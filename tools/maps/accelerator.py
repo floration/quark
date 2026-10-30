@@ -1,6 +1,7 @@
 """PARTICLE ACCELERATOR (1.19.6): race through a particle physics lab: about 1,550 m of running plus 100 m of drops and a
 120 m climb, about 75 s at 24 m/s (the ring tunnel is 390 m of it, a quarter).
-  1 the surface campus: the start grid in front of the wooden globe, an S between two office blocks, the glass foyer;
+  1 the surface campus: the start grid, an S between two office blocks (hedges make the road the line), the wooden globe by its last
+    bends, the glass foyer;
   2 the facilities: the magnet test hall (four rows of dipole magnets on stands to weave through, an invisible
     ceiling 4.5 m up over them so nobody hooks or hops over a row), gantry stairs up to the control room on the
     mezzanine, the enclosed skybridge, the cryogenics yard (tanks, pipe racks, a coolant trench: x1.3 speed);
@@ -12,17 +13,20 @@
     magnets along the outer wall, carts, magnet stands to hop, cable trays to slide under (or swing round), half-closed
     sector doors;
   6 the ventilation shaft up: a 60 degree kicker into an octagonal shaft 120 m tall with a low-gravity updraft, a fan
-    cage to thread; the walkable way is three ladders of 40 m with landings;
+    cage to thread; the walkable way is four ladders of 20-30 m with landings; the low gravity ends 10 m under the
+    top, an open canopy on four posts, so the climb carries straight out onto the roof;
   7 the car park: out of the vent stack on the roof, down three ramps between the parked cars, the finish in the
     ground floor's north bay.
-Checkpoints are full-height boxes across each section (a hook line can't fly over one). Falling below the void line
-puts you back at your checkpoint; there is no fall damage, so the shaft's drops are the walkable way down."""
+Checkpoints stand on their floors (R puts you back on the floor at the box's middle) and are at most 10.5 m tall;
+under open sky or a tall roof a clip pane over each one stops anybody flying over it. The underground floor is at
+y -90 and the void line at -99 (the engine holds feet at -100 or over). There is no fall damage, so the shaft's drops
+are the walkable way down."""
 import math
 from .prefabs import M, minus
 from .m4kit import Kit, num, MAT
 
-VOID = -125.0
-CAV_Y = -100.0         # the underground floor (shaft bottom, cavern, tunnel, vent room)
+VOID = -99.0          # (the engine holds feet at y -100 or over: the void line must be above that to ever fire)
+CAV_Y = -90.0          # the underground floor (shaft bottom, cavern, tunnel, vent room)
 
 
 def build():
@@ -32,11 +36,13 @@ def build():
     m.raw("palette base 0.62 0.63 0.66 accent 0.16 0.34 0.62 metal 0.30 0.32 0.36 glow 0.70 0.90 1.00 sky 0.58 0.70 0.86")
     cps = []   # checkpoints in race order (written at the end, in this order)
 
-    def cp(x0, floor, z0, x1, top, z1):
-        """a checkpoint across a section from its floor up to `top` (tall: a hook line can't fly over it), reaching as
-        far below the floor as it must for its centre to stand 3 m over the floor (the bots and the route checks
-        head for a checkpoint's centre)"""
-        cps.append((x0, min(floor, 2 * (floor + 3) - top), z0, x1, top, z1))
+    def cp(x0, floor, z0, x1, top, z1, seal=False):
+        """a checkpoint across a section, its bottom on the floor (R respawns you at the box's bottom, x/z centre) and at
+        most 10.5 m tall (the bots and the route checks head for its centre: within 6 m over a floor); seal: under open
+        sky or a tall roof, a clip pane over it up to `top`, so nobody hooks or flies over it"""
+        h = min(top - floor, 10.5)
+        cps.append((x0, floor, z0, x1, floor + h, z1))
+        if seal and top > floor + h: k.box("clip", x0, floor + h, z0, x1, top, z1)
 
     def poly_yz(mat, pts, x0, x1):
         """a prism along x over convex polygon pts [(z, y)]"""
@@ -91,11 +97,17 @@ def build():
     k.box("precastconcrete", -320, 0, -CZ, -280, 18, 18)
     k.box("precastconcrete", -240, 0, -18, -200, 18, CZ)
     k.box("clip", -320, 18, -CZ, -280, 120, 18); k.box("clip", -240, 18, -18, -200, 120, CZ)
-    # the start grid: eight racers in front of the globe, facing east
+    # the start grid: eight racers facing east down the first straight
     for i, z in enumerate((25, 28, 31, 34)):
         for x in (-352, -348):
             k.spawn("race", x, 0, z, -90)
-    cp(-262, 0, -CZ, -258, 120, CZ)                                    # CP1: between the office blocks
+    # the S as the line: hedges (clip over them) fill the yard round a 22-24 m road that turns 90 degrees at each
+    # block's corner (review: the racing line cut across an empty 128 m lawn)
+    LANES = [(CX0, 18, -256, 40), (-280, -42, -256, 40), (-280, -42, -176, -18), (-200, -42, -176, 12), (-200, -12, CX1, 12)]
+    BLOCKS = [(-320, -CZ, -280, 18), (-240, -18, -200, CZ)]
+    for (a, b, c, d) in minus((CX0, -CZ, CX1, CZ), LANES + BLOCKS):
+        k.box("hedge", a, 0, b, c, 2.6, d); k.box("clip", a, 2.6, b, c, 120, d)
+    cp(-262, 0, -42, -258, 120, 40, seal=True)                                    # CP1: between the office blocks
     # the main building's front (x -110): concrete with the glass foyer front round a 16 m entrance
     MB0, MB1 = -110, -70
     k.box("precastconcrete", MB0, 0, -40, MB0 + 1, 14, -8); k.box("precastconcrete", MB0, 0, 8, MB0 + 1, 14, 40)
@@ -128,7 +140,7 @@ def build():
             for i in range(n):
                 z0 = a + i * w; z1 = z0 + w - 0.5
                 if z1 - z0 < 0.6: continue
-                k.box("accent", rx, 1.0, z0, rx + 15, 3.0, z1)       # the dipole
+                k.box("bluedsteel", rx, 1.0, z0, rx + 15, 3.0, z1)   # the dipole
                 k.box("copperandpatina", rx - 0.4, 1.1, z0 + 0.15, rx, 2.9, z1 - 0.15)                   # coil ends
                 k.box("copperandpatina", rx + 15, 1.1, z0 + 0.15, rx + 15.4, 2.9, z1 - 0.15)
                 for sx in (rx + 1.5, rx + 12.5):
@@ -138,7 +150,8 @@ def build():
     # gantry stairs up to the mezzanine (y 12) and the control room on it
     k.stairs("steelcheckerfloor", 60, -4, 84, 4, 12, "x", 1, solid=False)
     MZ0 = 84
-    k.box("steelcheckerfloor", MZ0, 11.4, -HZ, H1, 12, HZ)
+    k.box("steelcheckerfloor", MZ0, 11.4, -HZ, 92, 12, HZ)
+    k.box("steelcheckerfloor", 92, 11.4, -12.4, H1, 12, 12.4)   # (only under the control room: no dead corners beside it)
     for (px, pz) in ((MZ0, -HZ + 0.5), (MZ0, HZ - 1.5), (MZ0, -5.5), (MZ0, 4.5)):
         k.box("galvanizedsteel", px, 0, pz, px + 1, 11.4, pz + 1)
     k.box("galvanizedsteel", MZ0, 12, -HZ, MZ0 + 0.2, 13.1, -4); k.box("galvanizedsteel", MZ0, 12, 4, MZ0 + 0.2, 13.1, HZ)   # railing
@@ -177,7 +190,7 @@ def build():
     # tanks (12-sided, 18 m) off the line
     for (tx, tz, r) in ((214, -24, 5), (214, 24, 5), (240, -26, 4), (244, 25, 4), (230, 14, 3)):
         k.disc("rivetedplates", tx, tz, r, 0, 18, n=12)
-    cp(238, 0, -YZ, 242, 120, YZ)                                       # CP5: the cryo yard
+    cp(222.5, 0, -YZ, 225.5, 120, YZ, seal=True)                                   # CP5: the cryo yard, off the stairs (clear of the trench)
     # the shaft head x 262..292, z -16..16, door west 12 m
     SH0, SH1, SHZ, SHS = 262, 292, 16, 20     # (north z -16, south z 20: the stairwell beside the shaft)
     S0, S1, SZ = 265, 285, 12      # the shaft x 265..285, z -12..12
@@ -205,7 +218,7 @@ def build():
         else:
             k.stairs("steelcheckerfloor", 267, 16.15, 283, SW[3], top, "x", 1, base=bot, solid=False)
             k.box("steelcheckerfloor", SW[0], bot - 0.5, SW[1], 267, bot, SW[3])
-    cp(SH0, 0, -SZ, 270, 14, SZ)                                     # CP6: into the shaft head
+    cp(SH0 + 1, 0, -SZ, S0 - 0.4, 14, SZ)                            # CP6: in the shaft head's door (on its floor, short of the shaft)
 
     # ================================================================== 3. the shaft: 100 m down, three drops
     k.box("nograpple", S0 - 1, CAV_Y - 1, -SZ - 1, S0, -1, SZ + 1)
@@ -232,7 +245,7 @@ def build():
     PITY = CAV_Y - 1.5      # the service pit's floor: 7.5 m under the decks (the bots' longest drop is 8 m)
     k.box("precastconcrete", V0, CAV_Y - 6, -VZ, PIT0, CAV_Y, VZ)                 # floor west of the pit
     k.box("precastconcrete", PIT0, CAV_Y - 7, -VZ, TOW0, PITY, VZ)               # the service pit's floor
-    k.box("scaffoldboards", TOW0, PITY, -VZ, B0d, CAV_Y + 6, VZ)                 # the scaffold tower, its top y -94
+    k.box("scaffoldboards", TOW0, PITY, -VZ, B0d, CAV_Y + 6, VZ)                 # the scaffold tower, its top y -84
     k.box("precastconcrete", B0d, CAV_Y - 1, -VZ, V1, CAV_Y, VZ)
     k.box("tunnellining", V0 - 1, CAV_Y + 6, -VZ, V0, VTOP, VZ)
     k.box("tunnellining", V0 - 1, CAV_Y - 7, -VZ, V0, CAV_Y + 6, -5); k.box("tunnellining", V0 - 1, CAV_Y - 7, 5, V0, CAV_Y + 6, VZ)
@@ -241,7 +254,7 @@ def build():
     # the east wall, the tunnel's portal in it (8.2 x 5 m)
     k.box("tunnellining", V1, CAV_Y - 1, -VZ, V1 + 2, VTOP, -4.1); k.box("tunnellining", V1, CAV_Y - 1, 4.1, V1 + 2, VTOP, VZ)
     k.box("tunnellining", V1, CAV_Y + 5, -4.1, V1 + 2, VTOP, 4.1)
-    # stairs up to half A's deck (y -94), the gangway, the west shielding wall with its way through
+    # stairs up to half A's deck (y -84), the gangway, the west shielding wall with its way through
     k.stairs("steelcheckerfloor", 304, -5, 316, 5, CAV_Y + 6, "x", 1, base=CAV_Y, solid=True)
     k.box("steelcheckerfloor", 316, CAV_Y, -6, A0, CAV_Y + 6, 6)
     k.box("rivetedplates", 328, CAV_Y, -VZ, A0, VTOP, -5); k.box("rivetedplates", 328, CAV_Y, 5, A0, VTOP, VZ)
@@ -249,7 +262,11 @@ def build():
     # the two halves: 12 sides, 22 m across (circumradius 11.4), coil layer inside, a deck through each
     for (x0, x1) in ((A0, A1), (B0d, B1d)):
         barrel("rivetedplates", x0, x1, DY, 0, 9.6, 11.4)
-        barrel("copperandpatina", x0 + 0.5, x1 - 0.5, DY, 0, 8.3, 9.6)
+        # the coil layer inside, in coloured windings along the barrel (what you see running through it)
+        cols = ("hammeredcopper", "powdercoatyellow", "bluedsteel", "powdercoatgreen", "hammeredcopper")
+        for j, c in enumerate(cols):
+            a = x0 + 0.5 + (x1 - x0 - 1) * j / len(cols); b = x0 + 0.5 + (x1 - x0 - 1) * (j + 1) / len(cols)
+            barrel(c, a, b, DY, 0, 8.3, 9.6)
         k.box("steelcheckerfloor", x0, CAV_Y + 4, -5, x1, CAV_Y + 6, 5)
     k.box("galvanizedsteel", A0 + 2, CAV_Y, -4, A1 - 2, CAV_Y + 1.6, 4)                 # half A's cradle
     # the beam pipe along the axis, and its supports in the pit (the hook line across the gap)
@@ -260,7 +277,7 @@ def build():
     for lz in (-9, 9):
         k.ladder(TOW0, lz, PITY, CAV_Y + 6, "e")
     cp(410, CAV_Y + 6, -VZ, 414, -72, VZ)
-    k.box("clip", B0d, -72, -VZ, B1d + 2, VTOP, VZ)                    # (nobody over half B: through it or beside it)                              # CP8: through half B
+    k.box("clip", B0d, CAV_Y + 28, -VZ, B1d + 2, VTOP, VZ)                    # (nobody over half B: through it or beside it)                              # CP8: through half B
     # the east shielding wall: half B's open end (10 x 10 m) and two doors at floor level beside it
     k.box("rivetedplates", B1d + 2, CAV_Y, -VZ, B1d + 4, VTOP, -24); k.box("rivetedplates", B1d + 2, CAV_Y, 24, B1d + 4, VTOP, VZ)
     k.box("rivetedplates", B1d + 2, CAV_Y, -14, B1d + 4, VTOP, -5); k.box("rivetedplates", B1d + 2, CAV_Y, 5, B1d + 4, VTOP, 14)
@@ -268,7 +285,7 @@ def build():
     k.box("rivetedplates", B1d + 2, CAV_Y + 16, -5, B1d + 4, VTOP, 5)
     k.box("steelcheckerfloor", B1d, CAV_Y, -6, 444, CAV_Y + 6, 6)
     k.stairs("steelcheckerfloor", 444, -6, 456, 6, CAV_Y + 6, "x", -1, base=CAV_Y, solid=True)
-    cp(505, CAV_Y, -VZ, 510, VTOP, VZ)                                  # CP9: the tunnel portal
+    cp(505, CAV_Y, -VZ, 510, VTOP, VZ, seal=True)                                  # CP9: the tunnel portal
 
     # ================================================================== 5. the ring tunnel
     W = 4.1                                         # half the clear width
@@ -328,19 +345,21 @@ def build():
             for (sg, o) in ((-1, a0), (1, a0), (1, a1), (-1, a1)):
                 poly.append((cx + d[0] * sg * depth / 2 + left[i][0] * o, cz + d[1] * sg * depth / 2 + left[i][1] * o))
             k.prism(mat, poly, y0, y1)
-    # obstacles: hurdles (open magnet stands, 0.9 m), cable trays (bottom 1.35 m: slide under, or swing to the 1.6 m way
-    # past at one side), half-closed sector doors
-    # (the trays hang where the runs are nearly square to the map: a turned piece's box would close the way past)
-    across(1, 0.5, -W, W - 1.6, TY0 + 1.35, TY0 + 1.75, "galvanizedgrating", depth=1.5)
+    # obstacles in two sectors (review: one every 35 m was mostly reacting): sector 1 on runs 2-4, sector 2 on runs
+    # 9-11, each a hurdle (open magnet stand, 0.9 m), a half-closed sector door and a cart; clean runs between them
     across(2, 0.5, -W + 1.2, W, TY0, TY0 + 0.9, "galvanizedsteel")
-    across(4, 0.3, -W + 1.2, 0.4, TY0, TY1, "rivetedplates", depth=1.0)          # sector door, half closed (outer half)
-    across(6, 0.5, -W + 1.2, W, TY0, TY0 + 0.9, "galvanizedsteel")
-    across(7, 0.5, -0.4, W, TY0, TY1, "rivetedplates", depth=1.0)                # sector door, inner half
+    across(3, 0.4, -W + 1.2, 0.4, TY0, TY1, "rivetedplates", depth=1.0)          # sector door, half closed (outer half)
+    across(4, 0.6, 1.8, W - 0.2, TY0, TY0 + 1.6, "galvanizedsteel", depth=3.0)    # a cart (inner side)
     across(9, 0.4, -W + 1.2, W, TY0, TY0 + 0.9, "galvanizedsteel")
-    across(11, 0.4, -W + 1.2, 0.4, TY0, TY1, "rivetedplates", depth=1.0)
-    across(12, 0.6, -W, W - 1.6, TY0 + 1.35, TY0 + 1.75, "galvanizedgrating", depth=1.5)
-    for (i, f) in ((3, 0.6), (8, 0.3), (10, 0.5)):
-        across(i, f, 1.8, W - 0.2, TY0, TY0 + 1.6, "galvanizedsteel", depth=3.0)
+    across(10, 0.4, -0.4, W, TY0, TY1, "rivetedplates", depth=1.0)               # sector door, inner half
+    across(11, 0.5, 1.8, W - 0.2, TY0, TY0 + 1.6, "galvanizedsteel", depth=3.0)
+    # the walls read as progress: copper ends on every magnet, a cable tray high on the inner wall, and each
+    # sector's colour on the inner wall (yellow, then orange) as a flush panel at every run's start
+    for i in range(1, len(heads) - 1):
+        for f in (0.03, 0.97):
+            across(i, f, -W, -W + 1.25, TY0, TY0 + 1.45, "hammeredcopper", depth=0.5)
+        band(i, W - 0.35, W, TY1 - 1.0, TY1 - 0.85, "galvanizedgrating")
+        across(i, 0.12, W - 0.03, W, TY0 + 1.6, TY0 + 3.2, "powdercoatyellow" if i < 7 else "orangewirecut", depth=2.0)
     jm = 7
     jx, jz = pts[jm]
     cp(jx - 6, TY0, jz - 6, jx + 6, TY1, jz + 6)                         # CP10: halfway round
@@ -348,15 +367,15 @@ def build():
     # ================================================================== 6. the vent: room, kicker, octagonal shaft
     SX, SZc = EX, EZ - 14.0          # the shaft's centre
     A = 5.5                          # its inner half-width (11 m across the flats)
-    RZ0, RZ1 = EZ - 22, EZ           # the room z (x EX-8..EX+8), y -100..-90
+    RZ0, RZ1 = EZ - 22, EZ           # the room z (x EX-8..EX+8), y -90..-80
     k.box("tunnellining", EX - 8, TY0 - 1, RZ0, EX + 8, TY0, RZ1)
-    k.box("tunnellining", EX - 9, TY0 - 1, RZ0 - 1, EX + 9, -89, RZ0); k.box("tunnellining", EX - 9, TY0 - 1, RZ0, EX - 8, -89, RZ1 + 1)
-    k.box("tunnellining", EX + 8, TY0 - 1, RZ0, EX + 9, -89, RZ1 + 1)
-    k.box("tunnellining", EX - 8, TY0 - 1, RZ1, EX - W, -89, RZ1 + 1); k.box("tunnellining", EX + W, TY0 - 1, RZ1, EX + 8, -89, RZ1 + 1)
-    k.box("tunnellining", EX - W, TY1, RZ1, EX + W, -89, RZ1 + 1)
+    k.box("tunnellining", EX - 9, TY0 - 1, RZ0 - 1, EX + 9, TY0 + 11, RZ0); k.box("tunnellining", EX - 9, TY0 - 1, RZ0, EX - 8, TY0 + 11, RZ1 + 1)
+    k.box("tunnellining", EX + 8, TY0 - 1, RZ0, EX + 9, TY0 + 11, RZ1 + 1)
+    k.box("tunnellining", EX - 8, TY0 - 1, RZ1, EX - W, TY0 + 11, RZ1 + 1); k.box("tunnellining", EX + W, TY0 - 1, RZ1, EX + 8, TY0 + 11, RZ1 + 1)
+    k.box("tunnellining", EX - W, TY1, RZ1, EX + W, TY0 + 11, RZ1 + 1)
     for (a, b, c, d) in minus((EX - 8, RZ0, EX + 8, RZ1), [(SX - A, SZc - A, SX + A, SZc + A)]):
-        k.box("nograpple", a, -90, b, c, -89, d)
-    cp(EX - 8, TY0, EZ - 6, EX + 8, -90, EZ)                             # CP11: the vent room
+        k.box("nograpple", a, TY0 + 10, b, c, TY0 + 11, d)
+    cp(EX - 8, TY0, EZ - 6, EX + 8, TY0 + 10, EZ)                             # CP11: the vent room
     # the kicker: 60 degrees, rising north into the shaft
     k.wedge("rivetedplates", 3, EX - 4, TY0, EZ - 4 - 15 / math.tan(math.radians(60)), EX + 4, TY0 + 15, EZ - 4)
     # the shaft: flat walls + chamfered corners, from the room's ceiling (y -90) to the stack's cap (y 27)
@@ -384,8 +403,11 @@ def build():
         for (sx, sz) in ((1, 1), (1, -1), (-1, 1), (-1, -1)):
             cx, cz = SX + sx * A, SZc + sz * A
             k.prism(mat, [(cx, cz), (cx - sx * c, cz), (cx, cz - sz * c)], y0, y1)
-    octa(-90, 20, "ventilationduct")
-    octa(20, 27, "ventilationduct", doors=[("n", 20, 24), ("e", 20, 24), ("w", 20, 24)])
+    octa(CAV_Y + 10, 20, "ventilationduct")
+    # the top: an open canopy, four corner posts under the cap (the climb carries straight out onto the roof)
+    for (sx, sz) in ((1, 1), (1, -1), (-1, 1), (-1, -1)):
+        cx, cz = SX + sx * A, SZc + sz * A
+        k.box("ventilationduct", min(cx, cx + sx * 1.0), 20, min(cz, cz + sz * 1.0), max(cx, cx + sx * 1.0), 27, max(cz, cz + sz * 1.0))
     k.box("nograpple", SX - A - 1, 27, SZc - A - 1, SX + A + 1, 28, SZc + A + 1)     # the stack's cap
     # the walkable way up: three 40 m ladders, each wall stepping back to leave a landing on the last one's top
     # (each ladder 1.2 m to the other side of the last, so stepping off one onto its landing never catches the next)
@@ -397,12 +419,12 @@ def build():
     for (a, b, c, d) in minus((SX - A, SZc - A, SX + A, SZc + A), [(SX - 2, SZc - 2, SX + 2, SZc + 2), (SX - 2, SZc - A, SX - 0.4, SZc - A + 2)]):
         k.box("galvanizedgrating", a, 19.6, b, c, 20, d)
     # the updraft: low gravity up the middle (off the ladders)
-    k.box("lowgravityfield", SX - A, -89, SZc - A + 5, SX + A, 19.5, SZc + A)
+    k.box("lowgravityfield", SX - A, CAV_Y + 11, SZc - A + 5, SX + A, 9.5, SZc + A)   # (ends 10 m under the top: the climb carries out)
     # the fan cage at y -25: two diagonal bars and a hub to thread past
     k.bar("galvanizedsteel", (SX - A, SZc + A), (SX + A, SZc - A + 5), 1.0, -25.5, -24.5)
     k.bar("galvanizedsteel", (SX - A, SZc - A + 5), (SX + A, SZc + A), 1.0, -25.5, -24.5)
     k.disc("galvanizedsteel", SX, SZc, 1.6, -26, -24, n=8)
-    cp(SX - 8, 20, SZc - A - 12, SX + A + 12, 27, SZc + A + 1)       # CP12: out of the stack
+    cp(SX - 8, 20, SZc - 13.5, SX + 28, 120, SZc - A - 1.5, seal=True)   # CP12: across the roof between the stack and ramp 3
 
     # ================================================================== 7. the car park (y 0, 6.67, 13.33, 20)
     PX0, PX1 = SX - 8, SX + 28
@@ -440,11 +462,11 @@ def build():
     cp(EL[0], LV[1], SZc - 14, EL[1], LV[2] - 0.5, SZc + 7)              # CP13: off ramp 2 (deck 1's south bay)
     cp(PX0, 0, PZ0, PX1, LV[1] - 0.5, PZ0 + 6)                            # CP14: the finish, the ground floor's north bay
 
-    # ================================================================== the globe (behind the start), the campus look
+    # ================================================================== the globe (beside the S's last bends), the campus look
     for i in range(10):
         y0 = i * 2.0; y1 = y0 + 2.0
         r = 20 * math.cos(math.asin(min(1.0, (y0 + 1.0) / 20.5)))
-        k.disc("logcabin" if i % 2 == 0 else "wideplanks", -378, 30, r, y0, y1, n=12)
+        k.disc("logcabin" if i % 2 == 0 else "wideplanks", -145, 40, r, y0, y1, n=12)   # (beside the last bends: in view)
 
     # ================================================================== dressing (walls, ceilings, edges: the lanes stay clear)
     # campus: road markings (flush), crossings, lamp posts and trees on the lawns' far edges, the office blocks' windows
@@ -463,7 +485,6 @@ def build():
             k.box("steeldoorskin", x0 - 0.06, y, z0, x0, y + 1.6, z1)
             k.box("steeldoorskin", x1, y, z0, x1 + 0.06, y + 1.6, z1)
         k.box("glow", x0 - 0.1, 17.6, z0, x1 + 0.1, 18, z1)
-    k.box("glow", -398, 0, 30 - 0.4, -358, 0.3, 30 + 0.4)                          # the globe's light line
     # the foyer: glass either side of the entrance, a reception desk and a sign off to the side
     k.box("bluetintedglass", MB0 - 0.2, 1, -20, MB0, 6, -8); k.box("bluetintedglass", MB0 - 0.2, 1, 8, MB0, 6, 20)
     for z in (-20, -14, 8, 14, 20): k.box("galvanizedsteel", MB0 - 0.3, 0, z - 0.15, MB0, 7, z + 0.15)
@@ -500,15 +521,64 @@ def build():
     # detector's open faces
     for x in (320, 380, 445, 495):
         for z0, z1 in ((-VZ, -VZ + 1.2), (VZ - 1.2, VZ)):
-            k.box("galvanizedsteel", x - 1.2, VTOP - 7, z0, x + 1.2, VTOP - 5.2, z1)
+            k.box("powdercoatyellow", x - 1.2, VTOP - 7, z0, x + 1.2, VTOP - 5.2, z1)   # (yellow work floods)
             k.box("glow", x - 1.0, VTOP - 7.1, z0 + 0.1, x + 1.0, VTOP - 7, z1 - 0.1)
     k.box("bridgegirder", 470, VTOP - 4, -VZ, 474, VTOP - 2, VZ)
+    # hazard banding: flush along the cavern's walls at the floor, and round the service pit's edges
+    for (z0, z1) in ((-VZ, -VZ + 0.03), (VZ - 0.03, VZ)):
+        k.box("hazard", V0, CAV_Y, z0, V1, CAV_Y + 1.2, z1)
+    k.box("hazard", PIT0 - 0.6, CAV_Y - 0.01, -VZ, PIT0, CAV_Y + 0.005, VZ)
     for z0, z1 in ((-VZ, -VZ + 1.0), (VZ - 1.0, VZ)):
         k.box("galvanizedgrating", V0, CAV_Y + 9, z0, V1, CAV_Y + 9.3, z1)
     for xf in (A1, B0d):
         barrel("glow", xf - 0.05, xf + 0.05, DY, 0, 11.4, 11.7)
     for xb in (A0 + 8, A0 + 26, B0d + 8, B0d + 26):
         barrel("tankarmour", xb, xb + 1.2, DY, 0, 11.4, 11.9)                    # the yoke bands
+    # the measuring hall (q: "more decor, especially for the measuring room"); all of it flush on the walls or high up,
+    # nothing on the floor of the line: the detector's end-cap rings on both shielding walls (open at the bottom, clear
+    # of the ways through), flanges on the beam pipe, readout screens and instrument racks high on the side walls,
+    # vertical cable drops, accent strips under the ceiling, and catwalks with railings at the hall's two ends (they
+    # bridge nothing: the west one ends at the shielding wall, the east one starts past half B)
+    for (xa, xb) in ((A0, A0 + 0.15), (B1d + 1.85, B1d + 2)):
+        barrel("bluedsteel", xa, xb, DY, 0, 12.4, 13.4, skip=(7, 8, 9))
+        barrel("hammeredcopper", xa, xb, DY, 0, 13.4, 13.9, skip=(7, 8, 9))
+        barrel("glow", xa, xb + (0.03 if xa == A0 else 0), DY, 0, 12.2, 12.4, skip=(7, 8, 9))
+    for fx in range(A0 + 4, B1d, 8):
+        k.tube_x("electroplatednickel", fx, fx + 0.3, DY, 0, 0.95)
+    RY0 = CAV_Y + 10.5                     # the high instrument band: 10.5-14 m up the side walls
+    for x in range(306, V1 - 6, 14):
+        if 326 <= x <= 336 or 428 <= x <= 438: continue    # (not on the shielding walls)
+        for (z0, z1, zs) in ((-VZ, -VZ + 0.5, -VZ + 0.5), (VZ - 0.5, VZ, VZ - 0.55)):
+            k.box("electricalcabinet", x, RY0, z0, x + 4, RY0 + 2.4, z1)                 # a rack of instruments
+            k.box("controlpanel", x + 5, RY0 + 0.4, z0 if z0 < 0 else z1 - 0.12, x + 9, RY0 + 2.6, (z0 + 0.12) if z0 < 0 else z1)
+            k.box("neonmaze", x + 5.3, RY0 + 0.7, zs if z0 < 0 else zs - 0.01, x + 8.7, RY0 + 2.3, (zs + 0.01) if z0 < 0 else zs + 0.05)   # the readout
+            k.box("galvanizedgrating", x + 10.2, CAV_Y + 9.3, z0 if z0 < 0 else z1 - 0.3, x + 10.8, VTOP, (z0 + 0.3) if z0 < 0 else z1)   # a cable drop
+    for (z0, z1) in ((-VZ, -VZ + 0.05), (VZ - 0.05, VZ)):
+        k.box("glow", V0, VTOP - 1.2, z0, V1, VTOP - 0.9, z1)                              # the accent strip
+        k.box("radiationwarning", 345, CAV_Y + 2.5, z0, 349, CAV_Y + 5.5, z1)
+        k.box("radiationwarning", 470, CAV_Y + 2.5, z0, 474, CAV_Y + 5.5, z1)
+    CWY = CAV_Y + 16                       # the catwalks (16 m up)
+    for (x0, x1) in ((V0 + 0.5, 327.5), (B1d + 6, V1 - 0.5)):
+        for (z0, z1, rz) in ((-VZ, -VZ + 2, -VZ + 2), (VZ - 2, VZ, VZ - 2.06)):
+            k.box("steeldeckplate", x0, CWY - 0.2, z0, x1, CWY, z1)
+            k.box("galvanizedsteel", x0, CWY + 1.0, rz, x1, CWY + 1.1, rz + 0.06)       # the rails
+            k.box("galvanizedsteel", x0, CWY + 0.5, rz, x1, CWY + 0.56, rz + 0.06)
+            for x in [x0 + 0.1 + 3.0 * i for i in range(int((x1 - x0) // 3.0) + 1)]:
+                if x + 0.08 <= x1: k.box("galvanizedsteel", x, CWY, rz, x + 0.08, CWY + 1.0, rz + 0.06)
+            k.box("powdercoatyellow", x0, CWY - 0.2, rz - 0.02 if z0 < 0 else rz, x1, CWY - 0.05, rz + 0.04 if z0 < 0 else rz + 0.06)
+            for x in range(int(x0) + 2, int(x1) - 3, 9):
+                k.box("electricalcabinet", x, CWY, z0 if z0 < 0 else z1 - 0.7, x + 1.4, CWY + 2.2, (z0 + 0.7) if z0 < 0 else z1)
+    # the ring tunnel: a pipe run and a cable bundle along the outer wall's top, a light strip down the ceiling,
+    # radiation signs and a hazard stripe at the outer wall's foot (flush), magnet tops on the inner wall (high)
+    for i in range(len(heads)):
+        band(i, W - 0.9, W - 0.35, TY1 - 0.75, TY1 - 0.25, "copperandpatina")
+        band(i, W - 0.35, W, TY1 - 0.6, TY1 - 0.15, "galvanizedsteel")
+        band(i, -0.25, 0.25, TY1 - 0.04, TY1, "glow")
+        band(i, W - 0.03, W, TY0, TY0 + 0.45, "hazard")
+        if 0 < i < len(heads) - 1:
+            band(i, -W, -W + 0.45, TY1 - 1.3, TY1 - 0.5, "bluedsteel")
+            if i % 2 == 1:
+                across(i, 0.5, W - 0.03, W, TY0 + 1.7, TY0 + 2.9, "radiationwarning", depth=1.2)
     # the vent: glowing fan-housing bands every 30 m on its walls
     for y in (-60, -30, 0):
         k.box("glow", SX + A - 0.05, y, SZc - A + 4.5, SX + A, y + 0.4, SZc + A)
@@ -533,11 +603,9 @@ def build():
     k.box("glow", PX0, 5.2, PZ0 + 2.8, PX1, 5.6, PZ0 + 3.2)
     for (x0, x1) in ((PX0, PX0 + 0.3), (PX1 - 0.3, PX1)):
         k.box("glow", x0, 0, PZ0 + 2.8, x1, 5.6, PZ0 + 3.2)
-    # the world round it: the ground (unlit, open over the shafts), a ridge of hills far to the west and north
+    # the world round it: the ground (unlit, open over the shafts)
     for (a, b, c, d) in minus((-480, -420, 920, 140), [(SH0, -SHZ, SH1, SHS), (SX - A - 1, SZc - A - 1, SX + A + 1, SZc + A + 1)]):
         k.box("far", a, -1.6, b, c, -1.1, d)
-    k.box("far", -520, -2, -420, -480, 70, 140); k.box("far", -520, -2, -460, 960, 45, -420)
-    k.box("far", -520, -2, 140, 960, 30, 180)
 
     # ================================================================== lights (the bake): cold white inside, yellow
     # floods in the cavern, a lamp every 25 m in the tunnel, the vent dark but for its fan housings
@@ -561,7 +629,7 @@ def build():
             k.light(x, TY1 - 0.4, z, 13, 0.9)
             (ax, az), (bx, bz) = pts[i], pts[i + 1]
             k.box("lightblock", x - 0.4, TY1 - 0.08, z - 0.4, x + 0.4, TY1, z + 0.4)
-    k.light(EX, -92, EZ - 8, 16, 0.9)
+    k.light(EX, CAV_Y + 8, EZ - 8, 16, 0.9)
     for y in (-70, -40, -10, 15): k.light(SX, y, SZc + 3, 14, 0.6)
     for lv in range(3):
         for x in (SX - 2, SX + 22):
@@ -571,10 +639,27 @@ def build():
     for c in cps:
         m.raw("checkpoint " + " ".join(num(v) for v in c))
     m.raw("setting particle physics lab")
-    m.top_up_spawns = lambda offered: None   # (race only: no free for all pool)
+    # bomb (q, 2026-10-30: "playable in bomb too"): the cryogenics yard is the arena. Attackers climb out of the shaft
+    # head's stairwell (one flight) and in at its west door; defenders come along the skybridge onto the cold box and
+    # down its stairs. The two sites are the yard's west corners (north and south of the cold box),
+    # each beside a tank: attackers reach the north one in 99 m and the south one in 118 m (4.1 / 4.9 s at 24 m/s),
+    # defenders either in 109 m (maptool metrics). Defenders any further back lost about two rounds in three to 8
+    # expert bots (seeds 1-6); from here the rounds split 43-38 with plants on both sites. The race spawns and checkpoints are untouched; nothing was built for it but the sites' flush markings.
+    m.also = ["bomb"]
+    LAND = -CAV_Y / 13               # (the stairwell's first landing, 6.9 m down: the attackers climb one flight out)
+    BA = [(283.8, 14.2), (285.2, 15.9), (283.8, 17.6), (285.2, 18.6), (285.2, 13.6)]
+    BD = [(150, -1.5), (150, 1.5), (153, -1.5), (153, 1.5), (156, 0)]
+    for (x, z) in BA: m.raw(f"spawn bomb-a {x:g} {-LAND:.3f} {z:g} 90")
+    for (x, z) in BD: m.raw(f"spawn bomb-b {x} 12 {z} -90")
+    SITES = [(198, 0, 20, 208, 3, 31), (198, 0, -31, 208, 3, -20)]
+    for st in SITES:
+        m.raw("site " + " ".join(f"{v:g}" for v in st))
+        for (z0, z1) in ((st[2], st[2] + 0.4), (st[5] - 0.4, st[5])):
+            k.box("hazard", st[0], -0.01, z0, st[3], 0.004, z1)
+    m.top_up_spawns = lambda offered: None   # (race and bomb: their own spawns; no free for all pool)
     m.save("accelerator", dress=False)
     import os
     from . import prefabs
     path = os.path.join(prefabs.OUT, "accelerator.qmap")
-    text = open(path).read().replace("modes race ffa\n", "modes race\n")
+    text = open(path).read().replace("modes race bomb ffa\n", "modes race bomb\n")
     open(path, "w", newline="\n").write(text)
