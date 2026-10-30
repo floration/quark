@@ -109,13 +109,21 @@ public:
     void shutdown();
     void frame(double dt);
     bool quitRequested() const { return quit_; }
-    int maxFps() const { return cfg_.maxFps; }
+    int maxFps() const {   // (VIDEO > MORE: WHEN UNFOCUSED caps it while the window is in the background or minimized)
+        int cap = cfg_.maxFps;
+        if (cfg_.vrr && vrrHz_ > 3) cap = cap > 0 ? std::min(cap, vrrHz_ - 3) : vrrHz_ - 3;   // (VRR: under the refresh, never at it)
+        if (bgCap_ && cfg_.bgFps > 0) return cap > 0 ? std::min(cap, cfg_.bgFps) : cfg_.bgFps;
+        return cap;
+    }
 
     // GLFW callbacks
     void onChar(unsigned cp);
     void onKey(int key, int action, int mods);
     void onMouseButton(int button, int action);
-    void onFocus(bool focused);   // (the click that brings the window back is the window's, not a shot)
+    void onFocus(bool focused);
+    void onIconify(bool iconified);
+    void onWindowPos(int x, int y);    // windowed: remembered for the next launch (VIDEO > MORE)
+    void onWindowSize(int w, int h);   // (the click that brings the window back is the window's, not a shot)
     void onCursor(double x, double y);
     void onResize(int w, int h);
     void onScroll(double dy);
@@ -131,7 +139,7 @@ private:
     // null, testHeld_ is 0, and the widgets' UiExp descriptors are a few pointers each.
     friend class UiTest;
     UiTest* uiTest_ = nullptr;
-    uint32_t testHeld_ = 0;                 // actions the UI test holds down (bit per Action), read by isDown
+    uint64_t testHeld_ = 0;                 // actions the UI test holds down (bit per Action), read by isDown
     int edOpens_ = 0;                       // openEditor() calls (NEW / OPEN reopened the editor)
     std::string uiScreenPath() const;       // where the UI is: "main", "host/picker:maps", "ingame/pause/settings/hud"...
     std::string uiContext() const;          // what else tells this screen's widgets apart (the editor's selection)
@@ -345,12 +353,21 @@ private:
     bool playDemo(const std::string& path);
     std::vector<std::string> demoFiles_;
     std::vector<std::string> demoNotes_;   // per demo: "" (plays), or which version recorded it / converting
+    std::vector<uintmax_t> demoSizes_;     // ...its size in bytes
+    std::string demoDelArmed_; double demoDelUntil_ = 0;   // DELETE: the demo armed by a first click (a second deletes it)
+    std::string demoRename_, demoRenameText_;   // RENAME: the demo being renamed, and the name typed so far
+    void applySettings();                  // after many settings changed at once (console, IMPORT, RESET ALL): the ones not read every frame
+    std::string allMsg_; double allMsgUntil_ = 0, resetAllArmed_ = 0;   // GAMEPLAY > MORE: ALL SETTINGS' answer; RESET ALL armed
+    void pruneDemos();                     // KEEP: delete all but the newest cfg_.demoKeep
     double demoListAt_ = -1;
     int infoTab_ = 0;
     int infoScroll_ = 0;                    // the info page's first line shown (mouse wheel: 3 lines a notch)
     int demoScroll_ = 0, joinScroll_ = 0;   // first row shown in the demo list / server list (mouse wheel)
     std::vector<std::string> maps_;
-    struct MapInfo { std::string title; int preferredMode = -1; uint32_t modes = 0; uint16_t ranked = 0; }; // ranked: ladders it's a ranked map for // modes: bit per supported mode
+    struct MapInfo { std::string title; int preferredMode = -1; uint32_t modes = 0; uint16_t ranked = 0; std::vector<uint8_t> preview; }; // ranked: ladders it's a ranked map for // modes: bit per supported mode // preview: the picker's image (kPreviewW x kPreviewH RGBA, rows bottom-up)
+    static constexpr int kPreviewW = 192, kPreviewH = 108;
+    int pickScroll_ = 0;        // the map picker's first row shown (the wheel)
+    std::string previewSig_;    // (the maps the renderer's previews are of: names, file times and sizes)
     std::vector<MapInfo> mapInfo_;
     enum { PICK_NONE = 0, PICK_HOST_MAP, PICK_HOST_MODE, PICK_BOT_MAP, PICK_BOT_MODE, PICK_LIVE_MAP, PICK_LIVE_MODE, PICK_VARIANT, PICK_TMAPS, PICK_TMODES, PICK_RANKED };
     int variantCtx_ = 0, liveVariant_ = 0; // ruleset step: 0 host, 1 vs bots, 2 in game
@@ -420,7 +437,7 @@ private:
     bool edSession_ = false;    // this connection has been an edit session (leaving offers to save a copy)
     bool testEdit_ = false;     // hosting an edit session started from the editor
     uint32_t edRev_ = 0;        // net_.mapRevision() that ed_ was copied from
-    std::vector<std::string> edUndo_; // inverse ops, newest last
+    std::vector<std::string> edUndo_; // inverse ops, newest last (edUndoFwd_: each one's op)
     // dragging a handle of the selection: a face (resize) or, with Shift / on points, the whole thing (move)
     struct EdHandle { Vec3 pos; int axis, sign; bool move; };
     std::vector<EdHandle> edHandles() const;
@@ -461,8 +478,16 @@ private:
     void closeEditor();
     void editorFrame(double dt);
     void editorKey(int key, int mods);
-    void edDo(const std::string& op, const std::string& inverse, bool coalesce = false, bool undoable = true);
+    bool edDo(const std::string& op, const std::string& inverse, bool coalesce = false, bool undoable = true);
     void edUndoLast();
+    void edRedoLast();   // Ctrl+Y / Ctrl+Shift+Z: the last undone step again
+    std::vector<std::string> edUndoFwd_;   // each undo step's own op (what redo does again), beside edUndo_
+    std::vector<std::pair<std::string, std::string>> edRedo_;   // undone steps (op, inverse), newest last; a new edit clears it
+    bool edRedoing_ = false;
+    double edAutoAt_ = 0;    // EDITOR AUTOSAVE: the next one (a changed map every 60 s, to editor-autosave.qmap)
+    bool edHasAutosave_ = false;   // ...one is there to RESTORE (from a crash, or leaving without saving)
+    void edAutosave();
+    void edRestoreAutosave();
     void edChanged();
     void edNotify(const std::string& s);
     bool edSelValid() const;
@@ -548,9 +573,10 @@ private:
     std::deque<Feed> killFeed_, chatFeed_, notices_;
     void drawFeedText(float x, float y, float ts, const Feed& f);
     std::deque<Feed> chatLog_;   // the chat history shown while typing (Enter)
-    void addChat(const Feed& f) { chatFeed_.push_back(f); chatLog_.push_back(f); while (chatFeed_.size() > 8) chatFeed_.pop_front(); while (chatLog_.size() > 30) chatLog_.pop_front(); }
+    void addChat(const Feed& f) { chatFeed_.push_back(f); chatLog_.push_back(f); while ((int)chatFeed_.size() > cfg_.chatLines) chatFeed_.pop_front(); while (chatLog_.size() > 30) chatLog_.pop_front(); }
     std::string centerText_;
     double killMarkUntil_ = 0;   // your kill: a bigger red X on the crosshair until then (X6)
+    bool hitHead_ = false;   // (the last hit a headshot: the crosshair flashes HEADSHOT's colour)
     double centerUntil_ = 0, hitUntil_ = 0, damageUntil_ = 0, recoil_ = 0, localNextFire_ = 0;
     // the first-person grapple arm: how far it has turned toward the hook (camera space yaw / pitch, radians) and raised
     // (0..1), eased each frame; and each player's launcher muzzle as drawn this frame (their rope starts there)
@@ -638,6 +664,15 @@ private:
     std::string perfPrio_;   // F3: PRIORITIZE GAME as Windows reports it (gamePriorityStatus; empty off Windows)   // (drawPerf: the version / server line, made with the numbers)
     struct JoiningThread { std::thread t; ~JoiningThread() { if (t.joinable()) t.join(); } };
     JoiningThread raceWriter_;  // (onRaceSplit: appends a finished run to race_times.log; joined however the game ends)
+    // the race ghost: this run's path (20 a second, from its start) and the best run's on this map (ghosts/<map>.txt)
+    struct GhostPt { float t; Vec3 pos; };
+    std::vector<GhostPt> ghostRec_, ghostBest_;
+    std::string ghostMap_;               // (the map ghostBest_ is for)
+    double ghostRunStart_ = -1, ghostNext_ = 0;
+    JoiningThread ghostWriter_;
+    void drawTeamPanel(float H, float s, float ts);   // TEAM PANEL
+    int matchShots_ = 0, matchHits_ = 0, matchBestStreak_ = 0; float matchDmg_ = 0;   // MATCH SUMMARY: this match's, from when it began
+    void updateGhost();                  // record this run; draw the best one
     Vec3 viewAnchor(const Settings::HudElem& e, const Vec3& base) const;   // a first-person model's pivot (camera space)
     Mat4 weaponFrame(float kick) const;    // the weapon model: its space (x its size) -> camera space (HUD layout)
     Vec3 muzzlePoint(int weapon, const Vec3& eye) const;   // world point of the weapon model's barrel tip (HUD layout)
@@ -695,6 +730,40 @@ private:
     bool rasterBlank(double* at, double* refresh);   // the next vertical blank on the game's monitor (Windows)
     bool ultraPaced() const { return cfg_.lowLatency == 2 || cfg_.presentMode == 3; }   // (fences, learnt CPU / GPU times)
     bool mouseHeld_ = false;           // rawMouse_.hold is on (the cursor clipped to the window's centre)
+    bool focused_ = true, iconified_ = false, bgCap_ = false;   // (the window in the background / minimized: WHEN UNFOCUSED)
+    void applyBackground();            // bgCap_ and the background mute from focused_ / iconified_
+    bool scoresOn_ = false;            // the scoreboard shown (CONTROLS > MORE: SCOREBOARD TOGGLE)
+    double raceResetAt_ = -1;          // (RACE RESET pressed and not yet acted on: let go, the checkpoint; held 250 ms, the start)
+    int moreOpen_ = 0;                 // settings: the tab's MORE page open (1, 2: which; 1.19.4, the settings that don't fit the tab)
+    int morePages() const { return setTab_ == TAB_VIDEO ? 3 : (setTab_ == TAB_CONTROLS || setTab_ == TAB_GAMEPLAY) ? 1 : 0; }
+    std::string chCodeMsg_; double chCodeUntil_ = 0;   // (CROSSHAIR > COPY / PASTE CODE's answer)
+    void drawMoreSettings(const SetLayout& L);
+    const char* moreNav(int n) const;
+    bool hudHidden_ = false;           // the HIDE HUD key
+    double reconnectAt_ = 0; int reconnectTries_ = 0;   // AUTO RECONNECT: the next try, and how many so far
+    // a key bound here that another action had: who lost it (UNDO puts it back there, and this slot as it was)
+    int bindTakenA_ = -1, bindTakenK_ = 0, bindTakenCode_ = 0, bindTakenTo_ = -1, bindTakenSlot_ = 0, bindTakenWas_ = 0; double bindTakenUntil_ = 0;
+    int chatScroll_ = 0;               // typing: chat history scrolled up this many lines (the wheel / Page Up)
+    bool teamChat_ = false;            // the chat line being typed goes to the team (TEAM CHAT key)
+    bool grappleOn_ = false;           // GRAPPLE TOGGLE: hooked by the last press
+    int lastWeapon_ = -1, lastWeaponFrom_ = -1;   // LAST WEAPON: the weapon held before the current one
+    std::string keyOf(int action) const;   // its key's name, for hints ("UNBOUND")
+    void cycleSpec(int dir);           // the next (1) / previous (-1) player to watch
+    double cornerAt_ = 0; int cornerFrames_ = 0, cornerFps_ = 0;   // SHOW FPS: frames counted over half a second
+    float hpMax_ = 100; bool hpAlive_ = false;   // HEALTH BARS: MODE'S MAX: the most health seen this life (from its spawn)
+    std::string captionText_; double captionUntil_ = 0;   // ANNOUNCER CAPTIONS: the last line, as text
+    double bombBeepAt_ = 0;            // the planted bomb's next beep (OBJECTIVE volume)
+    void announce(int snd);            // an announcer line (played, and captioned when ANNOUNCER CAPTIONS is on)
+    int vrrHz_ = 0;                    // G-SYNC / FREESYNC: the monitor's refresh (the cap goes 3 under it)
+    std::string confirmWhat_; double confirmUntil_ = 0;   // CONFIRM LEAVE: the button armed by a first click
+    bool confirmed(const std::string& what);   // (true: do it; false: armed, click again)
+    bool confirmArmed(const std::string& what) const { return cfg_.confirmLeave && confirmWhat_ == what && time_ < confirmUntil_; }
+    int settingsStartTab() const { return cfg_.rememberTab ? cfg_.lastTab : TAB_PLAYER; }
+    int prioLevel(bool focused) const { return cfg_.prioritize && focused ? cfg_.cpuPriority : 0; }
+    // a display change waiting for KEEP (VIDEO > MORE: RESOLUTION, VIDEO: DISPLAY): reverted at keepUntil_ unless kept
+    double keepUntil_ = 0;
+    int keepMode_ = 0, keepW_ = 0, keepH_ = 0;
+    void askKeepDisplay(int oldMode, int oldW, int oldH);
     bool focusGained_ = false;         // (focus came back in this event poll: its mouse presses are swallowed)
     uint16_t swallowedBtn_ = 0;        // (mouse buttons pressed by that click: up to their release, not down)
     bool mouseFocused_ = false;        // (the window had the focus at the frame's first read: the late reads use it)
@@ -794,6 +863,13 @@ private:
     std::string pendingFilled_;
     std::string discordCode_;   // settings: the one-time code from the bot's /link (or "unlink"), sent on BACK
     bool queueMenu_ = false;
+    bool practiceMenu_ = false;          // pause > HOST > PRACTICE (the host alone with bots)
+    void drawPracticeMenu();
+    bool playersMenu_ = false;           // pause > HOST > PLAYERS: kick, move to spectators, bots
+    void drawPlayersMenu();
+    std::string setSearch_;              // settings: the SEARCH field (matches listed under it; a click opens the page)
+    bool searchTyping_ = false;          // settings search: had focus last frame
+    bool drawSettingsSearch(const SetLayout& L);
     void onKillFeedback(int killer, int victim, int weapon, bool head, bool airborne);
     int streak_[kMaxPlayers] = {};
     double typingUntil_[kMaxPlayers] = {}, nextTypingSend_ = 0;
@@ -831,6 +907,9 @@ private:
     std::vector<std::string> consoleHistory_;
     int consoleHistoryAt_ = -1;
     void runConsole(const std::string& line);
+    void runCommands(const std::string& cmds, int depth = 0);   // ';'-separated console lines (binds, aliases, exec files)
+    int consoleDepth_ = 0;                 // (aliases / exec nesting: a loop stops at 8)
+    void execFile(const std::string& name, bool quiet = false);   // exec: <data folder>/<name>[.cfg], a console line each
     void drawConsole(float W, float H, float s, float ts);
     int bestMapFor(int mode) const;
     int bestRankedMap(int ladder) const; // the ladder's own ranked map, else any ranked map for it
@@ -839,7 +918,7 @@ private:
     void drawHudSettings(const SetLayout& L);
     void drawCrosshairSettings(const SetLayout& L);
     void drawKillMark(float cx, float cy, float scale);
-    void drawCrosshair(float cx, float cy, float scale, bool hit);
+    void drawCrosshair(float cx, float cy, float scale, bool hit, int weapon = -1);   // (weapon: its own STYLE if set)
     // FONT (settings/fonts, from PLAYER): the built-in UI fonts, then the player's mods/fonts files (uifonts.h). The
     // list is looked up when the page opens and on REFRESH; a font's atlas is built once when it's picked.
     bool fontsOpen_ = false;

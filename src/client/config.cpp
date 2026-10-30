@@ -44,6 +44,80 @@ void Settings::set(const std::string& k, const std::string& v) {
         if (k == "name") name = v;
         else if (k == "sensitivity") { if (std::isfinite(fv)) sensitivity = clampf(fv, 0.01f, 50.0f); }   // (the settings menu's range)
         else if (k == "dpi") dpi = std::min(std::max(iv, 100), 32000);
+        else if (k == "sens_y") { if (std::isfinite(fv)) sensY = clampf(fv, 0.1f, 10.0f); }
+        else if (k == "invert_y") invertY = iv != 0;
+        else if (k == "zoom_sens") { if (std::isfinite(fv)) zoomSens = clampf(fv, 0.1f, 10.0f); }
+        else if (k == "score_toggle") scoreToggle = iv != 0;
+        else if (k == "browser_sort") browserSort = std::min(std::max(iv, 0), 2);
+        else if (k == "browser_hide_full") browserHideFull = iv != 0;
+        else if (k == "browser_hide_empty") browserHideEmpty = iv != 0;
+        else if (k == "browser_max_ping") browserMaxPing = std::min(std::max(iv, 0), 1000);
+        else if (k == "fav_servers") favServers = v;
+        else if (k == "recent_servers") recentServers = v;
+        else if (k == "hit_volume") { if (std::isfinite(fv)) hitVolume = clampf(fv, 0, 2); }
+        else if (k == "hit_pack") hitPack = std::min(std::max(iv, -1), 4);
+        else if (k == "headshot_sound") headshotSound = iv != 0;
+        else if (k == "kill_sound") killSound = iv != 0;
+        else if (k == "hud_size") { if (std::isfinite(fv)) hudSize = clampf(fv, 0.5f, 2.0f); }
+        else if (k == "feed_time") feedTime = std::min(std::max(iv, 1), 60);
+        else if (k == "feed_lines") feedLines = std::min(std::max(iv, 1), 24);
+        else if (k == "feed_mine") feedMine = iv != 0;
+        else if (k == "chat_time") chatTime = std::min(std::max(iv, 1), 120);
+        else if (k == "chat_lines") chatLines = std::min(std::max(iv, 1), 30);
+        else if (k == "chat_opacity") { if (std::isfinite(fv)) chatOpacity = clampf(fv, 0.1f, 1.0f); }
+        else if (k == "show_fps") showFps = iv != 0;
+        else if (k == "show_ping") showPing = iv != 0;
+        else if (k == "hide_hud_crosshair") hideHudCrosshair = iv != 0;
+        else if (k == "fog") { if (std::isfinite(fv)) fog = clampf(fv, 0, 3); }
+        else if (k == "gamma") { if (std::isfinite(fv)) gamma = clampf(fv, 0.5f, 2.0f); }
+        else if (k == "contrast") { if (std::isfinite(fv)) contrast = clampf(fv, 0.5f, 2.0f); }
+        else if (k == "saturation") { if (std::isfinite(fv)) saturation = clampf(fv, 0, 2.0f); }
+        else if (k == "cpu_priority") cpuPriority = iv == 2 ? 2 : 1;
+        else if (k == "scroll_wrap") scrollWrap = iv != 0;
+        else if (k == "scroll_skip") scrollSkip = iv;
+        else if (k == "auto_iconify") autoIconify = iv != 0;
+        else if (k == "remember_tab") rememberTab = iv != 0;
+        else if (k == "last_tab") lastTab = std::min(std::max(iv, 0), 5);
+        else if (k == "confirm_leave") confirmLeave = iv != 0;
+        else if (k == "vrr") vrr = iv != 0;
+        else if (k == "captions") captions = iv != 0;
+        else if (k == "hp_scaled") hpScaled = iv != 0;
+        else if (k == "vol_steps") { if (std::isfinite(fv)) volSteps = clampf(fv, 0, 1); }
+        else if (k == "vol_others_steps") { if (std::isfinite(fv)) volOthersSteps = clampf(fv, 0, 2); }
+        else if (k == "vol_objective") { if (std::isfinite(fv)) volObjective = clampf(fv, 0, 1); }
+        else if (k == "vol_weapons") { if (std::isfinite(fv)) volWeapons = clampf(fv, 0, 1); }
+        else if (k == "enemy_model") enemyModel = iv >= 0 && iv < kPlayerModels ? iv : -1;
+        else if (k == "grapple_toggle") grappleToggle = iv != 0;
+        else if (k == "left_handed") leftHanded = iv != 0;
+        else if (k == "auto_reconnect") autoReconnect = iv != 0;
+        else if (k == "queue_flash") queueFlash = iv != 0;
+        else if (k == "ghost") ghost = iv != 0;
+        else if (k == "team_panel") teamPanel = iv != 0;
+        else if (k == "match_summary") matchSummary = iv != 0;
+        else if (k.rfind("cbind_", 0) == 0) { const int c = atoi(k.c_str() + 6); if (c > 0) { if (v.empty()) cmdBinds.erase(c); else cmdBinds[c] = v; } }
+        else if (k.rfind("alias_", 0) == 0 && k.size() > 6) { if (v.empty()) aliases.erase(k.substr(6)); else aliases[k.substr(6)] = v; }
+        else if (k == "fs_width") fsWidth = std::min(std::max(iv, 0), 16384);
+        else if (k == "fs_height") fsHeight = std::min(std::max(iv, 0), 16384);
+        else if (k == "auto_record") autoRecord = std::min(std::max(iv, 0), 2);
+        else if (k == "demo_keep") demoKeep = std::min(std::max(iv, 0), 1000);
+        else if (k == "demo_sort") demoSort = std::min(std::max(iv, 0), 3);
+        else if (k == "video_preset") videoPreset = std::min(std::max(iv, 0), 4);
+        else if (k == "fx_opacity") { if (std::isfinite(fv)) fxOpacity = clampf(fv, 0, 1); }
+        else if (k == "kill_bursts") killBursts = iv != 0;
+        else if (k == "tracers") tracers = iv != 0;
+        else if (k == "view_recoil") viewRecoil = iv != 0;
+        else if (k == "ch_dot") { if (std::isfinite(fv)) chDot = clampf(std::round(fv), 0, 12); }
+        else if (k == "ch_opacity") { if (std::isfinite(fv)) chOpacity = clampf(fv, 0.1f, 1); }
+        else if (k == "ch_outline_w") { if (std::isfinite(fv)) chOutlineW = clampf(fv, 0.5f, 3); }
+        else if (k == "ch_outline_a") { if (std::isfinite(fv)) chOutlineA = clampf(fv, 0, 1); }
+        else if (k.rfind("ch_wstyle_", 0) == 0) {   // ch_wstyle_<weapon number>
+            int w = atoi(k.c_str() + 10);
+            if (w >= 0 && w < WPN_COUNT) chWStyle[w] = std::min(std::max(iv, -1), 4);
+        }
+        else if (k == "win_x") winX = iv;
+        else if (k == "win_y") winY = iv;
+        else if (k == "bg_fps") bgFps = std::min(std::max(iv, 0), 1000);
+        else if (k == "bg_mute") bgMute = iv != 0;
         else if (k == "fov") { if (std::isfinite(fv)) fov = clampf(fv, 60, 140); }
         else if (k == "brightness") brightness = clampf(fv, 0.6f, 1.8f);
         else if (k == "vsync") presentMode = iv != 0 ? 1 : 0; // old setting
@@ -70,7 +144,7 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k.rfind("mode_hud_", 0) == 0) { int m = modeFromName(k.c_str() + 9); if (m >= 0 && (v.empty() || plainFileName(v))) modeHud[m] = v; }   // (a file in huds/)
         else if (k.rfind("mode_controls_", 0) == 0) { int m = modeFromName(k.c_str() + 14); if (m >= 0 && (v.empty() || plainFileName(v))) modeCtl[m] = v; }
         else if (k == "msaa") msaa = (iv == 1 || iv == 2 || iv == 4) ? iv : 0;
-        else if (k == "render_scale") renderScale = std::max(50, std::min(200, iv));
+        else if (k == "render_scale") renderScale = std::max(25, std::min(400, iv));
         else if (k == "render_sharpen") renderSharpen = iv != 0;
         else if (k == "volume") volume = clampf(fv, 0, 1);
         else if (k == "volume_effects") { if (std::isfinite(fv)) volumeEffects = clampf(fv, 0, 1); }
@@ -126,6 +200,7 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "ch_color") chColor = parseColor(v, chColor);
         else if (k == "ch_hit_flash") chHitFlash = iv != 0;
         else if (k == "ch_hit_color") chHitColor = parseColor(v, chHitColor);
+        else if (k == "ch_head_color") chHeadColor = parseColor(v, chHeadColor);
         else if (k == "last_address") lastAddress = v;
         else if (k == "rank_hello") rankHello = v;
         else if (k == "host_name") hostName = v;
@@ -166,8 +241,8 @@ void Settings::set(const std::string& k, const std::string& v) {
         }
         else if (k == "bind_version") bindVersion = iv;
         else if (k.rfind("bind_", 0) == 0) {
-            int a = atoi(k.c_str() + 5), c0 = 0, c1 = 0;
-            if (a >= 0 && a < A_COUNT && sscanf(v.c_str(), "%d,%d", &c0, &c1) >= 1) { binds.code[a][0] = c0; binds.code[a][1] = c1; }
+            int a = atoi(k.c_str() + 5), c0 = 0, c1 = 0, c2 = 0;
+            if (a >= 0 && a < A_COUNT && sscanf(v.c_str(), "%d,%d,%d", &c0, &c1, &c2) >= 1) { binds.code[a][0] = c0; binds.code[a][1] = c1; binds.code[a][2] = c2; }
         }
     }
 }
@@ -190,6 +265,13 @@ void Settings::finishLoad() {
         binds.code[A_PERFMINI][1] = 0;
         bindVersion = 3;
     }
+    if (bindVersion < 4) {   // RACE RESET (R) came in 1.19.4: unbound if R already does something else
+        bool rUsed = false;
+        for (int a = 0; a < A_COUNT; a++) if (a != A_RACERESET && binds.has(a, 82)) rUsed = true;   // (GLFW R)
+        binds.code[A_RACERESET][0] = rUsed ? 0 : 82;
+        binds.code[A_RACERESET][1] = 0;
+        bindVersion = 4;
+    }
     if (!hbMigrated) { healthBars = true; hbMigrated = true; }   // 1.17 turned health bars on by default: on once for everyone (owner), off again stays off
     if (width < 320) width = 1280;
     if (height < 240) height = 720;
@@ -201,9 +283,15 @@ void Settings::save() const {
 
 std::string Settings::toText() const {
     std::ostringstream f;
-    f << "name=" << name << "\nsensitivity=" << sensitivity << "\ndpi=" << dpi << "\nfov=" << fov << "\nbrightness=" << brightness << "\ndisplay_mode=" << displayMode
+    f << "name=" << name << "\nsensitivity=" << sensitivity << "\ndpi=" << dpi << "\nsens_y=" << sensY << "\ninvert_y=" << invertY << "\nzoom_sens=" << zoomSens << "\nscore_toggle=" << scoreToggle << "\nhit_volume=" << hitVolume << "\nhit_pack=" << hitPack << "\nheadshot_sound=" << headshotSound << "\nkill_sound=" << killSound << "\nhud_size=" << hudSize << "\nfeed_time=" << feedTime << "\nfeed_lines=" << feedLines << "\nfeed_mine=" << feedMine << "\nchat_time=" << chatTime << "\nchat_lines=" << chatLines << "\nchat_opacity=" << chatOpacity
+      << "\nshow_fps=" << showFps << "\nshow_ping=" << showPing << "\nhide_hud_crosshair=" << hideHudCrosshair << "\nfog=" << fog << "\ngamma=" << gamma << "\ncontrast=" << contrast << "\nsaturation=" << saturation << "\ncpu_priority=" << cpuPriority << "\nscroll_wrap=" << scrollWrap << "\nscroll_skip=" << scrollSkip
+      << "\nauto_iconify=" << autoIconify << "\nremember_tab=" << rememberTab << "\nlast_tab=" << lastTab << "\nconfirm_leave=" << confirmLeave << "\nvrr=" << vrr << "\ncaptions=" << captions << "\nhp_scaled=" << hpScaled << "\nvol_steps=" << volSteps << "\nvol_others_steps=" << volOthersSteps << "\nvol_weapons=" << volWeapons << "\nvol_objective=" << volObjective << "\nenemy_model=" << enemyModel << "\ngrapple_toggle=" << grappleToggle << "\nleft_handed=" << leftHanded << "\nauto_reconnect=" << autoReconnect << "\nqueue_flash=" << queueFlash << "\nghost=" << ghost << "\nteam_panel=" << teamPanel << "\nmatch_summary=" << matchSummary;
+    for (auto& b : cmdBinds) f << "\ncbind_" << b.first << "=" << b.second;
+    for (auto& a : aliases) f << "\nalias_" << a.first << "=" << a.second;
+    f << "\nfs_width=" << fsWidth << "\nfs_height=" << fsHeight << "\nauto_record=" << autoRecord << "\ndemo_keep=" << demoKeep << "\ndemo_sort=" << demoSort << "\nvideo_preset=" << videoPreset << "\nfx_opacity=" << fxOpacity << "\nkill_bursts=" << killBursts << "\ntracers=" << tracers << "\nview_recoil=" << viewRecoil
+       << "\nfov=" << fov << "\nbrightness=" << brightness << "\ndisplay_mode=" << displayMode
       << "\npresent_mode=" << presentMode << "\nlatent_offset_us=" << latentOffsetUs << "\ngpu_max_clocks=" << gpuMaxClocks << "\nprioritize=" << prioritize << "\nlow_latency=" << lowLatency << "\ninterp_ms=" << interpMs
-      << "\nmaxfps=" << maxFps << "\nwidth=" << width << "\nheight=" << height
+      << "\nmaxfps=" << maxFps << "\nwidth=" << width << "\nheight=" << height << "\nwin_x=" << winX << "\nwin_y=" << winY << "\nbg_fps=" << bgFps << "\nbg_mute=" << bgMute
       << "\nshadows=" << shadows << "\nmsaa=" << msaa << "\nrender_scale=" << renderScale << "\nrender_sharpen=" << renderSharpen << "\nmodel=" << model << "\nsoundpack=" << soundPack << "\nname_color=" << nameColorText() << "\nhealth_bars_117=1" << "\nsocd=" << socd << "\nalt_toggle=" << altToggle
       << "\nhud_verbose=" << hudVerbose << "\nhud_widgets=" << hudWidgets << "\nshadowres=" << shadowRes << "\nvolume=" << volume << "\nvolume_effects=" << volumeEffects << "\nvolume_announcer=" << volumeAnnouncer << "\nquips=" << quips << "\nvolume_quips=" << volumeQuips << "\nhitsounds=" << hitsounds << "\nexclusive_audio=" << exclusiveAudio
       << "\naudio_output=" << audioOutput << "\naudio_input=" << audioInput << "\nmonitor=" << monitor << "\nfullscreen_hz=" << fullscreenHz << "\nannouncer=" << announcer << "\nvoice=" << announcerVoice << "\nfullbright=" << fullbright << "\nown_shots=" << ownShots << "\nenemy_shots=" << enemyShots << "\nimpact_sparks=" << impactSparks << "\nmuzzle_flash=" << muzzleFlash << "\nviewmodel_opacity=" << viewmodelOpacity << "\nhealth_bars=" << healthBars << "\nhealth_bars_bottom=" << healthBarsBottom
@@ -211,11 +299,12 @@ std::string Settings::toText() const {
       << "\ncolor_friendly=" << colorHex(colorFriendly) << "\ncolor_enemy=" << colorHex(colorEnemy)
       << "\nch_style=" << chStyle << "\nch_length=" << chLength << "\nch_thickness=" << chThickness << "\nch_gap=" << chGap
       << "\nch_outline=" << chOutline << "\nch_team_color=" << chTeamColor << "\nch_color=" << colorHex(chColor)
-      << "\nch_hit_flash=" << chHitFlash << "\nch_hit_color=" << colorHex(chHitColor)
-      << "\nlast_address=" << lastAddress << "\nrank_hello=" << rankHello << "\nhost_name=" << hostName << "\nhost_prober=" << hostProber << "\nhost_map=" << hostMap
+      << "\nch_hit_flash=" << chHitFlash << "\nch_hit_color=" << colorHex(chHitColor) << "\nch_head_color=" << colorHex(chHeadColor) << "\nch_dot=" << chDot << "\nch_opacity=" << chOpacity << "\nch_outline_w=" << chOutlineW << "\nch_outline_a=" << chOutlineA
+      << "\nlast_address=" << lastAddress << "\nbrowser_sort=" << browserSort << "\nbrowser_hide_full=" << browserHideFull << "\nbrowser_hide_empty=" << browserHideEmpty << "\nbrowser_max_ping=" << browserMaxPing << "\nfav_servers=" << favServers << "\nrecent_servers=" << recentServers << "\nrank_hello=" << rankHello << "\nhost_name=" << hostName << "\nhost_prober=" << hostProber << "\nhost_map=" << hostMap
       << "\nhost_mode=" << hostMode << "\nhost_port=" << hostPort << "\nhost_max=" << hostMaxPlayers
       << "\nhost_upnp=" << hostUpnp << "\nhost_balance_bots=" << hostBalanceBots << "\nhost_log=" << hostLog << "\nhost_duel_size=" << hostDuelSize << "\nhost_public=" << hostPublic << "\nhost_ranked=" << hostRanked << "\nhost_custom=" << hostCustom << "\nhost_bot_brain=" << hostBotBrain << "\nhost_variant=" << hostArenaVariant << "\nbot_variant=" << botArenaVariant << "\nbot_skill=" << botSkill
       << "\nbot_enemies=" << botEnemies << "\nbot_allies=" << botAllies << "\nbot_mode=" << botMode << "\n";
+    for (int w = 0; w < WPN_COUNT; w++) if (chWStyle[w] >= 0) f << "ch_wstyle_" << w << "=" << chWStyle[w] << "\n";
     for (int i = 0; i < HUD_COUNT; i++)
         f << "hud_" << i << "=" << hud[i].x << "," << hud[i].y << "," << hud[i].scale << "," << hud[i].custom << ","
           << hud[i].color.x << "," << hud[i].color.y << "," << hud[i].color.z << "," << hud[i].hidden << "," << hud[i].z << ","
@@ -224,7 +313,36 @@ std::string Settings::toText() const {
         if (!modeHud[m].empty()) f << "mode_hud_" << modeName(m) << "=" << modeHud[m] << "\n";
         if (!modeCtl[m].empty()) f << "mode_controls_" << modeName(m) << "=" << modeCtl[m] << "\n";
     }
-    f << "bind_version=3\n";
-    for (int a = 0; a < A_COUNT; a++) f << "bind_" << a << "=" << binds.code[a][0] << "," << binds.code[a][1] << "\n";
+    f << "bind_version=4\n";
+    for (int a = 0; a < A_COUNT; a++) f << "bind_" << a << "=" << binds.code[a][0] << "," << binds.code[a][1] << "," << binds.code[a][2] << "\n";   // (older games read the first two)
     return f.str();
 }
+
+// CROSSHAIR > EXPORT / IMPORT: the ch_ lines of the settings, ';'-separated after "quark-crosshair:", so a crosshair can
+// be pasted into chat or Discord in one line. Only ch_ keys are read back (a code can't change anything else).
+std::string Settings::crosshairCode() const {
+    std::istringstream in(toText());
+    std::string line, out = "quark-crosshair:";
+    bool first = true;
+    while (std::getline(in, line))
+        if (line.rfind("ch_", 0) == 0) { out += (first ? "" : ";") + line; first = false; }
+    return out;
+}
+
+bool Settings::crosshairFromCode(const std::string& code) {
+    size_t at = code.find("quark-crosshair:");
+    std::string body = at == std::string::npos ? code : code.substr(at + 16);
+    std::istringstream in(body);
+    std::string item;
+    int n = 0;
+    for (int& w : chWStyle) w = -1;   // (a code without per-weapon styles: none)
+    while (std::getline(in, item, ';')) {
+        while (!item.empty() && (item.back() == '\r' || item.back() == '\n' || item.back() == ' ')) item.pop_back();
+        size_t eq = item.find('=');
+        if (eq == std::string::npos || item.rfind("ch_", 0) != 0) continue;
+        set(item.substr(0, eq), item.substr(eq + 1));
+        n++;
+    }
+    return n > 0;
+}
+

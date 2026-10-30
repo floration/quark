@@ -305,11 +305,46 @@ void Game::edNotify(const std::string& s) { edMsg_ = s; edMsgUntil_ = time_ + 3;
 
 bool Game::edSelValid() const { return edSel_.valid() && (size_t)edSel_.idx < kindCount(ed_, edSel_.kind); }
 
+// EDITOR AUTOSAVE: the map you're editing, every 60 s while it has unsaved changes, to editor-autosave.qmap in your data
+// folder (its name beside it), so a crash or a forgotten save loses at most a minute. SAVE removes it; RESTORE AUTOSAVE
+// in the panel brings it back.
+void Game::edAutosave() {
+    if (edOnline_ || !edDirty_ || time_ < edAutoAt_) return;
+    edAutoAt_ = time_ + 60;
+    if (writeFileAtomic(userDataPath("editor-autosave.qmap"), ed_.serialize()) && writeFileAtomic(userDataPath("editor-autosave.name"), edName_))
+        edHasAutosave_ = false;   // (this session's own: nothing to restore from it)
+}
+
+void Game::edRestoreAutosave() {
+    std::ifstream f(utf8Path(userDataPath("editor-autosave.qmap")), std::ios::binary), n(utf8Path(userDataPath("editor-autosave.name")), std::ios::binary);
+    std::stringstream ss, ns;
+    ss << f.rdbuf(); ns << n.rdbuf();
+    Map m;
+    std::string err;
+    if (!f || !m.parse(ss.str(), &err)) { edNotify("the autosave can't be read" + (err.empty() ? std::string() : ": " + err)); edHasAutosave_ = false; return; }
+    std::string name = ns.str();
+    while (!name.empty() && (unsigned char)name.back() <= ' ') name.pop_back();
+    ed_ = std::move(m);
+    if (validMapName(name)) edName_ = name;
+    edUndo_.clear(); edUndoFwd_.clear(); edRedo_.clear();
+    edSel_ = EdSel();
+    edMulti_.clear();
+    edChanged();
+    edMeshDirty_ = true;
+    edHasAutosave_ = false;
+    edNotify("restored the autosave of " + edName_ + " - SAVE to keep it");
+}
+
 void Game::openEditor(std::string name) {
     edOpens_++;
+    {   // (an autosave left from before: RESTORE AUTOSAVE offers it)
+        std::error_code ec;
+        edHasAutosave_ = std::filesystem::exists(utf8Path(userDataPath("editor-autosave.qmap")), ec);
+        edAutoAt_ = 0;
+    }
     rescanMaps();
     ed_ = Map();
-    edUndo_.clear();
+    edUndo_.clear(); edUndoFwd_.clear(); edRedo_.clear();
     edSel_ = EdSel();
     edMulti_.clear();
     edGroupMenu_ = edExportAsk_ = false;
@@ -350,7 +385,7 @@ void Game::enterOnlineEditor() {
     ed_ = net_.map();
     edRev_ = net_.mapRevision();
     edName_ = ed_.name;
-    edUndo_.clear();
+    edUndo_.clear(); edUndoFwd_.clear(); edRedo_.clear();
     edSel_ = EdSel();
     edMulti_.clear();
     edGroupMenu_ = edExportAsk_ = false;
@@ -388,8 +423,8 @@ void Game::edChanged() {
 
 // Apply an edit (or send it to the session) and remember how to undo it. coalesce: repeated nudges and
 // slider drags within 0.75 s share one undo step.
-void Game::edDo(const std::string& op, const std::string& inverse, bool coalesce, bool undoable) {
-    if (op.empty() || op == inverse) return;
+bool Game::edDo(const std::string& op, const std::string& inverse, bool coalesce, bool undoable) {
+    if (op.empty() || op == inverse) return false;
     std::vector<std::string> ops;
     for (size_t a = 0; a < op.size();) {
         size_t e = op.find('\n', a);
@@ -408,27 +443,43 @@ void Game::edDo(const std::string& op, const std::string& inverse, bool coalesce
             for (auto& one : ops) if (!(ok = applyMapEdit(tmp, one))) break;
             if (ok) ed_ = std::move(tmp);
         }
-        if (!ok) { edNotify("can't do that"); return; }   // (and no undo step for what didn't happen)
+        if (!ok) { edNotify("can't do that"); return false; }   // (and no undo step for what didn't happen)
         edChanged();
         // only boxes, groups and ladders (b, g, d ops) make the static batch's boxes: a title, a slider, a spawn moved
         // doesn't rebuild it (Midtown's rebuild is a 10-30 ms hitch)
         for (auto& one : ops) if (!one.empty() && (one[0] == 'b' || one[0] == 'g' || one[0] == 'd')) { edMeshDirty_ = true; break; }
     }
     if (undoable) {
+        if (!edRedoing_) edRedo_.clear();   // (a new edit: what was undone can't be redone over it)
+        edUndoFwd_.resize(edUndo_.size());
         if (!(coalesce && time_ - edLastPush_ < 0.75)) {   // (no join: -1e9, not 0 - time_ starts near 0 in a session, and the first edit there lost its undo step)
             edUndo_.push_back(inverse);
-            if (edUndo_.size() > 500) edUndo_.erase(edUndo_.begin());
-        }
+            edUndoFwd_.push_back(op);
+            if (edUndo_.size() > 500) { edUndo_.erase(edUndo_.begin()); edUndoFwd_.erase(edUndoFwd_.begin()); }
+        } else if (!edUndoFwd_.empty()) edUndoFwd_.back() = op;   // (joined: redo goes to where the step ended)
         edLastPush_ = coalesce ? time_ : -1e9;
     }
+    return true;
 }
 
 void Game::edUndoLast() {
     if (edUndo_.empty()) { edNotify("nothing to undo"); return; }
-    std::string op = edUndo_.back();
+    edUndoFwd_.resize(edUndo_.size());
+    std::string op = edUndo_.back(), fwd = edUndoFwd_.back();
     edUndo_.pop_back();
+    edUndoFwd_.pop_back();
     edLastPush_ = -1e9;
-    edDo(op, "", false, false);
+    if (edDo(op, "", false, false) && !fwd.empty()) edRedo_.push_back({fwd, op});
+}
+
+void Game::edRedoLast() {
+    if (edRedo_.empty()) { edNotify("nothing to redo"); return; }
+    const auto step = edRedo_.back();
+    edRedo_.pop_back();
+    edLastPush_ = -1e9;
+    edRedoing_ = true;
+    edDo(step.first, step.second);
+    edRedoing_ = false;
 }
 
 AABB Game::edBounds(const Map& m, EdSel sel) const {
@@ -1035,7 +1086,7 @@ static const std::vector<std::string>& edHelpLines(const Renderer& r, float maxW
         "CLICK: SELECT (AGAIN: THE ONE BEHIND, SHIFT: ADD MORE, THEN GROUP)",
         "ARROWS / PGUP / PGDN: MOVE BY GRID (ALONG YOUR VIEW)",
         "SHIFT + ARROWS: GROW THAT SIDE    CTRL + ARROWS: SHRINK IT    M: MATERIAL / TEAM    N: SHAPE    K: COAT THE SIDE YOU LOOK AT",
-        "CTRL+D: DUPLICATE    DEL: DELETE    CTRL+Z: UNDO    CTRL+S: SAVE    ESC: DESELECT / LEAVE",
+        "CTRL+D: DUPLICATE    DEL: DELETE    CTRL+Z: UNDO    CTRL+Y: REDO    CTRL+S: SAVE    ESC: DESELECT / LEAVE",
         "R: ROTATE 90 (SHIFT: ABOUT X, CTRL: ABOUT Z)    F: MIRROR LEFT / RIGHT (SHIFT: FRONT / BACK, CTRL: UPSIDE DOWN)",
     };
     static std::vector<std::string> lines;
@@ -1901,6 +1952,12 @@ bool Game::edSave(int then) {
     }
     if (!edSaveCopy(ed_, edName_)) return false;
     edDirty_ = false;
+    {   // (saved: the autosave has nothing more)
+        std::error_code ec;
+        std::filesystem::remove(utf8Path(userDataPath("editor-autosave.qmap")), ec);
+        std::filesystem::remove(utf8Path(userDataPath("editor-autosave.name")), ec);
+        edHasAutosave_ = false;
+    }
     return true;
 }
 
@@ -2012,6 +2069,7 @@ void Game::editorKey(int key, int mods) {
         closeEditor();
         return;
     }
+    if (ctrl && (key == GLFW_KEY_Y || (shift && key == GLFW_KEY_Z))) { edRedoLast(); return; }
     if (ctrl && key == GLFW_KEY_Z) { edUndoLast(); return; }
     if (key == GLFW_KEY_R && edSelValid()) { edTransform(ctrl ? ED_ROT_Z : shift ? ED_ROT_X : ED_ROT_Y); return; }
     if (key == GLFW_KEY_F && edSelValid()) { edTransform(ctrl ? ED_MIR_Y : shift ? ED_MIR_Z : ED_MIR_X); return; }
@@ -2170,6 +2228,7 @@ void Game::drawEditorSavePrompt() {
 }
 
 void Game::editorFrame(double dt) {
+    edAutosave();
     const float W = (float)r_.width(), H = (float)r_.height();
     const float s = H / 720.0f, g = kGrids[edGridIdx_];
     const float panelW = 320 * s, panelX = W - panelW;
@@ -2378,8 +2437,12 @@ void Game::editorFrame(double dt) {
             if (b) *b = keepBox;
             if (p) *p = keepPos;
             if (op != edDragLast_ && !(edDragLast_.empty() && op == edDragBaseOp_)) {
-                if (!edDragPushed_) { edUndo_.push_back(edDragBaseOp_); edDragPushed_ = true; }
+                if (!edDragPushed_) {
+                    edUndoFwd_.resize(edUndo_.size());
+                    edUndo_.push_back(edDragBaseOp_); edUndoFwd_.push_back(op); edRedo_.clear(); edDragPushed_ = true;
+                }
                 edDo(op, "", false, false);
+                if (!edUndoFwd_.empty()) edUndoFwd_.back() = op;   // (redo: to where the drag ended)
                 edDragLast_ = op;
             }
         }
@@ -3116,6 +3179,10 @@ void Game::editorFrame(double dt) {
                 if (ask) edAskKeep(ED_THEN_OPEN, next);
                 else { openEditor(next); return; }
             }
+            row();
+        }
+        if (edHasAutosave_) {   // (EDITOR AUTOSAVE: unsaved edits from last time)
+            if (ui_.button(x, y, w, h, "RESTORE AUTOSAVE", UiExp::state("edmap"))) edRestoreAutosave();
             row();
         }
         const float hostW = 180 * s;

@@ -101,6 +101,13 @@ uniform vec3 uSunColor, uSkyColor, uMetal, uGlow, uFogColor, uCamPos;
 uniform vec3 uBaseL, uAccentL, uWallbangL, uMetalL, uFloorL;
 uniform float uFogDensity;
 uniform float uBright;   // the brightness setting (exposure, before the filmic curve)
+uniform vec3 uGrade;     // VIDEO > MORE 2: gamma, contrast, saturation (1, 1, 1: as drawn)
+vec3 grade(vec3 c) {
+    if (uGrade == vec3(1.0)) return c;   // (the default: a uniform branch, nothing per pixel)
+    c = mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, uGrade.z);
+    c = (c - 0.5) * uGrade.y + 0.5;
+    return pow(clamp(c, 0.0, 1.0), vec3(1.0 / uGrade.x));
+}
 uniform float uFull;     // fullbright: flat white, black outlines, no light or fog
 uniform vec3 uFullColor; // ...and the flat colour (white by default)
 uniform float uOutlineW; // the world's outline width (pixels; settings)
@@ -203,7 +210,7 @@ vec3 finish(vec3 c) {
     float d = length(vPos - uCamPos);
     c = mix(c, uFogColor, 1.0 - exp(-d * uFogDensity)) * uBright;
     c = clamp((c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14), 0.0, 1.0) * 1.08; // ACES-style filmic curve
-    return pow(c, vec3(1.0 / 2.2));
+    return grade(pow(c, vec3(1.0 / 2.2)));
 }
 void main() {
     int mat = int(vMat + 0.5);
@@ -460,6 +467,13 @@ in vec2 vNdc;
 uniform vec3 uFwd, uRight, uUp, uSky, uSunDir;
 uniform vec2 uTan;
 uniform float uBright;
+uniform vec3 uGrade;
+vec3 grade(vec3 c) {
+    if (uGrade == vec3(1.0)) return c;
+    c = mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, uGrade.z);
+    c = (c - 0.5) * uGrade.y + 0.5;
+    return pow(clamp(c, 0.0, 1.0), vec3(1.0 / uGrade.x));
+}
 out vec4 fragColor;
 void main() {
     vec3 d = normalize(uFwd + vNdc.x * uTan.x * uRight + vNdc.y * uTan.y * uUp);
@@ -482,7 +496,7 @@ void main() {
     }
     c *= uBright;
     c = clamp((c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14), 0.0, 1.0) * 1.08;
-    fragColor = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);
+    fragColor = vec4(grade(pow(c, vec3(1.0 / 2.2))), 1.0);
 })";
 
 const char* kDynVS = R"(#version 330 core
@@ -507,6 +521,13 @@ uniform float uFogDensity;
 uniform int uReceiveShadow;
 uniform float uBright;
 uniform float uFade;   // the view model's see-through amount (1 - WEAPON MODEL OPACITY); 0 (unset) everywhere else
+uniform vec3 uGrade;   // (as the world's)
+vec3 grade(vec3 c) {
+    if (uGrade == vec3(1.0)) return c;
+    c = mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, uGrade.z);
+    c = (c - 0.5) * uGrade.y + 0.5;
+    return pow(clamp(c, 0.0, 1.0), vec3(1.0 / uGrade.x));
+}
 out vec4 fragColor;
 void main() {
     float sh = uReceiveShadow != 0 ? shadowAt(vShadow) : 1.0;
@@ -515,7 +536,7 @@ void main() {
     vec3 c = mix(vOutline, vColor.rgb * (light * 0.7 + 0.3), outline(vEdge, vOutlineW)); // partly emissive so team colors stay readable; edges in the outline colour
     float d = length(vPos - uCamPos);
     c = mix(c, uFogColor, 1.0 - exp(-d * uFogDensity)) * uBright;
-    fragColor = vec4(pow(c, vec3(1.0 / 2.2)), 1.0 - uFade);
+    fragColor = vec4(grade(pow(c, vec3(1.0 / 2.2))), 1.0 - uFade);
 })";
 
 const char* kFlatVS = R"(#version 330 core
@@ -762,7 +783,8 @@ void Renderer::initWorldUniforms() {
     glUniform1f(U(worldProg_, "uShadowTexel"), 1.0f / shadowRes_);
     setVec3(U(worldProg_, "uSunColor"), Vec3(0.78f, 0.75f, 0.70f));
     setVec3(U(worldProg_, "uSkyColor"), Vec3(0.42f, 0.45f, 0.52f));
-    glUniform1f(U(worldProg_, "uFogDensity"), 0.0035f);
+    glUniform1f(U(worldProg_, "uFogDensity"), kFogDensity * fogMul_);
+    glUniform3f(U(worldProg_, "uGrade"), grade_.x, grade_.y, grade_.z);
     glUniform1f(U(worldProg_, "uPxScale"), 1.0f);
     uWorldPx_ = U(worldProg_, "uPxScale");
     glUniform1f(uWorldPx_, pxScale_);
@@ -771,7 +793,25 @@ void Renderer::initWorldUniforms() {
     glUniform1i(uHoleGridH_, holeGridH_);
 }
 
+int Renderer::setShadowRes(int res) {
+    GLint64 maxTex = 0;
+    glGetInteger64v(GL_MAX_TEXTURE_SIZE, &maxTex);
+    if (maxTex > 0 && res > maxTex) res = (int)maxTex;
+    res = res < 256 ? 256 : res;
+    if (res == shadowRes_ || !shadowTex_) return shadowRes_;
+    shadowRes_ = res;
+    glBindTexture(GL_TEXTURE_2D, shadowTex_);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, shadowRes_, shadowRes_, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+    glUseProgram(worldProg_);
+    glUniform1f(U(worldProg_, "uShadowTexel"), 1.0f / shadowRes_);
+    glUseProgram(dynProg_);
+    glUniform1f(U(dynProg_, "uShadowTexel"), 1.0f / shadowRes_);
+    glUseProgram(0);
+    return shadowRes_;
+}
+
 bool Renderer::init(int shadowRes, std::string* err) {
+    if (const GLubyte* g = glGetString(GL_RENDERER)) gpuName_ = (const char*)g;
     QGPUCONTEXT();
     {   // the lightmap atlas is packed to fit the GPU's largest texture (PERF-13); the shadow map too (a size past it
         // left the framebuffer incomplete, so shadows turned off instead of using the largest the GPU has)
@@ -870,7 +910,7 @@ bool Renderer::init(int shadowRes, std::string* err) {
     // Uniform locations, once; the values that never change set now (each program keeps its own)
     const Vec3 sunColor = {0.78f, 0.75f, 0.70f};
     const Vec3 skyLight = {0.42f, 0.45f, 0.52f};
-    const float fog = 0.0035f;
+    const float fog = kFogDensity * fogMul_;
     initWorldUniforms();
     glUseProgram(dynProg_);
     uDyn_ = {U(dynProg_, "uViewProj"), U(dynProg_, "uShadowMat"), U(dynProg_, "uShadowOn"), U(dynProg_, "uCasterRect"),
@@ -880,11 +920,14 @@ bool Renderer::init(int shadowRes, std::string* err) {
     setVec3(U(dynProg_, "uSunColor"), sunColor);
     setVec3(U(dynProg_, "uSkyColor"), skyLight);
     glUniform1f(U(dynProg_, "uFogDensity"), fog);
+    glUniform3f(U(dynProg_, "uGrade"), grade_.x, grade_.y, grade_.z);
     glUniform1f(U(dynProg_, "uPxScale"), 1.0f);
     uDynPx_ = U(dynProg_, "uPxScale");
     pxScale_ = 1.0f;
     uSky_ = {U(skyProg_, "uFwd"), U(skyProg_, "uRight"), U(skyProg_, "uUp"), U(skyProg_, "uTan"), U(skyProg_, "uSky"),
              U(skyProg_, "uSunDir"), U(skyProg_, "uBright")};
+    glUseProgram(skyProg_);
+    glUniform3f(U(skyProg_, "uGrade"), grade_.x, grade_.y, grade_.z);
     uFlatViewProj_ = U(flatProg_, "uViewProj");
     uDynFade_ = U(dynProg_, "uFade"); uFlatFade_ = U(flatProg_, "uFade");
     uShadowViewProj_ = U(shadowProg_, "uViewProj");
@@ -2012,6 +2055,54 @@ void Renderer::swatch(float x, float y, float w, float h, int material) {
     swatchQuads_.insert(swatchQuads_.end(), q, q + 5);
 }
 
+void Renderer::setPreviews(std::vector<std::vector<uint8_t>> images, int w, int h) {
+    previewImgs_ = std::move(images);
+    previewW_ = w; previewH_ = h;
+    previewDirty_ = true;
+}
+
+void Renderer::preview(float x, float y, float w, float h, int slot) {
+    if (slot < 0 || slot >= (int)previewImgs_.size()) return;
+    const float q[5] = {x, y, x + w, y + h, (float)slot};
+    previewQuads_.insert(previewQuads_.end(), q, q + 5);
+}
+
+// Textured quads in window pixels (x0 y0 x1 y1 slot each) from an atlas of cols x rows slots, over the 2D batch; slotOf
+// maps a quad's number to its slot (-1: not drawn), or the number is the slot. The quads are cleared.
+void Renderer::drawImageQuads(std::vector<float>& quads, unsigned tex, int cols, int rows, const std::vector<int>* slotOf) {
+    glViewport(0, 0, width_, height_);
+    if (!imgProg_) {
+        imgProg_ = compile(kImgVS, kImgFS, nullptr);
+        uImgScreen_ = glGetUniformLocation(imgProg_, "uScreen");
+        glGenVertexArrays(1, &imgVao_); glGenBuffers(1, &imgVbo_);
+        glBindVertexArray(imgVao_); glBindBuffer(GL_ARRAY_BUFFER, imgVbo_);
+        glEnableVertexAttribArray(0); glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 16, (void*)0);
+        glEnableVertexAttribArray(1); glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, (void*)8);
+    }
+    std::vector<float> v;
+    v.reserve(quads.size() / 5 * 24);
+    for (size_t i = 0; i + 5 <= quads.size(); i += 5) {
+        const float* r = &quads[i];
+        const int k = !slotOf ? (int)r[4] : slotOf->empty() ? -1 : (*slotOf)[(int)r[4]];
+        if (k < 0) continue;
+        const float u0 = (float)(k % cols) / cols, v0 = (float)(k / cols) / rows;
+        const float q[8] = {r[0], r[1], r[2], r[3], u0, v0 + 1.0f / rows, u0 + 1.0f / cols, v0};   // (the atlas is upside down)
+        const float t[6][4] = {{q[0], q[1], q[4], q[5]}, {q[2], q[1], q[6], q[5]}, {q[2], q[3], q[6], q[7]},
+                               {q[0], q[1], q[4], q[5]}, {q[2], q[3], q[6], q[7]}, {q[0], q[3], q[4], q[7]}};
+        for (auto& c : t) v.insert(v.end(), c, c + 4);
+    }
+    quads.clear();
+    if (v.empty()) return;
+    glUseProgram(imgProg_);
+    glUniform2f(uImgScreen_, (float)width_, (float)height_);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glBindVertexArray(imgVao_);
+    glBindBuffer(GL_ARRAY_BUFFER, imgVbo_);
+    glBufferData(GL_ARRAY_BUFFER, v.size() * sizeof(float), v.data(), GL_STREAM_DRAW);
+    glDrawArrays(GL_TRIANGLES, 0, (GLsizei)(v.size() / 4));
+}
+
 // Each material on a 2 m square (x 0-2, y 1-3, facing +z: the shader's q is its x, y), lit by a one-texel lightmap
 // of full sun and sky, no shadows or holes, into its slot of the atlas: the ones this frame asks for that aren't there
 // yet (all again when the palette changes).
@@ -2165,36 +2256,29 @@ void Renderer::flush2D() {
     ui_.clear();
     if (!swatchQuads_.empty()) {   // (the editor's material picker: over the batch)
         buildSwatches();
-        glViewport(0, 0, width_, height_);
-        if (!imgProg_) {
-            imgProg_ = compile(kImgVS, kImgFS, nullptr);
-            uImgScreen_ = glGetUniformLocation(imgProg_, "uScreen");
-            glGenVertexArrays(1, &imgVao_); glGenBuffers(1, &imgVbo_);
-            glBindVertexArray(imgVao_); glBindBuffer(GL_ARRAY_BUFFER, imgVbo_);
-            glEnableVertexAttribArray(0); glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 16, (void*)0);
-            glEnableVertexAttribArray(1); glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, (void*)8);
+        drawImageQuads(swatchQuads_, swatchTex_, kSwatchCols, kSwatchRows, &swatchSlotOf_);
+    }
+    if (!previewQuads_.empty()) {   // (the map picker's previews: over the batch)
+        if (previewDirty_ && previewW_ > 0) {
+            previewDirty_ = false;
+            const int n = (int)previewImgs_.size();
+            previewCols_ = 8;
+            previewRows_ = std::max(1, (n + previewCols_ - 1) / previewCols_);
+            if (!previewTex_) glGenTextures(1, &previewTex_);
+            glBindTexture(GL_TEXTURE_2D, previewTex_);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, previewW_ * previewCols_, previewH_ * previewRows_, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            for (int i = 0; i < n; i++)
+                if ((int)previewImgs_[i].size() == previewW_ * previewH_ * 4)   // (rows bottom-up in the atlas, like the swatches': flipped by the quad)
+                    glTexSubImage2D(GL_TEXTURE_2D, 0, (i % previewCols_) * previewW_, (i / previewCols_) * previewH_, previewW_, previewH_, GL_RGBA, GL_UNSIGNED_BYTE, previewImgs_[i].data());
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
         }
-        std::vector<float> v;
-        v.reserve(swatchQuads_.size() / 5 * 24);
-        for (size_t i = 0; i + 5 <= swatchQuads_.size(); i += 5) {
-            const float* r = &swatchQuads_[i];
-            const int k = swatchSlotOf_.empty() ? -1 : swatchSlotOf_[(int)r[4]];
-            if (k < 0) continue;
-            const float u0 = (float)(k % kSwatchCols) / kSwatchCols, v0 = (float)(k / kSwatchCols) / kSwatchRows;
-            const float q[8] = {r[0], r[1], r[2], r[3], u0, v0 + 1.0f / kSwatchRows, u0 + 1.0f / kSwatchCols, v0};   // (the atlas is upside down)
-            const float t[6][4] = {{q[0], q[1], q[4], q[5]}, {q[2], q[1], q[6], q[5]}, {q[2], q[3], q[6], q[7]},
-                                   {q[0], q[1], q[4], q[5]}, {q[2], q[3], q[6], q[7]}, {q[0], q[3], q[4], q[7]}};
-            for (auto& c : t) v.insert(v.end(), c, c + 4);
-        }
-        glUseProgram(imgProg_);
-        glUniform2f(uImgScreen_, (float)width_, (float)height_);
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, swatchTex_);
-        glBindVertexArray(imgVao_);
-        glBindBuffer(GL_ARRAY_BUFFER, imgVbo_);
-        glBufferData(GL_ARRAY_BUFFER, v.size() * sizeof(float), v.data(), GL_STREAM_DRAW);
-        glDrawArrays(GL_TRIANGLES, 0, (GLsizei)(v.size() / 4));
-        swatchQuads_.clear();
+        if (previewTex_) drawImageQuads(previewQuads_, previewTex_, previewCols_, previewRows_, nullptr);
+        previewQuads_.clear();
     }
 #ifdef QUARK_TRACY
     // profiling builds: per-frame averages to stderr every 5 s (and to Tracy plots)
@@ -2208,6 +2292,26 @@ void Renderer::flush2D() {
         t0 = timeNow(); frames = 0; bytes = ups = dyn = shadow = uiTotal = 0;
     }
 #endif
+}
+
+void Renderer::setGrade(float gamma, float contrast, float saturation) {
+    grade_ = {std::max(0.2f, gamma), std::max(0.0f, contrast), std::max(0.0f, saturation)};
+    for (unsigned prog : {worldProg_, dynProg_, skyProg_}) {
+        if (!prog) continue;
+        glUseProgram(prog);
+        glUniform3f(U(prog, "uGrade"), grade_.x, grade_.y, grade_.z);
+    }
+    glUseProgram(0);
+}
+
+void Renderer::setFog(float mul) {
+    fogMul_ = std::max(0.0f, mul);
+    for (unsigned prog : {worldProg_, dynProg_}) {   // (each pass binds its program before it draws)
+        if (!prog) continue;
+        glUseProgram(prog);
+        glUniform1f(U(prog, "uFogDensity"), kFogDensity * fogMul_);
+    }
+    glUseProgram(0);
 }
 
 bool Renderer::screenshot(const std::string& path) {

@@ -1,5 +1,6 @@
 #include <fstream>
 #include "../common/u8file.h"
+#include "settings_index.h"
 #include "../common/rng.h"
 #include <filesystem>
 #include <ctime>
@@ -41,7 +42,26 @@ const Palette kPalettes[] = {
     {"BLUE / ORANGE", {0.3f, 0.55f, 1.0f}, {1.0f, 0.6f, 0.15f}},
     {"GREEN / MAGENTA", {0.35f, 1.0f, 0.45f}, {1.0f, 0.3f, 0.85f}},
     {"WHITE / YELLOW", {0.95f, 0.95f, 0.95f}, {1.0f, 0.85f, 0.1f}},
+    {"COLORBLIND: RED-GREEN", {0.1f, 0.45f, 1.0f}, {1.0f, 0.75f, 0.0f}},   // (protan / deutan: blue and yellow-orange)
+    {"COLORBLIND: BLUE-YELLOW", {0.0f, 0.8f, 0.85f}, {0.95f, 0.15f, 0.2f}},   // (tritan: cyan and red)
 };
+
+// The colour blindness a colour pair is hard to tell apart under (nullptr: none): each colour as a protan, deutan or
+// tritan eye sees it (Machado et al. 2009, full severity, in linear RGB), then how far apart the two are
+static const char* colorPairClash(Vec3 a, Vec3 b) {
+    static const struct { const char* name; float m[3][3]; } kSim[] = {
+        {"RED-GREEN (PROTAN)", {{0.152286f, 1.052583f, -0.204868f}, {0.114503f, 0.786281f, 0.099216f}, {-0.003882f, -0.048116f, 1.051998f}}},
+        {"RED-GREEN (DEUTAN)", {{0.367322f, 0.860646f, -0.227968f}, {0.280085f, 0.672501f, 0.047413f}, {-0.011820f, 0.042940f, 0.968881f}}},
+        {"BLUE-YELLOW (TRITAN)", {{1.255528f, -0.076749f, -0.178779f}, {-0.078411f, 0.930809f, 0.147602f}, {0.004733f, 0.691367f, 0.303900f}}}};
+    auto sim = [](Vec3 c, const float (*m)[3]) {
+        const float l[3] = {std::pow(clampf(c.x, 0, 1), 2.2f), std::pow(clampf(c.y, 0, 1), 2.2f), std::pow(clampf(c.z, 0, 1), 2.2f)};
+        Vec3 o;
+        for (int i = 0; i < 3; i++) o[i] = std::pow(clampf(m[i][0] * l[0] + m[i][1] * l[1] + m[i][2] * l[2], 0, 1), 1 / 2.2f);
+        return o;
+    };
+    for (auto& k : kSim) if (length(sim(a, k.m) - sim(b, k.m)) < 0.4f) return k.name;
+    return nullptr;
+}
 constexpr int kPaletteCount = sizeof(kPalettes) / sizeof(kPalettes[0]);
 
 std::string fmtTime(float s) {
@@ -129,10 +149,12 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     glfwSetMonitorCallback(onMonitorEvent);   // (a monitor plugged in or out: DEVICES' MONITOR found again)
     applyDisplayMode();
     applyPresentMode();
+    r_.setFog(cfg_.fog);
+    r_.setGrade(cfg_.gamma, cfg_.contrast, cfg_.saturation);
     for (auto& q : latQ_) glGenQueries(1, &q.q);
     audio_.setAnnouncer(cfg_.announcerVoice);
     audio_.setExclusive(cfg_.exclusiveAudio);
-    if (!opts_.uiTest) setGamePriority(cfg_.prioritize && glfwGetWindowAttrib(win_, GLFW_FOCUSED) != 0);
+    if (!opts_.uiTest) setGamePriority(prioLevel(glfwGetWindowAttrib(win_, GLFW_FOCUSED) != 0));
     audio_.setOutputDevice(cfg_.audioOutput);   // (Settings > DEVICES; "" the default)
     if (!opts_.uiTest) rawMouse_.start();   // (the UI test drives the mouse through GLFW)
     if (!audio_.start()) printf("audio: no output device - running without sound\n");
@@ -141,6 +163,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     audio_.setAnnouncerVolume(cfg_.volumeAnnouncer);
     audio_.setQuips(cfg_.quips);
     audio_.setQuipVolume(cfg_.volumeQuips);
+    if (!opts_.uiTest) execFile("autoexec.cfg", true);   // (the console's lines from your data folder, if there; not in the UI test)
 
     botMapIdx_ = bestMapFor(cfg_.botMode);
     if (!opts_.uiTest && opts_.screenshot.empty() && !opts_.benchmark) benchRetryUploads();   // (runs whose upload didn't get through)
@@ -303,6 +326,24 @@ void Game::stopHost() {
     host_.reset();
 }
 
+// "a;b;c" lists in quark.cfg (favourite / recent servers)
+static std::vector<std::string> splitList(const std::string& s) {
+    std::vector<std::string> out;
+    size_t a = 0;
+    while (a <= s.size()) {
+        size_t b = s.find(';', a);
+        if (b == std::string::npos) b = s.size();
+        if (b > a) out.push_back(s.substr(a, b - a));
+        a = b + 1;
+    }
+    return out;
+}
+static std::string joinList(const std::vector<std::string>& v) {
+    std::string o;
+    for (auto& x : v) o += (o.empty() ? "" : ";") + x;
+    return o;
+}
+
 void Game::connectTo(const std::string& rawAddr) {
     error_.clear();
     std::string addr = rawAddr; // pasted addresses often carry spaces / newlines
@@ -312,7 +353,15 @@ void Game::connectTo(const std::string& rawAddr) {
     edSession_ = edOnline_ = false;
     unratedServer_ = false;
     rankBefore_ = rankGamesBefore_ = -1;
-    if (!host_) { cfg_.lastAddress = addr; cfg_.save(); }
+    if (!host_) {
+        cfg_.lastAddress = addr;
+        std::vector<std::string> rec = splitList(cfg_.recentServers);   // (newest first, no repeats, 8 kept)
+        rec.erase(std::remove(rec.begin(), rec.end(), addr), rec.end());
+        rec.insert(rec.begin(), addr);
+        if (rec.size() > 8) rec.resize(8);
+        cfg_.recentServers = joinList(rec);
+        cfg_.save();
+    }
     setScreen(Screen::Connecting);
 }
 
@@ -346,7 +395,7 @@ void Game::leaveGame(const std::string& error) {
     if (widgetEdit_) widgets_.save(activeHudPath());
     hudEditClose();
     if (settingsInGame_) cfg_.save();
-    settingsInGame_ = voteMenu_ = specPick_ = queueMenu_ = fontsOpen_ = devicesOpen_ = widgetEdit_ = false;
+    settingsInGame_ = voteMenu_ = specPick_ = queueMenu_ = practiceMenu_ = playersMenu_ = fontsOpen_ = devicesOpen_ = widgetEdit_ = false;
     setTab_ = TAB_PLAYER; controlsSub_ = 0;
     ui_.closePopup();
     picker_ = PICK_NONE;
@@ -477,6 +526,76 @@ void Game::drawBakeScreen(const std::string& name, float p) {
     r_.text((r_.width() - r_.textWidth(t, ts)) * 0.5f, by - 30 * ts / 2, ts, t, kWhite);
 }
 
+// A map's preview for the picker: seen from above, each column of the map the colour of its highest surface (the roof
+// of an indoor map and anything covering most of it left out, so the rooms show), lit by its height and a light from
+// the top left, edges where the height steps. Rows bottom-up (the renderer's atlas). About a millisecond a map, once
+// per map file (cached with its info).
+static std::vector<uint8_t> makeMapPreview(const Map& m, const int W, const int H) {
+    std::vector<uint8_t> img((size_t)W * H * 4);
+    std::vector<float> top((size_t)W * H, -1e9f);
+    std::vector<Vec3> col((size_t)W * H, Vec3(0.07f, 0.08f, 0.1f));
+    const AABB& b = m.bounds;
+    const float sx = b.mx.x - b.mn.x, sz = b.mx.z - b.mn.z;
+    if (sx <= 0 || sz <= 0) return img;
+    const float scale = std::min((W - 8) / sx, (H - 8) / sz), ox = (W - sx * scale) * 0.5f, oz = (H - sz * scale) * 0.5f;
+    const Vec3 base = m.hasPalette ? m.palBase : Vec3(0.62f, 0.62f, 0.64f), accent = m.hasPalette ? m.palAccent : Vec3(0.40f, 0.40f, 0.43f),
+               metal = m.hasPalette ? m.palMetal : Vec3(0.30f, 0.33f, 0.37f), glow = m.hasPalette ? m.palGlow : Vec3(1.0f, 0.55f, 0.15f);
+    auto matColor = [&](int mat) -> Vec3 {
+        switch (mat) {
+            case 1: case 8: return accent;
+            case 2: return Vec3(0.25f, 0.25f, 0.27f);
+            case 3: case kMatSteel: case kMatDiamond: case kMatCorrugated: return metal;
+            case 4: case kMatCrystal: return glow;
+            case 6: return Vec3(0.15f, 0.35f, 0.6f);
+            case 7: return Vec3(1.0f, 0.35f, 0.05f);
+            case kMatAcid: return Vec3(0.35f, 0.9f, 0.2f);
+            case kMatIce: case kMatSnow: return Vec3(0.8f, 0.88f, 0.95f);
+            case kMatSand: return Vec3(0.78f, 0.68f, 0.45f);
+            case kMatWood: return Vec3(0.55f, 0.38f, 0.22f);
+            case kMatGrass: return Vec3(0.3f, 0.55f, 0.22f);
+            case kMatBrick: case kMatBrickBreak: case kMatTerracotta: return Vec3(0.6f, 0.28f, 0.2f);
+            case kMatGlass: case kMatGlassBreak: return Vec3(0.6f, 0.75f, 0.8f);
+            case kMatAsphalt: return Vec3(0.2f, 0.2f, 0.22f);
+            case kMatMud: return Vec3(0.35f, 0.27f, 0.18f);
+            case kMatRust: return Vec3(0.5f, 0.27f, 0.15f);
+            case kMatHazard: return Vec3(0.85f, 0.7f, 0.1f);
+            default: return base;
+        }
+    };
+    const float area = sx * sz;
+    for (const Brush& br : m.brushes) {
+        if (br.material == 9 || br.material == 5) continue;   // (clip: invisible; far: scenery outside the walls)
+        const AABB& a = br.box;
+        if (m.indoor && a.mn.y >= m.ceilingY - 0.5f) continue;
+        if ((a.mx.x - a.mn.x) * (a.mx.z - a.mn.z) > area * 0.5f && a.mn.y > b.mn.y + 2.0f) continue;   // (a roof over most of it)
+        const int x0 = std::max(0, (int)std::floor(ox + (a.mn.x - b.mn.x) * scale)), x1 = std::min(W - 1, (int)std::ceil(ox + (a.mx.x - b.mn.x) * scale) - 1);
+        const int z0 = std::max(0, (int)std::floor(oz + (a.mn.z - b.mn.z) * scale)), z1 = std::min(H - 1, (int)std::ceil(oz + (a.mx.z - b.mn.z) * scale) - 1);
+        const Vec3 c = matColor(br.material);
+        for (int z = z0; z <= z1; z++)
+            for (int x = x0; x <= x1; x++) {
+                const size_t k = (size_t)z * W + x;
+                if (a.mx.y > top[k]) { top[k] = a.mx.y; col[k] = c; }
+            }
+    }
+    const float lo = b.mn.y, span = std::max(1.0f, b.mx.y - b.mn.y);
+    for (int z = 0; z < H; z++)
+        for (int x = 0; x < W; x++) {
+            const size_t k = (size_t)z * W + x;
+            Vec3 c = col[k];
+            if (top[k] > -1e8f) {
+                const float h = top[k];
+                const float hl = x > 0 && top[k - 1] > -1e8f ? top[k - 1] : h, hu = z > 0 && top[k - W] > -1e8f ? top[k - W] : h;
+                float lit = 0.55f + 0.45f * clampf((h - lo) / span, 0, 1);
+                lit += clampf((h - hl + h - hu) * 0.08f, -0.25f, 0.25f);   // (the light from the top left)
+                if (std::fabs(h - hl) > 0.6f || std::fabs(h - hu) > 0.6f) lit *= 0.6f;   // (a step: an edge)
+                c = c * lit;
+            }
+            uint8_t* p = &img[((size_t)(H - 1 - z) * W + x) * 4];
+            p[0] = (uint8_t)(clampf(c.x, 0, 1) * 255); p[1] = (uint8_t)(clampf(c.y, 0, 1) * 255); p[2] = (uint8_t)(clampf(c.z, 0, 1) * 255); p[3] = 255;
+        }
+    return img;
+}
+
 // The map behind the main menu (lighting is baked once, then cached like any map).
 void Game::rescanMaps() {
     std::string hostName = maps_.empty() ? cfg_.hostMap : maps_[hostMapIdx_ % maps_.size()];
@@ -505,6 +624,7 @@ void Game::rescanMaps() {
             mi.preferredMode = m.preferredMode;
             for (int k = 0; k < MODE_COUNT; k++) if (m.supportsMode(k)) mi.modes |= 1u << k;
             for (int v = 0; v < 16; v++) if (isRankedMap(m, v)) mi.ranked |= (uint16_t)(1u << v);
+            mi.preview = makeMapPreview(m, kPreviewW, kPreviewH);
         }
         mapInfoCache_[path] = {mtime, size, mi};
         mapInfo_.push_back(mi);
@@ -516,6 +636,18 @@ void Game::rescanMaps() {
     // (a map that's gone: back to the first; the pickers index mapInfo_ with these unguarded)
     if (hostMapIdx_ < 0 || hostMapIdx_ >= (int)maps_.size()) hostMapIdx_ = 0;
     if (botMapIdx_ < 0 || botMapIdx_ >= (int)maps_.size()) botMapIdx_ = 0;
+    // the picker's previews, to the renderer when the list or a file changed (not on every rescan: a texture upload)
+    std::string sig;
+    for (size_t i = 0; i < maps_.size(); i++) {
+        auto it = mapInfoCache_.find(mapFilePath(maps_[i]));
+        sig += maps_[i] + (it != mapInfoCache_.end() ? ":" + std::to_string(it->second.mtime) + ":" + std::to_string(it->second.size) : "") + ";";
+    }
+    if (sig != previewSig_) {
+        previewSig_ = sig;
+        std::vector<std::vector<uint8_t>> imgs;
+        for (const MapInfo& mi : mapInfo_) imgs.push_back(mi.preview);
+        r_.setPreviews(std::move(imgs), kPreviewW, kPreviewH);
+    }
 }
 
 void Game::loadMenuBackdrop() {
@@ -584,7 +716,7 @@ int Game::bestMapFor(int mode) const {
 
 bool Game::isDown(int action) const {
     if (testHeld_ >> action & 1) return true;   // (the UI test holding e.g. the scoreboard key; 0 in play)
-    for (int k = 0; k < 2; k++) {
+    for (int k = 0; k < kBindSlots; k++) {
         int c = binds().code[action][k];
         if (c >= kMouseCode && c < kMouseCode + 16) { if (!(swallowedBtn_ >> (c - kMouseCode) & 1) && glfwGetMouseButton(win_, c - kMouseCode) == GLFW_PRESS) return true; }
         else if (c > 0 && c < kMouseCode && glfwGetKey(win_, c) == GLFW_PRESS) return true;
@@ -598,19 +730,43 @@ bool Game::pressInput(int code) {
     if (captureAction_ >= 0) {
         if (code == GLFW_KEY_ESCAPE) { captureAction_ = -1; return true; }
         int& slot = cfg_.binds.code[captureAction_][captureSlot_];
+        const int was = slot;
         slot = (code == GLFW_KEY_BACKSPACE || code == GLFW_KEY_DELETE) ? 0 : code;
         // An input does one thing: binding it here removes it from every other action (otherwise the
-        // default wheel = next/prev weapon kept firing alongside e.g. wheel = jump).
+        // default wheel = next/prev weapon kept firing alongside e.g. wheel = jump). The page says which, with UNDO.
         if (slot)
             for (int a = 0; a < A_COUNT; a++)
-                for (int k = 0; k < 2; k++)
-                    if ((a != captureAction_ || k != captureSlot_) && cfg_.binds.code[a][k] == slot) cfg_.binds.code[a][k] = 0;
+                for (int k = 0; k < kBindSlots; k++)
+                    if ((a != captureAction_ || k != captureSlot_) && cfg_.binds.code[a][k] == slot) {
+                        cfg_.binds.code[a][k] = 0;
+                        bindTakenA_ = a; bindTakenK_ = k; bindTakenCode_ = slot; bindTakenTo_ = captureAction_; bindTakenSlot_ = captureSlot_;
+                        bindTakenWas_ = was; bindTakenUntil_ = time_ + 8;
+                    }
         captureAction_ = -1;
         cfg_.save();
         return true;
     }
+    // the console's command binds (bind <key> <commands>): in a match, beside whatever action the key has
+    if (!cfg_.cmdBinds.empty() && screen_ == Screen::InGame && !paused_ && !chatting_)
+        if (auto it = cfg_.cmdBinds.find(code); it != cfg_.cmdBinds.end()) runCommands(it->second);
     const Binds& b = binds();
+    if (b.has(A_SCORES, code) && cfg_.scoreToggle && !chatting_) scoresOn_ = !scoresOn_;   // (and on: the key may do more)
+    if (b.has(A_HIDEHUD, code) && !chatting_) { hudHidden_ = !hudHidden_; return true; }
+    if ((b.has(A_SAVEPOS, code) || b.has(A_LOADPOS, code)) && screen_ == Screen::InGame && !paused_ && !chatting_ && host_) {
+        net_.sendCommand(b.has(A_SAVEPOS, code) ? "practice savepos" : "practice loadpos");
+        return true;
+    }
+    if ((b.has(A_SPECNEXT, code) || b.has(A_SPECPREV, code)) && screen_ == Screen::InGame && !paused_ && !chatting_ && !net_.selfAlive()) {
+        cycleSpec(b.has(A_SPECNEXT, code) ? 1 : -1);
+        return true;
+    }
     if (b.has(A_PERF, code)) { const bool was = perfOn(); perfStage_ = (perfStage_ + 1) % 4; if (!was && perfOn()) pipeReset(); return true; }
+    const bool racing = screen_ == Screen::InGame && !paused_ && !chatting_ && isRaceMode(net_.mode().mode) && net_.state() == ConnState::Connected;
+    if (b.has(A_RACERESET, code) && racing) {   // (a tap: the last checkpoint when it's let go; held 250 ms: the start, in raceResetHold)
+        raceResetAt_ = time_;
+        return true;
+    }
+    if (b.has(A_RACERESTART, code) && racing) { net_.sendCommand("racereset full"); return true; }
     if (b.has(A_PERFMINI, code)) { const bool was = perfOn(); perfMini_ = !perfMini_; if (!was) pipeReset(); return true; }
     if (b.has(A_SCREENSHOT, code)) {   // screenshots/<date>_<time>.png in your data folder (was screenshot_<n>.png in
         // the working directory with n from 0 each launch: the first one of every session overwrote the last session's)
@@ -633,8 +789,10 @@ bool Game::pressInput(int code) {
     if (b.has(A_VOTESTART, code)) { net_.sendCommand("callvote start"); return true; }
     if (b.has(A_QUIP, code) && !paused_) { net_.sendCommand("quip"); return true; }
     if (paused_ && !settingsInGame_) return false;
-    if (b.has(A_CHAT, code)) {   // (in game, and over the settings menu: owner 2026-10-29)
+    if (b.has(A_CHAT, code) || b.has(A_TEAMCHAT, code)) {   // (in game, and over the settings menu: owner 2026-10-29)
         chatting_ = true;
+        teamChat_ = !b.has(A_CHAT, code) && modeIsTeamBased(net_.mode().mode);
+        chatScroll_ = 0;   // (TEAM CHAT: to your team; not a team mode: everyone)
         chatText_.clear();
         uiIn_.chars.clear();
         captureMouse(false);
@@ -655,16 +813,21 @@ bool Game::pressInput(int code) {
     const PlayerSnap* self = net_.findPlayer(net_.clientId());
     bool emptyHanded = isItMode(mode) && !(self && (self->flags & PS_HASBOMB));   // hide and seek / tag: only "it" holds anything
     auto allowed = [&](int w) { return (!pool || (pool >> w & 1)) && weaponInMode(w, mode) && !emptyHanded && weaponAwayLeft(w) <= 0; }; // a thrown knife / syringe is away for a bit
+    const int now = wp_.desired >= 0 ? wp_.desired : heldWeapon_;
+    auto want = [&](int w) { if (w != now) lastWeapon_ = now; wp_.want(w); };   // (LAST WEAPON goes back to the one before)
+    if (b.has(A_LASTWEAPON, code)) { if (lastWeapon_ >= 0 && lastWeapon_ != now && allowed(lastWeapon_)) want(lastWeapon_); return true; }
     bool slotKey = false;
     for (int k = 0; k < WPN_COUNT; k++) // slot keys 1-9 and 0, in kWeaponSlots order (0: the syringe, or the locator)
-        if (b.has(slotAction(k), code)) { slotKey = true; int w = kWeaponSlots[k]; if (allowed(w)) { wp_.want(w); return true; } }
+        if (b.has(slotAction(k), code)) { slotKey = true; int w = kWeaponSlots[k]; if (allowed(w)) { want(w); return true; } }
     if (slotKey) return true;
-    int cur = weaponSlot(wp_.desired >= 0 ? wp_.desired : heldWeapon_);
+    int cur = weaponSlot(now);
     for (int dir : {1, -1}) {
         if (!b.has(dir > 0 ? A_NEXTWEAPON : A_PREVWEAPON, code)) continue;
-        for (int k = 1; k <= WPN_COUNT; k++) {
-            int w = kWeaponSlots[(cur + dir * k + WPN_COUNT * 2) % WPN_COUNT];
-            if (allowed(w)) { wp_.want(w); break; }
+        for (int k = 1; k <= WPN_COUNT; k++) {   // (CONTROLS > MORE: WRAP off stops at the ends; SKIP leaves weapons out)
+            const int at = cur + dir * k;
+            if (!cfg_.scrollWrap && (at < 0 || at >= WPN_COUNT)) break;
+            int w = kWeaponSlots[(at + WPN_COUNT * 2) % WPN_COUNT];
+            if (allowed(w) && !(cfg_.scrollSkip >> w & 1)) { want(w); break; }
         }
         return true;
     }
@@ -672,7 +835,10 @@ bool Game::pressInput(int code) {
     // ...and so does a jump, dash or grapple tap (it went down and up between two ticks: no command saw it held)
     if (b.has(A_JUMP, code)) moveLatched_ |= BTN_JUMP;
     if (b.has(A_DASH, code)) { moveLatched_ |= BTN_DASH; dashHoldUntil_ = time_ + kDashPressBuffer; }
-    if (b.has(A_GRAPPLE, code)) moveLatched_ |= BTN_GRAPPLE;
+    if (b.has(A_GRAPPLE, code)) {   // (GRAPPLE TOGGLE: each press hooks or lets go)
+        if (cfg_.grappleToggle) grappleOn_ = !grappleOn_;
+        if (!cfg_.grappleToggle || grappleOn_) moveLatched_ |= BTN_GRAPPLE;
+    }
     return false;
 }
 
@@ -774,11 +940,12 @@ void Game::onKey(int key, int action, int mods) {
             return;
         }
         if (chatting_) {
+            if (key == GLFW_KEY_PAGE_UP || key == GLFW_KEY_PAGE_DOWN) { chatScroll_ = std::max(0, chatScroll_ + (key == GLFW_KEY_PAGE_UP ? 6 : -6)); return; }
             if (key == GLFW_KEY_ESCAPE) { chatting_ = false; chatText_.clear(); captureMouse(!paused_); }
             else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
                 if (!chatText_.empty()) {
                     if (chatText_[0] == '/') net_.sendCommand(chatText_.substr(1));
-                    else net_.sendCommand("say " + chatText_);
+                    else net_.sendCommand((teamChat_ ? "sayteam " : "say ") + chatText_);
                 }
                 chatText_.clear();
                 chatting_ = false;
@@ -793,8 +960,9 @@ void Game::onKey(int key, int action, int mods) {
             if (hudEdit_) { hudEditClose(); return; }   // (EDIT ON SCREEN: back to the HUD tab)
             if (fontsOpen_) { fontsOpen_ = false; cfg_.save(); return; }   // (FONT: back to PLAYER)
             if (devicesOpen_) { devicesOpen_ = false; cfg_.save(); return; }   // (DEVICES: back to VIDEO + AUDIO)
+            if (moreOpen_) { moreOpen_ = false; cfg_.save(); return; }   // (MORE: back to its tab)
             if (settingsInGame_) { leaveSettings(); return; }   // (any tab: as BACK)
-            if (voteMenu_ || queueMenu_ || picker_ != PICK_NONE) { voteMenu_ = queueMenu_ = specPick_ = false; picker_ = PICK_NONE; return; }
+            if (voteMenu_ || queueMenu_ || practiceMenu_ || playersMenu_ || picker_ != PICK_NONE) { voteMenu_ = queueMenu_ = practiceMenu_ = playersMenu_ = specPick_ = false; picker_ = PICK_NONE; return; }
             paused_ = !paused_;
             captureMouse(!paused_);
             return;
@@ -808,6 +976,7 @@ void Game::onKey(int key, int action, int mods) {
         if (hudEdit_) { hudEditClose(); return; }   // (EDIT ON SCREEN: back to the HUD tab)
         if (fontsOpen_) { fontsOpen_ = false; cfg_.save(); return; }   // (FONT: back to PLAYER)
         if (devicesOpen_) { devicesOpen_ = false; cfg_.save(); return; }   // (DEVICES: back to VIDEO + AUDIO)
+        if (moreOpen_) { moreOpen_ = false; cfg_.save(); return; }   // (MORE: back to its tab)
         if (screen_ == Screen::Settings) { leaveSettings(); return; }   // (any tab: as BACK)
         if (picker_ != PICK_NONE) { picker_ = PICK_NONE; return; }
         if (screen_ == Screen::Leaderboard && raceStatsView_) { raceStatsView_ = false; return; } // race stats: back to the board
@@ -825,7 +994,28 @@ void Game::onKey(int key, int action, int mods) {
 
 void Game::onFocus(bool focused) {
     if (focused) focusGained_ = true; else swallowedBtn_ = 0;   // (let go while away: no release comes)
-    if (!opts_.uiTest) setGamePriority(cfg_.prioritize && focused);   // (alt-tabbed: the other programs get their share back)
+    if (!opts_.uiTest) setGamePriority(prioLevel(focused));   // (alt-tabbed: the other programs get their share back)
+    focused_ = focused;
+    applyBackground();
+}
+
+void Game::onIconify(bool iconified) { iconified_ = iconified; applyBackground(); }
+
+// In the background (another window focused) or minimized: VIDEO > MORE's frame cap and mute (bgCap_ is read by maxFps).
+void Game::applyBackground() {
+    bgCap_ = !opts_.uiTest && (!focused_ || iconified_);
+    audio_.setMasterVolume(bgCap_ && cfg_.bgMute ? 0.0f : cfg_.volume);
+}
+
+void Game::onWindowPos(int x, int y) {
+    if (cfg_.displayMode != 0 || iconified_ || glfwGetWindowMonitor(win_)) return;   // (windowed only)
+    cfg_.winX = x; cfg_.winY = y;
+}
+
+void Game::onWindowSize(int w, int h) {
+    if (cfg_.displayMode != 0 || iconified_ || glfwGetWindowMonitor(win_) || w < 320 || h < 240) return;
+    if (glfwGetWindowAttrib(win_, GLFW_MAXIMIZED)) return;   // (a maximized window: the size it comes back to stays)
+    cfg_.width = w; cfg_.height = h;
 }
 
 void Game::onMouseButton(int button, int action) {
@@ -858,9 +1048,9 @@ void Game::onMouseButton(int button, int action) {
 // Mouse motion (counts) into the view.
 void Game::turn(double dx, double dy) {
     float k = deg2rad(cfg_.sensitivity) * 0.01f * 2.2f;
-    if (scoped_) k *= std::tan(deg2rad(viewFov()) * 0.5f) / std::tan(deg2rad(cfg_.fov) * 0.5f); // same feel when zoomed
+    if (scoped_) k *= std::tan(deg2rad(viewFov()) * 0.5f) / std::tan(deg2rad(cfg_.fov) * 0.5f) * cfg_.zoomSens; // same feel when zoomed (x ZOOM SENS)
     yaw_ -= (float)dx * k;
-    pitch_ = clampf(pitch_ - (float)dy * k, -1.55f, 1.55f);
+    pitch_ = clampf(pitch_ - (float)dy * k * cfg_.sensY * (cfg_.invertY ? -1.0f : 1.0f), -1.55f, 1.55f);
     yaw_ = std::remainder(yaw_, 2 * PI);
 }
 
@@ -912,10 +1102,12 @@ void Game::onResize(int w, int h) { r_.resize(w, h); mouseHeld_ = false; vmStale
 void Game::onScroll(double dy) {
     markInput();
     if (dy == 0) return;
+    if (chatting_ && !console_) { chatScroll_ = std::max(0, chatScroll_ + (dy > 0 ? 1 : -1)); return; }   // (chat history; clamped when drawn)
     if (screen_ == Screen::Editor && edMatMenu_) { edMatScroll_ = std::max(0, edMatScroll_ - (dy > 0 ? 1 : -1)); return; }   // (a row a notch; clamped when drawn)
     if (screen_ == Screen::Editor) { edSpeed_ = clampf(edSpeed_ * (float)std::pow(1.25, dy), 2, 80); return; }
     if (screen_ == Screen::Info) { infoScroll_ = std::max(0, infoScroll_ - (dy > 0 ? 3 : -3)); return; }   // (3 lines a notch; clamped when drawn)
     if (screen_ == Screen::Benchmarks) { benchScroll_ = std::max(0, benchScroll_ - (dy > 0 ? 1 : -1)); return; }   // (clamped when drawn)
+    if (picker_ != PICK_NONE) { pickScroll_ = std::max(0, pickScroll_ - (dy > 0 ? 1 : -1)); return; }   // (the map picker's rows; clamped when drawn)
     if (screen_ == Screen::Demos && picker_ == PICK_NONE) { demoScroll_ = std::max(0, demoScroll_ - (dy > 0 ? 1 : -1)); return; }   // clamped when drawn
     if (screen_ == Screen::Join) { joinScroll_ = std::max(0, joinScroll_ - (dy > 0 ? 1 : -1)); return; }
     if (hudEdit_ && !chatting_ && setTab_ == TAB_HUD && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) { hudEdWheel_ += dy; return; }
@@ -976,7 +1168,8 @@ UserCmd Game::buildCmd() {
     if (isDown(A_JUMP)) c.buttons |= BTN_JUMP;
     if (isDown(A_USE)) c.buttons |= BTN_USE;
     if (isDown(A_DASH)) c.buttons |= BTN_DASH;
-    if (isDown(A_GRAPPLE)) c.buttons |= BTN_GRAPPLE;
+    if (!net_.selfAlive()) grappleOn_ = false;
+    if (cfg_.grappleToggle ? grappleOn_ : isDown(A_GRAPPLE)) c.buttons |= BTN_GRAPPLE;
     c.buttons |= moveLatched_;   // (a tap since the last command: in this one)
     if (time_ <= dashHoldUntil_) c.buttons |= BTN_DASH;   // (a dash press up to 0.1 s before one is allowed: held till then, T2)
     moveLatched_ = 0;
@@ -1028,7 +1221,7 @@ bool Game::isFriendly(int id) const {
 void Game::updateAnnouncer() {
     if (!net_.hasSnapshot()) return;
     const ModeState& ms = net_.mode();
-    auto say = [&](int id, int level) { if (cfg_.announcer >= level) audio_.play(id, 1.0f); };
+    auto say = [&](int id, int level) { if (cfg_.announcer >= level) announce(id); };
     if (ms.phase == PHASE_FREEZE) {
         int c = (int)std::ceil(ms.timeLeft - 0.02f);
         if (c != annCount_ && c >= 1 && c <= 3) say(SND_VOICE_ONE - (c - 1), 1);
@@ -1080,13 +1273,20 @@ void Game::updateAnnouncer() {
             audio_.play(SND_HURT, 1.0f);
             audio_.play(SND_STICKY_ATTACH, 1.0f, 1.6f);
         } else if (tagger >= 0 && tagger == net_.clientId()) {   // you tagged them: a heavy hit's sound (no EV_HIT for a tag)
-            if (cfg_.hitsounds && hitGate_.pass(time_, SND_HIT_HEAVY)) audio_.play(SND_HIT_HEAVY, 0.9f);
+            if (cfg_.hitsounds && hitGate_.pass(time_, SND_HIT_HEAVY)) audio_.play(SND_HIT_HEAVY, 0.9f * cfg_.hitVolume, 1.0f, cfg_.hitPack);
         } else if (tagger >= 0) {   // someone else tagged: their hurt sound from the new "it"
             const PlayerSnap* v = net_.findPlayer(itNow);
             if (v && !v->hidden) audio_.play3D(SND_HURT, v->pos + Vec3(0, 1.2f, 0), 0.8f, 1.0f, net_.playerSoundPack(itNow));
         }
         tagIt_ = itNow;
     }
+    // the planted bomb beeps with its blink (game.cpp's bomb model: every timer / 20 s, at least 0.15 s), from where it is
+    if (ms.mode == MODE_BOMB && ms.bombState == BOMB_PLANTED && ms.phase == PHASE_LIVE && cfg_.volObjective > 0.001f) {
+        if (time_ >= bombBeepAt_) {
+            audio_.play3D(SND_STICKY_ATTACH, ms.bombPos + Vec3(0, 0.3f, 0), 0.6f * cfg_.volObjective, 2.2f);
+            bombBeepAt_ = time_ + std::max(0.15, ms.bombTimer / 20.0);
+        }
+    } else bombBeepAt_ = 0;
     if (ms.phase != PHASE_LIVE) annLeader_ = -2;   // (a new match: the first lead isn't "new")
     else if (annLeader_ == -2) annLeader_ = -1;
     // Killstreaks are per match and per player: a new match (back to warmup, or another mode) starts them again, and a
@@ -1095,11 +1295,33 @@ void Game::updateAnnouncer() {
     if (annPrevValid_ && (ms.mode != annPrev_.mode || (annPrev_.phase != PHASE_WARMUP && ms.phase == PHASE_WARMUP) ||
                           ((annPrev_.phase == PHASE_WARMUP || annPrev_.phase == PHASE_MATCH_END) && ms.phase != annPrev_.phase) ||
                           ms.round < annPrev_.round))
+    {
         for (int& k : streak_) k = 0;
+        matchShots_ = matchHits_ = matchBestStreak_ = 0; matchDmg_ = 0;   // (MATCH SUMMARY counts from here)
+    }
     for (int i = 0; i < kMaxPlayers; i++)
         if (streak_[i] && !net_.findPlayer(i)) streak_[i] = 0;
     annPrev_ = ms;
     annPrevValid_ = true;
+}
+
+// the announcer's lines (SND_VOICE_THREE on, in audio.h's order) as ANNOUNCER CAPTIONS shows them
+static const char* const kVoiceCaptions[] = {
+    "THREE", "TWO", "ONE", "GO!", "BOMB PLANTED", "BOMB DEFUSED", "HILL TAKEN", "HILL LOST", "POINT TAKEN", "POINT LOST",
+    "ROUND WON", "ROUND LOST", "OVERTIME", "YOU WIN", "YOU LOSE", "HIGH SCORE", "NEW LEADER", "YOU DIED", "HEADSHOT",
+    "AIR ROCKET", "KILLING SPREE", "RAMPAGE", "UNSTOPPABLE", "GODLIKE", "ONE MINUTE", "THIRTY SECONDS", "ROUND OVER"};
+static_assert(sizeof kVoiceCaptions / sizeof *kVoiceCaptions == SND_COUNT - SND_VOICE_THREE, "a caption for every announcer line");
+
+void Game::announce(int snd) {
+    audio_.play(snd, 1.0f);
+    if (snd >= SND_VOICE_THREE && snd < SND_COUNT) { captionText_ = kVoiceCaptions[snd - SND_VOICE_THREE]; captionUntil_ = time_ + 2.0; }
+}
+
+// CONFIRM LEAVE: a first click arms the button (its label asks SURE?), a second within 3 s does it
+bool Game::confirmed(const std::string& what) {
+    if (!cfg_.confirmLeave || confirmArmed(what)) { confirmWhat_.clear(); return true; }
+    confirmWhat_ = what; confirmUntil_ = time_ + 3;
+    return false;
 }
 
 Vec3 Game::teamColor(int id) const {
@@ -1124,10 +1346,11 @@ void Game::onKillFeedback(int killer, int victim, int weapon, bool head, bool ai
     if (victim >= 0 && victim < kMaxPlayers) streak_[victim] = 0;
     if (victim == me) {
         audio_.play(SND_DEATH, 0.8f);
-        if (cfg_.announcer >= 2) audio_.play(SND_VOICE_YOU_DIED, 1.0f);
+        if (cfg_.announcer >= 2) announce(SND_VOICE_YOU_DIED);
     }
     if (killer < 0 || killer >= kMaxPlayers || killer == victim || (modeIsTeamBased(net_.mode().mode) && isFriendly(killer) == isFriendly(victim))) return;
     int n = ++streak_[killer];
+    if (killer == me) matchBestStreak_ = std::max(matchBestStreak_, n);   // (MATCH SUMMARY)
     static const struct { int kills; int snd; const char* what; } streaks[] = {
         {3, SND_VOICE_SPREE, "IS ON A KILLING SPREE"}, {5, SND_VOICE_RAMPAGE, "IS ON A RAMPAGE"},
         {7, SND_VOICE_UNSTOPPABLE, "IS UNSTOPPABLE"}, {10, SND_VOICE_GODLIKE, "IS GODLIKE"}};
@@ -1138,9 +1361,24 @@ void Game::onKillFeedback(int killer, int victim, int weapon, bool head, bool ai
         else notify(std::string("YOU'RE ") + (st.what + 3), 3);   // ("IS ..." -> "YOU'RE ...")
     }
     if (killer != me || cfg_.announcer < 2) return;
-    if (streakSnd >= 0) audio_.play(streakSnd, 1.0f);
-    else if (head) audio_.play(SND_VOICE_HEADSHOT, 1.0f);
-    else if (airborne && weapon == WPN_ROCKET) audio_.play(SND_VOICE_AIR_ROCKET, 1.0f);
+    if (streakSnd >= 0) announce(streakSnd);
+    else if (head) announce(SND_VOICE_HEADSHOT);
+    else if (airborne && weapon == WPN_ROCKET) announce(SND_VOICE_AIR_ROCKET);
+}
+
+// dead or spectating: watch the next (dir 1) or previous (-1) living player (a team mode: a teammate)
+// the key an action is on, for hints ("UNBOUND" when it has none)
+std::string Game::keyOf(int action) const {
+    for (int k = 0; k < kBindSlots; k++) if (int c = binds().code[action][k]) return upper(inputName(c));
+    return "UNBOUND";
+}
+
+void Game::cycleSpec(int dir) {
+    const auto& ps = framePlayers();
+    for (int k = 1; k <= kMaxPlayers; k++) {
+        int id = (specTarget_ + dir * k + kMaxPlayers * 2) % kMaxPlayers;   // (-1, none yet: from 0)
+        if (ps[id].valid && (ps[id].snap.flags & PS_ALIVE) && id != net_.clientId() && (!modeIsTeamBased(net_.mode().mode) || isFriendly(id))) { specTarget_ = id; break; }
+    }
 }
 
 void Game::handleEvents() {
@@ -1154,12 +1392,12 @@ void Game::handleEvents() {
                                                              : killer + " [" + weaponName(wpn) + "] " + net_.playerName(e.b);
                 onKillFeedback(e.a, e.b, wpn, e.c >= 0 && (e.c & KILL_HEADSHOT), e.c >= 0 && (e.c & KILL_AIRBORNE));
                 Color c = e.a == net_.clientId() ? rgba(cfg_.colorFriendly) : e.b == net_.clientId() ? rgba(cfg_.colorEnemy) : kWhite;
-                Feed f{t, c, time_ + 6};
+                Feed f{t, c, time_ + cfg_.feedTime};
                 Color nc;
                 if (!killer.empty() && e.a != e.b && nameColorOf(e.a, nc)) f.spans.push_back({0, killer.size(), nc});
                 if (nameColorOf(e.b, nc)) { size_t vn = net_.playerName(e.b).size(); f.spans.push_back({killer.empty() || e.a == e.b ? 0 : t.size() - vn, vn, nc}); }
-                killFeed_.push_back(f);
-                while (killFeed_.size() > 6) killFeed_.pop_front();
+                if (!cfg_.feedMine || e.a == net_.clientId() || e.b == net_.clientId()) killFeed_.push_back(f);   // (ONLY MY KILLS)
+                while ((int)killFeed_.size() > cfg_.feedLines) killFeed_.pop_front();
                 if (e.b == net_.clientId() && e.a < kMaxPlayers && e.a != e.b) { specTarget_ = e.a; killCamUntil_ = time_ + kKillCamTime; }
                 if (e.b == net_.clientId()) {   // the death screen: the victim's copy carries "<killer hp> <respawn ms>"
                     deathValid_ = true;
@@ -1173,7 +1411,7 @@ void Game::handleEvents() {
                         if (ms >= 0 && ms <= 600000) deathRespawnAt_ = time_ + ms * 0.001;
                     }
                 }
-                if (e.a == net_.clientId() && e.b != e.a && cfg_.hitsounds) audio_.play(SND_KILL, 0.9f);
+                if (e.a == net_.clientId() && e.b != e.a && cfg_.killSound) audio_.play(SND_KILL, 0.9f * cfg_.hitVolume, 1.0f, cfg_.hitPack);
                 if (e.a == net_.clientId() && e.b != e.a) killMarkUntil_ = time_ + 0.45;   // X6: a kill looks unlike a hit
                 if (e.b != net_.clientId() && e.b < kMaxPlayers) {   // X6: where they fell (in sight only), a thud and a red burst
                     const PlayerSnap* v = net_.findPlayer(e.b);
@@ -1186,9 +1424,9 @@ void Game::handleEvents() {
             }
             case EV_CHAT:   // (chat off: dropped, not just hidden - turning it back on doesn't replay what was missed)
                 if (!cfg_.chatOff) {
-                    Feed f{net_.playerName(e.a) + ": " + e.text, isFriendly(e.a) ? rgba(cfg_.colorFriendly) : rgba(cfg_.colorEnemy), time_ + 10, crownOf(e.a), true};
+                    Feed f{(e.b == 1 ? "(TEAM) " : "") + net_.playerName(e.a) + ": " + e.text, isFriendly(e.a) ? rgba(cfg_.colorFriendly) : rgba(cfg_.colorEnemy), time_ + cfg_.chatTime, crownOf(e.a), true};
                     Color nc;
-                    if (nameColorOf(e.a, nc)) f.spans.push_back({0, net_.playerName(e.a).size(), nc});
+                    if (nameColorOf(e.a, nc)) f.spans.push_back({e.b == 1 ? 7u : 0u, net_.playerName(e.a).size(), nc});
                     addChat(f);
                 }
                 break;
@@ -1315,11 +1553,11 @@ void Game::handleEvents() {
                 bool teams = modeIsTeamBased(net_.mode().mode) && net_.mode().mode != MODE_TOURNEY;   // (a = the winning team, else the winning player)
                 if (me && me->team() != TEAM_SPECTATOR && e.a != 255) {
                     bool won = teams ? e.a == me->team() : e.a == net_.clientId();
-                    if (e.b && cfg_.announcer >= 1) audio_.play(won ? SND_VOICE_YOU_WIN : SND_VOICE_YOU_LOSE, 1.0f);
-                    else if (!e.b && teams && cfg_.announcer >= 2) audio_.play(won ? SND_VOICE_ROUND_WON : SND_VOICE_ROUND_LOST, 1.0f);
-                    else if (!e.b && cfg_.announcer >= 2) audio_.play(SND_VOICE_ROUND_OVER, 1.0f);
+                    if (e.b && cfg_.announcer >= 1) announce(won ? SND_VOICE_YOU_WIN : SND_VOICE_YOU_LOSE);
+                    else if (!e.b && teams && cfg_.announcer >= 2) announce(won ? SND_VOICE_ROUND_WON : SND_VOICE_ROUND_LOST);
+                    else if (!e.b && cfg_.announcer >= 2) announce(SND_VOICE_ROUND_OVER);
                 } else if (me && me->team() != TEAM_SPECTATOR && !e.b && cfg_.announcer >= 2 && (net_.mode().mode == MODE_PAYLOAD || net_.mode().mode == MODE_POINTS))
-                    audio_.play(SND_VOICE_ROUND_OVER, 1.0f);   // (a stopwatch pair's first round: a mark to beat, nobody's won yet)
+                    announce(SND_VOICE_ROUND_OVER);   // (a stopwatch pair's first round: a mark to beat, nobody's won yet)
                 centerText_ = e.text;
                 centerUntil_ = time_ + (e.b ? 8.0 : 3.5);
                 break;
@@ -1327,7 +1565,7 @@ void Game::handleEvents() {
             case EV_GUNFIRE: {   // X9: a shot out of sight, roughly where: the weapon's sound, quieter and lower (muffled)
                 Vec3 p;
                 if (e.c >= 0 && e.c < WPN_COUNT && std::sscanf(e.text.c_str(), "%f %f %f", &p.x, &p.y, &p.z) == 3)
-                    audio_.play3D(SND_RIFLE + e.c, p, 0.45f, 0.8f);
+                    audio_.play3D(SND_RIFLE + e.c, p, 0.45f * cfg_.volWeapons, 0.8f);
                 break;
             }
             case EV_BRACKET: {
@@ -1352,8 +1590,14 @@ void Game::handleEvents() {
                     float dmg = e.c / 100.0f; // hundredths of a point
                     bool head = e.text == "h"; // a headshot: its own red number
                     hitUntil_ = time_ + 0.15;
+                    hitHead_ = head;
+                    matchHits_++; matchDmg_ += dmg;
                     // four tiers by this hit's damage, each heavier and louder (hitSoundFor); hits landing together make one
-                    if (cfg_.hitsounds) { int snd = hitSoundFor(dmg); if (hitGate_.pass(time_, snd)) audio_.play(snd, 0.9f); }
+                    if (cfg_.hitsounds) {
+                        int snd = hitSoundFor(dmg);
+                        if (hitGate_.pass(time_, snd)) audio_.play(snd, 0.9f * cfg_.hitVolume, 1.0f, cfg_.hitPack);
+                        if (head && cfg_.headshotSound) audio_.play(SND_HIT, 0.7f * cfg_.hitVolume, 1.7f, cfg_.hitPack);   // (a higher ding over it)
+                    }
                     // hits on the same target in quick succession add up into one number
                     bool merged = false;
                     for (auto& d : dmgNums_)
@@ -1454,7 +1698,7 @@ void Game::frame(double dt) {
     }
     if (opts_.textHeavy && screen_ == Screen::InGame) {
         perfStage_ = 3;
-        while (chatFeed_.size() < 8) addChat({"Player" + std::to_string(chatFeed_.size()) + ": the quick brown fox jumps over the lazy dog 0123456789", Color{1, 1, 1, 1}, time_ + 1e9});
+        while ((int)chatFeed_.size() < std::min(8, cfg_.chatLines)) addChat({"Player" + std::to_string(chatFeed_.size()) + ": the quick brown fox jumps over the lazy dog 0123456789", Color{1, 1, 1, 1}, time_ + 1e9});
     }
     if (opts_.feedShot && screen_ == Screen::InGame && killFeed_.empty()) {   // (kill feed and chat lines that stay)
         static const char* kills[] = {"wraith [ROCKET] lynx", "player [RIFLE] ghost", "ghost [KNIFE] player", "ember [SNIPER] wraith"};
@@ -1506,11 +1750,22 @@ void Game::frame(double dt) {
     if (((screen_ == Screen::InGame && !bake_) || screen_ == Screen::Editor || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty() || opts_.menuShot) && !opts_.screenshot.empty() && shotAt_ < 0) shotAt_ = time_ + opts_.shotDelay;
 
     if (screen_ == Screen::Join) browser_.poll();
+    if (reconnectAt_ > 0 && time_ >= reconnectAt_) {   // (AUTO RECONNECT's try, from the main menu it left you on)
+        reconnectAt_ = 0;
+        if (screen_ == Screen::Main) { const std::string msg = error_; connectTo(cfg_.lastAddress); if (screen_ != Screen::Connecting) reconnectTries_ = 0; else error_ = msg; }
+        else reconnectTries_ = 0;
+    }
     if (screen_ == Screen::Connecting || screen_ == Screen::InGame || (screen_ == Screen::Editor && edOnline_)) {
         if (net_.state() == ConnState::Disconnected) {
             bool demoEnd = net_.error() == "demo finished";
-            leaveGame(net_.error().empty() ? "disconnected" : net_.error());
+            // AUTO RECONNECT: the connection dropped (a timeout, not a kick or a refusal), or a retry got no answer
+            const std::string err = net_.error();
+            const bool lost = err == "connection to server lost" || (reconnectTries_ > 0 && err.rfind("no response", 0) == 0);
+            const bool retry = cfg_.autoReconnect && lost && !host_ && !net_.playback() && testMap_.empty() && reconnectTries_ < 3 && !cfg_.lastAddress.empty();
+            leaveGame(err.empty() ? "disconnected" : err);
             if (demoEnd) { error_.clear(); setScreen(Screen::Demos); }
+            if (retry) { reconnectAt_ = time_ + 2; error_ = "connection lost - reconnecting (" + std::to_string(++reconnectTries_) + " of 3)"; }
+            else reconnectTries_ = 0;
         } else if (net_.state() == ConnState::Connected && net_.mapReady() && (screen_ != Screen::Connecting || net_.hasSnapshot())) {
             bool editing = net_.hasSnapshot() && (net_.mode().flags & MS_EDITING);
             if (editing) { // an edit session (or the host switched back to editing)
@@ -1518,7 +1773,13 @@ void Game::frame(double dt) {
             } else {
                 if (screen_ == Screen::Editor) { edOnline_ = false; loadedMapGen_ = 0; } // the host switched to playing it: bake it
                 loadMapIfNeeded();
-                if (screen_ != Screen::InGame) setScreen(Screen::InGame);
+                if (screen_ != Screen::InGame) {
+                    setScreen(Screen::InGame);
+                    // DEMOS > AUTO RECORD: every match you join, or ranked ones (then KEEP prunes the oldest)
+                    const bool ranked = net_.mode().flags & MS_RANKED;
+                    if ((cfg_.autoRecord == 1 || (cfg_.autoRecord == 2 && ranked)) && !net_.recording() && !net_.playback() && !uiTest_) { startRecording(); pruneDemos(); }
+                }
+                reconnectTries_ = 0;
             }
         }
     }
@@ -1619,12 +1880,13 @@ void Game::frame(double dt) {
                 localNextFire_ = (cadence ? localNextFire_ : time_) + localRefire_;
                 if (isThrow(w, alt)) (w == WPN_KNIFE ? localKnifeBack_ : localSyringeBack_) = time_ + (w == WPN_KNIFE ? weaponAlt().knifeAway : weaponAlt().syringeAway);
                 if (w != WPN_LASER || time_ >= nextLaserSound_) { // laser fires every 10 ms: sound at 20 Hz
-                    audio_.play(SND_RIFLE + w, w == WPN_LASER ? 0.6f : 0.8f, 0.97f + (qrand() % 7) * 0.01f);
+                    audio_.play(SND_RIFLE + w, (w == WPN_LASER ? 0.6f : 0.8f) * cfg_.volWeapons, 0.97f + (qrand() % 7) * 0.01f);
                     nextLaserSound_ = time_ + 0.05;
                 }
                 if (w == WPN_KNIFE && !alt) knifeSlash_[net_.clientId() % kMaxPlayers] = time_;
                 if (isThrow(w, alt)) { localFireLocked_ = true; heldWeapon_ = wp_.thrown(weaponView()); }   // (and out comes the next weapon)
                 recoil_ = w == WPN_LASER ? 0.15 : w == WPN_SNIPER ? 1.6 : 1.0;
+                matchShots_++;
                 if (w != WPN_KNIFE && w != WPN_SYRINGE && w != WPN_LOCATOR) muzzleUntil_ = time_ + (w == WPN_SNIPER ? 0.07 : 0.05);
                 if (w == WPN_ROCKET || w == WPN_CROSSBOW || (w == WPN_KNIFE && alt)) spawnPredictedProjectile(w, alt, c);   // X5
                 if (!weaponDef(w).projectile && w != WPN_KNIFE && w != WPN_SYRINGE && w != WPN_LOCATOR && !(w == WPN_SHOTGUN && alt) &&
@@ -1770,14 +2032,7 @@ void Game::frame(double dt) {
         }
         lastHealth_ = hp;
         if (net_.selfAlive()) deathValid_ = false;   // (the death screen is this death's only)
-        if (!net_.selfAlive() && uiIn_.pressed && !paused_) {
-            // cycle spectate target
-            const auto& ps = framePlayers();
-            for (int k = 1; k <= kMaxPlayers; k++) {
-                int id = (specTarget_ + k + kMaxPlayers) % kMaxPlayers;
-                if (ps[id].valid && (ps[id].snap.flags & PS_ALIVE) && id != net_.clientId() && (!modeIsTeamBased(net_.mode().mode) || isFriendly(id))) { specTarget_ = id; break; }
-            }
-        }
+        if (!net_.selfAlive() && uiIn_.pressed && !paused_) cycleSpec(1);   // (a click: the next player to watch)
         captureMouse(!paused_ && !chatting_ && !bake_);
     }
 
@@ -1867,7 +2122,8 @@ static constexpr float kRefAspect = 16.0f / 9.0f, kRefTanY = 1.19175359f / kRefA
 // it) and the same height, whatever the aspect or FOV: x follows the aspect (out to the corner on an ultrawide, in on
 // 4:3), depth the vertical FOV (so a wider FOV or a zoom doesn't shrink or grow the model).
 Vec3 Game::viewAnchor(const Settings::HudElem& e, const Vec3& base) const {
-    const Vec3 p = base + Vec3(e.x * 0.0005f, -e.y * 0.0005f, -e.z * 0.001f);
+    Vec3 p = base + Vec3(e.x * 0.0005f, -e.y * 0.0005f, -e.z * 0.001f);
+    if (cfg_.leftHanded) p.x = -p.x;   // (HAND: LEFT: both models swap sides)
     const float tx = r_.tanX(), ty = r_.tanY();
     if (!(tx > 0) || !(ty > 0)) return p;
     return {p.x * (tx / ty) / kRefAspect, p.y, p.z * kRefTanY / ty};
@@ -1887,7 +2143,11 @@ Mat4 Game::weaponFrame(float kick) const {
     const auto& vm = cfg_.hud[Settings::HUD_VIEWMODEL];
     Vec3 at = viewAnchor(vm, kWeaponBase);
     at.z += kick;
-    return tilted(vm) ? Mat4::translate(at) * viewTilt(vm) : Mat4::translate(at);
+    if (!tilted(vm)) return Mat4::translate(at);
+    if (!cfg_.leftHanded) return Mat4::translate(at) * viewTilt(vm);
+    Settings::HudElem m = vm;   // (left-handed: the tilt mirrored too)
+    m.yaw = -m.yaw; m.roll = -m.roll;
+    return Mat4::translate(at) * viewTilt(m);
 }
 
 // Where your shots come out: the muzzle of the weapon model wherever the HUD settings put it (x / y / depth /
@@ -1896,7 +2156,7 @@ Vec3 Game::muzzlePoint(int weapon, const Vec3& eye) const {
     const auto& vm = cfg_.hud[Settings::HUD_VIEWMODEL];
     Vec3 d = angleForward(yaw_, pitch_), right = normalize(cross(d, {0, 1, 0}));
     if (weapon < 0 || weapon >= WPN_COUNT) return eye + d * 0.5f + right * 0.15f - Vec3(0, 0.12f, 0); // (hidden model: where it would be)
-    const Mat4 f = weaponFrame((float)recoil_ * 0.06f);
+    const Mat4 f = weaponFrame(cfg_.viewRecoil ? (float)recoil_ * 0.06f : 0.0f);
     const Vec3 m = kMuzzle[weapon] * vm.scale;
     Vec3 o = {f.m[0] * m.x + f.m[4] * m.y + f.m[8] * m.z + f.m[12], f.m[1] * m.x + f.m[5] * m.y + f.m[9] * m.z + f.m[13],
               f.m[2] * m.x + f.m[6] * m.y + f.m[10] * m.z + f.m[14]};
@@ -2040,7 +2300,9 @@ void Game::drawWorld(float alpha) {
         auto at = [&](float h) { return pos + Vec3(0, h * hs * bs, 0); };
         Vec3 fwd = {-std::sin(yaw), 0, -std::cos(yaw)}, rgt = {std::cos(yaw), 0, -std::sin(yaw)};
         // the player model (cosmetic: every model fits the same hitbox); ranked / time trial: the default for everyone
-        const int pm = ranked ? 0 : opts_.debugModels && i >= kMaxPlayers - kPlayerModels ? i - (kMaxPlayers - kPlayerModels) : net_.playerModel(i);
+        // (GAMEPLAY > MORE: ENEMY MODEL draws every enemy as one model)
+        const int pm = ranked ? 0 : opts_.debugModels && i >= kMaxPlayers - kPlayerModels ? i - (kMaxPlayers - kPlayerModels)
+                     : cfg_.enemyModel >= 0 && !self && !isFriendly(i) ? cfg_.enemyModel : net_.playerModel(i);
         const ModelMesh* ov = modelOverride(MODEL_PLAYER, pm);
         // sunlight on them: only coloured geometry uses it (the shadow pass doesn't), so not for yourself in first
         // person, nor for a box model out of view (its boxes and what it holds, all within 2.5 m: shadow pass only).
@@ -2241,7 +2503,7 @@ void Game::drawWorld(float alpha) {
     Vec3 fpMuzzle;                                    // its muzzle in the world
     if (fpHook) {
         const Vec3 base = viewAnchor(gm, kHookBase);
-        float tYaw = -0.06f, tPitch = 0, tRaise = 0;  // (at rest: the barrel turned in a touch, toward the crosshair)
+        float tYaw = cfg_.leftHanded ? 0.06f : -0.06f, tPitch = 0, tRaise = 0;  // (at rest: the barrel turned in a touch, toward the crosshair)
         if (fpHooked) {   // toward the hook, from where the launcher is (camera space), at most ~30 degrees
             const Vec3 f = angleForward(camYaw, camPitch), rt = normalize(cross(f, {0, 1, 0})), up = cross(rt, f);
             const Vec3 d = fpHookTo - r_.viewPoint(base);
@@ -2525,14 +2787,23 @@ void Game::drawWorld(float alpha) {
         if (t >= 1) { explosions_.erase(explosions_.begin() + i); continue; }
         float r = (0.5f + t * 3.0f) * explosions_[i].size;
         Vec3 c = explosions_[i].at;
+        if (cfg_.fxOpacity < 0.01f || (explosions_[i].kill && !cfg_.killBursts)) { i++; continue; }   // (VIDEO > MORE 2: EFFECTS)
         Color ec = explosions_[i].wall ? Color{1.0f, 0.82f, 0.45f, 0.85f * (1 - t)} : explosions_[i].bubble ? rgba(r_.glowColor, 0.5f * (1 - t)) : explosions_[i].spark ? Color{1.0f, 0.35f, 0.2f, 0.9f * (1 - t)}
                  : explosions_[i].kill ? Color{0.85f, 0.08f, 0.06f, 0.6f * (1 - t)} : Color{1.0f, 0.85f, 0.5f, 0.55f * (1 - t)};
+        ec.a *= cfg_.fxOpacity;
         r_.translucentBox({c - Vec3(r, r, r), c + Vec3(r, r, r)}, ec);
         i++;
+    }
+    updateGhost();   // (race / surf: the best run's ghost, among the see-through effects)
+    if (raceResetAt_ >= 0) {   // RACE RESET held: 250 ms is the start (the server respawns you there); let go sooner, the last checkpoint
+        if (!isRaceMode(net_.mode().mode) || net_.state() != ConnState::Connected) raceResetAt_ = -1;
+        else if (!isDown(A_RACERESET)) { net_.sendCommand("racereset"); raceResetAt_ = -1; }
+        else if (time_ - raceResetAt_ >= 0.25) { net_.sendCommand("racereset full"); raceResetAt_ = -1; }
     }
     for (size_t i = 0; i < tracers_.size();) {
         if (time_ > tracers_[i].until) { tracers_.erase(tracers_.begin() + i); continue; }
         float life = (float)std::min(1.0, (tracers_[i].until - time_) / 0.25); // fade out over the last quarter second
+        if (!cfg_.tracers) { i++; continue; }
         r_.line(tracers_[i].a, tracers_[i].b, 0.03f, {1.0f, 0.95f, 0.7f, 0.8f * life});
         i++;
     }
@@ -2636,7 +2907,7 @@ void Game::drawWorld(float alpha) {
     recoil_ = std::max(0.0, recoil_ - 8.0 * frameDt_);
     if ((alive || specGun) && !(scoped_ && scopeOverlay_ && !specGun) && !unarmed && !vm.hidden) {
         int w = specGun ? (int)players[viewing].snap.weapon : heldWeapon_;
-        float kick = (float)recoil_ * 0.06f;
+        float kick = cfg_.viewRecoil ? (float)recoil_ * 0.06f : 0.0f;   // (VIDEO > MORE 2: GUN RECOIL off: none)
         // Each weapon is a handful of boxes around `at` (camera space: +x right, +y up, -z forward), models.h.
         // the map's own palette: metal body, base-coloured highlights, its glow colour on emitters / sights
         ModelPalette vpal;
@@ -3003,22 +3274,23 @@ void Game::hudBoxDraw(int el, const lay::Rect& r, float k, Color def) {
 
 float Game::hudFont(int el) const {
     const HudStyle& st = hudStyle(el);
-    return (st.has(HudStyle::FONT) ? st.fontScale : 1.0f) * cfg_.hud[el].scale;
+    return (st.has(HudStyle::FONT) ? st.fontScale : 1.0f) * cfg_.hud[el].scale * cfg_.hudSize;
 }
 
 Game::HudRect Game::drawHudHealth(const Settings::HudElem& e, float W, float H, float s, int hp, Color num, Color bar, bool draw) {
     // health: number + bar, bottom left (the content 200 x 50, its bottom 20 over the screen's)
     const int el = Settings::HUD_HEALTH;
-    const float k = s * e.scale;
+    const float k = s * e.scale * cfg_.hudSize;
     lay::Rect c;
     const lay::Rect r = hudSimple(el, W, H, 0, 1, 24 * s + e.x * s, H - 20 * k + e.y * s, k, 200 * k, 50 * k, c);
     if (draw) {
         AlphaScope a(r_, hudOpacity(el));
         hudBoxDraw(el, r, k, {0, 0, 0, 0});
         float hts = std::max(1.0f, std::round(ui_.textScale() * 2 * hudFont(el)));
-        r_.text(c.x, c.y, hts, std::to_string(hp), hp > 30 ? num : kRed);
+        const float mx = cfg_.hpScaled ? std::max(1.0f, hpMax_) : 100.0f;   // (GAMEPLAY > MORE: HEALTH BARS: MODE'S MAX)
+        r_.text(c.x, c.y, hts, std::to_string(hp), hp > mx * 0.3f ? num : kRed);
         r_.rect(c.x, c.y + 42 * k, 200 * k, 8 * k, {0, 0, 0, 0.5f});
-        r_.rect(c.x, c.y + 42 * k, 200 * k * clampf(hp / 100.0f, 0, 1), 8 * k, hp > 30 ? bar : kRed);
+        r_.rect(c.x, c.y + 42 * k, 200 * k * clampf(hp / mx, 0, 1), 8 * k, hp > mx * 0.3f ? bar : kRed);
     }
     return {r.x, r.y, r.w, r.h};
 }
@@ -3026,7 +3298,7 @@ Game::HudRect Game::drawHudHealth(const Settings::HudElem& e, float W, float H, 
 Game::HudRect Game::drawHudWeaponName(const Settings::HudElem& e, float W, float H, float s, const std::string& wn, Color c, bool draw) {
     // current weapon name, bottom right (its right edge 24 in, its top 50 up)
     const int el = Settings::HUD_WEAPON;
-    const float k = s * e.scale;
+    const float k = s * e.scale * cfg_.hudSize;
     float wts = std::max(1.0f, std::round(ui_.textScale() * 1.5f * hudFont(el))), tw = hudWidth(hudCapW_[0], wn.c_str(), wts), th = r_.textHeight(wts);
     lay::Rect t;
     const lay::Rect r = hudSimple(el, W, H, 1, 1, W - 24 * s + e.x * s, H - 50 * k + th + e.y * s, k, tw, th, t);
@@ -3042,7 +3314,7 @@ Game::HudRect Game::drawHudBars(const Settings::HudElem& e, float W, float H, fl
     // dash + grapple cooldown bars under the crosshair (full = ready)
     const int el = Settings::HUD_BARS;
     const HudStyle& st = hudStyle(el);
-    const float k = s * e.scale, bcx = W * 0.5f + e.x * s, bcy = H * 0.5f + e.y * s;
+    const float k = s * e.scale * cfg_.hudSize, bcx = W * 0.5f + e.x * s, bcy = H * 0.5f + e.y * s;
     // (rows 16 apart, captions at text 1.5 centred on their bar: text 1 was below the redesign's smallest)
     const float lts = std::max(r_.minTextScale(), ui_.textScale() * 0.75f * hudFont(el)), lh = r_.textHeight(lts);
     const float bw = 90 * k, bh = 5 * k, wW = hudWidth(hudCapW_[1], "WEAPON", lts), capW = wW + 6 * k;   // (the widest caption)
@@ -3087,7 +3359,7 @@ Game::HudRect Game::drawHudSpeed(const Settings::HudElem& e, float W, float H, f
     // speed meter: speed is unbounded, so the bar fills on a saturating exponential curve (1 - e^(-v/20)): half full
     // at ~14 m/s, 90% at ~46 m/s, always room to grow. Number shows the real value.
     const int el = Settings::HUD_SPEED;
-    const float k = s * e.scale, bcx = W * 0.5f + e.x * s, y = H * 0.5f + 84 * k + e.y * s;
+    const float k = s * e.scale * cfg_.hudSize, bcx = W * 0.5f + e.x * s, y = H * 0.5f + 84 * k + e.y * s;
     const float bw = 90 * k, bh = 5 * k, bx = bcx - bw * 0.5f;
     const float lts = std::max(r_.minTextScale(), ui_.textScale() * 0.75f * hudFont(el)), lh = r_.textHeight(lts), ly = y + (bh - lh) * 0.5f;
     char buf[16]; snprintf(buf, sizeof buf, "%.1f", v);
@@ -3116,7 +3388,7 @@ Game::HudRect Game::drawHudSlots(const Settings::HudElem& e, float W, float H, f
     // weapon slots in kWeaponSlots order: 1 rocket, 2 rifle, 3 laser, ... a row ending 38 in from the right, 74 up
     const int el = Settings::HUD_SLOTS;
     const HudStyle& st = hudStyle(el);
-    const float k = s * e.scale;
+    const float k = s * e.scale * cfg_.hudSize;
     const float sts = std::max(1.0f, std::round(ui_.textScale() * 0.75f * hudFont(el))), th = r_.textHeight(sts);
     struct Slot { int kk, wi; bool has; double away; };
     Slot slots[WPN_COUNT];
@@ -3179,7 +3451,7 @@ Game::HudRect Game::drawHudScore(const ScoreText& t, float W, float H, float s, 
     const int el = Settings::HUD_SCORE;
     const Settings::HudElem& e = cfg_.hud[el];
     const HudStyle& st = hudStyle(el);
-    const float k = s * e.scale, fm = hudFont(el);
+    const float k = s * e.scale * cfg_.hudSize, fm = hudFont(el);
     const float ts = std::max(1.0f, std::round(ui_.textScale() * fm)), sts = ts * 1.5f, th = r_.textHeight(ts), sh = r_.textHeight(sts);
     // (the lines' widths: measured again only when a line, the size or the font changes)
     ScoreWidths& cw = hudScoreW_;
@@ -3305,7 +3577,7 @@ Game::HudRect Game::drawHudKillFeed(float W, float H, float s, float top, bool s
     const int el = Settings::HUD_KILLFEED;
     const Settings::HudElem& e = cfg_.hud[el];
     const HudStyle& st = hudStyle(el);
-    const float k = s * e.scale, ts = ui_.textScale() * hudFont(el), th = r_.textHeight(ts);
+    const float k = s * e.scale * cfg_.hudSize, ts = ui_.textScale() * hudFont(el), th = r_.textHeight(ts);
     static const Feed kSample[] = {{"wraith [ROCKET] lynx", {1, 1, 1, 1}, 0}, {"ghost [RIFLE] ember", {1, 1, 1, 1}, 0}, {"lynx [KNIFE] ghost", {1, 1, 1, 1}, 0}};
     const Feed* lines[24];
     int n = 0;
@@ -3353,15 +3625,21 @@ Game::HudRect Game::drawChatBox(float W, float H, float s, float ts0, bool sampl
     const int el = Settings::HUD_CHAT;
     const Settings::HudElem& e = cfg_.hud[el];
     const HudStyle& st = hudStyle(el);
-    const float k = s * e.scale, ts = ts0 * hudFont(el), th = r_.textHeight(ts);
+    const float k = s * e.scale * cfg_.hudSize, ts = ts0 * hudFont(el), th = r_.textHeight(ts);
     if (draw) while (!chatFeed_.empty() && chatFeed_.front().until < time_ && !chatting_) chatFeed_.pop_front();
     static const Feed kSample[] = {{"wraith: nice shot", {1, 1, 1, 1}, 0, 0, true}, {"ember: gg", {1, 1, 1, 1}, 0, 0, true}};
     const Feed* lines[48];
     int n = 0;
     const bool showLines = !e.hidden || chatting_;   // (hidden: only while typing)
     if (sample) for (const Feed& f : kSample) lines[n++] = &f;
-    else if (showLines)
-        for (const Feed& c : chatting_ ? chatLog_ : chatFeed_)   // (chat off: players' lines are hidden, server messages stay)
+    else if (showLines && chatting_) {   // typing: the history (30 lines kept), 12 at a time, scrolled up by chatScroll_
+        const Feed* all[48];
+        int na = 0;
+        for (const Feed& c : chatLog_) if (!(c.player && cfg_.chatOff) && na < 48) all[na++] = &c;
+        chatScroll_ = std::min(chatScroll_, std::max(0, na - 12));
+        for (int i = std::max(0, na - 12 - chatScroll_); i < na - chatScroll_; i++) lines[n++] = all[i];
+    } else if (showLines)
+        for (const Feed& c : chatFeed_)   // (chat off: players' lines are hidden, server messages stay)
             if (!(c.player && cfg_.chatOff) && n < 48) lines[n++] = &c;
     const lay::Align al = !st.has(HudStyle::ALIGN) ? lay::START : st.align == 0 ? lay::START : st.align == 1 ? lay::CENTER : lay::END;
     const float defPad[4] = {6 * k, 4 * k, 6 * k, 4 * k};
@@ -3379,7 +3657,7 @@ Game::HudRect Game::drawChatBox(float W, float H, float s, float ts0, bool sampl
     const lay::Rect r = hudRect_[el] = L.rect(0);
     if (!draw) return {r.x, r.y, r.w, r.h};
     {
-        AlphaScope a(r_, hudOpacity(el));
+        AlphaScope a(r_, hudOpacity(el) * (chatting_ || chatOverMenu_ ? 1.0f : cfg_.chatOpacity));   // (GAMEPLAY > MORE: CHAT OPACITY)
         // (over the settings menu: always on a dark box, the menu's text would show through)
         if (n > 0 && (chatting_ || chatOverMenu_ || st.has(HudStyle::BACKGROUND) || st.has(HudStyle::BORDER)))
             hudBoxDraw(el, r, k, chatOverMenu_ ? Color{0, 0, 0, 0.8f} : chatting_ ? Color{0, 0, 0, 0.4f} : Color{0, 0, 0, 0});
@@ -3399,8 +3677,9 @@ Game::HudRect Game::drawChatBox(float W, float H, float s, float ts0, bool sampl
         float lts = std::max(1.0f, std::round(ui_.textScale()));
         const float x = r.x + (st.has(HudStyle::PADDING) ? st.pad[0] * k : defPad[0]), y = r.y + r.h + 10 * k;
         if (chatOverMenu_) r_.rect(r.x, y - 4 * k, std::max(r.w, r_.textWidth("SAY: " + chatText_, lts) + 16 * k), r_.textHeight(lts) + 8 * k, {0, 0, 0, 0.8f});
-        ui_.label(x, y, "SAY: " + chatText_, kWhite);
-        drawCaret(x, y, lts, false, "SAY: " + chatText_.substr(0, chatCursor_));
+        const char* say = teamChat_ ? "SAY (TEAM): " : "SAY: ";
+        ui_.label(x, y, say + chatText_, kWhite);
+        drawCaret(x, y, lts, false, say + chatText_.substr(0, chatCursor_));
     }
     return {r.x, r.y, r.w, r.h};
 }
@@ -3409,7 +3688,7 @@ Game::HudRect Game::drawKeyOverlay(float W, float H, float s, bool sample, bool 
     const int el = Settings::HUD_KEYS;
     const auto& e = cfg_.hud[el];
     const HudStyle& st = hudStyle(el);
-    const float k = s * e.scale, u = 30 * k, g = st.has(HudStyle::GAP) ? st.gap * k : 4 * k, side = 4 * u + 3 * g;
+    const float k = s * e.scale * cfg_.hudSize, u = 30 * k, g = st.has(HudStyle::GAP) ? st.gap * k : 4 * k, side = 4 * u + 3 * g;
     lay::Rect c;
     const lay::Rect r = hudSimple(el, W, H, 0.5f, 1, W * 0.5f + e.x * s, H - 230 * s + side + e.y * s, k, side, side, c);
     if (!draw) return {r.x, r.y, r.w, r.h};
@@ -3453,7 +3732,7 @@ void Game::drawHudLive(const ModeState& ms, const PlayerSnap* mep, float W, floa
         for (auto& pr : lastProjectiles_) out += pr.type == WPN_STICKY && pr.owner == net_.clientId();   // (this frame's)
         if (out > 0 || heldWeapon_ == WPN_STICKY) {
             const auto& e = he[Settings::HUD_WEAPON];
-            float k = std::max(1.0f, std::round(ts * 0.9f * e.scale));
+            float k = std::max(1.0f, std::round(ts * 0.9f * e.scale * cfg_.hudSize));
             std::string t = "STICKIES " + std::to_string(out) + "/" + std::to_string(weaponAlt().stickyMax);
             r_.text(W - 24 * s - r_.textWidth(t, k) + e.x * s, H - 128 * s * e.scale + e.y * s, k, t, out >= weaponAlt().stickyMax ? Color{1, 0.6f, 0.2f, 1} : hudTint(Settings::HUD_WEAPON, kWhite));
         }
@@ -3612,9 +3891,22 @@ void Game::drawHud() {
     int myTeam = mep ? (mep->team() == TEAM_SPECTATOR ? TEAM_A : mep->team()) : TEAM_A;
     Color fc = rgba(cfg_.colorFriendly), ec = rgba(cfg_.colorEnemy);
     // (held scoreboard: known up front, the round-end message and the tiebreak make way for it)
-    showScores_ = (isDown(A_SCORES) && !chatting_) || opts_.textHeavy || ms.phase == PHASE_MATCH_END;
+    showScores_ = ((cfg_.scoreToggle ? scoresOn_ : isDown(A_SCORES)) && !chatting_) || opts_.textHeavy || ms.phase == PHASE_MATCH_END;
 
     float cx = W * 0.5f, cy = H * 0.5f;
+    {   // HEALTH BARS: MODE'S MAX: a life's max is its spawn health (custom modes set it), or the most seen since
+        const int hp = net_.selfAlive() ? net_.selfHealth() : 0;
+        if (hp > 0 && !hpAlive_) hpMax_ = (float)hp;
+        else if (hp > 0) hpMax_ = std::max(hpMax_, (float)hp);
+        hpAlive_ = hp > 0;
+    }
+    if (hudHidden_ && !paused_ && !chatting_) {   // HIDE HUD: a clean screen (the scoreboard still on its key)
+        if (cfg_.hideHudCrosshair && !(scoped_ && scopeOverlay_ && cfg_.scopeOpacity > 0.001f)) drawCrosshair(cx, cy, s, time_ < hitUntil_, heldWeapon_);
+        while (!killFeed_.empty() && killFeed_.front().until < time_) killFeed_.pop_front();
+        if (showScores_) drawScoreboard();
+        if (ui_.probing()) uiTestActions();
+        return;
+    }
     // the sniper scope's mask and reticle; SCOPE OVERLAY at 0 turns them off and the normal crosshair stays (as the
     // rifle's and crossbow's zoom do)
     const bool scopeShown = scoped_ && scopeOverlay_ && cfg_.scopeOpacity > 0.001f;
@@ -3695,7 +3987,7 @@ void Game::drawHud() {
     }
     const bool rpsOn = (ms.flags & MS_RPS) || opts_.debugRps;   // (drawn over the rest of the HUD, at the end)
     // crosshair (scoped with the overlay on: the scope's reticle replaces it)
-    if (!scopeShown && !paused_ && !rpsOn) drawCrosshair(cx, cy, s, time_ < hitUntil_); // menus open: no crosshair through them
+    if (!scopeShown && !paused_ && !rpsOn) drawCrosshair(cx, cy, s, time_ < hitUntil_, heldWeapon_); // menus open: no crosshair through them
     if (!paused_ && !rpsOn && net_.selfAlive()) drawDamageArcs(cx, cy, s);
     if (!paused_ && !rpsOn) drawKillMark(cx, cy, s);
     if (!cfg_.dmgNums) dmgNums_.clear();   // (VISUALS > DAMAGE NUMBERS off)
@@ -3741,8 +4033,9 @@ void Game::drawHud() {
     float progress = -1;
     if (ms.mode == MODE_BOMB && ms.phase == PHASE_LIVE) {
         bool att = myTeam == ms.attackers;
-        if (ms.bombState == BOMB_PLANTED) obj = att ? "BOMB PLANTED - DEFEND IT" : "BOMB PLANTED - DEFUSE IT (HOLD E)";
-        else if (ms.bombCarrier == me) obj = "YOU HAVE THE BOMB - PLANT AT A SITE (HOLD E)";
+        const std::string use = "(HOLD " + keyOf(A_USE) + ")";   // (the hint names your USE key)
+        if (ms.bombState == BOMB_PLANTED) obj = att ? "BOMB PLANTED - DEFEND IT" : "BOMB PLANTED - DEFUSE IT " + use;
+        else if (ms.bombCarrier == me) obj = "YOU HAVE THE BOMB - PLANT AT A SITE " + use;
         else if (ms.bombState == BOMB_DROPPED) obj = att ? "BOMB DROPPED - PICK IT UP" : "BOMB DROPPED";
         else obj = att ? "ATTACK - PLANT THE BOMB" : "DEFEND THE SITES";
         if (ms.actionPlayer != 255) progress = ms.actionProgress;
@@ -3937,6 +4230,24 @@ void Game::drawHud() {
         }
     }
     noticeEnd_ = ny;
+    if (cfg_.teamPanel && modeIsTeamBased(ms.mode) && !paused_ && net_.hasSnapshot()) drawTeamPanel(H, s, ts);
+    if (cfg_.captions && time_ < captionUntil_ && !paused_) {   // ANNOUNCER CAPTIONS: the line, under the crosshair
+        const float cts = std::max(1.0f, std::round(ts * 1.2f));
+        const float tw = r_.textWidth(captionText_, cts), th = r_.textHeight(cts);
+        r_.rect(cx - tw * 0.5f - 8 * s, H * 0.64f - 4 * s, tw + 16 * s, th + 8 * s, {0, 0, 0, 0.55f});
+        r_.text(cx - tw * 0.5f, H * 0.64f, cts, captionText_, kWhite);
+    }
+    if ((cfg_.showFps || cfg_.showPing) && !perfStage_) {   // SHOW FPS / PING: the top right corner, no widget needed
+        cornerFrames_++;
+        if (time_ - cornerAt_ >= 0.5) { cornerFps_ = (int)std::lround(cornerFrames_ / std::max(1e-6, time_ - cornerAt_)); cornerFrames_ = 0; cornerAt_ = time_; }
+        std::string t;
+        if (cfg_.showFps) t = std::to_string(cornerFps_) + " FPS";
+        if (cfg_.showPing && mep) t += (t.empty() ? "" : "  ") + std::to_string(mep->ping) + " MS";
+        if (!t.empty()) {
+            const float cts = std::max(1.0f, std::round(ts * 0.9f));
+            r_.text(W - 10 * s - r_.textWidth(t, cts), 6 * s, cts, t, kWhite);
+        }
+    }
 
     // tourney: the bracket between matches / rounds and on TAB, so everyone sees who's still in
     bool showBracket = ms.mode == MODE_TOURNEY && !bracket_.empty() &&
@@ -3949,6 +4260,15 @@ void Game::drawHud() {
     }
     if (showBracket && !paused_) drawBracket();
     else if (board) drawScoreboard();
+    if (board && ms.phase == PHASE_MATCH_END && cfg_.matchSummary && !opts_.textHeavy) {   // MATCH SUMMARY: under the scoreboard
+        const ScoreboardBox b = scoreboardBox(net_.latest().players.size());
+        char t[160];
+        snprintf(t, sizeof t, "YOUR MATCH:  %d SHOTS  %d HITS  %d%% ACCURACY  %.0f DAMAGE  BEST STREAK %d", matchShots_, matchHits_,
+                 matchShots_ ? (int)std::lround(100.0 * std::min(matchHits_, matchShots_) / matchShots_) : 0, matchDmg_, matchBestStreak_);
+        const float y0 = std::min(b.y + b.h + 12 * s, H - 40 * s);
+        r_.rect(b.x, y0, b.w, 28 * s, {0, 0, 0, 0.7f});
+        ui_.labelCentered(b.x + b.w * 0.5f, y0 + 6 * s, t, kWhite, 1.0f, b.w - 16 * s);
+    }
     if (paused_) {
         // dim the game behind the menu so HUD text doesn't show through its panels; not on the pages
         // that preview the HUD / crosshair over the game
@@ -4081,6 +4401,40 @@ void Game::consolePrint(const std::string& t) {
     while (consoleLog_.size() > 200) consoleLog_.pop_front();
 }
 
+// a key's code from its name as the keys pages show it ("R", "MOUSE 4", "WHEEL UP", "F5"), 0 if none
+static int codeOfKeyName(const std::string& name) {
+    const std::string want = upper(name);
+    for (int c = 1; c < kMouseCode; c++) if (upper(inputName(c)) == want && inputName(c) != "-" && inputName(c).rfind("KEY ", 0) != 0) return c;
+    for (int c = kMouseCode; c < kMouseCode + 8; c++) if (upper(inputName(c)) == want) return c;
+    for (int c : {kWheelUp, kWheelDown}) if (upper(inputName(c)) == want) return c;
+    return 0;
+}
+
+void Game::runCommands(const std::string& cmds, int depth) {
+    if (depth > 8) { consolePrint("too deep (an alias or exec that runs itself?)"); return; }
+    consoleDepth_ = depth;
+    std::string one;
+    std::istringstream in(cmds);
+    while (std::getline(in, one, ';')) {
+        while (!one.empty() && (one[0] == ' ' || one[0] == '\t')) one.erase(0, 1);
+        while (!one.empty() && (one.back() == ' ' || one.back() == '\r')) one.pop_back();
+        if (one.empty() || one[0] == '#') continue;
+        consoleDepth_ = depth;
+        runConsole(one);
+    }
+    consoleDepth_ = 0;
+}
+
+void Game::execFile(const std::string& name, bool quiet) {
+    std::string file = name.find('.') == std::string::npos ? name + ".cfg" : name;
+    if (!plainFileName(file)) { consolePrint("exec: a file name in your data folder (no folders)"); return; }
+    std::ifstream f(utf8Path(userDataPath(file)), std::ios::binary);
+    if (!f) { if (!quiet) consolePrint("exec: no " + file + " in your data folder"); return; }
+    const int depth = consoleDepth_;
+    std::string line;
+    while (std::getline(f, line)) runCommands(line, depth + 1);
+}
+
 void Game::runConsole(const std::string& line) {
     consolePrint("> " + line);
     std::istringstream in(line);
@@ -4090,9 +4444,59 @@ void Game::runConsole(const std::string& line) {
     while (!v.empty() && v[0] == ' ') v.erase(0, 1);
     if (k.empty()) return;
     auto lines = [&] { std::vector<std::string> out; std::istringstream t(cfg_.toText()); std::string l; while (std::getline(t, l)) out.push_back(l); return out; };
+    // binds, aliases, exec, toggle (1.19.4): keys and words that run console lines
+    if (k == "bind" || k == "unbind") {
+        std::istringstream a(v);
+        std::string key, cmd;
+        a >> key;
+        std::getline(a, cmd);
+        while (!cmd.empty() && cmd[0] == ' ') cmd.erase(0, 1);
+        if (cmd.size() >= 2 && cmd.front() == '"' && cmd.back() == '"') cmd = cmd.substr(1, cmd.size() - 2);
+        const int c = codeOfKeyName(key);
+        if (!c) { consolePrint("no key called '" + key + "' (names as CONTROLS shows them: R, F5, MOUSE 4, WHEEL UP)"); return; }
+        if (k == "unbind") { cfg_.cmdBinds.erase(c); consolePrint("  " + upper(inputName(c)) + " runs nothing"); }
+        else if (cmd.empty()) { auto it = cfg_.cmdBinds.find(c); consolePrint("  " + upper(inputName(c)) + (it == cfg_.cmdBinds.end() ? " runs nothing" : " runs: " + it->second)); return; }
+        else { cfg_.cmdBinds[c] = cmd; consolePrint("  " + upper(inputName(c)) + " runs: " + cmd + " (its CONTROLS action too, if it has one)"); }
+        cfg_.save();
+        return;
+    }
+    if (k == "binds") {
+        if (cfg_.cmdBinds.empty()) consolePrint("  no command binds - bind <key> <commands>");
+        for (auto& b : cfg_.cmdBinds) consolePrint("  " + upper(inputName(b.first)) + ": " + b.second);
+        return;
+    }
+    if (k == "alias" || k == "unalias") {
+        std::istringstream a(v);
+        std::string name, cmd;
+        a >> name;
+        std::getline(a, cmd);
+        while (!cmd.empty() && cmd[0] == ' ') cmd.erase(0, 1);
+        if (cmd.size() >= 2 && cmd.front() == '"' && cmd.back() == '"') cmd = cmd.substr(1, cmd.size() - 2);
+        if (name.empty()) { for (auto& al : cfg_.aliases) consolePrint("  " + al.first + ": " + al.second); if (cfg_.aliases.empty()) consolePrint("  no aliases - alias <name> <commands>"); return; }
+        if (k == "unalias" || cmd.empty()) cfg_.aliases.erase(name);
+        else cfg_.aliases[name] = cmd;
+        cfg_.save();
+        consoleWords_.clear();
+        return;
+    }
+    if (k == "exec") { execFile(v); return; }
+    if (k == "toggle") {   // toggle <setting> [a b]: between a and b (default 0 and 1)
+        std::istringstream a(v);
+        std::string key, va = "0", vb = "1";
+        a >> key >> va >> vb;
+        std::string cur;
+        for (auto& l : lines()) if (l.rfind(key + "=", 0) == 0) cur = l.substr(key.size() + 1);
+        if (key.empty() || cur.empty()) { consolePrint("toggle <setting> [a b]: no setting '" + key + "'"); return; }
+        runConsole(key + " " + (cur == va ? vb : va));
+        return;
+    }
+    if (auto al = cfg_.aliases.find(k); al != cfg_.aliases.end()) { runCommands(al->second, consoleDepth_ + 1); return; }
     if (k == "help") {
         consolePrint("<setting>          show it          <setting> <value>   set it (saved)");
         consolePrint("list [text]        settings (containing text)     clear    empty this log");
+        consolePrint("bind <key> <commands>   a key runs console lines (';' between)   unbind <key>   binds");
+        consolePrint("alias <name> <commands>   a word that runs them   exec <file>   autoexec.cfg runs at start");
+        consolePrint("toggle <setting> [a b]   flips it between a and b (0 and 1)");
         consolePrint("TAB completes   UP/DOWN history   CTRL+V pastes   CTRL+C copies the line (empty line or CTRL+SHIFT+C: the log)");
         consolePrint("/<command>         a server command (callvote, team, kill, ...)");
         consolePrint("e.g.  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5");
@@ -4113,22 +4517,17 @@ void Game::runConsole(const std::string& line) {
     cfg_.set(k, v);
     cfg_.finishLoad();
     cfg_.save();
-    audio_.setMasterVolume(cfg_.volume);   // (the ones that need applying; the rest are read every frame)
-    audio_.setEffectsVolume(cfg_.volumeEffects);
-    audio_.setAnnouncerVolume(cfg_.volumeAnnouncer);
-    audio_.setQuips(cfg_.quips);
-    audio_.setQuipVolume(cfg_.volumeQuips);
-    audio_.setOutputDevice(cfg_.audioOutput);   // (nothing unless it changed)
+    applySettings();
     if (k == "voice") audio_.setAnnouncer(cfg_.announcerVoice);   // (it resamples every line: only when it's the one set)
     if ((k == "monitor" || k == "fullscreen_hz") && cfg_.displayMode != 0) applyDisplayMode();
-    ui_.accent = rgba(cfg_.colorFriendly);
     for (auto& l : lines()) if (l.rfind(k + "=", 0) == 0) consolePrint("  " + k + " = " + l.substr(k.size() + 1));
     consoleWords_.clear();   // (a setting can add a key: mode_hud_*, mode_controls_*)
 }
 
 // Every word the console knows: its commands and every setting name.
 std::vector<std::string> Game::consoleWords() const {
-    std::vector<std::string> out = {"help", "list", "clear"};
+    std::vector<std::string> out = {"help", "list", "clear", "bind", "unbind", "binds", "alias", "unalias", "exec", "toggle"};
+    for (auto& a : cfg_.aliases) out.push_back(a.first);
     std::istringstream t(cfg_.toText());
     std::string l;
     while (std::getline(t, l)) if (size_t e = l.find('='); e != std::string::npos && e > 0) out.push_back(l.substr(0, e));
@@ -4582,7 +4981,12 @@ void Game::onRaceSplit(int cp, int ms) {
             }
         }
     }
-    if (cp == 1) raceSplits_.clear();
+    if (cp == 1) {   // a run starts: the ghost's clock and this run's path from its start
+        raceSplits_.clear();
+        ghostRunStart_ = time_ - ms / 1000.0;
+        const float keepFrom = (float)(ghostRunStart_);
+        ghostRec_.erase(ghostRec_.begin(), std::find_if(ghostRec_.begin(), ghostRec_.end(), [&](const GhostPt& g) { return g.t >= keepFrom; }));
+    }
     if ((int)raceSplits_.size() != cp - 1) { raceSplits_.clear(); audio_.play(cp == (int)net_.map().raceCheckpoints.size() ? SND_FINISH : SND_CHECKPOINT, 0.9f); return; } // missed one: this run doesn't count
     raceSplits_.push_back(ms);
     const std::string map = net_.map().name;
@@ -4618,11 +5022,78 @@ void Game::onRaceSplit(int cp, int ms) {
     }
     bool pb = !best || ms < best->ms;
     raceRuns_.push_back(run);
+    if (pb && ghostRunStart_ >= 0 && !ghostRec_.empty()) {   // the new best's path becomes the ghost (times from the run's start)
+        ghostBest_.clear();
+        for (const GhostPt& g : ghostRec_) ghostBest_.push_back({g.t - (float)ghostRunStart_, g.pos});
+        ghostMap_ = map;
+        std::ostringstream f;
+        f.precision(4);
+        for (const GhostPt& g : ghostBest_) f << std::fixed << g.t << " " << g.pos.x << " " << g.pos.y << " " << g.pos.z << "\n";
+        if (ghostWriter_.t.joinable()) ghostWriter_.t.join();
+        ghostWriter_.t = std::thread([path = userDataPath("ghosts/" + safeMapName(map) + ".txt"), text = f.str()] {
+            std::error_code ec;
+            std::filesystem::create_directories(std::filesystem::path(utf8Path(path)).parent_path(), ec);
+            writeFileAtomic(path, text);
+        });
+    }
+    ghostRunStart_ = -1;
     if (trial && pb) { // the game server posts every run itself (the Worker keeps only your best); refresh the board after
         rank_.fetchRaceBoard(map, 3);
         notify("NEW PERSONAL BEST " + fmtRace(ms) + " - THE SERVER SENDS IT TO THE LEADERBOARD", 5);
     } else if (pb) notify("NEW PERSONAL BEST " + fmtRace(ms), 5);
-    if (pb && cfg_.announcer >= 1) audio_.play(SND_VOICE_HIGH_SCORE, 1.0f);
+    if (pb && cfg_.announcer >= 1) announce(SND_VOICE_HIGH_SCORE);
+}
+
+// TEAM PANEL (team modes): each teammate's name over a health bar, then a pip for every enemy (lit while alive), at the
+// left of the screen under the kill feed's height
+void Game::drawTeamPanel(float H, float s, float ts) {
+    const PlayerSnap* me = net_.findPlayer(net_.clientId());
+    const int myTeam = me && me->team() != TEAM_SPECTATOR ? me->team() : TEAM_A;
+    const float x = 12 * s, w = 150 * s, lts = std::max(1.0f, std::round(ts * 0.8f)), th = r_.textHeight(lts);
+    float y = H * 0.36f;
+    int enemies = 0, alive = 0;
+    for (const PlayerSnap& p : net_.latest().players) {
+        if (p.team() == TEAM_SPECTATOR) continue;
+        const bool up = (p.flags & PS_ALIVE) != 0;
+        if (p.team() != myTeam) { enemies++; alive += up; continue; }
+        r_.rect(x - 4 * s, y - 2 * s, w + 8 * s, th + 10 * s, {0, 0, 0, 0.4f});
+        r_.text(x, y, lts, net_.playerName(p.id), up ? kWhite : kGrey);
+        const float f = up ? clampf(p.health / std::max(1.0f, hpMax_), 0, 1) : 0;
+        r_.rect(x, y + th + 2 * s, w, 4 * s, {0, 0, 0, 0.6f});
+        r_.rect(x, y + th + 2 * s, w * f, 4 * s, p.health > hpMax_ * 0.3f ? rgba(cfg_.colorFriendly) : kRed);
+        y += th + 12 * s;
+    }
+    for (int i = 0; i < enemies; i++)   // (the enemies: lit while alive, the dead dark)
+        r_.rect(x + i * 12 * s, y + 2 * s, 8 * s, 8 * s, i < alive ? rgba(cfg_.colorEnemy) : Color{0.25f, 0.25f, 0.28f, 0.8f});
+}
+
+// The race ghost: while racing, your position 20 times a second (the run's path once it starts); the best run on this
+// map drawn as a see-through figure where it was at the same time into its run
+void Game::updateGhost() {
+    const int mode = net_.mode().mode;
+    if (!isRaceMode(mode) || !net_.selfAlive() || net_.playback()) { ghostRunStart_ = -1; return; }
+    const std::string& map = net_.map().name;
+    if (ghostMap_ != map) {   // (a new map: its saved ghost, if any)
+        ghostMap_ = map;
+        ghostBest_.clear();
+        std::ifstream f(utf8Path(userDataPath("ghosts/" + safeMapName(map) + ".txt")));
+        GhostPt g;
+        while (f >> g.t >> g.pos.x >> g.pos.y >> g.pos.z) ghostBest_.push_back(g);
+    }
+    if (time_ >= ghostNext_) {
+        ghostNext_ = time_ + 0.05;
+        ghostRec_.push_back({(float)time_, net_.predicted().pos});
+        if (ghostRec_.size() > 24000) ghostRec_.erase(ghostRec_.begin(), ghostRec_.begin() + 4000);   // (20 minutes at most)
+    }
+    if (!cfg_.ghost || ghostRunStart_ < 0 || ghostBest_.size() < 2) return;
+    const float t = (float)(time_ - ghostRunStart_);
+    if (t > ghostBest_.back().t) return;   // (the ghost finished)
+    auto it = std::upper_bound(ghostBest_.begin(), ghostBest_.end(), t, [](float v, const GhostPt& g) { return v < g.t; });
+    if (it == ghostBest_.begin()) return;
+    const GhostPt& b = *it, & a = *(it - 1);
+    const float f = b.t > a.t ? clampf((t - a.t) / (b.t - a.t), 0, 1) : 0;
+    const Vec3 p = a.pos + (b.pos - a.pos) * f;
+    r_.translucentBox({p - Vec3(0.3f, 0, 0.3f), p + Vec3(0.3f, kPlayerHeight, 0.3f)}, {0.6f, 0.85f, 1.0f, 0.3f});
 }
 
 void Game::startTimeTrial() {
@@ -4899,6 +5370,102 @@ struct PauseCol {
 float pauseH(int rows, int sections, bool lastRow) { return rows * (kPRow + kPGap) - kPGap + sections * (20 + 24 - kPGap) + (lastRow ? 20 + kPRow : 0); }
 }
 
+// PRACTICE (pause > HOST; the server takes it only while you're alone with bots): save / load a spot, take no damage,
+// bots that don't fire, all off; BACK
+void Game::drawPracticeMenu() {
+    const SetLayout L = ingameLayout(kPW + 32);
+    const float kH = 40 + pauseH(3, 0, true);
+    PauseCol c{ui_, L, ingameTop(L, kH)};
+    ui_.panel(L.X(kPX - 16), L.Y(c.y - 16), L.L(kPW + 32), L.L(kH + 32), 0.95f);
+    ui_.labelCentered(L.X(640), L.Y(c.y), "PRACTICE (ALONE WITH BOTS)", kWhite, 1.0f, L.L(kPW));
+    c.y += 40;
+    if (c.half(1, "SAVE POSITION", UiExp::cmd("practice savepos"))) net_.sendCommand("practice savepos");
+    if (c.half(2, "LOAD POSITION", UiExp::cmd("practice loadpos"))) { net_.sendCommand("practice loadpos"); paused_ = false; practiceMenu_ = false; }
+    c.next();
+    if (c.half(1, "TAKE NO DAMAGE", UiExp::cmd("practice god"))) net_.sendCommand("practice god");
+    if (c.half(2, "BOTS DON'T FIRE", UiExp::cmd("practice passive"))) net_.sendCommand("practice passive");
+    c.next();
+    if (c.full("ALL OFF", UiExp::cmd("practice reset"))) net_.sendCommand("practice reset");
+    c.next();
+    c.last();
+    if (c.half(1, "BACK", UiExp::nav("ingame/pause"))) practiceMenu_ = false;
+    if (c.half(2, "RESTART MAP", UiExp::cmd("restart"))) { net_.sendCommand("restart"); paused_ = false; practiceMenu_ = false; }
+}
+
+// SETTINGS SEARCH (1.19.4): a field over the tab row's right end; while it's in use, what's typed lists matching settings
+// (labels from tools/settings_index.py, plus the keys' action names) in place of the page, each a button that opens its
+// page. True: the list was drawn (the page isn't)
+bool Game::drawSettingsSearch(const SetLayout& L) {
+    ui_.textField(62, L.X(836), L.Y(2), L.L(176), L.L(26), setSearch_, 24, UiExp::local().withId("SEARCH").typing("FOG"));
+    if (setSearch_.empty()) { ui_.hint(L.X(836 - 70), L.Y(8), "SEARCH:", kGrey, L.L(66)); searchTyping_ = false; return false; }
+    const bool wasTyping = searchTyping_;
+    searchTyping_ = ui_.focused(62);   // (not typing(): a slider or colour being typed into has the keyboard too)
+    if (!searchTyping_ && !(wasTyping && uiIn_.pressed)) return false;
+    struct Hit { std::string label; int tab, more, sub; };
+    std::vector<Hit> hits;
+    const std::string q = upper(setSearch_);
+    for (const SettingsIndexEntry& e : kSettingsIndex)
+        if (std::string(e.label).find(q) != std::string::npos && hits.size() < 14) hits.push_back({e.label, e.tab, e.more, e.sub});
+    for (int a = 0; a < A_COUNT && hits.size() < 14; a++)   // (a key: its keys page)
+        if (std::string(actionName(a)).find(q) != std::string::npos && a != A_CROUCH) {
+            const int sub = a >= A_TEAMCHAT && a <= A_RACERESTART ? 2 : (a <= A_WEAPON8 || a == A_NEXTWEAPON || a == A_PREVWEAPON || a == A_WEAPON9 || a == A_WEAPON10 || a == A_RACERESET) ? 1 : 0;
+            hits.push_back({std::string(actionName(a)) + " (KEY)", TAB_CONTROLS, 0, sub});
+        }
+    static const char* const tabNames[] = {"PLAYER", "GAMEPLAY", "CONTROLS", "VIDEO + AUDIO", "CROSSHAIR", "HUD"};
+    const float x = L.X(268), w = L.L(744), h = L.L(32);
+    float y = L.Y(88);
+    // (the list only while the field is in use; the click that picks a result arrives after the press dropped focus, so
+    // a click on the list still counts; a click anywhere else puts it away and goes to the page)
+    const float listH = std::max<float>(1, (float)hits.size()) * (h + 4 * L.s);
+    if (!searchTyping_ && !(uiIn_.mx >= x && uiIn_.mx < x + w && uiIn_.my >= y && uiIn_.my < y + listH)) return false;
+    if (hits.empty()) { ui_.hint(x, y + 6 * L.s, "NOTHING MATCHES \"" + upper(setSearch_) + "\"", kGrey, w); return true; }
+    for (const Hit& hit : hits) {
+        std::string where = tabNames[hit.tab];
+        if (hit.more) where += hit.more == 1 ? " > MORE" : " > MORE " + std::to_string(hit.more);
+        if (hit.sub == 1) where += " > MOVE KEYS"; else if (hit.sub == 2) where += " > MORE KEYS";
+        // (its page as a screen path, for the UI test)
+        static const char* const kPaths[] = {"~settings", "~settings/gameplay", "~settings/gameplay/more", "~settings/controls", "~settings/controls/movement",
+                                             "~settings/controls/keys2", "~settings/controls/more", "~settings/video", "~settings/video/more",
+                                             "~settings/video/more2", "~settings/video/more3", "~settings/crosshair", "~settings/hud"};
+        const int pi = hit.tab == 0 ? 0 : hit.tab == 1 ? (hit.more ? 2 : 1) : hit.tab == 2 ? (hit.more ? 6 : 3 + hit.sub)
+                     : hit.tab == 3 ? 7 + std::min(hit.more, 3) : hit.tab == 4 ? 11 : 12;
+        if (ui_.button(x, y, w, h, hit.label + "  -  " + where, UiExp::nav(kPaths[pi]).withId("SEARCH RESULT").clipOk().optional())) {
+            openSettingsTab(hit.tab);
+            moreOpen_ = hit.more; controlsSub_ = hit.sub;
+            setSearch_.clear();
+            ui_.clearFocus();
+            return true;
+        }
+        y += h + 4 * L.s;
+    }
+    return true;
+}
+
+// PLAYERS (pause > HOST): everyone on your server, each with KICK (yourself excepted); ADD BOT / KICK BOTS / RESTART; BACK
+void Game::drawPlayersMenu() {
+    std::vector<int> ids;
+    if (net_.hasSnapshot()) for (auto& p : net_.latest().players) ids.push_back(p.id);
+    const int n = std::min((int)ids.size(), 12);
+    const SetLayout L = ingameLayout(kPW + 32);
+    const float kH = 40 + pauseH(n + 1, 0, true);
+    PauseCol c{ui_, L, ingameTop(L, kH)};
+    ui_.panel(L.X(kPX - 16), L.Y(c.y - 16), L.L(kPW + 32), L.L(kH + 32), 0.95f);
+    ui_.labelCentered(L.X(640), L.Y(c.y), "PLAYERS ON YOUR SERVER", kWhite, 1.0f, L.L(kPW));
+    c.y += 40;
+    for (int k = 0; k < n; k++) {
+        const int id = ids[k];
+        ui_.labelFit(L.X(kPX), L.Y(c.y + 8), L.L(kPHalf), net_.playerName(id), kWhite);
+        if (id != net_.clientId() && c.half(2, "KICK", UiExp::cmd("kick").withId("KICK").optional())) net_.sendCommand("kick " + std::to_string(id));
+        c.next();
+    }
+    if (c.half(1, "ADD BOT", UiExp::cmd("addbot"))) net_.sendCommand("addbot");
+    if (c.half(2, "KICK BOTS", UiExp::cmd("kickbots"))) net_.sendCommand("kickbots");
+    c.next();
+    c.last();
+    if (c.half(1, "BACK", UiExp::nav("ingame/pause"))) playersMenu_ = false;
+    if (c.half(2, "RESTART MATCH", UiExp::cmd("restart"))) { net_.sendCommand("restart"); paused_ = false; playersMenu_ = false; }
+}
+
 // Everything players can call a vote on (majority of human players decides): CALL A VOTE at text 3; START THE MATCH
 // (warmup), the tourney lists, CHANGE MAP / MODE beside RANKED (ranked: the map on its own, LADDER | RANKED OFF),
 // EDIT THE MAP TOGETHER, MOVE A PLAYER TO SPECTATOR; a BOTS section; BACK on the last row.
@@ -4993,6 +5560,8 @@ void Game::drawPauseMenu(float cx, float y) {
     }
     if (picker_ != PICK_NONE) { drawPicker(cx, y); return; }
     if (voteMenu_) { drawVoteMenu(cx, y); return; }
+    if (practiceMenu_) { drawPracticeMenu(); return; }
+    if (playersMenu_) { drawPlayersMenu(); return; }
     if (queueMenu_) { drawQueueMenu(cx, y); return; }
     const SetLayout L = ingameLayout(kPW + 32);
     if (net_.playback()) { // watching a demo
@@ -5001,16 +5570,16 @@ void Game::drawPauseMenu(float cx, float y) {
         ui_.panel(L.X(kPX - 16), L.Y(c.y - 16), L.L(kPW + 32), L.L(kH + 32), 0.95f);
         if (c.full("RESUME", UiExp::nav("ingame"))) paused_ = false;
         c.next();
-        if (c.full("SETTINGS", UiExp::nav("ingame/pause/settings"))) { settingsInGame_ = true; openSettingsTab(TAB_PLAYER); }
+        if (c.full("SETTINGS", UiExp::nav("ingame/pause/settings"))) { settingsInGame_ = true; openSettingsTab(settingsStartTab()); }
         c.next();
         c.last();
         if (c.half(1, "STOP DEMO", UiExp::nav("demos"))) { leaveGame(); setScreen(Screen::Demos); return; }
-        if (c.half(2, "QUIT", UiExp::quit())) quit_ = true;
+        if (c.half(2, confirmArmed("quit") ? "SURE? QUIT" : "QUIT", (cfg_.confirmLeave && !confirmArmed("quit") ? UiExp::state("confirm", "quit") : UiExp::quit()).withId("QUIT")) && confirmed("quit")) quit_ = true;
         return;
     }
     const bool teamMode = modeIsTeamBased(net_.mode().mode), ranked = net_.mode().flags & MS_RANKED;
     const int pairs = (teamMode ? 2 : 1) + 4;   // (JOIN A + B or PLAY), SPECTATE, VOTE, QUEUE, RECORD DEMO
-    const int rows = 1 + (pairs + 1) / 2 + 1 + (host_ ? 2 + (ranked ? 0 : 1) : 0);
+    const int rows = 1 + (pairs + 1) / 2 + 1 + (host_ ? 2 + (ranked ? 0 : 2) : 0);
     const float kH = pauseH(rows, host_ ? 1 : 0, true);
     PauseCol c{ui_, L, ingameTop(L, kH)};
     ui_.panel(L.X(kPX - 16), L.Y(c.y - 16), L.L(kPW + 32), L.L(kH + 32), 0.95f);
@@ -5034,7 +5603,7 @@ void Game::drawPauseMenu(float cx, float y) {
     if (net_.recording()) {
         if (pair("STOP RECORDING (" + fmtTime((float)net_.recordingTime()) + ")", UiExp::state("recording", "0").withId("STOP RECORDING"))) { net_.stopRecording(); notify("DEMO SAVED - MAIN MENU > DEMOS", 4); }
     } else if (pair("RECORD DEMO", UiExp::state("recording", "1"))) startRecording();
-    if (c.full("SETTINGS", UiExp::nav("ingame/pause/settings"))) { settingsInGame_ = true; openSettingsTab(TAB_PLAYER); }
+    if (c.full("SETTINGS", UiExp::nav("ingame/pause/settings"))) { settingsInGame_ = true; openSettingsTab(settingsStartTab()); }
     c.next();
     if (host_) {   // the host's controls: start now, reload the map file (picks up edits to it), change map / mode live, edit together
         c.section("HOST");
@@ -5046,11 +5615,19 @@ void Game::drawPauseMenu(float cx, float y) {
         if (!ranked) {
             if (c.full("EDIT THE MAP TOGETHER", UiExp::cmd("editmode on"))) { net_.sendCommand("editmode on"); paused_ = false; }
             c.next();
+            if (c.half(1, "PLAYERS", UiExp::nav("ingame/pause/players"))) playersMenu_ = true;
+            if (c.half(2, "PRACTICE", UiExp::nav("ingame/pause/practice"))) practiceMenu_ = true;
+            c.next();
         }
     }
     c.last();
-    if (c.half(1, !testMap_.empty() ? "BACK TO EDITOR" : host_ ? "STOP HOSTING" : "DISCONNECT", UiExp::nav(!testMap_.empty() ? "editor" : "main"))) { leaveGame(); return; }
-    if (c.half(2, "QUIT", UiExp::quit())) quit_ = true;
+    {   // (CONFIRM LEAVE: STOP HOSTING / DISCONNECT and QUIT ask SURE? first; BACK TO EDITOR doesn't)
+        const char* lv = !testMap_.empty() ? "BACK TO EDITOR" : host_ ? "STOP HOSTING" : "DISCONNECT";
+        const bool ask = testMap_.empty() && cfg_.confirmLeave && !confirmArmed("leave");
+        if (c.half(1, testMap_.empty() && confirmArmed("leave") ? "SURE? " + std::string(lv) : std::string(lv), (ask ? UiExp::state("confirm", "leave") : UiExp::nav(!testMap_.empty() ? "editor" : "main")).withId(lv)) &&
+            (!testMap_.empty() || confirmed("leave"))) { confirmWhat_.clear(); leaveGame(); return; }
+    }
+    if (c.half(2, confirmArmed("quit") ? "SURE? QUIT" : "QUIT", (cfg_.confirmLeave && !confirmArmed("quit") ? UiExp::state("confirm", "quit") : UiExp::quit()).withId("QUIT")) && confirmed("quit")) quit_ = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -5066,7 +5643,7 @@ void Game::drawPauseMenu(float cx, float y) {
 namespace {
 constexpr float kColL = 268, kColR = 652, kColW = 360, kHalfW = 176, kRowH = 32;
 constexpr float kHudFootY = 560;   // (the HUD tab's footer: clear of the bottom row of the HUD under it)
-const Color kHintC = {0.7f, 0.72f, 0.75f, 1}, kLabelC = {0.85f, 0.87f, 0.9f, 1};
+const Color kLabelC = {0.85f, 0.87f, 0.9f, 1};
 constexpr int kNameColorOn = 0xFFD040;   // NAME COLOR turned on (the old R / G / B sliders' default)
 constexpr int kCustomInterpMs = 10;      // SMOOTHING: CUSTOM starts here (and a right-click on its slider goes back to it)
 
@@ -5086,8 +5663,8 @@ struct SetFlow {
     void next() { y += kRowH + 8; }
     // hint lines under the row just placed (right after next())
     void hint(const std::string& a, const std::string& b = std::string()) {
-        ui.hint(x(), L.Y(y - 4), a, kHintC, w());
-        if (!b.empty()) { ui.hint(x(), L.Y(y + 10), b, kHintC, w()); y += 14; }
+        ui.hint(x(), L.Y(y - 4), a, kGrey, w());
+        if (!b.empty()) { ui.hint(x(), L.Y(y + 10), b, kGrey, w()); y += 14; }
         y += 16;
     }
 };
@@ -5103,6 +5680,7 @@ void Game::openSettingsTab(int tab) {
     setTab_ = tab;
     controlsSub_ = 0;
     fontsOpen_ = devicesOpen_ = widgetEdit_ = false;
+    moreOpen_ = 0;
     widgetSel_ = -1;
     filePick_ = 0;
     captureAction_ = -1;
@@ -5113,6 +5691,7 @@ void Game::openSettingsTab(int tab) {
 // BACK and Esc: save, send what changed, back where settings was opened from (and on its first tab next time)
 void Game::leaveSettings() {
     if (widgetEdit_) widgets_.save(activeHudPath());
+    cfg_.lastTab = setTab_;   // (GAMEPLAY > MORE: REMEMBER LAST TAB opens it there next time)
     openSettingsTab(TAB_PLAYER);
     linkDiscord();
     if (net_.state() == ConnState::Connected) net_.sendCommand("name " + cfg_.name);
@@ -5132,7 +5711,11 @@ void Game::debugSettingsTab() {
     for (int i = 0; i < 6; i++) if (t.rfind(tabs[i], 0) == 0) setTab_ = i;
     if (t == "fonts") fontsOpen_ = true;
     if (t == "video/devices") { devicesOpen_ = true; devListed_ = false; }
+    if (t == "video/more" || t == "controls/more" || t == "gameplay/more") moreOpen_ = 1;
+    if (t == "video/more2") moreOpen_ = 2;
+    if (t == "video/more3") moreOpen_ = 3;
     if (t == "controls/movement") controlsSub_ = 1;
+    if (t == "controls/keys2") controlsSub_ = 2;
     if (t == "controls/files") filePick_ = 2;
     if (t == "hud/elements") ui_.openPopup("ELEMENT", true);
     if (t == "hud/widgets") { widgetEdit_ = true; widgetSel_ = 0; }
@@ -5166,8 +5749,10 @@ void Game::drawSettings() {
         r_.rect(L.X(268), L.Y(72), L.L(744), L.L(2), ui_.accent);
         if (pick >= 0) { openSettingsTab(pick); return; }   // (next frame: the new tab)
     }
-    if (fontsOpen_) drawFontSettings(L);
+    if (!modal && !widgetEdit_ && drawSettingsSearch(L)) {}   // (the search's list in place of the page)
+    else if (fontsOpen_) drawFontSettings(L);
     else if (devicesOpen_) drawDeviceSettings(L);
+    else if (moreOpen_) drawMoreSettings(L);
     else switch (setTab_) {
         case TAB_PLAYER: drawPlayerSettings(L); break;
         case TAB_GAMEPLAY: drawGameplaySettings(L); break;
@@ -5182,9 +5767,30 @@ void Game::drawSettings() {
         if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav("~settings"))) { fontsOpen_ = false; cfg_.save(); }
     } else if (devicesOpen_) {
         if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav("~settings/video"))) { devicesOpen_ = false; cfg_.save(); }
+    } else if (moreOpen_) {
+        if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav(moreNav(0)))) { moreOpen_ = 0; cfg_.save(); }
     } else if (ui_.button(L.X(268), L.Y(footY), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav(settingsInGame_ ? "ingame/pause" : "main"))) {
         leaveSettings();
         return;
+    }
+    // the footer's middle: the tab's MORE page (1.19.4: settings that don't fit the tab)
+    if (!fontsOpen_ && !devicesOpen_ && moreOpen_ < morePages() && !modal)
+        if (ui_.button(L.X(552), L.Y(640), L.L(kHalfW), L.L(kRowH), moreOpen_ ? "MORE " + std::to_string(moreOpen_ + 1) + "  >" : std::string("MORE  >"),
+                       UiExp::nav(moreNav(moreOpen_ + 1)).withId(moreOpen_ == 2 ? "MORE 3" : moreOpen_ ? "MORE 2" : "MORE"))) {
+            moreOpen_++; captureAction_ = -1; ui_.closePopup(); cfg_.save();
+        }
+    if (keepUntil_ > 0) {   // a display change waiting for KEEP: reverted when the count runs out
+        const float bx = L.X(268), by = L.Y(596), bw = L.L(744), bh = L.L(kRowH);
+        r_.rect(bx, by, bw, bh, {0.05f, 0.06f, 0.08f, 0.95f});
+        const int left = std::max(0, (int)std::ceil(keepUntil_ - time_));
+        ui_.label(bx + 10 * L.s, by + (bh - r_.textHeight(ui_.textScale())) * 0.5f, "KEEP THESE DISPLAY SETTINGS? REVERTING IN " + std::to_string(left), ui_.accent, 1.0f, L.L(440));
+        if (ui_.button(L.X(836 - 184), by, L.L(176), bh, "KEEP", UiExp::local())) keepUntil_ = 0;
+        if (ui_.button(L.X(836), by, L.L(176), bh, "REVERT", UiExp::local()) || (keepUntil_ > 0 && time_ >= keepUntil_)) {
+            keepUntil_ = 0;
+            cfg_.displayMode = keepMode_; cfg_.width = keepW_; cfg_.height = keepH_;
+            applyDisplayMode();
+            cfg_.save();
+        }
     }
     if (modal) drawImportDialog(L);
     if (hudPreview) drawHudPreviewTop();   // (under the dropdown's list)
@@ -5292,7 +5898,9 @@ void Game::drawPlayerSettings(const SetLayout& L) {
     g.next();
     ui_.colorPicker(g.x(), g.top(), w, h, "ENEMY COLOR", cfg_.colorEnemy, UiExp::cfg("color_enemy"), defaultSettings().colorEnemy);
     g.next();
-    g.hint("TEAM COLOR IS ALSO THE MENU ACCENT");
+    if (const char* clash = colorPairClash(cfg_.colorFriendly, cfg_.colorEnemy))   // (a COLORBLIND preset fixes it)
+        g.hint("HARD TO TELL APART WITH", std::string(clash) + " COLOR BLINDNESS");
+    else g.hint("TEAM COLOR IS ALSO THE MENU ACCENT");
     ui_.accent = rgba(cfg_.colorFriendly);
     g.section("INTERFACE");   // (FONT: a page of its own in this tab)
     if (ui_.button(g.x(), g.top(), w, h, "FONT: " + upper(cfg_.uiFont.empty() ? std::string(uifonts::kDefault) : cfg_.uiFont) + "  >",
@@ -5397,7 +6005,10 @@ void Game::drawVideoSettings(const SetLayout& L) {
     const float w = f.w(), h = f.h(), hw = L.L(kHalfW);
     f.header("DISPLAY");
     static const std::vector<std::string> dispNames = {"DISPLAY: WINDOWED", "DISPLAY: BORDERLESS FULLSCREEN", "DISPLAY: EXCLUSIVE FULLSCREEN"};
-    if (ui_.cycle(f.x(), f.top(), w, h, "DISPLAY", cfg_.displayMode, 3, dispNames, UiExp::cfg("display_mode"))) applyDisplayMode();
+    {
+        const int was = cfg_.displayMode;
+        if (ui_.cycle(f.x(), f.top(), w, h, "DISPLAY", cfg_.displayMode, 3, dispNames, UiExp::cfg("display_mode"))) { applyDisplayMode(); askKeepDisplay(was, cfg_.width, cfg_.height); }
+    }
     f.next();
     f.hint("EXCLUSIVE / BORDERLESS SKIP THE DESKTOP", "COMPOSITOR ON MOST DRIVERS");
     {   // any cap, typed or dragged (0: unlimited); right-click: the screen's refresh rate (G-Sync / FreeSync: a few under)
@@ -5437,14 +6048,14 @@ void Game::drawVideoSettings(const SetLayout& L) {
         notify(msg);
     }
     f.next();
-    f.hint("KEEPS GPU CLOCKS HIGH: LESS LAG, MORE POWER", "F3 SHOWS INPUT->FRAME LATENCY");
+    f.hint("KEEPS GPU CLOCKS HIGH: LESS LAG, MORE POWER", keyOf(A_PERF) + " SHOWS INPUT->FRAME LATENCY");
     if (ui_.toggle(f.x(), f.top(), w, h, "PRIORITIZE GAME", cfg_.prioritize, UiExp::cfg("prioritize")) && !uiTest_)
-        setGamePriority(cfg_.prioritize && glfwGetWindowAttrib(win_, GLFW_FOCUSED) != 0);
+        setGamePriority(prioLevel(glfwGetWindowAttrib(win_, GLFW_FOCUSED) != 0));
     f.next();
     f.hint("GPU + CPU GO TO THE GAME FIRST WHILE FOCUSED", "(BROWSER VIDEOS, ELECTRON APPS WAIT)");
 #else
     f.y -= 16;
-    f.hint("", "F3 SHOWS INPUT->FRAME LATENCY");
+    f.hint("", keyOf(A_PERF) + " SHOWS INPUT->FRAME LATENCY");
 #endif
     f.section("FLAT MAP");
     ui_.toggle(f.x(), f.top(), w, h, "FULLBRIGHT", cfg_.fullbright, UiExp::cfg("fullbright"));
@@ -5478,8 +6089,8 @@ void Game::drawVideoSettings(const SetLayout& L) {
     {   // the 3D scene at this % of the window's pixels (the HUD and menus always at 100%): below for frame rate, above
         // as supersampling; SHARPEN: below 100%, sharpened as it's stretched
         float v = (float)cfg_.renderScale;
-        if (ui_.slider(g.x(), g.top(), hw, h, "RENDER SCALE", v, 50, 200, "%.0f%%", UiExp::cfg("render_scale"), (float)defaultSettings().renderScale))
-            cfg_.renderScale = std::max(50, std::min(200, (int)std::lround(v)));
+        if (ui_.slider(g.x(), g.top(), hw, h, "RENDER SCALE", v, 25, 400, "%.0f%%", UiExp::cfg("render_scale"), (float)defaultSettings().renderScale))
+            cfg_.renderScale = std::max(25, std::min(400, (int)std::lround(v)));
         ui_.toggle(L.X(kColR + kColW - kHalfW), g.top(), hw, h, "SHARPEN", cfg_.renderSharpen, UiExp::cfg("render_sharpen"));
         g.next();
     }
@@ -5601,6 +6212,410 @@ void Game::listRates() {
 // and exclusive fullscreen's refresh rate (right), like the FONT page's rows: the one in use "> NAME <", a click on
 // another picks it, saves it and applies it at once (the output reopened, the window moved). The wheel scrolls a list
 // longer than its rows. REFRESH (bottom right) asks the OS again.
+// A display change: KEEP within 10 s or it's put back (a mode the monitor can't show leaves a black screen otherwise).
+// (Not in the UI test: its clicks would race the count.)
+void Game::askKeepDisplay(int oldMode, int oldW, int oldH) {
+    if (uiTest_) return;
+    if (keepUntil_ <= 0) { keepMode_ = oldMode; keepW_ = oldW; keepH_ = oldH; }   // (a second change: still back to the first's)
+    keepUntil_ = time_ + 10;
+}
+
+// the settings path of this tab's MORE page n (0: the tab itself)
+const char* Game::moreNav(int n) const {   // (static strings: a UiExp keeps the pointer)
+    static const char* const p[3][4] = {{"~settings/video", "~settings/video/more", "~settings/video/more2", "~settings/video/more3"},
+                                        {"~settings/controls", "~settings/controls/more", "~settings/controls/more", "~settings/controls/more"},
+                                        {"~settings/gameplay", "~settings/gameplay/more", "~settings/gameplay/more", "~settings/gameplay/more"}};
+    return p[setTab_ == TAB_VIDEO ? 0 : setTab_ == TAB_CONTROLS ? 1 : 2][std::min(std::max(n, 0), 3)];
+}
+
+// MORE (settings/<tab>/more, 1.19.4): the tab's settings that don't fit on it. GAMEPLAY: the kill feed, chat, enemies,
+// all settings, the screen, menus. CONTROLS: the mouse's other axis, zoom, grapple and hand, the scoreboard key, the
+// weapon scroll. VIDEO + AUDIO: 1 the window, shadows, GPU, HUD size, background, hitsounds; 2 fog, picture, effects;
+// 3 display, sound groups, performance, presets.
+void Game::drawMoreSettings(const SetLayout& L) {
+    SetFlow f{ui_, L, kColL, 90}, g{ui_, L, kColR, 90};
+    const float w = f.w(), h = f.h();
+    if (setTab_ == TAB_CONTROLS) {
+        f.header("MOUSE");
+        ui_.slider(f.x(), f.top(), w, h, "VERTICAL SENSITIVITY", cfg_.sensY, 0.25f, 4.0f, "X%.2f", UiExp::cfg("sens_y"), defaultSettings().sensY);
+        cfg_.sensY = clampf(cfg_.sensY, 0.1f, 10.0f);
+        f.next();
+        f.hint("UP / DOWN AS A MULTIPLE OF SENSITIVITY");
+        ui_.toggle(f.x(), f.top(), w, h, "INVERT Y", cfg_.invertY, UiExp::cfg("invert_y"));
+        f.next();
+        f.section("ZOOM");
+        ui_.slider(f.x(), f.top(), w, h, "ZOOM SENSITIVITY", cfg_.zoomSens, 0.25f, 4.0f, "X%.2f", UiExp::cfg("zoom_sens"), defaultSettings().zoomSens);
+        cfg_.zoomSens = clampf(cfg_.zoomSens, 0.1f, 10.0f);
+        f.next();
+        f.hint("X1.00: THE SAME FEEL AS UNZOOMED", "LOWER: SLOWER WHILE SCOPED");
+        f.section("GRAPPLE + HAND");
+        {
+            static const std::vector<std::string> gn = {"GRAPPLE: HOLD", "GRAPPLE: TOGGLE"};
+            int gi = cfg_.grappleToggle;
+            if (ui_.cycle(f.x(), f.top(), w, h, "GRAPPLE", gi, 2, gn, UiExp::cfg("grapple_toggle"))) { cfg_.grappleToggle = gi; grappleOn_ = false; }
+            f.next();
+            f.hint("TOGGLE: PRESS TO HOOK, PRESS AGAIN TO LET GO");
+        }
+        {
+            static const std::vector<std::string> hn = {"HAND: RIGHT", "HAND: LEFT"};
+            int hi = cfg_.leftHanded;
+            if (ui_.cycle(f.x(), f.top(), w, h, "HAND", hi, 2, hn, UiExp::cfg("left_handed"))) cfg_.leftHanded = hi;
+            f.next();
+            f.hint("LEFT: THE GUN ON THE LEFT, THE GRAPPLE", "LAUNCHER ON THE RIGHT");
+        }
+        g.header("SCREEN");
+        static const std::vector<std::string> sn = {"SCOREBOARD: HOLD", "SCOREBOARD: TOGGLE"};
+        int st = cfg_.scoreToggle;
+        if (ui_.cycle(g.x(), g.top(), w, h, "SCOREBOARD", st, 2, sn, UiExp::cfg("score_toggle"))) { cfg_.scoreToggle = st; scoresOn_ = false; }
+        g.next();
+        g.hint("TOGGLE: PRESS THE SCOREBOARD KEY TO SHOW / HIDE");
+        g.section("WEAPON SCROLL");   // NEXT / PREV WEAPON: wrap at the ends or stop; weapons it passes over
+        ui_.toggle(g.x(), g.top(), w, h, "WRAP AROUND", cfg_.scrollWrap, UiExp::cfg("scroll_wrap"));
+        g.next();
+        {
+            static int skW = WPN_ROCKET;
+            static std::vector<std::string> wn;
+            if (wn.empty()) for (int i = 0; i < WPN_COUNT; i++) wn.push_back("WEAPON: " + upper(baseWeaponDef(i).name));
+            const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
+            ui_.cycle(g.x(), g.top(), hw, h, "WEAPON", skW, WPN_COUNT, wn, UiExp::local());
+            bool skip = cfg_.scrollSkip >> skW & 1;
+            if (ui_.toggle(x2, g.top(), hw, h, "SKIP IT", skip, UiExp::cfg("scroll_skip"))) cfg_.scrollSkip = skip ? cfg_.scrollSkip | 1 << skW : cfg_.scrollSkip & ~(1 << skW);
+            g.next();
+            g.hint("THE SCROLL WHEEL PASSES OVER SKIPPED", "WEAPONS (THEIR NUMBER KEYS STILL WORK)");
+        }
+        g.section("SENSITIVITY FROM ANOTHER GAME");   // the same turn per mouse count: quark's yaw is 0.022 degrees a count x SENSITIVITY
+        {
+            static const struct { const char* name; float yaw; } kGames[] = {
+                {"FROM: CS2 / CS:GO", 0.022f}, {"FROM: QUAKE", 0.022f}, {"FROM: APEX LEGENDS", 0.022f}, {"FROM: TEAM FORTRESS 2", 0.022f},
+                {"FROM: VALORANT", 0.07f}, {"FROM: OVERWATCH 2", 0.0066f}, {"FROM: CALL OF DUTY", 0.0066f}};
+            constexpr int n = sizeof kGames / sizeof kGames[0];
+            static std::vector<std::string> gn;
+            if (gn.empty()) for (auto& k : kGames) gn.push_back(k.name);
+            static int gi = 0;
+            static float theirs = 1.0f;
+            ui_.cycle(g.x(), g.top(), w, h, "FROM", gi, n, gn, UiExp::local());
+            g.next();
+            const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
+            ui_.slider(g.x(), g.top(), hw, h, "THEIRS", theirs, 0.01f, 20.0f, "%.3f", UiExp::local(), 1.0f);
+            theirs = clampf(theirs, 0.001f, 100.0f);
+            const float mine = clampf(theirs * kGames[gi].yaw / 0.022f, 0.01f, 50.0f);
+            char lbl[48];
+            snprintf(lbl, sizeof lbl, "USE %.3f", mine);
+            if (ui_.button(x2, g.top(), hw, h, lbl, (std::fabs(mine - cfg_.sensitivity) < 1e-4f ? UiExp::inert() : UiExp::cfg("sensitivity")).withId("USE IT")))
+                cfg_.sensitivity = mine;
+            g.next();
+            g.hint("SAME DPI: THE SAME TURN PER INCH OF MOUSE");
+        }
+        return;
+    }
+    if (setTab_ == TAB_GAMEPLAY) {
+        f.header("KILL FEED");
+        auto intSlider = [&](SetFlow& c, const char* label, int& v, int lo, int hi, const char* fmt, const char* key, int def) {
+            float fv = (float)v;
+            ui_.slider(c.x(), c.top(), w, h, label, fv, (float)lo, (float)hi, fmt, UiExp::cfg(key), (float)def);
+            v = std::min(std::max(lo, (int)std::lround(fv)), hi);
+            c.next();
+        };
+        const Settings& d = defaultSettings();
+        intSlider(f, "KILL FEED SECONDS", cfg_.feedTime, 1, 30, "%.0f S", "feed_time", d.feedTime);
+        intSlider(f, "KILL FEED LINES", cfg_.feedLines, 1, 12, "%.0f", "feed_lines", d.feedLines);
+        ui_.toggle(f.x(), f.top(), w, h, "ONLY KILLS I'M IN", cfg_.feedMine, UiExp::cfg("feed_mine"));
+        f.next();
+        f.section("CHAT");
+        intSlider(f, "CHAT SECONDS", cfg_.chatTime, 1, 60, "%.0f S", "chat_time", d.chatTime);
+        intSlider(f, "CHAT LINES", cfg_.chatLines, 1, 16, "%.0f", "chat_lines", d.chatLines);
+        while ((int)chatFeed_.size() > cfg_.chatLines) chatFeed_.pop_front();
+        ui_.slider(f.x(), f.top(), w, h, "CHAT OPACITY", cfg_.chatOpacity, 0.1f, 1.0f, "%.2f", UiExp::cfg("chat_opacity"), d.chatOpacity);
+        cfg_.chatOpacity = clampf(cfg_.chatOpacity, 0.1f, 1.0f);
+        f.next();
+        f.hint("WHILE TYPING, CHAT IS ALWAYS FULLY SHOWN");
+        f.section("ENEMIES");
+        {
+            static std::vector<std::string> en;
+            if (en.empty()) { en.push_back("ENEMY MODEL: THEIR OWN"); for (int m = 0; m < kPlayerModels; m++) en.push_back(std::string("ENEMY MODEL: ") + playerModelName(m)); }
+            int ei = cfg_.enemyModel + 1;
+            if (ui_.cycle(f.x(), f.top(), w, h, "ENEMY MODEL", ei, kPlayerModels + 1, en, UiExp::cfg("enemy_model"))) cfg_.enemyModel = ei - 1;
+            f.next();
+            f.hint("EVERY ENEMY AS ONE MODEL (NOT IN RANKED,", "WHERE EVERYONE IS STANDARD)");
+        }
+        f.section("ALL SETTINGS");   // every setting as text on the clipboard (your name, Discord and servers stay yours)
+        {
+            static const char* const kOwn[] = {"name=", "discord=", "rank_hello=", "last_address=", "fav_servers=", "recent_servers="};
+            auto own = [](const std::string& l) { for (const char* p : kOwn) if (l.rfind(p, 0) == 0) return true; return false; };
+            const float tw = (w - L.L(16)) / 3, tg = L.L(8);
+            if (ui_.button(f.x(), f.top(), tw, h, "EXPORT", UiExp::state("allset"))) {
+                std::istringstream in(cfg_.toText());
+                std::string out = "quark-settings:\n", l;
+                while (std::getline(in, l)) if (!own(l)) out += l + "\n";
+                glfwSetClipboardString(win_, out.c_str());
+                allMsg_ = "SETTINGS COPIED: PASTE THEM ANYWHERE"; allMsgUntil_ = time_ + 3;
+            }
+            if (ui_.button(f.x() + tw + tg, f.top(), tw, h, "IMPORT", UiExp::state("allset"))) {
+                const char* clip = glfwGetClipboardString(win_);
+                const std::string text = clip ? clip : "";
+                if (text.find("quark-settings:") == std::string::npos) { allMsg_ = "NO SETTINGS ON THE CLIPBOARD (EXPORT MAKES THEM)"; }
+                else {
+                    std::istringstream in(text.substr(text.find("quark-settings:") + 15));
+                    std::string l;
+                    int n = 0;
+                    while (std::getline(in, l)) {
+                        while (!l.empty() && (l.back() == '\r' || l.back() == ' ')) l.pop_back();
+                        const size_t eq = l.find('=');
+                        if (eq == std::string::npos || own(l)) continue;
+                        cfg_.set(l.substr(0, eq), l.substr(eq + 1));
+                        n++;
+                    }
+                    cfg_.finishLoad();
+                    cfg_.save();
+                    applySettings();
+                    allMsg_ = std::to_string(n) + " SETTINGS IMPORTED";
+                }
+                allMsgUntil_ = time_ + 3;
+            }
+            const bool armed = time_ < resetAllArmed_;
+            auto fresh = [&] {   // (the defaults, with what's yours kept)
+                Settings d = defaultSettings();
+                d.name = cfg_.name; d.discordName = cfg_.discordName; d.rankHello = cfg_.rankHello; d.lastAddress = cfg_.lastAddress;
+                d.favServers = cfg_.favServers; d.recentServers = cfg_.recentServers;
+                return d;
+            };
+            const bool same = armed && fresh().toText() == cfg_.toText();   // (only while armed: two texts a frame)
+            if (ui_.button(f.x() + 2 * (tw + tg), f.top(), tw, h, armed ? "SURE?" : "RESET ALL",
+                           (!armed ? UiExp::state("allset") : same ? UiExp::state("allset") : UiExp::cfg("*")).withId("RESET ALL"))) {
+                if (!armed) { resetAllArmed_ = time_ + 3; allMsg_ = "CLICK AGAIN TO RESET EVERY SETTING (NOT YOUR NAME)"; allMsgUntil_ = time_ + 3; }
+                else {
+                    cfg_ = fresh();
+                    cfg_.save();
+                    applySettings();
+                    resetAllArmed_ = 0;
+                    allMsg_ = "EVERY SETTING IS BACK TO ITS DEFAULT"; allMsgUntil_ = time_ + 3;
+                }
+            }
+            f.next();
+            f.hint(time_ < allMsgUntil_ ? allMsg_ : std::string("EXPORT / IMPORT USE THE CLIPBOARD"));
+        }
+        g.header("SCREEN");
+        const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
+        ui_.toggle(g.x(), g.top(), hw, h, "SHOW FPS", cfg_.showFps, UiExp::cfg("show_fps"));
+        ui_.toggle(x2, g.top(), hw, h, "SHOW PING", cfg_.showPing, UiExp::cfg("show_ping"));
+        g.next();
+        g.hint("TOP RIGHT, WITHOUT A WIDGET (F3 HAS MORE)");
+        ui_.toggle(g.x(), g.top(), w, h, "HIDE HUD KEEPS CROSSHAIR", cfg_.hideHudCrosshair, UiExp::cfg("hide_hud_crosshair"));
+        g.next();
+        g.hint("BIND HIDE HUD ON CONTROLS");
+        ui_.toggle(g.x(), g.top(), w, h, "HEALTH BAR: MODE'S MAX", cfg_.hpScaled, UiExp::cfg("hp_scaled"));
+        g.next();
+        g.hint("OFF: THE BAR IS FULL AT 100 IN EVERY MODE");
+        {
+            const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
+            ui_.toggle(g.x(), g.top(), hw, h, "CAPTIONS", cfg_.captions, UiExp::cfg("captions"));
+            ui_.toggle(x2, g.top(), hw, h, "MATCH SUMMARY", cfg_.matchSummary, UiExp::cfg("match_summary"));
+            g.next();
+            g.hint("CAPTIONS: THE ANNOUNCER AS TEXT TOO");
+        }
+        {
+            const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
+            ui_.toggle(g.x(), g.top(), hw, h, "RACE GHOST", cfg_.ghost, UiExp::cfg("ghost"));
+            ui_.toggle(x2, g.top(), hw, h, "TEAM PANEL", cfg_.teamPanel, UiExp::cfg("team_panel"));
+            g.next();
+        }
+        g.section("MENUS");
+        ui_.toggle(g.x(), g.top(), w, h, "REMEMBER LAST TAB", cfg_.rememberTab, UiExp::cfg("remember_tab"));
+        g.next();
+        ui_.toggle(g.x(), g.top(), w, h, "CONFIRM QUIT / LEAVE", cfg_.confirmLeave, UiExp::cfg("confirm_leave"));
+        g.next();
+        g.hint("QUIT, DISCONNECT AND STOP HOSTING", "ASK \"SURE?\" FIRST: CLICK AGAIN");
+        ui_.toggle(g.x(), g.top(), w, h, "AUTO RECONNECT", cfg_.autoReconnect, UiExp::cfg("auto_reconnect"));
+        g.next();
+        g.hint("A DROPPED CONNECTION TRIES AGAIN (3 TIMES)");
+        ui_.toggle(g.x(), g.top(), w, h, "QUEUE FILLED: FLASH TASKBAR", cfg_.queueFlash, UiExp::cfg("queue_flash"));
+        g.next();
+        return;
+    }
+    if (moreOpen_ == 2) {   // VIDEO + AUDIO > MORE 2: the picture and the effects
+        f.header("WORLD");
+        if (ui_.slider(f.x(), f.top(), w, h, "FOG", cfg_.fog, 0, 3, cfg_.fog < 0.005f ? "OFF" : "X%.2f", UiExp::cfg("fog"), defaultSettings().fog))
+            r_.setFog(cfg_.fog = clampf(cfg_.fog, 0, 3));
+        f.next();
+        f.hint("THE HAZE OVER DISTANT WALLS (0: NONE)");
+        f.section("PICTURE");
+        {
+            const Settings& d = defaultSettings();
+            bool ch = ui_.slider(f.x(), f.top(), w, h, "GAMMA", cfg_.gamma, 0.5f, 2.0f, "%.2f", UiExp::cfg("gamma"), d.gamma);
+            f.next();
+            ch |= ui_.slider(f.x(), f.top(), w, h, "CONTRAST", cfg_.contrast, 0.5f, 2.0f, "%.2f", UiExp::cfg("contrast"), d.contrast);
+            f.next();
+            ch |= ui_.slider(f.x(), f.top(), w, h, "SATURATION", cfg_.saturation, 0, 2.0f, "%.2f", UiExp::cfg("saturation"), d.saturation);
+            f.next();
+            cfg_.gamma = clampf(cfg_.gamma, 0.5f, 2.0f); cfg_.contrast = clampf(cfg_.contrast, 0.5f, 2.0f); cfg_.saturation = clampf(cfg_.saturation, 0, 2.0f);
+            if (ch) r_.setGrade(cfg_.gamma, cfg_.contrast, cfg_.saturation);
+            f.hint("THE 3D SCENE (THE HUD STAYS AS IT IS);", "SATURATION 0: BLACK AND WHITE");
+        }
+        g.header("EFFECTS");
+        ui_.slider(g.x(), g.top(), w, h, "EFFECTS OPACITY", cfg_.fxOpacity, 0, 1, cfg_.fxOpacity < 0.01f ? "OFF" : "%.2f", UiExp::cfg("fx_opacity"), defaultSettings().fxOpacity);
+        cfg_.fxOpacity = clampf(cfg_.fxOpacity, 0, 1);
+        g.next();
+        g.hint("EXPLOSIONS, SPARKS AND BURSTS");
+        {
+            const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
+            ui_.toggle(g.x(), g.top(), hw, h, "KILL BURSTS", cfg_.killBursts, UiExp::cfg("kill_bursts"));
+            ui_.toggle(x2, g.top(), hw, h, "TRACERS", cfg_.tracers, UiExp::cfg("tracers"));
+            g.next();
+        }
+        ui_.toggle(g.x(), g.top(), w, h, "GUN RECOIL KICK", cfg_.viewRecoil, UiExp::cfg("view_recoil"));
+        g.next();
+        return;
+    }
+    if (moreOpen_ == 3) {   // VIDEO + AUDIO > MORE 3: the display and the process
+        f.header("DISPLAY");
+        {   // FULLSCREEN SIZE: the monitor's own modes (each size once), for exclusive fullscreen
+            std::vector<std::pair<int, int>> sizes = {{0, 0}};
+            if (GLFWmonitor* mon = chosenMonitor()) {
+                int n = 0;
+                const GLFWvidmode* ms = glfwGetVideoModes(mon, &n);
+                for (int i = n - 1; i >= 0; i--) {   // (largest first)
+                    std::pair<int, int> sz = {ms[i].width, ms[i].height};
+                    if (sz.first >= 640 && std::find(sizes.begin(), sizes.end(), sz) == sizes.end()) sizes.push_back(sz);
+                }
+            }
+            int cur = 0;
+            for (size_t i = 0; i < sizes.size(); i++) if (sizes[i].first == cfg_.fsWidth && sizes[i].second == cfg_.fsHeight) cur = (int)i;
+            if (cfg_.fsWidth > 0 && cur == 0) { sizes.push_back({cfg_.fsWidth, cfg_.fsHeight}); cur = (int)sizes.size() - 1; }
+            std::vector<std::string> names;
+            for (auto& z : sizes) names.push_back(z.first ? "FULLSCREEN SIZE: " + std::to_string(z.first) + " X " + std::to_string(z.second) : std::string("FULLSCREEN SIZE: DESKTOP"));
+            int pick = cur;
+            if (ui_.cycle(f.x(), f.top(), w, h, "FULLSCREEN SIZE", pick, (int)sizes.size(), names, UiExp::cfg("fs_*")) && pick != cur) {
+                cfg_.fsWidth = sizes[pick].first; cfg_.fsHeight = sizes[pick].second;
+                if (cfg_.displayMode == 2 && !uiTest_) applyDisplayMode();
+            }
+            f.next();
+            f.hint("EXCLUSIVE FULLSCREEN ONLY; A 4:3 SIZE IS", "STRETCHED (OR BARRED BY YOUR GPU'S SCALING)");
+        }
+        if (ui_.toggle(f.x(), f.top(), w, h, "G-SYNC / FREESYNC", cfg_.vrr, UiExp::cfg("vrr"))) applyPresentMode();
+        f.next();
+        f.hint(vrrHz_ > 3 ? "VSYNC ON, FPS CAPPED AT " + std::to_string(vrrHz_ - 3) + " (REFRESH - 3)" : std::string("VSYNC ON, FPS CAPPED 3 UNDER THE REFRESH"),
+               "FOR A VARIABLE REFRESH MONITOR");
+        if (ui_.toggle(f.x(), f.top(), w, h, "MINIMIZE ON ALT-TAB", cfg_.autoIconify, UiExp::cfg("auto_iconify")))
+            glfwSetWindowAttrib(win_, GLFW_AUTO_ICONIFY, cfg_.autoIconify ? GLFW_TRUE : GLFW_FALSE);
+        f.next();
+        f.hint("FULLSCREEN: OFF KEEPS IT ON SCREEN", "BEHIND OTHER WINDOWS");
+        f.section("SOUND GROUPS");   // (on top of EFFECTS VOLUME)
+        {
+            const Settings& d = defaultSettings();
+            ui_.slider(f.x(), f.top(), w, h, "MY FOOTSTEPS", cfg_.volSteps, 0, 1, "%.2f", UiExp::cfg("vol_steps"), d.volSteps);
+            cfg_.volSteps = clampf(cfg_.volSteps, 0, 1);
+            f.next();
+            ui_.slider(f.x(), f.top(), w, h, "OTHERS' FOOTSTEPS", cfg_.volOthersSteps, 0, 2, "%.2f", UiExp::cfg("vol_others_steps"), d.volOthersSteps);
+            cfg_.volOthersSteps = clampf(cfg_.volOthersSteps, 0, 2);
+            f.next();
+            f.hint("OVER 1: LOUDER, TO HEAR THEM COMING");
+            ui_.slider(f.x(), f.top(), w, h, "GUNFIRE", cfg_.volWeapons, 0, 1, "%.2f", UiExp::cfg("vol_weapons"), d.volWeapons);
+            cfg_.volWeapons = clampf(cfg_.volWeapons, 0, 1);
+            f.next();
+            ui_.slider(f.x(), f.top(), w, h, "BOMB BEEP", cfg_.volObjective, 0, 1, "%.2f", UiExp::cfg("vol_objective"), d.volObjective);
+            cfg_.volObjective = clampf(cfg_.volObjective, 0, 1);
+            f.next();
+        }
+        g.header("PERFORMANCE");
+        static const std::vector<std::string> pn = {"CPU PRIORITY: ABOVE NORMAL", "CPU PRIORITY: HIGH"};
+        int pi = cfg_.cpuPriority - 1;
+        if (ui_.cycle(g.x(), g.top(), w, h, "CPU PRIORITY", pi, 2, pn, UiExp::cfg("cpu_priority"))) {
+            cfg_.cpuPriority = pi + 1;
+            if (!uiTest_) setGamePriority(prioLevel(glfwGetWindowAttrib(win_, GLFW_FOCUSED) != 0));
+        }
+        g.next();
+        g.hint("WINDOWS, WITH PRIORITIZE GAME ON;", "HIGH CAN SLOW OTHER PROGRAMS");
+        g.section("PRESET");   // a starting point: shadows, anti-aliasing, render scale, fog and effects at once
+        {
+            static const std::vector<std::string> vn = {"PRESET: CUSTOM", "PRESET: LOW", "PRESET: MEDIUM", "PRESET: HIGH", "PRESET: COMPETITIVE"};
+            if (ui_.cycle(g.x(), g.top(), w, h, "PRESET", cfg_.videoPreset, 5, vn, UiExp::cfg("video_preset")) && cfg_.videoPreset > 0) {
+                struct P { bool shadows; int shadowRes, msaa, scale; float fog, fx; bool bursts, recoil; };
+                static const P ps[] = {{false, 1024, 0, 75, 1.0f, 0.6f, true, true}, {true, 2048, 1, 100, 1.0f, 1.0f, true, true},
+                                       {true, 4096, 4, 100, 1.0f, 1.0f, true, true}, {false, 1024, 0, 100, 0.0f, 0.5f, false, false}};
+                const P& p = ps[cfg_.videoPreset - 1];
+                cfg_.shadows = p.shadows; cfg_.msaa = p.msaa; cfg_.renderScale = p.scale; cfg_.fxOpacity = p.fx;
+                cfg_.killBursts = p.bursts; cfg_.viewRecoil = p.recoil;
+                if (cfg_.shadowRes != p.shadowRes) r_.setShadowRes(cfg_.shadowRes = p.shadowRes);
+                r_.setFog(cfg_.fog = p.fog);
+            }
+            g.next();
+            g.hint("COMPETITIVE: NO FOG OR SHADOWS, FEWER EFFECTS;", "CHANGE ANYTHING AFTER (IT STAYS)");
+        }
+        return;
+    }
+    // VIDEO + AUDIO
+    f.header("WINDOW");
+    {   // the windowed size: common sizes that fit the monitor, plus the current one if it's none of them
+        static const int sizes[][2] = {{1280, 720}, {1366, 768}, {1600, 900}, {1920, 1080}, {2560, 1440}, {3840, 2160}};
+        GLFWmonitor* mon = chosenMonitor();
+        const DeskMode dm = mon ? desktopMode(mon) : DeskMode{};
+        std::vector<std::pair<int, int>> opts;
+        for (auto& s : sizes) if (dm.w <= 0 || (s[0] <= dm.w && s[1] <= dm.h)) opts.push_back({s[0], s[1]});
+        int cur = -1;
+        for (size_t i = 0; i < opts.size(); i++) if (opts[i].first == cfg_.width && opts[i].second == cfg_.height) cur = (int)i;
+        if (cur < 0) { opts.push_back({cfg_.width, cfg_.height}); cur = (int)opts.size() - 1; }
+        std::vector<std::string> names;
+        for (auto& o : opts) names.push_back("WINDOW SIZE: " + std::to_string(o.first) + " X " + std::to_string(o.second));
+        int pick = cur;
+        if (ui_.cycle(f.x(), f.top(), w, h, "WINDOW SIZE", pick, (int)opts.size(), names, UiExp::cfg("width")) && pick != cur) {
+            const int ow = cfg_.width, oh = cfg_.height;
+            cfg_.width = opts[pick].first; cfg_.height = opts[pick].second;
+            if (cfg_.displayMode == 0 && !uiTest_) { applyDisplayMode(); askKeepDisplay(cfg_.displayMode, ow, oh); }
+        }
+        f.next();
+        if (cfg_.displayMode == 0) f.hint("THE WINDOW'S SIZE AND PLACE ARE KEPT", "FOR THE NEXT LAUNCH");
+        else f.hint("FOR WINDOWED MODE (FULLSCREEN USES", "THE MONITOR'S OWN SIZE)");
+    }
+    f.section("SHADOWS");
+    {
+        static const int res[] = {1024, 2048, 4096};
+        static const std::vector<std::string> names = {"SHADOW QUALITY: LOW", "SHADOW QUALITY: MEDIUM", "SHADOW QUALITY: HIGH"};
+        int qi = cfg_.shadowRes <= 1024 ? 0 : cfg_.shadowRes <= 2048 ? 1 : 2;
+        if (ui_.cycle(f.x(), f.top(), w, h, "SHADOW QUALITY", qi, 3, names, UiExp::cfg("shadowres"))) {
+            cfg_.shadowRes = res[qi];
+            r_.setShadowRes(cfg_.shadowRes);
+        }
+        f.next();
+        f.hint("PLAYERS' SHADOW DETAIL (PLAYER SHADOWS", "ON VIDEO + AUDIO TURNS THEM OFF)");
+    }
+    f.section("GPU");
+    {
+        const std::string gpu = upper(r_.gpuName().empty() ? std::string("UNKNOWN") : r_.gpuName());
+        f.hint(gpu);
+        const bool integrated = gpu.find("INTEL") != std::string::npos || gpu.find("UHD") != std::string::npos || gpu.find("IRIS") != std::string::npos;
+        if (integrated) f.hint("LOOKS INTEGRATED: IF THERE'S A DEDICATED GPU,", "PICK IT IN WINDOWS' GRAPHICS SETTINGS");
+    }
+    g.header("WHEN UNFOCUSED");
+    {
+        float v = (float)cfg_.bgFps;
+        ui_.slider(g.x(), g.top(), w, h, "BACKGROUND FPS LIMIT", v, 0, 240, cfg_.bgFps <= 0 ? "SAME AS FPS LIMIT" : "%.0f", UiExp::cfg("bg_fps"), (float)defaultSettings().bgFps);
+        cfg_.bgFps = std::min(std::max(0, (int)std::lround(v)), 1000);
+        g.next();
+        g.hint("ALT-TABBED OR MINIMIZED: LESS POWER AND HEAT");
+        if (ui_.toggle(g.x(), g.top(), w, h, "MUTE IN BACKGROUND", cfg_.bgMute, UiExp::cfg("bg_mute"))) applyBackground();
+        g.next();
+    }
+    g.section("HITSOUNDS");   // (HITSOUND on VIDEO + AUDIO turns them on / off)
+    {
+        const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
+        if (ui_.slider(g.x(), g.top(), w, h, "HITSOUND VOLUME", cfg_.hitVolume, 0, 2, "%.2f", UiExp::cfg("hit_volume"), defaultSettings().hitVolume))
+            audio_.play(SND_HIT_MED, 0.9f * (cfg_.hitVolume = clampf(cfg_.hitVolume, 0, 2)), 1.0f, cfg_.hitPack);
+        g.next();
+        static const std::vector<std::string> hp = {"HITSOUND: MY SOUND PACK", "HITSOUND: DEFAULT", "HITSOUND: HEAVY METAL", "HITSOUND: MAGICAL", "HITSOUND: RETRO", "HITSOUND: MOUTH"};
+        int pi = cfg_.hitPack + 1;
+        if (ui_.cycle(g.x(), g.top(), w, h, "HITSOUND", pi, 6, hp, UiExp::cfg("hit_pack"))) { cfg_.hitPack = pi - 1; audio_.play(SND_HIT_MED, 0.9f * cfg_.hitVolume, 1.0f, cfg_.hitPack); }
+        g.next();
+        ui_.toggle(g.x(), g.top(), hw, h, "HEADSHOT", cfg_.headshotSound, UiExp::cfg("headshot_sound"));
+        ui_.toggle(x2, g.top(), hw, h, "KILL SOUND", cfg_.killSound, UiExp::cfg("kill_sound"));
+        g.next();
+    }
+    f.section("INTERFACE");
+    ui_.slider(f.x(), f.top(), w, h, "HUD SIZE", cfg_.hudSize, 0.5f, 2.0f, "X%.2f", UiExp::cfg("hud_size"), defaultSettings().hudSize);
+    cfg_.hudSize = clampf(cfg_.hudSize, 0.5f, 2.0f);
+    f.next();
+    f.hint("EVERY HUD ELEMENT AT ONCE (EACH ALSO HAS", "ITS OWN SIZE ON THE HUD TAB)");
+}
+
 void Game::drawDeviceSettings(const SetLayout& L) {
     if (!devListed_) listDevices();
     const float w = L.L(kColW), h = L.L(kRowH), hw = L.L(kHalfW);
@@ -5693,29 +6708,41 @@ void Game::drawDeviceSettings(const SetLayout& L) {
 void Game::drawControls(const SetLayout& L) {
     const float w = L.L(kColW), h = L.L(kRowH), hw = L.L(kHalfW);
     // the two sub-pages
-    if (ui_.tab(L.X(268), L.Y(90), L.L(368), h, "GENERAL + INTERFACE KEYS", controlsSub_ == 0, UiExp::nav("~settings/controls"), true)) { controlsSub_ = 0; captureAction_ = -1; }
-    if (ui_.tab(L.X(644), L.Y(90), L.L(368), h, "MOVE + WEAPON KEYS", controlsSub_ == 1, UiExp::nav("~settings/controls/movement"), true)) { controlsSub_ = 1; captureAction_ = -1; }
-    ui_.hint(L.X(268), L.Y(126), captureAction_ >= 0 ? "PRESS A KEY, MOUSE BUTTON OR SCROLL - ESC CANCELS, DEL CLEARS"
-                                                     : "CLICK A SLOT TO REBIND IT - RIGHT-CLICK OR DEL UNBINDS", kHintC, L.L(744));
-    // key rows: a header with KEY 1 / KEY 2 over the slots, then a row an action (label, two 108 px slots)
-    static std::string idText[A_COUNT][2];   // the UI test's ids: "<ACTION> KEY 1", "<ACTION> KEY 2"
-    static const char* ids[A_COUNT][2];
+    if (ui_.tab(L.X(268), L.Y(90), L.L(244), h, "GENERAL + INTERFACE", controlsSub_ == 0, UiExp::nav("~settings/controls"), true)) { controlsSub_ = 0; captureAction_ = -1; }
+    if (ui_.tab(L.X(518), L.Y(90), L.L(244), h, "MOVE + WEAPON KEYS", controlsSub_ == 1, UiExp::nav("~settings/controls/movement"), true)) { controlsSub_ = 1; captureAction_ = -1; }
+    if (ui_.tab(L.X(768), L.Y(90), L.L(244), h, "MORE KEYS", controlsSub_ == 2, UiExp::nav("~settings/controls/keys2"), true)) { controlsSub_ = 2; captureAction_ = -1; }
+    if (bindTakenA_ >= 0 && time_ < bindTakenUntil_ && captureAction_ < 0) {   // (a key taken from another action: say so, UNDO)
+        const std::string t = upper(inputName(bindTakenCode_)) + " WAS ON " + actionName(bindTakenA_) + ": UNBOUND THERE";
+        ui_.hint(L.X(268), L.Y(126), t, {1.0f, 0.7f, 0.35f, 1}, L.L(640));
+        if (ui_.button(L.X(932), L.Y(120), L.L(80), L.L(24), "UNDO", UiExp::cfg("bind_*"))) {
+            cfg_.binds.code[bindTakenTo_][bindTakenSlot_] = bindTakenWas_;
+            cfg_.binds.code[bindTakenA_][bindTakenK_] = bindTakenCode_;
+            bindTakenA_ = -1;
+            cfg_.save();
+        }
+    } else
+        ui_.hint(L.X(268), L.Y(126), captureAction_ >= 0 ? "PRESS A KEY, MOUSE BUTTON OR SCROLL - ESC CANCELS, DEL CLEARS"
+                                                         : "CLICK A SLOT TO REBIND IT - RIGHT-CLICK OR DEL UNBINDS", kGrey, L.L(744));
+    // key rows: a header with KEY 1 / 2 / 3 over the slots, then a row an action (label, three 82 px slots)
+    static std::string idText[A_COUNT][kBindSlots];   // the UI test's ids: "<ACTION> KEY 1", "<ACTION> KEY 2", ...
+    static const char* ids[A_COUNT][kBindSlots];
     if (!ids[0][0])
         for (int a = 0; a < A_COUNT; a++)
-            for (int k = 0; k < 2; k++) { idText[a][k] = std::string(actionName(a)) + (k ? " KEY 2" : " KEY 1"); ids[a][k] = idText[a][k].c_str(); }
+            for (int k = 0; k < kBindSlots; k++) { idText[a][k] = std::string(actionName(a)) + " KEY " + std::to_string(k + 1); ids[a][k] = idText[a][k].c_str(); }
+    constexpr float kSlotX = 100, kSlotStep = 87, kSlotW = 82;
     auto keyRows = [&](float col, float y, const char* header, std::initializer_list<int> actions) -> float {
-        ui_.label(L.X(col), L.Y(y), header, ui_.accent, 1.0f, L.L(128));
+        ui_.label(L.X(col), L.Y(y), header, ui_.accent, 1.0f, L.L(96));
         const float hs = ui_.hintScale();
-        for (int k = 0; k < 2; k++) {
-            const char* cap = k ? "KEY 2" : "KEY 1";
-            r_.text(L.X(col + 136 + k * 116 + 54) - r_.textWidth(cap, hs) * 0.5f, L.Y(y + 3), hs, cap, kHintC);
+        for (int k = 0; k < kBindSlots; k++) {
+            static const char* const caps[] = {"KEY 1", "KEY 2", "KEY 3"};
+            r_.text(L.X(col + kSlotX + k * kSlotStep + kSlotW * 0.5f) - r_.textWidth(caps[k], hs) * 0.5f, L.Y(y + 3), hs, caps[k], kGrey);
         }
         y += 24;
         for (int a : actions) {
             const char* name = a == A_NEXTWEAPON ? "NEXT WEAPON" : a == A_PREVWEAPON ? "PREV WEAPON" : actionName(a);
-            ui_.labelFit(L.X(col), L.Y(y + 8), L.L(128), name, kLabelC);
-            for (int k = 0; k < 2; k++) {
-                const float bx = L.X(col + 136 + k * 116), by = L.Y(y), bw = L.L(108);
+            ui_.labelFit(L.X(col), L.Y(y + 8), L.L(96), name, kLabelC);
+            for (int k = 0; k < kBindSlots; k++) {
+                const float bx = L.X(col + kSlotX + k * kSlotStep), by = L.Y(y), bw = L.L(kSlotW);
                 const bool cap = captureAction_ == a && captureSlot_ == k;
                 int& code = cfg_.binds.code[a][k];
                 if (ui_.button(bx, by, bw, h, cap ? "PRESS..." : inputName(code), UiExp::bind().withId(ids[a][k]))) { captureAction_ = a; captureSlot_ = k; }
@@ -5728,9 +6755,12 @@ void Game::drawControls(const SetLayout& L) {
         }
         return y + 16;   // (the next header: 20 under the last row)
     };
-    if (controlsSub_ == 1) {
+    if (controlsSub_ == 2) {   // (1.19.4: the keys that didn't fit the other two pages)
+        keyRows(kColL, keyRows(kColL, keyRows(kColL, 154, "WEAPONS", {A_LASTWEAPON}), "CHAT", {A_TEAMCHAT}), "PRACTICE", {A_SAVEPOS, A_LOADPOS});
+        keyRows(kColR, keyRows(kColR, keyRows(kColR, 154, "SPECTATING", {A_SPECNEXT, A_SPECPREV}), "SCREEN", {A_HIDEHUD}), "RACE", {A_RACERESTART});
+    } else if (controlsSub_ == 1) {
         float y = keyRows(kColL, 154, "MOVEMENT", {A_FORWARD, A_BACK, A_LEFT, A_RIGHT, A_JUMP, A_DASH, A_GRAPPLE, A_USE});
-        keyRows(kColL, y, "ATTACK", {A_FIRE, A_ALTFIRE});
+        keyRows(kColL, y, "ATTACK + RACE", {A_FIRE, A_ALTFIRE, A_RACERESET});
         keyRows(kColR, 154, "WEAPONS", {A_WEAPON1, A_WEAPON2, A_WEAPON3, A_WEAPON4, A_WEAPON5, A_WEAPON6, A_WEAPON7, A_WEAPON8, A_WEAPON9, A_WEAPON10, A_NEXTWEAPON, A_PREVWEAPON});
     } else {
         float y = keyRows(kColR, 154, "CHAT", {A_CHAT, A_TOGGLECHAT, A_QUIP});
@@ -5845,6 +6875,19 @@ void Game::drawCrosshairSettings(const SetLayout& L) {
     f.next();
     ui_.toggle(f.x(), f.top(), w, h, "OUTLINE", cfg_.chOutline, UiExp::cfg("ch_outline"));
     f.next();
+    {   // 1.19.4: the dot's own size, the outline's thickness and opacity, the whole crosshair's opacity
+        const float hw = L.L(kHalfW), x2 = L.X(kColL + kColW - kHalfW);
+        ui_.slider(f.x(), f.top(), hw, h, "DOT", cfg_.chDot, 0, 12, cfg_.chDot <= 0 ? "AS THICK" : "%.0f", UiExp::cfg("ch_dot"), defaultSettings().chDot);
+        cfg_.chDot = clampf(std::round(cfg_.chDot), 0, 12);
+        ui_.slider(x2, f.top(), hw, h, "OPACITY", cfg_.chOpacity, 0.1f, 1, "%.2f", UiExp::cfg("ch_opacity"), defaultSettings().chOpacity);
+        cfg_.chOpacity = clampf(cfg_.chOpacity, 0.1f, 1);
+        f.next();
+        ui_.slider(f.x(), f.top(), hw, h, "OUTLINE PX", cfg_.chOutlineW, 0.5f, 3, "%.1f", UiExp::cfg("ch_outline_w"), defaultSettings().chOutlineW);
+        cfg_.chOutlineW = clampf(cfg_.chOutlineW, 0.5f, 3);
+        ui_.slider(x2, f.top(), hw, h, "OUTLINE A", cfg_.chOutlineA, 0, 1, "%.2f", UiExp::cfg("ch_outline_a"), defaultSettings().chOutlineA);
+        cfg_.chOutlineA = clampf(cfg_.chOutlineA, 0, 1);
+        f.next();
+    }
 
     SetFlow g{ui_, L, kColR, 240};
     g.header("COLOR");
@@ -5856,16 +6899,51 @@ void Game::drawCrosshairSettings(const SetLayout& L) {
     g.section("ON HIT");   // HIT FLASH: off, or the colour a hit flashes the crosshair (white by default)
     ui_.toggle(g.x(), g.top(), w, h, "HIT FLASH", cfg_.chHitFlash, UiExp::cfg("ch_hit_flash"));
     g.next();
-    ui_.colorPicker(g.x(), g.top(), w, h, "HIT FLASH COLOR", cfg_.chHitColor, UiExp::cfg("ch_hit_color"), defaultSettings().chHitColor);
-    g.next();
+    {   // a body hit's flash colour, and a headshot's
+        const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
+        ui_.colorPicker(g.x(), g.top(), hw, h, "HIT COLOR", cfg_.chHitColor, UiExp::cfg("ch_hit_color"), defaultSettings().chHitColor);
+        ui_.colorPicker(x2, g.top(), hw, h, "HEADSHOT", cfg_.chHeadColor, UiExp::cfg("ch_head_color"), defaultSettings().chHeadColor);
+        g.next();
+    }
+    g.section("PER WEAPON");   // a weapon's own STYLE (e.g. a dot on the sniper), and the crosshair as a code to share
+    {
+        static int chW = WPN_SNIPER;
+        static std::vector<std::string> wn, sn;
+        if (wn.empty()) {
+            for (int i = 0; i < WPN_COUNT; i++) wn.push_back("WEAPON: " + upper(baseWeaponDef(i).name));
+            sn = {"ITS STYLE: SAME AS ABOVE", "ITS STYLE: CROSS", "ITS STYLE: CROSS + DOT", "ITS STYLE: DOT", "ITS STYLE: CIRCLE", "ITS STYLE: T"};
+        }
+        const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
+        ui_.cycle(g.x(), g.top(), w, h, "WEAPON", chW, WPN_COUNT, wn, UiExp::local());
+        g.next();
+        int si = cfg_.chWStyle[chW] + 1;
+        if (ui_.cycle(g.x(), g.top(), w, h, "ITS STYLE", si, 6, sn, UiExp::cfg("ch_wstyle_*"))) cfg_.chWStyle[chW] = si - 1;
+        g.next();
+        if (ui_.button(g.x(), g.top(), hw, h, "COPY CODE", UiExp::state("chcode"))) {
+            glfwSetClipboardString(win_, cfg_.crosshairCode().c_str());
+            chCodeMsg_ = "CROSSHAIR CODE COPIED"; chCodeUntil_ = time_ + 3;
+        }
+        if (ui_.button(x2, g.top(), hw, h, "PASTE CODE", UiExp::state("chcode"))) {
+            const char* clip = glfwGetClipboardString(win_);
+            bool ok = clip && cfg_.crosshairFromCode(clip);
+            chCodeMsg_ = ok ? "CROSSHAIR PASTED" : "NO CROSSHAIR CODE ON THE CLIPBOARD"; chCodeUntil_ = time_ + 3;
+            if (ok) cfg_.save();
+        }
+        g.next();
+        if (time_ < chCodeUntil_) g.hint(chCodeMsg_);
+    }
     const Settings& d = defaultSettings();   // (RESET is greyed out while the crosshair is the default one)
     bool chDefault = cfg_.chStyle == d.chStyle && cfg_.chLength == d.chLength && cfg_.chThickness == d.chThickness && cfg_.chGap == d.chGap &&
                      cfg_.chOutline == d.chOutline && cfg_.chTeamColor == d.chTeamColor && length(cfg_.chColor - d.chColor) == 0 &&
-                     cfg_.chHitFlash == d.chHitFlash && length(cfg_.chHitColor - d.chHitColor) == 0;
+                     cfg_.chHitFlash == d.chHitFlash && length(cfg_.chHitColor - d.chHitColor) == 0 && length(cfg_.chHeadColor - d.chHeadColor) == 0 && cfg_.chDot == d.chDot &&
+                     cfg_.chOpacity == d.chOpacity && cfg_.chOutlineW == d.chOutlineW && cfg_.chOutlineA == d.chOutlineA &&
+                     std::equal(std::begin(cfg_.chWStyle), std::end(cfg_.chWStyle), std::begin(d.chWStyle));
     if (ui_.button(L.X(836), L.Y(640), L.L(kHalfW), h, "RESET CROSSHAIR", UiExp::cfg("ch_*"), !chDefault)) {
         cfg_.chStyle = d.chStyle; cfg_.chLength = d.chLength; cfg_.chThickness = d.chThickness; cfg_.chGap = d.chGap;
         cfg_.chOutline = d.chOutline; cfg_.chTeamColor = d.chTeamColor; cfg_.chColor = d.chColor;
-        cfg_.chHitFlash = d.chHitFlash; cfg_.chHitColor = d.chHitColor;
+        cfg_.chHitFlash = d.chHitFlash; cfg_.chHitColor = d.chHitColor; cfg_.chHeadColor = d.chHeadColor;
+        cfg_.chDot = d.chDot; cfg_.chOpacity = d.chOpacity; cfg_.chOutlineW = d.chOutlineW; cfg_.chOutlineA = d.chOutlineA;
+        std::copy(std::begin(d.chWStyle), std::end(d.chWStyle), std::begin(cfg_.chWStyle));
     }
 }
 
@@ -5961,7 +7039,7 @@ void Game::drawFontSettings(const SetLayout& L) {
             else notify("FONT " + upper(name) + ": " + upper(err), 5);   // (nothing changes)
             return;   // (fontList_ stays; the next frame draws in the new font)
         }
-        if (!e.hint.empty()) ui_.hint(L.X(kColR), f.top() + (h - r_.textHeight(hs)) * 0.5f, e.hint, kHintC, w);
+        if (!e.hint.empty()) ui_.hint(L.X(kColR), f.top() + (h - r_.textHeight(hs)) * 0.5f, e.hint, kGrey, w);
         f.next();
     }
     if (n > rows) f.hint(std::to_string(fontScroll_ + 1) + "-" + std::to_string(fontScroll_ + rows) + " OF " + std::to_string(n) + " - WHEEL TO SCROLL");
@@ -6126,16 +7204,21 @@ void Game::drawMainMenu(const SetLayout& L) {
     if (ui_.textField(9, x, L.Y(186), w, h, cfg_.name, 20, UiExp::cfg("name").withId("NAME"))) cfg_.save();
     if (ui_.button(x, L.Y(246), hw, h, "PLAY VS BOTS", UiExp::nav("vsbots"))) setScreen(Screen::VsBots);
     if (ui_.button(x2, L.Y(246), hw, h, "TIME TRIAL", UiExp::state("hosting", "1"))) startTimeTrial();
-    if (ui_.button(x, L.Y(294), w, h, "JOIN GAME", UiExp::nav("join"))) setScreen(Screen::Join);
+    if (cfg_.lastAddress.empty()) { if (ui_.button(x, L.Y(294), w, h, "JOIN GAME", UiExp::nav("join"))) setScreen(Screen::Join); }
+    else {   // RECONNECT: the server you joined last
+        if (ui_.button(x, L.Y(294), hw, h, "JOIN GAME", UiExp::nav("join"))) setScreen(Screen::Join);
+        if (ui_.button(x2, L.Y(294), hw, h, "RECONNECT", UiExp::nav("connecting"))) { reconnectAt_ = 0; reconnectTries_ = 0; connectTo(cfg_.lastAddress); }
+    }
     if (ui_.button(x, L.Y(342), w, h, "HOST GAME", UiExp::nav("host"))) setScreen(Screen::Host);
     if (ui_.button(x, L.Y(390), hw, h, "MAP EDITOR", UiExp::nav("editor"))) openEditor("");
     if (ui_.button(x2, L.Y(390), hw, h, "LEADERBOARD", UiExp::nav("leaderboard"))) { nextBoardFetch_ = 0; raceStatsView_ = false; setScreen(Screen::Leaderboard); }
-    if (ui_.button(x, L.Y(438), hw, h, "SETTINGS", UiExp::nav("settings"))) { openSettingsTab(TAB_PLAYER); setScreen(Screen::Settings); }
+    if (ui_.button(x, L.Y(438), hw, h, "SETTINGS", UiExp::nav("settings"))) { openSettingsTab(settingsStartTab()); setScreen(Screen::Settings); }
     if (ui_.button(x2, L.Y(438), hw, h, "INFO", UiExp::nav("info/*"))) setScreen(Screen::Info);   // how everything works
     if (ui_.button(x, L.Y(486), hw, h, "DISCORD", UiExp::url())) openUrl(kDiscordUrl);
     if (ui_.button(x2, L.Y(486), hw, h, "DEMOS", UiExp::nav("demos"))) setScreen(Screen::Demos);
     if (ui_.button(x, L.Y(534), w, h, "BENCHMARK", UiExp::nav("benchmarks"))) setScreen(Screen::Benchmarks);
-    if (ui_.button(x, L.Y(594), w, h, "QUIT", UiExp::quit())) quit_ = true;   // (destructive: its own row, 20 px below)
+    if (ui_.button(x, L.Y(594), w, h, confirmArmed("quit") ? "SURE? QUIT" : "QUIT", (cfg_.confirmLeave && !confirmArmed("quit") ? UiExp::state("confirm", "quit") : UiExp::quit()).withId("QUIT")) &&
+        confirmed("quit")) quit_ = true;   // (destructive: its own row, 20 px below)
     if (!error_.empty()) ui_.labelCentered(L.X(640), L.Y(650), error_, kRed, 1.0f, L.L(960));
 }
 
@@ -6144,25 +7227,61 @@ void Game::drawMainMenu(const SetLayout& L) {
 void Game::drawJoin(const SetLayout& L) {
     const float lx = L.X(360), lw = L.L(560), h = L.L(kMRow), hs = ui_.hintScale();
     ui_.label(lx, L.Y(166), "ADDRESS (IP:PORT)", kGrey, 1.0f, lw);
-    ui_.textField(2, lx, L.Y(186), L.L(416), h, joinAddr_, 64, UiExp::local().withId("ADDRESS"));
+    ui_.textField(2, lx, L.Y(186), L.L(332), h, joinAddr_, 64, UiExp::local().withId("ADDRESS"));
+    {   // RECENT: the servers you joined last, one per click (newest first)
+        const std::vector<std::string> rec = splitList(cfg_.recentServers);
+        if (ui_.button(L.X(700), L.Y(186), L.L(76), h, "RECENT", UiExp::local().withId("RECENT"), !rec.empty())) {
+            auto it = std::find(rec.begin(), rec.end(), joinAddr_);
+            joinAddr_ = it == rec.end() || it + 1 == rec.end() ? rec[0] : *(it + 1);
+        }
+    }
     if (ui_.button(L.X(784), L.Y(186), L.L(136), h, "CONNECT", UiExp::nav("connecting")) || (uiIn_.enter && !joinAddr_.empty())) connectTo(joinAddr_);
     ui_.label(lx, L.Y(246), "SERVERS (LAN + INTERNET)", ui_.accent, 1.0f, lw);
     ui_.hint(lx, L.Y(266), browser_.internetStatus(), kGrey, lw);
-    ui_.panel(lx, L.Y(282), lw, L.L(236), 0.6f);
+    ui_.panel(lx, L.Y(282), lw, L.L(200), 0.6f);
     // the columns: SERVER, MAP, PLAYERS, PING (design x of each, and how far it may run)
     static const float colX[4] = {372, 622, 752, 852}, colEnd[4] = {612, 744, 844, 908};
     static const char* const heads[4] = {"SERVER", "MAP", "PLAYERS", "PING"};
     for (int c = 0; c < 4; c++) ui_.hint(L.X(colX[c]), L.Y(290), heads[c], kGrey, L.L(colEnd[c] - colX[c]));
-    const int kJoinRows = 6;   // rows that fit the list panel; the wheel scrolls the rest
-    const int nsv = (int)browser_.servers().size();
+    const int kJoinRows = 5;   // rows that fit the list panel; the wheel scrolls the rest
+    // what's listed: the filters, then favourites first, then the sort (a few dozen servers at most: built each frame)
+    const std::vector<std::string> favs = splitList(cfg_.favServers);
+    auto isFav = [&](const std::string& a) { return std::find(favs.begin(), favs.end(), a) != favs.end(); };
+    std::vector<int> shown;
+    for (int i = 0; i < (int)browser_.servers().size(); i++) {
+        auto& sv = browser_.servers()[i];
+        const bool fav = isFav(sv.addr.toString());
+        if (!fav && !sv.noReply) {
+            if (cfg_.browserHideFull && sv.players >= sv.maxPlayers) continue;
+            if (cfg_.browserHideEmpty && sv.players == 0) continue;
+            if (cfg_.browserMaxPing > 0 && sv.ping > cfg_.browserMaxPing) continue;
+        }
+        shown.push_back(i);
+    }
+    std::stable_sort(shown.begin(), shown.end(), [&](int a, int b) {
+        auto& x = browser_.servers()[a]; auto& y = browser_.servers()[b];
+        const bool fx = isFav(x.addr.toString()), fy = isFav(y.addr.toString());
+        if (fx != fy) return fx;
+        if (x.noReply != y.noReply) return !x.noReply;
+        if (cfg_.browserSort == 1 && x.players != y.players) return x.players > y.players;
+        if (cfg_.browserSort == 2) return upper(x.name) < upper(y.name);
+        return x.ping < y.ping;
+    });
+    const int nsv = (int)shown.size();
     joinScroll_ = std::min(joinScroll_, std::max(0, nsv - kJoinRows));
     const float ts = ui_.textScale();
     for (int k = 0, si = joinScroll_; si < nsv && k < kJoinRows; k++, si++) {
-        auto& sv = browser_.servers()[si];
+        auto& sv = browser_.servers()[shown[si]];
         const float ry = L.Y(306 + 36 * k), rh = L.L(32), ty = ry + (rh - r_.textHeight(ts)) * 0.5f;
         if (ui_.button(L.X(366), ry, L.L(548), rh, "", UiExp::nav("connecting").withId("SERVER").optional())) {
             joinAddr_ = sv.addr.toString();
             connectTo(joinAddr_);
+        } else if (ui_.rclicked(L.X(366), ry, L.L(548), rh)) {   // right-click: a favourite (listed first, never filtered out), or not
+            std::vector<std::string> f = favs;
+            const std::string a = sv.addr.toString();
+            if (isFav(a)) f.erase(std::remove(f.begin(), f.end(), a), f.end()); else f.push_back(a);
+            cfg_.favServers = joinList(f);
+            cfg_.save();
         }
         if (sv.noReply) r_.text(L.X(colX[1]), ty, ts, r_.textClip("NO RESPONSE - CLICK TO TRY", ts, L.L(colEnd[3] - colX[1])), kGrey);
         else {
@@ -6175,7 +7294,7 @@ void Game::drawJoin(const SetLayout& L) {
             r_.text(L.X(colX[3]), ty, ts, b, kWhite);
         }
         // the name: a long one scrolls back and forth so all of it can be read
-        std::string name = upper(sv.name);
+        std::string name = (isFav(sv.addr.toString()) ? "* " : "") + upper(sv.name);
         const float avail = L.L(colEnd[0] - colX[0]);
         int extra = 0;   // leading characters to drop before the rest fits (measured: W is wider than M)
         while (extra < (int)name.size() && r_.textWidth(name.substr(extra), ts) > avail) extra++;
@@ -6188,10 +7307,25 @@ void Game::drawJoin(const SetLayout& L) {
         r_.text(L.X(colX[0]), ty, ts, name, kWhite);
     }
     if (browser_.servers().empty()) ui_.label(L.X(372), L.Y(310), "NO GAMES FOUND", kGrey, 1.0f, L.L(536));
-    else if (nsv > kJoinRows) {
-        char more[64];
-        snprintf(more, sizeof more, "%d-%d OF %d - WHEEL TO SCROLL", joinScroll_ + 1, std::min(nsv, joinScroll_ + kJoinRows), nsv);
-        ui_.hint(lx + lw - r_.textWidth(more, hs), L.Y(522), more, kGrey, lw);
+    else if (shown.empty()) ui_.label(L.X(372), L.Y(310), "NO GAMES MATCH THE FILTERS", kGrey, 1.0f, L.L(536));
+    {   // under the list: how far it's scrolled, and the right-click hint
+        char more[96];
+        if (nsv > kJoinRows) snprintf(more, sizeof more, "%d-%d OF %d - WHEEL TO SCROLL - RIGHT-CLICK: FAVORITE", joinScroll_ + 1, std::min(nsv, joinScroll_ + kJoinRows), nsv);
+        else snprintf(more, sizeof more, "RIGHT-CLICK A SERVER: FAVORITE (LISTED FIRST)");
+        ui_.hint(lx + lw - r_.textWidth(more, hs), L.Y(486), more, kGrey, lw);
+    }
+    {   // the filters and the sort (saved)
+        const float fw = L.L(134), fg = L.L(8), fy = L.Y(500);
+        static const std::vector<std::string> sorts = {"BY PING", "BY PLAYERS", "BY NAME"};
+        static const std::vector<std::string> pings = {"PING: ANY", "PING: < 50", "PING: < 100", "PING: < 150"};
+        static const int pingVals[] = {0, 50, 100, 150};
+        bool ch = ui_.cycle(lx, fy, fw, L.L(30), "SORT", cfg_.browserSort, 3, sorts, UiExp::cfg("browser_sort"));
+        ch |= ui_.toggle(lx + fw + fg, fy, fw, L.L(30), "HIDE FULL", cfg_.browserHideFull, UiExp::cfg("browser_hide_full"));
+        ch |= ui_.toggle(lx + 2 * (fw + fg), fy, fw, L.L(30), "HIDE EMPTY", cfg_.browserHideEmpty, UiExp::cfg("browser_hide_empty"));
+        if (ch) cfg_.save();   // (saved as they change: JOIN has no settings BACK that saves)
+        int pi = 0;
+        for (int i = 0; i < 4; i++) if (pingVals[i] == cfg_.browserMaxPing) pi = i;
+        if (ui_.cycle(lx + 3 * (fw + fg), fy, fw, L.L(30), "MAX PING", pi, 4, pings, UiExp::cfg("browser_max_ping"))) { cfg_.browserMaxPing = pingVals[pi]; cfg_.save(); }
     }
     if (ui_.button(lx, L.Y(538), L.L(276), h, "BACK", UiExp::nav("main"))) setScreen(Screen::Main);
     if (ui_.button(L.X(644), L.Y(538), L.L(276), h, "REFRESH LIST", UiExp::state("browser"))) browser_.refresh();
@@ -6623,7 +7757,7 @@ static const char* const kInfoPages[][48] = {
         "Q - grapple: hold to hook what you're aiming at and pull toward it; release to let go.",
         "LEFT MOUSE - fire.   RIGHT MOUSE - alt-fire (scope, knife throw, rocket lob, bubble stream, syringe throw...).",
         "E - use (plant / defuse the bomb).   1-9, 0 - weapons.   MOUSE WHEEL - next / previous weapon.",
-        "TAB - scoreboard.   ENTER - chat.   F1 / F2 - vote yes / no.   F4 - vote to start the match.",
+        "TAB - scoreboard.   ENTER - chat.   F1 / F2 - vote yes / no.   F5 - vote to start the match.",
         "F3 - performance overlay (average, 1% and 0.1% low FPS, input latency).   F12 - screenshot.   ESC - menu, votes, settings.",
         "# MOVEMENT",
         "You run at 9.5 m/s. In the air, holding a direction drifts you up to run speed (a standing jump moves too).",
@@ -6720,46 +7854,123 @@ bool Game::playDemo(const std::string& path) {
 }
 
 // DEMOS: newest first, 8 rows (the wheel scrolls the rest), the recording rate, BACK and OPEN FOLDER
+// The settings that are applied when they change rather than read every frame, all at once
+void Game::applySettings() {
+    audio_.setMasterVolume(bgCap_ && cfg_.bgMute ? 0.0f : cfg_.volume);
+    audio_.setEffectsVolume(cfg_.volumeEffects);
+    audio_.setAnnouncerVolume(cfg_.volumeAnnouncer);
+    audio_.setQuips(cfg_.quips);
+    audio_.setQuipVolume(cfg_.volumeQuips);
+    audio_.setOutputDevice(cfg_.audioOutput);   // (nothing unless it changed)
+    r_.setFog(cfg_.fog);
+    r_.setGrade(cfg_.gamma, cfg_.contrast, cfg_.saturation);
+    r_.setShadowRes(cfg_.shadowRes);
+    applyPresentMode();
+    glfwSetWindowAttrib(win_, GLFW_AUTO_ICONIFY, cfg_.autoIconify ? GLFW_TRUE : GLFW_FALSE);
+    ui_.accent = rgba(cfg_.colorFriendly);
+}
+
+// DEMOS > KEEP: all but the newest cfg_.demoKeep demos deleted (after each recording starts, and when KEEP changes)
+void Game::pruneDemos() {
+    if (cfg_.demoKeep <= 0) return;
+    std::error_code ec;
+    std::vector<std::pair<std::filesystem::file_time_type, std::filesystem::path>> fs;
+    for (auto& e : std::filesystem::directory_iterator(demoDir(), ec))
+        if (e.path().extension() == ".qdemo") fs.push_back({e.last_write_time(ec), e.path()});
+    std::sort(fs.begin(), fs.end(), [](auto& x, auto& y) { return x.first > y.first; });
+    for (size_t i = (size_t)cfg_.demoKeep; i < fs.size(); i++)
+        if (!(net_.recording() && i == 0)) std::filesystem::remove(fs[i].second, ec);
+    demoListAt_ = 0;
+}
+
 void Game::drawDemos(const SetLayout& L) {
     if (time_ >= demoListAt_) { // rescan now and then (a demo you just recorded shows up)
         demoListAt_ = time_ + 2;
         demoFiles_.clear();
         demoNotes_.clear();
+        demoSizes_.clear();
         std::error_code ec;
-        std::vector<std::pair<std::filesystem::file_time_type, std::string>> fs;
+        struct F { std::filesystem::file_time_type t; std::string path; uintmax_t size; };
+        std::vector<F> fs;
         for (auto& e : std::filesystem::directory_iterator(demoDir(), ec))
-            if (e.path().extension() == ".qdemo") fs.push_back({e.last_write_time(ec), e.path().string()});
-        std::sort(fs.begin(), fs.end(), [](auto& a, auto& b) { return a.first > b.first; });
+            if (e.path().extension() == ".qdemo") fs.push_back({e.last_write_time(ec), e.path().string(), e.file_size(ec)});
+        // (SORT: newest first, oldest first, by name, biggest first)
+        std::sort(fs.begin(), fs.end(), [&](const F& a, const F& b) {
+            switch (cfg_.demoSort) {
+                case 1: return a.t < b.t;
+                case 2: return a.path < b.path;
+                case 3: return a.size > b.size;
+                default: return a.t > b.t;
+            }
+        });
         for (auto& f : fs) {
-            demoFiles_.push_back(f.second);
+            demoFiles_.push_back(f.path);
+            demoSizes_.push_back(f.size);
             uint16_t proto = kProtocolVersion;   // (6 bytes per file every 2 s, only while this page is open)
             std::string note;
-            if (demo::readProtocol(f.second, &proto) && proto != kProtocolVersion)
+            if (demo::readProtocol(f.path, &proto) && proto != kProtocolVersion)
                 note = demo::upgradeRunning() && demo::convertible(proto) ? "CONVERTING..." : "RECORDED WITH " + upper(demo::recordedWith(proto));
             demoNotes_.push_back(note);
         }
     }
-    const int kRows = 8;
+    const int kRows = 6;   // (the page fits the band at 720p with SORT, AUTO RECORD and KEEP under the list)
     const int nd = (int)demoFiles_.size();
     demoScroll_ = std::min(demoScroll_, std::max(0, nd - kRows));
     const int rows = std::min(nd - demoScroll_, kRows);
     static const std::string rateHint = "FULL RATE: EVERY SNAPSHOT (UP TO 1000 HZ) - SMOOTHER, MUCH BIGGER FILES";
     const float lx = L.X(360), lw = L.L(560);
     const int hintLines = (int)ui_.wrap(rateHint, ui_.hintScale(), lw).size();
-    // title, the list (or the "none yet" line), the scroll line, RATE + its hint, BACK / OPEN FOLDER
+    // title, SORT, the list (or the "none yet" line), the scroll line, RATE + its hint, AUTO RECORD + KEEP, BACK / OPEN FOLDER
     const float listH = std::max(rows, 1) * 36.0f, scrollH = nd > rows ? 28 : 12;
-    const float kH = 24 + 16 + listH + scrollH + 44 + hintLines * 14 - 2 + 20 + 40;
+    const float kH = 24 + 16 + 40 + listH + scrollH + 44 + hintLines * 14 - 2 + 20 + 44 + 40;
     float y = bandTop(kH);
     ui_.panel(L.X(344), L.Y(y - 16), L.L(592), L.L(kH + 32));
     ui_.labelCentered(L.X(640), L.Y(y), "DEMOS", kWhite, 1.5f, lw);
     y += 40;
+    {
+        static const std::vector<std::string> sorts = {"SORT: NEWEST FIRST", "SORT: OLDEST FIRST", "SORT: NAME", "SORT: BIGGEST FIRST"};
+        if (ui_.cycle(lx, L.Y(y), lw, L.L(32), "SORT", cfg_.demoSort, 4, sorts, UiExp::cfg("demo_sort"))) { demoListAt_ = 0; cfg_.save(); }
+        y += 40;
+    }
     if (demoFiles_.empty()) ui_.labelCentered(L.X(640), L.Y(y + 8), "NONE YET - IN A GAME, ESC > RECORD DEMO", kGrey, 1.0f, lw);
     for (int k = 0; k < rows; k++) {
         int i = demoScroll_ + k;
         std::string name = std::filesystem::path(demoFiles_[i]).stem().string();
         for (auto& c : name) c = c == '_' ? ' ' : (char)toupper((unsigned char)c);
         if (i < (int)demoNotes_.size() && !demoNotes_[i].empty()) name += " (" + demoNotes_[i] + ")";
-        if (ui_.button(lx, L.Y(y + 36 * k), lw, L.L(32), name, UiExp::state("demo", "1").withId("DEMO"))) { playDemo(demoFiles_[i]); return; }
+        if (i < (int)demoSizes_.size()) {   // (its size: the details a list needs to pick what to delete)
+            char sz[24];
+            snprintf(sz, sizeof sz, "  %.1f MB", demoSizes_[i] / 1048576.0);
+            name += sz;
+        }
+        const float dw = L.L(72);
+        if (demoRename_ == demoFiles_[i]) {   // RENAME: its name in a field; Enter renames the file, Esc or a click away keeps it
+            ui_.textField(63, lx, L.Y(y + 36 * k), lw - 2 * dw - L.L(8), L.L(32), demoRenameText_, 60, UiExp::state("demos").withId("NEW NAME"));
+            if (uiIn_.enter) {
+                std::string n;
+                for (char c : demoRenameText_) n += std::isalnum((unsigned char)c) || c == '-' ? (char)std::tolower((unsigned char)c) : '_';   // (a file name on every system)
+                std::error_code ec;
+                const std::filesystem::path to = std::filesystem::path(demoFiles_[i]).parent_path() / (n + ".qdemo");
+                if (!n.empty() && !std::filesystem::exists(to, ec)) std::filesystem::rename(demoFiles_[i], to, ec);
+                demoRename_.clear();
+                demoListAt_ = 0;
+            } else if (!ui_.focused(63)) demoRename_.clear();
+        } else if (ui_.button(lx, L.Y(y + 36 * k), lw - 2 * dw - L.L(8), L.L(32), name, UiExp::state("demo", "1").withId("DEMO").clipOk())) { playDemo(demoFiles_[i]); return; }
+        if (ui_.button(lx + lw - 2 * dw - L.L(4), L.Y(y + 36 * k), dw, L.L(32), "RENAME", UiExp::state("demoren").withId("RENAME"))) {
+            demoRename_ = demoFiles_[i];
+            demoRenameText_ = std::filesystem::path(demoFiles_[i]).stem().string();
+            ui_.focus(63);
+        }
+        // DELETE: arms on the first click (SURE?), deletes on a second within 3 s
+        const bool armed = demoDelArmed_ == demoFiles_[i] && time_ < demoDelUntil_;
+        if (ui_.button(lx + lw - dw, L.Y(y + 36 * k), dw, L.L(32), armed ? "SURE?" : "DELETE", (armed ? UiExp::state("demos") : UiExp::state("demodel")).withId("DELETE"))) {
+            if (armed) {
+                std::error_code ec;
+                std::filesystem::remove(demoFiles_[i], ec);
+                demoDelArmed_.clear();
+                demoListAt_ = 0;
+            } else { demoDelArmed_ = demoFiles_[i]; demoDelUntil_ = time_ + 3; }
+        }
     }
     y += listH;
     if (nd > rows) {
@@ -6773,6 +7984,17 @@ void Game::drawDemos(const SetLayout& L) {
     if (ui_.cycle(lx, L.Y(y), lw, L.L(kMRow), "RATE", rate, 2, rates, UiExp::cfg("demo_full_rate"))) { cfg_.demoFullRate = rate == 1; cfg_.save(); }
     y += 44;
     y += ui_.hintWrapped(lx, L.Y(y), rateHint, kGrey, lw, L.L(14)) * 14 - 2 + 20;
+    {   // AUTO RECORD and KEEP (the oldest deleted past it)
+        const float hw = L.L(276);
+        static const std::vector<std::string> ar = {"AUTO RECORD: OFF", "AUTO RECORD: EVERY MATCH", "AUTO RECORD: RANKED ONLY"};
+        if (ui_.cycle(lx, L.Y(y), hw, L.L(kMRow), "AUTO RECORD", cfg_.autoRecord, 3, ar, UiExp::cfg("auto_record"))) cfg_.save();
+        static const int keeps[] = {0, 20, 50, 100};
+        static const std::vector<std::string> kn = {"KEEP: ALL", "KEEP: NEWEST 20", "KEEP: NEWEST 50", "KEEP: NEWEST 100"};
+        int ki = 0;
+        for (int k = 0; k < 4; k++) if (keeps[k] == cfg_.demoKeep) ki = k;
+        if (ui_.cycle(L.X(644), L.Y(y), hw, L.L(kMRow), "KEEP", ki, 4, kn, UiExp::cfg("demo_keep"))) { cfg_.demoKeep = keeps[ki]; cfg_.save(); pruneDemos(); }
+        y += 44;
+    }
     if (ui_.button(lx, L.Y(y), L.L(276), L.L(kMRow), "BACK", UiExp::nav("main"))) setScreen(Screen::Main);
     if (ui_.button(L.X(644), L.Y(y), L.L(276), L.L(kMRow), "OPEN FOLDER", UiExp::url())) {
         std::error_code ec;
@@ -6867,7 +8089,7 @@ void Game::drawPerf() {
         if (net_.hasSnapshot()) perfTick_ += "  SERVER " + std::to_string(net_.tickRate()) + " HZ  LOSS " + std::to_string(net_.snapshotLoss()) + "%";
         // PRIORITIZE GAME: what Windows actually gave (and the focus state is checked again here, twice a second: a
         // window focused before its focus callback was set never got the call)
-        if (!uiTest_) setGamePriority(cfg_.prioritize && glfwGetWindowAttrib(win_, GLFW_FOCUSED) != 0);
+        if (!uiTest_) setGamePriority(prioLevel(glfwGetWindowAttrib(win_, GLFW_FOCUSED) != 0));
         perfPrio_ = gamePriorityStatus();
     }
     // four lines in a box at (24, 8) no wider than x 396 at 720p, so it stays left of the score bar (x 420..860; it
@@ -7130,13 +8352,17 @@ void Game::applyDisplayMode() {
     if (!mon) return;
     const DeskMode vm = desktopMode(mon);
     appliedMon_ = mon;
+    vrrHz_ = cfg_.displayMode == 2 && cfg_.fullscreenHz > 0 ? cfg_.fullscreenHz : vm.hz;   // (G-SYNC / FREESYNC's cap)
+    glfwSetWindowAttrib(win_, GLFW_AUTO_ICONIFY, cfg_.autoIconify ? GLFW_TRUE : GLFW_FALSE);   // (fullscreen: alt-tab minimizes it)
     int mx = 0, my = 0;
     glfwGetMonitorPos(mon, &mx, &my);
     switch (cfg_.displayMode) {
         case 2: // exclusive fullscreen: owns the display, bypasses the desktop compositor (at DEVICES' REFRESH RATE if
                 // one is picked: GLFW takes the closest mode the monitor has at that size)
             glfwSetWindowAttrib(win_, GLFW_DECORATED, GLFW_TRUE);
-            glfwSetWindowMonitor(win_, mon, 0, 0, vm.w, vm.h, cfg_.fullscreenHz > 0 ? cfg_.fullscreenHz : vm.hz);
+            // (VIDEO > MORE 3: FULLSCREEN SIZE: a lower resolution, which the monitor stretches to fill the screen)
+            glfwSetWindowMonitor(win_, mon, 0, 0, cfg_.fsWidth > 0 ? cfg_.fsWidth : vm.w, cfg_.fsHeight > 0 ? cfg_.fsHeight : vm.h,
+                                 cfg_.fullscreenHz > 0 ? cfg_.fullscreenHz : vm.hz);
             break;
         case 1: { // borderless fullscreen window covering the monitor
             glfwSetWindowMonitor(win_, nullptr, mx, my, vm.w, vm.h, 0);
@@ -7145,10 +8371,21 @@ void Game::applyDisplayMode() {
             glfwSetWindowSize(win_, vm.w, vm.h);
             break;
         }
-        default:   // (on the chosen monitor too: 100 px in from its corner)
-            glfwSetWindowMonitor(win_, nullptr, mx + 100, my + 100, cfg_.width, cfg_.height, 0);
+        default: {   // where it was last (on a monitor that's still there), else on the chosen monitor 100 px in from its corner
+            int wx = mx + 100, wy = my + 100;
+            if (cfg_.winX > -100000) {
+                int n = 0;
+                GLFWmonitor** ms = glfwGetMonitors(&n);
+                for (int i = 0; i < n; i++) {   // (its title bar on a monitor: it can be dragged back)
+                    int ax = 0, ay = 0; const DeskMode m = desktopMode(ms[i]);
+                    glfwGetMonitorPos(ms[i], &ax, &ay);
+                    if (cfg_.winX + 40 >= ax && cfg_.winX + 40 < ax + m.w && cfg_.winY >= ay && cfg_.winY + 10 < ay + m.h) { wx = cfg_.winX; wy = cfg_.winY; break; }
+                }
+            }
+            glfwSetWindowMonitor(win_, nullptr, wx, wy, cfg_.width, cfg_.height, 0);
             glfwSetWindowAttrib(win_, GLFW_DECORATED, GLFW_TRUE);
             break;
+        }
     }
     applyPresentMode(); // some drivers reset the swap interval on mode changes
     // Render at the new size right away (don't wait for a resize event that may arrive late).
@@ -7279,8 +8516,8 @@ void Game::beforeSwap() {
 
 void Game::applyPresentMode() {
     int interval = 0;
-    if (cfg_.presentMode == 1) interval = 1;
-    if (cfg_.presentMode == 2) {
+    if (cfg_.presentMode == 1 || cfg_.vrr) interval = 1;   // (G-SYNC / FREESYNC: vsync, the cap under the refresh keeps it out of vsync's queue)
+    if (cfg_.presentMode == 2 && !cfg_.vrr) {
         bool tear = glfwExtensionSupported("WGL_EXT_swap_control_tear") || glfwExtensionSupported("GLX_EXT_swap_control_tear");
         interval = tear ? -1 : 1; // adaptive: vsync, but tear instead of waiting when a frame is late
     }
@@ -7440,6 +8677,19 @@ void Game::drawPicker(float cx, float y) {
     bool rankedTile = picker_ == PICK_HOST_MODE || picker_ == PICK_LIVE_MODE; // RANKED is one more choice, holding the ladders
     bool rankedNow = live ? serverRanked : host && cfg_.hostRanked; // vs bots is never ranked
     int n = ladders ? 3 : variants ? kArenaVariants : modes ? MODE_COUNT + (rankedTile ? 1 : 0) : (int)maps_.size();
+    // a map list: only the maps built for the mode (owner, 2026-10-30: "you shouldnt get to pick maps that are not under the
+    // playable gamemode for the map"; a tourney list: built for tourney; ranked: its ladder's maps), vis[i] is card i's map
+    static std::vector<int> vis;
+    vis.clear();
+    const bool mapList = !ladders && !variants && !modes;
+    const int ladderNow = live ? net_.mode().arenaVariant : cfg_.hostArenaVariant;
+    static int scrollOf = PICK_NONE;   // (a picker just opened: scrolled to the current map's row, when drawn)
+    if (picker_ != scrollOf) { scrollOf = picker_; pickScroll_ = -1; }
+    if (mapList) {
+        for (int i = 0; i < (int)maps_.size() && i < (int)mapInfo_.size(); i++)
+            if ((mapInfo_[i].modes >> (multi ? MODE_TOURNEY : mode) & 1) && (!rankedNow || (mapInfo_[i].ranked >> ladderNow & 1))) vis.push_back(i);
+        n = (int)vis.size();
+    }
     // where a choice / BACK leaves you (the UI test checks it): the host / vs bots menu, or the pause menu (or its votes)
     const char* done = host ? "host" : "vsbots";
     const char* back = screen_ == Screen::InGame ? (voteMenu_ ? "ingame/pause/vote" : "ingame/pause") : done;
@@ -7488,16 +8738,11 @@ void Game::drawPicker(float cx, float y) {
             if (i == MODE_ARENA) it.sub = "9 RULESETS >";
             if (i == MODE_TOURNEY) it.sub = "BRACKET OF 1V1S - RULESETS >";
         } else {
-            const MapInfo& mi = mapInfo_[i];
-            it.label = upper(maps_[i]);
-            it.cur = multi ? multiSel_[i] : i == mapIdx;
-            it.built = (mi.modes >> (multi ? MODE_TOURNEY : mode)) & 1;
-            int ladderNow = live ? net_.mode().arenaVariant : cfg_.hostArenaVariant;
-            bool rankedOnly = rankedNow && !(mi.ranked >> ladderNow & 1);
-            // any map can be picked for any mode; one not built for it says so (it may be missing what the mode needs)
-            it.sub = rankedOnly ? "NOT A RANKED MAP FOR THIS LADDER" : !it.built ? "WARNING: NOT BUILT FOR THIS MODE - MAY NOT WORK" : mi.preferredMode >= 0 ? std::string("BUILT FOR ") + modeTitle(mi.preferredMode) : "ALL MODES";
-            it.ok = !rankedOnly;
-            it.warn = !it.built && !rankedOnly;
+            const MapInfo& mi = mapInfo_[vis[i]];
+            it.label = upper(maps_[vis[i]]);
+            it.cur = multi ? multiSel_[i] : vis[i] == mapIdx;
+            it.built = true;
+            it.sub = mi.preferredMode >= 0 ? std::string("FOR ") + modeTitle(mi.preferredMode) : "ALL MODES";
         }
         it.pe = multi ? UiExp::state("multisel")
               : ladders && live ? UiExp::cmd(livePickVote_ ? "callvote ranked on" : "ranked on")
@@ -7534,14 +8779,66 @@ void Game::drawPicker(float cx, float y) {
                 picker_ = PICK_VARIANT;
             } else if (live) picker_ = PICK_LIVE_MAP;    // in game: then a map for it (one vote / change for both)
             else finish();
-        } else { mapIdx = i; finish(); }
+        } else { mapIdx = vis[i]; finish(); }
     };
 
     {
         const bool inGame = screen_ == Screen::InGame;
         const SetLayout L = inGame ? ingameLayout(960) : menuLayout(960);
         const float bandH = inGame ? kIgH : kBandH;
-        const bool mapList = !ladders && !variants && !modes;
+        if (mapList) {   // MAPS: 7 across, each card its preview over its name and the mode it's for; the wheel scrolls the rows
+            constexpr int cols = 7;
+            const float gx = 12, gy = 10, cw = (928 - gx * (cols - 1)) / cols, imgH = std::round(cw * 9 / 16), nameH = 26;
+            const float cardH = imgH + nameH, rowH = cardH + 4 + 14, headH = 24 + 16;
+            const int rowsAll = std::max(1, (n + cols - 1) / cols);
+            const int rowsFit = std::max(1, (int)((bandH - headH - 92 - 18 + gy) / (rowH + gy)));
+            const int rows = std::min(rowsAll, rowsFit);
+            if (pickScroll_ < 0) {   // (just opened: the current map's row in view)
+                pickScroll_ = 0;
+                for (int i = 0; i < n; i++) if (vis[i] == mapIdx) pickScroll_ = i / cols - rows / 2;
+            }
+            pickScroll_ = std::clamp(pickScroll_, 0, rowsAll - rows);
+            const bool scrolls = rowsAll > rows;
+            const float kH = headH + rows * rowH + (rows - 1) * gy + 20 + 40 + (scrolls ? 18 : 0);
+            const float top = inGame ? ingameTop(L, kH) : bandTop(kH);
+            ui_.panel(L.X(160), L.Y(top - 16), L.L(960), L.L(kH + 32), inGame ? 0.95f : 0.75f);
+            ui_.labelCentered(L.X(640), L.Y(top), title, kWhite, 1.5f, L.L(928));
+            float ry = top + headH;
+            if (n == 0) ui_.labelCentered(L.X(640), L.Y(ry + 20), "NO MAP IS BUILT FOR THIS MODE YET", kGrey, 1.0f, L.L(928));
+            for (int r = 0; r < rows; r++, ry += rowH + gy)
+                for (int c = 0; c < cols; c++) {
+                    const int i = (pickScroll_ + r) * cols + c;
+                    if (i >= n) break;
+                    const Item it = item(i);
+                    const float bx = 176 + c * (cw + gx);
+                    if (it.cur) tabFrame(r_, ui_, L.X(bx), L.Y(ry), L.L(cw), L.L(cardH));
+                    r_.preview(L.X(bx), L.Y(ry), L.L(cw), L.L(imgH), vis[i]);
+                    if (uiIn_.pressed && ui_.over(L.X(bx), L.Y(ry), L.L(cw), L.L(imgH))) { choose(i); return; }   // (the picture picks it too)
+                    if (ui_.button(L.X(bx), L.Y(ry + imgH), L.L(cw), L.L(nameH), it.label, it.pe.clipOk())) { choose(i); return; }
+                    ui_.hint(L.X(bx + 2), L.Y(ry + cardH + 4), it.sub, it.cur ? ui_.accent : kGrey, L.L(cw - 4));
+                }
+            ry += 20 - gy;
+            if (scrolls) {
+                char more[64];
+                snprintf(more, sizeof more, "ROWS %d-%d OF %d - WHEEL TO SCROLL", pickScroll_ + 1, pickScroll_ + rows, rowsAll);
+                ui_.hintCentered(L.X(640), L.Y(ry - 6), more, kGrey, L.L(928));
+                ry += 18;
+            }
+            const float fw = 176;
+            if (multi) {   // a tourney rotation list: the picked ones go to one vote
+                int count = 0;
+                std::string list;
+                for (int i = 0; i < n; i++)
+                    if (multiSel_[i]) list += (count++ ? "," : "") + maps_[vis[i]];
+                if (ui_.button(L.X(1104 - fw), L.Y(ry), L.L(fw), L.L(40), "CALL VOTE", UiExp::cmd("callvote tmaps"), count > 0)) {
+                    net_.sendCommand("callvote tmaps " + list);
+                    picker_ = PICK_NONE; voteMenu_ = false; paused_ = false;
+                    return;
+                }
+            }
+            if (ui_.button(L.X(176), L.Y(ry), L.L(fw), L.L(40), "BACK", UiExp::nav(back))) picker_ = PICK_NONE;
+            return;
+        }
         // every card once a frame (labels, tags: what it shows; the buffers are reused)
         static std::vector<Item> items;
         static std::vector<std::string> descs;
@@ -7600,7 +8897,7 @@ void Game::drawPicker(float cx, float y) {
             int count = 0;
             std::string list;
             for (int i = 0; i < n; i++)
-                if (multiSel_[i]) { list += (count++ ? "," : "") + std::string(variants ? arenaVariant(i).name : maps_[i]); }
+                if (multiSel_[i]) { list += (count++ ? "," : "") + std::string(variants ? arenaVariant(i).name : maps_[vis[i]]); }
             if (ui_.button(L.X(1104 - fw), L.Y(ry), L.L(fw), L.L(40), "CALL VOTE", UiExp::cmd(picker_ == PICK_TMAPS ? "callvote tmaps" : "callvote tmodes"), count > 0)) {
                 net_.sendCommand(std::string("callvote ") + (picker_ == PICK_TMAPS ? "tmaps " : "tmodes ") + list);
                 picker_ = PICK_NONE; voteMenu_ = false; paused_ = false;
@@ -8187,11 +9484,13 @@ void Game::drawDamageArcs(float cx, float cy, float scale) {
     }
 }
 
-void Game::drawCrosshair(float cx, float cy, float scale, bool hit) {
+void Game::drawCrosshair(float cx, float cy, float scale, bool hit, int weapon) {
     float u = std::max(1.0f, std::round(scale));
     float t = std::max(1.0f, std::round(cfg_.chThickness * u)), len = std::round(cfg_.chLength * u), g = std::round(cfg_.chGap * u);
     hit = hit && cfg_.chHitFlash;   // (settings: HIT FLASH off, or its colour)
-    Color c = hit ? rgba(cfg_.chHitColor) : rgba(cfg_.chTeamColor ? cfg_.colorFriendly : cfg_.chColor);
+    Color c = hit ? rgba(hitHead_ ? cfg_.chHeadColor : cfg_.chHitColor) : rgba(cfg_.chTeamColor ? cfg_.colorFriendly : cfg_.chColor);
+    c.a *= cfg_.chOpacity;
+    const float dot = cfg_.chDot > 0 ? std::max(1.0f, std::round(cfg_.chDot * u)) : t;
     cx = std::round(cx); cy = std::round(cy);
     struct Rects {   // x, y, w, h: at most 25 (the ring), on the stack (this runs every frame)
         std::array<float, 4> r[25]; int n = 0;
@@ -8199,7 +9498,7 @@ void Game::drawCrosshair(float cx, float cy, float scale, bool hit) {
         const std::array<float, 4>* begin() const { return r; }
         const std::array<float, 4>* end() const { return r + n; }
     } rs;
-    int st = cfg_.chStyle;
+    int st = weapon >= 0 && weapon < WPN_COUNT && cfg_.chWStyle[weapon] >= 0 ? cfg_.chWStyle[weapon] : cfg_.chStyle;
     if (st == 0 || st == 1 || st == 4) {
         if (len > 0) {
             if (st != 4) rs.push_back({cx - t * 0.5f, cy - g - len, t, len});        // up (not on T)
@@ -8208,7 +9507,7 @@ void Game::drawCrosshair(float cx, float cy, float scale, bool hit) {
             rs.push_back({cx + g, cy - t * 0.5f, len, t});                           // right
         }
     }
-    if (st == 1 || st == 2) rs.push_back({cx - t * 0.5f, cy - t * 0.5f, t, t});
+    if (st == 1 || st == 2) rs.push_back({cx - dot * 0.5f, cy - dot * 0.5f, dot, dot});
     if (st == 3) { // ring of small blocks
         float R = g + len * 0.5f + t;
         static const auto ring = [] {   // (the 24 directions, worked out once)
@@ -8219,8 +9518,10 @@ void Game::drawCrosshair(float cx, float cy, float scale, bool hit) {
         for (int i = 0; i < 24; i++) rs.push_back({cx + ring[i][0] * R - t * 0.5f, cy + ring[i][1] * R - t * 0.5f, t, t});
         rs.push_back({cx - t * 0.5f, cy - t * 0.5f, t, t});
     }
-    if (cfg_.chOutline)
-        for (auto& r : rs) r_.rect(r[0] - 1, r[1] - 1, r[2] + 2, r[3] + 2, {0, 0, 0, c.a * 0.9f});
+    if (cfg_.chOutline && cfg_.chOutlineA > 0) {
+        const float o = cfg_.chOutlineW;
+        for (auto& r : rs) r_.rect(r[0] - o, r[1] - o, r[2] + 2 * o, r[3] + 2 * o, {0, 0, 0, c.a * cfg_.chOutlineA});
+    }
     for (auto& r : rs) r_.rect(r[0], r[1], r[2], r[3], c);
     if (hit && st != 1 && st != 2) r_.rect(cx - t, cy - t, 2 * t, 2 * t, c);
 }
@@ -8275,7 +9576,7 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
         float h = std::sqrt(d.x * d.x + d.z * d.z);
         if (now && h < 2.0f) {
             stepDist_ += h;
-            if (stepDist_ > 2.4f) { stepDist_ = 0; audio_.play(SND_STEP, 0.55f, 0.9f + (qrand() % 20) * 0.01f); }
+            if (stepDist_ > 2.4f) { stepDist_ = 0; audio_.play(SND_STEP, 0.55f * cfg_.volSteps, 0.9f + (qrand() % 20) * 0.01f); }
         }
     }
     {   // jumps, landings, dashes and the grapple from what each tick's movement did (pmove's ME_*): comparing the state once
@@ -8284,8 +9585,8 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
         float land = 0;
         const uint8_t ev = net_.takeMoveEvents(&land);
         if (alive && prevAlive_ && ev) {
-            if (ev & ME_LAND) audio_.play(SND_LAND, clampf(land / 20.0f, 0.3f, 1.0f));
-            if (ev & ME_JUMP) audio_.play(SND_JUMP, 0.5f);
+            if (ev & ME_LAND) audio_.play(SND_LAND, clampf(land / 20.0f, 0.3f, 1.0f) * cfg_.volSteps);
+            if (ev & ME_JUMP) audio_.play(SND_JUMP, 0.5f * cfg_.volSteps);
             if (ev & ME_DASH) audio_.play(SND_DASH, 0.8f);
             if (ev & (ME_SUPER | ME_HYPER)) audio_.play((ev & ME_HYPER) ? SND_HYPER : SND_SUPER, 0.9f);
             if (ev & ME_HOOK) {
@@ -8323,7 +9624,7 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
                 ra.nextLaser = time_ + 0.05;
             } else if (firing && !ra.firing && p.weapon != WPN_LASER && p.weapon < WPN_LOCATOR && time_ >= ra.nextShot) {
                 ra.nextShot = time_ + weaponDef(p.weapon).refire * 0.6f;
-                audio_.play(SND_RIFLE + p.weapon, 0.8f, 0.97f + (qrand() % 7) * 0.01f, net_.playerSoundPack(i));
+                audio_.play(SND_RIFLE + p.weapon, 0.8f * cfg_.volWeapons, 0.97f + (qrand() % 7) * 0.01f, net_.playerSoundPack(i));
             }
             ra.firing = firing;
             ra.valid = false;   // (their steps, hurt and grapple: your own sounds' code plays those)
@@ -8345,7 +9646,7 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
                 (vy < h * 1.1f + flat && net_.map().sweepAxis(playerBox(p.pos, (p.flags & PS_CROUCHED) != 0, bodyScale()), 1, -0.2f) > -0.199f);
             if (h < 2.0f && onFloor) {
                 ra.stepDist += h;
-                if (ra.stepDist > 2.4f) { ra.stepDist = 0; audio_.play3D(SND_STEP, p.pos, 0.8f, 0.9f + (qrand() % 20) * 0.01f, sp); }
+                if (ra.stepDist > 2.4f) { ra.stepDist = 0; audio_.play3D(SND_STEP, p.pos, 0.8f * cfg_.volOthersSteps, 0.9f + (qrand() % 20) * 0.01f, sp); }
             }
             if (p.health < ra.health && time_ >= ra.nextHurt) { // their hurt sound, at most 5 a second (beams, drain)
                 ra.nextHurt = time_ + 0.2;
@@ -8358,7 +9659,7 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
                 ra.nextLaser = time_ + 0.05;
             } else if (firing && !remoteFiring_[i] && p.weapon != WPN_LASER && p.weapon < WPN_LOCATOR && time_ >= ra.nextShot) {   // (the locator's ping: EV_SOUND)
                 ra.nextShot = time_ + weaponDef(p.weapon).refire * 0.6f; // (a flag flicker between snapshots isn't a second shot)
-                audio_.play3D(SND_RIFLE + p.weapon, p.pos + Vec3(0, 1.5f, 0), 1.0f, 0.97f + (qrand() % 7) * 0.01f, sp);
+                audio_.play3D(SND_RIFLE + p.weapon, p.pos + Vec3(0, 1.5f, 0), cfg_.volWeapons, 0.97f + (qrand() % 7) * 0.01f, sp);
             }
         }
         ra.pos = p.pos;
@@ -8376,8 +9677,9 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
         const Vec3 at = players[e.id].snap.pos;
         const int sp = net_.playerSoundPack(e.id);
         auto play = [&](int snd, float vol) { if (self) audio_.play(snd, vol * 0.6f, 1.0f, sp); else audio_.play3D(snd, at, vol, 1.0f, sp); };
-        if (ev & ME_LAND) play(SND_LAND, (e.ev & KEY_EV_LAND_HARD) ? 1.0f : 0.6f);
-        if (ev & ME_JUMP) play(SND_JUMP, 0.8f);
+        const float sv = self ? cfg_.volSteps : cfg_.volOthersSteps;   // (VIDEO > MORE 3: FOOTSTEPS)
+        if (ev & ME_LAND) play(SND_LAND, ((e.ev & KEY_EV_LAND_HARD) ? 1.0f : 0.6f) * sv);
+        if (ev & ME_JUMP) play(SND_JUMP, 0.8f * sv);
         if (ev & ME_DASH) play(SND_DASH, 1.0f);
         if (ev & (ME_SUPER | ME_HYPER)) play((ev & ME_HYPER) ? SND_HYPER : SND_SUPER, 1.0f);
     }

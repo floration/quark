@@ -28,6 +28,15 @@
 
 static Game* g_game = nullptr;
 
+#ifdef _WIN32
+// Hybrid laptops (an integrated + a dedicated GPU): the drivers run a program that exports these on the dedicated one
+// (NVIDIA Optimus, AMD PowerXpress); without them a laptop could run the game on its integrated GPU. 1.19.4 (#113).
+extern "C" {
+__declspec(dllexport) unsigned long NvOptimusEnablement = 1;
+__declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
+}
+#endif
+
 int main(int argc, char** argv) {
     if (int code = isa::runAvx2Build(argc, argv); code >= 0) return code;   // the AVX2 build, on a CPU that has it
 #ifdef _WIN32
@@ -171,6 +180,9 @@ int main(int argc, char** argv) {
     glfwSetKeyCallback(win, [](GLFWwindow*, int k, int, int a, int m) { g_game->onKey(k, a, m); });
     glfwSetMouseButtonCallback(win, [](GLFWwindow*, int b, int a, int) { g_game->onMouseButton(b, a); });
     glfwSetWindowFocusCallback(win, [](GLFWwindow*, int f) { g_game->onFocus(f != 0); });
+    glfwSetWindowIconifyCallback(win, [](GLFWwindow*, int i) { g_game->onIconify(i != 0); });
+    glfwSetWindowPosCallback(win, [](GLFWwindow*, int x, int y) { g_game->onWindowPos(x, y); });
+    glfwSetWindowSizeCallback(win, [](GLFWwindow*, int w, int h) { g_game->onWindowSize(w, h); });
     glfwSetCursorPosCallback(win, [](GLFWwindow*, double x, double y) { g_game->onCursor(x, y); });
     glfwSetFramebufferSizeCallback(win, [](GLFWwindow*, int fw, int fh) { g_game->onResize(fw, fh); });
     glfwSetScrollCallback(win, [](GLFWwindow*, double, double dy) { g_game->onScroll(dy); });

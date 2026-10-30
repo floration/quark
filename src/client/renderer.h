@@ -38,6 +38,10 @@ inline Color rgba(const Vec3& c, float a = 1) { return {c.x, c.y, c.z, a}; }
 class Renderer {
 public:
     bool init(int shadowRes, std::string* err);
+    // VIDEO > MORE > SHADOW QUALITY: the shadow map at a new size (clamped to the GPU's limit), in place. Returns the size used.
+    int setShadowRes(int res);
+    int shadowRes() const { return shadowRes_; }
+    const std::string& gpuName() const { return gpuName_; }   // GL_RENDERER (VIDEO > MORE shows it)
     void resize(int w, int h) { width_ = w; height_ = h; }
     int width() const { return width_; }
     int height() const { return height_; }
@@ -142,6 +146,10 @@ public:
     // palette, on top of this frame's 2D batch (drawn after it: put nothing over a swatch). Each is rendered into a slot
     // of an atlas the first frame it's asked for (again when the palette changes).
     void swatch(float x, float y, float w, float h, int material);
+    // Map previews (the map picker): small RGBA images (w x h each, all the same size), kept in one atlas uploaded the
+    // next frame after they change; preview() draws image `slot` like a swatch (over this frame's 2D batch).
+    void setPreviews(std::vector<std::vector<uint8_t>> images, int w, int h);
+    void preview(float x, float y, float w, float h, int slot);
     // The 2D batch so far uploaded now (the HUD before the late latch): flush2D then only draws it, unless more was added.
     void prepare2D();
 
@@ -152,11 +160,14 @@ public:
     // RENDER SCALE (VIDEO): the 3D scene drawn at the window's size times pct / 100 (50 - 200), then stretched to the
     // window, filtered; the 2D layer (HUD, text, menus) is drawn after at the window's own size, so it stays sharp.
     // sharpen: below 100%, a contrast-adaptive sharpen in the stretch (not with EDGES, which smooths instead).
-    void setRenderScale(int pct, bool sharpen) { scalePct_ = std::max(50, std::min(200, pct)); sharpen_ = sharpen; }
+    void setRenderScale(int pct, bool sharpen) { scalePct_ = std::max(25, std::min(400, pct)); sharpen_ = sharpen; }
     // the size the scene was last drawn at (the window's, at 100% or with no world drawn yet): F3
     int sceneWidth() const { return sceneW_; }
     int sceneHeight() const { return sceneH_; }
     bool screenshot(const std::string& path);
+    void setFog(float mul);
+    void setGrade(float gamma, float contrast, float saturation);   // VIDEO > MORE 2 (1, 1, 1: none), the 3D scene only   // VIDEO > MORE: FOG, x the default distance fog (0 = none)
+    static constexpr float kFogDensity = 0.0035f;
 
     // palette
     Vec3 skyColor = {0.62f, 0.66f, 0.72f};
@@ -171,6 +182,8 @@ public:
     float worldOutline = 1.0f; // the baked world's outline width in pixels (settings); 0 = none
 
 private:
+    float fogMul_ = 1.0f;
+    Vec3 grade_ = {1, 1, 1};
     unsigned compile(const char* vs, const char* fs, std::string* err);
     void aim(float yaw, float pitch);   // (setCamera's view half: the view, its vectors, viewProj_ and the frustum planes)
     void addQuad(std::vector<DynVertex>& out, const Vec3* c, const Vec3& n, const Vec3& col, float sv);
@@ -227,6 +240,12 @@ private:
     std::vector<unsigned> swatchSlotUsed_;            // (the frame each slot was last drawn)
     unsigned swatchFrame_ = 0;
     void buildSwatches();
+    std::vector<std::vector<uint8_t>> previewImgs_;   // (setPreviews': uploaded into previewTex_ when previewDirty_)
+    int previewW_ = 0, previewH_ = 0, previewCols_ = 1, previewRows_ = 1;
+    bool previewDirty_ = false;
+    unsigned previewTex_ = 0;
+    std::vector<float> previewQuads_;   // (this frame's: x0 y0 x1 y1 slot per quad)
+    void drawImageQuads(std::vector<float>& quads, unsigned tex, int cols, int rows, const std::vector<int>* slotOf);
     int worldVerts_ = 0;
     std::vector<WorldChunk> chunks_;
     std::vector<int> drawFirst_, drawCount_;
@@ -251,6 +270,7 @@ private:
     unsigned dynVao_ = 0, dynVbo_ = 0, flatVao_ = 0, flatVbo_ = 0, uiVao_ = 0, uiVbo_ = 0;
     unsigned shadowFbo_ = 0, shadowTex_ = 0;
     int shadowRes_ = 2048;
+    std::string gpuName_;
     bool shadowsOn_ = true;
     unsigned fontTex_ = 0;
     unsigned logoTex_ = 0;     // (logo_data.h, RGBA, mipmapped; bound to unit 1 by a flush that draws it)
