@@ -1,20 +1,29 @@
 """WAR (1.19.6): multi point on a 420 x 160 m strip of an active warzone, attacked east to west through five points
 about 80 m apart:
-  A  the crater field (x 150): no-man's-land, shell craters (stepped pits, mud at the bottom), barbed wire, a burnt
-     tank;
-  B  the trench line (x 70): a zig-zag trench 2.2 m deep with duckboards, steps out every 8 m, dugouts, sandbag
-     parapets and MG nests, a wire belt in front of it;
-  C  the village crossroads (x -10): ruined houses (two with an upper floor), a church whose broken tower is a 14 m
-     perch (stairs inside);
+  A  the crater field (x 150): no-man's-land, shell craters (stepped pits, spoil slopes on their lips, mud only in
+     the deepest), barbed wire, the burnt tank on the point's east edge and a broken sandbag ring on it;
+  B  the trench line (x 70): a zig-zag trench 2.2 m deep with duckboards, steps out every 8 m, dugouts, 1.2 and 1.8 m
+     sandbag parapets and MG nests, a wire belt in front of it; the point is the trench itself (its zone stops at
+     ground level);
+  C  the village crossroads (x -10): ruined houses (two with an upper floor, partial roofs), a church whose broken
+     tower is a 14 m perch (stairs inside, a parapet notched on every side);
   D  the bridge (x -90): a damaged girder bridge over a swamp-water river (x 0.7 speed), a sunken barge to the north
-     and a rubble ford to the south as the two flanks;
+     and a rubble ford to the south as the two flanks; the shell hole in its deck drops onto rubble, not into a trap;
   E  the HQ bunker (x -165): a concrete command bunker, three ways in (front, side, rear), an AA gun on the roof
-     (stairs up inside, a ladder at the back); the roof's outer band can't be hooked.
-Each stage's attackers spawn east of their point and its defenders west of it, each group in a 3.5 m concrete T-wall
-shelter open away from the fight (no enemy spawn in sight): both walk 48-53 m to the point (out of the shelter and
-round it; stage 4 through the bunker's front or rear door), so the two sides arrive within 0.5 s of each other.
-Everything is axis-aligned boxes (the walk grid sees a brush as its box): craters and banks are steps, not slopes.
-No fall damage: you only die below the void line."""
+     (stairs up inside, a ladder at the back); its outer faces and the roof's outer band can't be hooked.
+The strip's long lines are broken every 40-80 m by a few big pieces (momentum flows round them): facades fallen
+inward off the edges, spoil ridges, ruined walls across the strip, wrecked lorries and sandbag barricades across one
+half of the road, smoke plumes over the three wrecks and smoke banks in the hollows (sight only). No ground line runs
+over about 250 m (418 m before), and of the ground pairs 50-100 m apart 21% see each other (38%). The facades along
+the edges are clipped from 8 m up (no sniper ledges).
+Each stage's attackers spawn east of their point (south of the middle line) and its defenders west of it (north of
+it), each group in a shelter (a sandbagged dugout, a ruined wall corner or a supply dump) closed toward its point and
+its outer side and open toward the middle: the spawns face the opening and come out moving. The attackers' shelter
+stands 25-45 m past the point they just took (for pace; the plan had them behind it). Arrival, from the game's own
+metric (`quark_maptool metrics`, the bots' nav routes, attackers minus defenders): A -0.4 s, B +0.3 s, C -0.2 s,
+D +0.1 s, E +0.4 s; on the walk grid (slowest spawn, 9.5 m/s) every stage is within 1.0 s.
+Everything but the spoil slopes and the fallen facades' faces is axis-aligned boxes (the walk grid sees a brush as
+its box). No fall damage: you only die below the void line."""
 import random
 from .prefabs import M, minus, tiles
 from .bigkit import Kit, num, yaw_to
@@ -40,10 +49,13 @@ LEGS = [(-80 + 16 * i, -64 + 16 * i, (65, 68.5) if i % 2 == 0 else (71.5, 75)) f
 
 POINTS = {"A": (142, -8, 158, 8, 0), "B": (62, -8, 78, 8, TRENCH_Y), "C": (-18, -8, -2, 8, 0),
           "D": (-100, -5, -80, 5, 0), "E": (-170, -6, -156, 6, 0)}
-# staged spawns: (x of the shelter wall, which side the spawns stand: +1 east (attackers), -1 west (defenders), z)
-SHELTERS = {"att0": (194, 1, 0), "def0": (106, -1, 0), "att1": (114, 1, 0), "def1": (26, -1, 0),
-            "att2": (34, 1, 0), "def2": (-54, -1, 0), "att3": (-46, 1, 0), "def3": (-134, -1, 0),
-            "att4": (-128, 1, 0), "def4": (-201, -1, 0)}
+# staged spawns: (x of the shelter wall, which side the spawns stand: +1 east (attackers), -1 west (defenders), z of
+# the shelter's middle, its dressing). Off the road and the centre: attackers south of the middle line, defenders
+# north of it; each shelter is closed toward its point and on its outer side, open toward the middle of the strip
+SHELTERS = {"att0": (194, 1, 20, "dugout"), "def0": (104, -1, -20, "dump"), "att1": (116, 1, 20, "dugout"),
+            "def1": (40, -1, -30, "dump"), "att2": (30, 1, 20, "ruin"), "def2": (-58, -1, -20, "ruin"),
+            "att3": (-58, 1, 18, "dugout"), "def3": (-127, -1, -22, "dugout"), "att4": (-126, 1, 20, "dump"),
+            "def4": (-200, -1, -20, "ruin")}
 
 
 def crater_rect(c):
@@ -115,22 +127,42 @@ def tank(k, x, z, along, burning=True):
     def b(mat, a0, y0, c0, a1, y1, c1):   # (a along the hull, c across it)
         if along == "x": k.box(mat, x + a0, y0, z + c0, x + a1, y1, z + c1)
         else: k.box(mat, x + c0, y0, z + a0, x + c1, y1, z + a1)
-    b("sootysteel", -3.5, 0, -1.7, 3.5, 1.2, -1.0); b("sootysteel", -3.5, 0, 1.0, 3.5, 1.2, 1.7)   # tracks
-    b("tankarmour", -3.2, 0.4, -1.0, 3.2, 1.2, 1.0)
-    b("tankarmour", -3.3, 1.2, -1.6, 3.3, 1.7, 1.6)                                                # the hull deck
-    b("tankarmour", -1.8, 1.7, -1.3, 0.8, 2.7, 1.3)                                                # the turret
+    b("charredtimber", -3.5, 0, -1.7, 3.5, 1.2, -1.0); b("charredtimber", -3.5, 0, 1.0, 3.5, 1.2, 1.7)   # tracks
+    b("rustedsheet", -3.2, 0.4, -1.0, 3.2, 1.2, 1.0)
+    b("tankarmour", -3.3, 1.2, -1.6, 3.3, 1.45, 1.6)                                               # (its last paint: a band)
+    b("sootysteel", -3.3, 1.45, -1.6, 3.3, 1.7, 1.6)                                               # the hull deck
+    b("sootysteel", -1.8, 1.7, -1.3, 0.8, 2.7, -0.3); b("sootysteel", -1.8, 1.7, 0.3, 0.8, 2.7, 1.3)   # the turret, its
+    b("sootysteel", -1.8, 1.7, -0.3, -1.0, 2.7, 0.3); b("sootysteel", 0.0, 1.7, -0.3, 0.8, 2.7, 0.3)   # hatch blown open
     b("gunmetal", 0.8, 2.0, -0.15, 4.8, 2.3, 0.15)                                                 # the barrel (a hook)
-    if burning:
-        b("lightblock", -3.0, 1.7, -0.6, -2.0, 2.0, 0.6)
-        lx, lz = (x - 2.5, z) if along == "x" else (x, z - 2.5)
-        k.light(lx, 3.0, lz, 10, 0.9)
+    if burning:   # (the fire inside the open hatch, an orange light over it)
+        b("lightblock", -1.0, 1.7, -0.3, 0.0, 2.2, 0.3)
+        k.light(x, 3.4, z, 11, 1.0)
 
 
-def shelter(k, xw, side, zc):
-    """a T-wall shelter round a spawn group: a 3.5 m wall across the strip, 16 m wide, wings 5 m back"""
-    k.box("precastconcrete", xw - 0.5, 0, zc - 8, xw + 0.5, 3.5, zc + 8)
-    xa, xb = sorted((xw, xw + side * 5))
-    k.box("precastconcrete", xa, 0, zc - 8, xb, 3.5, zc - 7.4); k.box("precastconcrete", xa, 0, zc + 7.4, xb, 3.5, zc + 8)
+def shelter(k, xw, side, zc, style):
+    """a spawn shelter: a 3.5 m wall across the strip toward the point (16 m along z) and a wing on its outer side
+    (6 m back), open toward the middle of the strip, so players come out moving; dressed as a sandbagged dugout (an
+    earth bank topped with sandbags), a ruined wall corner or a supply dump (stacked crates under a tarp)"""
+    zo = 1 if zc > 0 else -1                                   # the outer side
+    xa, xb = sorted((xw, xw + side * 6))
+    za, zb = zc - 8, zc + 8
+    wall = (xw - 0.5, za, xw + 0.5, zb)
+    wing = (xa, zb - 0.6, xb, zb) if zo > 0 else (xa, za, xb, za + 0.6)
+    if style == "dugout":
+        for (x0, z0, x1, z1) in (wall, wing):
+            k.box("dirt", x0 - 0.3, 0, z0, x1 + 0.3, 2.3, z1)
+            k.box("sandbagwall", x0 - 0.1, 2.3, z0, x1 + 0.1, 3.5, z1)
+        k.box("charredtimber", xa, 2.6, zb - 3 if zo > 0 else za, xb, 2.9, zb if zo > 0 else za + 3)   # (its roof logs)
+        k.light(xw + side * 3, 2.4, zc, 8, 0.6)
+    elif style == "ruin":
+        for (x0, z0, x1, z1) in (wall, wing):
+            k.box("burntoutruinwall", x0, 0, z0, x1, 3.5, z1)
+        k.box("burntoutruinwall", wall[0], 3.5, zc + zo * 2, wall[2], 4.6, zc + zo * 8)                # (its broken top)
+    else:   # dump
+        for (x0, z0, x1, z1) in (wall, wing):
+            k.box("woodencrate", x0 - 0.5, 0, z0, x1 + 0.5, 2.4, z1)
+            k.box("woodencrate", x0 - 0.2, 2.4, z0 + 0.4, x1 + 0.2, 3.5, z1 - 0.4)
+        k.box("corrugated", wall[0] - 0.6, 3.5, za, wall[2] + 0.6, 3.7, zb)                            # (the tarp)
 
 
 def build():
@@ -158,8 +190,8 @@ def build():
         x0, z0, x1, z1 = crater_rect(c); n = int(round(c[4] / 0.5)); s = min(x1 - x0, z1 - z0) / 2 / (n + 0.6)
         for j in range(n):
             o = (x0 + j * s, z0 + j * s, x1 - j * s, z1 - j * s)
-            if j == n - 1:
-                k.box("mud", o[0], G0, o[1], o[2], -0.5 * n, o[3]); break
+            if j == n - 1:   # (mud only in the deepest few: "stop dead" everywhere would kill the field's momentum)
+                k.box("mud" if c[4] >= 2.5 else "smoulderingash", o[0], G0, o[1], o[2], -0.5 * n, o[3]); break
             i = (o[0] + s, o[1] + s, o[2] - s, o[3] - s)
             for (a, b, cc, d) in minus(o, [i]): k.box("crackedearth" if j == 0 else "dirt", a, G0, b, cc, -0.5 * (j + 1), d)
 
@@ -174,11 +206,11 @@ def build():
         k.box("cratewood", x0 + 0.3, TRENCH_Y, z0 + 0.4, x0 + 1.5, TRENCH_Y + 0.9, z1 - 0.4)   # (a bench)
         k.light((x0 + x1) / 2, -0.6, (z0 + z1) / 2, 7, 0.8)
         k.box("lightblock", (x0 + x1) / 2 - 0.2, -0.25, (z0 + z1) / 2 - 0.2, (x0 + x1) / 2 + 0.2, 0, (z0 + z1) / 2 + 0.2)
-    # sandbag parapets on the east lip (low: crouch cover for anyone up top, gaps at every bay and bend)
+    # sandbag parapets on the east lip (1.2 m: crouch cover, 1.8 m: standing cover; gaps at every bay and bend)
     for i, (z0, z1, (x0, x1)) in enumerate(LEGS):
         bz = [b for b in bays() if b[0] == "e" and z0 <= b[2] < z1][0]
         for (a, b) in ((z0 + 2, bz[2] - 1), (bz[4] + 1, z1 - 2)):
-            if b - a > 2: k.box("sandbagwall", x1 + 0.2, 0, a, x1 + 1.2, 0.7, b)
+            if b - a > 2: k.box("sandbagwall", x1 + 0.2, 0, a, x1 + 1.2, 1.2 if (i + (a > z0 + 3)) % 2 else 1.8, b)
     # MG nests: sandbag horseshoes on the west lip, open to the west
     for (x, z) in ((58, -46), (58, 24), (58, -8.5), (57, 56)):
         k.box("sandbagwall", x + 1.4, 0, z - 2, x + 2.2, 1.2, z + 2)
@@ -206,7 +238,7 @@ def build():
     ruin(k, W, 16, 12, 28, 22, 4.6, [("n", 22, 3, 0, DOOR_H), ("w", 17, 2.5, 1.1, 2.4), ("s", 20, 4, 1.2, 4.6), ("e", 15, 3, 0, DOOR_H)])
     k.box("collapsedbrick", 18, 0, 17, 22, 0.5, 21.5); k.box("collapsedbrick", 18.8, 0.5, 18.5, 21, 1.0, 21.5)
     # house 3 (north-east, back row)
-    ruin(k, W, 2, 28, 14, 38, 5.2, [("n", 8, 3, 0, DOOR_H), ("e", 33, 2.5, 1.1, 2.4), ("w", 31, 3, 1.2, 5.2), ("s", 6, 2, 1.1, 2.4)])
+    ruin(k, "bulletpockedwall", 2, 28, 14, 38, 5.2, [("n", 8, 3, 0, DOOR_H), ("e", 33, 2.5, 1.1, 2.4), ("w", 31, 3, 1.2, 5.2), ("s", 6, 2, 1.1, 2.4)])
     # house 4 and 5 (south-east), the barn
     ruin(k, W, 0, -22, 14, -10, 5.0, [("s", 7, 3, 0, DOOR_H), ("e", -18, 3, 0, DOOR_H), ("n", 4, 2.5, 1.1, 2.4), ("w", -16, 4, 1.2, 5.0)])
     ruin(k, W, 18, -20, 28, -10, 4.4, [("s", 22, 3, 0, DOOR_H), ("w", -15, 2.5, 1.1, 2.4), ("n", 24, 3, 1.2, 4.4)])
@@ -218,9 +250,17 @@ def build():
     k.stairs("charredtimber", -20.0, -22.0, -18.4, -18.4, 3.3, "z", -1)
     k.box("charredtimber", -29.6, 3.0, -23.6, -18.4, 3.3, -22.0)
     k.box("charredtimber", -29.6, 3.0, -22.0, -20.0, 3.3, -19.4)
-    ruin(k, W, -46, -38, -34, -28, 4.8, [("s", -40, 3, 0, DOOR_H), ("e", -33, 2.5, 1.1, 2.4), ("n", -38, 3, 1.2, 4.8)])
+    ruin(k, "bulletpockedwall", -46, -38, -34, -28, 4.8, [("s", -40, 3, 0, DOOR_H), ("e", -33, 2.5, 1.1, 2.4), ("n", -38, 3, 1.2, 4.8)])
     # north-west: house 8
-    ruin(k, W, -44, 30, -34, 40, 5.0, [("n", -39, 3, 0, DOOR_H), ("e", 35, 2.5, 1.1, 2.4), ("s", -41, 3, 1.2, 5.0)])
+    ruin(k, "collapsedbrick", -44, 30, -34, 40, 5.0, [("n", -39, 3, 0, DOOR_H), ("e", 35, 2.5, 1.1, 2.4), ("s", -41, 3, 1.2, 5.0)])
+    # what's left of the roofs: a sagging sheet over half of house 3, beams over house 8, a scorched floor in house 4,
+    # a rubble ramp against house 7's back wall, a charred upper storey stub on house 5
+    k.box("corrugated", 1.7, 5.2, 27.7, 9, 5.45, 38.3)
+    for z in (32, 36):
+        k.box("charredtimber", -44, 4.8, z - 0.15, -34, 5.1, z + 0.15)
+    k.box("scorchedtiles", 0.4, 0, -21.6, 13.6, 0.02, -10.4)
+    k.wedge("rubblepile", 3, -45.6, 0, -37.6, -40, 1.6, -34)
+    k.box("charredtimber", 18, 4.4, -20, 28, 6.2, -19.7); k.box("collapsedbrick", 18, 4.4, -20, 18.4, 5.6, -14)
     # the church: the nave (roof gone, beams left), the tower at its east end over the square
     ruin(k, "rubblewall", -50, 11, -28, 21, 8, [("w", 16, 4, 0, 4.2), ("n", -38.5, 3, 0, 3.6), ("s", -41, 6, 1.0, 8),
                                                 ("n", -45, 1.4, 3, 6.2), ("n", -32, 1.4, 3, 6.2), ("s", -33, 1.4, 3, 6.2)], t=0.6)
@@ -236,9 +276,12 @@ def build():
     k.stairs("rubblewall", ix1 - 1.6, iz0, ix1, iz1 - 1.6, 10.5, "z", -1, base=7, solid=False)
     k.stairs("rubblewall", ix0, iz0, ix1 - 1.6, iz0 + 1.6, 14, "x", -1, base=10.5, solid=False)
     for (a, b, c, d) in minus((ix0, iz0, ix1, iz1), [(ix0, iz0, ix1 - 1.6, iz0 + 1.6)]): k.box("charredtimber", a, 13.6, b, c, 14, d)
-    # the perch: a broken parapet (whole on the west and north, gone on half the east), stumps of the spire
-    k.box("rubblewall", T0, 14, U0, T0 + 0.5, 15.1, U1); k.box("rubblewall", T0, 14, U1 - 0.5, T1, 15.1, U1)
-    k.box("rubblewall", T0 + 0.5, 14, U0, T1 - 3, 15.1, U0 + 0.5); k.box("rubblewall", T1 - 0.5, 14, U1 - 3.5, T1, 15.1, U1 - 0.5)
+    # the perch: a parapet round all four sides (the same cover toward both teams), each side notched down to 0.5 m
+    # in one place, stumps of the spire
+    for (a, b, c, d, n0, n1) in ((T0, U0, T0 + 0.5, U1, U0 + 3, U0 + 5), (T1 - 0.5, U0, T1, U1, U1 - 5, U1 - 3)):
+        k.box("rubblewall", a, 14, b, c, 15.1, n0); k.box("rubblewall", a, 14, n1, c, 15.1, d); k.box("rubblewall", a, 14, n0, c, 14.5, n1)
+    for (a, b, c, d, n0, n1) in ((T0 + 0.5, U0, T1 - 0.5, U0 + 0.5, T0 + 4, T0 + 5.5), (T0 + 0.5, U1 - 0.5, T1 - 0.5, U1, T1 - 5.5, T1 - 4)):
+        k.box("rubblewall", a, 14, b, n0, 15.1, d); k.box("rubblewall", n1, 14, b, c, 15.1, d); k.box("rubblewall", n0, 14, b, n1, 14.5, d)
     k.box("rubblewall", T0, 15.1, U1 - 1, T0 + 1, 17.5, U1); k.box("rubblewall", T1 - 1, 15.1, U1 - 1, T1, 16.4, U1)
     k.light(-24, 6, 16, 9, 0.7); k.light(-24, 12.5, 16, 8, 0.6)
     # the square: a broken fountain, a cart, sandbags round the crossroads
@@ -257,6 +300,7 @@ def build():
     # the bridge (z -5..5): the deck flush with the road, a shell hole in its north half, girder trusses either side
     # (rails 1 m: cover), posts and a top chord at 5 m (hooks), cross beams overhead
     for (a, b, c, d) in minus((x0, -5, x1, 5), [(-92, 0.5, -88, 5)]): k.box("steeldeckplate", a, -0.6, b, c, 0, d)
+    k.box("rubblepile", -92, BED, 0.5, -88, -0.5, 5)                    # (the deck's rubble under the hole: a dip, not a trap)
     for x in (-94, -86):
         k.box("precastconcrete", x - 1, BED - 1, -4, x + 1, -0.6, 4)
     for (zs, broken) in ((-5.0, False), (4.4, True)):
@@ -288,11 +332,11 @@ def build():
     # doors: the front (east, z 6..10), the side (north, x -168..-164), the rear (west, z -10..-6)
     B0, B1, C0, C1 = -182, -148, -13, 13
     CW = "castinplacewalls"
-    def outer(side, a, b, ya, yb):
-        if side == "w": k.box(CW, B0, ya, a, B0 + 1, yb, b)
-        elif side == "e": k.box(CW, B1 - 1, ya, a, B1, yb, b)
-        elif side == "n": k.box(CW, a, ya, C1 - 1, b, yb, C1)
-        else: k.box(CW, a, ya, C0, b, yb, C0 + 1)
+    def outer(side, a, b, ya, yb):   # (the outer 0.3 m can't be hooked: nobody swings round the bunker)
+        if side == "w": k.box("nograpple", B0, ya, a, B0 + 0.3, yb, b); k.box(CW, B0 + 0.3, ya, a, B0 + 1, yb, b)
+        elif side == "e": k.box(CW, B1 - 1, ya, a, B1 - 0.3, yb, b); k.box("nograpple", B1 - 0.3, ya, a, B1, yb, b)
+        elif side == "n": k.box(CW, a, ya, C1 - 1, b, yb, C1 - 0.3); k.box("nograpple", a, ya, C1 - 0.3, b, yb, C1)
+        else: k.box("nograpple", a, ya, C0, b, yb, C0 + 0.3); k.box(CW, a, ya, C0 + 0.3, b, yb, C0 + 1)
     doors = {"e": [(6, 10)], "n": [(-168, -164)], "w": [(-10, -6)], "s": []}
     for side in "nswe":
         a, b = (C0 + 1, C1 - 1) if side in "we" else (B0, B1)
@@ -309,7 +353,7 @@ def build():
     for (a, b, c, d) in ((B0, C0, B1, C0 + 0.6), (B0, C1 - 0.6, B1, C1), (B1 - 0.6, C0 + 0.6, B1, C1 - 0.6),
                          (B0, C0 + 0.6, B0 + 0.6, 8.5), (B0, 11.5, B0 + 0.6, C1 - 0.6)):
         k.box("nograpple", a, 6, b, c, 6.9, d)
-    k.ladder(B0, 10, 0, 6, "e")
+    k.ladder(B0 - 0.12, 10, 0, 6, "e")   # (rails flush on the wall's outer face, so they show)
     k.box("sandbagwall", -168, 6, -4.5, -160, 7.1, -3.7); k.box("sandbagwall", -168, 6, 3.7, -160, 7.1, 4.5)
     k.box("sandbagwall", -160.8, 6, -3.7, -160, 7.1, -1.2); k.box("sandbagwall", -160.8, 6, 1.2, -160, 7.1, 3.7)
     k.disc("gunmetal", -164, 0, 1.6, 6, 6.8, n=8)
@@ -327,7 +371,7 @@ def build():
     for (x, z) in ((-163, -4.5), (-163, 4.5)):
         k.box("lightblock", x - 0.6, 4.8, z - 0.2, x + 0.6, 5, z + 0.2)
     # tank traps on the approach (off the road), sandbags at the front door
-    for (x, z) in ((-140, -14), (-136, -24), (-142, -34), (-138, 16), (-133, 30), (-143, 40), (-140, -50), (-136, 50)):
+    for (x, z) in ((-145, -18), (-128, -38), (-142, -34), (-138, 16), (-133, 30), (-143, 40), (-140, -50), (-136, 50)):
         k.box("tanktrapfield", x - 0.8, 0, z - 0.8, x + 0.8, 1.3, z + 0.8)
     k.box("sandbagwall", -146.5, 0, 4.5, -145.7, 1.2, 11.5)
     # its outbuildings: a half-sunk ammunition store to the south, the radio hut and its mast to the north
@@ -335,11 +379,11 @@ def build():
     k.box(CW, -178.3, 3.0, -60.3, -163.7, 3.6, -49.7)
     ruin(k, "plywoodboardup", -178, 44, -168, 52, 3.2, [("s", -173, 2.6, 0, 2.6), ("e", 48, 2, 1.2, 2.2)], t=0.3)
     k.box("corrugated", -178.3, 3.2, 43.7, -167.7, 3.45, 52.3)
-    k.box("galvanizedsteel", -166.2, 0, 52.8, -165.8, 18, 53.2); k.box("galvanizedsteel", -167.5, 17.5, 52.9, -164.5, 17.7, 53.1)
+    k.box("galvanizedsteel", -166.2, 0, 52.8, -165.8, 4, 53.2); k.box("nograpple", -166.2, 4, 52.8, -165.8, 18, 53.2)   # (no perch)
 
     # crater rims: spoil thrown up on two sides of each crater (a 0.5 m step, then a 1 m berm at the lip: crouch cover)
     keep = [ROAD, SQUARE, HQ] + [(p[0] - 1, p[1] - 1, p[2] + 1, p[3] + 1) for p in POINTS.values()] + \
-           [(min(xw, xw + sd * 6) - 1, zc - 9, max(xw, xw + sd * 6) + 1, zc + 9) for (xw, sd, zc) in SHELTERS.values()]
+           [(min(xw, xw + sd * 6) - 1, zc - 9, max(xw, xw + sd * 6) + 1, zc + 9) for (xw, sd, zc, _) in SHELTERS.values()]
     holes = [crater_rect(c) for c in CRATERS]
     def free(r, extra=()):
         return not any(inter(r, o) for o in keep + list(extra))
@@ -351,7 +395,13 @@ def build():
             elif side == "n": a, b = (x0, z0 - 1.0, x1, z0), (x0 + 1, z0 - 2.4, x1 - 1, z0 - 1.0)
             else: a, b = (x0, z1, x1, z1 + 1.0), (x0 + 1, z1 + 1.0, x1 - 1, z1 + 2.4)
             if not free(a, [h for h in holes if h != (x0, z0, x1, z1)]) or not free(b, holes): continue
-            k.box("crackedearth", a[0], 0, a[1], a[2], 1.0, a[3]); k.box("dirt", b[0], 0, b[1], b[2], 0.5, b[3])
+            k.box("crackedearth", a[0], 0, a[1], a[2], 1.0, a[3])
+            k.wedge("dirt", {"e": 1, "w": 0, "n": 2, "s": 3}[side], b[0], 0, b[1], b[2], 1.0, b[3])   # (spoil sloping off)
+            if R.random() < 0.6:   # (shell debris on the lip)
+                rx, rz = R.uniform(a[0], a[2] - 1.2), R.uniform(a[1], a[3] - 1.2)
+                k.box("rubblepile", rx, 1.0, rz, rx + 1.2, 1.3, rz + 1.2)
+        if free((x0 - 3.5, z0 - 3.5, x0 - 0.5, z0 - 0.5), holes):   # (a scorch mark by its corner)
+            k.box("scorchedtiles", x0 - 3.5, 0, z0 - 3.5, x0 - 0.5, 0.02, z0 - 0.5)
 
     # ---- cover between the points (purposeful pieces, spaced for momentum: broken walls, field walls, wrecks)
     def stub(x, z, along, n, h, mat="burntoutruinwall"):
@@ -372,18 +422,19 @@ def build():
             k.box("sootysteel", x - 1.2, 0, z - 3.5, x + 1.2, 1.4, z + 1.5); k.box("dentedsteel", x - 1.2, 0, z + 1.5, x + 1.2, 2.6, z + 3.5)
     # between the trench and the village: a supply dump, field walls, a lorry
     k.box("woodencrate", 43, 0, 20, 47, 2.4, 23); k.box("woodencrate", 47.6, 0, 21, 49.6, 1.2, 23); k.box("woodencrate", 43.5, 2.4, 20.5, 45.5, 3.6, 22.5)
-    k.box("woodencrate", 38, 0, -26, 40, 1.2, -24); k.box("woodencrate", 40.5, 0, -27, 43.5, 1.6, -24.5)
-    for (a, b) in ((30, 38), (44, 56)): wall(a, -34.4, b, -33.8); wall(a, 33.8, b, 34.4)
+    k.box("woodencrate", 46, 0, -27, 48, 1.2, -25); k.box("woodencrate", 48.5, 0, -28, 51.5, 1.6, -25.5)
+    wall(44, -34.4, 56, -33.8)
+    for (a, b) in ((30, 38), (44, 56)): wall(a, 33.8, b, 34.4)
     truck(52, -13, "x"); truck(48, 46, "z")
     stub(36, 58, "x", 10, 3.2, "collapsedbrick"); stub(56, -54, "z", 10, 3.0, "collapsedbrick")
     # between the village and the river: a dead orchard, field walls
-    for (x, z) in ((-60, 22), (-68, 30), (-62, 40), (-70, 50), (-60, 60), (-64, -22), (-70, -32), (-60, -42), (-68, -52), (-62, -64)):
+    for (x, z) in ((-70, 14), (-68, 34), (-62, 40), (-70, 50), (-60, 60), (-64, -22), (-70, -32), (-60, -42), (-68, -52), (-62, -64)):
         k.box("charredtimber", x - 0.3, 0, z - 0.3, x + 0.3, 4.5 + (x * 7 + z) % 3 * 0.6, z + 0.3)
     for (a, b) in ((12, 22), (28, 44), (-22, -12), (-44, -28)): wall(-74.6, a, -74, b)
     # between the river and the bunker: sandbag posts, a lorry, the old forward trench's sandbags
     k.box("sandbagwall", -112, 0, 12, -111.2, 1.2, 19); k.box("sandbagwall", -112, 0, -19, -111.2, 1.2, -12)
     k.box("sandbagwall", -142, 0, 22, -136, 1.2, 22.8); k.box("sandbagwall", -142, 0, -22.8, -136, 1.2, -22)
-    truck(-128, -26, "x"); stub(-118, -48, "x", 10, 3.2, "collapsedbrick"); stub(-124, 50, "x", 10, 3.0, "collapsedbrick")
+    truck(-130, -40, "x"); stub(-118, -48, "x", 10, 3.2, "collapsedbrick"); stub(-124, 50, "x", 10, 3.0, "collapsedbrick")
     # the motor pool's burnt sheds either side of the bunker's approach (cover off the road)
     ruin(k, "charredtimber", -142, -66, -126, -56, 4.6, [("n", -134, 5, 0, 3.8), ("s", -134, 5, 0, 3.8), ("w", -61, 3, 1.1, 2.4)], t=0.3)
     ruin(k, "charredtimber", -142, 56, -126, 66, 4.2, [("n", -134, 5, 0, 3.8), ("s", -134, 5, 0, 3.8), ("e", 61, 3, 1.1, 2.4)], t=0.3)
@@ -394,8 +445,64 @@ def build():
     ruin(k, W, -4, -58, 8, -48, 4.8, [("s", 2, 3, 0, DOOR_H), ("w", -53, 2.5, 1.1, 2.4), ("n", 4, 4, 1.2, 4.8)])
     ruin(k, W, -28, -56, -18, -46, 4.4, [("e", -52, 3, 0, DOOR_H), ("s", -24, 2.5, 1.1, 2.4), ("w", -50, 3, 1.2, 4.4)])
 
+    # ---- the big pieces that break the strip's long lines (a few, large, purposeful: momentum flows round them)
+    def fallen(x0, x1, zs, d=12, h=4.0):
+        """a facade fallen inward off the strip's edge: a rubble foot, the slab lying on it (a steep face toward the
+        field, a flat top at h), rebar stubs out of its broken end"""
+        ze = HZ * zs - zs * 3.5                               # (it leans on the standing facades' line)
+        zi = ze - zs * d
+        a, b = sorted((ze, zi + zs * 3))
+        k.box("collapsedbrick", x0, 0, a, x1, h, b)
+        k.wedge("bulletpockedwall", 3 if zs > 0 else 2, x0, 0, min(zi, zi + zs * 3), x1, h, max(zi, zi + zs * 3))
+        k.box("rubblepile", x0 - 1.5, 0, min(zi, zi + zs * 6), x0, 0.6, max(zi, zi + zs * 6))
+        for x in (x0 + 2, x0 + 4.5, x1 - 3):
+            k.box("exposedrebar", x - 0.05, h, ze - zs * 1.5 - 0.05, x + 0.05, h + 1.2, ze - zs * 1.5 + 0.05)
+    for (x0, x1, zs) in ((182, 194, -1), (160, 172, 1), (120, 132, 1), (84, 96, -1), (44, 54, 1), (50, 58, -1),
+                         (-40, -28, -1), (10, 22, 1), (-124, -112, -1), (-124, -112, 1), (-200, -188, -1), (-196, -184, 1), (106, 118, -1)):
+        fallen(x0, x1, zs)
+    def ridge(x0, z0, x1, z1, h=2.6):
+        """a spoil ridge thrown up by the shelling: earth slopes either side of a flat crest (along its long side)"""
+        if x1 - x0 < z1 - z0:
+            d = (x1 - x0) / 3
+            k.wedge("crackedearth", 0, x0, 0, z0, x0 + d, h, z1); k.box("dirt", x0 + d, 0, z0, x1 - d, h, z1)
+            k.wedge("crackedearth", 1, x1 - d, 0, z0, x1, h, z1)
+        else:
+            d = (z1 - z0) / 3
+            k.wedge("crackedearth", 2, x0, 0, z0, x1, h, z0 + d); k.box("dirt", x0, 0, z0 + d, x1, h, z1 - d)
+            k.wedge("crackedearth", 3, x0, 0, z1 - d, x1, h, z1)
+    for r in ((166, 24, 173, 44), (116, -50, 123, -34), (40, -61, 50, -53), (-116, -42, -109, -26), (-116, 30, -109, 46),
+              (79, 52, 85, 68), (78, -68, 84, -52), (186, 46, 193, 62)):
+        ridge(*r)
+    # ruined walls across the strip (a broken field wall line, a shot-up barn's gable)
+    for (x, z0, z1, h) in ((150, -76, -58, 3.6), (40, 36, 52, 3.4), (-66, -72, -52, 3.4), (-66, 44, 64, 3.2)):
+        k.box("bulletpockedwall", x - 0.4, 0, z0, x + 0.4, h, z0 + (z1 - z0) * 0.65)
+        k.box("bulletpockedwall", x - 0.4, 0, z0 + (z1 - z0) * 0.65, x + 0.4, h * 0.55, z1)
+        k.box("rubblepile", x + 0.4, 0, z0 + (z1 - z0) * 0.7, x + 1.6, 0.5, z1 - 1)
+    # the road and the strip's middle: wrecked lorries and sandbag barricades, each across one half (round them, not
+    # over them: the middle line is broken every 20-40 m, the other half stays a clean lane)
+    for (x, z) in ((112, -2.5), (44, 1.5), (-66, -2.5), (-118, 2.5)):
+        truck(x, z, "z")
+    for (x, z0, z1) in ((96, 2, 9), (14, -6, 0), (-40, 0, 6), (-140, -6, 0), (176, -4, 3)):
+        k.box("sandbagwall", x - 0.5, 0, z0, x + 0.5, 1.8, z1); k.box("sandbagwall", x - 1.0, 0, z0 + 0.5, x - 0.5, 1.2, z1 - 0.5)
+    # smoke: drifting from the burning wrecks, and banks lying in the hollows on the long lines (sight only)
+    for (x0, z0, x1, z1, y0, y1) in ((158, -7, 164, 1, 2.0, 9.0), (106, 26, 112, 34, 2.0, 9.0), (-122, 18, -116, 26, 1.5, 7.0),
+                                     (126, 40, 134, 48, 0, 4.5), (16, -48, 24, -40, 0, 4.5), (-136, 40, -128, 48, 0, 4.5),
+                                     (96, -74, 104, -66, 0, 4.5), (-60, 66, -52, 74, 0, 4.5)):
+        if y0 > 0:   # a plume off a wreck: narrow at the bottom, spreading as it rises and drifts
+            cx, cz = (x0 + x1) / 2, (z0 + z1) / 2
+            k.box("smokewall", cx - 1.5, y0, cz - 1.5, cx + 1.5, y0 + 2.5, cz + 1.5)
+            k.box("smokewall", cx - 2.5, y0 + 2.5, cz - 2.0, cx + 3.0, y1 - 2.0, cz + 2.5)
+            k.box("smokewall", cx - 2.0, y1 - 2.0, cz - 3.5, cx + 4.5, y1 + 1.0, cz + 3.0)
+            k.light(cx, 2.0, cz, 12, 0.7)                                    # (the wreck's fire glows in its smoke)
+        else:        # a bank lying low in a hollow: wide, 2.4 m deep, a lower skirt round it
+            k.box("smokewall", x0, 0, z0, x1, 2.4, z1)
+            k.box("smokewall", x0 + 1.5, 2.4, z0 + 1.0, x1 - 2.0, 3.4, z1 - 1.5)
+
     # ---- tanks: one burning in the crater field, one in front of the wire, one dead outside the bunker
-    tank(k, 164, -14, "x"); tank(k, 104, 32, "z"); tank(k, -116, 24, "x", burning=False)
+    tank(k, 156, -3, "z"); tank(k, 104, 32, "z"); tank(k, -116, 24, "x", burning=False)
+    # point A's cover: the burnt tank on its east edge, a broken sandbag ring (1.2 and 1.8 m) round its middle
+    for (a, b, c, d, h) in ((145, -3.2, 149.5, -2.4, 1.8), (142.6, -0.5, 143.4, 4.0, 1.2), (146.5, 5.6, 151, 6.4, 1.8), (151.6, 0.5, 152.4, 3.5, 1.2)):
+        k.box("sandbagwall", a, 0, b, c, h, d)
 
     # ---- the strip's edges: tall ruined facades along the long sides (clip above them), walls at the ends
     for zs in (-1, 1):
@@ -408,13 +515,28 @@ def build():
             if any(x < b and x + w > a for (a, b) in ((-104, -76), (55, 80))): x += w; continue
             a, b = sorted((zw, zw - zs * d))
             mat = R.choice(("collapsedbrick", "burntoutruinwall", "bulletpockedwall"))
-            k.box(mat, x, 0, a, x + w, h - 2, b)
+            # piers between window recesses (0.8 m deep) on the two upper floors, the ground floor pushed out a step
+            k.box(mat, x, 0, a, x + w, 4.0, b)
+            fa, fb = sorted((zw - zs * (d + 0.6), zw - zs * d))
+            k.box(mat, x, 0, fa, x + w, 3.4, fb)
+            ra, rb = sorted((zw - zs * (d - 0.8), zw))
+            xs = [x] + [x + 2 + 4 * i for i in range(int((w - 2) // 4))] + [x + w]
+            for (y0, y1, win) in ((4.0, 5.2, False), (5.2, 6.8, True), (6.8, 8.0, False), (8.0, h - 2, True)):
+                if y1 <= y0: continue
+                if not win: k.box(mat, x, y0, a, x + w, y1, b); continue
+                k.box(mat, x, y0, ra, x + w, y1, rb)                             # (the wall behind the windows)
+                for i in range(len(xs) - 1):
+                    p0, p1 = xs[i], xs[i + 1]
+                    k.box(mat, p0, y0, a, min(p1, p0 + 1.4) if i else p0 + 2, y1, b)
             k.box(mat, x, h - 2, a, x + w * 0.6, h, b)                           # (a broken top)
+            k.box("exposedrebar", x + w * 0.6, h - 2, (a + b) / 2 - 0.05, x + w * 0.6 + 0.1, h - 0.8, (a + b) / 2 + 0.05)
             x += w + R.choice((12, 16, 22))
     for xs in (-1, 1):
         xw = HX * xs
         k.box("bulletpockedwall", min(xw, xw + xs), G0, -HZ, max(xw, xw + xs), 10, HZ)
     m.clip_walls(-HX, -HZ, HX, HZ, 10)
+    for zs in (-1, 1):   # (the facades' tops are no perches: clip over them from 8 m up)
+        k.box("clip", -HX, 8, min(HZ * zs, HZ * zs - zs * 4.6), HX, 40, max(HZ * zs, HZ * zs - zs * 4.6))
     k.box("clip", -HX, 40, -HZ, HX, 41, HZ)
 
     # ---- the points (attack order A to E): a flush glow border, the zone 4 m tall
@@ -423,18 +545,20 @@ def build():
         if key not in "BD":
             for (a, b, c, d) in ((x0, z0, x1, z0 + 0.3), (x0, z1 - 0.3, x1, z1), (x0, z0 + 0.3, x0 + 0.3, z1 - 0.3), (x1 - 0.3, z0 + 0.3, x1, z1 - 0.3)):
                 k.box("glow", a, y, b, c, y + 0.04, d)
-        m.raw(f"point {num(x0)} {num(y)} {num(z0)} {num(x1)} {num(y + 4.5)} {num(z1)}")
+        top = 0 if key == "B" else y + 4.5   # (B: only the trench counts, not the open ground over it)
+        m.raw(f"point {num(x0)} {num(y)} {num(z0)} {num(x1)} {num(top)} {num(z1)}")
     for (a, b) in ((-8, -6), (6, 8)):                                     # (B: glow posts on the trench's lips)
         for x in (62, 78): k.box("glow", x - 0.2, 0, a, x + 0.2, 1.2, b)
     for x in (-100, -80): k.box("glow", x - 0.1, 0, -4.9, x + 0.1, 0.04, 4.9)
 
     # ---- staged spawns: six a side a stage, behind a shelter, facing their point
-    for key, (xw, side, zc) in SHELTERS.items():
-        shelter(k, xw, side, zc)
+    for key, (xw, side, zc, style) in SHELTERS.items():
+        shelter(k, xw, side, zc, style)
+        zo = 1 if zc > 0 else -1
         for i in range(2):
             for j in (-2, 0, 2):
-                x = xw + side * (3 + 1.6 * i)
-                k.spawn(key, x, 0, zc + j, 90 if side > 0 else -90)
+                x = xw + side * (2.6 + 1.6 * i)
+                k.spawn(key, x, 0, zc + zo * 4 + j, 0 if zo > 0 else 180)   # (facing the open side: yaw 0 faces -z)
     for (x, z) in ((182, 62), (128, -66), (82, 44), (40, -50), (-24, 54), (-62, -52), (-120, -58), (-196, 44)):
         k.spawn("any", x, 0, z, yaw_to(x, z, x * 0.6, 0))
 
@@ -463,8 +587,8 @@ def decorate(k, R):
             z = zs * (HZ - 5.6)
             k.box("rubblepile", x, 0, min(z, z + zs * 1.2), x + 4, 0.45, max(z, z + zs * 1.2))
     # ash round the burning tanks
-    for (x, z) in ((164, -14), (104, 32)):
-        k.box("smoulderingash", x - 5, 0, z - 4, x + 5, 0.03, z + 4)
+    for (x, z) in ((156, -3), (104, 32)):
+        k.box("scorchedtiles", x - 4, 0, z - 4, x + 4, 0.03, z + 4)
     # shell-shocked trees: stumps on the field's edges
     for (x, z) in ((196, -70), (172, -66), (120, 72), (40, 70), (-60, 72), (-130, -70), (-70, -66), (30, -72)):
         k.box("charredtimber", x - 0.35, 0, z - 0.35, x + 0.35, R.uniform(2.5, 6), z + 0.35)
