@@ -40,14 +40,17 @@ float Ui::hintScale() const { return std::max(r_->minTextScale(), textScale_ * 0
 void Ui::hint(float x, float y, const std::string& t, const Color& c, float maxW) { drawFitted(x, y, t, c, hintScale(), maxW > 0 ? maxW : boxWidth(x)); }
 
 void Ui::panel(float x, float y, float w, float h, float alpha) {
-    r_->rect(x, y, w, h, {0.05f, 0.06f, 0.08f, alpha});
+    // (PLAYER > MORE: PANEL DARKNESS scales its opacity; HIGH CONTRAST: black)
+    const float a = std::min(1.0f, alpha * panelDark);
+    r_->rect(x, y, w, h, contrast ? Color{0, 0, 0, std::max(a, 0.9f)} : Color{0.05f, 0.06f, 0.08f, a});
     r_->rect(x, y, w, 2 * scale_, accent);
     box(x, x + w);   // (labels after it fit inside it, until a narrower box is set)
 }
 
 // A label's text in at most maxW (0: as wide as it is): tighter, then smaller, then cut (fitted()), vertically centred
 // on where the full-size line would be.
-void Ui::drawFitted(float x, float y, const std::string& t, const Color& c, float ts, float maxW) {
+void Ui::drawFitted(float x, float y, const std::string& t, const Color& c0, float ts, float maxW) {
+    const Color c = textMul == 1.0f ? c0 : Color{std::min(1.0f, c0.r * textMul), std::min(1.0f, c0.g * textMul), std::min(1.0f, c0.b * textMul), c0.a};
     if (maxW <= 0 || t.empty() || r_->textWidth(t, ts) <= maxW) { r_->text(x, y, ts, t, c); return; }
     TextFit f = fitted(t, ts, maxW);
     float dy = (r_->textHeight(ts) - r_->textHeight(f.scale)) * 0.5f;
@@ -223,7 +226,7 @@ bool Ui::tab(float x, float y, float w, float h, const std::string& label, bool 
     std::string shown = label;
     bool clipped = false;
     float tk = 0, ts = fit(shown, w - 8 * scale_, &clipped, &tk);
-    r_->text(x + (w - r_->textWidth(shown, ts, tk)) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, shown, {1, 1, 1, 1}, tk);
+    r_->text(x + (w - r_->textWidth(shown, ts, tk)) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, shown, textC(), tk);
     if (reporting()) report(UiWidget::BUTTON, x, y, w, h, label, "", e, true, clipped);
     return hv && in_.pressed;
 }
@@ -231,10 +234,15 @@ bool Ui::tab(float x, float y, float w, float h, const std::string& label, bool 
 bool Ui::buttonImpl(float x, float y, float w, float h, const std::string& label, bool enabled, bool* clipped) {
     bool hv = enabled && hover(x, y, w, h);
     Color bg = !enabled ? Color{0.12f, 0.12f, 0.14f, 0.8f} : hv ? Color{accent.r * 0.5f, accent.g * 0.5f, accent.b * 0.5f, 0.95f}
-                                                             : Color{0.14f, 0.16f, 0.2f, 0.9f};
+                                                             : btnC();
     r_->rect(x, y, w, h, bg);
+    if (contrast && enabled) {   // (HIGH CONTRAST: a light outline round every button)
+        const float o = std::max(1.0f, std::round(scale_));
+        r_->rect(x, y, w, o, {0.9f, 0.9f, 0.9f, 1}); r_->rect(x, y + h - o, w, o, {0.9f, 0.9f, 0.9f, 1});
+        r_->rect(x, y, o, h, {0.9f, 0.9f, 0.9f, 1}); r_->rect(x + w - o, y, o, h, {0.9f, 0.9f, 0.9f, 1});
+    }
     if (hv) r_->rect(x, y + h - 2 * scale_, w, 2 * scale_, accent);
-    Color tc = enabled ? Color{1, 1, 1, 1} : Color{0.5f, 0.5f, 0.5f, 1};
+    Color tc = enabled ? textC() : Color{0.5f, 0.5f, 0.5f, 1};
     std::string buf;
     float ts, tk, tw;
     const std::string& shown = fitText(label, w - 8 * scale_, buf, ts, tk, tw, clipped);
@@ -255,11 +263,11 @@ bool Ui::textField(int id, float x, float y, float w, float h, std::string& valu
     }
     r_->rect(x, y, w, h, focused ? Color{0.1f, 0.12f, 0.16f, 1} : Color{0.08f, 0.09f, 0.11f, 0.95f});
     r_->rect(x, y + h - 2 * scale_, w, 2 * scale_, focused ? accent : Color{0.3f, 0.3f, 0.35f, 1});
-    std::string shown = value;
+    std::string shown = maskText ? std::string(value.size(), '*') : value;   // (STREAMER MODE: addresses and codes)
     float cw = caretWidth(), maxW = w - 12 * scale_ - cw - 2 * scale_;
     while (!shown.empty() && r_->textWidth(shown, textScale_) > maxW) shown.erase(0, 1); // long: show the end
     float tx = x + 6 * scale_, ty = y + (h - r_->textHeight(textScale_)) * 0.5f;
-    r_->text(tx, ty, textScale_, shown, {1, 1, 1, 1});
+    r_->text(tx, ty, textScale_, shown, textC());
     if (focused) caret(tx + r_->textWidth(shown, textScale_), ty);
     if (reporting()) {
         UiWidget wd;
@@ -298,7 +306,7 @@ bool Ui::cycle(float x, float y, float w, float h, const std::string& label, int
     std::string buf;
     float ts, tk, tw;
     const std::string& t = fitText(name, w - 2 * bw - 8 * scale_, buf, ts, tk, tw, &clipped);
-    r_->text(x + (w - tw) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, t, {1, 1, 1, 1}, tk);
+    r_->text(x + (w - tw) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, t, textC(), tk);
     if (reporting()) {
         UiWidget wd;
         wd.where = where; wd.scope = scope;
@@ -386,7 +394,7 @@ bool Ui::slider(float x, float y, float w, float h, const std::string& label, fl
         float cw = caretWidth() + 2 * scale_;
         float ex = x + (w - r_->textWidth(s, es) - cw) * 0.5f, ew = r_->textWidth(s, es), ey = y + (h - r_->textHeight(es)) * 0.5f;
         r_->rect(ex + r_->textWidth(elab + ": ", es) - 3 * scale_, y + 3 * scale_, r_->textWidth(editText_, es) + cw + 6 * scale_, h - 6 * scale_, {0, 0, 0, 0.6f});
-        r_->text(ex, ey, es, s, {1, 1, 1, 1});
+        r_->text(ex, ey, es, s, textC());
         caret(ex + ew, ey, es);
         r_->rect(x, y + h - 2 * scale_, w, 2 * scale_, accent);
     } else {
@@ -399,7 +407,7 @@ bool Ui::slider(float x, float y, float w, float h, const std::string& label, fl
         }
         clipped = bw > w - 8 * scale_;
         float sx = x + (w - tw) * 0.5f, sy = y + (h - r_->textHeight(ls)) * 0.5f;
-        r_->text(sx, sy, ls, shown, {1, 1, 1, 1});
+        r_->text(sx, sy, ls, shown, textC());
         // the number looks clickable: a faint box always, brighter with an underline under the mouse
         float bx = sx + pw;
         r_->rect(bx - 3 * scale_, y + 3 * scale_, bw + 6 * scale_, h - 6 * scale_, {1, 1, 1, overNumber ? 0.14f : 0.05f});
@@ -476,7 +484,7 @@ int Ui::colorPicker(float x, float y, float w, float h, const std::string& label
         }
     }
     // the widget: a button with its label on the left and the colour on the right
-    Color bg = hv ? Color{accent.r * 0.5f, accent.g * 0.5f, accent.b * 0.5f, 0.95f} : Color{0.14f, 0.16f, 0.2f, 0.9f};
+    Color bg = hv ? Color{accent.r * 0.5f, accent.g * 0.5f, accent.b * 0.5f, 0.95f} : btnC();
     r_->rect(x, y, w, h, bg);
     if (hv || open) r_->rect(x, y + h - 2 * s, w, 2 * s, accent);
     const float sw = 36 * s, sh = std::min(h - 8 * s, 22 * s), sx = x + w - sw - 8 * s, sy = y + (h - sh) * 0.5f;
@@ -485,7 +493,7 @@ int Ui::colorPicker(float x, float y, float w, float h, const std::string& label
     std::string shown = label;
     bool clipped = false;
     float tk = 0, ts = fit(shown, sx - x - 16 * s, &clipped, &tk);
-    r_->text(x + 8 * s, y + (h - r_->textHeight(ts)) * 0.5f, ts, shown, {1, 1, 1, 1}, tk);
+    r_->text(x + 8 * s, y + (h - r_->textHeight(ts)) * 0.5f, ts, shown, textC(), tk);
     if (open) {
         popup_.seen = true;
         popup_.ax = x; popup_.ay = y; popup_.aw = w; popup_.ah = h;
@@ -573,13 +581,13 @@ bool Ui::dropdown(float x, float y, float w, float h, const std::string& label, 
         }
     }
     // the field: "LABEL: VALUE  V" (^ while open)
-    Color bg = hv ? Color{accent.r * 0.5f, accent.g * 0.5f, accent.b * 0.5f, 0.95f} : Color{0.14f, 0.16f, 0.2f, 0.9f};
+    Color bg = hv ? Color{accent.r * 0.5f, accent.g * 0.5f, accent.b * 0.5f, 0.95f} : btnC();
     r_->rect(x, y, w, h, bg);
     if (hv || open) r_->rect(x, y + h - 2 * s, w, 2 * s, accent);
     std::string shown = label + ": " + (index >= 0 && index < n ? names[index] : "?") + (open ? "  ^" : "  V");
     bool clipped = false;
     float tk = 0, ts = fit(shown, w - 8 * s, &clipped, &tk);
-    r_->text(x + (w - r_->textWidth(shown, ts, tk)) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, shown, {1, 1, 1, 1}, tk);
+    r_->text(x + (w - r_->textWidth(shown, ts, tk)) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, shown, textC(), tk);
     if (open) {
         popup_.seen = true;
         popup_.ax = x; popup_.ay = y; popup_.aw = w; popup_.ah = h;
@@ -619,7 +627,7 @@ void Ui::popups() {
             r_->rect(ex, ey, ew, rowH, bg);
             std::string t = popup_.names[i];
             float tk = 0, ts = fit(t, ew - 8 * s, nullptr, &tk);
-            r_->text(ex + (ew - r_->textWidth(t, ts, tk)) * 0.5f, ey + (rowH - r_->textHeight(ts)) * 0.5f, ts, t, {1, 1, 1, 1}, tk);
+            r_->text(ex + (ew - r_->textWidth(t, ts, tk)) * 0.5f, ey + (rowH - r_->textHeight(ts)) * 0.5f, ts, t, textC(), tk);
         }
     } else if (popup_.kind == POP_COLOR) {
         r_->rect(b[0], b[1], b[2], b[3], {0.05f, 0.06f, 0.08f, 0.98f});
@@ -653,7 +661,7 @@ void Ui::popups() {
         r_->rect(hx[0], hx[1] + hx[3] - 2 * s, hx[2], 2 * s, focused ? accent : Color{0.3f, 0.3f, 0.35f, 1});
         std::string t = focused ? hexText_ : hexOf(popup_.last);
         float tx = hx[0] + 6 * s, ty = hx[1] + (hx[3] - r_->textHeight(textScale_)) * 0.5f;
-        r_->text(tx, ty, textScale_, t, {1, 1, 1, 1});
+        r_->text(tx, ty, textScale_, t, textC());
         if (focused) caret(tx + r_->textWidth(t, textScale_), ty);
         float swx = hx[0] + hx[2] + 8 * s, sww = 28 * s;
         r_->rect(swx, hx[1], sww, hx[3], rgba(popup_.last));

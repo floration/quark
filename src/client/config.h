@@ -172,6 +172,46 @@ struct Settings {
     int cursorSize = 0;            // ...the menu cursor: 0 the system's, 1 x1, 2 x1.5, 3 x2
     int cursorColor = 0;           // ...0 white, 1 black, 2 yellow, 3 your team colour
     bool useToggle = false;        // ...USE pressed once to hold, again to let go
+    // 1.19.4 settings, batch 4 (the 1s): VIDEO + AUDIO > MORE 2 / 4 / 5 / 6
+    int shotFormat = 0;            // MORE 6: screenshots as 0 PNG, 1 TGA (written at once, no compression pass)
+    int shotFolder = 0;            // ...in 0 the data folder's screenshots/, 1 Pictures/Quark
+    bool shotHideHud = false;      // ...the screenshot key leaves the HUD out (the 3D view only)
+    bool liquidFlow = true;        // MORE 2: water / lava / acid flow (off: still)
+    float glowStrength = 1.0f;     // ...the map's glowing parts, x
+    Vec3 worldEdgeColor = {0, 0, 0};   // MORE 4: the map's outline colour
+    bool hitTiers = true;          // MORE 5: the hitsound gets heavier with the damage (off: one sound)
+    bool ffaColors = false;        // MORE 4: free for all: each opponent their own colour
+    bool ownFx = false;            // ...your projectiles, laser and rope in OWN EFFECTS COLOR
+    Vec3 ownFxColor = {0.3f, 1.0f, 0.5f};
+    int hbLow = 30;                // ...health bars turn LOW COLOR at or below this health
+    Vec3 hbLowColor = {1, 0.35f, 0.3f};
+    bool hbCustom = false;         // ...health bars over players in HEALTH BAR COLOR (not the team's)
+    Vec3 hbColor = {1, 1, 1};
+    int tagColor = 0;              // ...teammates' name tags: 0 team colour, 1 white, 2 custom
+    Vec3 tagCustom = {1, 1, 1};
+    float tagAlpha = 1.0f, tagSize = 1.0f;
+    int fxColorMode = 0;           // MORE 2: explosions / sparks: 0 their own, 1 your team colour, 2 custom
+    Vec3 fxColor = {1.0f, 0.85f, 0.5f};
+    bool objPalette = false;       // MORE 4: the bomb's blink and unreached checkpoints in your enemy colour
+    bool skyOverride = false, glowOverride = false;   // ...the map's sky / glow colour replaced
+    Vec3 skyColor = {0.62f, 0.66f, 0.72f}, glowColor = {1.0f, 0.55f, 0.15f};
+    bool highContrast = false;     // ...lighter walls and floors, darker trim
+    bool f3Safe = false;           // ...F3's pipeline colours told apart under colour blindness (Okabe-Ito)
+    bool onTop = false;            // MORE 6: the window always on top (windowed)
+    int gunColor = 0;              // MORE 4: the gun's body: 0 the map's metal, 1 your team colour, 2 custom
+    Vec3 gunCustom = {0.3f, 0.33f, 0.37f};
+    float objOpacity = 1.0f;       // ...objective zones' opacity, x
+    bool objPulse = true;          // ...and their pulse (off: steady)
+    float dashBuffer = 0.1f;       // MORE 6: a dash pressed this long before it's allowed is held till then (0 / 0.05 / 0.1 / 0.15 s)
+    float smoothAmt = 1.0f;        // MORE 2: SMOOTH anti-aliasing's strength
+    bool lightmapNearest = false;  // ...LIGHTMAP FILTER: nearest (blocky light)
+    bool wallbangTint = false;     // MORE 4: wallbang walls in WALLBANG COLOR (not dark grey)
+    Vec3 wallbangColor = {0.55f, 0.25f, 0.6f};
+    int ultraMarginUs = 150;       // MORE 6: LOW LATENCY ULTRA: the frame starts this much early
+    bool nvThreaded = false;       // ...Windows NVIDIA: threaded optimization off (driver profile)
+    bool nvDxgi = false;           // ...Windows NVIDIA: present through DXGI (driver profile)
+    bool quipCaptions = false;     // MORE 5: quips shown as captions
+    float annDuck = 0.0f;          // ...effects ducked by this much while the announcer speaks (0: none, 1: silent)
     // VISUALS
     bool fullbright = false;    // flat white world, black outlines, no lighting
     int ownShots = 0;           // your tracers / beam: 0 with the weapon model, 1 always, 2 never
@@ -248,8 +288,9 @@ struct Settings {
     // HUD layout: offset (pixels at 720p) from the default spot, size, and an optional color override
     // (keys, then the grapple launcher: after the weapon model, so saved layouts keep their indices; then the score box,
     // kill feed and chat, which could only be themed and moved from 1.19.0.testing on)
+    // (1.19.4: the objective line, the notices and the scoreboard, appended so older hud_<n> lines keep their meaning)
     enum { HUD_HEALTH, HUD_WEAPON, HUD_BARS, HUD_SPEED, HUD_SLOTS, HUD_VIEWMODEL, HUD_KEYS, HUD_GRAPPLE, HUD_SCORE, HUD_KILLFEED, HUD_CHAT,
-           HUD_COUNT };
+           HUD_OBJECTIVE, HUD_NOTICES, HUD_SCOREBOARD, HUD_COUNT };
     // x / y / scale move and size an element (720p units); hidden removes it. For the two first-person models (the
     // weapon, the grapple launcher), x / y / depth move it in front of the camera (depth: z, + = further away), pitch /
     // yaw / roll tilt it about its pivot (degrees) and colour tints its accent parts (the launcher: its stripe).
@@ -259,6 +300,134 @@ struct Settings {
     };
     static bool isModelElem(int el) { return el == HUD_VIEWMODEL || el == HUD_GRAPPLE; }
     HudElem hud[HUD_COUNT];
+    // ---- 1.19.4 settings, batch 3 (the 2s): HUD, social, controls, editor, menus (setBatch3 / batch3Text in config.cpp)
+    // GAMEPLAY > MORE 2 (feedback): damage numbers, damage arcs, the kill mark, the hit flash, low health
+    Vec3 dmgNumColor = {1, 1, 1};      // a normal hit's number (headshots stay red, big hits gold)
+    int dmgNumStack = 0;               // 0 quick hits add up, 1 a number a hit, 2 one running total a target until it fades
+    float dmgNumTime = 0.9f;           // seconds a number shows
+    bool dmgArcs = true;               // the red arcs toward whoever hit you
+    Vec3 dmgArcColor = {1, 0.12f, 0.08f};
+    float dmgArcSize = 1.0f, dmgArcTime = 1.0f;
+    bool killMark = true;              // the X on the crosshair on your kill
+    float killMarkTime = 0.45f;
+    Vec3 killMarkColor = {1, 0.12f, 0.1f};
+    float hitFlashTime = 0.15f;        // the crosshair's hit flash
+    bool killText = false;             // "KILLED <NAME>" under the crosshair
+    bool healNums = true;              // green "+N" when you heal
+    float lowHp = 0.3f;                // low health below this share of the max: the number + bar in lowHpColor
+    Vec3 lowHpColor = {1, 0.35f, 0.3f};
+    bool lowHpPulse = false, lowHpSound = false;   // ...pulsing; a beep as you drop under it
+    // GAMEPLAY > MORE 3 (HUD info)
+    int speedUnit = 0;                 // the speed meter / verbose speed: 0 m/s, 1 km/h, 2 ups (Quake units, 39.37 a metre)
+    float speedScale = 1.0f;           // the speed meter's bar: x the speed it takes to fill
+    bool speedTicks = true;            // ...its tick marks
+    int barCaps = 15;                  // captions shown: bit 0 WEAPON, 1 DASH, 2 HOOK, 3 SPEED
+    bool clock12 = false;              // the verbose TIME as 12 h (am / pm)
+    int clockMode = 0;                 // the round clock: 0 time left, 1 time played
+    bool clockTenths = false;          // ...tenths in its last 10 s
+    int verboseLines = 0x3FFF;         // the verbose info block's lines (bit per line, kVerboseNames in game.cpp)
+    bool drainWarn = true;             // vs / duel / 1v1 / tourney: "HEALTH DRAINS IN N" over the last 10 s, a beep at 10 and 5
+    bool netIcons = true;              // warnings for high ping / packet loss / a stalled connection
+    int autoHideHealth = 0;            // 0 always, 1 for 3 s after it changes (and while low), 2 only while low
+    int autoHideSlots = 0;             // the weapon list: 0 always, 1 for 3 s after a switch
+    int autoHideBars = 0;              // the cooldown bars: 0 always, 1 only while one isn't ready
+    float objSize = 1.0f, objMarkOpacity = 1.0f;   // objective markers (bomb, hill, cart, points)
+    bool objDistance = true, objArrow = true;  // ...their distance in metres; an arrow at the screen's edge when off screen
+    float scopeSize = 1.0f;            // the sniper scope's circle (x the default)
+    Vec3 scopeColor = {0, 0, 0};       // ...its reticle lines
+    float scopeLine = 1.0f;            // ...their thickness (px at 720p)
+    int specHud = 0;                   // spectating: 0 the full HUD, 1 minimal
+    bool feedHeadshot = true;          // the kill feed: a headshot marked "(HS)"
+    int scoreSort = 0;                 // the scoreboard: 0 score, 1 kills, 2 deaths, 3 ping, 4 name
+    int scoreCols = 0xFF;              // ...the columns shown (bit per column)
+    // GAMEPLAY > MORE 4 (social, death camera)
+    bool chatOneColor = false;         // chat lines in chatColor (not by team)
+    Vec3 chatColor = {1, 1, 1};
+    Vec3 sysColor = {0.7f, 0.72f, 0.75f};   // server / system lines
+    bool chatBox = false;              // a dark box behind chat (not only while typing)
+    float chatBoxOpacity = 0.4f;
+    bool chatStamps = false;           // [12:34] before each line
+    bool mentionHl = true, mentionSound = true;   // a line with your name: gold, and a ping
+    bool chatFilter = false;           // rude words starred out (a short list)
+    bool teamChatOnly = false;         // only your team's chat (and the server's lines)
+    bool otherNameColors = true;       // other players' custom name colours (off: the team colour)
+    bool streamer = false;             // hide addresses, codes and other players' names
+    int sysMsgs = 0;                   // server messages: 0 all, 1 important, 2 off
+    int alerts = 0;                    // unfocused: flash the taskbar on bit 0 match start, 1 round start, 2 a vote, 3 a join
+    int onJoin = 0;                    // joining a match: 0 play, 1 spectate, 2 ask
+    int deathCam = 0;                  // dead: 0 watch the killer, 1 your body, 2 a teammate
+    float killCamTime = 1.5f;          // team modes: how long the killer can be watched (0 - kKillCamTime)
+    float recoilAmount = 1.0f;         // the gun model's kick (x the default; 0 = none)
+    float specFov = 0;                 // spectating: the FOV (0 = yours)
+    bool specThird = false;            // spectating: behind the player, not their eyes
+    std::string quipBlock;
+    int quipPick = -1;                 // PLAYER > MORE: MY QUIP: the QUIP key says this one (-1: a random one)
+    bool useOverrides = true;          // PLAYER > MORE: MODS: your overrides folder used (next start)             // players whose quips you don't hear (names, ';'-separated)
+    // CONTROLS > MORE 2
+    float wpnSens[WPN_COUNT];          // per weapon: x SENSITIVITY (1 = the same)
+    bool wpnVmHide[WPN_COUNT] = {};    // per weapon: its model hidden (GAMEPLAY > MORE 2: WEAPON MODEL)
+    float wpnVmOff[WPN_COUNT][3] = {}; // per weapon: added to the WEAPON MODEL element's x / y (720p units) / depth (mm)
+    float mouseAccel = 0;              // sensitivity x (1 + accel x counts per ms), at most x4 (0 = off)
+    bool rawInput = true;              // raw mouse input (off: the OS's pointer motion, with its acceleration)
+    int altToggleWpns = -1;            // ALT-FIRE: TOGGLE applies to these weapons (bits; -1: the ones that zoom)
+    int swapFire = 0;                  // these weapons swap FIRE and ALT FIRE (bits)
+    bool autoHop = true;               // holding jump jumps again on landing (off: a press a jump)
+    int consoleKey = 96;               // the console's key (GLFW code; ` by default)
+    bool consoleMenus = false;         // ...also opens in the menus
+    bool rankedAltToggle = true;       // ALT-FIRE: TOGGLE in ranked too
+    // PLAYER > MORE (menus, ranked)
+    int menuBg = 0;                    // the menu's background: 0 the last map, 1 a map picked (menuBgMap), 2 a plain colour
+    std::string menuBgMap;
+    Vec3 menuBgColor = {0.06f, 0.07f, 0.09f};
+    int menuTheme = 0;                 // 0 dark, 1 high contrast
+    bool menuAccentOn = false;         // the menus' accent: menuAccent (off: your team colour)
+    Vec3 menuAccent = {1.0f, 0.75f, 0.25f};
+    float panelDark = 1.0f, textBright = 1.0f;   // the panels' darkness, the menu text's brightness
+    bool hideRatings = false;          // ranked: ratings hidden on the scoreboard
+    bool rememberQueues = false;       // the ranked queues you're in, joined again at the next start
+    std::string lastQueues;            // (those queues, ','-separated)
+    // race: splits compared with your best run, your best segments or your last run; how long a split shows; the
+    // race stats page's date format (0 month-day, 1 day-month, 2 year-month-day)
+    int raceSplitVs = 0;
+    float raceSplitTime = 2.5f;
+    int raceDate = 0;
+    // HOST > ADVANCED: the tick rate (0 1000, 1 500, 2 250, 3 125 Hz; the highest: it still steps down if the PC can't
+    // keep up), the snapshot rate (0 as the tick rate, 1 500, 2 250, 3 125, 4 62.5), an upload cap (kbit/s, 0 none),
+    // the match starting by itself once both sides have players, balance bots' skill
+    int hostTick = 0, hostSnap = 0, hostUpload = 0;
+    bool hostAutoStart = false;
+    int hostBotSkill = 1;
+    // EDITOR
+    float edFlySpeed = 12.0f, edFastMul = 3.0f, edGridCustom = 0, edRotStep = 45.0f;   // (ROTATION STEP: Q / E on a spawn; its slider drags in 15 or less)
+    int edGridIdx = 2;
+    bool edFlyBinds = false;           // the fly camera's keys follow your FORWARD / BACK / LEFT / RIGHT / JUMP / CROUCH binds
+    std::string edLight;               // the last light's values ("radius intensity"), "" = the default
+    int edTestMode = -1;               // TEST PLAY: the mode (-1: the map's own)
+    int edTestBots = 0;                // ...enemy bots
+    bool edTestAtCam = false;          // ...start where the editor's camera is
+    bool edTestNoWarmup = false;       // ...the match starts at once
+    // ---- batch 4b (1.19.4, the 1s; HUD > MORE unless noted)
+    Vec3 barRechargeColor = {0.6f, 0.62f, 0.66f};   // a cooldown bar while it recharges
+    Vec3 speedLowColor = {1.0f, 0.85f, 0.3f}, speedHighColor = {1.0f, 0.25f, 0.1f};   // the speed meter, slow -> fast
+    Vec3 slotOffColor = {0.5f, 0.52f, 0.55f};       // the weapon list: a weapon you can't use now
+    Vec3 stickyFullColor = {1.0f, 0.6f, 0.2f};      // the sticky counter at its most
+    Vec3 warnColor = {1.0f, 0.78f, 0.25f};          // banners: ranked / unrated notes (warnings)
+    Vec3 infoColor = {0.6f, 0.62f, 0.66f};          // banners: the grey info lines (spectating, hosting)
+    Vec3 dmgHeadColor = {1.0f, 0.18f, 0.15f}, dmgBigColor = {1.0f, 0.85f, 0.2f};   // damage numbers: headshots, 40+ hits
+    float textOutline = 1.0f;          // the text outline's width, x (0: none; at most 1.5)
+    int noticeLines = 4;               // notices kept on screen at once (1 - 8)
+    float noticeTime = 1.0f;           // ...and how long, x
+    bool compass = false;              // a compass strip at the top
+    bool radar = false;                // a radar: teammates and objectives (never enemies)
+    float radarRange = 40;             // ...its radius in metres
+    bool hideRec = false;              // no REC / DEMO indicator
+    int tourneyTab = 0;                // tourney: TAB shows 0 the bracket, 1 the scoreboard
+    bool stepSmooth = true;            // GAMEPLAY > MORE 3: the camera eases up / down stair steps
+    bool sendTyping = true;            // GAMEPLAY > MORE 4: others see "..." while you type
+    bool rpsClick = true;              // GAMEPLAY > MORE 4: the tiebreak's cards are clicked (the cursor is freed)
+    bool fixedLogo = false;            // PLAYER > MORE: the title in its own cyan / red, not your team colours
+    int botLooks = 0;                  // PLAYER > MORE: your server's bots: 0 a mix of models, 1 all STANDARD
+    Vec3 clipColor = {0.75f, 0.35f, 1.0f};   // CONTROLS > MORE 2: the editor's clip boxes (see-through)
     // play vs bots
     int botSkill = 1;           // 0 beginner .. 3 expert
     int botEnemies = 3, botAllies = 1;
@@ -271,7 +440,9 @@ struct Settings {
     // 3: F4 shows the mouse to photon number (LATENCY); VOTE START moved from F4 to F5.
     // 4: RACE RESET (R) added; unbound if R was taken.
     int bindVersion = 4;
-    Settings() { binds.setDefaults(); for (int& w : chWStyle) w = -1; }
+    Settings() { binds.setDefaults(); for (int& w : chWStyle) w = -1; for (float& s : wpnSens) s = 1.0f; }
+    bool setBatch3(const std::string& key, const std::string& value);   // (config.cpp: the batch 3 keys)
+    std::string batch3Text() const;
     void load();
     void save() const;
     void set(const std::string& key, const std::string& value); // one setting from text (file or console)

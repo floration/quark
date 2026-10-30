@@ -18,8 +18,9 @@ static_assert(HudTheme::kElems == Settings::HUD_COUNT, "a theme style per HUD el
 
 namespace {
 const char* const kElemNames[HudTheme::kElems] = {"health", "weapon", "bars", "speed", "slots", "weapon-model", "keys", "grapple-model",
-                                                  "score", "killfeed", "chat"};
-static_assert(Settings::HUD_SCORE == 8 && Settings::HUD_KILLFEED == 9 && Settings::HUD_CHAT == 10, "kElemNames follows Settings::HUD_*");
+                                                  "score", "killfeed", "chat", "objective", "notices", "scoreboard"};
+static_assert(Settings::HUD_SCORE == 8 && Settings::HUD_KILLFEED == 9 && Settings::HUD_CHAT == 10 && Settings::HUD_OBJECTIVE == 11 &&
+              Settings::HUD_NOTICES == 12 && Settings::HUD_SCOREBOARD == 13, "kElemNames follows Settings::HUD_*");
 const char* const kSelNames[HudTheme::SEL_ELEM0] = {"hud", "hud-panel", "killfeed", "chat"};
 
 std::string lower(std::string s) { for (char& c : s) c = (char)tolower((unsigned char)c); return s; }
