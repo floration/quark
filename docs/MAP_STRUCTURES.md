@@ -72,6 +72,10 @@ What every map gets, whatever its mode (checked by `quark_tests`):
 - **Causeway blocks.** Cover beside the cart.
 - **Spawn screens.** A wall in front of each team's spawn row, at the causeway's end: the causeway was a 78 m sightline from one spawn to the other.
 
+## Surfy and Cobblestone: q's own maps (hand-made)
+
+Owner, 2026-10-30: "make sure all future updates get cobblestone map and surfy map ... surfy map is default surf gamemode map". Both are q's, made in the map editor (`handmade`), shipped as they are from q's PC (`maps/surfy.qmap`, `maps/cobblestone.qmap`, un-ignored in `.gitignore`); change them by saving a new version from the editor, never by hand here. **Surfy** is built for surf and is the mode's default map (`defaultMapName`, client/game.cpp), ahead of Cascade. **Cobblestone** is the all-cobblestone map q benchmarks the cobblestone look's frame-time lows with; it has no `for` line, so no mode picks it by default.
+
 ## Cascade: surf. Setting: a frozen gorge.
 
 Surf (owner, 2026-10-28): race rules on a course you ride, not walk: no dash, no grapple, steep ramps you strafe along.

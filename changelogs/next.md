@@ -2,6 +2,9 @@
 
 What's on `testing` since production 1.19.3. The release PR renames this file to `changelogs/<VERSION>.md`.
 
+## Maps
+- **Two new maps, made by q:** **Surfy** (surf), now the map surf mode starts on, and **Cobblestone**.
+
 ## Servers
 - **Testing server alone:** `install.sh --testing-only` sets up just the testing server, on the normal port, and keeps it running all the time on the newest testing build or production release, whichever is newer. Both servers stay the default (`--both` to go back); `--no-testing` is still production only.
 

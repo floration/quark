@@ -545,8 +545,23 @@ int Game::bestRankedMap(int ladder) const {
 }
 
 // The map built for this mode if there is one, else the first map that supports it.
+// A mode's default map where several are built for it (owner, 2026-10-30: "surfy map is default surf gamemode map").
+static const char* defaultMapName(int mode) {
+    switch (mode) {
+    case MODE_SURF: return "surfy";
+    default: return nullptr;
+    }
+}
+
 int Game::bestMapFor(int mode) const {
     int fallback = -1;
+    if (const char* name = defaultMapName(mode)) {
+        const bool info = mapInfo_.size() == maps_.size();
+        for (size_t i = 0; i < maps_.size(); i++) {
+            if (maps_[i] != name) continue;
+            if (!info || (mapInfo_[i].modes >> mode & 1)) return (int)i;   // (a mode with a default is in range)
+        }
+    }
     // from rescanMaps' map info (the same files' modes and preferred mode): this used to load and parse maps, collision
     // grid and all, until it found one, on the frame you picked a mode (in a match too)
     const bool info = mapInfo_.size() == maps_.size();
@@ -7465,9 +7480,11 @@ void Game::drawPicker(float cx, float y) {
         } else if (modes) {
             it.label = modeTitle(i);
             it.cur = i == mode && !rankedNow;
-            for (auto& mi : mapInfo_) if (mi.preferredMode == i) it.sub = "MAP: " + upper(mi.title);
-            if (it.sub.empty() && i == MODE_TAG) for (auto& mi : mapInfo_) if (mi.preferredMode == MODE_HIDE) it.sub = "MAP: " + upper(mi.title);
-            if (it.sub.empty() && i == MODE_POWER) for (auto& mi : mapInfo_) if (mi.preferredMode == MODE_VS) it.sub = "MAP: " + upper(mi.title);
+            // (the map picking this mode would start on)
+            if (mapInfo_.size() == maps_.size() && !maps_.empty()) {
+                int m = bestMapFor(i);
+                if (m >= 0 && m < (int)mapInfo_.size() && (mapInfo_[m].modes >> i & 1)) it.sub = "MAP: " + upper(mapInfo_[m].title);
+            }
             if (i == MODE_ARENA) it.sub = "9 RULESETS >";
             if (i == MODE_TOURNEY) it.sub = "BRACKET OF 1V1S - RULESETS >";
         } else {

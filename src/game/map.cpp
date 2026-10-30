@@ -1952,7 +1952,8 @@ bool Map::canSupportMode(int mode) const {
         case MODE_POWER: return teams;
         case MODE_TOURNEY: return !spawns.empty();
         case MODE_BOMB: return teams && !bombSites.empty();
-        case MODE_RACE: case MODE_SURF: return has(SPAWN_RACE) && !raceCheckpoints.empty();
+        // (a map with no race spawn starts racers on its "any" spawns: q's Surfy has one, 2026-10-30)
+        case MODE_RACE: case MODE_SURF: return (has(SPAWN_RACE) || has(SPAWN_ANY)) && !raceCheckpoints.empty();
         case MODE_KOTH: return teams && hasHill;
         case MODE_PAYLOAD:
         case MODE_NPAYLOAD: return teams && payloadPath.size() >= 2;
