@@ -4,7 +4,8 @@
 // A walk grid over the map: columns every 0.25 m, and in each column every height where the real player hull
 // (playerBox, crouched at least) fits against the real collision (the boxSolid brushes: clip blocks, trim doesn't),
 // at the column's centre or up to 0.12 m off it (a 0.9 m slot), with at least 10 cm of floor under it, above the kill
-// height and out of lava. Links are what a player can do without movement tech:
+// height and out of lava. A ramp (a wedge, corner, tetra or cut box no steeper than 45 degrees: pmove's floor limit)
+// is floor at its surface's height over each column, not its whole box (walkableSlope / columnSpan). Links are what a player can do without movement tech:
 //   - walk, step up (0.55 m, pmove's step) or drop any distance to the next column, the hull clear all the way;
 //   - jump up to 1.15 m onto the next column (a standing jump clears 1.22 m), standing headroom for it;
 //   - jump a gap of up to 2.5 m (in 32 directions) onto floor under the jump's arc, the hull clear along the arc;
@@ -75,9 +76,65 @@ struct WalkGrid {
     }
     // floor under the feet reaching to within kSupport of the centre: at least 10 cm of the hull on it (pmove would
     // stand on a 4 cm glow lip at the hull's very edge, but nobody runs a course along one)
+    // (slack: on a ramp the feet rest on its highest point under the hull, at the hull's edge; within kSupport of the
+    // centre its floor is up to (kHalf - kSupport) x its steepness lower: columnSpan's slack)
     static constexpr float kSupport = 0.3f;
-    static bool supported(const Map& m, const Vec3& p) {
-        return m.boxSolid({{p.x - kSupport, p.y - 0.02f, p.z - kSupport}, {p.x + kSupport, p.y - 0.001f, p.z + kSupport}});
+    static bool supported(const Map& m, const Vec3& p, float slack = 0) {
+        return m.boxSolid({{p.x - kSupport, p.y - 0.02f - slack, p.z - kSupport}, {p.x + kSupport, p.y - 0.001f, p.z + kSupport}});
+    }
+    // Ramps: a slope you can walk up (pmove's floorFace: up to 45 degrees, the steepest face a floor) is a floor at its
+    // surface's height, column by column; a steeper one (a wall you slide down), or one turned on its side or hung
+    // from the ceiling, is still its whole box (a 45 degree ramp rises 0.25 m a column, well inside the 0.55 m step;
+    // a steeper one taken that way would climb walls a player slides off).
+    static constexpr float kWalkSlope = 1.0002f;   // tan of pmove's floorFace limit (n.y >= 0.70710678 - 1e-4)
+    static bool walkableSlope(const Brush& b) {
+        if (b.shape == BRUSH_BOX || (b.shape != BRUSH_CUT && b.up != 0)) return false;
+        return slopeSteepness(b) <= kWalkSlope;
+    }
+    // What of brush b a column's hull footprint (centre cx, cz; half width half) has over it: its y span, and the
+    // support slack there (above). False: none of it is over the footprint (a cut's corner, a tetra's low side).
+    // A cut's span is bounded from its planes over the footprint's corners (inside its box): its top (the lowest of the
+    // up-facing planes) no higher than each plane's highest corner, its bottom no lower than each down-facing plane's
+    // lowest; exact on a ramp's face, a little high (more solid: never a way through that isn't there) where two of
+    // its planes meet over the column. (cutBounds per column, clipping its faces, made the raster of a map with 166
+    // cut boxes 7x slower: 92 -> 670 ms.)
+    // (b: a walkableSlope; steep: its slopeSteepness)
+    static bool columnSpan(const Brush& b, float steep, float cx, float cz, float half, float& lo, float& hi, float& slack) {
+        lo = b.box.mn.y; hi = b.box.mx.y;
+        const float xa = std::max(cx - half, b.box.mn.x), xb = std::min(cx + half, b.box.mx.x);
+        const float za = std::max(cz - half, b.box.mn.z), zb = std::min(cz + half, b.box.mx.z);
+        if (b.shape == BRUSH_CUT) {
+            Vec3 pn[kMaxCuts]; float pd[kMaxCuts];
+            const int np = cutPlanes(b, pn, pd);
+            for (int k = 0; k < np; k++) {
+                const Vec3& n = pn[k];
+                // the plane's n.x x + n.z z over the footprint: its least (at a corner)
+                const float ax = n.x * xa, bx = n.x * xb, az = n.z * za, bz = n.z * zb;
+                const float sMin = std::min(ax, bx) + std::min(az, bz);
+                if (std::fabs(n.y) < 1e-6f) { if (sMin >= pd[k]) return false; continue; }   // (a side: all of it cut away)
+                if (n.y > 0) hi = std::min(hi, (pd[k] - sMin) / n.y);
+                else lo = std::max(lo, (pd[k] - sMin) / n.y);
+            }
+        } else hi = brushTopOver(b, xa, xb, za, zb);
+        if (hi - lo < 1e-4f) return false;
+        slack = (kHalf - kSupport) * steep + 0.005f;
+        return true;
+    }
+    // a solid's y span over a column, before the column's spans are merged (sorted by lo, then hi)
+    struct RawSpan {
+        float lo, hi, slack;
+        bool operator<(const RawSpan& o) const { return lo != o.lo ? lo < o.lo : hi != o.hi ? hi < o.hi : slack < o.slack; }
+    };
+    // merges the next raw span (ascending) into a column's merged list, starting at `start`; the merged spans' slack:
+    // the one of whichever raw span reaches the merged top (the most of them, on a tie)
+    static void mergeSpan(std::vector<std::pair<float, float>>& out, std::vector<float>* slack, size_t start, const RawSpan& r) {
+        if (out.size() > start && r.lo <= out.back().second) {
+            if (slack) { if (r.hi > out.back().second) slack->back() = r.slack; else if (r.hi == out.back().second) slack->back() = std::max(slack->back(), r.slack); }
+            out.back().second = std::max(out.back().second, r.hi);
+        } else {
+            out.push_back({r.lo, r.hi});
+            if (slack) slack->push_back(r.slack);
+        }
     }
     int colOf(const Vec3& p) const { return col((int)std::floor((p.x - x0) / kCol), (int)std::floor((p.z - z0) / kCol)); }
     // a step / walk / jump-up move between neighbouring spots where one is shifted: the two columns and the crossing
@@ -105,7 +162,7 @@ struct WalkGrid {
         // 1. every solid brush into the columns whose footprint (half width `half`) it overlaps (strictly, as
         //    AABB::overlaps), as y spans, merged per column; raw: the unmerged spans' tops too
         auto raster = [&](float half, std::vector<uint32_t>& outCol, std::vector<std::pair<float, float>>& out,
-                          std::vector<uint32_t>* rawCol, std::vector<float>* rawTops) {
+                          std::vector<uint32_t>* rawCol, std::vector<RawSpan>* raws, std::vector<float>* outSlack) {
             auto range = [&](float lo, float hi, float o, int n, int& a, int& b) {   // columns whose centre is in (lo - half, hi + half)
                 a = std::max(0, (int)std::floor((lo - half - o) / kCol - 0.5f));
                 b = std::min(n - 1, (int)std::ceil((hi + half - o) / kCol - 0.5f));
@@ -113,48 +170,50 @@ struct WalkGrid {
                 while (b >= a && o + (b + 0.5f) * kCol >= hi + half) b--;
             };
             std::vector<uint32_t> count(C + 1, 0), fill;
-            std::vector<std::pair<float, float>> raw;
+            std::vector<RawSpan> raw;
             for (int pass = 0; pass < 2; pass++) {
                 if (pass == 1) {
                     for (size_t c = 0; c < C; c++) count[c + 1] += count[c];
-                    raw.assign(count[C], {0, 0});
+                    raw.assign(count[C], {0, 0, 0});
                     fill.assign(count.begin(), count.end() - 1);
                 }
                 for (auto& b : m.brushes) {
                     if (!Map::gridSolid(b)) continue;
+                    const bool ramp = walkableSlope(b);
+                    const float steep = ramp ? slopeSteepness(b) : 0;
                     int i0, i1, k0, k1;
                     range(b.box.mn.x, b.box.mx.x, x0, nx, i0, i1);
                     range(b.box.mn.z, b.box.mx.z, z0, nz, k0, k1);
                     for (int k = k0; k <= k1; k++)
                         for (int i = i0; i <= i1; i++) {
+                            RawSpan r = {b.box.mn.y, b.box.mx.y, 0};
+                            if (ramp) { Vec3 cc = colCentre(i, k); if (!columnSpan(b, steep, cc.x, cc.z, half, r.lo, r.hi, r.slack)) continue; }
                             size_t c = (size_t)col(i, k);
                             if (pass == 0) count[c + 1]++;
-                            else raw[fill[c]++] = {b.box.mn.y, b.box.mx.y};
+                            else raw[fill[c]++] = r;
                         }
                 }
             }
             outCol.assign(C + 1, 0);
             out.clear();
             out.reserve(raw.size());
-            if (rawTops) rawTops->resize(raw.size());
+            if (outSlack) { outSlack->clear(); outSlack->reserve(raw.size()); }
             for (size_t c = 0; c < C; c++) {
                 outCol[c] = (uint32_t)out.size();
                 std::sort(raw.begin() + count[c], raw.begin() + count[c + 1]);
-                for (uint32_t t = count[c]; t < count[c + 1]; t++) {
-                    if (rawTops) (*rawTops)[t] = raw[t].second;
-                    if (out.size() > outCol[c] && raw[t].first <= out.back().second) out.back().second = std::max(out.back().second, raw[t].second);
-                    else out.push_back(raw[t]);
-                }
+                for (uint32_t t = count[c]; t < count[c + 1]; t++) mergeSpan(out, outSlack, outCol[c], raw[t]);
             }
             outCol[C] = (uint32_t)out.size();
             if (rawCol) *rawCol = std::move(count);
+            if (raws) *raws = std::move(raw);
         };
         std::vector<uint32_t> count, coreCol;
-        std::vector<float> tops;
+        std::vector<RawSpan> tops;
+        std::vector<float> slack;
         std::vector<std::pair<float, float>> core;
-        raster(kHalf, colSpan, spans, &count, &tops);
+        raster(kHalf, colSpan, spans, &count, &tops, &slack);
         // the core: what every hull up to 0.12 m off a column's centre covers (a solid in it rules out every shift)
-        raster(kHalf - 0.12f, coreCol, core, nullptr, nullptr);
+        raster(kHalf - 0.12f, coreCol, core, nullptr, nullptr, nullptr);
         auto coreClear = [&](int c, float y0, float y1) {
             for (uint32_t s = coreCol[c]; s < coreCol[c + 1]; s++) {
                 if (core[s].first >= y1) break;
@@ -174,14 +233,14 @@ struct WalkGrid {
                     if (room < kCrouch || y < kill + 0.05f) continue;
                     Vec3 p = colCentre(i, k);
                     p.y = y;
-                    if (!supported(m, p) || m.inLava(playerBox(p, room < kHull))) continue;
+                    if (!supported(m, p, slack[s]) || m.inLava(playerBox(p, room < kHull))) continue;
                     nodes.push_back({p, room});
                 }
                 // a floor the hull doesn't fit on at the column's centre may fit a little to one side (a 0.9 m slot
                 // fits it only within 5 cm): try the hull up to 0.12 m off centre, 6 cm apart, against the map itself
                 for (uint32_t t = count[c]; t < count[c + 1]; t++) {
-                    float y = tops[t];
-                    if (y < kill + 0.05f || (t > count[c] && tops[t - 1] == y)) continue;
+                    float y = tops[t].hi;
+                    if (y < kill + 0.05f || (t > count[c] && tops[t - 1].hi == y)) continue;
                     bool have = false;
                     for (uint32_t a = colNodes[c]; a < nodes.size() && !have; a++) have = std::fabs(nodes[a].p.y - y) < 0.06f;
                     if (have || !coreClear(c, y, y + kCrouch)) continue;
@@ -194,7 +253,7 @@ struct WalkGrid {
                         else { sx = sh[(q - 8) % 4]; sz = sh[(q - 8) / 4]; }
                         Vec3 p = {base.x + sx, y, base.z + sz};
                         if (m.boxSolid(playerBox(p, true))) continue;
-                        if (!supported(m, p)) continue;
+                        if (!supported(m, p, tops[t].slack)) continue;
                         float room = m.boxSolid(playerBox(p, false)) ? kCrouch : kHull;
                         if (m.inLava(playerBox(p, room < kHull))) continue;
                         nodes.push_back({p, room, true});

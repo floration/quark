@@ -1946,7 +1946,7 @@ static void testSpawnSanity() {
 
 // The collision-checked walk (WalkGrid, REVIEW MAP-3) on small maps: what a player can and can't get past.
 static void testWalkGrid() {
-    printf("walk grid: sealed rooms, slots, steps, gaps, ladders, crouching, clip, lava\n");
+    printf("walk grid: sealed rooms, slots, steps, gaps, ladders, crouching, clip, lava, ramps\n");
     const std::string F = "box -20 -1 -20 20 0 20\nspawn any 0 0 0\n";   // a 40 m floor
     auto reaches = [](const std::string& text, Vec3 a, Vec3 b) {
         Map m;
@@ -1985,6 +1985,19 @@ static void testWalkGrid() {
     CHECK(reaches(slot(1.2f), W, E) == 1 && reaches(slot(1.2f) + "clip -0.2 0 3.07 0.2 4 4.27\n", W, E) == 0);
     // lava across the floor: 1 m is jumped over, 3 m isn't
     CHECK(reaches(F + "lava -0.5 0 -20 0.5 0.2 20\n", W, E) == 1 && reaches(F + "lava -1.5 0 -20 1.5 0.2 20\n", W, E) == 0);
+    // ramps up onto a 4 m platform (too high to jump): a wedge, a cut box and a corner up to 45 degrees are walked up
+    // (their surface is the floor, not their box); a 63 degree wedge is a wall; the way down a gentle one walks too
+    const std::string deck = "box 8 0 -3 14 4 3\n";
+    const Vec3 top(11, 4, 0);
+    CHECK(reaches(F + deck, W, top) == 0);
+    CHECK(reaches(F + deck + "wedge 0 0 0 0 -3 8 4 3\n", W, top) == 1 && reaches(F + deck + "wedge 0 0 0 0 -3 8 4 3\n", top, W) == 1);
+    CHECK(reaches(F + deck + "wedge 0 0 4 0 -3 8 4 3\n", W, top) == 1);                    // (45 degrees: the steepest floor)
+    CHECK(reaches(F + deck + "wedge 0 0 6 0 -3 8 4 3\n", W, top) == 0);                    // (63 degrees)
+    CHECK(reaches(F + deck + "cut 0 1 -1 1 0 0 0 0 -3 8 4 3\n", W, top) == 1);            // (y <= x over its box: 27 degrees)
+    CHECK(reaches(F + deck + "wedge 0 4 0 0 -3 8 4 3\n", W, top) == 0);                    // (hung from the ceiling: no floor)
+    // a 4 m wedge rising along z beside the deck, then a corner ramp (high at +x+z) into its corner
+    CHECK(reaches(F + "box 8 0 3 14 4 9\nwedge 0 2 8 0 -5 14 4 3\n", W, {11, 4, 6}) == 1);
+    CHECK(reaches(F + deck + "corner 0 2 0 0 -3 8 4 3\n", W, top) == 1);
 }
 
 // Every map: loads, supports the mode it was built for, no spawn inside a wall, players can get from every spawn to

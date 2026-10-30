@@ -94,3 +94,6 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 
 ## Modes
 - **New mode: POWER.** Each team shares one health pool, 2500 for every player on it, and nobody dies. An enemy's hits come off your team's pool instead of your health. When a team's pool runs out it loses; when the 10 minutes are up, the fuller pool wins. Your own rockets and the world (lava, acid, falls) take nothing from the pool; falling out of the map still respawns you. Someone who joins mid-match adds their 2500. The score box shows both pools, and the bar under it shows yours. Played on Bastion, Orbital and Lodestone. **The network protocol is now 54**, so games and servers update together.
+
+## Map checks
+- **The walk check sees ramps.** The map tests' "can players get from every spawn to every objective" check now walks up wedges, corners and cut slopes up to 45 degrees (the steepest you can walk). Before, every slope counted as a solid block, so routes up a ramp (Mine's haul road and lava ramp, QK7's helix ramps) were reported missing or found only the long way round.
