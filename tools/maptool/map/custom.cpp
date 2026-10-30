@@ -339,7 +339,7 @@ Json customKindsJson() {
         field("a", "place", Json(), "a point, a spawn or a team"), field("b", "place", Json(), "a point, a spawn or a team"),
         field("expect", "bool", false, "true: every pair must see each other; false: none may"), field("eye", "number", kEyeHeight, "height added to each point (m; 0 for raw points)")});
     kind("spawn_clearance", "Spawn clearance", "room round each spawn: the nearest wall at chest height (from the hull's side) and the headroom", {
-        field("team", "team", Json(), "only this team's spawns (a, b, any, race, att0, def1 ...)"), field("min", "number", 1.0f, "fail when a wall is closer (m)"),
+        field("team", "team", Json(), "only this team's spawns (a, b, any, race, att0, def1, koth-a ...)"), field("min", "number", 1.0f, "fail when a wall is closer (m)"),
         field("headroom", "number", Json(), "fail when the ceiling is lower (m)")});
     Json ids = Json::array();
     for (int k = 0; kCheckIds[k]; k++) ids.push(kCheckIds[k]);

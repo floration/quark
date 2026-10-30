@@ -376,10 +376,37 @@ static void upgradeMap7to8(std::vector<std::string>&) {}
 static void upgradeMap8to9(std::vector<std::string>&) {}
 // 9 -> 10: the 24 breakable blocks and 10 feature blocks (562-595: new keywords, a teleporter's "tp" after its box)
 static void upgradeMap9to10(std::vector<std::string>&) {}
+// 10 -> 11: mode spawn sets ("spawn koth-a ...": new spawn team words, which an older reader refuses; a format 10 map
+// has none, nothing to change)
+static void upgradeMap10to11(std::vector<std::string>&) {}
 
-static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2, upgradeMap2to3, upgradeMap3to4, upgradeMap4to5, upgradeMap5to6, upgradeMap6to7, upgradeMap7to8, upgradeMap8to9, upgradeMap9to10};
+static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2, upgradeMap2to3, upgradeMap3to4, upgradeMap4to5, upgradeMap5to6, upgradeMap6to7, upgradeMap7to8, upgradeMap8to9, upgradeMap9to10, upgradeMap10to11};
 static_assert(sizeof kMapUpgrades / sizeof kMapUpgrades[0] == kMapFormatVersion - 1,
               "a map format change needs its converter step in kMapUpgrades (owner rule)");
+
+static_assert(kSpawnModes == MODE_COUNT, "a mode spawn set per mode (map.h)");
+bool modeSetAllowed(int mode) { return mode >= 0 && mode < kSpawnModes && mode != MODE_RACE && mode != MODE_POINTS; }
+std::string spawnTeamWord(int team) {
+    static const char* sides[] = {"a", "b", "any", "race"};
+    if (isModeSpawn(team)) return std::string(modeName(spawnSetMode(team))) + "-" + sides[spawnSide(team)];
+    if (isStagedSpawn(team)) return std::string(spawnDefends(team) ? "def" : "att") + char('0' + spawnStage(team));
+    return team >= 0 && team < 4 ? sides[team] : "any";
+}
+int spawnTeamFromWord(const std::string& w) {
+    if (w == "a") return SPAWN_A;
+    if (w == "b") return SPAWN_B;
+    if (w == "any") return SPAWN_ANY;
+    if (w == "race") return SPAWN_RACE;
+    if (w.size() == 4 && (w.compare(0, 3, "att") == 0 || w.compare(0, 3, "def") == 0) && w[3] >= '0' && w[3] <= '0' + kMaxSpawnStage)
+        return stagedSpawn(w[3] - '0', w[0] == 'd');
+    const size_t dash = w.find('-');
+    if (dash == std::string::npos) return -1;
+    const std::string side = w.substr(dash + 1);
+    const int mode = modeFromName(w.substr(0, dash).c_str());
+    const int sd = side == "a" ? SPAWN_A : side == "b" ? SPAWN_B : side == "any" ? SPAWN_ANY : -1;
+    if (sd < 0 || !modeSetAllowed(mode) || w.compare(0, dash, modeName(mode)) != 0) return -1;   // (lower case only, as written)
+    return modeSpawn(mode, sd);
+}
 
 int mapTextVersion(const std::string& text) {
     size_t p = 0;
@@ -764,10 +791,8 @@ bool Map::parseCurrent(const std::string& text, std::string* err) {
             ls >> yawDeg;
             if (!std::isfinite(yawDeg)) ok = false;
             s.yaw = deg2rad(yawDeg);
-            s.team = team == "a" ? SPAWN_A : team == "b" ? SPAWN_B : team == "race" ? SPAWN_RACE : SPAWN_ANY;
-            if ((team.rfind("att", 0) == 0 || team.rfind("def", 0) == 0) && team.size() == 4 && team[3] >= '0' && team[3] <= '0' + kMaxSpawnStage)
-                s.team = stagedSpawn(team[3] - '0', team[0] == 'd');
-            else if (team != "a" && team != "b" && team != "any" && team != "race") ok = false;   // (it used to become "any")
+            s.team = spawnTeamFromWord(team);
+            if (s.team < 0) ok = false;   // (an unknown team used to become "any")
             if (ok) spawns.push_back(s);
         } else if (kw == "site") {
             AABB b; ok = readBox(ls, b) && bombSites.size() < kMaxMapSites; if (ok) bombSites.push_back(b);
@@ -1001,9 +1026,8 @@ std::string Map::serialize() const {
         tp(br);
     }
     o += "\n";
-    static const char* teams[] = {"a", "b", "any", "race"};
     for (auto& sp : spawns) {
-        std::string tn = isStagedSpawn(sp.team) ? std::string(spawnDefends(sp.team) ? "def" : "att") + char('0' + spawnStage(sp.team)) : teams[sp.team & 3];
+        std::string tn = spawnTeamWord(sp.team);
         float p[3] = {sp.pos.x, sp.pos.y, sp.pos.z};
         o += "spawn " + tn;
         nums(3, p);
@@ -1211,7 +1235,7 @@ bool applyMapEdit(Map& m, const std::string& op) {
     if (full) { std::string keep = std::move(m.source); before = m; m.source = std::move(keep); }
     if (kind == "s") ok = edit(m.spawns, [&](SpawnPoint& sp) {
         float yaw;
-        if (!(in >> sp.team) || sp.team < 0 || sp.team > stagedSpawn(kMaxSpawnStage, true) || !readVec(sp.pos) || !(in >> yaw) || !okNum(yaw)) return false;
+        if (!(in >> sp.team) || sp.team < 0 || sp.team > kMaxSpawnTeam || (isModeSpawn(sp.team) && !modeSetAllowed(spawnSetMode(sp.team))) || !readVec(sp.pos) || !(in >> yaw) || !okNum(yaw)) return false;
         sp.yaw = deg2rad(yaw);
         return true;
     }, 1, kMaxMapSpawns);
@@ -1943,7 +1967,8 @@ bool Map::supportsMode(int mode) const {
 }
 
 bool Map::canSupportMode(int mode) const {
-    auto has = [&](int t) { for (auto& s : spawns) if (s.team == t) return true; return false; };
+    // (a side counts with the mode's own set's spawns too: modeSpawnType starts the mode on those)
+    auto has = [&](int t) { for (auto& s : spawns) if (s.team == t || (mode >= 0 && mode < kSpawnModes && s.team == modeSpawn(mode, t))) return true; return false; };
     bool teams = has(SPAWN_A) && has(SPAWN_B);
     switch (mode) {
         case MODE_VS:
