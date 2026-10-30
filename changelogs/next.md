@@ -108,3 +108,19 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 
 ## Map format 11: spawns for one mode
 - **A map can give a mode its own spawns**, e.g. a koth hill in a bomb map: `spawn koth-a` / `spawn koth-b` spawns are used only in king of the hill (and koth starts on them when the map has them), never in other modes. Any mode but race and multi point can have a set (`ffa-any`, `bomb-a`, ...). The map editor sets it on a spawn (MODE SET; a white cap marks one). **Maps are now format 11**: older maps convert by themselves, but an older game can't open a map that uses the new spawns.
+
+## Settings: page numbers
+- **Every settings tab with more than one page shows its page numbers at the bottom**, with < and > at the ends: click a number to go straight to that page, or the arrows (or the Left / Right arrow keys) for the previous / next page. The arrows stop at the first and last page. The MORE buttons are gone; BACK now leaves settings from any page (Esc still goes back to the tab's first page).
+- **Fixed: settings rows drawn over the bottom buttons.** On Windows, VIDEO + AUDIO's MAP COLOR and RESET MAP COLOR sat on top of BACK and MORE. Pages that were too full have moved rows instead: FLAT MAP (FULLBRIGHT, MAP COLOR) is now on VIDEO + AUDIO page 2, EXCLUSIVE AUDIO (Windows) on page 6 under OUTPUT, and SMOOTHING (INTERP) from GAMEPLAY to VIDEO + AUDIO page 7 under NETWORK. SEARCH finds them all.
+
+## Settings: SEARCH tab
+- **SEARCH is a settings tab of its own** (the last one): every setting in the game in one list, three wide, scrolled with the mouse wheel or the scrollbar, each with a small tag saying which tab and page it lives on. Type in the field at the top and the list narrows to the settings whose name, values, hint or a few extra keywords have every word you typed: "screen" finds the display mode, fullscreen size, window size, render scale and your monitors; "fov" the field of view and the zoom FOVs. The settings work right there in the list. **Ctrl+F** (or **/**) opens it from any tab; **Esc** clears what you typed. It replaces the small search box at the top right.
+
+## Bots
+- **Team order no longer matters:** every bot now decides what to do on the same picture of the world each tick, and who moves first rotates every tick, so it doesn't matter which team or player joined first. At round start, both teams' spawns are picked without either team dodging the other's fresh spawns.
+
+## Bomb
+- **Spawns go by role:** the attackers always start at the map's attack spawns and the defenders at the defence spawns, so at halftime the teams swap ends as well as roles. Before, each team kept its own end, so a map built with the attack 1 s closer to a site than the defence gave the same team the short way all match.
+
+## Glass
+- **Sloped glass draws as its slope:** glass on a wedge, corner or cut box used to draw as its whole box (a glass dome looked like four slabs floating over the roof). It now draws, and breaks into shards, as its real shape. The same goes for see-through looks and breakable blocks on a slope.

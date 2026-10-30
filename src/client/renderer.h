@@ -89,6 +89,7 @@ public:
     void overlayBox(const Vec3& center, const Vec3& half, const Vec3& color); // world space, drawn over everything (editor handles)
     Vec3 viewPoint(const Vec3& offset) const;  // where a camera-relative point (as viewBox takes) is in the world
     void translucentBox(const AABB& b, const Color& c);
+    void translucentBrush(const Brush& b, const Color& c);   // a box as translucentBox, a slope or cut as its own faces
     // A static batch of boxes (the editor's unbaked map, PERF-12): box() calls made inside emit go to a buffer that's
     // uploaded once and drawn every frame useStaticBoxes() is called, culled per box, instead of being streamed again
     // each frame (~21 MB a frame on Midtown). Rebuild it only when the boxes change.
@@ -117,6 +118,10 @@ public:
     // uiMark() before them, then uiTransform scales what was drawn since about (px, py) by k and moves it by (dx, dy).
     // Callers skip it at offset 0 / size 1, so the default HUD costs nothing; else one pass over those vertices.
     size_t uiMark() const { return ui_.size(); }
+    // The lowest pixel row drawn on since uiMark() `from` (a glyph: its ink box, without the quad's padding), leaving out
+    // quads that lie wholly in the band [skipTop, skipBottom]: the UI test's check that a settings page's content stays
+    // clear of its footer (only called while the UI test probes: a pass over that stretch's vertices). -1: nothing.
+    float uiInkBottom(size_t from, float skipTop, float skipBottom) const;
     // one solid quad with free corners (xy: 4 points, clockwise or not; convex): the PLAYER tab's model preview's faces
     void quad2D(const float xy[8], const Color& c);
     void setTextOutline(float k) { textOutline_ = k < 0 ? 0 : k > 1.5f ? 1.5f : k; }   // the text outline's width, x (0: none)
