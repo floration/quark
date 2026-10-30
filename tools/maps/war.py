@@ -26,12 +26,13 @@ Everything but the spoil slopes and the fallen facades' faces is axis-aligned bo
 its box). No fall damage: you only die below the void line.
 Bomb (also offered): two sites in the trench line, each round one of its dugouts (south: z -50..-30, north: z 30..50;
 x 58..80, glow posts at the corners). Their own spawn set (bomb-a / bomb-b, five a side; the staged points spawns
-are untouched): team A at the crater field's east end behind a sandbag barricade, team B on the road west of the
-village beside one. Both are about 5 s from either site at 24 m/s (nav: A 111-114 m, B 117 m; diff -0.3 / -0.7 s at
-the metric's 9.5 m/s): equal on purpose, not the plan's "CT 1 s later", because a team keeps its spawns when the
-sides switch at halftime (attackers come from bomb-b in the second half), so a CT head start would favour team A in
-both halves (with A at 115 m and B at 144 m, 8 expert bots won 7 matches of 8 for team A). Equal: 24 seeds, rounds
-attackers 143 / defenders 108, team A 134 / team B 117, matches 13-11, plants south 105 / north 99."""
+are untouched): the attack (bomb-a) at the crater field's east end beside a sandbag barricade, the defence (bomb-b)
+on the road west of the village behind a wrecked lorry. Spawns go by role, not team (teams swap ends at halftime),
+so this is q's timing: the attackers about 5 s from either site at 24 m/s, the defenders about 1 s later (nav, the
+spawns' mean: site A 114 m vs 139 m, 4.8 s vs 5.8 s; site B 111 m vs 139 m, 4.6 s vs 5.8 s; each spawn 107-117 m
+vs 137-141 m). The attackers can't go further back: east of x 180 the nav graph sends them round the crater (+30 m).
+16 seeds of 8 expert bots, 30 min each: rounds attack 624 / defence 208, team A 435 / team B 397, matches 26-38
+(at 6-6 the 13th round is team B's attack), plants south 397 / north 395 (with equal timing: attack 512 / defence 289)."""
 import random
 from .prefabs import M, minus, tiles
 from .bigkit import Kit, num, yaw_to
@@ -93,7 +94,7 @@ DUGOUTS = [(LEGS[i][2][0] - 6, (LEGS[i][0] + LEGS[i][1]) / 2 + 0.5, LEGS[i][2][0
 HQ = (-182, -13, -148, 13)
 BOMB_SITES = [(-50, -30), (30, 50)]                                  # (z ranges; x 58..80 over the trench)
 BOMB_A = [(177, 4.5), (177, 7), (180, 4.5), (180, 7), (174, 5.75)]   # (the crater field, behind a sandbag barricade east of point A, facing west)
-BOMB_B = [(-38, -2), (-38, -4), (-41, -2), (-41, -4), (-44, -3)]   # (on the road west of the village, beside a sandbag barricade, facing east)
+BOMB_B = [(-68.5, -2), (-68.5, -4.5), (-71, -2), (-71, -4.5), (-73.5, -3.25)]   # (on the road west of the village, behind the wrecked lorry at x -66, facing east)
 
 
 def union(rects):
@@ -575,8 +576,8 @@ def build():
         k.spawn("any", x, 0, z, yaw_to(x, z, x * 0.6, 0))
 
     # ---- bomb: two sites in the trench line, each round a dugout (south: the leg at z -48..-32, north: z 32..48);
-    # the attackers (bomb-a) come from the crater field's east end, the defenders (bomb-b) from the village's west
-    # edge, both on the road (their own spawn set: the staged points spawns stay as they are)
+    # the attackers (bomb-a) come from the crater field's east end, the defenders (bomb-b) from the road west of the
+    # village (~1 s further from either site), both on the road (their own spawn set: the staged points spawns stay as they are)
     for (z0, z1) in BOMB_SITES:
         m.raw(f"site 58 {num(TRENCH_Y)} {num(z0)} 80 3 {num(z1)}")
         for x in (58, 79.6):   # (glow posts at its corners, on the ground beside the trench)
