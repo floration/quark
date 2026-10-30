@@ -658,6 +658,15 @@ static void testGrappleAgainstWall() {
         CHECK(q.pos.z > -1.0f + kPlayerHalfWidth - 0.01f);
         CHECK(n.raycast(Vec3(0, 1, 0), Vec3(0, 0, -1), 50) > 0.9f);   // shots and sight stop at it
     }
+    {   // clip refuses it too (owner, 2026-10-30): a clip wall in front of a grabbable one, the hook hits the clip and lets go
+        Map n;
+        CHECK(n.parse("box -10 -1 -10 10 0 10\nclip -10 0 -1.5 10 4 -1\nbox -10 0 -4 10 4 -3.5\nspawn any 0 0 0\n", &err) && n.brushes[1].material == 9);
+        MoveState q; q.flags = MF_ONGROUND;
+        int g = 0;
+        for (int t = 0; t < 1500; t++) { q.events = 0; pmove(q, c, n); g += (q.events & ME_HOOK) != 0; }
+        CHECK(g == 0 && !(q.flags & MF_HOOKED));
+        CHECK(n.raycast(Vec3(0, 1, 0), Vec3(0, 0, -1), 50) > 2.9f);   // (shots still go through it)
+    }
 }
 
 // Liquids (472-496, owner 2026-10-29): not solid; each moves you its own way in pmove's 1 ms steps (kLiquids), damage
@@ -730,6 +739,20 @@ static void testFeatureBlocks() {
         for (int t = 0; t < 400 && s.pos.x < 0; t += 8) pmove(s, c, m);
         printf("  teleporter: at %.2f %.2f %.2f, vel y %.2f\n", s.pos.x, s.pos.y, s.pos.z, s.vel.y);
         CHECK(s.pos.x > 40 && s.pos.x < 42 && s.pos.y >= 1.0f);
+    }
+    {   // into its wall at 60 m/s (in the air): out at 60, not the speed the slide left after clipping it (owner, 2026-10-30)
+        int kept = 0;
+        float worst = 1e9f;
+        for (int k = 0; k < 8; k++) {   // (from 8 starting points: whether a step ends just short of the wall or in it)
+            MoveState s; s.pos = {-32.0f + k * 0.0075f, 0.5f, 31}; s.vel = {60, 0, 0};
+            UserCmd c; c.msec = 1;
+            bool out = false;
+            for (int t = 0; t < 60 && !out; t++) { pmove(s, c, m); out = s.pos.x > 30; }
+            kept += out && length(s.vel) > 59.0f;
+            worst = std::min(worst, out ? length(s.vel) : 0.0f);
+        }
+        printf("  teleporter at 60 m/s: %d of 8 kept their speed (slowest %.2f)\n", kept, worst);
+        CHECK(kept == 8);
     }
     {   // its link and face in the file, and in an edit
         Map r;

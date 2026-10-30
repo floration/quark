@@ -1656,8 +1656,9 @@ UserCmd botThinkDirect(Server& s, int id) {
                     if (!want) continue;
                     Vec3 tgt = cand - Vec3(0, 0.1f, 0); // just into the walkable surface, so the hook catches on it
                     Vec3 d = normalize(tgt - eye);
-                    float t = s.map_.raycast(eye, d, kGrappleRange * moveValue(me.move, MV_HOOK_RANGE, &s.map_));
-                    if (t >= 0 && length(eye + d * t - tgt) < 3.0f && safeHook(s, me, eye + d * t)) {
+                    int hm = -1;
+                    float t = s.map_.raycast(eye, d, kGrappleRange * moveValue(me.move, MV_HOOK_RANGE, &s.map_), nullptr, &hm, true);
+                    if (t >= 0 && hm != 9 && hm != kMatNoGrapple && length(eye + d * t - tgt) < 3.0f && safeHook(s, me, eye + d * t)) {
                         b.hookAnchor = eye + d * t;
                         b.hookUntil = now + 1.6;
                         b.hookChecked = false;
