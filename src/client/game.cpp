@@ -7075,8 +7075,8 @@ void Game::drawGameplayMore2(const SetLayout& L) {
         const float tw = (w - 2 * L.L(8)) / 3, step = tw + L.L(8);
         static const char* const lab[3] = {"X", "Y", "DEPTH"};
         for (int i = 0; i < 3; i++) {
-            ui_.slider(g.x() + step * i, g.top(), tw, h, lab[i], cfg_.wpnVmOff[pw][i], -200, 200, "%+.0f", UiExp::cfg("wpn_vm_*"), 0.0f);
-            if (!ui_.typed()) cfg_.wpnVmOff[pw][i] = std::round(cfg_.wpnVmOff[pw][i]);
+            if (ui_.slider(g.x() + step * i, g.top(), tw, h, lab[i], cfg_.wpnVmOff[pw][i], -200, 200, "%+.0f", UiExp::cfg("wpn_vm_*"), 0.0f) && !ui_.typed())
+                cfg_.wpnVmOff[pw][i] = std::round(cfg_.wpnVmOff[pw][i]);
             cfg_.wpnVmOff[pw][i] = clampf(cfg_.wpnVmOff[pw][i], -200, 200);
         }
         g.next();
@@ -7257,8 +7257,9 @@ void Game::drawGameplayMore4(const SetLayout& L) {
     ui_.slider(g.x(), g.top(), w, h, "KILL CAM TIME", cfg_.killCamTime, 0, kKillCamTime, "%.1f S", UiExp::cfg("kill_cam_time"), d.killCamTime);
     cfg_.killCamTime = clampf(cfg_.killCamTime, 0, kKillCamTime);
     g.next();
-    ui_.slider(g.x(), g.top(), hw, h, "SPECTATOR FOV", cfg_.specFov, 0, 130, cfg_.specFov < 0.5f ? "MINE" : "%.0f", UiExp::cfg("spec_fov"), d.specFov);
-    cfg_.specFov = cfg_.specFov < 0.5f ? 0 : clampf(std::round(cfg_.specFov), 60, 140);
+    if (ui_.slider(g.x(), g.top(), hw, h, "SPECTATOR FOV", cfg_.specFov, 0, 130, cfg_.specFov < 0.5f ? "MINE" : "%.0f", UiExp::cfg("spec_fov"), d.specFov) && !ui_.typed())
+        cfg_.specFov = std::round(cfg_.specFov);   // (dragged: whole degrees, the far left is MINE; typed: as typed)
+    cfg_.specFov = cfg_.specFov < 0.5f ? 0 : clampf(cfg_.specFov, 30, 140);
     ui_.toggle(gx2, g.top(), hw, h, "THIRD PERSON", cfg_.specThird, UiExp::cfg("spec_third"));
     g.next();
 }
@@ -7300,8 +7301,8 @@ void Game::drawControlsMore2(const SetLayout& L) {
     ui_.slider(fx2, f.top(), hw, h, "FAST FLY", cfg_.edFastMul, 1, 10, "X%.1f", UiExp::cfg("ed_fast_mul"), d.edFastMul);
     cfg_.edFastMul = clampf(cfg_.edFastMul, 1, 10);
     f.next();
-    ui_.slider(f.x(), f.top(), hw, h, "CUSTOM GRID", cfg_.edGridCustom, 0, 8, cfg_.edGridCustom <= 0 ? "OFF" : "%.2f M", UiExp::cfg("ed_grid_custom"), d.edGridCustom);
-    if (!ui_.typed()) cfg_.edGridCustom = std::round(cfg_.edGridCustom * 20) / 20;   // (dragged: 5 cm steps)
+    if (ui_.slider(f.x(), f.top(), hw, h, "CUSTOM GRID", cfg_.edGridCustom, 0, 8, cfg_.edGridCustom <= 0 ? "OFF" : "%.2f M", UiExp::cfg("ed_grid_custom"), d.edGridCustom) && !ui_.typed())
+        cfg_.edGridCustom = std::round(cfg_.edGridCustom * 20) / 20;   // (dragged: 5 cm steps)
     cfg_.edGridCustom = clampf(cfg_.edGridCustom, 0, 16);
     ui_.slider(fx2, f.top(), hw, h, "ROTATION STEP", cfg_.edRotStep, 1, 90, "%.0f DEG", UiExp::cfg("ed_rot_step"), d.edRotStep);
     cfg_.edRotStep = clampf(std::round(cfg_.edRotStep), 1, 90);
@@ -8274,7 +8275,7 @@ void Game::drawHostAdvanced(const SetLayout& L) {
         if (ui_.slider(x, L.Y(y), w, h, "UPLOAD CAP (MBIT/S)", up, 0, 50, cfg_.hostUpload <= 0 ? "NONE" : "%.1f", UiExp::cfg("host_upload"), 0))
             cfg_.hostUpload = std::min(std::max(0, (int)std::lround(up * 1000)), 100000);
         y += 44;
-        static const std::vector<std::string> bs = {"BOT SKILL: EASY", "BOT SKILL: MEDIUM", "BOT SKILL: HARD", "BOT SKILL: EXPERT"};
+        static const std::vector<std::string> bs = {"BOTS: EASY", "BOTS: MEDIUM", "BOTS: HARD", "BOTS: EXPERT"};   // (BALANCE BOT SKILL)
         ui_.toggle(x, L.Y(y), hw, h, "AUTO START", cfg_.hostAutoStart, UiExp::cfg("host_auto_start"));
         ui_.cycle(x2, L.Y(y), hw, h, "BALANCE BOT SKILL", cfg_.hostBotSkill, 4, bs, UiExp::cfg("host_bot_skill"));
         y += 44;
