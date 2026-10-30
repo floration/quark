@@ -836,14 +836,23 @@ void measure(Metrics& r, const Map& m, const Map& solid, const NavGraph& g, cons
     {
         std::vector<Vec3> tp;
         size_t stride = pts.size() / 2500 + 1; // up to ~2500 points
-        std::vector<char> sampled(g.nodes.size(), 0);
-        for (size_t i = 0; i < pts.size(); i += stride) { tp.push_back(pts[i].p); techPlayable.push_back(playable[pts[i].node]); sampled[pts[i].node] = 1; }
-        // and one on every surface the thinning missed (the run only links samples on the same or linked surfaces: a
-        // strip, a stair step or a catwalk left without one cut the run in two, and legs read "UNREACHABLE")
-        if (stride > 1)
-            for (size_t i = 0; i < pts.size(); i++)
-                if (!sampled[pts[i].node]) { sampled[pts[i].node] = 1; tp.push_back(pts[i].p); techPlayable.push_back(playable[pts[i].node]); }
+        for (size_t i = 0; i < pts.size(); i += stride) { tp.push_back(pts[i].p); techPlayable.push_back(playable[pts[i].node]); }
         techCell = 4.0f * stride;
+        // and more where the thinning left a surface's samples farther apart than half a run's reach (the run only links
+        // samples on the same or linked surfaces: a strip, a stair step or a catwalk left without one, or a long ledge
+        // sampled every 18 m, cut the run in two, and legs read "UNREACHABLE")
+        if (stride > 1) {
+            const float gap = 0.5f * std::max(6.0f, 3.0f * std::sqrt(techCell));
+            std::vector<std::vector<Vec3>> kept(g.nodes.size());
+            for (size_t i = 0; i < pts.size(); i += stride) kept[pts[i].node].push_back(pts[i].p);
+            for (size_t i = 0; i < pts.size(); i++) {
+                auto& kn = kept[pts[i].node];
+                bool near = false;
+                for (const Vec3& q : kn) if (length(q - pts[i].p) < gap) { near = true; break; }
+                if (near) continue;
+                kn.push_back(pts[i].p); tp.push_back(pts[i].p); techPlayable.push_back(playable[pts[i].node]);
+            }
+        }
         // and a sample on every floor inside each objective (race checkpoints, bomb sites, the hill, capture points)
         // and under every spawn: a thin sampling must not make a leg or a trip read as unreachable
         std::vector<AABB> zones = m.checkpoints;
