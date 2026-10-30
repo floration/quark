@@ -17,7 +17,7 @@ sys.path.insert(0, TOOLS)
 # every map, in the order they're made (each is tools/maps/<name>.py, saved as <name>.qmap)
 MAPS = ["clockwork", "depot", "summit", "railyard", "canal", "harbor", "bastion", "foundry", "temple", "colosseum",
         "furnace", "dojo", "gantry", "anvil", "viaduct", "hamlet", "downtown", "orbital", "lodestone", "midtown", "hightown",
-        "cascade", "castle", "qk1", "qk2", "qk3", "qk4", "datacenter", "mine", "qk5", "qk8", "qk6", "qk7", "sewer", "riverside", "war", "accelerator", "solar", "lighthouse", "terraces"]
+        "cascade", "castle", "qk1", "qk2", "qk3", "qk4", "datacenter", "mine", "qk5", "qk8", "qk6", "qk7", "sewer", "riverside", "war", "accelerator", "solar", "lighthouse", "terraces", "glacier"]
 
 
 def main():
