@@ -3,7 +3,7 @@ crystals and metal bars). A deep mine on four levels, 4v4: the pithead at the su
 yard, a), the haulage level (-15: minecart galleries, the loading station, the old stope), the powder magazine cavern
 and the ore store (-30: the site, the hill) and the deep workings (-45: lava channels and the crystal grotto; the
 defenders' refuge, b, behind its steel screen). Bomb: T reach the TNT pile in about 5 s at 24 m/s (~120 m walked), CT
-about 1 s later (~144 m). King of the hill uses the same team spawns (the format has no koth-only spawn set yet), so
+about 1 s later (~144 m). King of the hill has its own spawn set (koth-a / koth-b), and
 the hill is in the ore bay (west of the cavern), where both teams walk about the same distance; it has four doors, two per team.
 Everything underground is closed: the rock between the rooms is solid (fill_solid), so no hollow, hidden top or open
 shaft is left for a player or the bots' nav graph.
@@ -95,6 +95,7 @@ def build():
     room("orebay", -46, -25, -30, -12, -30, -20, floor="slate")
     room("grottotunnel", -4, -34, 4, -26, -30, -25)
     room("baydrift", -42, -11, -38, 9, -30, -25)   # (the stope pit -> the ore bay: T's second door to the hill)
+    room("baylink", -37, -3, -30, 3, -30, -25)     # (the shaft drift -> the bay drift: T's second way into the bay)
     # ---- the deep workings (-45)
     room("deep", -70, -86, 32, -67, -45, -36, floor="slate", fholes=[(0, -77, 32, -72)], choles=[(0, -77, 32.5, -72)])
     room("refuge", -68, -100, -52, -87, -45, -39, floor="castiron", wall="castiron", ceil="castiron")
@@ -128,6 +129,8 @@ def build():
     opening(-44, -30, -27.5, -40, -25.5, -24.5)  # adit -> ore bay (CT's second door)
     opening(-42, -30, -12.5, -38, -25.5, -10.5)  # bay drift -> ore bay (T's second door)
     opening(-42, -30, 8.5, -38, -25.5, 10.5)     # stope pit -> bay drift
+    opening(-38.5, -30, -3, -36.5, -25.5, 3)     # bay drift -> bay link
+    opening(-30.5, -30, -3, -28.5, -25.5, 3)     # bay link -> shaft drift
     opening(-4, -30, -26.5, 4, -25.5, -24.5)     # grotto tunnel -> cavern (north door)
     build_rooms()
 
@@ -152,7 +155,8 @@ def build():
     m.ladder(-19.6, 0, -24, -15, "w")
     # the cavern's ledges (slabs on timber posts), with a ladder up to each
     B(m, TIMBER, -20, -24.4, -1, 20, -24, 5)
-    B(m, TIMBER, -20, -24.4, -25, -14, -24, -1)
+    for (z0, z1) in ((-25, -17), (-9, -1)): B(m, TIMBER, -20, -24.4, z0, -14, -24, z1)
+    B(m, TIMBER, -16, -24.4, -17, -14, -24, -9)   # (a drop hole over the shaft drift's door: you can drop straight in front of it)
     for x in (-14, -6, 6, 14): B(m, TIMBER, x - 0.25, -30, -1.25, x + 0.25, -24.4, -0.75)
     for z in (-21, -7): B(m, TIMBER, -14.25, -30, z - 0.25, -13.75, -24.4, z + 0.25)
     B(m, TIMBER, 15.5, -30, -1.6, 16.5, -24.4, -1.0); m.ladder(16, -2.0, -30, -24, "s")
@@ -185,7 +189,7 @@ def build():
     HX, HZ = -38.0, -18.0
     for (x0, z0, x1, z1, h) in ((HX - 3.4, HZ + 0.4, HX - 0.6, HZ + 1.8, 1.4), (HX + 0.4, HZ - 2.0, HX + 3.2, HZ - 0.6, 1.8)):
         B(m, "castiron", x0, -30, z0, x1, -30 + h - 0.3, z1); B(m, "gold", x0 + 0.1, -30 + h - 0.3, z0 + 0.1, x1 - 0.1, -30 + h, z1 - 0.1)   # (bar stacks)
-    m.raw(f"hill {HX - 6:g} -30 {HZ - 4:g} {HX + 6:g} -26 {HZ + 4:g}")
+    m.raw(f"hill {HX - 6:g} -30 {HZ - 4:g} -30.5 -26 {HZ + 4:g}")   # (east to the T door's mouth)
 
     # ===================================== structures and decoration =====================================
     def crystal(x, z, y, h, r, mat="crystal"):
@@ -367,6 +371,13 @@ def build():
     # ---- spawns
     for x in (-6, -2, 2, 6): m.spawn("a", x, 0, 54, 40)   # (facing the headframe and the cage shaft)
     for (x, z) in ((-64, -95), (-60, -95), (-56, -95), (-60, -91)): m.spawn("b", x, -45, z, 180)
+    # king of the hill's own spawn set (map format 11): both sides about 80-110 m (bot routes) from the ore bay's hill,
+    # away from the hill room (T: the haulage level's loading station and gallery; CT: the ore store and the deep
+    # workings), so koth fights move through the cavern, the drifts and the adits, not only the hill room
+    for (x, y, z, yaw) in ((4, -15, 22, 90), (12, -15, 22, 90), (18, -15, 18.5, 90), (24, -15, 22, 90)):
+        m.spawn("koth-a", x, y, z, yaw)
+    for (x, y, z, yaw) in ((-60, -45, -95, 180), (-10, -45, -82, 90), (-4, -45, -62, 180), (-56, -45, -95, 180)):
+        m.spawn("koth-b", x, y, z, yaw)
     for (x, y, z, yaw) in ((-48, 0, 40, -90), (34, -15, 20, 90), (-42, -15, 20, 0), (0, -30, -22, 180), (40, -30, -20, 0), (-40, -45, -82, -90), (30, -45, -82, 90), (10, -45, -45, 180)):
         m.spawn("any", x, y, z, yaw)
 
