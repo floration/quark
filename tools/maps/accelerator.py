@@ -534,6 +534,51 @@ def build():
         barrel("glow", xf - 0.05, xf + 0.05, DY, 0, 11.4, 11.7)
     for xb in (A0 + 8, A0 + 26, B0d + 8, B0d + 26):
         barrel("tankarmour", xb, xb + 1.2, DY, 0, 11.4, 11.9)                    # the yoke bands
+    # the measuring hall (q: "more decor, especially for the measuring room"); all of it flush on the walls or high up,
+    # nothing on the floor of the line: the detector's end-cap rings on both shielding walls (open at the bottom, clear
+    # of the ways through), flanges on the beam pipe, readout screens and instrument racks high on the side walls,
+    # vertical cable drops, accent strips under the ceiling, and catwalks with railings at the hall's two ends (they
+    # bridge nothing: the west one ends at the shielding wall, the east one starts past half B)
+    for (xa, xb) in ((A0, A0 + 0.15), (B1d + 1.85, B1d + 2)):
+        barrel("bluedsteel", xa, xb, DY, 0, 12.4, 13.4, skip=(7, 8, 9))
+        barrel("hammeredcopper", xa, xb, DY, 0, 13.4, 13.9, skip=(7, 8, 9))
+        barrel("glow", xa, xb + (0.03 if xa == A0 else 0), DY, 0, 12.2, 12.4, skip=(7, 8, 9))
+    for fx in range(A0 + 4, B1d, 8):
+        k.tube_x("electroplatednickel", fx, fx + 0.3, DY, 0, 0.95)
+    RY0 = CAV_Y + 10.5                     # the high instrument band: 10.5-14 m up the side walls
+    for x in range(306, V1 - 6, 14):
+        if 326 <= x <= 336 or 428 <= x <= 438: continue    # (not on the shielding walls)
+        for (z0, z1, zs) in ((-VZ, -VZ + 0.5, -VZ + 0.5), (VZ - 0.5, VZ, VZ - 0.55)):
+            k.box("electricalcabinet", x, RY0, z0, x + 4, RY0 + 2.4, z1)                 # a rack of instruments
+            k.box("controlpanel", x + 5, RY0 + 0.4, z0 if z0 < 0 else z1 - 0.12, x + 9, RY0 + 2.6, (z0 + 0.12) if z0 < 0 else z1)
+            k.box("neonmaze", x + 5.3, RY0 + 0.7, zs if z0 < 0 else zs - 0.01, x + 8.7, RY0 + 2.3, (zs + 0.01) if z0 < 0 else zs + 0.05)   # the readout
+            k.box("galvanizedgrating", x + 10.2, CAV_Y + 9.3, z0 if z0 < 0 else z1 - 0.3, x + 10.8, VTOP, (z0 + 0.3) if z0 < 0 else z1)   # a cable drop
+    for (z0, z1) in ((-VZ, -VZ + 0.05), (VZ - 0.05, VZ)):
+        k.box("glow", V0, VTOP - 1.2, z0, V1, VTOP - 0.9, z1)                              # the accent strip
+        k.box("radiationwarning", 345, CAV_Y + 2.5, z0, 349, CAV_Y + 5.5, z1)
+        k.box("radiationwarning", 470, CAV_Y + 2.5, z0, 474, CAV_Y + 5.5, z1)
+    CWY = CAV_Y + 16                       # the catwalks (16 m up)
+    for (x0, x1) in ((V0 + 0.5, 327.5), (B1d + 6, V1 - 0.5)):
+        for (z0, z1, rz) in ((-VZ, -VZ + 2, -VZ + 2), (VZ - 2, VZ, VZ - 2.06)):
+            k.box("steeldeckplate", x0, CWY - 0.2, z0, x1, CWY, z1)
+            k.box("galvanizedsteel", x0, CWY + 1.0, rz, x1, CWY + 1.1, rz + 0.06)       # the rails
+            k.box("galvanizedsteel", x0, CWY + 0.5, rz, x1, CWY + 0.56, rz + 0.06)
+            for x in [x0 + 0.1 + 3.0 * i for i in range(int((x1 - x0) // 3.0) + 1)]:
+                if x + 0.08 <= x1: k.box("galvanizedsteel", x, CWY, rz, x + 0.08, CWY + 1.0, rz + 0.06)
+            k.box("powdercoatyellow", x0, CWY - 0.2, rz - 0.02 if z0 < 0 else rz, x1, CWY - 0.05, rz + 0.04 if z0 < 0 else rz + 0.06)
+            for x in range(int(x0) + 2, int(x1) - 3, 9):
+                k.box("electricalcabinet", x, CWY, z0 if z0 < 0 else z1 - 0.7, x + 1.4, CWY + 2.2, (z0 + 0.7) if z0 < 0 else z1)
+    # the ring tunnel: a pipe run and a cable bundle along the outer wall's top, a light strip down the ceiling,
+    # radiation signs and a hazard stripe at the outer wall's foot (flush), magnet tops on the inner wall (high)
+    for i in range(len(heads)):
+        band(i, W - 0.9, W - 0.35, TY1 - 0.75, TY1 - 0.25, "copperandpatina")
+        band(i, W - 0.35, W, TY1 - 0.6, TY1 - 0.15, "galvanizedsteel")
+        band(i, -0.25, 0.25, TY1 - 0.04, TY1, "glow")
+        band(i, W - 0.03, W, TY0, TY0 + 0.45, "hazard")
+        if 0 < i < len(heads) - 1:
+            band(i, -W, -W + 0.45, TY1 - 1.3, TY1 - 0.5, "bluedsteel")
+            if i % 2 == 1:
+                across(i, 0.5, W - 0.03, W, TY0 + 1.7, TY0 + 2.9, "radiationwarning", depth=1.2)
     # the vent: glowing fan-housing bands every 30 m on its walls
     for y in (-60, -30, 0):
         k.box("glow", SX + A - 0.05, y, SZc - A + 4.5, SX + A, y + 0.4, SZc + A)
