@@ -1,5 +1,6 @@
 #include <fstream>
 #include "../common/u8file.h"
+#include "settings_index.h"
 #include "../common/rng.h"
 #include <filesystem>
 #include <ctime>
@@ -394,7 +395,7 @@ void Game::leaveGame(const std::string& error) {
     if (widgetEdit_) widgets_.save(activeHudPath());
     hudEditClose();
     if (settingsInGame_) cfg_.save();
-    settingsInGame_ = voteMenu_ = specPick_ = queueMenu_ = practiceMenu_ = fontsOpen_ = devicesOpen_ = widgetEdit_ = false;
+    settingsInGame_ = voteMenu_ = specPick_ = queueMenu_ = practiceMenu_ = playersMenu_ = fontsOpen_ = devicesOpen_ = widgetEdit_ = false;
     setTab_ = TAB_PLAYER; controlsSub_ = 0;
     ui_.closePopup();
     picker_ = PICK_NONE;
@@ -879,7 +880,7 @@ void Game::onKey(int key, int action, int mods) {
             if (devicesOpen_) { devicesOpen_ = false; cfg_.save(); return; }   // (DEVICES: back to VIDEO + AUDIO)
             if (moreOpen_) { moreOpen_ = false; cfg_.save(); return; }   // (MORE: back to its tab)
             if (settingsInGame_) { leaveSettings(); return; }   // (any tab: as BACK)
-            if (voteMenu_ || queueMenu_ || practiceMenu_ || picker_ != PICK_NONE) { voteMenu_ = queueMenu_ = practiceMenu_ = specPick_ = false; picker_ = PICK_NONE; return; }
+            if (voteMenu_ || queueMenu_ || practiceMenu_ || playersMenu_ || picker_ != PICK_NONE) { voteMenu_ = queueMenu_ = practiceMenu_ = playersMenu_ = specPick_ = false; picker_ = PICK_NONE; return; }
             paused_ = !paused_;
             captureMouse(!paused_);
             return;
@@ -5303,6 +5304,80 @@ void Game::drawPracticeMenu() {
     if (c.half(2, "RESTART MAP", UiExp::cmd("restart"))) { net_.sendCommand("restart"); paused_ = false; practiceMenu_ = false; }
 }
 
+// SETTINGS SEARCH (1.19.4): a field over the tab row's right end; while it's in use, what's typed lists matching settings
+// (labels from tools/settings_index.py, plus the keys' action names) in place of the page, each a button that opens its
+// page. True: the list was drawn (the page isn't)
+bool Game::drawSettingsSearch(const SetLayout& L) {
+    ui_.textField(62, L.X(836), L.Y(2), L.L(176), L.L(26), setSearch_, 24, UiExp::local().withId("SEARCH").typing("FOG"));
+    if (setSearch_.empty()) { ui_.hint(L.X(836 - 70), L.Y(8), "SEARCH:", kGrey, L.L(66)); searchTyping_ = false; return false; }
+    const bool wasTyping = searchTyping_;
+    searchTyping_ = ui_.focused(62);   // (not typing(): a slider or colour being typed into has the keyboard too)
+    if (!searchTyping_ && !(wasTyping && uiIn_.pressed)) return false;
+    struct Hit { std::string label; int tab, more, sub; };
+    std::vector<Hit> hits;
+    const std::string q = upper(setSearch_);
+    for (const SettingsIndexEntry& e : kSettingsIndex)
+        if (std::string(e.label).find(q) != std::string::npos && hits.size() < 14) hits.push_back({e.label, e.tab, e.more, e.sub});
+    for (int a = 0; a < A_COUNT && hits.size() < 14; a++)   // (a key: its keys page)
+        if (std::string(actionName(a)).find(q) != std::string::npos && a != A_CROUCH) {
+            const int sub = a >= A_TEAMCHAT && a <= A_HIDEHUD ? 2 : (a <= A_WEAPON8 || a == A_NEXTWEAPON || a == A_PREVWEAPON || a == A_WEAPON9 || a == A_WEAPON10 || a == A_RACERESET) ? 1 : 0;
+            hits.push_back({std::string(actionName(a)) + " (KEY)", TAB_CONTROLS, 0, sub});
+        }
+    static const char* const tabNames[] = {"PLAYER", "GAMEPLAY", "CONTROLS", "VIDEO + AUDIO", "CROSSHAIR", "HUD"};
+    const float x = L.X(268), w = L.L(744), h = L.L(32);
+    float y = L.Y(88);
+    // (the list only while the field is in use; the click that picks a result arrives after the press dropped focus, so
+    // a click on the list still counts; a click anywhere else puts it away and goes to the page)
+    const float listH = std::max<float>(1, (float)hits.size()) * (h + 4 * L.s);
+    if (!searchTyping_ && !(uiIn_.mx >= x && uiIn_.mx < x + w && uiIn_.my >= y && uiIn_.my < y + listH)) return false;
+    if (hits.empty()) { ui_.hint(x, y + 6 * L.s, "NOTHING MATCHES \"" + upper(setSearch_) + "\"", kGrey, w); return true; }
+    for (const Hit& hit : hits) {
+        std::string where = tabNames[hit.tab];
+        if (hit.more) where += hit.more == 1 ? " > MORE" : " > MORE " + std::to_string(hit.more);
+        if (hit.sub == 1) where += " > MOVE KEYS"; else if (hit.sub == 2) where += " > MORE KEYS";
+        // (its page as a screen path, for the UI test)
+        static const char* const kPaths[] = {"~settings", "~settings/gameplay", "~settings/gameplay/more", "~settings/controls", "~settings/controls/movement",
+                                             "~settings/controls/keys2", "~settings/controls/more", "~settings/video", "~settings/video/more",
+                                             "~settings/video/more2", "~settings/video/more3", "~settings/crosshair", "~settings/hud"};
+        const int pi = hit.tab == 0 ? 0 : hit.tab == 1 ? (hit.more ? 2 : 1) : hit.tab == 2 ? (hit.more ? 6 : 3 + hit.sub)
+                     : hit.tab == 3 ? 7 + std::min(hit.more, 3) : hit.tab == 4 ? 11 : 12;
+        if (ui_.button(x, y, w, h, hit.label + "  -  " + where, UiExp::nav(kPaths[pi]).withId("SEARCH RESULT").clipOk().optional())) {
+            openSettingsTab(hit.tab);
+            moreOpen_ = hit.more; controlsSub_ = hit.sub;
+            setSearch_.clear();
+            ui_.clearFocus();
+            return true;
+        }
+        y += h + 4 * L.s;
+    }
+    return true;
+}
+
+// PLAYERS (pause > HOST): everyone on your server, each with KICK (yourself excepted); ADD BOT / KICK BOTS / RESTART; BACK
+void Game::drawPlayersMenu() {
+    std::vector<int> ids;
+    if (net_.hasSnapshot()) for (auto& p : net_.latest().players) ids.push_back(p.id);
+    const int n = std::min((int)ids.size(), 12);
+    const SetLayout L = ingameLayout(kPW + 32);
+    const float kH = 40 + pauseH(n + 1, 0, true);
+    PauseCol c{ui_, L, ingameTop(L, kH)};
+    ui_.panel(L.X(kPX - 16), L.Y(c.y - 16), L.L(kPW + 32), L.L(kH + 32), 0.95f);
+    ui_.labelCentered(L.X(640), L.Y(c.y), "PLAYERS ON YOUR SERVER", kWhite, 1.0f, L.L(kPW));
+    c.y += 40;
+    for (int k = 0; k < n; k++) {
+        const int id = ids[k];
+        ui_.labelFit(L.X(kPX), L.Y(c.y + 8), L.L(kPHalf), net_.playerName(id), kWhite);
+        if (id != net_.clientId() && c.half(2, "KICK", UiExp::cmd("kick").withId("KICK").optional())) net_.sendCommand("kick " + std::to_string(id));
+        c.next();
+    }
+    if (c.half(1, "ADD BOT", UiExp::cmd("addbot"))) net_.sendCommand("addbot");
+    if (c.half(2, "KICK BOTS", UiExp::cmd("kickbots"))) net_.sendCommand("kickbots");
+    c.next();
+    c.last();
+    if (c.half(1, "BACK", UiExp::nav("ingame/pause"))) playersMenu_ = false;
+    if (c.half(2, "RESTART MATCH", UiExp::cmd("restart"))) { net_.sendCommand("restart"); paused_ = false; playersMenu_ = false; }
+}
+
 // Everything players can call a vote on (majority of human players decides): CALL A VOTE at text 3; START THE MATCH
 // (warmup), the tourney lists, CHANGE MAP / MODE beside RANKED (ranked: the map on its own, LADDER | RANKED OFF),
 // EDIT THE MAP TOGETHER, MOVE A PLAYER TO SPECTATOR; a BOTS section; BACK on the last row.
@@ -5398,6 +5473,7 @@ void Game::drawPauseMenu(float cx, float y) {
     if (picker_ != PICK_NONE) { drawPicker(cx, y); return; }
     if (voteMenu_) { drawVoteMenu(cx, y); return; }
     if (practiceMenu_) { drawPracticeMenu(); return; }
+    if (playersMenu_) { drawPlayersMenu(); return; }
     if (queueMenu_) { drawQueueMenu(cx, y); return; }
     const SetLayout L = ingameLayout(kPW + 32);
     if (net_.playback()) { // watching a demo
@@ -5451,7 +5527,8 @@ void Game::drawPauseMenu(float cx, float y) {
         if (!ranked) {
             if (c.full("EDIT THE MAP TOGETHER", UiExp::cmd("editmode on"))) { net_.sendCommand("editmode on"); paused_ = false; }
             c.next();
-            if (c.full("PRACTICE", UiExp::nav("ingame/pause/practice"))) practiceMenu_ = true;
+            if (c.half(1, "PLAYERS", UiExp::nav("ingame/pause/players"))) playersMenu_ = true;
+            if (c.half(2, "PRACTICE", UiExp::nav("ingame/pause/practice"))) practiceMenu_ = true;
             c.next();
         }
     }
@@ -5478,7 +5555,7 @@ void Game::drawPauseMenu(float cx, float y) {
 namespace {
 constexpr float kColL = 268, kColR = 652, kColW = 360, kHalfW = 176, kRowH = 32;
 constexpr float kHudFootY = 560;   // (the HUD tab's footer: clear of the bottom row of the HUD under it)
-const Color kHintC = {0.7f, 0.72f, 0.75f, 1}, kLabelC = {0.85f, 0.87f, 0.9f, 1};
+const Color kLabelC = {0.85f, 0.87f, 0.9f, 1};
 constexpr int kNameColorOn = 0xFFD040;   // NAME COLOR turned on (the old R / G / B sliders' default)
 constexpr int kCustomInterpMs = 10;      // SMOOTHING: CUSTOM starts here (and a right-click on its slider goes back to it)
 
@@ -5498,8 +5575,8 @@ struct SetFlow {
     void next() { y += kRowH + 8; }
     // hint lines under the row just placed (right after next())
     void hint(const std::string& a, const std::string& b = std::string()) {
-        ui.hint(x(), L.Y(y - 4), a, kHintC, w());
-        if (!b.empty()) { ui.hint(x(), L.Y(y + 10), b, kHintC, w()); y += 14; }
+        ui.hint(x(), L.Y(y - 4), a, kGrey, w());
+        if (!b.empty()) { ui.hint(x(), L.Y(y + 10), b, kGrey, w()); y += 14; }
         y += 16;
     }
 };
@@ -5584,7 +5661,8 @@ void Game::drawSettings() {
         r_.rect(L.X(268), L.Y(72), L.L(744), L.L(2), ui_.accent);
         if (pick >= 0) { openSettingsTab(pick); return; }   // (next frame: the new tab)
     }
-    if (fontsOpen_) drawFontSettings(L);
+    if (!modal && !widgetEdit_ && drawSettingsSearch(L)) {}   // (the search's list in place of the page)
+    else if (fontsOpen_) drawFontSettings(L);
     else if (devicesOpen_) drawDeviceSettings(L);
     else if (moreOpen_) drawMoreSettings(L);
     else switch (setTab_) {
@@ -6556,7 +6634,7 @@ void Game::drawControls(const SetLayout& L) {
         }
     } else
         ui_.hint(L.X(268), L.Y(126), captureAction_ >= 0 ? "PRESS A KEY, MOUSE BUTTON OR SCROLL - ESC CANCELS, DEL CLEARS"
-                                                         : "CLICK A SLOT TO REBIND IT - RIGHT-CLICK OR DEL UNBINDS", kHintC, L.L(744));
+                                                         : "CLICK A SLOT TO REBIND IT - RIGHT-CLICK OR DEL UNBINDS", kGrey, L.L(744));
     // key rows: a header with KEY 1 / 2 / 3 over the slots, then a row an action (label, three 82 px slots)
     static std::string idText[A_COUNT][kBindSlots];   // the UI test's ids: "<ACTION> KEY 1", "<ACTION> KEY 2", ...
     static const char* ids[A_COUNT][kBindSlots];
@@ -6569,7 +6647,7 @@ void Game::drawControls(const SetLayout& L) {
         const float hs = ui_.hintScale();
         for (int k = 0; k < kBindSlots; k++) {
             static const char* const caps[] = {"KEY 1", "KEY 2", "KEY 3"};
-            r_.text(L.X(col + kSlotX + k * kSlotStep + kSlotW * 0.5f) - r_.textWidth(caps[k], hs) * 0.5f, L.Y(y + 3), hs, caps[k], kHintC);
+            r_.text(L.X(col + kSlotX + k * kSlotStep + kSlotW * 0.5f) - r_.textWidth(caps[k], hs) * 0.5f, L.Y(y + 3), hs, caps[k], kGrey);
         }
         y += 24;
         for (int a : actions) {
@@ -6873,7 +6951,7 @@ void Game::drawFontSettings(const SetLayout& L) {
             else notify("FONT " + upper(name) + ": " + upper(err), 5);   // (nothing changes)
             return;   // (fontList_ stays; the next frame draws in the new font)
         }
-        if (!e.hint.empty()) ui_.hint(L.X(kColR), f.top() + (h - r_.textHeight(hs)) * 0.5f, e.hint, kHintC, w);
+        if (!e.hint.empty()) ui_.hint(L.X(kColR), f.top() + (h - r_.textHeight(hs)) * 0.5f, e.hint, kGrey, w);
         f.next();
     }
     if (n > rows) f.hint(std::to_string(fontScroll_ + 1) + "-" + std::to_string(fontScroll_ + rows) + " OF " + std::to_string(n) + " - WHEEL TO SCROLL");

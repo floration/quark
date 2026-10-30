@@ -93,6 +93,7 @@ std::string Game::uiScreenPath() const {
                 else if (voteMenu_) p += specPick_ ? "/vote/spec" : "/vote";
                 else if (queueMenu_) p += "/queue";
                 else if (practiceMenu_) p += "/practice";
+                else if (playersMenu_) p += "/players";
             }
             if (chatting_) p += console_ ? "/console" : "/chat";
             return p;
@@ -568,7 +569,7 @@ private:
         g.ui_.clearFocus();
         g.paused_ = g.chatting_ = g.console_ = false;
         g.chatText_.clear();
-        g.settingsInGame_ = g.voteMenu_ = g.queueMenu_ = g.practiceMenu_ = g.fontsOpen_ = g.devicesOpen_ = false;
+        g.settingsInGame_ = g.voteMenu_ = g.queueMenu_ = g.practiceMenu_ = g.playersMenu_ = g.fontsOpen_ = g.devicesOpen_ = false;
         g.moreOpen_ = 0;
         for (int& d : g.devScroll_) d = 0;
         g.setTab_ = Game::TAB_PLAYER;

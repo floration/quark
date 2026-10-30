@@ -35,6 +35,19 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 - **Queues:** when your queue fills, a chime plays and the taskbar button flashes if the game is in the background.
 - **Map editor:** redo (Ctrl+Y or Ctrl+Shift+Z), and an autosave every minute while you have unsaved changes, with RESTORE AUTOSAVE if the game closed before you saved.
 
+## Settings (batch 2, second half)
+- **Settings search:** a SEARCH box at the top of settings. Type part of a setting's name (or a key's) and click a match to jump to its page.
+- **Three keys per action:** every action can now have three keys instead of two.
+- **Console binds:** `bind`, `unbind`, `binds`, `alias`, `unalias`, `exec` and `toggle` in the console. A key can run any console command, and `autoexec.cfg` in the data folder runs at start.
+- **Export / import all settings:** GAMEPLAY > MORE > ALL SETTINGS copies every setting to the clipboard, or reads them back; RESET ALL (click twice) goes back to the defaults, keeping your name and servers.
+- **Demos:** sort by date, name, size or map, each demo's size, DELETE, AUTO RECORD (every match or ranked only) and KEEP the newest N.
+- **Sensitivity from another game:** CONTROLS > MORE turns a CS2, Quake, Apex, TF2, Valorant, Overwatch or Call of Duty sensitivity into Quark's.
+- **Fullscreen resolution:** VIDEO + AUDIO > MORE 3 picks any mode your monitor offers.
+- **Practice (your own server, alone with bots):** pause > PRACTICE has save / load position, god mode, passive bots (they don't shoot) and reset.
+- **Players:** pause > PLAYERS lists everyone on your server, with KICK, ADD BOT, KICK BOTS and RESTART.
+- **Race ghost:** in race and surf, your best run on each map plays as a see-through ghost.
+- **Team panel and match summary:** an optional panel with your teammates' health, and a summary of your match (shots, hits, accuracy, damage, best streak) under the end-of-match scoreboard.
+
 ## Maps
 - **Two new maps, made by q:** **Surfy** (surf), now the map surf mode starts on, and **Cobblestone**.
 

@@ -861,6 +861,11 @@ private:
     bool queueMenu_ = false;
     bool practiceMenu_ = false;          // pause > HOST > PRACTICE (the host alone with bots)
     void drawPracticeMenu();
+    bool playersMenu_ = false;           // pause > HOST > PLAYERS: kick, move to spectators, bots
+    void drawPlayersMenu();
+    std::string setSearch_;              // settings: the SEARCH field (matches listed under it; a click opens the page)
+    bool searchTyping_ = false;          // settings search: had focus last frame
+    bool drawSettingsSearch(const SetLayout& L);
     void onKillFeedback(int killer, int victim, int weapon, bool head, bool airborne);
     int streak_[kMaxPlayers] = {};
     double typingUntil_[kMaxPlayers] = {}, nextTypingSend_ = 0;

@@ -173,6 +173,7 @@ public:
     }
     bool over(float x, float y, float w, float h) const { return hover(x, y, w, h); }   // the mouse is over it (and takes input)
     bool typing() const { return focus_ >= 0; }
+    bool focused(int id) const { return focus_ == id; }   // that text field has the keyboard
     // Text the focused field wants on the clipboard (Ctrl+C); empty if none.
     std::string takeCopy() { std::string c; c.swap(copied_); return c; }
 

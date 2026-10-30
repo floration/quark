@@ -218,6 +218,11 @@ add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/generated/default_modes.h
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/modes/embed_modes.py ${CMAKE_BINARY_DIR}/generated ${CMAKE_SOURCE_DIR}/tools/modes
   DEPENDS ${CMAKE_SOURCE_DIR}/tools/modes/embed_modes.py ${QUARK_MODE_LOGIC_FILES}
   COMMENT "Embedding the built-in modes' logic (tools/modes/*.qlogic)" VERBATIM)
+# Settings search's index: every settings label and its page, read from the game's settings pages (1.19.4).
+add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/generated/settings_index.h
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/settings_index.py ${CMAKE_BINARY_DIR}/generated ${CMAKE_SOURCE_DIR}/src/client/game.cpp
+  DEPENDS ${CMAKE_SOURCE_DIR}/tools/settings_index.py ${CMAKE_SOURCE_DIR}/src/client/game.cpp
+  COMMENT "Indexing the settings pages for search" VERBATIM)
 set(QUARK_MAPS_DIR ${CMAKE_SOURCE_DIR}/maps)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/make_maps.py)
 execute_process(COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/make_maps.py --list
@@ -370,6 +375,7 @@ if(QUARK_BUILD_CLIENT)
 
 
   add_executable(quark WIN32 MACOSX_BUNDLE
+    ${CMAKE_BINARY_DIR}/generated/settings_index.h
     src/client/main.cpp
     src/client/game.cpp
     src/client/rawmouse.cpp
