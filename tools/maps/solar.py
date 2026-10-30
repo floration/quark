@@ -3,7 +3,9 @@ played it: "really easy", "finished the whole thing in like 1:30", "they should 
 jumps"). Each stage is a closed box (dark walls with thin stripes of its body's material, clip over them, the black sky
 over all) with ridges over a liquid that kills on touch; a teleporter covers its end wall and drops you onto the next
 stage's ledge (its checkpoint) standing still: every stage starts from a standstill, as surf stages do (speed carried
-through the portals snowballed to 180 m/s, and a fast rider flew whole stages straight into their end walls).
+through the portals snowballed to 180 m/s, and a fast rider flew whole stages straight into their end walls). Every
+teleporter is a walk one (map format 12, q: "in solar they should all be walking speed"): you leave the end wall at
+no more than the run speed (9.5 m/s), so the drop onto the ledge is a short one, not a 180 m/s slam.
 
 A ridge is two steep faces back to back with a cap on the line between them (cut boxes; nothing flat to stand on);
 a wall ride is one face with a wall on the line behind it. Transfers: the next ridge runs beside the one you ride, a
@@ -329,10 +331,12 @@ def course(OX):
         k.box(mats["cap"], lx0, Y - 0.35, LF, lx1, Y - 0.05, LF + 0.15)
         # the arrival portal: a slab over the ledge, under a canopy; you come out of its underside straight down at your
         # speed and land on the ledge standing (every stage starts from a standstill, as surf stages do: carried speed
-        # let a fast rider fly a whole stage into its end wall). Out of reach from the ledge (7 m up).
+        # let a fast rider fly a whole stage into its end wall). Out of reach from the ledge (7 m up): touching it would
+        # send you back. Both ends are walk teleporters (q: "in solar they should all be walking speed"; the one you go
+        # in decides, the end wall): out of the slab at no more than 9.5 m/s, straight down onto the ledge.
         PY = Y + 7.0
         if link_in is not None:
-            k.line(f"teleporter {num(st.ox - 3)} {num(PY)} {num(LF + 2)} {num(st.ox + 3)} {num(PY + 0.5)} {num(z1 - 2)} tp {link_in} 3")
+            k.line(f"teleporter {num(st.ox - 3)} {num(PY)} {num(LF + 2)} {num(st.ox + 3)} {num(PY + 0.5)} {num(z1 - 2)} tp {link_in} 3 walk")
             cps.append((lx0 + 0.5, Y, LF + 0.5, lx1 - 0.5, Y + 6, z1 - 0.6))
         k.box(mats["ledge"], lx0, PY + 0.5, LF, lx1, PY + 1.2, z1)
         for gx in (lx0, lx1 - 0.6):
@@ -344,9 +348,9 @@ def course(OX):
         if link_out is not None:
             last = st.seq[-1] if not isinstance(st.seq[-1], str) else st.ridges[-1]
             d = st.end or ("-z" if abs(last.u[1]) > abs(last.u[0]) and last.u[1] < 0 else "-x" if last.u[0] < 0 else "+x")
-            if d == "-z": k.line(f"teleporter {num(x0)} {num(killY)} {num(z0)} {num(x1)} {num(lid)} {num(z0 + 1)} tp {link_out} 4")
-            elif d == "-x": k.line(f"teleporter {num(x0)} {num(killY)} {num(z0)} {num(x0 + 1)} {num(lid)} {num(z1)} tp {link_out} 0")
-            else: k.line(f"teleporter {num(x1 - 1)} {num(killY)} {num(z0)} {num(x1)} {num(lid)} {num(z1)} tp {link_out} 1")
+            if d == "-z": k.line(f"teleporter {num(x0)} {num(killY)} {num(z0)} {num(x1)} {num(lid)} {num(z0 + 1)} tp {link_out} 4 walk")
+            elif d == "-x": k.line(f"teleporter {num(x0)} {num(killY)} {num(z0)} {num(x0 + 1)} {num(lid)} {num(z1)} tp {link_out} 0 walk")
+            else: k.line(f"teleporter {num(x1 - 1)} {num(killY)} {num(z0)} {num(x1)} {num(lid)} {num(z1)} tp {link_out} 1 walk")
         for f in st.after: f(st)
         # the plan for the ride check
         PLAN.append(f"stage {killY:g} {st.ox:g} {Y + 0.05:g} {z1 - 5.05:g} 0")   # (where you land, and where R puts you)
