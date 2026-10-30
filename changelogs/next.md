@@ -2,6 +2,39 @@
 
 What's on `testing` since production 1.19.3. The release PR renames this file to `changelogs/<VERSION>.md`.
 
+## Settings (the settings update, batch 1 of the 231 you picked)
+- **New MORE pages** on CONTROLS and VIDEO + AUDIO (button at the bottom middle) for settings that didn't fit.
+- **Mouse:** vertical sensitivity, invert Y, zoom sensitivity (x1.00 = the same feel as unzoomed).
+- **Scoreboard:** hold or toggle.
+- **Window:** window size picker, the window's size and position kept between launches, and a 10 second "keep these display settings?" that puts the old mode back if you don't click KEEP.
+- **Background:** an FPS cap while alt-tabbed or minimized (60 by default) and an optional mute.
+- **Shadow quality** low / medium / high, applied at once. The GPU's name is shown, and laptops with two GPUs now run the game on the dedicated one.
+- **HUD size:** every HUD element bigger or smaller at once.
+- **Crosshair:** dot size, opacity, outline thickness and opacity, a style per weapon (e.g. a dot on the sniper), and COPY / PASTE CODE to share a crosshair in one line.
+- **Hitsounds:** their own volume, any sound pack's hitsound, a headshot ding, and the kill sound on its own switch.
+- **Server list:** sort by ping / players / name, hide full / empty, a ping limit, favourites (right-click a server; listed first) and a RECENT button for the servers you joined last.
+- **Race and surf:** R takes you back to your last checkpoint; press it twice quickly to go back to the start. Rebindable (CONTROLS > MOVE + WEAPON KEYS).
+
+## Settings (batch 2, first half)
+- **More MORE pages:** GAMEPLAY gets one, and VIDEO + AUDIO now has three. CONTROLS has a third keys page, MORE KEYS.
+- **Picture:** gamma, contrast and saturation for the 3D scene (the HUD stays as it is), fog amount or off, and render scale now goes from 25% to 400%.
+- **Presets:** LOW / MEDIUM / HIGH / COMPETITIVE set shadows, anti-aliasing, render scale, fog and effects in one go.
+- **Effects:** effects opacity (explosions, sparks, bursts; 0 = off), kill bursts, tracers and the gun's recoil kick on their own switches.
+- **Colour blindness:** two team colour presets for red-green and blue-yellow colour blindness, and a warning under the team colours when your pair would be hard to tell apart.
+- **Enemy model:** draw every enemy as one model (not in ranked).
+- **Sound:** separate volumes for your footsteps, other players' footsteps (up to 2x louder), gunfire and the bomb beep. **The planted bomb now beeps**, faster as it runs down.
+- **Kill feed and chat:** how long lines stay, how many show, only kills you're in, chat opacity. While typing, the mouse wheel or Page Up / Down scrolls back through chat.
+- **Team chat:** a TEAM CHAT key sends to your team only (shown as "(TEAM)").
+- **More keys:** LAST WEAPON, SPEC NEXT / SPEC PREV while dead or spectating, HIDE HUD (with an option to keep the crosshair). When a new bind takes a key from another action, the page says so, with an UNDO button.
+- **HUD:** FPS and ping in the top right without a widget, announcer captions, health bars that fill to the mode's max health instead of 100, and a headshot colour for the crosshair's hit flash. Hints that name a key (like "HOLD E" to plant) now show your own bind.
+- **Controls:** grapple hold or toggle, left-handed (gun on the left, grapple launcher on the right), and NEXT / PREV WEAPON can stop at the ends and skip weapons you pick.
+- **Display:** G-SYNC / FreeSync mode (vsync on with the frame cap 3 under the refresh), and fullscreen can stay on screen when you alt-tab.
+- **Windows:** CPU priority HIGH as an option (above normal stays the default).
+- **Menus:** settings can open on the last tab you used, QUIT / DISCONNECT / STOP HOSTING can ask "SURE?" first, and a RECONNECT button on the main menu joins your last server again.
+- **Connection:** if the connection drops, the game tries to reconnect by itself (3 times; it can be turned off).
+- **Queues:** when your queue fills, a chime plays and the taskbar button flashes if the game is in the background.
+- **Map editor:** redo (Ctrl+Y or Ctrl+Shift+Z), and an autosave every minute while you have unsaved changes, with RESTORE AUTOSAVE if the game closed before you saved.
+
 ## Maps
 - **Two new maps, made by q:** **Surfy** (surf), now the map surf mode starts on, and **Cobblestone**.
 

@@ -1466,7 +1466,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
         p.typingAt = time() + 0.25f;
         GameEvent e; e.type = EV_TYPING; e.a = (uint8_t)id;
         for (int i = 0; i < kMaxPlayers; i++) if (i != id && players_[i].connected && !players_[i].isBot) sendEvent(i, e);
-    } else if (cmd == "say") {
+    } else if (cmd == "say" || cmd == "sayteam") {   // (sayteam: the TEAM CHAT key; to your own team in a team mode)
         if (rest.empty()) return;
         if (rest.size() > 120) rest.resize(120);
         for (auto& c : rest) if ((unsigned char)c < 32 || (unsigned char)c > 126) c = '?';   // (no control or escape codes in anyone's console or log)
@@ -1475,8 +1475,11 @@ void Server::handleStringCmd(int id, const std::string& s) {
         if (p.chatTokens < 1) { GameEvent e; e.type = EV_MESSAGE; e.text = "chat: slow down"; sendEvent(id, e); return; }
         p.chatTokens -= 1;
         GameEvent e; e.type = EV_CHAT; e.a = (uint8_t)id; e.text = rest;
-        broadcastEvent(e);
-        log(p.name + ": " + rest);
+        if (cmd == "sayteam" && modeIsTeamBased(cfg_.mode)) {   // (b = 1: shown as (TEAM); spectators talk among themselves)
+            e.b = 1;
+            for (int i = 0; i < kMaxPlayers; i++) if (players_[i].connected && players_[i].team == p.team) sendEvent(i, e);
+        } else broadcastEvent(e);
+        log(p.name + (e.b ? " (team): " : ": ") + rest);
         glog(LOG_SIMPLE, "chat %d \"%s\": %s", id, p.name.c_str(), rest.c_str());
     } else if (cmd == "ticketsig") { // the player's signature of the live ranked match id (EV_RANKSIGN): goes with the ticket
         // (or of the time trial's race ticket id, from its racer)
@@ -1649,6 +1652,14 @@ void Server::handleStringCmd(int id, const std::string& s) {
         p.specTarget = w >= 0 && w < kMaxPlayers ? w : -1;
     } else if (cmd == "kill") {
         if (p.alive) killPlayer(id, ringOutKiller(id), 255);   // (knocked off, then "kill": still theirs)
+    } else if (cmd == "racereset") {   // race / surf (the R key): back to your last checkpoint, or ("full") to the start
+        if (isRaceMode(ms_.mode) && p.alive && !p.finished && p.team != TEAM_SPECTATOR && !editing_) {
+            if (rest == "full" || p.checkpoint == 0) {
+                p.checkpoint = 0;
+                p.raceSplits.clear();   // (a run from the start again: the splits begin anew)
+            }
+            spawnPlayer(id);   // (at checkpoint p.checkpoint's spot, or a race spawn; EV_SPAWN resets the client's prediction)
+        }
     } else if (isAdmin(id)) {
         command(s, id);
     }

@@ -29,6 +29,7 @@ void Binds::setDefaults() {
     set(A_SCREENSHOT, GLFW_KEY_F12);
     set(A_VOTESTART, GLFW_KEY_F5);
     set(A_PERFMINI, GLFW_KEY_F4);
+    set(A_RACERESET, GLFW_KEY_R);
     set(A_QUIP, GLFW_KEY_G);
 }
 
@@ -36,7 +37,7 @@ const char* actionName(int a) {
     static const char* n[A_COUNT] = {
         "FORWARD", "BACK", "LEFT", "RIGHT", "JUMP", "CROUCH", "FIRE", "ALT FIRE", "USE", "DASH", "GRAPPLE",
         "ROCKET", "RIFLE", "LASER", "SHOTGUN", "SNIPER", "STICKY", "CROSSBOW", "BUBBLE", // weapon slots 1-8
-        "NEXT WEAP", "PREV WEAP", "SCOREBOARD", "CHAT", "VOTE YES", "VOTE NO", "PERF STATS", "SCREENSHOT", "VOTE START", "KNIFE", "SYRINGE", "QUIP", "TOGGLE CHAT", "LATENCY",
+        "NEXT WEAP", "PREV WEAP", "SCOREBOARD", "CHAT", "VOTE YES", "VOTE NO", "PERF STATS", "SCREENSHOT", "VOTE START", "KNIFE", "SYRINGE", "QUIP", "TOGGLE CHAT", "LATENCY", "RACE RESET", "TEAM CHAT", "LAST WEAPON", "SPEC NEXT", "SPEC PREV", "HIDE HUD",
     };
     return a >= 0 && a < A_COUNT ? n[a] : "?";
 }

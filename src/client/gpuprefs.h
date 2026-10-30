@@ -32,7 +32,7 @@ bool nvMaxClocks(bool on, std::string* msg);
 
 // high: GPU scheduling class HIGH (ABOVE_NORMAL if Windows refuses it) and CPU class ABOVE_NORMAL; else both NORMAL.
 // Cheap and idempotent (only a change calls Windows): called on focus changes. REALTIME (admin only) is never asked for.
-void setGamePriority(bool high);
+void setGamePriority(int level);   // 0 normal, 1 raised (CPU above normal), 2 CPU high
 // For F3: the GPU scheduling class Windows reports for the game now (and the refusal's NTSTATUS, if the last set was
 // refused) and the CPU class. Empty elsewhere.
 std::string gamePriorityStatus();

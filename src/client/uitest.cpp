@@ -42,9 +42,9 @@ namespace fs = std::filesystem;
 std::string Game::uiScreenPath() const {
     auto settingsSub = [&]() -> std::string {   // (the tab, then what's open on it)
         switch (setTab_) {
-            case TAB_GAMEPLAY: return "/gameplay";
-            case TAB_CONTROLS: return filePick_ == 2 ? "/controls/files" : controlsSub_ == 1 ? "/controls/movement" : "/controls";
-            case TAB_VIDEO: return devicesOpen_ ? "/video/devices" : "/video";
+            case TAB_GAMEPLAY: return moreOpen_ ? "/gameplay/more" : "/gameplay";
+            case TAB_CONTROLS: return moreOpen_ ? "/controls/more" : filePick_ == 2 ? "/controls/files" : controlsSub_ == 1 ? "/controls/movement" : controlsSub_ == 2 ? "/controls/keys2" : "/controls";
+            case TAB_VIDEO: return devicesOpen_ ? "/video/devices" : moreOpen_ == 3 ? "/video/more3" : moreOpen_ == 2 ? "/video/more2" : moreOpen_ ? "/video/more" : "/video";
             case TAB_CROSSHAIR: return "/crosshair";
             case TAB_HUD:
                 if (hudEdit_) return "/hud/edit";
@@ -134,6 +134,8 @@ std::string Game::uiObserve(const std::string& w) {
     if (w == "widgets") return widgets_.toText() + "|" + std::to_string(widgetSel_) + "|" + std::to_string(filePick_) + "|" + widgetMsg_ + "@" + std::to_string(widgetMsgUntil_);
     if (w == "ctlimport") return cfg_.toText() + "|" + std::to_string(filePick_) + "|" + widgetMsg_ + "@" + std::to_string(widgetMsgUntil_);
     if (w.rfind("files:", 0) == 0) return listDir(profileDir(w.substr(6).c_str()));
+    if (w == "confirm") return confirmArmed(confirmWhat_) ? confirmWhat_ : "";
+    if (w == "chcode") return cfg_.toText() + "|" + chCodeMsg_ + "@" + std::to_string(chCodeUntil_);
     if (w == "groups") return listDir(userDataPath("groups"));
     if (w == "bench") return listDir(userDataPath("benchmarks")) + "|" + listDir(userDataPath("benchmarks/exports"));
     if (w == "usermaps") return listDir(userMapsDir());
@@ -254,6 +256,7 @@ void Game::uiTestActions() {
         ui_.scope = nullptr;
     }
     ui_.keyAction("CTRL+Z (UNDO)", GLFW_KEY_Z, GLFW_MOD_CONTROL, edUndo_.empty() ? UiExp::state("ednotice") : UiExp::state("edmap"));
+    ui_.keyAction("CTRL+Y (REDO)", GLFW_KEY_Y, GLFW_MOD_CONTROL, edRedo_.empty() ? UiExp::state("ednotice") : UiExp::state("edmap"));
     if (!edOnline_) ui_.keyAction("CTRL+S (SAVE)", GLFW_KEY_S, GLFW_MOD_CONTROL, UiExp::state("usermaps"));
     ui_.keyAction("] (BIGGER GRID)", GLFW_KEY_RIGHT_BRACKET, 0, edGridIdx_ < 5 ? UiExp::state("edgrid") : UiExp::inert());
     ui_.keyAction("[ (SMALLER GRID)", GLFW_KEY_LEFT_BRACKET, 0, edGridIdx_ > 0 ? UiExp::state("edgrid") : UiExp::inert());
@@ -562,6 +565,7 @@ private:
         g.paused_ = g.chatting_ = g.console_ = false;
         g.chatText_.clear();
         g.settingsInGame_ = g.voteMenu_ = g.queueMenu_ = g.fontsOpen_ = g.devicesOpen_ = false;
+        g.moreOpen_ = 0;
         for (int& d : g.devScroll_) d = 0;
         g.setTab_ = Game::TAB_PLAYER;
         g.controlsSub_ = 0;
@@ -766,7 +770,7 @@ private:
                 break;
             }
             case UiWidget::KEY:
-                if (w.count > 0) { g_.testHeld_ |= 1u << (w.count - 1); step(3); break; }   // held (released by the caller)
+                if (w.count > 0) { g_.testHeld_ |= 1ull << (w.count - 1); step(3); break; }   // held (released by the caller)
                 if (w.exp.arg) type(w.exp.arg);
                 key(w.key, w.mods);
                 break;

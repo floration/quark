@@ -2,6 +2,8 @@
 // (the discord-bot branch): linking your Discord name, queues you can join from inside the game (the bot pings
 // Discord users, the game tells you), and crowns for the ranked leaders (gold #1, silver #2-10).
 #include "game.h"
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
 #include <algorithm>
 #include <sstream>
 
@@ -119,6 +121,8 @@ void Game::updateCommunity() {
         if (screen_ == Screen::InGame) addChat({pendingFilled_, rgba(cfg_.colorFriendly), time_ + 15});
         else error_ = pendingFilled_;
         audio_.play(SND_STREAK, 1.0f);
+        audio_.play(SND_FINISH, 1.0f);   // (and the finish chime: it's heard over a match or from another window)
+        if (cfg_.queueFlash && !glfwGetWindowAttrib(win_, GLFW_FOCUSED)) glfwRequestWindowAttention(win_);   // (the taskbar button flashes)
         pendingFilled_.clear();
     }
     updateLifetime();
