@@ -6,7 +6,7 @@ hill, and the undercroft tunnel from the west bailey that comes up through a hat
 keep, the inner wall-walk, the outer wall-walk, the undercroft. Mirrored north to south (each team the same map;
 the keep stands east of the ward, the same distance from both gates)."""
 from .prefabs import *
-from .mkit import wedge, cylinder, slope, peak
+from .mkit import wedge, cylinder, slope, peak, ring
 
 # the ward (the hill's courtyard) and the block round it: the inner walls (walk at 9 m) and the keep east of it
 WARD = 16                 # the ward: x, z in -16..16
@@ -59,7 +59,8 @@ class ZM:
 
 
 def build():
-    m = M("Castle", "koth", sun=(-0.75, 0.55, 0))   # (late afternoon, low from the west: both halves lit alike)
+    m = M("Castle", "koth", sun=(-0.85, 0.38, 0))   # (late afternoon, low from the west: both halves lit alike)
+    m.raw("palette base 0.64 0.58 0.5 accent 0.58 0.3 0.16 metal 0.32 0.29 0.26 glow 1 0.68 0.32 sky 0.96 0.74 0.52")
     m.also = ["power"]
     z = ZM(m)
     ground(m, z)
@@ -70,6 +71,7 @@ def build():
     town(m, z)
     objects(m, z)
     decorate(m, z)
+    m.lines = [("castlestone " + l[4:]) if l.startswith("box ") else l for l in m.lines]   # (no untextured base anywhere)
     m.raw("setting a medieval concentric castle")
     m.save("castle", dress=False)
 
@@ -97,6 +99,8 @@ def ground(m, z):
     # steps out of the water: two flights each side of the block (west and east channels)
     z.stairs(mo[0], 10, mo[0] + MOAT, 13, 0, "x", -1, base=-2)
     z.stairs(mo[2] - MOAT, 10, mo[2], 13, 0, "x", 1, base=-2)
+    z.stairs(30, WARD + IW, 33, mo[3], 0, "z", 1, base=-2)                              # (and out of the north / south channels)
+    z.stairs(-15, WARD + IW, -12, mo[3], 0, "z", 1, base=-2)
     # the gate bridges over the moat (north / south gatehouses, the west postern, the keep's east door)
     z.box(-3.5, -1, WARD + IW, 3.5, 0, mo[3], mat="wideplanks")
     m.box(mo[0], -1, -3, -WARD - IW, 0, 3, mat="wideplanks")
@@ -127,9 +131,14 @@ def curtain(m, z):
         m.box(ox0, -1, -CZ, ox1, H + 2, CZ, mat="nograpple")                # (no hooking the outside face)
         mx0, mx1 = (x0, x0 + 0.8) if sx < 0 else (x1 - 0.8, x1)
         merlons(mx0, -CZ, mx1, CZ, "z")
-    for (a0, a1) in ((-CX + t, -5), (5, CX - t)):
+    for (a0, a1) in ((-CX + t, -9.5), (-7, -5), (5, 7), (9.5, CX - t)):          # (the gate, and a sally port each side: x 7..9.5)
         z.box(a0, -1, CZ - t, a1, H, CZ, mat="largecastlestone")
         z.box(a0, H, CZ - 0.8, a1, H + 0.6, CZ, mat="castlestone")
+    for (a0, a1) in ((-9.5, -7), (7, 9.5)):
+        z.box(a0, 3.5, CZ - t, a1, H, CZ, mat="largecastlestone")
+        z.box(a0, -1, CZ - t, a1, 0, CZ, mat="dirt")
+        z.box(a0, H, CZ - 0.8, a1, H + 0.6, CZ, mat="castlestone")
+    for (a0, a1) in ((-CX + t, -14), (14, CX - t)):
         z.box(a0, -1, CZ, a1, H + 2, CZ + 0.1, mat="nograpple")
     z.box(-5, 7, CZ - t, 5, H, CZ)                                         # over the gate passage
     for (a0, a1) in ((-CX + t, -5), (5, CX - t)):
@@ -138,13 +147,25 @@ def curtain(m, z):
             z.box(k, H + 0.6, CZ - 0.8, min(k + 1.5, a1), H + 2, CZ)
             k += 3.0
     # the towers: round, 18 m, a parapet ring on top (hooks: their parapets and the merlons)
+    # (hollow above the walk: a floor at 12, doorways where the walks meet them, a parapet; the walk is one loop)
+    import math as _m
     for (tx, tz) in ((-CX + 6, CZ - 6), (CX - 6, CZ - 6), (-CX + 6, 0), (CX - 6, 0)):
         for zz in ((tz, -tz) if tz else (0,)):
-            cylinder(m, "largecastlestone", tx, zz, 6, -1, 18, sides=12)
-            cylinder(m, "castlestone", tx, zz, 6, 18, 18.6, sides=12)
+            cylinder(m, "largecastlestone", tx, zz, 6, -1, H, sides=12)
+            sx = 1 if tx > 0 else -1
+            def on_walk(px, pz): return CX - t <= abs(px) <= CX or CZ - t <= abs(pz) <= CZ
+            def outside(px, pz): return abs(px) > CX or abs(pz) > CZ
+            doors = set()
+            for k in range(12):   # (a doorway in every segment that stands on a walk, but none facing out of the castle)
+                a = _m.radians((k + 0.5) * 30)
+                if on_walk(tx + 5.5 * _m.cos(a), zz + 5.5 * _m.sin(a)) and not outside(tx + 6.3 * _m.cos(a), zz + 6.3 * _m.sin(a)): doors.add(k)
+            ring(m, "largecastlestone", tx, zz, 5, 6, H, H + 3.2, sides=12, skip=doors)
+            ring(m, "largecastlestone", tx, zz, 5, 6, H + 3.2, 18, sides=12)
+            ring(m, "castlestone", tx, zz, 5, 6.3, 18, 18.8, sides=12)
     # stairs up to the walk: along the inside of the west and east walls, two flights a side (24 steps of 0.5)
     for (x0, x1, r) in ((-CX + t, -CX + t + 3, 1), (CX - t - 3, CX - t, -1)):
         z.stairs(x0, 26, x1, 50, H, "z", 1)
+    z.stairs(30, CZ - t - 3, 54, CZ - t, H, "x", 1)                                    # up to the north / south walks
     # the barbicans: a walled yard outside each gate, 10 m walls, open to the sky (the spawns)
     for (x0, z0, x1, z1) in ((-14, CZ, -12, BZ), (12, CZ, 14, BZ), (-12, BZ - 2, 12, BZ)):
         z.box(x0, -1, z0, x1, 10, z1, mat="largecastlestone")
@@ -152,9 +173,16 @@ def curtain(m, z):
     z.box(-12, -1, CZ, 12, 0, BZ - 2, mat="dirt")
     z.box(-5, -1, CZ - t, 5, 0, CZ, mat="dirt")
     # the gate towers either side of the barbican's mouth, square, 14 m (a perch over the spawn, by grapple)
-    for (x0, x1) in ((-16, -10), (10, 16)):
+    for (x0, x1) in ((-14, -10), (10, 14)):   # (inside the barbican's line: nothing hangs over the void)
         z.box(x0, -1, CZ - 2, x1, 14, CZ + 4, mat="largecastlestone")
-        z.box(x0 - 0.3, 14, CZ - 2.3, x1 + 0.3, 14.6, CZ + 4.3)
+        z.box(x0, 14, CZ - 2, x1, 14.6, CZ + 4)
+        z.box(x0, 14.6, CZ - 2, x1, LID, CZ + 4, mat="clip")                          # (no perch over the spawns)
+    # the barbican's baffle: a solid screen across the yard in front of the gate (x -9..9), the way out goes round
+    # both ends of it, to the gate or the sally ports; nothing in the road sees the spawns
+    z.box(-9, -1, CZ + 7, 9, 6, CZ + 8, mat="largecastlestone")
+    z.box(-9.2, 6, CZ + 6.8, 9.2, 6.4, CZ + 8.2)
+    for bx in (-11, 11):
+        z.box(bx - 0.3, 2.2, CZ + 7.2, bx + 0.3, 2.7, CZ + 7.8, mat="lightblock")
     # clip: up from every outer wall top to the lid, and the lid (nobody hooks or jumps out)
     for sx in (-1, 1):
         x0, x1 = (-CX - 1, -CX) if sx < 0 else (CX, CX + 1)
@@ -184,6 +212,7 @@ def inner(m, z):
     m.box(-W1, -1, 2, -W0, WALK, W0)
     m.box(-W1, -1, -W0, -W0, WALK, -2)
     m.box(-W1, 3.5, -2, -W0, WALK, 2)
+    m.box(-13.4, 0, -2.6, -12.8, 2.6, 2.6, mat="largecastlestone")                      # the postern's screen: in round it (a dogleg)
     # merlons on the bailey side of the walk
     def mer(x0, z0, x1, z1, along):
         a0, a1 = (x0, x1) if along == "x" else (z0, z1)
@@ -251,6 +280,11 @@ def keep(m, z):
             m.box(xa, ROOF, k, xb, ROOF + 1.4, min(k + 1.5, zz)); k += 3
     m.ladder(ix1 - 0.12, 0, WALK, ROOF, "e")
     m.box(x1 - 0.7, ROOF, -1.5, x1, ROOF + 3.2, 1.5)                                   # (the parapet behind the hatch: stops you on the roof)
+    # the hearth in the great hall: a solid chimney breast between the east door and the hall's opening (no line
+    # from the east bridge across the hill)
+    m.box(26, -1, -3.5, 28.5, 4.0, 3.5, mat="largecastlestone")
+    m.box(26.4, 4.0, -2.0, 28.1, WALK - 0.5, 2.0, mat="castlestone")
+    m.box(26.0, 0.0, -1.2, 26.05, 1.2, 1.2, mat="lightblock")
     # inside: lamps in the hall and on the first floor
     for (lx, lz) in ((24, 0), (34, 0)):
         m.light(lx, 6.5, lz, 12, 0.7, fixture=False)
@@ -296,7 +330,7 @@ def spiral(m, z, X0, Z0, X1, Z1):
     c9 = exits[WALK]
     doors_s, doors_w = [(X0 + 0.5, X0 + 3, 0, 3.0)], []
     if abs(c9[1] - Z0) < 1e-6: doors_s.append((c9[0], c9[2], WALK, WALK + 3.0))       # (the cell at 9 m is on the south side)
-    elif abs(c9[0] - X0) < 1e-6: doors_w.append((c9[1], c9[3], WALK, WALK + 3.0))
+    elif abs(c9[0] - X0) < 1e-6: doors_w.append((c9[1] - 1, c9[3] + 1, WALK, WALK + 3.0))   # (three treads wide: 3 m)
     wall_with_doors(X0, Z0 - w, X1, Z0, [(a, b, 0.0 if y == 0 else y, yy) for (a, b, y, yy) in doors_s], "x")
     wall_with_doors(X0 - w, Z0 - w, X0, Z1, doors_w, "z")
     z.light(cx, 4, Z0 + 1.5, 7, 0.5); z.light(cx, 15, Z0 + 1.5, 7, 0.5)
@@ -377,10 +411,11 @@ def town(m, z):
     house(z, 12, -62, 28, -50, 6, [("xlo", -56, 3), ("zhi", 20, 3), ("xhi", -56, 2.5)])
     house(z, 30, -44, 40, -34, 5, [("zhi", 35, 2.5), ("xlo", -39, 2.5)], roof="flat", ladder=(40.12, -39, "w"))
     house(z, -50, -66, -40, -58, 4.5, [("zhi", -45, 2.5), ("xhi", -62, 2.5)], wall="logcabin")
-    # the market cross in the road (breaks the gate-to-gatehouse line), a cart and haybales by the houses
-    z.box(-1.5, 0, -51.5, 1.5, 0.8, -48.5, mat="largemossystoneblocks")
-    z.box(-0.6, 0.8, -50.6, 0.6, 5.5, -49.4, mat="castlestone")
-    z.box(-1.2, 4.6, -50.2, 1.2, 5.0, -49.8, mat="castlestone")
+    # the market hall standing in the road (x -6..6): the road forks round it, so the gate and the inner gatehouse
+    # never line up (a pillar didn't break the line)
+    z.box(-6, -1, -53, 6, 4.5, -46, mat="castlestone")
+    z.box(-6.4, 4.5, -53.4, 6.4, 4.8, -45.6, mat="wideplanks")
+    z.wedge("roofshingles", 2, (-6.4, 4.8, -53.4, 6.4, 7.0, -49.5)); z.wedge("roofshingles", 3, (-6.4, 4.8, -49.5, 6.4, 7.0, -45.6))
     for (x0, z0, x1, z1, h) in ((7, -45, 9.4, -42.6, 1.2), (-9.5, -60, -7, -57.5, 1.2), (8, -36, 10.4, -34.8, 1.2)):
         z.box(x0, 0, z0, x1, h, z1, mat="haybales")
     for (x0, z0) in ((44, -60), (-12, -33)):
@@ -392,13 +427,15 @@ def objects(m, z):
     m.raw("hill -12 0 -12 12 6 12")
     # the barbicans' spawns (4 a side) facing the gate, out of each other's sight
     for x in (-6, -2, 2, 6):
-        z.spawn("a", x, 0, -86, 180, "b")
+        z.spawn("a", x, 0, -87, 180, "b")
     # free for all: eight round the bailey and the walks
-    for (x, y, zz, yaw) in ((-46, 0, -12, -90), (62, 0, -24, 180), (-22, 0, -56, -90), (30, 0, -48, 90)):
+    for (x, y, zz, yaw) in ((-46, 0, -12, -90), (72.5, OWALK, -30, 180), (-11, 0, -66, -90), (-72.5, OWALK, -12, 180)):
         z.spawn("any", x, y, zz, yaw, "any")
     # the courtyard's dressing that is also cover: the well (by the hatch), the market stall and the cart across
     # the gate-to-gate line, a low wall (crouch cover)
     m.box(-7.7, 0, -1.2, -5.3, 1.0, 1.2, mat="castlestone")                            # the well
+    for wx in (-8.0, -5.2):                                                            # its house: walls to 2.4 m east and west (closed at eye height)
+        m.box(wx, 0, -1.6, wx + 0.2, 2.4, 1.6, mat="castlestone")
     for (wx, wz) in ((-7.6, -1.1), (-5.6, -1.1), (-7.6, 0.9), (-5.6, 0.9)):
         m.box(wx, 1.0, wz, wx + 0.2, 3.2, wz + 0.2, mat="charredtimber")
     m.box(-8.0, 3.2, -1.5, -5.0, 3.5, 1.5, mat="roofshingles")
@@ -444,12 +481,12 @@ def decorate(m, z):
     for (tx, tz) in ((-15.8, 2.6), (-4, 15.8), (4, 15.8)):
         z.box(tx - 0.15, 3.6, tz - 0.15, tx + 0.15, 4.2, tz + 0.15, mat="lightblock")
     # the ward: a hand cart and barrels by the north and south walls (out of the gate lanes)
-    z.box(7, 0.5, 12.4, 10.5, 1.3, 14.4, mat="wideplanks")
-    z.box(7.4, 0, 12.2, 8.2, 0.9, 12.4, mat="charredtimber"); z.box(7.4, 0, 14.4, 8.2, 0.9, 14.6, mat="charredtimber")
-    z.box(10.5, 0.9, 13.2, 12.0, 1.0, 13.6, mat="charredtimber")
+    z.box(7, 0.5, 8.4, 10.5, 1.3, 10.4, mat="wideplanks")                               # (on the hill: cover for cappers)
+    z.box(7.4, 0, 8.2, 8.2, 0.9, 8.4, mat="charredtimber"); z.box(7.4, 0, 10.4, 8.2, 0.9, 10.6, mat="charredtimber")
+    z.box(10.5, 0.9, 9.2, 12.0, 1.0, 9.6, mat="charredtimber")
     for (bx, bz) in ((-12.5, 14.8), (-11.4, 14.8)):
         z.box(bx - 0.45, 0, bz - 0.45, bx + 0.45, 1.1, bz + 0.45, mat="woodencrate")
     # out past the walls: far hills, a valley floor
     for (hx, hz, r, h) in ((-200, 0, 90, 55), (210, 0, 100, 70), (60, 240, 110, 60), (-140, 220, 90, 45), (60, -240, 110, 60), (-140, -220, 90, 45)):
         peak(m, "far", hx, hz, r, -12, h)
-    m.box(-500, -5, -500, 500, -2.05, 500, mat="far")
+    m.box(-500, -12, -500, 500, -9, 500, mat="far")                                    # (under the undercroft: it looked plugged)
