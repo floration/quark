@@ -1904,6 +1904,23 @@ static void uiQuad(Vertex2DList& out, float x0, float y0, float x1, float y1, ui
     uiQuadAt(out.data() + n, x0, y0, x1, y1, U0, V0, U1, V1, c, scaleInt, scaleFrac);
 }
 
+float Renderer::uiInkBottom(size_t from, float skipTop, float skipBottom) const {
+    float bottom = -1;
+    for (size_t q = from; q + 4 <= ui_.size(); q += 4) {
+        float y0 = ui_[q].pos[1], y1 = y0;
+        for (int i = 1; i < 4; i++) { y0 = std::min(y0, (float)ui_[q + i].pos[1]); y1 = std::max(y1, (float)ui_[q + i].pos[1]); }
+        const Vertex2D& v = ui_[q];
+        if (v.pad[1] != 1 && (v.scaleInt || v.scaleFrac)) {   // a glyph: its padding isn't ink
+            const float pad = kUiPad * (v.scaleInt + v.scaleFrac / 256.0f);
+            y0 += pad; y1 -= pad;
+        }
+        if (y1 <= y0) continue;   // (an empty quad: rect()'s placeholders, a zero-size draw)
+        if (y0 >= skipTop - 0.5f && y1 <= skipBottom + 0.5f) continue;
+        bottom = std::max(bottom, y1);
+    }
+    return bottom;
+}
+
 void Renderer::uiTransform(size_t from, float px, float py, float k, float dx, float dy) {
     if (from >= ui_.size() || (k == 1 && dx == 0 && dy == 0)) return;
     auto cl16 = [](float v) { return (int16_t)std::max(-32768.0f, std::min(32767.0f, std::round(v))); };
@@ -1924,6 +1941,7 @@ void Renderer::uiTransform(size_t from, float px, float py, float k, float dx, f
 }
 
 void Renderer::quad2D(const float xy[8], const Color& c) {
+    if (alpha_ <= 0) return;   // (fully transparent: nothing to draw)
     constexpr uint16_t u = (uint16_t)((kUiCell * 0.5f + 1) * 32.0f), v = (uint16_t)((kUiCell * 6.5f + 1) * 32.0f);
     const size_t n = ui_.size();
     ui_.resize(n + 4);
@@ -1932,12 +1950,14 @@ void Renderer::quad2D(const float xy[8], const Color& c) {
 }
 
 void Renderer::rect(float x, float y, float w, float h, const Color& c) {
+    if (alpha_ <= 0) return;   // (fully transparent: nothing to draw)
     // a texel inside the solid block (cell 0.5, 6.5), as stored: (texel + 1) * 32
     constexpr uint16_t u = (uint16_t)((kUiCell * 0.5f + 1) * 32.0f), v = (uint16_t)((kUiCell * 6.5f + 1) * 32.0f);
     uiQuad(ui_, x, y, x + w, y + h, u, v, u, v, rgba8(c, alpha_), 0, 0);
 }
 
 void Renderer::rectGradient(float x, float y, float w, float h, const Color& tl, const Color& tr, const Color& br, const Color& bl) {
+    if (alpha_ <= 0) return;   // (fully transparent: nothing to draw)
     constexpr uint16_t u = (uint16_t)((kUiCell * 0.5f + 1) * 32.0f), v = (uint16_t)((kUiCell * 6.5f + 1) * 32.0f);
     const size_t n = ui_.size();
     uiQuad(ui_, x, y, x + w, y + h, u, v, u, v, rgba8(tl, alpha_), 0, 0);
@@ -1948,6 +1968,7 @@ void Renderer::rectGradient(float x, float y, float w, float h, const Color& tl,
 }
 
 void Renderer::roundRect(float x, float y, float w, float h, float radius, const Color& c, float ring) {
+    if (alpha_ <= 0) return;   // (fully transparent: nothing to draw)
     if (w <= 0 || h <= 0) return;
     if (radius < 0.5f && ring <= 0) { rect(x, y, w, h, c); return; }
     const int16_t X0 = px(x), X1 = px(x + w), Y0 = px(y), Y1 = px(y + h);
@@ -1973,6 +1994,7 @@ void Renderer::roundRect(float x, float y, float w, float h, float radius, const
 static constexpr float kLogoEmK = 0.66f / 0.70f, kLogoTilt = 0.16f, kLogoSeam = 12.0f / 844.0f;
 
 void Renderer::logo(float cx, float y, float ts, const Color& friendly, const Color& enemy) {
+    if (alpha_ <= 0) return;   // (fully transparent: nothing to draw)
     if (ts <= 0) return;
     logoA_ = friendly; logoB_ = enemy;
     if (!g_uiFont && logoTex_) {   // Rubik: the baked logo, one quad (its masks tinted in the shader)
@@ -2008,6 +2030,7 @@ void Renderer::logo(float cx, float y, float ts, const Color& friendly, const Co
 static inline float glyphAdv(int prev, int g) { return g_uiAdv[prev] + g_uiKern[prev * 95 + g] * (1.0f / 16.0f); }
 
 void Renderer::text(float x, float y, float s, const std::string& str, const Color& c, float level) {
+    if (alpha_ <= 0) return;   // (fully transparent: nothing to draw)
     if (s <= 0) return;
     if (s < minScale_) s = minScale_;
     // a font whose ink would leave the line box is drawn k times smaller, moved by its fit shift (k = 1: most fonts)
