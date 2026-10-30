@@ -5850,17 +5850,17 @@ static void testRocketLob(uint16_t port) {
     s.stop();
 }
 
-// The primary rocket speeds up kRocketAccel (4 m/s2) along its flight (owner, 2026-10-30); the lob doesn't. The server's
+// The primary rocket speeds up kRocketAccel (8 m/s2) along its flight (owner, 2026-10-30); the lob doesn't. The server's
 // 1 ms steps, the client's closed form (projectileExtrapolate) and its inverse (projectileRewind) agree.
 static void testRocketThrust(uint16_t port) {
-    printf("rocket thrust: the primary speeds up 4 m/s2, the lob unchanged\n");
+    printf("rocket thrust: the primary speeds up 8 m/s2, the lob unchanged\n");
     Server s;
     ServerConfig cfg;
     cfg.autoStart = false; cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port; cfg.balanceBots = false;
     s.setLog([](const std::string&) {});
     { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     CHECK(s.map_.parse("box -100 -1 -100 100 0 100\nspawn any 0 0 0\n"));   // (open: nothing in the way for 1 s)
-    CHECK(kRocketAccel == 4.0f && weaponAlt().rocketAccel == kRocketAccel && projectileAccel(WPN_ROCKET, 1) == kRocketAccel);
+    CHECK(kRocketAccel == 8.0f && baseWeaponDef(WPN_ROCKET).projSpeed == 24.0f && std::fabs(baseWeaponDef(WPN_ROCKET).projSpeed * kRocketLobSpeed - 33.6f) < 1e-3f && weaponAlt().rocketAccel == kRocketAccel && projectileAccel(WPN_ROCKET, 1) == kRocketAccel);
     CHECK(projectileAccel(WPN_ROCKET, kRocketLobGravity) == 0 && projectileAccel(WPN_STICKY, 1) == 0 && projectileAccel(WPN_CROSSBOW, 1) == 0);
     const float sp0 = weaponDef(WPN_ROCKET).projSpeed;
     auto fly = [&](Vec3 pos, Vec3 vel, float gravMul, int ms) {
@@ -5874,15 +5874,15 @@ static void testRocketThrust(uint16_t port) {
         return pr;
     };
     const Vec3 from(-60, 10, -5), dir = normalize(Vec3(1, 0.15f, 0.2f));
-    {   // the primary: 52 m/s after 1 s, along the same line, where the closed form puts it
+    {   // the primary: 32 m/s after 1 s, along the same line, where the closed form puts it
         const Projectile pr = fly(from, dir * sp0, 1, 1000);
         Vec3 cp = from, cv = dir * sp0;
         projectileExtrapolate(cp, cv, projectileFlight(WPN_ROCKET, 1), 1.0f);
         printf("    primary after 1 s: %.4f m/s (closed form %.4f), %.4f m along, %.3f mm from the closed form\n", length(pr.vel), length(cv),
                dot(pr.pos - from, dir), length(pr.pos - cp) * 1000);
-        CHECK(pr.active && std::fabs(length(pr.vel) - 52.0f) < 0.01f && std::fabs(length(cv) - 52.0f) < 0.01f);
+        CHECK(pr.active && std::fabs(length(pr.vel) - 32.0f) < 0.01f && std::fabs(length(cv) - 32.0f) < 0.01f);
         CHECK(length(normalize(pr.vel) - dir) < 1e-4f && length(pr.pos - cp) < 0.002f);
-        CHECK(std::fabs(dot(pr.pos - from, dir) - (sp0 + 0.5f * kRocketAccel * 1.001f)) < 0.01f);   // (48 + 4 x 1000 x 1001 / 2 ms2)
+        CHECK(std::fabs(dot(pr.pos - from, dir) - (sp0 + 0.5f * kRocketAccel * 1.001f)) < 0.01f);   // (24 + 8 x 1000 x 1001 / 2 ms2)
         // run back: projectileRewind undoes it (whole steps and a part of one)
         for (float t : {1.0f, 0.2345f}) {
             Vec3 p = from, v = dir * sp0;
