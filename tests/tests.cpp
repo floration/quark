@@ -1982,6 +1982,9 @@ static void testAllMaps() {
             for (auto& b : m.brushes) over += b.box.overlaps(mat);
             if (over) printf("  dojo: %d boxes on or over the mat\n", over);
             CHECK(over == 0 && m.holdFire == 5);
+            // (q, 1.19.6: the new dojo replaces the old one on the ranked vampire ladder, under the same name: ratings are
+            //  per ladder, and the build embeds its new sha256, so it stays a ranked map without a change to ranking)
+            CHECK(m.rankedLadders == (1u << arenaVariantFromName("vampire")) && isRankedMap(m, arenaVariantFromName("vampire")));
         }
         for (auto& sp : m.spawns) CHECK(!m.boxSolid(playerBox(sp.pos + Vec3(0, 0.02f, 0), false)));
         {   // walked with the player's hull against the map's collision: a route that isn't there fails
