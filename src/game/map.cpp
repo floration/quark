@@ -730,7 +730,7 @@ bool Map::parseCurrent(const std::string& text, std::string* err) {
             ok = readBox(ls, b.box);
             b.material = materialKeyword(kw);
             { std::string w; if (ok && b.material == kMatTeleport && (ls >> w)) ok = w == "tp" && readTp(ls, b); }   // (a teleporter's link and face)
-            hasWallbang |= b.material == 2;
+            hasWallbang |= wallbangBrush(b);
             if (ok && brushes.size() >= kMaxMapBrushes) { if (err) *err = "too many boxes (limit " + std::to_string(kMaxMapBrushes) + ")"; return false; }
             if (ok) {
                 brushes.push_back(b);
@@ -750,7 +750,7 @@ bool Map::parseCurrent(const std::string& text, std::string* err) {
             { std::string w; if (ok && b.material == kMatTeleport && (ls >> w)) ok = w == "tp" && readTp(ls, b); }
             if (ok && brushes.size() >= kMaxMapBrushes) { if (err) *err = "too many boxes (limit " + std::to_string(kMaxMapBrushes) + ")"; return false; }
             if (ok) {
-                hasWallbang |= b.material == 2;
+                hasWallbang |= wallbangBrush(b);
                 brushes.push_back(b);
                 if (!solidMaterial(b.material)) continue;
                 bounds.mn = vmin(bounds.mn, b.box.mn);
@@ -1349,7 +1349,7 @@ bool Map::rebuild() {
         if (!solidMaterial(b.material)) continue; // far scenery, water / lava surfaces: never collide (clip: not part of the bounds)
         bounds.mn = vmin(bounds.mn, b.box.mn);
         bounds.mx = vmax(bounds.mx, b.box.mx);
-        hasWallbang |= b.material == 2;
+        hasWallbang |= wallbangBrush(b);
     }
     if (brushes.empty()) bounds = {{-1, -1, -1}, {1, 1, 1}};
     return buildGrid();
@@ -1453,12 +1453,12 @@ bool Map::changeBrush(int op, size_t i, const Brush& b) {
                       : x.mn.x >= in.mn.x && x.mn.y >= in.mn.y && x.mn.z >= in.mn.z && x.mx.x <= in.mx.x && x.mx.y <= in.mx.y && x.mx.z <= in.mx.z;
     };
     AABB nb = bounds;
-    bool wallbang = hasWallbang || (op != 2 && b.material == 2);
+    bool wallbang = hasWallbang || (op != 2 && wallbangBrush(b));
     bool oldGone = op == 1 || !solidMaterial(old.material) || inside(old.box, bounds, true), newIn = op == 2 || !solidMaterial(b.material) || inside(b.box, bounds, false);
-    if (!oldGone || !newIn || (op != 1 && old.material == 2) || brushes.size() + (op == 1) - (op == 2) == 0) {
+    if (!oldGone || !newIn || (op != 1 && wallbangBrush(old)) || brushes.size() + (op == 1) - (op == 2) == 0) {
         nb = {{1e9f, 1e9f, 1e9f}, {-1e9f, -1e9f, -1e9f}};
         wallbang = false;
-        auto add = [&](const Brush& x) { if (!solidMaterial(x.material)) return; nb.mn = vmin(nb.mn, x.box.mn); nb.mx = vmax(nb.mx, x.box.mx); wallbang |= x.material == 2; };
+        auto add = [&](const Brush& x) { if (!solidMaterial(x.material)) return; nb.mn = vmin(nb.mn, x.box.mn); nb.mx = vmax(nb.mx, x.box.mx); wallbang |= wallbangBrush(x); };
         for (size_t k = 0; k < brushes.size(); k++) if (k != i || op == 1) add(brushes[k]);
         if (op != 2) add(b);
         if (brushes.size() + (op == 1) - (op == 2) == 0) nb = {{-1, -1, -1}, {1, 1, 1}};
@@ -1884,7 +1884,7 @@ float Map::raycastBullet(const Vec3& o, const Vec3& dir, float maxDist, float* b
             if (!stopsShots(br.material)) continue;   // clip: players only
             float t = rayBrush(o, dir, inv, br, best < 0 ? maxDist : best);
             if (t < 0) continue;
-            if (br.material == 2) { if (bang < 0 || t < bang) bang = t; }
+            if (wallbangBrush(br)) { if (bang < 0 || t < bang) bang = t; }
             else if (best < 0 || t < best) best = t;
         }
         return !(best >= 0 && best <= tExit);

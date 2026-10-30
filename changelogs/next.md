@@ -57,6 +57,7 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 - **Crosshair:** a spread circle, a cooldown ring, and sizes in exact pixels instead of scaled with the resolution.
 
 ## Maps
+- **Thin walls are shoot-through:** any surface 1/8 m thick or less (coats, panels, thin trim) now lets hitscan through at wallbang damage, like the dark grey wallbang walls.
 - **Map picker:** lists only the maps made for the mode you picked (ranked: only that ladder's maps), 7 across, each with a picture of the map from above. The mouse wheel scrolls when there are more.
 - **Two new maps, made by q:** **Surfy** (surf), now the map surf mode starts on, and **Cobblestone**.
 

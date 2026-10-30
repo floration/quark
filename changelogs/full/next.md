@@ -53,6 +53,10 @@ Every change on `testing` since production 1.19.3, with what changed and why. Th
 - **Match summary (#180).** `match_summary`: your shots, hits, accuracy, damage dealt and best streak for the match under the end-of-match scoreboard, counted on the client.
 - **Demo rename (#139).** RENAME beside DELETE turns the row into a field; Enter renames the file (letters, digits and - kept, the rest _), Esc or a click away leaves it. **Not in this batch** (still 3s): a turning 3D model preview (#128) and moving the objective / notice / scoreboard boxes (#21), which come with batch 3. Viewmodel FOV: see Controls above.
 
+## Thin surfaces are wallbang (owner, 2026-10-30: "any 1/8m surface should have the wallbang property on it")
+
+- `wallbangBrush(b)` (map.h): the wallbang material, or any shot-stopping brush whose thinnest side is 1/8 m or less (0.126 with a rounding margin), whatever its material: a Coat (K) layer, a thin panel, trim. `raycastBullet` (server hit checks and every client prediction of them) and the map's `hasWallbang` flag use it, so a map with only thin brushes still takes the wallbang path. Movement, sight, splash and grapple rays are unchanged: a thin wall still blocks players and explosions. A bullet passes one or more wallbang brushes and takes the weapon's wallbang damage once, as before. Test: `testWallbang` (a 1/8 m box passes, a 1/4 m one stops).
+
 ## Map picker (owner, 2026-10-30: "you shouldnt get to pick maps that are not under the playable gamemode for the map, also map previews should exist in the picker in game; list should be scrollable and 7 wide")
 
 - **Only the mode's maps.** The host, vs bots and in-game pickers list a map only if its `modes` include the chosen mode (a tourney rotation list: tourney; ranked: maps ranked for that ladder). The "NOT FOR THIS MODE" tag, its legend and the ranked-but-greyed cards are gone with them. A console `map` command can still start any map in any mode.
