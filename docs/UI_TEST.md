@@ -122,7 +122,15 @@ strip in its footer's middle: `PREVIOUS PAGE` (`<`), `PAGE 1` ... `PAGE N` and `
 key actions `LEFT ARROW (PREVIOUS PAGE)` / `RIGHT ARROW (NEXT PAGE)` doing the same (registered only while the
 arrows turn the page: not while a field, a key bind, a slider, a picker or the console has the keyboard). Every
 settings page's content (rows, labels and hints: the 2D drawn between the tab row and the footer, Renderer::uiInkBottom)
-must end at least 4 px (at 720p) above its footer row, at every resolution (a layout issue `(page content) : content runs into the footer`). `quark
+must end at least 4 px (at 720p) above its footer row, at every resolution (a layout issue `(page content) : content runs into the footer`). Settings > SEARCH (`settings/search`, the last tab):
+its field is `local()` (`SEARCH`, the test types `FOV`), its list is the pages' own widgets placed by a
+UiRelocator, each reported as `<PAGE> > <ID>` (`VIDEO 3 > FOG`: a label can be on two pages) and tested there as on its
+page, but optional (the list scrolls under the test; every widget is tested on its own page anyway); its cells are a
+third of a page wide, so a long value cut there isn't a layout issue), its scrollbar a handle (`SCROLLBAR`, `state("searchscroll")`); on every other settings page `CTRL+F
+(SEARCH)` and `/ (SEARCH)` are key actions to `nav("~settings/search")`, and with text typed `ESC (CLEAR SEARCH)`
+empties it. The menus scenario ends with query checks: "screen" must find FULLSCREEN SIZE, DISPLAY, RENDER SCALE and
+WINDOW SIZE, "fov" / "FOV" must show the FOV slider, "fov zoom" SNIPER ZOOM FOV, "volume announcer" ANNOUNCER VOLUME
+(failures are listed as SETUP). host-ffa skips the tab in game (the same widgets, tested on their pages there). `quark
 --settingsmenu --settingstab <page>[+<picker label>] --menushot --screenshot out.png` (or `--settings` in game) opens a
 page for a screenshot, e.g. `hud/elements` or `player+TEAM COLOR`.
 

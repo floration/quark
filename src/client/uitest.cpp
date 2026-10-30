@@ -48,6 +48,7 @@ std::string Game::uiScreenPath() const {
             case TAB_CONTROLS: return moreOpen_ >= 2 ? "/controls/more2" : moreOpen_ ? "/controls/more" : filePick_ == 2 ? "/controls/files" : controlsSub_ == 1 ? "/controls/movement" : controlsSub_ == 2 ? "/controls/keys2" : "/controls";
             case TAB_VIDEO: return devicesOpen_ ? "/video/devices" : moreOpen_ == 8 ? "/video/more8" : moreOpen_ == 7 ? "/video/more7" : moreOpen_ == 6 ? "/video/more6" : moreOpen_ == 5 ? "/video/more5" : moreOpen_ == 4 ? "/video/more4" : moreOpen_ == 3 ? "/video/more3" : moreOpen_ == 2 ? "/video/more2" : moreOpen_ ? "/video/more" : "/video";
             case TAB_CROSSHAIR: return "/crosshair";
+            case TAB_SEARCH: return "/search";
             case TAB_HUD:
                 if (hudEdit_) return "/hud/edit";
                 if (widgetEdit_) return filePick_ == 1 ? "/hud/widgets/files" : valueDrop_ && widgetSel_ >= 0 ? "/hud/widgets/values" : "/hud/widgets";
@@ -175,6 +176,8 @@ std::string Game::uiObserve(const std::string& w) {
     if (w == "browser") return std::to_string(browser_.refreshes());
     if (w == "fontscan") return std::to_string(fontScans_);
     if (w == "devscan") return std::to_string(devScans_);
+    if (w == "searchscroll") return std::to_string(searchScroll_);
+    if (w == "setsearch") return setSearch_;
     if (w == "scores") return b(showScores_);
     if (w == "perf") return b(perfStage_ != 0);
     if (w == "perfstage") return std::to_string(perfStage_);
@@ -550,6 +553,7 @@ private:
     void layoutCheck() {
         const float W = (float)g_.r_.width(), H = (float)g_.r_.height();
         std::string p = path();
+        const bool searchList = p.size() >= 15 && p.compare(p.size() - 15, 15, "settings/search") == 0;
         auto issue = [&](const std::string& id, const std::string& what) {
             std::string k = resName_ + " " + sc_->name + " :: " + p + " > " + id + " : " + what;
             layout_.emplace(k, what);
@@ -559,7 +563,8 @@ private:
             if (!hasRect(a)) continue;
             if (a.x < -0.5f || a.y < -0.5f || a.x + a.w > W + 0.5f || a.y + a.h > H + 0.5f)
                 issue(ids_[i], "off screen");
-            if (a.clipped && !(a.exp.flags & UiExp::CLIP_OK)) issue(ids_[i], "label clipped (doesn't fit)");
+            // (Settings > SEARCH's cells are a third of the page wide: a long value may be cut there; it's whole on its page)
+            if (a.clipped && !(a.exp.flags & UiExp::CLIP_OK) && !searchList) issue(ids_[i], "label clipped (doesn't fit)");
             for (size_t j = i + 1; j < cur_.size(); j++) {
                 const UiWidget& b = cur_[j];
                 if (!hasRect(b)) continue;
@@ -577,6 +582,37 @@ private:
         }
     }
 
+    // ---- Settings > SEARCH finds a setting by a word of its name or of what it does (owner: "typing in screen should
+    // show the devices, fullscreen setting, ..."): each query lists the setting wanted (shown or scrolled off), and
+    // "fov" shows the FOV slider itself on the first rows
+    void searchCheck() {
+        leaveAll();
+        hardReset();
+        g_.setScreen(Game::Screen::Settings);
+        g_.openSettingsTab(Game::TAB_SEARCH);
+        step(2);
+        struct Q { const char* query; const char* label; bool exact, shown; };
+        static const Q qs[] = {{"screen", "FULLSCREEN", false, false}, {"screen", "DISPLAY", true, false}, {"screen", "RENDER SCALE", true, false},
+                               {"screen", "WINDOW SIZE", true, false}, {"fov", "FOV", true, true}, {"FOV", "FOV", true, true},
+                               {"fov zoom", "SNIPER ZOOM FOV", true, false}, {"volume announcer", "ANNOUNCER VOLUME", true, false}};
+        int ok = 0;
+        for (const Q& q : qs) {
+            g_.setSearch_ = q.query;
+            step(3);
+            auto has = [&](const std::string& l) { return q.exact ? l == q.label : l.find(q.label) != std::string::npos; };
+            bool found = std::any_of(g_.searchMatched_.begin(), g_.searchMatched_.end(), has);
+            if (found && q.shown) found = std::any_of(cur_.begin(), cur_.end(), [&](const UiWidget& w) { return has(w.label); });
+            if (found) ok++;
+            else setupFails_.push_back(std::string("settings search: \"") + q.query + "\" doesn't " + (q.shown ? "show " : "find ") + q.label + " (" +
+                                       std::to_string(g_.searchMatched_.size()) + " matches)");
+        }
+        g_.setSearch_.clear();
+        step(2);
+        printf("uitest: settings search: %d of %zu queries found their setting\n", ok, sizeof qs / sizeof qs[0]);
+        fflush(stdout);
+        leaveAll();
+    }
+
     // ---- getting around
     void hardReset() {
         Game& g = g_;
@@ -585,6 +621,9 @@ private:
         g.chatText_.clear();
         g.settingsInGame_ = g.voteMenu_ = g.queueMenu_ = g.practiceMenu_ = g.playersMenu_ = g.fontsOpen_ = g.devicesOpen_ = false;
         g.moreOpen_ = 0;
+        g.setSearch_.clear();
+        g.searchScroll_ = 0;
+        g.searchDrag_ = false;
         for (int& d : g.devScroll_) d = 0;
         g.setTab_ = Game::TAB_PLAYER;
         g.controlsSub_ = 0;
@@ -1371,7 +1410,8 @@ private:
         // in game: every in-game screen once (host, free for all); the other situations: what differs there
         const std::vector<std::string> inGameAll = {"ingame"};
         const std::vector<std::string> noSettings = {"ingame/pause/settings", "ingame/pause/queue"};
-        v.push_back({"host-ffa", "ingame", inGameAll, {}, [=] { return hostGame(MODE_FFA, "temple", false, false); }, hosted(MODE_FFA, false, false)});
+        // (SEARCH lists the very widgets the pages have, which host-ffa tests on them in game: the menus test the tab)
+        v.push_back({"host-ffa", "ingame", inGameAll, {"ingame/pause/settings/search"}, [=] { return hostGame(MODE_FFA, "temple", false, false); }, hosted(MODE_FFA, false, false)});
         v.push_back({"host-vs", "ingame", inGameAll, noSettings, [=] { return hostGame(MODE_VS, "temple", false, false); }, hosted(MODE_VS, false, false)});
         v.push_back({"host-tourney", "ingame", inGameAll, noSettings, [=] { return hostGame(MODE_TOURNEY, "temple", false, false); }, hosted(MODE_TOURNEY, false, false)});
         v.push_back({"host-ranked", "ingame", inGameAll, noSettings, [=] { return hostGame(MODE_ARENA, "temple", true, false); }, hosted(MODE_ARENA, true, false)});
@@ -1562,6 +1602,7 @@ int UiTest::run() {
     std::vector<Scenario> all = scenarios();
     auto wanted = [&](const std::string& n) { return o_.uiTestOnly.empty() || ("," + o_.uiTestOnly + ",").find("," + n + ",") != std::string::npos; };
     for (auto& sc : all) if (wanted(sc.name)) runScenario(sc);
+    if (wanted("menus")) searchCheck();
     // the other resolutions: the same screens, layout only (16:9 large, 4:3)
     for (auto res : {std::make_pair(1920, 1080), std::make_pair(1024, 768)}) {
         setResolution(res.first, res.second);

@@ -219,7 +219,7 @@ private:
     void checkHostBrain();                  // compile the chosen brain (loadBrain: cached while the file is unchanged)
     void drawPauseMenu(float cx, float y);
     // Settings: one shell, six tabs (drawSettings: the menus and the pause menu; game.cpp "Settings")
-    enum { TAB_PLAYER, TAB_GAMEPLAY, TAB_CONTROLS, TAB_VIDEO, TAB_CROSSHAIR, TAB_HUD };
+    enum { TAB_PLAYER, TAB_GAMEPLAY, TAB_CONTROLS, TAB_VIDEO, TAB_CROSSHAIR, TAB_HUD, TAB_SEARCH };   // (SEARCH: every setting in one list)
     int setTab_ = TAB_PLAYER;
     int controlsSub_ = 0;    // CONTROLS: 0 general + interface keys, 1 move + weapon keys
     void drawSettings();
@@ -801,7 +801,6 @@ private:
     void settingsPage(int n);
     bool settingsPageKeys() const;
     void drawSettingsPages(const SetLayout& L, float footY);
-    bool setSearchShown_ = false;      // settings search: its results drawn in place of the page this frame (no page strip)
     // (UI test only) the lowest pixel the settings page's content drew on this frame, and the footer row's top: the
     // test fails a page whose content runs into its footer (-1: no settings page drawn this frame)
     float setInkBottom_ = -1, setFootTop_ = 0;
@@ -960,9 +959,18 @@ private:
     void drawPracticeMenu();
     bool playersMenu_ = false;           // pause > HOST > PLAYERS: kick, move to spectators, bots
     void drawPlayersMenu();
-    std::string setSearch_;              // settings: the SEARCH field (matches listed under it; a click opens the page)
-    bool searchTyping_ = false;          // settings search: had focus last frame
-    bool drawSettingsSearch(const SetLayout& L);
+    // Settings > SEARCH (owner, 2026-10-30): every settings page's widgets in one 3-wide list, what's typed in its field
+    // narrowing it (drawSearchTab; how a row is matched: the relocator in game.cpp)
+    std::string setSearch_;              // the field's text
+    int searchScroll_ = 0;               // the list's first row shown (the wheel, the scrollbar)
+    bool searchDrag_ = false;            // the scrollbar's thumb held
+    float searchDragOff_ = 0;            // (where on the thumb it was taken)
+    int searchRows_ = 0;                 // the list's rows last frame (the wheel's and the scrollbar's range)
+    std::vector<std::string> searchMatched_;   // (UI test only) every matching widget's label this frame, shown or not
+    static constexpr int kSearchField = 62;
+    void drawSearchTab(const SetLayout& L);
+    void openSearch();                   // Ctrl+F / "/": the SEARCH tab, its field focused
+    bool settingsShown() const { return screen_ == Screen::Settings || (screen_ == Screen::InGame && paused_ && settingsInGame_); }
     void onKillFeedback(int killer, int victim, int weapon, bool head, bool airborne);
     int streak_[kMaxPlayers] = {};
     double typingUntil_[kMaxPlayers] = {}, nextTypingSend_ = 0;
@@ -1053,6 +1061,9 @@ private:
     DeskMode desktopMode(GLFWmonitor* mon);
     GLFWmonitor* deskMon_ = nullptr;
     DeskMode desk_;
+    GLFWmonitor* dmCacheMon_ = nullptr;   // (desktopMode: the last windowed answer, kept a second)
+    DeskMode dmCache_;
+    double dmCacheUntil_ = 0;
     void monitorsChanged();        // (GLFW's monitor callback: one plugged in or out)
     // scriptable HUD: hud.cfg widgets, the verbose info block, and the in-game widget editor
     HudWidgets widgets_;

@@ -1941,6 +1941,7 @@ void Renderer::uiTransform(size_t from, float px, float py, float k, float dx, f
 }
 
 void Renderer::quad2D(const float xy[8], const Color& c) {
+    if (alpha_ <= 0) return;   // (fully transparent: nothing to draw)
     constexpr uint16_t u = (uint16_t)((kUiCell * 0.5f + 1) * 32.0f), v = (uint16_t)((kUiCell * 6.5f + 1) * 32.0f);
     const size_t n = ui_.size();
     ui_.resize(n + 4);
@@ -1949,12 +1950,14 @@ void Renderer::quad2D(const float xy[8], const Color& c) {
 }
 
 void Renderer::rect(float x, float y, float w, float h, const Color& c) {
+    if (alpha_ <= 0) return;   // (fully transparent: nothing to draw)
     // a texel inside the solid block (cell 0.5, 6.5), as stored: (texel + 1) * 32
     constexpr uint16_t u = (uint16_t)((kUiCell * 0.5f + 1) * 32.0f), v = (uint16_t)((kUiCell * 6.5f + 1) * 32.0f);
     uiQuad(ui_, x, y, x + w, y + h, u, v, u, v, rgba8(c, alpha_), 0, 0);
 }
 
 void Renderer::rectGradient(float x, float y, float w, float h, const Color& tl, const Color& tr, const Color& br, const Color& bl) {
+    if (alpha_ <= 0) return;   // (fully transparent: nothing to draw)
     constexpr uint16_t u = (uint16_t)((kUiCell * 0.5f + 1) * 32.0f), v = (uint16_t)((kUiCell * 6.5f + 1) * 32.0f);
     const size_t n = ui_.size();
     uiQuad(ui_, x, y, x + w, y + h, u, v, u, v, rgba8(tl, alpha_), 0, 0);
@@ -1965,6 +1968,7 @@ void Renderer::rectGradient(float x, float y, float w, float h, const Color& tl,
 }
 
 void Renderer::roundRect(float x, float y, float w, float h, float radius, const Color& c, float ring) {
+    if (alpha_ <= 0) return;   // (fully transparent: nothing to draw)
     if (w <= 0 || h <= 0) return;
     if (radius < 0.5f && ring <= 0) { rect(x, y, w, h, c); return; }
     const int16_t X0 = px(x), X1 = px(x + w), Y0 = px(y), Y1 = px(y + h);
@@ -1990,6 +1994,7 @@ void Renderer::roundRect(float x, float y, float w, float h, float radius, const
 static constexpr float kLogoEmK = 0.66f / 0.70f, kLogoTilt = 0.16f, kLogoSeam = 12.0f / 844.0f;
 
 void Renderer::logo(float cx, float y, float ts, const Color& friendly, const Color& enemy) {
+    if (alpha_ <= 0) return;   // (fully transparent: nothing to draw)
     if (ts <= 0) return;
     logoA_ = friendly; logoB_ = enemy;
     if (!g_uiFont && logoTex_) {   // Rubik: the baked logo, one quad (its masks tinted in the shader)
@@ -2025,6 +2030,7 @@ void Renderer::logo(float cx, float y, float ts, const Color& friendly, const Co
 static inline float glyphAdv(int prev, int g) { return g_uiAdv[prev] + g_uiKern[prev * 95 + g] * (1.0f / 16.0f); }
 
 void Renderer::text(float x, float y, float s, const std::string& str, const Color& c, float level) {
+    if (alpha_ <= 0) return;   // (fully transparent: nothing to draw)
     if (s <= 0) return;
     if (s < minScale_) s = minScale_;
     // a font whose ink would leave the line box is drawn k times smaller, moved by its fit shift (k = 1: most fonts)
