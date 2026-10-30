@@ -13,7 +13,7 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 - **Crosshair:** dot size, opacity, outline thickness and opacity, a style per weapon (e.g. a dot on the sniper), and COPY / PASTE CODE to share a crosshair in one line.
 - **Hitsounds:** their own volume, any sound pack's hitsound, a headshot ding, and the kill sound on its own switch.
 - **Server list:** sort by ping / players / name, hide full / empty, a ping limit, favourites (right-click a server; listed first) and a RECENT button for the servers you joined last.
-- **Race and surf:** R takes you back to your last checkpoint; press it twice quickly to go back to the start. Rebindable (CONTROLS > MOVE + WEAPON KEYS).
+- **Race and surf:** tap R to go back to your last checkpoint, or hold it a quarter of a second to restart from the start. FULL RESTART can also go on a key of its own (CONTROLS > MORE KEYS). Both can be rebound.
 
 ## Settings (batch 2, first half)
 - **More MORE pages:** GAMEPLAY gets one, and VIDEO + AUDIO now has three. CONTROLS has a third keys page, MORE KEYS.
@@ -48,6 +48,14 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 - **Race ghost:** in race and surf, your best run on each map plays as a see-through ghost.
 - **Team panel and match summary:** an optional panel with your teammates' health, and a summary of your match (shots, hits, accuracy, damage, best streak) under the end-of-match scoreboard.
 
+## Settings (batch 3: video, audio, crosshair, network, accessibility)
+- **More picture options:** VIDEO + AUDIO > MORE 2 adds TONE CURVE, CLEAN SURFACES, FLAT LIGHTING, SIMPLE SKY, FAR SCENERY, DRAW DISTANCE (150 / 250 / 400 m), DEBAND and 10-BIT OUTPUT, plus tracer colour (classic, team or your own) and projectile TRAILS (off / short / full, with opacity).
+- **MSAA 8x**, and options your PC can't do now say "N/A" (MSAA levels, 10-bit, latent sync, bypass compositor).
+- **New VIDEO + AUDIO > MORE 4:** shadow edge, shadow distance, shadows on the map / on players, your own shadow, players always lit, player brightness, custom outline colours and opacity, separate team / enemy outline widths, rope colour, fixed team A / B colours when spectating or watching demos, colour scheme copy / paste and 3 save slots, and accessibility: REDUCE FLASHING, colourblind-safe OK / error colours, tag "it" and race splits in your palette, AHEAD / BEHIND on splits.
+- **New VIDEO + AUDIO > MORE 5 (sound):** mono / swapped channels, stereo width, behind-you muffle, hearing range, sound occlusion (walls muffle sounds), dynamic range (clean / normal / night), audio latency (low / normal / safe), volume in dB or on a perceptual curve and up to 150%, background volume, force your sound pack on everyone, streak callouts (all / mine / off), time warnings (off / 60 + 30 / countdown, and on screen), each cue sound and announcer line on or off, and VISUALIZE SOUNDS.
+- **New VIDEO + AUDIO > MORE 6:** a NET GRAPH (apart from F3), packet loss protection 2 / 4 / 8, map downloads on / off with a cache limit and CLEAR, the light bake cache (size, bake threads, CLEAR), FOV as horizontal / vertical / 4:3, bypass compositor (Linux), latent sync safety and late-frame behaviour (Windows), a bigger or coloured menu cursor, and USE as hold or toggle.
+- **Crosshair:** a spread circle, a cooldown ring, and sizes in exact pixels instead of scaled with the resolution.
+
 ## Settings (batch 3: HUD, social, controls, menus, host, editor, launcher)
 - **Hit feedback (GAMEPLAY > MORE 2):** damage number colour, stacking and time; damage direction arcs (colour, size, time); kill mark time and colour; a KILLED <NAME> line; hit flash time; low health warning (threshold, colour, pulse, beep); green +N heal numbers; weapon kick amount; and per weapon: show its model, and move it (x, y, depth).
 - **HUD info (GAMEPLAY > MORE 3):** speed in m/s, km/h or ups with a scale and ticks; bar captions; a 12 h clock, the round clock counting up and tenths in the last 10 s; pick the verbose info lines; auto-hide health, weapon list and bars; objective marker size, opacity, distance and edge arrow; scope size and reticle colour / width; network warnings (ping, loss, stall); a minimal spectator HUD; a headshot mark in the kill feed; a stalemate warning before the drain.
@@ -61,7 +69,14 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 - **Race:** splits against your best, the previous segment or your last run, with a display time; the race stats page picks the map and the date format.
 - **Launcher:** OPTIONS: start the game automatically, keep the launcher open, launch options, and updates automatic / ask / at next launch.
 
+## Settings (batch 4: colours, screenshots, sound extras, latency)
+- **New VIDEO + AUDIO > MORE 7 (colours):** the world's outline colour, a wallbang tint, a high-contrast map palette, your own sky and glow colours on every map, objectives in your palette, zone pulse and opacity, a colour per FFA opponent, your own colour for your shots / laser / rope, gun colour (map / team / custom), health bar low threshold and colours, name tag colour / opacity / size, explosion colours (their own / your team / custom) and a colourblind palette for F3.
+- **New VIDEO + AUDIO > MORE 8:** screenshots as PNG or TGA, saved in the game's folder or Pictures/Quark, with or without the HUD, and an OPEN FOLDER button; demo rate (also here, not only on DEMOS); always on top; dash buffer (off / 0.05 / 0.1 / 0.15 s); ultra low-latency safety margin; NVIDIA threaded optimization off and DXGI present (Windows); hitsound tiers on / off, typing sounds on / off, quip captions and announcer ducking.
+- **MORE 2:** liquids flowing or still, glow strength, SMOOTH strength and the lightmap filter (smooth / nearest).
+
 ## Maps
+- **Thin walls are shoot-through:** any surface 1/8 m thick or less (coats, panels, thin trim) now lets hitscan through at wallbang damage, like the dark grey wallbang walls.
+- **Map picker:** lists only the maps made for the mode you picked (ranked: only that ladder's maps), 7 across, each with a picture of the map from above. The mouse wheel scrolls when there are more.
 - **Two new maps, made by q:** **Surfy** (surf), now the map surf mode starts on, and **Cobblestone**.
 
 ## Servers

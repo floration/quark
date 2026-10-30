@@ -775,6 +775,12 @@ inline bool solidMaterial(int m) {   // in the collision grid (a see-through one
 // what a brush in the grid stops: players (collision), shots (raycast: hitscan, projectiles, the grapple), sight
 inline bool stopsPlayers(int m) { return m != kMatShield && (!semiMaterial(m) || kSemi[m - kMatSemi].players); }
 inline bool stopsShots(int m) { return m != 9 && (!semiMaterial(m) || kSemi[m - kMatSemi].shots); }
+// Hitscan goes through it at the weapon's wallbang damage: the wallbang material, and any brush 1/8 m thin or less on
+// some axis (owner, 2026-10-30: "any 1/8m surface should have the wallbang property": coats, panels, thin trims)
+constexpr float kWallbangThin = 0.125f + 1e-3f;
+inline bool wallbangBrush(const Brush& b) {
+    return b.material == 2 || (stopsShots(b.material) && std::min(std::min(b.box.mx.x - b.box.mn.x, b.box.mx.y - b.box.mn.y), b.box.mx.z - b.box.mn.z) <= kWallbangThin);
+}
 inline bool stopsSight(int m) { return m != 9 && m != kMatShield && !glassMaterial(m) && (!semiMaterial(m) || kSemi[m - kMatSemi].sight); }
 // lit by the bake (the shader skips the lightmap for glow, far, water, lava, acid; clip and glass aren't baked: glass is
 // drawn see-through each frame, so a broken pane can go)

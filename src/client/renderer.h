@@ -47,7 +47,7 @@ public:
     int height() const { return height_; }
     // World geometry grouped into spatial chunks (12 m columns) so the world pass only draws what's in
     // the view frustum: one glMultiDrawArrays over the visible ranges.
-    struct WorldChunk { Vec3 mn, mx; int first, count; };
+    struct WorldChunk { Vec3 mn, mx; int first, count; bool far = false; };   // (far: distant scenery's own chunks)
     // A map's world, built and lit but not on the GPU yet: prepareWorld needs no GL context (any thread, on its
     // own copy of the map), uploadWorld puts it on the GPU (the GL thread). loadWorld = both, here and now.
     struct PreparedWorld { BakedWorld bw; std::vector<WorldChunk> chunks; };
@@ -153,6 +153,10 @@ public:
     // palette, on top of this frame's 2D batch (drawn after it: put nothing over a swatch). Each is rendered into a slot
     // of an atlas the first frame it's asked for (again when the palette changes).
     void swatch(float x, float y, float w, float h, int material);
+    // Map previews (the map picker): small RGBA images (w x h each, all the same size), kept in one atlas uploaded the
+    // next frame after they change; preview() draws image `slot` like a swatch (over this frame's 2D batch).
+    void setPreviews(std::vector<std::vector<uint8_t>> images, int w, int h);
+    void preview(float x, float y, float w, float h, int slot);
     // The 2D batch so far uploaded now (the HUD before the late latch): flush2D then only draws it, unless more was added.
     void prepare2D();
 
@@ -183,8 +187,37 @@ public:
     Vec3 fullbrightColor = {1, 1, 1};   // ...that colour instead of white (VISUALS > FULLBRIGHT COLOUR)
     float brightness = 1.0f;   // the player's brightness setting (scales the lit scene before tonemapping)
     float worldOutline = 1.0f; // the baked world's outline width in pixels (settings); 0 = none
+    // VIDEO + AUDIO > MORE 2 / 4 (1.19.4): the look's shader switches (setLook: uniforms, only when they change)
+    struct Look {
+        bool tone = true, dither = false, clean = false, flatLight = false, simpleSky = false;
+        int pcf = 1;            // the shadow edge: 0 hard, 1 soft, 2 softer
+        float emit = 0.3f;      // models' own light share
+        float outlineA = 1.0f;  // players' outline opacity
+        bool operator==(const Look& o) const {
+            return tone == o.tone && dither == o.dither && clean == o.clean && flatLight == o.flatLight && simpleSky == o.simpleSky &&
+                   pcf == o.pcf && emit == o.emit && outlineA == o.outlineA;
+        }
+    };
+    void setLook(const Look& l);
+    bool farScenery = true;     // distant scenery's chunks drawn
+    float farPlane = 400.0f;    // DRAW DISTANCE: metres to the far plane (the next setCamera)
+    float shadowRange = 32.0f;  // SHADOW DISTANCE: the shadow map's half-width around its focus (metres)
+    bool shadowWorld = true, shadowPlayers = true;   // dynamic shadows onto the map / onto players
+    int maxSamples();           // the driver's most MSAA samples (asked once)
+    // 1.19.4 batch 4 (VIDEO + AUDIO > MORE 2 / 4): x < 0 = the map's own
+    Vec3 skyOverride = {-1, -1, -1}, glowOverride = {-1, -1, -1}, wallbangTint = {-1, -1, -1};
+    Vec3 worldEdge = {0, 0, 0}; // the world's outline colour (black: as before)
+    float glowMul = 1.0f;       // GLOW STRENGTH
+    bool liquidFlow = true;     // water / lava / acid flowing
+    bool highContrast = false;  // HIGH CONTRAST MAP: lighter base, darker accent
+    bool lightmapNearest = false;   // LIGHTMAP FILTER: nearest
+    float smoothAmt = 1.0f;     // SMOOTH (the edge pass) strength, 0.25 - 1
+    int outputBits();           // the window's bits per colour (asked once): 10 with 10-BIT OUTPUT where it's given
 
 private:
+    Look look_;
+    bool lmFilterSet_ = false; float edgeAmtSet_ = 1.0f;
+    void lookUniforms(unsigned prog);
     float fogMul_ = 1.0f;
     Vec3 grade_ = {1, 1, 1};
     unsigned compile(const char* vs, const char* fs, std::string* err);
@@ -243,6 +276,12 @@ private:
     std::vector<unsigned> swatchSlotUsed_;            // (the frame each slot was last drawn)
     unsigned swatchFrame_ = 0;
     void buildSwatches();
+    std::vector<std::vector<uint8_t>> previewImgs_;   // (setPreviews': uploaded into previewTex_ when previewDirty_)
+    int previewW_ = 0, previewH_ = 0, previewCols_ = 1, previewRows_ = 1;
+    bool previewDirty_ = false;
+    unsigned previewTex_ = 0;
+    std::vector<float> previewQuads_;   // (this frame's: x0 y0 x1 y1 slot per quad)
+    void drawImageQuads(std::vector<float>& quads, unsigned tex, int cols, int rows, const std::vector<int>* slotOf);
     int worldVerts_ = 0;
     std::vector<WorldChunk> chunks_;
     std::vector<int> drawFirst_, drawCount_;

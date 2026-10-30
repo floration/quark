@@ -3618,6 +3618,17 @@ static void testWallbang() {
     CHECK(std::fabs(t - 9) < 0.01f);      // stopped by the solid box at x=4
     CHECK(std::fabs(m.raycast({-5, 1.5f, 0}, {1, 0, 0}, 50) - 4) < 0.01f); // normal rays (sight, splash) stop
     CHECK(m.boxSolid(playerBox({0, 0, 0}, false)));                        // and you can't walk through it
+    // any brush 1/8 m thin is wallbang too (owner, 2026-10-30), whatever its material; a thicker one isn't
+    Map t2;
+    CHECK(t2.parse("box -10 -1 -10 10 0 10\nbox -1 0 -5 -0.875 3 5\nbox 4 0 -5 5 3 5\nspawn any -5 0 0\n"));
+    bang = -2;
+    t = t2.raycastBullet({-5, 1.5f, 0}, {1, 0, 0}, 50, &bang);
+    CHECK(std::fabs(bang - 4) < 0.01f && std::fabs(t - 9) < 0.01f);
+    Map t3;
+    CHECK(t3.parse("box -10 -1 -10 10 0 10\nbox -1 0 -5 -0.75 3 5\nspawn any -5 0 0\n"));
+    bang = -2;
+    t = t3.raycastBullet({-5, 1.5f, 0}, {1, 0, 0}, 50, &bang);
+    CHECK(bang < 0 && std::fabs(t - 4) < 0.01f);
 }
 
 // Syringe: each use heals you 10 hp, with a 1 s cooldown (owner 1.17); a thrown one heals the teammate it hits by 30

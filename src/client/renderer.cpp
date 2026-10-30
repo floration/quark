@@ -79,10 +79,24 @@ uniform sampler2DShadow uShadow;
 uniform int uShadowOn;
 uniform float uShadowTexel;
 uniform vec4 uCasterRect; // shadow-map area the dynamic casters cover: outside it nothing can be shadowed
+uniform int uPcf;         // VIDEO > MORE 4: SHADOW EDGE: 0 soft (4 taps, the default), 1 hard (1), 2 softer (16)
+uniform float uDither;    // VIDEO > MORE 2: DEBAND: 1 adds +-half an 8-bit step of interleaved gradient noise
+vec3 dith(vec3 c) {
+    if (uDither < 0.5) return c;
+    float n = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+    return c + (n - 0.5) / 255.0;
+}
 float shadowAt(vec4 sc) {
     if (uShadowOn == 0) return 1.0;
     vec3 p = sc.xyz / sc.w * 0.5 + 0.5;
     if (p.x < uCasterRect.x || p.y < uCasterRect.y || p.x > uCasterRect.z || p.y > uCasterRect.w || p.z >= 1.0) return 1.0;
+    if (uPcf == 1) return texture(uShadow, vec3(p.xy, p.z - 0.0015));
+    if (uPcf == 2) {   // (4 x 4 taps a texel apart: within the caster rect's 2 texel margin)
+        float t = 0.0;
+        for (int y = 0; y < 4; y++) for (int x = 0; x < 4; x++)
+            t += texture(uShadow, vec3(p.xy + (vec2(x, y) - 1.5) * uShadowTexel, p.z - 0.0015));
+        return t * 0.0625;
+    }
     float s = 0.0;
     s += texture(uShadow, vec3(p.xy + vec2(-0.5, -0.5) * uShadowTexel, p.z - 0.0015));
     s += texture(uShadow, vec3(p.xy + vec2( 0.5, -0.5) * uShadowTexel, p.z - 0.0015));
@@ -108,9 +122,13 @@ vec3 grade(vec3 c) {
     c = (c - 0.5) * uGrade.y + 0.5;
     return pow(clamp(c, 0.0, 1.0), vec3(1.0 / uGrade.x));
 }
+uniform float uNoTone;   // VIDEO > MORE 2: TONE CURVE off (1): a straight clamp in place of the filmic curve
+uniform float uClean;    // ...CLEAN SURFACES (1): the palette's faces without panel seams or shade noise
+uniform float uFlatLight;   // ...FLAT LIGHTING (1): no lightmap, full sun and sky everywhere
 uniform float uFull;     // fullbright: flat white, black outlines, no light or fog
 uniform vec3 uFullColor; // ...and the flat colour (white by default)
 uniform float uOutlineW; // the world's outline width (pixels; settings)
+uniform vec3 uWorldEdge; // VIDEO + AUDIO > MORE 4: WORLD OUTLINE COLOR, linear (black, the default, is the old darkening)
 uniform float uTime;     // seconds (wrapped every hour): water, lava and acid flow
 uniform vec3 uSunDir;    // toward the sun: metals' highlights
 out vec4 fragColor;
@@ -209,8 +227,8 @@ bool inHole() {
 vec3 finish(vec3 c) {
     float d = length(vPos - uCamPos);
     c = mix(c, uFogColor, 1.0 - exp(-d * uFogDensity)) * uBright;
-    c = clamp((c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14), 0.0, 1.0) * 1.08; // ACES-style filmic curve
-    return grade(pow(c, vec3(1.0 / 2.2)));
+    c = uNoTone > 0.5 ? clamp(c, 0.0, 1.0) : clamp((c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14), 0.0, 1.0) * 1.08; // ACES-style filmic curve
+    return dith(grade(pow(c, vec3(1.0 / 2.2))));
 }
 void main() {
     int mat = int(vMat + 0.5);
@@ -247,7 +265,7 @@ void main() {
         fragColor = vec4(finish(c), 1.0);
         return;
     }
-    vec2 lm = uAlphaPass > 0.5 ? vec2(1.0, 0.85) : texture(uLightmap, vUV).rg;   // (the see-through pass: not baked, full sun and sky)
+    vec2 lm = uAlphaPass > 0.5 || uFlatLight > 0.5 ? vec2(1.0, 0.85) : texture(uLightmap, vUV).rg;   // (the see-through pass: not baked, full sun and sky)
     vec3 albedo = mat == 0 ? uBaseL : (mat == 1 || mat == 8) ? uAccentL : mat == 2 ? uWallbangL : uMetalL; // 8: trim (decor, not solid)
     if (mat == 10) albedo = vec3(0.30, 0.33, 0.42) * (0.8 + 0.2 * step(0.5, fract((vPos.x + vPos.y + vPos.z) * 1.5))); // nograpple: slate blue with diagonal stripes
     // surface detail: 2 m panels (4 m on floors) with a faint per-panel tint and thin seams, world-space so it
@@ -262,7 +280,7 @@ void main() {
         if (mat == 3) pp = pp * vec2(2.0, 0.5);
         vec2 cell = floor(pp), f = fract(pp), w = fwidth(pp) * max(1.5 * uPxScale, 1.0);   // (1.5 window pixels, at least 1 scene pixel)
         float seam = min(smoothstep(0.0, w.x + 0.012, min(f.x, 1.0 - f.x)), smoothstep(0.0, w.y + 0.012, min(f.y, 1.0 - f.y)));
-        albedo *= (0.93 + 0.1 * hash2(cell + floor(vPos.y * 0.01))) * mix(0.82, 1.0, seam);
+        if (uClean < 0.5) albedo *= (0.93 + 0.1 * hash2(cell + floor(vPos.y * 0.01))) * mix(0.82, 1.0, seam);
         if (mat == 3) {   // metal: brushed streaks along each panel and a soft sheen (owner, 2026-10-28: "not just black box")
             albedo *= 1.15 + 0.12 * (vnoiseAA(vec2(q.x * 0.6, q.y * 40.0)) - 0.5);
             spec = 0.35; gloss = 24.0;
@@ -386,7 +404,7 @@ void main() {
         c += uSunColor * sun * spec * pow(max(dot(normalize(vN), h), 0.0), gloss);
     }
     c += emit;
-    c *= outline(vEdge, uOutlineW);
+    c = mix(uWorldEdge, c, outline(vEdge, uOutlineW));
     bool blended = uAlphaPass > 0.5 && uAlphaPass < 1.5;   // (2: the breakable blocks, opaque)
     if (blended && alpha < 0.01) discard;
     fragColor = vec4(finish(c), blended ? clamp(alpha, 0.0, 1.0) : 1.0);
@@ -417,6 +435,7 @@ const char* kEdgeFS = R"(#version 330 core
 in vec2 vUV;
 uniform sampler2D uScene;
 uniform vec2 uRcp;
+uniform float uEdgeOff;   // VIDEO + AUDIO > MORE 2: SMOOTH STRENGTH's 1 - strength (0: the full blend, as before)
 out vec4 fragColor;
 float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
 void main() {
@@ -432,7 +451,7 @@ void main() {
     vec3 a = 0.5 * (texture(uScene, vUV + dir * (1.0 / 3.0 - 0.5)).rgb + texture(uScene, vUV + dir * (2.0 / 3.0 - 0.5)).rgb);
     vec3 b = a * 0.5 + 0.25 * (texture(uScene, vUV - dir * 0.5).rgb + texture(uScene, vUV + dir * 0.5).rgb);
     float lB = luma(b);
-    fragColor = vec4((lB < lMin || lB > lMax) ? a : b, 1.0);
+    fragColor = vec4(mix((lB < lMin || lB > lMax) ? a : b, m, uEdgeOff), 1.0);
 })";
 
 // RENDER SCALE below 100%: the scene stretched to the window with a light contrast-adaptive sharpen (CAS-style, the
@@ -467,6 +486,7 @@ in vec2 vNdc;
 uniform vec3 uFwd, uRight, uUp, uSky, uSunDir;
 uniform vec2 uTan;
 uniform float uBright;
+uniform float uNoTone, uSimple, uDither;   // VIDEO > MORE 2: TONE CURVE off, SIMPLE SKY, DEBAND (as the world's)
 uniform vec3 uGrade;
 vec3 grade(vec3 c) {
     if (uGrade == vec3(1.0)) return c;
@@ -476,6 +496,7 @@ vec3 grade(vec3 c) {
 }
 out vec4 fragColor;
 void main() {
+    if (uSimple > 0.5) { fragColor = vec4(grade(pow(clamp(uSky * uBright, 0.0, 1.0), vec3(1.0 / 2.2))), 1.0); return; }
     vec3 d = normalize(uFwd + vNdc.x * uTan.x * uRight + vNdc.y * uTan.y * uUp);
     float up = clamp(d.y, 0.0, 1.0);
     vec3 zenith = uSky * vec3(0.55, 0.62, 0.8);
@@ -495,8 +516,10 @@ void main() {
         }
     }
     c *= uBright;
-    c = clamp((c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14), 0.0, 1.0) * 1.08;
-    fragColor = vec4(grade(pow(c, vec3(1.0 / 2.2))), 1.0);
+    c = uNoTone > 0.5 ? clamp(c, 0.0, 1.0) : clamp((c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14), 0.0, 1.0) * 1.08;
+    c = grade(pow(c, vec3(1.0 / 2.2)));
+    if (uDither > 0.5) c += (fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) - 0.5) / 255.0;
+    fragColor = vec4(c, 1.0);
 })";
 
 const char* kDynVS = R"(#version 330 core
@@ -521,6 +544,8 @@ uniform float uFogDensity;
 uniform int uReceiveShadow;
 uniform float uBright;
 uniform float uFade;   // the view model's see-through amount (1 - WEAPON MODEL OPACITY); 0 (unset) everywhere else
+uniform float uEmitAdd;     // VIDEO > MORE 4: PLAYER BRIGHTNESS's own-light share - the default 0.3 (0: as it was)
+uniform float uOutlineFade; // ...1 - OUTLINE OPACITY (0: solid outlines)
 uniform vec3 uGrade;   // (as the world's)
 vec3 grade(vec3 c) {
     if (uGrade == vec3(1.0)) return c;
@@ -533,10 +558,12 @@ void main() {
     float sh = uReceiveShadow != 0 ? shadowAt(vShadow) : 1.0;
     float ndl = max(dot(normalize(vN), uSunDir), 0.0);
     vec3 light = uSkyColor * (0.6 + 0.25 * vN.y) + uSunColor * ndl * vColor.a * sh;
-    vec3 c = mix(vOutline, vColor.rgb * (light * 0.7 + 0.3), outline(vEdge, vOutlineW)); // partly emissive so team colors stay readable; edges in the outline colour
+    float e = 0.3 + uEmitAdd;
+    vec3 body = vColor.rgb * (light * (1.0 - e) + e);
+    vec3 c = mix(mix(vOutline, body, uOutlineFade), body, outline(vEdge, vOutlineW)); // partly emissive so team colors stay readable; edges in the outline colour
     float d = length(vPos - uCamPos);
     c = mix(c, uFogColor, 1.0 - exp(-d * uFogDensity)) * uBright;
-    fragColor = vec4(grade(pow(c, vec3(1.0 / 2.2))), 1.0 - uFade);
+    fragColor = vec4(dith(grade(pow(c, vec3(1.0 / 2.2)))), 1.0 - uFade);
 })";
 
 const char* kFlatVS = R"(#version 330 core
@@ -791,6 +818,8 @@ void Renderer::initWorldUniforms() {
     glUniform1i(uHoleCount_, holeCount_);
     glUniform4fv(uHoleGrid_, 1, holeGrid_);
     glUniform1i(uHoleGridH_, holeGridH_);
+    lookUniforms(worldProg_);
+    glUseProgram(worldProg_);
 }
 
 int Renderer::setShadowRes(int res) {
@@ -928,6 +957,7 @@ bool Renderer::init(int shadowRes, std::string* err) {
              U(skyProg_, "uSunDir"), U(skyProg_, "uBright")};
     glUseProgram(skyProg_);
     glUniform3f(U(skyProg_, "uGrade"), grade_.x, grade_.y, grade_.z);
+    lookUniforms(dynProg_); lookUniforms(skyProg_);
     uFlatViewProj_ = U(flatProg_, "uViewProj");
     uDynFade_ = U(dynProg_, "uFade"); uFlatFade_ = U(flatProg_, "uFade");
     uShadowViewProj_ = U(shadowProg_, "uViewProj");
@@ -993,6 +1023,7 @@ void Renderer::prepareWorld(const Map& map, PreparedWorld& w, const std::functio
             if (i == 0 || key[i].first != key[i - 1].first)
                 chunks_.push_back({{1e9f, 1e9f, 1e9f}, {-1e9f, -1e9f, -1e9f}, (int)sorted.size(), 0});
             WorldChunk& c = chunks_.back();
+            c.far = (key[i].first >> 40) & 1;
             for (int k = 0; k < 6; k++) {
                 const WorldVertex& v = bw.verts[key[i].second * 6 + k];
                 sorted.push_back(v);
@@ -1107,8 +1138,9 @@ void Renderer::uploadWorld(const Map& map, PreparedWorld& w) {
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glBindTexture(GL_TEXTURE_2D, lightmapTex_);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RG8, bw.atlasW, bw.atlasH, 0, GL_RG, GL_UNSIGNED_BYTE, bw.texels.data());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    lmFilterSet_ = lightmapNearest;   // (MORE 2: LIGHTMAP FILTER: smooth, or nearest's blocky light)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, lightmapNearest ? GL_NEAREST : GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, lightmapNearest ? GL_NEAREST : GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     warmup(map);
@@ -1212,7 +1244,7 @@ void Renderer::setCamera(const Vec3& eye, float yaw, float pitch, float hfovDeg)
     float aspect = width_ / (float)std::max(1, height_);
     camAspect_ = aspect;
     float vfov = 2.0f * std::atan(std::tan(deg2rad(hfovDeg) * 0.5f) / aspect);
-    proj_ = Mat4::perspective(vfov, aspect, 0.05f, 400.0f);
+    proj_ = Mat4::perspective(vfov, aspect, 0.05f, std::max(50.0f, farPlane));
     tanY_ = std::tan(vfov * 0.5f); tanX_ = tanY_ * aspect;
     aim(yaw, pitch);
     viewProjFix_ = viewProj_;   // (no relatch: no fix)
@@ -1529,7 +1561,7 @@ void Renderer::prepareScene(bool shadows) {
     Mat4& shadowMat = shadowMat_;
     shadowMat = Mat4();
     if (useShadows) {
-        const float R = 32.0f;
+        const float R = std::max(8.0f, shadowRange);
         Vec3 up = std::fabs(sunDir_.y) > 0.99f ? Vec3(0, 0, 1) : Vec3(0, 1, 0);
         Mat4 lv = Mat4::lookAt(sunDir_ * 100.0f, {0, 0, 0}, up);
         Vec3 focus = camPos_ + angleForward(camYaw_, 0) * (R * 0.5f);
@@ -1586,15 +1618,20 @@ void Renderer::prepareScene(bool shadows) {
     prepN_[0] = nShadow; prepN_[1] = nDyn; prepN_[2] = nNoCast; prepN_[3] = nView; prepN_[4] = nFlat; prepN_[5] = nViewFlat;
 
     // The per-frame uniforms that don't depend on the aim (the view's matrices and the sky's vectors: drawScene)
+    // (MORE 4: SKY / GLOW COLOR overrides and HIGH CONTRAST in place of the map's palette, for this frame's uniforms)
+    const Vec3 skyColor = skyOverride.x >= 0 ? skyOverride : this->skyColor;
+    const Vec3 glowColor = (glowOverride.x >= 0 ? glowOverride : this->glowColor) * glowMul;
+    const float hiBase = highContrast ? 1.45f : 1.5f, hiAccent = highContrast ? 0.75f : 1.5f;
     clear_[0] = std::pow(skyColor.x, 1 / 2.2f); clear_[1] = std::pow(skyColor.y, 1 / 2.2f); clear_[2] = std::pow(skyColor.z, 1 / 2.2f);
     glUseProgram(worldProg_);
     setMat(uWorld_.shadowMat, shadowMat);
-    glUniform1i(uWorld_.shadowOn, useShadows ? 1 : 0);
+    glUniform1i(uWorld_.shadowOn, useShadows && shadowWorld ? 1 : 0);
     glUniform4fv(uWorld_.casterRect, 1, casterRect_);
     auto lin = [](const Vec3& c, float k) { return Vec3(std::pow(c.x, 2.2f), std::pow(c.y, 2.2f), std::pow(c.z, 2.2f)) * k; };
-    setVec3(uWorld_.baseL, lin(baseColor, 1.5f));
-    setVec3(uWorld_.accentL, lin(accentColor, 1.5f));
-    setVec3(uWorld_.wallbangL, lin(baseColor * 0.42f, 1.5f));
+    setVec3(uWorld_.baseL, highContrast ? lin(vmin(baseColor * 1.3f + Vec3(0.12f, 0.12f, 0.12f), Vec3(1, 1, 1)), hiBase) : lin(baseColor, 1.5f));
+    setVec3(uWorld_.accentL, lin(accentColor, hiAccent));
+    setVec3(uWorld_.wallbangL, wallbangTint.x >= 0 ? lin(wallbangTint, 1.5f) : lin(baseColor * 0.42f, 1.5f));   // (MORE 4: WALLBANG TINT)
+    setVec3(U(worldProg_, "uWorldEdge"), lin(worldEdge, 1.0f));
     setVec3(uWorld_.metalL, lin(metalColor, 1.5f));
     setVec3(uWorld_.floorL, lin(metalColor, 2.0f));
     setVec3(uWorld_.metal, metalColor);
@@ -1605,14 +1642,14 @@ void Renderer::prepareScene(bool shadows) {
     glUniform1f(uWorld_.full, fullbright ? 1.0f : 0.0f);
     setVec3(uWorld_.fullColor, fullbrightColor);
     glUniform1f(uWorld_.outlineW, worldOutline);
-    glUniform1f(uWorld_.time, (float)std::fmod(timeNow(), 3600.0));
+    glUniform1f(uWorld_.time, liquidFlow ? (float)std::fmod(timeNow(), 3600.0) : 0.0f);   // (MORE 2: LIQUIDS STILL: time stands)
     setVec3(uWorld_.sunDir, sunDir_);
     glUseProgram(skyProg_);
     setVec3(uSky_.sky, skyColor); setVec3(uSky_.sunDir, sunDir_);
     glUniform1f(uSky_.bright, brightness);
     glUseProgram(dynProg_);
     setMat(uDyn_.shadowMat, shadowMat);
-    glUniform1i(uDyn_.shadowOn, useShadows ? 1 : 0);
+    glUniform1i(uDyn_.shadowOn, useShadows && shadowPlayers ? 1 : 0);
     glUniform4fv(uDyn_.casterRect, 1, casterRect_);
     setVec3(uDyn_.sunDir, sunDir_);
     setVec3(uDyn_.fogColor, skyColor);
@@ -1654,6 +1691,11 @@ void Renderer::drawScene(bool shadows) {
         glUseProgram(worldProg_);
         setMat(uWorld_.viewProj, viewProj_);
         glBindTexture(GL_TEXTURE_2D, lightmapTex_);
+        if (lightmapNearest != lmFilterSet_) {   // (changed in the settings: once)
+            lmFilterSet_ = lightmapNearest;
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, lightmapNearest ? GL_NEAREST : GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, lightmapNearest ? GL_NEAREST : GL_LINEAR);
+        }
         glBindVertexArray(worldVao_);
         drawWorldChunks();
         if (blockVerts_) {   // the breakable blocks: their looks, lit by full sun and sky (uAlphaPass 2: opaque)
@@ -1788,6 +1830,7 @@ void Renderer::drawScene(bool shadows) {
             const float rx = 1.0f / sceneW_, ry = 1.0f / sceneH_;
             float* last = edges ? edgeRcp_ : sharpRcp_;
             if (rx != last[0] || ry != last[1]) { glUniform2f(edges ? uEdgeRcp_ : uSharpRcp_, rx, ry); last[0] = rx; last[1] = ry; }   // (only when the size changes)
+            if (edges && smoothAmt != edgeAmtSet_) { edgeAmtSet_ = smoothAmt; glUniform1f(U(edgeProg_, "uEdgeOff"), 1.0f - clampf(smoothAmt, 0, 1)); }
             glBindVertexArray(fsVao_);
             glDrawArrays(GL_TRIANGLES, 0, 3);
             glEnable(GL_DEPTH_TEST);
@@ -2082,6 +2125,54 @@ void Renderer::swatch(float x, float y, float w, float h, int material) {
     swatchQuads_.insert(swatchQuads_.end(), q, q + 5);
 }
 
+void Renderer::setPreviews(std::vector<std::vector<uint8_t>> images, int w, int h) {
+    previewImgs_ = std::move(images);
+    previewW_ = w; previewH_ = h;
+    previewDirty_ = true;
+}
+
+void Renderer::preview(float x, float y, float w, float h, int slot) {
+    if (slot < 0 || slot >= (int)previewImgs_.size()) return;
+    const float q[5] = {x, y, x + w, y + h, (float)slot};
+    previewQuads_.insert(previewQuads_.end(), q, q + 5);
+}
+
+// Textured quads in window pixels (x0 y0 x1 y1 slot each) from an atlas of cols x rows slots, over the 2D batch; slotOf
+// maps a quad's number to its slot (-1: not drawn), or the number is the slot. The quads are cleared.
+void Renderer::drawImageQuads(std::vector<float>& quads, unsigned tex, int cols, int rows, const std::vector<int>* slotOf) {
+    glViewport(0, 0, width_, height_);
+    if (!imgProg_) {
+        imgProg_ = compile(kImgVS, kImgFS, nullptr);
+        uImgScreen_ = glGetUniformLocation(imgProg_, "uScreen");
+        glGenVertexArrays(1, &imgVao_); glGenBuffers(1, &imgVbo_);
+        glBindVertexArray(imgVao_); glBindBuffer(GL_ARRAY_BUFFER, imgVbo_);
+        glEnableVertexAttribArray(0); glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 16, (void*)0);
+        glEnableVertexAttribArray(1); glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, (void*)8);
+    }
+    std::vector<float> v;
+    v.reserve(quads.size() / 5 * 24);
+    for (size_t i = 0; i + 5 <= quads.size(); i += 5) {
+        const float* r = &quads[i];
+        const int k = !slotOf ? (int)r[4] : slotOf->empty() ? -1 : (*slotOf)[(int)r[4]];
+        if (k < 0) continue;
+        const float u0 = (float)(k % cols) / cols, v0 = (float)(k / cols) / rows;
+        const float q[8] = {r[0], r[1], r[2], r[3], u0, v0 + 1.0f / rows, u0 + 1.0f / cols, v0};   // (the atlas is upside down)
+        const float t[6][4] = {{q[0], q[1], q[4], q[5]}, {q[2], q[1], q[6], q[5]}, {q[2], q[3], q[6], q[7]},
+                               {q[0], q[1], q[4], q[5]}, {q[2], q[3], q[6], q[7]}, {q[0], q[3], q[4], q[7]}};
+        for (auto& c : t) v.insert(v.end(), c, c + 4);
+    }
+    quads.clear();
+    if (v.empty()) return;
+    glUseProgram(imgProg_);
+    glUniform2f(uImgScreen_, (float)width_, (float)height_);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glBindVertexArray(imgVao_);
+    glBindBuffer(GL_ARRAY_BUFFER, imgVbo_);
+    glBufferData(GL_ARRAY_BUFFER, v.size() * sizeof(float), v.data(), GL_STREAM_DRAW);
+    glDrawArrays(GL_TRIANGLES, 0, (GLsizei)(v.size() / 4));
+}
+
 // Each material on a 2 m square (x 0-2, y 1-3, facing +z: the shader's q is its x, y), lit by a one-texel lightmap
 // of full sun and sky, no shadows or holes, into its slot of the atlas: the ones this frame asks for that aren't there
 // yet (all again when the palette changes).
@@ -2235,36 +2326,29 @@ void Renderer::flush2D() {
     ui_.clear();
     if (!swatchQuads_.empty()) {   // (the editor's material picker: over the batch)
         buildSwatches();
-        glViewport(0, 0, width_, height_);
-        if (!imgProg_) {
-            imgProg_ = compile(kImgVS, kImgFS, nullptr);
-            uImgScreen_ = glGetUniformLocation(imgProg_, "uScreen");
-            glGenVertexArrays(1, &imgVao_); glGenBuffers(1, &imgVbo_);
-            glBindVertexArray(imgVao_); glBindBuffer(GL_ARRAY_BUFFER, imgVbo_);
-            glEnableVertexAttribArray(0); glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 16, (void*)0);
-            glEnableVertexAttribArray(1); glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, (void*)8);
+        drawImageQuads(swatchQuads_, swatchTex_, kSwatchCols, kSwatchRows, &swatchSlotOf_);
+    }
+    if (!previewQuads_.empty()) {   // (the map picker's previews: over the batch)
+        if (previewDirty_ && previewW_ > 0) {
+            previewDirty_ = false;
+            const int n = (int)previewImgs_.size();
+            previewCols_ = 8;
+            previewRows_ = std::max(1, (n + previewCols_ - 1) / previewCols_);
+            if (!previewTex_) glGenTextures(1, &previewTex_);
+            glBindTexture(GL_TEXTURE_2D, previewTex_);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, previewW_ * previewCols_, previewH_ * previewRows_, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            for (int i = 0; i < n; i++)
+                if ((int)previewImgs_[i].size() == previewW_ * previewH_ * 4)   // (rows bottom-up in the atlas, like the swatches': flipped by the quad)
+                    glTexSubImage2D(GL_TEXTURE_2D, 0, (i % previewCols_) * previewW_, (i / previewCols_) * previewH_, previewW_, previewH_, GL_RGBA, GL_UNSIGNED_BYTE, previewImgs_[i].data());
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
         }
-        std::vector<float> v;
-        v.reserve(swatchQuads_.size() / 5 * 24);
-        for (size_t i = 0; i + 5 <= swatchQuads_.size(); i += 5) {
-            const float* r = &swatchQuads_[i];
-            const int k = swatchSlotOf_.empty() ? -1 : swatchSlotOf_[(int)r[4]];
-            if (k < 0) continue;
-            const float u0 = (float)(k % kSwatchCols) / kSwatchCols, v0 = (float)(k / kSwatchCols) / kSwatchRows;
-            const float q[8] = {r[0], r[1], r[2], r[3], u0, v0 + 1.0f / kSwatchRows, u0 + 1.0f / kSwatchCols, v0};   // (the atlas is upside down)
-            const float t[6][4] = {{q[0], q[1], q[4], q[5]}, {q[2], q[1], q[6], q[5]}, {q[2], q[3], q[6], q[7]},
-                                   {q[0], q[1], q[4], q[5]}, {q[2], q[3], q[6], q[7]}, {q[0], q[3], q[4], q[7]}};
-            for (auto& c : t) v.insert(v.end(), c, c + 4);
-        }
-        glUseProgram(imgProg_);
-        glUniform2f(uImgScreen_, (float)width_, (float)height_);
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, swatchTex_);
-        glBindVertexArray(imgVao_);
-        glBindBuffer(GL_ARRAY_BUFFER, imgVbo_);
-        glBufferData(GL_ARRAY_BUFFER, v.size() * sizeof(float), v.data(), GL_STREAM_DRAW);
-        glDrawArrays(GL_TRIANGLES, 0, (GLsizei)(v.size() / 4));
-        swatchQuads_.clear();
+        if (previewTex_) drawImageQuads(previewQuads_, previewTex_, previewCols_, previewRows_, nullptr);
+        previewQuads_.clear();
     }
 #ifdef QUARK_TRACY
     // profiling builds: per-frame averages to stderr every 5 s (and to Tracy plots)
@@ -2300,10 +2384,40 @@ void Renderer::setFog(float mul) {
     glUseProgram(0);
 }
 
+// VIDEO + AUDIO > MORE 2 / 4: the look's switches as uniforms, each 0 at its default (so a program that never got them,
+// the swatches', draws as before). Set when they change and on a new world program: nothing per frame.
+void Renderer::lookUniforms(unsigned prog) {
+    if (!prog) return;
+    glUseProgram(prog);
+    glUniform1f(U(prog, "uNoTone"), look_.tone ? 0.0f : 1.0f);
+    glUniform1f(U(prog, "uDither"), look_.dither ? 1.0f : 0.0f);
+    glUniform1f(U(prog, "uClean"), look_.clean ? 1.0f : 0.0f);
+    glUniform1f(U(prog, "uFlatLight"), look_.flatLight ? 1.0f : 0.0f);
+    glUniform1f(U(prog, "uSimple"), look_.simpleSky ? 1.0f : 0.0f);
+    glUniform1i(U(prog, "uPcf"), look_.pcf == 0 ? 1 : look_.pcf == 2 ? 2 : 0);
+    glUniform1f(U(prog, "uEmitAdd"), look_.emit - 0.3f);
+    glUniform1f(U(prog, "uOutlineFade"), 1.0f - look_.outlineA);
+}
+
+void Renderer::setLook(const Look& l) {
+    if (l == look_) return;
+    look_ = l;
+    for (unsigned prog : {worldProg_, dynProg_, skyProg_}) lookUniforms(prog);
+    glUseProgram(0);
+}
+
 bool Renderer::screenshot(const std::string& path) {
     std::vector<uint8_t> px((size_t)width_ * height_ * 3);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glReadPixels(0, 0, width_, height_, GL_RGB, GL_UNSIGNED_BYTE, px.data());
+    if (path.size() > 4 && path.compare(path.size() - 4, 4, ".tga") == 0) {   // (SCREENSHOT FORMAT: TGA: 24-bit, bottom-up, as read)
+        uint8_t hdr[18] = {0, 0, 2};
+        hdr[12] = width_ & 255; hdr[13] = (width_ >> 8) & 255; hdr[14] = height_ & 255; hdr[15] = (height_ >> 8) & 255; hdr[16] = 24;
+        for (size_t i = 0; i + 2 < px.size(); i += 3) std::swap(px[i], px[i + 2]);   // (BGR)
+        std::string data((const char*)hdr, 18);
+        data.append((const char*)px.data(), px.size());
+        return writeFileAtomic(path, data);
+    }
     std::vector<uint8_t> raw;
     raw.reserve((size_t)(width_ * 3 + 1) * height_);
     for (int y = height_ - 1; y >= 0; y--) {
@@ -2340,6 +2454,7 @@ void Renderer::drawWorldChunks() {
     drawFirst_.clear();
     drawCount_.clear();
     for (const WorldChunk& c : chunks_) {
+        if (c.far && !farScenery) continue;   // (VIDEO > MORE 2: FAR SCENERY off)
         bool in = true;
         for (int i = 0; i < 6 && in; i++) { // the box corner farthest along the plane normal must be inside
             const float* p = frustum_[i];   // (setCamera's planes)
@@ -2355,6 +2470,23 @@ void Renderer::drawWorldChunks() {
 
 // (Re)create the scene target when the anti-aliasing, the render scale or the window size changes (never otherwise:
 // every other frame this is a few compares). No target at 100% with AA off: the scene draws straight into the window.
+int Renderer::outputBits() {   // the window's red bits (8; 10 with 10-BIT OUTPUT where the driver gave it), asked once
+    static GLint b = -1;
+    if (b < 0) {
+        b = 8;
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glGetFramebufferAttachmentParameteriv(GL_FRAMEBUFFER, GL_BACK_LEFT, GL_FRAMEBUFFER_ATTACHMENT_RED_SIZE, &b);
+        if (glGetError() != GL_NO_ERROR || b <= 0) b = 8;
+    }
+    return b;
+}
+
+int Renderer::maxSamples() {
+    static GLint64 m = -1;
+    if (m < 0) { m = 0; glGetInteger64v(GL_MAX_SAMPLES, &m); }
+    return (int)m;
+}
+
 void Renderer::ensureMsaaTarget() {
     int want = msaa_ > 1 ? msaa_ : 0;
     static GLint64 maxS = -1, maxDim = -1;
@@ -2389,7 +2521,7 @@ void Renderer::ensureMsaaTarget() {
     auto colorTex = [&](unsigned fbo, unsigned& tex) {
         glGenTextures(1, &tex);
         glBindTexture(GL_TEXTURE_2D, tex);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, sw, sh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexImage2D(GL_TEXTURE_2D, 0, outputBits() >= 10 ? GL_RGB10_A2 : GL_RGBA8, sw, sh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);   // (10-BIT OUTPUT: kept to the window)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -2414,7 +2546,7 @@ void Renderer::ensureMsaaTarget() {
     glGenRenderbuffers(1, &msaaColor_);
     glGenRenderbuffers(1, &msaaDepth_);
     glBindRenderbuffer(GL_RENDERBUFFER, msaaColor_);
-    glRenderbufferStorageMultisample(GL_RENDERBUFFER, want, GL_RGBA8, sw, sh);
+    glRenderbufferStorageMultisample(GL_RENDERBUFFER, want, outputBits() >= 10 ? GL_RGB10_A2 : GL_RGBA8, sw, sh);
     glBindRenderbuffer(GL_RENDERBUFFER, msaaDepth_);
     glRenderbufferStorageMultisample(GL_RENDERBUFFER, want, GL_DEPTH24_STENCIL8, sw, sh);
     glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo_);

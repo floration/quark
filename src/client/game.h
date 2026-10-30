@@ -356,6 +356,7 @@ private:
     std::vector<std::string> demoNotes_;   // per demo: "" (plays), or which version recorded it / converting
     std::vector<uintmax_t> demoSizes_;     // ...its size in bytes
     std::string demoDelArmed_; double demoDelUntil_ = 0;   // DELETE: the demo armed by a first click (a second deletes it)
+    std::string demoRename_, demoRenameText_;   // RENAME: the demo being renamed, and the name typed so far
     void applySettings();                  // after many settings changed at once (console, IMPORT, RESET ALL): the ones not read every frame
     std::string allMsg_; double allMsgUntil_ = 0, resetAllArmed_ = 0;   // GAMEPLAY > MORE: ALL SETTINGS' answer; RESET ALL armed
     void pruneDemos();                     // KEEP: delete all but the newest cfg_.demoKeep
@@ -364,7 +365,10 @@ private:
     int infoScroll_ = 0;                    // the info page's first line shown (mouse wheel: 3 lines a notch)
     int demoScroll_ = 0, joinScroll_ = 0;   // first row shown in the demo list / server list (mouse wheel)
     std::vector<std::string> maps_;
-    struct MapInfo { std::string title; int preferredMode = -1; uint32_t modes = 0; uint16_t ranked = 0; }; // ranked: ladders it's a ranked map for // modes: bit per supported mode
+    struct MapInfo { std::string title; int preferredMode = -1; uint32_t modes = 0; uint16_t ranked = 0; std::vector<uint8_t> preview; }; // ranked: ladders it's a ranked map for // modes: bit per supported mode // preview: the picker's image (kPreviewW x kPreviewH RGBA, rows bottom-up)
+    static constexpr int kPreviewW = 192, kPreviewH = 108;
+    int pickScroll_ = 0;        // the map picker's first row shown (the wheel)
+    std::string previewSig_;    // (the maps the renderer's previews are of: names, file times and sizes)
     std::vector<MapInfo> mapInfo_;
     enum { PICK_NONE = 0, PICK_HOST_MAP, PICK_HOST_MODE, PICK_BOT_MAP, PICK_BOT_MODE, PICK_LIVE_MAP, PICK_LIVE_MODE, PICK_VARIANT, PICK_TMAPS, PICK_TMODES, PICK_RANKED };
     int variantCtx_ = 0, liveVariant_ = 0; // ruleset step: 0 host, 1 vs bots, 2 in game
@@ -596,7 +600,7 @@ private:
     bool quipBlocked(const std::string& name) const;
     bool muted_ = false;
     float modeSens_ = 0, modeFov_ = 0, modeZoom_[2] = {0, 0};   // a mode's controls profile's own aim (0: yours)
-    float baseFov() const { return modeFov_ > 0 ? modeFov_ : cfg_.fov; }   // the MUTE key (the master volume at 0 until pressed again or the volume changes)
+    float baseFov() const { return hfov(); }   // the MUTE key (the master volume at 0 until pressed again or the volume changes)
     bool deathBody_ = false;
     bool joinHandled_ = false;
     int drainBeep_ = -1;
@@ -635,7 +639,7 @@ private:
     bool stepGround_ = false;
     float localRefire_ = 0;    // the refire localNextFire_ counts down (the last shot's, alt-fire's own; the spawn lock's)
     float tickYaw_ = 0;        // the yaw the last tick sent (F18: the next frame's turn spreads from it)   // alive as of the last frame's ticks (a spawn starts the mirrored spawn fire lock)
-    struct Tracer { Vec3 a, b; double until; };
+    struct Tracer { Vec3 a, b; double until; Vec3 col = {1.0f, 0.95f, 0.7f}; };   // (col: TRACER COLOR, tracerColorFor)
     std::vector<Tracer> tracers_;
     struct Explosion { Vec3 at; double start; float size = 1; bool bubble = false; bool kill = false; bool spark = false; bool wall = false; float life = 0.35f; };   // kill: a red burst where someone died (X6); spark: a hitscan hit on a player (X4); wall: on a wall
     void localImpactSparks(int w, const UserCmd& c);
@@ -768,9 +772,9 @@ private:
     bool focused_ = true, iconified_ = false, bgCap_ = false;   // (the window in the background / minimized: WHEN UNFOCUSED)
     void applyBackground();            // bgCap_ and the background mute from focused_ / iconified_
     bool scoresOn_ = false;            // the scoreboard shown (CONTROLS > MORE: SCOREBOARD TOGGLE)
-    double raceResetAt_ = -1;          // (RACE RESET's last press: a second one soon after goes to the start)
+    double raceResetAt_ = -1;          // (RACE RESET pressed and not yet acted on: let go, the checkpoint; held 250 ms, the start)
     int moreOpen_ = 0;                 // settings: the tab's MORE page open (1, 2: which; 1.19.4, the settings that don't fit the tab)
-    int morePages() const { return setTab_ == TAB_VIDEO ? 3 : setTab_ == TAB_GAMEPLAY ? 4 : setTab_ == TAB_CONTROLS ? 2 : setTab_ == TAB_PLAYER ? 1 : 0; }
+    int morePages() const { return setTab_ == TAB_VIDEO ? 8 : setTab_ == TAB_GAMEPLAY ? 4 : setTab_ == TAB_CONTROLS ? 2 : setTab_ == TAB_PLAYER ? 1 : 0; }
     // batch 3 (1.19.4): GAMEPLAY > MORE 2 (feedback), MORE 3 (HUD info), MORE 4 (social, spectating); CONTROLS > MORE 2; PLAYER > MORE
     void drawGameplayMore2(const SetLayout& L);
     void drawGameplayMore3(const SetLayout& L);
@@ -790,6 +794,33 @@ private:
     void drawMoreSettings(const SetLayout& L);
     const char* moreNav(int n) const;
     bool hudHidden_ = false;           // the HIDE HUD key
+    // 1.19.4 settings, batch 3 (VIDEO + AUDIO > MORE 2 / 4 / 5 / 6, CROSSHAIR)
+    float hfov() const;                       // FOV MODE: the horizontal degrees the camera takes
+    Vec3 tracerColorFor(int shooter) const;   // TRACER COLOR
+    int soundPackOf(int id) const { return cfg_.forcePack ? -1 : net_.playerSoundPack(id); }   // FORCE MY SOUND PACK
+    float masterGain() const;                 // VOLUME as a gain (PERCEPTUAL: squared; unfocused: x BACKGROUND VOLUME)
+    void applyLive();                         // the batch's settings into the renderer / mixer / net (each frame: a few compares)
+    void drawNetGraph(float W, float H, float s);
+    void drawSoundViz(float cx, float cy, float s);
+    void pruneMapDownloads();                 // MAP CACHE: the oldest downloaded maps past the limit deleted
+    void applyCursor();                       // MENU CURSOR: the system's, or ours at a size and colour
+    void applyCompositor();                   // BYPASS COMPOSITOR (Linux, X11)
+    bool useOn_ = false;                      // USE: TOGGLE's state
+    float netPing_[120] = {}; int netPingN_ = 0; double netSampleAt_ = 0;   // NET GRAPH: ping, 10 a second
+    float netLoss_[120] = {};
+    struct HeardMark { int id; Vec3 at; double until; };
+    std::vector<HeardMark> heardMarks_;       // VISUALIZE SOUNDS
+    void* cursor_ = nullptr; int cursorKey_ = 0;   // (a GLFWcursor; the size / colour it was made for)
+    int compositorSet_ = -1;
+    bool dlWas_ = false;                      // (a map download was running last frame)
+    std::string lookMsg_; double lookMsgUntil_ = 0;   // (MORE 4 / 6 buttons' answers)
+    // batch 4
+    std::string shotPending_;                 // SCREENSHOT: HIDE HUD: saved after the 3D view, before the HUD
+    std::string shotDir() const;
+    int onTopSet_ = 0;
+    bool captionQuip_ = false;                // (the caption showing is a quip's: QUIP CAPTIONS)
+    Color hbLowC() const { return length(cfg_.hbLowColor - Vec3(1, 0.35f, 0.3f)) < 0.01f ? kRedNow() : rgba(cfg_.hbLowColor); }
+    static Color kRedNow();
     double reconnectAt_ = 0; int reconnectTries_ = 0;   // AUTO RECONNECT: the next try, and how many so far
     // a key bound here that another action had: who lost it (UNDO puts it back there, and this slot as it was)
     int bindTakenA_ = -1, bindTakenK_ = 0, bindTakenCode_ = 0, bindTakenTo_ = -1, bindTakenSlot_ = 0, bindTakenWas_ = 0; double bindTakenUntil_ = 0;

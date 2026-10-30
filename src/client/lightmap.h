@@ -33,6 +33,12 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
 // The GPU's largest texture side (GL_MAX_TEXTURE_SIZE, set by the renderer at start): the lightmap atlas is packed to
 // fit it (PERF-13). Until set: 4096, what every GL 3.3 driver we run on offers.
 void setLightmapMaxTextureSize(int px);
+// VIDEO + AUDIO > MORE 6 (1.19.4): how many bakes the user's cache keeps (oldest go after the next bake), the threads a
+// bake runs on (0: all but one core), the cache's bakes and their size, and emptying it (shipped bakes stay)
+void setLightCacheLimit(int n);
+void setBakeThreads(int n);
+int lightCacheStats(uint64_t* bytes);
+int clearLightCache();
 // Sun visibility (0..1) of a point; used for lighting dynamic objects consistently with the bake.
 float sunVisibility(const Map& map, const Vec3& p);
 

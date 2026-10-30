@@ -43,6 +43,11 @@ def main():
             elif "setTab_ == TAB_GAMEPLAY" in line: page = [1, 1, 0]
             elif "moreOpen_ == 2)" in line: page = [3, 2, 0]
             elif "moreOpen_ == 3)" in line: page = [3, 3, 0]
+            elif "moreOpen_ == 4)" in line: page = [3, 4, 0]
+            elif "moreOpen_ == 5)" in line: page = [3, 5, 0]
+            elif "moreOpen_ == 6)" in line: page = [3, 6, 0]
+            elif "moreOpen_ == 7)" in line: page = [3, 7, 0]
+            elif "moreOpen_ == 8)" in line: page = [3, 8, 0]
             elif "// VIDEO + AUDIO" in line and "MORE" not in line: page = [3, 1, 0]
         if func == "drawControls":
             if "controlsSub_ == 2)" in line: page = [2, 0, 2]
