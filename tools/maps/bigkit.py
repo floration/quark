@@ -82,9 +82,9 @@ class Kit:
         p = " ".join(f"{num(a)} {num(b)} {num(c)} {num(dd)}" for (a, b, c, dd) in out)
         s.line(f"cut {mat_id(mat)} {len(out)} {p} {num(x0)} {num(y0)} {num(z0)} {num(x1)} {num(y1)} {num(z1)}")
 
-    def prism(s, mat, poly, y0, y1, top=None):
+    def prism(s, mat, poly, y0, y1, top=None, clip=()):
         """a vertical prism over convex polygon poly [(x, z)...] (either winding) from y0 to y1; top = (nx, ny, nz, d)
-        an extra plane (a sloped top)"""
+        an extra plane (a sloped top); clip: more planes (n . p <= d kept)"""
         xs = [p[0] for p in poly]; zs = [p[1] for p in poly]
         cx, cz = sum(xs) / len(xs), sum(zs) / len(zs)
         planes = []
@@ -99,6 +99,7 @@ class Kit:
             if abs(nx) < 1e-6 or abs(nz) < 1e-6: continue   # (an axis edge: the box's own face)
             planes.append((nx, 0, nz, nx * ax + nz * az))
         if top: planes.append(top)
+        planes += list(clip)
         s.cut(mat, (min(xs), y0, min(zs), max(xs), y1, max(zs)), planes)
 
     def bar(s, mat, a, b, w, y0, y1):
@@ -114,7 +115,7 @@ class Kit:
             s.box(mat, min(xs), y0, min(zs), max(xs), y1, max(zs)); return
         s.prism(mat, [(ax + px, az + pz), (bx + px, bz + pz), (bx - px, bz - pz), (ax - px, az - pz)], y0, y1)
 
-    def ring(s, mat, cx, cz, r0, r1, y0, y1, n=16, a0=0.0, arc=(0.0, 360.0), skip=()):
+    def ring(s, mat, cx, cz, r0, r1, y0, y1, n=16, a0=0.0, arc=(0.0, 360.0), skip=(), only=None):
         """a vertical ring wall (or annular floor) from radius r0 to r1 in n segments (outer corners on r1's
         polygon, the inner chord at r0): arc limits it (degrees, from +x toward +z), skip lists segments left out"""
         out = []
@@ -123,7 +124,7 @@ class Kit:
             mid = math.degrees((t0 + t1) / 2) % 360
             lo, hi = arc
             if not (lo <= mid <= hi or lo <= mid + 360 <= hi): continue
-            if i in skip: continue
+            if i in skip or (only is not None and i not in only): continue
             poly = [(cx + r0 * math.cos(t0), cz + r0 * math.sin(t0)), (cx + r1 * math.cos(t0), cz + r1 * math.sin(t0)),
                     (cx + r1 * math.cos(t1), cz + r1 * math.sin(t1)), (cx + r0 * math.cos(t1), cz + r0 * math.sin(t1))]
             if r0 <= 1e-6: poly = [(cx, cz)] + poly[1:3]
@@ -194,6 +195,18 @@ class Kit:
 
     def spawn(s, team, x, y, z, yaw):
         s.line(f"spawn {team} {num(x)} {num(y)} {num(z)} {num(yaw)}")
+
+
+def clip_poly(poly, a, b, c):
+    """convex polygon [(x, z)] cut to a x + b z <= c (a tight polygon: its box is what the walk checks see)"""
+    out = []
+    for i in range(len(poly)):
+        p, q = poly[i], poly[(i + 1) % len(poly)]
+        dp, dq = a * p[0] + b * p[1] - c, a * q[0] + b * q[1] - c
+        if dp <= 0: out.append(p)
+        if (dp <= 0) != (dq <= 0):
+            t = dp / (dp - dq); out.append((p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t))
+    return out
 
 
 def yaw_to(x, z, tx, tz):
