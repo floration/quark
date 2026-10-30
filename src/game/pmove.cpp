@@ -835,8 +835,12 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             const Vec3 at = c - off;
             if (!map.boxSolid(playerBox(at, crouched, scale))) {
                 s.pos = at;
-                s.vel = n * std::max(length(s.vel), length(before.vel));   // (a wall teleporter is solid: the slide clipped
-                                                                             // the speed into it this step, so keep the speed you came in with)
+                // (a wall teleporter is solid: the slide clipped the speed into it this step, so keep the speed you
+                // came in with). A walk teleporter (the one you went INTO: Brush::tpWalk, map format 12) lets you out at
+                // no more than the run speed, never faster than you came in.
+                float sp = std::max(length(s.vel), length(before.vel));
+                if (map.brushes[(size_t)from].tpWalk) sp = std::min(sp, kGroundSpeed * mt.speed);
+                s.vel = n * sp;
                 s.flags &= ~MF_ONGROUND;
                 s.dashTimer = 0;
             }
