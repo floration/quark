@@ -6,6 +6,8 @@
 #include <ctime>
 #include <algorithm>
 #include <sstream>
+#include <unordered_map>
+#include <deque>
 #include "../common/profile.h"
 #include "gpuprofile.h"
 #include <array>
@@ -987,6 +989,27 @@ void Game::onKey(int key, int action, int mods) {
         !ui_.popupOpen() && key != GLFW_KEY_ESCAPE && hudEditKey(key, action, mods)) return;   // (the on-screen HUD editor's keys)
     if (action != GLFW_PRESS) return;
     if (key == GLFW_KEY_ESCAPE && ui_.typing() && !chatting_) { uiIn_.escape = true; return; } // just stop typing, stay on the screen
+    // settings: Ctrl+F or "/" opens SEARCH with its field focused ("/" only when not typing: it's a character); Esc
+    // there clears the field first (an open picker still closes first)
+    if (settingsShown() && !chatting_ && !console_ && captureAction_ < 0 && !widgetEdit_ && !hudEdit_ && filePick_ == 0) {
+        const bool ctrl = (mods & (GLFW_MOD_CONTROL | GLFW_MOD_SUPER)) != 0;
+        if ((key == GLFW_KEY_F && ctrl) || (key == GLFW_KEY_SLASH && !mods && !ui_.typing())) {
+            openSearch();
+            if (key == GLFW_KEY_SLASH) swallowChar_ = true;   // (its '/' isn't typed into the field)
+            return;
+        }
+        if (key == GLFW_KEY_ESCAPE && setTab_ == TAB_SEARCH && !setSearch_.empty() && !ui_.popupOpen()) {
+            setSearch_.clear();
+            searchScroll_ = 0;
+            ui_.clearFocus();
+            return;
+        }
+    }
+    // settings: Left / Right turn the tab's page (the page strip's arrows), when nothing else has the keyboard
+    if ((key == GLFW_KEY_LEFT || key == GLFW_KEY_RIGHT) && !(mods & (GLFW_MOD_CONTROL | GLFW_MOD_ALT | GLFW_MOD_SUPER)) && settingsPageKeys()) {
+        settingsPage(moreOpen_ + (key == GLFW_KEY_RIGHT ? 1 : -1));
+        return;
+    }
     bool typing = chatting_ || ui_.typing();
     if (captureAction_ >= 0 || !typing) {
         bool wasChatting = chatting_;
@@ -1208,6 +1231,7 @@ void Game::onScroll(double dy) {
     if (screen_ == Screen::Demos && picker_ == PICK_NONE) { demoScroll_ = std::max(0, demoScroll_ - (dy > 0 ? 1 : -1)); return; }   // clamped when drawn
     if (screen_ == Screen::Join) { joinScroll_ = std::max(0, joinScroll_ - (dy > 0 ? 1 : -1)); return; }
     if (hudEdit_ && !chatting_ && setTab_ == TAB_HUD && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) { hudEdWheel_ += dy; return; }
+    if (setTab_ == TAB_SEARCH && settingsShown()) { searchScroll_ = std::max(0, searchScroll_ - (dy > 0 ? 2 : -2)); return; }   // (2 rows a notch; clamped when drawn)
     if (fontsOpen_ && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) { fontScroll_ = std::max(0, fontScroll_ - (dy > 0 ? 1 : -1)); return; }   // (clamped when drawn)
     if (devicesOpen_ && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) {   // (the list under the mouse)
         for (int k = 0; k < 3; k++) {
@@ -2113,10 +2137,10 @@ void Game::frame(double dt) {
                 if ((c.buttons & BTN_GRAPPLE) && moveTuning().rocketRide)
                     for (const auto& q : predProj_)
                         if (q.live && !q.atWall && q.type == WPN_ROCKET && n < HookProbe::kRockets) {
-                            const float g = projectileGravity(WPN_ROCKET, q.lob ? kRocketLobGravity : 1.0f);
+                            const ProjFlight g = projectileFlight(WPN_ROCKET, q.lob ? kRocketLobGravity : 1.0f);
                             Vec3 p = q.pos0, v = q.vel0;
                             net_.map().flyProjectile(p, v, g, (float)(time_ - q.born));
-                            rc[n++] = {p, v, g};
+                            rc[n++] = {p, v, g.grav, g.accel};
                         }
                 net_.setRocketCopies(rc, n);
             }
@@ -2820,7 +2844,7 @@ void Game::drawWorld(float alpha) {
     // projectiles (yours: from your weapon model's muzzle, blending onto the real path over 0.2 s; X5: your rockets,
     // bolts and thrown knives fly from the click, a predicted copy, until the server's arrives and takes over as far
     // along as the copy was)
-    auto projGravity = [](int type, bool lob) { return projectileGravity(type, lob ? kRocketLobGravity : 1.0f); };
+    auto projGravity = [](int type, bool lob) { return projectileFlight(type, lob ? kRocketLobGravity : 1.0f); };   // (the drop and the primary rocket's thrust)
     if (!alive) for (auto& q : predProj_) q.live = false;
     for (auto& q : predProj_) {   // the copies, where they'd be now (stopped at the first wall: the server's word follows)
         if (!q.live) continue;
@@ -5843,59 +5867,6 @@ void Game::drawPracticeMenu() {
     if (c.half(2, "RESTART MAP", UiExp::cmd("restart"))) { net_.sendCommand("restart"); paused_ = false; practiceMenu_ = false; }
 }
 
-// SETTINGS SEARCH (1.19.4): a field over the tab row's right end; while it's in use, what's typed lists matching settings
-// (labels from tools/settings_index.py, plus the keys' action names) in place of the page, each a button that opens its
-// page. True: the list was drawn (the page isn't)
-bool Game::drawSettingsSearch(const SetLayout& L) {
-    ui_.textField(62, L.X(836), L.Y(2), L.L(176), L.L(26), setSearch_, 24, UiExp::local().withId("SEARCH").typing("FOG"));
-    if (setSearch_.empty()) { ui_.hint(L.X(836 - 70), L.Y(8), "SEARCH:", kGrey, L.L(66)); searchTyping_ = false; return false; }
-    const bool wasTyping = searchTyping_;
-    searchTyping_ = ui_.focused(62);   // (not typing(): a slider or colour being typed into has the keyboard too)
-    if (!searchTyping_ && !(wasTyping && uiIn_.pressed)) return false;
-    struct Hit { std::string label; int tab, more, sub; };
-    std::vector<Hit> hits;
-    const std::string q = upper(setSearch_);
-    for (const SettingsIndexEntry& e : kSettingsIndex)
-        if (std::string(e.label).find(q) != std::string::npos && hits.size() < 14) hits.push_back({e.label, e.tab, e.more, e.sub});
-    for (int a = 0; a < A_COUNT && hits.size() < 14; a++)   // (a key: its keys page)
-        if (std::string(actionName(a)).find(q) != std::string::npos && a != A_CROUCH) {
-            const int sub = a >= A_TEAMCHAT && a <= A_SPECTATE ? 2 : (a <= A_WEAPON8 || a == A_NEXTWEAPON || a == A_PREVWEAPON || a == A_WEAPON9 || a == A_WEAPON10 || a == A_RACERESET) ? 1 : 0;
-            hits.push_back({std::string(actionName(a)) + " (KEY)", TAB_CONTROLS, 0, sub});
-        }
-    static const char* const tabNames[] = {"PLAYER", "GAMEPLAY", "CONTROLS", "VIDEO + AUDIO", "CROSSHAIR", "HUD"};
-    const float x = L.X(268), w = L.L(744), h = L.L(32);
-    float y = L.Y(88);
-    // (the list only while the field is in use; the click that picks a result arrives after the press dropped focus, so
-    // a click on the list still counts; a click anywhere else puts it away and goes to the page)
-    const float listH = std::max<float>(1, (float)hits.size()) * (h + 4 * L.s);
-    if (!searchTyping_ && !(uiIn_.mx >= x && uiIn_.mx < x + w && uiIn_.my >= y && uiIn_.my < y + listH)) return false;
-    if (hits.empty()) { ui_.hint(x, y + 6 * L.s, "NOTHING MATCHES \"" + upper(setSearch_) + "\"", kGrey, w); return true; }
-    for (const Hit& hit : hits) {
-        std::string where = tabNames[hit.tab];
-        if (hit.more) where += hit.more == 1 ? " > MORE" : " > MORE " + std::to_string(hit.more);
-        if (hit.sub == 1) where += " > MOVE KEYS"; else if (hit.sub == 2) where += " > MORE KEYS";
-        // (its page as a screen path, for the UI test)
-        static const char* const kPaths[] = {"~settings", "~settings/gameplay", "~settings/gameplay/more", "~settings/controls", "~settings/controls/movement",
-                                             "~settings/controls/keys2", "~settings/controls/more", "~settings/video", "~settings/video/more",
-                                             "~settings/video/more2", "~settings/video/more3", "~settings/crosshair", "~settings/hud",
-                                             "~settings/video/more4", "~settings/video/more5", "~settings/video/more6",
-                                             "~settings/video/more7", "~settings/video/more8",
-                                             "~settings/gameplay/more2", "~settings/gameplay/more3", "~settings/gameplay/more4", "~settings/controls/more2",
-                                             "~settings/player/more", "~settings/hud/more"};
-        const int pi = hit.tab == 0 ? (hit.more ? 22 : 0) : hit.tab == 1 ? (hit.more >= 2 ? 16 + std::min(hit.more, 4) : hit.more ? 2 : 1)
-                     : hit.tab == 2 ? (hit.more >= 2 ? 21 : hit.more ? 6 : 3 + hit.sub)
-                     : hit.tab == 3 ? (hit.more <= 3 ? 7 + hit.more : 9 + std::min(hit.more, 8)) : hit.tab == 4 ? 11 : hit.more ? 23 : 12;
-        if (ui_.button(x, y, w, h, hit.label + "  -  " + where, UiExp::nav(kPaths[pi]).withId("SEARCH RESULT").clipOk().optional())) {
-            openSettingsTab(hit.tab);
-            moreOpen_ = hit.more; controlsSub_ = hit.sub;
-            setSearch_.clear();
-            ui_.clearFocus();
-            return true;
-        }
-        y += h + 4 * L.s;
-    }
-    return true;
-}
 
 // PLAYERS (pause > HOST): everyone on your server, each with KICK (yourself excepted); ADD BOT / KICK BOTS / RESTART; BACK
 // PLAYERS (pause menu): everyone on the server; QUIPS ON / OFF mutes one player's quips for you (kept by name in
@@ -6201,8 +6172,9 @@ void Game::debugSettingsTab() {
     if (t.empty()) return;
     size_t plus = t.find('+');
     if (plus != std::string::npos) { pick = t.substr(plus + 1); t = t.substr(0, plus); }
-    static const char* tabs[] = {"player", "gameplay", "controls", "video", "crosshair", "hud"};
-    for (int i = 0; i < 6; i++) if (t.rfind(tabs[i], 0) == 0) setTab_ = i;
+    static const char* tabs[] = {"player", "gameplay", "controls", "video", "crosshair", "hud", "search"};
+    for (int i = 0; i < 7; i++) if (t.rfind(tabs[i], 0) == 0) setTab_ = i;
+    if (t.rfind("search/", 0) == 0) setSearch_ = upper(t.substr(7));   // (search/QUERY: that typed)
     if (t == "fonts") fontsOpen_ = true;
     if (t == "video/devices") { devicesOpen_ = true; devListed_ = false; }
     if (t == "video/more" || t == "controls/more" || t == "gameplay/more" || t == "player/more" || t == "hud/more") moreOpen_ = 1;
@@ -6239,16 +6211,19 @@ void Game::drawSettings() {
     const float footY = setTab_ == TAB_HUD && !moreOpen_ ? kHudFootY : 640;
     ui_.panel(L.X(252), L.Y(32), L.L(776), L.L(footY + 48 - 32), hudPreview ? 0.6f : 1.0f);
     {   // the tab row, an accent line under it
-        static const char* names[] = {"PLAYER", "GAMEPLAY", "CONTROLS", "VIDEO + AUDIO", "CROSSHAIR", "HUD"};
-        static const char* navs[] = {"~settings", "~settings/gameplay", "~settings/controls", "~settings/video", "~settings/crosshair", "~settings/hud"};
-        static const float tx[] = {268, 377, 508, 638, 795, 932}, tw[] = {105, 127, 126, 153, 133, 80};
+        static const char* names[] = {"PLAYER", "GAMEPLAY", "CONTROLS", "VIDEO + AUDIO", "CROSSHAIR", "HUD", "SEARCH"};
+        static const char* navs[] = {"~settings", "~settings/gameplay", "~settings/controls", "~settings/video", "~settings/crosshair", "~settings/hud",
+                                     "~settings/search"};
+        // (SEARCH last: the tabs before it are where settings live, it looks through all of them)
+        static const float tx[] = {268, 364, 480, 596, 742, 862, 924}, tw[] = {92, 112, 112, 142, 116, 58, 88};
         int pick = -1;
-        for (int t = 0; t < 6; t++)
+        for (int t = 0; t < 7; t++)
             if (ui_.tab(L.X(tx[t]), L.Y(40), L.L(tw[t]), L.L(kRowH), names[t], t == setTab_, UiExp::nav(navs[t]))) pick = t;
         r_.rect(L.X(268), L.Y(72), L.L(744), L.L(2), ui_.accent);
         if (pick >= 0) { openSettingsTab(pick); return; }   // (next frame: the new tab)
     }
-    if (!modal && !widgetEdit_ && drawSettingsSearch(L)) {}   // (the search's list in place of the page)
+    const size_t inkFrom = r_.uiMark();   // (the UI test: where the page's content starts)
+    if (setTab_ == TAB_SEARCH) drawSearchTab(L);
     else if (fontsOpen_) drawFontSettings(L);
     else if (devicesOpen_) drawDeviceSettings(L);
     else if (moreOpen_) drawMoreSettings(L);
@@ -6261,23 +6236,26 @@ void Game::drawSettings() {
         case TAB_HUD: drawHudSettings(L); break;
     }
     if (setTab_ == TAB_HUD && (widgetEdit_ || hudEdit_)) return;   // (WIDGET EDITOR / EDIT ON SCREEN was just clicked)
-    // the footer: BACK (FONT: back to PLAYER; DEVICES: to VIDEO + AUDIO), and the page's reset on the right (drawn by the page)
+    // (the UI test: the content's lowest pixel, leaving out what the page drew in its footer row: RESET, DEVICES)
+    if (ui_.probing()) { setFootTop_ = L.Y(footY); setInkBottom_ = r_.uiInkBottom(inkFrom, setFootTop_, setFootTop_ + L.L(kRowH)); }
+    // the footer: BACK (FONT: back to PLAYER; DEVICES: to VIDEO + AUDIO; any page of a tab: out of settings), the
+    // page strip in the middle, and the page's reset on the right (drawn by the page)
     if (fontsOpen_) {
         if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav("~settings"))) { fontsOpen_ = false; cfg_.save(); }
     } else if (devicesOpen_) {
         if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav("~settings/video"))) { devicesOpen_ = false; cfg_.save(); }
-    } else if (moreOpen_) {
-        if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav(moreNav(0)))) { moreOpen_ = 0; cfg_.save(); }
     } else if (ui_.button(L.X(268), L.Y(footY), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav(settingsInGame_ ? "ingame/pause" : "main"))) {
         leaveSettings();
         return;
     }
-    // the footer's middle: the tab's MORE page (1.19.4: settings that don't fit the tab)
-    if (!fontsOpen_ && !devicesOpen_ && moreOpen_ < morePages() && !modal)
-        if (ui_.button(L.X(552), L.Y(footY), L.L(kHalfW), L.L(kRowH), moreOpen_ ? "MORE " + std::to_string(moreOpen_ + 1) + "  >" : std::string("MORE  >"),
-                       UiExp::nav(moreNav(moreOpen_ + 1)).withId(moreOpen_ == 7 ? "MORE 8" : moreOpen_ == 6 ? "MORE 7" : moreOpen_ == 5 ? "MORE 6" : moreOpen_ == 4 ? "MORE 5" : moreOpen_ == 3 ? "MORE 4" : moreOpen_ == 2 ? "MORE 3" : moreOpen_ ? "MORE 2" : "MORE"))) {
-            moreOpen_++; captureAction_ = -1; ui_.closePopup(); cfg_.save();
-        }
+    if (!fontsOpen_ && !devicesOpen_ && !modal && morePages() > 0) drawSettingsPages(L, footY);
+    if (ui_.probing() && !modal && !ui_.typing() && !ui_.popupOpen() && captureAction_ < 0 && !widgetEdit_ && !hudEdit_) {   // (the UI test: the search keys)
+        if (setTab_ != TAB_SEARCH) {
+            ui_.keyAction("CTRL+F (SEARCH)", GLFW_KEY_F, GLFW_MOD_CONTROL, UiExp::nav("~settings/search"));
+            ui_.keyAction("/ (SEARCH)", GLFW_KEY_SLASH, 0, UiExp::nav("~settings/search"));
+        } else if (!setSearch_.empty())
+            ui_.keyAction("ESC (CLEAR SEARCH)", GLFW_KEY_ESCAPE, 0, UiExp::state("setsearch", ""));
+    }
     if (keepUntil_ > 0) {   // a display change waiting for KEEP: reverted when the count runs out
         const float bx = L.X(268), by = L.Y(596), bw = L.L(744), bh = L.L(kRowH);
         r_.rect(bx, by, bw, bh, {0.05f, 0.06f, 0.08f, 0.95f});
@@ -6465,6 +6443,7 @@ void Game::drawCompassRadar(float W, float H, float s) {
 // turned by previewYaw_ and seen a little from above, projected flat (orthographic) into the 2D batch: each box's
 // faces toward the camera, lit by one light, far faces first. A mesh override has no boxes: a line says so.
 void Game::drawModelPreview(float x, float y, float w, float h) {
+    if (ui_.relocating()) return;   // (settings SEARCH draws the PLAYER page for its widgets only)
     r_.rect(x, y, w, h, {0, 0, 0, 0.25f});
     const int pm = std::min(std::max(cfg_.model, 0), kPlayerModels - 1);
     if (modelOverride(MODEL_PLAYER, pm)) {
@@ -6558,19 +6537,8 @@ void Game::drawGameplaySettings(const SetLayout& L) {
         ui_.toggle(L.X(kColL + kColW - kHalfW), f.top(), hw, h, "MUZZLE FLASH", cfg_.muzzleFlash, UiExp::cfg("muzzle_flash"));
         f.next();
     }
-    f.section("NETWORK");
-    {   // other players' interpolation delay (ranked: always 10 ms): adaptive (the default), custom (the slider), or off
-        static const std::vector<std::string> imn = {"SMOOTHING (INTERP): ADAPTIVE", "SMOOTHING (INTERP): CUSTOM", "SMOOTHING (INTERP): OFF"};
-        int ii = cfg_.interpMs == 0 ? 0 : cfg_.interpMs < 0 ? 2 : 1;
-        if (ui_.cycle(f.x(), f.top(), w, h, "INTERP", ii, 3, imn, UiExp::cfg("interp_ms"))) cfg_.interpMs = ii == 0 ? 0 : ii == 2 ? -1 : kCustomInterpMs;
-        f.next();
-        f.hint("HOW OTHER PLAYERS' MOVES ARE SMOOTHED");
-        float v = (float)(cfg_.interpMs > 0 ? cfg_.interpMs : kCustomInterpMs);   // (moving it picks CUSTOM)
-        if (ui_.slider(f.x(), f.top(), w, h, "SMOOTHING DELAY (MS)", v, 1, (float)kMaxInterpMs, "%.0f", UiExp::cfg("interp_ms"), (float)kCustomInterpMs))
-            cfg_.interpMs = std::min(std::max(1, (int)std::lround(v)), kMaxInterpMs);
-        f.next();
-        f.hint("USED WHEN SMOOTHING IS CUSTOM");
-    }
+    // (NETWORK, the smoothing delay, is on VIDEO + AUDIO page 7 with the other network settings: this column ran into
+    // the footer, 2026-10-30)
 
     SetFlow g{ui_, L, kColR, 90};
     g.header("FEEDBACK");
@@ -6668,18 +6636,8 @@ void Game::drawVideoSettings(const SetLayout& L) {
     f.y -= 16;
     f.hint("", keyOf(A_PERF) + " SHOWS INPUT->FRAME LATENCY");
 #endif
-    f.section("FLAT MAP");
-    ui_.toggle(f.x(), f.top(), w, h, "FULLBRIGHT", cfg_.fullbright, UiExp::cfg("fullbright"));
-    f.next();
-    f.hint("FLAT MAP, NO LIGHTING");
-    {   // its colour (white: the classic look)
-        Vec3& c = cfg_.fullbrightColor;
-        const Vec3& d = defaultSettings().fullbrightColor;
-        ui_.colorPicker(f.x(), f.top(), hw, h, "MAP COLOR", c, UiExp::cfg("fullbright_color"), d);
-        bool white = c.x == d.x && c.y == d.y && c.z == d.z;
-        if (ui_.button(L.X(kColL + 184), f.top(), hw, h, "RESET MAP COLOR", UiExp::cfg("fullbright_color").withId("RESET MAP COLOR"), !white)) c = d;
-        f.next();
-    }
+    // (FLAT MAP, FULLBRIGHT and its colour, is on page 2: on Windows, with GPU MAX CLOCKS and PRIORITIZE GAME, this
+    // column ran into the footer - MAP COLOR under BACK; 2026-10-30)
 
     SetFlow g{ui_, L, kColR, 90};
     g.header("IMAGE");
@@ -6751,14 +6709,7 @@ void Game::drawVideoSettings(const SetLayout& L) {
         ui_.cycle(g.x(), g.top(), w, h, "SOUNDS", cfg_.soundPack, 5, sn, UiExp::cfg("soundpack"));
         g.next();
     }
-#ifdef _WIN32
-    // the sound device to the game alone: about 10 ms sooner, and Discord / music go silent while the game runs
-    if (ui_.toggle(g.x(), g.top(), w, h, !cfg_.exclusiveAudio || audio_.exclusiveActive() ? "EXCLUSIVE AUDIO" : audio_.exclusiveState() == Audio::kExclUnsupported ? "EXCLUSIVE AUDIO (N/A)" : "EXCLUSIVE AUDIO (BUSY)",   // (N/A: the device takes none of its formats)
-                   cfg_.exclusiveAudio, UiExp::cfg("exclusive_audio")))
-        audio_.setExclusive(cfg_.exclusiveAudio);
-    g.next();
-    g.hint("TAKES THE SOUND DEVICE FOR LOWER AUDIO LAG");
-#endif
+    // (EXCLUSIVE AUDIO, Windows only, is on page 6 under OUTPUT: here it put VOICE 2 px over the footer, 2026-10-30)
     {   // the announcer (in SOUND: its own section header no longer fit under the two volumes above)
         static const std::vector<std::string> an = {"ANNOUNCER: OFF", "ANNOUNCER: COUNTDOWN", "ANNOUNCER: ALL CALLS"};
         static std::vector<std::string> av;
@@ -6851,6 +6802,237 @@ void Game::askKeepDisplay(int oldMode, int oldW, int oldH) {
     keepUntil_ = time_ + 10;
 }
 
+// ---- Settings > SEARCH (owner, 2026-10-30: "search should be its own tab, where it shows every setting in the game in
+// a big scrollable list 3 wide, and whatever you type in the search bar should limit what is seen; you should be able to
+// search the name of the setting, or what it does").
+// One source of truth: the pages' own draw functions. The tab draws every page (each tab, each page, CONTROLS' key
+// pages, DEVICES) with a Ui relocator set (UiRelocator): each widget asks it first, and it either skips the widget or
+// gives it a cell in the list, where it's drawn and works exactly as on its page (same code, same config). So a
+// setting added to a page is in the search with nothing else to do. Its help text and extra keywords come from the
+// build-time index (tools/settings_index.py: the hint under each row, and KEYWORDS). Left out: navigation (FONT >,
+// DEVICES >, EDIT ON SCREEN...: they lead to pages, which are listed themselves) and anything that isn't a widget.
+// Cost: the pages' code runs (no text is fitted or drawn for a skipped widget: Ui returns before that, and the page's
+// own labels, hints and rects are dropped at once with the renderer's alpha at 0); a match is a hash lookup per
+// widget, worked out once per query (the query's words are kept upper-cased); only the rows on screen are drawn.
+namespace {
+struct SearchList : UiRelocator {
+    std::vector<std::string> words;                 // the query's words, upper case (every one must match)
+    std::unordered_map<std::string, bool> hit;      // (tag, label, id) -> matches this query
+    const char* tag = "";                           // the page being drawn
+    int n = 0, first = 0, rows = 9;
+    float x0 = 0, y0 = 0, cellW = 0, cellH = 0, pitch = 0, colStep = 0, tagH = 0;
+    struct Cell { float x, y; std::string tag; };
+    std::vector<Cell> cells;
+    std::vector<std::string>* matched = nullptr;    // (UI test: every match's label)
+    std::deque<std::string> ids;                    // (UI test: the placed widgets' ids, "<PAGE> > <ID>", kept a frame)
+    const char* reportId(const std::string& label, const UiExp& e) override {
+        ids.push_back(std::string(tag) + " > " + (e.id ? e.id : label.empty() ? "FIELD" : label.c_str()));
+        return ids.back().c_str();
+    }
+    static const std::unordered_map<std::string, std::string>& extra() {   // label (or id prefix) -> help + keywords
+        static std::unordered_map<std::string, std::string> m;
+        if (m.empty()) {
+            for (const SettingsIndexEntry& e : kSettingsIndex) { std::string& t = m[e.label]; t += ' '; t += e.help; }
+            for (const SettingsKeywords& k : kSettingsKeywords) { std::string& t = m[k.key]; t += ' '; t += k.words; }
+        }
+        return m;
+    }
+    bool matches(const std::string& label, const std::vector<std::string>* names, const UiExp& e) {
+        if (words.empty()) return true;
+        std::string key = tag;
+        key += '\x1f'; key += label; key += '\x1f'; if (e.id) key += e.id;
+        auto it = hit.find(key);
+        if (it != hit.end()) return it->second;
+        std::string hay = upper(label) + ' ' + (e.id ? upper(e.id) : std::string());   // (a key slot's id: "<ACTION> KEY 1")
+        if (names) for (const std::string& v : *names) { hay += ' '; hay += upper(v); }
+        const auto& x = extra();
+        if (auto f = x.find(label); f != x.end()) hay += f->second;
+        if (e.id) {   // (a row with a run-time label: its id's first part, "MONITOR" of "MONITOR: <NAME>")
+            std::string id = e.id;
+            if (size_t c = id.find(':'); c != std::string::npos) id = id.substr(0, c);
+            if (auto f = x.find(id); f != x.end()) hay += f->second;
+        }
+        bool ok = true;
+        for (const std::string& w : words) if (hay.find(w) == std::string::npos) { ok = false; break; }
+        hit.emplace(std::move(key), ok);
+        return ok;
+    }
+    bool place(const std::string& label, const std::vector<std::string>* names, const UiExp& e, float& x, float& y, float& w, float& h) override {
+        if (e.kind == UiExp::NAV || e.kind == UiExp::NONE) return false;   // (a way to another page, not a setting)
+        if (!matches(label, names, e)) return false;
+        const int i = n++;
+        if (matched) matched->push_back(label);
+        const int row = i / 3;
+        if (row < first || row >= first + rows) return false;
+        x = x0 + (i % 3) * colStep;
+        y = y0 + (row - first) * pitch + tagH;
+        w = cellW; h = cellH;
+        std::string t = tag;
+        // (a key slot shows its key, a field its text: the tag says which setting it is, by the widget's id)
+        if (e.id && label != e.id) { t += ": "; t += e.id; }
+        cells.push_back({x, y - tagH, std::move(t)});
+        return true;
+    }
+};
+SearchList g_search;
+}
+
+void Game::openSearch() {
+    if (setTab_ != TAB_SEARCH) openSettingsTab(TAB_SEARCH);
+    ui_.focus(kSearchField);
+}
+
+void Game::drawSearchTab(const SetLayout& L) {
+    // the field (and how many match), then the list: 3 columns, a small tag over each widget naming its page
+    const float fieldW = 744 - 176;
+    ui_.textField(kSearchField, L.X(268), L.Y(84), L.L(fieldW), L.L(kRowH), setSearch_, 40, UiExp::local().withId("SEARCH").typing("FOV"));
+    if (setSearch_.empty() && !ui_.focused(kSearchField)) ui_.hint(L.X(276), L.Y(84 + 10), "TYPE TO SEARCH: A NAME OR WHAT IT DOES (CTRL+F)", kGrey, L.L(fieldW - 16));
+    SearchList& sl = g_search;
+    bool queryChanged = false;
+    {   // the query's words, upper case: worked out when it changes (the matches with it)
+        static std::string last = "\x01";
+        queryChanged = setSearch_ != last;
+        if (queryChanged) {
+            last = setSearch_;
+            sl.words.clear();
+            sl.hit.clear();
+            std::istringstream in(upper(setSearch_));
+            for (std::string w; in >> w;) sl.words.push_back(w);
+            searchScroll_ = 0;
+        }
+    }
+    constexpr float kTop = 124, kTagH = 14, kPitch = 54, kGap = 10, kBarW = 12, kListW = 744 - kBarW - 8;
+    constexpr int kRows = 9;   // (the last row ends at 124 + 8 x 54 + 46 = 602: clear of the footer at 640)
+    const int maxFirst = std::max(0, searchRows_ - kRows);
+    searchScroll_ = std::min(std::max(searchScroll_, 0), maxFirst);
+    sl.n = 0; sl.first = searchScroll_; sl.rows = kRows;
+    sl.x0 = L.X(268); sl.y0 = L.Y(kTop); sl.tagH = L.L(kTagH); sl.pitch = L.L(kPitch);
+    sl.cellW = L.L((kListW - 2 * kGap) / 3); sl.colStep = sl.cellW + L.L(kGap); sl.cellH = L.L(kRowH);
+    sl.cells.clear();
+    sl.ids.clear();   // (last frame's: the UI test has read them)
+    sl.matched = ui_.probing() ? &searchMatched_ : nullptr;
+    searchMatched_.clear();
+    {   // every page, as it is drawn on its tab (its state put back afterwards)
+        struct Pg { int tab, more, sub; bool devices; const char* tag; };
+        static const Pg pages[] = {
+            {TAB_PLAYER, 0, 0, false, "PLAYER"}, {TAB_PLAYER, 1, 0, false, "PLAYER 2"},
+            {TAB_GAMEPLAY, 0, 0, false, "GAMEPLAY"}, {TAB_GAMEPLAY, 1, 0, false, "GAMEPLAY 2"}, {TAB_GAMEPLAY, 2, 0, false, "GAMEPLAY 3"},
+            {TAB_GAMEPLAY, 3, 0, false, "GAMEPLAY 4"}, {TAB_GAMEPLAY, 4, 0, false, "GAMEPLAY 5"},
+            {TAB_CONTROLS, 0, 0, false, "CONTROLS"}, {TAB_CONTROLS, 0, 1, false, "CONTROLS: MOVE KEYS"}, {TAB_CONTROLS, 0, 2, false, "CONTROLS: MORE KEYS"},
+            {TAB_CONTROLS, 1, 0, false, "CONTROLS 2"}, {TAB_CONTROLS, 2, 0, false, "CONTROLS 3"},
+            {TAB_VIDEO, 0, 0, false, "VIDEO"}, {TAB_VIDEO, 1, 0, false, "VIDEO 2"}, {TAB_VIDEO, 2, 0, false, "VIDEO 3"}, {TAB_VIDEO, 3, 0, false, "VIDEO 4"},
+            {TAB_VIDEO, 4, 0, false, "VIDEO 5"}, {TAB_VIDEO, 5, 0, false, "VIDEO 6"}, {TAB_VIDEO, 6, 0, false, "VIDEO 7"}, {TAB_VIDEO, 7, 0, false, "VIDEO 8"},
+            {TAB_VIDEO, 8, 0, false, "VIDEO 9"}, {TAB_VIDEO, 0, 0, true, "VIDEO: DEVICES"},
+            {TAB_CROSSHAIR, 0, 0, false, "CROSSHAIR"}, {TAB_HUD, 0, 0, false, "HUD"}, {TAB_HUD, 1, 0, false, "HUD 2"}};
+        const int tab0 = setTab_, more0 = moreOpen_, sub0 = controlsSub_;
+        const Pg* jump = nullptr;
+        const bool dev0 = devicesOpen_;
+        const float alpha0 = r_.alpha();
+        // A page whose rows all lie above or below the rows on screen isn't run: its count from the last full pass
+        // stands in. Every page runs when anything could have changed a count (the query, the scroll, a click or a
+        // drag, typing, an open picker, the UI test), and every 16th frame anyway.
+        constexpr int kPages = sizeof pages / sizeof pages[0];
+        static int counts[kPages] = {}, sinceFull = 0;
+        static bool valid = false;
+        static int lastFirst = -1;
+        const bool full = !valid || ++sinceFull >= 16 || searchScroll_ != lastFirst || queryChanged || uiIn_.pressed || uiIn_.rpressed || uiIn_.down ||
+                          ui_.typing() || ui_.popupOpen() || captureAction_ >= 0 || ui_.probing();
+        if (full) sinceFull = 0;
+        lastFirst = searchScroll_;
+        r_.setAlpha(0);   // (a page's own rects and text: not drawn; Ui puts it back to 1 for each placed widget)
+        ui_.reloc = &sl;
+        for (int pi = 0; pi < kPages; pi++) {
+            const Pg& p = pages[pi];
+            const int start = sl.n;
+            if (!full && (start + counts[pi] <= sl.first * 3 || start >= (sl.first + sl.rows) * 3)) { sl.n += counts[pi]; continue; }
+            setTab_ = p.tab; moreOpen_ = p.more; controlsSub_ = p.sub; devicesOpen_ = p.devices;
+            sl.tag = p.tag;
+            if (p.devices) drawDeviceSettings(L);
+            else if (p.more) drawMoreSettings(L);
+            else switch (p.tab) {
+                case TAB_PLAYER: drawPlayerSettings(L); break;
+                case TAB_GAMEPLAY: drawGameplaySettings(L); break;
+                case TAB_CONTROLS: drawControls(L); break;
+                case TAB_VIDEO: drawVideoSettings(L); break;
+                case TAB_CROSSHAIR: drawCrosshairSettings(L); break;
+                case TAB_HUD: drawHudSettings(L); break;
+            }
+            counts[pi] = sl.n - start;
+            // (a row that opens something of its page's own - CONTROLS' IMPORT and its file list, an editor - takes you
+            // to that page with it open)
+            if (!jump && (filePick_ || fontsOpen_ || widgetEdit_ || hudEdit_)) jump = &p;
+        }
+        valid = true;
+        ui_.reloc = nullptr;
+        r_.setAlpha(alpha0);
+        if (jump) { setTab_ = jump->tab; moreOpen_ = jump->more; controlsSub_ = jump->sub; devicesOpen_ = jump->devices; ui_.closePopup(); }
+        else { setTab_ = tab0; moreOpen_ = more0; controlsSub_ = sub0; devicesOpen_ = dev0; }
+    }
+    searchRows_ = (sl.n + 2) / 3;
+    for (const SearchList::Cell& c : sl.cells) ui_.hint(c.x, c.y, c.tag, kGrey, sl.cellW);
+    ui_.hint(L.X(268 + fieldW + 12), L.Y(84 + 10), sl.n == 1 ? std::string("1 SETTING") : std::to_string(sl.n) + " SETTINGS", kGrey, L.L(176 - 12));
+    if (sl.n == 0) ui_.hint(L.X(268), L.Y(kTop + 6), "NOTHING MATCHES \"" + upper(setSearch_) + "\"", kGrey, L.L(744));
+    // the scrollbar: its track the list's height; drag the thumb, or click above / below it for a page
+    if (searchRows_ > kRows) {
+        const float tx = L.X(1012 - kBarW), ty = L.Y(kTop), tw = L.L(kBarW), th = L.L(kRows * kPitch - (kPitch - kTagH - kRowH));
+        const float thumbH = std::max(L.L(24), th * kRows / searchRows_);
+        const float thumbY = ty + (th - thumbH) * searchScroll_ / std::max(1, maxFirst);
+        r_.rect(tx, ty, tw, th, {0.08f, 0.09f, 0.11f, 0.95f});
+        const bool overThumb = ui_.over(tx, thumbY, tw, thumbH);
+        r_.rect(tx, thumbY, tw, thumbH, searchDrag_ || overThumb ? ui_.accent : Color{0.35f, 0.37f, 0.42f, 1});
+        if (uiIn_.pressed && overThumb) { searchDrag_ = true; searchDragOff_ = uiIn_.my - thumbY; }
+        else if (uiIn_.pressed && ui_.over(tx, ty, tw, th)) searchScroll_ += uiIn_.my < thumbY ? -kRows : kRows;
+        if (!uiIn_.down) searchDrag_ = false;
+        if (searchDrag_ && th > thumbH) searchScroll_ = (int)std::lround((uiIn_.my - searchDragOff_ - ty) / (th - thumbH) * maxFirst);
+        searchScroll_ = std::min(std::max(searchScroll_, 0), maxFirst);
+        if (ui_.probing()) ui_.handle(tx, thumbY, tw, thumbH, 0, 1, "SCROLLBAR", UiExp::state("searchscroll"));
+    } else searchDrag_ = false;
+}
+
+// The page strip (owner, 2026-10-30: "at the bottom you should be able to see all the page numbers, and on the end they
+// should have left and right arrows, which you can also go to by pressing left and right arrow"): in the footer's
+// middle, between BACK and the page's own button on the right, "<", a number for each page (the one open filled) and
+// ">". The arrows stop at the ends (greyed out there) rather than wrapping: a wrap from the last page to the first
+// reads as a jump, and nine pages are one click apart anyway.
+void Game::drawSettingsPages(const SetLayout& L, float footY) {
+    static const char* const kIds[] = {"PAGE 1", "PAGE 2", "PAGE 3", "PAGE 4", "PAGE 5", "PAGE 6", "PAGE 7", "PAGE 8", "PAGE 9"};
+    const int n = std::min(morePages() + 1, 9), cur = std::min(std::max(moreOpen_, 0), n - 1);
+    // (452..828: the gap between BACK and the right-hand button, 4 px apart; cells at most 40 wide, centred)
+    const float gap = 4, cw = std::min(40.0f, (376 - gap * (n + 1)) / (n + 2)), total = cw * (n + 2) + gap * (n + 1);
+    float x = 640 - total * 0.5f;
+    const float y = L.Y(footY), h = L.L(kRowH);
+    int go = -1;
+    if (ui_.button(L.X(x), y, L.L(cw), h, "<", cur > 0 ? UiExp::nav(moreNav(cur - 1)).withId("PREVIOUS PAGE") : UiExp::inert().withId("PREVIOUS PAGE"), cur > 0)) go = cur - 1;
+    x += cw + gap;
+    for (int i = 0; i < n; i++, x += cw + gap)
+        if (ui_.tab(L.X(x), y, L.L(cw), h, std::to_string(i + 1), i == cur, i == cur ? UiExp::inert().withId(kIds[i]) : UiExp::nav(moreNav(i)).withId(kIds[i]))) go = i;
+    if (ui_.button(L.X(x), y, L.L(cw), h, ">", cur < n - 1 ? UiExp::nav(moreNav(cur + 1)).withId("NEXT PAGE") : UiExp::inert().withId("NEXT PAGE"), cur < n - 1)) go = cur + 1;
+    if (ui_.probing() && settingsPageKeys()) {   // (the UI test: the arrow keys do the same)
+        ui_.keyAction("LEFT ARROW (PREVIOUS PAGE)", GLFW_KEY_LEFT, 0, cur > 0 ? UiExp::nav(moreNav(cur - 1)) : UiExp::inert());
+        ui_.keyAction("RIGHT ARROW (NEXT PAGE)", GLFW_KEY_RIGHT, 0, cur < n - 1 ? UiExp::nav(moreNav(cur + 1)) : UiExp::inert());
+    }
+    if (go >= 0) settingsPage(go);
+}
+
+void Game::settingsPage(int n) {
+    n = std::min(std::max(n, 0), morePages());
+    if (n == moreOpen_) return;
+    moreOpen_ = n;
+    controlsSub_ = 0;   // (CONTROLS: page 1 is its own first view, not MOVE KEYS / MORE KEYS left open before)
+    captureAction_ = -1;
+    ui_.closePopup();
+    cfg_.save();
+}
+
+// The arrow keys turn the settings page only while nothing else wants them: a field being typed in (a slider's typed
+// value too), a key being bound, a held slider, an open colour picker or dropdown, the console or chat, and the pages
+// with no strip (FONT, DEVICES, the import list, the HUD's editors, SEARCH). (No other settings widget takes
+// the keyboard: the < > rows are clicked, they never hold focus.)
+bool Game::settingsPageKeys() const {
+    return settingsShown() && morePages() > 0 && !chatting_ && !console_ && !ui_.typing() && captureAction_ < 0 && !ui_.popupOpen() && !ui_.sliderHeld() &&
+           !fontsOpen_ && !devicesOpen_ && !widgetEdit_ && !hudEdit_ && filePick_ == 0;
+}
+
 // the settings path of this tab's MORE page n (0: the tab itself)
 const char* Game::moreNav(int n) const {   // (static strings: a UiExp keeps the pointer)
     static const char* const p[5][9] = {{"~settings/video", "~settings/video/more", "~settings/video/more2", "~settings/video/more3",
@@ -6873,9 +7055,10 @@ const char* Game::moreNav(int n) const {   // (static strings: a UiExp keeps the
 
 // MORE (settings/<tab>/more, 1.19.4): the tab's settings that don't fit on it. GAMEPLAY: the kill feed, chat, enemies,
 // all settings, the screen, menus. CONTROLS: the mouse's other axis, zoom, grapple and hand, the scoreboard key, the
-// weapon scroll. VIDEO + AUDIO: 1 the window, shadows, GPU, HUD size, background, hitsounds; 2 fog, picture, look,
+// weapon scroll. VIDEO + AUDIO: 1 the window, shadows, GPU, HUD size, FLAT MAP, background, hitsounds; 2 fog, picture, look,
 // effects, tracers and trails, output; 3 display, sound groups, performance, presets; 4 shadows, players, outlines,
-// colours, accessibility; 5 the sound's output, volume, callouts, cue sounds; 6 network, caches, display, cursor, USE.
+// colours, accessibility; 5 the sound's output, volume, callouts, cue sounds; 6 network (smoothing too), caches,
+// display, cursor, USE.
 void Game::drawMoreSettings(const SetLayout& L) {
     if (setTab_ == TAB_GAMEPLAY && moreOpen_ == 2) { drawGameplayMore2(L); return; }
     if (setTab_ == TAB_GAMEPLAY && moreOpen_ == 3) { drawGameplayMore3(L); return; }
@@ -7285,6 +7468,15 @@ void Game::drawMoreSettings(const SetLayout& L) {
 #else
         f.hint("NIGHT: QUIET UP, LOUD DOWN; SAFE: MORE", "QUEUED, NO CRACKLE ON A BUSY PC");
 #endif
+#ifdef _WIN32
+        // the sound device to the game alone: about 10 ms sooner, and Discord / music go silent while the game runs
+        // (on page 1's SOUND until 2026-10-30: there it ran VOICE into the footer)
+        if (ui_.toggle(f.x(), f.top(), w, h, !cfg_.exclusiveAudio || audio_.exclusiveActive() ? "EXCLUSIVE AUDIO" : audio_.exclusiveState() == Audio::kExclUnsupported ? "EXCLUSIVE AUDIO (N/A)" : "EXCLUSIVE AUDIO (BUSY)",   // (N/A: the device takes none of its formats)
+                       cfg_.exclusiveAudio, UiExp::cfg("exclusive_audio")))
+            audio_.setExclusive(cfg_.exclusiveAudio);
+        f.next();
+        f.hint("TAKES THE SOUND DEVICE FOR LOWER AUDIO LAG");
+#endif
         f.section("VOLUME");
         ui_.toggle(f.x(), f.top(), hw, h, "SHOW DB", cfg_.volDb, UiExp::cfg("vol_db"));
         ui_.toggle(xl, f.top(), hw, h, "PERCEPTUAL", cfg_.volPerceptual, UiExp::cfg("vol_perceptual"));
@@ -7354,6 +7546,19 @@ void Game::drawMoreSettings(const SetLayout& L) {
             if (ui_.cycle(f.x(), f.top(), w, h, "PACKET LOSS PROTECTION", pi, 3, pn, UiExp::cfg("cmd_redundancy"))) cfg_.cmdRedundancy = pr[pi];
             f.next();
             f.hint("EACH INPUT SENT IN THIS MANY PACKETS");
+        }
+        {   // other players' interpolation delay (ranked: always 10 ms): adaptive (the default), custom (the slider), or off
+            // (was GAMEPLAY > NETWORK until 2026-10-30: that page's left column ran into its footer)
+            static const std::vector<std::string> imn = {"SMOOTHING (INTERP): ADAPTIVE", "SMOOTHING (INTERP): CUSTOM", "SMOOTHING (INTERP): OFF"};
+            int ii = cfg_.interpMs == 0 ? 0 : cfg_.interpMs < 0 ? 2 : 1;
+            if (ui_.cycle(f.x(), f.top(), w, h, "INTERP", ii, 3, imn, UiExp::cfg("interp_ms"))) cfg_.interpMs = ii == 0 ? 0 : ii == 2 ? -1 : kCustomInterpMs;
+            f.next();
+            f.hint("HOW OTHER PLAYERS' MOVES ARE SMOOTHED");
+            float v = (float)(cfg_.interpMs > 0 ? cfg_.interpMs : kCustomInterpMs);   // (moving it picks CUSTOM)
+            if (ui_.slider(f.x(), f.top(), w, h, "SMOOTHING DELAY (MS)", v, 1, (float)kMaxInterpMs, "%.0f", UiExp::cfg("interp_ms"), (float)kCustomInterpMs))
+                cfg_.interpMs = std::min(std::max(1, (int)std::lround(v)), kMaxInterpMs);
+            f.next();
+            f.hint("USED WHEN SMOOTHING IS CUSTOM");
         }
         ui_.toggle(f.x(), f.top(), hw, h, "MAP DOWNLOADS", cfg_.mapDownloads, UiExp::cfg("map_downloads"));
         {
@@ -7748,6 +7953,19 @@ void Game::drawMoreSettings(const SetLayout& L) {
     cfg_.hudSize = clampf(cfg_.hudSize, 0.5f, 2.0f);
     f.next();
     f.hint("EVERY HUD ELEMENT AT ONCE (EACH ALSO HAS", "ITS OWN SIZE ON THE HUD TAB)");
+    f.section("FLAT MAP");   // (page 1 until 2026-10-30: there it ran into the footer on Windows)
+    ui_.toggle(f.x(), f.top(), w, h, "FULLBRIGHT", cfg_.fullbright, UiExp::cfg("fullbright"));
+    f.next();
+    f.hint("FLAT MAP, NO LIGHTING");
+    {   // its colour (white: the classic look)
+        const float hw = L.L(kHalfW);
+        Vec3& c = cfg_.fullbrightColor;
+        const Vec3& d = defaultSettings().fullbrightColor;
+        ui_.colorPicker(f.x(), f.top(), hw, h, "MAP COLOR", c, UiExp::cfg("fullbright_color"), d);
+        bool white = c.x == d.x && c.y == d.y && c.z == d.z;
+        if (ui_.button(L.X(kColL + 184), f.top(), hw, h, "RESET MAP COLOR", UiExp::cfg("fullbright_color").withId("RESET MAP COLOR"), !white)) c = d;
+        f.next();
+    }
 }
 
 // ---- batch 3 (1.19.4, the 2s): GAMEPLAY > MORE 2 / 3 / 4, CONTROLS > MORE 2, PLAYER > MORE --------------------------
@@ -8575,7 +8793,9 @@ void Game::drawCrosshairSettings(const SetLayout& L) {
         ui_.colorPicker(x2, g.top(), hw, h, "HEADSHOT", cfg_.chHeadColor, UiExp::cfg("ch_head_color"), defaultSettings().chHeadColor);
         g.next();
     }
+    const float codeMsgY = g.y + 12;   // (COPY / PASTE CODE's answer: beside this header; under its row it touched the footer)
     g.section("PER WEAPON");   // a weapon's own STYLE (e.g. a dot on the sniper), and the crosshair as a code to share
+    if (time_ < chCodeUntil_) ui_.hint(L.X(kColR + 120), L.Y(codeMsgY + 4), chCodeMsg_, kGrey, L.L(kColW - 120));
     {
         static int chW = WPN_SNIPER;
         static std::vector<std::string> wn, sn;
@@ -8600,7 +8820,6 @@ void Game::drawCrosshairSettings(const SetLayout& L) {
             if (ok) cfg_.save();
         }
         g.next();
-        if (time_ < chCodeUntil_) g.hint(chCodeMsg_);
     }
     const Settings& d = defaultSettings();   // (RESET is greyed out while the crosshair is the default one)
     bool chDefault = cfg_.chStyle == d.chStyle && cfg_.chLength == d.chLength && cfg_.chThickness == d.chThickness && cfg_.chGap == d.chGap &&
@@ -10295,9 +10514,14 @@ GLFWmonitor* Game::chosenMonitor() {
 Game::DeskMode Game::desktopMode(GLFWmonitor* mon) {
     GLFWmonitor* on = glfwGetWindowMonitor(win_);   // (exclusive on it: its desktop mode is the one kept)
     if (mon && mon == deskMon_ && on == mon) return desk_;
+    // (not exclusive: the last answer for this monitor, for a second. glfwGetVideoMode asks the X server (XRandR) every
+    // time, about 1.5 ms: VIDEO + AUDIO page 2's WINDOW SIZE and DEVICES' REFRESH RATE ask every frame, and Settings >
+    // SEARCH draws both. A monitor plugged in or out clears it: monitorsChanged.)
+    if (!on && mon && mon == dmCacheMon_ && time_ < dmCacheUntil_) return dmCache_;
     const GLFWvidmode* vm = mon ? glfwGetVideoMode(mon) : nullptr;
     if (!vm) return desk_;
     const DeskMode m = {vm->width, vm->height, vm->refreshRate};
+    if (!on) { dmCacheMon_ = mon; dmCache_ = m; dmCacheUntil_ = time_ + 1; }
     if (!on || on != deskMon_) { deskMon_ = mon; desk_ = m; }   // (another monitor read while exclusive keeps the kept one)
     return m;
 }
@@ -10307,6 +10531,7 @@ Game::DeskMode Game::desktopMode(GLFWmonitor* mon) {
 void Game::monitorsChanged() {
     chosenMon_ = nullptr;
     deskMon_ = nullptr;
+    dmCacheMon_ = nullptr;
     vmStale_ = true;
     if (devicesOpen_) devListed_ = false;
     GLFWmonitor* was = appliedMon_;
@@ -11020,7 +11245,8 @@ void Game::updateDestruction(const Map& map) {
             }
             continue;
         }
-        glassShards(fx.pane, fx.how, fx.at, fx.dir, fx.seed, glassShardScratch_);
+        const Brush* shape = fx.brush >= 0 && (size_t)fx.brush < map.brushes.size() ? &map.brushes[(size_t)fx.brush] : nullptr;   // (a sloped pane's: in its shape)
+        glassShards(fx.pane, fx.how, fx.at, fx.dir, fx.seed, glassShardScratch_, shape);
         uint32_t sd = fx.seed ^ 0x9E3779B9u;
         for (const GlassShard& g : glassShardScratch_) {
             if (visShards_.size() >= kMaxVisShards) break;
@@ -11033,7 +11259,9 @@ void Game::updateDestruction(const Map& map) {
             const Vec3 ext = fx.pane.mx - fx.pane.mn, away = glassShardScratch_.empty() ? fx.dir : normalize(glassShardScratch_[0].vel + Vec3(0, 1e-3f, 0));
             for (int i = 0; i < n && visShards_.size() < kMaxVisShards; i++) {
                 const Vec3 r(glassRandF(sd) - 0.5f, glassRandF(sd) - 0.4f, glassRandF(sd) - 0.5f);
-                const Vec3 p = crater ? fx.at : Vec3(fx.pane.mn.x + ext.x * glassRandF(sd), fx.pane.mn.y + ext.y * glassRandF(sd), fx.pane.mn.z + ext.z * glassRandF(sd));
+                Vec3 p = crater ? fx.at : Vec3(fx.pane.mn.x + ext.x * glassRandF(sd), fx.pane.mn.y + ext.y * glassRandF(sd), fx.pane.mn.z + ext.z * glassRandF(sd));
+                if (!crater && shape && shape->shape != BRUSH_BOX && !glassShardScratch_.empty() && !brushNear(*shape, p, 0.05f))
+                    p = glassShardScratch_[(size_t)i % glassShardScratch_.size()].pos;   // (off a sloped pane's shape: where a piece starts)
                 const Vec3 v = (crater ? fx.dir : away) * (1.0f + 5.0f * glassRandF(sd)) + r * 4.0f;
                 VisShard d = {p, v, 0.004f + 0.008f * glassRandF(sd), Vec3(0.9f, 0.94f, 0.97f) * (0.85f + 0.3f * glassRandF(sd)), false, false, time_};
                 d.dust = true;
@@ -11043,8 +11271,9 @@ void Game::updateDestruction(const Map& map) {
         audio_.play3D(SND_BOLT_HIT, fx.at, glassCrater(fx.how) ? 0.8f : 1.0f, glassCrater(fx.how) ? 1.8f : 1.5f);
     }
     // the panes still standing: see-through (the bake leaves glass out)
-    for (uint32_t i : map.glass) if (!map.brushes[i].gone) r_.translucentBox(map.brushes[i].box, kGlassTint);
-    for (uint32_t i : map.windows) r_.translucentBox(map.brushes[i].box, kGlassTint);   // (plain glass: never breaks)
+    // (translucentBrush: a pane on a wedge, corner or cut draws as its shape, not its box: Museum's dome)
+    for (uint32_t i : map.glass) if (!map.brushes[i].gone) r_.translucentBrush(map.brushes[i], kGlassTint);
+    for (uint32_t i : map.windows) r_.translucentBrush(map.brushes[i], kGlassTint);   // (plain glass: never breaks)
     // shards fly, land and lie; one out of view is gone
     const float dt = shardsAt_ < 0 ? 0.0f : (float)std::min(0.05, time_ - shardsAt_);
     shardsAt_ = time_;

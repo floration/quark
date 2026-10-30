@@ -70,7 +70,7 @@ public:
     uint32_t lastReplayCount() const { return lastReplay_; } // commands the last reconcile re-ran (0 = prediction matched)
     // Rocket riding: your own rockets the server hasn't sent yet (the client's predicted copies, X5), where they are as
     // the next tick() starts, so a grapple can catch one at once. Set before each tick (n = 0: none).
-    struct RocketCopy { Vec3 pos, vel; float grav = 0; };
+    struct RocketCopy { Vec3 pos, vel; float grav = 0, accel = 0; };
     void setRocketCopies(const RocketCopy* c, int n) { nCopies_ = std::min(std::max(n, 0), (int)HookProbe::kRockets); for (int k = 0; k < nCopies_; k++) copies_[k] = c[k]; }
     Vec3 smoothedPos(float alpha) const; // predicted position interpolated between ticks + error smoothing
     void updateVisualPos(double tickAcc, float yaw, float pitch); // once a frame after the ticks: smoothedPos is then as of now
@@ -111,7 +111,7 @@ public:
     // Glass and blown holes (glass.h): each break the server sent, or one this client predicted (its own shot, dash or
     // grapple), as something to show: shards, a sound. takeGlassFx hands over what came since the last call.
     static constexpr uint8_t kGlassFxShake = 250;   // (how: a crumble platform shaking, about to fall)
-    struct GlassFx { AABB pane; uint8_t how; Vec3 at, dir; uint32_t seed; bool hole; int material = -1; };   // (hole with how 1: a wall that fell, pane its box)
+    struct GlassFx { AABB pane; uint8_t how; Vec3 at, dir; uint32_t seed; bool hole; int material = -1; int brush = -1; };   // (hole with how 1: a wall that fell, pane its box)
     std::vector<AABB> crumbled_;
     void takeGlassFx(std::vector<GlassFx>& out) { out.swap(glassFx_); glassFx_.clear(); }
     bool predictGlass(int brush, int how, const Vec3& at, const Vec3& dir);   // false: no standing pane
@@ -256,7 +256,7 @@ private:
     RocketCopy copies_[HookProbe::kRockets];
     int nCopies_ = 0;
     // the last predicted catch, for replays: a player (box, id) or a rocket (rocket: at, pos, vel, grav, rid as the probe had them)
-    struct HookCatch { uint32_t seq = 0; AABB box; uint8_t id = 0; bool rocket = false; Vec3 at, pos, vel; float grav = 0; uint16_t rid = 0; } hookCatch_;
+    struct HookCatch { uint32_t seq = 0; AABB box; uint8_t id = 0; bool rocket = false; Vec3 at, pos, vel; float grav = 0, accel = 0; uint16_t rid = 0; } hookCatch_;
     uint8_t moveEv_ = 0;
     float moveLand_ = 0;
     static constexpr uint32_t kRemoteEvRing = 128;   // (a power of two: the counters wrap cleanly)

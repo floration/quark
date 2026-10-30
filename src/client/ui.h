@@ -1,6 +1,7 @@
 // Tiny immediate-mode UI for menus (buttons, text fields, option cyclers, sliders).
 #pragma once
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -80,6 +81,18 @@ public:
     virtual void widget(const UiWidget& w) = 0;
 };
 
+// Settings > SEARCH (Game::drawSearchTab) draws the settings pages themselves, every widget relocated into one list:
+// while a relocator is set, each widget call asks it first. false: the widget is skipped (not drawn, not reported, takes
+// no input); true: it's drawn at the rect place() set. Labels, hints and hover tests outside a placed widget do nothing
+// meanwhile, so a page's own decoration never shows or reacts. (names: a cycle's / dropdown's values, else null)
+class UiRelocator {
+public:
+    virtual ~UiRelocator() = default;
+    virtual bool place(const std::string& label, const std::vector<std::string>* names, const UiExp& e, float& x, float& y, float& w, float& h) = 0;
+    // (UI test) the id the placed widget is reported under; it must stay valid until the next frame
+    virtual const char* reportId(const std::string& label, const UiExp& e) = 0;
+};
+
 class Ui {
 public:
     void begin(Renderer* r, const UiInput& in, float scale);
@@ -146,7 +159,14 @@ public:
     struct PopupRects { float box[4] = {}, sv[4] = {}, hue[4] = {}, hex[4] = {}; };
     const PopupRects& popupRects() const { return rects_; }
     // a right-click over the rect this frame (keybind slots: unbind)
-    bool rclicked(float x, float y, float w, float h) const { return in_.rpressed && hover(x, y, w, h); }
+    bool rclicked(float x, float y, float w, float h) const {
+        if (reloc && !relocActive_) {   // (settings SEARCH: the widget just placed, at its place in the list)
+            if (!lastPlaced_ || std::fabs(x - lastOrig_[0]) > 0.5f || std::fabs(y - lastOrig_[1]) > 0.5f) return false;
+            return in_.rpressed && !muted && (!blocked_ || unblock_) && in_.mx >= lastAt_[0] && in_.mx < lastAt_[0] + lastAt_[2] &&
+                   in_.my >= lastAt_[1] && in_.my < lastAt_[1] + lastAt_[3];
+        }
+        return in_.rpressed && hover(x, y, w, h);
+    }
     // Interactive things that aren't drawn as widgets, for the UI test: a key that does something on this screen, a
     // draggable handle (editor gizmo, HUD widget), a clickable 3D view. Only call while probing() (no cost otherwise).
     bool probing() const { return probe != nullptr; }
@@ -166,6 +186,8 @@ public:
     Color textC() const { const float v = contrast ? 1.0f : std::min(1.0f, textMul); return {v, v, v, 1}; }
     Color btnC() const { return contrast ? Color{0, 0, 0, 1} : Color{0.14f, 0.16f, 0.2f, 0.9f}; }               // text fields drawn as '*' (STREAMER MODE, set around an address / code field)
     UiProbe* probe = nullptr;            // the UI test (null in normal play)
+    UiRelocator* reloc = nullptr;        // settings SEARCH: widgets placed into its list (UiRelocator); null otherwise
+    bool relocating() const { return reloc != nullptr; }
     // While probing, set around a group of widgets: `where` - the screen they belong to, when they're drawn on others
     // too (the editor's panel under its menus); `scope` - what they act on (the editor's selection kind). Cleared by begin().
     const char* where = nullptr;
@@ -224,6 +246,19 @@ private:
     static constexpr int kWrapCache = 128;
     mutable WrapEntry wrapCache_[kWrapCache];
     bool buttonImpl(float x, float y, float w, float h, const std::string& label, bool enabled, bool* clipped);
+    // (a relocator set: asks it, and while the placed widget draws, lets it draw and take input; see UiRelocator)
+    bool relocActive_ = false;
+    const char* relocId_ = nullptr;
+    void emitWidget(UiWidget& wd);
+    bool lastPlaced_ = false;              // (the last widget asked was placed: where it was meant to go, where it went)
+    float lastOrig_[4] = {}, lastAt_[4] = {};
+    struct RelocScope {
+        Ui& u; bool on = false, prev = false; float alpha = 1;
+        RelocScope(Ui& ui, const std::string& label, const std::vector<std::string>* names, const UiExp& e, float& x, float& y, float& w, float& h);
+        ~RelocScope();
+        bool skip() const { return u.reloc && !on && !u.relocActive_; }
+    };
+    bool quiet() const { return reloc && !relocActive_; }   // (relocating, outside a placed widget: draw nothing)
     void report(UiWidget::Kind k, float x, float y, float w, float h, const std::string& label, const std::string& value,
                 const UiExp& e, bool enabled, bool clipped);
     Renderer* r_ = nullptr;

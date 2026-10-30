@@ -43,6 +43,8 @@ float nativeRoundLength(const Server& s) {
         if (s.cfg_.ranked) return P(s).rankedTime;
         return s.cfg_.timeLimit > 0 ? (float)s.cfg_.timeLimit : P(s).matchTime;
     }
+    if (P(s).roundTimePerPlayer > 0)   // neutral payload: 2 min a player on the teams (owner, 2026-10-30)
+        return P(s).roundTimePerPlayer * (float)std::max(1, s.teamCount(TEAM_A) + s.teamCount(TEAM_B));
     return P(s).roundTime;   // (0: no limit)
 }
 float roundLength(const Server& s) { double v; return hookQuery(s, MSLOT_ROUND_LENGTH, v) ? (float)v : nativeRoundLength(s); }
@@ -477,12 +479,19 @@ void startRound(Server& s) {
     }
     objectsRoundReset(s);
     if (!hookEvent(s, MSLOT_ROUND_SETUP)) nativeRoundSetup(s);
+    // (everyone at once: nobody's spot from last round counts, and in a team mode nor do the enemies spawned before you
+    // in this loop, so the spawns don't depend on who has the lower slots)
+    for (auto& p : s.players_) if (p.connected) p.alive = false;
+    s.spawnBatch_ = true;
+    s.batchSpawned_ = 0;
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = s.players_[i];
         if (!p.connected) continue;
         if (p.team == TEAM_SPECTATOR || (m.mode == MODE_TAG && p.out)) { p.alive = false; continue; }
         s.spawnPlayer(i);
+        s.batchSpawned_ |= 1u << i;
     }
+    s.spawnBatch_ = false;
     // Remove leftover projectiles between rounds.
     for (auto& pr : s.projectiles_) pr.active = false;
     float freeze = freezeLength(s);
@@ -1699,6 +1708,11 @@ int modeSpawnType(const Map& m, int mode, int team, int attackers, bool tourneyM
     if (mode == MODE_PAYLOAD && staged) return stagedSpawn(0, team != attackers);
     if (mode == MODE_POINTS && m.canSupportMode(MODE_POINTS)) // staged: the spawns for how far the attack has got
         return stagedSpawn(0, team != attackers);
+    // bomb: by role, not by team (q, 2026-10-30): the attack always starts on the a spawns (team A attacks the first
+    // half, bomb.qlogic), the defence on the b ones, so after halftime team B attacks from a. By team, a map built to
+    // q's timing (attackers ~5 s from a site, defenders ~6 s) handed team A the short way in both halves: War, 115 m
+    // vs 144 m, team A won 7 of 8.
+    if (mode == MODE_BOMB) return own(team == attackers ? SPAWN_A : SPAWN_B);
     return own(team == TEAM_B ? SPAWN_B : SPAWN_A);
 }
 

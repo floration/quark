@@ -3031,7 +3031,7 @@ void Game::editorFrame(double dt) {
         r_.useStaticBoxes();
     }
     mapCache();
-    if (edBaked_) for (auto& b : ed_.brushes) if (glassMaterial(b.material)) r_.translucentBox(b.box, kGlassTint);   // (the bake leaves glass out)
+    if (edBaked_) for (auto& b : ed_.brushes) if (glassMaterial(b.material)) r_.translucentBrush(b, kGlassTint);   // (the bake leaves glass out)
     for (auto& b : edClipBoxes_) r_.translucentBox(b, {cfg_.clipColor.x, cfg_.clipColor.y, cfg_.clipColor.z, kClipColor.a});   // (CONTROLS > MORE 2: CLIP BOX COLOR)
     // (clip: invisible in play, the baked world leaves it out too; see-through here so it can be found and edited)
     for (auto& sp : ed_.spawns) {
