@@ -86,8 +86,16 @@ def ground(m, z):
         m.box(x0, -1, z0, x1, 0, z1, mat="dirt")
     for (x0, z0, x1, z1) in minus((-WARD, -WARD, WARD, WARD), [hatch]):
         m.box(x0, -1, z0, x1, 0, z1, mat="cobbledsetts")
-    # the moat: a channel 2 m deep of swamp water (slow, never lethal), lined in mossy stone, steps out at the corners
-    for (x0, z0, x1, z1) in minus(mo, [block]):
+    # the moat: a channel 2 m deep of swamp water (slow, never lethal), lined in mossy stone, steps out at the corners.
+    # A berm (a stone path at the ground's level) runs along the keep's north, east and south faces inside the moat:
+    # round the keep on the ground is a loop (north gate, berm, east door, berm, south gate)
+    berms = [(44, -22.5, 46.5, 22.5)]
+    for sz in (1, -1):
+        for (x0, z0, x1, z1) in ((12, WARD + IW, 46.5, WARD + IW + 2.5), (8, WARD + IW, 12, WARD + IW + 5.5), (3.5, WARD + IW + 3, 8, WARD + IW + 5.5)):
+            berms.append((x0, z0, x1, z1) if sz > 0 else (x0, -z1, x1, -z0))
+    for (x0, z0, x1, z1) in berms:
+        m.box(x0, -3, z0, x1, 0, z1, mat="largemossystoneblocks")
+    for (x0, z0, x1, z1) in minus(mo, [block] + berms):
         m.box(x0, -3, z0, x1, -2, z1, mat="largemossystoneblocks")
         m.box(x0, -2, z0, x1, -0.3, z1, mat="swampwater")
     for (x0, z0, x1, z1) in ((mo[0] - 1, mo[1], mo[0], mo[3]), (mo[2], mo[1], mo[2] + 1, mo[3])):
@@ -98,8 +106,8 @@ def ground(m, z):
     z.box(block[0], -3, block[3] - 1, block[2], -1, block[3], mat="largemossystoneblocks")
     # steps out of the water: two flights each side of the block (west and east channels)
     z.stairs(mo[0], 10, mo[0] + MOAT, 13, 0, "x", -1, base=-2)
-    z.stairs(mo[2] - MOAT, 10, mo[2], 13, 0, "x", 1, base=-2)
-    z.stairs(30, WARD + IW, 33, mo[3], 0, "z", 1, base=-2)                              # (and out of the north / south channels)
+    z.stairs(mo[2] - MOAT + 2.5, 10, mo[2], 13, 0, "x", 1, base=-2)                   # (from the berm's outer side)
+    z.stairs(30, WARD + IW + 2.5, 33, mo[3], 0, "z", 1, base=-2)                              # (and out of the north / south channels)
     z.stairs(-15, WARD + IW, -12, mo[3], 0, "z", 1, base=-2)
     # the gate bridges over the moat (north / south gatehouses, the west postern, the keep's east door)
     z.box(-3.5, -1, WARD + IW, 3.5, 0, mo[3], mat="wideplanks")
@@ -177,6 +185,18 @@ def curtain(m, z):
         z.box(x0, -1, CZ - 2, x1, 14, CZ + 4, mat="largecastlestone")
         z.box(x0, 14, CZ - 2, x1, 14.6, CZ + 4)
         z.box(x0, 14.6, CZ - 2, x1, LID, CZ + 4, mat="clip")                          # (no perch over the spawns)
+    # the gate passage's dressing: a raised portcullis (bars from 5.6 m up), an arch (haunches hanging from 5 m at
+    # the sides), torches on the barbican face either side
+    for k in range(7):
+        bx = -4.5 + 1.5 * k
+        z.box(bx - 0.08, 5.6, CZ - 2.1, bx + 0.08, 7, CZ - 1.9, mat="metal")
+    z.box(-5, 5.6, CZ - 2.12, 5, 5.8, CZ - 1.88, mat="metal")
+    z.wedge("castlestone", 1, (-5, 5, CZ - t, -3.2, 7, CZ), up=1)
+    z.wedge("castlestone", 0, (3.2, 5, CZ - t, 5, 7, CZ), up=1)
+    for bx in (-6.2, 6.2):
+        z.box(bx - 0.25, 3.0, CZ, bx + 0.25, 3.2, CZ + 0.4, mat="charredtimber")
+        z.box(bx - 0.2, 3.2, CZ + 0.05, bx + 0.2, 3.7, CZ + 0.35, mat="lightblock")
+    z.light(0, 4, CZ + 2, 8, 0.6)
     # the barbican's baffle: a solid screen across the yard in front of the gate (x -9..9), the way out goes round
     # both ends of it, to the gate or the sally ports; nothing in the road sees the spawns
     z.box(-9, -1, CZ + 7, 9, 6, CZ + 8, mat="largecastlestone")
@@ -225,6 +245,12 @@ def inner(m, z):
         z0, z1 = (W1 - 0.7, W1) if zz > 0 else (-W1, -W1 + 0.7)
         mer(-W1, z0, -8, z1, "x"); mer(8, z0, KX0, z1, "x")
     mer(-W1, -W0, -W1 + 0.7, W0, "z")
+    # over the gatehouses (x -8..8) the walk has a parapet on the ward side too (1 m, merlons to 1.8): from there
+    # the ward is seen through the crenels only
+    z.box(-8, WALK, W0, 8, WALK + 1.0, W0 + 0.6, mat="castlestone")
+    for zz in (1, -1):
+        z0, z1 = (W0, W0 + 0.6) if zz > 0 else (-W0 - 0.6, -W0)
+        mer(-8, z0, 8, z1, "x")
     # the stairs down from the walk into the ward, along the west wall's inner face (top at the corners)
     z.stairs(-W0, 3, -W0 + 2.5, W0, WALK, "z", 1)
 
@@ -235,7 +261,10 @@ def keep(m, z):
     terrace at 26 m: two spiral stairs in the east corners, a ladder between them"""
     x0, x1, zz = KX0, KX1, WARD + IW     # z -20..20
     ix0, ix1, iz = x0 + KT, x1 - KT, zz - KT
-    m.box(ix0, -1, -iz, ix1, 0, iz, mat="wideplanks")                                   # the hall floor
+    # the hall floor, cut round the hearth (it stands from -1: a floor face it overlapped drew as a hole, seen
+    # from the east door) and in 10 m tiles
+    for (a0, b0, a1, b1) in tiles(minus((ix0, -iz, ix1, iz), [(26, -3.5, 28.5, 3.5)]), 10):
+        m.box(a0, -1, b0, a1, 0, b1, mat="wideplanks")
     # west wall: the great hall's opening (z -6..6, 7 m), the first floor's slits and the balcony door
     z.box(x0, -1, 6, ix0, WALK, iz)
     m.box(x0, 7, -6, ix0, WALK, 6)
@@ -353,6 +382,24 @@ def bailey(m, z):
     m.ladder(-9.8 - 0.12, 0, TY0, 0, "e")
     for x in range(-42, -12, 10): m.light(x, TY1 - 0.6, 0, 8, 0.7, fixture=False)
     m.light(-52, -3, 0, 7, 0.6, fixture=False)
+    # the chapel (west bailey, on the axis, in front of the postern's bridge): a nave the postern lane runs through
+    # (doors west and east, 4 m), stained glass windows north and south, a gable roof
+    CH0, CH1, CHZ, CHH = -41, -29.5, 6, 7.5
+    for (wx0, wx1) in ((CH0, CH0 + 0.6), (CH1 - 0.6, CH1)):
+        z.box(wx0, 0, 2, wx1, CHH, CHZ)
+        m.box(wx0, 4.5, -2, wx1, CHH, 2, mat="castlestone")
+    wins = [(-38.5, -36.9), (-34.3, -32.7)]
+    edges = [CH0] + [v for w_ in wins for v in w_] + [CH1]
+    for (a0, a1) in zip(edges[0::2], edges[1::2]):
+        z.box(a0, 0, CHZ - 0.6, a1, CHH, CHZ)
+    for (a0, a1) in wins:
+        z.box(a0, 0, CHZ - 0.6, a1, 2.0, CHZ); z.box(a0, 5.5, CHZ - 0.6, a1, CHH, CHZ)
+        z.box(a0, 2.0, CHZ - 0.4, a1, 5.5, CHZ - 0.2, mat="stainedglass")
+    z.box(CH0 - 0.3, CHH, 0, CH1 + 0.3, CHH + 0.3, CHZ + 0.3, mat="wideplanks")
+    z.wedge("roofshingles", 2, (CH0 - 0.3, CHH + 0.3, -CHZ - 0.3, CH1 + 0.3, CHH + 3.3, 0))
+    for (gx0, gx1) in ((CH0, CH0 + 0.6), (CH1 - 0.6, CH1)):                          # the gables
+        z.wedge("castlestone", 2, (gx0, CHH + 0.3, -CHZ, gx1, CHH + 3.0, 0))
+    m.light((CH0 + CH1) / 2, 5.5, 0, 9, 0.7, fixture=False)
     # stables (west, each half): open-fronted, a thatch roof, stalls inside
     z.box(-64, -1, 50, -42, 4.5, 51, mat="logcabin")                                  # back wall
     for x in (-64, -56.5, -49, -42.6):
@@ -444,6 +491,9 @@ def objects(m, z):
     for x in (-3.5, 3.2): z.box(x, 0, 4.5, x + 0.3, 3.0, 4.8, mat="charredtimber")
     z.box(-3.8, 3.0, 4.2, 3.8, 3.2, 6.3, mat="thatch")
     z.box(5, 0, -0.8, 9, 1.2, 0.8, mat="largemossystoneblocks", mirror=False)          # the low wall
+    # a dais in the ward's middle (three 0.5 m tiers, 1.5 m): cappers aren't at the very bottom
+    for (hx, hz, h) in ((4.5, 3.5, 0.5), (3.5, 2.5, 1.0), (2.5, 1.5, 1.5)):
+        m.box(-hx, 0, -hz, hx, h, hz, mat="largemossystoneblocks")
     # light the courtyard's corners and the gate passages
     z.light(-12, 4, 12, 10, 0.6); z.light(12, 4, 12, 10, 0.6); z.light(0, 3.5, 18, 7, 0.6)
     m.light(-18, 2.8, 0, 6, 0.6, fixture=False)
