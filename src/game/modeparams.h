@@ -21,6 +21,7 @@
     /* per mode */ \
     X(rounds,          int,   "int", "",     1,    50,   1,     "rounds to win the match (the host's rounds key beats it)") \
     X(roundTime,       float, "f32", "s",    0,    3600, 0.0f,  "the round clock (0: none)") \
+    X(roundTimePerPlayer, float, "f32", "s", 0,    3600, 0.0f,  "the round clock per player on the teams at the round start (beats roundTime when > 0)") \
     X(respawnTime,     float, "f32", "s",    -1,   60,   -1.0f, "dead before respawning during play (< 0: one life a round)") \
     X(matchTime,       float, "f32", "s",    1,    3600, 600.0f, "free for all: the match clock when the host sets no time limit") \
     X(rankedTime,      float, "f32", "s",    1,    3600, kRankedFfaTime, "ranked free for all (instagib): the match clock") \
@@ -76,7 +77,7 @@ constexpr ModeParams builtinModeParamsFor(int mode) {
         case MODE_RACE: case MODE_SURF: p.rounds = 3; p.roundTime = 300.0f; break;   // two loops of Viaduct
         case MODE_PAYLOAD: p.roundTime = 240.0f; break;              // each team attacks once (rounds 1)
         case MODE_POINTS: p.roundTime = 150.0f; break;               // the attack's clock at the start
-        case MODE_NPAYLOAD: p.roundTime = 300.0f; break;
+        case MODE_NPAYLOAD: p.roundTime = 300.0f; p.roundTimePerPlayer = 120.0f; break;   // 2 min a player (owner, 2026-10-30): 4v4 16 min
         case MODE_HIDE: p.roundTime = kHideRoundTime; break;
         case MODE_TAG: p.roundTime = kTagRoundTime; break;
         case MODE_POWER: p.roundTime = 600.0f; break;                // one round: a pool at 0, or the clock (the fuller pool wins)

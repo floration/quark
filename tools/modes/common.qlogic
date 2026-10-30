@@ -15,12 +15,16 @@ param overtime f32 = 5 # an objective touch holds the round open this long after
 # ---- what a mode usually sets
 param rounds int = 1 # rounds to win the match, when the host sets none
 param roundTime f32 = 0 # a round's clock (0: no clock)
+param roundTimePerPlayer f32 = 0 # above 0: the clock is this per player on the teams (beats roundTime)
 param respawnTime f32 = -1 # dead this long before respawning (below 0: one life a round)
 
 slot freezeLength:
   return freezeTime
 
 slot roundLength:
+  if roundTimePerPlayer > 0:
+    n = teamCount(A) + teamCount(B)
+    return roundTimePerPlayer * (n > 1 ? n : 1)
   return roundTime
 
 slot roundsToWin:

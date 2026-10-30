@@ -160,7 +160,7 @@ Host each mode on **its own map** with bots (and a second human if you can). For
 | ☐ | Surf | Cascade | No dash and no grapple (the bars are gone). Drop off the start onto the first ridge and strafe into a face: you slide along it keeping your speed (air strafing adds some), fly to the next ridge, land on each stage's ledge (its checkpoint). A fall: back at your checkpoint. Practice, then vote start: the run is timed like Race. |
 | ☐ | King of the hill | Summit / Downtown | Capture, a contested hill freezes the clock. |
 | ☐ | Payload | Railyard | The cart moves only with attackers on it, checkpoints add time, overtime. Round 1 ends with "TEAM A pushed N m - TEAM B must beat it" (no ROUND WON); round 2 ends **as soon as** the attackers pass that mark. A level push goes to the side there sooner ("there sooner than its 3:40"), no tiebreaker rounds. Past the last checkpoint, attackers respawn in 3 s (death screen says RESPAWN IN 3; **open for 1.19.0**: bots never reached the last leg in testing, so check it with people). |
-| ☐ | Neutral payload | Canal | Both teams push. |
+| ☐ | Neutral payload | Canal | Both teams push. The round clock is 2 min per player on the teams (4 min in a 1v1, 16 in a 4v4). |
 | ☐ | FFA | Harbor / Gantry | Frags on the scoreboard, overtime tiebreak. Respawns vary (not always the same farthest spawn) and never in an enemy's sight. |
 | ☐ | Duel | Clockwork | Size modifiers (giant / tiny) change the collision box. Play vs bots DUEL: the duel team size per side (not 2v3). The break between rounds is 2.5 s. |
 | ☐ | 1v1 | Temple, Furnace, Dojo | Rulesets (vampire, instagib, ...), first to 5; Dojo's 5 s hold-fire start. Play vs bots 1V1 is exactly one bot; the round end is 2.5 s (was 4) and the calls use names, not TEAM A. |

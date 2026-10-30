@@ -8755,6 +8755,7 @@ static void testBots(uint16_t& port) {
         pump(s, cls, 3.3, idle);
         for (int i = 0; i < 15 && s.ms_.phase != PHASE_LIVE; i++) pump(s, cls, 0.2, idle);   // (a slow host's clock lags)
         CHECK(s.ms_.phase == PHASE_LIVE);
+        CHECK(std::fabs(s.liveLength_ - 240.0f) < 0.01f);   // the round clock: 2 min a player on the teams (owner, 2026-10-30)
         float mid = s.ms_.payloadLen * 0.5f;
         CHECK(std::fabs(s.ms_.payloadDist - mid) < 0.5f);
         int ia = s.players_[a.clientId()].team == TEAM_A ? a.clientId() : b.clientId();

@@ -303,6 +303,12 @@ Worker 2's share of the 1-scored items, in the same batch-3 key table (`b3Keys`)
 - **Weapon sets and stats.** New field `rocket.accel` (m/s², 0-100, default 4; 0 turns it off). The weapon stats' travel times to 10 / 20 / 40 m count it (0.207 / 0.410 / 0.806 s, were 0.208 / 0.417 / 0.833), and the maptool's stats row notes it.
 - **Test.** `testRocketThrust` (weapons group): a server-stepped primary rocket is at 52 ±0.01 m/s after 1 s, still on its line, within 2 mm of projectileExtrapolate and 50.002 m along; projectileRewind brings it back (1 s and 0.2345 s); the lob keeps its horizontal speed and drops 13.5 m/s²; the stepped drop-and-thrust path matches its steps and rewinds. The snapshot round trip carries `hookAccel`, and a protocol 54 header reads as no thrust.
 
+## Modes: neutral payload's clock scales with the players (owner, 2026-10-30: "npayload round timer should be 2 minutes per total players")
+
+- **What.** New mode param `roundTimePerPlayer` (modeparams.h, s, 0-3600, default 0 = off; common.qlogic declares it and its roundLength slot uses it). Above 0 the round clock is it times the players on teams A and B when the round goes live (at least 1), and it beats `roundTime`. Neutral payload sets 120 (npayload.qlogic too): 1v1 4 min, 2v2 8, 4v4 16 (it was a flat 5 min). `roundTime` 300 stays as the number a custom mode falls back to with the per-player clock set to 0.
+- **Why at the round start.** The clock is set once, when the freeze ends (roundLength is read there only), so someone joining mid-round doesn't move it; the next round counts them.
+- **Test.** The neutral payload test (bots group): a 1v1 goes live with a 240 s clock.
+
 ## Tests: testBotFalls plays on a lava moat again (engine work list, 2026-10-30)
 
 - **What was wrong.** `testBotFalls` (group botfalls) said it played experts on "Dojo (a platform in a lava moat)". That was the old Dojo; the rebuilt Dojo (a hall, tatami, garden: maps branch) has no lava, so the test would have stopped testing edges at all once it lands.

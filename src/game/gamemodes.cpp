@@ -43,6 +43,8 @@ float nativeRoundLength(const Server& s) {
         if (s.cfg_.ranked) return P(s).rankedTime;
         return s.cfg_.timeLimit > 0 ? (float)s.cfg_.timeLimit : P(s).matchTime;
     }
+    if (P(s).roundTimePerPlayer > 0)   // neutral payload: 2 min a player on the teams (owner, 2026-10-30)
+        return P(s).roundTimePerPlayer * (float)std::max(1, s.teamCount(TEAM_A) + s.teamCount(TEAM_B));
     return P(s).roundTime;   // (0: no limit)
 }
 float roundLength(const Server& s) { double v; return hookQuery(s, MSLOT_ROUND_LENGTH, v) ? (float)v : nativeRoundLength(s); }
