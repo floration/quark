@@ -1613,8 +1613,7 @@ bool Map::restoreBrush(size_t i) {
 int Map::crumbleAt(const Vec3& p, float eps) const {
     for (uint32_t i : crumbles) {
         const Brush& b = brushes[i];
-        if (!b.gone && p.x >= b.box.mn.x - eps && p.y >= b.box.mn.y - eps && p.z >= b.box.mn.z - eps &&
-            p.x <= b.box.mx.x + eps && p.y <= b.box.mx.y + eps && p.z <= b.box.mx.z + eps) return (int)i;
+        if (!b.gone && brushNear(b, p, eps)) return (int)i;   // (a sloped one: its shape, not its box)
     }
     return -1;
 }
@@ -1670,8 +1669,7 @@ void Map::flyProjectile(Vec3& pos, Vec3& vel, const ProjFlight& f, float t) cons
 int Map::blockAt(const Vec3& p, float eps) const {
     for (uint32_t i : blocks) {
         const Brush& b = brushes[i];
-        if (!b.gone && p.x >= b.box.mn.x - eps && p.y >= b.box.mn.y - eps && p.z >= b.box.mn.z - eps &&
-            p.x <= b.box.mx.x + eps && p.y <= b.box.mx.y + eps && p.z <= b.box.mx.z + eps) return (int)i;
+        if (!b.gone && brushNear(b, p, eps)) return (int)i;   // (a sloped one: its shape, not its box)
     }
     return -1;
 }
@@ -1679,8 +1677,7 @@ int Map::blockAt(const Vec3& p, float eps) const {
 int Map::glassAt(const Vec3& p, float eps) const {
     for (uint32_t i : glass) {
         const Brush& b = brushes[i];
-        if (!b.gone && p.x >= b.box.mn.x - eps && p.y >= b.box.mn.y - eps && p.z >= b.box.mn.z - eps &&
-            p.x <= b.box.mx.x + eps && p.y <= b.box.mx.y + eps && p.z <= b.box.mx.z + eps) return (int)i;
+        if (!b.gone && brushNear(b, p, eps)) return (int)i;   // (a sloped pane: its shape, not its box, which overlaps its neighbours')
     }
     return -1;
 }

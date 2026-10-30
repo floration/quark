@@ -79,7 +79,7 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "scroll_skip") scrollSkip = iv;
         else if (k == "auto_iconify") autoIconify = iv != 0;
         else if (k == "remember_tab") rememberTab = iv != 0;
-        else if (k == "last_tab") lastTab = std::min(std::max(iv, 0), 5);
+        else if (k == "last_tab") lastTab = std::min(std::max(iv, 0), 6);   // (6: SEARCH)
         else if (k == "confirm_leave") confirmLeave = iv != 0;
         else if (k == "vrr") vrr = iv != 0;
         else if (k == "captions") captions = iv != 0;

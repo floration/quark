@@ -110,6 +110,7 @@ constexpr size_t kMaxUnackedEvents = 256;
 }
 
 bool g_serverRateCheck = true;
+bool g_legacyTickOrder = false;
 
 // Detached cleanup (stop()): counted, so an exiting process can wait for them a little (waitBackground).
 namespace {
@@ -1930,7 +1931,7 @@ void Server::spawnPlayer(int id) {
         // teammate stands on is taken (-1e5: behind any seen one, ahead of a crouch-only one).
         const bool teams = modeIsTeamBased(ms_.mode) && p.team != TEAM_SPECTATOR;
         const bool unseen = ms_.mode == MODE_FFA || (arenaRules() & AR_INSTAGIB) || teams;
-        auto rival = [&](int i) { return i != id && players_[i].connected && players_[i].alive && (!teams || players_[i].team != p.team); };
+        auto rival = [&](int i) { return i != id && players_[i].connected && players_[i].alive && (!teams || (players_[i].team != p.team && !(spawnBatch_ && (batchSpawned_ >> i & 1)))); };
         const SpawnPoint* best = cands[qrand() % cands.size()];
         float bestScore = -1e9f;
         bool bestCrouched = false;
@@ -2287,17 +2288,32 @@ void Server::simulate() {
     }
     for (auto& p : players_)   // voted to spectate: whatever put them back on a team (a tourney ending...), they watch
         if (p.specLocked && p.connected && p.team != TEAM_SPECTATOR) { p.team = TEAM_SPECTATOR; p.alive = false; p.respawnAt = -1; p.waitingToPlay = false; }
-    for (int i = 0; i < kMaxPlayers; i++) {
+    // Who moves first (a map worker, 2026-10-30: the bots added second won ~3% more): every bot thinks first, all on
+    // the same world (as the tick found it), then everyone's commands run, starting from a different player each tick
+    // (the connected ones in slot order, turned by the tick). Before, each bot thought just before its own command ran,
+    // in slot order, so a higher slot saw the lower ones' moves, shots and deaths of this tick, and the route-search
+    // budget and every same-tick trade went to the lower slots every time.
+    int order[kMaxPlayers], nOrder = 0;
+    for (int i = 0; i < kMaxPlayers; i++) if (players_[i].connected) order[nOrder++] = i;
+    const bool legacy = g_legacyTickOrder;
+    const int first = nOrder && !legacy ? (int)(tick_ % (uint32_t)nOrder) : 0;
+    UserCmd botCmd[kMaxPlayers];
+    auto think = [&](int i) {
+        UserCmd& c = botCmd[i];
+        { QZONE("bot think"); c = botThink(*this, i); }
+        if (practicePassive_) c.buttons &= ~(BTN_FIRE | BTN_ALTFIRE);   // (practice: PASSIVE BOTS)
+        c.seq = tick_; // (a command number like a client's; spread doesn't depend on it, NET-9)
+        c.msec = (uint8_t)(1000 / tickRate());
+        c.viewTick = (uint32_t)timeMs_;   // (as a client sends it: 32 bits)
+    };
+    if (!legacy) for (int k = 0; k < nOrder; k++) { const int i = order[(first + k) % nOrder]; if (players_[i].isBot) think(i); }
+    for (int k = 0; k < nOrder; k++) {
+        const int i = order[(first + k) % nOrder];
         ServerPlayer& p = players_[i];
-        if (!p.connected) continue;
+        if (!p.connected) continue;   // (dropped by an earlier command: a kick vote, say)
         if (p.isBot) {
-            UserCmd c;
-            { QZONE("bot think"); c = botThink(*this, i); }
-            if (practicePassive_) c.buttons &= ~(BTN_FIRE | BTN_ALTFIRE);   // (practice: PASSIVE BOTS)
-            c.seq = tick_; // (a command number like a client's; spread doesn't depend on it, NET-9)
-            c.msec = (uint8_t)(1000 / tickRate());
-            c.viewTick = (uint32_t)timeMs_;   // (as a client sends it: 32 bits)
-            { QZONE("bot cmd"); runPlayerCmd(i, c); }
+            if (legacy) think(i);
+            { QZONE("bot cmd"); runPlayerCmd(i, botCmd[i]); }
             continue;
         }
         p.cmdTokensMs = std::min(p.cmdTokensMs + 1000.0f / tickRate(), kMaxCmdTokensMs);
@@ -3225,7 +3241,7 @@ bool Server::breakGlass(int brush, int how, const Vec3& at, const Vec3& dir, int
     d.seed = glassRand(glassSeed_);
     broadcastEvent(destructEvent(d));
     static thread_local std::vector<GlassShard> sh;
-    glassShards(pane, how, at, dir, d.seed, sh);
+    glassShards(pane, how, at, dir, d.seed, sh, &map_.brushes[(size_t)brush]);
     const int8_t spare = glassSparesBreaker(how) ? (int8_t)by : (int8_t)-1;
     for (const GlassShard& g : sh)
         if (shards_.size() < kMaxShards) shards_.push_back({g.pos, g.vel, g.size, g.damage, time() + kShardLife, (int8_t)by, spare, (uint32_t)brush});
