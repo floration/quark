@@ -11020,7 +11020,8 @@ void Game::updateDestruction(const Map& map) {
             }
             continue;
         }
-        glassShards(fx.pane, fx.how, fx.at, fx.dir, fx.seed, glassShardScratch_);
+        const Brush* shape = fx.brush >= 0 && (size_t)fx.brush < map.brushes.size() ? &map.brushes[(size_t)fx.brush] : nullptr;   // (a sloped pane's: in its shape)
+        glassShards(fx.pane, fx.how, fx.at, fx.dir, fx.seed, glassShardScratch_, shape);
         uint32_t sd = fx.seed ^ 0x9E3779B9u;
         for (const GlassShard& g : glassShardScratch_) {
             if (visShards_.size() >= kMaxVisShards) break;
@@ -11033,7 +11034,9 @@ void Game::updateDestruction(const Map& map) {
             const Vec3 ext = fx.pane.mx - fx.pane.mn, away = glassShardScratch_.empty() ? fx.dir : normalize(glassShardScratch_[0].vel + Vec3(0, 1e-3f, 0));
             for (int i = 0; i < n && visShards_.size() < kMaxVisShards; i++) {
                 const Vec3 r(glassRandF(sd) - 0.5f, glassRandF(sd) - 0.4f, glassRandF(sd) - 0.5f);
-                const Vec3 p = crater ? fx.at : Vec3(fx.pane.mn.x + ext.x * glassRandF(sd), fx.pane.mn.y + ext.y * glassRandF(sd), fx.pane.mn.z + ext.z * glassRandF(sd));
+                Vec3 p = crater ? fx.at : Vec3(fx.pane.mn.x + ext.x * glassRandF(sd), fx.pane.mn.y + ext.y * glassRandF(sd), fx.pane.mn.z + ext.z * glassRandF(sd));
+                if (!crater && shape && shape->shape != BRUSH_BOX && !glassShardScratch_.empty() && !brushNear(*shape, p, 0.05f))
+                    p = glassShardScratch_[(size_t)i % glassShardScratch_.size()].pos;   // (off a sloped pane's shape: where a piece starts)
                 const Vec3 v = (crater ? fx.dir : away) * (1.0f + 5.0f * glassRandF(sd)) + r * 4.0f;
                 VisShard d = {p, v, 0.004f + 0.008f * glassRandF(sd), Vec3(0.9f, 0.94f, 0.97f) * (0.85f + 0.3f * glassRandF(sd)), false, false, time_};
                 d.dust = true;
@@ -11043,8 +11046,9 @@ void Game::updateDestruction(const Map& map) {
         audio_.play3D(SND_BOLT_HIT, fx.at, glassCrater(fx.how) ? 0.8f : 1.0f, glassCrater(fx.how) ? 1.8f : 1.5f);
     }
     // the panes still standing: see-through (the bake leaves glass out)
-    for (uint32_t i : map.glass) if (!map.brushes[i].gone) r_.translucentBox(map.brushes[i].box, kGlassTint);
-    for (uint32_t i : map.windows) r_.translucentBox(map.brushes[i].box, kGlassTint);   // (plain glass: never breaks)
+    // (translucentBrush: a pane on a wedge, corner or cut draws as its shape, not its box: Museum's dome)
+    for (uint32_t i : map.glass) if (!map.brushes[i].gone) r_.translucentBrush(map.brushes[i], kGlassTint);
+    for (uint32_t i : map.windows) r_.translucentBrush(map.brushes[i], kGlassTint);   // (plain glass: never breaks)
     // shards fly, land and lie; one out of view is gone
     const float dt = shardsAt_ < 0 ? 0.0f : (float)std::min(0.05, time_ - shardsAt_);
     shardsAt_ = time_;

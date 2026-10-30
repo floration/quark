@@ -427,6 +427,17 @@ inline int slopePlanes(const Brush& b, Vec3* n, float* d) {
     } else { plane(0, b.dir == 1 || b.dir == 2); plane(2, b.dir == 2 || b.dir == 3); }
     return k;
 }
+// World: p in the brush's solid grown by eps (its box, and for a slope or a cut each of its planes, by eps): the real
+// shape, where a box test would take a slope's whole box (sloped glass: which pane a shot is in, where its shards are).
+inline bool brushNear(const Brush& b, const Vec3& p, float eps) {
+    if (!(p.x >= b.box.mn.x - eps && p.y >= b.box.mn.y - eps && p.z >= b.box.mn.z - eps &&
+          p.x <= b.box.mx.x + eps && p.y <= b.box.mx.y + eps && p.z <= b.box.mx.z + eps)) return false;
+    if (b.shape == BRUSH_BOX) return true;
+    Vec3 pn[kMaxCuts]; float pd[kMaxCuts];
+    const int np = slopePlanes(b, pn, pd);
+    for (int k = 0; k < np; k++) if (dot(pn[k], p) - pd[k] > eps * length(pn[k])) return false;   // (a cut's normals aren't unit)
+    return true;
+}
 // World: the sloped plane at p (a corner's: the one whose height is the lower there, the top being the min of the two).
 inline int slopePlaneAt(const Brush& b, const Vec3& p, Vec3& n, float& d) {
     Vec3 pn[kMaxCuts]; float pd[kMaxCuts];
@@ -486,6 +497,11 @@ template <class F> void slopePolygons(const Brush& world, F fn) {
             out(p, 3, n.y < 0 ? n * -1.0f : n);
         }
     }
+}
+// World: a slope's or cut's surface as triangles, fn(a, b, c) (a fan over each slopePolygons face): what a see-through
+// one (sloped glass, a see-through look) draws, its real shape rather than its box (Renderer::translucentBrush).
+template <class F> void slopeTriangles(const Brush& world, F fn) {
+    slopePolygons(world, [&](const Vec3* p, int np, const Vec3&) { for (int k = 1; k + 1 < np; k++) fn(p[0], p[k], p[k + 1]); });
 }
 // A slope turned or mirrored: `to` (its box already the turned box) gets the dir and up whose solid is `from`'s moved
 // by pt (a 90 degree turn or a mirror: any of them maps the 24 dir / up pairs onto each other). Tried on sample points
@@ -1612,7 +1628,7 @@ struct Map {
     std::vector<Brush> pristineBrushes;   // the brushes as they were before the first break (empty: none yet)
     uint32_t destructSerial = 0;          // counts every change (the renderer sends the holes again)
     bool breakGlass(size_t i);            // false: not a standing pane
-    int glassAt(const Vec3& p, float eps = 0.03f) const;   // a standing pane whose box (grown by eps) holds p, -1 none
+    int glassAt(const Vec3& p, float eps = 0.03f) const;   // a standing pane whose shape (grown by eps) holds p, -1 none
     int blockAt(const Vec3& p, float eps = 0.03f) const;   // the same for a standing breakable block
     // Blows a hole in every thin (kBreakableThick) brick / cobblestone box near `at`: kHoleSize across where it meets the
     // wall, less the distance from it to the wall's plane (owner: "if a sticky blows up 1m away ... a 1.5m hole").

@@ -89,6 +89,7 @@ public:
     void overlayBox(const Vec3& center, const Vec3& half, const Vec3& color); // world space, drawn over everything (editor handles)
     Vec3 viewPoint(const Vec3& offset) const;  // where a camera-relative point (as viewBox takes) is in the world
     void translucentBox(const AABB& b, const Color& c);
+    void translucentBrush(const Brush& b, const Color& c);   // a box as translucentBox, a slope or cut as its own faces
     // A static batch of boxes (the editor's unbaked map, PERF-12): box() calls made inside emit go to a buffer that's
     // uploaded once and drawn every frame useStaticBoxes() is called, culled per box, instead of being streamed again
     // each frame (~21 MB a frame on Midtown). Rebuild it only when the boxes change.

@@ -3241,7 +3241,7 @@ bool Server::breakGlass(int brush, int how, const Vec3& at, const Vec3& dir, int
     d.seed = glassRand(glassSeed_);
     broadcastEvent(destructEvent(d));
     static thread_local std::vector<GlassShard> sh;
-    glassShards(pane, how, at, dir, d.seed, sh);
+    glassShards(pane, how, at, dir, d.seed, sh, &map_.brushes[(size_t)brush]);
     const int8_t spare = glassSparesBreaker(how) ? (int8_t)by : (int8_t)-1;
     for (const GlassShard& g : sh)
         if (shards_.size() < kMaxShards) shards_.push_back({g.pos, g.vel, g.size, g.damage, time() + kShardLife, (int8_t)by, spare, (uint32_t)brush});

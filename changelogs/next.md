@@ -109,3 +109,6 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 
 ## Bomb
 - **Spawns go by role:** the attackers always start at the map's attack spawns and the defenders at the defence spawns, so at halftime the teams swap ends as well as roles. Before, each team kept its own end, so a map built with the attack 1 s closer to a site than the defence gave the same team the short way all match.
+
+## Glass
+- **Sloped glass draws as its slope:** glass on a wedge, corner or cut box used to draw as its whole box (a glass dome looked like four slabs floating over the roof). It now draws, and breaks into shards, as its real shape. The same goes for see-through looks and breakable blocks on a slope.

@@ -9019,6 +9019,71 @@ static OrderBias orderBias(const std::string& map, int mode, int seeds, double s
 // The tick's order doesn't favour a slot: every bot thinks on the same world (as the tick found it: nobody has moved,
 // shot or died yet this tick), each once, and who thinks and moves first turns tick by tick. Then the statistics: team
 // A's kill share with its bots added first or second (low slots or high) is the same within the noise.
+// Sloped glass (a map review, 2026-10-30: Museum's glass dome, four cut boxes, drew as four 40 x 6 m slabs over the
+// roof): a pane on a wedge or a cut is its shape everywhere: what's drawn (slopeTriangles, Renderer::translucentBrush),
+// what players stand on and shots hit, which pane a shot is in (Map::glassAt) and where its shards start.
+static void testSlopedGlass() {
+    printf("sloped glass: drawn, solid, hit and shattered as its shape, not its box\n");
+    // two breakable wedges in one box (rising toward +x and toward -x: each box holds the other's shape), and plain glass
+    // on a cut box (x/8 + y/4 <= 1 over its fractions: the same slope as the first wedge's, falling toward +x)
+    Map m;
+    std::string err;
+    const bool ok = m.parse("version 11\nbox -20 -1 -20 20 0 20\nspawn any 0 0 10\n"
+                            "wedge 37 0 0 0 -3 8 4 3\nwedge 37 1 0 0 -3 8 4 3\ncut 21 1 1 1 0 1 0 0 6 8 4 12\n", &err);
+    CHECK(ok && m.glass.size() == 2 && m.windows.size() == 1);
+    if (!ok || m.glass.size() != 2 || m.windows.size() != 1) { printf("  %s\n", err.c_str()); return; }
+    const Brush &up = m.brushes[m.glass[0]], &down = m.brushes[m.glass[1]], &cut = m.brushes[m.windows[0]];
+    CHECK(up.shape == BRUSH_WEDGE && down.shape == BRUSH_WEDGE && cut.shape == BRUSH_CUT);
+    auto around = [](Vec3 c, float r) { return AABB{c - Vec3(r, r, r), c + Vec3(r, r, r)}; };
+    // drawn: every corner on the shape, and the faces' area the wedge's (bottom 48, slope 6 sqrt 80, the high end 24, two
+    // ends 16 each: 157.7), not its box's (208)
+    for (const Brush* b : {&up, &cut}) {
+        float area = 0;
+        int tris = 0, off = 0;
+        slopeTriangles(*b, [&](const Vec3& a, const Vec3& c, const Vec3& d) {
+            area += 0.5f * length(cross(c - a, d - a)); tris++;
+            for (const Vec3* q : {&a, &c, &d}) off += !brushNear(*b, *q, 1e-3f);
+        });
+        printf("  %s: %d triangles, %.1f m2 of surface (its box: 208.0), %d corners off it\n", b == &up ? "wedge" : "cut", tris, area, off);
+        CHECK(tris >= 8 && off == 0 && std::fabs(area - 157.67f) < 0.5f);
+    }
+    // solid only under the slope: air over the low end of the box, glass under the high end
+    CHECK(m.boxSolid(around({1, 3, 9}, 0.1f)) && !m.boxSolid(around({7, 3, 9}, 0.1f)) && m.boxSolid(around({7, 0.2f, 9}, 0.1f)));   // (the cut: high at x 0)
+    // shots and sight hit its surface: straight down onto the cut at x 7 meets it at 0.5 m, not the box's top at 4
+    float t = m.raycast({7, 10, 9}, {0, -1, 0}, 50);
+    printf("  a shot down onto the cut at x 7 hits at y %.2f (the box's top: 4)\n", 10 - t);
+    CHECK(std::fabs(10 - t - 0.5f) < 0.02f);
+    // standing on it: a player box over x 7 comes down onto the slope, not the box's top
+    {
+        AABB pb = around({7, 3, 9}, 0.2f);
+        const float dy = m.sweepAxis(pb, 1, -5.0f);
+        CHECK(pb.mn.y + dy < 1.2f && pb.mn.y + dy > 0.45f);   // (the slope's 0.5 m to 0.75 under the box's 0.4 m width)
+    }
+    // which pane a point is in: inside the box of both wedges, but only in the down wedge's shape (high at x 0)
+    CHECK(m.glassAt({1, 2, 0}) == (int)m.glass[1]);
+    CHECK(m.glassAt({7, 2, 0}) == (int)m.glass[0]);
+    CHECK(m.glassAt({4, 3.9f, 0}) == -1);   // (over both slopes' meeting, under the box's top)
+    // shards start in the shape (the same draws for a box: none moved)
+    std::vector<GlassShard> inShape, inBox;
+    glassShards(up.box, GLASS_SHATTER, {4, 1, 0}, {}, 12345u, inShape, &up);
+    glassShards(up.box, GLASS_SHATTER, {4, 1, 0}, {}, 12345u, inBox);
+    int outS = 0, outB = 0;
+    for (auto& g : inShape) outS += !brushNear(up, g.pos, 1e-3f);
+    for (auto& g : inBox) outB += !brushNear(up, g.pos, 1e-3f);
+    printf("  shattered: %zu shards, %d off the wedge (%d with only its box)\n", inShape.size(), outS, outB);
+    CHECK(!inShape.empty() && inShape.size() == inBox.size() && outS == 0 && outB > 0);
+    Brush plain = up; plain.shape = BRUSH_BOX;
+    std::vector<GlassShard> b1, b2;
+    glassShards(plain.box, GLASS_SHOT, {4, 1, 0}, {0, 0, 1}, 777u, b1, &plain);
+    glassShards(plain.box, GLASS_SHOT, {4, 1, 0}, {0, 0, 1}, 777u, b2);
+    bool same = b1.size() == b2.size();
+    for (size_t k = 0; same && k < b1.size(); k++) same = length(b1[k].pos - b2[k].pos) == 0 && length(b1[k].vel - b2[k].vel) == 0;
+    CHECK(same);
+    // breaking one leaves the other: a shot through the down wedge breaks it, and the up one still stands
+    CHECK(m.breakGlass(m.glass[1]) && m.glassAt({1, 2, 0}) == -1 && m.glassAt({7, 2, 0}) == (int)m.glass[0]);
+    CHECK(!m.boxSolid(around({1, 3, 0}, 0.1f)) && m.boxSolid(around({7, 3, 0}, 0.1f)));   // (the up wedge alone now: its low end is air)
+}
+
 static void testTickOrder(uint16_t port) {
     printf("tick order: bots think on one world, first mover turns, no slot advantage\n");
     SimClock clock;
@@ -9625,6 +9690,7 @@ int main(int argc, char** argv) {
         {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"bombsites", [] { testBombSites(TP(29090)); }},
         {"tickorder", [] { testTickOrder(TP(29096)); }},
+        {"slopedglass", [] { testSlopedGlass(); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
         {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotNavBlockers(TP(29030)); testBotAim(p); testHostedBotsThreadExit(TP(29010)); testBotHurtTurn(TP(29011)); }},
         {"assets", [] { g_fail += assetTests(); }},

@@ -1150,7 +1150,38 @@ void Renderer::uploadWorld(const Map& map, PreparedWorld& w) {
 
 // A brush's box as 6 faces (both sides get drawn: the passes don't cull), with the face's own u, v for the outlines; the
 // material tells the shader its look. For the see-through looks and the breakable blocks, which aren't baked.
+// A slope or a cut (a see-through look on a wedge, a breakable block on a corner): its own faces, not its box, each a fan
+// of triangles with the outline distances as Renderer::slope's (edge = the distances to the face's sides).
 static void boxFaces(const Brush& b, std::vector<WorldVertex>& vs) {
+    if (b.shape != BRUSH_BOX) {
+        slopePolygons(b, [&](const Vec3* pp, int npAll, const Vec3& n) {
+            for (int s0 = 0; s0 + 2 < npAll; s0 += 2) {   // (pieces of up to 4 corners, as Renderer::slope)
+                const int ia = s0 + 1, ib = s0 + 2, ic = std::min(s0 + 3, npAll - 1);
+                const Vec3 p[4] = {pp[0], pp[ia], pp[ib], pp[ic]};
+                const int np = ic > ib ? 4 : 3;
+                const bool innerFirst = s0 > 0, innerLast = ic + 1 < npAll;
+                const Vec3 cen = np == 3 ? (p[0] + p[1] + p[2]) * (1.0f / 3) : (p[0] + p[1] + p[2] + p[3]) * 0.25f;
+                auto dist = [&](int e, const Vec3& q) {
+                    const Vec3 a = p[e], d = p[(e + 1) % np] - a;
+                    const Vec3 inward = cross(n, d);
+                    const float l = length(inward);
+                    if (l < 1e-6f || (e == 0 && innerFirst) || (e == np - 1 && innerLast)) return 1000.0f;
+                    return (dot(cen - a, inward) >= 0 ? 1.0f : -1.0f) * dot(q - a, inward) / l;
+                };
+                WorldVertex v[4] = {};
+                for (int k = 0; k < np; k++) {
+                    v[k].pos[0] = p[k].x; v[k].pos[1] = p[k].y; v[k].pos[2] = p[k].z;
+                    v[k].normal[0] = n.x; v[k].normal[1] = n.y; v[k].normal[2] = n.z;
+                    v[k].material = (float)b.material;
+                    const float d0 = dist(0, p[k]), d1 = dist(1, p[k]), d2 = dist(2, p[k]), d3 = np > 3 ? dist(3, p[k]) : 1000.0f;
+                    v[k].edge[0] = d0; v[k].edge[1] = d1; v[k].edge[2] = d0 + d2; v[k].edge[3] = d1 + d3;
+                }
+                vs.insert(vs.end(), {v[0], v[1], v[2]});
+                if (np == 4) vs.insert(vs.end(), {v[0], v[2], v[3]});
+            }
+        });
+        return;
+    }
     for (int axis = 0; axis < 3; axis++)
         for (int side = 0; side < 2; side++) {
             const int ua = (axis + 1) % 3, va = (axis + 2) % 3;
@@ -1507,6 +1538,18 @@ void Renderer::translucentBox(const AABB& b, const Color& c) {
             flat_.push_back(v);
         }
     }
+}
+
+void Renderer::translucentBrush(const Brush& b, const Color& c) {
+    if (b.shape == BRUSH_BOX) { translucentBox(b.box, c); return; }
+    slopeTriangles(b, [&](const Vec3& p0, const Vec3& p1, const Vec3& p2) {   // (map.h: its faces, fanned)
+        for (const Vec3* q : {&p0, &p1, &p2}) {
+            FlatVertex v;
+            memcpy(v.pos, &q->x, 12);
+            v.color[0] = c.r; v.color[1] = c.g; v.color[2] = c.b; v.color[3] = c.a;
+            flat_.push_back(v);
+        }
+    });
 }
 
 void Renderer::line(const Vec3& a, const Vec3& b, float width, const Color& c) {

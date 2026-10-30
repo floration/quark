@@ -875,7 +875,7 @@ void NetClient::applyDestructEvent(const GameEvent& e, bool fx) {
     }
     for (size_t k = 0; k < pendingGlass_.size(); k++)   // our own, predicted: already broken and shown
         if (pendingGlass_[k].brush == d.brush) { pendingGlass_.erase(pendingGlass_.begin() + (long)k); return; }
-    if (map_.breakGlass(d.brush) && fx && glassFx_.size() < 256) glassFx_.push_back({map_.brushes[d.brush].box, d.how, d.at, d.dir, d.seed, false, map_.brushes[d.brush].material});
+    if (map_.breakGlass(d.brush) && fx && glassFx_.size() < 256) glassFx_.push_back({map_.brushes[d.brush].box, d.how, d.at, d.dir, d.seed, false, map_.brushes[d.brush].material, (int)d.brush});
 }
 
 void NetClient::replayDestruction() {
@@ -886,7 +886,7 @@ void NetClient::replayDestruction() {
 bool NetClient::predictGlass(int brush, int how, const Vec3& at, const Vec3& dir) {
     if (play_.active || brush < 0 || !map_.breakGlass((size_t)brush)) return false;
     pendingGlass_.push_back({(uint32_t)brush, timeNow()});
-    if (glassFx_.size() < 256) glassFx_.push_back({map_.brushes[(size_t)brush].box, (uint8_t)how, at, dir, glassRand(glassSeed_), false});
+    if (glassFx_.size() < 256) glassFx_.push_back({map_.brushes[(size_t)brush].box, (uint8_t)how, at, dir, glassRand(glassSeed_), false, map_.brushes[(size_t)brush].material, brush});
     return true;
 }
 
