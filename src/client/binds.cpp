@@ -4,7 +4,7 @@
 #include <cctype>
 
 void Binds::setDefaults() {
-    for (auto& c : code) c[0] = c[1] = 0;
+    for (auto& c : code) for (int& k : c) k = 0;
     auto set = [&](int a, int k0, int k1 = 0) { code[a][0] = k0; code[a][1] = k1; };
     set(A_FORWARD, GLFW_KEY_W);
     set(A_BACK, GLFW_KEY_S);
@@ -37,7 +37,7 @@ const char* actionName(int a) {
     static const char* n[A_COUNT] = {
         "FORWARD", "BACK", "LEFT", "RIGHT", "JUMP", "CROUCH", "FIRE", "ALT FIRE", "USE", "DASH", "GRAPPLE",
         "ROCKET", "RIFLE", "LASER", "SHOTGUN", "SNIPER", "STICKY", "CROSSBOW", "BUBBLE", // weapon slots 1-8
-        "NEXT WEAP", "PREV WEAP", "SCOREBOARD", "CHAT", "VOTE YES", "VOTE NO", "PERF STATS", "SCREENSHOT", "VOTE START", "KNIFE", "SYRINGE", "QUIP", "TOGGLE CHAT", "LATENCY", "RACE RESET", "TEAM CHAT", "LAST WEAPON", "SPEC NEXT", "SPEC PREV", "HIDE HUD",
+        "NEXT WEAP", "PREV WEAP", "SCOREBOARD", "CHAT", "VOTE YES", "VOTE NO", "PERF STATS", "SCREENSHOT", "VOTE START", "KNIFE", "SYRINGE", "QUIP", "TOGGLE CHAT", "LATENCY", "RACE RESET", "TEAM CHAT", "LAST WEAPON", "SPEC NEXT", "SPEC PREV", "SAVE POS", "LOAD POS", "HIDE HUD",
     };
     return a >= 0 && a < A_COUNT ? n[a] : "?";
 }

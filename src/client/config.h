@@ -3,6 +3,7 @@
 constexpr int kOutlineColors = 8;
 extern const char* const kOutlineNames[kOutlineColors];
 #include <cstdio>
+#include <map>
 #include <string>
 #include "../common/qmath.h"
 #include "binds.h"
@@ -88,6 +89,14 @@ struct Settings {
     bool killBursts = true;            // ...the red burst where someone dies
     bool tracers = true;               // ...the bullet tracers (beams are YOUR / ENEMY SHOTS)
     bool viewRecoil = true;            // ...the gun model's kick on a shot
+    std::map<int, std::string> cmdBinds;   // the console's "bind <key> <commands>": a key that runs console lines (cbind_<code>)
+    std::map<std::string, std::string> aliases;   // "alias <name> <commands>": a word that runs them (alias_<name>)
+    bool matchSummary = true;          // GAMEPLAY > MORE: the match's end: your shots, hits, accuracy, damage and best streak
+    bool teamPanel = false;            // GAMEPLAY > MORE: team modes: your teammates' health and the enemies left, at the left
+    bool ghost = true;                 // GAMEPLAY > MORE: race / surf: your best run's ghost runs beside you
+    int autoRecord = 0;                // DEMOS: record every match you join (1), only ranked ones (2), or not (0)
+    int demoKeep = 0;                  // ...keep only the newest this many demos (0: all); older ones are deleted
+    int demoSort = 0;                  // ...the list: newest first, oldest, name, biggest
     bool queueFlash = true;            // GAMEPLAY > MORE: a filled queue flashes the taskbar button (the game in the background)
     bool autoReconnect = true;         // GAMEPLAY > MORE: a lost connection (not a kick) tries the server again, 3 times
     bool leftHanded = false;           // CONTROLS > MORE: HAND: the gun on the left, the grapple launcher on the right
@@ -99,6 +108,7 @@ struct Settings {
     std::string audioOutput;       // the sound output's id (a Windows endpoint id, an ALSA name, a CoreAudio UID)
     std::string audioInput;        // the microphone's id (nothing records yet: kept for voice chat)
     std::string monitor;           // fullscreen / borderless on this monitor (its name, "#2" for a second of the same); "" = primary
+    int fsWidth = 0, fsHeight = 0;     // EXCLUSIVE FULLSCREEN's resolution (VIDEO > MORE 3); 0 = the monitor's desktop size
     int fullscreenHz = 0;          // EXCLUSIVE FULLSCREEN's refresh rate; 0 = the monitor's desktop rate
     // VISUALS
     bool fullbright = false;    // flat white world, black outlines, no lighting

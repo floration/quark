@@ -353,6 +353,11 @@ private:
     bool playDemo(const std::string& path);
     std::vector<std::string> demoFiles_;
     std::vector<std::string> demoNotes_;   // per demo: "" (plays), or which version recorded it / converting
+    std::vector<uintmax_t> demoSizes_;     // ...its size in bytes
+    std::string demoDelArmed_; double demoDelUntil_ = 0;   // DELETE: the demo armed by a first click (a second deletes it)
+    void applySettings();                  // after many settings changed at once (console, IMPORT, RESET ALL): the ones not read every frame
+    std::string allMsg_; double allMsgUntil_ = 0, resetAllArmed_ = 0;   // GAMEPLAY > MORE: ALL SETTINGS' answer; RESET ALL armed
+    void pruneDemos();                     // KEEP: delete all but the newest cfg_.demoKeep
     double demoListAt_ = -1;
     int infoTab_ = 0;
     int infoScroll_ = 0;                    // the info page's first line shown (mouse wheel: 3 lines a notch)
@@ -655,6 +660,15 @@ private:
     std::string perfPrio_;   // F3: PRIORITIZE GAME as Windows reports it (gamePriorityStatus; empty off Windows)   // (drawPerf: the version / server line, made with the numbers)
     struct JoiningThread { std::thread t; ~JoiningThread() { if (t.joinable()) t.join(); } };
     JoiningThread raceWriter_;  // (onRaceSplit: appends a finished run to race_times.log; joined however the game ends)
+    // the race ghost: this run's path (20 a second, from its start) and the best run's on this map (ghosts/<map>.txt)
+    struct GhostPt { float t; Vec3 pos; };
+    std::vector<GhostPt> ghostRec_, ghostBest_;
+    std::string ghostMap_;               // (the map ghostBest_ is for)
+    double ghostRunStart_ = -1, ghostNext_ = 0;
+    JoiningThread ghostWriter_;
+    void drawTeamPanel(float H, float s, float ts);   // TEAM PANEL
+    int matchShots_ = 0, matchHits_ = 0, matchBestStreak_ = 0; float matchDmg_ = 0;   // MATCH SUMMARY: this match's, from when it began
+    void updateGhost();                  // record this run; draw the best one
     Vec3 viewAnchor(const Settings::HudElem& e, const Vec3& base) const;   // a first-person model's pivot (camera space)
     Mat4 weaponFrame(float kick) const;    // the weapon model: its space (x its size) -> camera space (HUD layout)
     Vec3 muzzlePoint(int weapon, const Vec3& eye) const;   // world point of the weapon model's barrel tip (HUD layout)
@@ -845,6 +859,8 @@ private:
     std::string pendingFilled_;
     std::string discordCode_;   // settings: the one-time code from the bot's /link (or "unlink"), sent on BACK
     bool queueMenu_ = false;
+    bool practiceMenu_ = false;          // pause > HOST > PRACTICE (the host alone with bots)
+    void drawPracticeMenu();
     void onKillFeedback(int killer, int victim, int weapon, bool head, bool airborne);
     int streak_[kMaxPlayers] = {};
     double typingUntil_[kMaxPlayers] = {}, nextTypingSend_ = 0;
@@ -882,6 +898,9 @@ private:
     std::vector<std::string> consoleHistory_;
     int consoleHistoryAt_ = -1;
     void runConsole(const std::string& line);
+    void runCommands(const std::string& cmds, int depth = 0);   // ';'-separated console lines (binds, aliases, exec files)
+    int consoleDepth_ = 0;                 // (aliases / exec nesting: a loop stops at 8)
+    void execFile(const std::string& name, bool quiet = false);   // exec: <data folder>/<name>[.cfg], a console line each
     void drawConsole(float W, float H, float s, float ts);
     int bestMapFor(int mode) const;
     int bestRankedMap(int ladder) const; // the ladder's own ranked map, else any ranked map for it

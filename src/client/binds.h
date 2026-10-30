@@ -1,4 +1,4 @@
-// Rebindable controls. Every action has two slots; a slot holds a key, a mouse button or a
+// Rebindable controls. Every action has three slots (two until 1.19.4); a slot holds a key, a mouse button or a
 // scroll direction.
 #pragma once
 #include <string>
@@ -16,6 +16,7 @@ enum Action {
     A_TEAMCHAT,  // chat to your team only (unbound by default)
     A_LASTWEAPON, // back to the weapon held before this one (unbound by default)
     A_SPECNEXT, A_SPECPREV,   // spectating / dead: the next / previous player to watch (a click still does next)
+    A_SAVEPOS, A_LOADPOS,   // practice (the host alone with bots): save your spot / go back to it (unbound by default)
     A_HIDEHUD,   // hide / show the HUD (a clean screen; the crosshair kept unless HIDE HUD KEEPS CROSSHAIR is off); unbound
     A_COUNT
 };
@@ -26,10 +27,16 @@ constexpr int kMouseCode = 1000;
 constexpr int kWheelUp = 2000;
 constexpr int kWheelDown = 2001;
 
+constexpr int kBindSlots = 3;
+
 struct Binds {
-    int code[A_COUNT][2] = {};
+    int code[A_COUNT][kBindSlots] = {};
     void setDefaults();
-    bool has(int action, int code) const { return code != 0 && (this->code[action][0] == code || this->code[action][1] == code); }
+    bool has(int action, int code) const {
+        if (code == 0) return false;
+        for (int k = 0; k < kBindSlots; k++) if (this->code[action][k] == code) return true;
+        return false;
+    }
 };
 
 const char* actionName(int action);

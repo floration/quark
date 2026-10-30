@@ -91,6 +91,16 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "left_handed") leftHanded = iv != 0;
         else if (k == "auto_reconnect") autoReconnect = iv != 0;
         else if (k == "queue_flash") queueFlash = iv != 0;
+        else if (k == "ghost") ghost = iv != 0;
+        else if (k == "team_panel") teamPanel = iv != 0;
+        else if (k == "match_summary") matchSummary = iv != 0;
+        else if (k.rfind("cbind_", 0) == 0) { const int c = atoi(k.c_str() + 6); if (c > 0) { if (v.empty()) cmdBinds.erase(c); else cmdBinds[c] = v; } }
+        else if (k.rfind("alias_", 0) == 0 && k.size() > 6) { if (v.empty()) aliases.erase(k.substr(6)); else aliases[k.substr(6)] = v; }
+        else if (k == "fs_width") fsWidth = std::min(std::max(iv, 0), 16384);
+        else if (k == "fs_height") fsHeight = std::min(std::max(iv, 0), 16384);
+        else if (k == "auto_record") autoRecord = std::min(std::max(iv, 0), 2);
+        else if (k == "demo_keep") demoKeep = std::min(std::max(iv, 0), 1000);
+        else if (k == "demo_sort") demoSort = std::min(std::max(iv, 0), 3);
         else if (k == "video_preset") videoPreset = std::min(std::max(iv, 0), 4);
         else if (k == "fx_opacity") { if (std::isfinite(fv)) fxOpacity = clampf(fv, 0, 1); }
         else if (k == "kill_bursts") killBursts = iv != 0;
@@ -231,8 +241,8 @@ void Settings::set(const std::string& k, const std::string& v) {
         }
         else if (k == "bind_version") bindVersion = iv;
         else if (k.rfind("bind_", 0) == 0) {
-            int a = atoi(k.c_str() + 5), c0 = 0, c1 = 0;
-            if (a >= 0 && a < A_COUNT && sscanf(v.c_str(), "%d,%d", &c0, &c1) >= 1) { binds.code[a][0] = c0; binds.code[a][1] = c1; }
+            int a = atoi(k.c_str() + 5), c0 = 0, c1 = 0, c2 = 0;
+            if (a >= 0 && a < A_COUNT && sscanf(v.c_str(), "%d,%d,%d", &c0, &c1, &c2) >= 1) { binds.code[a][0] = c0; binds.code[a][1] = c1; binds.code[a][2] = c2; }
         }
     }
 }
@@ -275,7 +285,10 @@ std::string Settings::toText() const {
     std::ostringstream f;
     f << "name=" << name << "\nsensitivity=" << sensitivity << "\ndpi=" << dpi << "\nsens_y=" << sensY << "\ninvert_y=" << invertY << "\nzoom_sens=" << zoomSens << "\nscore_toggle=" << scoreToggle << "\nhit_volume=" << hitVolume << "\nhit_pack=" << hitPack << "\nheadshot_sound=" << headshotSound << "\nkill_sound=" << killSound << "\nhud_size=" << hudSize << "\nfeed_time=" << feedTime << "\nfeed_lines=" << feedLines << "\nfeed_mine=" << feedMine << "\nchat_time=" << chatTime << "\nchat_lines=" << chatLines << "\nchat_opacity=" << chatOpacity
       << "\nshow_fps=" << showFps << "\nshow_ping=" << showPing << "\nhide_hud_crosshair=" << hideHudCrosshair << "\nfog=" << fog << "\ngamma=" << gamma << "\ncontrast=" << contrast << "\nsaturation=" << saturation << "\ncpu_priority=" << cpuPriority << "\nscroll_wrap=" << scrollWrap << "\nscroll_skip=" << scrollSkip
-      << "\nauto_iconify=" << autoIconify << "\nremember_tab=" << rememberTab << "\nlast_tab=" << lastTab << "\nconfirm_leave=" << confirmLeave << "\nvrr=" << vrr << "\ncaptions=" << captions << "\nhp_scaled=" << hpScaled << "\nvol_steps=" << volSteps << "\nvol_others_steps=" << volOthersSteps << "\nvol_weapons=" << volWeapons << "\nvol_objective=" << volObjective << "\nenemy_model=" << enemyModel << "\ngrapple_toggle=" << grappleToggle << "\nleft_handed=" << leftHanded << "\nauto_reconnect=" << autoReconnect << "\nqueue_flash=" << queueFlash << "\nvideo_preset=" << videoPreset << "\nfx_opacity=" << fxOpacity << "\nkill_bursts=" << killBursts << "\ntracers=" << tracers << "\nview_recoil=" << viewRecoil
+      << "\nauto_iconify=" << autoIconify << "\nremember_tab=" << rememberTab << "\nlast_tab=" << lastTab << "\nconfirm_leave=" << confirmLeave << "\nvrr=" << vrr << "\ncaptions=" << captions << "\nhp_scaled=" << hpScaled << "\nvol_steps=" << volSteps << "\nvol_others_steps=" << volOthersSteps << "\nvol_weapons=" << volWeapons << "\nvol_objective=" << volObjective << "\nenemy_model=" << enemyModel << "\ngrapple_toggle=" << grappleToggle << "\nleft_handed=" << leftHanded << "\nauto_reconnect=" << autoReconnect << "\nqueue_flash=" << queueFlash << "\nghost=" << ghost << "\nteam_panel=" << teamPanel << "\nmatch_summary=" << matchSummary;
+    for (auto& b : cmdBinds) f << "\ncbind_" << b.first << "=" << b.second;
+    for (auto& a : aliases) f << "\nalias_" << a.first << "=" << a.second;
+    f << "\nfs_width=" << fsWidth << "\nfs_height=" << fsHeight << "\nauto_record=" << autoRecord << "\ndemo_keep=" << demoKeep << "\ndemo_sort=" << demoSort << "\nvideo_preset=" << videoPreset << "\nfx_opacity=" << fxOpacity << "\nkill_bursts=" << killBursts << "\ntracers=" << tracers << "\nview_recoil=" << viewRecoil
        << "\nfov=" << fov << "\nbrightness=" << brightness << "\ndisplay_mode=" << displayMode
       << "\npresent_mode=" << presentMode << "\nlatent_offset_us=" << latentOffsetUs << "\ngpu_max_clocks=" << gpuMaxClocks << "\nprioritize=" << prioritize << "\nlow_latency=" << lowLatency << "\ninterp_ms=" << interpMs
       << "\nmaxfps=" << maxFps << "\nwidth=" << width << "\nheight=" << height << "\nwin_x=" << winX << "\nwin_y=" << winY << "\nbg_fps=" << bgFps << "\nbg_mute=" << bgMute
@@ -301,7 +314,7 @@ std::string Settings::toText() const {
         if (!modeCtl[m].empty()) f << "mode_controls_" << modeName(m) << "=" << modeCtl[m] << "\n";
     }
     f << "bind_version=4\n";
-    for (int a = 0; a < A_COUNT; a++) f << "bind_" << a << "=" << binds.code[a][0] << "," << binds.code[a][1] << "\n";
+    for (int a = 0; a < A_COUNT; a++) f << "bind_" << a << "=" << binds.code[a][0] << "," << binds.code[a][1] << "," << binds.code[a][2] << "\n";   // (older games read the first two)
     return f.str();
 }
 

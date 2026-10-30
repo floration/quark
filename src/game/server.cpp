@@ -1689,6 +1689,28 @@ void Server::command(const std::string& line, int fromPlayer) {
         if (blocked) { reply("a ranked match is being played: '" + cmd + "' has to wait until it's over"); return; }
     }
     if (cmd == "editmode" && cfg_.ranked) { reply("no map editing on a ranked server (vote ranked off first)"); return; }
+    if (cmd == "practice") {   // practice savepos|loadpos|god|passive|reset: the host alone with bots (no other human: no unfair edge)
+        int humans = 0;
+        for (auto& o : players_) humans += o.connected && !o.isBot;
+        if (fromPlayer < 0 || cfg_.ranked || humans > 1) { reply("practice: only when you host and no one else has joined"); return; }
+        ServerPlayer& p = players_[fromPlayer];
+        if (arg == "savepos" && p.alive) {
+            p.practiceSaved = true; p.practicePos = p.move.pos; p.practiceVel = p.move.vel; p.practiceYaw = p.yaw; p.practicePitch = p.pitch;
+            reply("practice: position saved");
+        } else if (arg == "loadpos") {
+            if (!p.practiceSaved) { reply("practice: no position saved yet"); return; }
+            if (!p.alive) spawnPlayer(fromPlayer);
+            p.move = MoveState();   // (a fresh move state there: dashes and grapple ready, as a spawn's)
+            p.move.pos = p.practicePos; p.move.vel = p.practiceVel; p.yaw = p.practiceYaw; p.pitch = p.practicePitch;
+            GameEvent e;   // (EV_SPAWN: the client's prediction starts again from here, facing the saved way)
+            e.type = EV_SPAWN; e.a = (uint8_t)fromPlayer; e.c = (int16_t)std::lround(std::remainder(p.yaw, 2 * PI) * 1000.0f);
+            sendEvent(fromPlayer, e);
+        } else if (arg == "god") { p.practiceGod = !p.practiceGod; reply(p.practiceGod ? "practice: you take no damage" : "practice: you take damage again"); }
+        else if (arg == "passive") { practicePassive_ = !practicePassive_; reply(practicePassive_ ? "practice: bots won't fire" : "practice: bots fire again"); }
+        else if (arg == "reset") { p.practiceGod = false; practicePassive_ = false; p.practiceSaved = false; reply("practice: all off"); }
+        else reply("practice savepos | loadpos | god | passive | reset");
+        return;
+    }
     if (cmd == "editmode") { // editmode on|off: switch between editing the map together and playing it
         if (arg == "on") { if (!editing_) setEditing(true); return; }
         if (!editing_) return;
@@ -2058,7 +2080,7 @@ void Server::killPlayer(int victim, int killer, int weapon) {
 void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const Vec3& knock) {
     ServerPlayer& v = players_[victim];
     if (!v.alive) return;
-    bool canHurt = rulesCanDamage(*this, attacker, victim, weapon);
+    bool canHurt = rulesCanDamage(*this, attacker, victim, weapon) && !v.practiceGod;   // (practice: TAKE NO DAMAGE)
     bool friendly = attacker >= 0 && attacker != victim && modeIsTeamBased(cfg_.mode) && players_[attacker].team == v.team;
     // Race: you can only affect yourself (rocket jumps etc.); hide and seek / tag: only "it" touches anyone (the rules)
     if (!rulesCanHit(*this, attacker, victim, weapon)) return;
@@ -2252,6 +2274,7 @@ void Server::simulate() {
         if (p.isBot) {
             UserCmd c;
             { QZONE("bot think"); c = botThink(*this, i); }
+            if (practicePassive_) c.buttons &= ~(BTN_FIRE | BTN_ALTFIRE);   // (practice: PASSIVE BOTS)
             c.seq = tick_; // (a command number like a client's; spread doesn't depend on it, NET-9)
             c.msec = (uint8_t)(1000 / tickRate());
             c.viewTick = (uint32_t)timeMs_;   // (as a client sends it: 32 bits)

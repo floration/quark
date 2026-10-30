@@ -92,6 +92,7 @@ std::string Game::uiScreenPath() const {
                 else if (picker_ != PICK_NONE) p += pick;
                 else if (voteMenu_) p += specPick_ ? "/vote/spec" : "/vote";
                 else if (queueMenu_) p += "/queue";
+                else if (practiceMenu_) p += "/practice";
             }
             if (chatting_) p += console_ ? "/console" : "/chat";
             return p;
@@ -134,6 +135,9 @@ std::string Game::uiObserve(const std::string& w) {
     if (w == "widgets") return widgets_.toText() + "|" + std::to_string(widgetSel_) + "|" + std::to_string(filePick_) + "|" + widgetMsg_ + "@" + std::to_string(widgetMsgUntil_);
     if (w == "ctlimport") return cfg_.toText() + "|" + std::to_string(filePick_) + "|" + widgetMsg_ + "@" + std::to_string(widgetMsgUntil_);
     if (w.rfind("files:", 0) == 0) return listDir(profileDir(w.substr(6).c_str()));
+    if (w == "allset") return allMsg_ + "@" + std::to_string(allMsgUntil_) + "@" + std::to_string(resetAllArmed_);
+    if (w == "demos") return listDir(userDataPath("demos"));
+    if (w == "demodel") return demoDelArmed_ + "@" + std::to_string(demoDelUntil_);
     if (w == "confirm") return confirmArmed(confirmWhat_) ? confirmWhat_ : "";
     if (w == "chcode") return cfg_.toText() + "|" + chCodeMsg_ + "@" + std::to_string(chCodeUntil_);
     if (w == "groups") return listDir(userDataPath("groups"));
@@ -564,7 +568,7 @@ private:
         g.ui_.clearFocus();
         g.paused_ = g.chatting_ = g.console_ = false;
         g.chatText_.clear();
-        g.settingsInGame_ = g.voteMenu_ = g.queueMenu_ = g.fontsOpen_ = g.devicesOpen_ = false;
+        g.settingsInGame_ = g.voteMenu_ = g.queueMenu_ = g.practiceMenu_ = g.fontsOpen_ = g.devicesOpen_ = false;
         g.moreOpen_ = 0;
         for (int& d : g.devScroll_) d = 0;
         g.setTab_ = Game::TAB_PLAYER;

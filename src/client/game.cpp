@@ -162,6 +162,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     audio_.setAnnouncerVolume(cfg_.volumeAnnouncer);
     audio_.setQuips(cfg_.quips);
     audio_.setQuipVolume(cfg_.volumeQuips);
+    if (!opts_.uiTest) execFile("autoexec.cfg", true);   // (the console's lines from your data folder, if there; not in the UI test)
 
     botMapIdx_ = bestMapFor(cfg_.botMode);
     if (!opts_.uiTest && opts_.screenshot.empty() && !opts_.benchmark) benchRetryUploads();   // (runs whose upload didn't get through)
@@ -393,7 +394,7 @@ void Game::leaveGame(const std::string& error) {
     if (widgetEdit_) widgets_.save(activeHudPath());
     hudEditClose();
     if (settingsInGame_) cfg_.save();
-    settingsInGame_ = voteMenu_ = specPick_ = queueMenu_ = fontsOpen_ = devicesOpen_ = widgetEdit_ = false;
+    settingsInGame_ = voteMenu_ = specPick_ = queueMenu_ = practiceMenu_ = fontsOpen_ = devicesOpen_ = widgetEdit_ = false;
     setTab_ = TAB_PLAYER; controlsSub_ = 0;
     ui_.closePopup();
     picker_ = PICK_NONE;
@@ -631,7 +632,7 @@ int Game::bestMapFor(int mode) const {
 
 bool Game::isDown(int action) const {
     if (testHeld_ >> action & 1) return true;   // (the UI test holding e.g. the scoreboard key; 0 in play)
-    for (int k = 0; k < 2; k++) {
+    for (int k = 0; k < kBindSlots; k++) {
         int c = binds().code[action][k];
         if (c >= kMouseCode && c < kMouseCode + 16) { if (!(swallowedBtn_ >> (c - kMouseCode) & 1) && glfwGetMouseButton(win_, c - kMouseCode) == GLFW_PRESS) return true; }
         else if (c > 0 && c < kMouseCode && glfwGetKey(win_, c) == GLFW_PRESS) return true;
@@ -651,7 +652,7 @@ bool Game::pressInput(int code) {
         // default wheel = next/prev weapon kept firing alongside e.g. wheel = jump). The page says which, with UNDO.
         if (slot)
             for (int a = 0; a < A_COUNT; a++)
-                for (int k = 0; k < 2; k++)
+                for (int k = 0; k < kBindSlots; k++)
                     if ((a != captureAction_ || k != captureSlot_) && cfg_.binds.code[a][k] == slot) {
                         cfg_.binds.code[a][k] = 0;
                         bindTakenA_ = a; bindTakenK_ = k; bindTakenCode_ = slot; bindTakenTo_ = captureAction_; bindTakenSlot_ = captureSlot_;
@@ -661,9 +662,16 @@ bool Game::pressInput(int code) {
         cfg_.save();
         return true;
     }
+    // the console's command binds (bind <key> <commands>): in a match, beside whatever action the key has
+    if (!cfg_.cmdBinds.empty() && screen_ == Screen::InGame && !paused_ && !chatting_)
+        if (auto it = cfg_.cmdBinds.find(code); it != cfg_.cmdBinds.end()) runCommands(it->second);
     const Binds& b = binds();
     if (b.has(A_SCORES, code) && cfg_.scoreToggle && !chatting_) scoresOn_ = !scoresOn_;   // (and on: the key may do more)
     if (b.has(A_HIDEHUD, code) && !chatting_) { hudHidden_ = !hudHidden_; return true; }
+    if ((b.has(A_SAVEPOS, code) || b.has(A_LOADPOS, code)) && screen_ == Screen::InGame && !paused_ && !chatting_ && host_) {
+        net_.sendCommand(b.has(A_SAVEPOS, code) ? "practice savepos" : "practice loadpos");
+        return true;
+    }
     if ((b.has(A_SPECNEXT, code) || b.has(A_SPECPREV, code)) && screen_ == Screen::InGame && !paused_ && !chatting_ && !net_.selfAlive()) {
         cycleSpec(b.has(A_SPECNEXT, code) ? 1 : -1);
         return true;
@@ -871,7 +879,7 @@ void Game::onKey(int key, int action, int mods) {
             if (devicesOpen_) { devicesOpen_ = false; cfg_.save(); return; }   // (DEVICES: back to VIDEO + AUDIO)
             if (moreOpen_) { moreOpen_ = false; cfg_.save(); return; }   // (MORE: back to its tab)
             if (settingsInGame_) { leaveSettings(); return; }   // (any tab: as BACK)
-            if (voteMenu_ || queueMenu_ || picker_ != PICK_NONE) { voteMenu_ = queueMenu_ = specPick_ = false; picker_ = PICK_NONE; return; }
+            if (voteMenu_ || queueMenu_ || practiceMenu_ || picker_ != PICK_NONE) { voteMenu_ = queueMenu_ = practiceMenu_ = specPick_ = false; picker_ = PICK_NONE; return; }
             paused_ = !paused_;
             captureMouse(!paused_);
             return;
@@ -1203,7 +1211,10 @@ void Game::updateAnnouncer() {
     if (annPrevValid_ && (ms.mode != annPrev_.mode || (annPrev_.phase != PHASE_WARMUP && ms.phase == PHASE_WARMUP) ||
                           ((annPrev_.phase == PHASE_WARMUP || annPrev_.phase == PHASE_MATCH_END) && ms.phase != annPrev_.phase) ||
                           ms.round < annPrev_.round))
+    {
         for (int& k : streak_) k = 0;
+        matchShots_ = matchHits_ = matchBestStreak_ = 0; matchDmg_ = 0;   // (MATCH SUMMARY counts from here)
+    }
     for (int i = 0; i < kMaxPlayers; i++)
         if (streak_[i] && !net_.findPlayer(i)) streak_[i] = 0;
     annPrev_ = ms;
@@ -1255,6 +1266,7 @@ void Game::onKillFeedback(int killer, int victim, int weapon, bool head, bool ai
     }
     if (killer < 0 || killer >= kMaxPlayers || killer == victim || (modeIsTeamBased(net_.mode().mode) && isFriendly(killer) == isFriendly(victim))) return;
     int n = ++streak_[killer];
+    if (killer == me) matchBestStreak_ = std::max(matchBestStreak_, n);   // (MATCH SUMMARY)
     static const struct { int kills; int snd; const char* what; } streaks[] = {
         {3, SND_VOICE_SPREE, "IS ON A KILLING SPREE"}, {5, SND_VOICE_RAMPAGE, "IS ON A RAMPAGE"},
         {7, SND_VOICE_UNSTOPPABLE, "IS UNSTOPPABLE"}, {10, SND_VOICE_GODLIKE, "IS GODLIKE"}};
@@ -1273,7 +1285,7 @@ void Game::onKillFeedback(int killer, int victim, int weapon, bool head, bool ai
 // dead or spectating: watch the next (dir 1) or previous (-1) living player (a team mode: a teammate)
 // the key an action is on, for hints ("UNBOUND" when it has none)
 std::string Game::keyOf(int action) const {
-    for (int k = 0; k < 2; k++) if (int c = binds().code[action][k]) return upper(inputName(c));
+    for (int k = 0; k < kBindSlots; k++) if (int c = binds().code[action][k]) return upper(inputName(c));
     return "UNBOUND";
 }
 
@@ -1495,6 +1507,7 @@ void Game::handleEvents() {
                     bool head = e.text == "h"; // a headshot: its own red number
                     hitUntil_ = time_ + 0.15;
                     hitHead_ = head;
+                    matchHits_++; matchDmg_ += dmg;
                     // four tiers by this hit's damage, each heavier and louder (hitSoundFor); hits landing together make one
                     if (cfg_.hitsounds) {
                         int snd = hitSoundFor(dmg);
@@ -1676,7 +1689,12 @@ void Game::frame(double dt) {
             } else {
                 if (screen_ == Screen::Editor) { edOnline_ = false; loadedMapGen_ = 0; } // the host switched to playing it: bake it
                 loadMapIfNeeded();
-                if (screen_ != Screen::InGame) setScreen(Screen::InGame);
+                if (screen_ != Screen::InGame) {
+                    setScreen(Screen::InGame);
+                    // DEMOS > AUTO RECORD: every match you join, or ranked ones (then KEEP prunes the oldest)
+                    const bool ranked = net_.mode().flags & MS_RANKED;
+                    if ((cfg_.autoRecord == 1 || (cfg_.autoRecord == 2 && ranked)) && !net_.recording() && !net_.playback() && !uiTest_) { startRecording(); pruneDemos(); }
+                }
                 reconnectTries_ = 0;
             }
         }
@@ -1784,6 +1802,7 @@ void Game::frame(double dt) {
                 if (w == WPN_KNIFE && !alt) knifeSlash_[net_.clientId() % kMaxPlayers] = time_;
                 if (isThrow(w, alt)) { localFireLocked_ = true; heldWeapon_ = wp_.thrown(weaponView()); }   // (and out comes the next weapon)
                 recoil_ = w == WPN_LASER ? 0.15 : w == WPN_SNIPER ? 1.6 : 1.0;
+                matchShots_++;
                 if (w != WPN_KNIFE && w != WPN_SYRINGE && w != WPN_LOCATOR) muzzleUntil_ = time_ + (w == WPN_SNIPER ? 0.07 : 0.05);
                 if (w == WPN_ROCKET || w == WPN_CROSSBOW || (w == WPN_KNIFE && alt)) spawnPredictedProjectile(w, alt, c);   // X5
                 if (!weaponDef(w).projectile && w != WPN_KNIFE && w != WPN_SYRINGE && w != WPN_LOCATOR && !(w == WPN_SHOTGUN && alt) &&
@@ -2691,6 +2710,7 @@ void Game::drawWorld(float alpha) {
         r_.translucentBox({c - Vec3(r, r, r), c + Vec3(r, r, r)}, ec);
         i++;
     }
+    updateGhost();   // (race / surf: the best run's ghost, among the see-through effects)
     for (size_t i = 0; i < tracers_.size();) {
         if (time_ > tracers_[i].until) { tracers_.erase(tracers_.begin() + i); continue; }
         float life = (float)std::min(1.0, (tracers_[i].until - time_) / 0.25); // fade out over the last quarter second
@@ -4121,6 +4141,7 @@ void Game::drawHud() {
         }
     }
     noticeEnd_ = ny;
+    if (cfg_.teamPanel && modeIsTeamBased(ms.mode) && !paused_ && net_.hasSnapshot()) drawTeamPanel(H, s, ts);
     if (cfg_.captions && time_ < captionUntil_ && !paused_) {   // ANNOUNCER CAPTIONS: the line, under the crosshair
         const float cts = std::max(1.0f, std::round(ts * 1.2f));
         const float tw = r_.textWidth(captionText_, cts), th = r_.textHeight(cts);
@@ -4150,6 +4171,15 @@ void Game::drawHud() {
     }
     if (showBracket && !paused_) drawBracket();
     else if (board) drawScoreboard();
+    if (board && ms.phase == PHASE_MATCH_END && cfg_.matchSummary && !opts_.textHeavy) {   // MATCH SUMMARY: under the scoreboard
+        const ScoreboardBox b = scoreboardBox(net_.latest().players.size());
+        char t[160];
+        snprintf(t, sizeof t, "YOUR MATCH:  %d SHOTS  %d HITS  %d%% ACCURACY  %.0f DAMAGE  BEST STREAK %d", matchShots_, matchHits_,
+                 matchShots_ ? (int)std::lround(100.0 * std::min(matchHits_, matchShots_) / matchShots_) : 0, matchDmg_, matchBestStreak_);
+        const float y0 = std::min(b.y + b.h + 12 * s, H - 40 * s);
+        r_.rect(b.x, y0, b.w, 28 * s, {0, 0, 0, 0.7f});
+        ui_.labelCentered(b.x + b.w * 0.5f, y0 + 6 * s, t, kWhite, 1.0f, b.w - 16 * s);
+    }
     if (paused_) {
         // dim the game behind the menu so HUD text doesn't show through its panels; not on the pages
         // that preview the HUD / crosshair over the game
@@ -4282,6 +4312,40 @@ void Game::consolePrint(const std::string& t) {
     while (consoleLog_.size() > 200) consoleLog_.pop_front();
 }
 
+// a key's code from its name as the keys pages show it ("R", "MOUSE 4", "WHEEL UP", "F5"), 0 if none
+static int codeOfKeyName(const std::string& name) {
+    const std::string want = upper(name);
+    for (int c = 1; c < kMouseCode; c++) if (upper(inputName(c)) == want && inputName(c) != "-" && inputName(c).rfind("KEY ", 0) != 0) return c;
+    for (int c = kMouseCode; c < kMouseCode + 8; c++) if (upper(inputName(c)) == want) return c;
+    for (int c : {kWheelUp, kWheelDown}) if (upper(inputName(c)) == want) return c;
+    return 0;
+}
+
+void Game::runCommands(const std::string& cmds, int depth) {
+    if (depth > 8) { consolePrint("too deep (an alias or exec that runs itself?)"); return; }
+    consoleDepth_ = depth;
+    std::string one;
+    std::istringstream in(cmds);
+    while (std::getline(in, one, ';')) {
+        while (!one.empty() && (one[0] == ' ' || one[0] == '\t')) one.erase(0, 1);
+        while (!one.empty() && (one.back() == ' ' || one.back() == '\r')) one.pop_back();
+        if (one.empty() || one[0] == '#') continue;
+        consoleDepth_ = depth;
+        runConsole(one);
+    }
+    consoleDepth_ = 0;
+}
+
+void Game::execFile(const std::string& name, bool quiet) {
+    std::string file = name.find('.') == std::string::npos ? name + ".cfg" : name;
+    if (!plainFileName(file)) { consolePrint("exec: a file name in your data folder (no folders)"); return; }
+    std::ifstream f(utf8Path(userDataPath(file)), std::ios::binary);
+    if (!f) { if (!quiet) consolePrint("exec: no " + file + " in your data folder"); return; }
+    const int depth = consoleDepth_;
+    std::string line;
+    while (std::getline(f, line)) runCommands(line, depth + 1);
+}
+
 void Game::runConsole(const std::string& line) {
     consolePrint("> " + line);
     std::istringstream in(line);
@@ -4291,9 +4355,59 @@ void Game::runConsole(const std::string& line) {
     while (!v.empty() && v[0] == ' ') v.erase(0, 1);
     if (k.empty()) return;
     auto lines = [&] { std::vector<std::string> out; std::istringstream t(cfg_.toText()); std::string l; while (std::getline(t, l)) out.push_back(l); return out; };
+    // binds, aliases, exec, toggle (1.19.4): keys and words that run console lines
+    if (k == "bind" || k == "unbind") {
+        std::istringstream a(v);
+        std::string key, cmd;
+        a >> key;
+        std::getline(a, cmd);
+        while (!cmd.empty() && cmd[0] == ' ') cmd.erase(0, 1);
+        if (cmd.size() >= 2 && cmd.front() == '"' && cmd.back() == '"') cmd = cmd.substr(1, cmd.size() - 2);
+        const int c = codeOfKeyName(key);
+        if (!c) { consolePrint("no key called '" + key + "' (names as CONTROLS shows them: R, F5, MOUSE 4, WHEEL UP)"); return; }
+        if (k == "unbind") { cfg_.cmdBinds.erase(c); consolePrint("  " + upper(inputName(c)) + " runs nothing"); }
+        else if (cmd.empty()) { auto it = cfg_.cmdBinds.find(c); consolePrint("  " + upper(inputName(c)) + (it == cfg_.cmdBinds.end() ? " runs nothing" : " runs: " + it->second)); return; }
+        else { cfg_.cmdBinds[c] = cmd; consolePrint("  " + upper(inputName(c)) + " runs: " + cmd + " (its CONTROLS action too, if it has one)"); }
+        cfg_.save();
+        return;
+    }
+    if (k == "binds") {
+        if (cfg_.cmdBinds.empty()) consolePrint("  no command binds - bind <key> <commands>");
+        for (auto& b : cfg_.cmdBinds) consolePrint("  " + upper(inputName(b.first)) + ": " + b.second);
+        return;
+    }
+    if (k == "alias" || k == "unalias") {
+        std::istringstream a(v);
+        std::string name, cmd;
+        a >> name;
+        std::getline(a, cmd);
+        while (!cmd.empty() && cmd[0] == ' ') cmd.erase(0, 1);
+        if (cmd.size() >= 2 && cmd.front() == '"' && cmd.back() == '"') cmd = cmd.substr(1, cmd.size() - 2);
+        if (name.empty()) { for (auto& al : cfg_.aliases) consolePrint("  " + al.first + ": " + al.second); if (cfg_.aliases.empty()) consolePrint("  no aliases - alias <name> <commands>"); return; }
+        if (k == "unalias" || cmd.empty()) cfg_.aliases.erase(name);
+        else cfg_.aliases[name] = cmd;
+        cfg_.save();
+        consoleWords_.clear();
+        return;
+    }
+    if (k == "exec") { execFile(v); return; }
+    if (k == "toggle") {   // toggle <setting> [a b]: between a and b (default 0 and 1)
+        std::istringstream a(v);
+        std::string key, va = "0", vb = "1";
+        a >> key >> va >> vb;
+        std::string cur;
+        for (auto& l : lines()) if (l.rfind(key + "=", 0) == 0) cur = l.substr(key.size() + 1);
+        if (key.empty() || cur.empty()) { consolePrint("toggle <setting> [a b]: no setting '" + key + "'"); return; }
+        runConsole(key + " " + (cur == va ? vb : va));
+        return;
+    }
+    if (auto al = cfg_.aliases.find(k); al != cfg_.aliases.end()) { runCommands(al->second, consoleDepth_ + 1); return; }
     if (k == "help") {
         consolePrint("<setting>          show it          <setting> <value>   set it (saved)");
         consolePrint("list [text]        settings (containing text)     clear    empty this log");
+        consolePrint("bind <key> <commands>   a key runs console lines (';' between)   unbind <key>   binds");
+        consolePrint("alias <name> <commands>   a word that runs them   exec <file>   autoexec.cfg runs at start");
+        consolePrint("toggle <setting> [a b]   flips it between a and b (0 and 1)");
         consolePrint("TAB completes   UP/DOWN history   CTRL+V pastes   CTRL+C copies the line (empty line or CTRL+SHIFT+C: the log)");
         consolePrint("/<command>         a server command (callvote, team, kill, ...)");
         consolePrint("e.g.  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5");
@@ -4314,22 +4428,17 @@ void Game::runConsole(const std::string& line) {
     cfg_.set(k, v);
     cfg_.finishLoad();
     cfg_.save();
-    audio_.setMasterVolume(cfg_.volume);   // (the ones that need applying; the rest are read every frame)
-    audio_.setEffectsVolume(cfg_.volumeEffects);
-    audio_.setAnnouncerVolume(cfg_.volumeAnnouncer);
-    audio_.setQuips(cfg_.quips);
-    audio_.setQuipVolume(cfg_.volumeQuips);
-    audio_.setOutputDevice(cfg_.audioOutput);   // (nothing unless it changed)
+    applySettings();
     if (k == "voice") audio_.setAnnouncer(cfg_.announcerVoice);   // (it resamples every line: only when it's the one set)
     if ((k == "monitor" || k == "fullscreen_hz") && cfg_.displayMode != 0) applyDisplayMode();
-    ui_.accent = rgba(cfg_.colorFriendly);
     for (auto& l : lines()) if (l.rfind(k + "=", 0) == 0) consolePrint("  " + k + " = " + l.substr(k.size() + 1));
     consoleWords_.clear();   // (a setting can add a key: mode_hud_*, mode_controls_*)
 }
 
 // Every word the console knows: its commands and every setting name.
 std::vector<std::string> Game::consoleWords() const {
-    std::vector<std::string> out = {"help", "list", "clear"};
+    std::vector<std::string> out = {"help", "list", "clear", "bind", "unbind", "binds", "alias", "unalias", "exec", "toggle"};
+    for (auto& a : cfg_.aliases) out.push_back(a.first);
     std::istringstream t(cfg_.toText());
     std::string l;
     while (std::getline(t, l)) if (size_t e = l.find('='); e != std::string::npos && e > 0) out.push_back(l.substr(0, e));
@@ -4783,7 +4892,12 @@ void Game::onRaceSplit(int cp, int ms) {
             }
         }
     }
-    if (cp == 1) raceSplits_.clear();
+    if (cp == 1) {   // a run starts: the ghost's clock and this run's path from its start
+        raceSplits_.clear();
+        ghostRunStart_ = time_ - ms / 1000.0;
+        const float keepFrom = (float)(ghostRunStart_);
+        ghostRec_.erase(ghostRec_.begin(), std::find_if(ghostRec_.begin(), ghostRec_.end(), [&](const GhostPt& g) { return g.t >= keepFrom; }));
+    }
     if ((int)raceSplits_.size() != cp - 1) { raceSplits_.clear(); audio_.play(cp == (int)net_.map().raceCheckpoints.size() ? SND_FINISH : SND_CHECKPOINT, 0.9f); return; } // missed one: this run doesn't count
     raceSplits_.push_back(ms);
     const std::string map = net_.map().name;
@@ -4819,11 +4933,78 @@ void Game::onRaceSplit(int cp, int ms) {
     }
     bool pb = !best || ms < best->ms;
     raceRuns_.push_back(run);
+    if (pb && ghostRunStart_ >= 0 && !ghostRec_.empty()) {   // the new best's path becomes the ghost (times from the run's start)
+        ghostBest_.clear();
+        for (const GhostPt& g : ghostRec_) ghostBest_.push_back({g.t - (float)ghostRunStart_, g.pos});
+        ghostMap_ = map;
+        std::ostringstream f;
+        f.precision(4);
+        for (const GhostPt& g : ghostBest_) f << std::fixed << g.t << " " << g.pos.x << " " << g.pos.y << " " << g.pos.z << "\n";
+        if (ghostWriter_.t.joinable()) ghostWriter_.t.join();
+        ghostWriter_.t = std::thread([path = userDataPath("ghosts/" + safeMapName(map) + ".txt"), text = f.str()] {
+            std::error_code ec;
+            std::filesystem::create_directories(std::filesystem::path(utf8Path(path)).parent_path(), ec);
+            writeFileAtomic(path, text);
+        });
+    }
+    ghostRunStart_ = -1;
     if (trial && pb) { // the game server posts every run itself (the Worker keeps only your best); refresh the board after
         rank_.fetchRaceBoard(map, 3);
         notify("NEW PERSONAL BEST " + fmtRace(ms) + " - THE SERVER SENDS IT TO THE LEADERBOARD", 5);
     } else if (pb) notify("NEW PERSONAL BEST " + fmtRace(ms), 5);
     if (pb && cfg_.announcer >= 1) announce(SND_VOICE_HIGH_SCORE);
+}
+
+// TEAM PANEL (team modes): each teammate's name over a health bar, then a pip for every enemy (lit while alive), at the
+// left of the screen under the kill feed's height
+void Game::drawTeamPanel(float H, float s, float ts) {
+    const PlayerSnap* me = net_.findPlayer(net_.clientId());
+    const int myTeam = me && me->team() != TEAM_SPECTATOR ? me->team() : TEAM_A;
+    const float x = 12 * s, w = 150 * s, lts = std::max(1.0f, std::round(ts * 0.8f)), th = r_.textHeight(lts);
+    float y = H * 0.36f;
+    int enemies = 0, alive = 0;
+    for (const PlayerSnap& p : net_.latest().players) {
+        if (p.team() == TEAM_SPECTATOR) continue;
+        const bool up = (p.flags & PS_ALIVE) != 0;
+        if (p.team() != myTeam) { enemies++; alive += up; continue; }
+        r_.rect(x - 4 * s, y - 2 * s, w + 8 * s, th + 10 * s, {0, 0, 0, 0.4f});
+        r_.text(x, y, lts, net_.playerName(p.id), up ? kWhite : kGrey);
+        const float f = up ? clampf(p.health / std::max(1.0f, hpMax_), 0, 1) : 0;
+        r_.rect(x, y + th + 2 * s, w, 4 * s, {0, 0, 0, 0.6f});
+        r_.rect(x, y + th + 2 * s, w * f, 4 * s, p.health > hpMax_ * 0.3f ? rgba(cfg_.colorFriendly) : kRed);
+        y += th + 12 * s;
+    }
+    for (int i = 0; i < enemies; i++)   // (the enemies: lit while alive, the dead dark)
+        r_.rect(x + i * 12 * s, y + 2 * s, 8 * s, 8 * s, i < alive ? rgba(cfg_.colorEnemy) : Color{0.25f, 0.25f, 0.28f, 0.8f});
+}
+
+// The race ghost: while racing, your position 20 times a second (the run's path once it starts); the best run on this
+// map drawn as a see-through figure where it was at the same time into its run
+void Game::updateGhost() {
+    const int mode = net_.mode().mode;
+    if (!isRaceMode(mode) || !net_.selfAlive() || net_.playback()) { ghostRunStart_ = -1; return; }
+    const std::string& map = net_.map().name;
+    if (ghostMap_ != map) {   // (a new map: its saved ghost, if any)
+        ghostMap_ = map;
+        ghostBest_.clear();
+        std::ifstream f(utf8Path(userDataPath("ghosts/" + safeMapName(map) + ".txt")));
+        GhostPt g;
+        while (f >> g.t >> g.pos.x >> g.pos.y >> g.pos.z) ghostBest_.push_back(g);
+    }
+    if (time_ >= ghostNext_) {
+        ghostNext_ = time_ + 0.05;
+        ghostRec_.push_back({(float)time_, net_.predicted().pos});
+        if (ghostRec_.size() > 24000) ghostRec_.erase(ghostRec_.begin(), ghostRec_.begin() + 4000);   // (20 minutes at most)
+    }
+    if (!cfg_.ghost || ghostRunStart_ < 0 || ghostBest_.size() < 2) return;
+    const float t = (float)(time_ - ghostRunStart_);
+    if (t > ghostBest_.back().t) return;   // (the ghost finished)
+    auto it = std::upper_bound(ghostBest_.begin(), ghostBest_.end(), t, [](float v, const GhostPt& g) { return v < g.t; });
+    if (it == ghostBest_.begin()) return;
+    const GhostPt& b = *it, & a = *(it - 1);
+    const float f = b.t > a.t ? clampf((t - a.t) / (b.t - a.t), 0, 1) : 0;
+    const Vec3 p = a.pos + (b.pos - a.pos) * f;
+    r_.translucentBox({p - Vec3(0.3f, 0, 0.3f), p + Vec3(0.3f, kPlayerHeight, 0.3f)}, {0.6f, 0.85f, 1.0f, 0.3f});
 }
 
 void Game::startTimeTrial() {
@@ -5100,6 +5281,28 @@ struct PauseCol {
 float pauseH(int rows, int sections, bool lastRow) { return rows * (kPRow + kPGap) - kPGap + sections * (20 + 24 - kPGap) + (lastRow ? 20 + kPRow : 0); }
 }
 
+// PRACTICE (pause > HOST; the server takes it only while you're alone with bots): save / load a spot, take no damage,
+// bots that don't fire, all off; BACK
+void Game::drawPracticeMenu() {
+    const SetLayout L = ingameLayout(kPW + 32);
+    const float kH = 40 + pauseH(3, 0, true);
+    PauseCol c{ui_, L, ingameTop(L, kH)};
+    ui_.panel(L.X(kPX - 16), L.Y(c.y - 16), L.L(kPW + 32), L.L(kH + 32), 0.95f);
+    ui_.labelCentered(L.X(640), L.Y(c.y), "PRACTICE (ALONE WITH BOTS)", kWhite, 1.0f, L.L(kPW));
+    c.y += 40;
+    if (c.half(1, "SAVE POSITION", UiExp::cmd("practice savepos"))) net_.sendCommand("practice savepos");
+    if (c.half(2, "LOAD POSITION", UiExp::cmd("practice loadpos"))) { net_.sendCommand("practice loadpos"); paused_ = false; practiceMenu_ = false; }
+    c.next();
+    if (c.half(1, "TAKE NO DAMAGE", UiExp::cmd("practice god"))) net_.sendCommand("practice god");
+    if (c.half(2, "BOTS DON'T FIRE", UiExp::cmd("practice passive"))) net_.sendCommand("practice passive");
+    c.next();
+    if (c.full("ALL OFF", UiExp::cmd("practice reset"))) net_.sendCommand("practice reset");
+    c.next();
+    c.last();
+    if (c.half(1, "BACK", UiExp::nav("ingame/pause"))) practiceMenu_ = false;
+    if (c.half(2, "RESTART MAP", UiExp::cmd("restart"))) { net_.sendCommand("restart"); paused_ = false; practiceMenu_ = false; }
+}
+
 // Everything players can call a vote on (majority of human players decides): CALL A VOTE at text 3; START THE MATCH
 // (warmup), the tourney lists, CHANGE MAP / MODE beside RANKED (ranked: the map on its own, LADDER | RANKED OFF),
 // EDIT THE MAP TOGETHER, MOVE A PLAYER TO SPECTATOR; a BOTS section; BACK on the last row.
@@ -5194,6 +5397,7 @@ void Game::drawPauseMenu(float cx, float y) {
     }
     if (picker_ != PICK_NONE) { drawPicker(cx, y); return; }
     if (voteMenu_) { drawVoteMenu(cx, y); return; }
+    if (practiceMenu_) { drawPracticeMenu(); return; }
     if (queueMenu_) { drawQueueMenu(cx, y); return; }
     const SetLayout L = ingameLayout(kPW + 32);
     if (net_.playback()) { // watching a demo
@@ -5211,7 +5415,7 @@ void Game::drawPauseMenu(float cx, float y) {
     }
     const bool teamMode = modeIsTeamBased(net_.mode().mode), ranked = net_.mode().flags & MS_RANKED;
     const int pairs = (teamMode ? 2 : 1) + 4;   // (JOIN A + B or PLAY), SPECTATE, VOTE, QUEUE, RECORD DEMO
-    const int rows = 1 + (pairs + 1) / 2 + 1 + (host_ ? 2 + (ranked ? 0 : 1) : 0);
+    const int rows = 1 + (pairs + 1) / 2 + 1 + (host_ ? 2 + (ranked ? 0 : 2) : 0);
     const float kH = pauseH(rows, host_ ? 1 : 0, true);
     PauseCol c{ui_, L, ingameTop(L, kH)};
     ui_.panel(L.X(kPX - 16), L.Y(c.y - 16), L.L(kPW + 32), L.L(kH + 32), 0.95f);
@@ -5246,6 +5450,8 @@ void Game::drawPauseMenu(float cx, float y) {
         c.next();
         if (!ranked) {
             if (c.full("EDIT THE MAP TOGETHER", UiExp::cmd("editmode on"))) { net_.sendCommand("editmode on"); paused_ = false; }
+            c.next();
+            if (c.full("PRACTICE", UiExp::nav("ingame/pause/practice"))) practiceMenu_ = true;
             c.next();
         }
     }
@@ -5848,8 +6054,6 @@ void Game::askKeepDisplay(int oldMode, int oldW, int oldH) {
     keepUntil_ = time_ + 10;
 }
 
-// MORE (settings/<tab>/more, 1.19.4): the tab's settings that don't fit on it. CONTROLS: the mouse's other axis and
-// zoom, the scoreboard key. VIDEO + AUDIO: the window's size, shadow quality, the GPU, the background cap and mute.
 // the settings path of this tab's MORE page n (0: the tab itself)
 const char* Game::moreNav(int n) const {   // (static strings: a UiExp keeps the pointer)
     static const char* const p[3][4] = {{"~settings/video", "~settings/video/more", "~settings/video/more2", "~settings/video/more3"},
@@ -5858,6 +6062,10 @@ const char* Game::moreNav(int n) const {   // (static strings: a UiExp keeps the
     return p[setTab_ == TAB_VIDEO ? 0 : setTab_ == TAB_CONTROLS ? 1 : 2][std::min(std::max(n, 0), 3)];
 }
 
+// MORE (settings/<tab>/more, 1.19.4): the tab's settings that don't fit on it. GAMEPLAY: the kill feed, chat, enemies,
+// all settings, the screen, menus. CONTROLS: the mouse's other axis, zoom, grapple and hand, the scoreboard key, the
+// weapon scroll. VIDEO + AUDIO: 1 the window, shadows, GPU, HUD size, background, hitsounds; 2 fog, picture, effects;
+// 3 display, sound groups, performance, presets.
 void Game::drawMoreSettings(const SetLayout& L) {
     SetFlow f{ui_, L, kColL, 90}, g{ui_, L, kColR, 90};
     const float w = f.w(), h = f.h();
@@ -5909,6 +6117,29 @@ void Game::drawMoreSettings(const SetLayout& L) {
             g.next();
             g.hint("THE SCROLL WHEEL PASSES OVER SKIPPED", "WEAPONS (THEIR NUMBER KEYS STILL WORK)");
         }
+        g.section("SENSITIVITY FROM ANOTHER GAME");   // the same turn per mouse count: quark's yaw is 0.022 degrees a count x SENSITIVITY
+        {
+            static const struct { const char* name; float yaw; } kGames[] = {
+                {"FROM: CS2 / CS:GO", 0.022f}, {"FROM: QUAKE", 0.022f}, {"FROM: APEX LEGENDS", 0.022f}, {"FROM: TEAM FORTRESS 2", 0.022f},
+                {"FROM: VALORANT", 0.07f}, {"FROM: OVERWATCH 2", 0.0066f}, {"FROM: CALL OF DUTY", 0.0066f}};
+            constexpr int n = sizeof kGames / sizeof kGames[0];
+            static std::vector<std::string> gn;
+            if (gn.empty()) for (auto& k : kGames) gn.push_back(k.name);
+            static int gi = 0;
+            static float theirs = 1.0f;
+            ui_.cycle(g.x(), g.top(), w, h, "FROM", gi, n, gn, UiExp::local());
+            g.next();
+            const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
+            ui_.slider(g.x(), g.top(), hw, h, "THEIRS", theirs, 0.01f, 20.0f, "%.3f", UiExp::local(), 1.0f);
+            theirs = clampf(theirs, 0.001f, 100.0f);
+            const float mine = clampf(theirs * kGames[gi].yaw / 0.022f, 0.01f, 50.0f);
+            char lbl[48];
+            snprintf(lbl, sizeof lbl, "USE %.3f", mine);
+            if (ui_.button(x2, g.top(), hw, h, lbl, (std::fabs(mine - cfg_.sensitivity) < 1e-4f ? UiExp::inert() : UiExp::cfg("sensitivity")).withId("USE IT")))
+                cfg_.sensitivity = mine;
+            g.next();
+            g.hint("SAME DPI: THE SAME TURN PER INCH OF MOUSE");
+        }
         return;
     }
     if (setTab_ == TAB_GAMEPLAY) {
@@ -5941,6 +6172,62 @@ void Game::drawMoreSettings(const SetLayout& L) {
             f.next();
             f.hint("EVERY ENEMY AS ONE MODEL (NOT IN RANKED,", "WHERE EVERYONE IS STANDARD)");
         }
+        f.section("ALL SETTINGS");   // every setting as text on the clipboard (your name, Discord and servers stay yours)
+        {
+            static const char* const kOwn[] = {"name=", "discord=", "rank_hello=", "last_address=", "fav_servers=", "recent_servers="};
+            auto own = [](const std::string& l) { for (const char* p : kOwn) if (l.rfind(p, 0) == 0) return true; return false; };
+            const float tw = (w - L.L(16)) / 3, tg = L.L(8);
+            if (ui_.button(f.x(), f.top(), tw, h, "EXPORT", UiExp::state("allset"))) {
+                std::istringstream in(cfg_.toText());
+                std::string out = "quark-settings:\n", l;
+                while (std::getline(in, l)) if (!own(l)) out += l + "\n";
+                glfwSetClipboardString(win_, out.c_str());
+                allMsg_ = "SETTINGS COPIED: PASTE THEM ANYWHERE"; allMsgUntil_ = time_ + 3;
+            }
+            if (ui_.button(f.x() + tw + tg, f.top(), tw, h, "IMPORT", UiExp::state("allset"))) {
+                const char* clip = glfwGetClipboardString(win_);
+                const std::string text = clip ? clip : "";
+                if (text.find("quark-settings:") == std::string::npos) { allMsg_ = "NO SETTINGS ON THE CLIPBOARD (EXPORT MAKES THEM)"; }
+                else {
+                    std::istringstream in(text.substr(text.find("quark-settings:") + 15));
+                    std::string l;
+                    int n = 0;
+                    while (std::getline(in, l)) {
+                        while (!l.empty() && (l.back() == '\r' || l.back() == ' ')) l.pop_back();
+                        const size_t eq = l.find('=');
+                        if (eq == std::string::npos || own(l)) continue;
+                        cfg_.set(l.substr(0, eq), l.substr(eq + 1));
+                        n++;
+                    }
+                    cfg_.finishLoad();
+                    cfg_.save();
+                    applySettings();
+                    allMsg_ = std::to_string(n) + " SETTINGS IMPORTED";
+                }
+                allMsgUntil_ = time_ + 3;
+            }
+            const bool armed = time_ < resetAllArmed_;
+            auto fresh = [&] {   // (the defaults, with what's yours kept)
+                Settings d = defaultSettings();
+                d.name = cfg_.name; d.discordName = cfg_.discordName; d.rankHello = cfg_.rankHello; d.lastAddress = cfg_.lastAddress;
+                d.favServers = cfg_.favServers; d.recentServers = cfg_.recentServers;
+                return d;
+            };
+            const bool same = armed && fresh().toText() == cfg_.toText();   // (only while armed: two texts a frame)
+            if (ui_.button(f.x() + 2 * (tw + tg), f.top(), tw, h, armed ? "SURE?" : "RESET ALL",
+                           (!armed ? UiExp::state("allset") : same ? UiExp::state("allset") : UiExp::cfg("*")).withId("RESET ALL"))) {
+                if (!armed) { resetAllArmed_ = time_ + 3; allMsg_ = "CLICK AGAIN TO RESET EVERY SETTING (NOT YOUR NAME)"; allMsgUntil_ = time_ + 3; }
+                else {
+                    cfg_ = fresh();
+                    cfg_.save();
+                    applySettings();
+                    resetAllArmed_ = 0;
+                    allMsg_ = "EVERY SETTING IS BACK TO ITS DEFAULT"; allMsgUntil_ = time_ + 3;
+                }
+            }
+            f.next();
+            f.hint(time_ < allMsgUntil_ ? allMsg_ : std::string("EXPORT / IMPORT USE THE CLIPBOARD"));
+        }
         g.header("SCREEN");
         const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
         ui_.toggle(g.x(), g.top(), hw, h, "SHOW FPS", cfg_.showFps, UiExp::cfg("show_fps"));
@@ -5953,8 +6240,19 @@ void Game::drawMoreSettings(const SetLayout& L) {
         ui_.toggle(g.x(), g.top(), w, h, "HEALTH BAR: MODE'S MAX", cfg_.hpScaled, UiExp::cfg("hp_scaled"));
         g.next();
         g.hint("OFF: THE BAR IS FULL AT 100 IN EVERY MODE");
-        ui_.toggle(g.x(), g.top(), w, h, "ANNOUNCER CAPTIONS", cfg_.captions, UiExp::cfg("captions"));
-        g.next();
+        {
+            const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
+            ui_.toggle(g.x(), g.top(), hw, h, "CAPTIONS", cfg_.captions, UiExp::cfg("captions"));
+            ui_.toggle(x2, g.top(), hw, h, "MATCH SUMMARY", cfg_.matchSummary, UiExp::cfg("match_summary"));
+            g.next();
+            g.hint("CAPTIONS: THE ANNOUNCER AS TEXT TOO");
+        }
+        {
+            const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
+            ui_.toggle(g.x(), g.top(), hw, h, "RACE GHOST", cfg_.ghost, UiExp::cfg("ghost"));
+            ui_.toggle(x2, g.top(), hw, h, "TEAM PANEL", cfg_.teamPanel, UiExp::cfg("team_panel"));
+            g.next();
+        }
         g.section("MENUS");
         ui_.toggle(g.x(), g.top(), w, h, "REMEMBER LAST TAB", cfg_.rememberTab, UiExp::cfg("remember_tab"));
         g.next();
@@ -6004,6 +6302,29 @@ void Game::drawMoreSettings(const SetLayout& L) {
     }
     if (moreOpen_ == 3) {   // VIDEO + AUDIO > MORE 3: the display and the process
         f.header("DISPLAY");
+        {   // FULLSCREEN SIZE: the monitor's own modes (each size once), for exclusive fullscreen
+            std::vector<std::pair<int, int>> sizes = {{0, 0}};
+            if (GLFWmonitor* mon = chosenMonitor()) {
+                int n = 0;
+                const GLFWvidmode* ms = glfwGetVideoModes(mon, &n);
+                for (int i = n - 1; i >= 0; i--) {   // (largest first)
+                    std::pair<int, int> sz = {ms[i].width, ms[i].height};
+                    if (sz.first >= 640 && std::find(sizes.begin(), sizes.end(), sz) == sizes.end()) sizes.push_back(sz);
+                }
+            }
+            int cur = 0;
+            for (size_t i = 0; i < sizes.size(); i++) if (sizes[i].first == cfg_.fsWidth && sizes[i].second == cfg_.fsHeight) cur = (int)i;
+            if (cfg_.fsWidth > 0 && cur == 0) { sizes.push_back({cfg_.fsWidth, cfg_.fsHeight}); cur = (int)sizes.size() - 1; }
+            std::vector<std::string> names;
+            for (auto& z : sizes) names.push_back(z.first ? "FULLSCREEN SIZE: " + std::to_string(z.first) + " X " + std::to_string(z.second) : std::string("FULLSCREEN SIZE: DESKTOP"));
+            int pick = cur;
+            if (ui_.cycle(f.x(), f.top(), w, h, "FULLSCREEN SIZE", pick, (int)sizes.size(), names, UiExp::cfg("fs_*")) && pick != cur) {
+                cfg_.fsWidth = sizes[pick].first; cfg_.fsHeight = sizes[pick].second;
+                if (cfg_.displayMode == 2 && !uiTest_) applyDisplayMode();
+            }
+            f.next();
+            f.hint("EXCLUSIVE FULLSCREEN ONLY; A 4:3 SIZE IS", "STRETCHED (OR BARRED BY YOUR GPU'S SCALING)");
+        }
         if (ui_.toggle(f.x(), f.top(), w, h, "G-SYNC / FREESYNC", cfg_.vrr, UiExp::cfg("vrr"))) applyPresentMode();
         f.next();
         f.hint(vrrHz_ > 3 ? "VSYNC ON, FPS CAPPED AT " + std::to_string(vrrHz_ - 3) + " (REFRESH - 3)" : std::string("VSYNC ON, FPS CAPPED 3 UNDER THE REFRESH"),
@@ -6236,25 +6557,26 @@ void Game::drawControls(const SetLayout& L) {
     } else
         ui_.hint(L.X(268), L.Y(126), captureAction_ >= 0 ? "PRESS A KEY, MOUSE BUTTON OR SCROLL - ESC CANCELS, DEL CLEARS"
                                                          : "CLICK A SLOT TO REBIND IT - RIGHT-CLICK OR DEL UNBINDS", kHintC, L.L(744));
-    // key rows: a header with KEY 1 / KEY 2 over the slots, then a row an action (label, two 108 px slots)
-    static std::string idText[A_COUNT][2];   // the UI test's ids: "<ACTION> KEY 1", "<ACTION> KEY 2"
-    static const char* ids[A_COUNT][2];
+    // key rows: a header with KEY 1 / 2 / 3 over the slots, then a row an action (label, three 82 px slots)
+    static std::string idText[A_COUNT][kBindSlots];   // the UI test's ids: "<ACTION> KEY 1", "<ACTION> KEY 2", ...
+    static const char* ids[A_COUNT][kBindSlots];
     if (!ids[0][0])
         for (int a = 0; a < A_COUNT; a++)
-            for (int k = 0; k < 2; k++) { idText[a][k] = std::string(actionName(a)) + (k ? " KEY 2" : " KEY 1"); ids[a][k] = idText[a][k].c_str(); }
+            for (int k = 0; k < kBindSlots; k++) { idText[a][k] = std::string(actionName(a)) + " KEY " + std::to_string(k + 1); ids[a][k] = idText[a][k].c_str(); }
+    constexpr float kSlotX = 100, kSlotStep = 87, kSlotW = 82;
     auto keyRows = [&](float col, float y, const char* header, std::initializer_list<int> actions) -> float {
-        ui_.label(L.X(col), L.Y(y), header, ui_.accent, 1.0f, L.L(128));
+        ui_.label(L.X(col), L.Y(y), header, ui_.accent, 1.0f, L.L(96));
         const float hs = ui_.hintScale();
-        for (int k = 0; k < 2; k++) {
-            const char* cap = k ? "KEY 2" : "KEY 1";
-            r_.text(L.X(col + 136 + k * 116 + 54) - r_.textWidth(cap, hs) * 0.5f, L.Y(y + 3), hs, cap, kHintC);
+        for (int k = 0; k < kBindSlots; k++) {
+            static const char* const caps[] = {"KEY 1", "KEY 2", "KEY 3"};
+            r_.text(L.X(col + kSlotX + k * kSlotStep + kSlotW * 0.5f) - r_.textWidth(caps[k], hs) * 0.5f, L.Y(y + 3), hs, caps[k], kHintC);
         }
         y += 24;
         for (int a : actions) {
             const char* name = a == A_NEXTWEAPON ? "NEXT WEAPON" : a == A_PREVWEAPON ? "PREV WEAPON" : actionName(a);
-            ui_.labelFit(L.X(col), L.Y(y + 8), L.L(128), name, kLabelC);
-            for (int k = 0; k < 2; k++) {
-                const float bx = L.X(col + 136 + k * 116), by = L.Y(y), bw = L.L(108);
+            ui_.labelFit(L.X(col), L.Y(y + 8), L.L(96), name, kLabelC);
+            for (int k = 0; k < kBindSlots; k++) {
+                const float bx = L.X(col + kSlotX + k * kSlotStep), by = L.Y(y), bw = L.L(kSlotW);
                 const bool cap = captureAction_ == a && captureSlot_ == k;
                 int& code = cfg_.binds.code[a][k];
                 if (ui_.button(bx, by, bw, h, cap ? "PRESS..." : inputName(code), UiExp::bind().withId(ids[a][k]))) { captureAction_ = a; captureSlot_ = k; }
@@ -6268,7 +6590,7 @@ void Game::drawControls(const SetLayout& L) {
         return y + 16;   // (the next header: 20 under the last row)
     };
     if (controlsSub_ == 2) {   // (1.19.4: the keys that didn't fit the other two pages)
-        keyRows(kColL, keyRows(kColL, 154, "WEAPONS", {A_LASTWEAPON}), "CHAT", {A_TEAMCHAT});
+        keyRows(kColL, keyRows(kColL, keyRows(kColL, 154, "WEAPONS", {A_LASTWEAPON}), "CHAT", {A_TEAMCHAT}), "PRACTICE", {A_SAVEPOS, A_LOADPOS});
         keyRows(kColR, keyRows(kColR, 154, "SPECTATING", {A_SPECNEXT, A_SPECPREV}), "SCREEN", {A_HIDEHUD});
     } else if (controlsSub_ == 1) {
         float y = keyRows(kColL, 154, "MOVEMENT", {A_FORWARD, A_BACK, A_LEFT, A_RIGHT, A_JUMP, A_DASH, A_GRAPPLE, A_USE});
@@ -7366,21 +7688,61 @@ bool Game::playDemo(const std::string& path) {
 }
 
 // DEMOS: newest first, 8 rows (the wheel scrolls the rest), the recording rate, BACK and OPEN FOLDER
+// The settings that are applied when they change rather than read every frame, all at once
+void Game::applySettings() {
+    audio_.setMasterVolume(bgCap_ && cfg_.bgMute ? 0.0f : cfg_.volume);
+    audio_.setEffectsVolume(cfg_.volumeEffects);
+    audio_.setAnnouncerVolume(cfg_.volumeAnnouncer);
+    audio_.setQuips(cfg_.quips);
+    audio_.setQuipVolume(cfg_.volumeQuips);
+    audio_.setOutputDevice(cfg_.audioOutput);   // (nothing unless it changed)
+    r_.setFog(cfg_.fog);
+    r_.setGrade(cfg_.gamma, cfg_.contrast, cfg_.saturation);
+    r_.setShadowRes(cfg_.shadowRes);
+    applyPresentMode();
+    glfwSetWindowAttrib(win_, GLFW_AUTO_ICONIFY, cfg_.autoIconify ? GLFW_TRUE : GLFW_FALSE);
+    ui_.accent = rgba(cfg_.colorFriendly);
+}
+
+// DEMOS > KEEP: all but the newest cfg_.demoKeep demos deleted (after each recording starts, and when KEEP changes)
+void Game::pruneDemos() {
+    if (cfg_.demoKeep <= 0) return;
+    std::error_code ec;
+    std::vector<std::pair<std::filesystem::file_time_type, std::filesystem::path>> fs;
+    for (auto& e : std::filesystem::directory_iterator(demoDir(), ec))
+        if (e.path().extension() == ".qdemo") fs.push_back({e.last_write_time(ec), e.path()});
+    std::sort(fs.begin(), fs.end(), [](auto& x, auto& y) { return x.first > y.first; });
+    for (size_t i = (size_t)cfg_.demoKeep; i < fs.size(); i++)
+        if (!(net_.recording() && i == 0)) std::filesystem::remove(fs[i].second, ec);
+    demoListAt_ = 0;
+}
+
 void Game::drawDemos(const SetLayout& L) {
     if (time_ >= demoListAt_) { // rescan now and then (a demo you just recorded shows up)
         demoListAt_ = time_ + 2;
         demoFiles_.clear();
         demoNotes_.clear();
+        demoSizes_.clear();
         std::error_code ec;
-        std::vector<std::pair<std::filesystem::file_time_type, std::string>> fs;
+        struct F { std::filesystem::file_time_type t; std::string path; uintmax_t size; };
+        std::vector<F> fs;
         for (auto& e : std::filesystem::directory_iterator(demoDir(), ec))
-            if (e.path().extension() == ".qdemo") fs.push_back({e.last_write_time(ec), e.path().string()});
-        std::sort(fs.begin(), fs.end(), [](auto& a, auto& b) { return a.first > b.first; });
+            if (e.path().extension() == ".qdemo") fs.push_back({e.last_write_time(ec), e.path().string(), e.file_size(ec)});
+        // (SORT: newest first, oldest first, by name, biggest first)
+        std::sort(fs.begin(), fs.end(), [&](const F& a, const F& b) {
+            switch (cfg_.demoSort) {
+                case 1: return a.t < b.t;
+                case 2: return a.path < b.path;
+                case 3: return a.size > b.size;
+                default: return a.t > b.t;
+            }
+        });
         for (auto& f : fs) {
-            demoFiles_.push_back(f.second);
+            demoFiles_.push_back(f.path);
+            demoSizes_.push_back(f.size);
             uint16_t proto = kProtocolVersion;   // (6 bytes per file every 2 s, only while this page is open)
             std::string note;
-            if (demo::readProtocol(f.second, &proto) && proto != kProtocolVersion)
+            if (demo::readProtocol(f.path, &proto) && proto != kProtocolVersion)
                 note = demo::upgradeRunning() && demo::convertible(proto) ? "CONVERTING..." : "RECORDED WITH " + upper(demo::recordedWith(proto));
             demoNotes_.push_back(note);
         }
@@ -7392,20 +7754,41 @@ void Game::drawDemos(const SetLayout& L) {
     static const std::string rateHint = "FULL RATE: EVERY SNAPSHOT (UP TO 1000 HZ) - SMOOTHER, MUCH BIGGER FILES";
     const float lx = L.X(360), lw = L.L(560);
     const int hintLines = (int)ui_.wrap(rateHint, ui_.hintScale(), lw).size();
-    // title, the list (or the "none yet" line), the scroll line, RATE + its hint, BACK / OPEN FOLDER
+    // title, SORT, the list (or the "none yet" line), the scroll line, RATE + its hint, AUTO RECORD + KEEP, BACK / OPEN FOLDER
     const float listH = std::max(rows, 1) * 36.0f, scrollH = nd > rows ? 28 : 12;
-    const float kH = 24 + 16 + listH + scrollH + 44 + hintLines * 14 - 2 + 20 + 40;
+    const float kH = 24 + 16 + 40 + listH + scrollH + 44 + hintLines * 14 - 2 + 20 + 44 + 40;
     float y = bandTop(kH);
     ui_.panel(L.X(344), L.Y(y - 16), L.L(592), L.L(kH + 32));
     ui_.labelCentered(L.X(640), L.Y(y), "DEMOS", kWhite, 1.5f, lw);
     y += 40;
+    {
+        static const std::vector<std::string> sorts = {"SORT: NEWEST FIRST", "SORT: OLDEST FIRST", "SORT: NAME", "SORT: BIGGEST FIRST"};
+        if (ui_.cycle(lx, L.Y(y), lw, L.L(32), "SORT", cfg_.demoSort, 4, sorts, UiExp::cfg("demo_sort"))) { demoListAt_ = 0; cfg_.save(); }
+        y += 40;
+    }
     if (demoFiles_.empty()) ui_.labelCentered(L.X(640), L.Y(y + 8), "NONE YET - IN A GAME, ESC > RECORD DEMO", kGrey, 1.0f, lw);
     for (int k = 0; k < rows; k++) {
         int i = demoScroll_ + k;
         std::string name = std::filesystem::path(demoFiles_[i]).stem().string();
         for (auto& c : name) c = c == '_' ? ' ' : (char)toupper((unsigned char)c);
         if (i < (int)demoNotes_.size() && !demoNotes_[i].empty()) name += " (" + demoNotes_[i] + ")";
-        if (ui_.button(lx, L.Y(y + 36 * k), lw, L.L(32), name, UiExp::state("demo", "1").withId("DEMO"))) { playDemo(demoFiles_[i]); return; }
+        if (i < (int)demoSizes_.size()) {   // (its size: the details a list needs to pick what to delete)
+            char sz[24];
+            snprintf(sz, sizeof sz, "  %.1f MB", demoSizes_[i] / 1048576.0);
+            name += sz;
+        }
+        const float dw = L.L(72);
+        if (ui_.button(lx, L.Y(y + 36 * k), lw - dw - L.L(4), L.L(32), name, UiExp::state("demo", "1").withId("DEMO"))) { playDemo(demoFiles_[i]); return; }
+        // DELETE: arms on the first click (SURE?), deletes on a second within 3 s
+        const bool armed = demoDelArmed_ == demoFiles_[i] && time_ < demoDelUntil_;
+        if (ui_.button(lx + lw - dw, L.Y(y + 36 * k), dw, L.L(32), armed ? "SURE?" : "DELETE", (armed ? UiExp::state("demos") : UiExp::state("demodel")).withId("DELETE"))) {
+            if (armed) {
+                std::error_code ec;
+                std::filesystem::remove(demoFiles_[i], ec);
+                demoDelArmed_.clear();
+                demoListAt_ = 0;
+            } else { demoDelArmed_ = demoFiles_[i]; demoDelUntil_ = time_ + 3; }
+        }
     }
     y += listH;
     if (nd > rows) {
@@ -7419,6 +7802,17 @@ void Game::drawDemos(const SetLayout& L) {
     if (ui_.cycle(lx, L.Y(y), lw, L.L(kMRow), "RATE", rate, 2, rates, UiExp::cfg("demo_full_rate"))) { cfg_.demoFullRate = rate == 1; cfg_.save(); }
     y += 44;
     y += ui_.hintWrapped(lx, L.Y(y), rateHint, kGrey, lw, L.L(14)) * 14 - 2 + 20;
+    {   // AUTO RECORD and KEEP (the oldest deleted past it)
+        const float hw = L.L(276);
+        static const std::vector<std::string> ar = {"AUTO RECORD: OFF", "AUTO RECORD: EVERY MATCH", "AUTO RECORD: RANKED ONLY"};
+        if (ui_.cycle(lx, L.Y(y), hw, L.L(kMRow), "AUTO RECORD", cfg_.autoRecord, 3, ar, UiExp::cfg("auto_record"))) cfg_.save();
+        static const int keeps[] = {0, 20, 50, 100};
+        static const std::vector<std::string> kn = {"KEEP: ALL", "KEEP: NEWEST 20", "KEEP: NEWEST 50", "KEEP: NEWEST 100"};
+        int ki = 0;
+        for (int k = 0; k < 4; k++) if (keeps[k] == cfg_.demoKeep) ki = k;
+        if (ui_.cycle(L.X(644), L.Y(y), hw, L.L(kMRow), "KEEP", ki, 4, kn, UiExp::cfg("demo_keep"))) { cfg_.demoKeep = keeps[ki]; cfg_.save(); pruneDemos(); }
+        y += 44;
+    }
     if (ui_.button(lx, L.Y(y), L.L(276), L.L(kMRow), "BACK", UiExp::nav("main"))) setScreen(Screen::Main);
     if (ui_.button(L.X(644), L.Y(y), L.L(276), L.L(kMRow), "OPEN FOLDER", UiExp::url())) {
         std::error_code ec;
@@ -7784,7 +8178,9 @@ void Game::applyDisplayMode() {
         case 2: // exclusive fullscreen: owns the display, bypasses the desktop compositor (at DEVICES' REFRESH RATE if
                 // one is picked: GLFW takes the closest mode the monitor has at that size)
             glfwSetWindowAttrib(win_, GLFW_DECORATED, GLFW_TRUE);
-            glfwSetWindowMonitor(win_, mon, 0, 0, vm.w, vm.h, cfg_.fullscreenHz > 0 ? cfg_.fullscreenHz : vm.hz);
+            // (VIDEO > MORE 3: FULLSCREEN SIZE: a lower resolution, which the monitor stretches to fill the screen)
+            glfwSetWindowMonitor(win_, mon, 0, 0, cfg_.fsWidth > 0 ? cfg_.fsWidth : vm.w, cfg_.fsHeight > 0 ? cfg_.fsHeight : vm.h,
+                                 cfg_.fullscreenHz > 0 ? cfg_.fullscreenHz : vm.hz);
             break;
         case 1: { // borderless fullscreen window covering the monitor
             glfwSetWindowMonitor(win_, nullptr, mx, my, vm.w, vm.h, 0);

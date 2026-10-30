@@ -150,6 +150,9 @@ struct ServerPlayer {
     double fireQueuedUntil = -1; // semi-auto: a click waiting for the weapon to be ready
     int kills = 0, deaths = 0, score = 0;
     double respawnAt = -1;
+    // practice (the host alone with bots, "practice ..."): a saved spot to go back to, and taking no damage
+    bool practiceSaved = false, practiceGod = false;
+    Vec3 practicePos, practiceVel; float practiceYaw = 0, practicePitch = 0;
     int checkpoint = 0;         // race: next checkpoint index
     std::vector<int> raceSplits;   // race: ms at each checkpoint of the current run (time trials report it)
     uint32_t joinId = 0;        // unique per connection (a new player in a reused slot gets a new one)
@@ -511,6 +514,7 @@ public:
     // Map edit sessions: everyone flies around and edits the map together; edits go through here so all
     // copies stay identical. The map file is autosaved (it's the host's copy) while dirty.
     bool editing_ = false, editDirty_ = false;
+    bool practicePassive_ = false;   // practice: bots move but never fire
     bool tempEdit_ = false;     // editing was voted on a normal server: never saved, reverts at the next map change
     bool mapEdited_ = false;    // map_ differs from its file (temporary edits being played)
     bool autosaveBackedUp_ = false; // this edit session's first autosave copied the file to <name>.qmap.bak
