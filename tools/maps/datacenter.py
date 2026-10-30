@@ -28,6 +28,11 @@ H1 = (-64.0, 56.0, -61.0, 59.0)        # the hall hatch
 H2 = (-64.0, 19.0, -61.0, 22.0)        # the hatch in A
 # site B: the UPS hall, inside x 37..84, z -10..27, 14.4 tall
 BX0, BZ0, BX1, BZ1 = 37.0, -10.0, 84.0, 27.0
+# the yard's south wall and the NOC's back wall (25 m behind each spawn: q's 120 / 144 m)
+YS, NN = 121.0, -121.0
+# the server hall's rack rows
+RACK_Z = (34.0, 40.4, 46.8, 53.2)
+RACK_X = ((-92, -78), (-72, -66), (-56, -50), (-44, -24))
 
 
 def build():
@@ -48,7 +53,7 @@ def build():
     OCT_SKIN = octagon(AX, AZ, A_IN + 0.5)
 
     # ================= floors (ground) =================
-    floor("oilstainedconcrete", (-46, 63, 46, 90))                                        # the dock yard
+    floor("oilstainedconcrete", (-46, 63, 46, YS))                                        # the dock yard
     floor("loadingdockfloor", (-46, 62, 46, 63))                                          # (under the dock doors)
     floor("raisedaccessfloor", (-96, 27, -19, 62), [(-77, 27, -39, 28), (PX0 - 1, 27, PX1 + 1, PZ1 + 1)])     # server hall (less the plenum)
     floor("loadingdockfloor", (-19, 27, 19, 62))                                          # receiving
@@ -66,19 +71,26 @@ def build():
     floor("epoxyfloor", (36, -10, 85, 27))                                                # B
     floor("polishedconcrete", (85, -10, 96, 27))                                          # east corridor
     floor("steelcheckerfloor", (-96, -46, -40, -10))                                      # security
-    floor("terrazzo", (-40, -46, 36, -10))                                                # lobby
+    floor("polishedgranite", (-40, -46, 36, -10))                                                # lobby
     floor("epoxyfloor", (36, -46, 96, -10))                                               # battery room
     floor("loadingdockfloor", (-96, -47, 96, -46))                                        # (under the north doors)
     floor("concretepavers", (-96, -64, 96, -47))                                          # courtyard
-    floor("officecarpettiles", (-32, -96, 32, -64))                                       # NOC
+    floor("officecarpettiles", (-32, NN, 32, -64))                                       # NOC
 
     # ================= the plenum =================
     B(m, "concrete", PX0, PY - 1, PZ0, PX1, PY, PZ1)                                       # its floor
     for (a, b, c, d) in ((PX0 - 1, PZ0 - 1, PX0, PZ1 + 1), (PX1, PZ0 - 1, PX1 + 1, PZ1 + 1), (PX0, PZ0 - 1, PX1, PZ0), (PX0, PZ1, PX1, PZ1 + 1)):
         B(m, "darkconcrete", a, PY - 1, b, c, -0.4, d)
-    for r in minus((PX0 - 1, PZ0 - 1, PX1 + 1, PZ1 + 1), [H1, H2]): B(m, "raisedaccessfloor", r[0], -0.4, r[1], r[2], 0, r[3])
-    m.ladder(PX0 + 0.4, (H1[1] + H1[3]) / 2, PY, 0, "w")
-    m.ladder(PX0 + 0.4, (H2[1] + H2[3]) / 2, PY, 0, "w")
+    for r in minus((PX0 - 1, PZ0 - 1, PX1 + 1, PZ1 + 1), [H1, H2]):
+        for (z0, z1, mat) in ((r[1], min(r[3], 28.0), "circuit"), (max(r[1], 28.0), r[3], "raisedaccessfloor")):   # (in A: its circuit floor)
+            if z1 > z0: B(m, mat, r[0], -0.4, z0, r[2], 0, z1)
+    # the hatches' lips (hazard-striped: seen before you fall in; low enough to step over)
+    for (x0, z0, x1, z1) in (H1,):
+        B(m, "hazard", x0, 0, z0 - 0.15, x1, 0.3, z0); B(m, "hazard", x0, 0, z1, x1, 0.3, z1 + 0.15)
+        B(m, "hazard", x1, 0, z0 - 0.15, x1 + 0.15, 0.3, z1 + 0.15)
+    m.ladder(PX0 + 0.4, (H1[1] + H1[3]) / 2, PY, 0, "w", width=2.6)      # (the hatch's width: a bot that drops in anywhere climbs out)
+    m.ladder(PX0 + 0.4, (H2[1] + H2[3]) / 2, PY, 0, "w", width=2.6)
+    B(m, "hazard", H2[2], 0, H2[1], H2[2] + 0.15, 0.3, H2[3])                              # (A's hatch: a lip on its open side)
 
     # ================= the outer shell =================
     # south facade (dock doors: west into the hall, centre into receiving, east into the plant hall; parapet gaps
@@ -101,6 +113,11 @@ def build():
     wall(m, WALL, 20, 27, 36, 28, 0, C)                                                   # plant | mid
     wall(m, WALL, 85, 27, 96, 28, 0, C, [door(90.5)])                                     # plant | east corridor
     wall(m, WALL, -28, -10, -27, 27, 0, C, [door(0.5), door(18)])                         # east ring | mid
+    # baffles in the west ring and the east corridor (T -> CT's back rooms slower than the site routes): a zigzag
+    for (x0, z0, x1, z1) in ((-96, 16, -81, 17), (-92, 4, -77, 5), (85, 16, 92, 17), (89, 4, 96, 5)):
+        B(m, "precastconcrete", x0, 0, z0, x1, C, z1)
+    # mid's north door: a turnstile screen just inside the lobby (no straight run from mid into CT's lobby)
+    B(m, "steeldoorskin", -4.5, 0, -16, 4.5, 2.4, -15.2); B(m, "glow", -4.5, 2.4, -16, 4.5, 2.5, -15.2)
     # the north band's south wall (two storeys): ground doors, then the office facade (windows on the roof, the bridge
     # door into A's gallery, the balcony door over B)
     gdoors = [door(-89.75), door(AX), door(-33.5), door(0, 6), door(46), door(75), door(90.5)]
@@ -140,27 +157,34 @@ def build():
     for k in range(8):
         piece = [OCT_IN[k], OCT_IN[(k + 1) % 8], G_IN[(k + 1) % 8], G_IN[k]]
         prism(m, "galvanizedgrating", piece, C, U)
-        # its rail: 1 m, on the inner edge (thin: hitscan goes through), left open in front of the two ladders
+        # its rail: 1 m, on the inner edge, 0.2 m solid steel (it stops what it looks like it stops), left open in front
+        # of the two ladders
         a, b = G_IN[k], G_IN[(k + 1) % 8]
         L0 = math.hypot(b[0] - a[0], b[1] - a[1]); ux, uz = (b[0] - a[0]) / L0, (b[1] - a[1]) / L0
         nx, nz = -uz, ux
         if (AX - a[0]) * nx + (AZ - a[1]) * nz < 0: nx, nz = -nx, -nz
-        rail = [a, b, (b[0] + nx * 0.12, b[1] + nz * 0.12), (a[0] + nx * 0.12, a[1] + nz * 0.12)]
+        rail = [a, b, (b[0] + nx * 0.2, b[1] + nz * 0.2), (a[0] + nx * 0.2, a[1] + nz * 0.2)]
         cu = ux * (a[0] + b[0]) / 2 + uz * (a[1] + b[1]) / 2
         gaps = [(cu - 1.2, cu + 1.2, U, U + 2)] if k in (2, 6) else []
-        poly_wall(m, "galvanizedgrating", rail, (ux, uz), gaps, U, U + 1.0)
+        poly_wall(m, "steel", rail, (ux, uz), gaps, U, U + 1.0)
     # ladders up to the gallery on two steel columns (E and W), for the walk back up
     for sx in (1, -1):
         cx = AX + sx * (A_IN - 3)
         B(m, "steel", cx - (0.8 if sx > 0 else 0), 0, AZ - 0.6, cx + (0 if sx > 0 else 0.8), C, AZ + 0.6)
         m.ladder(cx - sx * 1.2, AZ, 0, U, "e" if sx > 0 else "w")
     # the plinth and the singularity: an octagonal plinth 3 m tall; the core, a glowing ball hanging at 10 m, inside a
-    # shield shell (stops shots, rockets and grapples, not players or sight: nobody hangs off it over the site)
+    # hologram orb (stops nothing: stacked hologram discs, since see-through blocks draw as boxes); clip round the core
+    # and the orb up to the roof, so nobody stands on the ball (no stall spot over the site)
     prism(m, "darkconcrete", octagon(AX, AZ, 3.0), 0, 0.6)
     prism(m, "scifipanels", octagon(AX, AZ, 2.4), 0.6, 3.0)
     prism(m, "glow", octagon(AX, AZ, 2.6), 3.0, 3.15)
     sphere(m, "lightblock", AX, 10.0, AZ, 2.2, bands=6, sectors=8)
-    prism(m, "shieldwall", octagon(AX, AZ, 3.0), 7.2, 12.8)
+    for (y0, y1, rr) in ((7.0, 7.5, 1.6), (7.5, 8.3, 2.6), (8.3, 11.7, 3.2), (11.7, 12.5, 2.6), (12.5, 13.0, 1.6)):
+        w = rr * 0.42
+        B(m, "hologrampanel", AX - rr, y0, AZ - w, AX + rr, y1, AZ + w)
+        B(m, "hologrampanel", AX - w, y0, AZ - rr, AX + w, y1, AZ - w)
+        B(m, "hologrampanel", AX - w, y0, AZ + w, AX + w, y1, AZ + rr)
+    B(m, "clip", AX - 3.4, 6.8, AZ - 3.4, AX + 3.4, A_H, AZ + 3.4)
     L.append(f"site {AX - 4:g} 0 {AZ - 8:g} {AX + 12:g} 4 {AZ + 8:g}")   # (east of the plinth: its middle on open floor)
 
     # ================= site B: the UPS hall (two storeys tall, a catwalk on each long side) =================
@@ -170,7 +194,11 @@ def build():
     for (z0, z1) in ((23, 27), (-10, -6)):   # the south catwalk (T, off the roof) and the north balcony (CT, off the offices)
         B(m, "meshcatwalk", BX0, C, z0, BX1, U, z1)
         zr = z0 if z0 > 0 else z1 - 0.12
-        wall(m, "galvanizedgrating", BX0, zr, BX1, zr + 0.12, U, U + 1.0, [(41, 43.4, U, U + 2), (77.6, 80, U, U + 2)])
+        # its rail: chain-link (looks like what it is: shots go through, players don't)
+        wall(m, "chainlinkmesh", BX0, zr, BX1, zr + 0.12, U, U + 1.0, [(41, 43.4, U, U + 2), (59.5, 61.5, U, U + 2), (77.6, 80, U, U + 2)])
+        # a structural column on its rail side halfway along: breaks the catwalk's 47 m line (walk past it by the wall)
+        zc0, zc1 = (z0, z0 + 1.5) if z0 > 0 else (z1 - 1.5, z1)
+        B(m, "precastconcrete", 59.5, 0, zc0, 61.5, C, zc1); B(m, "precastconcrete", 59.5, U, zc0, 61.5, UC, zc1)
         for x in (42.2, 78.8):   # columns with ladders, from the hall floor to each walkway
             zc = z0 - 0.6 if z0 > 0 else z1 + 0.6
             B(m, "steel", x - 0.6, 0, min(zc, z0 if z0 > 0 else z1), x + 0.6, C, max(zc, z0 if z0 > 0 else z1))
@@ -199,31 +227,46 @@ def build():
     B(m, "ventilationduct", AX - 3, U + 3.8, A_OUT + AZ, AX + 3, U + 4.6, A_OUT + AZ + 8)
     # roof cover: chiller units in two staggered rows across the south roof, fan stacks over mid, a pipe rack; lanes
     # kept from each stair to the duct and to B's roof door
-    for (x0, z0) in ((-92, 44), (-80, 52), (-40, 44), (-28, 52), (-14, 44), (-2, 52), (10, 44), (22, 52), (54, 44), (66, 52), (78, 44), (88, 52)):
+    for (x0, z0) in ((-92, 44), (-80, 52), (-40, 44), (-28, 52), (22, 52), (54, 44), (66, 52), (78, 44), (88, 52)):
         B(m, "radiatorfins", x0, U, z0, x0 + 7, U + 2.6, z0 + 3.2)
     for (x, z) in ((-16, 2), (-16, 18), (2, 2), (2, 18), (22, 10), (-88, 4), (-88, 18), (90, 4), (90, 18)):
         prism(m, "heatvents", octagon(x, z, 2.2), U, U + 1.6); prism(m, "galvanizedgrating", octagon(x, z, 2.2), U + 1.6, U + 1.8)
-    for x in range(-34, 31, 8): B(m, "steel", x - 0.25, U, 33.75, x + 0.25, U + 3.4, 34.25)
-    B(m, "ventilationduct", -36, U + 3.4, 33, 32, U + 4.4, 35)
+    # two cooling towers in the middle of the south roof (the plant's big items: they break the roof's flat slab)
+    for xc in (-9.0, 9.0):
+        prism(m, "corrugated", octagon(xc, 48, 5.0), U, U + 7.0); prism(m, "galvanizedgrating", octagon(xc, 48, 5.4), U + 7.0, U + 7.4)
+        prism(m, "heatvents", octagon(xc, 48, 3.4), U + 7.4, U + 8.6)
+        light(m, xc, U + 10, 48, 10, 0.5)
     # parapets round the roof's edge toward the tall parts are their walls; the east corridor's roof meets B's wall
 
     # ================= the yard (T spawn) and the courtyard / NOC (CT spawn) =================
-    wall(m, "corrugated", -47, 63, -46, 91, 0, 6); wall(m, "corrugated", 46, 63, 47, 91, 0, 6)
-    wall(m, "corrugated", -46, 90, 46, 91, 0, 6)
+    wall(m, "corrugated", -47, 63, -46, YS + 1, 0, 6); wall(m, "corrugated", 46, 63, 47, YS + 1, 0, 6)
+    wall(m, "corrugated", -46, YS, 46, YS + 1, 0, 6)
     wall(m, "precastconcrete", -97, -65, -32, -64, 0, 6); wall(m, "precastconcrete", 32, -65, 97, -64, 0, 6)
     wall(m, "precastconcrete", -97, -64, -96, -47, 0, 6); wall(m, "precastconcrete", 96, -64, 97, -47, 0, 6)
     # the NOC: CT's spawn behind its glass front; doors at both ends of the front
-    wall(m, "whiteconcrete", -33, -97, -32, -64, 0, 6.4); wall(m, "whiteconcrete", 32, -97, 33, -64, 0, 6.4)
-    wall(m, "whiteconcrete", -32, -97, 32, -96, 0, 6.4)
-    wall(m, "whiteconcrete", -32, -65, 32, -64, 0, 6.4, [door(-25), door(25), (-18, 18, 1, 5)])
-    B(m, "bluetintedglass", -18, 1, -64.9, 18, 5, -64.1)
-    B(m, "whiteconcrete", -33, 6.4, -97, 33, 6.8, -64)
+    # (doors at both ends and two in the middle: the middle ones run straight across to the lobby, so CT hold the
+    # lobby and mid's north door before a T rush through mid gets there)
+    wall(m, "whiteconcrete", -33, NN - 1, -32, -64, 0, 6.4); wall(m, "whiteconcrete", 32, NN - 1, 33, -64, 0, 6.4)
+    wall(m, "whiteconcrete", -32, NN - 1, 32, NN, 0, 6.4)
+    wall(m, "whiteconcrete", -32, -65, 32, -64, 0, 6.4, [door(-25), door(25), door(-6, 4), door(6, 4), (-18, -9, 1, 5), (9, 18, 1, 5)])
+    for x0 in (-18, 9): B(m, "bluetintedglass", x0, 1, -64.9, x0 + 9, 5, -64.1)
+    B(m, "whiteconcrete", -33, 6.4, NN - 1, 33, 6.8, -64)
+    # the courtyard's middle: a wall on the line x 0 with a vehicle gate (no 192 m line along CT's exit)
+    B(m, "precastconcrete", -0.5, 0, -64, 0.5, 4, -59); B(m, "precastconcrete", -0.5, 0, -54, 0.5, 4, -49.5)
+    for (z0, z1) in ((-64, -59), (-54, -49.5)): B(m, "glow", -0.55, 4, z0, 0.55, 4.1, z1)
+    for z in (-59.3, -54): B(m, "hazard", -0.7, 0, z, 0.7, 4.2, z + 0.3)                 # (the gate posts)
 
     # ================= cover (layout) =================
-    # server hall: four rack rows (E-W), broken by two cross aisles
-    for zc in (34.0, 40.4, 46.8, 53.2):
-        for (x0, x1) in ((-92, -78), (-72, -50), (-44, -24)):
-            B(m, "serverrack", x0, 0, zc - 0.6, x1, 2.6, zc + 0.6)
+    # server hall: four rack rows (E-W), 4.6 m tall, broken by three cross aisles (the middle one over the plenum's
+    # strip); clip over the whole hall from the rack tops up (nobody stands on a rack or a tray: the aisles stay
+    # aisles); perforated rack doors (1/8 m: wallbang) half across some aisles break their lines
+    RK = 4.6
+    for zc in RACK_Z:
+        for (x0, x1) in RACK_X:
+            B(m, "serverrack", x0, 0, zc - 0.6, x1, RK, zc + 0.6)
+    B(m, "clip", -96, RK, 28, -20, C, 62)
+    for (x, z0, z1) in ((-85, 34.6, 37.2), (-85, 50.0, 52.6), (-53, 41.0, 43.6), (-34, 43.6, 46.2), (-34, 47.4, 50.0), (-53, 30.8, 33.4)):
+        B(m, "perforatedmetal", x - 0.0625, 0, z0, x + 0.0625, RK, z1)
     # receiving: pallets and a cage
     for (x0, z0, x1, z1) in ((-12, 48, -8, 52), (6, 36, 10, 40), (-4, 34, 0, 36)):
         B(m, "palletstack", x0, 0, z0, x1, 1.4, z1)
@@ -240,9 +283,14 @@ def build():
         B(m, "steel", x0, 3.2, z0, x1, 3.3, z1)
         for zz in (z0 + 2.2, z0 + 5.0): B(m, "serverrack", x0 + 1.5, 0, zz, x1 - 1.5, 2.4, zz + 1.0)
     for xc in (-6.5, 10.5): B(m, "electricalcabinet", xc - 1.5, 0, 7, xc + 1.5, 1.6, 9)
-    # B: UPS cabinets round the site, battery strings
+    # B: UPS strings (N-S rows, 2.6 m: floor cover with gaps), a transformer, cable-trench covers, UPS cabinets round
+    # the site
     for (x0, z0, x1, z1, h) in ((55, 6, 58, 11, 2.2), (63, 6, 66, 11, 2.2), (44, -2, 47, 4, 2.4), (74, 13, 77, 19, 2.4), (44, 15, 47, 19, 1.6), (74, -2, 77, 2, 1.6)):
         B(m, "electricalcabinet", x0, 0, z0, x1, h, z1)
+    for (x0, z0, z1) in ((49.2, 2.5, 9.0), (49.2, 12.0, 16.5), (70.8, 0.5, 6.0), (70.8, 9.0, 15.5), (39.6, 4.0, 13.5)):
+        B(m, "lockerdoors", x0, 0, z0, x0 + 1.2, 2.6, z1); B(m, "glow", x0 - 0.02, 2.1, z0 + 0.4, x0, 2.25, z1 - 0.4)
+    B(m, "radiatorfins", 79.5, 0, 4.0, 83.5, 3.2, 12.0); B(m, "hazard", 78.5, 0, 3.0, 84, 0.02, 3.3); B(m, "hazard", 78.5, 0, 12.7, 84, 0.02, 13.0)
+    for z in (-3.5, 20.0): B(m, "steelcheckerfloor", 40, 0, z, 82, 0.03, z + 1.0)
     # battery room: rows of battery racks
     for xc in (48, 58, 68, 78):
         B(m, "lockerdoors", xc - 0.6, 0, -40, xc + 0.6, 2.4, -30); B(m, "lockerdoors", xc - 0.6, 0, -24, xc + 0.6, 2.4, -16)
@@ -255,6 +303,15 @@ def build():
         B(m, "drywall", x0, U, z0, x1, UC, z1)
     for (x0, z0) in ((-90, -40), (-70, -40), (-60, -32), (-24, -42), (20, -42), (60, -40), (80, -40), (88, -24)):
         B(m, "scaffoldboards", x0, U, z0, x0 + 3, U + 0.8, z0 + 1.6)
+    # NOC: operator console rows in front of the spawns
+    for z in (-104.0, -94.0):
+        for (x0, x1) in ((-24, -10), (10, 24)): B(m, "electricalcabinet", x0, 0, z, x1, 0.9, z + 1.2)
+    # yard: dock levellers at the doors, a forklift lane, a guard hut and parked containers by the walls
+    for xd in (-32, 0, 32): B(m, "steeldeckplate", xd - 3, 0, 63, xd + 3, 0.05, 65.5)
+    for x in (-36, -28, 28, 36): B(m, "roadmarkings", x - 0.15, 0, 66, x + 0.15, 0.01, YS - 4)
+    B(m, "shippingcontainer", -45.5, 0, 92, -42.5, 2.6, 104); B(m, "shippingcontainer", -45.5, 2.6, 94, -42.5, 5.2, 102)
+    B(m, "shippingcontainer", 42.5, 0, 88, 45.5, 2.6, 100)
+    B(m, "corrugated", 30, 0, 104, 36, 3, 109); B(m, "bluetintedglass", 31, 1.2, 103.9, 35, 2.4, 104)
     # yard: two trucks backed up to the dock doors
     for xc in (-18, 18):
         B(m, "shippingcontainer", xc - 1.4, 0.6, 66, xc + 1.4, 4.0, 78); B(m, "steel", xc - 1.3, 0.6, 78, xc + 1.3, 3.2, 81.5)
@@ -266,13 +323,13 @@ def build():
         B(m, "precastconcrete", x0, 0, -58, x1, 1.0, -54)
 
     # ================= decoration (walls, ceilings, edges: the lanes stay clear) =================
-    # server hall: blue LED strips along the rack tops, cable trays over the aisles (grapple lines), light panels
-    for zc in (34.0, 40.4, 46.8, 53.2):
-        for (x0, x1) in ((-92, -78), (-72, -50), (-44, -24)):
-            B(m, "glow", x0, 2.6, zc - 0.62, x1, 2.66, zc - 0.5); B(m, "glow", x0, 2.6, zc + 0.5, x1, 2.66, zc + 0.62)
+    # server hall: blue LED strips along the rack tops, cable trays over the racks (above the clip), light panels
+    for zc in RACK_Z:
+        for (x0, x1) in RACK_X:
+            B(m, "glow", x0, RK, zc - 0.62, x1, RK + 0.06, zc - 0.5); B(m, "glow", x0, RK, zc + 0.5, x1, RK + 0.06, zc + 0.62)
     for zc in (30.7, 37.2, 43.6, 50.0):
-        B(m, "steel", -92, 4.6, zc - 0.3, -24, 4.7, zc + 0.3)
-        for x in range(-90, -23, 11): B(m, "steel", x - 0.04, 4.7, zc - 0.04, x + 0.04, C, zc + 0.04)
+        B(m, "steel", -92, 6.4, zc - 0.3, -24, 6.5, zc + 0.3)
+        for x in range(-90, -23, 11): B(m, "steel", x - 0.04, 6.5, zc - 0.04, x + 0.04, C, zc + 0.04)
     for zc in (30.7, 43.6, 57.9):
         for x in range(-88, -23, 14): B(m, "lightblock", x, C - 0.1, zc - 0.4, x + 5, C, zc + 0.4)
     # the plenum: light strips and cable trays along its walls
@@ -307,9 +364,9 @@ def build():
             B(m, "lightblock", x, C - 0.1, z - 0.5, x + 4, C, z + 0.5)
             B(m, "lightblock", x, UC - 0.1, z - 0.5, x + 4, UC, z + 0.5)
     # NOC: the wall of screens, consoles behind the spawns
-    B(m, "controlpanel", -28, 1.0, -96, 28, 5.4, -95.9)
-    for z in (-93.0, -90.0): B(m, "electricalcabinet", -20, 0, z, 20, 0.8, z + 1)
-    for x in range(-24, 25, 12): B(m, "lightblock", x - 2, 6.3, -86, x + 2, 6.4, -84)
+    B(m, "controlpanel", -28, 1.0, NN, 28, 5.4, NN + 0.1)
+    B(m, "electricalcabinet", -20, 0, NN + 3, 20, 0.8, NN + 4)
+    for x in range(-24, 25, 12): B(m, "lightblock", x - 2, 6.3, -86, x + 2, 6.4, -84); B(m, "lightblock", x - 2, 6.3, -110, x + 2, 6.4, -108)
     # the office windows over the roof get a frame; the parapets a coping strip and warning lights at the corners
     B(m, "steel", -96, U + 1.2, 61.8, 96, U + 1.3, 63.2)
     for (x, z) in ((-96, 62), (96, 62), (-46, 62), (46, 62)): B(m, "glow", x - 0.3, U + 1.3, z - 0.3, x + 0.3, U + 1.6, z + 0.3)
@@ -322,10 +379,10 @@ def build():
         B(m, "copperandpatina", x0, 5.4, z0, x1, 6.2, z1)
     for x in (32, 53, 71): B(m, "galvanizedsteel", x - 0.4, 3.0, 38, x + 0.4, 6.2, 39) if x != 71 else B(m, "galvanizedsteel", x - 0.4, 3.0, 46, x + 0.4, 6.2, 47)
     # the yard: bay lines on the ground, dock bumpers beside the doors, floodlights on the yard walls
-    for x in (-24, -12, 12, 24): B(m, "roadmarkings", x - 0.15, 0, 64, x + 0.15, 0.01, 86)
+    for x in (-24, -12, 12, 24): B(m, "roadmarkings", x - 0.15, 0, 64, x + 0.15, 0.01, YS - 4)
     for xd in (-32, 0, 32):
         for sx in (-1, 1): B(m, "rubber", xd + sx * 3.4 - 0.3, 0.4, 63, xd + sx * 3.4 + 0.3, 1.4, 63.4)
-    for (x, z) in ((-46, 72), (-46, 86), (46, 72), (46, 86)):
+    for (x, z) in ((-46, 72), (-46, 86), (-46, 106), (46, 72), (46, 86), (46, 106)):
         B(m, "glow", x - 0.3 if x < 0 else x - 0.1, 5.2, z - 0.6, x + 0.1 if x < 0 else x + 0.3, 5.6, z + 0.6); light(m, x * 0.95, 5, z, 16, 0.7)
     # the courtyard: lamp posts along its edges
     for x in (-70, -40, -10, 10, 40, 70):
@@ -336,12 +393,21 @@ def build():
                                 (90, -170, 130, -130, 70), (150, -120, 180, -80, 40), (150, -20, 185, 20, 56), (150, 60, 180, 100, 36),
                                 (-185, 40, -150, 80, 48), (-180, -60, -150, -20, 64), (-120, 130, -80, 160, 40), (-20, 140, 30, 175, 58), (80, 130, 120, 165, 46)):
         B(m, "far", x0, -2, z0, x1, h, z1)
+        # lit windows: glow bands on the face toward the site
+        cx, cz = (x0 + x1) / 2, (z0 + z1) / 2
+        for y in range(10, int(h) - 4, 13):
+            if abs(cx) > abs(cz):     # (a tower east or west of the site: its face toward x 0)
+                fx = x1 if cx < 0 else x0 - 0.3
+                B(m, "glow", fx, y, z0 + 3, fx + 0.3, y + 1.2, z1 - 3)
+            else:
+                fz = z1 if cz < 0 else z0 - 0.3
+                B(m, "glow", x0 + 3, y, fz, x1 - 3, y + 1.2, fz + 0.3)
     B(m, "far", -400, -7, -400, 400, -6, 400)
 
     # ================= spawns =================
-    for x in (-9, -3, 3, 9): m.spawn("a", x, 0, 84, 0)
-    for x in (-9, -3, 3, 9): m.spawn("b", x, 0, -86, 180)
-    for (x, z, yaw) in ((-84, 58, -90), (-30, 32, 0), (60, 58, 90), (90, 0, 0), (-90, 0, 180), (-70, -20, 90), (70, -30, -90), (0, -54, 0)):
+    for x in (-9, -3, 3, 9): m.spawn("a", x, 0, YS - 6, 0)
+    for x in (-9, -3, 3, 9): m.spawn("b", x, 0, NN + 10, 180)
+    for (x, z, yaw) in ((-84, 58, -90), (-30, 32, 0), (60, 58, 90), (90, 0, 0), (-90, 0, 180), (-70, -20, 90), (70, -30, -90), (8, -56, 0)):
         m.spawn("any", x, 0, z, yaw)
 
     # ================= lights (layout pass: enough to see) =================
@@ -355,20 +421,24 @@ def build():
     light(m, AX, 15, AZ, 30, 0.9); light(m, AX, 4, AZ, 16, 0.7); light(m, AX, 10, AZ, 8, 1.0)
     for x in (45, 60, 76):
         for z in (0, 17): light(m, x, 12, z, 18, 0.8)
-    for x in range(-24, 25, 16): light(m, x, 5.4, -80, 14, 0.8)
-    for x in range(-40, 41, 20): light(m, x, 6, 76, 16, 0.7)
+    for x in range(-24, 25, 16): light(m, x, 5.4, -80, 14, 0.8); light(m, x, 5.4, -104, 14, 0.8)
+    for x in range(-40, 41, 20): light(m, x, 6, 76, 16, 0.7); light(m, x, 6, 100, 16, 0.7)
     for x in range(-90, 91, 20): light(m, x, 6, -56, 14, 0.7)
     for x in range(-88, 96, 16): light(m, x, U + 4, 44, 16, 0.5)
 
     # ================= bounds =================
     # the map's own outline, clipped all round, a lid at 45 m, and the tall roofs (offices, B, A, the NOC) clipped
     # so nobody stands over the courtyard or the sites' roofs
-    for (a, b, c, d) in ((-99, -65, -96, 63), (96, -65, 99, 63), (-99, 90, 99, 93), (-99, 63, -46, 90), (46, 63, 99, 90),
-                         (-99, -99, -32, -65), (32, -99, 99, -65), (-32, -99, 32, -96)):
+    for (a, b, c, d) in ((-99, -65, -96, 63), (96, -65, 99, 63), (-99, YS, 99, YS + 3), (-99, 63, -46, YS), (46, 63, 99, YS),
+                         (-99, NN - 3, -32, -65), (32, NN - 3, 99, -65), (-32, NN - 3, 32, NN)):
         B(m, "clip", a, -4, b, c, 45, d)
-    B(m, "clip", -99, 45, -99, 99, 46, 93)
-    B(m, "clip", -96, RT, -46, 96, 45, -10); B(m, "clip", 36, RT, -10, 85, 45, 28)
-    B(m, "clip", -77, A_H + 0.6, -10, -39, 45, 28); B(m, "clip", -32, 6.8, -96, 32, 45, -64)
+    B(m, "clip", -99, 45, NN - 3, 99, 46, YS + 3)
+    B(m, "clip", -96, RT, -47, 96, 45, -10); B(m, "clip", 36, RT, -10, 85, 45, 28)        # (the north facade's top too)
+    B(m, "clip", -77, A_H + 0.6, -10, -39, 45, 28); B(m, "clip", -32, 6.8, NN, 32, 45, -64)
+    # the courtyard's walls and its middle wall, the yard's walls, the cooling towers: clipped from their tops
+    for (a, b, c, d, y) in ((-96, -65, -32, -64, 6), (32, -65, 96, -64, 6), (-0.7, -64, 0.7, -49.5, 4), (-46, YS, 46, YS + 1, 6)):
+        B(m, "clip", a, y, b, c, 45, d)
+    for xc in (-9.0, 9.0): B(m, "clip", xc - 5.4, U + 7.4, 48 - 5.4, xc + 5.4, 45, 48 + 5.4)
 
     m.raw("palette base 0.5 0.5 0.52 accent 0.2 0.3 0.5 metal 0.3 0.32 0.36 glow 0.4 0.8 1 sky 0.03 0.04 0.08")
     m.raw("setting hyperscale data centre at night")
