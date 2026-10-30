@@ -28,7 +28,7 @@ def build():
 
 def layout(m):
     # ---- ground: the garden's gravel, the building's plinth and floors
-    ponds = [(-13, 20, -3, 26)]
+    ponds = [(-13, 21.5, -3, 27)]   # (a 3 m lane between it and the plinth)
     holes = [(-VX - 0.5, -VZ - 0.5, VX + 0.5, VZ + 0.5)] + ponds + [(-x1, -z1, -x0, -z0) for (x0, z0, x1, z1) in ponds]
     for (x0, z0, x1, z1) in minus((-GX, -GZ, GX, GZ), holes):
         m.box(x0, -1, z0, x1, 0, z1, mat="gravel")
@@ -38,10 +38,10 @@ def layout(m):
     for (x0, z0, x1, z1) in minus((-HX, -HZ, HX, HZ), [(-9, -9, 9, 9)]):
         m.box(x0, F - 0.15, z0, x1, F, z1, mat="wideplanks")                                 # the hall floor
     m.box(-9, F - 0.15, -9, 9, F, 9, mat="tatami")                                           # the mat, flush
-    # the koi ponds (clear water, slows, not lethal), a pool 0.8 m deep: a step down and a hop out
+    # the koi ponds (clear water, slows, not lethal), a pool 0.5 m deep: a step down, a step out
     for (x0, z0, x1, z1) in ponds:
-        m.box(x0, -1.8, z0, x1, -0.8, z1, mat="mossystone", mirror=True)
-        m.box(x0, -0.8, z0, x1, -0.15, z1, mat="clearlagoon", mirror=True)
+        m.box(x0, -1.5, z0, x1, -0.5, z1, mat="mossystone", mirror=True)        # (0.5 m: a step, under the 0.55 step-up)
+        m.box(x0, -0.5, z0, x1, -0.15, z1, mat="clearlagoon", mirror=True)
     # ---- the garden wall (and the clip over it and over the whole map: nobody hooks out)
     WH = 4.0
     m.box(-GX - 1, -1, -GZ - 1, -GX, WH, GZ + 1, mat="hedge", mirror=True)
@@ -90,16 +90,18 @@ def layout(m):
     m.box(11.9, RAFT - 0.6, -11.9, 13.1, RAFT, 11.9, mat="logcabin", mirror=True)          # ...and the cross beams
     # ---- the veranda: posts along its edge, a lean-to roof of shingles
     VR = F + 5.0
-    for k in range(12):
-        x = -VX + 4 * k
+    for x in (-22, -14, -6, 6, 14, 22):     # (8 m apart, and 12 across the middle: the veranda and the lane are one)
         m.box(x - 0.2, F, VZ - 0.4, x + 0.2, VR, VZ, mat="logcabin", mirror=True)
-    for k in range(1, 9):
-        z = -VZ + 4 * k
+    for z in (-9, 0, 9):
         m.box(VX - 0.4, F, z - 0.2, VX, VR, z + 0.2, mat="logcabin", mirror=True)
     for (x0, z0, x1, z1) in minus((-VX - 0.8, -VZ - 0.8, VX + 0.8, VZ + 0.8), [(-HX - 0.25, -HZ - 0.25, HX + 0.25, HZ + 0.25)]):
         m.box(x0, VR, z0, x1, VR + 0.35, z1, mat="wideplanks")
     wedge(m, "roofshingles", 2, (-VX - 0.8, VR + 0.35, -VZ - 0.8, VX + 0.8, VR + 1.6, -HZ - 0.25), mirror=True)
     wedge(m, "roofshingles", 0, (-VX - 0.8, VR + 0.35, -HZ - 0.25, -HX - 0.25, VR + 1.6, HZ + 0.25), mirror=True)
+    # ---- the roofs are no play area (review: 3400 m2 only movement tech reached): clip from the eaves up to the lid
+    m.box(-HX - 1.25, CEIL + 0.5, -HZ - 1.25, HX + 1.25, LID, HZ + 1.25, mat="clip")
+    for (x0, z0, x1, z1) in minus((-VX - 0.8, -VZ - 0.8, VX + 0.8, VZ + 0.8), [(-HX - 0.25, -HZ - 0.25, HX + 0.25, HZ + 0.25)]):
+        m.box(x0, VR + 0.35, z0, x1, LID, z1, mat="clip")
     # ---- the tea houses (one each side): raised 1 m on stone, two steps up at each end, open to the front
     TX0, TX1, TZ0, TZ1, TY = 11, 19, 22, 27.5, 1.0
     m.box(TX0, -1, TZ0, TX1, TY, TZ1, mat="largetemplestone", mirror=True)
@@ -111,15 +113,21 @@ def layout(m):
         m.box(x0, TY, TZ0, x1, TR, 23, mat="shojiscreen", mirror=True)
         m.box(x0, TY, 26.5, x1, TR, TZ1 - 0.3, mat="shojiscreen", mirror=True)
         m.box(x0, TY + 4.3, 23, x1, TR, 26.5, mat="logcabin", mirror=True)
-    for x in (TX0 + 0.3, 15, TX1 - 0.6):
+    for x in (TX0 + 0.3, TX1 - 0.6):
         m.box(x, TY, TZ0, x + 0.3, TR, TZ0 + 0.3, mat="logcabin", mirror=True)            # the open front's posts
     m.box(TX0 - 0.6, TR, TZ0 - 0.6, TX1 + 0.6, TR + 0.3, TZ1 + 0.3, mat="wideplanks", mirror=True)
     wedge(m, "roofshingles", 3, (TX0 - 0.6, TR + 0.3, TZ0 - 0.6, TX1 + 0.6, TR + 1.8, TZ1 + 0.3), mirror=True)
+    m.box(TX0 - 0.6, TR + 0.3, TZ0 - 0.6, TX1 + 0.6, LID, TZ1 + 0.3, mat="clip", mirror=True)
+    # ---- the hall's length broken at the dais fronts: lattice panels (1/8 m wallbang: shot through at half damage),
+    # 2.6 m tall, z 3..7 each side of the middle, so dais to dais (30 m, past the laser's 24) is cut, short peeks stay
+    for (z0, z1) in ((3, 7), (-7, -3)):
+        m.wallbang(14.0, F, z0, 14.125, F + 2.6, z1, mirror=True)
+        m.box(13.95, F + 2.6, z0, 14.175, F + 2.75, z1, mat="logcabin", mirror=True)
     # ---- the spawns: each side's four along its edge of the mat, facing across it (14 m: the bow)
     for z in (-3.75, -1.25, 1.25, 3.75):
         m.spawn("a", -7, F, z, -90, "b")
     # free for all (and a tourney's warm-up): eight, in mirrored pairs, on every level
-    for (x, y, z, yaw) in ((-12, F, -9, -90), (16.8, RAFT, -10, 90), (-4, F, 16, -90), (-24, 0, -23, 180)):
+    for (x, y, z, yaw) in ((-12, F, -9, -90), (16.8, RAFT, -10, 90), (-4, F, 16, -90), (-25, 0, -8, 180)):
         m.spawn("any", x, y, z, yaw, "any")
     # ---- light: daylight on the garden (the sun overhead), lamps in the hall, under the galleries and the veranda
     for (x, z) in ((-6, -6), (6, -6)):
@@ -158,19 +166,18 @@ def decorate(m):
         m.glow(x - 0.25, VR - 0.7, VZ - 0.45, x + 0.25, VR - 0.1, VZ - 0.05, mirror=True)
     for z in (-10, 10):
         m.glow(VX - 0.45, VR - 0.7, z - 0.25, VX - 0.05, VR - 0.1, z + 0.25, mirror=True)
-    # the garden: stone lanterns in the corners and by the ponds, rocks at the ponds' far edge, a bamboo grove on each
-    # side strip (breakable stems at the wall side: the lane along the veranda stays clear)
-    for (x, z) in ((25.5, 25.5), (-25.5, 25.5), (-1.5, 22), (25, 20.5)):
-        m.box(x - 0.5, 0, z - 0.5, x + 0.5, 0.3, z + 0.5, mat="mossystone", mirror=True)
+    # the garden: stone lanterns against the hedge (out of the lanes), a bamboo stand filling the north-east and
+    # south-west corner pockets (it blocks sight there; the strips stay clear)
+    for (x, z) in ((-27.1, 26.2), (-27.1, 21), (27.1, 6), (6, 27.1)):
+        m.box(x - 0.45, 0, z - 0.45, x + 0.45, 0.3, z + 0.45, mat="mossystone", mirror=True)
         m.box(x - 0.2, 0.3, z - 0.2, x + 0.2, 1.0, z + 0.2, mat="mossystone", mirror=True)
-        m.glow(x - 0.35, 1.0, z - 0.35, x + 0.35, 1.5, z + 0.35, mirror=True)
-        m.box(x - 0.55, 1.5, z - 0.55, x + 0.55, 1.75, z + 0.55, mat="mossystone", mirror=True)
+        m.glow(x - 0.3, 1.0, z - 0.3, x + 0.3, 1.5, z + 0.3, mirror=True)
+        m.box(x - 0.5, 1.5, z - 0.5, x + 0.5, 1.75, z + 0.5, mat="mossystone", mirror=True)
         m.light(x, 1.3, z, 5, 0.4, fixture=False, mirror=True)
-    for (x0, z0, x1, z1, h) in ((-12.5, 26.2, -10.5, 27.6, 0.9), (-7, 26.4, -5.5, 27.6, 0.6), (-13.8, 23, -13.1, 24.6, 0.5)):
-        m.box(x0, 0, z0, x1, h, z1, mat="mossystone", mirror=True)
-    for (x, z) in ((26.2, 3), (27.1, 4.4), (25.8, 5.6), (26.9, 7.1), (26.0, 8.8), (27.2, 9.9), (26.4, 11.3), (27.0, 1.6),
-                   (27.4, 2.6), (26.6, 6.3), (27.5, 8.1), (25.9, 10.2), (27.3, 11.9), (26.5, 0.8), (27.6, 5.3), (26.1, 12.4)):
-        m.box(x - 0.18, 0, z - 0.18, x + 0.18, 6.5 + (x * 7 + z * 3) % 2.0, z + 0.18, mat="bamboofence", mirror=True)
+    for i in range(22):
+        x = 23.3 + (i * 7 % 11) * 0.43
+        z = 19.6 + (i * 5 % 17) * 0.47
+        m.box(x - 0.18, 0, z - 0.18, x + 0.18, 6.5 + (i * 3 % 5) * 0.45, z + 0.18, mat="bamboofence", mirror=True)
     # out past the wall: far mountains (unlit scenery)
     for (x, z, r, h) in ((150, -60, 70, 60), (120, 90, 55, 42), (30, 170, 80, 70), (-90, 140, 60, 48)):
         peak(m, "far", x, z, r, -10, h, mirror=True)
