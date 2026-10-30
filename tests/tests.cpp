@@ -1792,7 +1792,7 @@ static void testMaps() {
         };
         int odd = 0;
         for (auto& sp : m.spawns) {
-            int twinTeam = sp.team == SPAWN_A ? SPAWN_B : sp.team == SPAWN_B ? SPAWN_A : sp.team;
+            int twinTeam = sp.team == SPAWN_A ? SPAWN_B : sp.team == SPAWN_B ? SPAWN_A : isModeSpawn(sp.team) && spawnSide(sp.team) != SPAWN_ANY ? modeSpawn(spawnSetMode(sp.team), 1 - spawnSide(sp.team)) : sp.team;
             bool found = false;
             for (auto& o : m.spawns)
                 if (o.team == twinTeam && same(o.pos, flip(sp.pos)) && std::fabs(std::remainder(o.yaw - sp.yaw - PI, 2 * PI)) < 0.01f) found = true;
@@ -1907,7 +1907,7 @@ static void testSpawnSanity() {
         // (spawns used together: a mode's two teams; the free-for-all pool; the race grid; a staged map's attackers and
         // defenders, but never one side's stages with each other. Lodestone's race grid may share a pad with a multi
         // point stage: no mode uses both.)
-        auto group = [](int t) { return t == SPAWN_A || t == SPAWN_B ? 0 : t == SPAWN_ANY ? 1 : t == SPAWN_RACE ? 2 : 3; };
+        auto group = [](int t) { return isModeSpawn(t) ? 4 + spawnSetMode(t) : t == SPAWN_A || t == SPAWN_B ? 0 : t == SPAWN_ANY ? 1 : t == SPAWN_RACE ? 2 : 3; };   // (a mode set: its own group)
         for (size_t i = 0; i < m.spawns.size(); i++)
             for (size_t j = i + 1; j < m.spawns.size(); j++) {
                 auto &p = m.spawns[i], &q = m.spawns[j];
@@ -2287,6 +2287,64 @@ static void testMapConverter() {
         CHECK(r.converted == 1 && rd(d / "old" / "v1" / "old-1.qmap") == v1);
         CHECK(upgradeMapDir((d / "nowhere").string()).log.empty());
         fs::remove_all(d, ec);
+    }
+}
+
+// Mode spawn sets (map format 11): "spawn koth-a ..." spawns only that mode uses (Mine's hill apart from its bomb
+// sides); the mode starts on them when the map has them, every other mode never does; the walk check routes them.
+static void testModeSpawnSets() {
+    printf("mode spawn sets: koth-a / koth-b, read and written, used only by their mode, walked\n");
+    const std::string base = "box -40 -1 -40 40 0 40\nhill -2 0 -2 2 3 2\nsite 20 0 -2 24 3 2\n"
+                             "spawn a -30 0 0 90\nspawn b 30 0 0 -90\n";
+    const std::string sets = "spawn koth-a -10 0 10 0\nspawn koth-b 10 0 -10 180\n";
+    Map m;
+    std::string err;
+    CHECK(m.parse(base + sets, &err) && m.spawns.size() == 4);
+    if (m.spawns.size() != 4) { printf("  %s\n", err.c_str()); return; }
+    CHECK(m.spawns[2].team == modeSpawn(MODE_KOTH, SPAWN_A) && m.spawns[3].team == modeSpawn(MODE_KOTH, SPAWN_B));
+    CHECK(isModeSpawn(m.spawns[2].team) && !isStagedSpawn(m.spawns[2].team) && spawnSide(m.spawns[3].team) == SPAWN_B && spawnSetMode(m.spawns[3].team) == MODE_KOTH);
+    const std::string text = m.serialize();
+    CHECK(text.find("spawn koth-a -10 0 10 0\n") != std::string::npos && text.find("spawn koth-b 10 0 -10 180\n") != std::string::npos);
+    { Map r; CHECK(r.parse(text) && r.serialize() == text); }
+    // koth starts on its own set; bomb and vs on the map's a / b; each pool holds only its own
+    CHECK(modeSpawnType(m, MODE_KOTH, TEAM_A, TEAM_A, false) == modeSpawn(MODE_KOTH, SPAWN_A));
+    CHECK(modeSpawnType(m, MODE_KOTH, TEAM_B, TEAM_A, false) == modeSpawn(MODE_KOTH, SPAWN_B));
+    CHECK(modeSpawnType(m, MODE_BOMB, TEAM_A, TEAM_A, false) == SPAWN_A && modeSpawnType(m, MODE_VS, TEAM_B, TEAM_A, false) == SPAWN_B);
+    { auto p = spawnPool(m, modeSpawnType(m, MODE_KOTH, TEAM_A, TEAM_A, false), 0); CHECK(p.size() == 1 && p[0] == &m.spawns[2]); }
+    { auto p = spawnPool(m, modeSpawnType(m, MODE_BOMB, TEAM_B, TEAM_A, false), 0); CHECK(p.size() == 1 && p[0] == &m.spawns[1]); }
+    // a map without the set: koth falls back to a / b (and one side's set alone: the other side falls back)
+    { Map n; CHECK(n.parse(base) && modeSpawnType(n, MODE_KOTH, TEAM_A, TEAM_A, false) == SPAWN_A); }
+    { Map n; CHECK(n.parse(base + "spawn koth-a -10 0 10 0\n") && modeSpawnType(n, MODE_KOTH, TEAM_A, TEAM_A, false) == modeSpawn(MODE_KOTH, SPAWN_A) &&
+                   modeSpawnType(n, MODE_KOTH, TEAM_B, TEAM_A, false) == SPAWN_B); }
+    // a mode's set makes the mode playable on its own: koth on a map with only koth spawns, but not vs
+    { Map n; CHECK(n.parse("box -40 -1 -40 40 0 40\nhill -2 0 -2 2 3 2\n" + sets) && n.canSupportMode(MODE_KOTH) && !n.canSupportMode(MODE_VS)); }
+    { Map n; CHECK(n.parse(base + "spawn ffa-any 5 0 5 0\n") && modeSpawnType(n, MODE_FFA, TEAM_A, TEAM_A, false) == modeSpawn(MODE_FFA, SPAWN_ANY)); }
+    // refused: an unknown mode or side, upper case, race and multi point (they have their own spawns)
+    for (const char* bad : {"koth-c", "kingofthehill-a", "KOTH-a", "race-a", "points-a", "koth-", "-a", "koth-race"}) {
+        Map n;
+        CHECK(!n.parse(base + "spawn " + bad + " 0 0 0\n"));
+    }
+    CHECK(spawnTeamFromWord("koth-b") == modeSpawn(MODE_KOTH, SPAWN_B) && spawnTeamWord(modeSpawn(MODE_BOMB, SPAWN_ANY)) == "bomb-any" && spawnTeamWord(stagedSpawn(2, true)) == "def2");
+    // an editor edit can set one (and only a valid one)
+    { Map n; CHECK(n.parse(base)); std::string op = "s set 0 " + std::to_string(modeSpawn(MODE_KOTH, SPAWN_A)) + " -30 0 0 90";
+      CHECK(applyMapEdit(n, op) && n.spawns[0].team == modeSpawn(MODE_KOTH, SPAWN_A));
+      CHECK(!applyMapEdit(n, "s set 0 " + std::to_string(modeSpawn(MODE_RACE, SPAWN_A)) + " -30 0 0 90") && !applyMapEdit(n, "s set 0 " + std::to_string(kMaxSpawnTeam + 1) + " -30 0 0 90")); }
+    // the walk check routes koth from the koth set: sealed in a box, the hill is out of reach (and only koth says so)
+    {
+        Map n;
+        CHECK(n.parse(base + "spawn koth-a -10 0 10 0\nspawn koth-b 10 0 -10 180\nbox -12 0 8 -8 4 8.4\nbox -12 0 11.6 -8 4 12\nbox -12 0 8.4 -11.6 4 11.6\nbox -8.4 0 8.4 -8 4 11.6\n"));
+        WalkGrid w;
+        w.build(n);
+        std::vector<std::string> miss = walkRoutesMissing(n, w);
+        bool hill = false, other = false;
+        for (auto& l : miss) (l.find("spawn -10.0 0.0 10.0 can't reach hill") != std::string::npos ? hill : other) = true;
+        if (!hill || other) for (auto& l : miss) printf("    %s\n", l.c_str());
+        CHECK(hill && !other);
+        Map open;
+        CHECK(open.parse(base + sets));
+        WalkGrid w2;
+        w2.build(open);
+        CHECK(walkRoutesMissing(open, w2).empty());
     }
 }
 
@@ -9417,7 +9475,7 @@ int main(int argc, char** argv) {
         {"brains", [] { g_fail += brainTests(TP(29150)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
-        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testGrappleAgainstWall(); testAcid(); testLiquids(); testFeatureBlocks(); testStrafeEase(); testSeeThrough(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testMapFix(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testGrappleAgainstWall(); testAcid(); testLiquids(); testFeatureBlocks(); testStrafeEase(); testSeeThrough(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testModeSpawnSets(); testMapFix(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"bombsites", [] { testBombSites(TP(29090)); }},

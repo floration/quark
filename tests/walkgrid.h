@@ -445,10 +445,17 @@ struct WalkGrid {
 struct WalkSpawnSets {
     std::vector<int> a, b, any, race, ffa;          // ffa: the free-for-all pool (spawnPool: any spawns, else every spawn)
     std::vector<std::vector<int>> stage[2];         // staged spawns per stage: [0] attackers, [1] defenders
+    std::vector<int> set[kSpawnModes][3];           // mode spawn sets ("spawn koth-a"): [mode][SPAWN_A / B / ANY]
+    // the spawns a mode starts a side on: its own set's when the map has one (modeSpawnType), else the map's
+    const std::vector<int>& forMode(int mode, int side) const {
+        if (mode >= 0 && mode < kSpawnModes && !set[mode][side].empty()) return set[mode][side];
+        return side == SPAWN_A ? a : side == SPAWN_B ? b : ffa;
+    }
     explicit WalkSpawnSets(const Map& m) {
         for (int i = 0; i < (int)m.spawns.size(); i++) {
             int t = m.spawns[i].team;
-            if (t == SPAWN_A) a.push_back(i); else if (t == SPAWN_B) b.push_back(i); else if (t == SPAWN_ANY) any.push_back(i);
+            if (isModeSpawn(t)) set[spawnSetMode(t)][spawnSide(t)].push_back(i);
+            else if (t == SPAWN_A) a.push_back(i); else if (t == SPAWN_B) b.push_back(i); else if (t == SPAWN_ANY) any.push_back(i);
             else if (t == SPAWN_RACE) race.push_back(i);
             else if (isStagedSpawn(t)) {
                 auto& v = stage[spawnDefends(t) ? 1 : 0];
@@ -490,14 +497,18 @@ inline std::vector<std::string> walkRoutesMissing(const Map& m, WalkGrid& w, int
         return g;
     };
     WalkSpawnSets S(m);
-    std::vector<int> teams = S.a;
-    teams.insert(teams.end(), S.b.begin(), S.b.end());
     for (int mode = 0; mode < MODE_COUNT; mode++) {
         if (!m.supportsMode(mode)) continue;
+        // (each mode's sides: its own spawn set's where the map has one: "spawn koth-a")
+        const std::vector<int>& A = S.forMode(mode, SPAWN_A);
+        const std::vector<int>& B = S.forMode(mode, SPAWN_B);
+        const std::vector<int>& ffa = S.forMode(mode, SPAWN_ANY);
+        std::vector<int> teams = A;
+        teams.insert(teams.end(), B.begin(), B.end());
         switch (mode) {
-            case MODE_VS: case MODE_DUEL: case MODE_ARENA: eachOther(S.a, S.b); break;
-            case MODE_TOURNEY: eachOther(S.ffa, S.ffa); if (m.canSupportMode(MODE_VS)) eachOther(S.a, S.b); break;
-            case MODE_FFA: case MODE_HIDE: case MODE_TAG: eachOther(S.ffa, S.ffa); break;
+            case MODE_VS: case MODE_DUEL: case MODE_ARENA: eachOther(A, B); break;
+            case MODE_TOURNEY: eachOther(ffa, ffa); if (m.canSupportMode(MODE_VS)) eachOther(A, B); break;
+            case MODE_FFA: case MODE_HIDE: case MODE_TAG: eachOther(ffa, ffa); break;
             case MODE_BOMB: for (size_t k = 0; k < m.bombSites.size(); k++) require(teams, zone("bomb site", k, m.bombSites[k])); break;
             case MODE_KOTH: require(teams, zone("hill", 0, m.hill)); break;
             case MODE_PAYLOAD: case MODE_NPAYLOAD: {

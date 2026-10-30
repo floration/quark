@@ -100,3 +100,6 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 
 ## Bots
 - **Bomb bots use every site.** The attackers went for the first bomb site every round, so a site further away (Datacenter's B) never saw them. They now take the sites in turn, round by round. The defenders still guard one site each.
+
+## Map format 11: spawns for one mode
+- **A map can give a mode its own spawns**, e.g. a koth hill in a bomb map: `spawn koth-a` / `spawn koth-b` spawns are used only in king of the hill (and koth starts on them when the map has them), never in other modes. Any mode but race and multi point can have a set (`ffa-any`, `bomb-a`, ...). The map editor sets it on a spawn (MODE SET; a white cap marks one). **Maps are now format 11**: older maps convert by themselves, but an older game can't open a map that uses the new spawns.

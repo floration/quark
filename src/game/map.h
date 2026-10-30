@@ -10,10 +10,27 @@ enum SpawnTeam { SPAWN_A = 0, SPAWN_B = 1, SPAWN_ANY = 2, SPAWN_RACE = 3, SPAWN_
 // Multi point spawns ("spawn att2 ..." / "spawn def0 ..."): team = SPAWN_STAGED + 2 * stage + (defenders ? 1 : 0).
 // A stage's spawns are used once that many points have fallen (the highest stage reached so far wins).
 constexpr int kMaxSpawnStage = 9;
-inline int stagedSpawn(int stage, bool defenders) { return SPAWN_STAGED + 2 * stage + (defenders ? 1 : 0); }
-inline bool isStagedSpawn(int team) { return team >= SPAWN_STAGED; }
+constexpr int stagedSpawn(int stage, bool defenders) { return SPAWN_STAGED + 2 * stage + (defenders ? 1 : 0); }
+// Mode spawn sets (map format 11; owner, 2026-10-30: Mine's koth hill gets its own koth spawns, apart from the bomb
+// ones): "spawn koth-a ...", "spawn ffa-any ...": spawns only that mode uses, team = SPAWN_MODESET + 3 * mode + side
+// (SPAWN_A, SPAWN_B or SPAWN_ANY). A mode starts players on its own set's side when the map has one (modeSpawnType),
+// and no other mode uses them. Not for race (its race spawns are its set) or multi point (its staged spawns are).
+constexpr int SPAWN_MODESET = stagedSpawn(kMaxSpawnStage, true) + 1;
+constexpr int kSpawnModes = 15;   // MODE_COUNT (static_assert in map.cpp)
+constexpr int modeSpawn(int mode, int side) { return SPAWN_MODESET + 3 * mode + side; }
+constexpr int kMaxSpawnTeam = modeSpawn(kSpawnModes - 1, SPAWN_ANY);
+inline bool isStagedSpawn(int team) { return team >= SPAWN_STAGED && team < SPAWN_MODESET; }
 inline int spawnStage(int team) { return (team - SPAWN_STAGED) / 2; }
 inline bool spawnDefends(int team) { return ((team - SPAWN_STAGED) & 1) != 0; }
+inline bool isModeSpawn(int team) { return team >= SPAWN_MODESET && team <= kMaxSpawnTeam; }
+inline int spawnSetMode(int team) { return (team - SPAWN_MODESET) / 3; }
+// a spawn's side: SPAWN_A, SPAWN_B or SPAWN_ANY for a mode set's, its team for the rest
+inline int spawnSide(int team) { return isModeSpawn(team) ? (team - SPAWN_MODESET) % 3 : team; }
+// the modes that can have their own set (race and multi point have theirs already)
+bool modeSetAllowed(int mode);
+// A spawn's team as written in a map file ("a", "att2", "koth-b"), and back (-1: not a team)
+std::string spawnTeamWord(int team);
+int spawnTeamFromWord(const std::string& w);
 
 constexpr int kMaxCuts = 6;   // a cut box's planes
 
@@ -1412,7 +1429,7 @@ struct SpawnPoint {
 // the setting in comments; those are still read). A keyword this build doesn't know is skipped with a warning (in
 // Map::warnings), so an older build still loads a newer map; a known keyword with a bad value is an error.
 // 2: "version", "stairs", "setting", "handmade"; a second hill or an unknown spawn team is an error.
-constexpr int kMapFormatVersion = 10;   // 3: the nograpple material; 4: the acid material; 5: wedges and corners; 6: brick, cobblestone and glass never break (breakable ones are their own materials); 7: materials 139-471; 8: the liquids 472-496 and the large patterns 497-536; 9: the see-through looks 537-561; 10: the breakable blocks 562-585 and the feature blocks 586-595 (a teleporter's "tp <link> <face>")
+constexpr int kMapFormatVersion = 11;   // 3: the nograpple material; 4: the acid material; 5: wedges and corners; 6: brick, cobblestone and glass never break (breakable ones are their own materials); 7: materials 139-471; 8: the liquids 472-496 and the large patterns 497-536; 9: the see-through looks 537-561; 10: the breakable blocks 562-585 and the feature blocks 586-595 (a teleporter's "tp <link> <face>"); 11: mode spawn sets ("spawn koth-a ...")
 
 struct Map {
     std::string name;

@@ -1680,19 +1680,26 @@ int rulesSpawnType(const Server& s, int id) {
 }
 
 int modeSpawnType(const Map& m, int mode, int team, int attackers, bool tourneyMatch) {
+    // a mode's own spawn set, when the map has one for this side ("spawn koth-a": Mine's hill apart from its bomb sides)
+    auto own = [&](int side) {
+        if (!modeSetAllowed(mode)) return side;
+        const int t = modeSpawn(mode, side);
+        for (auto& sp : m.spawns) if (sp.team == t) return t;
+        return side;
+    };
     // (canSupportMode, not supportsMode: whether the map HAS these spawns, not whether its "modes" line offers the
     // mode. Colosseum is built for tourney and doesn't offer vs, so its a/b spawns were never used: REVIEW MAP-7.)
     if (isRaceMode(mode) && m.canSupportMode(MODE_RACE))
         for (auto& sp : m.spawns) if (sp.team == SPAWN_RACE) return SPAWN_RACE;   // (none: its "any" spawns, below)
     if (mode == MODE_TOURNEY && tourneyMatch && m.canSupportMode(MODE_VS))
-        return team == TEAM_B ? SPAWN_B : SPAWN_A; // a match: opposite ends
-    if (!modeIsTeamBased(mode)) return SPAWN_ANY;
+        return own(team == TEAM_B ? SPAWN_B : SPAWN_A); // a match: opposite ends
+    if (!modeIsTeamBased(mode)) return own(SPAWN_ANY);
     bool staged = false;   // (payload maps may stage their spawns by checkpoint, like multi point)
     for (auto& sp : m.spawns) staged |= isStagedSpawn(sp.team);
     if (mode == MODE_PAYLOAD && staged) return stagedSpawn(0, team != attackers);
     if (mode == MODE_POINTS && m.canSupportMode(MODE_POINTS)) // staged: the spawns for how far the attack has got
         return stagedSpawn(0, team != attackers);
-    return team == TEAM_B ? SPAWN_B : SPAWN_A;
+    return own(team == TEAM_B ? SPAWN_B : SPAWN_A);
 }
 
 std::vector<const SpawnPoint*> spawnPool(const Map& m, int want, int pointsTaken) {
@@ -1706,6 +1713,8 @@ std::vector<const SpawnPoint*> spawnPool(const Map& m, int want, int pointsTaken
     }
     for (auto& sp : m.spawns) if (sp.team == want) cands.push_back(&sp);
     if (cands.empty()) for (auto& sp : m.spawns) if (sp.team == SPAWN_ANY) cands.push_back(&sp);
+    // (then every spawn but the mode sets' ("koth-a": only koth uses them), and those only on a map with nothing else)
+    if (cands.empty()) for (auto& sp : m.spawns) if (!isModeSpawn(sp.team)) cands.push_back(&sp);
     if (cands.empty()) for (auto& sp : m.spawns) cands.push_back(&sp);
     return cands;
 }
