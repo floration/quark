@@ -214,6 +214,26 @@ Everything is on VIDEO + AUDIO > MORE 2 (added to) and two new pages, MORE 7 (co
 - **Screenshots (#38).** `shot_format` PNG / TGA, `shot_folder` the game's data folder / Pictures/Quark in your home folder, `shot_hide_hud` saves the 3D view right after it's drawn, before the HUD (one frame later, no extra pass). OPEN FOLDER opens it. JPG was **not** added: the tree has no JPG encoder and adding one is a new third-party file.
 - **Skipped:** #19 voice chat (there is none), #85 language (every string would first have to move into one table), #224 HDR (parked).
 
+## Settings: batch 4, the 1s (HUD, menus, social, editor, practice, gameplay)
+
+Worker 2's share of the 1-scored items, in the same batch-3 key table (`b3Keys`). Nothing runs per frame at the defaults beyond what ran before: the colours replace constants, the compass and radar draw only when on.
+
+- **HUD > MORE (new page; morePages / moreNav / search / uiScreenPath / settings_index know it).** The HUD tab's panel ends at Y 560 to leave the live HUD preview visible, so the HUD's MORE button sits in that footer; the MORE page itself is a normal full-height page without the preview.
+- **Colours (#93, #94, #95, #96, #99).** `bar_recharge_color` (a bar while it recharges, and the dash pips), `speed_low_color` / `speed_high_color` (the speed meter blends from one to the other as before from gold to red), `slot_off_color` (the weapon list: a weapon not usable now, at its old 35% opacity), `sticky_full_color`, `warn_color` (the ranked and unrated notes under the score box), `info_color` (the grey lines: JOIN A TEAM..., the host's port and listing lines), `dmg_head_color` / `dmg_big_color` (damage numbers, 40+ for big). Each defaults to the colour it replaces.
+- **Text outline (#216).** `text_outline` 0 to x1.5 scales the UI shader's outline band (a uniform set only when it changes). Capped at 1.5 and kept at least 0.12 distance-field units inside the glyph edge, because the distance field's spread runs out at small text and a thicker band blotted the letters together.
+- **Notices (#72).** `notice_lines` 1 to 8 (was a fixed 4) and `notice_time` x0.5 to x3 on each notice's time.
+- **Compass and radar (#160).** `compass`: a 180-degree strip at the bottom centre with N / NE / E... every 45 and ticks every 15. `radar`: a 60 px disc top left, up = where you look, `radar_range` 10 to 120 m (further ones sit on the rim): your teammates in team modes and the objective markers' positions (collected from the marker labels the world pass already draws). Never enemies, and off in ranked (the default HUD). No minimap: it needs a top-down render of each map.
+- **REC (#201).** `hide_rec` drops the blinking REC while recording; the demo playback bar stays (it's the playback control's progress).
+- **Tourney TAB (#179).** `tourney_tab` 0 the bracket (as before), 1 the scoreboard; the bracket still shows between rounds.
+- **HUD panel colour (#97).** Not a new setting: theme.cfg's `hud-panel` (background, border, opacity) already does it, and the on-screen editor edits it.
+- **Stair smoothing (#156).** `step_smooth` off skips the X7 camera ease on stair steps (the view jumps with your feet).
+- **Typing indicator (#169).** `send_typing` off: the client stops sending `typing` while you type, so nobody sees your "..." or hears your keys.
+- **Clickable tiebreak (#180).** `rps_click`: while you choose in the hide and seek tiebreak, the cursor is freed and a click on ROCK / PAPER / SCISSORS throws it (the slot keys still work).
+- **Fixed logo (#110).** `fixed_logo`: the title in the default cyan / red instead of your team colours.
+- **Bots (#135).** `bot_looks` 0 a mix of models (as before), 1 all STANDARD; `bots/names.txt` (BOT NAMES FILE makes one and opens the folder): one name a line, letters / digits / spaces / - _, up to 12 characters and 64 names, given to your server's bots as "BOT <NAME>" (ServerConfig `botNames`, `botLooks`; text in the config, no protocol change). Hosted games only; dedicated servers keep the built-in names.
+- **Clip box colour (#106).** `clip_color` for the editor's see-through clip boxes (their opacity unchanged).
+- **Race / leaderboard colours (#100).** Worker 1's SPLITS: PALETTE (`split_palette`) now also colours the race stats' BEST row and the leaderboard's #1 in your team colour instead of gold, rather than a second setting for the same thing.
+
 ## Maps: q's Surfy and Cobblestone ship (owner, 2026-10-30: "make sure all future updates get cobblestone map and surfy map, use latest version; also surfy map is default surf gamemode map")
 
 - **Shipped as hand-made maps.** `maps/surfy.qmap` (58 brushes, `for surf`, saved 2026-10-29 18:46) and `maps/cobblestone.qmap` (885 brushes, no `for` line, saved 2026-10-29 15:59) are the newest copies from q's maps folder, byte for byte (sha256 20620ee2... and 31fbb542...). `.gitignore` un-ignores both, so CMake embeds and copies them into every build like the generated maps. As `handmade` maps they run every map check but never fail `quark_tests`.

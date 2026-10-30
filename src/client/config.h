@@ -406,6 +406,28 @@ struct Settings {
     int edTestBots = 0;                // ...enemy bots
     bool edTestAtCam = false;          // ...start where the editor's camera is
     bool edTestNoWarmup = false;       // ...the match starts at once
+    // ---- batch 4b (1.19.4, the 1s; HUD > MORE unless noted)
+    Vec3 barRechargeColor = {0.6f, 0.62f, 0.66f};   // a cooldown bar while it recharges
+    Vec3 speedLowColor = {1.0f, 0.85f, 0.3f}, speedHighColor = {1.0f, 0.25f, 0.1f};   // the speed meter, slow -> fast
+    Vec3 slotOffColor = {0.5f, 0.52f, 0.55f};       // the weapon list: a weapon you can't use now
+    Vec3 stickyFullColor = {1.0f, 0.6f, 0.2f};      // the sticky counter at its most
+    Vec3 warnColor = {1.0f, 0.78f, 0.25f};          // banners: ranked / unrated notes (warnings)
+    Vec3 infoColor = {0.6f, 0.62f, 0.66f};          // banners: the grey info lines (spectating, hosting)
+    Vec3 dmgHeadColor = {1.0f, 0.18f, 0.15f}, dmgBigColor = {1.0f, 0.85f, 0.2f};   // damage numbers: headshots, 40+ hits
+    float textOutline = 1.0f;          // the text outline's width, x (0: none; at most 1.5)
+    int noticeLines = 4;               // notices kept on screen at once (1 - 8)
+    float noticeTime = 1.0f;           // ...and how long, x
+    bool compass = false;              // a compass strip at the top
+    bool radar = false;                // a radar: teammates and objectives (never enemies)
+    float radarRange = 40;             // ...its radius in metres
+    bool hideRec = false;              // no REC / DEMO indicator
+    int tourneyTab = 0;                // tourney: TAB shows 0 the bracket, 1 the scoreboard
+    bool stepSmooth = true;            // GAMEPLAY > MORE 3: the camera eases up / down stair steps
+    bool sendTyping = true;            // GAMEPLAY > MORE 4: others see "..." while you type
+    bool rpsClick = true;              // GAMEPLAY > MORE 4: the tiebreak's cards are clicked (the cursor is freed)
+    bool fixedLogo = false;            // PLAYER > MORE: the title in its own cyan / red, not your team colours
+    int botLooks = 0;                  // PLAYER > MORE: your server's bots: 0 a mix of models, 1 all STANDARD
+    Vec3 clipColor = {0.75f, 0.35f, 1.0f};   // CONTROLS > MORE 2: the editor's clip boxes (see-through)
     // play vs bots
     int botSkill = 1;           // 0 beginner .. 3 expert
     int botEnemies = 3, botAllies = 1;

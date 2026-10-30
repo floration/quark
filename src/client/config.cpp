@@ -525,6 +525,16 @@ static std::vector<B3> b3Keys(Settings& s) {
         {T::I, "race_date", &s.raceDate, 0, 2}, {T::I, "host_tick", &s.hostTick, 0, 3}, {T::I, "host_snap", &s.hostSnap, 0, 4},
         {T::I, "host_upload", &s.hostUpload, 0, 100000}, {T::B, "host_auto_start", &s.hostAutoStart, 0, 1}, {T::I, "host_bot_skill", &s.hostBotSkill, 0, 3}, {T::I, "ed_test_mode", &s.edTestMode, -1, MODE_COUNT - 1}, {T::I, "ed_test_bots", &s.edTestBots, 0, 7},
         {T::B, "ed_test_at_cam", &s.edTestAtCam, 0, 1}, {T::B, "ed_test_no_warmup", &s.edTestNoWarmup, 0, 1},
+        // batch 4b (the 1s)
+        {T::C, "bar_recharge_color", &s.barRechargeColor, 0, 0}, {T::C, "speed_low_color", &s.speedLowColor, 0, 0},
+        {T::C, "speed_high_color", &s.speedHighColor, 0, 0}, {T::C, "slot_off_color", &s.slotOffColor, 0, 0},
+        {T::C, "sticky_full_color", &s.stickyFullColor, 0, 0}, {T::C, "warn_color", &s.warnColor, 0, 0}, {T::C, "info_color", &s.infoColor, 0, 0},
+        {T::C, "dmg_head_color", &s.dmgHeadColor, 0, 0}, {T::C, "dmg_big_color", &s.dmgBigColor, 0, 0},
+        {T::F, "text_outline", &s.textOutline, 0, 1.5f}, {T::I, "notice_lines", &s.noticeLines, 1, 8}, {T::F, "notice_time", &s.noticeTime, 0.5f, 3},
+        {T::B, "compass", &s.compass, 0, 1}, {T::B, "radar", &s.radar, 0, 1}, {T::F, "radar_range", &s.radarRange, 10, 120},
+        {T::B, "hide_rec", &s.hideRec, 0, 1}, {T::I, "tourney_tab", &s.tourneyTab, 0, 1}, {T::B, "step_smooth", &s.stepSmooth, 0, 1},
+        {T::B, "send_typing", &s.sendTyping, 0, 1}, {T::B, "rps_click", &s.rpsClick, 0, 1}, {T::B, "fixed_logo", &s.fixedLogo, 0, 1},
+        {T::I, "bot_looks", &s.botLooks, 0, 1}, {T::C, "clip_color", &s.clipColor, 0, 0},
     };
     return v;
 }

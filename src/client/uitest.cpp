@@ -50,6 +50,7 @@ std::string Game::uiScreenPath() const {
             case TAB_HUD:
                 if (hudEdit_) return "/hud/edit";
                 if (widgetEdit_) return filePick_ == 1 ? "/hud/widgets/files" : valueDrop_ && widgetSel_ >= 0 ? "/hud/widgets/values" : "/hud/widgets";
+                if (moreOpen_) return "/hud/more";
                 return ui_.dropdownOpen() ? "/hud/elements" : "/hud";
         }
         return fontsOpen_ ? "/fonts" : "";

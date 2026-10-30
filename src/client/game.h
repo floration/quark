@@ -774,7 +774,7 @@ private:
     bool scoresOn_ = false;            // the scoreboard shown (CONTROLS > MORE: SCOREBOARD TOGGLE)
     double raceResetAt_ = -1;          // (RACE RESET pressed and not yet acted on: let go, the checkpoint; held 250 ms, the start)
     int moreOpen_ = 0;                 // settings: the tab's MORE page open (1, 2: which; 1.19.4, the settings that don't fit the tab)
-    int morePages() const { return setTab_ == TAB_VIDEO ? 8 : setTab_ == TAB_GAMEPLAY ? 4 : setTab_ == TAB_CONTROLS ? 2 : setTab_ == TAB_PLAYER ? 1 : 0; }
+    int morePages() const { return setTab_ == TAB_VIDEO ? 8 : setTab_ == TAB_GAMEPLAY ? 4 : setTab_ == TAB_CONTROLS ? 2 : setTab_ == TAB_PLAYER || setTab_ == TAB_HUD ? 1 : 0; }
     // batch 3 (1.19.4): GAMEPLAY > MORE 2 (feedback), MORE 3 (HUD info), MORE 4 (social, spectating); CONTROLS > MORE 2; PLAYER > MORE
     void drawGameplayMore2(const SetLayout& L);
     void drawGameplayMore3(const SetLayout& L);
@@ -784,6 +784,9 @@ private:
     // PLAYER: your model in your team colour, turning (drag to turn it): its boxes projected into the 2D batch, only
     // while the tab is open (a few hundred quads)
     void drawModelPreview(float x, float y, float w, float h);
+    void drawCompassRadar(float W, float H, float s);   // HUD > MORE: COMPASS, RADAR
+    std::vector<std::pair<Vec3, Color>> radarObj_;     // (the objectives' markers this frame, for the RADAR)
+    void drawHudMore(const SetLayout& L);               // HUD > MORE (batch 4b)
     float previewYaw_ = 0.6f;
     bool previewDrag_ = false;
     float previewLastX_ = 0;
@@ -1166,7 +1169,7 @@ private:
     lay::Rect hudClose(int el);                       // closes the root, solves (cached), keeps and returns its rect
     void hudBoxDraw(int el, const lay::Rect& r, float k, Color def);   // its background (def: the built-in one) and border
     // Settings > HUD's live preview: the tab is showing (not the widget editor, FONT or DEVICES)
-    bool hudPreviewOn() const { return setTab_ == TAB_HUD && !widgetEdit_ && !hudEdit_ && !fontsOpen_ && !devicesOpen_; }
+    bool hudPreviewOn() const { return setTab_ == TAB_HUD && !moreOpen_ && !widgetEdit_ && !hudEdit_ && !fontsOpen_ && !devicesOpen_; }
     void drawHudLive(const ModeState& ms, const PlayerSnap* mep, float W, float H, float s, bool preview);   // (alive)
     HudRect drawHudElement(int el, float W, float H, float s, bool sample, bool draw = true);   // one element (the overlay)
     void drawHudSample(float W, float H, float s);   // every element with made-up values (the main menu's settings)

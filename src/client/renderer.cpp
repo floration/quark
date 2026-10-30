@@ -619,6 +619,7 @@ uniform float uK; // distance-field units per screen pixel at scale 1 (texels pe
 uniform vec3 uLogoA, uLogoB;
 uniform vec2 uSplitP, uSplitN;
 uniform float uSplitSeam;
+uniform float uOutline;   // the outline's width, x (HUD > MORE: TEXT OUTLINE; 0: none)
 out vec4 fragColor;
 void main() {
     if (vShape.x > 0.5) {   // a rounded rect: coverage from its signed distance (< 0 inside), a ring minus what's further in
@@ -643,7 +644,7 @@ void main() {
     if (vScale <= 0.0) { fragColor = vec4(vColor.rgb, vColor.a * d); return; }
     float px = uK / vScale;                       // one screen pixel in distance-field units
     float w = 0.5 * px;
-    float od = 0.5 - max(1.0, vScale * 0.15) * px; // outline edge
+    float od = max(0.12, 0.5 - max(1.0, vScale * 0.15) * px * uOutline); // outline edge
     float o = smoothstep(od - w, od + w, d);
     if (o <= 0.004) discard;
     float fill = smoothstep(0.5 - w, 0.5 + w, d);
@@ -970,6 +971,7 @@ bool Renderer::init(int shadowRes, std::string* err) {
     glUniform2f(U(uiProg_, "uLogoSize"), (float)kLogoW, (float)kLogoH);
     uLogoA_ = U(uiProg_, "uLogoA"); uLogoB_ = U(uiProg_, "uLogoB");
     uSplitP_ = U(uiProg_, "uSplitP"); uSplitN_ = U(uiProg_, "uSplitN"); uSplitSeam_ = U(uiProg_, "uSplitSeam");
+    uOutline_ = U(uiProg_, "uOutline"); glUniform1f(uOutline_, 1.0f); outlineSet_ = 1.0f;
     if (edgeProg_) {
         glUseProgram(edgeProg_);
         uEdgeRcp_ = U(edgeProg_, "uRcp");
@@ -2302,6 +2304,7 @@ void Renderer::flush2D() {
         uiScreen_[0] = (float)width_; uiScreen_[1] = (float)height_;
         glUniform2f(uUiScreen_, uiScreen_[0], uiScreen_[1]);
     }
+    if (textOutline_ != outlineSet_) { outlineSet_ = textOutline_; glUniform1f(uOutline_, outlineSet_); }   // (only when it changes)
     if (logoDrawn_ || splitDrawn_) {   // (only a frame with the title sets its colours)
         glUniform3f(uLogoA_, logoA_.r, logoA_.g, logoA_.b);
         glUniform3f(uLogoB_, logoB_.r, logoB_.g, logoB_.b);

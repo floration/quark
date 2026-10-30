@@ -63,6 +63,8 @@ struct ServerConfig {
     int balanceBotSkill = BOT_INTERMEDIATE;
     bool vsBots = false;        // "play vs bots": fixed bots, humans always on team A
     bool autoStart = false;     // start the match automatically once both sides have players (else: vote)
+    std::vector<std::string> botNames;   // the bots' names (bots/names.txt on the host; empty: the built-in 16), "BOT " added
+    int botLooks = 0;           // 0 the bots wear a mix of models, 1 all STANDARD
     int botsEnemy = 0, botsAlly = 0, botSkill = BOT_INTERMEDIATE;
     std::string botBrain;       // bots/<name>.qbrain that bots play (tools/bots/GRAMMAR.md); empty = the built-in one. Never on ranked or time trial
     bool lanOnly = false;

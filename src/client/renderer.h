@@ -119,6 +119,7 @@ public:
     size_t uiMark() const { return ui_.size(); }
     // one solid quad with free corners (xy: 4 points, clockwise or not; convex): the PLAYER tab's model preview's faces
     void quad2D(const float xy[8], const Color& c);
+    void setTextOutline(float k) { textOutline_ = k < 0 ? 0 : k > 1.5f ? 1.5f : k; }   // the text outline's width, x (0: none)
     void uiTransform(size_t from, float px, float py, float k, float dx, float dy);
     // The QUARK title (the menus'): centred on cx, its line top at y (as text() takes it), at text scale ts (fractional
     // is fine); the Q split along a slanted line with a black seam: its left and UARK in `friendly`, its right in
@@ -240,7 +241,9 @@ private:
     struct { GLint fwd, right, up, tan, sky, sunDir, bright; } uSky_ = {};
     GLint uDynFade_ = -1, uFlatFade_ = -1;   // (the view pass's see-through amount: WEAPON MODEL OPACITY)
     GLint uFlatViewProj_ = -1, uShadowViewProj_ = -1, uUiScreen_ = -1, uEdgeRcp_ = -1, uSharpRcp_ = -1, uWorldPx_ = -1, uDynPx_ = -1;
-    GLint uLogoA_ = -1, uLogoB_ = -1, uSplitP_ = -1, uSplitN_ = -1, uSplitSeam_ = -1;   // (the title: Renderer::logo)
+    GLint uLogoA_ = -1, uLogoB_ = -1, uSplitP_ = -1, uSplitN_ = -1, uSplitSeam_ = -1;
+    GLint uOutline_ = -1;
+    float textOutline_ = 1.0f, outlineSet_ = -1.0f;   // (HUD > MORE: TEXT OUTLINE; the uniform as last set)   // (the title: Renderer::logo)
     float uiScreen_[2] = {}, edgeRcp_[2] = {}, sharpRcp_[2] = {};   // (the values last set: uScreen / uRcp change only with the size)
     float pxScale_ = 1;                          // (uPxScale's value: scene pixels per window pixel)
     float clear_[3] = {};                        // (the sky colour in display space: prepareScene works it out)

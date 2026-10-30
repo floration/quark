@@ -3913,12 +3913,13 @@ int Server::addBot(int team, int skill, bool balance, const std::string* brainNa
     if (waits) { team = TEAM_SPECTATOR; p.waitingToPlay = true; }
     p.team = team;
     p.lastRecv = timeNow();
-    p.name = uniqueName(std::string("BOT ") + names[(id * 7 + tick_) % 16], id);
+    const size_t nn = cfg_.botNames.size();   // (the host's own list, else the built-in names)
+    p.name = uniqueName(std::string("BOT ") + (nn ? cfg_.botNames[(size_t)(id * 7 + tick_) % nn] : std::string(names[(id * 7 + tick_) % 16])), id);
     bots_[id] = BotBrain();
     bots_[id].skill = skill;
     bots_[id].rng = (qrand() ^ (uint32_t)(id * 2654435761u)) | 1u;   // (qrand: seeded per thread at random, not from the tick count: REVIEW GAME-12)
     { GameEvent r; r.type = EV_RANKINFO; r.a = (uint8_t)id; broadcastEvent(r); }
-    p.model = cfg_.ranked ? 0 : (int)(bots_[id].rng % kPlayerModels); // bots: a mix of looks (ranked: default)
+    p.model = cfg_.ranked || cfg_.botLooks == 1 ? 0 : (int)(bots_[id].rng % kPlayerModels); // bots: a mix of looks (ranked, or the host's BOT LOOKS: STANDARD: default)
     p.soundPack = (int)((bots_[id].rng >> 8) % kSoundPacks);
     GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = looksByte(p); e.c = (int16_t)p.nameColor; e.text = p.name;
     broadcastEvent(e);
