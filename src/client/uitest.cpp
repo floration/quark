@@ -10,7 +10,8 @@
 //          the server, so the game stays as it was)        BIND  the slot took the next key and saved it
 //   URL / QUIT  intercepted; LOCAL the widget's own value; INERT (and any greyed-out widget) nothing changed
 // It also checks Esc from every screen goes back to a screen it came through, and the layout of every screen at
-// 1280x720, 1920x1080 and 1024x768: nothing off screen, no two widgets overlapping, no label clipped.
+// 1280x720, 1920x1080 and 1024x768: nothing off screen, no two widgets overlapping, no label clipped, no settings
+// page's content (labels and hints too) running into its footer.
 // It fails if any widget has no expectation, fails its expectation, or was seen but never tested (the coverage gate),
 // so a new widget can't go in untested. Nothing here runs in normal play (Game::uiTest_ is null).
 #include "game.h"
@@ -432,6 +433,7 @@ private:
             if (holdDemo_ && g_.net_.playback() && g_.net_.hasSnapshot()) g_.net_.holdPlaybackClock();
             double now = timeNow(), dt = std::min(0.1, std::max(0.0005, now - last_));
             last_ = now;
+            g_.setInkBottom_ = -1;   // (set again if this frame draws a settings page)
             g_.frame(dt);
             glfwSwapBuffers(win_);
             g_.afterSwap();
@@ -564,6 +566,14 @@ private:
                 float ox = std::min(a.x + a.w, b.x + b.w) - std::max(a.x, b.x), oy = std::min(a.y + a.h, b.y + b.h) - std::max(a.y, b.y);
                 if (ox > 1 && oy > 1) issue(ids_[i], "overlaps " + ids_[j]);
             }
+        }
+        // a settings page's content (its rows, labels and hints, not only its widgets) ends at least 4 px (at 720p)
+        // above its footer row (BACK, the page strip, the page's own button): a page that doesn't fit moves rows to
+        // another page
+        if (g_.setInkBottom_ >= 0 && g_.setInkBottom_ > g_.setFootTop_ - 4 * H / 720.0f + 0.5f) {
+            char b[112];
+            snprintf(b, sizeof b, "content runs into the footer (down to y %.0f, footer at %.0f, 4 px clear needed)", g_.setInkBottom_, g_.setFootTop_);
+            issue("(page content)", b);
         }
     }
 

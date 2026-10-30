@@ -117,6 +117,10 @@ public:
     // uiMark() before them, then uiTransform scales what was drawn since about (px, py) by k and moves it by (dx, dy).
     // Callers skip it at offset 0 / size 1, so the default HUD costs nothing; else one pass over those vertices.
     size_t uiMark() const { return ui_.size(); }
+    // The lowest pixel row drawn on since uiMark() `from` (a glyph: its ink box, without the quad's padding), leaving out
+    // quads that lie wholly in the band [skipTop, skipBottom]: the UI test's check that a settings page's content stays
+    // clear of its footer (only called while the UI test probes: a pass over that stretch's vertices). -1: nothing.
+    float uiInkBottom(size_t from, float skipTop, float skipBottom) const;
     // one solid quad with free corners (xy: 4 points, clockwise or not; convex): the PLAYER tab's model preview's faces
     void quad2D(const float xy[8], const Color& c);
     void setTextOutline(float k) { textOutline_ = k < 0 ? 0 : k > 1.5f ? 1.5f : k; }   // the text outline's width, x (0: none)

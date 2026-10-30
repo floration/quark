@@ -115,7 +115,14 @@ Settings is one shell with six tabs, the same in the menus (`settings...`) and i
 KEYS), `settings/controls/movement` (MOVE + WEAPON KEYS), `settings/controls/files` (the import list), `settings/video`
 (VIDEO + AUDIO), `settings/video/devices` (VIDEO + AUDIO > DEVICES), `settings/crosshair`, `settings/hud`, `settings/hud/elements` (the ELEMENT dropdown open), `settings/hud/edit` (EDIT ON SCREEN: each element a handle, the selection's corner a size handle, the editor's keys key actions),
 `settings/hud/widgets` (+ `/files`, `/values`). The tab row's tabs are `nav("~settings/<tab>")` buttons (the current one
-too); BACK and Esc leave settings from any tab (Esc first closes an open picker, dropdown or list). `quark
+too); BACK and Esc leave settings from any tab (Esc first closes an open picker, dropdown or list; on a tab's page 2
+or later Esc goes to its page 1). A tab with MORE pages (PLAYER, GAMEPLAY, CONTROLS, VIDEO + AUDIO, HUD) has the page
+strip in its footer's middle: `PREVIOUS PAGE` (`<`), `PAGE 1` ... `PAGE N` and `NEXT PAGE` (`>`), each
+`nav("~settings/<tab>/more<n>")` to its page (the page open, and an arrow at its end, greyed out: `inert()`), and the
+key actions `LEFT ARROW (PREVIOUS PAGE)` / `RIGHT ARROW (NEXT PAGE)` doing the same (registered only while the
+arrows turn the page: not while a field, a key bind, a slider, a picker or the console has the keyboard). Every
+settings page's content (rows, labels and hints: the 2D drawn between the tab row and the footer, Renderer::uiInkBottom)
+must end at least 4 px (at 720p) above its footer row, at every resolution (a layout issue `(page content) : content runs into the footer`). `quark
 --settingsmenu --settingstab <page>[+<picker label>] --menushot --screenshot out.png` (or `--settings` in game) opens a
 page for a screenshot, e.g. `hud/elements` or `player+TEAM COLOR`.
 

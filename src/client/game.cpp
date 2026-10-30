@@ -987,6 +987,11 @@ void Game::onKey(int key, int action, int mods) {
         !ui_.popupOpen() && key != GLFW_KEY_ESCAPE && hudEditKey(key, action, mods)) return;   // (the on-screen HUD editor's keys)
     if (action != GLFW_PRESS) return;
     if (key == GLFW_KEY_ESCAPE && ui_.typing() && !chatting_) { uiIn_.escape = true; return; } // just stop typing, stay on the screen
+    // settings: Left / Right turn the tab's page (the page strip's arrows), when nothing else has the keyboard
+    if ((key == GLFW_KEY_LEFT || key == GLFW_KEY_RIGHT) && !(mods & (GLFW_MOD_CONTROL | GLFW_MOD_ALT | GLFW_MOD_SUPER)) && settingsPageKeys()) {
+        settingsPage(moreOpen_ + (key == GLFW_KEY_RIGHT ? 1 : -1));
+        return;
+    }
     bool typing = chatting_ || ui_.typing();
     if (captureAction_ >= 0 || !typing) {
         bool wasChatting = chatting_;
@@ -5872,7 +5877,7 @@ bool Game::drawSettingsSearch(const SetLayout& L) {
     if (hits.empty()) { ui_.hint(x, y + 6 * L.s, "NOTHING MATCHES \"" + upper(setSearch_) + "\"", kGrey, w); return true; }
     for (const Hit& hit : hits) {
         std::string where = tabNames[hit.tab];
-        if (hit.more) where += hit.more == 1 ? " > MORE" : " > MORE " + std::to_string(hit.more);
+        if (hit.more) where += " > PAGE " + std::to_string(hit.more + 1);   // (the page strip's number: MORE is page 2)
         if (hit.sub == 1) where += " > MOVE KEYS"; else if (hit.sub == 2) where += " > MORE KEYS";
         // (its page as a screen path, for the UI test)
         static const char* const kPaths[] = {"~settings", "~settings/gameplay", "~settings/gameplay/more", "~settings/controls", "~settings/controls/movement",
@@ -6248,7 +6253,9 @@ void Game::drawSettings() {
         r_.rect(L.X(268), L.Y(72), L.L(744), L.L(2), ui_.accent);
         if (pick >= 0) { openSettingsTab(pick); return; }   // (next frame: the new tab)
     }
-    if (!modal && !widgetEdit_ && drawSettingsSearch(L)) {}   // (the search's list in place of the page)
+    const size_t inkFrom = r_.uiMark();   // (the UI test: where the page's content starts)
+    setSearchShown_ = false;
+    if (!modal && !widgetEdit_ && drawSettingsSearch(L)) setSearchShown_ = true;   // (the search's list in place of the page)
     else if (fontsOpen_) drawFontSettings(L);
     else if (devicesOpen_) drawDeviceSettings(L);
     else if (moreOpen_) drawMoreSettings(L);
@@ -6261,23 +6268,19 @@ void Game::drawSettings() {
         case TAB_HUD: drawHudSettings(L); break;
     }
     if (setTab_ == TAB_HUD && (widgetEdit_ || hudEdit_)) return;   // (WIDGET EDITOR / EDIT ON SCREEN was just clicked)
-    // the footer: BACK (FONT: back to PLAYER; DEVICES: to VIDEO + AUDIO), and the page's reset on the right (drawn by the page)
+    // (the UI test: the content's lowest pixel, leaving out what the page drew in its footer row: RESET, DEVICES)
+    if (ui_.probing()) { setFootTop_ = L.Y(footY); setInkBottom_ = r_.uiInkBottom(inkFrom, setFootTop_, setFootTop_ + L.L(kRowH)); }
+    // the footer: BACK (FONT: back to PLAYER; DEVICES: to VIDEO + AUDIO; any page of a tab: out of settings), the
+    // page strip in the middle, and the page's reset on the right (drawn by the page)
     if (fontsOpen_) {
         if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav("~settings"))) { fontsOpen_ = false; cfg_.save(); }
     } else if (devicesOpen_) {
         if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav("~settings/video"))) { devicesOpen_ = false; cfg_.save(); }
-    } else if (moreOpen_) {
-        if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav(moreNav(0)))) { moreOpen_ = 0; cfg_.save(); }
     } else if (ui_.button(L.X(268), L.Y(footY), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav(settingsInGame_ ? "ingame/pause" : "main"))) {
         leaveSettings();
         return;
     }
-    // the footer's middle: the tab's MORE page (1.19.4: settings that don't fit the tab)
-    if (!fontsOpen_ && !devicesOpen_ && moreOpen_ < morePages() && !modal)
-        if (ui_.button(L.X(552), L.Y(footY), L.L(kHalfW), L.L(kRowH), moreOpen_ ? "MORE " + std::to_string(moreOpen_ + 1) + "  >" : std::string("MORE  >"),
-                       UiExp::nav(moreNav(moreOpen_ + 1)).withId(moreOpen_ == 7 ? "MORE 8" : moreOpen_ == 6 ? "MORE 7" : moreOpen_ == 5 ? "MORE 6" : moreOpen_ == 4 ? "MORE 5" : moreOpen_ == 3 ? "MORE 4" : moreOpen_ == 2 ? "MORE 3" : moreOpen_ ? "MORE 2" : "MORE"))) {
-            moreOpen_++; captureAction_ = -1; ui_.closePopup(); cfg_.save();
-        }
+    if (!fontsOpen_ && !devicesOpen_ && !modal && !setSearchShown_ && morePages() > 0) drawSettingsPages(L, footY);
     if (keepUntil_ > 0) {   // a display change waiting for KEEP: reverted when the count runs out
         const float bx = L.X(268), by = L.Y(596), bw = L.L(744), bh = L.L(kRowH);
         r_.rect(bx, by, bw, bh, {0.05f, 0.06f, 0.08f, 0.95f});
@@ -6558,19 +6561,8 @@ void Game::drawGameplaySettings(const SetLayout& L) {
         ui_.toggle(L.X(kColL + kColW - kHalfW), f.top(), hw, h, "MUZZLE FLASH", cfg_.muzzleFlash, UiExp::cfg("muzzle_flash"));
         f.next();
     }
-    f.section("NETWORK");
-    {   // other players' interpolation delay (ranked: always 10 ms): adaptive (the default), custom (the slider), or off
-        static const std::vector<std::string> imn = {"SMOOTHING (INTERP): ADAPTIVE", "SMOOTHING (INTERP): CUSTOM", "SMOOTHING (INTERP): OFF"};
-        int ii = cfg_.interpMs == 0 ? 0 : cfg_.interpMs < 0 ? 2 : 1;
-        if (ui_.cycle(f.x(), f.top(), w, h, "INTERP", ii, 3, imn, UiExp::cfg("interp_ms"))) cfg_.interpMs = ii == 0 ? 0 : ii == 2 ? -1 : kCustomInterpMs;
-        f.next();
-        f.hint("HOW OTHER PLAYERS' MOVES ARE SMOOTHED");
-        float v = (float)(cfg_.interpMs > 0 ? cfg_.interpMs : kCustomInterpMs);   // (moving it picks CUSTOM)
-        if (ui_.slider(f.x(), f.top(), w, h, "SMOOTHING DELAY (MS)", v, 1, (float)kMaxInterpMs, "%.0f", UiExp::cfg("interp_ms"), (float)kCustomInterpMs))
-            cfg_.interpMs = std::min(std::max(1, (int)std::lround(v)), kMaxInterpMs);
-        f.next();
-        f.hint("USED WHEN SMOOTHING IS CUSTOM");
-    }
+    // (NETWORK, the smoothing delay, is on VIDEO + AUDIO page 7 with the other network settings: this column ran into
+    // the footer, 2026-10-30)
 
     SetFlow g{ui_, L, kColR, 90};
     g.header("FEEDBACK");
@@ -6668,18 +6660,8 @@ void Game::drawVideoSettings(const SetLayout& L) {
     f.y -= 16;
     f.hint("", keyOf(A_PERF) + " SHOWS INPUT->FRAME LATENCY");
 #endif
-    f.section("FLAT MAP");
-    ui_.toggle(f.x(), f.top(), w, h, "FULLBRIGHT", cfg_.fullbright, UiExp::cfg("fullbright"));
-    f.next();
-    f.hint("FLAT MAP, NO LIGHTING");
-    {   // its colour (white: the classic look)
-        Vec3& c = cfg_.fullbrightColor;
-        const Vec3& d = defaultSettings().fullbrightColor;
-        ui_.colorPicker(f.x(), f.top(), hw, h, "MAP COLOR", c, UiExp::cfg("fullbright_color"), d);
-        bool white = c.x == d.x && c.y == d.y && c.z == d.z;
-        if (ui_.button(L.X(kColL + 184), f.top(), hw, h, "RESET MAP COLOR", UiExp::cfg("fullbright_color").withId("RESET MAP COLOR"), !white)) c = d;
-        f.next();
-    }
+    // (FLAT MAP, FULLBRIGHT and its colour, is on page 2: on Windows, with GPU MAX CLOCKS and PRIORITIZE GAME, this
+    // column ran into the footer - MAP COLOR under BACK; 2026-10-30)
 
     SetFlow g{ui_, L, kColR, 90};
     g.header("IMAGE");
@@ -6751,14 +6733,7 @@ void Game::drawVideoSettings(const SetLayout& L) {
         ui_.cycle(g.x(), g.top(), w, h, "SOUNDS", cfg_.soundPack, 5, sn, UiExp::cfg("soundpack"));
         g.next();
     }
-#ifdef _WIN32
-    // the sound device to the game alone: about 10 ms sooner, and Discord / music go silent while the game runs
-    if (ui_.toggle(g.x(), g.top(), w, h, !cfg_.exclusiveAudio || audio_.exclusiveActive() ? "EXCLUSIVE AUDIO" : audio_.exclusiveState() == Audio::kExclUnsupported ? "EXCLUSIVE AUDIO (N/A)" : "EXCLUSIVE AUDIO (BUSY)",   // (N/A: the device takes none of its formats)
-                   cfg_.exclusiveAudio, UiExp::cfg("exclusive_audio")))
-        audio_.setExclusive(cfg_.exclusiveAudio);
-    g.next();
-    g.hint("TAKES THE SOUND DEVICE FOR LOWER AUDIO LAG");
-#endif
+    // (EXCLUSIVE AUDIO, Windows only, is on page 6 under OUTPUT: here it put VOICE 2 px over the footer, 2026-10-30)
     {   // the announcer (in SOUND: its own section header no longer fit under the two volumes above)
         static const std::vector<std::string> an = {"ANNOUNCER: OFF", "ANNOUNCER: COUNTDOWN", "ANNOUNCER: ALL CALLS"};
         static std::vector<std::string> av;
@@ -6851,6 +6826,51 @@ void Game::askKeepDisplay(int oldMode, int oldW, int oldH) {
     keepUntil_ = time_ + 10;
 }
 
+// The page strip (owner, 2026-10-30: "at the bottom you should be able to see all the page numbers, and on the end they
+// should have left and right arrows, which you can also go to by pressing left and right arrow"): in the footer's
+// middle, between BACK and the page's own button on the right, "<", a number for each page (the one open filled) and
+// ">". The arrows stop at the ends (greyed out there) rather than wrapping: a wrap from the last page to the first
+// reads as a jump, and nine pages are one click apart anyway.
+void Game::drawSettingsPages(const SetLayout& L, float footY) {
+    static const char* const kIds[] = {"PAGE 1", "PAGE 2", "PAGE 3", "PAGE 4", "PAGE 5", "PAGE 6", "PAGE 7", "PAGE 8", "PAGE 9"};
+    const int n = std::min(morePages() + 1, 9), cur = std::min(std::max(moreOpen_, 0), n - 1);
+    // (452..828: the gap between BACK and the right-hand button, 4 px apart; cells at most 40 wide, centred)
+    const float gap = 4, cw = std::min(40.0f, (376 - gap * (n + 1)) / (n + 2)), total = cw * (n + 2) + gap * (n + 1);
+    float x = 640 - total * 0.5f;
+    const float y = L.Y(footY), h = L.L(kRowH);
+    int go = -1;
+    if (ui_.button(L.X(x), y, L.L(cw), h, "<", cur > 0 ? UiExp::nav(moreNav(cur - 1)).withId("PREVIOUS PAGE") : UiExp::inert().withId("PREVIOUS PAGE"), cur > 0)) go = cur - 1;
+    x += cw + gap;
+    for (int i = 0; i < n; i++, x += cw + gap)
+        if (ui_.tab(L.X(x), y, L.L(cw), h, std::to_string(i + 1), i == cur, i == cur ? UiExp::inert().withId(kIds[i]) : UiExp::nav(moreNav(i)).withId(kIds[i]))) go = i;
+    if (ui_.button(L.X(x), y, L.L(cw), h, ">", cur < n - 1 ? UiExp::nav(moreNav(cur + 1)).withId("NEXT PAGE") : UiExp::inert().withId("NEXT PAGE"), cur < n - 1)) go = cur + 1;
+    if (ui_.probing() && settingsPageKeys()) {   // (the UI test: the arrow keys do the same)
+        ui_.keyAction("LEFT ARROW (PREVIOUS PAGE)", GLFW_KEY_LEFT, 0, cur > 0 ? UiExp::nav(moreNav(cur - 1)) : UiExp::inert());
+        ui_.keyAction("RIGHT ARROW (NEXT PAGE)", GLFW_KEY_RIGHT, 0, cur < n - 1 ? UiExp::nav(moreNav(cur + 1)) : UiExp::inert());
+    }
+    if (go >= 0) settingsPage(go);
+}
+
+void Game::settingsPage(int n) {
+    n = std::min(std::max(n, 0), morePages());
+    if (n == moreOpen_) return;
+    moreOpen_ = n;
+    controlsSub_ = 0;   // (CONTROLS: page 1 is its own first view, not MOVE KEYS / MORE KEYS left open before)
+    captureAction_ = -1;
+    ui_.closePopup();
+    cfg_.save();
+}
+
+// The arrow keys turn the settings page only while nothing else wants them: a field being typed in (a slider's typed
+// value too), a key being bound, a held slider, an open colour picker or dropdown, the console or chat, and the pages
+// with no strip (FONT, DEVICES, the import list, the HUD's editors, search results). (No other settings widget takes
+// the keyboard: the < > rows are clicked, they never hold focus.)
+bool Game::settingsPageKeys() const {
+    const bool shown = screen_ == Screen::Settings || (screen_ == Screen::InGame && paused_ && settingsInGame_);
+    return shown && morePages() > 0 && !chatting_ && !console_ && !ui_.typing() && captureAction_ < 0 && !ui_.popupOpen() && !ui_.sliderHeld() &&
+           !fontsOpen_ && !devicesOpen_ && !widgetEdit_ && !hudEdit_ && filePick_ == 0 && !setSearchShown_;
+}
+
 // the settings path of this tab's MORE page n (0: the tab itself)
 const char* Game::moreNav(int n) const {   // (static strings: a UiExp keeps the pointer)
     static const char* const p[5][9] = {{"~settings/video", "~settings/video/more", "~settings/video/more2", "~settings/video/more3",
@@ -6873,9 +6893,10 @@ const char* Game::moreNav(int n) const {   // (static strings: a UiExp keeps the
 
 // MORE (settings/<tab>/more, 1.19.4): the tab's settings that don't fit on it. GAMEPLAY: the kill feed, chat, enemies,
 // all settings, the screen, menus. CONTROLS: the mouse's other axis, zoom, grapple and hand, the scoreboard key, the
-// weapon scroll. VIDEO + AUDIO: 1 the window, shadows, GPU, HUD size, background, hitsounds; 2 fog, picture, look,
+// weapon scroll. VIDEO + AUDIO: 1 the window, shadows, GPU, HUD size, FLAT MAP, background, hitsounds; 2 fog, picture, look,
 // effects, tracers and trails, output; 3 display, sound groups, performance, presets; 4 shadows, players, outlines,
-// colours, accessibility; 5 the sound's output, volume, callouts, cue sounds; 6 network, caches, display, cursor, USE.
+// colours, accessibility; 5 the sound's output, volume, callouts, cue sounds; 6 network (smoothing too), caches,
+// display, cursor, USE.
 void Game::drawMoreSettings(const SetLayout& L) {
     if (setTab_ == TAB_GAMEPLAY && moreOpen_ == 2) { drawGameplayMore2(L); return; }
     if (setTab_ == TAB_GAMEPLAY && moreOpen_ == 3) { drawGameplayMore3(L); return; }
@@ -7285,6 +7306,15 @@ void Game::drawMoreSettings(const SetLayout& L) {
 #else
         f.hint("NIGHT: QUIET UP, LOUD DOWN; SAFE: MORE", "QUEUED, NO CRACKLE ON A BUSY PC");
 #endif
+#ifdef _WIN32
+        // the sound device to the game alone: about 10 ms sooner, and Discord / music go silent while the game runs
+        // (on page 1's SOUND until 2026-10-30: there it ran VOICE into the footer)
+        if (ui_.toggle(f.x(), f.top(), w, h, !cfg_.exclusiveAudio || audio_.exclusiveActive() ? "EXCLUSIVE AUDIO" : audio_.exclusiveState() == Audio::kExclUnsupported ? "EXCLUSIVE AUDIO (N/A)" : "EXCLUSIVE AUDIO (BUSY)",   // (N/A: the device takes none of its formats)
+                       cfg_.exclusiveAudio, UiExp::cfg("exclusive_audio")))
+            audio_.setExclusive(cfg_.exclusiveAudio);
+        f.next();
+        f.hint("TAKES THE SOUND DEVICE FOR LOWER AUDIO LAG");
+#endif
         f.section("VOLUME");
         ui_.toggle(f.x(), f.top(), hw, h, "SHOW DB", cfg_.volDb, UiExp::cfg("vol_db"));
         ui_.toggle(xl, f.top(), hw, h, "PERCEPTUAL", cfg_.volPerceptual, UiExp::cfg("vol_perceptual"));
@@ -7354,6 +7384,19 @@ void Game::drawMoreSettings(const SetLayout& L) {
             if (ui_.cycle(f.x(), f.top(), w, h, "PACKET LOSS PROTECTION", pi, 3, pn, UiExp::cfg("cmd_redundancy"))) cfg_.cmdRedundancy = pr[pi];
             f.next();
             f.hint("EACH INPUT SENT IN THIS MANY PACKETS");
+        }
+        {   // other players' interpolation delay (ranked: always 10 ms): adaptive (the default), custom (the slider), or off
+            // (was GAMEPLAY > NETWORK until 2026-10-30: that page's left column ran into its footer)
+            static const std::vector<std::string> imn = {"SMOOTHING (INTERP): ADAPTIVE", "SMOOTHING (INTERP): CUSTOM", "SMOOTHING (INTERP): OFF"};
+            int ii = cfg_.interpMs == 0 ? 0 : cfg_.interpMs < 0 ? 2 : 1;
+            if (ui_.cycle(f.x(), f.top(), w, h, "INTERP", ii, 3, imn, UiExp::cfg("interp_ms"))) cfg_.interpMs = ii == 0 ? 0 : ii == 2 ? -1 : kCustomInterpMs;
+            f.next();
+            f.hint("HOW OTHER PLAYERS' MOVES ARE SMOOTHED");
+            float v = (float)(cfg_.interpMs > 0 ? cfg_.interpMs : kCustomInterpMs);   // (moving it picks CUSTOM)
+            if (ui_.slider(f.x(), f.top(), w, h, "SMOOTHING DELAY (MS)", v, 1, (float)kMaxInterpMs, "%.0f", UiExp::cfg("interp_ms"), (float)kCustomInterpMs))
+                cfg_.interpMs = std::min(std::max(1, (int)std::lround(v)), kMaxInterpMs);
+            f.next();
+            f.hint("USED WHEN SMOOTHING IS CUSTOM");
         }
         ui_.toggle(f.x(), f.top(), hw, h, "MAP DOWNLOADS", cfg_.mapDownloads, UiExp::cfg("map_downloads"));
         {
@@ -7748,6 +7791,19 @@ void Game::drawMoreSettings(const SetLayout& L) {
     cfg_.hudSize = clampf(cfg_.hudSize, 0.5f, 2.0f);
     f.next();
     f.hint("EVERY HUD ELEMENT AT ONCE (EACH ALSO HAS", "ITS OWN SIZE ON THE HUD TAB)");
+    f.section("FLAT MAP");   // (page 1 until 2026-10-30: there it ran into the footer on Windows)
+    ui_.toggle(f.x(), f.top(), w, h, "FULLBRIGHT", cfg_.fullbright, UiExp::cfg("fullbright"));
+    f.next();
+    f.hint("FLAT MAP, NO LIGHTING");
+    {   // its colour (white: the classic look)
+        const float hw = L.L(kHalfW);
+        Vec3& c = cfg_.fullbrightColor;
+        const Vec3& d = defaultSettings().fullbrightColor;
+        ui_.colorPicker(f.x(), f.top(), hw, h, "MAP COLOR", c, UiExp::cfg("fullbright_color"), d);
+        bool white = c.x == d.x && c.y == d.y && c.z == d.z;
+        if (ui_.button(L.X(kColL + 184), f.top(), hw, h, "RESET MAP COLOR", UiExp::cfg("fullbright_color").withId("RESET MAP COLOR"), !white)) c = d;
+        f.next();
+    }
 }
 
 // ---- batch 3 (1.19.4, the 2s): GAMEPLAY > MORE 2 / 3 / 4, CONTROLS > MORE 2, PLAYER > MORE --------------------------
@@ -8575,7 +8631,9 @@ void Game::drawCrosshairSettings(const SetLayout& L) {
         ui_.colorPicker(x2, g.top(), hw, h, "HEADSHOT", cfg_.chHeadColor, UiExp::cfg("ch_head_color"), defaultSettings().chHeadColor);
         g.next();
     }
+    const float codeMsgY = g.y + 12;   // (COPY / PASTE CODE's answer: beside this header; under its row it touched the footer)
     g.section("PER WEAPON");   // a weapon's own STYLE (e.g. a dot on the sniper), and the crosshair as a code to share
+    if (time_ < chCodeUntil_) ui_.hint(L.X(kColR + 120), L.Y(codeMsgY + 4), chCodeMsg_, kGrey, L.L(kColW - 120));
     {
         static int chW = WPN_SNIPER;
         static std::vector<std::string> wn, sn;
@@ -8600,7 +8658,6 @@ void Game::drawCrosshairSettings(const SetLayout& L) {
             if (ok) cfg_.save();
         }
         g.next();
-        if (time_ < chCodeUntil_) g.hint(chCodeMsg_);
     }
     const Settings& d = defaultSettings();   // (RESET is greyed out while the crosshair is the default one)
     bool chDefault = cfg_.chStyle == d.chStyle && cfg_.chLength == d.chLength && cfg_.chThickness == d.chThickness && cfg_.chGap == d.chGap &&

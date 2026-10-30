@@ -103,3 +103,7 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 
 ## Map format 11: spawns for one mode
 - **A map can give a mode its own spawns**, e.g. a koth hill in a bomb map: `spawn koth-a` / `spawn koth-b` spawns are used only in king of the hill (and koth starts on them when the map has them), never in other modes. Any mode but race and multi point can have a set (`ffa-any`, `bomb-a`, ...). The map editor sets it on a spawn (MODE SET; a white cap marks one). **Maps are now format 11**: older maps convert by themselves, but an older game can't open a map that uses the new spawns.
+
+## Settings: page numbers
+- **Every settings tab with more than one page shows its page numbers at the bottom**, with < and > at the ends: click a number to go straight to that page, or the arrows (or the Left / Right arrow keys) for the previous / next page. The arrows stop at the first and last page. The MORE buttons are gone; BACK now leaves settings from any page (Esc still goes back to the tab's first page).
+- **Fixed: settings rows drawn over the bottom buttons.** On Windows, VIDEO + AUDIO's MAP COLOR and RESET MAP COLOR sat on top of BACK and MORE. Pages that were too full have moved rows instead: FLAT MAP (FULLBRIGHT, MAP COLOR) is now on VIDEO + AUDIO page 2, EXCLUSIVE AUDIO (Windows) on page 6 under OUTPUT, and SMOOTHING (INTERP) from GAMEPLAY to VIDEO + AUDIO page 7 under NETWORK. SEARCH finds them all, and its results now name the page by its number (e.g. VIDEO + AUDIO > PAGE 3).

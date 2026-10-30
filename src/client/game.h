@@ -796,6 +796,15 @@ private:
     std::string chCodeMsg_; double chCodeUntil_ = 0;   // (CROSSHAIR > COPY / PASTE CODE's answer)
     void drawMoreSettings(const SetLayout& L);
     const char* moreNav(int n) const;
+    // the page strip at the foot of a tab with MORE pages ("<  1 2 3 ... N  >", 1.19.4+): page n (0: the tab itself),
+    // clamped to the tab's pages; the Left / Right arrow keys step it while nothing else has the keyboard
+    void settingsPage(int n);
+    bool settingsPageKeys() const;
+    void drawSettingsPages(const SetLayout& L, float footY);
+    bool setSearchShown_ = false;      // settings search: its results drawn in place of the page this frame (no page strip)
+    // (UI test only) the lowest pixel the settings page's content drew on this frame, and the footer row's top: the
+    // test fails a page whose content runs into its footer (-1: no settings page drawn this frame)
+    float setInkBottom_ = -1, setFootTop_ = 0;
     bool hudHidden_ = false;           // the HIDE HUD key
     // 1.19.4 settings, batch 3 (VIDEO + AUDIO > MORE 2 / 4 / 5 / 6, CROSSHAIR)
     float hfov() const;                       // FOV MODE: the horizontal degrees the camera takes

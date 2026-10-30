@@ -1904,6 +1904,23 @@ static void uiQuad(Vertex2DList& out, float x0, float y0, float x1, float y1, ui
     uiQuadAt(out.data() + n, x0, y0, x1, y1, U0, V0, U1, V1, c, scaleInt, scaleFrac);
 }
 
+float Renderer::uiInkBottom(size_t from, float skipTop, float skipBottom) const {
+    float bottom = -1;
+    for (size_t q = from; q + 4 <= ui_.size(); q += 4) {
+        float y0 = ui_[q].pos[1], y1 = y0;
+        for (int i = 1; i < 4; i++) { y0 = std::min(y0, (float)ui_[q + i].pos[1]); y1 = std::max(y1, (float)ui_[q + i].pos[1]); }
+        const Vertex2D& v = ui_[q];
+        if (v.pad[1] != 1 && (v.scaleInt || v.scaleFrac)) {   // a glyph: its padding isn't ink
+            const float pad = kUiPad * (v.scaleInt + v.scaleFrac / 256.0f);
+            y0 += pad; y1 -= pad;
+        }
+        if (y1 <= y0) continue;   // (an empty quad: rect()'s placeholders, a zero-size draw)
+        if (y0 >= skipTop - 0.5f && y1 <= skipBottom + 0.5f) continue;
+        bottom = std::max(bottom, y1);
+    }
+    return bottom;
+}
+
 void Renderer::uiTransform(size_t from, float px, float py, float k, float dx, float dy) {
     if (from >= ui_.size() || (k == 1 && dx == 0 && dy == 0)) return;
     auto cl16 = [](float v) { return (int16_t)std::max(-32768.0f, std::min(32767.0f, std::round(v))); };
