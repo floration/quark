@@ -893,7 +893,7 @@ class M:
         # (any map can still be started in any mode: the menus warn that it may not work)
         mode = next((l.split()[1] for l in s.lines if l.startswith("for ")), None)
         s.lines = [l for l in s.lines if not l.startswith("modes ")]
-        if mode: s.lines.insert(4, "modes " + " ".join([mode] + getattr(s, "also", []) + ([] if mode in ("ffa", "surf") else ["ffa"])))
+        if mode: s.lines.insert(4, "modes " + " ".join([mode] + getattr(s, "also", []) + ([] if mode in ("ffa", "surf") or getattr(s, "no_ffa", False) else ["ffa"])))   # (no_ffa: a one-way race course)
         s.name = name
         offered = next((l.split()[1:] for l in s.lines if l.startswith("modes ")), None)   # (None: every mode)
         s.top_up_spawns(offered)
