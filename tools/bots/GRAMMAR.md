@@ -287,7 +287,7 @@ to outputs are absolute (`now + ...`). The authoritative list, with docs and uni
 | `unstick` | when the last `next` is due | `moving` bool, `moved` f32 (m), `hasTarget` bool | `stuck` bool, `side` f32, `until` f64, `next` f64 |
 
 Objective sensors: `checkpointsLeft`, `hasHill`, `hasCart`, `pointActive`, `bombPlanted`, `bombDropped`,
-`bombCarried`, `attacker`, `carrierIsMe`, `carrierAlive`, `navReady`, `it` (bool), `siteCount`, `teamRank` (int: teammates with a lower id, 0 = the first; deals out the bomb sites).
+`bombCarried`, `attacker`, `carrierIsMe`, `carrierAlive`, `navReady`, `it` (bool), `siteCount`, `teamRank` (int: teammates with a lower id, 0 = the first; deals out the bomb sites), `roundNo` (int: the round, 1 = the match's first, 0 before one; the default brain's attackers go for site `roundNo + teamRank`).
 Points (for `goto`): `me.pos`, `checkpoint.next`, `hill.floor`, `cart.goal`, `point.floor`, `bomb.pos`,
 `carrier.pos`, `site(i)`. A point whose map feature is missing is where the bot stands.
 

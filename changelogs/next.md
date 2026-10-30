@@ -97,3 +97,6 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 
 ## Map checks
 - **The walk check sees ramps.** The map tests' "can players get from every spawn to every objective" check now walks up wedges, corners and cut slopes up to 45 degrees (the steepest you can walk). Before, every slope counted as a solid block, so routes up a ramp (Mine's haul road and lava ramp, QK7's helix ramps) were reported missing or found only the long way round.
+
+## Bots
+- **Bomb bots use every site.** The attackers went for the first bomb site every round, so a site further away (Datacenter's B) never saw them. They now take the sites in turn, round by round. The defenders still guard one site each.

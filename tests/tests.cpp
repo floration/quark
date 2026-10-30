@@ -8877,6 +8877,52 @@ static void testBotFalls(uint16_t port) {
     }
 }
 
+// Bomb: the attacking bots go for every site in turn (site round + rank: they used to take the first one every round,
+// and Datacenter's B, 8 m further, never saw them). Rounds of expert bots on Depot (4 v 4, two sites): which site each
+// plant was in; both get some. The defenders guard one each (dealt out by rank), so a site isn't left open either.
+static void testBombSites(uint16_t port) {
+    printf("bomb: bots plant at every site, round by round\n");
+    SimClock clock;
+    qsrand(0xB0B5u);
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "depot"; cfg.mode = MODE_BOMB; cfg.port = port; cfg.autoStart = true;
+    s.setLog([](const std::string&) {});
+    bool started = false;
+    for (int k = 0; k < 20 && !started; k++) { started = s.start(cfg); if (!started) cfg.port = ++port; }
+    CHECK(started);
+    if (!started) return;
+    for (int i = 0; i < 4; i++) { s.addBot(TEAM_A, BOT_EXPERT); s.addBot(TEAM_B, BOT_EXPERT); }
+    simNavReady(s);
+    simRun(s, 1.0);
+    s.command("forcestart");
+    const size_t n = s.map_.bombSites.size();
+    std::vector<int> plants(n, 0);
+    int lastRound = -1, rounds = 0, defended[2] = {0, 0};
+    bool was = false;
+    simRun(s, 600, [&] {
+        const ModeState& m = s.ms_;
+        if (m.round != lastRound && m.phase == PHASE_LIVE) {   // (each round once it's live: where the defenders are headed)
+            lastRound = m.round; rounds++;
+            int rank = 0;   // (teamRank: the defenders in slot order)
+            for (int i = 0; i < kMaxPlayers; i++)
+                if (s.players_[i].connected && s.players_[i].isBot && s.players_[i].team != m.attackers) defended[rank++ % n % 2]++;
+        }
+        const bool now = m.bombState == BOMB_PLANTED;
+        if (now && !was) {
+            size_t best = 0;
+            for (size_t k = 1; k < n; k++) if (length(s.map_.bombSites[k].center() - m.bombPos) < length(s.map_.bombSites[best].center() - m.bombPos)) best = k;
+            plants[best]++;
+        }
+        was = now;
+    });
+    printf("  depot: %d rounds, plants at A %d, B %d; defenders sent to A %d, B %d\n", rounds, plants[0], n > 1 ? plants[1] : 0, defended[0], defended[1]);
+    CHECK(n == 2);
+    for (size_t k = 0; k < n; k++) CHECK(plants[k] >= 1);
+    CHECK(defended[0] >= 1 && defended[1] >= 1);
+    s.stop();
+}
+
 // Maps and rules arrive from untrusted servers: junk must be refused (or clamped), never crash or blow up memory.
 static void testHostileInput() {
     printf("hostile input\n");
@@ -9374,6 +9420,7 @@ int main(int argc, char** argv) {
         {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testGrappleAgainstWall(); testAcid(); testLiquids(); testFeatureBlocks(); testStrafeEase(); testSeeThrough(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testMapFix(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},
+        {"bombsites", [] { testBombSites(TP(29090)); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
         {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotNavBlockers(TP(29030)); testBotAim(p); testHostedBotsThreadExit(TP(29010)); testBotHurtTurn(TP(29011)); }},
         {"assets", [] { g_fail += assetTests(); }},
