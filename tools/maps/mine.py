@@ -3,16 +3,20 @@ crystals and metal bars). A deep mine on four levels, 4v4: the pithead at the su
 yard, a), the haulage level (-15: minecart galleries, the loading station, the old stope), the powder magazine cavern
 and the ore store (-30: the site, the hill) and the deep workings (-45: lava channels and the crystal grotto; the
 defenders' refuge, b, behind its steel screen). Bomb: T reach the TNT pile in about 5 s at 24 m/s (~120 m walked), CT
-about 1 s later (~144 m). King of the hill uses the same team spawns (the format has no koth-only spawn set), so the
-ore store was placed where both teams walk the same distance to the hill.
+about 1 s later (~144 m). King of the hill uses the same team spawns (the format has no koth-only spawn set yet), so
+the hill is in the ore bay (west of the cavern), where both teams walk about the same distance; it has four doors, two per team.
+Everything underground is closed: the rock between the rooms is solid (fill_solid), so no hollow, hidden top or open
+shaft is left for a player or the bots' nav graph.
 Routes to the site, T: the cage shaft (drop or ladder, 0 -> -15 -> -30, the shaft-bottom drift into the cavern); the
 haul road (the open-cut decline to -15, the haulage gallery, the ore chute onto the cavern's south ledge); the old stope
 (the bench stairs to -15, rotten planks over the pit, the winze hole onto the west ledge). CT: the crystal grotto (its
 stair up to the cavern's north door); the pump shaft (a 15 m ladder, the drainage adit to the north-west door); the
-lava gallery (the ramp over the magma channel to the ore store, the crosscut into the cavern's east door)."""
+lava gallery (the ramp beside the magma channel to the ore store, the crosscut into the cavern's east door). The lava
+runs only along that flank (the deep workings' east end and the gallery), which both teams use, so either side can
+knock the other in; the spawn exits cross no lava."""
 import math
 from .prefabs import M, minus, tiles
-from .m2kit import B, wedge, prism, octagon, light, sphere, solid_spans, MAT
+from .m2kit import B, wedge, prism, octagon, light, sphere, solid_spans, MAT, fill_solid
 
 ROCK, FLOOR, TIMBER = "wetcaverock", "gravel", "wideplanks"
 
@@ -65,9 +69,9 @@ def build():
     SHAFT = (-30, 32, -22, 40)                  # the cage shaft (0 -> -15)
     WINZE = (-28, 12, -22, 18)                  # its lower half (-15 -> -30)
     HAUL = (30, 38)                             # the haul road's open cut: x 30..38, from z 62 (0) down north to z 31 (-15)
-    STOPE = (-48, -42)                          # the stope's bench stairs: x -48..-42, from z 60 (0) down north to z 31 (-15)
+    STOPE = (-44, -38)                          # the stope's bench stairs: x -44..-38, from z 50 (0) down north to z 31 (-15)
     room("yard", -50, YZ0, 50, YZ1, 0, 12, floor="dirt", wall="graniterock", noceil=True,
-         fholes=[SHAFT, (HAUL[0], 31, HAUL[1], 62), (STOPE[0], 31, STOPE[1], 60)])
+         fholes=[SHAFT, (HAUL[0], 31, HAUL[1], 62), (STOPE[0], 31, STOPE[1], 50)])
     # ---- the haulage level (-15)
     room("landing", -32, 10, -14, 42, -15, -9, fholes=[WINZE], choles=[SHAFT])
     room("shaftwalls", SHAFT[0], SHAFT[1], SHAFT[2], SHAFT[3], -9, 0, nofloor=True, noceil=True)
@@ -75,7 +79,7 @@ def build():
     room("loading", 26, 2, 42, 30, -15, -8, fholes=[(30, 2, 36, 6)])
     room("orechute", 30, 2, 36, 6, -18, -15, nofloor=True, noceil=True)
     room("haulcut", HAUL[0], 31, HAUL[1], 62, -15, 0, noceil=True, nofloor=True)
-    room("stopecut", STOPE[0], 31, STOPE[1], 60, -15, 0, noceil=True, nofloor=True)
+    room("stopecut", STOPE[0], 31, STOPE[1], 50, -15, 0, noceil=True, nofloor=True)
     room("stope", -50, -4, -34, 30, -15, -7, floor="scaffoldboards", fholes=[(-50, 10, -34, 16)])
     room("stopedrift", -33, -3, -17, 3, -15, -11, fholes=[(-21, -3.5, -16, 3.5)])
     room("chute", -4, 6, 4, 16, -24, -9.5, nofloor=True)
@@ -90,12 +94,13 @@ def build():
     room("adit2", -37, -32, -6, -26, -30, -25)
     room("orebay", -46, -25, -30, -12, -30, -20, floor="slate")
     room("grottotunnel", -4, -34, 4, -26, -30, -25)
+    room("baydrift", -42, -11, -38, 9, -30, -25)   # (the stope pit -> the ore bay: T's second door to the hill)
     # ---- the deep workings (-45)
-    room("deep", -82, -86, 60, -67, -45, -36, floor="slate", fholes=[(-82, -77, 60, -72)])
-    room("refuge", -78, -100, -62, -87, -45, -39, floor="castiron", wall="castiron", ceil="castiron")
-    room("pumpshaft", -46, -66, -38, -58, -45, -30, noceil=True)
+    room("deep", -70, -86, 32, -67, -45, -36, floor="slate", fholes=[(0, -77, 32, -72)], choles=[(0, -77, 32.5, -72)])
+    room("refuge", -68, -100, -52, -87, -45, -39, floor="castiron", wall="castiron", ceil="castiron")
+    room("pumpshaft", -46, -66, -38, -58, -45, -25)   # (roofed at the adit's ceiling: the ladder leads only into the adit)
     room("grotto", -16, -66, 16, -35, -45, -24, floor="graniterock", wall="glowwormcave", ceil="glowwormcave")
-    room("lavagallery", 30, -66, 42, -25, -45, -24, floor="emberbed", fholes=[(30, -66, 36, -25)], ceil="nograpple")
+    room("lavagallery", 21, -66, 33, -25, -45, -24, floor="emberbed", fholes=[(27, -66, 33, -25)], ceil="nograpple")
 
     # ---- doors (every wall in each volume is opened)
     opening(-4, -25, 16, 4, -9.5, 17)            # haul gallery -> chute (the chute's stairs start in the gallery)
@@ -109,17 +114,20 @@ def build():
     opening(-34.5, -30, 10, -32.5, -26, 16)      # pit -> pit drift
     opening(-30.5, -30, 10, -28.5, -26, 16)      # pit drift -> shaft drift
     opening(19.5, -30, -18, 21.5, -25, -12)      # cavern -> ore store
-    opening(36, -30, -25.5, 42, -25, -23.5)      # lava gallery -> ore store
-    opening(36, -45, -67.5, 42, -40, -65.5)      # deep -> lava gallery
+    opening(21, -30, -25.5, 27, -25, -23.5)      # lava gallery -> ore store
+    opening(21, -45, -67.5, 27, -40, -65.5)      # deep -> lava gallery
     opening(-15, -45, -67.5, -9, -40, -65.5)     # deep -> grotto (its west end: nearer the refuge)
     opening(-46, -45, -67.5, -38, -40, -65.5)    # deep -> pump shaft
-    opening(-74, -45, -87.5, -66, -41, -85.5)    # refuge -> deep
+    opening(-64, -45, -87.5, -56, -41, -85.5)    # refuge -> deep
     opening(-44, -30, -58.5, -40, -26, -56.5)    # pump shaft top -> adit
     opening(-38.5, -30, -32, -36.5, -25.5, -27)  # adit -> adit2
     opening(-11, -30, -26.5, -7, -25.5, -24.5)   # adit2 -> cavern (north-west door)
     opening(-4, -30, -35.5, 4, -25.5, -33.5)     # grotto -> its tunnel
     opening(-30.5, -30, -16, -28.5, -25, -12)    # ore bay -> shaft drift
     opening(-36, -30, -26.5, -32, -25.5, -24.5)  # adit2 -> ore bay
+    opening(-44, -30, -27.5, -40, -25.5, -24.5)  # adit -> ore bay (CT's second door)
+    opening(-42, -30, -12.5, -38, -25.5, -10.5)  # bay drift -> ore bay (T's second door)
+    opening(-42, -30, 8.5, -38, -25.5, 10.5)     # stope pit -> bay drift
     opening(-4, -30, -26.5, 4, -25.5, -24.5)     # grotto tunnel -> cavern (north door)
     build_rooms()
 
@@ -130,7 +138,7 @@ def build():
     # the haul road: the decline (a ramp, 25 degrees) in its open cut
     wedge(m, "rutteddirtroad", "+z", HAUL[0], -15, 31, HAUL[1], 0, 62)
     # the stope's bench stairs
-    m.stairs(STOPE[0], 31, STOPE[1], 60, 0, "z", 1, base=-15)
+    m.stairs(STOPE[0], 31, STOPE[1], 50, 0, "z", 1, base=-15)
     # the ore chute: stairs from the haul gallery down onto the cavern's south ledge
     m.stairs(-4, 6, 4, 20, -15, "z", 1, base=-24)
     # the ore chute in the loading station: a drop into the ore store (a ladder back up)
@@ -138,7 +146,7 @@ def build():
     # the grotto's stair up to its tunnel and the cavern's north door
     m.stairs(-4, -58, 4, -35, -30, "z", 1, base=-45)
     # the lava gallery: the ledge, the ramp up to the ore store
-    wedge(m, "graniterock", "+z", 36, -45, -62, 42, -30, -34); B(m, "graniterock", 36, -31, -34, 42, -30, -25)
+    wedge(m, "graniterock", "+z", 21, -45, -62, 27, -30, -34); B(m, "graniterock", 21, -31, -34, 27, -30, -25)
     # the pump shaft's ladder (15 m) and the stope drift's winze ladder (from the west ledge up to -15)
     m.ladder(-42, -58.4, -45, -30, "s")
     m.ladder(-19.6, 0, -24, -15, "w")
@@ -148,27 +156,33 @@ def build():
     for x in (-14, -6, 6, 14): B(m, TIMBER, x - 0.25, -30, -1.25, x + 0.25, -24.4, -0.75)
     for z in (-21, -7): B(m, TIMBER, -14.25, -30, z - 0.25, -13.75, -24.4, z + 0.25)
     B(m, TIMBER, 15.5, -30, -1.6, 16.5, -24.4, -1.0); m.ladder(16, -2.0, -30, -24, "s")
-    B(m, TIMBER, -14.0, -30, -15.5, -13.4, -24.4, -14.5); m.ladder(-13.0, -15, -30, -24, "w")
+    # CT's own way up: a ladder onto the west ledge's north end, 4 m from the north-west door (T's ladder is at the
+    # south ledge's east end)
+    B(m, TIMBER, -14.0, -30, -24.0, -13.4, -24.4, -22.6); m.ladder(-13.0, -23.3, -30, -24, "w")
     # the stope: rotten planks across its pit (they give way under anyone who stops on them)
     for x0 in (-47, -39): B(m, "rottenplanks", x0, -15.3, 10, x0 + 2, -15, 16)
     # the lava: a magma river in the deep workings' channel (crossed by three bridges) and beside the lava gallery's ramp
-    B(m, "magmariver", -82, -48, -77, 60, -46.2, -72); B(m, ROCK, -82, -49, -77, 60, -48, -72)
-    B(m, "magmariver", 30, -48, -66, 36, -46.2, -25); B(m, ROCK, 30, -49, -66, 36, -48, -25)
-    for (x0, x1) in ((-45, -39), (-15, -9), (36, 42)): B(m, "castiron", x0, -45.5, -77, x1, -45, -72)
+    B(m, "magmariver", 0, -48, -77, 32, -46.2, -72); B(m, ROCK, 0, -49, -77, 32, -48, -72)
+    B(m, "magmariver", 27, -48, -66, 33, -46.2, -25); B(m, ROCK, 27, -49, -66, 33, -48, -25)
+    B(m, "nograpple", 0, -36, -77, 32.5, -35, -72)   # (nobody hangs over the river)
+    B(m, "castiron", 21, -45.5, -77, 27, -45, -72)    # (the bridge to the lava gallery's door)
+    # two rock buttresses, one from each wall, so the deep workings bend (no line runs their length)
+    B(m, ROCK, -36, -45, -86, -30, -36, -77); B(m, ROCK, -26, -45, -73, -20, -36, -67)
 
     # ---- objectives
-    # the TNT pile: a solid core, crates stacked round it to 6 m (80 hp each: shoot one out for a new line)
+    # the TNT pile: a solid core, crates stacked round it to 6 m (80 hp each: shooting the top ones out opens a line
+    # over the pile from the ledges)
     PX, PZ = 0.0, -10.0
-    B(m, "hazard", PX - 2, -30, PZ - 2, PX + 2, -26.5, PZ + 2)
+    B(m, "hazard", PX - 1.5, -30, PZ - 1.5, PX + 1.45, -27, PZ + 1.45)   # (the inner 2 x 2 crates' cells, two crates tall)
     cr = 1.5
     for (i, j, lv) in [(i, j, 0) for i in range(-2, 2) for j in range(-2, 2) if not (-1 <= i <= 0 and -1 <= j <= 0)] + \
                       [(i, j, 1) for (i, j) in ((-2, -1), (-2, 0), (1, -1), (1, 0), (-1, -2), (0, -2), (-1, 1), (0, 1))] + \
                       [(i, j, 2) for (i, j) in ((-1, -1), (0, -1), (-1, 0), (0, 0))] + [(-0.5, -0.5, 3)]:
         x0, z0, y0 = PX + i * cr + (0.75 if lv == 1 and False else 0), PZ + j * cr, -30 + lv * cr
         B(m, "woodencrate", x0, y0, z0, x0 + cr - 0.05, y0 + cr, z0 + cr - 0.05)
-    m.raw(f"site {PX - 4:g} -30 {PZ - 9:g} {PX + 14:g} -26 {PZ + 9:g}")
-    # the hill: a pile of crystals and metal bars in the ore store
-    HX, HZ = -37.0, -15.0
+    m.raw(f"site {PX - 9:g} -30 {PZ - 14:g} {PX + 9:g} -26 {PZ + 6:g}")   # (round the pile, its centre just north of it: on the floor)
+    # the hill: a pile of crystals and metal bars in the ore bay (four doors, two per side, each 3-5 m from it)
+    HX, HZ = -38.0, -18.0
     for (x0, z0, x1, z1, h) in ((HX - 3.4, HZ + 0.4, HX - 0.6, HZ + 1.8, 1.4), (HX + 0.4, HZ - 2.0, HX + 3.2, HZ - 0.6, 1.8)):
         B(m, "castiron", x0, -30, z0, x1, -30 + h - 0.3, z1); B(m, "gold", x0 + 0.1, -30 + h - 0.3, z0 + 0.1, x1 - 0.1, -30 + h, z1 - 0.1)   # (bar stacks)
     m.raw(f"hill {HX - 6:g} -30 {HZ - 4:g} {HX + 6:g} -26 {HZ + 4:g}")
@@ -261,6 +275,8 @@ def build():
     for z in (0, 22): lamp(-42, -7.4, z)
     for x in (-46, -38): B(m, TIMBER, x - 0.2, -15, 9.8, x + 0.2, -7.4, 10.2); B(m, TIMBER, x - 0.2, -15, 15.8, x + 0.2, -7.4, 16.2)
 
+    # cover on CT's approaches (solid, 1.65 m tall; away from the doors' main lines): three ore carts off their rails
+    cart(8.5, -21.5, -30, ore="bandediron"); cart(14.5, -6, -30, along="z"); cart(-5.5, -20.5, -30, ore="jasper")
     # ---- the magazine cavern: roof timbers (grapple anchors), work lights, ore seams in the walls, hazard boards
     for z in (-21, -13, -5):
         B(m, TIMBER, -20, -17.2, z - 0.3, 20, -16.6, z + 0.3)
@@ -279,19 +295,19 @@ def build():
         crystal(HX + dx, HZ + dz, -29.4, h, r)
     for (dx, dz) in ((-1.2, -1.6), (2.2, 1.4), (-3.0, -0.4)):   # loose bars on the heap
         B(m, "gold", HX + dx, -29.4, HZ + dz, HX + dx + 1.2, -29.1, HZ + dz + 0.35)
-    for (x, z) in ((-42, -22), (-34, -15)): lamp(x, -20.4, z)
+    for (x, z) in ((-42, -22), (-34, -15), (-42, -14), (-34, -22)): lamp(x, -20.4, z, r=14, i=1.0)
     # the shaft drift and the adits: timbers, lamps
-    timbers(-29, -16, -21, 19, -30, -24); timbers(-46, -57, -38, -27, -30, -25); timbers(-37, -32, -6, -26, -30, -25)
+    timbers(-29, -16, -21, 19, -30, -24); timbers(-46, -57, -38, -27, -30, -25); timbers(-37, -32, -6, -26, -30, -25); timbers(-42, -11, -38, 9, -30, -25)
     for (x, z) in ((-25, 0), (-25, -12), (-42, -50), (-42, -36), (-28, -29), (-18, -29)): lamp(x, -24.4 if x == -25 else -25.4, z, drop=0.8)
     # the deep workings: the refuge's steel door screen, the pump station, bridges' rails, the lava's light, crystals
-    B(m, "steeldoorskin", -78, -45, -84.5, -72, -40, -84); B(m, "steeldoorskin", -68, -45, -84.5, -62, -40, -84)
-    B(m, "vaultdoor", -74, -41, -86.2, -66, -39, -85.9)
-    for (x0, x1) in ((-45, -39), (-15, -9), (36, 42)):
+    B(m, "steeldoorskin", -68, -45, -84.5, -62, -40, -84); B(m, "steeldoorskin", -58, -45, -84.5, -52, -40, -84)
+    B(m, "vaultdoor", -64, -41, -86.2, -56, -39, -85.9)
+    for (x0, x1) in ((21, 27),):
         B(m, "castiron", x0, -45, -77, x0 + 0.12, -44, -72); B(m, "castiron", x1 - 0.12, -45, -77, x1, -44, -72)
-    for x in range(-76, 60, 12):
+    for x in range(4, 32, 10):
         light(m, x, -44, -74.5, 9, 0.9)
         B(m, "emberbed", x - 3, -45, -78, x + 3, -44.98, -77)
-    for x in range(-70, 60, 16): lamp(x, -36.4, -82)
+    for x in range(-62, 32, 16): lamp(x, -36.4, -82)
     for (x, z) in ((-44, -62), (-40, -62)): B(m, "gaugecluster", x - 1, -45, z - 1, x + 1, -43.5, z + 1)
     B(m, "galvanizedsteel", -46, -40, -66, -45.6, -30, -65.6)
     # the grotto: glowing crystals round its walls (out of the stair and the lanes), cover crystals
@@ -300,12 +316,58 @@ def build():
         crystal(x, z, -45, h, r, "crystal" if h < 2.5 else "quartzcrystals")
     for (x, z) in ((-10, -50), (10, -50), (0, -40)): light(m, x, -38, z, 14, 0.8)
     # the lava gallery: its ledge's edge glows, lamps
-    for z in range(-60, -28, 10): light(m, 33, -43, z, 9, 0.9); lamp(40, -24.4, z, drop=1.4)
+    for z in range(-60, -28, 10): light(m, 30, -43, z, 9, 0.9); lamp(24, -24.4, z, drop=1.4)
+
+    # ---- rock shapes (review 2: no more square basements): chamfered ceiling edges in the big rooms, sloped wall
+    # feet between the doors, ore seams and glow-worm patches along the galleries (on walls and roofs, out of the lanes)
+    def chamfer(x0, z0, x1, z1, yc, d=2.0, h=2.0, skip_w=None, skip_s=False):
+        """(skip_w: a z range on the west side left square, for a ladder through the roof; skip_s: no south side)"""
+        wedge(m, ROCK, "-z", x0, yc - h, z0, x1, yc, z0 + d, up=1)
+        if not skip_s: wedge(m, ROCK, "+z", x0, yc - h, z1 - d, x1, yc, z1, up=1)
+        for (a, b) in ([(z0 + d, skip_w[0]), (skip_w[1], z1 - d)] if skip_w else [(z0 + d, z1 - d)]):
+            wedge(m, ROCK, "-x", x0, yc - h, a, x0 + d, yc, b, up=1)
+        wedge(m, ROCK, "+x", x1 - d, yc - h, z0 + d, x1, yc, z1 - (0 if skip_s else d), up=1)
+    chamfer(-20, -25, 20, 5, -16, 2.5, 2.5, skip_w=(-2.5, 2.5)); chamfer(-16, -66, 16, -35, -24, 3, 3); chamfer(-46, -25, -30, -12, -20); chamfer(21, -24, 46, 6, -18, skip_s=True)
+    def feet(runs, yf, d=0.9, h=0.7):
+        for (side, a0, a1, w) in runs:     # side n/s/w/e, from a0 to a1 along it, the wall's inner face at w
+            if side == "n": wedge(m, ROCK, "-z", a0, yf, w, a1, yf + h, w + d)
+            if side == "s": wedge(m, ROCK, "+z", a0, yf, w - d, a1, yf + h, w)
+            if side == "w": wedge(m, ROCK, "-x", w, yf, a0, w + d, yf + h, a1)
+            if side == "e": wedge(m, ROCK, "+x", w - d, yf, a0, w, yf + h, a1)
+    feet([("n", 4, 20, -25), ("n", -20, -14.5, -25), ("e", -25, -18, 20), ("e", -12, 5, 20)], -30)
+    feet([("w", -66, -35, -16), ("e", -66, -35, 16), ("s", -16, -4, -35), ("s", 4, 16, -35)], -45, 1.4, 1.1)
+    feet([("w", -25, -12, -46), ("n", -30, -32, -25)], -30)
+    import random
+    rng = random.Random(1906)
+    ORES = ["bandediron", "gold", "malachite", "jasper", "geode"]
+    def seams(x0, z0, x1, z1, yf, yc, step=12.0):
+        along_x = (x1 - x0) >= (z1 - z0)
+        a, a1 = (x0, x1) if along_x else (z0, z1)
+        a += step / 2; k = 0
+        while a < a1 - 2:
+            w, ht, y = rng.uniform(1.6, 3.0), rng.uniform(0.5, 1.1), rng.uniform(yf + 1.5, yc - 1.5)
+            mat = ORES[rng.randrange(len(ORES))]
+            if along_x:
+                zz = z0 if k % 2 == 0 else z1 - 0.08
+                B(m, mat, a - w / 2, y, zz, a + w / 2, y + ht, zz + 0.08)
+            else:
+                xx = x0 if k % 2 == 0 else x1 - 0.08
+                B(m, mat, xx, y, a - w / 2, xx + 0.08, y + ht, a + w / 2)
+            if k % 2 == 1:   # (a glow-worm patch on the roof between seams)
+                if along_x: B(m, "glowwormcave", a - 1.5, yc - 0.05, z0 + 1, a + 1.5, yc, z1 - 1)
+                else: B(m, "glowwormcave", x0 + 1, yc - 0.05, a - 1.5, x1 - 1, yc, a + 1.5)
+            a += step; k += 1
+    for (x0, z0, x1, z1, yf, yc) in ((-13, 17, 25, 24, -15, -9.5), (-70, -86, 32, -67, -45, -36), (-46, -57, -38, -27, -30, -25), (-37, -32, -6, -26, -30, -25),
+                                     (-29, -16, -21, 19, -30, -24), (-33, -3, -17, 3, -15, -11), (-42, -11, -38, 9, -30, -25), (-50, -4, -34, 30, -15, -7)):
+        seams(x0, z0, x1, z1, yf, yc)
+    # the grotto's big crystals: against its walls and in its corners (the lanes and the stair stay clear)
+    for (x, z, h, r) in ((-14.2, -64.2, 7.0, 1.8), (14.2, -64.2, 6.2, 1.6), (-14.2, -52, 5.4, 1.5), (14.2, -55, 6.6, 1.7), (-14.2, -42, 4.8, 1.4), (14.2, -40, 5.8, 1.6)):
+        crystal(x, z, -45, h, r, "quartzcrystals")
 
     # ---- spawns
-    for x in (-6, -2, 2, 6): m.spawn("a", x, 0, 54, 0)
-    for (x, z) in ((-74, -95), (-70, -95), (-66, -95), (-70, -91)): m.spawn("b", x, -45, z, 180)
-    for (x, y, z, yaw) in ((-40, 0, 40, -90), (34, -15, 20, 90), (-42, -15, 20, 0), (0, -30, -22, 180), (40, -30, -20, 0), (-40, -45, -82, -90), (30, -45, -82, 90), (10, -45, -45, 180)):
+    for x in (-6, -2, 2, 6): m.spawn("a", x, 0, 54, 40)   # (facing the headframe and the cage shaft)
+    for (x, z) in ((-64, -95), (-60, -95), (-56, -95), (-60, -91)): m.spawn("b", x, -45, z, 180)
+    for (x, y, z, yaw) in ((-48, 0, 40, -90), (34, -15, 20, 90), (-42, -15, 20, 0), (0, -30, -22, 180), (40, -30, -20, 0), (-40, -45, -82, -90), (30, -45, -82, 90), (10, -45, -45, 180)):
         m.spawn("any", x, y, z, yaw)
 
     # ---- lights (layout pass)
@@ -315,6 +377,12 @@ def build():
         for i in range(nx):
             for k in range(nz):
                 light(m, x0 + (x1 - x0) * (i + 0.5) / nx, min(R["yc"] - 1, R["yf"] + 6), z0 + (z1 - z0) * (k + 0.5) / nz, 14, 0.8)
+
+    # ---- the rock: everything underground that isn't a room (with its 1 m shell), a door or a lava channel is solid,
+    # up to the surface (y 0; under the yard, its floor at -1)
+    air = [(R["r"][0] - 1, R["yf"] - 1, R["r"][1] - 1, R["r"][2] + 1, R["yc"] + (0 if R["noceil"] else 1), R["r"][3] + 1) for R in rooms]
+    air += doors + [(0, -49, -77, 32, -46, -72), (27, -49, -66, 33, -46, -25), (-4, -25, 6, 4, -15, 20)]   # (the lava channels; the chute's stairs under the gallery)
+    fill_solid(m, ROCK, (-72, -50, -102, 48, 0, 64), air)
 
     # ---- bounds: the yard is the only open sky; clip over it at 45 m and round the map
     B(m, "clip", -110, 45, -110, 110, 46, 110)

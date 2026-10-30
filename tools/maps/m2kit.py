@@ -319,3 +319,43 @@ class Rooms:
             if "s" in R["walls"]: s.slab_wall(w, x0 - 1, yb, z1, x1 + 1, yt, z1 + 1)
             if "w" in R["walls"]: s.slab_wall(w, x0 - 1, yb, z0, x0, yt, z1)
             if "e" in R["walls"]: s.slab_wall(w, x1, yb, z0, x1 + 1, yt, z1)
+
+
+def fill_solid(m, mat, bounds, air):
+    """fill bounds (x0 y0 z0 x1 y1 z1) with mat wherever no air box (same form) is: the rock between rooms, so no
+    hidden top or hollow is left for a player or the bots' nav graph. Greedy merge of the grid the boxes cut."""
+    bx0, by0, bz0, bx1, by1, bz1 = bounds
+    cl = []
+    for a in air:
+        c = (max(a[0], bx0), max(a[1], by0), max(a[2], bz0), min(a[3], bx1), min(a[4], by1), min(a[5], bz1))
+        if c[3] - c[0] > 1e-4 and c[4] - c[1] > 1e-4 and c[5] - c[2] > 1e-4: cl.append(c)
+    xs = sorted({bx0, bx1} | {v for c in cl for v in (c[0], c[3])})
+    ys = sorted({by0, by1} | {v for c in cl for v in (c[1], c[4])})
+    zs = sorted({bz0, bz1} | {v for c in cl for v in (c[2], c[5])})
+    nx, ny, nz = len(xs) - 1, len(ys) - 1, len(zs) - 1
+    import bisect
+    full = [[[True] * nz for _ in range(ny)] for _ in range(nx)]
+    for c in cl:
+        i0, i1 = bisect.bisect_left(xs, c[0]), bisect.bisect_left(xs, c[3])
+        j0, j1 = bisect.bisect_left(ys, c[1]), bisect.bisect_left(ys, c[4])
+        k0, k1 = bisect.bisect_left(zs, c[2]), bisect.bisect_left(zs, c[5])
+        for i in range(i0, i1):
+            for j in range(j0, j1):
+                row = full[i][j]
+                for k in range(k0, k1): row[k] = False
+    n = 0
+    for i in range(nx):
+        for j in range(ny):
+            for k in range(nz):
+                if not full[i][j][k]: continue
+                k2 = k
+                while k2 + 1 < nz and full[i][j][k2 + 1]: k2 += 1
+                i2 = i
+                while i2 + 1 < nx and all(full[i2 + 1][j][kk] for kk in range(k, k2 + 1)): i2 += 1
+                j2 = j
+                while j2 + 1 < ny and all(full[ii][j2 + 1][kk] for ii in range(i, i2 + 1) for kk in range(k, k2 + 1)): j2 += 1
+                for ii in range(i, i2 + 1):
+                    for jj in range(j, j2 + 1):
+                        for kk in range(k, k2 + 1): full[ii][jj][kk] = False
+                B(m, mat, xs[i], ys[j], zs[k], xs[i2 + 1], ys[j2 + 1], zs[k2 + 1]); n += 1
+    return n
