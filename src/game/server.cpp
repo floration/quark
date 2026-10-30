@@ -3053,7 +3053,7 @@ void Server::stepProjectile(Projectile& pr) {
         }
         if (hitPlayer >= 0) hitBb = hitHead ? headBox(hitBb) : bodyBox(hitBb);
         if (wall < 0 && hitPlayer < 0) { pr.pos += step; return; }
-        Vec3 at = pr.pos + dir * std::max(0.0f, best - 0.05f);
+        Vec3 at = blastPoint(pr.pos, dir, best);
         // a teleporter: out of the next one with its link, 10 cm off its exit face, at its speed straight out of it
         if (hitPlayer < 0 && wallMat == kMatTeleport) {
             const Vec3 in = pr.pos + dir * (wall + 0.01f);
@@ -3470,23 +3470,12 @@ void Server::explode(const Vec3& at, int owner, int weapon, int direct, bool alt
         Vec3 closest = hitboxClosest(b, at);   // (the body or the head: a blast over the shoulders is as far as the head)
         float d = length(closest - at);
         if (d > wd.splashRadius) continue;
-        // Splash is blocked by walls between the blast and the target's center.
+        // Splash is blocked by walls between the blast and the target's center (a half-peeking player still takes it:
+        // blastReaches, F16 - the shooter's game runs the same test on its reported blasts)
+        if (!blastReaches(map_, at, b)) continue;
         Vec3 c = b.center();
         Vec3 to = c - at;
         float dist = length(to);
-        if (dist > 0.01f) {
-            float w = map_.raycast(at, to / dist, dist);
-            if (w >= 0 && w < dist - 0.1f) {
-                // the centre is behind cover: a half-peeking player still takes it if the blast reaches the box's
-                // nearest point or the head (F16: 0 instead of ~30). At most these 2 rays, and only here.
-                auto clear = [&](const Vec3& pt) {
-                    Vec3 v = pt - at;
-                    float len = length(v);
-                    return len < 0.11f || !map_.raycastAny(at, v / len, len - 0.1f);
-                };
-                if (!clear(closest) && !clear(Vec3(c.x, b.mx.y - 0.15f * (b.mx.y - b.mn.y), c.z))) continue;
-            }
-        }
         float frac = 1.0f - d / wd.splashRadius;
         Vec3 push = dist > 0.01f ? to / dist : Vec3(0, 1, 0);
         bool self = i == owner;

@@ -127,3 +127,6 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 
 ## Glass
 - **Sloped glass draws as its slope:** glass on a wedge, corner or cut box used to draw as its whole box (a glass dome looked like four slabs floating over the roof). It now draws, and breaks into shards, as its real shape. The same goes for see-through looks and breakable blocks on a slope.
+
+## Rockets
+- **Rocket splash damage works online again:** since 1.19.3 only a direct rocket hit did damage on a server; a rocket landing on the floor or a wall next to someone did nothing and showed no hit marker. Splash now hurts as it did before.
