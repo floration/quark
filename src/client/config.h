@@ -172,6 +172,46 @@ struct Settings {
     int cursorSize = 0;            // ...the menu cursor: 0 the system's, 1 x1, 2 x1.5, 3 x2
     int cursorColor = 0;           // ...0 white, 1 black, 2 yellow, 3 your team colour
     bool useToggle = false;        // ...USE pressed once to hold, again to let go
+    // 1.19.4 settings, batch 4 (the 1s): VIDEO + AUDIO > MORE 2 / 4 / 5 / 6
+    int shotFormat = 0;            // MORE 6: screenshots as 0 PNG, 1 TGA (written at once, no compression pass)
+    int shotFolder = 0;            // ...in 0 the data folder's screenshots/, 1 Pictures/Quark
+    bool shotHideHud = false;      // ...the screenshot key leaves the HUD out (the 3D view only)
+    bool liquidFlow = true;        // MORE 2: water / lava / acid flow (off: still)
+    float glowStrength = 1.0f;     // ...the map's glowing parts, x
+    Vec3 worldEdgeColor = {0, 0, 0};   // MORE 4: the map's outline colour
+    bool hitTiers = true;          // MORE 5: the hitsound gets heavier with the damage (off: one sound)
+    bool ffaColors = false;        // MORE 4: free for all: each opponent their own colour
+    bool ownFx = false;            // ...your projectiles, laser and rope in OWN EFFECTS COLOR
+    Vec3 ownFxColor = {0.3f, 1.0f, 0.5f};
+    int hbLow = 30;                // ...health bars turn LOW COLOR at or below this health
+    Vec3 hbLowColor = {1, 0.35f, 0.3f};
+    bool hbCustom = false;         // ...health bars over players in HEALTH BAR COLOR (not the team's)
+    Vec3 hbColor = {1, 1, 1};
+    int tagColor = 0;              // ...teammates' name tags: 0 team colour, 1 white, 2 custom
+    Vec3 tagCustom = {1, 1, 1};
+    float tagAlpha = 1.0f, tagSize = 1.0f;
+    int fxColorMode = 0;           // MORE 2: explosions / sparks: 0 their own, 1 your team colour, 2 custom
+    Vec3 fxColor = {1.0f, 0.85f, 0.5f};
+    bool objPalette = false;       // MORE 4: the bomb's blink and unreached checkpoints in your enemy colour
+    bool skyOverride = false, glowOverride = false;   // ...the map's sky / glow colour replaced
+    Vec3 skyColor = {0.62f, 0.66f, 0.72f}, glowColor = {1.0f, 0.55f, 0.15f};
+    bool highContrast = false;     // ...lighter walls and floors, darker trim
+    bool f3Safe = false;           // ...F3's pipeline colours told apart under colour blindness (Okabe-Ito)
+    bool onTop = false;            // MORE 6: the window always on top (windowed)
+    int gunColor = 0;              // MORE 4: the gun's body: 0 the map's metal, 1 your team colour, 2 custom
+    Vec3 gunCustom = {0.3f, 0.33f, 0.37f};
+    float objOpacity = 1.0f;       // ...objective zones' opacity, x
+    bool objPulse = true;          // ...and their pulse (off: steady)
+    float dashBuffer = 0.1f;       // MORE 6: a dash pressed this long before it's allowed is held till then (0 / 0.05 / 0.1 / 0.15 s)
+    float smoothAmt = 1.0f;        // MORE 2: SMOOTH anti-aliasing's strength
+    bool lightmapNearest = false;  // ...LIGHTMAP FILTER: nearest (blocky light)
+    bool wallbangTint = false;     // MORE 4: wallbang walls in WALLBANG COLOR (not dark grey)
+    Vec3 wallbangColor = {0.55f, 0.25f, 0.6f};
+    int ultraMarginUs = 150;       // MORE 6: LOW LATENCY ULTRA: the frame starts this much early
+    bool nvThreaded = false;       // ...Windows NVIDIA: threaded optimization off (driver profile)
+    bool nvDxgi = false;           // ...Windows NVIDIA: present through DXGI (driver profile)
+    bool quipCaptions = false;     // MORE 5: quips shown as captions
+    float annDuck = 0.0f;          // ...effects ducked by this much while the announcer speaks (0: none, 1: silent)
     // VISUALS
     bool fullbright = false;    // flat white world, black outlines, no lighting
     int ownShots = 0;           // your tracers / beam: 0 with the weapon model, 1 always, 2 never

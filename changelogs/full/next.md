@@ -97,6 +97,37 @@ Everything lives on VIDEO + AUDIO > MORE 2 (added to), MORE 4, MORE 5 and MORE 6
 - **USE toggle (#149).** `use_toggle`: a press holds USE (plant / defuse) until the next press, like GRAPPLE TOGGLE; dying lets go. On VIDEO + AUDIO > MORE 6 (CONTROLS is another branch's this batch).
 - **Crosshair (#145, #217).** `ch_spread`: a ring of dots at the held weapon's spread (its tangent over the view's), shown when it's wider than the crosshair. `ch_cooldown`: 32 dots round the crosshair that fill as the refire runs out (hidden when ready). `ch_pixels`: the crosshair's sizes as exact pixels, not scaled from 720p. All three ride in the crosshair code.
 
+## Settings: batch 4, the 1s (video, visuals, audio, latency, accessibility, cosmetics, modes, movement)
+
+Everything is on VIDEO + AUDIO > MORE 2 (added to) and two new pages, MORE 7 (colours) and MORE 8 (screenshots, demos, the window, latency, sound). As in batch 3, every renderer switch is a uniform at its old value by default and set only when it changes, and `Game::applyLive` pushes the lot once a frame as compares and stores; nothing costs anything per frame at its default.
+
+- **Liquids and glow (#51).** `liquid_flow` off gives the world shader `uTime` 0, so water and lava stand still (no animation, same cost). `glow_strength` 0 to 2 scales the map's glow colour (1 as before).
+- **World outline colour (#57).** `world_edge_color`: the world shader's panel outline now mixes towards `uWorldEdge` (black by default, which is what it was) instead of a constant.
+- **Typing sounds (#64).** TYPING SOUNDS flips the SND_TYPING bit in batch 3's `cue_mute`, the same bit as its CUE row.
+- **Hitsound tiers (#66).** `hit_tiers` off plays the medium hitsound for every hit, whatever the damage.
+- **FFA colours (#88).** `ffa_colors`: in modes without teams each other player gets one of 8 distinct colours by id (`teamColor`), so you can tell opponents apart; off as before (all enemy colour).
+- **Own effects colour (#89).** `own_fx` / `own_fx_color`: your projectiles, laser and rope in your colour (the `rope` lambda now knows whose rope it draws).
+- **Health bars (#90).** `hb_low` (0 to 100 HP, 30 as before) is where bars and the HUD health number turn to `hb_low_color` (the old red until you pick one); `hb_custom` / `hb_color` set the healthy bar's colour.
+- **Name tags (#91).** `tag_color` team / white / custom (`tag_custom`), `tag_alpha` 0.1 to 1, `tag_size` 0.5x to 3x.
+- **Effect colour (#102).** `fx_color_mode`: explosions in their own colour (as before), your team's (explosions don't record an owner, so "team" is your team's colour) or `fx_color`. Kill bursts keep theirs: they say whose kill it was.
+- **Objectives in your palette (#104).** `obj_palette`: the bomb's blink and payload checkpoints not yet reached use your enemy colour (from your colour scheme, so the batch 3 palettes apply). The other objectives were already team-coloured.
+- **Map colour overrides, high contrast (#105).** `sky_override` / `sky_color` and `glow_override` / `glow_color` replace every map's sky and glow (prepareScene builds them as locals; x < 0 means the map's own). `high_contrast` lightens wall base colours and darkens trim.
+- **F3 colourblind palette (#109).** `f3_safe`: the F3 pipeline bars use the Okabe-Ito colours (blue / orange / bluish green / vermilion ...), distinct in every common colour blindness.
+- **Always on top (#122).** `on_top`: `GLFW_FLOATING`, set when it changes. Confine cursor was **skipped**: GLFW 3.3 has no confine, in play the cursor is already captured, and the menus would need per-OS code that can't be tested here.
+- **Gun colour (#129).** `gun_color` map (as before) / team / custom (`gun_custom`): the viewmodel's metal tint.
+- **Objective zones (#136).** `obj_opacity` 0 to 2 scales points zones' and the KOTH hill's fill; `obj_pulse` off holds them steady.
+- **Dash buffer (#147).** `dash_buffer` off / 0.05 / 0.1 (as before) / 0.15 s: how long a dash pressed before it's ready is kept.
+- **Smooth strength (#206).** `smooth_amt` 0.25 to 1: the FXAA pass mixes its result with the unfiltered pixel (`uEdgeOff`, 1 = full as before), set only when it changes.
+- **Lightmap filter (#208).** `lightmap_nearest`: the lightmap texture's filter becomes GL_NEAREST (crisp texel blocks, the old-school look), switched only when it changes.
+- **Wallbang tint (#214).** `wallbang_tint` / `wallbang_color`: wallbang brushes in your colour instead of the dark grey.
+- **Ultra safety margin (#220).** `ultra_margin_us` 0 to 2000 µs (150 as before; the slider goes to 1000): how early low latency ULTRA starts each frame. More margin, fewer missed vblanks; less, a little lower latency.
+- **NVIDIA driver profile (#222).** `nv_threaded` (Threaded Optimization off, setting 0x20C1221E) and `nv_dxgi` (Vulkan/OpenGL present method: DXGI, 0x20D690F8) write the game's NVIDIA profile through NVAPI, the same path as GPU MAX CLOCKS (now a shared `nvProfileSetting`). Windows only; the setting IDs are from NvApiDriverSettings.h and could not be tested on an NVIDIA card here. A failure says why and turns the toggle back off.
+- **Quip captions (#229).** `quip_captions`: player quips get a caption even with CAPTIONS off.
+- **Announcer ducking (#233).** `ann_duck` 0 (off, as before) to 1: effects get that much quieter while an announcer line plays (the mixer checks its voices once a buffer).
+- **Demo rate in settings (#20).** DEMO RATE (`demo_full_rate`, 62.5 Hz or every snapshot) is on MORE 8 as well as on DEMOS.
+- **Screenshots (#38).** `shot_format` PNG / TGA, `shot_folder` the game's data folder / Pictures/Quark in your home folder, `shot_hide_hud` saves the 3D view right after it's drawn, before the HUD (one frame later, no extra pass). OPEN FOLDER opens it. JPG was **not** added: the tree has no JPG encoder and adding one is a new third-party file.
+- **Skipped:** #19 voice chat (there is none), #85 language (every string would first have to move into one table), #224 HDR (parked).
+
 ## Maps: q's Surfy and Cobblestone ship (owner, 2026-10-30: "make sure all future updates get cobblestone map and surfy map, use latest version; also surfy map is default surf gamemode map")
 
 - **Shipped as hand-made maps.** `maps/surfy.qmap` (58 brushes, `for surf`, saved 2026-10-29 18:46) and `maps/cobblestone.qmap` (885 brushes, no `for` line, saved 2026-10-29 15:59) are the newest copies from q's maps folder, byte for byte (sha256 20620ee2... and 31fbb542...). `.gitignore` un-ignores both, so CMake embeds and copies them into every build like the generated maps. As `handmade` maps they run every map check but never fail `quark_tests`.

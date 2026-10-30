@@ -466,7 +466,10 @@ void Audio::render(float* buf, int n) {
         takePending();
         const Vec3 right = rightOf(mixListenerYaw_);
         const float perFrame = n > 0 ? 1.0f / n : 0.0f;
-        const float fxVol = fxVolume_, annVol = annVolume_;   // (EFFECTS / ANNOUNCER / QUIPS VOLUME: read once a period)
+        float fxVol = fxVolume_;
+        const float annVol = annVolume_;   // (EFFECTS / ANNOUNCER / QUIPS VOLUME: read once a period)
+        if (const float dk = duck_.load(std::memory_order_relaxed); dk > 0)   // (ANNOUNCER DUCKING: a line playing pulls the effects down)
+            for (const Voice& v : voices_) if (v.id >= SND_VOICE_THREE && v.id < SND_QUIP) { fxVol *= 1.0f - dk; break; }
         const float quipVol = quipsOn_ ? quipVolume_.load() : 0.0f;
         for (size_t k = 0; k < voices_.size();) {
             Voice& v = voices_[k];

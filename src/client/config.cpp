@@ -106,6 +106,48 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "kill_bursts") killBursts = iv != 0;
         else if (k == "tracers") tracers = iv != 0;
         else if (k == "view_recoil") viewRecoil = iv != 0;
+        else if (k == "shot_format") shotFormat = iv == 1 ? 1 : 0;
+        else if (k == "shot_folder") shotFolder = iv == 1 ? 1 : 0;
+        else if (k == "shot_hide_hud") shotHideHud = iv != 0;
+        else if (k == "liquid_flow") liquidFlow = iv != 0;
+        else if (k == "glow_strength") { if (std::isfinite(fv)) glowStrength = clampf(fv, 0, 2); }
+        else if (k == "world_edge_color") worldEdgeColor = parseColor(v, worldEdgeColor);
+        else if (k == "hit_tiers") hitTiers = iv != 0;
+        else if (k == "ffa_colors") ffaColors = iv != 0;
+        else if (k == "own_fx") ownFx = iv != 0;
+        else if (k == "own_fx_color") ownFxColor = parseColor(v, ownFxColor);
+        else if (k == "hb_low") hbLow = std::min(std::max(iv, 0), 100);
+        else if (k == "hb_low_color") hbLowColor = parseColor(v, hbLowColor);
+        else if (k == "hb_custom") hbCustom = iv != 0;
+        else if (k == "hb_color") hbColor = parseColor(v, hbColor);
+        else if (k == "tag_color") tagColor = std::min(std::max(iv, 0), 2);
+        else if (k == "tag_custom") tagCustom = parseColor(v, tagCustom);
+        else if (k == "tag_alpha") { if (std::isfinite(fv)) tagAlpha = clampf(fv, 0.1f, 1); }
+        else if (k == "tag_size") { if (std::isfinite(fv)) tagSize = clampf(fv, 0.5f, 3); }
+        else if (k == "fx_color_mode") fxColorMode = std::min(std::max(iv, 0), 2);
+        else if (k == "fx_color") fxColor = parseColor(v, fxColor);
+        else if (k == "obj_palette") objPalette = iv != 0;
+        else if (k == "sky_override") skyOverride = iv != 0;
+        else if (k == "glow_override") glowOverride = iv != 0;
+        else if (k == "sky_color") skyColor = parseColor(v, skyColor);
+        else if (k == "glow_color") glowColor = parseColor(v, glowColor);
+        else if (k == "high_contrast") highContrast = iv != 0;
+        else if (k == "f3_safe") f3Safe = iv != 0;
+        else if (k == "on_top") onTop = iv != 0;
+        else if (k == "gun_color") gunColor = std::min(std::max(iv, 0), 2);
+        else if (k == "gun_custom") gunCustom = parseColor(v, gunCustom);
+        else if (k == "obj_opacity") { if (std::isfinite(fv)) objOpacity = clampf(fv, 0, 2); }
+        else if (k == "obj_pulse") objPulse = iv != 0;
+        else if (k == "dash_buffer") { if (std::isfinite(fv)) dashBuffer = fv < 0.025f ? 0.0f : fv < 0.075f ? 0.05f : fv < 0.125f ? 0.1f : 0.15f; }
+        else if (k == "smooth_amt") { if (std::isfinite(fv)) smoothAmt = clampf(fv, 0.25f, 1); }
+        else if (k == "lightmap_nearest") lightmapNearest = iv != 0;
+        else if (k == "wallbang_tint") wallbangTint = iv != 0;
+        else if (k == "wallbang_color") wallbangColor = parseColor(v, wallbangColor);
+        else if (k == "ultra_margin_us") ultraMarginUs = std::min(std::max(iv, 0), 2000);
+        else if (k == "nv_threaded") nvThreaded = iv != 0;
+        else if (k == "nv_dxgi") nvDxgi = iv != 0;
+        else if (k == "quip_captions") quipCaptions = iv != 0;
+        else if (k == "ann_duck") { if (std::isfinite(fv)) annDuck = clampf(fv, 0, 1); }
         else if (k == "tone_curve") toneCurve = iv != 0;
         else if (k == "dither") dither = iv != 0;
         else if (k == "out10") out10 = iv != 0;
@@ -363,6 +405,14 @@ std::string Settings::toText() const {
       << "\ncue_mute=" << cueMute << "\nann_mute=" << annMute << "\nsound_viz=" << soundViz << "\nnet_graph=" << netGraph << "\ncmd_redundancy=" << cmdRedundancy << "\nmap_downloads=" << mapDownloads << "\nmap_cache_max=" << mapCacheMax
       << "\nlight_cache_max=" << lightCacheMax << "\nbake_threads=" << bakeThreads << "\nlatent_safety_us=" << latentSafetyUs << "\nlatent_slow=" << latentSlow << "\nbypass_compositor=" << bypassCompositor << "\ncursor_size=" << cursorSize
       << "\ncursor_color=" << cursorColor << "\nuse_toggle=" << useToggle << "\nch_spread=" << chSpread << "\nch_cooldown=" << chCooldown << "\nch_pixels=" << chPixels;
+    f << "\nshot_format=" << shotFormat << "\nshot_folder=" << shotFolder << "\nshot_hide_hud=" << shotHideHud << "\nliquid_flow=" << liquidFlow << "\nglow_strength=" << glowStrength << "\nworld_edge_color=" << colorHex(worldEdgeColor)
+      << "\nhit_tiers=" << hitTiers << "\nffa_colors=" << ffaColors << "\nown_fx=" << ownFx << "\nown_fx_color=" << colorHex(ownFxColor) << "\nhb_low=" << hbLow << "\nhb_low_color=" << colorHex(hbLowColor)
+      << "\nhb_custom=" << hbCustom << "\nhb_color=" << colorHex(hbColor) << "\ntag_color=" << tagColor << "\ntag_custom=" << colorHex(tagCustom) << "\ntag_alpha=" << tagAlpha << "\ntag_size=" << tagSize
+      << "\nfx_color_mode=" << fxColorMode << "\nfx_color=" << colorHex(fxColor) << "\nobj_palette=" << objPalette << "\nsky_override=" << skyOverride << "\nglow_override=" << glowOverride
+      << "\nsky_color=" << colorHex(skyColor) << "\nglow_color=" << colorHex(glowColor) << "\nhigh_contrast=" << highContrast << "\nf3_safe=" << f3Safe << "\non_top=" << onTop << "\ngun_color=" << gunColor
+      << "\ngun_custom=" << colorHex(gunCustom) << "\nobj_opacity=" << objOpacity << "\nobj_pulse=" << objPulse << "\ndash_buffer=" << dashBuffer << "\nsmooth_amt=" << smoothAmt << "\nlightmap_nearest=" << lightmapNearest
+      << "\nwallbang_tint=" << wallbangTint << "\nwallbang_color=" << colorHex(wallbangColor) << "\nultra_margin_us=" << ultraMarginUs << "\nnv_threaded=" << nvThreaded << "\nnv_dxgi=" << nvDxgi
+      << "\nquip_captions=" << quipCaptions << "\nann_duck=" << annDuck;
     for (int i = 0; i < 3; i++) if (!colorPreset[i].empty()) f << "\ncolor_preset_" << i + 1 << "=" << colorPreset[i];
     for (auto& b : cmdBinds) f << "\ncbind_" << b.first << "=" << b.second;
     for (auto& a : aliases) f << "\nalias_" << a.first << "=" << a.second;
@@ -430,7 +480,7 @@ bool Settings::crosshairFromCode(const std::string& code) {
 // crosshair's code ("quark-colors:" then key=value pairs, ';'-separated). Only these keys are read back.
 static const char* const kColorKeys[] = {"color_friendly", "color_enemy", "outline_friendly", "outline_enemy", "outline_friendly_color",
                                          "outline_enemy_color", "outline_alpha", "team_a_color", "team_b_color", "tracer_mode", "tracer_color",
-                                         "rope_color", "fullbright_color", "ch_team_color", "ch_color", "ch_hit_color", "ch_head_color", "name_color"};
+                                         "rope_color", "fullbright_color", "world_edge_color", "own_fx_color", "hb_low_color", "hb_color", "tag_custom", "fx_color", "sky_color", "glow_color", "gun_custom", "wallbang_color", "ch_team_color", "ch_color", "ch_hit_color", "ch_head_color", "name_color"};
 std::string Settings::colorCode() const {
     std::istringstream in(toText());
     std::string line, out = "quark-colors:";

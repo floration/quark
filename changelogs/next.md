@@ -56,6 +56,11 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 - **New VIDEO + AUDIO > MORE 6:** a NET GRAPH (apart from F3), packet loss protection 2 / 4 / 8, map downloads on / off with a cache limit and CLEAR, the light bake cache (size, bake threads, CLEAR), FOV as horizontal / vertical / 4:3, bypass compositor (Linux), latent sync safety and late-frame behaviour (Windows), a bigger or coloured menu cursor, and USE as hold or toggle.
 - **Crosshair:** a spread circle, a cooldown ring, and sizes in exact pixels instead of scaled with the resolution.
 
+## Settings (batch 4: colours, screenshots, sound extras, latency)
+- **New VIDEO + AUDIO > MORE 7 (colours):** the world's outline colour, a wallbang tint, a high-contrast map palette, your own sky and glow colours on every map, objectives in your palette, zone pulse and opacity, a colour per FFA opponent, your own colour for your shots / laser / rope, gun colour (map / team / custom), health bar low threshold and colours, name tag colour / opacity / size, explosion colours (their own / your team / custom) and a colourblind palette for F3.
+- **New VIDEO + AUDIO > MORE 8:** screenshots as PNG or TGA, saved in the game's folder or Pictures/Quark, with or without the HUD, and an OPEN FOLDER button; demo rate (also here, not only on DEMOS); always on top; dash buffer (off / 0.05 / 0.1 / 0.15 s); ultra low-latency safety margin; NVIDIA threaded optimization off and DXGI present (Windows); hitsound tiers on / off, typing sounds on / off, quip captions and announcer ducking.
+- **MORE 2:** liquids flowing or still, glow strength, SMOOTH strength and the lightmap filter (smooth / nearest).
+
 ## Maps
 - **Thin walls are shoot-through:** any surface 1/8 m thick or less (coats, panels, thin trim) now lets hitscan through at wallbang damage, like the dark grey wallbang walls.
 - **Map picker:** lists only the maps made for the mode you picked (ranked: only that ladder's maps), 7 across, each with a picture of the map from above. The mouse wheel scrolls when there are more.
