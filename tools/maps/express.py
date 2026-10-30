@@ -8,15 +8,22 @@ A half, from the end: the yard (the team's spawn), a bend through the canyon gap
 over the track, a stair up each rim), the edge of town, the main street (three false-fronted buildings a side with
 shoot-through plank fronts, one solid stone one, a balcony walk at 4 m along both sides, back alleys behind), then
 the square. The water tower's walkway (12 m, a ladder from each side street) overlooks both streets; it is koth's
-hill underneath."""
+hill underneath.
+Fix round 2 (q's review answers, 2026-10-30): street cover (a freight wagon on a siding, crates and barrels, a water
+stand by the square whose spout and a hanging freight board hang over the line under eye height so the 150 m line
+breaks, the stagecoach skirted, the trough 1.3 m, the bank's / jail's porch a solid 1.3 m wall); the walkway's side
+street edges a solid parapet (it still sees down the main street); ladders to the saloon's and hotel's roofs, the hotel
+three storeys and the store one; the canyon gap 26 m long along the bend with stepped rims to 15.5 m, scree, varnish
+and a curved arch; the yard pulled in 20 m (clip at 115); a corral, a wagon and a windmill on the flanks, alley crates,
+telegraph poles every ~16 m with wires, warm lamp caps."""
 import random
 from .prefabs import M
 from .bigkit import Kit, num, yaw_to
 
 LID = 50.0
-HX, HZ = 135, 45
+HX, HZ = 115, 45
 TY = 0.06            # the track's line: the cart rides just over the sleepers (their tops 0.05)
-WEST = [(-124, 0), (-104, 0), (-92, -12), (-74, -12), (-62, 0)]
+WEST = [(-108, 0), (-104, 0), (-92, -12), (-74, -12), (-62, 0)]
 PATH = WEST + [(0, 0)] + [(-x, z) for (x, z) in reversed(WEST)]
 LOOK = {   # per side: (-1 west / the station end, +1 east / the mine end)
     "north": {-1: ["wideplanks", "cratewood", "mudandstrawdaub"], 1: ["mudandstrawdaub", "wideplanks", "cratewood"]},
@@ -63,56 +70,80 @@ def build():
 
     for s in (-1, 1):
         # ================= the yard: the station / the ore dock, the freight / powder shed =================
-        B("wideplanks", -132, 0, 4, -106, 1.0, 9, s)                          # the platform / the loading dock
-        for x in (-131, -123, -115, -107):
+        B("wideplanks", -115, 0, 4, -104, 1.0, 9, s)                          # the platform / the loading dock
+        for x in (-114, -109, -104.4):
             B("castiron" if s < 0 else "logcabin", x, 1.0, 8.4, x + 0.4, 6, 8.8, s)
-        B("corrugated" if s < 0 else "scaffoldboards", -132, 6, 3.5, -106, 6.3, 10, s)    # its canopy
-        stairs("wideplanks", -106, 4, -103, 9, 1.0, "x", -1, s)               # steps off its end
-        # the station building / the mine office: a hall with doors front (platform) and back, and onto the street
+        B("corrugated" if s < 0 else "scaffoldboards", -115, 6, 3.5, -104, 6.3, 10, s)    # its canopy
+        stairs("wideplanks", -107, 2, -104, 4, 1.0, "z", 1, s)                # steps off its track side
+        # the station building / the mine office: a hall with a door front (platform) and back (alley)
         f = "wideplanks" if s < 0 else "mudandstrawdaub"
-        B(f, -134, 0, 12, -110, 0.3, 26, s)
-        for (x0, x1) in ((-134, -126), (-122, -110)):
+        B(f, -115, 0, 12, -101, 0.3, 26, s)
+        for (x0, x1) in ((-115, -110), (-106, -101)):
             B(f, x0, 0, 12, x1, 7, 12.3, s)                                   # the front (door 4 m)
-        B(f, -126, 3.2, 12, -122, 7, 12.3, s)
-        for (x0, x1) in ((-134, -114), ):
-            B(f, x0, 0, 25.7, x1, 7, 26, s)                                   # the back (door 4 m at the east end)
-        B(f, -114, 3.2, 25.7, -110, 7, 26, s)
-        B(f, -134, 0, 12.3, -133.7, 7, 25.7, s)
-        B(f, -110.3, 0, 12.3, -110, 7, 17, s); B(f, -110.3, 0, 21, -110, 7, 25.7, s); B(f, -110.3, 3.2, 17, -110, 7, 21, s)
-        B("corrugated" if s < 0 else "rust", -134.5, 7, 11.5, -109.5, 7.4, 26.5, s)
-        B("sandblastedsign", -128, 7.4, 12, -116, 9.4, 12.12, s)               # the name board (thin)
-        B("woodencrate", -131, 0.3, 22, -129, 1.8, 24, s); B("woodencrate", -118, 0.3, 14, -116, 1.4, 15.6, s)
-        light(-122, 5, 19, 14, 0.7, s); light(-119, 5, 6.5, 16, 0.75, s)
-        # the freight shed / the powder shed
+        B(f, -110, 3.2, 12, -106, 7, 12.3, s)
+        B(f, -115, 0, 25.7, -105, 7, 26, s); B(f, -105, 3.2, 25.7, -101, 7, 26, s)   # the back (door at the east end)
+        B(f, -101.3, 0, 12.3, -101, 7, 25.7, s)
+        B("corrugated" if s < 0 else "rust", -115, 7, 11.5, -100.5, 7.4, 26.5, s)
+        B("sandblastedsign", -112, 7.4, 12, -104, 9.4, 12.12, s)               # the name board (thin)
+        B("woodencrate", -114, 0.3, 22, -112, 1.8, 24, s); B("woodencrate", -104, 0.3, 14, -102, 1.4, 15.6, s)
+        light(-108, 5, 19, 14, 0.7, s); light(-109, 5, 6.5, 16, 0.75, s)
+        # the freight shed / the powder shed (doors north, onto the yard, and east)
         f = "corrugated" if s < 0 else "rustedsheetfence"
-        B("wideplanks", -122, 0, -28, -102, 0.3, -14, s)
-        B(f, -122, 0, -14.3, -116, 6, -14, s); B(f, -110, 0, -14.3, -102, 6, -14, s); B(f, -116, 3.4, -14.3, -110, 6, -14, s)
-        B(f, -122, 0, -28, -102, 6, -27.7, s)
-        B(f, -122, 0, -27.7, -121.7, 6, -14.3, s)
-        B(f, -102.3, 0, -27.7, -102, 6, -24, s); B(f, -102.3, 0, -18, -102, 6, -14.3, s); B(f, -102.3, 3.4, -24, -102, 6, -18, s)
-        B("corrugated", -122.5, 6, -28.5, -101.5, 6.3, -13.5, s)
-        B("woodencrate", -120, 0.3, -26, -117, 2.4, -23, s); B("haybales" if s < 0 else "barricade", -108, 0.3, -26, -105, 1.5, -24, s)
-        light(-112, 5, -21, 12, 0.6, s)
+        B("wideplanks", -115, 0, -25, -104, 0.3, -14, s)
+        B(f, -115, 0, -14.3, -112, 6, -14, s); B(f, -108, 0, -14.3, -104, 6, -14, s); B(f, -112, 3.4, -14.3, -108, 6, -14, s)
+        B(f, -115, 0, -25, -104, 6, -24.7, s)
+        B(f, -104.3, 0, -24.7, -104, 6, -22, s); B(f, -104.3, 0, -18, -104, 6, -14.3, s); B(f, -104.3, 3.4, -22, -104, 6, -18, s)
+        B("corrugated", -115, 6, -25.5, -103.5, 6.3, -13.5, s)
+        B("woodencrate", -114, 0.3, -23.5, -111, 2.4, -20.5, s); B("haybales" if s < 0 else "barricade", -109, 0.3, -24, -106, 1.5, -22, s)
+        light(-109, 5, -19, 12, 0.6, s)
         # spawns in the yard, facing down the line
-        for z in (-4.5, -2.5, -0.5, 1.5):   # (north of the canyon gap's line: the rim hides the far yard)
-            k.spawn("a" if s < 0 else "b", X(-130, s), 0.05, z, -90 if s < 0 else 90)
-        B("woodencrate", -127, 0, -14, -124, 2.2, -11, s); B("woodencrate", -127, 2.2, -13.5, -125, 3.4, -11.5, s)
+        for z in (-4.5, -2.5, -0.5, 1.5):   # (north of the canyon gap's line: the north rim hides the far yard)
+            k.spawn("a" if s < 0 else "b", X(-111, s), 0.05, z, -90 if s < 0 else 90)
+        B("woodencrate", -113, 0, -12, -110, 2.2, -9, s); B("woodencrate", -113, 2.2, -11.5, -111, 3.4, -9.5, s)
 
-        # ================= the canyon gap: rock rims (8 m), the arch over the track =================
-        B("redcanyonrock", -90, 0, -6, -76, 8, 22, s)
-        B("redcanyonrock", -90, 0, -HZ + 3, -76, 8, -18, s)
-        B("badlands", -90, 8, -6, -76, 8.3, 22, s); B("badlands", -90, 8, -HZ + 3, -76, 8.3, -18, s)
+        # ================= the canyon gap (x -102..-76, along the track's bend): stepped rims, the arch =================
+        # each rim: a trail ledge at 8.3 along the gap, the rock stepping back behind it to 12 and 15.5 (clipped)
+        for (x0, x1, z0, z1, inner) in ((-102, -92, 2, 30, 2), (-92, -76, -6, 30, -6),              # north
+                                        (-102, -92, -HZ, -16, -16), (-92, -76, -HZ, -18, -18)):     # south
+            B("redcanyonrock", x0, 0, z0, x1, 8, z1, s)
+            B("badlands", x0, 8, z0, x1, 8.3, z1, s)
+            sg = 1 if inner == z0 else -1                                      # (+1: the rim is north of the gap)
+            for (back, top) in ((4.5, 12), (9, 15.5)):
+                za, zb = (inner + sg * back, z1) if sg > 0 else (z0, inner + sg * back)
+                xa, xb = x0 + (0.8 if top > 12 else 0), x1 - (0.6 if top > 12 else 0)
+                if x1 == -76 and sg > 0: xb = -80                              # (a strip at 8.3 where the town's stair lands)
+                if x0 == -102 and sg < 0: xa = -98                             # (and where the yard's stair lands)
+                B("redcanyonrock", xa, 8.3, za, xb, top, zb, s)
+                B("clip", xa, top, za, xb, LID, zb, s)
+            # desert varnish streaks down the gap face and scree at its foot
+            for xs in (x0 + 1.5, (x0 + x1) / 2, x1 - 3):
+                zf0, zf1 = (inner - 0.05, inner) if sg > 0 else (inner, inner + 0.05)
+                B("desertvarnish", xs, 0.8, zf0, xs + 1.2 + (xs % 3) * 0.4, 7.6, zf1, s)
+            W("scree", 2 if sg > 0 else 3, x0 + 1, 0, inner - 1.6 if sg > 0 else inner, x1 - 1, 1.4, inner if sg > 0 else inner + 1.6, s)
         B("crossbeddedsandstone", -85, 7, -18, -81, 8.3, -6, s)                # the arch (walkable: rim to rim)
-        W("crossbeddedsandstone", 2, -85, 4.5, -18, -81, 7, -15, s)            # its feet
-        W("crossbeddedsandstone", 3, -85, 4.5, -9, -81, 7, -6, s)
-        B("desertvarnish", -76.05, 1, -5, -76, 6, 20, s)                       # (streaks on the rim's face)
+        for (zw, d, zs) in ((-18, 2, 1), (-6, 3, -1)):                         # its curved underside: two corner pieces a side
+            k.wedge("crossbeddedsandstone", d, X(-85, s), 4.0, zw, X(-81, s), 7, zw + zs * 2.2, up=1)
+            k.wedge("crossbeddedsandstone", d, X(-85, s), 6.2, zw + zs * 2.2, X(-81, s), 7, zw + zs * 4.4, up=1)
         stairs("crossbeddedsandstone", -76, 18.5, -60, 21.5, 8.3, "x", -1, s)  # up the north rim from the edge of town
-        stairs("crossbeddedsandstone", -101.5, -30, -90, -27, 8.3, "x", 1, s)  # up the south rim from the yard
-        B("boulderfield", -74, 0, -24, -70, 1.8, -20, s); B("boulderfield", -96, 0, 10, -93, 1.4, 13, s)
-        for (x, z, h) in ((-96, 24, 3.4), (-70, -32, 2.8), (-66, 26, 3.0), (-100, -8, 2.6)):
+        stairs("crossbeddedsandstone", -112, -30, -102, -27, 8.3, "x", 1, s)   # up the south rim from the yard
+        B("boulderfield", -74, 0, -24, -70, 1.8, -20, s)
+        B("boulderfield", -72, 0, -3, -69, 1.9, 0, s)                          # edge-of-town cover
+        B("woodencrate", -64, 0, -7.5, -61.5, 1.8, -5, s); B("woodencrate", -106.5, 0, -6.5, -104, 1.6, -4, s)
+        k.disc("rust", X(-97.5, s), 0.9, 0.6, 0, 1.3, n=8); k.disc("rust", X(-96.2, s), 0.6, 0.6, 0, 1.3, n=8)   # (barrels in the gap)
+        for (x, z, h) in ((-66, 26, 3.0), (-70, -32, 2.8), (-106, -10, 2.6)):
             B("cactus", x - 0.3, 0, z - 0.3, x + 0.3, h, z + 0.3, s)
             B("cactus", x + 0.3, 1.2, z - 0.2, x + 1.0, 1.6, z + 0.2, s); B("cactus", x + 0.7, 1.6, z - 0.2, x + 1.0, h - 0.6, z + 0.2, s)
-        light(-83, 4, -12, 16, 0.6, s)
+        light(-83, 4, -12, 16, 0.6, s); light(-97, 4, -6, 14, 0.5, s)
+        # flank pieces round the edge of town: a corral (solid log rails, gaps), a wrecked wagon and a windmill on the dunes
+        for (x0, x1) in ((-69, -66), (-64.5, -62)):
+            B("logcabin", x0, 0, -27.3, x1, 1.2, -27, s)
+        B("logcabin", -69, 0, -27, -68.7, 1.2, -22, s); B("logcabin", -62.3, 0, -27, -62, 1.2, -24, s)
+        B("cratewood", -40, 0, 32.5, -35, 2.4, 35, s); B("castiron", -40.3, 0, 32.3, -39.5, 1.0, 35.2, s)
+        for (px, pz) in ((-84, 34), (-81, 34), (-84, 37), (-81, 37)):
+            B("treebark", px, 0, pz, px + 0.3, 10, pz + 0.3, s)
+        B("scaffoldboards", -84.5, 10, 33.5, -80.2, 10.3, 37.8, s)
+        B("rust", -83, 10.3, 35.2, -82, 11.6, 36.2, s)
+        B("corrugated", -82.6, 11.6, 33, -82.4, 15, 38.6, s); B("corrugated", -82.6, 12.4, 35.7, -82.4, 14.2, 36.7, s)
 
         # ================= the main street: three buildings a side, balconies, back alleys =================
         for side in (1, -1):
@@ -133,9 +164,16 @@ def build():
                 B(f, xm - 1.2, 2.8, Z(zf, zf + side * t)[0], xm + 1.2, 3.6, Z(zf, zf + side * t)[1], s)
                 B(f, xm - 1.2, 2.8, Z(zb, zb - side * 0.3)[0], xm + 1.2, 3.6, Z(zb, zb - side * 0.3)[1], s)
                 B("wideplanks", x0, 0, *Z(zf, zb)[0:1], x1, 0.2, Z(zf, zb)[1], s)
-                B(f, x0, 3.6, Z(zf, zb)[0], x1, 8, Z(zf, zb)[1], s)              # the upper storey (solid)
-                B(f, x0 + 1, 8, Z(zf, zf + side * 0.12)[0], x1 - 1, 10, Z(zf, zf + side * 0.12)[1], s)   # the false front
-                B("corrugated", x0, 8, Z(zf + side * 0.12, zb)[0], x1, 8.3, Z(zf + side * 0.12, zb)[1], s)
+                # storeys: the store a single one (roof 3.9), the hotel three (roof 11.8), the others two (roof 8.3)
+                top = 3.6 if (side > 0 and i == 1) else 11.5 if (side > 0 and i == 2) else 8
+                if top > 3.6: B(f, x0, 3.6, Z(zf, zb)[0], x1, top, Z(zf, zb)[1], s)   # the upper storeys (solid)
+                B(f, x0 + 1, top, Z(zf, zf + side * 0.12)[0], x1 - 1, top + 2, Z(zf, zf + side * 0.12)[1], s)   # the false front
+                B("corrugated", x0, top, Z(zf + side * 0.12, zb)[0], x1, top + 0.3, Z(zf + side * 0.12, zb)[1], s)
+                if top > 8:
+                    for wx in (x0 + 2, x1 - 4):
+                        B("glow", wx, 8.6, *Z(zf, zf - side * 0.04)[0:1], wx + 2, 10.2, Z(zf, zf - side * 0.04)[1], s)
+                if side > 0 and i in (0, 2):                                    # a ladder up the back to the roof
+                    k.ladder(X(x0 + 3, s), zb + 0.12, 0, top + 0.3, "n")
                 B("glassbottles" if i == 0 else "woodencrate", x0 + 0.6, 0.2, *Z(zb - side * 1.3, zb - side * 0.3)[0:1], x0 + 4, 1.6, Z(zb - side * 1.3, zb - side * 0.3)[1], s)
                 for wx in (x0 + 2, x1 - 4):
                     B("glow", wx, 5, *Z(zf, zf - side * 0.04)[0:1], wx + 2, 6.6, Z(zf, zf - side * 0.04)[1], s)
@@ -149,33 +187,60 @@ def build():
                 B("wideplanks", x, 0.25, *Z(zf - side * 1.75, zf - side * 2)[0:1], x + 0.3, 3.8, Z(zf - side * 1.75, zf - side * 2)[1], s)
             B("picketfence", -60, 4.0, *Z(zf - side * 1.9, zf - side * 2)[0:1], -12, 5.0, Z(zf - side * 1.9, zf - side * 2)[1], s)
             stairs("wideplanks", -66, *(sorted((zf, zf - side * 2))[0:1]), -60, sorted((zf, zf - side * 2))[1], 4.0, "x", 1, s)
+            if side < 0:   # the bank's / jail's porch: a solid 1.3 m stone wall along the boardwalk (a gap at its door)
+                B("sandstoneashlar", -26, 0.25, -10.3, -20.2, 1.3, -10, s); B("sandstoneashlar", -17.8, 0.25, -10.3, -12.3, 1.3, -10, s)
+            # crates and barrels in the back alley (cover on the flank, a lane left clear)
+            for (cx, cz) in ((-55, 26.2), (-33, 27.2), (-18, 25.6)):
+                B("woodencrate", cx, 0, *Z(side * cz, side * (cz + 1.5))[0:1], cx + 1.6, 1.5, Z(side * cz, side * (cz + 1.5))[1], s)
+            k.disc("rust", X(-47, s), side * 27.4, 0.55, 0, 1.25, n=8)
             # the back alley's fence (gaps onto the dunes)
             za = 30 * side
             for (x0, x1) in ((-104, -86), (-74, -50), (-40, -6)):
                 B("rustedsheetfence", x0, 0, *Z(za, za + side * 0.12)[0:1], x1, 2.0, Z(za, za + side * 0.12)[1], s)
         # the street's cover: a stagecoach, a water trough, hitching rails, the sign gantry, lamps
         B("logcabin", -36, 0.7, -7, -30, 2.6, -3.6, s)                         # the stagecoach's body
+        B("charredtimber", -35.6, 0, -6.7, -30.4, 0.7, -3.9, s)                # its solid skirt (no legs showing)
         for x in (-35.5, -31):
             B("castiron", x, 0, -7.2, x + 0.5, 1.2, -6.9, s); B("castiron", x, 0, -3.7, x + 0.5, 1.2, -3.4, s)
-        B("wideplanks", -50, 0, 4.5, -46, 0.9, 6, s)                            # the trough
-        B("clearlagoon", -49.8, 0.6, 4.7, -46.2, 0.85, 5.8, s)
-        for (x0, z0) in ((-58, 7.2), (-22, -7.6)):
+        B("wideplanks", -30, 0, 7.2, -26, 1.3, 8.6, s)                          # the trough (1.3 m: cover)
+        B("clearlagoon", -29.8, 1.0, 7.4, -26.2, 1.25, 8.4, s)
+        # a freight wagon on a siding beside the track (solid to the ground), crates, the water stand over the line
+        B("railwaysleepers", -56, -0.5, 2.0, -42, 0.04, 4.8, s)
+        B("castiron", -54, 0, 1.9, -44, 0.7, 4.9, s)
+        B("cratewood" if s < 0 else "rustedsheet", -54.5, 0.7, 1.8, -43.5, 2.8, 5.1, s)
+        B("corrugated", -54.7, 2.8, 1.7, -43.3, 3.0, 5.2, s)
+        B("woodencrate", -26, 0, 5.4, -23, 1.6, 8.8, s); B("woodencrate", -25.6, 1.6, 5.8, -23.4, 2.6, 8.2, s)   # by the trough
+        B("woodencrate", -22, 0, -8.6, -19, 1.6, -5.4, s); B("woodencrate", -21.6, 1.6, -8.2, -19.6, 2.6, -6.2, s)
+        k.disc("rust", X(-17.6, s), -7.2, 0.6, 0, 1.3, n=8); k.disc("rust", X(-17.6, s), -5.9, 0.6, 0, 1.3, n=8)
+        B("sandstoneashlar", -16.5, 0, 2, -12.5, 1.6, 5.6, s)                  # the water stand: a solid base,
+        for (lx, lz) in ((-16.3, 2.2), (-13, 2.2), (-16.3, 5.1), (-13, 5.1)):
+            B("wideplanks", lx, 1.6, lz, lx + 0.3, 3.6, lz + 0.3, s)          # legs,
+        k.disc("logcabin", X(-14.5, s), 3.8, 2.0, 3.6, 6.4, n=8)               # the tank,
+        B("castiron", -15, 1.58, -1.6, -14, 2.6, 2.0, s)                       # and its spout arm over the track
+        B("castiron", -15, 2.6, -0.2, -14, 3.8, 2.0, s)
+        for (x0, z0) in ((-64, 7.2), (-16, -7.6)):
             B("wideplanks", x0, 0.9, z0, x0 + 6, 1.05, z0 + 0.12, s)
             B("wideplanks", x0, 0, z0, x0 + 0.15, 0.9, z0 + 0.12, s); B("wideplanks", x0 + 5.85, 0, z0, x0 + 6, 0.9, z0 + 0.12, s)
         for z0, z1 in ((-10, -9.6), (9.6, 10)):
             B("wideplanks", -40.2, 0, z0, -39.8, 6.2, z1, s)
         B("wideplanks", -40.2, 5.8, -10, -39.8, 6.2, 10, s)                     # the sign gantry over the street
         B("sandblastedsign", -40.06, 4.2, -5, -39.94, 5.8, 5, s)                 # its board (thin)
+        B("cratewood", -40.4, 1.58, -1.6, -39.6, 3.2, 1.6, s)                   # a hanging freight board (the cart passes under)
+        B("castiron", -40.05, 3.2, -1.2, -39.95, 5.8, -1.1, s); B("castiron", -40.05, 3.2, 1.1, -39.95, 5.8, 1.2, s)
         for x in (-56, -20):
             for z in (-9.5, 9.5):
-                B("castiron", x, 0, z - 0.1, x + 0.2, 4.0, z + 0.1, s); B("lightblock", x - 0.2, 4.0, z - 0.3, x + 0.4, 4.25, z + 0.3, s)
+                B("castiron", x, 0, z - 0.1, x + 0.2, 4.0, z + 0.1, s); B("glow", x - 0.2, 4.0, z - 0.3, x + 0.4, 4.25, z + 0.3, s)
                 light(x, 3.6, z, 14, 0.6, s)
         # telegraph poles along the line out of town (cross-arms at 7 m: hooks)
-        for (x, z) in ((-100, 8), (-68, -22), (-118, -8)):
+        poles = [(-110, -7), (-97, -12), (-80, -16.5), (-64, -9), (-46, -9.6)]
+        for (x, z) in poles:
             B("treebark", x - 0.2, 0, z - 0.2, x + 0.2, 8, z + 0.2, s); B("wideplanks", x - 0.1, 7, z - 1.2, x + 0.1, 7.2, z + 1.2, s)
+        for (a, b) in zip(poles, poles[1:]):                                   # the wires (high over everything)
+            for dz in (-1.0, 1.0):
+                k.bar("castiron", (X(a[0], s), a[1] + dz), (X(b[0], s), b[1] + dz), 0.04, 7.2, 7.24)
         # the landmark outside the walls: the station's signal tower / the mine's headframe
-        B("castiron" if s < 0 else "logcabin", -150, 0, 6, -146, 26 if s > 0 else 18, 10, s)
-        B("rust", -151, 24 if s > 0 else 16, 5, -145, 25 if s > 0 else 17, 11, s)
+        B("castiron" if s < 0 else "logcabin", -124, 0, 6, -120, 26 if s > 0 else 20, 10, s)
+        B("rust", -125, 24 if s > 0 else 18, 5, -119, 25 if s > 0 else 19, 11, s)
 
     # ================= the square: the water tower (koth's hill under it) =================
     for (x, z) in ((-4.5, -4.5), (4, -4.5), (-4.5, 4), (4, 4)):
@@ -183,8 +248,11 @@ def build():
     k.box("scaffoldboards", -6.5, 11.6, -6.5, 6.5, 12, 6.5)
     k.disc("logcabin", 0, 0, 4.6, 12, 17, n=8)
     k.wedge("corrugated", 0, -4.6, 17, -4.6, 0, 19, 4.6); k.wedge("corrugated", 1, 0, 17, -4.6, 4.6, 19, 4.6)
-    for (x0, z0, x1, z1) in ((-6.5, -6.5, 6.5, -6.38), (-6.5, 6.38, 6.5, 6.5), (-6.5, -6.38, -6.38, 6.38), (6.38, -6.38, 6.5, 6.38)):
-        k.box("picketfence", x0, 12, z0, x1, 13, z1)                           # its walkway rail (thin)
+    for (x0, z0, x1, z1) in ((-6.5, -6.38, -6.38, 6.38), (6.38, -6.38, 6.5, 6.38)):
+        k.box("picketfence", x0, 12, z0, x1, 13, z1)                           # its walkway rail down the street (thin)
+    for sz in (1, -1):   # solid 1.2 m parapets to the side streets (gaps at the ladders)
+        za, zb = (6.2, 6.5) if sz > 0 else (-6.5, -6.2)
+        k.box("logcabin", -6.5, 12, za, -0.6, 13.2, zb); k.box("logcabin", 0.6, 12, za, 6.5, 13.2, zb)
     for sz in (1, -1):   # the two ladder posts (side streets: equal for both teams)
         z0, z1 = (6.5, 7.5) if sz > 0 else (-7.5, -6.5)
         k.box("wideplanks", -0.5, 0, z0, 0.5, 12, z1)
@@ -195,7 +263,7 @@ def build():
     m.raw("hill -8 0 -8 8 4 8")
 
     # free for all: eight spawns (mirrored pairs)
-    for (x, y, z) in ((-50, 0, 27), (-96, 0, -22), (-83, 8.3, 10), (-24, 4.0, 11)):
+    for (x, y, z) in ((-50, 0, 27), (-70, 0, -14), (-84, 8.3, -3.5), (-24, 4.0, 11)):
         for s in (-1, 1):
             k.spawn("any", X(x, s), y + 0.05, z, yaw_to(X(x, s), z, 0, 0))
     m.save("express", dress=False)

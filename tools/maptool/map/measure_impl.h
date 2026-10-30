@@ -632,12 +632,14 @@ struct TechGraph {
         // ladders: from the floor at the foot to the floor at the top, in both graphs
         for (const AABB& l : m.ladders) {
             Vec3 c = l.center();
-            int lo = nearest({c.x, l.mn.y, c.z}, 2.5f);
-            int hi = -1; float bd = 3.0f;
+            // the floor at its foot and the floor at its top: the nearest samples across (within a run's reach: the samples
+            // are thinned on big maps, and the nav cuts the floor back from the wall it's on), at those levels (the volume
+            // ends ~1 m over the top floor)
+            int lo = -1, hi = -1; float bl = std::max(3.5f, runReach), bd = bl;
             for (size_t j = 0; j < p.size(); j++) {
-                if (std::fabs(p[j].y - l.mx.y) > 0.8f) continue;
                 float dd = std::hypot(p[j].x - c.x, p[j].z - c.z);
-                if (dd < bd) { bd = dd; hi = (int)j; }
+                if (std::fabs(p[j].y - l.mn.y) < 0.6f && dd < bl) { bl = dd; lo = (int)j; }
+                if (p[j].y <= l.mx.y + 0.2f && p[j].y >= l.mx.y - 1.8f && dd < bd) { bd = dd; hi = (int)j; }
             }
             if (lo < 0 || hi < 0 || lo == hi) continue;
             float cost = (l.mx.y - l.mn.y) * 1.8f + bd; // climbing is slower than running
@@ -802,7 +804,16 @@ void measure(Metrics& r, const Map& m, const Map& solid, const NavGraph& g, cons
         for (float x = sx; x < n.x1; x += 2)
             for (float z = sz; z < n.z1; z += 2) {
                 Vec3 p = {x, n.y, z};
-                if (!m.boxSolid(playerBox(p + Vec3(0, 0.02f, 0), false))) pts.push_back({p, (int)i});
+                if (!m.boxSolid(playerBox(p + Vec3(0, 0.02f, 0), false))) { pts.push_back({p, (int)i}); continue; }
+                // a stair tread is shallower than a player is wide: where you stand on one your hull hangs over the step
+                // below (and on a surface under 2 m across, its middle row may touch a wall): a sample a little off it
+                for (Vec3 o : {Vec3(-0.35f, 0, 0), Vec3(0.35f, 0, 0), Vec3(0, 0, -0.35f), Vec3(0, 0, 0.35f)}) {
+                    Vec3 q = p + o;
+                    q.x = std::clamp(q.x, n.x0, n.x1); q.z = std::clamp(q.z, n.z0, n.z1);   // (a slope's strip: its edge)
+                    if (m.boxSolid(playerBox(q + Vec3(0, 0.02f, 0), false))) continue;
+                    pts.push_back({q, (int)i});
+                    break;
+                }
             }
     }
     for (auto& [k, a] : levelArea) r.levels += a >= 10.0f;
@@ -827,6 +838,21 @@ void measure(Metrics& r, const Map& m, const Map& solid, const NavGraph& g, cons
         size_t stride = pts.size() / 2500 + 1; // up to ~2500 points
         for (size_t i = 0; i < pts.size(); i += stride) { tp.push_back(pts[i].p); techPlayable.push_back(playable[pts[i].node]); }
         techCell = 4.0f * stride;
+        // and more where the thinning left a surface's samples farther apart than half a run's reach (the run only links
+        // samples on the same or linked surfaces: a strip, a stair step or a catwalk left without one, or a long ledge
+        // sampled every 18 m, cut the run in two, and legs read "UNREACHABLE")
+        if (stride > 1) {
+            const float gap = 0.5f * std::max(6.0f, 3.0f * std::sqrt(techCell));
+            std::vector<std::vector<Vec3>> kept(g.nodes.size());
+            for (size_t i = 0; i < pts.size(); i += stride) kept[pts[i].node].push_back(pts[i].p);
+            for (size_t i = 0; i < pts.size(); i++) {
+                auto& kn = kept[pts[i].node];
+                bool near = false;
+                for (const Vec3& q : kn) if (length(q - pts[i].p) < gap) { near = true; break; }
+                if (near) continue;
+                kn.push_back(pts[i].p); tp.push_back(pts[i].p); techPlayable.push_back(playable[pts[i].node]);
+            }
+        }
         // and a sample on every floor inside each objective (race checkpoints, bomb sites, the hill, capture points)
         // and under every spawn: a thin sampling must not make a leg or a trip read as unreachable
         std::vector<AABB> zones = m.checkpoints;

@@ -8,7 +8,14 @@ Every half has the same ways up: its end station's two escalators, three stair t
 buildings with a bridge to it, and the middle station's escalator; and the same deck cover (a signal box, a gantry,
 the stations' kiosks and windbreaks). The layout is point-symmetric (each team's half is the other's, turned), only
 the look differs, so every timing is the same for both sides. The middle station is also the hill (koth); power plays
-the whole map."""
+the whole map.
+Fix round 2 (q's review answers, 2026-10-30): the deck's end-to-end sightline is cut by a ticket hut over the beam at
+each end of the middle station (the cart runs through an arch below eye height), frosted windbreaks and a 1.5 m locker
+per straight on the other walkway; the rails are 1.3 m, thin, ridge-topped (no standing on them) and the bend rails
+1 m diagonal panels; the ground is split into 20-26 m pieces (one 260 m slab made the bots' nav cost every route from
+its centre: spawn to deck 28.9 s by nav, now 5.9 s); spawns forward to x -104 behind a solid screen; a truck / tram and
+a news kiosk per half cut the avenue's side lanes; a pale grey deck with white edge bands, a lower sun and darker sky;
+the halves dressed apart below the deck (old town awnings and signs, new district glass canopy and LED blades)."""
 import math, random
 from .prefabs import M, minus
 from .bigkit import Kit, num, yaw_to
@@ -29,10 +36,10 @@ THEME = {   # per side (-1 west / old town, +1 east / new district)
 
 
 def build():
-    m = M("Monorail", "npayload", sun=(-0.6, 0.45, 0.35))
+    m = M("Monorail", "npayload", sun=(-0.6, 0.18, 0.35))
     m.also = ["koth", "power"]
     m.raw("setting futuristic city monorail at dusk")
-    m.raw("palette base 0.42 0.44 0.52 accent 0.55 0.3 0.22 metal 0.3 0.32 0.38 glow 1.0 0.85 0.6 sky 0.07 0.09 0.22")
+    m.raw("palette base 0.42 0.44 0.52 accent 0.55 0.3 0.22 metal 0.3 0.32 0.38 glow 1.0 0.85 0.6 sky 0.035 0.045 0.13")
     k = Kit(m)
     R = random.Random(1198)
 
@@ -51,12 +58,23 @@ def build():
         a, b = T(x, z, s); k.spawn(team, a, y, b, yaw if s < 0 else yaw + 180)
     def clipcap(x0, z0, x1, z1, top, s):
         B("clip", x0, top, z0, x1, LID, z1, s)
+    def rail(mat, a, b, s, w=0.08, h=1.3, y=DECK):
+        """a thin shoot-through rail panel from a to b (x, z), h tall, its top a steep ridge (nothing to stand on)"""
+        (ax, az), (bx, bz) = T(a[0], a[1], s), T(b[0], b[1], s)
+        dx, dz = bx - ax, bz - az; L = math.hypot(dx, dz)
+        ux, uz = dx / L, dz / L; px, pz = -uz * w / 2, ux * w / 2
+        poly = [(ax + px, az + pz), (bx + px, bz + pz), (bx - px, bz - pz), (ax - px, az - pz)]
+        cx, cz = (ax + bx) / 2, (az + bz) / 2; nx, nz = -uz, ux; K = 7.0
+        planes = [(sg * nx * K, 1.0, sg * nz * K, y + h + K * sg * (nx * cx + nz * cz)) for sg in (1, -1)]
+        k.prism(mat, poly, y, y + h, clip=planes)
 
     # ================= the ground, the canal / pool, the perimeter =================
-    k.box("asphalt", -HX, -1, -24, HX, 0, 24)                                # the avenue under the deck
+    for x in range(-HX, HX, 20):                                             # the avenue under the deck (20 m pieces: the
+        k.box("asphalt", x, -1, -24, min(HX, x + 20), 0, 24)                  # nav's surfaces stay small, routes stay true)
     for s in (-1, 1):
         g = THEME["ground"][s]
-        B(g, -HX, -1, 24, 0, 0, 46.5, s); B(g, -HX, -1, -46.5, 0, 0, -24, s)   # pavements and side streets
+        for x in range(-HX, 0, 26):                                          # pavements and side streets (26 m pieces)
+            B(g, x, -1, 24, min(0, x + 26), 0, 46.5, s); B(g, x, -1, -46.5, min(0, x + 26), 0, -24, s)
         B(g, -HX, -1, -54, 0, 0, -46.5, s)                                    # (the outer street opposite the canal)
         # the canal (old town, north) / reflecting pool (new district, south): sunk 1.5 m, water to -0.5, a bridge
         # at every cross street, steps out at both ends
@@ -89,12 +107,17 @@ def build():
         if abs(bx) > 100: bx = math.copysign(100, bx)
         if abs(ax) < 12: ax = math.copysign(12, bx)
         if abs(bx) < 12: bx = math.copysign(12, ax)
-        k.bar("whiteconcrete", (ax, az), (bx, bz), 8, DECK - 0.8, DECK)
+        k.bar("polishedconcrete", (ax, az), (bx, bz), 8, DECK - 0.8, DECK)       # a pale grey deck (no glare)
+        L = math.hypot(bx - ax, bz - az)
+        if L < 1e-6: continue
+        ox, oz = -(bz - az) / L * 3.95, (bx - ax) / L * 3.95
+        for sg in (1, -1):                                                     # its white edge bands (flush)
+            k.bar("whiteconcrete", (ax + sg * ox, az + sg * oz), (bx + sg * ox, bz + sg * oz), 0.1, DECK - 0.8, DECK)
         k.bar("polishedconcrete", (ax, az), (bx, bz), 2, DECK - 2.2, DECK - 0.8)
     for (x, z) in [(-78, 0), (-58, -5.36), (-38, -5.36), (-18, 0)]:          # the joints at the bends
         for s in (-1, 1):
             a, b = T(x, z, s)
-            k.disc("whiteconcrete", a, b, 4.33, DECK - 0.8, DECK, n=8)
+            k.disc("polishedconcrete", a, b, 4.33, DECK - 0.8, DECK, n=8)
             k.box("polishedconcrete", a - 1, 0, b - 1, a + 1, DECK - 2.2, b + 1)    # a pillar under each
     for (x, z) in [(-89, 0), (-48, -5.36)]:
         both("polishedconcrete", x - 1, 0, z - 1, x + 1, DECK - 2.2, z + 1)
@@ -107,16 +130,15 @@ def build():
                 gaps = sorted(GAPS.get((x0, x1, side), []))
                 pos = x0
                 for (g0, g1) in gaps + [(x1, x1)]:
-                    if g0 > pos: B("carbonfibre", pos, DECK, z - 0.06 if side > 0 else z, g0, DECK + 1.1, z if side > 0 else z + 0.06, s)
+                    if g0 > pos: rail("carbonfibre", (pos, z - side * 0.04), (g0, z - side * 0.04), s)
                     pos = max(pos, g1)
         for (a, b) in (((-78, 0), (-58, -5.36)), ((-38, -5.36), (-18, 0))):
             dx, dz = b[0] - a[0], b[1] - a[1]; L = math.hypot(dx, dz); px, pz = -dz / L * 3.94, dx / L * 3.94
-            for sg in (1, -1):   # (short axis-aligned panels down the bend: a long diagonal one's box would cross the cart's)
-                n = int(math.ceil(L / 2.0))
+            for sg in (1, -1):   # (1 m diagonal panels end to end down the bend: one long one's bounding box would cross the
+                n = int(math.ceil(L / 1.0))   # cart's; a short one's stays 3 m clear of it)
                 for j in range(n):
-                    xa = a[0] + sg * px + dx * j / n; xb = a[0] + sg * px + dx * (j + 1) / n
-                    zm = a[1] + sg * pz + dz * (j + 0.5) / n
-                    B("carbonfibre", xa, DECK, zm - 0.06, xb, DECK + 1.1, zm + 0.06, s)
+                    rail("carbonfibre", (a[0] + sg * px + dx * j / n, a[1] + sg * pz + dz * j / n),
+                         (a[0] + sg * px + dx * (j + 1) / n, a[1] + sg * pz + dz * (j + 1) / n), s)
     # deck lamps down the walkways, a signal box per half, the gantries
     for s in (-1, 1):
         for x in (-95, -85, -52, -44):
@@ -124,6 +146,9 @@ def build():
             B("lightblock", x, DECK, zc + 3.3, x + 0.4, DECK + 0.25, zc + 3.7, s)
         B("electricalcabinet", -84, DECK, 2.2, -82.4, DECK + 2, 3.8, s)       # signal boxes on the walkways (solid cover)
         B("electricalcabinet", -56, DECK, -9.0, -54.4, DECK + 2, -7.4, s)
+        for (x0, z0) in ((-92, -3.7), (-50, -3.2)):                           # maintenance lockers (solid, 1.5 m: the
+            B("castiron" if s < 0 else "scifipanels", x0, DECK, z0, x0 + 1.2, DECK + 1.5, z0 + 1.2, s)   # other walkway)
+            B("lightblock", x0 + 0.2, DECK + 1.1, z0 - 0.02 if z0 < -3.5 else z0 + 1.2, x0 + 1.0, DECK + 1.2, z0 if z0 < -3.5 else z0 + 1.22, s)
         for (gx, z0, z1) in ((-89, -8.4, 8.4), (-30, -9.8, 3.4)):
             B("castiron", gx - 0.3, 0, z0 - 0.6, gx + 0.3, DECK + 3.5, z0, s); B("castiron", gx - 0.3, 0, z1, gx + 0.3, DECK + 3.5, z1 + 0.6, s)
             B("castiron", gx - 0.3, DECK + 3, z0 - 0.6, gx + 0.3, DECK + 3.5, z1 + 0.6, s)
@@ -143,16 +168,23 @@ def build():
             B("whiteconcrete" if s > 0 else "castiron", x, 0, z, x + 0.6, 13.5, z + 0.6, s)
         B("carbonfibre" if s > 0 else "corrugated", -130, 13.5, -14, -100, 13.9, 14, s)   # its canopy
         B("glow", -129, 13.3, -0.5, -101, 13.5, 0.5, s)
-        B("bluetintedglass", -112, 0, -8, -111.88, 6.5, 8, s)                         # the spawn screen (shoot-through glass)
+        B("darkconcrete" if s > 0 else "londonstock", -99.8, 0, -8.5, -99.2, 6.2, 8.5, s)   # the spawn screen (solid)
+        B("glow", -99.86, 4.6, -6, -99.8, 4.9, 6, s)
         B("electricalcabinet", -126, DECK, 5, -124, DECK + 2.2, 7.5, s); B("electricalcabinet", -126, DECK, -7.5, -124, DECK + 2.2, -5, s)
         B("hologrampanel" if s > 0 else "neonmaze", -119, DECK + 0.4, 8.4, -114, DECK + 2.6, 8.52, s)   # kiosk signs (thin)
         B("cratewood" if s < 0 else "whiteconcrete", -119, DECK, 8.52, -114, DECK + 2.6, 9.8, s)       # the kiosk
         light(-115, 6, 0, 16, 0.8, s); light(-115, DECK + 4.5, 0, 18, 0.8, s)
-        for i, z in enumerate((-6, -2, 2, 6)): spawn("a" if s < 0 else "b", -126, 0, z, -90, s)
+        for i, z in enumerate((-6, -2, 2, 6)): spawn("a" if s < 0 else "b", -104, 0, z, -90, s)   # under the platform's end
         # the middle station's half: its escalator, a kiosk, a windbreak
         stairs("tactilepaving", -28, -12, -12, -8, DECK, "x", 1, s)
         B("chrome", -28, 0, -12.2, -12, 1.0 + DECK, -12, s)
-        B("bluetintedglass", -8, DECK, 3.4, -2, DECK + 2.2, 3.52, s)                   # windbreak (shoot-through)
+        B("frostedglass", -8, DECK, 3.4, -2, DECK + 2.2, 3.52, s)                      # windbreak (frosted: blocks sight)
+        # the ticket hut over the beam at the platform's end (the cart runs through its arch, which is under eye height)
+        hm = "cratewood" if s < 0 else "whiteconcrete"
+        B(hm, -11, DECK, -4.2, -9, DECK + 2.8, -1.1, s); B(hm, -11, DECK, 1.1, -9, DECK + 2.8, 4.2, s)
+        B(hm, -11, DECK + 1.58, -1.1, -9, DECK + 2.8, 1.1, s)
+        B("castiron" if s < 0 else "chrome", -11.2, DECK + 2.8, -4.4, -8.8, DECK + 3.0, 4.4, s)
+        B("hologrampanel" if s > 0 else "neonmaze", -11.06, DECK + 1.9, -4, -11, DECK + 2.6, -1.6, s)
         B("cratewood" if s < 0 else "whiteconcrete", -10, DECK, 8, -6, DECK + 2.4, 11, s)   # kiosk
         B("hologrampanel" if s > 0 else "neonmaze", -10, DECK + 0.5, 7.88, -6, DECK + 2.2, 8, s)
         for (x, z) in ((-11.4, -13.4), (-11.4, 12.8)):
@@ -201,7 +233,7 @@ def build():
             e0, e1 = (dzc + 4, bz0) if dz == bz0 else (bz1, dzc - 4)
             B("fibreglassgrating" if s > 0 else "wideplanks", notch[0], DECK - 0.4, e0, notch[1], DECK, e1, s)
             for xx in (notch[0], notch[1] - 0.12):
-                B("carbonfibre", xx, DECK, min(e0, e1), xx + 0.12, DECK + 1.1, max(e0, e1), s)
+                rail("carbonfibre", (xx + 0.06, min(e0, e1)), (xx + 0.06, max(e0, e1)), s)
             light((bx0 + bx1) / 2, 5.5, (bz0 + bz1) / 2, 14, 0.7, s)
 
     # ================= the other blocks (clipped tops), street cover, the landmarks =================
@@ -238,6 +270,42 @@ def build():
             B("castiron", x, 0, z, x + 0.25, 6, z + 0.25, s); B("lightblock", x - 0.3, 6, z - 0.3, x + 0.55, 6.3, z + 0.55, s)
             light(x, 5, z, 14, THEME["light"][s], s)
         light(-60, 4, 50, 18, 0.6, s); light(-110, 4, 40, 16, 0.6, s); light(-90, 4, -40, 16, 0.6, s)
+        # cross features in the avenue's side lanes (solid; the middle |z| < 8 stays open): a parked delivery truck
+        # (old town) / tram car (new district) at x -78..-63, and a news kiosk with a solid back at x -112..-107
+        if s < 0:
+            B("castiron", -78, 0.5, 14.8, -63, 1.1, 18.2, s)                          # chassis
+            B("corrugated", -78, 1.1, 14.8, -68.5, 3.8, 18.2, s)                      # the box body
+            B("terracotta", -68.3, 1.1, 14.9, -63, 2.9, 18.1, s)   # the cab
+            B("bluetintedglass", -64.2, 2.0, 14.86, -63.0, 2.8, 18.14, s)
+            for wx in (-76.5, -71, -65.5):
+                for wz in (14.6, 18.0):
+                    B("castiron", wx - 0.55, 0, wz, wx + 0.55, 1.1, wz + 0.4, s)
+            B("glow", -63.04, 1.4, 15.2, -63.0, 1.7, 15.7, s); B("glow", -63.04, 1.4, 17.3, -63.0, 1.7, 17.8, s)
+        else:
+            B("chrome", -78, 0, 14.8, -63, 0.6, 18.2, s)                              # bogies / skirt
+            B("whiteconcrete", -78, 0.6, 14.8, -63, 3.6, 18.2, s)                     # the car
+            B("bluetintedglass", -77, 1.7, 14.76, -64, 2.9, 14.8, s); B("bluetintedglass", -77, 1.7, 18.2, -64, 2.9, 18.24, s)
+            B("glow", -78, 3.6, 16.2, -63, 3.7, 16.8, s)                               # its roof light strip
+            B("castiron", -71.2, 3.6, 16.4, -70.8, 6.0, 16.6, s)                       # pantograph
+        km = "londonstock" if s < 0 else "darkconcrete"
+        B(km, -112, 0, -23.6, -107, 2.8, -22.6, s)                                    # the kiosk's solid back
+        B(km, -112, 0, -22.6, -111.4, 2.8, -18.4, s); B(km, -107.6, 0, -22.6, -107, 2.8, -18.4, s)
+        B("cratewood" if s < 0 else "fibrecementboard", -111.4, 0, -22.6, -107.6, 1.1, -18.6, s)   # its counter
+        B("corrugated" if s < 0 else "carbonfibre", -112.3, 2.8, -23.8, -106.7, 3.0, -17.6, s)
+        B("hologrampanel" if s > 0 else "neonmaze", -111.6, 1.6, -22.58, -107.4, 2.6, -22.5, s)
+        light(-109.5, 2.4, -20, 8, 0.6, s)
+        # the two halves dressed apart under the deck (same footprints): the old town's shopfront awnings and hanging
+        # signs, the new district's continuous glass canopy and LED blades, on the blocks' avenue faces at 3 m
+        for (x0, x1, zf) in ((-130, -108, 24), (-74, -52, 24), (-44, -22, 24), (-130, -108, -24), (-100, -80, -24), (-36, -16, -24)):
+            sg = 1 if zf > 0 else -1
+            if s < 0:
+                for ax in range(int(x0) + 1, int(x1) - 3, 5):
+                    B(("leantocanvas", "pooltablefelt", "paintedconcretestripes")[(ax // 5) % 3], ax, 3.1, zf - 1.3 * sg if sg > 0 else zf, ax + 4, 3.2, zf if sg > 0 else zf + 1.3, s)
+                    B("castiron", ax + 1.8, 3.6, zf - 0.9 * sg if sg > 0 else zf + 0.1, ax + 1.86, 4.4, zf - 0.1 if sg > 0 else zf + 0.9, s)
+            else:
+                B("bluetintedglass", x0 + 1, 3.6, zf - 1.6 if sg > 0 else zf, x1 - 1, 3.68, zf if sg > 0 else zf + 1.6, s)
+                for ax in range(int(x0) + 3, int(x1) - 1, 7):
+                    B("glow", ax, 4.2, zf - 0.5 if sg > 0 else zf, ax + 0.12, 9.0, zf if sg > 0 else zf + 0.5, s)
     # free for all: eight spawns round the city (point-symmetric pairs; save()'s top-up only sees plain boxes)
     for (x, y, z) in ((-118, 0, 19), (-78, 0, 35), (-40, 0, -35), (-52, DECK, -8)):
         for s in (-1, 1):
