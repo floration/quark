@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include "../common/qmath.h"
+struct ProjFlight;   // gamedefs.h
 
 enum SpawnTeam { SPAWN_A = 0, SPAWN_B = 1, SPAWN_ANY = 2, SPAWN_RACE = 3, SPAWN_STAGED = 4 };
 // Multi point spawns ("spawn att2 ..." / "spawn def0 ..."): team = SPAWN_STAGED + 2 * stage + (defenders ? 1 : 0).
@@ -1557,7 +1558,7 @@ struct Map {
         return 1.0f;
     }
     // projectileExtrapolate through the slow-mo fields (in 2 ms steps there; the closed form when there are none)
-    void flyProjectile(Vec3& pos, Vec3& vel, float gravity, float t) const;
+    void flyProjectile(Vec3& pos, Vec3& vel, const ProjFlight& f, float t) const;   // (f: the drop and thrust, projectileFlight)
     struct Liquid { AABB box; uint16_t kind; };   // kind: kLiquids' index
     std::vector<Liquid> liquids;   // the liquid brushes (kMatLiquids..: pmove moves you differently in them), from rebuild()
     const LiquidDef* liquidAt(const AABB& box) const {   // the first one the box touches (none: null)

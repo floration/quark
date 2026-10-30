@@ -64,6 +64,7 @@ Alt fire (only the weapon that has it):
 |---|---|---|
 | `rifle.scopedRefire` | 1.111 | x refire while scoped |
 | `rocket.lobSpeed`, `rocket.lobGravity` | 0.7, 13.5 | lob: x speed, its drop |
+| `rocket.accel` | 4 | the primary rocket's thrust (m/s² along its flight, no cap; the lob has none) |
 | `knife.throwSpeed`, `knife.throwGravity`, `knife.throwLife`, `knife.away` | 38, 14, 2, 4 | the throw |
 | `knife.grow` | 0.04 | m wider hit boxes for a swing |
 | `shotgun.bounces`, `shotgun.bounceDamage` | 2, 0.5 | bouncing pellets |
