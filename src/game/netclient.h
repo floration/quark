@@ -302,6 +302,7 @@ struct ServerInfo {
     int mode = 0, players = 0, maxPlayers = 0;
     float ping = 0;
     bool noReply = false; // on the internet list but didn't answer (port not open?); still clickable
+    bool official = false; // an official Quark server (isOfficialServer, master.h: by its address, never its name)
 };
 
 // LAN discovery and direct server queries.

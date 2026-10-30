@@ -7363,6 +7363,26 @@ static void testMasterSignature() {
           !signedMasterUrl("http://plain.example\n", sig2, pub, &url)); // https only
 }
 
+// The browser's OFFICIAL tag: only the built-in addresses of the official servers, matched exactly (by the address the
+// client talks to, never the name a server reports), so a lookalike address or a server named "official" isn't.
+static void testOfficialServers() {
+    printf("official servers\n");
+    CHECK(kOfficialServerCount == 2);
+    CHECK(isOfficialServer("75.127.7.139:27500"));   // production
+    CHECK(isOfficialServer("75.127.7.139:27501"));   // testing
+    const uint32_t ip = 75u << 24 | 127u << 16 | 7u << 8 | 139u;
+    CHECK(isOfficialServer(ip, 27500) && isOfficialServer(ip, 27501));
+    CHECK(!isOfficialServer(ip, 27502) && !isOfficialServer(ip + 1, 27500) && !isOfficialServer(0, 0));
+    NetAddr a;   // what the browser holds: NetAddr's parse and toString agree with it
+    CHECK(NetAddr::parse("75.127.7.139:27501", kDefaultPort, a) && isOfficialServer(a.ip, a.port) && isOfficialServer(a.toString()));
+    for (const char* fake : {"75.127.7.139:27502", "75.127.7.13:27500", "75.127.7.1390:27500", "175.127.7.139:27500",
+                             "75.127.7.139:2750", "75.127.7.139:275000", "75.127.7.139", "75.127.7.139:", "075.127.7.139:27500",
+                             "75.127.7.139:027500", "75.127.7.139.1:27500", "75.127.7:27500", " 75.127.7.139:27500",
+                             "75.127.7.139:27500 ", "75.127.7.139:27500x", "official", "OFFICIAL 75.127.7.139:27500",
+                             "127.0.0.1:27500", "129.151.8.15:27500", ""})
+        CHECK(!isOfficialServer(std::string(fake)));
+}
+
 // REVIEW 2.3: a dedicated server (src/server/main.cpp: frame() and idle(), never run()) handles ranking server
 // replies: a failed race ticket clears and the racer is told. And replies nobody takes are capped.
 static void testMasterReplies(uint16_t port) {
@@ -9802,7 +9822,7 @@ int main(int argc, char** argv) {
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testDemoUpgrade(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testBuiltInMapEditSession(TP(28606)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
         {"bots", [] { uint16_t p = TP(28900); testBots(p); }},
-        {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); testRankedLockLadders(); }},
+        {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testHelloRetry(); testMasterSignature(); testOfficialServers(); testPlacementConstant(); testRankedLockLadders(); }},
         {"ranked2", [] { testRankedLeaver(TP(28636)); testRankedLeaverPaths(TP(28639)); testRankedRelay(TP(28640)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); testRemoteMoveSounds(TP(28585)); testRefillPrediction(TP(28586)); testHookPrediction(TP(28588)); }},
         {"brains", [] { g_fail += brainTests(TP(29150)); }},

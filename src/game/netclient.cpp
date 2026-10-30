@@ -1043,7 +1043,7 @@ void ServerBrowser::poll() {
         if (now - l.since > 2.5) {
             bool shown = false;
             for (auto& sv : servers_) shown |= sv.addr == l.addr;
-            if (!shown) { ServerInfo si; si.addr = l.addr; si.name = l.addr.toString(); si.noReply = true; servers_.push_back(si); }
+            if (!shown) { ServerInfo si; si.addr = l.addr; si.name = l.addr.toString(); si.noReply = true; si.official = isOfficialServer(l.addr.ip, l.addr.port); servers_.push_back(si); }
         }
         i++;
     }
@@ -1055,6 +1055,7 @@ void ServerBrowser::poll() {
         if (r.u32() != kProtocolMagic || r.u8() != PKT_INFO_REPLY) continue;
         ServerInfo si;
         si.addr = from;
+        si.official = isOfficialServer(from.ip, from.port);   // (the address it answered from, not what it says)
         si.name = r.str(); si.map = r.str(); si.mode = r.u8(); si.players = r.u8(); si.maxPlayers = r.u8();
         r.u16();
         if (r.bad()) continue;
