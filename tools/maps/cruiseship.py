@@ -13,7 +13,14 @@
   Sun deck (10.2): the lifeboats (one way in each), the bridge and its radar mast.
 Three stair towers (aft, mid, fore) on the centre line join the decks: each a pair of flights per deck, side by
 side, with landings at both ends crossing the ship. The atrium (12 x 12 m, deck 2 up to the lido) has its own
-stairs and a static glass lift. Rails and invisible walls keep everyone aboard."""
+stairs and a static glass lift. Rails and invisible walls keep everyone aboard.
+(1.19.6 fix round, all review notes YES: the fire-door stubs are 1.3 m from opposite walls, overlapping, so no straight
+line runs down a corridor (line of sight checked across z 6.8..8.8), and there are three a corridor, not five (four legs
+of 25-35 m for tag); the sea is the engine's water look, not far scenery; the hull is dark below a blue band and white
+above, the lido carries the white superstructure up to the sun deck as a windscreen with blue panes, and a two-storey
+deckhouse with a balcony row stands on the sun deck; short ladders up the engines' forward ends (their top walks
+cleared of the deckhead pipes); one locked crew cabin a side on deck 1; warm glow exit signs at every stair-tower
+landing; corridor lights 0.7; an ffa-any spawn set over decks 1, 2 and 4, the engine room and the aft deck.)"""
 import math
 from .prefabs import M
 from .m6kit import Kit, wall_x, wall_z, slab, yaw_to, minus, tiles, num
@@ -78,10 +85,11 @@ def cabin_row(k, xs, side, y, locked):
 
 
 def chicane(k, x, side):
-    """a fire-door frame across a corridor (z 6.6..9 on side 1): two stubs 1 m apart, gaps at opposite sides"""
+    """a fire-door frame across a corridor (z 6.6..9 on side 1): two stubs 1.3 m wide, 1 m apart, from opposite
+    walls: they overlap by 0.2 m, so the 1.1 m gaps never line up and no straight slot runs down the corridor"""
     a, b = sorted((side * 6.6, side * 9.0))
-    k.box("steeldoorskin", x, 0, a, x + 0.3, 3.0, b - 1.4) if side > 0 else k.box("steeldoorskin", x, 0, a + 1.4, x + 0.3, 3.0, b)
-    k.box("steeldoorskin", x + 1.3, 0, a + 1.4, x + 1.6, 3.0, b) if side > 0 else k.box("steeldoorskin", x + 1.3, 0, a, x + 1.6, 3.0, b - 1.4)
+    k.box("steeldoorskin", x, 0, a, x + 0.3, 3.0, a + 1.3) if side > 0 else k.box("steeldoorskin", x, 0, b - 1.3, x + 0.3, 3.0, b)
+    k.box("steeldoorskin", x + 1.3, 0, b - 1.3, x + 1.6, 3.0, b) if side > 0 else k.box("steeldoorskin", x + 1.3, 0, a, x + 1.6, 3.0, a + 1.3)
     k.box("steeldoorskin", x, 2.6, a, x + 1.6, 3.0, b)
 
 
@@ -99,6 +107,11 @@ def decorate(k):
     # the radar on the mast; navigation lights on the bridge's wings
     k.box("galvanizedsteel", 41.2, 19.2, -1.4, 42.8, 19.6, 1.4)
     k.box("glow", 45.8, D5 + 2.6, -10.3, 46.2, D5 + 3.0, -9.9); k.box("glow", 45.8, D5 + 2.6, 9.9, 46.2, D5 + 3.0, 10.3)
+    # exit signs (glow, the palette's warm colour) on the stair towers' dividers at both landings of every deck
+    for (x0, decks) in ((T1, (D1, D2, D3)), (T2, (E, D1, D2, D3)), (T3, (D1, D2, D3, D4))):
+        for yy in decks:
+            k.box("glow", x0 + 1.95, yy + 2.2, -0.3, x0 + 2.0, yy + 2.5, 0.3)
+            k.box("glow", x0 + 8.0, yy + 2.2, -0.3, x0 + 8.05, yy + 2.5, 0.3)
     # the casino's sign over its aft entrance, the dining room's ceiling lamps, the arcade's shop signs
     k.box("neonmaze", -23.8, D3 + 2.4, -2.5, -23.6, D3 + 2.9, 2.5)
     for x in (15, 20, 40, 45):
@@ -108,7 +121,7 @@ def decorate(k):
             a, b = sorted((s * 3.9, s * 3.8))
             k.box("glow", x - 1.2, D3 + 2.65, a, x + 1.2, D3 + 2.9, b)
     # pipes along the engine room's deckhead; potted palms at the atrium's corners on deck 2
-    for z in (-6, 6):
+    for z in (-2, 2):   # (over the aisle between the engines: the engines' top walks keep their headroom)
         k.box("greasestainedmetal", -36, -1.2, z - 0.2, 12, -0.8, z + 0.2)
     for (x, z) in ((-5.2, -5.2), (5.2, 5.2)):
         k.box("terracotta", x - 0.4, D2, z - 0.4, x + 0.4, D2 + 0.6, z + 0.4); k.box("jungleleaves", x - 0.6, D2 + 0.6, z - 0.6, x + 0.6, D2 + 1.6, z + 0.6)
@@ -135,12 +148,16 @@ def build():
     # ================================================================== hull, decks, sea, bounds
     HULL = "shiphullplating"
     k.box(HULL, X0, E - 0.8, -HZ, XB, E - 0.4, HZ); k.prism(HULL, BOW, E - 0.8, E - 0.4)          # the bottom
-    for s in (-1, 1):
-        a, b = sorted((s * HZ, s * (HZ + 0.5)))
-        k.box(HULL, X0 - 0.5, E - 0.8, a, XB, D3 + 1.1, b)
-    k.box(HULL, X0 - 0.5, E - 0.8, -HZ, X0, D3 + 1.1, HZ)
-    for s in (-1, 1):   # the bow's flanks (a bar each side, from the taper's start to the tip)
-        k.bar(HULL, (XB, s * (HZ + 0.25)), (XT + 0.2, s * 0.15), 0.5, E - 0.8, D3 + 1.1)
+    # the hull's sides: dark plating to the waterline and up to the cabin deck, a blue band, white above (the
+    # promenade's bulwark: a liner's white upperworks)
+    bands = [(HULL, E - 0.8, 1.8), ("bluedsteel", 1.8, 2.6), ("whiteconcrete", 2.6, D3 + 1.1)]
+    for (mat, ya, yb) in bands:
+        for s in (-1, 1):
+            a, b = sorted((s * HZ, s * (HZ + 0.5)))
+            k.box(mat, X0 - 0.5, ya, a, XB, yb, b)
+        k.box(mat, X0 - 0.5, ya, -HZ, X0, yb, HZ)
+        for s in (-1, 1):   # the bow's flanks (a bar each side, from the taper's start to the tip)
+            k.bar(mat, (XB, s * (HZ + 0.25)), (XT + 0.2, s * 0.15), 0.5, ya, yb)
     # lower hull: the space under deck 1 outside the engine room and the tunnel is sealed off
     for (x0, x1) in ((X0, -66), (-66, -36), (12, XB)):
         for (a, b) in ((-HZ, -1.2), (1.2, HZ)) if (x0, x1) == (-66, -36) else ((-HZ, HZ),):
@@ -159,11 +176,12 @@ def build():
     deck(k, "wideplanks", D3, X0, XB, holes_at(D3) + a3, bow=True)
     deck(k, "wideplanks", D4, -66, XB, holes_at(D4) + a4 + [POOL])
     slab(k, "steeldeckplate", (8, -11, 46, 11), D5, holes=holes_at(D5))
-    # the sea: far water round the hull (none inside it), the void under it
+    # the sea: water round the hull (the engine's unlit rippling water look, blue against the pink dusk; none inside
+    # the hull), the void under it
     for (x0, z0, x1, z1) in tiles(minus((-400, -400, 400, 400), [(X0 - 0.5, -HZ - 0.5, XT + 0.5, HZ + 0.5)]), 200):
-        k.box("far", x0, -2.4, z0, x1, -2.0, z1)
+        k.box("water", x0, -2.4, z0, x1, -2.0, z1)
     for s in (-1, 1):
-        k.prism("far", [(XB, s * (HZ + 0.5)), (XT + 0.5, s * (HZ + 0.5)), (XT + 0.5, s * 0.5)], -2.4, -2.0)
+        k.prism("water", [(XB, s * (HZ + 0.5)), (XT + 0.5, s * (HZ + 0.5)), (XT + 0.5, s * 0.5)], -2.4, -2.0)
     # the invisible walls: round the hull from the bulwark up, over the bow's flanks, the lid
     k.box("clip", X0 - 2.5, D3 + 1.1, -HZ - 2.5, X0 - 0.5, LID, HZ + 2.5)
     for s in (-1, 1):
@@ -194,7 +212,8 @@ def build():
     for s in (-1, 1):
         a, b = sorted((s * 3.6, s * 9.4))
         k.box("engineblock", -34, E, a, -24, E + 3.6, b)
-        k.box("greasestainedmetal", -33, E + 3.6, a + 0.6, -25, E + 4.4, b - 0.6)
+        k.box("greasestainedmetal", -33, E + 3.6, a + 0.6, -24, E + 4.4, b - 0.6)
+        k.ladder(-24.0, s * 6.5, E, E + 4.4, "w")            # a short ladder up its forward end (bots too)
         a, b = sorted((s * 4.0, s * 8.0))
         k.box("guttedmachinery", -4, E, a, 4, E + 2.4, b)
     wall_x(k, "boilerplate", 2, 12, -5, E, E + 3.2, [(7, 1.6, 2.6), (4.5, 2.0, 2.6, 1.0)], t=0.3, glass="glass")
@@ -223,6 +242,8 @@ def build():
     for s in (-1, 1):
         wall_x(k, "painteddrywall", -56, -52, s * 8.7, y, D2 - 0.4, [(-54, 1.2, 2.4)], t=0.2)
         wall_x(k, "painteddrywall", -50, -44, s * 8.7, y, D2 - 0.4, [(-47, 1.2, 2.4)], t=0.2)
+        lx = -47 if s < 0 else -39                               # one locked crew cabin a side (deck 1 has some too)
+        k.box("steeldoorskin", lx - 0.6, y, s * 8.7 - 0.1, lx + 0.6, y + 2.4, s * 8.7 + 0.1)
         wall_x(k, "painteddrywall", -42, -36, s * 8.7, y, D2 - 0.4, [(-39, 1.2, 2.4)], t=0.2)
         for x in (-52, -50, -44, -42):
             k.box("painteddrywall", x - 0.06, y, min(s * 2.6, s * 8.7), x + 0.06, D2 - 0.4, max(s * 2.6, s * 8.7))
@@ -273,8 +294,8 @@ def build():
     k.box("painteddrywall", -66, y, -0.2, -52, 3.0, 0.2); k.box("painteddrywall", -42, y, -0.2, -20, 3.0, 0.2)
     k.box("painteddrywall", -10, y, -0.2, -6, 3.0, 0.2); k.box("painteddrywall", 6, y, -0.2, 26, 3.0, 0.2)
     k.box("painteddrywall", 36, y, -0.2, XB, 3.0, 0.2)
-    # fire-door dog-legs in both corridors every 18 m
-    for x in (-57, -39, -21, 15, 33):
+    # fire-door dog-legs in both corridors: three, so the corridors are four legs of 25-35 m (fewer stops for tag)
+    for x in (-40.5, -14, 22.5):
         for s in (-1, 1):
             chicane(k, x, s)
     # the aft lobby (x -72..-66) and the bow hold (x 50..75): open rooms joining both corridors
@@ -330,8 +351,19 @@ def build():
 
     # ================================================================== deck 4: the lido
     y = D4
-    for s in (-1, 1):   # rails along both edges and across the stern end
-        k.box("chrome", -66, y, min(s * 12.85, s * 13), XB, y + 1.1, max(s * 12.85, s * 13))
+    for s in (-1, 1):   # rails along both edges (x -40..46: the white windscreen wall instead) and across the stern end
+        for (xa, xb) in ((-66, -40), (46, XB)):
+            k.box("chrome", xa, y, min(s * 12.85, s * 13), xb, y + 1.1, max(s * 12.85, s * 13))
+        # the windscreen: the superstructure's white side carried up from the lido to the sun deck's height (a white
+        # bulwark, blue glass panes between posts, a white band on top): the liner's stacked white decks from outside
+        a, b = sorted((s * 12.7, s * 13.0))
+        k.box("whiteconcrete", -40, y, a, 46, y + 1.1, b)
+        k.box("whiteconcrete", -40, D5 - 0.6, a, 46, D5, b)
+        g0, g1 = sorted((s * 12.8, s * 12.9))
+        k.box("bluetintedglass", -40, y + 1.1, g0, 46, D5 - 0.6, g1)
+        for i in range(21):
+            x = -40 + 4.3 * i
+            k.box("whiteconcrete", x - 0.15, y + 1.1, a, x + 0.15, D5 - 0.6, b)
     k.box("chrome", -66, y, -13, -65.85, y + 1.1, 13)
     k.box("chrome", XB - 0.15, y, -13, XB, y + 1.1, 13)
     # the pool (x -40..-24, z -4..4: 1.4 deep), its rim; the hot tub; the bar; the slide off its platform
@@ -405,6 +437,25 @@ def build():
                 k.box("galvanizedsteel", x - 0.1, y, (a + b) / 2 - 0.1, x + 0.1, y + 0.2, (a + b) / 2 + 0.1)
                 k.box("galvanizedsteel", x - 0.1, y, min(s * 10.4, s * 10.6), x + 0.1, y + 3.2, max(s * 10.4, s * 10.6))
                 k.box("galvanizedsteel", x - 0.1, y + 3.0, min(s * 8, s * 10.6), x + 0.1, y + 3.2, max(s * 8, s * 10.6))
+    # the deckhouse (x 25..36 either side of the fore tower's well, two storeys to 15.8): dark windows below, a row of
+    # balconies above (slabs, glass-railed, white fins between them) facing the sea; its roof a grapple-only perch
+    for s in (-1, 1):
+        a, b = sorted((s * 5.4, s * 9.4))
+        k.box("whiteconcrete", 25, y, a, 36, y + 5.6, b)
+        k.box("whiteconcrete", 24.8, y + 5.6, min(s * 5.2, s * 10.6), 36.2, y + 5.8, max(s * 5.2, s * 10.6))
+        f0, f1 = sorted((s * 9.4, s * 9.45))
+        for i in range(5):
+            x = 25.6 + 2.2 * i
+            k.box("anodizedblack", x, y + 0.9, f0, x + 1.6, y + 2.2, f1)            # lower windows
+            k.box("anodizedblack", x + 0.2, y + 2.95, f0, x + 1.4, y + 5.0, f1)     # balcony doors
+        p0, p1 = sorted((s * 9.4, s * 10.4))
+        k.box("whiteconcrete", 25, y + 2.8, p0, 36, y + 2.95, p1)                   # the balcony slab
+        r0, r1 = sorted((s * 10.33, s * 10.4))
+        k.box("bluetintedglass", 25, y + 2.95, r0, 36, y + 3.9, r1)
+        k.box("chrome", 25, y + 3.9, r0, 36, y + 4.0, r1)
+        for i in range(6):
+            x = 25 + 2.2 * i
+            k.box("whiteconcrete", x - 0.08, y + 2.95, p0, x + 0.08, y + 5.6, p1)   # fins
     # the bridge (x 38..46, z -10..10): windows forward and on its wings, a door aft, the helm; the radar mast on top
     wall_x(k, "whiteconcrete", 38, 46, -10, y, y + 3.0, [(42, 6.0, 2.4, 1.0)], t=0.3, glass="glass")
     wall_x(k, "whiteconcrete", 38, 46, 10, y, y + 3.0, [(42, 6.0, 2.4, 1.0)], t=0.3, glass="glass")
@@ -421,7 +472,7 @@ def build():
     L = []
     for x in range(-63, 50, 9):
         for s in (-1, 1):
-            L.append((x, D2 + 2.6, s * 7.8, 7, 0.55))
+            L.append((x, D2 + 2.6, s * 7.8, 7, 0.7))
     for x in (-60, -45, -30, 0, 18, 30, 44):
         L.append((x, D3 + 2.6, 0, 10, 0.55))
     for x in (-62, -46, 20, 31, 44, 60):
@@ -447,4 +498,9 @@ def build():
     # ================================================================== spawns: deck 3, the promenades, bow to stern
     for (x, z) in ((-58, -11.5), (-34, 11.5), (-10, -11.5), (16, 11.5), (38, -11.5), (-58, 11.5), (-22, -11.5), (36, 11.5)):
         k.spawn("any", x, D3, z, yaw_to(x, z, x + (10 if z > 0 else -10), z))
+    # free for all spreads out over the other decks (ffa-any, format 11)
+    for (x, y, z, tx, tz) in [(-64.5, D1, 6.5, -64.5, 0), (18, D1, -9, 18, 0), (-45, D2, 7.8, -30, 7.8), (30, D2, -7.8, 15, -7.8),
+                              (-69, D2, -4, -69, 4), (-10, E, 0, 0, 0), (-50, D4, -9, -40, -9), (30, D4, 8, 20, 8),
+                              (0, D3, 8.5, 10, 8.5), (-70, D3, 8, -70, 0)]:
+        k.spawn("ffa-any", x, y, z, yaw_to(x, z, tx, tz))
     m.save("cruiseship", dress=False)
