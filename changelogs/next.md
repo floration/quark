@@ -100,7 +100,7 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 
 ## Weapons
 - **Rockets speed up.** The rocket launcher's rocket now gains 4 m/s every second it flies, on top of its 48 m/s launch speed (52 m/s after a second, 68 m/s at the end of its 5 s life), and keeps speeding up after a rubber bounce. The lob (alt-fire) is unchanged. Bots lead for it, and rocket riding pulls you along at its new speed. **The network protocol is now 55**, so games and servers update together; older demos still play.
-- **Rockets start slower and speed up faster.** The rocket now leaves the launcher at 24 m/s (was 48) and gains 8 m/s every second (was 4): 32 m/s after a second, 64 m/s at the end of its 5 s life, so it reaches about 220 m. The lob (alt-fire) still leaves at 33.6 m/s as before. **The network protocol is now 57**, so games and servers update together; older demos still play.
+- **Rockets speed up much faster.** The rocket still leaves the launcher at 48 m/s but now gains 16 m/s every second: 64 m/s after one second, 80 m/s after two, 128 m/s at the end of its 5 s life (about 440 m). The lob (alt-fire) is unchanged at 33.6 m/s. **The network protocol is now 58**, so games and servers update together; older demos still play.
 
 ## Map checks
 - **The walk check sees ramps.** The map tests' "can players get from every spawn to every objective" check now walks up wedges, corners and cut slopes up to 45 degrees (the steepest you can walk). Before, every slope counted as a solid block, so routes up a ramp (Mine's haul road and lava ramp, QK7's helix ramps) were reported missing or found only the long way round.
