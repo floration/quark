@@ -276,6 +276,9 @@ private:
     void initWorldUniforms();
     // the material swatches (swatch): their atlas, its framebuffer, a one-texel lightmap, the quads, the 2D program
     unsigned swatchProg_ = 0;   // (the world program with every look: compileWorld(nullptr))
+    unsigned cleanTex_ = 0, cleanVao_ = 0, cleanVbo_ = 0;   // CLEAN SURFACES' averages (buildCleanMeans), texture unit 5
+    std::vector<bool> cleanUsed_;   // the looks in the map (12 on, the large ones as their base)
+    std::vector<float> cleanKey_;   // what the averages were made with (program, palette); cleared: make them again
     unsigned swatchTex_ = 0, swatchFbo_ = 0, swatchLm_ = 0, swatchVao_ = 0, swatchVbo_ = 0, imgProg_ = 0, imgVao_ = 0, imgVbo_ = 0;
     GLint uImgScreen_ = -1;
     float swatchKey_[13] = {};
@@ -284,6 +287,7 @@ private:
     std::vector<unsigned> swatchSlotUsed_;            // (the frame each slot was last drawn)
     unsigned swatchFrame_ = 0;
     void buildSwatches();
+    void buildCleanMeans(const std::vector<float>& key);   // CLEAN SURFACES: each look's average (uCleanTex)
     std::vector<std::vector<uint8_t>> previewImgs_;   // (setPreviews': uploaded into previewTex_ when previewDirty_)
     int previewW_ = 0, previewH_ = 0, previewCols_ = 1, previewRows_ = 1;
     bool previewDirty_ = false;
