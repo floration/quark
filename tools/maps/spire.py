@@ -142,12 +142,14 @@ def stairs(k):
         if ax == "x":
             xe = (x1 - 0.3) if r > 0 else (x0 + 0.3)
             for z in (z0 - 0.15, z1 + 0.15):
+                if any(f[4] == t and inside(f, xe, z) for f in FLOORS): continue   # (not where you step off sideways)
                 k.box("galvanizedsteel", xe - 0.075, b, z - 0.075, xe + 0.075, t + 1.1, z + 0.075)
             xs = x0 if r > 0 else x1 - 0.3
             k.box("hazard", xs, b, z0, xs + 0.3, b + 0.02, z1)
         else:
             ze = (z1 - 0.3) if r > 0 else (z0 + 0.3)
             for x in (x0 - 0.15, x1 + 0.15):
+                if any(f[4] == t and inside(f, x, ze) for f in FLOORS): continue
                 k.box("galvanizedsteel", x - 0.075, b, ze - 0.075, x + 0.075, t + 1.1, ze + 0.075)
             zs = z0 if r > 0 else z1 - 0.3
             k.box("hazard", x0, b, zs, x1, b + 0.02, zs + 0.3)
