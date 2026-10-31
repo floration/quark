@@ -131,3 +131,12 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 - **Surf maps have time trials too**, played with surf's rules; their runs go to the boards like race runs.
 - **LEADERBOARD:** the RACE TOTAL column, your total and your time on each map under it, and TRIAL MAP to pick which map PLAY TIME TRIAL starts. MY RACE STATS shows what each map adds to your total.
 - Viaduct is no longer a ranked race map.
+
+## Maps: the new pool, and legacy maps
+- **The old maps are retired.** Temple, Bastion, Hamlet, Lodestone, Viaduct and the rest of the pool before 1.19.6 are gone from the map lists; the new maps (and q's Surfy and Cobblestone) replace them. The menu background is now Castle, and hosting starts on Sewer.
+- **LEGACY MAPS** (settings > GAMEPLAY > MAPS, off by default): turn it on to list the old maps again, marked (legacy). They're never ranked. A server or demo that asks for one by name still loads it.
+- **Your maps folder is tidied once:** untouched copies of the old official maps that older versions left in your maps folder (they hid the shipped map of that name) move to `maps\legacy\`. Your own and edited maps and downloaded maps aren't touched.
+- **Ranked:** qk1-qk8 are ranked on all three ladders. Each ladder starts on the map it's designed for: vanilla 1v1 on Greenhouse, laser vampire on Dojo, instagib on Spire. A ranked server still set to an old ranked map (e.g. `--map temple`) starts on its ladder's map instead.
+
+## Hide and seek
+- **The hiders' head start is 5 seconds** (was 30).

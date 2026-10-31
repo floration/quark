@@ -21,6 +21,7 @@ race_times.log
 /maps/*.qmap
 /maps/*.qmap.bak
 /maps/*.tmp
+/maps/legacy/
 !/maps/cobblestone.qmap
 !/maps/surfy.qmap
 !/maps/accelerator.qmap

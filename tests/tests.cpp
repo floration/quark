@@ -1793,63 +1793,63 @@ static void testMaps() {
         }
         CHECK(m.payloadLength() > 20);
     }
-    // ranked: a map of its own for each ladder plus one for all three; every ranked map is point-symmetric
-    // (each solid has a mirrored twin through the center, and each team A spawn a team B one)
-    int perLadder[3] = {0, 0, 0}, ownMaps = 0;
+    // ranked: at least two maps per ladder, and each ladder's designed-for map (rankedDefaultMap) is ranked for it.
+    // Ranked maps needn't be symmetric (q, 2026-10-30: "would it be fair even though it's asymmetrical?"), only fair:
+    // on a ladder played 1v1 (vanilla, vampire) each side has as many spawns, and on a plain run the two sides are
+    // within 1 s of each other to the enemy spawns and to the middle of the map. (Instagib's free for all spawns
+    // everyone from one pool: fair as it is. Spawn sight and spacing: testSpawnSanity, for every map.)
+    int perLadder[3] = {0, 0, 0};
     for (auto& name : listMaps()) {
         Map m;
         if (!m.load(name) || !m.rankedLadders) continue;
         HumanMadeGrace hg(name, m);
         CHECK(isRankedMap(m, 0) || isRankedMap(m, 1) || isRankedMap(m, 5));
         for (int v : {0, 1, 5}) if (m.rankedLadders >> v & 1) CHECK(m.supportsMode(rankedMode(v)));   // (instagib: free for all)
-        int k = 0;
-        for (int v : {0, 1, 5}) if (m.rankedLadders >> v & 1) perLadder[k++ < 3 ? (v == 0 ? 0 : v == 1 ? 1 : 2) : 0]++;
-        if (__builtin_popcount(m.rankedLadders) == 1) ownMaps++;
-        auto mirrored = [](const AABB& b) { return AABB{{-b.mx.x, b.mn.y, -b.mx.z}, {-b.mn.x, b.mx.y, -b.mn.z}}; };
-        int lonely = 0;
-        for (auto& br : m.brushes) {
-            AABB mb = mirrored(br.box);
-            bool found = false;
-            for (auto& o : m.brushes)
-                if (o.material == br.material && length(o.box.mn - mb.mn) < 0.01f && length(o.box.mx - mb.mx) < 0.01f) { found = true; break; }
-            lonely += !found;
-        }
-        if (lonely) printf("  %s: %d solids without a mirrored twin\n", name.c_str(), lonely);
-        CHECK(lonely == 0);
+        for (int v : {0, 1, 5}) if (m.rankedLadders >> v & 1) perLadder[v == 0 ? 0 : v == 1 ? 1 : 2]++;
         int a = 0, b = 0;
         for (auto& sp : m.spawns) { a += sp.team == SPAWN_A; b += sp.team == SPAWN_B; }
         bool duel = (m.rankedLadders & 3) != 0;   // a ladder played 1v1 (vanilla, vampire): a spawn for each side
         CHECK(a == b && (a >= 1 || !duel));
-        // the rest of the map mirrors too (REVIEW MAP-17: only spawn counts were compared): every spawn has its twin
-        // (A <-> B, the others their own team) facing the mirrored way, every ladder, light and objective its twin,
-        // and the sun is overhead (any other sun lights the two halves differently: baked shadows fall one way)
-        auto same = [](const Vec3& p, const Vec3& q) { return length(p - q) < 0.01f; };
-        auto flip = [](const Vec3& p) { return Vec3(-p.x, p.y, -p.z); };
-        auto boxTwin = [&](const std::vector<AABB>& list, const AABB& x) {
-            AABB mx = mirrored(x);
-            for (auto& o : list) if (same(o.mn, mx.mn) && same(o.mx, mx.mx)) return true;
-            return false;
+        if (!duel || !a) continue;
+        WalkGrid w;
+        w.build(m);
+        std::vector<int> sa, sb;
+        Vec3 mid{0, 0, 0};
+        for (auto& sp : m.spawns) if (sp.team == SPAWN_A || sp.team == SPAWN_B) {
+            int n = w.nodeAt(sp.pos);
+            (sp.team == SPAWN_A ? sa : sb).push_back(n);
+            mid = mid + sp.pos * (1.0f / (2 * a));
+        }
+        // each spawn's runs, once; the middle: every spot within r of the spawns' centre (across), r growing from
+        // 4 m until every spawn reaches one (a void or a pillar in the very middle: the nearest floor round it)
+        std::vector<std::vector<float>> ta, tb;
+        for (int n : sa) ta.push_back(walkSeconds(w, n));
+        for (int n : sb) tb.push_back(walkSeconds(w, n));
+        auto meanTo = [](const std::vector<std::vector<float>>& own, const std::vector<int>& goals) {
+            float sum = 0;
+            for (auto& t : own) { float f = INFINITY; for (int g : goals) if (g >= 0) f = std::min(f, t[g]); sum += f; }
+            return sum / own.size();
         };
-        int odd = 0;
-        for (auto& sp : m.spawns) {
-            int twinTeam = sp.team == SPAWN_A ? SPAWN_B : sp.team == SPAWN_B ? SPAWN_A : isModeSpawn(sp.team) && spawnSide(sp.team) != SPAWN_ANY ? modeSpawn(spawnSetMode(sp.team), 1 - spawnSide(sp.team)) : sp.team;
-            bool found = false;
-            for (auto& o : m.spawns)
-                if (o.team == twinTeam && same(o.pos, flip(sp.pos)) && std::fabs(std::remainder(o.yaw - sp.yaw - PI, 2 * PI)) < 0.01f) found = true;
-            if (!found) { printf("  %s: spawn %.1f %.1f %.1f (yaw %.0f) has no mirrored twin\n", name.c_str(), sp.pos.x, sp.pos.y, sp.pos.z, sp.yaw * 180 / PI); odd++; }
+        float aFoe = meanTo(ta, sb), bFoe = meanTo(tb, sa), aMid = INFINITY, bMid = INFINITY;
+        for (float r = 4; r <= 32 && !(std::isfinite(aMid) && std::isfinite(bMid)); r += 4) {
+            std::vector<int> mids;
+            for (size_t n = 0; n + w.ladderHubs < w.nodes.size(); n++) {
+                const Vec3& p = w.nodes[n].p;
+                if ((p.x - mid.x) * (p.x - mid.x) + (p.z - mid.z) * (p.z - mid.z) <= r * r) mids.push_back((int)n);
+            }
+            aMid = meanTo(ta, mids); bMid = meanTo(tb, mids);
         }
-        for (auto& l : m.ladders) if (!boxTwin(m.ladders, l)) { printf("  %s: a ladder at %.1f %.1f has no twin\n", name.c_str(), l.center().x, l.center().z); odd++; }
-        for (auto& l : m.lights) {
-            bool found = false;
-            for (auto& o : m.lights) found |= same(o.pos, flip(l.pos)) && o.radius == l.radius && o.intensity == l.intensity;
-            if (!found) { printf("  %s: a light at %.1f %.1f %.1f has no twin\n", name.c_str(), l.pos.x, l.pos.y, l.pos.z); odd++; }
-        }
-        for (auto* list : {&m.bombSites, &m.points, &m.checkpoints}) for (auto& z : *list) if (!boxTwin(*list, z)) { printf("  %s: an objective has no twin\n", name.c_str()); odd++; }
-        if (m.hasHill && !boxTwin({m.hill}, m.hill)) { printf("  %s: the hill isn't centred\n", name.c_str()); odd++; }
-        if (std::fabs(m.sunDir.x) > 1e-6f || std::fabs(m.sunDir.z) > 1e-6f) { printf("  %s: the sun (%.2f %.2f %.2f) isn't overhead\n", name.c_str(), m.sunDir.x, m.sunDir.y, m.sunDir.z); odd++; }
-        CHECK(odd == 0);
+        bool fair = std::isfinite(aFoe + aMid + bFoe + bMid) && std::fabs(aFoe - bFoe) <= 1.0f && std::fabs(aMid - bMid) <= 1.0f;
+        if (!fair) printf("  %s: not fair: to the enemy A %.1f s / B %.1f s, to the middle A %.1f s / B %.1f s\n", name.c_str(), aFoe, bFoe, aMid, bMid);
+        CHECK(fair);
     }
-    CHECK(perLadder[0] >= 2 && perLadder[1] >= 2 && perLadder[2] >= 2 && ownMaps >= 3);
+    CHECK(perLadder[0] >= 2 && perLadder[1] >= 2 && perLadder[2] >= 2);
+    for (int v : {0, 1, 5}) {
+        Map d;
+        bool ok = d.load(rankedDefaultMap(v)) && isRankedMap(d, v);
+        if (!ok) printf("  ladder %s: its designed-for map %s isn't ranked for it\n", arenaVariant(v).name, rankedDefaultMap(v));
+        CHECK(ok);
+    }
 }
 
 // The payload cart drives the whole track without going through anything (REVIEW MAP-5: a box on Railyard's track at
@@ -2187,7 +2187,7 @@ static void testMapIdentity() {
     CHECK(mapContentId("").hex() == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");   // (FIPS 180-4)
     CHECK(mapContentId("box 0 0 0 1 1 1\r\nspawn any 0 0 0\r\n") == mapContentId("box 0 0 0 1 1 1\nspawn any 0 0 0\n"));
     Map m;
-    CHECK(m.load("temple"));
+    CHECK(m.load("qk1"));
     std::string lf;
     for (char c : m.source) if (c != '\r') lf += c;
     CHECK(m.id().hex() == sha256Hex(lf) && m.id() == m.contentId() && isOfficialMap(m));
@@ -3039,7 +3039,7 @@ static void testCartChecks(uint16_t port) {
     s.command("forcestart");
     pump(s, cls, 3.2, idle);
     for (int k = 0; k < 30 && s.ms_.phase != PHASE_LIVE; k++) pump(s, cls, 0.1, idle);   // (a loaded machine: the countdown's last ticks)
-    CHECK(s.ms_.phase == PHASE_LIVE && s.ms_.pointCount == 2);
+    CHECK(s.ms_.phase == PHASE_LIVE && s.ms_.pointCount >= 2 && s.ms_.pointCount == (int)s.map_.cartChecks.size());   // (Railyard: 3 since its 1.19.6 rebuild)
     int att = -1;
     for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].team == s.ms_.attackers) att = i;
     if (att < 0) { g_fail++; s.stop(); return; }
@@ -5866,24 +5866,26 @@ static void testResetMaps() {
     printf("reset built-in maps\n");
     namespace fs = std::filesystem;
     Map orig;
-    CHECK(orig.load("temple"));
+    CHECK(orig.load("qk1"));
     Server s;   // (not started: just its map facts cache)
-    CHECK(s.mapInfo("temple").ok && s.mapInfo("temple").ranked != 0);
-    CHECK(saveMapFile(userMapsDir() + "/temple.qmap", orig.source + "box 0 0 0 1 1 1\n")); // your edit shadows the shipped one
+    CHECK(s.mapInfo("qk1").ok && s.mapInfo("qk1").ranked != 0);
+    CHECK(saveMapFile(userMapsDir() + "/qk1.qmap", orig.source + "box 0 0 0 1 1 1\n")); // your edit shadows the shipped one
     Map m;
-    CHECK(m.load("temple") && !isOfficialMap(m));
-    CHECK(s.mapInfo("temple").ok && s.mapInfo("temple").ranked == 0);   // votes / ranked see the file that's played
+    CHECK(m.load("qk1") && !isOfficialMap(m));
+    CHECK(s.mapInfo("qk1").ok && s.mapInfo("qk1").ranked == 0);   // votes / ranked see the file that's played
     std::string shipped = userDataPath("zz_install_maps");
     std::error_code ec;
     fs::remove_all(shipped, ec);
     fs::create_directories(shipped, ec);
-    CHECK(saveMapFile(shipped + "/temple.qmap", orig.source + "box 0 0 0 1 1 1\n"));   // a shipped map changed in place
+    CHECK(saveMapFile(shipped + "/qk1.qmap", orig.source + "box 0 0 0 1 1 1\n"));   // a shipped map changed in place
     CHECK(saveMapFile(shipped + "/crucible.qmap", orig.source) && saveMapFile(shipped + "/crucible.qlm", "x"));   // retired
+    CHECK(saveMapFile(shipped + "/temple.qmap", orig.source) && saveMapFile(shipped + "/temple.qlm", "x"));
     CHECK(resetOfficialMaps(shipped) >= 13);
     CHECK(!fs::exists(shipped + "/crucible.qmap", ec) && !fs::exists(shipped + "/crucible.qlm", ec));
+    CHECK(!fs::exists(shipped + "/temple.qmap", ec) && !fs::exists(shipped + "/temple.qlm", ec));   // (1.19.6: retired to maps/legacy/)
     Map r;
-    CHECK(r.load("temple") && isOfficialMap(r));   // (your edited copy is gone)
-    CHECK(s.mapInfo("temple").ranked != 0);
+    CHECK(r.load("qk1") && isOfficialMap(r));   // (your edited copy is gone)
+    CHECK(s.mapInfo("qk1").ranked != 0);
     int n = 0;
     for (auto& e : fs::directory_iterator(shipped, ec)) {
         if (e.path().extension() != ".qmap") continue;
@@ -5897,6 +5899,83 @@ static void testResetMaps() {
     }
     CHECK(n >= 13);
     fs::remove_all(shipped, ec);
+}
+
+// 1.19.6 legacy maps: the old pool ships in maps/legacy/, listed only with LEGACY MAPS on but loaded by name either
+// way; and once per version the untouched generated copies in your maps folder move to its legacy/ (nothing else).
+static void testLegacyMaps() {
+    printf("legacy maps: listed with the setting, loaded by name, old copies moved aside once\n");
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    auto has = [](const std::vector<std::string>& v, const char* n) { return std::find(v.begin(), v.end(), n) != v.end(); };
+    // the shipped legacy folder (make_maps.py LEGACY): off, not listed; on, listed; loads by name, never official
+    setLegacyMapsListed(false);
+    std::vector<std::string> off = listMaps();
+    CHECK(!has(off, "temple") && !has(off, "bastion") && has(off, "qk1"));
+    Map t;
+    CHECK(t.load("temple") && !isOfficialMap(t) && !isRankedMap(t, 0) && isLegacyMap("temple") && !isLegacyMap("qk1"));
+    for (const char* n : kLegacyMapNames) { Map l; CHECK(l.load(n) && !isOfficialMap(l)); if (isOfficialMapName(n)) printf("  %s is still official\n", n); CHECK(!isOfficialMapName(n)); }
+    setLegacyMapsListed(true);
+    std::vector<std::string> on = listMaps();
+    CHECK(has(on, "temple") && has(on, "bastion") && has(on, "qk1"));
+    // your legacy folder too; a name that is also a current map plays the current one
+    CHECK(saveMapFile(userLegacyMapsDir() + "/zz_oldie.qmap", "title Oldie\nbox -20 -1 -20 20 0 20\nspawn any 0 0 0\n"));
+    CHECK(saveMapFile(userLegacyMapsDir() + "/qk1.qmap", "title Not QK1\nbox -20 -1 -20 20 0 20\nspawn any 0 0 0\n"));
+    on = listMaps();
+    CHECK(has(on, "zz_oldie") && std::count(on.begin(), on.end(), std::string("qk1")) == 1);
+    Map q;
+    CHECK(q.load("qk1") && isOfficialMap(q));
+    setLegacyMapsListed(false);
+    CHECK(!has(listMaps(), "zz_oldie"));
+    Map o;
+    CHECK(o.load("zz_oldie") && o.title == "Oldie");   // (by name: whatever the setting says)
+    fs::remove(userLegacyMapsDir() + "/zz_oldie.qmap", ec);
+    fs::remove(userLegacyMapsDir() + "/qk1.qmap", ec);
+    for (int v : {0, 1, 5}) {   // a ranked server still set to an old ranked map plays its ladder's designed-for map
+        Server rs;
+        ServerConfig cfg;
+        cfg.map = v == 5 ? "gantry" : v == 1 ? "furnace" : "temple"; cfg.port = 0; cfg.lanOnly = true; cfg.ranked = true; cfg.arenaVariant = v;
+        rs.setLog([](const std::string&) {});
+        std::string err;
+        bool ok = rs.start(cfg, &err);
+        if (!ok) printf("  ranked on %s: %s\n", cfg.map.c_str(), err.c_str());
+        CHECK(ok && rs.cfg_.map == rankedDefaultMap(v));
+        rs.stop();
+    }
+
+    // the move: a made-up user folder with a generated copy (and its sidecars), one with the same name already in
+    // legacy/, a hand-made one, a custom one and a download; and an install folder with a retired official map
+    const std::string root = userDataPath("zz_legacy_move"), maps = root + "/maps", ship = root + "/install_maps", stamp = root + "/legacy_maps.stamp";
+    fs::remove_all(root, ec);
+    Map gen;
+    CHECK(gen.load("temple"));
+    const std::string g = gen.source;   // (# generated by tools/make_maps.py, no handmade line)
+    CHECK(g.rfind("# generated by tools/make_maps.py", 0) == 0);
+    CHECK(saveMapFile(maps + "/temple.qmap", g) && saveMapFile(maps + "/temple.mapedit.json", "{}") && saveMapFile(maps + "/temple.qlm", "x"));
+    CHECK(saveMapFile(root + "/cache/temple.qlm", "x"));
+    CHECK(saveMapFile(maps + "/bastion.qmap", g) && saveMapFile(maps + "/legacy/bastion.qmap", "title other\n"));   // a name taken in legacy/
+    std::string hand = g;
+    hand.insert(hand.find('\n') + 1, "handmade\n");
+    CHECK(saveMapFile(maps + "/harbor.qmap", hand));                                   // hand-made (edited): stays
+    CHECK(saveMapFile(maps + "/my_arena.qmap", "title Mine\nbox -20 -1 -20 20 0 20\nspawn any 0 0 0\n"));   // custom: stays
+    CHECK(saveMapFile(maps + "/downloads/abc.qmap", g));                               // downloads: never touched
+    CHECK(saveMapFile(maps + "/sub/canal.qmap", g));                                   // a subfolder: never touched
+    CHECK(saveMapFile(ship + "/temple.qmap", g) && saveMapFile(ship + "/legacy/temple.qmap", g) && saveMapFile(ship + "/qk1.qmap", q.source));
+    LegacyMoveReport r = moveOldOfficialMaps(maps, ship, stamp, "9.9.9");
+    for (auto& l : r.log) printf("    %s\n", l.c_str());
+    CHECK(r.ran && r.moved == 2 && r.shipped == 1);
+    CHECK(!fs::exists(maps + "/temple.qmap", ec) && fs::exists(maps + "/legacy/temple.qmap", ec) && fs::exists(maps + "/legacy/temple.mapedit.json", ec));
+    CHECK(!fs::exists(maps + "/temple.mapedit.json", ec) && !fs::exists(maps + "/temple.qlm", ec) && !fs::exists(root + "/cache/temple.qlm", ec));
+    CHECK(!fs::exists(maps + "/bastion.qmap", ec) && fs::exists(maps + "/legacy/bastion_2.qmap", ec) && fs::exists(maps + "/legacy/bastion.qmap", ec));
+    CHECK(fs::exists(maps + "/harbor.qmap", ec) && fs::exists(maps + "/my_arena.qmap", ec) && fs::exists(maps + "/downloads/abc.qmap", ec) && fs::exists(maps + "/sub/canal.qmap", ec));
+    CHECK(!fs::exists(ship + "/temple.qmap", ec) && fs::exists(ship + "/legacy/temple.qmap", ec) && fs::exists(ship + "/qk1.qmap", ec));
+    // the stamp: the same version doesn't scan again (a new copy stays), the next version does
+    CHECK(saveMapFile(maps + "/temple.qmap", g));
+    LegacyMoveReport again = moveOldOfficialMaps(maps, ship, stamp, "9.9.9");
+    CHECK(!again.ran && again.moved == 0 && fs::exists(maps + "/temple.qmap", ec));
+    LegacyMoveReport next = moveOldOfficialMaps(maps, ship, stamp, "9.9.10");
+    CHECK(next.ran && next.moved == 1 && !fs::exists(maps + "/temple.qmap", ec));   // (identical to legacy/temple: just removed)
+    fs::remove_all(root, ec);
 }
 
 static void testRocketLob(uint16_t port) {
@@ -6813,7 +6892,7 @@ static void testRanked(uint16_t port) {
     }
     {
         Map m;
-        CHECK(m.load("temple"));
+        CHECK(m.load("qk1"));
         Map edited = m;
         edited.source += "box 0 50 0 1 51 1\n";
         CHECK(!isOfficialMap(edited));
@@ -6831,7 +6910,7 @@ static void testRanked(uint16_t port) {
         const int teamSize = 1;
         Server s;
         ServerConfig cfg;
-        cfg.map = "anvil"; cfg.mode = MODE_FFA; cfg.port = (uint16_t)(port + variant); cfg.ranked = true; cfg.arenaVariant = variant;
+        cfg.map = "qk1"; cfg.mode = MODE_FFA; cfg.port = (uint16_t)(port + variant); cfg.ranked = true; cfg.arenaVariant = variant;
         s.setLog([](const std::string&) {});
         if (!s.start(cfg)) { g_fail++; continue; }
         std::vector<std::unique_ptr<NetClient>> owned;
@@ -6928,7 +7007,7 @@ static void testRankedLeaver(uint16_t port) {
     snprintf(tag, sizeof tag, "%u", (unsigned)qrand());
     Server s;
     ServerConfig cfg;
-    cfg.map = "temple"; cfg.mode = MODE_ARENA; cfg.port = port; cfg.ranked = true; cfg.arenaVariant = 0;
+    cfg.map = "qk1"; cfg.mode = MODE_ARENA; cfg.port = port; cfg.ranked = true; cfg.arenaVariant = 0;
     s.setLog([](const std::string&) {});
     { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     NetClient a, b, c;
@@ -6971,7 +7050,7 @@ static void testRankedLeaver(uint16_t port) {
     s.command("map furnace");
     s.command("kick " + std::to_string(ib));
     s.command("kick leaver");   // (by name too)
-    CHECK(s.config().map == "temple" && s.players_[ib].connected && s.config().ranked);
+    CHECK(s.config().map == "qk1" && s.players_[ib].connected && s.config().ranked);
     // the leaver's connection drops: slot kept, and a reconnect within the grace gets it back
     int scoreB = s.players_[ib].score = 2;
     b.disconnect();
@@ -7032,7 +7111,7 @@ static void testRankedRelay(uint16_t port) {
     for (int pass = 0; pass < 2; pass++) {
         Server s;
         ServerConfig cfg;
-        cfg.map = "temple"; cfg.mode = MODE_ARENA; cfg.port = port;
+        cfg.map = "qk1"; cfg.mode = MODE_ARENA; cfg.port = port;
         if (pass == 1) cfg.ownAddrs = {relayAddr};   // (control: if the host says that address reaches it, the same connect is taken)
         std::vector<std::string> logs;
         s.setLog([&](const std::string& l) { logs.push_back(l); });
@@ -7086,7 +7165,7 @@ static void testRankedLeaverPaths(uint16_t port) {
     snprintf(tag, sizeof tag, "%u", (unsigned)qrand());
     Server s;
     ServerConfig cfg;
-    cfg.map = "gantry"; cfg.mode = MODE_FFA; cfg.port = port; cfg.ranked = true; cfg.arenaVariant = 5;   // instagib FFA: goes on after a leaver
+    cfg.map = "spire"; cfg.mode = MODE_FFA; cfg.port = port; cfg.ranked = true; cfg.arenaVariant = 5;   // instagib FFA: goes on after a leaver
     CHECK(rankedMode(5) == MODE_FFA);
     s.setLog([](const std::string&) {});
     { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
@@ -8268,13 +8347,13 @@ static void testDemo(uint16_t port) {
 // them under a new name (never a built-in map's), autosaved from then on.
 static void testBuiltInMapEditSession(uint16_t port) {
     printf("edit session on a built-in map: never saved over it\n");
-    std::string mine = userMapsDir() + "/bastion.qmap";
+    std::string mine = userMapsDir() + "/castle.qmap";
     std::remove(mine.c_str());
     Map disk;
-    CHECK(disk.load("bastion") && isOfficialMap(disk));
+    CHECK(disk.load("castle") && isOfficialMap(disk));
     Server s;
     ServerConfig cfg;
-    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port; cfg.editMode = true;
+    cfg.map = "castle"; cfg.mode = MODE_FFA; cfg.port = port; cfg.editMode = true;
     s.setLog([](const std::string&) {});
     if (!s.start(cfg)) { g_fail++; return; }
     NetClient a;
@@ -8293,8 +8372,8 @@ static void testBuiltInMapEditSession(uint16_t port) {
     s.command("editmode on");
     pump(s, cls, 0.3, idle);
     CHECK(s.editing_ && s.tempEdit_);
-    s.command("editmode saveas temple");   // another built-in map's name: refused
-    CHECK(s.cfg_.map == "bastion" && s.tempEdit_);
+    s.command("editmode saveas qk1");   // another built-in map's name: refused
+    CHECK(s.cfg_.map == "castle" && s.tempEdit_);
     char tag[16];
     snprintf(tag, sizeof tag, "%u", (unsigned)qrand());
     std::string name = std::string("zz_mybastion") + tag, path = userMapsDir() + "/" + name + ".qmap";
@@ -8306,7 +8385,7 @@ static void testBuiltInMapEditSession(uint16_t port) {
     s.stop();   // (autosaves: it's yours now)
     CHECK(kept.load(name) && kept.title == "Mine");
     Map after;
-    CHECK(!std::filesystem::exists(mine, ec) && after.load("bastion") && isOfficialMap(after) && after.brushes.size() == nb);
+    CHECK(!std::filesystem::exists(mine, ec) && after.load("castle") && isOfficialMap(after) && after.brushes.size() == nb);
     std::remove(path.c_str());
     std::remove((path + ".bak").c_str());
 }
@@ -9543,16 +9622,16 @@ static void testUserData() {
     { std::ofstream(old / "maps" / "downloads" / "x-0000.qmap") << "dl"; }
     { std::ofstream(old / "maps" / "mine.qlm") << "cache"; }
     Map t;
-    CHECK(t.load("temple"));
-    { std::ofstream(old / "maps" / "temple.qmap", std::ios::binary) << t.source; }          // untouched shipped map
-    { std::ofstream(old / "maps" / "canal.qmap", std::ios::binary) << t.source << "\n"; }   // edited one
+    CHECK(t.load("qk1"));
+    { std::ofstream(old / "maps" / "qk1.qmap", std::ios::binary) << t.source; }          // untouched shipped map
+    { std::ofstream(old / "maps" / "sewer.qmap", std::ios::binary) << t.source << "\n"; }   // edited one
     fs::create_directories(dst, ec);
     { std::ofstream(dst / "quark.key") << "newer\n"; } // never overwritten
     CHECK(migrateUserData(old.string(), dst.string()) == 5);
     auto rd = [](const fs::path& p) { std::ifstream f(p); std::stringstream ss; ss << f.rdbuf(); return ss.str(); };
     CHECK(rd(dst / "quark.cfg") == "sens=2\n" && rd(dst / "quark.key") == "newer\n" && rd(dst / "demos" / "a.qdemo") == "demo");
-    CHECK(fs::exists(dst / "maps" / "mine.qmap") && fs::exists(dst / "maps" / "canal.qmap") && fs::exists(dst / "maps" / "downloads" / "x-0000.qmap"));
-    CHECK(!fs::exists(dst / "maps" / "temple.qmap") && !fs::exists(dst / "maps" / "mine.qlm"));
+    CHECK(fs::exists(dst / "maps" / "mine.qmap") && fs::exists(dst / "maps" / "sewer.qmap") && fs::exists(dst / "maps" / "downloads" / "x-0000.qmap"));
+    CHECK(!fs::exists(dst / "maps" / "qk1.qmap") && !fs::exists(dst / "maps" / "mine.qlm"));
     CHECK(fs::exists(old / "quark.cfg") && fs::exists(old / "maps" / "mine.qmap")); // originals kept
     CHECK(migrateUserData(old.string(), dst.string()) == 0);                         // idempotent
     fs::remove_all(old, ec);
@@ -9560,7 +9639,7 @@ static void testUserData() {
     // shipped maps are read from the install; your maps dir is searched first and listed too
     CHECK(userMapsDir().find(userDataPath()) == 0 && downloadedMapPath(MapId()).find(userDataPath()) == 0);
     std::vector<std::string> ml = listMaps();
-    CHECK(std::find(ml.begin(), ml.end(), "temple") != ml.end());
+    CHECK(std::find(ml.begin(), ml.end(), "qk1") != ml.end());
 }
 
 // Reachability probe: a host asks a prober (any server) to send one packet to its game port from outside.
@@ -9888,7 +9967,7 @@ int main(int argc, char** argv) {
         {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotNavBlockers(TP(29030)); testBotAim(p); testHostedBotsThreadExit(TP(29010)); testBotHurtTurn(TP(29011)); }},
         {"assets", [] { g_fail += assetTests(); }},
         {"modelogic", [] { g_fail += modeTests(); }},
-        {"resetmaps", [] { testResetMaps(); }},   // (each forked group has its own user data dir: these write only there)
+        {"resetmaps", [] { testResetMaps(); testLegacyMaps(); }},   // (each forked group has its own user data dir: these write only there)
         {"userdata", [] { testUserData(); }},
         {"layout", [] { testLayoutCases(); testLayoutCache(); testHudTheme(); }},
         {"benchmark", [] { testBenchStats(); testBenchDemo(TP(29160)); }},

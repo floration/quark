@@ -15,7 +15,7 @@ D, RW, TOP = 12.0, 8.0, 30.0      # drum half size, ring width, top floor
 
 def build():
     m = M("QK7 Spiral", "1v1", sun=(0, 1, 0))
-    m.raw("ranked vanilla")
+    m.raw("ranked vanilla vampire instagib")   # (q, 2026-10-31: every qk map on all three ladders)
     m.also = ["duel", "vs", "tourney"]
     start = len(m.lines)
     O = D + RW

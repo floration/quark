@@ -12,7 +12,7 @@ from .m2kit import B, island, light, mirror_all, ramp
 
 def build():
     m = M("QK5 Islands", "1v1", sun=(0, 1, 0))   # (ranked: the sun overhead)
-    m.raw("ranked vanilla")
+    m.raw("ranked vanilla vampire instagib")   # (q, 2026-10-31: every qk map on all three ladders)
     m.also = ["duel", "vs", "tourney"]
     m.raw("void -20")
     start = len(m.lines)

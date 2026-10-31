@@ -75,7 +75,7 @@ constexpr float modeRespawnDelay(int m) {
 }
 constexpr bool modeRespawns(int m) { return modeRespawnDelay(m) >= 0; }
 inline bool isItMode(int m) { return m == MODE_HIDE || m == MODE_TAG; } // one player is "it" (seeker / tagger) with the knife
-constexpr float kHideTime = 30.0f;       // hide and seek: hiders' head start while the seeker faces the wall
+constexpr float kHideTime = 5.0f;        // hide and seek: hiders' head start while the seeker faces the wall
 constexpr float kHideRoundTime = 300.0f; // hiders win if anyone lasts this long
 constexpr float kSeekerRespawn = 2.0f;    // hide and seek: a seeker who fell (or died) is back this long after
 constexpr float kLastLegRespawn = 3.0f;   // payload, unstaged spawns: attackers past the last checkpoint (T18; else 5 s)
@@ -190,6 +190,10 @@ inline bool arenaVariantRanked(int v) { return v == 0 || v == 1 || v == 5; } // 
 inline int rankedMode(int v) { return v == 5 ? MODE_FFA : MODE_ARENA; }       // ranked instagib is a free for all, the rest 1v1
 inline const char* rankedKind(int v) { return v == 5 ? "RANKED FFA" : "RANKED 1V1"; }
 constexpr float kRankedFfaTime = 300.0f;                                       // ranked instagib: 5 minutes
+// The map each ladder is designed for (q, 2026-10-31: "lg vamp is designed for dojo, 1v1 vanilla is designed for
+// greenhouse, instagib is designed for spire"): what going ranked and the ranked pickers choose first, when it is a
+// ranked map for that ladder; else the first map that is only that ladder's, else the first that takes it.
+inline const char* rankedDefaultMap(int v) { return v == 0 ? "greenhouse" : v == 1 ? "dojo" : v == 5 ? "spire" : ""; }
 inline int arenaVariantFromName(const char* s) {
     for (int i = 0; i < kArenaVariants; i++) {
         const char* a = arenaVariant(i).name; const char* b = s;

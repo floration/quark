@@ -16,7 +16,7 @@ SW = 4.0                           # the shelves' and flights' width (and the en
 
 def build():
     m = M("QK8 Canyon", "1v1", sun=(0, 1, 0))
-    m.raw("ranked vanilla instagib")
+    m.raw("ranked vanilla vampire instagib")   # (q, 2026-10-31: every qk map on all three ladders)
     m.also = ["duel", "vs", "tourney"]
     start = len(m.lines)
     # ---- the trench floor (its own twin) and the walls: the north wall here, the south one is its mirror

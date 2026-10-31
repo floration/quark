@@ -148,6 +148,7 @@ def outside(k):
 def build():
     m = M("Greenhouse", "1v1", sun=(0.2, 1.0, 0.15))
     m.also = ["duel", "vs", "tourney"]
+    m.raw("ranked vanilla")   # (q, 2026-10-31: the map ranked vanilla 1v1 is designed for)
     k = Kit(m)
     m.raw("palette base 0.80 0.80 0.76 accent 0.24 0.36 0.26 metal 0.18 0.20 0.20 glow 1.00 0.90 0.70 sky 0.82 0.88 0.92")
 

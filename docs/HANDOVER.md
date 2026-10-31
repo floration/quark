@@ -201,7 +201,7 @@ build/quark_tests bounds          # out-of-bounds reach check (OOB_TRACE=<map> l
 - Client changes can be checked headless:
   ```
   Xvfb :99 &
-  DISPLAY=:99 build/quark --host ffa --map bastion --screenshot out.png
+  DISPLAY=:99 build/quark --host ffa --map qk1 --screenshot out.png
   ```
 - The UI test: `build/quark --uitest <report.json>`. It clicks every button on every screen and checks what each one does.
 

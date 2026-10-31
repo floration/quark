@@ -27,7 +27,7 @@ HUMP = 2.0            # each arm's rise
 def build():
     m = M("QK1 Ring", "1v1", sun=(0, 1, 0))
     m.also = ["duel", "vs", "tourney"]
-    m.raw("ranked vanilla")
+    m.raw("ranked vanilla vampire instagib")   # (q, 2026-10-31: every qk map on all three ladders)
     m.raw("void -14")
     m.raw("palette base 0.6 0.62 0.66 accent 0.95 0.45 0.12 metal 0.3 0.3 0.33 glow 1 0.62 0.25 sky 0.34 0.38 0.48")
     layout(m)

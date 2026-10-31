@@ -1319,7 +1319,7 @@ private:
         hardReset();
         ServerConfig sc;
         sc.name = edit ? "uitest edit" : "uitest";
-        sc.map = map ? map : edit ? "harbor" : "temple";   // (the guest may save a copy: not of the ranked map the host scenarios use)
+        sc.map = map ? map : edit ? "sewer" : "qk1";   // (the guest may save a copy: not of the ranked map the host scenarios use)
         sc.mode = mode;
         sc.port = 0;
         sc.lanOnly = true;
@@ -1352,7 +1352,7 @@ private:
     void pumpServer(double seconds) { double until = timeNow() + seconds; while (timeNow() < until) { srv_->frame(); sleepMs(1); } }
     // hide and seek with us seeking (the seeker holds the knife and the locator, slot key 0)
     bool hideSeeker() {
-        if (!ownServer(false, false, MODE_HIDE, "hamlet")) return false;
+        if (!ownServer(false, false, MODE_HIDE, "museum")) return false;
         pauseServer();
         Server& s = *srv_;
         s.command("forcestart");
@@ -1366,7 +1366,7 @@ private:
     bool iAmIt() const { const PlayerSnap* me = g_.net_.findPlayer(g_.net_.clientId()); return me && (me->flags & PS_HASBOMB) && isItMode(g_.net_.mode().mode); }
     // the hide and seek tiebreak (rock paper scissors among those tied for first), held at its throw
     bool hideRps() {
-        if (!ownServer(false, false, MODE_HIDE, "hamlet")) return false;
+        if (!ownServer(false, false, MODE_HIDE, "museum")) return false;
         pauseServer();
         Server& s = *srv_;
         s.command("forcestart");
@@ -1388,7 +1388,7 @@ private:
         srv_.reset();
     }
     bool recordDemo() {
-        if (!hostGame(MODE_FFA, "temple", false, false)) return false;
+        if (!hostGame(MODE_FFA, "qk1", false, false)) return false;
         g_.startRecording();
         waitFor([] { return false; }, 2.0);
         g_.net_.stopRecording();
@@ -1411,10 +1411,10 @@ private:
         const std::vector<std::string> inGameAll = {"ingame"};
         const std::vector<std::string> noSettings = {"ingame/pause/settings", "ingame/pause/queue"};
         // (SEARCH lists the very widgets the pages have, which host-ffa tests on them in game: the menus test the tab)
-        v.push_back({"host-ffa", "ingame", inGameAll, {"ingame/pause/settings/search"}, [=] { return hostGame(MODE_FFA, "temple", false, false); }, hosted(MODE_FFA, false, false)});
-        v.push_back({"host-vs", "ingame", inGameAll, noSettings, [=] { return hostGame(MODE_VS, "temple", false, false); }, hosted(MODE_VS, false, false)});
-        v.push_back({"host-tourney", "ingame", inGameAll, noSettings, [=] { return hostGame(MODE_TOURNEY, "temple", false, false); }, hosted(MODE_TOURNEY, false, false)});
-        v.push_back({"host-ranked", "ingame", inGameAll, noSettings, [=] { return hostGame(MODE_ARENA, "temple", true, false); }, hosted(MODE_ARENA, true, false)});
+        v.push_back({"host-ffa", "ingame", inGameAll, {"ingame/pause/settings/search"}, [=] { return hostGame(MODE_FFA, "qk1", false, false); }, hosted(MODE_FFA, false, false)});
+        v.push_back({"host-vs", "ingame", inGameAll, noSettings, [=] { return hostGame(MODE_VS, "qk1", false, false); }, hosted(MODE_VS, false, false)});
+        v.push_back({"host-tourney", "ingame", inGameAll, noSettings, [=] { return hostGame(MODE_TOURNEY, "qk1", false, false); }, hosted(MODE_TOURNEY, false, false)});
+        v.push_back({"host-ranked", "ingame", inGameAll, noSettings, [=] { return hostGame(MODE_ARENA, "qk1", true, false); }, hosted(MODE_ARENA, true, false)});
         v.push_back({"client-spectator", "ingame", inGameAll, noSettings, [=] { return ownServer(false, true); },
                      [=] { return g_.screen_ == Game::Screen::InGame && !g_.host_ && srv_ && g_.net_.state() == ConnState::Connected && g_.net_.hasSnapshot(); }});
         v.push_back({"demo", "ingame", inGameAll, noSettings,
@@ -1452,9 +1452,9 @@ private:
         Scenario builtin{"editor-builtin", "editor", {"editor"}, {"editor-online"},
                      [=] {
                          leaveAll();
-                         g_.openEditor("temple");
+                         g_.openEditor("qk1");
                          step(2);
-                         g_.edDo("t Temple (my edits)", "t " + g_.ed_.title);
+                         g_.edDo("t QK1 Ring (my edits)", "t " + g_.ed_.title);
                          step(2);
                          saveEdView();
                          return g_.screen_ == Game::Screen::Editor && g_.edDirty_ && g_.edOfficial();
@@ -1478,7 +1478,7 @@ private:
         v.push_back({"edit-guest", "editor-online", {"editor-online", "main/save-copy"}, {},
                      [=] {   // (the built-in map, changed: leaving always asks "save your copy?" - unchanged, it doesn't)
                          if (!ownServer(true, false)) return false;
-                         const std::string t0 = g_.ed_.title, t1 = "Harbor (uitest copy)";
+                         const std::string t0 = g_.ed_.title, t1 = "Sewer (uitest copy)";
                          g_.edDo("t " + t1, "t " + t0, false, false);
                          bool ok = waitFor([&] { return g_.ed_.title == t1 && g_.net_.map().title == t1; }, 10);
                          step(2);

@@ -23,7 +23,7 @@ RN, RF = -20.0 - RS, -20.0        # NW room's near/far edges (x and z: -34..-20)
 
 def build():
     m = M("QK6 Crossroads", "1v1", sun=(0, 1, 0))
-    m.raw("ranked vanilla instagib")
+    m.raw("ranked vanilla vampire instagib")   # (q, 2026-10-31: every qk map on all three ladders)
     m.also = ["duel", "vs", "tourney"]
     start = len(m.lines)
     R = Rooms(m)

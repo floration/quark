@@ -1,7 +1,7 @@
 #!/bin/sh
 # Sets up (or upgrades) the dedicated servers on a Linux box with systemd: one PRODUCTION server and one TESTING
 # server, each always running the latest release of its channel. Run it from a checkout, as a user with sudo:
-#   tools/server/install.sh --ranked --variant vanilla --map temple --public --name "my server"
+#   tools/server/install.sh --ranked --variant vanilla --map greenhouse --public --name "my server"
 # Every argument but install.sh's own (below) is passed to quark_server (run it again to change them; with none, the
 # options of the installed production service are kept, or --public on a first install). The testing server gets the
 # same options, on its own port, with " [TESTING]" added to its name.

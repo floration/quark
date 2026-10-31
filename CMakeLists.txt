@@ -236,11 +236,23 @@ set(QUARK_GEN_MAPS "")
 foreach(n ${QUARK_GEN_MAP_NAMES})
   list(APPEND QUARK_GEN_MAPS ${QUARK_MAPS_DIR}/${n}.qmap)
 endforeach()
+# the old map pool (official until 1.19.6), built into maps/legacy/: shipped with maps/, never embedded (not official)
+execute_process(COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/make_maps.py --list-legacy
+  OUTPUT_VARIABLE QUARK_LEGACY_MAP_NAMES RESULT_VARIABLE rc OUTPUT_STRIP_TRAILING_WHITESPACE)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "tools/make_maps.py --list-legacy failed (${rc})")
+endif()
+string(REPLACE "\r" "" QUARK_LEGACY_MAP_NAMES "${QUARK_LEGACY_MAP_NAMES}")
+string(REPLACE "\n" ";" QUARK_LEGACY_MAP_NAMES "${QUARK_LEGACY_MAP_NAMES}")
+set(QUARK_LEGACY_MAPS "")
+foreach(n ${QUARK_LEGACY_MAP_NAMES})
+  list(APPEND QUARK_LEGACY_MAPS ${QUARK_MAPS_DIR}/legacy/${n}.qmap)
+endforeach()
 # (the owner's map overrides, assets/overrides/maps/<name>.qmap, replace generated maps: docs/ASSETS.md)
 file(GLOB QUARK_MAP_OVERRIDES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/assets/overrides/maps/*.qmap)
 # (any change to the generator, the shared builder or one map's module, regenerates; a new module re-globs)
 file(GLOB QUARK_MAP_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/maps/*.py)
-add_custom_command(OUTPUT ${QUARK_GEN_MAPS}
+add_custom_command(OUTPUT ${QUARK_GEN_MAPS} ${QUARK_LEGACY_MAPS}
   COMMAND ${CMAKE_COMMAND} -E env PYTHONHASHSEED=0 ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/make_maps.py --out ${QUARK_MAPS_DIR}
   DEPENDS ${CMAKE_SOURCE_DIR}/tools/make_maps.py ${QUARK_MAP_SOURCES} ${QUARK_MAP_OVERRIDES}
   COMMENT "Generating maps (tools/make_maps.py)" VERBATIM)
@@ -474,7 +486,9 @@ endif()
 # Copy the shipped maps (generated + hand-made, as embedded above) next to the executables so builds run in place;
 # any other *.qmap there (a map since retired from the generator, a stray file) is removed.
 string(REPLACE ";" "|" QUARK_SHIPPED_MAPS_ARG "${QUARK_GEN_MAPS};${QUARK_HAND_MAPS}")
+string(REPLACE ";" "|" QUARK_LEGACY_MAPS_ARG "${QUARK_LEGACY_MAPS}")
 add_custom_target(copy_maps ALL
   COMMAND ${CMAKE_COMMAND} "-DMAPS=${QUARK_SHIPPED_MAPS_ARG}" -DDEST=${CMAKE_BINARY_DIR}/maps -P ${CMAKE_SOURCE_DIR}/tools/copy_maps.cmake
+  COMMAND ${CMAKE_COMMAND} "-DMAPS=${QUARK_LEGACY_MAPS_ARG}" -DDEST=${CMAKE_BINARY_DIR}/maps/legacy -P ${CMAKE_SOURCE_DIR}/tools/copy_maps.cmake
   VERBATIM)
 add_dependencies(copy_maps quark_maps)
