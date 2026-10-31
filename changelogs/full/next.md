@@ -436,3 +436,10 @@ Worker 2's share of the 1-scored items, in the same batch-3 key table (`b3Keys`)
 
 ## Servers: a new install plays unranked laser vampire on Dojo (owner, 2026-10-31: "default server position should be dojo ranked lg vamp for future updates", then "actually unranked")
 - `tools/server/install.sh` with no server options on a first install now runs `--mode 1v1 --variant vampire --map dojo --public` (it was `--public`: FFA on the default map). Re-running it still keeps an installed server's options.
+
+## Steam: a `QUARK_STEAM` build option (default off; the normal builds are unchanged)
+- `cmake -DQUARK_STEAM=ON` makes a Steam build (and defines `QUARK_STEAM=1` for the code). Why: Steam installs and updates the game itself, verifies the install folder, and its store doesn't take a game that installs other programs or names other games.
+- No launcher: `quark_launcher` isn't built and the game doesn't link `quark_launcher_core`. The game never calls `selfupdate::startFromGame`, so it never installs or replaces launchers, writes shortcuts (.lnk, .desktop, ~/Applications/Quark.app) or the Windows Uninstall / `HKCU\Software\quark` keys. The game itself has no "update available" check, so nothing else was needed there.
+- Nothing is written into the install folder. Your fonts and sounds are read from `<data folder>/mods/fonts` and `<data folder>/mods/sounds` (FONT > OPEN FOLDER opens that one), and the install's shipped `mods/` is still read too (yours win). RESET OFFICIAL MAPS only drops your edited copies (Steam repairs the shipped files). With no home folder the data folder falls back to the temp folder instead of the install.
+- Fonts: the bundled free fonts only. The game-styled rows never look for another game's font (mods/fonts under the real name, the system, a Steam library) and show the free font's own name without a hint naming a game ("CLOSEST FREE MATCH: ...", "THE FONT COCAINE DIESEL USES").
+- The main menu's version and the F3 overlay say "V<version> STEAM", so a Steam build can be told apart; the version sent to servers, the master and ranked is the same as the other builds'.

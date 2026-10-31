@@ -88,7 +88,13 @@ static std::string defaultUserDir() {
     if (!x.empty()) return x + "/quark";
     if (!home.empty()) return home + "/.local/share/quark";
 #endif
+#if QUARK_STEAM   // (Steam owns the install folder: never write there)
+    std::error_code ec;
+    fs::path tmp = fs::temp_directory_path(ec);
+    return (ec ? fs::path(".") : tmp).u8string() + "/quark";
+#else
     return findDataPath("maps") + "/.."; // nowhere better: the old place next to the install
+#endif
 }
 
 // The shipped copy of an official map, or null.
@@ -175,18 +181,24 @@ static bool officialNamed(const std::string& name) {
 int resetOfficialMaps(const std::string& shippedDir) {
     std::error_code ec;
     std::string dir = shippedDir.empty() ? findDataPath("maps") : shippedDir, mine = userMapsDir(), cache = userDataPath("cache");
-    fs::create_directories(dir, ec);
+#if QUARK_STEAM   // Steam owns the install folder (it verifies and repairs it): only your copies are dropped there
+    const bool writeInstall = !shippedDir.empty();
+#else
+    const bool writeInstall = true;
+#endif
+    if (writeInstall) fs::create_directories(dir, ec);
     int n = 0;
     for (const OfficialMapData* m = kOfficialMapData; m->name; m++) {
         fs::remove(mine + "/" + m->name + ".qmap", ec); // your edited copy shadows the shipped one: reset drops it
         fs::remove(cache + "/" + m->name + ".qlm", ec);   // (a light cache named after the map: older versions'; now they go by content)
         std::string path = dir + "/" + m->name + ".qmap";
-        if (noCR(readAll(path)) != noCR(std::string((const char*)m->data, m->size))) { // install may be read-only: write only if needed
+        if (writeInstall && noCR(readAll(path)) != noCR(std::string((const char*)m->data, m->size))) { // install may be read-only: write only if needed
             std::ofstream f(utf8Path(path), std::ios::binary | std::ios::trunc);
             if (!f.write((const char*)m->data, (std::streamsize)m->size)) continue;
         }
         n++;
     }
+    if (!writeInstall) return n;
     for (const char* old : {"arena", "tug", "duel", "sprint", "crucible"}) { // retired built-in maps left by older versions
         fs::remove(dir + "/" + old + ".qmap", ec);
         fs::remove(dir + "/" + old + ".qlm", ec);

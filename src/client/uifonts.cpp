@@ -34,30 +34,37 @@ struct Builtin {
     const char* realName;  // the menu's name when the player's own real font is used
     Real real[8];          // ...and where to look for it (path null = end)
 };
+// OTHER_GAME: a string naming another game or its files. A Steam build (QUARK_STEAM) names no other games and never
+// looks for their fonts (findReal finds nothing there): those rows show the bundled free font's own name, no hint.
+#if QUARK_STEAM
+#define OTHER_GAME(s) ""
+#else
+#define OTHER_GAME(s) s
+#endif
 // To add one: a row here, and (for a bundled font) its BUILTIN row in tools/make_font_atlas.py + the file and its
 // licence in assets/fonts. A row whose bundled font isn't baked and whose real font isn't found is not listed.
 const Builtin kBuiltinFonts[] = {
     {"rubik", "RUBIK", "", "THE DEFAULT", "fonts/Rubik", nullptr, {}},
     {"worksans", "WORK SANS", "worksans", "QUARK 1.17 - 1.18", "fonts/WorkSans", nullptr, {}},
     {"classic", "QUARK CLASSIC", "classic", "THE ORIGINAL PIXEL FONT", nullptr, nullptr, {}},
-    {"overwatch", "BEBAS NEUE", "bebasneue", "CLOSEST FREE MATCH: OVERWATCH", "fonts/BebasNeue-Regular", "BIG NOODLE", {
+    {"overwatch", "BEBAS NEUE", "bebasneue", OTHER_GAME("CLOSEST FREE MATCH: OVERWATCH"), "fonts/BebasNeue-Regular", OTHER_GAME("BIG NOODLE"), {
         {MODS, TTF, "bignoodletoo*"}, {MODS, TTF, "big_noodle_titling*"}, {MODS, TTF, "bignoodletitling*"}, {MODS, TTF, "big noodle*"}}},
-    {"cocainediesel", "DECALOTYPE", "decalotype", "THE FONT COCAINE DIESEL USES", "fonts/Decalotype-Bold", nullptr, {}},
-    {"quake", "LIBREQUAKE 8X8", "librequake", "CLOSEST FREE MATCH: QUAKE", "fonts/LibreQuake-CONCHARS", "QUAKE", {
+    {"cocainediesel", "DECALOTYPE", "decalotype", OTHER_GAME("THE FONT COCAINE DIESEL USES"), "fonts/Decalotype-Bold", nullptr, {}},
+    {"quake", "LIBREQUAKE 8X8", "librequake", OTHER_GAME("CLOSEST FREE MATCH: QUAKE"), "fonts/LibreQuake-CONCHARS", OTHER_GAME("QUAKE"), {
         {MODS, QUAKE, "conchars.lmp"}, {MODS, QUAKE, "conchars.png"}, {MODS, QUAKE, "gfx.wad"},
-        {STEAM, QUAKE, "steamapps/common/Quake/id1/gfx.wad"}, {STEAM, QUAKE, "steamapps/common/Quake/id1/pak0.pak"},
-        {STEAM, QUAKE, "steamapps/common/Quake/rerelease/id1/pak0.pak"}}},
-    {"hl2", "DEJAVU SANS", "dejavusans", "CLOSEST FREE MATCH: HALF-LIFE 2", "fonts/DejaVuSans-Bold", "VERDANA BOLD", {
+        {STEAM, QUAKE, OTHER_GAME("steamapps/common/Quake/id1/gfx.wad")}, {STEAM, QUAKE, OTHER_GAME("steamapps/common/Quake/id1/pak0.pak")},
+        {STEAM, QUAKE, OTHER_GAME("steamapps/common/Quake/rerelease/id1/pak0.pak")}}},
+    {"hl2", "DEJAVU SANS", "dejavusans", OTHER_GAME("CLOSEST FREE MATCH: HALF-LIFE 2"), "fonts/DejaVuSans-Bold", "VERDANA BOLD", {
         {MODS, TTF, "verdanab.ttf"}, {SYSTEM, TTF, "win:%WINDIR%/Fonts/verdanab.ttf"},
         {SYSTEM, TTF, "mac:/Library/Fonts/Verdana Bold.ttf"}, {SYSTEM, TTF, "mac:/System/Library/Fonts/Supplemental/Verdana Bold.ttf"},
         {SYSTEM, TTF, "linux:/usr/share/fonts/truetype/msttcorefonts/Verdana_Bold.ttf"},
         {SYSTEM, TTF, "linux:/usr/share/fonts/truetype/msttcorefonts/verdanab.ttf"},
         {SYSTEM, TTF, "linux:/usr/share/fonts/msttcore/verdanab.ttf"}, {SYSTEM, TTF, "linux:/usr/share/fonts/TTF/verdanab.ttf"}}},
-    {"tf2", "LILITA ONE", "lilitaone", "CLOSEST FREE MATCH: TF2", "fonts/LilitaOne-Regular", "TF2 BUILD", {
-        {MODS, TTF, "tf2build*"}, {STEAM, TTF, "steamapps/common/Team Fortress 2/tf/resource/tf2build.ttf"}}},
-    {"tf2secondary", "JOST", "jost", "CLOSEST FREE MATCH: TF2 SECONDARY", "fonts/Jost", "TF2 SECONDARY", {
-        {MODS, TTF, "tf2secondary*"}, {STEAM, TTF, "steamapps/common/Team Fortress 2/tf/resource/tf2secondary.ttf"}}},
-    {"apex", "BARLOW CONDENSED", "barlowcondensed", "CLOSEST FREE MATCH: APEX LEGENDS", "fonts/BarlowCondensed-Bold", "APEX LEGENDS", {
+    {"tf2", "LILITA ONE", "lilitaone", OTHER_GAME("CLOSEST FREE MATCH: TF2"), "fonts/LilitaOne-Regular", OTHER_GAME("TF2 BUILD"), {
+        {MODS, TTF, "tf2build*"}, {STEAM, TTF, OTHER_GAME("steamapps/common/Team Fortress 2/tf/resource/tf2build.ttf")}}},
+    {"tf2secondary", "JOST", "jost", OTHER_GAME("CLOSEST FREE MATCH: TF2 SECONDARY"), "fonts/Jost", OTHER_GAME("TF2 SECONDARY"), {
+        {MODS, TTF, "tf2secondary*"}, {STEAM, TTF, OTHER_GAME("steamapps/common/Team Fortress 2/tf/resource/tf2secondary.ttf")}}},
+    {"apex", "BARLOW CONDENSED", "barlowcondensed", OTHER_GAME("CLOSEST FREE MATCH: APEX LEGENDS"), "fonts/BarlowCondensed-Bold", OTHER_GAME("APEX LEGENDS"), {
         // (the fan family "Apex" by Felix's Foundry: personal use only, so never bundled; Bold first)
         {MODS, TTF, "apex-bold.ttf"}, {MODS, TTF, "apex-semibold.ttf"}, {MODS, TTF, "apex-extrabold.ttf"},
         {MODS, TTF, "apex-*"}, {MODS, TTF, "apex*"}}},
@@ -85,9 +92,12 @@ bool readFile(const fs::path& p, std::vector<uint8_t>& out) {
     return (bool)f.read((char*)out.data(), n);
 }
 
+#if !QUARK_STEAM
 std::string envOr(const char* k) { const char* v = std::getenv(k); return v ? v : ""; }
+#endif
 
 // ---- where the player's own copies are ----------------------------------------------------------------------------
+#if !QUARK_STEAM
 std::vector<fs::path> g_steam;   // Steam libraries (found once; REFRESH looks again)
 bool g_steamFound = false;
 
@@ -132,9 +142,14 @@ std::vector<fs::path> steamLibraries() {
     }
     return g_steam;
 }
+#endif
 
 // The first of a row's real sources that is there: its path (empty: none)
 fs::path findReal(const Builtin& b, Fmt* fmt = nullptr) {
+#if QUARK_STEAM   // (the bundled free fonts only: no other game's fonts, from mods/fonts, the system or a Steam library)
+    (void)b; (void)fmt;
+    return {};
+#else
     std::error_code ec;
     const fs::path mods = fs::u8path(uifonts::modsDir());
     for (const Real& r : b.real) {
@@ -171,6 +186,7 @@ fs::path findReal(const Builtin& b, Fmt* fmt = nullptr) {
         }
     }
     return {};
+#endif
 }
 bool buildBytes(const std::vector<uint8_t>& file, Fmt fmt, const FontAtlasLayout& L, std::unique_ptr<FontAtlas>& out, std::string* err) {
     auto fa = std::make_unique<FontAtlas>();
@@ -192,18 +208,24 @@ bool buildFrom(const fs::path& p, Fmt fmt, const FontAtlasLayout& L, std::unique
 
 namespace uifonts {
 std::string modsDir() {
+#if QUARK_STEAM   // (Steam's install folder is never written: yours are in the data folder; the shipped ones are read too)
+    return userDataPath("mods/fonts");
+#else
     std::error_code ec;
     std::string d = findDataPath("mods/fonts");
     if (fs::is_directory(fs::u8path(d), ec)) return d;
     std::string m = findDataPath("mods");   // (an install from before mods/fonts shipped: next to mods/sounds)
     if (fs::is_directory(fs::u8path(m), ec)) return m + "/fonts";
     return executableDir().empty() ? d : executableDir() + "/mods/fonts";
+#endif
 }
 
 bool isBuiltin(const std::string& id) { return id.empty() || builtin(id) != nullptr; }
 
 std::vector<Entry> scan() {
+#if !QUARK_STEAM
     g_steamFound = false;   // (look again: a game installed or a file added since)
+#endif
     std::vector<Entry> v;
     std::vector<std::string> claimed;   // mods/fonts files a built-in row uses (not listed again below)
     std::error_code ec;
@@ -222,10 +244,16 @@ std::vector<Entry> scan() {
         v.push_back(e);
     }
     std::vector<Entry> mine;
-    for (auto it = fs::directory_iterator(fs::u8path(modsDir()), ec); !ec && it != fs::directory_iterator(); it.increment(ec)) {
+    std::vector<fs::path> dirs = {fs::u8path(modsDir())};
+#if QUARK_STEAM
+    dirs.push_back(fs::u8path(findDataPath("mods/fonts")));   // (the install's shipped mods/fonts, after yours)
+#endif
+    for (const fs::path& dir : dirs)
+    for (auto it = fs::directory_iterator(dir, ec); !ec && it != fs::directory_iterator(); it.increment(ec)) {
         std::string file = it->path().filename().u8string(), ext = lower(it->path().extension().u8string());
         if (!it->is_regular_file(ec) || (ext != ".ttf" && ext != ".otf")) continue;
         if (std::find(claimed.begin(), claimed.end(), lower(file)) != claimed.end()) continue;
+        if (std::find_if(mine.begin(), mine.end(), [&](const Entry& m) { return m.id == file; }) != mine.end()) continue;   // (yours wins)
         Entry e;
         e.id = file;
         e.name = upper(it->path().stem().u8string());
@@ -279,6 +307,11 @@ bool load(const std::string& idIn, const FontAtlasLayout& L, std::unique_ptr<Fon
         if (err) *err = "not a file name";
         return false;
     }
-    return buildFrom(fs::u8path(modsDir()) / fs::u8path(id), TTF, L, out, err);
+    fs::path file = fs::u8path(modsDir()) / fs::u8path(id);
+#if QUARK_STEAM
+    std::error_code ec;
+    if (!fs::is_regular_file(file, ec)) file = fs::u8path(findDataPath("mods/fonts")) / fs::u8path(id);   // (the shipped mods/fonts)
+#endif
+    return buildFrom(file, TTF, L, out, err);
 }
 } // namespace uifonts

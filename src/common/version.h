@@ -4,3 +4,10 @@
 extern const char kQuarkVersion[];          // e.g. "1.19.1", or "1.19.1.3" for a testing build (1.19.0 to 1.19.1: "1.19.0.testing.3", before: "1.18.9-test.3")
 extern const char kQuarkLauncherMarker[];   // "QUARK-LAUNCHER-VERSION:" + the version (src/launcher/selfupdate.cpp)
 #define QUARK_VERSION kQuarkVersion
+// Shown after the version on the main menu and the F3 overlay, so a Steam build (CMake -DQUARK_STEAM=ON) can be told
+// apart. Only for display: the version sent to servers, the master and ranked stays QUARK_VERSION.
+#if QUARK_STEAM
+#define QUARK_BUILD_LABEL " STEAM"
+#else
+#define QUARK_BUILD_LABEL ""
+#endif

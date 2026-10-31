@@ -9007,7 +9007,11 @@ void Game::drawFontSettings(const SetLayout& L) {
     }
     if (ui_.button(L.X(kColL + 184), b.top(), hw, h, "REFRESH", UiExp::state("fontscan"))) fontListed_ = false;
     b.next();
+#if QUARK_STEAM   // (a Steam build never looks for other games' fonts: uifonts.cpp)
+    b.hint("A VARIABLE FONT IS DRAWN AT ITS DEFAULT WEIGHT");
+#else
     b.hint("A VARIABLE FONT IS DRAWN AT ITS DEFAULT WEIGHT", "GAME FONTS: YOUR OWN COPY OF THE REAL FONT IF FOUND");
+#endif
     if (std::none_of(fontList_.begin(), fontList_.end(), [](const uifonts::Entry& e) { return e.user; })) {
         SetFlow r{ui_, L, kColR, 552};
         r.y += 40;
@@ -9133,7 +9137,7 @@ void Game::drawMenu() {
     // the title, drawn like the app icon (a baked texture: Renderer::logo); not over the settings shell (it covered it)
     if (screen_ != Screen::Settings) r_.logo(cx, H * 0.12f, 8 * s, rgba(cfg_.fixedLogo ? defaultSettings().colorFriendly : cfg_.colorFriendly),
                                              rgba(cfg_.fixedLogo ? defaultSettings().colorEnemy : cfg_.colorEnemy));   // (the Q in both team colours; FIXED LOGO COLORS: the defaults)
-    r_.text(8 * s, H - 20 * s, std::max(1.0f, std::round(s)), std::string("V") + QUARK_VERSION, kGrey);
+    r_.text(8 * s, H - 20 * s, std::max(1.0f, std::round(s)), std::string("V") + QUARK_VERSION + QUARK_BUILD_LABEL, kGrey);
 
     if (picker_ != PICK_NONE && (screen_ == Screen::Host || screen_ == Screen::VsBots)) { drawPicker(cx, H * 0.12f + 80 * s); return; }
     if (edPrompt_ && screen_ == Screen::Main) { drawEditorSavePrompt(); return; }
@@ -10247,7 +10251,7 @@ void Game::drawPerf() {
                  r_.sceneWidth(), r_.sceneHeight());   // (the world's own resolution: RENDER SCALE)
         perfText2_ = b;
         pipeAverages();
-        perfTick_ = std::string("QUARK V") + QUARK_VERSION;   // (with the numbers, not every frame)
+        perfTick_ = std::string("QUARK V") + QUARK_VERSION + QUARK_BUILD_LABEL;   // (with the numbers, not every frame)
         if (net_.hasSnapshot()) perfTick_ += "  SERVER " + std::to_string(net_.tickRate()) + " HZ  LOSS " + std::to_string(net_.snapshotLoss()) + "%";
         // PRIORITIZE GAME: what Windows actually gave (and the focus state is checked again here, twice a second: a
         // window focused before its focus callback was set never got the call)
