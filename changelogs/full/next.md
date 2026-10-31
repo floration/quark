@@ -433,3 +433,6 @@ Worker 2's share of the 1-scored items, in the same batch-3 key table (`b3Keys`)
 ## Votes: no legacy maps unless the server lists them (owner, 2026-10-31: "you cant vote the old maps on the new testing server update")
 - A legacy map loads by name (an old config or demo still works), so `callvote map summit koth` used to pass. A map vote for a legacy map is now refused ("<map> is a legacy map (this server doesn't list the old maps)") unless the server runs with `--legacy-maps`. testMapVote checks the refusal and votes Glacier Summit instead, and its every-map loop still votes every listed map in every mode it supports.
 - A server set up for a legacy map (an old `--map`, unranked, legacy maps off) now plays the listed map built for its mode instead (else the first that takes the mode), so nobody lands on a map they couldn't vote back. A ranked one already switched to its ladder's map.
+
+## Servers: a new install plays unranked laser vampire on Dojo (owner, 2026-10-31: "default server position should be dojo ranked lg vamp for future updates", then "actually unranked")
+- `tools/server/install.sh` with no server options on a first install now runs `--mode 1v1 --variant vampire --map dojo --public` (it was `--public`: FFA on the default map). Re-running it still keeps an installed server's options.
