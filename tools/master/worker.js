@@ -91,13 +91,11 @@ const RACE_MIN_MS = 5000; // nothing finishes faster: below this it's not a real
 // `build/quark_tests racefloors` (paste its output over this table; quark_tests checks this copy matches the maps).
 // A map taken off this table leaves its rows in race_times, unused (on no board or total) until it comes back.
 export const RACE_MAPS = {
-  accelerator: { defaultMs: 225000, floors: [1791, 3416, 1770, 2041, 2510, 781, 1683, 2291, 1895, 3942, 3671, 2106, 149, 750] },
-  cascade: { defaultMs: 600000, floors: [2799, 1821, 2343, 1898] },
+  accelerator: { defaultMs: 600000, floors: [1791, 3416, 1770, 2041, 2510, 781, 1683, 2291, 1895, 3942, 3671, 2106, 149, 750] },
   jungle: { defaultMs: 180000, floors: [1041, 1583, 2000, 1984, 1418, 1460, 631, 790, 3084, 2834, 3166, 279] },
   rooftoprun: { defaultMs: 180000, floors: [2770, 1311, 1389, 410, 3291, 1542, 1253, 2541, 252, 446, 1198, 2750] },
   solar: { defaultMs: 600000, floors: [2293, 2312, 3499, 2464, 4924, 1837, 5003, 1649, 4983, 1794, 1666, 4418, 1694, 1713, 6293] },
-  surfy: { defaultMs: 600000, floors: [109] },
-  viaduct: { defaultMs: 600000, floors: [792, 606, 485, 625, 250, 928, 1333, 341, 1818, 979, 1022, 1583] },
+  surfy: { defaultMs: 600000, floors: [1607] },
 };
 const isRaceMap = (map) => Object.prototype.hasOwnProperty.call(RACE_MAPS, map);
 const TICKET_MS = 2 * 3600000;       // a match ticket takes reports for this long
