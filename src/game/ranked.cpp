@@ -269,6 +269,54 @@ bool rankedResultMatchesView(const std::string& text, const std::vector<SeenPlay
     return true;
 }
 
+const std::vector<RaceMapInfo>& rankedRaceMaps() {
+    static const std::vector<RaceMapInfo> maps = [] {
+        std::vector<RaceMapInfo> out;
+        auto builtFor = [](const std::string& t, const char* mode) {   // a "for <mode>" line (cheap: only these are parsed)
+            const std::string w = std::string("\nfor ") + mode;
+            for (size_t at = t.find(w); at != std::string::npos; at = t.find(w, at + 1)) {
+                const size_t e = at + w.size();
+                if (e == t.size() || t[e] == '\n' || t[e] == '\r' || t[e] == ' ' || t[e] == '\t') return true;
+            }
+            return false;
+        };
+        for (auto& [name, text] : officialMapTexts()) {
+            if (!builtFor(text, "race") && !builtFor(text, "surf")) continue;
+            Map m;
+            if (!m.parse(text) || !isRaceMode(m.preferredMode) || m.raceCheckpoints.empty()) continue;
+            RaceMapInfo r;
+            r.name = name;
+            r.title = m.title.empty() ? name : m.title;
+            r.mode = m.preferredMode;
+            r.fallbackDefault = m.raceDefault <= 0;
+            r.defaultMs = r.fallbackDefault ? kRaceFallbackDefaultS * 1000 : (int)std::lround(m.raceDefault * 1000.0);
+            r.floorsMs = raceSplitFloorsMs(m);
+            out.push_back(std::move(r));
+        }
+        std::sort(out.begin(), out.end(), [](const RaceMapInfo& a, const RaceMapInfo& b) { return a.name < b.name; });
+        return out;
+    }();
+    return maps;
+}
+
+const RaceMapInfo* rankedRaceMap(const std::string& name) {
+    for (auto& r : rankedRaceMaps()) if (r.name == name) return &r;
+    return nullptr;
+}
+
+long long raceTotalMs(const std::map<std::string, int>& best, int* played) {
+    long long t = 0;
+    int n = 0;
+    for (auto& r : rankedRaceMaps()) {
+        auto it = best.find(r.name);
+        int b = it == best.end() ? 0 : it->second;
+        if (b > 0) n++;
+        t += b > 0 ? b : r.defaultMs;
+    }
+    if (played) *played = n;
+    return t;
+}
+
 std::vector<int> raceSplitFloorsMs(const Map& m) {
     std::vector<int> out;
     if (m.raceCheckpoints.empty() || m.spawns.empty()) return out;
@@ -319,6 +367,7 @@ std::string buildRaceRunForm(const std::string& ticket, const std::string& map, 
 static double rankClock() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 
 void RankService::fetchRaceBoard(const std::string& map, double delay) { Job j{rankClock() + delay, false, "", "race:" + map, {}}; j.board = true; push(j); }
+void RankService::fetchRaceTotal(double delay) { Job j{rankClock() + delay, false, "", "racetotal", {}}; j.board = true; push(j); }
 
 int Rating::display() const { return (int)std::lround(std::max(0.0, mu - 3 * sigma) * 40); }
 
@@ -460,7 +509,8 @@ void RankService::run() {
         bool okLadderName = !key.empty();
         for (char c : key) okLadderName &= (bool)isalnum((unsigned char)c);
         if (j.board) {
-            std::string url = race ? base + "/raceboard?map=" + key + "&n=25" : base + "/leaderboard?ladder=" + key + "&n=25";
+            const bool total = j.ladder == "racetotal";   // (lines "total_ms maps_run name", as a ladder's "rating games name")
+            std::string url = total ? base + "/racetotal?n=25" : race ? base + "/raceboard?map=" + key + "&n=25" : base + "/leaderboard?ladder=" + key + "&n=25";
             if (!base.empty() && okLadderName && httpGetText(url, out, 6000, &err)) {
                 std::istringstream in(out);
                 std::string line;

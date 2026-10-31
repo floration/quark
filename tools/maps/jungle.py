@@ -68,6 +68,7 @@ def build():
     m = M("Jungle Ruins", "race", sun=(0.25, 1.0, 0.35))
     m.no_ffa = True
     m.raw("setting jungle temple ruins")
+    m.raw("racedefault 180")   # the ranked race total counts this for anyone with no run here: PLACEHOLDER (3x a good run, about 60 s) until q sets it
     m.raw("palette base 0.36 0.42 0.3 accent 0.55 0.46 0.22 metal 0.3 0.3 0.26 glow 1.0 0.78 0.42 sky 0.5 0.64 0.58")
     m.raw("void -30")
     k = Kit(m)

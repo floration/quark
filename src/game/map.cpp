@@ -382,8 +382,10 @@ static void upgradeMap10to11(std::vector<std::string>&) {}
 // 11 -> 12: a teleporter's speed ("tp <link> <face> walk", which an older reader refuses; a format 11 teleporter has
 // none and carries all speed, as it still does without the word: nothing to change)
 static void upgradeMap11to12(std::vector<std::string>&) {}
+// 12 -> 13: a race map's default time ("racedefault <s>": a new keyword; a format 12 map has none, nothing to change)
+static void upgradeMap12to13(std::vector<std::string>&) {}
 
-static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2, upgradeMap2to3, upgradeMap3to4, upgradeMap4to5, upgradeMap5to6, upgradeMap6to7, upgradeMap7to8, upgradeMap8to9, upgradeMap9to10, upgradeMap10to11, upgradeMap11to12};
+static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2, upgradeMap2to3, upgradeMap3to4, upgradeMap4to5, upgradeMap5to6, upgradeMap6to7, upgradeMap7to8, upgradeMap8to9, upgradeMap9to10, upgradeMap10to11, upgradeMap11to12, upgradeMap12to13};
 static_assert(sizeof kMapUpgrades / sizeof kMapUpgrades[0] == kMapFormatVersion - 1,
               "a map format change needs its converter step in kMapUpgrades (owner rule)");
 
@@ -864,6 +866,9 @@ bool Map::parseCurrent(const std::string& text, std::string* err) {
             ok = (bool)(ls >> ceilingY) && okCoord(ceilingY); indoor = ok;
         } else if (kw == "holdfire") {
             ok = (bool)(ls >> holdFire) && holdFire >= 0 && holdFire <= 30;
+        } else if (kw == "racedefault") {   // (map format 13) a race map's default time on the ranked race total
+            ok = (bool)(ls >> raceDefault) && raceDefault >= 1 && raceDefault <= 3600;
+            if (!ok) raceDefault = 0;
         } else if (kw == "void") {
             ok = (bool)(ls >> voidY) && okCoord(voidY); hasVoid = ok;
         } else if (kw == "palette") {
@@ -1002,6 +1007,7 @@ std::string Map::serialize() const {
     if (hasVoid) { o += "void"; nums(1, &voidY); o += "\n"; }
     if (indoor) { o += "indoor"; nums(1, &ceilingY); o += "\n"; }
     if (holdFire > 0) { o += "holdfire"; nums(1, &holdFire); o += "\n"; }
+    if (raceDefault > 0) { o += "racedefault"; nums(1, &raceDefault); o += "\n"; }
     if (hasPalette) {
         auto c = [&](const char* k, Vec3 v) { float f[3] = {v.x, v.y, v.z}; o += ' '; o += k; nums(3, f); };
         o += "palette"; c("base", palBase); c("accent", palAccent); c("metal", palMetal); c("glow", palGlow); c("sky", palSky); o += "\n\n";

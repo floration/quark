@@ -639,6 +639,7 @@ def build():
     for c in cps:
         m.raw("checkpoint " + " ".join(num(v) for v in c))
     m.raw("setting particle physics lab")
+    m.raw("racedefault 225")   # the ranked race total counts this for anyone with no run here: PLACEHOLDER (3x a good run, about 75 s) until q sets it
     # bomb (q, 2026-10-30: "playable in bomb too"): the cryogenics yard is the arena. Attackers climb out of the shaft
     # head's stairwell (one flight) and in at its west door; defenders come along the skybridge onto the cold box and
     # down its stairs. The two sites are the yard's west corners (north and south of the cold box),

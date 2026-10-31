@@ -69,7 +69,7 @@ struct LaunchOptions {
     bool camSet = false;         // --cam: fixed backdrop camera (map analysis shots); in a match, the view's camera
     Vec3 camPos;
     float camYaw = 0, camPitch = 0;
-    bool timeTrial = false;      // --timetrial: start a Viaduct time trial
+    bool timeTrial = false;      // --timetrial: start a time trial (on --map if that is a ranked race map, else the first)
     bool debugRaceStats = false; // --racestats: the leaderboard's race stats page    // --models: every player model lined up in front of you  // --widgets: open the HUD widget editor in game
     bool debugSettings = false; // --settings: open the settings screen in game
     bool debugControls = false; // --controls
@@ -1083,10 +1083,12 @@ private:
     Color splitColor_ = {1, 1, 1, 1};
     double splitUntil_ = 0;
     int raceStatsMap_ = 0;   // MY RACE STATS: which raced map
+    int timeTrialMap_ = 0;   // the leaderboard's TRIAL MAP: which ranked race map (rankedRaceMaps) PLAY TIME TRIAL starts
+    std::string timeTrialMapName_;   // (set by startTimeTrial for startHost)
     void loadRaceRuns();
     const RaceRun* bestRun(const std::string& map, bool trial) const;
     void onRaceSplit(int checkpoint, int ms);
-    void startTimeTrial();
+    void startTimeTrial(const std::string& map = std::string());   // (empty: the TRIAL MAP)
     void drawRaceStats(const SetLayout& L);
     // profiles: per-mode rules swap the HUD layout / controls while that mode is running
     Binds modeBinds_;

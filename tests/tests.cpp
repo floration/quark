@@ -2315,6 +2315,18 @@ static void testMapConverter() {
         CHECK(a.parse(v11) && b.parse(o) && a.formatVersion == 11 && a.warnings.empty() && a.brushes.size() == b.brushes.size());
         CHECK(a.brushes[0].material == kMatTeleport && !a.brushes[0].tpWalk && !b.brushes[1].tpWalk && b.brushes[1].link == 4 && a.serialize() == b.serialize());
     }
+    {   // version 12 (before a race map's default time): only the version line changes; it has no default time
+        const std::string v12 = "version 12\nfor race\ncheckpoint -2 0 -2 2 2 2\n" + base;
+        std::string o;
+        CHECK(upgradeMapText(v12, &o) && o == "version " + std::to_string(kMapFormatVersion) + "\nfor race\ncheckpoint -2 0 -2 2 2 2\n" + base);
+        Map a, b;
+        CHECK(a.parse(v12) && b.parse(o) && a.formatVersion == 12 && a.warnings.empty() && a.raceDefault == 0 && b.raceDefault == 0 && a.serialize() == b.serialize());
+        // and the line itself, from version 13 on: read, written back (the editor and quark_maptool keep it), bounded
+        Map c, d, e;
+        CHECK(c.parse(o + "racedefault 187.5\n") && c.warnings.empty() && c.raceDefault == 187.5f);
+        CHECK(c.serialize().find("\nracedefault 187.5\n") != std::string::npos && d.parse(c.serialize()) && d.raceDefault == 187.5f);
+        CHECK(!e.parse(o + "racedefault 0\n") && !e.parse(o + "racedefault 4000\n") && !e.parse(o + "racedefault x\n"));
+    }
     for (int k = 1; k < kMapFormatVersion; k++) {   // every older version has a way to today's (a missing step doesn't compile)
         std::string o;
         CHECK(upgradeMapText((k > 1 ? "version " + std::to_string(k) + "\n" : std::string()) + base, &o) && mapTextVersion(o) == kMapFormatVersion);
@@ -2814,16 +2826,52 @@ static void testSession(int mode, const char* mapName, uint16_t port) {
 }
 
 // Time trial: solo Viaduct race, every checkpoint sends the racer a split (increasing ms, last = finish).
+// The Worker's race map table (tools/master/worker.js RACE_MAPS): every ranked race map's default time and split
+// floors, as "quark_tests racefloors" prints it.
+static std::string raceMapsJs() {
+    std::string o = "const RACE_MAPS = {\n";
+    for (auto& r : rankedRaceMaps()) {
+        o += "  " + r.name + ": { defaultMs: " + std::to_string(r.defaultMs) + ", floors: [";
+        for (size_t i = 0; i < r.floorsMs.size(); i++) o += (i ? ", " : "") + std::to_string(r.floorsMs[i]);
+        o += "] },\n";
+    }
+    return o + "};\n";
+}
+
 // Race runs: the fastest plausible split per leg (path gap at the speed ceiling); the Worker keeps the same table.
+// Ranked race maps: the official "for race" maps with a "racedefault" (map format 13); the race total sums them.
 static void testRaceFloors() {
-    printf("race split floors (and the Worker's copy)\n");
-    Map m;
-    CHECK(m.load("viaduct"));
-    std::vector<int> f = raceSplitFloorsMs(m);
-    CHECK(f.size() == m.checkpoints.size() && !f.empty());
-    int total = 0;
-    for (int x : f) { CHECK(x >= 0); total += x; }
-    CHECK(total > 1000);   // the course is long: well over a second even flat out
+    printf("race split floors, ranked race and surf maps, the race total (and the Worker's copy)\n");
+    const auto& rm = rankedRaceMaps();
+    CHECK(!rm.empty());
+    std::string names;
+    for (auto& r : rm) names += " " + r.name + " (" + std::string(r.mode == MODE_SURF ? "surf, " : "") + std::to_string(r.defaultMs / 1000) + " s" + (r.fallbackDefault ? ", no racedefault yet" : "") + ")";
+    printf("  ranked race maps:%s\n", names.c_str());
+    for (size_t k = 1; k < rm.size(); k++) CHECK(rm[k - 1].name < rm[k].name);   // (sorted: the Worker's table order)
+    for (auto& r : rm) {
+        Map m;
+        CHECK(m.load(r.name) && m.preferredMode == r.mode && isRaceMode(r.mode) && isOfficialMap(m) && rankedRaceMap(r.name) == &r);
+        CHECK(r.fallbackDefault == (m.raceDefault <= 0) && r.defaultMs == (r.fallbackDefault ? kRaceFallbackDefaultS * 1000 : (int)std::lround(m.raceDefault * 1000)));
+        CHECK(r.floorsMs == raceSplitFloorsMs(m) && r.floorsMs.size() == m.raceCheckpoints.size() && !r.floorsMs.empty());
+        int total = 0;
+        for (int x : r.floorsMs) { CHECK(x >= 0); total += x; }
+        CHECK(total > 0);                    // (Surfy has one checkpoint, its finish, a few metres from the start as the crow flies)
+        CHECK(r.defaultMs > total);          // a default no plausible run can't beat would make running pointless
+        CHECK(r.defaultMs <= 3600000);
+    }
+    CHECK(!rankedRaceMap("foundry") && !rankedRaceMap(""));
+    for (auto& [name, text] : officialMapTexts()) {   // every official race and surf map is on it (q: "the total race time also counts the 2 surf maps")
+        Map m;
+        if (m.parse(text) && isRaceMode(m.preferredMode)) CHECK(rankedRaceMap(name) != nullptr);
+    }
+    {   // the total: your best on each map, its default where you have none
+        long long all = 0;
+        for (auto& r : rm) all += r.defaultMs;
+        int played = -1;
+        CHECK(raceTotalMs({}, &played) == all && played == 0);
+        CHECK(raceTotalMs({{rm[0].name, 30000}, {"foundry", 1}, {rm.back().name, 0}}, &played) == all - rm[0].defaultMs + 30000 && played == 1);
+    }
+    const std::vector<int>& f = rm[0].floorsMs;
     std::vector<int> ok, fast;
     int t = 0;
     for (int x : f) { t += x * 3 + 200; ok.push_back(t); }
@@ -2834,24 +2882,28 @@ static void testRaceFloors() {
     CHECK(!raceSplitsPlausible(fast, f));
     CHECK(!raceSplitsPlausible({}, f));
     CHECK(!raceSplitsPlausible(std::vector<int>(ok.begin(), ok.end() - 1), f));
-    // tools/master/worker.js: RACE_FLOORS = { viaduct: [a, b, ...] } must be this table (re-run "quark_tests racefloors")
+    // tools/master/worker.js: its RACE_MAPS table must be this one (re-run "quark_tests racefloors" and paste it)
     std::ifstream w(findDataPath("maps") + "/../tools/master/worker.js");
     std::stringstream ws;
     ws << w.rdbuf();
-    std::string js = ws.str(), want = "viaduct: [";
-    for (size_t i = 0; i < f.size(); i++) want += (i ? ", " : "") + std::to_string(f[i]);
-    want += "]";
-    if (!js.empty()) CHECK(js.find(want) != std::string::npos);
-    else printf("  (tools/master/worker.js not found next to the maps: skipped the table check)\n");
-    CHECK(buildRaceRunForm("0123456789abcdef", "viaduct", std::string(32, 'a'), ok.back(), ok, "Racer").find("ticket=0123456789abcdef&map=viaduct&id=") == 0);
-    CHECK(buildRaceRunForm("0123456789abcdef", "viaduct", std::string(32, 'a'), ok.back() + 1, ok, "Racer").empty());
+    const std::string js = ws.str();
+    if (!js.empty()) {
+        const bool same = js.find(raceMapsJs()) != std::string::npos;
+        CHECK(same);
+        if (!same) printf("  tools/master/worker.js RACE_MAPS is out of date: paste the output of \"quark_tests racefloors\"\n");
+    } else printf("  (tools/master/worker.js not found next to the maps: skipped the table check)\n");
+    const std::string& map = rm[0].name;
+    CHECK(buildRaceRunForm("0123456789abcdef", map, std::string(32, 'a'), ok.back(), ok, "Racer").find("ticket=0123456789abcdef&map=" + map + "&id=") == 0);
+    CHECK(buildRaceRunForm("0123456789abcdef", map, std::string(32, 'a'), ok.back() + 1, ok, "Racer").empty());
 }
 
 static void testTimeTrial(uint16_t port) {
-    printf("time trial: solo race splits on viaduct\n");
+    if (rankedRaceMaps().empty()) { CHECK(!"no ranked race map"); return; }
+    const std::string map = rankedRaceMaps()[0].name;
+    printf("time trial: solo race splits on %s\n", map.c_str());
     Server s;
     ServerConfig cfg;
-    cfg.map = "viaduct"; cfg.mode = MODE_RACE; cfg.port = port;
+    cfg.map = map; cfg.mode = rankedRaceMaps()[0].mode; cfg.port = port;
     cfg.timeTrial = true; cfg.vsBots = true; cfg.autoStart = true; cfg.maxPlayers = 1; cfg.roundsToWin = 10000;
     cfg.botsEnemy = cfg.botsAlly = 0;
     s.setLog([](const std::string&) {});
@@ -2864,7 +2916,7 @@ static void testTimeTrial(uint16_t port) {
     // race starts in practice: untimed, never starts by itself; the course works, nothing is timed or sent
     pump(s, cls, 3.0, idle);
     CHECK(a.hasSnapshot() && a.mode().phase == PHASE_WARMUP);
-    CHECK(a.hasSnapshot() && (a.mode().flags & MS_TIMETRIAL));   // (the shipped viaduct: it counts)
+    CHECK(a.hasSnapshot() && (a.mode().flags & MS_TIMETRIAL));   // (a shipped ranked race map: it counts)
     const auto& cps = s.map_.checkpoints;
     auto& p = s.players_[a.clientId()];
     a.takeEvents();
@@ -2891,7 +2943,7 @@ static void testTimeTrial(uint16_t port) {
     CHECK(splits.size() == cps.size() && cps.size() >= 8);
     for (size_t i = 1; i < splits.size(); i++) CHECK(splits[i] > splits[i - 1]);
     s.stop();
-    // a "time trial" anywhere but the shipped Viaduct doesn't count for the board
+    // a "time trial" anywhere but a shipped ranked race map doesn't count for the board
     Server s2;
     cfg.map = "foundry"; cfg.port = port + 1;
     { std::string e_; if (!s2.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
@@ -2901,6 +2953,18 @@ static void testTimeTrial(uint16_t port) {
     pump(s2, cls2, 1.0, idle);
     CHECK(b.hasSnapshot() && !(b.mode().flags & MS_TIMETRIAL));
     s2.stop();
+    for (auto& r : rankedRaceMaps()) {   // a surf map's time trial counts only in surf (race's dash and grapple would beat its times)
+        if (r.mode != MODE_SURF) continue;
+        cfg.map = r.name; cfg.port = port + 2;
+        for (int mode : {MODE_SURF, MODE_RACE}) {
+            Server s3;
+            cfg.mode = mode;
+            { std::string e_; if (!s3.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+            CHECK(s3.timeTrialCounts() == (mode == MODE_SURF));
+            s3.stop();
+        }
+        break;
+    }
 }
 
 // Multi point: attackers capture the points in order (a defender on the point holds it), each capture adds time,
@@ -7376,9 +7440,10 @@ static void testMasterSignature() {
 // replies: a failed race ticket clears and the racer is told. And replies nobody takes are capped.
 static void testMasterReplies(uint16_t port) {
     printf("ranking server replies on a dedicated server\n");
+    if (rankedRaceMaps().empty()) { CHECK(!"no ranked race map"); return; }
     Server s;
     ServerConfig cfg;
-    cfg.map = "viaduct"; cfg.mode = MODE_RACE; cfg.port = port;
+    cfg.map = rankedRaceMaps()[0].name; cfg.mode = rankedRaceMaps()[0].mode; cfg.port = port;   // (a time trial that counts: its ticket goes out)
     cfg.timeTrial = true; cfg.vsBots = true; cfg.maxPlayers = 1; cfg.botsEnemy = cfg.botsAlly = 0;
     std::vector<std::string> logs;
     std::mutex logMu;
@@ -7451,8 +7516,8 @@ static void testRankedLockLadders() {
             CHECK(!s.rankedLive());
         }
     CHECK(locked == 3);
-    Server t;   // the Viaduct time trial: best times, no rating, never locked
-    t.cfg_.timeTrial = true; t.cfg_.mode = MODE_RACE; t.cfg_.map = "viaduct";
+    Server t;   // a race time trial: best times, no rating, never locked
+    t.cfg_.timeTrial = true; t.cfg_.mode = MODE_RACE; t.cfg_.map = "accelerator";
     t.rankedMatch_ = "0123456789abcdef"; t.ms_.phase = PHASE_LIVE;
     CHECK(!t.rankedLive());
     t.cfg_.ranked = true;
@@ -9716,13 +9781,9 @@ int main(int argc, char** argv) {
     }
     if (argc >= 2 && std::string(argv[1]) == "signing") { testSigning(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "launcher") { g_fail += launcherTests(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "racefloors") { // the RACE_FLOORS table for tools/master/worker.js
-        Map m;
-        if (!m.load("viaduct")) return 1;
-        std::vector<int> f = raceSplitFloorsMs(m);
-        printf("viaduct: [");
-        for (size_t i = 0; i < f.size(); i++) printf("%s%d", i ? ", " : "", f[i]);
-        printf("]\n");
+    if (argc >= 2 && std::string(argv[1]) == "racefloors") { // the RACE_MAPS table for tools/master/worker.js
+        if (rankedRaceMaps().empty()) return 1;
+        printf("%s", raceMapsJs().c_str());
         return 0;
     }
     if (argc >= 2 && std::string(argv[1]) == "bounds") { g_fail += outOfBoundsTests(); return g_fail ? 1 : 0; }
