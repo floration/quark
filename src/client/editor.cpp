@@ -1902,17 +1902,24 @@ std::vector<Game::EdSel> Game::edPickAll(const Vec3& o, const Vec3& dir) const {
         bool inside = o.x > b.mn.x && o.x < b.mx.x && o.y > b.mn.y && o.y < b.mx.y && o.z > b.mn.z && o.z < b.mx.z;
         hits.push_back({inside ? 1e6f + length(b.mx - b.mn) : t + bias, EdSel{kind, idx}});
     };
+    // a box by its solid, not its bounds: a wedge, corner, tetra or cut box is hit where its faces are (owner,
+    // 2026-10-31: "the hitboxes for the blocks are super fuckey, with the custom cut face blocks")
+    auto testBrush = [&](int kind, int idx, const Brush& br, float bias) {
+        if (br.shape == BRUSH_BOX) { test(kind, idx, br.box, bias); return; }
+        const float t = rayBrush(o, dir, inv, br, 1000);
+        if (t >= 0) hits.push_back({t + bias, EdSel{kind, idx}});
+    };
     // markers win over the box they sit on / inside (zones are see-through, so they only win when nothing's closer)
     for (size_t i = 0; i < ed_.spawns.size(); i++) test(ED_SPAWN, (int)i, edBounds(ed_, {ED_SPAWN, (int)i}), -0.5f);
     for (size_t i = 0; i < ed_.lights.size(); i++) test(ED_LIGHT, (int)i, edBounds(ed_, {ED_LIGHT, (int)i}), -0.5f);
     for (size_t i = 0; i < ed_.payloadPath.size(); i++) test(ED_PATH, (int)i, edBounds(ed_, {ED_PATH, (int)i}), -0.5f);
     for (size_t i = 0; i < ed_.brushes.size(); i++) // (clip is drawn see-through, so like a zone it only wins when nothing's closer)
-        if (!ed_.brushes[i].generated) test(ED_BRUSH, (int)i, ed_.brushes[i].box, ed_.brushes[i].material == 9 ? 0.25f : 0);
+        if (!ed_.brushes[i].generated) testBrush(ED_BRUSH, (int)i, ed_.brushes[i], ed_.brushes[i].material == 9 ? 0.25f : 0);
     for (size_t i = 0; i < ed_.ladders.size(); i++) test(ED_LADDER, (int)i, ed_.ladders[i], -0.3f);
     for (size_t i = 0; i < ed_.groups.size(); i++) { // a group: where you hit one of its boxes (a room's inside is open)
         std::vector<Brush> parts;
         Map::groupBoxes(ed_.groups[i], parts);
-        for (auto& p : parts) test(ED_GROUP, (int)i, p.box, p.material == 9 ? 0.25f : 0);
+        for (auto& p : parts) testBrush(ED_GROUP, (int)i, p, p.material == 9 ? 0.25f : 0);
     }
     for (size_t i = 0; i < ed_.bombSites.size(); i++) test(ED_SITE, (int)i, ed_.bombSites[i], 0.25f);
     for (size_t i = 0; i < ed_.checkpoints.size(); i++) test(ED_CHECK, (int)i, ed_.checkpoints[i], 0.25f);
