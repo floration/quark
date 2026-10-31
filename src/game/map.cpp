@@ -241,9 +241,17 @@ LegacyMoveReport moveOldOfficialMaps(const std::string& userMaps, const std::str
         if (e.is_regular_file(ec) && e.path().extension() == ".qmap") found.push_back(e.path());
     ec.clear();
     std::sort(found.begin(), found.end());
+    // (by name too: an untouched generated map saved under a name of your own, e.g. solarsystem12, is yours and stays:
+    // owner, 2026-10-31, "i can only see up to solar system 9")
+    auto shippedName = [](const std::string& n) {
+        if (officialNamed(n)) return true;
+        for (const char* old : kLegacyMapNames) if (n == old) return true;
+        for (const char* old : {"arena", "tug", "duel", "sprint", "crucible"}) if (n == old) return true;   // (retired before 1.19.6)
+        return false;
+    };
     for (const fs::path& p : found) {
-        if (!untouchedGeneratedMap(p)) continue;
         const std::string stem = p.stem().u8string();
+        if (!shippedName(stem) || !untouchedGeneratedMap(p)) continue;
         fs::create_directories(legacy, ec);
         fs::path dst = legacy / p.filename();
         std::string to = stem;

@@ -153,3 +153,4 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 - **Weapon switch:** holding the scope (right click) while switching from the rifle to the laser no longer stops the laser shooting until you let go.
 - **Syringe:** heals half as much: 5 HP a use (was 10), and a throw gives a teammate 15 HP (was 30).
 - **Clean surfaces** now cleans every surface, not just the default ones: each custom surface shows as its own average colour, flat.
+- **Your maps folder:** the maps update's one-time cleanup no longer moves your own copies of generated maps into legacy/. It only moves old copies of the official maps.

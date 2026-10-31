@@ -5992,6 +5992,7 @@ static void testLegacyMaps() {
     CHECK(saveMapFile(maps + "/my_arena.qmap", "title Mine\nbox -20 -1 -20 20 0 20\nspawn any 0 0 0\n"));   // custom: stays
     CHECK(saveMapFile(maps + "/downloads/abc.qmap", g));                               // downloads: never touched
     CHECK(saveMapFile(maps + "/sub/canal.qmap", g));                                   // a subfolder: never touched
+    CHECK(saveMapFile(maps + "/solarsystem12.qmap", g));                               // a generated map under your own name: stays
     CHECK(saveMapFile(ship + "/temple.qmap", g) && saveMapFile(ship + "/legacy/temple.qmap", g) && saveMapFile(ship + "/qk1.qmap", q.source));
     LegacyMoveReport r = moveOldOfficialMaps(maps, ship, stamp, "9.9.9");
     for (auto& l : r.log) printf("    %s\n", l.c_str());
@@ -6000,6 +6001,7 @@ static void testLegacyMaps() {
     CHECK(!fs::exists(maps + "/temple.mapedit.json", ec) && !fs::exists(maps + "/temple.qlm", ec) && !fs::exists(root + "/cache/temple.qlm", ec));
     CHECK(!fs::exists(maps + "/bastion.qmap", ec) && fs::exists(maps + "/legacy/bastion_2.qmap", ec) && fs::exists(maps + "/legacy/bastion.qmap", ec));
     CHECK(fs::exists(maps + "/harbor.qmap", ec) && fs::exists(maps + "/my_arena.qmap", ec) && fs::exists(maps + "/downloads/abc.qmap", ec) && fs::exists(maps + "/sub/canal.qmap", ec));
+    CHECK(fs::exists(maps + "/solarsystem12.qmap", ec) && !fs::exists(maps + "/legacy/solarsystem12.qmap", ec));
     CHECK(!fs::exists(ship + "/temple.qmap", ec) && fs::exists(ship + "/legacy/temple.qmap", ec) && fs::exists(ship + "/qk1.qmap", ec));
     // the stamp: the same version doesn't scan again (a new copy stays), the next version does
     CHECK(saveMapFile(maps + "/temple.qmap", g));
