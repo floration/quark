@@ -3834,6 +3834,7 @@ void Game::scoreText(ScoreText& t, bool sample) const {
         snprintf(b, sizeof b, "%s - %s", modeTitle(ms.mode), arenaVariant(ms.arenaVariant).title); t.title = b;
     } else t.title = modeTitle(ms.mode);
     b[0] = 0;
+    if (ms.phase != PHASE_LIVE) raceRunRound_ = -1;   // (the race stopwatch restarts when the next round goes live)
     switch (ms.phase) {
         case PHASE_WARMUP: {
             if (ms.timeLeft > 0) { snprintf(b, sizeof b, "MATCH STARTS IN %d", (int)std::ceil(ms.timeLeft)); break; }
@@ -3848,7 +3849,8 @@ void Game::scoreText(ScoreText& t, bool sample) const {
             break;
         case PHASE_LIVE: {   // the round clock in every timed mode (hudclock.h)
             char line[32];
-            hudLiveLine(ms, line, sizeof line);
+            if (ms.round != raceRunRound_) { raceRunRound_ = ms.round; raceRunStart_ = timeNow(); }
+            hudLiveLine(ms, line, sizeof line, isRaceMode(ms.mode) ? (float)(timeNow() - raceRunStart_) : -1.0f);
             // (GAMEPLAY > MORE 3: the plain round clock as TIME PLAYED, and / or with tenths in its last 10 s)
             const bool plain = ms.timeLeft > 0 && !(ms.flags & (MS_OVERTIME | MS_TIMETRIAL)) && ms.mode != MODE_KOTH && ms.mode != MODE_VS &&
                                ms.mode != MODE_DUEL && ms.mode != MODE_ARENA && ms.mode != MODE_TOURNEY && !(ms.mode == MODE_BOMB && ms.bombState == BOMB_PLANTED);

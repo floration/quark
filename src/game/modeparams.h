@@ -74,7 +74,7 @@ constexpr ModeParams builtinModeParamsFor(int mode) {
         case MODE_ARENA: p.rounds = 5; break;
         case MODE_TOURNEY: p.rounds = 3; break;        // each bracket match
         case MODE_BOMB: p.rounds = 7; p.roundTime = 105.0f; break;
-        case MODE_RACE: case MODE_SURF: p.rounds = 3; p.roundTime = 300.0f; break;   // two loops of Viaduct
+        case MODE_RACE: case MODE_SURF: p.rounds = 3; break;   // no clock: a round runs until someone finishes (owner, 2026-10-31)
         case MODE_PAYLOAD: p.roundTime = 240.0f; break;              // each team attacks once (rounds 1)
         case MODE_POINTS: p.roundTime = 150.0f; break;               // the attack's clock at the start
         case MODE_NPAYLOAD: p.roundTime = 300.0f; p.roundTimePerPlayer = 120.0f; break;   // 2 min a player (owner, 2026-10-30): 4v4 16 min

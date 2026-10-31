@@ -612,7 +612,8 @@ private:
     std::string filterChat(std::string t) const;
     bool sysLineShown(const std::string& t) const;
     mutable int clockRound_ = -1;
-    mutable float clockLen_ = 0;   // (TIME PLAYED: the longest time left seen this round = its length)
+    mutable float clockLen_ = 0;
+    mutable int raceRunRound_ = -1; mutable double raceRunStart_ = 0;   // race: when this round went live here (its run stopwatch)   // (TIME PLAYED: the longest time left seen this round = its length)
     std::string shownName(int id) const;   // (STREAMER MODE: other players as "PLAYER <n>")
     bool hitHead_ = false;   // (the last hit a headshot: the crosshair flashes HEADSHOT's colour)
     double centerUntil_ = 0, hitUntil_ = 0, damageUntil_ = 0, recoil_ = 0, localNextFire_ = 0;

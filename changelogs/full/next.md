@@ -400,3 +400,9 @@ Worker 2's share of the 1-scored items, in the same batch-3 key table (`b3Keys`)
 
 - `kHideTime` 30 -> 5 s (gamedefs.h): the freeze while the seeker faces the wall. It feeds the native default (`ModeParams::hideTime`), the mode logic's `hideTime` param default (modelogic.cpp, now `kHideTime` instead of a literal 30) and `tools/modes/hide.qlogic` (`param hideTime f32 = 5`). A custom mode that sets hideTime keeps its own value.
 - **No protocol bump.** The client never derives the head start: the freeze is a server phase, and its end reaches clients as the phase timer in the mode state, the same as before; the "hide! (N s)" line is server text. An older client on a 1.19.6 server shows a 5 s freeze correctly, and the other way round a 30 s one.
+
+## Race and surf: no time limit (q, 2026-10-31: "in race and surf modes there should be no time limit lol why is there one")
+- What changed: race and surf rounds had a 300 s round clock (sized for two loops of Viaduct), and a round with no finisher ended with "nobody finished". The mode default `roundTime` for race and surf is now 0, so there's no clock and a round runs until someone finishes (first to finish wins it, as before). A host or mod that sets a clock still gets one (`tickRace` only ends a round on time when `phaseEnd_ > 0`).
+- Split times were worked out from the clock (`liveLength_ - (phaseEnd_ - now)`). They now count from the round going live (`roundStart_`), which gives the same number when there is a clock.
+- The HUD's run time (to the hundredth) was `300 - timeLeft`, which only worked while the clock existed. It's now the client's own stopwatch from the round going live, shown in every race and surf round, not only the time trial. The splits and the board still use the server's times.
+- No protocol change.
