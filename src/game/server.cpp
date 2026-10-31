@@ -281,23 +281,6 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
             nav_.buildAsync(map_);
         }
     }
-    if (!cfg_.ranked && !cfg_.editMode && !legacyMapsListed() && isLegacyMap(cfg_.map)) {
-        // a server set up for an old map (legacy since 1.19.6, not listed here): it plays the listed map built for its
-        // mode instead (else one that takes the mode), so players never land on a map they can't vote (owner, 2026-10-31)
-        std::string pick;
-        Map d;
-        for (const std::string& n : mapList_) {
-            if (isLegacyMap(n) || !d.load(n) || !d.supportsMode(cfg_.mode)) continue;
-            if (pick.empty()) pick = n;
-            if (d.preferredMode == cfg_.mode) { pick = n; break; }
-        }
-        if (!pick.empty() && d.load(pick)) {
-            log(cfg_.map + " is a legacy map (this server doesn't list the old maps): playing " + pick + " instead");
-            cfg_.map = pick;
-            map_ = d;
-            nav_.buildAsync(map_);
-        }
-    }
     if (cfg_.ranked && !isRankedMap(map_, cfg_.arenaVariant)) { if (err) *err = "ranked only runs on the ranked maps for its ladder"; return false; }
     if (cfg_.ranked) cfg_.editMode = false;
     // any map runs any mode (one not built for it may be missing what the mode needs: the host was warned)
