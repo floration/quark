@@ -6570,12 +6570,15 @@ static void testMapVote(uint16_t port) {
     b.sendCommand("callvote map nosuchmap ffa");
     pump(s, cls, 0.3, idle);
     CHECK(s.vote_.kind == Server::VOTE_NONE);
-    b.sendCommand("callvote map summit koth");
+    b.sendCommand("callvote map summit koth");   // a legacy map (1.19.6): not votable while the old maps aren't listed (owner, 2026-10-31)
+    pump(s, cls, 0.3, idle);
+    CHECK(!legacyMapsListed() && isLegacyMap("summit") && s.vote_.kind == Server::VOTE_NONE);
+    b.sendCommand("callvote map glacier koth");
     pump(s, cls, 0.3, idle);
     CHECK(s.vote_.kind == Server::VOTE_MAP);
     a.sendCommand("vote yes");
     pump(s, cls, 1.0, idle);
-    CHECK(s.config().map == "summit" && s.config().mode == MODE_KOTH);
+    CHECK(s.config().map == "glacier" && s.config().mode == MODE_KOTH);
     // every map / mode pair the vote menu offers must be accepted
     for (auto& name : listMaps()) {
         Map m;

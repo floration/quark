@@ -147,3 +147,4 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 - **No time limit:** a round runs until someone finishes, and the HUD counts your run time up.
 ## Rockets
 - **Rocket splash damage works online again:** since 1.19.3 only a direct rocket hit did damage on a server; a rocket landing on the floor or a wall next to someone did nothing and showed no hit marker. Splash now hurts as it did before.
+- **Map votes:** the old (legacy) maps can't be voted unless the server turns them on.
