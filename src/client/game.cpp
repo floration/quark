@@ -9803,7 +9803,7 @@ static const char* const kInfoPages[][48] = {
         "LIGHTHOUSE / TERRACES - team vs.   REACTORS / BRIDGE - power.   DATACENTER / MINE - bomb.   CASTLE / GLACIER / AMPHITHEATRE - king of the hill.",
         "RAILYARD / DAM / EXPRESS / MONORAIL - neutral payload (Railyard: payload too).   WAR / CONVOY - multi point.",
         "SEWER - free for all.   RIVERSIDE / FAIRGROUND / ROOFTOPS - tag.   MUSEUM / CRUISESHIP - hide and seek.",
-        "ACCELERATOR / JUNGLE / ROOFTOPRUN - race (and the ranked time trials).   SOLAR / SURFY - surf.   COBBLESTONE - q's own.",
+        "ACCELERATOR / JUNGLE / ROOFTOPRUN - race (and the ranked time trials).   SURFY - surf.   COBBLESTONE - q's own.",
         "LEGACY MAPS (settings > GAMEPLAY) lists the old maps from before 1.19.6 too. They are never ranked.",
         "# YOUR OWN MAPS",
         "Anything in the maps folder shows up in the lists. Servers send their map to players who don't have it.",

@@ -17,7 +17,7 @@ TOOLS = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, TOOLS)
 # every map, in the order they're made (each is tools/maps/<name>.py, saved as <name>.qmap)
 MAPS = ["railyard", "dojo", "castle", "qk1", "qk2", "qk3", "qk4", "datacenter", "mine", "qk5", "qk8", "qk6", "qk7",
-        "sewer", "war", "solar", "rooftoprun", "jungle", "monorail", "dam", "express",
+        "sewer", "war", "rooftoprun", "jungle", "monorail", "dam", "express",
         "bridge", "convoy", "greenhouse", "orbit", "cruiseship", "fairground", "rooftops",
         "lighthouse", "terraces", "glacier", "spire"]
 # the old map pool (official until 1.19.6): still built, into <out>/legacy/ (shipped there, never official or ranked;
