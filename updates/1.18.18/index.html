@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.18.18: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.18.18</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<p>One fix to 1.18.14&#x27;s Settings &gt; VIDEO + AUDIO &gt; DEVICES page. No gameplay, network, file format or setting change; the page looks and works the same.</p>
+<h3>DEVICES rows&#x27; ids (src/client/game.cpp drawDeviceSettings / devRowText, src/client/game.h)</h3>
+<ul>
+<li><b>The bug</b>: the full UI test run with the UI customizer&#x27;s extract probe failed: 2454 widgets, 0 failed, but 13 never tested, all on the DEVICES page, under garbled ids such as &quot;[0.25098,0.85098,1,1]&quot; and &quot;REFRESH RATE: 165 HZ [CFG audio_output]&quot;.
+</li>
+<li><b>Why</b>: a widget&#x27;s UI test id (<code>UiExp::id</code>) is a pointer the test keeps after the widget call. The page built each row&#x27;s id (&quot;OUTPUT: &lt;NAME&gt;&quot;) every frame into a static string by move-assigning a new temporary, which freed the previous frame&#x27;s buffer and gave the row a new one each draw; REFRESH RATE&#x27;s names were also cleared and made again every frame. The extract probe draws a captured frame a second time (mouse parked off the window) and then keeps the first draw&#x27;s widgets, so their ids pointed into freed memory, by then reused for other text (a colour written to the capture, a refresh rate name). Their keys came out as garbage, so the rows registered under those keys were never found again to be tested. The plain UI test happened not to redraw, so it passed; the per-frame string building was also an allocation every frame on this page.
+</li>
+<li><b>Fix</b>: each row&#x27;s id (&quot;&lt;PREFIX&gt;: &lt;NAME&gt;&quot;) and its in-use label (&quot;&gt; NAME &lt;&quot;) are made once per listing (<code>Game::devRowText</code>, called by listDevices: on opening the page, REFRESH, a monitor plugged in or out) and kept in Game (<code>devRowId_</code> / <code>devRowOn_</code>); a listing that comes back the same keeps the very same strings. REFRESH RATE&#x27;s names (<code>devRateNames_</code>) are made again only when the monitor&#x27;s rates, its desktop rate or the saved rate change. The page now builds no strings per frame for its rows, and every id stays valid for as long as the lists don&#x27;t change. The 64-row cap on ids is gone with the static array (every row has its own id).
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.18.17/">&larr; 1.18.17</a></span><span><a href="../1.18.19/">1.18.19 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.5.0: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.5.0</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<p class="note">The full notes for this version are its short notes: that was all that was written then.</p>
+<div class="prose">
+<h3>New maps</h3>
+<ul>
+<li><b>Downtown</b> (king of the hill, a city block).
+<ul>
+<li>The hill is the plaza at the crossroads: a statue in a fountain, with benches and planters round it.
+</li>
+<li>Four avenues lead in, and an underpass runs under the plaza with a hatch ladder up into it.
+</li>
+<li>Around the plaza: an office building (two floors, plus a fire escape to the roof), a row of cafes with a roof terrace, parked cars, bus shelters, a metro entrance, and lit windows on every facade.
+</li></ul>
+</li>
+<li><b>Orbital</b> (team vs, a space station).
+<ul>
+<li>Each team starts in its docking bay beside a shuttle.
+</li>
+<li>Three ways across: the cargo hall in the middle, a corridor down each side behind shoot-through glass, and an upper deck along the corridor roofs.
+</li>
+<li>The hub has the reactor core and a catwalk ring. Its two observation windows are open to space, so fall out and you&#x27;re gone.
+</li>
+<li>Galleries at 8 m give each side a high perch.
+</li></ul>
+</li>
+<li><b>Clockwork</b> (duel) replaces Crucible: you&#x27;re inside a giant clock.
+<ul>
+<li>The great wheel turns in the middle, over the works. Four spokes lead in.
+</li>
+<li>A pinion up ladders above the wheel, balconies along the walls, pendulums in front of each spawn, and the clock face glowing on the end walls.
+</li></ul>
+</li></ul>
+<h3>Every map has one mode</h3>
+<ul>
+<li><b>Foundry</b> is built for tag now, with tool cribs to duck into. <b>Bastion</b> is built for team vs, and <b>Colosseum</b> for tourney. All three still run every mode.
+</li>
+<li><code>docs/MAP_STRUCTURES.md</code> explains, for every map, why its layout suits its mode and why each structure is there.
+</li></ul>
+<h3>Viaduct: harder, and the grapple doesn&#x27;t make it easy</h3>
+<ul>
+<li>The beams weave round posts, so a dash-jump can&#x27;t skip a bend.
+</li>
+<li>The stepping pads are 0.9 m, zig-zag, and have posts beside them.
+</li>
+<li>The covered lane is a tunnel through a rock spur, so there&#x27;s no roof to run along. The cliff path weaves under a solid overhang.
+</li>
+<li>Beams are 0.6–0.7 m wide, and there are 12 checkpoints.
+</li>
+<li>Measured on the path of a player who dash-jumps and grapples well: 12 jumps per 100 m, 20% of the course on narrow footing, and only 4% grappled.
+</li></ul>
+<h3>Stairs and ladders</h3>
+<ul>
+<li><b>Every staircase is now walked by the tests</b>, and none may cut through or hang over another path. Fixed along the way:
+<ul>
+<li>Single 0.6 m steps (the step-up is 0.55 m).
+</li>
+<li>Decoration caps that made every step 0.6 m.
+</li>
+<li>Anvil&#x27;s stairs under the horns.
+</li>
+<li>Galleries over the tower stairs on Anvil and Bastion.
+</li>
+<li>Foundry&#x27;s stairs into the offices.
+</li>
+<li>Colosseum&#x27;s aisle buried in the stands.
+</li>
+<li>Canal&#x27;s footbridge stairs into the corner stairs.
+</li>
+<li>Harbor&#x27;s stairs over a door.
+</li>
+<li>Props on the stairs on Gantry and Railyard.
+</li>
+<li>A house on Hamlet&#x27;s windmill-hill stairs.
+</li></ul>
+</li>
+<li><b>Ladders</b> end flush with the floor at the top (the rails used to stick up and trip you). New ladders on Anvil, Bastion, Canal, Colosseum, Depot, Furnace, Gantry, Summit and Temple.
+</li></ul>
+<h3>More to every map</h3>
+<ul>
+<li><b>Temple:</b> a roof walk and pagoda lookouts at 11 m.
+</li>
+<li><b>Gantry:</b> a flooded dock, crane-leg ladders up to the crane bridges, and sunken lorry docks.
+</li>
+<li><b>Anvil:</b> forge hoods with a flue walk and chimneys.
+</li>
+<li><b>Furnace:</b> a ladder up the stack, and a roof walk over the side bays.
+</li>
+<li><b>Summit:</b> a beacon platform, cairns on the peak and firewood stacks.
+</li>
+<li><b>Depot:</b> a barge basin and a yard crane.
+</li>
+<li><b>Hamlet:</b> a gully, street lamps and moved houses.
+</li>
+<li><b>Colosseum:</b> the emperor&#x27;s box and wreckage in the sand.
+</li>
+<li><b>Canal:</b> house-roof ladders.
+</li>
+<li><b>Bastion:</b> tower roofs at 12 m and torchlight.
+</li></ul>
+<h3>Bots</h3>
+<ul>
+<li>Bots now walk stairs with 0.5 m steps. They used to ignore those steps.
+</li></ul>
+<h3>Stricter map grading</h3>
+<ul>
+<li><b>Higher targets:</b> detail and lights for decor; cover, loops and dead ends for layout.
+</li>
+<li><b>Creativity:</b> each feature is worth less, and a setting no other map has counts.
+</li>
+<li><b>New &quot;mode fit&quot; score:</b> each map is judged on what its own mode needs.
+</li>
+<li><b>Only real floor counts:</b> unreachable roofs and floors below the kill height are no longer counted as floor.
+</li>
+<li><b>More realistic jump checks:</b> dash-jumps are checked for a player-wide body.
+</li>
+<li>Every map scores 7+ in every category, and the tests fail otherwise.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.4.0/">&larr; 1.4.0</a></span><span><a href="../1.6.0/">1.6.0 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

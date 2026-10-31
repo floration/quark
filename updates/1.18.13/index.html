@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.18.13: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.18.13</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<p>The owner-approved UI redesign (ui-redesign-spec; coordinates from layout-redesign.json at 720p in a 1280 frame). Its aims: one consistent look on every page (BACK bottom-left, the main action bottom-right, sections with accent headers, NAME: VALUE on every cycle), no text smaller than text scale 1.5, nothing off the screen or drawn over something else (the UI audit&#x27;s bugs), and text that fits by itself in every UI font. No setting, quark.cfg key, file format or network message changed; no gameplay change. (1.18.12 is the model editor.)</p>
+<h3>Title logo (src/client/renderer.cpp, tools/make_logo.py, src/client/logo_data.h)</h3>
+<ul>
+<li><b>Drawn like the app icon</b>: the menus&#x27; title was the UI font at text scale 8 in the team colour. It is now the design&#x27;s logo: Rubik ExtraBold, every letter on a square black outline, the Q split along make_icon.py&#x27;s slanted line with a black seam.
+</li>
+<li><b>Baked masks</b>: tools/make_logo.py bakes it with make_icon.py&#x27;s Pillow steps (mask, square dilation, split, seam) at its 2160p size, 4x supersampled, into one 626 x 147 RGBA PNG (16 KB) of masks: R = the friendly half (the Q left of the line and UARK), G = the enemy half, A = the outline. Mipmapped, so it is crisp at 720p, 1080p and 768.
+</li>
+<li><b>Team colours (owner)</b>: the UI shader tints R with color_friendly and G with color_enemy, so the title follows the player&#x27;s team colours (defaults: cyan / red, as before). Only the menus&#x27; title: the app icon, launcher and website keep the fixed colours.
+</li>
+<li><b>Any font (owner)</b>: with another UI font picked, the word is drawn in that font at the logo&#x27;s size (same em and baseline) with its own outline; the Q&#x27;s quad carries a flag in the vertex&#x27;s spare byte and the text shader colours it past the same slanted line (9.09 degrees, through the middle of the Q&#x27;s advance and ink) with a 12/844 em black seam.
+</li>
+<li><b>Cost</b>: still one draw call in the existing 2D batch, no extra pass. A sentinel text scale (255 + 255/256) makes the shader sample the logo texture; the texture is bound and the title&#x27;s uniforms set only by a flush that draws the title. Uniform locations are looked up once at init, like the rest of testing&#x27;s 2D path (no lookups in the frame loop).
+</li>
+<li>Sized as designed: em = 7.5 units x the text scale x 0.66 / 0.70 (Rubik&#x27;s cap height matched to the old font&#x27;s), baseline 5.7 units under the line top. The settings pages show no title (decision 6).
+</li></ul>
+<h3>New widgets (src/client/ui.cpp, ui.h)</h3>
+<ul>
+<li><b>Colour picker</b> (Ui::colorPicker): &quot;LABEL [swatch]&quot;; a click opens a saturation / value square, a hue bar, a hex field and R G B. Right-click: the default. It returns CHANGED or RESET, so a setting whose default is &quot;off&quot; (the name colour) can tell them apart. Colours stay 8 bits a channel, as quark.cfg keeps them. Why: every R / G / B slider trio took three rows and was hard to aim.
+</li>
+<li><b>Dropdown</b> (Ui::dropdown): &quot;LABEL: VALUE  V&quot; opening its list under it.
+</li>
+<li>An open picker or dropdown is modal (every other widget inert and unreported; a click outside closes it and does nothing else) and is drawn last, over the page. It closes when its widget is no longer drawn.
+</li>
+<li><b>Tabs, hints, right-click</b>: Ui::tab, Ui::hint (0.75 of the UI&#x27;s text scale, unrounded: 1.5 at 720p), Ui::hintCentered, Ui::rclicked, Ui::openPopup (screenshot runs). Ui::muted now also blocks input.
+</li>
+<li><b>Wrapped text</b> (Ui::wrap / hintWrapped): a paragraph broken at spaces, from a 128-entry cache keyed by text, width, size and font (the text kept too, so a hash clash re-wraps): measured once, not every frame, and a cache hit allocates nothing.
+</li>
+<li>Rect gradient (Renderer::rectGradient) for the picker&#x27;s ramps, in the same batch.
+</li>
+<li>No per-frame cost when nothing is open: a couple of flag checks per widget.
+</li></ul>
+<h3>Text fitting (src/client/textfit.{h,cpp}: GL-free, so quark_tests uses it)</h3>
+<ul>
+<li><b>Measured once per font</b>: when a UI font is picked (never per frame) every glyph&#x27;s ink box is measured from its atlas (the distance field gives the edge to a fraction of a texel).
+</li>
+<li><b>Line box</b>: if any glyph&#x27;s ink plus its outline reaches outside the box Rubik uses (the 8-unit line, or Rubik&#x27;s own ink: -1.21..8.12 units), the whole font is drawn just enough smaller and moved only as far as needed. Bebas Neue (Overwatch) 0.876 (its | , ; fell below the box), Lilita One (TF2) 0.982, Work Sans and Jost only move up 0.05 / 0.13 units, the rest untouched. Why (owner): some bundled fonts touched the line above or below.
+</li>
+<li><b>Width (owner)</b>: a label that doesn&#x27;t fit is first closed up (each letter pair only as far as its ink allows: fills at least an outline apart, never more than 15% of a letter), then shrunk, and only cut with &quot;...&quot; when it still doesn&#x27;t fit at the font&#x27;s smallest size. A 256-entry cache keyed by text, width, size and font: a fitted label is worked out once, with no per-frame allocation. Merged with testing&#x27;s no-copy Ui::fitText (buttons and cycles draw the label without copying it, and get its width from the fit).
+</li>
+<li><b>Labels fit too</b>: Ui::label / hint / labelCentered take a width or fit the current box (Ui::box; a panel sets its own). The UI test still counts only a &quot;...&quot; as clipped.
+</li>
+<li>Tests (assets): every built-in font stays inside the line box after its fit (Rubik at exactly 1); a long label in a narrow box (Rubik and QUARK CLASSIC): at 97% it only closes up, at 75% it shrinks with the most closing up that size allows, at 20% it is cut, a fitting one is unchanged.
+</li></ul>
+<h3>Settings (src/client/game.cpp)</h3>
+<ul>
+<li><b>One shell, six tabs</b>: every settings page (main menu and pause menu share the code) is one opaque 776 x 656 panel 32 px from the top, with tabs PLAYER / GAMEPLAY / CONTROLS / VIDEO + AUDIO / CROSSHAIR / HUD, BACK bottom-left and the tab&#x27;s reset bottom-right. Controls 360 wide, 32 high, 8 apart, with a hint under each at 1.5.
+</li>
+<li>PLAYER: identity, outlines, look (model, name colour), team colours (the preset cycle sets both pickers), INTERFACE &gt; FONT. GAMEPLAY (was VISUALS): view, shots, network smoothing, feedback, other players, chat. VIDEO + AUDIO (new): display, FPS limit, latency, flat map | sound, voice. CROSSHAIR: preview across the top, shape | colour and on hit. HUD: one ELEMENT dropdown with WEAPON MODEL first (decision 7).
+</li>
+<li><b>CONTROLS</b>: two sub-tabs (GENERAL + INTERFACE KEYS, MOVE + WEAPON KEYS). The X unbind column is gone: <b>right-click a slot</b> (or click it and press Del) unbinds it. The import list is a dialog over the dimmed tab.
+</li>
+<li>Every R / G / B trio is one colour picker (team, enemy, name, map, crosshair, hit flash, HUD element).
+</li>
+<li><b>HUD hidden in settings</b> (decision 5): in game the panel cut the score and weapon bars. Esc leaves settings from any tab (after closing a picker, dropdown or list).
+</li>
+<li>Testing&#x27;s own changes kept: EXCLUSIVE AUDIO (N/A) when the device takes none of its formats, and the FPS limit&#x27;s right-click default from the cached screen mode.
+</li>
+<li>Screen paths: settings/gameplay (was settings/visuals), settings/video, settings/controls/movement are new; the same under ingame/pause/. <code>--settingstab PAGE[+PICKER]</code> opens a page for screenshots.
+</li>
+<li>The HUD widget editor: its toolbar 24 px from the edges and only as tall as its rows, help and captions at 1.5; it says COLOR (was COLOUR).
+</li></ul>
+<h3>Menus</h3>
+<ul>
+<li><b>Layout</b>: Game::menuLayout (s = H / 720 around W / 2, narrowed so a 960 page keeps 20 px each side on a squarer window, its top under the title). SetLayout gained a y offset for that.
+</li>
+<li><b>MAIN</b>: the 360 px column under the title, rows 40 high, QUIT on its own row after a 20 px gap.
+</li>
+<li><b>JOIN</b>: the server list in its panel with headers (SERVER / MAP / PLAYERS / PING), 6 rows that scroll with the wheel, BACK | REFRESH LIST in the footer.
+</li>
+<li><b>HOST</b>: the panel sized to its rows (it ran off the bottom: audit). Duel&#x27;s TEAMS is a 40 px cycle (was a 24 px &quot;CLICK FOR 2V2&quot; button). The network options moved to <b>HOST &gt; ADVANCED</b> (decision 9: UDP PORT, AUTO PORT FORWARD, SERVER LOG), path host/advanced.
+</li>
+<li><b>VS BOTS</b>: DIFFICULTY: BEGINNER .. EXPERT (decision 10), TEAMMATE BOTS only in a team mode.
+</li>
+<li><b>Pickers</b> (maps, modes, 1v1 rulesets, ranked ladders, in the menus and in game): one card-grid template (Game::drawPicker) in a 960 panel: cards with their description wrapped at 1.5, the current one framed. Maps say FOR &lt;MODE&gt;; in a mode they aren&#x27;t built for, one legend line replaces the orange two-line warning that sat under almost every map (decision 14; it touched the next card&#x27;s button: audit).
+</li>
+<li><b>Custom mode</b> (decision 8): one 960 x 522 panel on every tab (it grew to the screen&#x27;s width on WEAPONS and MOVEMENT), five tabs with the current one framed, the same footer on each. GENERAL in three columns (RULES, PHYSICS, ABILITIES); WEAPONS a row per weapon, a hitscan weapon&#x27;s SPEED greyed out (it was a live slider that changed nothing); MOVEMENT split into MOVEMENT (15 sliders) and a new <b>DASH + GRAPPLE</b> tab (19), path custom/dash. <b>Real units</b>: every scaled slider shows the value it makes in the mode (GRAVITY: 22.0 M/S2, FIRE RATE: 0.83/S); the stored value stays the multiplier, so .qmode files and the network format are unchanged. Testing&#x27;s PLAYS AS fix (stepping over TOURNEY / ARENA in the direction pressed) is kept.
+</li>
+<li><b>INFO</b>: one 960 x 482 panel, text 2 (was 1.2) in one 640 px column, at most 80 characters a line (decision 11), scrolls with the wheel (3 lines a notch) with &quot;LINES x-y OF n&quot;. Wrapped once per tab, size and font.
+</li>
+<li><b>LEADERBOARD</b>: the buttons inside the panel (they straddled its edge: audit), four 220 px columns, top 15 in rows of 20; MY VIADUCT RUNS in the same panel.
+</li>
+<li><b>DEMOS</b>: 8 rows that scroll, RECORDING RATE and its hint, BACK | OPEN FOLDER. <b>CONNECTING</b>: a small centred panel. The save-a-copy question after an edit session uses the dialog template.
+</li>
+<li><code>quark --menupage PATH</code> opens a menu page by its path for screenshots.
+</li></ul>
+<h3>In game</h3>
+<ul>
+<li><b>One band</b>: the pause menu&#x27;s pages sit between the notices and the weapon bar (Game::ingameLayout), in panels at 95% alpha (decision 12: the HUD under them no longer shows through).
+</li>
+<li><b>Notice list</b>: the lines under the score bar (spectator banner, hide and seek / tag banner, objective, bomb timer, ranked&#x27;s notes, a running vote, the host&#x27;s port / UPnP / reachability lines with CHECK AGAIN) are one column, each under the last. Why: the tourney vote line, the port line and the reach line were drawn over each other (audit).
+</li>
+<li><b>Scoreboard</b>: starts under the notices. TOTAL K / D only shows when someone has a total (bots and offline players never do, so the column was empty) and shows &quot;-&quot; for a row without one.
+</li>
+<li><b>F3</b>: the box at (24, 8), at most to x 396, so it stays left of the score bar (it ran under it: audit); four lines, each measured once.
+</li>
+<li><b>Cooldown bars</b>: rows 16 apart (WEAPON, DASH, HOOK, SPEED), captions at 1.5 centred on the bar (text 1 was below the redesign&#x27;s smallest). Testing&#x27;s dash pips (grey until a dash is allowed) are kept.
+</li>
+<li><b>Hide and seek</b>: FACE THE WALL AND COUNT above the countdown (it ran into the captions); the round message in a centre slot, hidden while the scoreboard is held; the tiebreak is compact (560 x 258) and sits under the scoreboard while TAB is held (it covered it: audit).
+</li>
+<li><b>Pause</b>: the 360 column, rows of 36, a HOST section, the leave / quit row last. <b>VOTE</b>, <b>QUEUE</b> (two columns of 16 queues) and the MOVE TO SPECTATOR list in the same band and style.
+</li></ul>
+<h3>Map editor (src/client/editor.cpp)</h3>
+<ul>
+<li>&quot;Don&#x27;t over-design it: it&#x27;s the owner&#x27;s tool&quot;: the same tools in the same order, re-flowed, no text under 1.5.
+</li>
+<li><b>Side panel</b>: 12 px from the edges, sections with headers: FILE (NAME / TITLE, BUILT FOR, NEW | SAVE | EXIT | TEST in one row, decision 13), MAP + OPEN, HOST EDIT SESSION + BAKE LIGHT, MAPS FOLDER + RESET MAPS, ADD, GROUPS (MAKE / IMPORT / EXPORT, ids unchanged), GRID, MODES (chips 20 tall, names at 1.5, widths measured once per size and font), then the selection. Cycles say what they are (GRID: 1/2 M, MATERIAL: ACCENT).
+</li>
+<li><b>Selection</b>: starts at the same height for every kind; ROTATE / MIRROR as a caption and three short buttons; FIND INVISIBLE WALLS: n (was FIND CLIP BOXES (INVISIBLE WALLS): n, shrunk to fit; id unchanged).
+</li>
+<li><b>Key bar</b> under the 3D view: PLAYABLE AS, the modes, the team-spawn note and the counts (moved from the panel, where a long selection hid them) over the key help, at 1.5. Lines wider than the view are packed onto another line (a 4:3 window takes one more), re-packed only when width, size or font change. Testing&#x27;s per-map cache (mode support, clip-box count, the PLAYABLE AS text) feeds it, so nothing is recounted per frame.
+</li>
+<li><b>Dialogs</b> on one template, centred in the 3D view (EXPORT&#x27;s question, IMPORT&#x27;s list, keep-your-edits / save-a-copy). The session chat&#x27;s SAY line sits above the key bar (it was drawn over the key help); the top notice fits the view.
+</li>
+<li><b>Handle drag fix</b>: a handle on a far face, seen nearly along its axis and dragged towards the horizon, flipped the face inwards: past the axis&#x27;s vanishing point the nearest point of the mouse ray is behind the camera, so the drag&#x27;s delta changed sign. The drag now holds while that is so and follows again when the mouse comes back (the edit-host UI test&#x27;s &quot;[group] &gt; RESIZE -Z&quot; failure).
+</li></ul>
+<h3>UI test (src/client/uitest.cpp, docs/UI_TEST.md)</h3>
+<ul>
+<li>Learns the new widgets: colour pickers are opened, dragged, given a typed hex value, closed with Esc and right-clicked (default); dropdowns are opened; a keybind slot is right-clicked after its bind and must unbind (unbind_checks in the report).
+</li>
+<li><code>--uitest-path a,b,-c</code>: explore only the screens under the given paths, <code>-</code> excluding one.
+</li>
+<li>It no longer keeps a transient CONNECTING screen from a game the scenario starts itself (clicking its CANCEL raced the connection, failing about one run in two).
+</li>
+<li>Replaying the way to a screen, and clicking CHECK AGAIN, first wait (up to 6 s) for a running reachability check to end: the vote page&#x27;s CHECK AGAIN was sometimes untested or &quot;didn&#x27;t happen&quot; (the known host-tourney flake).
+</li></ul>
+<h3>Provenance</h3>
+<ul>
+<li>New UI pages registered as AI-made (the owner approved the redesign): ui/custom/dash, ui/host/advanced, ui/settings/controls/movement, ui/settings/gameplay, ui/settings/video; ui/settings/visuals is gone (renamed GAMEPLAY). The title logo is baked into the code (src/client/logo_data.h), not an exported asset.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.18.12/">&larr; 1.18.12</a></span><span><a href="../1.18.14/">1.18.14 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

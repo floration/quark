@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.18.10: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.18.10</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<p>A UI font update: Rubik Bold as the default, a SETTINGS &gt; FONT page with the built-in fonts, free look-alikes of game fonts, the player&#x27;s own copies of the real game fonts and their own <code>mods/fonts</code> files. <b>Network protocol unchanged</b> (43): 1.18.10 plays with 1.18.7 and 1.18.9 games and servers, and demos are unchanged.</p>
+<h3>The default UI font: Rubik Bold (tools/make_font_atlas.py, src/client/font_ui.h)</h3>
+<ul>
+<li><b>What</b>: the UI text (menus, HUD, chat, scoreboard, editor) is Rubik at wght 700 (Bold), was Work Sans Bold. The console stays monospaced.
+</li>
+<li><b>Why Rubik</b>: it&#x27;s already the logo&#x27;s, the launcher&#x27;s and the website title&#x27;s font (<code>assets/fonts/Rubik.ttf</code>, SIL OFL 1.1), so the game&#x27;s text now matches its branding.
+</li>
+<li><b>How</b>: <code>tools/make_font_atlas.py</code> bakes it into <code>src/client/font_ui.h</code> as before: raw R8 distance-field texels, uploaded at startup with no decoding, so startup costs the same. <code>Rubik.ttf</code> is a variable font whose default instance is Light; the tool sets wght 700 (Pillow).
+</li>
+<li><b>Layouts</b>: Rubik Bold&#x27;s widths are within 0.1% of Work Sans Bold&#x27;s at the same em, so every label fits as before. Capitals are 5.25 units (<code>kUiCapHeight</code>), the height every other font is sized to.
+</li>
+<li><b>Asset override</b>: <code>fonts/Rubik.ttf</code> / <code>.otf</code> (in <code>assets/overrides/</code> or the Asset Studio) now replaces the default font. <code>fonts/WorkSans.*</code> used to replace the UI font. It now replaces only the WORK SANS entry. The asset export lists <code>font/rubik</code> (<code>fonts/Rubik.ttf</code>) as the default font, beside <code>font/worksans</code>.
+</li></ul>
+<h3>SETTINGS &gt; FONT (src/client/uifonts.cpp, src/client/game.cpp)</h3>
+<ul>
+<li><b>The page</b>: a FONT button beside BACK on the settings page opens <code>settings/fonts</code>, in the menus and in game. It lists the built-ins (<code>kBuiltinFonts</code>: RUBIK, WORK SANS, QUARK CLASSIC, then the game-styled entries), then every <code>.ttf</code> / <code>.otf</code> in the game folder&#x27;s <code>mods/fonts</code> (OPEN FOLDER, REFRESH; the wheel scrolls a long list). The page rises over the logo when the list is long, so all 10 built-ins fit unscrolled at 1280x720 and 1024x768.
+</li>
+<li><b>Picking</b>: a click builds that font once (a baked PNG atlas about 3 ms, a TTF about 55 ms) and saves it as <code>ui_font</code> in quark.cfg (a built-in&#x27;s id or the file&#x27;s name). A font that can&#x27;t be loaded changes nothing and shows a notice. One that&#x27;s gone at startup falls back to Rubik with a notice, and the setting is kept, so the font comes back with its file.
+</li>
+<li><b>Applied once, never per frame</b>: <code>Game::frame</code> applies <code>ui_font</code> only when it differs from the last one tried (a string compare), so the console&#x27;s <code>ui_font x</code> and the UI test&#x27;s settings reset work too. <code>Renderer::setUiFont</code> replaces the font texture&#x27;s texels in place (<code>glTexSubImage2D</code>, same layout) and swaps the advance / kerning tables every text call reads. Nothing changes in the per-frame text path, so frame times and the F3 1% / 0.1% lows are unaffected.
+</li>
+<li><b>Sizing</b>: <code>buildFontAtlas</code> sizes any font so its capitals are as tall as Rubik&#x27;s (<code>FontAtlasLayout::cap</code>), so a picked font doesn&#x27;t break layouts. Before, a fixed em made fonts with small capitals look tiny.
+</li>
+<li><b>QUARK CLASSIC</b>: the original 5x7 pixel font (the <code>kFont</code> table removed in 8678b00) with its original metrics, baked as a max-norm distance field so its edges and outline stay square (17 KB).
+</li>
+<li><b>Built-ins are baked PNG atlases</b> (new <code>src/client/font_builtin.h</code>), not font files rasterised at run time:
+<ul>
+<li>Pillow can set a variable font&#x27;s weight; stb_truetype only draws the default instance (Work Sans would come out Regular).
+</li>
+<li>The bake sizes every font to Rubik&#x27;s capitals.
+</li>
+<li>A distance field compresses about 5:1 as a PNG: Work Sans Bold is 65 KB instead of 488 KB of raw texels or the 361 KB font file.
+</li></ul>
+</li></ul>
+<h3>The game-styled fonts (assets/fonts, src/client/uifonts.cpp)</h3>
+<ul>
+<li><b>Seven free look-alikes, bundled</b> (owner-approved downloads, each with its licence beside it in <code>assets/fonts/</code>):
+</li></ul>
+<div class="scroll"><table><tr><th>Entry</th><th>Bundled font</th><th>Licence</th></tr>
+<tr><td>OVERWATCH</td><td>Bebas Neue</td><td>SIL OFL 1.1</td></tr>
+<tr><td>COCAINE DIESEL</td><td>Decalotype Bold (the font Cocaine Diesel itself uses)</td><td>SIL OFL 1.1</td></tr>
+<tr><td>QUAKE</td><td>LibreQuake&#x27;s CONCHARS (a 16x16 sheet of 8x8 characters)</td><td>BSD-3-Clause</td></tr>
+<tr><td>HALF-LIFE 2</td><td>DejaVu Sans Bold</td><td>Bitstream Vera licence</td></tr>
+<tr><td>TF2</td><td>Lilita One</td><td>SIL OFL 1.1</td></tr>
+<tr><td>TF2 SECONDARY</td><td>Jost, baked at wght 600 (SemiBold)</td><td>SIL OFL 1.1</td></tr>
+<tr><td>APEX LEGENDS</td><td>Barlow Condensed Bold</td><td>SIL OFL 1.1</td></tr>
+</table></div>
+<p>Why look-alikes: the real fonts can&#x27;t be shipped. Big Noodle Titling&#x27;s EULA forbids redistribution, the fan &quot;Apex&quot; family is personal use only, and the TF2, Quake and Verdana files belong to their games and Windows.</p>
+<ul>
+<li><b>The player&#x27;s own real font comes first</b>: each entry has a list of places the real font may be, and the first one found is used instead of the look-alike. Those places are <code>mods/fonts</code> under its known names, the system&#x27;s Verdana Bold (Half-Life 2&#x27;s menu font; Windows, macOS, Linux msttcorefonts), Steam&#x27;s <code>Team Fortress 2/tf/resource/tf2build.ttf</code> / <code>tf2secondary.ttf</code>, and Quake&#x27;s <code>gfx.wad</code> or <code>pak0.pak</code> (CONCHARS read from the WAD2 or the PAK, palette index 0 as paper). These files are read only on the player&#x27;s computer, when the menu opens, on REFRESH and when picked. They are never shipped, and the search never runs per frame. An entry with neither a bundled file nor a found real font isn&#x27;t listed.
+</li>
+<li><b>Tuning</b> (from screenshots of each font on the main menu, settings and FONT pages, and the UI test&#x27;s layout checks run in every font with <code>QUARK_UITEST_FONT</code>):
+<ul>
+<li>Bebas Neue is baked 20% taller. It&#x27;s capitals only and very condensed, and at Rubik&#x27;s cap height its 1-pixel strokes broke up in small labels.
+</li>
+<li>The pixel fonts (QUARK CLASSIC, LibreQuake, a player&#x27;s own CONCHARS) are 1 unit a pixel and may be drawn down to scale 1 (<code>FontAtlas</code> / <code>BakedFont::minScale</code>, <code>Renderer::minTextScale</code>), where Rubik stops at 1.3.
+</li>
+<li>Quake sheets are proportional (each glyph as wide as its ink): fixed 8-pixel cells clipped 6 settings labels at 1280x720.
+</li>
+<li>A sheet&#x27;s dark drop shadow is treated as paper, because the UI draws its own outline.
+</li></ul>
+</li>
+<li><b>Quake sheets</b> (<code>buildSheetAtlas</code>, <code>quakeConchars</code>): a 16x16 pixel font sheet becomes a max-norm distance field sized by its H, from a PAK (its gfx.wad), a WAD2, the raw lump or a PNG / JPEG sheet.
+</li>
+<li><b>Asset overrides</b>: each look-alike can be replaced under its own file name (<code>fonts/BebasNeue-Regular.ttf</code>, <code>fonts/LibreQuake-CONCHARS.png</code> a 16x16 sheet, ...), and each is in the asset export (the Asset Studio lists them). A player&#x27;s own copy of the real game font still comes first.
+</li>
+<li><b>Text scale</b>: the UI&#x27;s shrink-to-fit (<code>Ui::fit</code>, <code>fitText</code>, sliders, the reset hint) uses the font in use&#x27;s smallest scale (<code>Renderer::minTextScale()</code>) instead of the fixed 1.3, so a pixel font can shrink to 1 pixel a pixel before clipping.
+</li></ul>
+<h3>mods/fonts</h3>
+<ul>
+<li>New <code>mods/fonts/README.txt</code>: how to add a font, and the real fonts&#x27; file names the game-styled entries look for.
+</li>
+<li>A variable font in <code>mods/fonts</code> is drawn at its default instance (stb_truetype). A name in <code>ui_font</code> can&#x27;t leave that folder.
+</li></ul>
+<h3>Size</h3>
+<ul>
+<li>The nine baked atlases in <code>font_builtin.h</code> add about 440 KB (Work Sans 65 KB, QUARK CLASSIC 17 KB, LibreQuake 15 KB, the other six 53-65 KB each). quark.exe is about 0.5 MB bigger.
+</li></ul>
+<h3>Asset provenance (assets/provenance, tools/provenance.py)</h3>
+<ul>
+<li>The seven bundled look-alikes are registered in <code>fonts.json</code> as <code>third-party</code> (made by people, under their licences), like Rubik and Work Sans. Rubik&#x27;s and Work Sans&#x27;s descriptions now say which is the UI font. The new FONT page is <code>ui/settings/fonts</code> (<code>ai</code>).
+</li>
+<li><code>tools/provenance.py sync</code> now finds a font&#x27;s licence by its family (<code>&lt;family&gt;-OFL.txt</code>, <code>-LICENSE.txt</code> or <code>-COPYING.txt</code>, the font&#x27;s file name starting with <code>&lt;family&gt;</code>), so <code>DejaVuSans-Bold.ttf</code> (<code>DejaVu-LICENSE.txt</code>, Bitstream Vera) and <code>LibreQuake-CONCHARS.png</code> (<code>LibreQuake-COPYING.txt</code>, BSD-3-Clause) are read as third-party too. Before, it only matched <code>&lt;file name&gt;-OFL.txt</code> and would have called them <code>ai</code>. The fonts category now also lists a <code>.png</code> sheet in <code>assets/fonts</code>.
+</li>
+<li>Human-made assets: 18.1% (100 of 550), was 17.1% (93 of 542).
+</li></ul>
+<h3>Tests</h3>
+<ul>
+<li><code>testUiFonts</code> (assets tests):
+<ul>
+<li>every listed built-in loads;
+</li>
+<li>a font is sized to Rubik&#x27;s capitals, and QUARK CLASSIC keeps its original metrics;
+</li>
+<li>a Quake-style sheet (raw, in a WAD2, in a PAK) becomes a pixel atlas, and a bad WAD or a sheet without an H fails;
+</li>
+<li>a <code>mods/fonts</code> name can&#x27;t leave that folder.
+</li></ul>
+</li>
+<li>The asset export test checks <code>fonts/Rubik.*</code> is listed.
+</li>
+<li>UI test: the FONT page is <code>settings/fonts</code>:
+<ul>
+<li>each entry is <code>cfg(&quot;ui_font&quot;)</code> with the font&#x27;s name as a stable id (the one in use is inert);
+</li>
+<li>REFRESH is <code>state(&quot;fontscan&quot;)</code>, and OPEN FOLDER is <code>url()</code>;
+</li>
+<li><code>--fonts</code> and <code>--settingsmenu</code> open the pages for screenshots;
+</li>
+<li><code>QUARK_UITEST_FONT</code> runs the layout checks in another font.
+</li></ul>
+</li></ul>
+<h3>Docs and credits</h3>
+<ul>
+<li>README&#x27;s Fonts section credits Rubik Bold as the UI font and every bundled font with its copyright and licence. The site footer and the Asset Studio&#x27;s font hint name Rubik.
+</li>
+<li>docs/ASSETS.md: how each font is built and why the built-ins are baked, <code>mods/fonts</code>, QUARK CLASSIC, the game-styled entries (look-alike, licence, where the real font is looked for), the sources of the bundled files, the tuning, and how to add a built-in.
+</li>
+<li>docs/RELEASE_CHECKLIST.md: a FONT row. docs/UI_TEST.md: the fonts page and <code>QUARK_UITEST_FONT</code>. docs/PROVENANCE.md: the font licence rule.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.18.9/">&larr; 1.18.9</a></span><span><a href="../1.18.11/">1.18.11 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>
