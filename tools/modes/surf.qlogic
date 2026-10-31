@@ -24,7 +24,7 @@ slot canHit:
 
 slot tick:
   raceStep()
-  if phaseEnd > 0 and now >= phaseEnd: endRound(none, "time")   # (only a clock a host or mod set)
+  if phaseEnd > 0 and now >= phaseEnd: endRound(none, "time") # (only a clock a host or mod set)
 
 slot finish:
   endRound(p)
