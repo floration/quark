@@ -9221,6 +9221,7 @@ void Game::drawJoin(const SetLayout& L) {
     }
     std::stable_sort(shown.begin(), shown.end(), [&](int a, int b) {
         auto& x = browser_.servers()[a]; auto& y = browser_.servers()[b];
+        if (x.official != y.official) return x.official;   // the official servers first (then your favourites)
         const bool fx = isFav(x.addr.toString()), fy = isFav(y.addr.toString());
         if (fx != fy) return fx;
         if (x.noReply != y.noReply) return !x.noReply;
@@ -9254,9 +9255,22 @@ void Game::drawJoin(const SetLayout& L) {
             snprintf(b, sizeof b, "%dMS", (int)sv.ping);
             r_.text(L.X(colX[3]), ty, ts, b, kWhite);
         }
+        // an official server (by its address: isOfficialServer, master.h): a gold OFFICIAL chip before its name
+        float nameX = L.X(colX[0]), avail = L.L(colEnd[0] - colX[0]);
+        if (sv.official) {
+            static const std::string kTag = "OFFICIAL";   // (static: no allocation a frame)
+            // the ranked gold: gold text (outlined like all text) on a dark gold chip with a gold border
+            static const Color kGold = {1.0f, 0.78f, 0.25f, 1}, kChipFill = {0.30f, 0.22f, 0.05f, 0.95f};
+            const float pad = L.L(5), cw = r_.textWidth(kTag, hs) + 2 * pad, th = r_.textHeight(hs), ch = th + L.L(8);
+            const float cy = ry + (rh - ch) * 0.5f;
+            r_.roundRect(nameX, cy, cw, ch, L.L(3), kChipFill);
+            r_.roundRect(nameX, cy, cw, ch, L.L(3), kGold, std::max(1.0f, L.L(1.5f)));
+            r_.text(nameX + pad, ry + (rh - th) * 0.5f, hs, kTag, kGold);
+            nameX += cw + L.L(6);
+            avail -= cw + L.L(6);
+        }
         // the name: a long one scrolls back and forth so all of it can be read
         std::string name = (isFav(sv.addr.toString()) ? "* " : "") + upper(sv.name);
-        const float avail = L.L(colEnd[0] - colX[0]);
         int extra = 0;   // leading characters to drop before the rest fits (measured: W is wider than M)
         while (extra < (int)name.size() && r_.textWidth(name.substr(extra), ts) > avail) extra++;
         if (extra > 0) { // ping-pong: pause 1.5 s at each end, scroll 6 characters a second
@@ -9265,7 +9279,7 @@ void Game::drawJoin(const SetLayout& L) {
             name = name.substr((size_t)std::clamp((int)pos, 0, extra));
             name.resize(r_.textFit(name, ts, avail));
         }
-        r_.text(L.X(colX[0]), ty, ts, name, kWhite);
+        r_.text(nameX, ty, ts, name, kWhite);
     }
     if (browser_.servers().empty()) ui_.label(L.X(372), L.Y(310), "NO GAMES FOUND", kGrey, 1.0f, L.L(536));
     else if (shown.empty()) ui_.label(L.X(372), L.Y(310), "NO GAMES MATCH THE FILTERS", kGrey, 1.0f, L.L(536));
@@ -11572,19 +11586,9 @@ void Game::reportBlast(int type, bool alt, const Vec3& at, int direct) {
         const Vec3 closest = hitboxClosest(b, at);
         const float d = length(closest - at);
         if (d > wd.splashRadius) continue;
+        if (!blastReaches(map, at, b)) continue;   // (the server's cover test)
         const Vec3 c = b.center(), to = c - at;
         const float dist = length(to);
-        if (dist > 0.01f) {
-            const float w = map.raycast(at, to / dist, dist);
-            if (w >= 0 && w < dist - 0.1f) {
-                auto clear = [&](const Vec3& pt) {
-                    const Vec3 v = pt - at;
-                    const float len = length(v);
-                    return len < 0.11f || !map.raycastAny(at, v / len, len - 0.1f);
-                };
-                if (!clear(closest) && !clear(Vec3(c.x, b.mx.y - 0.15f * (b.mx.y - b.mn.y), c.z))) continue;
-            }
-        }
         const float frac = 1.0f - d / wd.splashRadius;
         const Vec3 push = dist > 0.01f ? to / dist : Vec3(0, 1, 0);
         float dmg = wd.damage * frac;
@@ -11616,7 +11620,11 @@ void Game::reportBolt(const Vec3& at, const Vec3& dir, int victim, bool head) {
 
 void Game::reportImpact(int type, bool alt, const Vec3& from, const Vec3& to, int victim, bool head) {
     if (!net_.selfAlive()) return;   // (dead: the server's own hit, as it lands there)
-    if (type == WPN_ROCKET) reportBlast(type, alt, to, victim);
+    if (type == WPN_ROCKET) {   // (off where it met the surface, 5 cm back along its flight, as the server's goes off)
+        const Vec3 d = to - from;
+        const float len = length(d);
+        reportBlast(type, alt, len > 1e-4f ? blastPoint(from, d / len, len) : to, victim);
+    }
     else if (type == WPN_CROSSBOW) {
         const Vec3 d = to - from;
         const float len = length(d);

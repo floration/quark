@@ -126,7 +126,7 @@ Use HOST GAME → FFA (bots off or beginner) and the changelog's numbers.
 
 | ✓ | Check |
 |---|---|
-| ☐ | Each weapon fires, sounds right, shows its own projectile model, and does the damage the changelog / INFO says (rifle 5.0 body / 7.5 head; crossbow 50 body / 75 head; shotgun 2.6 a head pellet; laser 24 m range; sniper 40 body / 50 head; rockets fly straight with no drop and speed up as they go (4 m/s², 48 m/s at launch: a long shot arrives a little sooner), the alt-fire lob drops at 13.5 m/s² and doesn't speed up). |
+| ☐ | Each weapon fires, sounds right, shows its own projectile model, and does the damage the changelog / INFO says (rifle 5.0 body / 7.5 head; crossbow 50 body / 75 head; shotgun 2.6 a head pellet; laser 24 m range; sniper 40 body / 50 head; rockets fly straight with no drop and speed up as they go (16 m/s², 48 m/s at launch: 80 m/s after 2 s, 128 m/s by the end of its 5 s), the alt-fire lob leaves at 33.6 m/s, drops at 13.5 m/s² and doesn't speed up). |
 | ☐ | Alt-fires: rifle scope, shotgun bounce, rocket lob, knife throw, bubble stream. |
 | ☐ | Knife throw: the knife is **disabled for 4 s** (greyed with a timer), and nothing can be used for the knife's normal swing cooldown. |
 | ☐ | Syringe: self-use heals **10 HP** with a **1 s** cooldown; a throw heals a teammate, disables the syringe for 4 s, with a 1 s cooldown. It only exists in modes where you respawn. |
@@ -257,6 +257,7 @@ Host each mode on **its own map** with bots (and a second human if you can). For
 |---|---|
 | ☐ | HOST GAME with UPnP on: the pause menu shows whether UPnP worked and whether the port is reachable (green / red with advice; CHECK AGAIN). |
 | ☐ | Join by `ip:port` from another machine; also join from the LAN list and the internet server list. |
+| ☐ | **OFFICIAL tag** (1.19.4): JOIN lists the official servers (75.127.7.139:27500 production, :27501 testing while it runs) first, each with a gold OFFICIAL chip before its name; a server of your own named "OFFICIAL" (host one, or a `quark_server --name OFFICIAL`) has no chip and isn't moved up. |
 | ☐ | Reconnect grace: drop one client's network for ~5 s: it rejoins with the same slot, team and score. |
 | ☐ | Votes: change map / mode (pick mode, then map), `callvote spec <player>` (needs 3+ players; the target goes to spectator until the next map), restart. Kick is **not** votable: only the host / server console can `kick <name>`. |
 | ☐ | Chat, team chat, quips; the chat filter and rate limit. |

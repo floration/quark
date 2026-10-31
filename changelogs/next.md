@@ -92,6 +92,7 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 
 ## Servers
 - **Testing server alone:** `install.sh --testing-only` sets up just the testing server, on the normal port, and keeps it running all the time on the newest testing build or production release, whichever is newer. Both servers stay the default (`--both` to go back); `--no-testing` is still production only.
+- **OFFICIAL tag:** the official Quark servers (production and testing) show a gold OFFICIAL tag in the server list and are listed first. It goes by the server's address, so another server can't get it by putting "official" in its name.
 
 ## Modes
 - **New mode: POWER.** Each team shares one health pool, 2500 for every player on it, and nobody dies. An enemy's hits come off your team's pool instead of your health. When a team's pool runs out it loses; when the 10 minutes are up, the fuller pool wins. Your own rockets and the world (lava, acid, falls) take nothing from the pool; falling out of the map still respawns you. Someone who joins mid-match adds their 2500. The score box shows both pools, and the bar under it shows yours. Played on Bastion, Orbital and Lodestone. **The network protocol is now 54**, so games and servers update together.
@@ -100,6 +101,7 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 
 ## Weapons
 - **Rockets speed up.** The rocket launcher's rocket now gains 4 m/s every second it flies, on top of its 48 m/s launch speed (52 m/s after a second, 68 m/s at the end of its 5 s life), and keeps speeding up after a rubber bounce. The lob (alt-fire) is unchanged. Bots lead for it, and rocket riding pulls you along at its new speed. **The network protocol is now 55**, so games and servers update together; older demos still play.
+- **Rockets speed up much faster.** The rocket still leaves the launcher at 48 m/s but now gains 16 m/s every second: 64 m/s after one second, 80 m/s after two, 128 m/s at the end of its 5 s life (about 440 m). The lob (alt-fire) is unchanged at 33.6 m/s. **The network protocol is now 58**, so games and servers update together; older demos still play.
 
 ## Map checks
 - **The walk check sees ramps.** The map tests' "can players get from every spawn to every objective" check now walks up wedges, corners and cut slopes up to 45 degrees (the steepest you can walk). Before, every slope counted as a solid block, so routes up a ramp (Mine's haul road and lava ramp, QK7's helix ramps) were reported missing or found only the long way round.
@@ -143,3 +145,5 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 
 ## Race and surf
 - **No time limit:** a round runs until someone finishes, and the HUD counts your run time up.
+## Rockets
+- **Rocket splash damage works online again:** since 1.19.3 only a direct rocket hit did damage on a server; a rocket landing on the floor or a wall next to someone did nothing and showed no hit marker. Splash now hurts as it did before.

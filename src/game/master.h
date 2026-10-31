@@ -4,6 +4,8 @@
 // Everything here blocks on HTTP and runs on background threads.
 #pragma once
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
 #include <condition_variable>
 #include <deque>
 #include <mutex>
@@ -20,6 +22,16 @@ std::string masterUrl();
 bool signedMasterUrl(const std::string& body, const std::string& sigHex, const std::string& pubHex, std::string* url);
 // ip:port of every public server running this version.
 bool fetchServerList(std::vector<std::string>& out, std::string* err = nullptr);
+// The official Quark servers (the owner's box: production on 27500, testing on 27501). The browser tags them OFFICIAL
+// and lists them first. Matched by the address the client actually sends to and hears from (never by the name a
+// server reports), so a server can't fake it by calling itself "official". If the official servers move, update
+// kOfficialServers in master.cpp (and docs/HANDOVER.md).
+struct OfficialServer { uint32_t ip; uint16_t port; };   // ip in host order (a.b.c.d = a<<24 | b<<16 | c<<8 | d)
+extern const OfficialServer kOfficialServers[];
+extern const size_t kOfficialServerCount;
+bool isOfficialServer(uint32_t ip, uint16_t port);
+// "a.b.c.d:port" exactly (no host names, no leading zeros, a port required).
+bool isOfficialServer(const std::string& addr);
 // This machine's public IPv4 (empty if unknown). Blocks on HTTP. QUARK_PUBLIC_IP overrides it ("off": none, no request).
 std::string publicIpv4();
 
