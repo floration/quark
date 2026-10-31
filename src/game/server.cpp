@@ -1661,6 +1661,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
                 why = mapName + " isn't in this custom mode's map pool";
             else if (cfg_.custom.active() && mode != cfg_.custom.baseMode) why = "this server plays the custom mode " + cfg_.custom.name;
             else if (!m.ok) why = "this server doesn't have the map '" + mapName + "' (it may be on an older version)";
+            else if (isLegacyMap(mapName) && !legacyMapsListed()) why = mapName + " is a legacy map (this server doesn't list the old maps)";   // (owner, 2026-10-31)
 
             bool ok = why.empty();
             if (ok && cfg_.ranked && (!arenaVariantRanked(variant) || mode != rankedMode(variant) || !(m.ranked >> variant & 1))) {
