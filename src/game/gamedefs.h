@@ -569,6 +569,9 @@ inline bool weaponInMode(int w, int mode) { return w != WPN_LOCATOR || isItMode(
 inline int weaponSlotKey(int slot) { return slot >= 9 ? 0 : slot + 1; }   // number key of a slot (the syringe and the locator share 0: never in one mode)
 inline int weaponSlot(int w) { for (int i = 0; i < WPN_COUNT; i++) if (kWeaponSlots[i] == w) return i; return 0; }
 inline bool altFires(int w) { return w == WPN_KNIFE || w == WPN_SHOTGUN || w == WPN_ROCKET || w == WPN_BUBBLE || w == WPN_SYRINGE; } // knife (throw), shotgun (bounce), rocket (lob): alt-fire is a shot of its own
+// The buttons that fire w (alt-fire only where it's a shot or the sticky detonation; the rifle / sniper scope and the
+// laser pull aren't): only these lock fire across a weapon switch, so a scope held over a switch doesn't (q, 2026-10-31)
+inline uint16_t fireButtons(int w) { return (uint16_t)(BTN_FIRE | (altFires(w) || w == WPN_STICKY ? BTN_ALTFIRE : 0)); }
 constexpr int kMaxStickies = 6;       // per player; firing a 7th removes the oldest
 constexpr float kStickyArmTime = 0.35f;
 

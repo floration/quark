@@ -1947,8 +1947,8 @@ static void testWeaponPredict(uint16_t port) {
         bool sl = false;
         int w = wp.run(u, view(), &sl);   // (as Game's tick loop does)
         if (sl) locked = true;
+        if (locked && !(u.buttons & fireButtons(w))) locked = false;   // (as Game: the buttons that fire the held weapon)
         if (throwNext && (u.buttons & BTN_ALTFIRE)) { localAway = 1u << WPN_KNIFE; locked = true; w = wp.thrown(view()); throwNext = false; }
-        if (locked && !(u.buttons & (BTN_FIRE | BTN_ALTFIRE))) locked = false;
         if (lastPred >= 0 && w != lastPred) switches++;
         lastPred = w; lastCmdWeapon = u.weapon;
         ring[a.nextSeq() % ring.size()] = {a.nextSeq(), w, locked, a.selfAlive()};
@@ -1998,7 +1998,8 @@ static void testWeaponPredict(uint16_t port) {
     throwNext = true;
     buttons = BTN_ALTFIRE;
     pump(s, cls, 0.2, input);
-    CHECK(!throwNext && sp.knifeBackAt > s.time() && sp.weapon != WPN_KNIFE && lastPred == sp.weapon && locked && sp.fireLocked);
+    // (alt held over the throw is the sniper's scope there, not a shot: it locks nothing, q 2026-10-31)
+    CHECK(!throwNext && sp.knifeBackAt > s.time() && sp.weapon != WPN_KNIFE && lastPred == sp.weapon && !locked && !sp.fireLocked);
     CHECK(sp.weapon == WPN_SNIPER);   // back to the weapon held before the knife (T14; it was the first slot, the rocket)
     buttons = 0;
     wp.want(WPN_KNIFE);

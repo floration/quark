@@ -1321,6 +1321,11 @@ UserCmd Game::buildCmd() {
         if ((wp_.desired >= 0 && wp_.desired != heldWeapon_) || !net_.selfAlive()) altToggled_ = false; // switching weapons / dying drops the scope
         alt = altToggled_;
     }
+    // a held alt-fire (the scope) doesn't carry over a weapon switch: ignored until it's let go, so the laser after a
+    // scoped rifle shoots normally, not a pull, and fire isn't locked (q, 2026-10-31)
+    if (!alt) altWeapon_ = -1;
+    else if (altWeapon_ < 0) altWeapon_ = heldWeapon_;   // (the weapon it was pressed with)
+    if (alt && (altWeapon_ != heldWeapon_ || (wp_.desired >= 0 && wp_.desired != heldWeapon_))) { alt = false; altWeapon_ = -2; }   // (-2: till let go)
     if (alt) c.buttons |= BTN_ALTFIRE;
     fireLatched_ = false;
     if (opts_.debugWeapon >= 1 && opts_.debugWeapon <= WPN_COUNT) c.weapon = (uint8_t)(opts_.debugWeapon - 1);
@@ -2060,7 +2065,7 @@ void Game::frame(double dt) {
                 wantFire = false;
             }
             if (localFireLocked_) { // mirror the server: after a knife throw or a switch, let go before the next weapon fires
-                if (!(c.buttons & (BTN_FIRE | BTN_ALTFIRE))) localFireLocked_ = false;
+                if (!(c.buttons & fireButtons(hw))) localFireLocked_ = false;
                 else wantFire = false;
             }
             if (switchLock || localFireLocked_ || hw != localTapWeapon_) localFireQueued_ = -1;

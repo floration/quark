@@ -3404,6 +3404,13 @@ static void testSemiAuto(uint16_t port) {
         pump(s, cls, 0.3, [](int) { UserCmd c; c.weapon = WPN_RIFLE; c.buttons = BTN_FIRE; return c; });
         CHECK(p.lastFire != last);   // a fresh press fires
     }
+    // ...but a scope held over a switch locks nothing: fire on the laser shoots while the scope is still held (q, 2026-10-31)
+    pump(s, cls, 0.6, [&](int) { UserCmd c; c.weapon = WPN_RIFLE; c.buttons = BTN_ALTFIRE; return c; });
+    pump(s, cls, 0.6, [&](int) { UserCmd c; c.weapon = WPN_LASER; c.buttons = BTN_ALTFIRE; return c; });
+    last = p.lastFire;
+    pump(s, cls, 0.3, [&](int) { UserCmd c; c.weapon = WPN_LASER; c.buttons = BTN_ALTFIRE | BTN_FIRE; return c; });
+    printf("  scope held over rifle -> laser, then fire: %s\n", p.lastFire != last ? "fired" : "locked");
+    CHECK(p.weapon == WPN_LASER && !p.fireLocked && p.lastFire != last);
     s.stop();
 }
 

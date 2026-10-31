@@ -456,3 +456,9 @@ Worker 2's share of the 1-scored items, in the same batch-3 key table (`b3Keys`)
 - Some flights are very long (Mars 218 m, Asteroids 292 m, Io 252 m), so later ledges sit high (Pluto's at 1309 m) and speeds reach about 110-130 m/s. That's for q to tune.
 - Back in MAPS, and on the ranked race total (RACE_MAPS, `racefloors`) with `racedefault 600` as a placeholder until q sets the time. About 18,300 brushes.
 
+## Weapon switch: a held scope doesn't lock fire (owner bug report, 2026-10-31: "when holding scope on rifle and switch to laser you cant shoot until you un hold right click")
+- Cause: switching with fire OR alt-fire held locked fire until both were let go, and a held scope is alt-fire. So rifle (scoped) -> laser locked the laser.
+- Now only the buttons that fire the new weapon lock it: `fireButtons(w)` = fire, plus alt-fire where it is a shot (knife/syringe throw, shotgun bounce, rocket lob, bubble) or the sticky detonation. It doesn't include the rifle/sniper scope or the laser pull. The same rule applies on the server, in the client's mirror and in weapon prediction.
+- The game also ignores an alt-fire held over a switch until it's let go, so the laser shoots normally rather than as a pull. Toggle-scope already dropped it on a switch.
+- A knife thrown with right click, landing back on the sniper with the button still held: the sniper is scoped and isn't locked (it was locked before). Tests: testSemiAuto (scope held rifle -> laser, then fire: fires) and weaponpredict.
+

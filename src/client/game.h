@@ -276,6 +276,7 @@ private:
     double modelSentAt_ = -10;
     int socdLastF_ = 0, socdLastS_ = 0;     // control scripts: SOCD press order, alt-fire toggle state
     bool socdPrev_[4] = {}, altPrev_ = false, altToggled_ = false;
+    int altWeapon_ = -1;   // the weapon alt-fire was pressed with (-1 up; -2 held over a switch: ignored till let go)
     void benchFrame(double dt);
     // ---- BENCHMARK (main menu; --benchmark): a fixed bot match on Hamlet watched from a fixed camera path, then its
     // frame times (benchmark.cpp; the match and the maths: src/game/benchmark.h)

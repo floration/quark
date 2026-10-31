@@ -150,3 +150,4 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 - **Map votes:** the old (legacy) maps can't be voted unless the server turns them on.
 - **Servers:** a new server starts as unranked laser vampire 1v1 on Dojo.
 - **Solar System** (surf): 15 stages, Sun to Pluto, each one built from q's own design. It's on the ranked race total (10 min until you've run it).
+- **Weapon switch:** holding the scope (right click) while switching from the rifle to the laser no longer stops the laser shooting until you let go.
