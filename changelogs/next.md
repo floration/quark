@@ -156,3 +156,4 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 - **Your maps folder:** the maps update's one-time cleanup no longer moves your own copies of generated maps into legacy/. It only moves old copies of the official maps.
 - **Map editor:** clicking a cut box, wedge, corner or tetra selects it where its faces are, not anywhere in its bounding box.
 - **Step-up on cut boxes:** a low cut box with an upright side at an angle is stepped onto like a normal box. A steep sloped face still blocks.
+- **Floating faces:** surfaces that drew detached from their objects sit on them again: Monorail's deck top floated about 70 cm above the deck, and a staircase flush with a thin wall or rail showed its outline on the wall's far side (Dam). It happened on most maps.

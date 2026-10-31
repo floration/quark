@@ -37,6 +37,7 @@ struct Face {
     int np = 0;
     float pu[4], pv[4];
     uint8_t genOff = 0;   // its edges (bit i: corner i to i + 1) that join a neighbour's: no outline
+    float depth = 1e9f;   // how far its brush reaches behind its plane (a box face: the box's size on its axis)
     bool thin = false;    // a face of thin brick / cobblestone (kBreakableThick): blown holes cut it (the shader, tagged 0.25)
     // The plane the seam passes find it on: a box face's own (axis, sign, plane, u0..v1); a slope polygon lying in an
     // axis plane (a wedge's triangle or trapezoid side) that axis plane and its corners' bounds on it; a polygon on no
@@ -404,6 +405,7 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
                 f.plane = sign > 0 ? a.mx[axis] : a.mn[axis];
                 const int ua = (axis + 1) % 3, va = (axis + 2) % 3;
                 f.u0 = a.mn[ua]; f.u1 = a.mx[ua]; f.v0 = a.mn[va]; f.v1 = a.mx[va];
+                f.depth = a.mx[axis] - a.mn[axis];
                 if (!solidAt.buried(axis, f.plane + sign * 0.01f, f.u0, f.u1, f.v0, f.v1)) { slots[bi * 7 + slot] = f; keep[bi * 7 + slot] = 1; }
             };
             const AABB& a = lb.box;
@@ -462,6 +464,7 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
                     f.thin = std::min(ext.x, std::min(ext.y, ext.z)) <= kBreakableThick + 1e-4f;
                 }
                 f.plane = sign > 0 ? br.box.mx[axis] : br.box.mn[axis];
+                f.depth = br.box.mx[axis] - br.box.mn[axis];
                 int ua = (axis + 1) % 3, va = (axis + 2) % 3;
                 f.u0 = br.box.mn[ua]; f.u1 = br.box.mx[ua];
                 f.v0 = br.box.mn[va]; f.v1 = br.box.mx[va];
@@ -667,28 +670,44 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
         });
         if (!ran) { out.cancelled = true; return; }
     }
-    // 1c. Coplanar faces of different materials overlapping would z-fight: the higher material (wallbang >
-    // accent > base) gets lifted a hair off its plane, so decorations can sit flush on gameplay geometry.
-    // Only those faces: lifting every accent/wallbang face opened gaps along all their edges.
-    std::vector<uint8_t> needLift(faces.size(), 0);
-    ran = parallelFor(faces.size(), stopped, [&](size_t i) {
-        const Face& f = faces[i];
-        if (f.material == 0 || f.gen) return;
-        auto overlaps = [&](uint32_t k) {
-            const Face& o = faces[k];
-            if (o.gen || o.material >= f.material || o.axis != f.axis || o.sign != f.sign || std::fabs(o.plane - f.plane) > 1e-4f) return false;
-            return f.u0 < o.u1 && o.u0 < f.u1 && f.v0 < o.v1 && o.v0 < f.v1;
-        };
-        int cu0 = cellOf(f.u0), cu1 = cellOf(f.u1), cv0 = cellOf(f.v0), cv1 = cellOf(f.v1);
-        bool hit = false;
-        if ((int64_t)(cu1 - cu0 + 1) * (cv1 - cv0 + 1) > 32 * 32) { // a huge face: just scan everything on its plane
-            for (size_t k = 0; k < faces.size() && !hit; k++) hit = overlaps((uint32_t)k);
-        } else {   // (any lower material: overlaps() checks it)
-            for (int cv = cv0; cv <= cv1 && !hit; cv++)
-                for (int cu = cu0; cu <= cu1 && !hit; cu++) hit = near(f, kAnyMat, cu, cv, overlaps);
-        }
-        needLift[i] = hit;
-    });
+    // 1c. Coplanar faces of different materials overlapping would z-fight: one of them gets lifted a hair off its
+    // plane. The one on top is the face of the THINNER brush behind the plane: a decoration set flush into a wall
+    // (thinner than the wall) shows; a staircase or a box overlapping a thin rail or wall (its side flush with the
+    // wall's face, its body reaching far behind it) stays behind the wall's face, so its outline isn't printed on the
+    // wall's other side (owner, 2026-10-31: "the face of the side of the stairs is not attached to the object"; it was
+    // the higher material on top, whatever the shapes). Equal thickness: the higher material (wallbang > accent >
+    // base), as before. Only those faces: lifting every accent/wallbang face opened gaps along all their edges.
+    // level: 0 not lifted, else 1 + the level of the highest face it sits over (a few passes: chains are short)
+    auto beats = [](const Face& f, const Face& o) {
+        if (o.material == f.material) return false;
+        if (f.depth < o.depth - 1e-3f) return true;
+        return std::fabs(f.depth - o.depth) <= 1e-3f && f.material > o.material;
+    };
+    std::vector<uint8_t> needLift(faces.size(), 0), prevLift;
+    for (int pass = 0; pass < 3; pass++) {
+        prevLift = needLift;
+        ran = parallelFor(faces.size(), stopped, [&](size_t i) {
+            const Face& f = faces[i];
+            if (f.gen) return;
+            int lvl = 0;
+            auto overlaps = [&](uint32_t k) {
+                const Face& o = faces[k];
+                if (o.gen || o.axis != f.axis || o.sign != f.sign || std::fabs(o.plane - f.plane) > 1e-4f || !beats(f, o)) return false;
+                if (f.u0 < o.u1 && o.u0 < f.u1 && f.v0 < o.v1 && o.v0 < f.v1) lvl = std::max(lvl, prevLift[k] + 1);
+                return false;
+            };
+            int cu0 = cellOf(f.u0), cu1 = cellOf(f.u1), cv0 = cellOf(f.v0), cv1 = cellOf(f.v1);
+            if ((int64_t)(cu1 - cu0 + 1) * (cv1 - cv0 + 1) > 32 * 32) { // a huge face: just scan everything on its plane
+                for (size_t k = 0; k < faces.size(); k++) overlaps((uint32_t)k);
+            } else {   // (any material: overlaps() checks it)
+                for (int cv = cv0; cv <= cv1; cv++)
+                    for (int cu = cu0; cu <= cu1; cu++) near(f, kAnyMat, cu, cv, overlaps);
+            }
+            needLift[i] = (uint8_t)std::min(lvl, 8);
+        });
+        if (!ran) break;
+        if (needLift == prevLift) break;
+    }
     if (!ran) { out.cancelled = true; return; }
     // 2. Choose texel density so the atlas fits in 2048x2048.
     float area = 0;
@@ -740,7 +759,7 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
     for (size_t fi = 0; fi < faces.size(); fi++) {
         const Face& f = faces[fi];
         Vec3 n = faceNormal(f);
-        Vec3 lift = needLift[fi] ? n * (0.002f * f.material) : Vec3();
+        Vec3 lift = n * (0.004f * needLift[fi]);   // (4 mm a level)
         const float B = 1000.0f; // a turned-off edge is "infinitely far": no outline
         if (f.gen) {   // a slope's polygon: its corners, each edge's distance a linear function over it
             float area = 0;
