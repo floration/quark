@@ -421,6 +421,7 @@ Worker 2's share of the 1-scored items, in the same batch-3 key table (`b3Keys`)
 - What changed: race and surf rounds had a 300 s round clock (sized for two loops of Viaduct), and a round with no finisher ended with "nobody finished". The mode default `roundTime` for race and surf is now 0, so there's no clock and a round runs until someone finishes (first to finish wins it, as before). A host or mod that sets a clock still gets one (`tickRace` only ends a round on time when `phaseEnd_ > 0`).
 - Split times were worked out from the clock (`liveLength_ - (phaseEnd_ - now)`). They now count from the round going live (`roundStart_`), which gives the same number when there is a clock.
 - The HUD's run time (to the hundredth) was `300 - timeLeft`, which only worked while the clock existed. It's now the client's own stopwatch from the round going live, shown in every race and surf round, not only the time trial. The splits and the board still use the server's times.
+- The built-in mode scripts (tools/modes/race.qlogic, surf.qlogic) declare `roundTime 0` too, and their tick ends a round on time only when `phaseEnd > 0` (with no clock, `now >= phaseEnd` would have ended every round the moment it went live).
 - No protocol change.
 ## Rockets: splash did no damage on servers (q, 2026-10-30: "explosions aren't registering, they do no damage on my Oracle box server"; direct hits worked, splash did nothing, no hit markers)
 

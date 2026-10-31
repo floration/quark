@@ -1846,11 +1846,12 @@ static void testHudClock(uint16_t port) {
         if (!rulesStart(s, cfg, c, cs.players, cls)) { s.stop(); continue; }
         pump(s, cls, 0.3, idle);
         const ModeState& ms = c[0].mode();   // (what the HUD draws from)
-        hudLiveLine(ms, line, sizeof line);
+        hudLiveLine(ms, line, sizeof line, cs.mode == MODE_RACE ? 0.3f : -1.0f);
         const bool drainMode = cs.mode == MODE_VS || cs.mode == MODE_DUEL || cs.mode == MODE_ARENA;
         printf("  %s: phase %d, time left %.1f -> \"%s\"\n", modeName(cs.mode), ms.phase, ms.timeLeft, line);
         CHECK(ms.phase == PHASE_LIVE);
         if (cs.mode == MODE_KOTH) CHECK(ms.timeLeft == 0 && std::string(line) == "FIRST TO " + std::to_string(ms.target));   // (untimed)
+        else if (cs.mode == MODE_RACE) CHECK(ms.timeLeft == 0 && std::string(line) == "0:00.30");   // no clock (owner, 2026-10-31): the run time counts up
         else if (drainMode) CHECK(ms.timeLeft > 0 && std::string(line) == "DRAIN IN " + fmt(ms.timeLeft));
         else CHECK(ms.timeLeft > 10 && std::string(line) == fmt(ms.timeLeft));   // the round clock itself
         s.stop();
@@ -1866,8 +1867,10 @@ static void testHudClock(uint16_t port) {
     hudLiveLine(m, line, sizeof line); CHECK(std::string(line) == "OVERTIME 0:04");
     m.mode = MODE_FFA; m.timeLeft = 0;
     hudLiveLine(m, line, sizeof line); CHECK(std::string(line) == "OVERTIME - NEXT KILL WINS");
-    m.flags = MS_TIMETRIAL; m.mode = MODE_RACE; m.timeLeft = 300.0f - 72.345f;   // the run time, counting up
-    hudLiveLine(m, line, sizeof line); CHECK(std::string(line) == "1:12.34");
+    m.flags = MS_TIMETRIAL; m.mode = MODE_RACE; m.timeLeft = 0;   // the run time, counting up (the client's stopwatch: no clock)
+    hudLiveLine(m, line, sizeof line, 72.345f); CHECK(std::string(line) == "1:12.34");
+    m.flags = 0; m.mode = MODE_SURF;
+    hudLiveLine(m, line, sizeof line, 5.0f); CHECK(std::string(line) == "0:05.00");
     m.flags = 0; m.mode = MODE_TAG; m.timeLeft = 0;   // no clock running: nothing (never a frozen 0:00)
     hudLiveLine(m, line, sizeof line); CHECK(line[0] == 0);
     m.mode = MODE_VS; m.flags = MS_DRAIN;

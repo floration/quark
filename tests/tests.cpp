@@ -3541,6 +3541,31 @@ static void testClientHits() {
         CHECK(s.players_[0].health < 100);
         CHECK((s.players_[1].health < 100) == !reports);
     }
+    {   // q, 2026-10-30, 1.19.3: "explosions aren't registering" - only direct rocket hits did damage online. The game
+        // reported its blast exactly ON the floor / wall it met, so every cover ray started on that surface, hit it at
+        // t = 0 and called each splash victim "behind cover". The blast goes off 5 cm short, as the server's does.
+        Map m;
+        CHECK(m.parse("box -40 -1 -40 40 0 40\nspawn any 0 0 0\n"));
+        const Vec3 from(0, 1.6f, -10), aim = normalize(Vec3(1.2f, 0, 9.97f) - from);
+        const float hit = m.raycast(from, aim, 100.0f);
+        CHECK(hit > 0);
+        const Vec3 onFloor = from + aim * hit, at = blastPoint(from, aim, hit);
+        const AABB victim = playerBox(Vec3(0, 0, 10), false);   // 0.8 m from the blast: splash, not a direct hit
+        CHECK(length(hitboxClosest(victim, at) - at) < weaponDef(WPN_ROCKET).splashRadius);
+        // (the bug: a point on the surface - as rounding leaves it, exactly on or a hair inside - sees nobody)
+        CHECK(!blastReaches(m, Vec3(onFloor.x, 0.0f, onFloor.z), victim));
+        CHECK(!blastReaches(m, Vec3(onFloor.x, -1e-5f, onFloor.z), victim));
+        CHECK(blastReaches(m, blastPoint(from, aim, length(Vec3(onFloor.x, -1e-5f, onFloor.z) - from)), victim));
+        CHECK(blastReaches(m, at, victim));
+        CHECK(std::fabs(length(at - onFloor) - kBlastBackoff) < 1e-4f && at.y > 0);
+        CHECK(!blastReaches(m, at, playerBox(Vec3(0, -3, 10), false)));   // (under the floor: still behind cover)
+        // and the server's own blast from the same spot (a game that doesn't report) still hurts both, as before
+        Server s; fresh(s, false);
+        s.players_[0].move.pos = {0, 0, -10};
+        s.players_[1].move.pos = {0, 0, 10};
+        s.explodeForTest(at, 0, WPN_ROCKET);
+        CHECK(s.players_[1].health < 100);
+    }
 }
 
 // The 2026-10 feel review's server fixes, on a server that isn't started (no network: the players are set up by hand
@@ -6002,17 +6027,17 @@ static void testRocketLob(uint16_t port) {
     s.stop();
 }
 
-// The primary rocket speeds up kRocketAccel (4 m/s2) along its flight (owner, 2026-10-30); the lob doesn't. The server's
+// The primary rocket speeds up kRocketAccel (16 m/s2) along its flight (owner, 2026-10-30); the lob doesn't. The server's
 // 1 ms steps, the client's closed form (projectileExtrapolate) and its inverse (projectileRewind) agree.
 static void testRocketThrust(uint16_t port) {
-    printf("rocket thrust: the primary speeds up 4 m/s2, the lob unchanged\n");
+    printf("rocket thrust: the primary speeds up 16 m/s2, the lob unchanged\n");
     Server s;
     ServerConfig cfg;
     cfg.autoStart = false; cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port; cfg.balanceBots = false;
     s.setLog([](const std::string&) {});
     { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     CHECK(s.map_.parse("box -100 -1 -100 100 0 100\nspawn any 0 0 0\n"));   // (open: nothing in the way for 1 s)
-    CHECK(kRocketAccel == 4.0f && weaponAlt().rocketAccel == kRocketAccel && projectileAccel(WPN_ROCKET, 1) == kRocketAccel);
+    CHECK(kRocketAccel == 16.0f && baseWeaponDef(WPN_ROCKET).projSpeed == 48.0f && std::fabs(baseWeaponDef(WPN_ROCKET).projSpeed * kRocketLobSpeed - 33.6f) < 1e-3f && weaponAlt().rocketAccel == kRocketAccel && projectileAccel(WPN_ROCKET, 1) == kRocketAccel);
     CHECK(projectileAccel(WPN_ROCKET, kRocketLobGravity) == 0 && projectileAccel(WPN_STICKY, 1) == 0 && projectileAccel(WPN_CROSSBOW, 1) == 0);
     const float sp0 = weaponDef(WPN_ROCKET).projSpeed;
     auto fly = [&](Vec3 pos, Vec3 vel, float gravMul, int ms) {
@@ -6026,15 +6051,15 @@ static void testRocketThrust(uint16_t port) {
         return pr;
     };
     const Vec3 from(-60, 10, -5), dir = normalize(Vec3(1, 0.15f, 0.2f));
-    {   // the primary: 52 m/s after 1 s, along the same line, where the closed form puts it
+    {   // the primary: 64 m/s after 1 s, along the same line, where the closed form puts it
         const Projectile pr = fly(from, dir * sp0, 1, 1000);
         Vec3 cp = from, cv = dir * sp0;
         projectileExtrapolate(cp, cv, projectileFlight(WPN_ROCKET, 1), 1.0f);
         printf("    primary after 1 s: %.4f m/s (closed form %.4f), %.4f m along, %.3f mm from the closed form\n", length(pr.vel), length(cv),
                dot(pr.pos - from, dir), length(pr.pos - cp) * 1000);
-        CHECK(pr.active && std::fabs(length(pr.vel) - 52.0f) < 0.01f && std::fabs(length(cv) - 52.0f) < 0.01f);
+        CHECK(pr.active && std::fabs(length(pr.vel) - 64.0f) < 0.01f && std::fabs(length(cv) - 64.0f) < 0.01f);
         CHECK(length(normalize(pr.vel) - dir) < 1e-4f && length(pr.pos - cp) < 0.002f);
-        CHECK(std::fabs(dot(pr.pos - from, dir) - (sp0 + 0.5f * kRocketAccel * 1.001f)) < 0.01f);   // (48 + 4 x 1000 x 1001 / 2 ms2)
+        CHECK(std::fabs(dot(pr.pos - from, dir) - (sp0 + 0.5f * kRocketAccel * 1.001f)) < 0.01f);   // (48 + 16 x 1000 x 1001 / 2 ms2)
         // run back: projectileRewind undoes it (whole steps and a part of one)
         for (float t : {1.0f, 0.2345f}) {
             Vec3 p = from, v = dir * sp0;
@@ -6055,9 +6080,9 @@ static void testRocketThrust(uint16_t port) {
         const ProjFlight f(9.0f, kRocketAccel);
         Vec3 sp = from, sv = dir * sp0, p = from, v = dir * sp0;
         const float t = 0.7f;
-        const int n = (int)(t / kMoveStep);   // (as projectileExtrapolate counts the whole steps; the rest in a line)
+        const int n = (int)(t / kMoveStep + 1e-3f);   // (as projectileExtrapolate counts the whole steps; the rest in a line)
         for (int k = 0; k < n; k++) { projectileStepVel(sv, f, kMoveStep); sp += sv * kMoveStep; }
-        sp += sv * (t - n * kMoveStep);
+        sp += sv * std::max(0.0f, t - n * kMoveStep);
         projectileExtrapolate(p, v, f, t);
         CHECK(length(p - sp) < 1e-3f && length(v - sv) < 1e-3f);
         projectileRewind(p, v, f, t);
@@ -7513,6 +7538,26 @@ static void testMasterSignature() {
     std::string sig2;
     CHECK(sign::signData(sign::kMasterSignPrefix + std::string("http://plain.example\n"), priv, &sig2) &&
           !signedMasterUrl("http://plain.example\n", sig2, pub, &url)); // https only
+}
+
+// The browser's OFFICIAL tag: only the built-in addresses of the official servers, matched exactly (by the address the
+// client talks to, never the name a server reports), so a lookalike address or a server named "official" isn't.
+static void testOfficialServers() {
+    printf("official servers\n");
+    CHECK(kOfficialServerCount == 2);
+    CHECK(isOfficialServer("75.127.7.139:27500"));   // production
+    CHECK(isOfficialServer("75.127.7.139:27501"));   // testing
+    const uint32_t ip = 75u << 24 | 127u << 16 | 7u << 8 | 139u;
+    CHECK(isOfficialServer(ip, 27500) && isOfficialServer(ip, 27501));
+    CHECK(!isOfficialServer(ip, 27502) && !isOfficialServer(ip + 1, 27500) && !isOfficialServer(0, 0));
+    NetAddr a;   // what the browser holds: NetAddr's parse and toString agree with it
+    CHECK(NetAddr::parse("75.127.7.139:27501", kDefaultPort, a) && isOfficialServer(a.ip, a.port) && isOfficialServer(a.toString()));
+    for (const char* fake : {"75.127.7.139:27502", "75.127.7.13:27500", "75.127.7.1390:27500", "175.127.7.139:27500",
+                             "75.127.7.139:2750", "75.127.7.139:275000", "75.127.7.139", "75.127.7.139:", "075.127.7.139:27500",
+                             "75.127.7.139:027500", "75.127.7.139.1:27500", "75.127.7:27500", " 75.127.7.139:27500",
+                             "75.127.7.139:27500 ", "75.127.7.139:27500x", "official", "OFFICIAL 75.127.7.139:27500",
+                             "127.0.0.1:27500", "129.151.8.15:27500", ""})
+        CHECK(!isOfficialServer(std::string(fake)));
 }
 
 // REVIEW 2.3: a dedicated server (src/server/main.cpp: frame() and idle(), never run()) handles ranking server
@@ -9951,7 +9996,7 @@ int main(int argc, char** argv) {
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testDemoUpgrade(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testBuiltInMapEditSession(TP(28606)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
         {"bots", [] { uint16_t p = TP(28900); testBots(p); }},
-        {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); testRankedLockLadders(); }},
+        {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testHelloRetry(); testMasterSignature(); testOfficialServers(); testPlacementConstant(); testRankedLockLadders(); }},
         {"ranked2", [] { testRankedLeaver(TP(28636)); testRankedLeaverPaths(TP(28639)); testRankedRelay(TP(28640)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); testRemoteMoveSounds(TP(28585)); testRefillPrediction(TP(28586)); testHookPrediction(TP(28588)); }},
         {"brains", [] { g_fail += brainTests(TP(29150)); }},
