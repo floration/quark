@@ -10,7 +10,9 @@
 #include "../game/server.h"
 #include "gl.h"
 #include "lightmap.h"
+#if !QUARK_STEAM
 #include "../launcher/selfupdate.h"
+#endif
 #include "isa.h"
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -143,8 +145,10 @@ int main(int argc, char** argv) {
     bool automated = !opts.screenshot.empty() || opts.bench > 0 || opts.benchmark || !opts.editScript.empty() || opts.textHeavy || opts.feedShot ||
                      opts.menuShot || !opts.chatShot.empty() || !opts.consoleShot.empty() || opts.debugPerf || opts.uiTest;
     if (opts.uiTest) uiTestPrepare(opts);   // (its own data folder and settings: before anything reads them)
+#if !QUARK_STEAM   // (Steam installs and updates the game: no launcher, shortcuts or registry keys to update)
     if (!automated) selfupdate::startFromGame(argv[0]);
     struct LauncherUpdateJoin { ~LauncherUpdateJoin() { selfupdate::finishFromGame(2.0); } } launcherUpdateJoin;
+#endif
     // demos recorded by an older version: converted to this one in the background (originals in demos/old/<version>/)
     if (!automated) demo::startUpgrade(userDataPath("demos"), userDataPath("versions.txt"));
     if (!automated)   // your maps written in an older map format: converted (originals in maps/old/v<N>/)

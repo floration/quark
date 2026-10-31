@@ -1234,29 +1234,34 @@ static std::vector<float> prepareClip(const std::vector<float>& x, int rate, flo
 }
 
 void Audio::loadModSounds() {
-    std::string root = findDataPath("mods/sounds");
-    std::set<std::string> keep;
-    if (FILE* f = u8fopen(root + "/sound-levels.txt", "rb")) {   // (the one extra file open without it)
-        std::string text; char buf[4096]; size_t n;
-        while ((n = fread(buf, 1, sizeof buf, f)) > 0 && text.size() < (1u << 20)) text.append(buf, n);
-        fclose(f);
-        keep = keptLevels(text);
-    }
-    for (int pass = 0; pass < 2; pass++)   // "all" first, a kit's own folder wins over it
-    for (int kit = 0; kit < kPacks; kit++) {
-        const char* sub = pass == 0 ? "all" : kModKitDirs[kit];
-        std::string dir = root + "/" + sub;
-        for (int id = 0; id < SND_VOICE_THREE; id++) {
-            FILE* f = u8fopen(dir + "/" + kModSoundNames[id] + ".wav", "rb");
-            if (!f) continue;
-            std::vector<uint8_t> file;
-            uint8_t buf[65536]; size_t n;
-            while ((n = fread(buf, 1, sizeof buf, f)) > 0 && file.size() < (64u << 20)) file.insert(file.end(), buf, buf + n);
+    std::vector<std::string> roots = {findDataPath("mods/sounds")};
+#if QUARK_STEAM   // (Steam's install folder is never written: yours are in the data folder, read after the shipped ones)
+    roots.push_back(userDataPath("mods/sounds"));
+#endif
+    for (const std::string& root : roots) {
+        std::set<std::string> keep;
+        if (FILE* f = u8fopen(root + "/sound-levels.txt", "rb")) {   // (the one extra file open without it)
+            std::string text; char buf[4096]; size_t n;
+            while ((n = fread(buf, 1, sizeof buf, f)) > 0 && text.size() < (1u << 20)) text.append(buf, n);
             fclose(f);
-            std::vector<float> x; int rate = 0;
-            if (file.size() < 4 || memcmp(file.data(), "RIFF", 4) || !decodeSound(file.data(), file.size(), x, rate) || x.size() < 16) continue;
-            sounds_[kit][id] = prepareClip(x, rate, 3.0f, sounds_[kit][id], hitTier(id) >= 0,
-                                           kept(keep, std::string(sub) + "/" + kModSoundNames[id]));
+            keep = keptLevels(text);
+        }
+        for (int pass = 0; pass < 2; pass++)   // "all" first, a kit's own folder wins over it
+        for (int kit = 0; kit < kPacks; kit++) {
+            const char* sub = pass == 0 ? "all" : kModKitDirs[kit];
+            std::string dir = root + "/" + sub;
+            for (int id = 0; id < SND_VOICE_THREE; id++) {
+                FILE* f = u8fopen(dir + "/" + kModSoundNames[id] + ".wav", "rb");
+                if (!f) continue;
+                std::vector<uint8_t> file;
+                uint8_t buf[65536]; size_t n;
+                while ((n = fread(buf, 1, sizeof buf, f)) > 0 && file.size() < (64u << 20)) file.insert(file.end(), buf, buf + n);
+                fclose(f);
+                std::vector<float> x; int rate = 0;
+                if (file.size() < 4 || memcmp(file.data(), "RIFF", 4) || !decodeSound(file.data(), file.size(), x, rate) || x.size() < 16) continue;
+                sounds_[kit][id] = prepareClip(x, rate, 3.0f, sounds_[kit][id], hitTier(id) >= 0,
+                                               kept(keep, std::string(sub) + "/" + kModSoundNames[id]));
+            }
         }
     }
 }

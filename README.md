@@ -12,6 +12,7 @@ ctest --test-dir build          # or build/quark_tests
 Linux needs X11/GL dev packages (`libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev`).
 Windows: MinGW-w64 (gcc; what releases are built with; MSVC isn't supported). macOS: Xcode command line tools.
 The build needs `python3` (standard library only): it generates the recorded announcer lines from `assets/voice/`.
+Steam build: add `-DQUARK_STEAM=ON` (no launcher, no self-update or shortcuts, nothing written into the install folder).
 Executables: `quark` (game), `quark_server` (dedicated server), `quark_tests` (headless tests).
 Keep the `maps/` folder next to the executables.
 On Windows, `tools\build_windows.ps1` installs the tools, builds, and keeps each build in its own folder; `tools\fetch_ci_build.ps1` downloads a CI build ([docs/LOCAL_BUILD.md](docs/LOCAL_BUILD.md)).

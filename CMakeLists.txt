@@ -74,6 +74,10 @@ endif()
 
 option(QUARK_BUILD_CLIENT "Build the game client (needs OpenGL)" ON)
 option(QUARK_BUILD_TESTS "Build headless tests" ON)
+option(QUARK_STEAM "Steam build: no launcher, no self-update / shortcuts / registry, nothing written into the install folder" OFF)
+if(QUARK_STEAM)
+  add_compile_definitions(QUARK_STEAM=1)
+endif()
 option(QUARK_LTO "Link-time optimization" ON)   # (1.19 laptop benchmark: o3 1540 fps avg, o3 + LTO 1613, o3 + LTO + AVX2 1962)
 # Robustness builds (REVIEW ENG-3), never for releases:
 #   QUARK_SANITIZE: everything built with AddressSanitizer + UndefinedBehaviorSanitizer (the CI "sanitizers" job runs
@@ -411,19 +415,27 @@ if(QUARK_BUILD_CLIENT)
     src/client/binds.cpp
     src/client/uitest.cpp
   )
-  target_link_libraries(quark quark_core quark_launcher_core quark_audio glfw ${CMAKE_DL_LIBS})
+  if(QUARK_STEAM)   # Steam installs and updates the game: no launcher, no launcher self-update from the game
+    target_link_libraries(quark quark_core quark_audio glfw ${CMAKE_DL_LIBS})
+  else()
+    target_link_libraries(quark quark_core quark_launcher_core quark_audio glfw ${CMAKE_DL_LIBS})
+  endif()
   if(WIN32)
     target_link_libraries(quark shell32)
   endif()
-  add_executable(quark_launcher WIN32
-    src/launcher/main.cpp
-    src/client/gl.cpp
-    src/client/renderer.cpp
-    src/client/lightmap.cpp
-    src/client/ui.cpp
-  )
-  target_link_libraries(quark_launcher quark_core quark_launcher_core quark_assets glfw)
-  foreach(t quark quark_launcher)
+  set(_quark_targets quark)
+  if(NOT QUARK_STEAM)
+    list(APPEND _quark_targets quark_launcher)
+    add_executable(quark_launcher WIN32
+      src/launcher/main.cpp
+      src/client/gl.cpp
+      src/client/renderer.cpp
+      src/client/lightmap.cpp
+      src/client/ui.cpp
+    )
+    target_link_libraries(quark_launcher quark_core quark_launcher_core quark_assets glfw)
+  endif()
+  foreach(t ${_quark_targets})
     if(APPLE)
       target_link_libraries(${t} "-framework OpenGL" "-framework AudioToolbox" "-framework CoreFoundation")
     elseif(WIN32)
@@ -431,9 +443,11 @@ if(QUARK_BUILD_CLIENT)
     endif()
   endforeach()
   if(WIN32)
-    target_link_libraries(quark_launcher winhttp ole32 uuid shell32 advapi32)
     quark_win_resources(quark quark.exe "quark" ON)
-    quark_win_resources(quark_launcher quark_launcher.exe "quark launcher" ON)
+    if(NOT QUARK_STEAM)
+      target_link_libraries(quark_launcher winhttp ole32 uuid shell32 advapi32)
+      quark_win_resources(quark_launcher quark_launcher.exe "quark launcher" ON)
+    endif()
   endif()
 endif()
 
