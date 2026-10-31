@@ -125,3 +125,6 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 
 ## Glass
 - **Sloped glass draws as its slope:** glass on a wedge, corner or cut box used to draw as its whole box (a glass dome looked like four slabs floating over the roof). It now draws, and breaks into shards, as its real shape. The same goes for see-through looks and breakable blocks on a slope.
+
+## Hide and seek
+- **The hiders' head start is 5 seconds** (was 30).

@@ -305,7 +305,7 @@ const ParamInfo kParams[] = {
     {"captureDecay", T_F32, "/s", 0, 1, MO_POINTS, 0.05, "capture a point loses a second when the attackers leave it"},
     {"stalemate", T_F32, "s", 0, 600, MO_DRAIN, 30, "with no damage dealt before the drain starts"},
     {"drainRate", T_F32, "hp/s", 0, 100, MO_DRAIN, 5, "everyone loses this much health a second in a stalemate"},
-    {"hideTime", T_F32, "s", 0, 120, MO_IT, 30, "hide and seek: the hiders' head start while the seeker faces the wall"},
+    {"hideTime", T_F32, "s", 0, 120, MO_IT, kHideTime, "hide and seek: the hiders' head start while the seeker faces the wall"},
     {"tagFreeze", T_F32, "s", 0, 30, MO_IT, 2, "a newly tagged player stands still this long (no instant tag-back)"},
     {"rpsPickTime", T_F32, "s", 1, 60, MO_TIEBREAK, 6, "to choose rock, paper or scissors"},
     {"rpsRevealTime", T_F32, "s", 0, 60, MO_TIEBREAK, 3, "each throw is shown this long"},
