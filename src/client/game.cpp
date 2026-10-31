@@ -120,6 +120,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     opts_ = opts;
     cfg_.load();
     if (!cfg_.useOverrides) overrides::useUserFolder(false);   // (PLAYER > MORE: MODS: USE MY OVERRIDES off: the shipped ones only)
+    setLegacyMapsListed(cfg_.legacyMaps);   // (GAMEPLAY: LEGACY MAPS: the old pool in the pickers; a hosted server's list too)
     int w, h;
     glfwGetFramebufferSize(win, &w, &h);
     r_.resize(w, h);
@@ -650,6 +651,8 @@ void Game::rescanMaps() {
         MapInfo mi;
         if (m.load(name)) {
             mi.title = m.title.empty() ? name : m.title;
+            mi.legacy = isLegacyMap(name);   // (LEGACY MAPS on: the old pool, marked in the picker)
+            if (mi.legacy) mi.title += " (legacy)";
             mi.preferredMode = m.preferredMode;
             for (int k = 0; k < MODE_COUNT; k++) if (m.supportsMode(k)) mi.modes |= 1u << k;
             for (int v = 0; v < 16; v++) if (isRankedMap(m, v)) mi.ranked |= (uint16_t)(1u << v);
@@ -683,7 +686,7 @@ void Game::loadMenuBackdrop() {
     if (uiTest_) return;   // (the UI test: menus over a plain background, no bake)
     // (PLAYER > MORE: MENU BACKGROUND: the default map, one you picked, or a plain colour with no map at all)
     if (opts_.backdrop.empty() && cfg_.menuBg == 2) return;
-    std::string name = !opts_.backdrop.empty() ? opts_.backdrop : cfg_.menuBg == 1 && !cfg_.menuBgMap.empty() ? cfg_.menuBgMap : "clockwork";
+    std::string name = !opts_.backdrop.empty() ? opts_.backdrop : cfg_.menuBg == 1 && !cfg_.menuBgMap.empty() ? cfg_.menuBgMap : "castle";   // (castle: clockwork until 1.19.6)
     if (!menuMap_.load(name) && (maps_.empty() || !menuMap_.load(maps_[0]))) return;
     r_.loadWorld(menuMap_, [&](float p) { drawBakeProgress(menuMap_.name, p); });
     setBackdropFrame(menuMap_);
@@ -719,12 +722,12 @@ void Game::onChar(unsigned cp) {
 
 int Game::bestRankedMap(int ladder) const {
     int any = -1;
-    for (size_t i = 0; i < mapInfo_.size(); i++) {
-        if (!(mapInfo_[i].ranked >> ladder & 1)) continue;
-        if (mapInfo_[i].ranked == (1u << ladder)) return (int)i;
     const std::string designed = rankedDefaultMap(ladder);   // (the map the ladder is designed for, when it's ranked for it)
     for (size_t i = 0; i < mapInfo_.size() && i < maps_.size(); i++)
         if (maps_[i] == designed && (mapInfo_[i].ranked >> ladder & 1)) return (int)i;
+    for (size_t i = 0; i < mapInfo_.size(); i++) {
+        if (!(mapInfo_[i].ranked >> ladder & 1)) continue;
+        if (mapInfo_[i].ranked == (1u << ladder)) return (int)i;
         if (any < 0) any = (int)i;
     }
     return any < 0 ? 0 : any;
@@ -6540,6 +6543,13 @@ void Game::drawGameplaySettings(const SetLayout& L) {
         ui_.toggle(L.X(kColL + kColW - kHalfW), f.top(), hw, h, "MUZZLE FLASH", cfg_.muzzleFlash, UiExp::cfg("muzzle_flash"));
         f.next();
     }
+    f.section("MAPS");
+    if (ui_.toggle(f.x(), f.top(), w, h, "LEGACY MAPS", cfg_.legacyMaps, UiExp::cfg("legacy_maps"))) {
+        setLegacyMapsListed(cfg_.legacyMaps);
+        rescanMaps();
+    }
+    f.next();
+    f.hint("THE OLD MAPS (BEFORE 1.19.6) IN THE MAP LISTS. NEVER RANKED");
     // (NETWORK, the smoothing delay, is on VIDEO + AUDIO page 7 with the other network settings: this column ran into
     // the footer, 2026-10-30)
 
@@ -8354,7 +8364,7 @@ void Game::drawPlayerMore(const SetLayout& L) {
     if (ch) applyMenuTheme();
     f.section("MENU BACKGROUND");
     {
-        static const std::vector<std::string> bn = {"BACKGROUND: CLOCKWORK", "BACKGROUND: A MAP I PICK", "BACKGROUND: PLAIN COLOR"};
+        static const std::vector<std::string> bn = {"BACKGROUND: CASTLE", "BACKGROUND: A MAP I PICK", "BACKGROUND: PLAIN COLOR"};
         bool reload = ui_.cycle(f.x(), f.top(), w, h, "MENU BACKGROUND", cfg_.menuBg, 3, bn, UiExp::cfg("menu_bg"));
         f.next();
         std::vector<std::string> mn;
@@ -9042,7 +9052,7 @@ void Game::debugMenuPage() {
     if (p == "main/save-copy") {
         setScreen(Screen::Main);
         edPrompt_ = true; edPromptOfficial_ = true; edPromptThen_ = ED_THEN_NONE;
-        edPromptMap_ = Map(); edPromptMap_.name = "harbor"; edPromptName_ = "harbor_copy";
+        edPromptMap_ = Map(); edPromptMap_.name = "sewer"; edPromptName_ = "sewer_copy";
     } else if (p == "join") setScreen(Screen::Join);
     else if (under("host")) { setScreen(Screen::Host); hostAdvanced_ = p == "host/advanced"; pickerOf(true); }
     else if (under("vsbots")) { setScreen(Screen::VsBots); pickerOf(false); }
@@ -9668,7 +9678,7 @@ static const char* const kInfoPages[][48] = {
         "# CUSTOM MODES",
         "Host Game > CUSTOM MODE > NEW: any base mode with your own health, gravity, speed, jump, knockback, weapons (fire rate, damage, projectile speed) and map pool. Players who join get the rules automatically.",
         "# MAPS AND MODES",
-        "Each map is built for one mode, plus free for all; Lodestone is built for every mode. You can still start any map in any mode: the menus warn when it isn't built for it (it may be missing spawns or objectives).",
+        "Each map is built for one mode, plus free for all and any others it lists. You can still start any map in any mode: the menus warn when it isn't built for it (it may be missing spawns or objectives).",
     },
     {   // CONTROLS
         "# DEFAULT KEYS (Settings > CONTROLS to change any of them, two keys per action)",
@@ -9739,12 +9749,13 @@ static const char* const kInfoPages[][48] = {
     },
     {   // MAPS
         "# THE MAPS AND WHAT THEY'RE BUILT FOR",
-        "LODESTONE - a working mine, two storeys deep: built for multi point and for every other mode.",
-        "MIDTOWN - a city centre with offices you can climb through to the roofs, an elevated railway and a park: multi point.",
-        "BASTION / ORBITAL - team vs.   DEPOT - bomb.   SUMMIT / DOWNTOWN - king of the hill.",
-        "RAILYARD - payload.   CANAL - neutral payload.   HARBOR - free for all.",
-        "CLOCKWORK - duel.   COLOSSEUM - tourney.   FOUNDRY - tag.   HAMLET - hide and seek.   VIADUCT - race (and the ranked time trial).",
-        "TEMPLE, FURNACE, GANTRY, ANVIL - ranked (vanilla 1v1, laser vampire 1v1, instagib free for all with a 5 minute limit, all three).",
+        "QK1 - QK8 - ranked arenas for all three ladders (vanilla and laser vampire 1v1, instagib free for all), also duel and tourney.",
+        "GREENHOUSE - ranked vanilla 1v1.   DOJO - ranked laser vampire 1v1.   SPIRE - ranked instagib free for all (5 minutes).   ORBIT - 1v1, duel.",
+        "LIGHTHOUSE / TERRACES - team vs.   REACTORS / BRIDGE - power.   DATACENTER / MINE - bomb.   CASTLE / GLACIER / AMPHITHEATRE - king of the hill.",
+        "RAILYARD / DAM / EXPRESS / MONORAIL - neutral payload (Railyard: payload too).   WAR / CONVOY - multi point.",
+        "SEWER - free for all.   RIVERSIDE / FAIRGROUND / ROOFTOPS - tag.   MUSEUM / CRUISESHIP - hide and seek.",
+        "ACCELERATOR / JUNGLE / ROOFTOPRUN - race (and the ranked time trials).   SOLAR / SURFY - surf.   COBBLESTONE - q's own.",
+        "LEGACY MAPS (settings > GAMEPLAY) lists the old maps from before 1.19.6 too. They are never ranked.",
         "# YOUR OWN MAPS",
         "Anything in the maps folder shows up in the lists. Servers send their map to players who don't have it.",
     },

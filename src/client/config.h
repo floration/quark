@@ -253,7 +253,7 @@ struct Settings {
     // hosting
     std::string hostName = "quark server";
     std::string hostProber;     // "host:port" that checks our port is reachable (empty: QUARK_PROBER, else a listed server)
-    std::string hostMap = "bastion";
+    std::string hostMap = "sewer";   // (built for free for all, hostMode's default; bastion until 1.19.6)
     int hostMode = 5;
     int hostPort = 27500;
     int hostMaxPlayers = 8;
@@ -362,6 +362,7 @@ struct Settings {
     bool specThird = false;            // spectating: behind the player, not their eyes
     std::string quipBlock;
     int quipPick = -1;                 // PLAYER > MORE: MY QUIP: the QUIP key says this one (-1: a random one)
+    bool legacyMaps = false;           // GAMEPLAY: MAPS: LEGACY MAPS: the old map pool (maps/legacy/) listed in the pickers (1.19.6)
     bool useOverrides = true;          // PLAYER > MORE: MODS: your overrides folder used (next start)             // players whose quips you don't hear (names, ';'-separated)
     // CONTROLS > MORE 2
     float wpnSens[WPN_COUNT];          // per weapon: x SENSITIVITY (1 = the same)

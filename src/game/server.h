@@ -51,7 +51,7 @@ extern void (*g_eventHook)(const Server& s, const GameEvent& e);
 
 struct ServerConfig {
     std::string name = "quark server";
-    std::string map = "bastion";
+    std::string map = "sewer";   // (built for free for all; bastion until 1.19.6)
     int mode = MODE_FFA;
     uint16_t port = kDefaultPort;
     int maxPlayers = 8;         // up to kMaxPlayers (32); big servers start at a lower tick rate

@@ -268,6 +268,18 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     nav_.buildAsync(map_);   // bot navigation, built off the tick thread
     if (cfg_.editMode && !map_.supportsMode(cfg_.mode)) // an edit session runs whatever the map can't play yet
         cfg_.mode = map_.supportsMode(MODE_FFA) ? MODE_FFA : cfg_.mode;
+    if (cfg_.ranked && !isRankedMap(map_, cfg_.arenaVariant) && isLegacyMap(cfg_.map)) {
+        // a ranked server set up for an old ranked map (temple, furnace, gantry, anvil: legacy since 1.19.6, never
+        // ranked): it plays the map its ladder is designed for instead of refusing to start after the update
+        Map d;
+        const std::string designed = rankedDefaultMap(cfg_.arenaVariant);
+        if (!designed.empty() && d.load(designed) && isRankedMap(d, cfg_.arenaVariant)) {
+            log(cfg_.map + " is a legacy map (never ranked): ranked plays " + designed + " instead");
+            cfg_.map = designed;
+            map_ = d;
+            nav_.buildAsync(map_);
+        }
+    }
     if (cfg_.ranked && !isRankedMap(map_, cfg_.arenaVariant)) { if (err) *err = "ranked only runs on the ranked maps for its ladder"; return false; }
     if (cfg_.ranked) cfg_.editMode = false;
     // any map runs any mode (one not built for it may be missing what the mode needs: the host was warned)
@@ -4712,7 +4724,10 @@ void Server::setRanked(bool on, int ladder) {
     if (!fits(mapInfo(mapName))) {
         // the map the ladder is designed for, else its own map (built for just that ruleset), else any that takes it
         mapName.clear();
+        const std::string designed = rankedDefaultMap(ladder);
+        if (!designed.empty() && std::find(mapList_.begin(), mapList_.end(), designed) != mapList_.end() && fits(mapInfo(designed))) mapName = designed;
         for (auto& n : mapList_) {   // (the list cached at start / saveas: no folder scan on the tick)
+            if (!designed.empty() && mapName == designed) break;
             MapInfo c = mapInfo(n);
             if (!fits(c)) continue;
             bool own = c.ranked == (1u << ladder);
@@ -4724,10 +4739,7 @@ void Server::setRanked(bool on, int ladder) {
     if (!cfg_.ranked) balanceBotsUnranked_ = cfg_.balanceBots;
     cfg_.ranked = true;
     cfg_.balanceBots = false;
-        const std::string designed = rankedDefaultMap(ladder);
-        if (!designed.empty() && std::find(mapList_.begin(), mapList_.end(), designed) != mapList_.end() && fits(mapInfo(designed))) mapName = designed;
     for (int i = kMaxPlayers - 1; i >= 0; i--) if (players_[i].connected && players_[i].isBot) removeBot(i);
-            if (!designed.empty() && mapName == designed) break;
     cfg_.arenaVariant = ladder;
     command("map " + mapName + " " + modeName(rankedMode(ladder)) + " " + arenaVariant(ladder).name);
     message(std::string("ranked on - ") + arenaVariant(ladder).title + " ladder");
