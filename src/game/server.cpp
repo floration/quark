@@ -4710,7 +4710,7 @@ void Server::setRanked(bool on, int ladder) {
     std::string mapName = cfg_.map;
     auto fits = [&](const MapInfo& mi) { return mi.ok && (mi.ranked >> ladder & 1) && (mi.supports >> rankedMode(ladder) & 1); };
     if (!fits(mapInfo(mapName))) {
-        // the ladder's own map first (built for just that ruleset), else any ranked map that takes it
+        // the map the ladder is designed for, else its own map (built for just that ruleset), else any that takes it
         mapName.clear();
         for (auto& n : mapList_) {   // (the list cached at start / saveas: no folder scan on the tick)
             MapInfo c = mapInfo(n);
@@ -4724,7 +4724,10 @@ void Server::setRanked(bool on, int ladder) {
     if (!cfg_.ranked) balanceBotsUnranked_ = cfg_.balanceBots;
     cfg_.ranked = true;
     cfg_.balanceBots = false;
+        const std::string designed = rankedDefaultMap(ladder);
+        if (!designed.empty() && std::find(mapList_.begin(), mapList_.end(), designed) != mapList_.end() && fits(mapInfo(designed))) mapName = designed;
     for (int i = kMaxPlayers - 1; i >= 0; i--) if (players_[i].connected && players_[i].isBot) removeBot(i);
+            if (!designed.empty() && mapName == designed) break;
     cfg_.arenaVariant = ladder;
     command("map " + mapName + " " + modeName(rankedMode(ladder)) + " " + arenaVariant(ladder).name);
     message(std::string("ranked on - ") + arenaVariant(ladder).title + " ladder");

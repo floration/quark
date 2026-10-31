@@ -76,7 +76,7 @@ class Turn:
 def build():
     m = M("QK3 Pinwheel", "1v1", sun=(0, 1, 0))
     m.also = ["duel", "vs", "tourney"]
-    m.raw("ranked vanilla instagib")
+    m.raw("ranked vanilla vampire instagib")   # (q, 2026-10-31: every qk map on all three ladders)
     m.raw("palette base 0.62 0.62 0.6 accent 0.12 0.62 0.56 metal 0.3 0.3 0.32 glow 0.5 1 0.9 sky 0.6 0.7 0.82")
     layout(m)
     decorate(m)

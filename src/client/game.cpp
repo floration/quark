@@ -722,6 +722,9 @@ int Game::bestRankedMap(int ladder) const {
     for (size_t i = 0; i < mapInfo_.size(); i++) {
         if (!(mapInfo_[i].ranked >> ladder & 1)) continue;
         if (mapInfo_[i].ranked == (1u << ladder)) return (int)i;
+    const std::string designed = rankedDefaultMap(ladder);   // (the map the ladder is designed for, when it's ranked for it)
+    for (size_t i = 0; i < mapInfo_.size() && i < maps_.size(); i++)
+        if (maps_[i] == designed && (mapInfo_[i].ranked >> ladder & 1)) return (int)i;
         if (any < 0) any = (int)i;
     }
     return any < 0 ? 0 : any;

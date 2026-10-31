@@ -287,7 +287,8 @@ So the testing build is already live on every box: check it there.
 | ✓ | Check |
 |---|---|
 | ☐ | Queue from the game (RANKED) and from Discord (`/queue`): both see the same queue; a fill pings both players. |
-| ☐ | Play a ranked 1v1 vanilla (Temple) to the end: both clients show the same result; the rating changes on the in-game leaderboard and in Discord's #leaderboard within a few minutes. |
+| ☐ | Play a ranked 1v1 vanilla (Greenhouse, its designed-for map) to the end: both clients show the same result; the rating changes on the in-game leaderboard and in Discord's #leaderboard within a few minutes. |
+| ☐ | **Ranked maps (1.19.6)**: going ranked picks each ladder's designed-for map: vanilla Greenhouse, laser vampire Dojo, instagib Spire; the RANKED map picker also lists qk1-qk8 on all three ladders. |
 | ☐ | During a live ranked match: no votes, no map or mode change, no team switch, no kick (the lock is on exactly the three ranked ladders: 1v1 vanilla, 1v1 laser vampire, FFA instagib; the Viaduct race isn't locked). |
 | ☐ | Leaving a live ranked match early: the leaver loses; the player who stayed can then leave freely. |
 | ☐ | A new account is "provisional" for its first 5 matches. |

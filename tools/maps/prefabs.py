@@ -321,7 +321,10 @@ class M:
         return by
     def top_up_spawns(s, offered):
         spawns = [l.split() for l in s.lines if l.startswith("spawn ")]
-        ranked = any(l.startswith("ranked ") for l in s.lines)   # (ranked maps stay point symmetric: spawns in pairs)
+        # a point-symmetric ranked map (the qk maps: the sun overhead) keeps its spawns in mirrored pairs; ranked maps
+        # needn't be symmetric any more, only fair (q, 2026-10-30: greenhouse, spire), and those top up as any map does
+        sun = next((tuple(map(float, l.split()[1:4])) for l in s.lines if l.startswith("sun ")), None)
+        ranked = any(l.startswith("ranked ") for l in s.lines) and sun is not None and abs(sun[0]) < 1e-6 and abs(sun[2]) < 1e-6
         everything = offered is None
         if everything or "race" in offered:
             have = [w for w in spawns if w[1] == "race"]

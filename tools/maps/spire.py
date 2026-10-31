@@ -30,6 +30,7 @@ JIB = 44.0
 def build():
     m = M("Spire", "ffa", sun=(-0.6, 0.35, -0.5))
     m.also = ["1v1", "duel", "vs", "tourney"]
+    m.raw("ranked instagib")   # (q, 2026-10-31: the map ranked instagib is designed for)
     k = Kit(m)
 
     # ---- the floors (each less the core's footprint; the crane's mast through the 24 m floor if it's there)

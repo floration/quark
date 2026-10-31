@@ -1793,63 +1793,63 @@ static void testMaps() {
         }
         CHECK(m.payloadLength() > 20);
     }
-    // ranked: a map of its own for each ladder plus one for all three; every ranked map is point-symmetric
-    // (each solid has a mirrored twin through the center, and each team A spawn a team B one)
-    int perLadder[3] = {0, 0, 0}, ownMaps = 0;
+    // ranked: at least two maps per ladder, and each ladder's designed-for map (rankedDefaultMap) is ranked for it.
+    // Ranked maps needn't be symmetric (q, 2026-10-30: "would it be fair even though it's asymmetrical?"), only fair:
+    // on a ladder played 1v1 (vanilla, vampire) each side has as many spawns, and on a plain run the two sides are
+    // within 1 s of each other to the enemy spawns and to the middle of the map. (Instagib's free for all spawns
+    // everyone from one pool: fair as it is. Spawn sight and spacing: testSpawnSanity, for every map.)
+    int perLadder[3] = {0, 0, 0};
     for (auto& name : listMaps()) {
         Map m;
         if (!m.load(name) || !m.rankedLadders) continue;
         HumanMadeGrace hg(name, m);
         CHECK(isRankedMap(m, 0) || isRankedMap(m, 1) || isRankedMap(m, 5));
         for (int v : {0, 1, 5}) if (m.rankedLadders >> v & 1) CHECK(m.supportsMode(rankedMode(v)));   // (instagib: free for all)
-        int k = 0;
-        for (int v : {0, 1, 5}) if (m.rankedLadders >> v & 1) perLadder[k++ < 3 ? (v == 0 ? 0 : v == 1 ? 1 : 2) : 0]++;
-        if (__builtin_popcount(m.rankedLadders) == 1) ownMaps++;
-        auto mirrored = [](const AABB& b) { return AABB{{-b.mx.x, b.mn.y, -b.mx.z}, {-b.mn.x, b.mx.y, -b.mn.z}}; };
-        int lonely = 0;
-        for (auto& br : m.brushes) {
-            AABB mb = mirrored(br.box);
-            bool found = false;
-            for (auto& o : m.brushes)
-                if (o.material == br.material && length(o.box.mn - mb.mn) < 0.01f && length(o.box.mx - mb.mx) < 0.01f) { found = true; break; }
-            lonely += !found;
-        }
-        if (lonely) printf("  %s: %d solids without a mirrored twin\n", name.c_str(), lonely);
-        CHECK(lonely == 0);
+        for (int v : {0, 1, 5}) if (m.rankedLadders >> v & 1) perLadder[v == 0 ? 0 : v == 1 ? 1 : 2]++;
         int a = 0, b = 0;
         for (auto& sp : m.spawns) { a += sp.team == SPAWN_A; b += sp.team == SPAWN_B; }
         bool duel = (m.rankedLadders & 3) != 0;   // a ladder played 1v1 (vanilla, vampire): a spawn for each side
         CHECK(a == b && (a >= 1 || !duel));
-        // the rest of the map mirrors too (REVIEW MAP-17: only spawn counts were compared): every spawn has its twin
-        // (A <-> B, the others their own team) facing the mirrored way, every ladder, light and objective its twin,
-        // and the sun is overhead (any other sun lights the two halves differently: baked shadows fall one way)
-        auto same = [](const Vec3& p, const Vec3& q) { return length(p - q) < 0.01f; };
-        auto flip = [](const Vec3& p) { return Vec3(-p.x, p.y, -p.z); };
-        auto boxTwin = [&](const std::vector<AABB>& list, const AABB& x) {
-            AABB mx = mirrored(x);
-            for (auto& o : list) if (same(o.mn, mx.mn) && same(o.mx, mx.mx)) return true;
-            return false;
+        if (!duel || !a) continue;
+        WalkGrid w;
+        w.build(m);
+        std::vector<int> sa, sb;
+        Vec3 mid{0, 0, 0};
+        for (auto& sp : m.spawns) if (sp.team == SPAWN_A || sp.team == SPAWN_B) {
+            int n = w.nodeAt(sp.pos);
+            (sp.team == SPAWN_A ? sa : sb).push_back(n);
+            mid = mid + sp.pos * (1.0f / (2 * a));
+        }
+        // each spawn's runs, once; the middle: every spot within r of the spawns' centre (across), r growing from
+        // 4 m until every spawn reaches one (a void or a pillar in the very middle: the nearest floor round it)
+        std::vector<std::vector<float>> ta, tb;
+        for (int n : sa) ta.push_back(walkSeconds(w, n));
+        for (int n : sb) tb.push_back(walkSeconds(w, n));
+        auto meanTo = [](const std::vector<std::vector<float>>& own, const std::vector<int>& goals) {
+            float sum = 0;
+            for (auto& t : own) { float f = INFINITY; for (int g : goals) if (g >= 0) f = std::min(f, t[g]); sum += f; }
+            return sum / own.size();
         };
-        int odd = 0;
-        for (auto& sp : m.spawns) {
-            int twinTeam = sp.team == SPAWN_A ? SPAWN_B : sp.team == SPAWN_B ? SPAWN_A : isModeSpawn(sp.team) && spawnSide(sp.team) != SPAWN_ANY ? modeSpawn(spawnSetMode(sp.team), 1 - spawnSide(sp.team)) : sp.team;
-            bool found = false;
-            for (auto& o : m.spawns)
-                if (o.team == twinTeam && same(o.pos, flip(sp.pos)) && std::fabs(std::remainder(o.yaw - sp.yaw - PI, 2 * PI)) < 0.01f) found = true;
-            if (!found) { printf("  %s: spawn %.1f %.1f %.1f (yaw %.0f) has no mirrored twin\n", name.c_str(), sp.pos.x, sp.pos.y, sp.pos.z, sp.yaw * 180 / PI); odd++; }
+        float aFoe = meanTo(ta, sb), bFoe = meanTo(tb, sa), aMid = INFINITY, bMid = INFINITY;
+        for (float r = 4; r <= 32 && !(std::isfinite(aMid) && std::isfinite(bMid)); r += 4) {
+            std::vector<int> mids;
+            for (size_t n = 0; n + w.ladderHubs < w.nodes.size(); n++) {
+                const Vec3& p = w.nodes[n].p;
+                if ((p.x - mid.x) * (p.x - mid.x) + (p.z - mid.z) * (p.z - mid.z) <= r * r) mids.push_back((int)n);
+            }
+            aMid = meanTo(ta, mids); bMid = meanTo(tb, mids);
         }
-        for (auto& l : m.ladders) if (!boxTwin(m.ladders, l)) { printf("  %s: a ladder at %.1f %.1f has no twin\n", name.c_str(), l.center().x, l.center().z); odd++; }
-        for (auto& l : m.lights) {
-            bool found = false;
-            for (auto& o : m.lights) found |= same(o.pos, flip(l.pos)) && o.radius == l.radius && o.intensity == l.intensity;
-            if (!found) { printf("  %s: a light at %.1f %.1f %.1f has no twin\n", name.c_str(), l.pos.x, l.pos.y, l.pos.z); odd++; }
-        }
-        for (auto* list : {&m.bombSites, &m.points, &m.checkpoints}) for (auto& z : *list) if (!boxTwin(*list, z)) { printf("  %s: an objective has no twin\n", name.c_str()); odd++; }
-        if (m.hasHill && !boxTwin({m.hill}, m.hill)) { printf("  %s: the hill isn't centred\n", name.c_str()); odd++; }
-        if (std::fabs(m.sunDir.x) > 1e-6f || std::fabs(m.sunDir.z) > 1e-6f) { printf("  %s: the sun (%.2f %.2f %.2f) isn't overhead\n", name.c_str(), m.sunDir.x, m.sunDir.y, m.sunDir.z); odd++; }
-        CHECK(odd == 0);
+        bool fair = std::isfinite(aFoe + aMid + bFoe + bMid) && std::fabs(aFoe - bFoe) <= 1.0f && std::fabs(aMid - bMid) <= 1.0f;
+        if (!fair) printf("  %s: not fair: to the enemy A %.1f s / B %.1f s, to the middle A %.1f s / B %.1f s\n", name.c_str(), aFoe, bFoe, aMid, bMid);
+        CHECK(fair);
     }
-    CHECK(perLadder[0] >= 2 && perLadder[1] >= 2 && perLadder[2] >= 2 && ownMaps >= 3);
+    CHECK(perLadder[0] >= 2 && perLadder[1] >= 2 && perLadder[2] >= 2);
+    for (int v : {0, 1, 5}) {
+        Map d;
+        bool ok = d.load(rankedDefaultMap(v)) && isRankedMap(d, v);
+        if (!ok) printf("  ladder %s: its designed-for map %s isn't ranked for it\n", arenaVariant(v).name, rankedDefaultMap(v));
+        CHECK(ok);
+    }
 }
 
 // The payload cart drives the whole track without going through anything (REVIEW MAP-5: a box on Railyard's track at

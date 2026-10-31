@@ -18,7 +18,7 @@ UF, CH = 10.0, 18.0               # upper floor top, arm ceiling
 
 def build():
     m = M("QK6 Crossroads", "1v1", sun=(0, 1, 0))
-    m.raw("ranked vanilla instagib")
+    m.raw("ranked vanilla vampire instagib")   # (q, 2026-10-31: every qk map on all three ladders)
     m.also = ["duel", "vs", "tourney"]
     start = len(m.lines)
     R = Rooms(m)

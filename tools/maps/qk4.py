@@ -37,7 +37,7 @@ def flights(k):
 def build():
     m = M("QK4 Terraces", "1v1", sun=(0, 1, 0))
     m.also = ["duel", "vs", "tourney"]
-    m.raw("ranked vanilla instagib")
+    m.raw("ranked vanilla vampire instagib")   # (q, 2026-10-31: every qk map on all three ladders)
     m.raw("palette base 0.68 0.64 0.6 accent 0.46 0.26 0.62 metal 0.3 0.3 0.32 glow 0.85 0.6 1 sky 0.62 0.7 0.84")
     layout(m)
     decorate(m)
