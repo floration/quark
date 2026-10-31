@@ -2,7 +2,8 @@
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
 import { createHash, createPrivateKey, createPublicKey, sign as edSign } from "node:crypto";
-import worker, { rateTeams, rankKeyOf, prune, keyEq, isTestingVersion } from "./worker.js";
+import worker, { rateTeams, rankKeyOf, prune, keyEq, isTestingVersion, RACE_MAPS } from "./worker.js";
+const RM = Object.keys(RACE_MAPS)[0];   // (a ranked race map: the race tests run on it)
 
 const db = new DatabaseSync(":memory:");
 db.exec(readFileSync(new URL("./schema.sql", import.meta.url), "utf8"));
@@ -104,7 +105,7 @@ const server = async (v = "t9") => {
     addrs: dialled.join(",") });
   S.result = (match, p) => S.post("/result", { match, p });
   // a time trial: the racer's game signs the race ticket's id the same way
-  S.race = (match, n, map = "viaduct", signer = n, dialled = S.addr) => S.post("/ticket", { kind: "race", match, map, players: id(n), keys: key(n).pub,
+  S.race = (match, n, map = RM, signer = n, dialled = S.addr) => S.post("/ticket", { kind: "race", match, map, players: id(n), keys: key(n).pub,
     sigs: signTicket(signer, match, dialled), addrs: dialled });
   return S;
 };
@@ -144,7 +145,7 @@ check((await call("/list?v=t9")) === "", "hidden servers aren't listed");
     const port3 = S3.addr.split(":")[1];
     check((await S3.ticket("abcdabcdabcdabcd", "vanilla", [1, 2], "temple", [1, 2], ["10.1.2.3:" + (+port3 + 1), S3.addr])) === "signed for another server: " + id(1), "a LAN address on another port refused");
     check((await S3.ticket("abcdabcdabcdabcd", "vanilla", [1, 2], "temple", [1, 2], ["8.8.8.8:" + port3, S3.addr])) === "signed for another server: " + id(1), "a public address that isn't the server refused");
-    check((await S3.race("abcdabcdabcdabce", 1, "viaduct", 1, other.addr)) === "signed for another server: " + id(1), "race ticket signed for another server refused");
+    check((await S3.race("abcdabcdabcdabce", 1, RM, 1, other.addr)) === "signed for another server: " + id(1), "race ticket signed for another server refused");
     check((await S3.ticket("abcdabcdabcdabcd", "vanilla", [1, 2], "temple", [1, 2], ["192.168.1.20:" + port3, "127.0.0.1:" + port3])) === "ticket abcdabcdabcdabcd", "LAN / same-machine players on the server's port");
   }
   check((await S.ticket(match, "vanilla", [1, 2, 3, 4])) === "ticket " + match, "ticket opened");
@@ -353,18 +354,18 @@ check((await call("/report", { secret: secret(1), match: "cccccccccccccccc", lad
 check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", ladder: "vanilla", p: `${id(1)}:0:0,${id(2)}:0:1` })) === "bad result", "one side refused");
 // race time trials: runs come from the server under a race ticket; splits must respect the course's floors
 {
-  const floors = [792, 606, 485, 625, 250, 928, 1333, 341, 1818, 979, 1022, 1583];
-  const splitsFor = (leg) => { let t = 0; return floors.map((f) => (t += f + leg)); };
+  const splitsFor = (leg, map = RM) => { let t = 0; return RACE_MAPS[map].floors.map((f) => (t += f + leg)); };
+  const K = RACE_MAPS[RM].floors.length - 1;   // (the finish split)
   const S = await server();
   const name = Buffer.from("racer").toString("hex");
-  check((await call("/racetime", { secret: secret(5), map: "viaduct", ms: "40000", splits: "10000,25000,40000", name })).startsWith("update the game"), "self-reported times refused (R3)");
+  check((await call("/racetime", { secret: secret(5), map: RM, ms: "40000", splits: "10000,25000,40000", name })).startsWith("update the game"), "self-reported times refused (R3)");
   const run = (n, sp, ticket = "1111111111111111", extra = {}) =>
-    S.post("/racerun", { ticket, map: "viaduct", id: id(n), ms: String(sp[sp.length - 1]), splits: sp.join(","), ...extra });
+    S.post("/racerun", { ticket, map: RM, id: id(n), ms: String(sp[sp.length - 1]), splits: sp.join(","), ...extra });
   check((await run(5, splitsFor(2000))) === "no ticket", "no race ticket, no run");
   // a race ticket needs the racer's signature: a server can't put someone who isn't on it on the board (or rename them)
-  check((await S.post("/ticket", { kind: "race", match: "1111111111111111", map: "viaduct", players: id(5) })) === "missing signatures", "unsigned race ticket refused");
-  check((await S.race("1111111111111111", 5, "viaduct", 6)) === "bad signature for " + id(5), "race ticket signed by someone else refused");
-  check((await S.post("/ticket", { kind: "race", match: "1111111111111111", map: "viaduct", players: id(5), keys: key(6).pub, sigs: signTicket(6, "1111111111111111", S.addr), addrs: S.addr })) === "bad key for " + id(5), "race ticket key must hash to the racer");
+  check((await S.post("/ticket", { kind: "race", match: "1111111111111111", map: RM, players: id(5) })) === "missing signatures", "unsigned race ticket refused");
+  check((await S.race("1111111111111111", 5, RM, 6)) === "bad signature for " + id(5), "race ticket signed by someone else refused");
+  check((await S.post("/ticket", { kind: "race", match: "1111111111111111", map: RM, players: id(5), keys: key(6).pub, sigs: signTicket(6, "1111111111111111", S.addr), addrs: S.addr })) === "bad key for " + id(5), "race ticket key must hash to the racer");
   check((await S.race("1111111111111111", 5)) === "ticket 1111111111111111", "race ticket");
   check((await S.race("2222222222222222", 6)) === "ticket 2222222222222222", "second racer ticket");
   check((await S.race("3333333333333333", 6, "temple")) === "not a ranked race map", "race map only");
@@ -373,19 +374,40 @@ check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", lad
   check((await run(5, s40, "1111111111111111", { name })) === "first time", "first race time");
   check((await run(5, s41, "1111111111111111", { name: Buffer.from("renamed").toString("hex") })).startsWith("not faster"), "slower time kept out");
   check(db.prepare("SELECT name FROM names WHERE id = ?").get(id(5)).name === "racer", "a run that isn't kept doesn't change the name");
-  check((await run(5, s38)) === `new best (was ${s40[11]})`, "faster time replaces");
+  check((await run(5, s38)) === `new best (was ${s40[K]})`, "faster time replaces");
   check((await run(6, s39, "2222222222222222")) === "first time", "second racer");
   check((await run(6, s38, "1111111111111111")) === "no ticket", "a ticket is for its racer");
-  const fast = [...s38]; for (let i = 8; i < 12; i++) fast[i] -= 1800 + 1000; // one leg 1 s under its floor
+  const fast = [...s38]; for (let i = K - 3; i <= K; i++) fast[i] -= 1800 + 1000; // one leg 1 s under its floor
   check((await run(5, fast)) === "bad splits", "leg faster than the course allows");
-  check((await run(5, s38.slice(0, 11))) === "bad splits", "every checkpoint");
-  check((await run(5, [...s38.slice(0, 11), s38[11]], "1111111111111111", { ms: "99999" })) === "bad splits", "last split must be the time");
+  check((await run(5, s38.slice(0, K))) === "bad splits", "every checkpoint");
+  check((await run(5, [...s38.slice(0, K), s38[K]], "1111111111111111", { ms: "99999" })) === "bad splits", "last split must be the time");
   const other = await server();
-  check((await other.post("/racerun", { ticket: "1111111111111111", map: "viaduct", id: id(5), ms: String(s38[11]), splits: s38.join(",") })) === "no ticket", "only the ticket's server");
+  check((await other.post("/racerun", { ticket: "1111111111111111", map: RM, id: id(5), ms: String(s38[K]), splits: s38.join(",") })) === "no ticket", "only the ticket's server");
   await other.race("4444444444444444", 7);
-  check((await other.post("/racerun", { ticket: "4444444444444444", map: "viaduct", id: id(7), ms: String(s38[11]), splits: s38.join(",") })) === "bad time", "a run can't be longer than its session");
-  const board = (await call("/raceboard?map=viaduct")).split("\n");
-  check(board[0] === `${s38[11]} racer` && board[1] === `${s39[11]} player` && board.length === 2, "race board " + JSON.stringify(board));
+  check((await other.post("/racerun", { ticket: "4444444444444444", map: RM, id: id(7), ms: String(s38[K]), splits: s38.join(",") })) === "bad time", "a run can't be longer than its session");
+  const board = (await call("/raceboard?map=" + RM + "")).split("\n");
+  check(board[0] === `${s38[K]} racer` && board[1] === `${s39[K]} player` && board.length === 2, "race board " + JSON.stringify(board));
+  // the race total (owner, 2026-10-31): each racer's best on every ranked race map summed, a map they haven't run at
+  // its default; only racers with a run on a ranked race map
+  const maps = Object.keys(RACE_MAPS), all = maps.reduce((t, m) => t + RACE_MAPS[m].defaultMs, 0);
+  check(maps.length >= 1 && maps.every((m) => RACE_MAPS[m].defaultMs > RACE_MAPS[m].floors.reduce((a, b) => a + b, 0)), "every race map has a default no plausible run beats");
+  db.prepare("INSERT INTO race_times (map, id, ms, splits, version, created) VALUES ('retiredmap', ?, 1000, '1', 'x', 0)").run(id(8));   // (not a ranked race map now)
+  db.prepare("INSERT INTO race_times (map, id, ms, splits, version, created) VALUES ('retiredmap', ?, 1000, '1', 'x', 0)").run(id(5));
+  let tot = (await call("/racetotal")).split("\n");
+  check(tot.length === 2 && tot[0] === `${all - RACE_MAPS[RM].defaultMs + s38[K]} 1 racer` && tot[1] === `${all - RACE_MAPS[RM].defaultMs + s39[K]} 1 player`, "race total: one map run, the rest at their defaults " + JSON.stringify(tot));
+  if (maps.length > 1) {   // racer 6 runs a second map: their total drops below racer 5's
+    const M2 = maps[1], s2 = splitsFor(500, M2);
+    check((await S.race("5555555555555555", 6, M2)) === "ticket 5555555555555555", "a race ticket on another race map");
+    age("5555555555555555", 3600000);
+    check((await run(6, s2, "5555555555555555")) === "no ticket", "a run is for its ticket's map");
+    check((await S.post("/racerun", { ticket: "5555555555555555", map: M2, id: id(6), ms: String(s2[s2.length - 1]), splits: s2.join(",") })) === "first time", "a run on the second map");
+    tot = (await call("/racetotal?n=5")).split("\n");
+    const t6 = all - RACE_MAPS[RM].defaultMs + s39[K] - RACE_MAPS[M2].defaultMs + s2[s2.length - 1];
+    check(tot.length === 2 && tot[0] === `${t6} 2 player` && tot[1].startsWith(`${all - RACE_MAPS[RM].defaultMs + s38[K]} 1 `), "race total: both maps count " + JSON.stringify(tot));
+    check((await call("/racetotal?n=1")).split("\n").length === 1, "race total: n rows");
+    check((await call("/raceboard?map=" + M2)).split("\n")[0] === `${s2[s2.length - 1]} player`, "per-map board for the second map");
+  }
+  check((await call("/raceboard?map=retiredmap")) === "not a ranked race map", "a map off the table has no board");
 }
 // Discord link (verified by a code from the bot), crowns, queues shared with the bot
 {
@@ -401,8 +423,8 @@ check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", lad
   check((await call("/link", { secret: secret(6), code })) === "wrong or expired code", "a code works once");
   db.prepare("INSERT INTO links (id, discord, updated) VALUES (?, ?, 0)").run(id(6), "victim"); // an old, unverified link
   const cr = (await call("/crowns")).split("\n").filter(Boolean);
-  check(cr.some((l) => l === `race:viaduct 1 ${id(5)} ${hx("racer")} ${hx("racer#1")}`), "crowns: race leader with discord " + JSON.stringify(cr));
-  check(cr.some((l) => l.startsWith(`race:viaduct 2 ${id(6)} `) && l.endsWith(" -")), "crowns: unverified links get no role");
+  check(cr.some((l) => l === `race:${RM} 1 ${id(5)} ${hx("racer")} ${hx("racer#1")}`), "crowns: race leader with discord " + JSON.stringify(cr));
+  check(cr.some((l) => l.startsWith(`race:${RM} 2 ${id(6)} `) && l.endsWith(" -")), "crowns: unverified links get no role");
   check(cr.some((l) => l.startsWith(`vampire 1 ${id(11)} `)) && !cr.some((l) => l.includes(id(30))), "crowns: established players only");
   let limited = false;
   for (let i = 0; i < 10 && !limited; i++) limited = (await call("/link", { secret: secret(70 + i), code: wrong }, "192.0.2.77")) === "rate limited";
@@ -650,7 +672,7 @@ check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", lad
   check((await T.ticket("7a7a7a7a7a7a7a7a", "vanilla", [41, 42])) === nr, "a testing server can't open a match ticket");
   check((await T.race("7b7b7b7b7b7b7b7b", 43)) === nr, "nor a race ticket");
   check((await T.result("7a7a7a7a7a7a7a7a", `${id(41)}:0:0,${id(42)}:1:1`)) === nr, "nor post a result");
-  check((await T.post("/racerun", { ticket: "7b7b7b7b7b7b7b7b", map: "viaduct", id: id(43), ms: "60000", splits: "60000" })) === nr, "nor a race run");
+  check((await T.post("/racerun", { ticket: "7b7b7b7b7b7b7b7b", map: RM, id: id(43), ms: "60000", splits: "60000" })) === nr, "nor a race run");
   check(db.prepare("SELECT COUNT(*) AS n FROM tickets WHERE server = ?").get(T.addr).n === 0, "no ticket from a testing server");
   // a server that ticketed as production, then announces a testing build (an older ticket): nothing under it counts
   const P = await server("1.17.0");

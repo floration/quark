@@ -17,6 +17,24 @@ bool isOfficialMap(const Map& m);
 bool isOfficialMapName(const std::string& name);
 // Ranked runs only on official maps marked for that ladder ("ranked ..." line).
 bool isRankedMap(const Map& m, int ladder);
+// Ranked race maps (time trials and the race total board): the official maps built for race or surf ("for race",
+// "for surf"), sorted by name. Read once from the embedded maps. Each has a default time, counted on the race total for
+// a player with no run there: its "racedefault <s>" line, or kRaceFallbackDefaultS until the map has one. The Worker
+// keeps the same list (RACE_MAPS in tools/master/worker.js, written by "quark_tests racefloors"; quark_tests checks
+// they match).
+constexpr int kRaceFallbackDefaultS = 600;   // (a race / surf map with no "racedefault" line yet: q gives each its own)
+struct RaceMapInfo {
+    std::string name, title;
+    int mode = 0;                // MODE_RACE or MODE_SURF: a time trial counts only in the map's own mode
+    int defaultMs = 0;           // counted on the race total for a player with no run on this map
+    bool fallbackDefault = false; // (no "racedefault" line: kRaceFallbackDefaultS)
+    std::vector<int> floorsMs;   // raceSplitFloorsMs
+};
+const std::vector<RaceMapInfo>& rankedRaceMaps();
+const RaceMapInfo* rankedRaceMap(const std::string& name);   // null if it isn't one
+// A player's race total: the sum over rankedRaceMaps of their best time there, or its default where they have none.
+// best: map name -> best ms (other maps, and times <= 0, are ignored). played: how many ranked race maps had a time.
+long long raceTotalMs(const std::map<std::string, int>& best, int* played = nullptr);
 
 struct RankKey {
     std::string secret; // 64 hex chars: stays on this computer and goes only to the Worker
@@ -121,6 +139,10 @@ public:
     // message in name). Runs themselves are posted by the game server (see buildRaceRunForm).
     void fetchRaceBoard(const std::string& map, double delay = 0);
     bool raceBoard(const std::string& map, std::vector<LeaderRow>& out) { return leaderboard("race:" + map, out); }
+    // The race total (GET /racetotal): every racer with a run, by their total over the ranked race maps (a map they
+    // haven't run counts at its default), fastest first. "rating" holds the total in ms, "games" the maps they've run.
+    void fetchRaceTotal(double delay = 0);
+    bool raceTotal(std::vector<LeaderRow>& out) { return leaderboard("racetotal", out); }
     // Plain requests to the Worker (Discord link, queues, crowns): GET when body is empty, else a form POST.
     // The reply (or "!" + the error) lands under key; takeText hands it over once.
     void request(const std::string& key, const std::string& pathAndQuery, const std::string& body = "");

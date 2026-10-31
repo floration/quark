@@ -149,6 +149,8 @@ int main(int argc, char** argv) {
     if (!automated) demo::startUpgrade(userDataPath("demos"), userDataPath("versions.txt"));
     if (!automated)   // your maps written in an older map format: converted (originals in maps/old/v<N>/)
         for (auto& l : upgradeMapDir(userMapsDir()).log) fprintf(stderr, "maps: %s\n", l.c_str());
+    if (!automated)   // (once per version) old official map copies in your maps folder: moved to maps/legacy/
+        for (auto& l : moveOldOfficialMaps().log) fprintf(stderr, "maps: %s\n", l.c_str());
     struct DemoUpgradeJoin { ~DemoUpgradeJoin() { demo::finishUpgrade(5.0); } } demoUpgradeJoin;
     netInit();
     if (!glfwInit()) { fprintf(stderr, "glfwInit failed\n"); return 1; }

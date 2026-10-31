@@ -553,3 +553,27 @@ inline std::vector<std::string> walkRoutesMissing(const Map& m, WalkGrid& w, int
     if (routes) *routes = total;
     return missing;
 }
+
+// Seconds of a plain run (WalkGrid::kRun) from spot `from` to every spot (Dijkstra over the links): each move costs
+// its horizontal length plus any climb, at the run speed (drops cost only their length). Unreachable: +inf. A
+// measure for comparing two routes on one map (the ranked fairness check), not a stopwatch: no strafe or tech.
+inline std::vector<float> walkSeconds(const WalkGrid& w, int from) {
+    std::vector<float> t(w.nodes.size(), INFINITY);
+    if (from < 0) return t;
+    std::vector<std::pair<float, int>> heap = {{0.0f, from}};
+    t[from] = 0;
+    auto cmp = [](const std::pair<float, int>& a, const std::pair<float, int>& b) { return a.first > b.first; };
+    while (!heap.empty()) {
+        std::pop_heap(heap.begin(), heap.end(), cmp);
+        auto [d, v] = heap.back();
+        heap.pop_back();
+        if (d > t[v]) continue;
+        const Vec3& a = w.nodes[v].p;
+        for (int u : w.links[v]) {
+            const Vec3& b = w.nodes[u].p;
+            float cost = (std::sqrt((b.x - a.x) * (b.x - a.x) + (b.z - a.z) * (b.z - a.z)) + std::max(0.0f, b.y - a.y)) / WalkGrid::kRun;
+            if (d + cost < t[u]) { t[u] = d + cost; heap.push_back({t[u], u}); std::push_heap(heap.begin(), heap.end(), cmp); }
+        }
+    }
+    return t;
+}

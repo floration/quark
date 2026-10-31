@@ -16,7 +16,7 @@ static void usage() {
     printf(
         "quark_server [options]\n"
         "  --port N         UDP port (default %d)\n"
-        "  --map NAME       map from maps/ (default arena)\n"
+        "  --map NAME       map from maps/ (default sewer)\n"
         "  --mode MODE      vs | bomb | race | koth | payload | npayload | ffa | duel | 1v1 | tourney\n"
         "  --name TEXT      server name shown in the browser\n"
         "  --max N          max players (default 8, up to 32; over 16 starts at a lower tick rate)\n"
@@ -123,6 +123,7 @@ int main(int argc, char** argv) {
         }
         else if (a == "--nobalance") cfg.balanceBots = false;
         else if (a == "--ranked") cfg.ranked = true;
+        else if (a == "--legacy-maps") setLegacyMapsListed(true);   // the old map pool (maps/legacy/) in the map vote
         else if (a == "--restart-flag") cfg.restartFlag = next();
         else if (a == "--channel") {
             std::string c = next();
@@ -133,7 +134,8 @@ int main(int argc, char** argv) {
         else if (a == "-h" || a == "--help") { usage(); return 0; }
         else { printf("unknown option %s\n", a.c_str()); usage(); return 1; }
     }
-    for (auto& l : upgradeMapDir(userMapsDir()).log) printf("maps: %s\n", l.c_str());   // older map formats: converted (originals in maps/old/v<N>/)
+    for (auto& l : upgradeMapDir(userMapsDir()).log) printf("maps: %s\n", l.c_str());
+    for (auto& l : moveOldOfficialMaps().log) printf("maps: %s\n", l.c_str());   // (once per version: old official copies to maps/legacy/)   // older map formats: converted (originals in maps/old/v<N>/)
     cfg.pauseWithoutHumans = true;   // nobody to play for: bots wait (Server::updatePause; hosted and test servers keep ticking)
     netInit();
     auto srv = std::make_unique<Server>();   // (~1 MB: on the heap, not half of the main thread's 2 MB MinGW stack)

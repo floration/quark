@@ -120,6 +120,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     opts_ = opts;
     cfg_.load();
     if (!cfg_.useOverrides) overrides::useUserFolder(false);   // (PLAYER > MORE: MODS: USE MY OVERRIDES off: the shipped ones only)
+    setLegacyMapsListed(cfg_.legacyMaps);   // (GAMEPLAY: LEGACY MAPS: the old pool in the pickers; a hosted server's list too)
     int w, h;
     glfwGetFramebufferSize(win, &w, &h);
     r_.resize(w, h);
@@ -172,7 +173,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     botMapIdx_ = bestMapFor(cfg_.botMode);
     if (!opts_.uiTest && opts_.screenshot.empty() && !opts_.benchmark) benchRetryUploads();   // (runs whose upload didn't get through)
     if (opts_.benchmark) benchStart();   // --benchmark: the main menu's, printed then quit
-    else if (opts_.timeTrial) startTimeTrial();
+    else if (opts_.timeTrial) startTimeTrial(rankedRaceMap(opts_.hostMap) ? opts_.hostMap : std::string());
     else if (opts_.vsBotsMode >= 0) {
         cfg_.botMode = opts_.vsBotsMode;
         botMapIdx_ = bestMapFor(cfg_.botMode);
@@ -252,11 +253,11 @@ void Game::startHost(bool vsBots) {
         sc.mode = MODE_ARENA;
         if (!arenaVariantRanked(sc.arenaVariant)) sc.arenaVariant = 0;
     }
-    if (vsBots && timeTrialStart_) { // solo ranked race: Viaduct, nobody else, rounds forever (each one is a run)
+    if (vsBots && timeTrialStart_) { // solo ranked race: a ranked race map, nobody else, rounds forever (each one is a run)
         timeTrialStart_ = false;
         sc.name = "time trial";
-        sc.map = "viaduct";
-        sc.mode = MODE_RACE;
+        sc.map = timeTrialMapName_;
+        sc.mode = rankedRaceMap(sc.map) ? rankedRaceMap(sc.map)->mode : MODE_RACE;   // (a surf map: its time trial is surf)
         sc.port = 0;
         sc.upnp = false;
         sc.lanOnly = true;
@@ -650,6 +651,8 @@ void Game::rescanMaps() {
         MapInfo mi;
         if (m.load(name)) {
             mi.title = m.title.empty() ? name : m.title;
+            mi.legacy = isLegacyMap(name);   // (LEGACY MAPS on: the old pool, marked in the picker)
+            if (mi.legacy) mi.title += " (legacy)";
             mi.preferredMode = m.preferredMode;
             for (int k = 0; k < MODE_COUNT; k++) if (m.supportsMode(k)) mi.modes |= 1u << k;
             for (int v = 0; v < 16; v++) if (isRankedMap(m, v)) mi.ranked |= (uint16_t)(1u << v);
@@ -683,7 +686,7 @@ void Game::loadMenuBackdrop() {
     if (uiTest_) return;   // (the UI test: menus over a plain background, no bake)
     // (PLAYER > MORE: MENU BACKGROUND: the default map, one you picked, or a plain colour with no map at all)
     if (opts_.backdrop.empty() && cfg_.menuBg == 2) return;
-    std::string name = !opts_.backdrop.empty() ? opts_.backdrop : cfg_.menuBg == 1 && !cfg_.menuBgMap.empty() ? cfg_.menuBgMap : "clockwork";
+    std::string name = !opts_.backdrop.empty() ? opts_.backdrop : cfg_.menuBg == 1 && !cfg_.menuBgMap.empty() ? cfg_.menuBgMap : "castle";   // (castle: clockwork until 1.19.6)
     if (!menuMap_.load(name) && (maps_.empty() || !menuMap_.load(maps_[0]))) return;
     r_.loadWorld(menuMap_, [&](float p) { drawBakeProgress(menuMap_.name, p); });
     setBackdropFrame(menuMap_);
@@ -719,6 +722,9 @@ void Game::onChar(unsigned cp) {
 
 int Game::bestRankedMap(int ladder) const {
     int any = -1;
+    const std::string designed = rankedDefaultMap(ladder);   // (the map the ladder is designed for, when it's ranked for it)
+    for (size_t i = 0; i < mapInfo_.size() && i < maps_.size(); i++)
+        if (maps_[i] == designed && (mapInfo_[i].ranked >> ladder & 1)) return (int)i;
     for (size_t i = 0; i < mapInfo_.size(); i++) {
         if (!(mapInfo_[i].ranked >> ladder & 1)) continue;
         if (mapInfo_[i].ranked == (1u << ladder)) return (int)i;
@@ -3822,12 +3828,13 @@ void Game::scoreText(ScoreText& t, bool sample) const {
     const PlayerSnap* mep = net_.findPlayer(me);
     const int myTeam = mep ? (mep->team() == TEAM_SPECTATOR ? TEAM_A : mep->team()) : TEAM_A;
     char b[160];
-    if (ms.flags & MS_TIMETRIAL) t.title = "TIME TRIAL - VIADUCT";
+    if (ms.flags & MS_TIMETRIAL) t.title = "TIME TRIAL - " + upper(net_.map().title.empty() ? net_.map().name : net_.map().title);
     else if (ms.flags & MS_RANKED) { snprintf(b, sizeof b, "%s - %s", rankedKind(ms.arenaVariant), arenaVariant(ms.arenaVariant).title); t.title = b; }
     else if (ms.mode == MODE_ARENA || (ms.mode == MODE_TOURNEY && ms.phase != PHASE_WARMUP) || (ms.mode == MODE_FFA && ms.arenaVariant != 0)) {   // (free for all: a ruleset other than vanilla)
         snprintf(b, sizeof b, "%s - %s", modeTitle(ms.mode), arenaVariant(ms.arenaVariant).title); t.title = b;
     } else t.title = modeTitle(ms.mode);
     b[0] = 0;
+    if (ms.phase != PHASE_LIVE) raceRunRound_ = -1;   // (the race stopwatch restarts when the next round goes live)
     switch (ms.phase) {
         case PHASE_WARMUP: {
             if (ms.timeLeft > 0) { snprintf(b, sizeof b, "MATCH STARTS IN %d", (int)std::ceil(ms.timeLeft)); break; }
@@ -3842,7 +3849,8 @@ void Game::scoreText(ScoreText& t, bool sample) const {
             break;
         case PHASE_LIVE: {   // the round clock in every timed mode (hudclock.h)
             char line[32];
-            hudLiveLine(ms, line, sizeof line);
+            if (ms.round != raceRunRound_) { raceRunRound_ = ms.round; raceRunStart_ = timeNow(); }
+            hudLiveLine(ms, line, sizeof line, isRaceMode(ms.mode) ? (float)(timeNow() - raceRunStart_) : -1.0f);
             // (GAMEPLAY > MORE 3: the plain round clock as TIME PLAYED, and / or with tenths in its last 10 s)
             const bool plain = ms.timeLeft > 0 && !(ms.flags & (MS_OVERTIME | MS_TIMETRIAL)) && ms.mode != MODE_KOTH && ms.mode != MODE_VS &&
                                ms.mode != MODE_DUEL && ms.mode != MODE_ARENA && ms.mode != MODE_TOURNEY && !(ms.mode == MODE_BOMB && ms.bombState == BOMB_PLANTED);
@@ -5413,8 +5421,8 @@ void Game::onRaceSplit(int cp, int ms) {
     if ((int)raceSplits_.size() != cp - 1) { raceSplits_.clear(); audio_.play(cp == (int)net_.map().raceCheckpoints.size() ? SND_FINISH : SND_CHECKPOINT, 0.9f); return; } // missed one: this run doesn't count
     raceSplits_.push_back(ms);
     const std::string map = net_.map().name;
-    // a time trial run counts (and is compared) only on the shipped Viaduct, unchanged (the server says so too)
-    bool trial = (net_.mode().flags & MS_TIMETRIAL) != 0 && map == "viaduct" && isOfficialMap(net_.map());
+    // a time trial run counts (and is compared) only on a ranked race map, shipped and unchanged (the server says so too)
+    bool trial = (net_.mode().flags & MS_TIMETRIAL) != 0 && rankedRaceMap(map) && isOfficialMap(net_.map());
     const RaceRun* best = bestRun(map, trial);
     int total = (int)net_.map().raceCheckpoints.size();
     audio_.play(cp == total ? SND_FINISH : SND_CHECKPOINT, 0.9f);
@@ -5484,6 +5492,7 @@ void Game::onRaceSplit(int cp, int ms) {
     ghostRunStart_ = -1;
     if (trial && pb) { // the game server posts every run itself (the Worker keeps only your best); refresh the board after
         rank_.fetchRaceBoard(map, 3);
+        rank_.fetchRaceTotal(3);
         notify("NEW PERSONAL BEST " + fmtRace(ms) + " - THE SERVER SENDS IT TO THE LEADERBOARD", 5);
     } else if (pb) notify("NEW PERSONAL BEST " + fmtRace(ms), 5);
     if (pb && cfg_.announcer >= 1) announce(SND_VOICE_HIGH_SCORE);
@@ -5541,20 +5550,26 @@ void Game::updateGhost() {
     r_.translucentBox({p - Vec3(0.3f, 0, 0.3f), p + Vec3(0.3f, kPlayerHeight, 0.3f)}, {0.6f, 0.85f, 1.0f, 0.3f});
 }
 
-void Game::startTimeTrial() {
+void Game::startTimeTrial(const std::string& map) {
+    const auto& rm = rankedRaceMaps();
+    if (rm.empty()) return;   // (no ranked race map in this build)
+    timeTrialMap_ = std::min(std::max(timeTrialMap_, 0), (int)rm.size() - 1);
+    timeTrialMapName_ = rankedRaceMap(map) ? map : rm[timeTrialMap_].name;
     timeTrialStart_ = true;
     startHost(true);
 }
 
-// MY VIADUCT RUNS (leaderboard > MY RACE STATS): your own race history from race_times.log - best, recent runs,
+// MY <MAP> RUNS (leaderboard > MY RACE STATS): your own race history from race_times.log - best, recent runs,
 // average, the best possible from your best splits - in the leaderboard's 960 x 522 panel; BACK (to the board) and
 // PLAY TIME TRIAL in its footer
 void Game::drawRaceStats(const SetLayout& L) {
     if (!raceRunsLoaded_) loadRaceRuns();
     ui_.panel(L.X(160), L.Y(166), L.L(960), L.L(522), 0.85f);
-    // (1.19.4: any map you've raced, picked in the footer; Viaduct first)
-    std::vector<std::string> raced = {"viaduct"};
+    // (1.19.4: any map you've raced, picked in the footer; the ranked race maps first)
+    std::vector<std::string> raced;
+    for (auto& r : rankedRaceMaps()) raced.push_back(r.name);
     for (auto& r : raceRuns_) if (std::find(raced.begin(), raced.end(), r.map) == raced.end()) raced.push_back(r.map);
+    if (raced.empty()) { ui_.labelCentered(L.X(640), L.Y(222), "NO RACE MAPS", kGrey, 1.0f, L.L(928)); return; }
     raceStatsMap_ = std::min(std::max(raceStatsMap_, 0), (int)raced.size() - 1);
     const std::string& rmap = raced[raceStatsMap_];
     ui_.labelCentered(L.X(640), L.Y(182), "MY " + upper(rmap) + " RUNS", kWhite, 1.5f, L.L(928));
@@ -5568,7 +5583,12 @@ void Game::drawRaceStats(const SetLayout& L) {
     const float y = 222, rowH = 18, hs = ui_.hintScale();
     std::vector<const RaceRun*> runs;
     for (auto& r : raceRuns_) if (r.map == rmap) runs.push_back(&r);
-    if (runs.empty()) { ui_.labelCentered(L.X(640), L.Y(y), "NO RUNS YET - FINISH " + upper(rmap) + " IN A TIME TRIAL OR A RACE", kGrey, 1.0f, L.L(928)); return; }
+    const RaceMapInfo* ranked = rankedRaceMap(rmap);
+    if (runs.empty()) {
+        ui_.labelCentered(L.X(640), L.Y(y), "NO RUNS YET - FINISH " + upper(rmap) + " IN A TIME TRIAL OR A RACE", kGrey, 1.0f, L.L(928));
+        if (ranked) ui_.labelCentered(L.X(640), L.Y(y + 24), "ON THE RACE TOTAL IT COUNTS AT ITS DEFAULT, " + fmtRace(ranked->defaultMs), kGrey, 1.0f, L.L(928));
+        return;
+    }
     int total = 0;
     for (auto* r : runs) total = std::max(total, (int)r->splits.size());
     const RaceRun* best = nullptr;
@@ -5599,7 +5619,12 @@ void Game::drawRaceStats(const SetLayout& L) {
     row(yy, "BEST POSSIBLE (SEGMENTS)", fmtRace((int)possible), ui_.accent); yy += rowH;
     row(yy, "AVERAGE", fmtRace((int)(sum / runs.size()))); yy += rowH;
     row(yy, "AVERAGE, LAST " + std::to_string(recentN), fmtRace((int)(recent / recentN))); yy += rowH;
-    row(yy, "LAST RUN", fmtRace(runs.back()->ms)); yy += rowH * 2;
+    row(yy, "LAST RUN", fmtRace(runs.back()->ms)); yy += rowH;
+    if (ranked) {   // what this map adds to the race total: your best time trial, or the map's default without one
+        const RaceRun* tt = bestRun(rmap, true);
+        row(yy, tt ? "ON THE RACE TOTAL (BEST TIME TRIAL)" : "ON THE RACE TOTAL (DEFAULT: NO TIME TRIAL)", fmtRace(tt ? tt->ms : ranked->defaultMs));
+    }
+    yy += rowH * 2;
     // best run's splits vs your best segment at each checkpoint (as many as fit above the footer)
     const float c1 = lx, c2 = lx + 120, c3 = lx + 230;
     ui_.hint(L.X(c1), L.Y(yy), "CHECKPOINT", kGrey, L.L(110));
@@ -5636,19 +5661,22 @@ void Game::drawRaceStats(const SetLayout& L) {
     }
 }
 
-// RANKED LEADERBOARD: a column per ladder (and the Viaduct time trial) - its name bar, then its top 15 (rows of 20)
-// and your own rating under them; BACK, MY RACE STATS and PLAY TIME TRIAL in the panel's footer
+// RANKED LEADERBOARD: a column per ladder (and the race total) - its name bar, then its top 15 (rows of 20) and your
+// own rating under them; BACK, TRIAL MAP, MY RACE STATS and PLAY TIME TRIAL in the panel's footer. The race total is
+// each racer's best time trial on every ranked race map summed, a map they haven't run counting at its default.
 void Game::drawLeaderboard(const SetLayout& L) {
     static const int ladders[3] = {0, 1, 5};
     const float fy = L.Y(632), fw = L.L(176), fh = L.L(40);
     if (raceStatsView_) {
         drawRaceStats(L);
         if (ui_.button(L.X(176), fy, fw, fh, "BACK", UiExp::nav("leaderboard"))) raceStatsView_ = false;
-        if (ui_.button(L.X(928), fy, fw, fh, "PLAY TIME TRIAL", UiExp::state("hosting", "1"))) startTimeTrial();
+        const auto& rm = rankedRaceMaps();   // (the stats page's RACE MAP lists the ranked race maps first)
+        if (ui_.button(L.X(928), fy, fw, fh, "PLAY TIME TRIAL", UiExp::state("hosting", "1")))
+            startTimeTrial(raceStatsMap_ >= 0 && raceStatsMap_ < (int)rm.size() ? rm[raceStatsMap_].name : std::string());
         return;
     }
     if (time_ >= nextBoardFetch_) {
-        rank_.fetchRaceBoard("viaduct");
+        rank_.fetchRaceTotal();
         for (int v : ladders) rank_.fetchLeaderboard(arenaVariant(v).name);
         if (!rankKey_.id.empty()) for (int v : ladders) rank_.fetch(arenaVariant(v).name, {rankKey_.id});
         nextBoardFetch_ = time_ + 30;
@@ -5658,7 +5686,8 @@ void Game::drawLeaderboard(const SetLayout& L) {
     ui_.panel(L.X(160), L.Y(166), L.L(960), L.L(522), 0.85f);
     ui_.labelCentered(L.X(640), L.Y(182), "RANKED LEADERBOARD", kWhite, 1.5f, L.L(928));
     // a column: its name bar; rows: "1. NAME" and the number right-aligned (names cut to fit: they're data)
-    auto column = [&](int c, const char* title, Color bar, std::vector<RankService::LeaderRow>* rows, bool loaded, bool race) {
+    auto column = [&](int c, const char* title, Color bar, std::vector<RankService::LeaderRow>* rows, bool loaded, bool race, int top = -1) {
+        if (top < 0) top = kTop;
         const float x = 176 + c * 236, w = L.L(colW);
         r_.rect(L.X(x), L.Y(222), w, L.L(32), bar);
         ui_.labelCentered(L.X(x + colW * 0.5f), L.Y(230), title, kWhite, 1.0f, L.L(colW - 8));
@@ -5666,7 +5695,7 @@ void Game::drawLeaderboard(const SetLayout& L) {
         if (!loaded) { ui_.hintWrapped(sx, L.Y(262), "LOADING...", kGrey, sw, L.L(14)); return; }
         if (!rows->empty() && (*rows)[0].rating < 0) { ui_.hintWrapped(sx, L.Y(262), upper((*rows)[0].name), kGrey, sw, L.L(14)); return; }
         if (rows->empty()) ui_.hintWrapped(sx, L.Y(262), race ? "NO TIMES YET" : "NOBODY RANKED YET (3 GAMES)", kGrey, sw, L.L(14));
-        for (size_t i = 0; i < rows->size() && i < (size_t)kTop; i++) {
+        for (size_t i = 0; i < rows->size() && i < (size_t)top; i++) {
             const RankService::LeaderRow& lr = (*rows)[i];
             std::string v = race ? fmtRace(lr.rating) : std::to_string(lr.rating);
             const float vw = r_.textWidth(v, ts), ry = L.Y(262 + rowH * i);
@@ -5687,12 +5716,38 @@ void Game::drawLeaderboard(const SetLayout& L) {
         if (ok && !(!rows.empty() && rows[0].rating < 0) && rank_.rating(ladder, rankKey_.id, mine))   // (not under an error line)
             ui_.label(L.X(180 + c * 236), L.Y(youY), "YOU: " + std::to_string(mine.display()) + (mine.games < kPlacementGames ? "? " : " ") + "(" + std::to_string(mine.games) + " GAMES)", ui_.accent, 1.0f, L.L(colW - 8));
     }
-    {   // race: fastest Viaduct time trials
+    {   // race: the race total (every ranked race map's best time trial summed; unplayed maps at their default)
+        const auto& rm = rankedRaceMaps();
         rows.clear();
-        bool ok = rank_.raceBoard("viaduct", rows);
-        column(3, "VIADUCT TIME TRIAL", {1.0f * 0.45f, 0.78f * 0.45f, 0.25f * 0.45f, 0.95f}, &rows, ok, true);
+        bool ok = rank_.raceTotal(rows);
+        const int raceTop = 10;   // (fewer rows than the ladders: your time on each map and the rule go under them)
+        column(3, "RACE TOTAL", {1.0f * 0.45f, 0.78f * 0.45f, 0.25f * 0.45f, 0.95f}, &rows, ok, true, raceTop);
+        const float raceYouY = 262 + rowH * raceTop + 8;
         if (!raceRunsLoaded_) loadRaceRuns();
-        if (const RaceRun* b = bestRun("viaduct", true)) ui_.label(L.X(180 + 3 * 236), L.Y(youY), "YOU: " + fmtRace(b->ms), ui_.accent, 1.0f, L.L(colW - 8));
+        std::map<std::string, int> mine;
+        for (auto& r : rm) if (const RaceRun* b = bestRun(r.name, true)) mine[r.name] = b->ms;
+        int played = 0;
+        const long long total = raceTotalMs(mine, &played);
+        ui_.label(L.X(180 + 3 * 236), L.Y(raceYouY), played > 0 ? "YOU: " + fmtRace((int)std::min<long long>(total, INT32_MAX)) + " (" + std::to_string(played) + "/" + std::to_string(rm.size()) + " MAPS)"
+                                                                 : "YOU: NO TIME TRIALS YET", ui_.accent, 1.0f, L.L(colW - 8));
+        // your time on each map (or its default, grey), then the rule
+        float ly = raceYouY + 22;
+        for (size_t k = 0; k < rm.size() && ly + 14 <= 614; k++, ly += 15) {
+            auto it = mine.find(rm[k].name);
+            const std::string v = fmtRace(it != mine.end() ? it->second : rm[k].defaultMs);
+            const float vw = r_.textWidth(v, ui_.hintScale());
+            ui_.hint(L.X(180 + 3 * 236), L.Y(ly), upper(rm[k].title), kGrey, L.L(colW - 8) - vw - L.L(8));
+            ui_.hint(L.X(180 + 3 * 236) + L.L(colW - 8) - vw, L.Y(ly), v, it != mine.end() ? kWhite : kGrey, vw + 1);
+        }
+        if (ly + 14 <= 614) ui_.hintWrapped(L.X(180 + 3 * 236), L.Y(ly + 4), "UNPLAYED MAPS COUNT AT THEIR DEFAULT TIME", kGrey, L.L(colW - 8), L.L(13));
+    }
+    {   // TRIAL MAP: which ranked race map PLAY TIME TRIAL starts
+        const auto& rm = rankedRaceMaps();
+        std::vector<std::string> tn;
+        for (auto& r : rm) tn.push_back(upper(r.name));   // (the map name: the title doesn't fit between the arrows)
+        if (tn.empty()) tn.push_back("NO RACE MAPS");
+        timeTrialMap_ = std::min(std::max(timeTrialMap_, 0), (int)tn.size() - 1);
+        ui_.cycle(L.X(560), fy, fw, fh, "TRIAL MAP", timeTrialMap_, (int)tn.size(), tn, (tn.size() < 2 ? UiExp::inert() : UiExp::local()).clipOk());
     }
     if (ui_.button(L.X(176), fy, fw, fh, "BACK", UiExp::nav("main"))) setScreen(Screen::Main);
     if (ui_.button(L.X(744), fy, fw, fh, "MY RACE STATS", UiExp::nav("leaderboard/race-stats"))) raceStatsView_ = true;
@@ -6537,6 +6592,13 @@ void Game::drawGameplaySettings(const SetLayout& L) {
         ui_.toggle(L.X(kColL + kColW - kHalfW), f.top(), hw, h, "MUZZLE FLASH", cfg_.muzzleFlash, UiExp::cfg("muzzle_flash"));
         f.next();
     }
+    f.section("MAPS");
+    if (ui_.toggle(f.x(), f.top(), w, h, "LEGACY MAPS", cfg_.legacyMaps, UiExp::cfg("legacy_maps"))) {
+        setLegacyMapsListed(cfg_.legacyMaps);
+        rescanMaps();
+    }
+    f.next();
+    f.hint("THE OLD MAPS (BEFORE 1.19.6) IN THE MAP LISTS. NEVER RANKED");
     // (NETWORK, the smoothing delay, is on VIDEO + AUDIO page 7 with the other network settings: this column ran into
     // the footer, 2026-10-30)
 
@@ -8351,7 +8413,7 @@ void Game::drawPlayerMore(const SetLayout& L) {
     if (ch) applyMenuTheme();
     f.section("MENU BACKGROUND");
     {
-        static const std::vector<std::string> bn = {"BACKGROUND: CLOCKWORK", "BACKGROUND: A MAP I PICK", "BACKGROUND: PLAIN COLOR"};
+        static const std::vector<std::string> bn = {"BACKGROUND: CASTLE", "BACKGROUND: A MAP I PICK", "BACKGROUND: PLAIN COLOR"};
         bool reload = ui_.cycle(f.x(), f.top(), w, h, "MENU BACKGROUND", cfg_.menuBg, 3, bn, UiExp::cfg("menu_bg"));
         f.next();
         std::vector<std::string> mn;
@@ -9039,7 +9101,7 @@ void Game::debugMenuPage() {
     if (p == "main/save-copy") {
         setScreen(Screen::Main);
         edPrompt_ = true; edPromptOfficial_ = true; edPromptThen_ = ED_THEN_NONE;
-        edPromptMap_ = Map(); edPromptMap_.name = "harbor"; edPromptName_ = "harbor_copy";
+        edPromptMap_ = Map(); edPromptMap_.name = "sewer"; edPromptName_ = "sewer_copy";
     } else if (p == "join") setScreen(Screen::Join);
     else if (under("host")) { setScreen(Screen::Host); hostAdvanced_ = p == "host/advanced"; pickerOf(true); }
     else if (under("vsbots")) { setScreen(Screen::VsBots); pickerOf(false); }
@@ -9672,14 +9734,14 @@ static const char* const kInfoPages[][48] = {
         "TOURNEY - a single-elimination bracket of 1v1s; everyone else spectates the match in progress.",
         "# EVERYONE FOR THEMSELVES",
         "FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next kill wins).",
-        "RACE - the course's checkpoints in order. It starts as untimed practice; vote start (F4) to race. TIME TRIAL (main menu) is the ranked race on Viaduct.",
+        "RACE - the course's checkpoints in order. It starts as untimed practice; vote start (F4) to race. TIME TRIAL (main menu, or PLAY TIME TRIAL on the leaderboard) is the ranked race on each race map; the leaderboard's RACE TOTAL adds your best on every one, a map you haven't run counting at its default time.",
         "HIDE AND SEEK - one seeker with a knife, everyone else hides first. Everyone seeks once: 1 point for each hider you find, 1 for staying hidden to the end of a round. A tie for first is settled by rock paper scissors (keys 1 / 2 / 3).",
         "TAG - whoever is the TAGGER when the timer runs out is eliminated. Last one standing wins.",
         "LOCATOR (hide and seek and tag: the seeker's / tagger's second weapon, key 0) - fire it to see one random hider / runner through walls for a second; it recharges in 5 s. Everyone else hears its ping from where you stand.",
         "# CUSTOM MODES",
         "Host Game > CUSTOM MODE > NEW: any base mode with your own health, gravity, speed, jump, knockback, weapons (fire rate, damage, projectile speed) and map pool. Players who join get the rules automatically.",
         "# MAPS AND MODES",
-        "Each map is built for one mode, plus free for all; Lodestone is built for every mode. You can still start any map in any mode: the menus warn when it isn't built for it (it may be missing spawns or objectives).",
+        "Each map is built for one mode, plus free for all and any others it lists. You can still start any map in any mode: the menus warn when it isn't built for it (it may be missing spawns or objectives).",
     },
     {   // CONTROLS
         "# DEFAULT KEYS (Settings > CONTROLS to change any of them, two keys per action)",
@@ -9750,12 +9812,13 @@ static const char* const kInfoPages[][48] = {
     },
     {   // MAPS
         "# THE MAPS AND WHAT THEY'RE BUILT FOR",
-        "LODESTONE - a working mine, two storeys deep: built for multi point and for every other mode.",
-        "MIDTOWN - a city centre with offices you can climb through to the roofs, an elevated railway and a park: multi point.",
-        "BASTION / ORBITAL - team vs.   DEPOT - bomb.   SUMMIT / DOWNTOWN - king of the hill.",
-        "RAILYARD - payload.   CANAL - neutral payload.   HARBOR - free for all.",
-        "CLOCKWORK - duel.   COLOSSEUM - tourney.   FOUNDRY - tag.   HAMLET - hide and seek.   VIADUCT - race (and the ranked time trial).",
-        "TEMPLE, FURNACE, GANTRY, ANVIL - ranked (vanilla 1v1, laser vampire 1v1, instagib free for all with a 5 minute limit, all three).",
+        "QK1 - QK8 - ranked arenas for all three ladders (vanilla and laser vampire 1v1, instagib free for all), also duel and tourney.",
+        "GREENHOUSE - ranked vanilla 1v1.   DOJO - ranked laser vampire 1v1.   SPIRE - ranked instagib free for all (5 minutes).   ORBIT - 1v1, duel.",
+        "LIGHTHOUSE / TERRACES - team vs.   REACTORS / BRIDGE - power.   DATACENTER / MINE - bomb.   CASTLE / GLACIER / AMPHITHEATRE - king of the hill.",
+        "RAILYARD / DAM / EXPRESS / MONORAIL - neutral payload (Railyard: payload too).   WAR / CONVOY - multi point.",
+        "SEWER - free for all.   RIVERSIDE / FAIRGROUND / ROOFTOPS - tag.   MUSEUM / CRUISESHIP - hide and seek.",
+        "ACCELERATOR / JUNGLE / ROOFTOPRUN - race (and the ranked time trials).   SURFY - surf.   COBBLESTONE - q's own.",
+        "LEGACY MAPS (settings > GAMEPLAY) lists the old maps from before 1.19.6 too. They are never ranked.",
         "# YOUR OWN MAPS",
         "Anything in the maps folder shows up in the lists. Servers send their map to players who don't have it.",
     },

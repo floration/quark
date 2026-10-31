@@ -261,7 +261,7 @@ player; race `<player> wins the race` / `nobody finished`; no winner: `round dra
 | points | `pointStep()` -> bool | capture | captureTime 12, captureDecay 0.05 | points |
 | race | `raceStep()`, `racePractice()` | checkpoint, finish | | race |
 | drain | `stalemateDrain()` | | stalemate 30, drainRate 5 | vs, duel, 1v1, tourney |
-| it | `pickSeeker()`, `pickRandomIt()`, `tagOut(p)`, `passIt(from, to)` | | hideTime 30, tagFreeze 2 | hide, tag |
+| it | `pickSeeker()`, `pickRandomIt()`, `tagOut(p)`, `passIt(from, to)` | | hideTime 5, tagFreeze 2 | hide, tag |
 | tiebreak | `startTiebreak()` -> bool | | rpsPickTime 6, rpsRevealTime 3 | hide |
 | bracket | `tourneyBegin()` -> bool, `tourneyWalkover()` -> bool, `tourneyAdvance(t)` | | | tourney |
 | duelmods | `pickDuelModifier()` | | | duel |

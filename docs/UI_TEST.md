@@ -81,7 +81,7 @@ click-to-watch-next, the editor's 3D view (click to select), the selection's dra
 
 | scenario | starts at | what's different there |
 |---|---|---|
-| `host-ffa` | hosting free for all (temple, bots) | every in-game screen: pause menu (host controls), votes, queues, live map / mode pickers, all settings pages in game, HUD widget editor, chat, console, hotkeys |
+| `host-ffa` | hosting free for all (qk1, bots) | every in-game screen: pause menu (host controls), votes, queues, live map / mode pickers, all settings pages in game, HUD widget editor, chat, console, hotkeys |
 | `host-vs` | hosting team vs | JOIN TEAM A / B |
 | `host-tourney` | hosting tourney | warmup votes: tourney maps / rulesets (multi-select pickers) |
 | `host-ranked` | hosting ranked 1v1 | no map editing, LADDER / RANKED OFF votes, no bots |

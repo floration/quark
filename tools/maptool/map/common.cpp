@@ -100,6 +100,7 @@ Json mapToJson(const Map& m) {
     j.set("killY", m.killY());
     j.set("indoor", m.indoor ? Json(m.ceilingY) : Json());
     j.set("holdfire", m.holdFire);
+    j.set("racedefault", m.raceDefault);   // (map format 13: a race map's default time, s; 0 = none)
     Json br = Json::array(), gen = Json::array();
     for (auto& b : m.brushes) {
         Json o = Json::object();
@@ -199,6 +200,7 @@ bool mapFromJson(const Json& j, Map& m, std::string& err) {
     if (j["void"].isNum()) { m.hasVoid = true; m.voidY = j["void"].f(); }
     if (j["indoor"].isNum()) { m.indoor = true; m.ceilingY = j["indoor"].f(); }
     m.holdFire = j["holdfire"].f(0);
+    m.raceDefault = j["racedefault"].f(0);
     // a brush's or a group part's shape, dir and up (absent: a box)
     auto readShape = [&](const Json& b, Brush& br, const char* what) {
         const std::string shape = b["shape"].str("box");

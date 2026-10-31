@@ -1073,7 +1073,7 @@ void raceStep(Server& s) {
             p.checkpoint++;
             GameEvent e; // the split: race time at this checkpoint, to the ms (time trials log these)
             e.type = EV_RACE_SPLIT; e.a = (uint8_t)i; e.b = (uint8_t)p.checkpoint;
-            long long ms = std::lround((s.liveLength_ - (s.phaseEnd_ - s.time())) * 1000.0);
+            long long ms = std::lround((s.time() - s.roundStart_) * 1000.0);   // (from the round going live: there may be no clock)
             e.text = std::to_string(ms);
             s.broadcastEvent(e);
             if (p.checkpoint == 1) p.raceSplits.clear();
@@ -1093,7 +1093,7 @@ void raceStep(Server& s) {
 void tickRace(Server& s) {
     raceStep(s);
     if (s.ms_.phase != PHASE_LIVE) return;
-    if (s.time() >= s.phaseEnd_) endRound(s, -1, "time");
+    if (s.phaseEnd_ > 0 && s.time() >= s.phaseEnd_) endRound(s, -1, "time");   // (only when a host or mod set a clock)
 }
 
 // Race practice (warmup): run the course, checkpoints in order (a fall puts you back at the last one), no clock,

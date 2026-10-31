@@ -21,6 +21,12 @@ race_times.log
 /maps/*.qmap
 /maps/*.qmap.bak
 /maps/*.tmp
+/maps/legacy/
 !/maps/cobblestone.qmap
 !/maps/surfy.qmap
+!/maps/accelerator.qmap
+!/maps/amphitheatre.qmap
+!/maps/museum.qmap
+!/maps/reactors.qmap
+!/maps/riverside.qmap
 __pycache__/

@@ -221,6 +221,7 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     if (cfg_.maxPlayers > kMaxPlayers) cfg_.maxPlayers = kMaxPlayers;
     // ranked and time trials (their runs reach the leaderboard) play by the standard rules: no custom numbers, no logic
     if (cfg_.ranked || cfg_.timeTrial) cfg_.custom = CustomRules();
+    if (cfg_.timeTrial) rankedRaceMaps();   // (read the ranked race maps now, not on the first tick's snapshot)
     if (cfg_.custom.active()) { // a custom mode: its mode, limits and map pool
         const CustomRules& c = cfg_.custom;
         cfg_.mode = c.baseMode;
@@ -268,6 +269,18 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     nav_.buildAsync(map_);   // bot navigation, built off the tick thread
     if (cfg_.editMode && !map_.supportsMode(cfg_.mode)) // an edit session runs whatever the map can't play yet
         cfg_.mode = map_.supportsMode(MODE_FFA) ? MODE_FFA : cfg_.mode;
+    if (cfg_.ranked && !isRankedMap(map_, cfg_.arenaVariant) && isLegacyMap(cfg_.map)) {
+        // a ranked server set up for an old ranked map (temple, furnace, gantry, anvil: legacy since 1.19.6, never
+        // ranked): it plays the map its ladder is designed for instead of refusing to start after the update
+        Map d;
+        const std::string designed = rankedDefaultMap(cfg_.arenaVariant);
+        if (!designed.empty() && d.load(designed) && isRankedMap(d, cfg_.arenaVariant)) {
+            log(cfg_.map + " is a legacy map (never ranked): ranked plays " + designed + " instead");
+            cfg_.map = designed;
+            map_ = d;
+            nav_.buildAsync(map_);
+        }
+    }
     if (cfg_.ranked && !isRankedMap(map_, cfg_.arenaVariant)) { if (err) *err = "ranked only runs on the ranked maps for its ladder"; return false; }
     if (cfg_.ranked) cfg_.editMode = false;
     // any map runs any mode (one not built for it may be missing what the mode needs: the host was warned)
@@ -3662,8 +3675,8 @@ void Server::sendSnapshots() {
     ModeState ms = ms_;
     if (editing_) ms.flags |= MS_EDITING | (tempEdit_ ? MS_TEMP_EDIT : 0);
     if (cfg_.ranked) ms.flags |= MS_RANKED;
-    // a time trial counts for the race board only on the shipped Viaduct, unchanged
-    if (cfg_.timeTrial && cfg_.map == "viaduct" && isOfficialMap(map_)) ms.flags |= MS_TIMETRIAL;
+    // a time trial counts for the race boards only on a ranked race map, shipped and unchanged
+    if (timeTrialCounts()) ms.flags |= MS_TIMETRIAL;
     const uint16_t snapRate = (uint16_t)(tickRate() / snapEvery());
     std::vector<PlayerSnap>& all = snapPlayers_;
     all.clear();
@@ -4558,7 +4571,11 @@ void Server::maybeSendRankedTicket(bool giveUp) {
     glog(LOG_SIMPLE, "ranked ticket %s players %s", rankedMatch_.c_str(), players.c_str());
 }
 
-bool Server::timeTrialCounts() const { return cfg_.timeTrial && cfg_.map == "viaduct" && isOfficialMap(map_); }
+bool Server::timeTrialCounts() const {   // (a ranked race / surf map, in its own mode: surf's rules are part of its time)
+    if (!cfg_.timeTrial) return false;
+    const RaceMapInfo* r = rankedRaceMap(cfg_.map);
+    return r && ms_.mode == r->mode && isOfficialMap(map_);
+}
 
 // A time trial's race ticket: the racer's game signs its id (EV_RANKSIGN -> "ticketsig", as for a ranked match),
 // then sendRaceTicket opens it on the Worker with the racer's key and signature.
@@ -4699,9 +4716,12 @@ void Server::setRanked(bool on, int ladder) {
     std::string mapName = cfg_.map;
     auto fits = [&](const MapInfo& mi) { return mi.ok && (mi.ranked >> ladder & 1) && (mi.supports >> rankedMode(ladder) & 1); };
     if (!fits(mapInfo(mapName))) {
-        // the ladder's own map first (built for just that ruleset), else any ranked map that takes it
+        // the map the ladder is designed for, else its own map (built for just that ruleset), else any that takes it
         mapName.clear();
+        const std::string designed = rankedDefaultMap(ladder);
+        if (!designed.empty() && std::find(mapList_.begin(), mapList_.end(), designed) != mapList_.end() && fits(mapInfo(designed))) mapName = designed;
         for (auto& n : mapList_) {   // (the list cached at start / saveas: no folder scan on the tick)
+            if (!designed.empty() && mapName == designed) break;
             MapInfo c = mapInfo(n);
             if (!fits(c)) continue;
             bool own = c.ranked == (1u << ladder);

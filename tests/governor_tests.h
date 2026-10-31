@@ -318,7 +318,7 @@ static void testRankedNotRated(uint16_t port) {
     for (int ch : {GOV_PROD, GOV_TESTING}) {
         Server s;
         ServerConfig cfg;
-        cfg.map = "temple"; cfg.port = (uint16_t)(port + ch); cfg.ranked = true; cfg.arenaVariant = 0; cfg.channel = ch;
+        cfg.map = "qk1"; cfg.port = (uint16_t)(port + ch); cfg.ranked = true; cfg.arenaVariant = 0; cfg.channel = ch;
         s.setLog([](const std::string&) {});
         if (!s.start(cfg)) { g_fail++; continue; }
         CHECK(s.rated() == (ch == GOV_PROD));

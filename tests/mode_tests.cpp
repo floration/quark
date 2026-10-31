@@ -1021,12 +1021,13 @@ void testLogicServers() {
     {   // ranked: the custom mode and its logic are dropped (a preset one too)
         Server s;
         ServerConfig cfg;
-        cfg.map = "temple"; cfg.port = 0; cfg.lanOnly = true; cfg.ranked = true; cfg.arenaVariant = 0;
+        cfg.map = "qk1"; cfg.port = 0; cfg.lanOnly = true; cfg.ranked = true; cfg.arenaVariant = 0;
         cfg.custom = custom("custommode=r\nmode=1v1\nlogic 1\nslot kill:\n  pass\n");
         s.presetModeLogic(compileModeLogic("logic 1\nbase arena\nslot kill:\n  pass\n", MODE_ARENA));
         s.setLog([](const std::string&) {});
         std::string err;
         MCHECK(s.start(cfg, &err));
+        if (!err.empty()) printf("  start: %s\n", err.c_str());
         MCHECK(s.modeLogic() == nullptr && s.modeHooks_ == nullptr && !s.cfg_.custom.active() && s.modeLabel().empty() && s.mp_ == &builtinModeParams(MODE_ARENA));
         s.stop();
     }

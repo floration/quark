@@ -69,7 +69,7 @@ struct LaunchOptions {
     bool camSet = false;         // --cam: fixed backdrop camera (map analysis shots); in a match, the view's camera
     Vec3 camPos;
     float camYaw = 0, camPitch = 0;
-    bool timeTrial = false;      // --timetrial: start a Viaduct time trial
+    bool timeTrial = false;      // --timetrial: start a time trial (on --map if that is a ranked race map, else the first)
     bool debugRaceStats = false; // --racestats: the leaderboard's race stats page    // --models: every player model lined up in front of you  // --widgets: open the HUD widget editor in game
     bool debugSettings = false; // --settings: open the settings screen in game
     bool debugControls = false; // --controls
@@ -365,7 +365,7 @@ private:
     int infoScroll_ = 0;                    // the info page's first line shown (mouse wheel: 3 lines a notch)
     int demoScroll_ = 0, joinScroll_ = 0;   // first row shown in the demo list / server list (mouse wheel)
     std::vector<std::string> maps_;
-    struct MapInfo { std::string title; int preferredMode = -1; uint32_t modes = 0; uint16_t ranked = 0; std::vector<uint8_t> preview; }; // ranked: ladders it's a ranked map for // modes: bit per supported mode // preview: the picker's image (kPreviewW x kPreviewH RGBA, rows bottom-up)
+    struct MapInfo { std::string title; bool legacy = false; int preferredMode = -1; uint32_t modes = 0; uint16_t ranked = 0; std::vector<uint8_t> preview; }; // ranked: ladders it's a ranked map for // modes: bit per supported mode // preview: the picker's image (kPreviewW x kPreviewH RGBA, rows bottom-up)
     static constexpr int kPreviewW = 192, kPreviewH = 108;
     int pickScroll_ = 0;        // the map picker's first row shown (the wheel)
     std::string previewSig_;    // (the maps the renderer's previews are of: names, file times and sizes)
@@ -612,7 +612,8 @@ private:
     std::string filterChat(std::string t) const;
     bool sysLineShown(const std::string& t) const;
     mutable int clockRound_ = -1;
-    mutable float clockLen_ = 0;   // (TIME PLAYED: the longest time left seen this round = its length)
+    mutable float clockLen_ = 0;
+    mutable int raceRunRound_ = -1; mutable double raceRunStart_ = 0;   // race: when this round went live here (its run stopwatch)   // (TIME PLAYED: the longest time left seen this round = its length)
     std::string shownName(int id) const;   // (STREAMER MODE: other players as "PLAYER <n>")
     bool hitHead_ = false;   // (the last hit a headshot: the crosshair flashes HEADSHOT's colour)
     double centerUntil_ = 0, hitUntil_ = 0, damageUntil_ = 0, recoil_ = 0, localNextFire_ = 0;
@@ -1083,10 +1084,12 @@ private:
     Color splitColor_ = {1, 1, 1, 1};
     double splitUntil_ = 0;
     int raceStatsMap_ = 0;   // MY RACE STATS: which raced map
+    int timeTrialMap_ = 0;   // the leaderboard's TRIAL MAP: which ranked race map (rankedRaceMaps) PLAY TIME TRIAL starts
+    std::string timeTrialMapName_;   // (set by startTimeTrial for startHost)
     void loadRaceRuns();
     const RaceRun* bestRun(const std::string& map, bool trial) const;
     void onRaceSplit(int checkpoint, int ms);
-    void startTimeTrial();
+    void startTimeTrial(const std::string& map = std::string());   // (empty: the TRIAL MAP)
     void drawRaceStats(const SetLayout& L);
     // profiles: per-mode rules swap the HUD layout / controls while that mode is running
     Binds modeBinds_;
