@@ -436,3 +436,23 @@ Worker 2's share of the 1-scored items, in the same batch-3 key table (`b3Keys`)
 
 ## Servers: a new install plays unranked laser vampire on Dojo (owner, 2026-10-31: "default server position should be dojo ranked lg vamp for future updates", then "actually unranked")
 - `tools/server/install.sh` with no server options on a first install now runs `--mode 1v1 --variant vampire --map dojo --public` (it was `--public`: FFA on the default map). Re-running it still keeps an installed server's options.
+
+## Solar System: q's own stage designs (owner, 2026-10-31: "so i can design the maps, you just build them")
+- q laid out each of the 15 stages (Sun to Pluto) as a list of pieces in the Solar Stage Builder. Claude drew each one top-down, and q approved it before it was built. `tools/maps/solar.py` builds exactly those lists, in the approved layout.
+- Surf conventions (q):
+  - Every ramp has its own gap before the next, and an air piece is just an extra-big one.
+  - Ramps run about 3 s and flights about 2.2 s at the speed reached there.
+  - Left/right/top/bottom walls are kill walls standing in the flight, death floor to ceiling, covering 2/3 of the lane so you strafe to the open third.
+  - A speed check is a solid full-width wall, its top 1.2 m under an 85%-speed flight. Its height is an estimate for q to tune in the editor.
+  - Turnback legs are split by a wall you ride round.
+- Geometry:
+  - Gaps are ballistic flights at g=24, placed for a run at 85% of the ride's speed.
+  - The next ramp starts as steep as the flight falls there (at most about 50°), so you land along the face.
+  - Faces are 56-62°, 20 m wide (10 m for narrow ramps and split lanes).
+  - Curves are pieces of at most 3 m and 5°.
+  - Walls stand 24 m each side of the line. Lower sections passing under higher ones get a kill-liquid roof.
+  - Jupiter's helix has a centre column, so you can't drop through and skip the spiral.
+  - Each stage ends on a platform with a framed gate; Pluto's is the finish room.
+- Some flights are very long (Mars 218 m, Asteroids 292 m, Io 252 m), so later ledges sit high (Pluto's at 1309 m) and speeds reach about 110-130 m/s. That's for q to tune.
+- Back in MAPS, and on the ranked race total (RACE_MAPS, `racefloors`) with `racedefault 600` as a placeholder until q sets the time. About 18,300 brushes.
+
