@@ -462,3 +462,6 @@ Worker 2's share of the 1-scored items, in the same batch-3 key table (`b3Keys`)
 - The game also ignores an alt-fire held over a switch until it's let go, so the laser shoots normally rather than as a pull. Toggle-scope already dropped it on a switch.
 - A knife thrown with right click, landing back on the sniper with the button still held: the sniper is scoped and isn't locked (it was locked before). Tests: testSemiAuto (scope held rifle -> laser, then fire: fires) and weaponpredict.
 
+## Syringe: half the healing (owner, 2026-10-31: "half syringe healing")
+- Self-use 10 -> 5 HP (the SYRINGE row's damage, which is its heal), still once per 1 s cooldown. The thrown heal on a teammate is 30 -> 15 HP (kSyringeHeal). The throw's cooldown resets are unchanged. A custom mode's syringe damage scale still multiplies both. testSyringe and the throw-reset test have the new numbers; the release checklist says 5 / 15.
+

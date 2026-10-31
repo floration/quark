@@ -367,7 +367,7 @@ inline const WeaponDef& baseWeaponDef(int w) {
         {"STICKY",      0.75f,   29.75f,  0,    true,  22.0f, 3.4f,  0.0f,  -1,     0,    false, 1,  15.0f, true, 30}, // 4, 2.25 s
         {"CROSSBOW",    2.0f,    50,      0,    true,  76.5f, 0,     0.0f,  0.0f, 70.0f,  false, 1,  6.0f, false, 3},  // 3, 4.0 s body; 2, 2.0 s with a headshot (75: kCrossbowHeadDamage)
         {"BUBBLE",      1.0f/6,  10,      0,    true,  15.6f, 1.8f,  0.04f, -1,     0,    false, 1, -1.5f, false, 4}, // 10 pops, 1.5 s (floats up a little; 6 a second: owner, 2026-10-28, was 5)
-        {"SYRINGE",     1.0f,    10,      0,    false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // heals you 10 hp a use, 1 s cooldown (damage = heal; owner 1.17)
+        {"SYRINGE",     1.0f,     5,      0,    false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // heals you 5 hp a use, 1 s cooldown (damage = heal; owner 1.17; halved from 10, owner 2026-10-31)
         {"LOCATOR",     kLocatorCooldown, 0, 0, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // no damage: shows a hider / runner (hide and seek / tag only)
     };
     return defs[w < 0 || w >= WPN_COUNT ? 0 : w];
@@ -430,10 +430,10 @@ constexpr float kRocketLobSpeed = 0.7f, kRocketLobGravity = 13.5f; // rocket alt
 constexpr float kKnifeThrowSpeed = 38.0f, kKnifeThrowGravity = 14.0f, kKnifeThrowLife = 2.0f;
 constexpr float kKnifeGrow = 0.04f;    // a swing hits boxes 10% wider (0.04 m each side of 0.8)
 constexpr float kKnifeSwingTime = 0.12f; // ...and keeps cutting this long after the click if it hasn't hit yet
-// Syringe: fire heals you (10 hp a use, its 1 s cooldown); alt-fire throws it: a teammate it hits gets 30 hp at once
+// Syringe: fire heals you (5 hp a use, its 1 s cooldown); alt-fire throws it: a teammate it hits gets 15 hp at once
 // and every cooldown reset (weapon, dash, grapple, a thrown knife / syringe being away).
 constexpr float kSyringeThrowSpeed = 30.0f, kSyringeThrowGravity = 9.0f, kSyringeThrowLife = 2.0f;
-constexpr float kSyringeHeal = 30.0f;
+constexpr float kSyringeHeal = 15.0f;   // (halved from 30 with the 10 -> 5 self-heal: owner, 2026-10-31 "half syringe healing")
 // Throws (owner 1.17): no special or shared throw cooldown. A throw is a normal shot of that weapon: its own cooldown
 // (knife: the 0.75 s swing; syringe: 1 s), during which no weapon can be used, and then the thrown weapon is
 // disabled (away) this long from the throw: you switch to another weapon; it can't be drawn or used until it's back.

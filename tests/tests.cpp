@@ -3878,7 +3878,7 @@ static void testWallbang() {
     CHECK(bang < 0 && std::fabs(t - 4) < 0.01f);
 }
 
-// Syringe: each use heals you 10 hp, with a 1 s cooldown (owner 1.17); a thrown one heals the teammate it hits by 30
+// Syringe: each use heals you 5 hp, with a 1 s cooldown (owner 1.17; halved 2026-10-31); a thrown one heals the teammate it hits by 15
 // and resets their cooldowns; it does nothing to an enemy.
 // A spawn with an open 5 m lane in front of it (-z) and floor at its end: where the syringe tests throw (spawns no
 // longer keep teammates apart, T16, so whichever one b got may face a wall)
@@ -3915,12 +3915,12 @@ static void testSyringe(uint16_t port) {
     double first = pa.lastFire;
     printf("  one use: %.0f hp (from 50), next in %.2f s\n", pa.health, pa.nextFire - first);
     // (the cooldown runs from the use's command on the command clock, F22: the server clock or up to 0.1 s behind it)
-    CHECK(pa.health == 60 && pa.nextFire - 1.0 <= first + 0.002 && pa.nextFire - 1.0 >= first - 0.102);
+    CHECK(pa.health == 55 && pa.nextFire - 1.0 <= first + 0.002 && pa.nextFire - 1.0 >= first - 0.102);
     while (s.time() < first + 0.9) pump(s, cls, 0.01, heal);   // held: nothing more until the 1 s cooldown is over
-    CHECK(pa.health == 60);
+    CHECK(pa.health == 55);
     while (s.time() < first + 1.2) pump(s, cls, 0.01, heal);
     printf("  held 1.2 s: %.0f hp\n", pa.health);
-    CHECK(pa.health == 70);
+    CHECK(pa.health == 60);
     // b throws at a, 5 m in front of it (yaw 0 looks down -z)
     pa.health = 40; pa.move.dashCharges = 0; pa.nextFire = s.time() + 5;
     pa.move.dashCooldownMs = 30000; pa.move.dashRecharging = 2; pa.move.dashRechargeMs[0] = pa.move.dashRechargeMs[1] = 30000;   // (nothing comes back on its own)
@@ -3931,7 +3931,7 @@ static void testSyringe(uint16_t port) {
     pump(s, cls, 0.5, [&](int i) { UserCmd c; c.weapon = WPN_SYRINGE; if (i == 1) { c.yaw = 0; c.pitch = -0.05f; if (tick++ < 30) c.buttons = BTN_ALTFIRE; } if (i == 0) place(); return c; });
     printf("  thrown: %.0f hp (from 40), dash charges %d (%d recharging, cooldown %d ms)\n", pa.health, (int)pa.move.dashCharges,
            (int)pa.move.dashRecharging, (int)pa.move.dashCooldownMs);
-    CHECK(pa.health >= 69 && pa.health <= 72);
+    CHECK(pa.health >= 54 && pa.health <= 57);
     CHECK(pa.move.dashCharges == 2 && pa.move.dashRecharging == 0 && pa.move.dashCooldownMs == 0 && pa.nextFire <= s.time());
     s.stop();
 }

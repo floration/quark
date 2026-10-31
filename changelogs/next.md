@@ -151,3 +151,4 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 - **Servers:** a new server starts as unranked laser vampire 1v1 on Dojo.
 - **Solar System** (surf): 15 stages, Sun to Pluto, each one built from q's own design. It's on the ranked race total (10 min until you've run it).
 - **Weapon switch:** holding the scope (right click) while switching from the rifle to the laser no longer stops the laser shooting until you let go.
+- **Syringe:** heals half as much: 5 HP a use (was 10), and a throw gives a teammate 15 HP (was 30).
