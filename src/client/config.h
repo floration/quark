@@ -39,6 +39,9 @@ struct Settings {
     int winX = -100000, winY = -100000;   // the window's last position when windowed (-100000: never moved; 100 px in)
     int bgFps = 60;             // VIDEO > MORE: the frame cap while the window isn't focused or is minimized (0 = FPS LIMIT as usual)
     bool bgMute = false;        // ...and the sound muted then
+    bool bgDraw = false;        // ...frames still drawn then (at the cap); off (default): no frames drawn at all, the game,
+                                // network and a hosted server running as normal (owner, 2026-10-31: "you shouldnt pause the
+                                // server when hosting if you alt tab it should only pause the frame generation")
     bool shadows = true;
     int model = 0;              // player model (cosmetic): STANDARD, HEAVY, SIMPLE, ROBOT, KNIGHT, WIZARD, ZOMBIE, FIGHTER, PIRATE, NINJA, BANDIT
     int soundPack = 0;          // DEFAULT, HEAVY METAL, MAGICAL, RETRO, WOODEN
@@ -115,6 +118,12 @@ struct Settings {
     bool dither = false;           // ...a tiny noise before the 8-bit output: no banding in the sky and fog
     bool out10 = false;            // ...a 10-bit window where the driver gives one (at the next start)
     bool cleanSurfaces = false;    // ...the palette's walls and floors without panel seams or shade noise
+    // ...PATTERN FADE (owner, 2026-10-31: "if you are far away from a patterned surface it should fade, like how lava
+    // does"): a surface look whose pixels span more than fadeDist x 0.18 m each fades to its average colour over
+    // fadeLen times that (lava's own veins' numbers at 1 / 2); distance, angle and resolution alike
+    bool patternFade = true;
+    float fadeDist = 1.0f;         // 0.25..4: how far away the fade starts (x lava's)
+    float fadeLen = 2.0f;          // 1.25..8: the fade's end as a multiple of its start
     bool flatLight = false;        // ...no baked light: every face at full sun and sky (no shadows, no bounce)
     bool simpleSky = false;        // ...the sky one flat colour (no sun glow, no stars)
     bool farScenery = true;        // ...the distant backdrop (far scenery) drawn

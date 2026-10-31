@@ -199,9 +199,11 @@ public:
         int pcf = 1;            // the shadow edge: 0 hard, 1 soft, 2 softer
         float emit = 0.3f;      // models' own light share
         float outlineA = 1.0f;  // players' outline opacity
+        float fadeAt = 0.18f;   // PATTERN FADE: metres a pixel where a look starts fading to its average (0: never)
+        float fadeLen = 2.0f;   // ...where it's all average, as a multiple of fadeAt
         bool operator==(const Look& o) const {
             return tone == o.tone && dither == o.dither && clean == o.clean && flatLight == o.flatLight && simpleSky == o.simpleSky &&
-                   pcf == o.pcf && emit == o.emit && outlineA == o.outlineA;
+                   pcf == o.pcf && emit == o.emit && outlineA == o.outlineA && fadeAt == o.fadeAt && fadeLen == o.fadeLen;
         }
     };
     void setLook(const Look& l);

@@ -2250,6 +2250,12 @@ void Game::frame(double dt) {
     }
 
     // ---- render ----
+    if (drawPaused() && screen_ != Screen::Editor) {   // (alt-tabbed: no frame; the game above and a hosted server run on)
+        uiIn_.pressed = uiIn_.rpressed = false;
+        uiIn_.chars.clear();
+        uiIn_.backspace = uiIn_.enter = uiIn_.tab = uiIn_.escape = uiIn_.copy = false;
+        return;
+    }
     if (screen_ == Screen::Editor) {
         if (!edScript_.empty()) edScriptStep();
         editorFrame(dt);
@@ -7368,6 +7374,16 @@ void Game::drawMoreSettings(const SetLayout& L) {
                 if (ui_.cycle(x2, f.top(), hw, h, "DRAW DISTANCE", di, 3, dn, UiExp::cfg("draw_dist"))) cfg_.drawDist = dd[di];
             }
             f.next();
+            {   // PATTERN FADE (owner, 2026-10-31): far / grazing patterns fade to their average, like lava's veins
+                const Settings d = defaultSettings();
+                ui_.toggle(f.x(), f.top(), hw, h, "PATTERN FADE", cfg_.patternFade, UiExp::cfg("pattern_fade"));
+                ui_.slider(x2, f.top(), hw, h, "FADE DISTANCE", cfg_.fadeDist, 0.25f, 4.0f, "%.2fx", UiExp::cfg("fade_dist"), d.fadeDist);
+                cfg_.fadeDist = clampf(cfg_.fadeDist, 0.25f, 4.0f);
+                f.next();
+                ui_.slider(f.x(), f.top(), hw, h, "FADE LENGTH", cfg_.fadeLen, 1.25f, 8.0f, "%.2fx", UiExp::cfg("fade_len"), d.fadeLen);
+                cfg_.fadeLen = clampf(cfg_.fadeLen, 1.25f, 8.0f);
+                f.next();
+            }
             f.hint("TONE CURVE OFF: FLAT, LINEAR COLOUR; CLEAN: NO", "PANEL SEAMS; FLAT: NO BAKED LIGHT OR SHADOW");
         }
         g.header("EFFECTS");
@@ -7998,6 +8014,9 @@ void Game::drawMoreSettings(const SetLayout& L) {
         cfg_.bgFps = std::min(std::max(0, (int)std::lround(v)), 1000);
         g.next();
         g.hint("ALT-TABBED OR MINIMIZED: LESS POWER AND HEAT");
+        ui_.toggle(g.x(), g.top(), w, h, "DRAW IN BACKGROUND", cfg_.bgDraw, UiExp::cfg("bg_draw"));
+        g.next();
+        g.hint("OFF: NO FRAMES WHILE ALT-TABBED (THE GAME AND A", "HOSTED SERVER KEEP RUNNING); ON: DRAWN AT THE LIMIT");
         if (ui_.toggle(g.x(), g.top(), w, h, "MUTE IN BACKGROUND", cfg_.bgMute, UiExp::cfg("bg_mute"))) applyBackground();
         g.next();
     }
@@ -9891,7 +9910,7 @@ float Game::masterGain() const {
 // (the shader uniforms only when the look changed, the occlusion test only when it's turned on or off).
 void Game::applyLive() {
     Renderer::Look lk;
-    lk.tone = cfg_.toneCurve; lk.dither = cfg_.dither; lk.clean = cfg_.cleanSurfaces; lk.flatLight = cfg_.flatLight;
+    lk.tone = cfg_.toneCurve; lk.dither = cfg_.dither; lk.clean = cfg_.cleanSurfaces; lk.fadeAt = cfg_.patternFade ? 0.18f * cfg_.fadeDist : 0.0f; lk.fadeLen = cfg_.fadeLen; lk.flatLight = cfg_.flatLight;
     lk.simpleSky = cfg_.simpleSky; lk.pcf = cfg_.shadowFilter; lk.emit = cfg_.playerEmit; lk.outlineA = cfg_.outlineAlpha;
     r_.setLook(lk);
     r_.farScenery = cfg_.farScenery; r_.farPlane = (float)cfg_.drawDist; r_.shadowRange = (float)cfg_.shadowDist;

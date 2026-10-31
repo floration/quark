@@ -126,6 +126,7 @@ uniform float uNoTone;   // VIDEO > MORE 2: TONE CURVE off (1): a straight clamp
 uniform float uClean;    // ...CLEAN SURFACES (1): the palette's faces without panel seams or shade noise, every other
                          // look its average (uCleanTex; owner, 2026-10-31: "should apply to the custom surfaces too")
 uniform sampler2D uCleanTex;   // per material (x): row 0 its look's average albedo + alpha on a top, row 1 on a side, row 2 its glow
+uniform float uFadeAt, uFadeLen;   // PATTERN FADE: metres a pixel where looks start fading to their average (0: off), the end's multiple
 uniform int uMeanPass;   // Renderer::buildCleanMeans: 1 writes the look's albedo + alpha, 2 its glow (0: draw)
 uniform float uFlatLight;   // ...FLAT LIGHTING (1): no lightmap, full sun and sky everywhere
 uniform float uFull;     // fullbright: flat white, black outlines, no light or fog
@@ -145,7 +146,7 @@ float vnoise(vec2 p) {
 // Anti-aliased: noise finer than about 2 pixels on screen fades to its average (0.5), so a long strip seen from one end
 // (each pixel spanning metres of it) is a calm surface instead of shimmer (owner, 2026-10-28: lava "gets fucky because
 // of the angle"). The footprint is the longer of the pixel's two sides in noise cells: angle and distance alike.
-float noiseFade(float cells) { return 1.0 - smoothstep(0.25, 0.5, cells); }
+float noiseFade(float cells) { float a = 0.25 * (uFadeAt > 0.0 ? uFadeAt / 0.18 : 1.0); return 1.0 - smoothstep(a, a * (uFadeAt > 0.0 ? uFadeLen : 2.0), cells); }   // (PATTERN FADE scales it)
 float footprint(vec2 p) { vec2 w = fwidth(p); return max(w.x, w.y); }
 float vnoiseAA(vec2 p) { return mix(0.5, vnoise(p), noiseFade(footprint(p))); }
 float fbm(vec2 p) {
@@ -280,7 +281,12 @@ void main() {
     // @LARGE@: Renderer::compileWorld puts the large patterns here (kLarge: their material's look, the plane scaled)
     float spec = 0.0, gloss = 32.0;   // a highlight from the sun (metals, ice, plastic)
     vec3 emit = vec3(0.0);            // glowing parts (crystal edges, circuit traces), added after the light
-    if (uClean > 0.5 && mat >= 12 && uMeanPass == 0) {   // CLEAN SURFACES: the look's average, flat (and no look to run)
+    // PATTERN FADE (owner, 2026-10-31: "if you are far away from a patterned surface it should fade, like how lava does"):
+    // the pixel's footprint on the face in metres (distance, angle and resolution alike); past uFadeAt the look blends
+    // to its average (uCleanTex, as CLEAN SURFACES), all average at uFadeAt x uFadeLen, where the look isn't run at all
+    float fadeT = 0.0, fpq = footprint(q);   // (derivatives outside any branch)
+    if (uFadeAt > 0.0 && mat >= 12 && uMeanPass == 0) fadeT = smoothstep(uFadeAt, uFadeAt * uFadeLen, fpq);
+    if ((uClean > 0.5 || fadeT > 0.999) && mat >= 12 && uMeanPass == 0) {   // CLEAN SURFACES / faded: the look's average, flat (and no look to run)
         vec4 a = texelFetch(uCleanTex, ivec2(mat, an.y > 0.5 ? 0 : 1), 0);
         albedo = a.rgb; alpha = a.a; emit = texelFetch(uCleanTex, ivec2(mat, 2), 0).rgb;
     } else if (mat < 12) {
@@ -403,6 +409,10 @@ void main() {
         spec = 0.55; gloss = 40.0;
     }
     if (uMeanPass > 0) { fragColor = uMeanPass == 1 ? vec4(albedo, alpha) : vec4(emit, 1.0); return; }
+    if (fadeT > 0.0 && fadeT <= 0.999 && uClean < 0.5) {   // PATTERN FADE: part way to the average
+        vec4 a = texelFetch(uCleanTex, ivec2(mat, an.y > 0.5 ? 0 : 1), 0);
+        albedo = mix(albedo, a.rgb, fadeT); alpha = mix(alpha, a.a, fadeT); emit = mix(emit, texelFetch(uCleanTex, ivec2(mat, 2), 0).rgb, fadeT);
+    }
     if (mat == 0 && vN.y > 0.5) albedo = mix(albedo, uFloorL, 0.55); // floors / tops: darker, cooler than walls
     if (an.y < 0.5 && uClean < 0.5) albedo *= mix(0.72, 1.0, smoothstep(0.0, 0.6, fract(vPos.y + 1000.0) + step(1.0, vPos.y)));   // (clean: one colour a face)
     float sun = lm.r * shadowAt(vShadow);
@@ -1707,7 +1717,7 @@ void Renderer::prepareScene(bool shadows) {
     glUniform1f(uWorld_.outlineW, worldOutline);
     glUniform1f(uWorld_.time, liquidFlow ? (float)std::fmod(timeNow(), 3600.0) : 0.0f);   // (MORE 2: LIQUIDS STILL: time stands)
     setVec3(uWorld_.sunDir, sunDir_);
-    if (look_.clean) buildCleanMeans({(float)worldProg_, baseColor.x, baseColor.y, baseColor.z, accentColor.x, accentColor.y, accentColor.z,
+    if (look_.clean || look_.fadeAt > 0.0f) buildCleanMeans({(float)worldProg_, baseColor.x, baseColor.y, baseColor.z, accentColor.x, accentColor.y, accentColor.z,
                                       metalColor.x, metalColor.y, metalColor.z, glowColor.x, glowColor.y, glowColor.z, highContrast ? 1.0f : 0.0f});
     glUseProgram(skyProg_);
     setVec3(uSky_.sky, skyColor); setVec3(uSky_.sunDir, sunDir_);
@@ -2569,6 +2579,8 @@ void Renderer::lookUniforms(unsigned prog) {
     glUniform1f(U(prog, "uNoTone"), look_.tone ? 0.0f : 1.0f);
     glUniform1f(U(prog, "uDither"), look_.dither ? 1.0f : 0.0f);
     glUniform1f(U(prog, "uClean"), look_.clean ? 1.0f : 0.0f);
+    glUniform1f(U(prog, "uFadeAt"), look_.fadeAt);
+    glUniform1f(U(prog, "uFadeLen"), look_.fadeLen);
     glUniform1f(U(prog, "uFlatLight"), look_.flatLight ? 1.0f : 0.0f);
     glUniform1f(U(prog, "uSimple"), look_.simpleSky ? 1.0f : 0.0f);
     glUniform1i(U(prog, "uPcf"), look_.pcf == 0 ? 1 : look_.pcf == 2 ? 2 : 0);

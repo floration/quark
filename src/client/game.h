@@ -112,9 +112,13 @@ public:
     int maxFps() const {   // (VIDEO > MORE: WHEN UNFOCUSED caps it while the window is in the background or minimized)
         int cap = cfg_.maxFps;
         if (cfg_.vrr && vrrHz_ > 3) cap = cap > 0 ? std::min(cap, vrrHz_ - 3) : vrrHz_ - 3;   // (VRR: under the refresh, never at it)
+        if (drawPaused()) return cfg_.bgFps > 0 ? cfg_.bgFps : 60;   // (nothing drawn: the loop only runs the game and network)
         if (bgCap_ && cfg_.bgFps > 0) return cap > 0 ? std::min(cap, cfg_.bgFps) : cfg_.bgFps;
         return cap;
     }
+    // alt-tabbed or minimized with BACKGROUND DRAWING off: no frame is drawn or swapped; everything else runs
+    // (never in automated runs: a headless window is never focused, and screenshots, benches and the UI test must draw)
+    bool drawPaused() const { return bgCap_ && !cfg_.bgDraw && opts_.screenshot.empty() && !opts_.benchmark && opts_.bench <= 0 && !opts_.menuShot && opts_.backdrop.empty(); }
 
     // GLFW callbacks
     void onChar(unsigned cp);
