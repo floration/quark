@@ -94,7 +94,7 @@ struct ServerConfig {
     std::vector<int> tourneyVariants;
     bool editMode = false;      // start as a map edit session (anyone connected can edit; the host autosaves)
     std::string restartFlag;    // if this file appears (an update was installed), restart once no match is being played
-    bool timeTrial = false;     // solo ranked race on Viaduct: no bots, checkpoint splits sent to the racer
+    bool timeTrial = false;     // solo ranked race on a ranked race map (rankedRaceMaps): no bots, checkpoint splits sent to the racer
     bool ranked = false;        // matches are rated (OpenSkill) once every player reports the same result; no bots
     // Release channel this server runs for (GOV_PROD / GOV_TESTING; -1: by the build, testing for a testing version).
     // A testing server (or any testing build) plays ranked normally but never sends anything to the ranking server.
@@ -579,7 +579,7 @@ public:
     // While a ranked match is live (ticket opened at the first round going live, until the match ends) nothing may
     // change it: no votes, no map / mode / ranked changes, no team switches, no kicking its players (OWNER 3.4).
     // Exactly the three rated ladders are locked (JUDGMENT_CALLS C15): 1v1 vanilla, 1v1 laser vampire and instagib free
-    // for all. The Viaduct time trial (best times only, no rating), tourneys and everything else never are.
+    // for all. The race time trial (best times only, no rating), tourneys and everything else never are.
     bool rankedLadderPlayed() const { return cfg_.ranked && arenaVariantRanked(cfg_.arenaVariant) && cfg_.mode == rankedMode(cfg_.arenaVariant) && !cfg_.timeTrial; }
     bool rankedLive() const { return rankedLadderPlayed() && !rankedMatch_.empty() && ms_.phase != PHASE_WARMUP && ms_.phase != PHASE_MATCH_END; }
     bool rankedTicketSent_ = false;   // the ticket went out (or was given up on): no more signatures needed

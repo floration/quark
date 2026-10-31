@@ -125,3 +125,9 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 
 ## Glass
 - **Sloped glass draws as its slope:** glass on a wedge, corner or cut box used to draw as its whole box (a glass dome looked like four slabs floating over the roof). It now draws, and breaks into shards, as its real shape. The same goes for see-through looks and breakable blocks on a slope.
+
+## Race leaderboard: one total over every race map
+- **The race board is now a total:** your best time trial on every race and surf map (Particle Accelerator, Jungle Ruins, Rooftop Run, Solar System, Surfy) added up, fastest first. A map you haven't run counts at its default time, so playing every map pays. Each map's own board is still there.
+- **Surf maps have time trials too**, played with surf's rules; their runs go to the boards like race runs.
+- **LEADERBOARD:** the RACE TOTAL column, your total and your time on each map under it, and TRIAL MAP to pick which map PLAY TIME TRIAL starts. MY RACE STATS shows what each map adds to your total.
+- Viaduct is no longer a ranked race map.

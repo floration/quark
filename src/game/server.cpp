@@ -221,6 +221,7 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     if (cfg_.maxPlayers > kMaxPlayers) cfg_.maxPlayers = kMaxPlayers;
     // ranked and time trials (their runs reach the leaderboard) play by the standard rules: no custom numbers, no logic
     if (cfg_.ranked || cfg_.timeTrial) cfg_.custom = CustomRules();
+    if (cfg_.timeTrial) rankedRaceMaps();   // (read the ranked race maps now, not on the first tick's snapshot)
     if (cfg_.custom.active()) { // a custom mode: its mode, limits and map pool
         const CustomRules& c = cfg_.custom;
         cfg_.mode = c.baseMode;
@@ -3673,8 +3674,8 @@ void Server::sendSnapshots() {
     ModeState ms = ms_;
     if (editing_) ms.flags |= MS_EDITING | (tempEdit_ ? MS_TEMP_EDIT : 0);
     if (cfg_.ranked) ms.flags |= MS_RANKED;
-    // a time trial counts for the race board only on the shipped Viaduct, unchanged
-    if (cfg_.timeTrial && cfg_.map == "viaduct" && isOfficialMap(map_)) ms.flags |= MS_TIMETRIAL;
+    // a time trial counts for the race boards only on a ranked race map, shipped and unchanged
+    if (timeTrialCounts()) ms.flags |= MS_TIMETRIAL;
     const uint16_t snapRate = (uint16_t)(tickRate() / snapEvery());
     std::vector<PlayerSnap>& all = snapPlayers_;
     all.clear();
@@ -4569,7 +4570,11 @@ void Server::maybeSendRankedTicket(bool giveUp) {
     glog(LOG_SIMPLE, "ranked ticket %s players %s", rankedMatch_.c_str(), players.c_str());
 }
 
-bool Server::timeTrialCounts() const { return cfg_.timeTrial && cfg_.map == "viaduct" && isOfficialMap(map_); }
+bool Server::timeTrialCounts() const {   // (a ranked race / surf map, in its own mode: surf's rules are part of its time)
+    if (!cfg_.timeTrial) return false;
+    const RaceMapInfo* r = rankedRaceMap(cfg_.map);
+    return r && ms_.mode == r->mode && isOfficialMap(map_);
+}
 
 // A time trial's race ticket: the racer's game signs its id (EV_RANKSIGN -> "ticketsig", as for a ranked match),
 // then sendRaceTicket opens it on the Worker with the racer's key and signature.

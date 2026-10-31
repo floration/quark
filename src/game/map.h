@@ -1456,7 +1456,7 @@ struct SpawnPoint {
 // the setting in comments; those are still read). A keyword this build doesn't know is skipped with a warning (in
 // Map::warnings), so an older build still loads a newer map; a known keyword with a bad value is an error.
 // 2: "version", "stairs", "setting", "handmade"; a second hill or an unknown spawn team is an error.
-constexpr int kMapFormatVersion = 12;   // 3: the nograpple material; 4: the acid material; 5: wedges and corners; 6: brick, cobblestone and glass never break (breakable ones are their own materials); 7: materials 139-471; 8: the liquids 472-496 and the large patterns 497-536; 9: the see-through looks 537-561; 10: the breakable blocks 562-585 and the feature blocks 586-595 (a teleporter's "tp <link> <face>"); 11: mode spawn sets ("spawn koth-a ..."); 12: a teleporter's speed ("tp <link> <face> walk": out at no more than the run speed)
+constexpr int kMapFormatVersion = 13;   // 3: the nograpple material; 4: the acid material; 5: wedges and corners; 6: brick, cobblestone and glass never break (breakable ones are their own materials); 7: materials 139-471; 8: the liquids 472-496 and the large patterns 497-536; 9: the see-through looks 537-561; 10: the breakable blocks 562-585 and the feature blocks 586-595 (a teleporter's "tp <link> <face>"); 11: mode spawn sets ("spawn koth-a ..."); 12: a teleporter's speed ("tp <link> <face> walk": out at no more than the run speed); 13: a race map's default time ("racedefault <s>")
 
 struct Map {
     std::string name;
@@ -1512,6 +1512,10 @@ struct Map {
     // "void <y>": falling below this height kills (pits, water, the drop off a bridge); default 20 m below the map
     bool hasVoid = false;
     float holdFire = 0;        // "holdfire <s>": nobody can fire for this long after a round goes live (the dojo's bow)
+    // "racedefault <s>": a race / surf map's default time: on the ranked race total (the sum over every official race
+    // and surf map: rankedRaceMaps, ranked.h) a player with no run on this map counts this; 0 = none (the total then
+    // counts kRaceFallbackDefaultS).
+    float raceDefault = 0;
     bool indoor = false;   // "indoor <y>": a roof over everything at y (cameras that orbit the map stay below it)
     float ceilingY = 0;
     float voidY = 0;

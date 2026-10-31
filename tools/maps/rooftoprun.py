@@ -38,6 +38,7 @@ def build():
     m = M("Rooftop Run", "race", sun=(0.35, 0.55, -0.4))
     m.no_ffa = True
     m.raw("setting night city rooftops")
+    m.raw("racedefault 180")   # the ranked race total counts this for anyone with no run here: PLACEHOLDER (3x a good run, about 60 s) until q sets it
     m.raw("palette base 0.2 0.21 0.26 accent 0.62 0.24 0.5 metal 0.12 0.12 0.16 glow 1.0 0.62 0.3 sky 0.035 0.04 0.085")
     m.raw(f"void {num(VOID)}")
     k = Kit(m)
