@@ -140,4 +140,6 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 
 ## Hide and seek
 - **The hiders' head start is 5 seconds** (was 30).
-- **Race and surf have no time limit:** a round runs until someone finishes, and the HUD counts your run time up.
+
+## Race and surf
+- **No time limit:** a round runs until someone finishes, and the HUD counts your run time up.
