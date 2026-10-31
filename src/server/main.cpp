@@ -141,6 +141,21 @@ int main(int argc, char** argv) {
     auto srv = std::make_unique<Server>();   // (~1 MB: on the heap, not half of the main thread's 2 MB MinGW stack)
     Server& server = *srv;
     std::string err;
+    if (!cfg.ranked && !legacyMapsListed() && isLegacyMap(cfg.map)) {
+        // set up for an old map (legacy since 1.19.6, not listed here): play the listed map built for the mode
+        // instead (else one that takes it), so players never land on a map they can't vote (owner, 2026-10-31)
+        std::string pick;
+        Map d;
+        for (const std::string& n : listMaps()) {
+            if (isLegacyMap(n) || !d.load(n) || !d.supportsMode(cfg.mode)) continue;
+            if (pick.empty()) pick = n;
+            if (d.preferredMode == cfg.mode) { pick = n; break; }
+        }
+        if (!pick.empty()) {
+            printf("%s is a legacy map (this server doesn't list the old maps): playing %s instead\n", cfg.map.c_str(), pick.c_str());
+            cfg.map = pick;
+        }
+    }
     if (!server.start(cfg, &err)) {
         printf("failed to start: %s\n", err.c_str());
         return 1;

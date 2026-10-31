@@ -199,9 +199,11 @@ public:
         int pcf = 1;            // the shadow edge: 0 hard, 1 soft, 2 softer
         float emit = 0.3f;      // models' own light share
         float outlineA = 1.0f;  // players' outline opacity
+        float fadeAt = 0.18f;   // PATTERN FADE: metres a pixel where a look starts fading to its average (0: never)
+        float fadeLen = 2.0f;   // ...where it's all average, as a multiple of fadeAt
         bool operator==(const Look& o) const {
             return tone == o.tone && dither == o.dither && clean == o.clean && flatLight == o.flatLight && simpleSky == o.simpleSky &&
-                   pcf == o.pcf && emit == o.emit && outlineA == o.outlineA;
+                   pcf == o.pcf && emit == o.emit && outlineA == o.outlineA && fadeAt == o.fadeAt && fadeLen == o.fadeLen;
         }
     };
     void setLook(const Look& l);
@@ -276,6 +278,9 @@ private:
     void initWorldUniforms();
     // the material swatches (swatch): their atlas, its framebuffer, a one-texel lightmap, the quads, the 2D program
     unsigned swatchProg_ = 0;   // (the world program with every look: compileWorld(nullptr))
+    unsigned cleanTex_ = 0, cleanVao_ = 0, cleanVbo_ = 0;   // CLEAN SURFACES' averages (buildCleanMeans), texture unit 5
+    std::vector<bool> cleanUsed_;   // the looks in the map (12 on, the large ones as their base)
+    std::vector<float> cleanKey_;   // what the averages were made with (program, palette); cleared: make them again
     unsigned swatchTex_ = 0, swatchFbo_ = 0, swatchLm_ = 0, swatchVao_ = 0, swatchVbo_ = 0, imgProg_ = 0, imgVao_ = 0, imgVbo_ = 0;
     GLint uImgScreen_ = -1;
     float swatchKey_[13] = {};
@@ -284,6 +289,7 @@ private:
     std::vector<unsigned> swatchSlotUsed_;            // (the frame each slot was last drawn)
     unsigned swatchFrame_ = 0;
     void buildSwatches();
+    void buildCleanMeans(const std::vector<float>& key);   // CLEAN SURFACES: each look's average (uCleanTex)
     std::vector<std::vector<uint8_t>> previewImgs_;   // (setPreviews': uploaded into previewTex_ when previewDirty_)
     int previewW_ = 0, previewH_ = 0, previewCols_ = 1, previewRows_ = 1;
     bool previewDirty_ = false;

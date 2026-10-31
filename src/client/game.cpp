@@ -1321,6 +1321,11 @@ UserCmd Game::buildCmd() {
         if ((wp_.desired >= 0 && wp_.desired != heldWeapon_) || !net_.selfAlive()) altToggled_ = false; // switching weapons / dying drops the scope
         alt = altToggled_;
     }
+    // a held alt-fire (the scope) doesn't carry over a weapon switch: ignored until it's let go, so the laser after a
+    // scoped rifle shoots normally, not a pull, and fire isn't locked (q, 2026-10-31)
+    if (!alt) altWeapon_ = -1;
+    else if (altWeapon_ < 0) altWeapon_ = heldWeapon_;   // (the weapon it was pressed with)
+    if (alt && (altWeapon_ != heldWeapon_ || (wp_.desired >= 0 && wp_.desired != heldWeapon_))) { alt = false; altWeapon_ = -2; }   // (-2: till let go)
     if (alt) c.buttons |= BTN_ALTFIRE;
     fireLatched_ = false;
     if (opts_.debugWeapon >= 1 && opts_.debugWeapon <= WPN_COUNT) c.weapon = (uint8_t)(opts_.debugWeapon - 1);
@@ -2060,7 +2065,7 @@ void Game::frame(double dt) {
                 wantFire = false;
             }
             if (localFireLocked_) { // mirror the server: after a knife throw or a switch, let go before the next weapon fires
-                if (!(c.buttons & (BTN_FIRE | BTN_ALTFIRE))) localFireLocked_ = false;
+                if (!(c.buttons & fireButtons(hw))) localFireLocked_ = false;
                 else wantFire = false;
             }
             if (switchLock || localFireLocked_ || hw != localTapWeapon_) localFireQueued_ = -1;
@@ -2245,6 +2250,12 @@ void Game::frame(double dt) {
     }
 
     // ---- render ----
+    if (drawPaused() && screen_ != Screen::Editor) {   // (alt-tabbed: no frame; the game above and a hosted server run on)
+        uiIn_.pressed = uiIn_.rpressed = false;
+        uiIn_.chars.clear();
+        uiIn_.backspace = uiIn_.enter = uiIn_.tab = uiIn_.escape = uiIn_.copy = false;
+        return;
+    }
     if (screen_ == Screen::Editor) {
         if (!edScript_.empty()) edScriptStep();
         editorFrame(dt);
@@ -7363,6 +7374,16 @@ void Game::drawMoreSettings(const SetLayout& L) {
                 if (ui_.cycle(x2, f.top(), hw, h, "DRAW DISTANCE", di, 3, dn, UiExp::cfg("draw_dist"))) cfg_.drawDist = dd[di];
             }
             f.next();
+            {   // PATTERN FADE (owner, 2026-10-31): far / grazing patterns fade to their average, like lava's veins
+                const Settings d = defaultSettings();
+                ui_.toggle(f.x(), f.top(), hw, h, "PATTERN FADE", cfg_.patternFade, UiExp::cfg("pattern_fade"));
+                ui_.slider(x2, f.top(), hw, h, "FADE DISTANCE", cfg_.fadeDist, 0.25f, 4.0f, "%.2fx", UiExp::cfg("fade_dist"), d.fadeDist);
+                cfg_.fadeDist = clampf(cfg_.fadeDist, 0.25f, 4.0f);
+                f.next();
+                ui_.slider(f.x(), f.top(), hw, h, "FADE LENGTH", cfg_.fadeLen, 1.25f, 8.0f, "%.2fx", UiExp::cfg("fade_len"), d.fadeLen);
+                cfg_.fadeLen = clampf(cfg_.fadeLen, 1.25f, 8.0f);
+                f.next();
+            }
             f.hint("TONE CURVE OFF: FLAT, LINEAR COLOUR; CLEAN: NO", "PANEL SEAMS; FLAT: NO BAKED LIGHT OR SHADOW");
         }
         g.header("EFFECTS");
@@ -7993,6 +8014,9 @@ void Game::drawMoreSettings(const SetLayout& L) {
         cfg_.bgFps = std::min(std::max(0, (int)std::lround(v)), 1000);
         g.next();
         g.hint("ALT-TABBED OR MINIMIZED: LESS POWER AND HEAT");
+        ui_.toggle(g.x(), g.top(), w, h, "DRAW IN BACKGROUND", cfg_.bgDraw, UiExp::cfg("bg_draw"));
+        g.next();
+        g.hint("OFF: NO FRAMES WHILE ALT-TABBED (THE GAME AND A", "HOSTED SERVER KEEP RUNNING); ON: DRAWN AT THE LIMIT");
         if (ui_.toggle(g.x(), g.top(), w, h, "MUTE IN BACKGROUND", cfg_.bgMute, UiExp::cfg("bg_mute"))) applyBackground();
         g.next();
     }
@@ -9817,7 +9841,7 @@ static const char* const kInfoPages[][48] = {
         "LIGHTHOUSE / TERRACES - team vs.   REACTORS / BRIDGE - power.   DATACENTER / MINE - bomb.   CASTLE / GLACIER / AMPHITHEATRE - king of the hill.",
         "RAILYARD / DAM / EXPRESS / MONORAIL - neutral payload (Railyard: payload too).   WAR / CONVOY - multi point.",
         "SEWER - free for all.   RIVERSIDE / FAIRGROUND / ROOFTOPS - tag.   MUSEUM / CRUISESHIP - hide and seek.",
-        "ACCELERATOR / JUNGLE / ROOFTOPRUN - race (and the ranked time trials).   SURFY - surf.   COBBLESTONE - q's own.",
+        "ACCELERATOR / JUNGLE / ROOFTOPRUN - race (and the ranked time trials).   SOLAR / SURFY - surf.   COBBLESTONE - q's own.",
         "LEGACY MAPS (settings > GAMEPLAY) lists the old maps from before 1.19.6 too. They are never ranked.",
         "# YOUR OWN MAPS",
         "Anything in the maps folder shows up in the lists. Servers send their map to players who don't have it.",
@@ -9886,7 +9910,7 @@ float Game::masterGain() const {
 // (the shader uniforms only when the look changed, the occlusion test only when it's turned on or off).
 void Game::applyLive() {
     Renderer::Look lk;
-    lk.tone = cfg_.toneCurve; lk.dither = cfg_.dither; lk.clean = cfg_.cleanSurfaces; lk.flatLight = cfg_.flatLight;
+    lk.tone = cfg_.toneCurve; lk.dither = cfg_.dither; lk.clean = cfg_.cleanSurfaces; lk.fadeAt = cfg_.patternFade ? 0.18f * cfg_.fadeDist : 0.0f; lk.fadeLen = cfg_.fadeLen; lk.flatLight = cfg_.flatLight;
     lk.simpleSky = cfg_.simpleSky; lk.pcf = cfg_.shadowFilter; lk.emit = cfg_.playerEmit; lk.outlineA = cfg_.outlineAlpha;
     r_.setLook(lk);
     r_.farScenery = cfg_.farScenery; r_.farPlane = (float)cfg_.drawDist; r_.shadowRange = (float)cfg_.shadowDist;

@@ -149,3 +149,13 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 - **Rocket splash damage works online again:** since 1.19.3 only a direct rocket hit did damage on a server; a rocket landing on the floor or a wall next to someone did nothing and showed no hit marker. Splash now hurts as it did before.
 - **Map votes:** the old (legacy) maps can't be voted unless the server turns them on.
 - **Servers:** a new server starts as unranked laser vampire 1v1 on Dojo.
+- **Solar System** (surf): 15 stages, Sun to Pluto, each one built from q's own design. It's on the ranked race total (10 min until you've run it).
+- **Weapon switch:** holding the scope (right click) while switching from the rifle to the laser no longer stops the laser shooting until you let go.
+- **Syringe:** heals half as much: 5 HP a use (was 10), and a throw gives a teammate 15 HP (was 30).
+- **Clean surfaces** now cleans every surface, not just the default ones: each custom surface shows as its own average colour, flat, and every face is one colour (no streaks, stripes or darkening near the floor; liquids too).
+- **Your maps folder:** the maps update's one-time cleanup no longer moves your own copies of generated maps into legacy/. It only moves old copies of the official maps.
+- **Map editor:** clicking a cut box, wedge, corner or tetra selects it where its faces are, not anywhere in its bounding box.
+- **Step-up on cut boxes:** a low cut box with an upright side at an angle is stepped onto like a normal box. A steep sloped face still blocks.
+- **Floating faces:** surfaces that drew detached from their objects sit on them again: Monorail's deck top floated about 70 cm above the deck, and a staircase flush with a thin wall or rail showed its outline on the wall's far side (Dam). It happened on most maps.
+- **Pattern fade** (VIDEO + AUDIO > MORE 2, LOOK): far away or at a grazing angle, a patterned surface fades smoothly to its average colour instead of shimmering, the way lava already did. On by default at lava's distance; FADE DISTANCE moves where it starts (0.25x to 4x) and FADE LENGTH how gradually it fades. Fully faded surfaces skip their pattern, so they draw a little faster too.
+- **Alt-tabbed:** the game stops drawing frames while it's in the background or minimized, and everything else keeps running: your connection, the match and a server you're hosting. DRAW IN BACKGROUND (VIDEO + AUDIO > MORE, WHEN UNFOCUSED) turns drawing back on at the background FPS limit.

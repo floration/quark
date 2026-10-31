@@ -3404,6 +3404,13 @@ static void testSemiAuto(uint16_t port) {
         pump(s, cls, 0.3, [](int) { UserCmd c; c.weapon = WPN_RIFLE; c.buttons = BTN_FIRE; return c; });
         CHECK(p.lastFire != last);   // a fresh press fires
     }
+    // ...but a scope held over a switch locks nothing: fire on the laser shoots while the scope is still held (q, 2026-10-31)
+    pump(s, cls, 0.6, [&](int) { UserCmd c; c.weapon = WPN_RIFLE; c.buttons = BTN_ALTFIRE; return c; });
+    pump(s, cls, 0.6, [&](int) { UserCmd c; c.weapon = WPN_LASER; c.buttons = BTN_ALTFIRE; return c; });
+    last = p.lastFire;
+    pump(s, cls, 0.3, [&](int) { UserCmd c; c.weapon = WPN_LASER; c.buttons = BTN_ALTFIRE | BTN_FIRE; return c; });
+    printf("  scope held over rifle -> laser, then fire: %s\n", p.lastFire != last ? "fired" : "locked");
+    CHECK(p.weapon == WPN_LASER && !p.fireLocked && p.lastFire != last);
     s.stop();
 }
 
@@ -3871,7 +3878,7 @@ static void testWallbang() {
     CHECK(bang < 0 && std::fabs(t - 4) < 0.01f);
 }
 
-// Syringe: each use heals you 10 hp, with a 1 s cooldown (owner 1.17); a thrown one heals the teammate it hits by 30
+// Syringe: each use heals you 5 hp, with a 1 s cooldown (owner 1.17; halved 2026-10-31); a thrown one heals the teammate it hits by 15
 // and resets their cooldowns; it does nothing to an enemy.
 // A spawn with an open 5 m lane in front of it (-z) and floor at its end: where the syringe tests throw (spawns no
 // longer keep teammates apart, T16, so whichever one b got may face a wall)
@@ -3908,12 +3915,12 @@ static void testSyringe(uint16_t port) {
     double first = pa.lastFire;
     printf("  one use: %.0f hp (from 50), next in %.2f s\n", pa.health, pa.nextFire - first);
     // (the cooldown runs from the use's command on the command clock, F22: the server clock or up to 0.1 s behind it)
-    CHECK(pa.health == 60 && pa.nextFire - 1.0 <= first + 0.002 && pa.nextFire - 1.0 >= first - 0.102);
+    CHECK(pa.health == 55 && pa.nextFire - 1.0 <= first + 0.002 && pa.nextFire - 1.0 >= first - 0.102);
     while (s.time() < first + 0.9) pump(s, cls, 0.01, heal);   // held: nothing more until the 1 s cooldown is over
-    CHECK(pa.health == 60);
+    CHECK(pa.health == 55);
     while (s.time() < first + 1.2) pump(s, cls, 0.01, heal);
     printf("  held 1.2 s: %.0f hp\n", pa.health);
-    CHECK(pa.health == 70);
+    CHECK(pa.health == 60);
     // b throws at a, 5 m in front of it (yaw 0 looks down -z)
     pa.health = 40; pa.move.dashCharges = 0; pa.nextFire = s.time() + 5;
     pa.move.dashCooldownMs = 30000; pa.move.dashRecharging = 2; pa.move.dashRechargeMs[0] = pa.move.dashRechargeMs[1] = 30000;   // (nothing comes back on its own)
@@ -3924,7 +3931,7 @@ static void testSyringe(uint16_t port) {
     pump(s, cls, 0.5, [&](int i) { UserCmd c; c.weapon = WPN_SYRINGE; if (i == 1) { c.yaw = 0; c.pitch = -0.05f; if (tick++ < 30) c.buttons = BTN_ALTFIRE; } if (i == 0) place(); return c; });
     printf("  thrown: %.0f hp (from 40), dash charges %d (%d recharging, cooldown %d ms)\n", pa.health, (int)pa.move.dashCharges,
            (int)pa.move.dashRecharging, (int)pa.move.dashCooldownMs);
-    CHECK(pa.health >= 69 && pa.health <= 72);
+    CHECK(pa.health >= 54 && pa.health <= 57);
     CHECK(pa.move.dashCharges == 2 && pa.move.dashRecharging == 0 && pa.move.dashCooldownMs == 0 && pa.nextFire <= s.time());
     s.stop();
 }
@@ -5004,6 +5011,26 @@ static void testSlopes() {
             pmove(ms, cmd, m);
         }
     };
+    {   // a low cut box's upright side at an angle in plan is stepped up like a box's (owner, 2026-10-31: "sometimes you
+        // cant stepup on cut boxes even though the height distance is still below 0.55"); a low steep slope still isn't
+        auto stepOnto = [&](const std::string& piece, Vec3 from, Vec3 to) {
+            Map t;
+            CHECK(t.parse(piece + base));
+            MoveState ms; ms.pos = from;
+            for (int k = 0; k < 20; k++) { UserCmd c; c.msec = 8; pmove(ms, c, t); }   // (settle on the floor)
+            for (int k = 0; k < 250; k++) {
+                Vec3 d = to - ms.pos;
+                UserCmd c; c.yaw = std::atan2(-d.x, -d.z); c.forward = 127; c.msec = 8;
+                pmove(ms, c, t);
+            }
+            return ms.pos.y;
+        };
+        // x 2-6, z -2..2, 0.4 m high, less the corner past fx + fz = 1 (an upright face facing +x+z), walked into from +x+z
+        const float up = stepOnto("cut 0 1 1 0 1 1 2 0 -2 6 0.4 2\n", {8, 0, 4}, {3, 0, -1});
+        const float steep = stepOnto("wedge 0 0 6 0 -2 6 0.4 2\n", {0, 0, 0}, {5, 0, 0});   // (a 0.4 m rise in 0.2 m: 63 degrees)
+        printf("  0.4 m cut box, upright side at 45 degrees in plan: at %.2f m; 0.4 m 63 degree slope: at %.2f m\n", up, steep);
+        CHECK(std::fabs(up - 0.4f) < 0.02f && steep < 0.05f);
+    }
     {   // tetra (owner, 2026-10-28: "1 0 0 0 / 1 1 1 0"): three base corners, the apex over one, one sloped face
         Map t;
         CHECK(t.parse("tetra 0 0 0 0 0 4 2 4\ntetra 0 2 10 0 10 12 6 12\n" + base) && t.warnings.empty());
@@ -5985,6 +6012,7 @@ static void testLegacyMaps() {
     CHECK(saveMapFile(maps + "/my_arena.qmap", "title Mine\nbox -20 -1 -20 20 0 20\nspawn any 0 0 0\n"));   // custom: stays
     CHECK(saveMapFile(maps + "/downloads/abc.qmap", g));                               // downloads: never touched
     CHECK(saveMapFile(maps + "/sub/canal.qmap", g));                                   // a subfolder: never touched
+    CHECK(saveMapFile(maps + "/solarsystem12.qmap", g));                               // a generated map under your own name: stays
     CHECK(saveMapFile(ship + "/temple.qmap", g) && saveMapFile(ship + "/legacy/temple.qmap", g) && saveMapFile(ship + "/qk1.qmap", q.source));
     LegacyMoveReport r = moveOldOfficialMaps(maps, ship, stamp, "9.9.9");
     for (auto& l : r.log) printf("    %s\n", l.c_str());
@@ -5993,6 +6021,7 @@ static void testLegacyMaps() {
     CHECK(!fs::exists(maps + "/temple.mapedit.json", ec) && !fs::exists(maps + "/temple.qlm", ec) && !fs::exists(root + "/cache/temple.qlm", ec));
     CHECK(!fs::exists(maps + "/bastion.qmap", ec) && fs::exists(maps + "/legacy/bastion_2.qmap", ec) && fs::exists(maps + "/legacy/bastion.qmap", ec));
     CHECK(fs::exists(maps + "/harbor.qmap", ec) && fs::exists(maps + "/my_arena.qmap", ec) && fs::exists(maps + "/downloads/abc.qmap", ec) && fs::exists(maps + "/sub/canal.qmap", ec));
+    CHECK(fs::exists(maps + "/solarsystem12.qmap", ec) && !fs::exists(maps + "/legacy/solarsystem12.qmap", ec));
     CHECK(!fs::exists(ship + "/temple.qmap", ec) && fs::exists(ship + "/legacy/temple.qmap", ec) && fs::exists(ship + "/qk1.qmap", ec));
     // the stamp: the same version doesn't scan again (a new copy stays), the next version does
     CHECK(saveMapFile(maps + "/temple.qmap", g));

@@ -55,7 +55,8 @@ struct WeaponPredictor {
         if (!sent) { sent = true; firstSeq = nextSeq; }
     }
     // The command as it goes out (buttons final): the weapon the server will hold after running it. *lockFire: it
-    // switches with fire / alt-fire held, which the server answers by locking fire until both are let go.
+    // switches with a button held that fires the new weapon (fireButtons), which the server answers by locking fire until
+    // those are let go.
     int run(const UserCmd& c, const WeaponView& v, bool* lockFire = nullptr) {
         if (lockFire) *lockFire = false;
         if (!v.alive) { held = -1; prev = -1; return v.serverWeapon; }
@@ -69,7 +70,7 @@ struct WeaponPredictor {
             (!v.mask || (v.mask >> held & 1)))
             w = held;
         int before = held >= 0 ? held : v.serverWeapon;
-        if (lockFire && want >= 0 && w == want && w != before && (c.buttons & (BTN_FIRE | BTN_ALTFIRE))) *lockFire = true;
+        if (lockFire && want >= 0 && w == want && w != before && (c.buttons & fireButtons(w))) *lockFire = true;
         if (w != before) prev = before;
         held = w;
         return w;

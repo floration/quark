@@ -266,7 +266,7 @@ static void testThrowCooldown(uint16_t port) {
     int tick = 0;
     pump(s, cls, 0.5, [&](int i) { place(); UserCmd u = in(i); if (i == 1 && tick++ < 30) u.buttons = BTN_ALTFIRE; return u; });
     printf("  healed: %.0f hp, knife back in %.2f s, syringe in %.2f s\n", pa.health, pa.knifeBackAt - s.time(), pa.syringeBackAt - s.time());
-    CHECK(pa.health > 60 && pa.knifeBackAt <= s.time() && pa.syringeBackAt <= s.time() && pa.nextFire <= s.time());
+    CHECK(pa.health > 50 && pa.knifeBackAt <= s.time() && pa.syringeBackAt <= s.time() && pa.nextFire <= s.time());
     CHECK(pb.syringeBackAt > s.time());   // (the thrower's own syringe is away)
     wa = WPN_SYRINGE; ba = BTN_ALTFIRE;
     for (int k = 0; k < 20 && count(WPN_SYRINGE, c[0].clientId()) == 0; k++) pump(s, cls, 0.02, [&](int i) { place(); return in(i); });
@@ -1947,8 +1947,8 @@ static void testWeaponPredict(uint16_t port) {
         bool sl = false;
         int w = wp.run(u, view(), &sl);   // (as Game's tick loop does)
         if (sl) locked = true;
+        if (locked && !(u.buttons & fireButtons(w))) locked = false;   // (as Game: the buttons that fire the held weapon)
         if (throwNext && (u.buttons & BTN_ALTFIRE)) { localAway = 1u << WPN_KNIFE; locked = true; w = wp.thrown(view()); throwNext = false; }
-        if (locked && !(u.buttons & (BTN_FIRE | BTN_ALTFIRE))) locked = false;
         if (lastPred >= 0 && w != lastPred) switches++;
         lastPred = w; lastCmdWeapon = u.weapon;
         ring[a.nextSeq() % ring.size()] = {a.nextSeq(), w, locked, a.selfAlive()};
@@ -1998,7 +1998,8 @@ static void testWeaponPredict(uint16_t port) {
     throwNext = true;
     buttons = BTN_ALTFIRE;
     pump(s, cls, 0.2, input);
-    CHECK(!throwNext && sp.knifeBackAt > s.time() && sp.weapon != WPN_KNIFE && lastPred == sp.weapon && locked && sp.fireLocked);
+    // (alt held over the throw is the sniper's scope there, not a shot: it locks nothing, q 2026-10-31)
+    CHECK(!throwNext && sp.knifeBackAt > s.time() && sp.weapon != WPN_KNIFE && lastPred == sp.weapon && !locked && !sp.fireLocked);
     CHECK(sp.weapon == WPN_SNIPER);   // back to the weapon held before the knife (T14; it was the first slot, the rocket)
     buttons = 0;
     wp.want(WPN_KNIFE);

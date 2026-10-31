@@ -432,7 +432,68 @@ Worker 2's share of the 1-scored items, in the same batch-3 key table (`b3Keys`)
 
 ## Votes: no legacy maps unless the server lists them (owner, 2026-10-31: "you cant vote the old maps on the new testing server update")
 - A legacy map loads by name (an old config or demo still works), so `callvote map summit koth` used to pass. A map vote for a legacy map is now refused ("<map> is a legacy map (this server doesn't list the old maps)") unless the server runs with `--legacy-maps`. testMapVote checks the refusal and votes Glacier Summit instead, and its every-map loop still votes every listed map in every mode it supports.
-- A server set up for a legacy map (an old `--map`, unranked, legacy maps off) now plays the listed map built for its mode instead (else the first that takes the mode), so nobody lands on a map they couldn't vote back. A ranked one already switched to its ladder's map.
+- A dedicated server set up for a legacy map (an old `--map`, unranked, legacy maps off) now plays the listed map built for its mode instead (else the first that takes the mode), so nobody lands on a map they couldn't vote back. A ranked one already switched to its ladder's map. (It's in quark_server's start, not Server::start: there it also swapped the maps of the in-process test servers and broke ~370 weapon/rules checks.)
 
 ## Servers: a new install plays unranked laser vampire on Dojo (owner, 2026-10-31: "default server position should be dojo ranked lg vamp for future updates", then "actually unranked")
 - `tools/server/install.sh` with no server options on a first install now runs `--mode 1v1 --variant vampire --map dojo --public` (it was `--public`: FFA on the default map). Re-running it still keeps an installed server's options.
+
+## Solar System: q's own stage designs (owner, 2026-10-31: "so i can design the maps, you just build them")
+- q laid out each of the 15 stages (Sun to Pluto) as a list of pieces in the Solar Stage Builder. Claude drew each one top-down, and q approved it before it was built. `tools/maps/solar.py` builds exactly those lists, in the approved layout.
+- Surf conventions (q):
+  - Every ramp has its own gap before the next, and an air piece is just an extra-big one.
+  - Ramps run about 3 s and flights about 2.2 s at the speed reached there.
+  - Left/right/top/bottom walls are kill walls standing in the flight, death floor to ceiling, covering 2/3 of the lane so you strafe to the open third.
+  - A speed check is a solid full-width wall, its top 1.2 m under an 85%-speed flight. Its height is an estimate for q to tune in the editor.
+  - Turnback legs are split by a wall you ride round.
+- Geometry:
+  - Gaps are ballistic flights at g=24, placed for a run at 85% of the ride's speed.
+  - The next ramp starts as steep as the flight falls there (at most about 50°), so you land along the face.
+  - Faces are 56-62°, 20 m wide (10 m for narrow ramps and split lanes).
+  - Curves are pieces of at most 3 m and 5°.
+  - Walls stand 24 m each side of the line. Lower sections passing under higher ones get a kill-liquid roof.
+  - Jupiter's helix has a centre column, so you can't drop through and skip the spiral.
+  - Each stage ends on a platform with a framed gate; Pluto's is the finish room.
+- Some flights are very long (Mars 218 m, Asteroids 292 m, Io 252 m), so later ledges sit high (Pluto's at 1309 m) and speeds reach about 110-130 m/s. That's for q to tune.
+- Back in MAPS, and on the ranked race total (RACE_MAPS, `racefloors`) with `racedefault 600` as a placeholder until q sets the time. About 18,300 brushes.
+
+## Weapon switch: a held scope doesn't lock fire (owner bug report, 2026-10-31: "when holding scope on rifle and switch to laser you cant shoot until you un hold right click")
+- Cause: switching with fire OR alt-fire held locked fire until both were let go, and a held scope is alt-fire. So rifle (scoped) -> laser locked the laser.
+- Now only the buttons that fire the new weapon lock it: `fireButtons(w)` = fire, plus alt-fire where it is a shot (knife/syringe throw, shotgun bounce, rocket lob, bubble) or the sticky detonation. It doesn't include the rifle/sniper scope or the laser pull. The same rule applies on the server, in the client's mirror and in weapon prediction.
+- The game also ignores an alt-fire held over a switch until it's let go, so the laser shoots normally rather than as a pull. Toggle-scope already dropped it on a switch.
+- A knife thrown with right click, landing back on the sniper with the button still held: the sniper is scoped and isn't locked (it was locked before). Tests: testSemiAuto (scope held rifle -> laser, then fire: fires) and weaponpredict.
+
+## Syringe: half the healing (owner, 2026-10-31: "half syringe healing")
+- Self-use 10 -> 5 HP (the SYRINGE row's damage, which is its heal), still once per 1 s cooldown. The thrown heal on a teammate is 30 -> 15 HP (kSyringeHeal). The throw's cooldown resets are unchanged. A custom mode's syringe damage scale still multiplies both. testSyringe and the throw-reset test have the new numbers; the release checklist says 5 / 15.
+
+## Clean surfaces on every look (owner, 2026-10-31: "clean surfaces should apply to the custom surfaces too not just default ones")
+- VIDEO > CLEAN SURFACES only took the panel seams and shade noise off the palette materials (0-11). Now every look from 12 on (ice, sand, wood, brick, the 400+ surface looks, the large patterns as their base, the see-through and feature blocks) draws as its average, flat: its albedo on tops and on sides separately (grass: green tops, earth sides), its see-through alpha and its glow. Liquids keep their motion.
+- How: when it's on, `Renderer::buildCleanMeans` draws each look the map uses once, with the map's own world program and this frame's palette, as a 4 m square (64 px) on a top and on a side. It averages the pixels into a small RGBA32F texture (texture unit 5, a texel per material, 3 rows). The world shader then reads that in place of running the look. That's cheaper per pixel with it on, and unchanged with it off (one uniform branch). It's redone only when the world program, the palette or high contrast change: a few dozen 64 px draws and one readback while a map loads.
+
+## Legacy move: only copies named like a shipped map (owner, 2026-10-31: "solar system 12 doesnt load in game... i can only see up to solar system 9")
+- moveOldOfficialMaps moved every untouched generated map (first line `# generated by tools/make_maps.py`, no `handmade`) from your maps folder to maps/legacy/, whatever its name. On q's PC that took solarsystem1-12 (live playtest copies) and solar.qmap, along with older copies of the new pool. It now also needs the file's name to be an official map's, a legacy one's or a retired one's (arena, tug, duel, sprint, crucible): those are the copies that shadow a shipped map, and anything else is yours. testLegacyMaps adds a generated map saved as solarsystem12, which stays.
+
+## Map editor: sloped and cut pieces are picked by their solid (owner, 2026-10-31: "in the editor the hitboxes for the blocks are super fuckey, with the custom cut face blocks")
+- edPickAll tested every box and group part against its bounding box. A cut box (or wedge, corner, tetra) was clicked through the empty part of its bounds, so the click took it instead of what was behind, or the wrong one of two neighbours. Non-box shapes now use rayBrush, the same ray-vs-solid test shots and the grapple use (box slabs cut by the sloped planes). Plain boxes keep the bounds test and its inside-the-box rule.
+- (q, 2026-10-31: "smooth faces should turn all faces into single colors") With it on, the palette materials drop their remaining detail too: the metal's brushed streaks, nograpple's stripes and the walls' darkening near the floor. Water, lava and acid become one still colour each. Every face is a single colour.
+
+## Step-up on cut boxes' upright sides (owner, 2026-10-31: "sometimes you cant stepup on cut boxes even though the height distance is still below 0.55")
+- slideMove treats any face of a slope or cut box that isn't within 45 degrees of flat as a wall (`wall`), and the step-up ran only `!steep`. So a cut box's upright side at an angle in plan (n.y = 0) blocked like a steep ramp, while an axis box of the same height was stepped onto. An upright face (|n.y| < 0.01) is now a riser. The step-up is tried, taken only if it ends higher, and it gives back the speed the face took (unless dashing). Sloped faces steeper than 45 degrees still never lift you. testSlopes: a 0.4 m cut box with a 45-degree upright side ends at 0.40 m; a 0.4 m 63-degree wedge stays at 0.
+
+
+## Flush faces: the thinner brush's face shows (owner, 2026-10-31: "the FACE of the SIDE OF THE STAIRS is not attached to the object itself", "basically every map does it")
+- Where two boxes' faces lie in the same plane, face the same way, overlap and differ in look, the world mesh lifts one a hair off the plane so they don't z-fight. It used to lift the higher material index, whatever the shapes, so a staircase built into a thin rail (Dam's valley stair: steps x -32..-27, rail x -27.1..-27, sharing the plane x = -27) drew its steps' side faces over the rail's outer face: the stair profile showed on the outside of the rail.
+- Now the face whose box reaches less far behind the plane goes on top: a decoration set flush into a wall (thinner than the wall) still shows; a box or staircase overlapping a thin wall (5 m deep behind it vs the rail's 0.1 m) stays behind the wall's face. Equal depth: the higher material, as before. Same look: nothing lifted (no z-fight to hide).
+- The lift is now 4 mm a level (a face over a lifted face goes one level higher) instead of 2 mm times the material index. With 596 looks that index runs into the hundreds, so faces floated far off their boxes: Monorail's deck top (polishedconcrete, look 362, over its flush white edge bands) drew 72 cm above the real deck, hiding the cart line and the bases of things on it, and Dam's stair sides (boardformedconcrete, 397) stood 79 cm out from the stairs (owner, 2026-10-31: "the monorail platform face being lifted off of the actual surface"). Lighting bake unchanged (no rebake).
+
+## Pattern fade: every look fades to its average when it's too fine to draw (owner, 2026-10-31: "if you are far away from a patterned surface it should fade, like how lava does, because many many surfaces have the same problem lava does; depends on angle and screen resolution, so should have a setting... where lava changes now is the default for all textures")
+- The world shader measures each pixel's footprint on the face in metres (fwidth of the face-plane position: grows with distance, a grazing angle and a lower resolution or render scale alike). Past PATTERN FADE's start the surface look (every material from 12 on: the 596 looks) blends to its average colour, alpha and glow; at the end it's all average.
+- The averages are CLEAN SURFACES' (each used look rendered once on a 4 m top and side and averaged into uCleanTex), now built whenever pattern fade or clean surfaces is on: no cost per frame.
+- Default = lava's own numbers: lava's veins fade between 0.25 and 0.5 noise cells a pixel at 0.35 x 4 cells a metre, i.e. 0.18 to 0.36 m a pixel, so every look now starts fading at 0.18 m a pixel and is flat at 0.36. FADE DISTANCE (0.25x-4x) scales the start (2x: fades from twice as far), FADE LENGTH (1.25x-8x) is the end as a multiple of the start. The liquids' and noise surfaces' own anti-aliasing (noiseFade) follows the same two numbers. PATTERN FADE off: as before.
+- Speed: a fully faded pixel doesn't run its look at all (one texel fetch), so far floors and walls of expensive looks (cobblestone's Voronoi) cost less: better lows on big maps. Part-faded pixels pay the look plus two fetches.
+- Config keys pattern_fade, fade_dist, fade_len.
+
+## Alt-tab: frames stop, the game doesn't (owner, 2026-10-31: "you shouldnt pause the server when hosting if you alt tab it should only pause the frame generation")
+- Settings item #76 (pause offline games when unfocused) was skipped as needing a server-side pause; q's ruling replaces it: nothing pauses, only drawing stops.
+- `bg_draw` (DRAW IN BACKGROUND, off by default): while the window is unfocused or minimized, `Game::frame` runs the game (network, prediction, sounds, the match) and returns before the render section, and the main loop skips the latent-sync wait, the swap and the low-latency fences. The loop then runs at BACKGROUND FPS LIMIT (60 when that's "same as FPS limit"), so the network is read and commands sent as before, with no GPU work at all. On: drawn at the background limit, as before.
+- The hosted server was never paused by alt-tab: it runs on its own raised thread, the process priority only drops back to normal (not below), and Windows 11's background timer and power throttling were already opted out of (net.cpp). This removes the last cost of the background game, the frames nobody sees.
+- Automated runs (screenshots, benches, the UI test, backdrop shots) always draw: a headless window is never focused.

@@ -281,23 +281,6 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
             nav_.buildAsync(map_);
         }
     }
-    if (!cfg_.ranked && !cfg_.editMode && !legacyMapsListed() && isLegacyMap(cfg_.map)) {
-        // a server set up for an old map (legacy since 1.19.6, not listed here): it plays the listed map built for its
-        // mode instead (else one that takes the mode), so players never land on a map they can't vote (owner, 2026-10-31)
-        std::string pick;
-        Map d;
-        for (const std::string& n : mapList_) {
-            if (isLegacyMap(n) || !d.load(n) || !d.supportsMode(cfg_.mode)) continue;
-            if (pick.empty()) pick = n;
-            if (d.preferredMode == cfg_.mode) { pick = n; break; }
-        }
-        if (!pick.empty() && d.load(pick)) {
-            log(cfg_.map + " is a legacy map (this server doesn't list the old maps): playing " + pick + " instead");
-            cfg_.map = pick;
-            map_ = d;
-            nav_.buildAsync(map_);
-        }
-    }
     if (cfg_.ranked && !isRankedMap(map_, cfg_.arenaVariant)) { if (err) *err = "ranked only runs on the ranked maps for its ladder"; return false; }
     if (cfg_.ranked) cfg_.editMode = false;
     // any map runs any mode (one not built for it may be missing what the mode needs: the host was warned)
@@ -2453,7 +2436,7 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     if (p.weapon != heldWeapon) p.prevWeapon = heldWeapon;
     bool disabled = away(p.weapon);
     // a weapon switch never fires the new weapon with a button held from before: let go and press again
-    if (p.weapon != heldWeapon && (cmd.buttons & (BTN_FIRE | BTN_ALTFIRE))) p.fireLocked = true;
+    if (p.weapon != heldWeapon && (cmd.buttons & fireButtons(p.weapon))) p.fireLocked = true;
     // Sticky launcher: alt-fire detonates your armed stickies.
     if (p.weapon == WPN_STICKY && (cmd.buttons & BTN_ALTFIRE) && !p.fireLocked)
         for (auto& pr : projectiles_)
@@ -2465,7 +2448,7 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     // The locator (hide and seek / tag, "it" only): fire shows one random hider / runner, every kLocatorCooldown.
     if (p.weapon == WPN_LOCATOR) {
         if ((cmd.buttons & BTN_FIRE) && !p.fireLocked && !(p.move.flags & MF_FROZEN)) useLocator(id);
-        if (p.fireLocked && !(cmd.buttons & (BTN_FIRE | BTN_ALTFIRE))) p.fireLocked = false;
+        if (p.fireLocked && !(cmd.buttons & fireButtons(p.weapon))) p.fireLocked = false;
         p.knifeSwingUntil = -1;
         return;
     }
@@ -2474,7 +2457,7 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     bool altShot = altFires(p.weapon) && (cmd.buttons & BTN_ALTFIRE) && !itMode; // no throwing in hide and seek / tag
     bool wantFire = ((cmd.buttons & BTN_FIRE) != 0 || altShot) && (!itMode || p.it) && !disabled; // only "it" has a knife
     if (p.fireLocked) { // the click that threw the knife doesn't also fire the weapon you switched to
-        if (!(cmd.buttons & (BTN_FIRE | BTN_ALTFIRE))) p.fireLocked = false;
+        if (!(cmd.buttons & fireButtons(p.weapon))) p.fireLocked = false;
         else wantFire = altShot = false;
     }
     const double now = p.cmdTime;   // refire runs on the command clock (F22)

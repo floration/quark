@@ -123,7 +123,11 @@ vec3 grade(vec3 c) {
     return pow(clamp(c, 0.0, 1.0), vec3(1.0 / uGrade.x));
 }
 uniform float uNoTone;   // VIDEO > MORE 2: TONE CURVE off (1): a straight clamp in place of the filmic curve
-uniform float uClean;    // ...CLEAN SURFACES (1): the palette's faces without panel seams or shade noise
+uniform float uClean;    // ...CLEAN SURFACES (1): the palette's faces without panel seams or shade noise, every other
+                         // look its average (uCleanTex; owner, 2026-10-31: "should apply to the custom surfaces too")
+uniform sampler2D uCleanTex;   // per material (x): row 0 its look's average albedo + alpha on a top, row 1 on a side, row 2 its glow
+uniform float uFadeAt, uFadeLen;   // PATTERN FADE: metres a pixel where looks start fading to their average (0: off), the end's multiple
+uniform int uMeanPass;   // Renderer::buildCleanMeans: 1 writes the look's albedo + alpha, 2 its glow (0: draw)
 uniform float uFlatLight;   // ...FLAT LIGHTING (1): no lightmap, full sun and sky everywhere
 uniform float uFull;     // fullbright: flat white, black outlines, no light or fog
 uniform vec3 uFullColor; // ...and the flat colour (white by default)
@@ -142,7 +146,7 @@ float vnoise(vec2 p) {
 // Anti-aliased: noise finer than about 2 pixels on screen fades to its average (0.5), so a long strip seen from one end
 // (each pixel spanning metres of it) is a calm surface instead of shimmer (owner, 2026-10-28: lava "gets fucky because
 // of the angle"). The footprint is the longer of the pixel's two sides in noise cells: angle and distance alike.
-float noiseFade(float cells) { return 1.0 - smoothstep(0.25, 0.5, cells); }
+float noiseFade(float cells) { float a = 0.25 * (uFadeAt > 0.0 ? uFadeAt / 0.18 : 1.0); return 1.0 - smoothstep(a, a * (uFadeAt > 0.0 ? uFadeLen : 2.0), cells); }   // (PATTERN FADE scales it)
 float footprint(vec2 p) { vec2 w = fwidth(p); return max(w.x, w.y); }
 float vnoiseAA(vec2 p) { return mix(0.5, vnoise(p), noiseFade(footprint(p))); }
 float fbm(vec2 p) {
@@ -240,7 +244,9 @@ void main() {
     }
     if ((mat >= 4 && mat < 8) || mat == 11) { // glow trim / far scenery / water / lava / acid: unlit, skip everything below
         vec3 c;
-        if (mat == 6 || mat == 7 || mat == 11) {
+        if ((mat == 6 || mat == 7 || mat == 11) && uClean > 0.5) {   // CLEAN SURFACES: one flat colour each, still
+            c = mat == 6 ? vec3(0.06, 0.21, 0.35) : mat == 7 ? vec3(0.9, 0.25, 0.05) : vec3(0.07, 0.5, 0.03);
+        } else if (mat == 6 || mat == 7 || mat == 11) {
             // liquids: noise flowing across the surface (owner, 2026-10-28: "so you can tell its actually lava"), in the
             // face's plane (tops xz, sides along their face, sliding down them)
             vec3 an = abs(vN);
@@ -267,7 +273,7 @@ void main() {
     }
     vec2 lm = uAlphaPass > 0.5 || uFlatLight > 0.5 ? vec2(1.0, 0.85) : texture(uLightmap, vUV).rg;   // (the see-through pass: not baked, full sun and sky)
     vec3 albedo = mat == 0 ? uBaseL : (mat == 1 || mat == 8) ? uAccentL : mat == 2 ? uWallbangL : uMetalL; // 8: trim (decor, not solid)
-    if (mat == 10) albedo = vec3(0.30, 0.33, 0.42) * (0.8 + 0.2 * step(0.5, fract((vPos.x + vPos.y + vPos.z) * 1.5))); // nograpple: slate blue with diagonal stripes
+    if (mat == 10) albedo = vec3(0.30, 0.33, 0.42) * (uClean > 0.5 ? 0.9 : 0.8 + 0.2 * step(0.5, fract((vPos.x + vPos.y + vPos.z) * 1.5))); // nograpple: slate blue with diagonal stripes (clean: flat)
     // surface detail: 2 m panels (4 m on floors) with a faint per-panel tint and thin seams, world-space so it
     // tiles across brushes; floor contact darkening on walls
     vec3 an = abs(vN);
@@ -275,14 +281,22 @@ void main() {
     // @LARGE@: Renderer::compileWorld puts the large patterns here (kLarge: their material's look, the plane scaled)
     float spec = 0.0, gloss = 32.0;   // a highlight from the sun (metals, ice, plastic)
     vec3 emit = vec3(0.0);            // glowing parts (crystal edges, circuit traces), added after the light
-    if (mat < 12) {
+    // PATTERN FADE (owner, 2026-10-31: "if you are far away from a patterned surface it should fade, like how lava does"):
+    // the pixel's footprint on the face in metres (distance, angle and resolution alike); past uFadeAt the look blends
+    // to its average (uCleanTex, as CLEAN SURFACES), all average at uFadeAt x uFadeLen, where the look isn't run at all
+    float fadeT = 0.0, fpq = footprint(q);   // (derivatives outside any branch)
+    if (uFadeAt > 0.0 && mat >= 12 && uMeanPass == 0) fadeT = smoothstep(uFadeAt, uFadeAt * uFadeLen, fpq);
+    if ((uClean > 0.5 || fadeT > 0.999) && mat >= 12 && uMeanPass == 0) {   // CLEAN SURFACES / faded: the look's average, flat (and no look to run)
+        vec4 a = texelFetch(uCleanTex, ivec2(mat, an.y > 0.5 ? 0 : 1), 0);
+        albedo = a.rgb; alpha = a.a; emit = texelFetch(uCleanTex, ivec2(mat, 2), 0).rgb;
+    } else if (mat < 12) {
         vec2 pp = q * (an.y > 0.5 ? 0.25 : 0.5);
         if (mat == 3) pp = pp * vec2(2.0, 0.5);
         vec2 cell = floor(pp), f = fract(pp), w = fwidth(pp) * max(1.5 * uPxScale, 1.0);   // (1.5 window pixels, at least 1 scene pixel)
         float seam = min(smoothstep(0.0, w.x + 0.012, min(f.x, 1.0 - f.x)), smoothstep(0.0, w.y + 0.012, min(f.y, 1.0 - f.y)));
         if (uClean < 0.5) albedo *= (0.93 + 0.1 * hash2(cell + floor(vPos.y * 0.01))) * mix(0.82, 1.0, seam);
         if (mat == 3) {   // metal: brushed streaks along each panel and a soft sheen (owner, 2026-10-28: "not just black box")
-            albedo *= 1.15 + 0.12 * (vnoiseAA(vec2(q.x * 0.6, q.y * 40.0)) - 0.5);
+            albedo *= 1.15 + (uClean > 0.5 ? 0.0 : 0.12 * (vnoiseAA(vec2(q.x * 0.6, q.y * 40.0)) - 0.5));   // (clean: no streaks)
             spec = 0.35; gloss = 24.0;
         }
     } else if (mat == 12) {   // ice: pale blue, cloudy depths and fine white cracks, glossy
@@ -394,8 +408,13 @@ void main() {
         albedo = lin(vec3(0.50, 0.52, 0.55)) * (0.9 + 0.1 * vnoiseAA(q * 9.0)) * (1.0 + 0.6 * bump * sign(lug + 0.0001));
         spec = 0.55; gloss = 40.0;
     }
+    if (uMeanPass > 0) { fragColor = uMeanPass == 1 ? vec4(albedo, alpha) : vec4(emit, 1.0); return; }
+    if (fadeT > 0.0 && fadeT <= 0.999 && uClean < 0.5) {   // PATTERN FADE: part way to the average
+        vec4 a = texelFetch(uCleanTex, ivec2(mat, an.y > 0.5 ? 0 : 1), 0);
+        albedo = mix(albedo, a.rgb, fadeT); alpha = mix(alpha, a.a, fadeT); emit = mix(emit, texelFetch(uCleanTex, ivec2(mat, 2), 0).rgb, fadeT);
+    }
     if (mat == 0 && vN.y > 0.5) albedo = mix(albedo, uFloorL, 0.55); // floors / tops: darker, cooler than walls
-    if (an.y < 0.5) albedo *= mix(0.72, 1.0, smoothstep(0.0, 0.6, fract(vPos.y + 1000.0) + step(1.0, vPos.y)));
+    if (an.y < 0.5 && uClean < 0.5) albedo *= mix(0.72, 1.0, smoothstep(0.0, 0.6, fract(vPos.y + 1000.0) + step(1.0, vPos.y)));   // (clean: one colour a face)
     float sun = lm.r * shadowAt(vShadow);
     vec3 light = uSkyColor * lm.g + uSunColor * sun;
     vec3 c = albedo * light * 0.62;
@@ -745,6 +764,13 @@ void Renderer::setWorldLooks(const BakedWorld& bw) {
         if (m >= kMatBlocks && m < kMapMaterials) used[(size_t)(m >= kMatLarge && m < kMatSemi ? kLarge[m - kMatLarge].base : m)] = true;
     }
     for (size_t m = 0; m < seeUsed_.size(); m++) if (seeUsed_[m]) used[m] = true;
+    cleanUsed_.assign((size_t)kMapMaterials, false);   // (every look in the map, 12 on: CLEAN SURFACES' averages)
+    for (const WorldVertex& v : bw.verts) {
+        const int m = (int)(v.material + 0.5f);
+        if (m >= 12 && m < kMapMaterials) cleanUsed_[(size_t)(m >= kMatLarge && m < kMatSemi ? kLarge[m - kMatLarge].base : m)] = true;
+    }
+    for (size_t m = 0; m < seeUsed_.size(); m++) if (seeUsed_[m]) cleanUsed_[m] = true;
+    cleanKey_.clear();
     if (used == worldUsed_ && worldProg_) return;
     QZONE("world shader");
     std::string err;
@@ -808,6 +834,8 @@ void Renderer::initWorldUniforms() {
     glUniform1i(uHoleCount_, 0);
     glUniform1i(U(worldProg_, "uLightmap"), 0);
     glUniform1i(U(worldProg_, "uShadow"), 1);
+    glUniform1i(U(worldProg_, "uCleanTex"), 5);
+    cleanKey_.clear();   // (a new program: its averages again)
     glUniform1f(U(worldProg_, "uShadowTexel"), 1.0f / shadowRes_);
     setVec3(U(worldProg_, "uSunColor"), Vec3(0.78f, 0.75f, 0.70f));
     setVec3(U(worldProg_, "uSkyColor"), Vec3(0.42f, 0.45f, 0.52f));
@@ -1689,6 +1717,8 @@ void Renderer::prepareScene(bool shadows) {
     glUniform1f(uWorld_.outlineW, worldOutline);
     glUniform1f(uWorld_.time, liquidFlow ? (float)std::fmod(timeNow(), 3600.0) : 0.0f);   // (MORE 2: LIQUIDS STILL: time stands)
     setVec3(uWorld_.sunDir, sunDir_);
+    if (look_.clean || look_.fadeAt > 0.0f) buildCleanMeans({(float)worldProg_, baseColor.x, baseColor.y, baseColor.z, accentColor.x, accentColor.y, accentColor.z,
+                                      metalColor.x, metalColor.y, metalColor.z, glowColor.x, glowColor.y, glowColor.z, highContrast ? 1.0f : 0.0f});
     glUseProgram(skyProg_);
     setVec3(uSky_.sky, skyColor); setVec3(uSky_.sunDir, sunDir_);
     glUniform1f(uSky_.bright, brightness);
@@ -2352,6 +2382,94 @@ void Renderer::buildSwatches() {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
+// CLEAN SURFACES on the looks (owner, 2026-10-31: "clean surfaces should apply to the custom surfaces too not just
+// default ones"): each look the map uses is drawn once, by the map's own world program with this frame's palette, as a
+// 4 m square on a top and on a side (64 px: 6 cm a pixel, the fine patterns fading to their average as they do far off),
+// and its pixels averaged into uCleanTex (unit 5). With it on the world draws those averages flat: no look runs at all.
+// Again only when the program, the palette or high contrast change (key); called from prepareScene, worldProg_ bound.
+void Renderer::buildCleanMeans(const std::vector<float>& key) {
+    if (key == cleanKey_ || !worldProg_) return;
+    cleanKey_ = key;
+    QZONE("clean surfaces");
+    std::vector<int> mats;
+    for (int m = 12; m < kMapMaterials && m < (int)cleanUsed_.size(); m++) if (cleanUsed_[(size_t)m]) mats.push_back(m);
+    std::vector<float> texels((size_t)kMapMaterials * 3 * 4, 0.0f);
+    constexpr int P = 64;
+    if (!mats.empty()) {
+        if (!cleanVao_) { glGenVertexArrays(1, &cleanVao_); glGenBuffers(1, &cleanVbo_); }
+        std::vector<WorldVertex> vs;   // (per material: the top square, x z 0-4 facing +y, then the side, x y 0-4 facing +z)
+        for (int m : mats) {
+            const float c[6][2] = {{0, 0}, {4, 0}, {4, 4}, {0, 0}, {4, 4}, {0, 4}};
+            for (int side = 0; side < 2; side++)
+                for (auto& p : c) {
+                    WorldVertex v = {};
+                    if (side) { v.pos[0] = p[0]; v.pos[1] = p[1]; v.normal[2] = 1; }
+                    else { v.pos[0] = p[0]; v.pos[2] = p[1]; v.normal[1] = 1; }
+                    v.uv[0] = v.uv[1] = 0.5f;
+                    v.material = (float)m;
+                    v.edge[0] = p[0]; v.edge[1] = p[1]; v.edge[2] = v.edge[3] = 4;
+                    vs.push_back(v);
+                }
+        }
+        glBindVertexArray(cleanVao_);
+        glBindBuffer(GL_ARRAY_BUFFER, cleanVbo_);
+        glBufferData(GL_ARRAY_BUFFER, vs.size() * sizeof(WorldVertex), vs.data(), GL_STREAM_DRAW);
+        glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)0);
+        glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)12);
+        glEnableVertexAttribArray(2); glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)24);
+        glEnableVertexAttribArray(3); glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)32);
+        glEnableVertexAttribArray(4); glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)36);
+        // the target: 3 patches across (top albedo, side albedo, side glow), a row per material
+        const int W = 3 * P, H = P * (int)mats.size();
+        unsigned tex = 0, fbo = 0;
+        glGenTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, W, H, 0, GL_RGBA, GL_FLOAT, nullptr);
+        glGenFramebuffers(1, &fbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+        glDisable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glDisable(GL_BLEND);
+        Mat4 top;   // (x z 0-4 onto the patch: clip x = x / 2 - 1, clip y = z / 2 - 1)
+        top.m[0] = 0.5f; top.m[5] = 0.0f; top.m[9] = 0.5f; top.m[10] = 0.0f; top.m[12] = -1.0f; top.m[13] = -1.0f;
+        const Mat4 side = Mat4::ortho(0, 4, 0, 4, -1, 1);
+        const GLint pass = U(worldProg_, "uMeanPass");
+        for (size_t i = 0; i < mats.size(); i++)
+            for (int k = 0; k < 3; k++) {
+                glViewport(k * P, (int)i * P, P, P);
+                setMat(uWorld_.viewProj, k == 0 ? top : side);
+                glUniform1i(pass, k == 2 ? 2 : 1);
+                glDrawArrays(GL_TRIANGLES, (GLint)(i * 12 + (k == 0 ? 0 : 6)), 6);
+            }
+        glUniform1i(pass, 0);
+        std::vector<float> px((size_t)W * H * 4);
+        glReadPixels(0, 0, W, H, GL_RGBA, GL_FLOAT, px.data());
+        for (size_t i = 0; i < mats.size(); i++)
+            for (int k = 0; k < 3; k++) {
+                double sum[4] = {};
+                for (int y = 0; y < P; y++)
+                    for (int x = 0; x < P; x++) {
+                        const float* t = &px[(((size_t)i * P + y) * W + (size_t)k * P + x) * 4];
+                        for (int c = 0; c < 4; c++) sum[c] += t[c];
+                    }
+                float* o = &texels[(((size_t)k * kMapMaterials) + (size_t)mats[i]) * 4];
+                for (int c = 0; c < 4; c++) o[c] = (float)(sum[c] / (P * P));
+            }
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glDeleteFramebuffers(1, &fbo);
+        glDeleteTextures(1, &tex);
+        glEnable(GL_DEPTH_TEST); glEnable(GL_CULL_FACE);
+    }
+    glActiveTexture(GL_TEXTURE0 + 5);
+    if (!cleanTex_) {
+        glGenTextures(1, &cleanTex_);
+        glBindTexture(GL_TEXTURE_2D, cleanTex_);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    } else glBindTexture(GL_TEXTURE_2D, cleanTex_);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, kMapMaterials, 3, 0, GL_RGBA, GL_FLOAT, texels.data());
+    glActiveTexture(GL_TEXTURE0);
+}
+
 void Renderer::flush2D() {
     if (ui_.empty()) { uiUploaded_ = 0; return; }
     QPLOT("ui verts", ui_.size());
@@ -2461,6 +2579,8 @@ void Renderer::lookUniforms(unsigned prog) {
     glUniform1f(U(prog, "uNoTone"), look_.tone ? 0.0f : 1.0f);
     glUniform1f(U(prog, "uDither"), look_.dither ? 1.0f : 0.0f);
     glUniform1f(U(prog, "uClean"), look_.clean ? 1.0f : 0.0f);
+    glUniform1f(U(prog, "uFadeAt"), look_.fadeAt);
+    glUniform1f(U(prog, "uFadeLen"), look_.fadeLen);
     glUniform1f(U(prog, "uFlatLight"), look_.flatLight ? 1.0f : 0.0f);
     glUniform1f(U(prog, "uSimple"), look_.simpleSky ? 1.0f : 0.0f);
     glUniform1i(U(prog, "uPcf"), look_.pcf == 0 ? 1 : look_.pcf == 2 ? 2 : 0);

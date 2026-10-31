@@ -668,6 +668,11 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     Vec3 wall;
     int blocked = slideMove(s, map, delta, crouched, &wall);
     const bool steep = wall.x != 0 || wall.y != 0 || wall.z != 0;
+    // an upright face (a cut box's side at any angle in plan, a turned box): a riser like a box's own side, so it's
+    // stepped up when it's low enough (owner, 2026-10-31: "sometimes you cant stepup on cut boxes even though the
+    // height distance is still below 0.55"); a sloped face stays a wall you never step up
+    const bool riser = steep && std::fabs(wall.y) < 0.01f;
+    const Vec3 velIn = s.vel;   // (what the face takes off below: given back if the step is taken)
     // against a slope's wall face: the velocity along it (what goes into it is gone), so you slide down it as you
     // fall and along it as you run; it never lifts you off the floor (no climbing a steep slope by running at it; in
     // the air it's a plain clip, so a ramp turns a fall along it: surfing). A dash does go
@@ -704,7 +709,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     // of stopping you dead. Only ledges up to a step's height qualify, so walls still block. Walking up a slope is
     // this too (each step's rise is a sliver); a steep one is a wall, never stepped up.
     bool airStep = !onGround;
-    if ((onGround || airStep) && (blocked & 0b101) && !steep) {
+    if ((onGround || airStep) && ((blocked & 0b101) || riser) && (!steep || riser)) {
         MoveState step = before;
         AABB b = playerBox(step.pos, crouched, scale);
         float up = map.sweepAxis(b, 1, (kStepHeight * mt.m[MV_STEP]));
@@ -719,7 +724,11 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         float d1 = (step.pos.x - before.pos.x) * (step.pos.x - before.pos.x) + (step.pos.z - before.pos.z) * (step.pos.z - before.pos.z);
         // take the step if it gets further, or if the raised path was clear (a hair short of the riser, both
         // moves stop at the same spot: refusing would zero your speed and leave you stuck against a 0.5 m step)
-        if (d1 > d0 + 1e-6f || (!(sb & 0b101) && d1 >= d0)) { s.pos = step.pos; blocked &= ~0b101; }
+        const bool rose = step.pos.y > s.pos.y + 1e-4f;   // (an upright face: only a step that lands higher is one)
+        if ((!riser || rose) && (d1 > d0 + 1e-6f || (!(sb & 0b101) && d1 >= d0))) {
+            s.pos = step.pos; blocked &= ~0b101;
+            if (riser && !dashing) { s.vel.x = velIn.x; s.vel.z = velIn.z; }   // (over it, keeping your speed, as on a box's side)
+        }
     }
     // Dash wall bounce: a dash (this step's, including its last) that runs into a wall under kDashBounceAngle from
     // the wall's normal reflects off it (d' = d - 2(d.n)n: walls are axis-aligned, so one horizontal component
