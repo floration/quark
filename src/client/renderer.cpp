@@ -243,7 +243,9 @@ void main() {
     }
     if ((mat >= 4 && mat < 8) || mat == 11) { // glow trim / far scenery / water / lava / acid: unlit, skip everything below
         vec3 c;
-        if (mat == 6 || mat == 7 || mat == 11) {
+        if ((mat == 6 || mat == 7 || mat == 11) && uClean > 0.5) {   // CLEAN SURFACES: one flat colour each, still
+            c = mat == 6 ? vec3(0.06, 0.21, 0.35) : mat == 7 ? vec3(0.9, 0.25, 0.05) : vec3(0.07, 0.5, 0.03);
+        } else if (mat == 6 || mat == 7 || mat == 11) {
             // liquids: noise flowing across the surface (owner, 2026-10-28: "so you can tell its actually lava"), in the
             // face's plane (tops xz, sides along their face, sliding down them)
             vec3 an = abs(vN);
@@ -270,7 +272,7 @@ void main() {
     }
     vec2 lm = uAlphaPass > 0.5 || uFlatLight > 0.5 ? vec2(1.0, 0.85) : texture(uLightmap, vUV).rg;   // (the see-through pass: not baked, full sun and sky)
     vec3 albedo = mat == 0 ? uBaseL : (mat == 1 || mat == 8) ? uAccentL : mat == 2 ? uWallbangL : uMetalL; // 8: trim (decor, not solid)
-    if (mat == 10) albedo = vec3(0.30, 0.33, 0.42) * (0.8 + 0.2 * step(0.5, fract((vPos.x + vPos.y + vPos.z) * 1.5))); // nograpple: slate blue with diagonal stripes
+    if (mat == 10) albedo = vec3(0.30, 0.33, 0.42) * (uClean > 0.5 ? 0.9 : 0.8 + 0.2 * step(0.5, fract((vPos.x + vPos.y + vPos.z) * 1.5))); // nograpple: slate blue with diagonal stripes (clean: flat)
     // surface detail: 2 m panels (4 m on floors) with a faint per-panel tint and thin seams, world-space so it
     // tiles across brushes; floor contact darkening on walls
     vec3 an = abs(vN);
@@ -288,7 +290,7 @@ void main() {
         float seam = min(smoothstep(0.0, w.x + 0.012, min(f.x, 1.0 - f.x)), smoothstep(0.0, w.y + 0.012, min(f.y, 1.0 - f.y)));
         if (uClean < 0.5) albedo *= (0.93 + 0.1 * hash2(cell + floor(vPos.y * 0.01))) * mix(0.82, 1.0, seam);
         if (mat == 3) {   // metal: brushed streaks along each panel and a soft sheen (owner, 2026-10-28: "not just black box")
-            albedo *= 1.15 + 0.12 * (vnoiseAA(vec2(q.x * 0.6, q.y * 40.0)) - 0.5);
+            albedo *= 1.15 + (uClean > 0.5 ? 0.0 : 0.12 * (vnoiseAA(vec2(q.x * 0.6, q.y * 40.0)) - 0.5));   // (clean: no streaks)
             spec = 0.35; gloss = 24.0;
         }
     } else if (mat == 12) {   // ice: pale blue, cloudy depths and fine white cracks, glossy
@@ -402,7 +404,7 @@ void main() {
     }
     if (uMeanPass > 0) { fragColor = uMeanPass == 1 ? vec4(albedo, alpha) : vec4(emit, 1.0); return; }
     if (mat == 0 && vN.y > 0.5) albedo = mix(albedo, uFloorL, 0.55); // floors / tops: darker, cooler than walls
-    if (an.y < 0.5) albedo *= mix(0.72, 1.0, smoothstep(0.0, 0.6, fract(vPos.y + 1000.0) + step(1.0, vPos.y)));
+    if (an.y < 0.5 && uClean < 0.5) albedo *= mix(0.72, 1.0, smoothstep(0.0, 0.6, fract(vPos.y + 1000.0) + step(1.0, vPos.y)));   // (clean: one colour a face)
     float sun = lm.r * shadowAt(vShadow);
     vec3 light = uSkyColor * lm.g + uSunColor * sun;
     vec3 c = albedo * light * 0.62;

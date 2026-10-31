@@ -474,4 +474,8 @@ Worker 2's share of the 1-scored items, in the same batch-3 key table (`b3Keys`)
 
 ## Map editor: sloped and cut pieces are picked by their solid (owner, 2026-10-31: "in the editor the hitboxes for the blocks are super fuckey, with the custom cut face blocks")
 - edPickAll tested every box and group part against its bounding box. A cut box (or wedge, corner, tetra) was clicked through the empty part of its bounds, so the click took it instead of what was behind, or the wrong one of two neighbours. Non-box shapes now use rayBrush, the same ray-vs-solid test shots and the grapple use (box slabs cut by the sloped planes). Plain boxes keep the bounds test and its inside-the-box rule.
+- (q, 2026-10-31: "smooth faces should turn all faces into single colors") With it on, the palette materials drop their remaining detail too: the metal's brushed streaks, nograpple's stripes and the walls' darkening near the floor. Water, lava and acid become one still colour each. Every face is a single colour.
+
+## Step-up on cut boxes' upright sides (owner, 2026-10-31: "sometimes you cant stepup on cut boxes even though the height distance is still below 0.55")
+- slideMove treats any face of a slope or cut box that isn't within 45 degrees of flat as a wall (`wall`), and the step-up ran only `!steep`. So a cut box's upright side at an angle in plan (n.y = 0) blocked like a steep ramp, while an axis box of the same height was stepped onto. An upright face (|n.y| < 0.01) is now a riser. The step-up is tried, taken only if it ends higher, and it gives back the speed the face took (unless dashing). Sloped faces steeper than 45 degrees still never lift you. testSlopes: a 0.4 m cut box with a 45-degree upright side ends at 0.40 m; a 0.4 m 63-degree wedge stays at 0.
 

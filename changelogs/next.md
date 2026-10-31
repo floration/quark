@@ -152,6 +152,7 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 - **Solar System** (surf): 15 stages, Sun to Pluto, each one built from q's own design. It's on the ranked race total (10 min until you've run it).
 - **Weapon switch:** holding the scope (right click) while switching from the rifle to the laser no longer stops the laser shooting until you let go.
 - **Syringe:** heals half as much: 5 HP a use (was 10), and a throw gives a teammate 15 HP (was 30).
-- **Clean surfaces** now cleans every surface, not just the default ones: each custom surface shows as its own average colour, flat.
+- **Clean surfaces** now cleans every surface, not just the default ones: each custom surface shows as its own average colour, flat, and every face is one colour (no streaks, stripes or darkening near the floor; liquids too).
 - **Your maps folder:** the maps update's one-time cleanup no longer moves your own copies of generated maps into legacy/. It only moves old copies of the official maps.
 - **Map editor:** clicking a cut box, wedge, corner or tetra selects it where its faces are, not anywhere in its bounding box.
+- **Step-up on cut boxes:** a low cut box with an upright side at an angle is stepped onto like a normal box. A steep sloped face still blocks.

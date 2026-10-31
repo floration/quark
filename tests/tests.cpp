@@ -5011,6 +5011,26 @@ static void testSlopes() {
             pmove(ms, cmd, m);
         }
     };
+    {   // a low cut box's upright side at an angle in plan is stepped up like a box's (owner, 2026-10-31: "sometimes you
+        // cant stepup on cut boxes even though the height distance is still below 0.55"); a low steep slope still isn't
+        auto stepOnto = [&](const std::string& piece, Vec3 from, Vec3 to) {
+            Map t;
+            CHECK(t.parse(piece + base));
+            MoveState ms; ms.pos = from;
+            for (int k = 0; k < 20; k++) { UserCmd c; c.msec = 8; pmove(ms, c, t); }   // (settle on the floor)
+            for (int k = 0; k < 250; k++) {
+                Vec3 d = to - ms.pos;
+                UserCmd c; c.yaw = std::atan2(-d.x, -d.z); c.forward = 127; c.msec = 8;
+                pmove(ms, c, t);
+            }
+            return ms.pos.y;
+        };
+        // x 2-6, z -2..2, 0.4 m high, less the corner past fx + fz = 1 (an upright face facing +x+z), walked into from +x+z
+        const float up = stepOnto("cut 0 1 1 0 1 1 2 0 -2 6 0.4 2\n", {8, 0, 4}, {3, 0, -1});
+        const float steep = stepOnto("wedge 0 0 6 0 -2 6 0.4 2\n", {0, 0, 0}, {5, 0, 0});   // (a 0.4 m rise in 0.2 m: 63 degrees)
+        printf("  0.4 m cut box, upright side at 45 degrees in plan: at %.2f m; 0.4 m 63 degree slope: at %.2f m\n", up, steep);
+        CHECK(std::fabs(up - 0.4f) < 0.02f && steep < 0.05f);
+    }
     {   // tetra (owner, 2026-10-28: "1 0 0 0 / 1 1 1 0"): three base corners, the apex over one, one sloped face
         Map t;
         CHECK(t.parse("tetra 0 0 0 0 0 4 2 4\ntetra 0 2 10 0 10 12 6 12\n" + base) && t.warnings.empty());
