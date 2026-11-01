@@ -4340,6 +4340,69 @@ static void testWinnerStays(uint16_t port) {
     s.stop();
 }
 
+// Winner stays mode (MODE_WINNER): rounds, the round's loser to the back of the line, round wins are the score, first to 10.
+static void testWinnerStaysMode(uint16_t port) {
+    printf("winner stays mode: each round's loser to the back of the line, first to 10 round wins\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.autoStart = true;
+    cfg.map = "dojo"; cfg.mode = MODE_WINNER; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    CHECK(s.map_.supportsMode(MODE_WINNER));   // (a 1v1 map offers it: prefabs.py)
+    NetClient a, b, c;
+    std::vector<NetClient*> cls;
+    const char* names[] = {"ann", "bob", "cat"};
+    NetClient* all[] = {&a, &b, &c};
+    for (int i = 0; i < 3; i++) { all[i]->connect("127.0.0.1:" + std::to_string(port), names[i]); cls.push_back(all[i]); pump(s, cls, 0.4, idle); }
+    auto P = [&](NetClient& n) -> ServerPlayer& { return s.players_[n.clientId()]; };
+    CHECK(P(c).team == TEAM_SPECTATOR && P(c).queueSeq > 0);
+    const int annTeam = P(a).team, other = annTeam == TEAM_A ? TEAM_B : TEAM_A;
+    auto live = [&] { for (int i = 0; i < 200 && s.ms_.phase != PHASE_LIVE && s.ms_.phase != PHASE_MATCH_END; i++) { skipCountdowns(s); pump(s, cls, 0.05, idle); } };
+    auto seated = [&](int team) { for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].team == team) return i; return -1; };
+    live();
+    CHECK(s.ms_.phase == PHASE_LIVE);
+    CHECK(s.ms_.roundsToWin == 10);
+    // round 1: ann beats bob; bob to the back, cat in
+    s.killPlayer(b.clientId(), a.clientId(), WPN_RIFLE);
+    pump(s, cls, 0.1, idle);
+    CHECK(s.ms_.phase == PHASE_ROUND_END);
+    live();
+    CHECK(P(a).team == annTeam && P(c).team == other && P(b).team == TEAM_SPECTATOR && P(b).queueSeq > 0);
+    CHECK(P(a).score == 1 && P(b).score == 0);   // (a round win, not the kill: 1)
+    CHECK((annTeam == TEAM_A ? s.ms_.scoreA : s.ms_.scoreB) == 1 && (annTeam == TEAM_A ? s.ms_.scoreB : s.ms_.scoreA) == 0);
+    // round 2: cat beats ann: ann out, bob in; cat's 1 against bob's 0
+    s.killPlayer(a.clientId(), c.clientId(), WPN_RIFLE);
+    pump(s, cls, 0.1, idle);
+    live();
+    CHECK(P(c).team == other && P(b).team == annTeam && P(a).team == TEAM_SPECTATOR);
+    CHECK((annTeam == TEAM_A ? s.ms_.scoreB : s.ms_.scoreA) == 1 && P(a).score == 1);
+    // cat wins every round from here: first to 10 ends the match, after 9 more rounds won
+    int rounds = 0;
+    for (; rounds < 20 && s.ms_.phase == PHASE_LIVE; rounds++) {
+        const int foe = seated(annTeam);
+        CHECK(foe >= 0);
+        if (foe < 0) break;
+        s.killPlayer(foe, c.clientId(), WPN_RIFLE);
+        pump(s, cls, 0.1, idle);
+        live();
+    }
+    CHECK(rounds == 9);
+    CHECK(s.ms_.phase == PHASE_MATCH_END && s.matchWinner_ == other && P(c).score == 10);
+    s.stop();
+}
+
+// Accuracy is the mean of each weapon's own (owner, 2026-11-01): a second of the laser doesn't swamp the rest.
+static void testAccuracyPerWeapon() {
+    printf("accuracy: the average of each fired weapon's hits / shots, reset each match\n");
+    ServerPlayer p;
+    for (int i = 0; i < 100; i++) { p.addShot(WPN_LASER); if (i < 30) p.addHit(WPN_LASER); }
+    for (int i = 0; i < 10; i++) { p.addShot(WPN_RIFLE); if (i < 8) p.addHit(WPN_RIFLE); }
+    CHECK(p.accuracy() == 55);   // (30% and 80%; by total shots it was 34%)
+    p.resetAccuracy();
+    CHECK(p.accuracy() == 0 && p.shotsFired == 0);
+}
+
 // Internet list end to end; only runs with QUARK_MASTER pointing at a test copy of tools/master/worker.js.
 static void testInternetList(uint16_t port) {
     if (!getenv("QUARK_MASTER") || strncmp(getenv("QUARK_MASTER"), "http", 4) != 0) return;
@@ -9114,8 +9177,8 @@ static void testBots(uint16_t& port) {
         s.stop();
     }
     // every mode with bots on both sides: no crashes, things happen
-    const char* maps[MODE_COUNT] = {"bastion", "bastion", "foundry", "bastion", "bastion", "bastion", "bastion", "clockwork", "clockwork", "clockwork", "hamlet", "hamlet", "lodestone", "cascade", "bastion"};
-    static_assert(MODE_COUNT == 15, "add the new mode's map here");
+    const char* maps[MODE_COUNT] = {"bastion", "bastion", "foundry", "bastion", "bastion", "bastion", "bastion", "clockwork", "clockwork", "clockwork", "hamlet", "hamlet", "lodestone", "cascade", "bastion", "clockwork"};
+    static_assert(MODE_COUNT == 16, "add the new mode's map here");
     SimClock clock;   // (bots only: every tick runs, none waited for)
     for (int mode = 0; mode < MODE_COUNT; mode++) {
         qsrand(0x5EED0100u + mode);
@@ -9126,7 +9189,7 @@ static void testBots(uint16_t& port) {
         cfg.vsBots = true; cfg.botsEnemy = 3; cfg.botsAlly = 2; cfg.botSkill = BOT_ADVANCED;
         s.setLog([](const std::string&) {});
         if (!s.start(cfg)) { g_fail++; continue; }
-        if (mode == MODE_ARENA || mode == MODE_DUEL) {
+        if (isOneVsOneMode(mode) || mode == MODE_DUEL) {
             // 1v1 and duel are the player and their team size of bots (F7: no ally in 1v1): the player joins, a NetClient,
             // so these two run on the real clock (pump) as before; the other modes are bots only
             setManualClock(false);
@@ -10089,7 +10152,7 @@ int main(int argc, char** argv) {
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); testRemoteMoveSounds(TP(28585)); testRefillPrediction(TP(28586)); testHookPrediction(TP(28588)); }},
         {"brains", [] { g_fail += brainTests(TP(29150)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
-        {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); testWinnerStays(TP(28522)); }},
+        {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); testWinnerStays(TP(28522)); testWinnerStaysMode(TP(28523)); testAccuracyPerWeapon(); }},
         {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testGrappleAgainstWall(); testAcid(); testLiquids(); testFeatureBlocks(); testStrafeEase(); testSeeThrough(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testModeSpawnSets(); testMapFix(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},

@@ -22,7 +22,7 @@ inline void hudLiveLine(const ModeState& ms, char* out, size_t n, float raceRun 
         snprintf(out, n, "%s%d:%02d", pre, t / 60, t % 60);
     };
     out[0] = 0;
-    if (ms.mode == MODE_VS || ms.mode == MODE_DUEL || ms.mode == MODE_ARENA || ms.mode == MODE_TOURNEY) {
+    if (ms.mode == MODE_VS || ms.mode == MODE_DUEL || isOneVsOneMode(ms.mode) || ms.mode == MODE_TOURNEY) {
         if (ms.flags & MS_DRAIN) snprintf(out, n, "STALEMATE - HEALTH DRAINING");
         else clock("DRAIN IN ", ms.timeLeft);
     } else if (ms.mode == MODE_KOTH) snprintf(out, n, "FIRST TO %d", (int)ms.target);

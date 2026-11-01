@@ -17,7 +17,9 @@ constexpr int stagedSpawn(int stage, bool defenders) { return SPAWN_STAGED + 2 *
 // (SPAWN_A, SPAWN_B or SPAWN_ANY). A mode starts players on its own set's side when the map has one (modeSpawnType),
 // and no other mode uses them. Not for race (its race spawns are its set) or multi point (its staged spawns are).
 constexpr int SPAWN_MODESET = stagedSpawn(kMaxSpawnStage, true) + 1;
-constexpr int kSpawnModes = 15;   // MODE_COUNT (static_assert in map.cpp)
+constexpr int kSpawnModes = 15;   // MODE_COUNT - 1: winner stays (the last mode) plays on 1v1's set (spawnSetFor, static_assert in map.cpp)
+// the mode whose spawn set a mode starts on: winner stays plays 1v1's ("spawn 1v1-a"), so no map format change
+inline constexpr int spawnSetFor(int mode) { return mode == 15 ? 8 : mode; }   // (MODE_WINNER, MODE_ARENA: static_assert in map.cpp)
 constexpr int modeSpawn(int mode, int side) { return SPAWN_MODESET + 3 * mode + side; }
 constexpr int kMaxSpawnTeam = modeSpawn(kSpawnModes - 1, SPAWN_ANY);
 inline bool isStagedSpawn(int team) { return team >= SPAWN_STAGED && team < SPAWN_MODESET; }

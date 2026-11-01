@@ -1,0 +1,26 @@
+logic 1
+base winner
+# Winner stays: 1v1 rounds, one life each. A round's winner stays; its loser goes to the back of the spectators' line
+# and the first in line plays the winner next round (a draw: the same two again). A player's score is their round
+# wins (the engine counts them; teamScore shows the two playing), and the first to 10 wins the match.
+use drain
+use line
+
+param rounds int = 10
+param roundEndTime f32 = 2.5 # short rounds, a shorter break (common: 4)
+param stalemate f32 = 30 # with no damage dealt before the drain starts
+param drainRate f32 = 5 # health a second, everyone, in a stalemate
+
+# (a kill scores nothing: the round win is the point)
+slot kill:
+  return
+
+slot tick:
+  a = aliveCount(A)
+  b = aliveCount(B)
+  if a == 0 or b == 0: endRound(a > 0 ? A : b > 0 ? B : none)
+  stalemateDrain()
+
+slot roundOver:
+  firstToRounds()
+  winnerStays()

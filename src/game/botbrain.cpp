@@ -86,7 +86,7 @@ const char* typeName(int t) {
 bool isNumeric(int t) { return t == T_INT || t == T_F32 || t == T_F64; }
 
 const char* const kWeaponNames[WPN_COUNT] = {"rifle", "rocket", "knife", "sniper", "laser", "shotgun", "sticky", "crossbow", "bubble", "syringe", "locator"};
-const char* const kModeNames[MODE_COUNT] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "arena", "tourney", "hide", "tag", "points", "surf", "power"};
+const char* const kModeNames[MODE_COUNT] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "arena", "tourney", "hide", "tag", "points", "surf", "power", "winner"};
 int weaponByName(const std::string& s) { for (int i = 0; i < WPN_COUNT; i++) if (s == kWeaponNames[i]) return i; return -1; }
 int modeByName(const std::string& s) { for (int i = 0; i < MODE_COUNT; i++) if (s == kModeNames[i]) return i; return -1; }
 

@@ -228,7 +228,7 @@ struct Settings {
     bool impactSparks = true;   // a spark where a hitscan shot meets a wall or a player (yours and everyone's)
     bool muzzleFlash = true;    // a flash at the gun's muzzle on each shot (yours and everyone's)
     float viewmodelOpacity = 1.0f; // the first-person gun and grapple launcher: 1 solid, 0 not drawn (see-through between)
-    bool healthBars = true;     // health bars over other players (not in ranked; on by default, owner 1.17)
+    bool healthBars = true;     // health bars over other players (on by default, owner 1.17; in ranked too, owner 2026-11-01)
     bool healthBarsBottom = false;  // ... at their feet instead of over the head
     float scopeOpacity = 1.0f;  // the sniper scope's black surround and reticle (0 = off: just the zoom, with the normal crosshair)
     bool stickyCounter = true;  // "STICKIES 3/6" while you hold the sticky launcher or have any out

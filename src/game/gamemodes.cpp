@@ -630,7 +630,7 @@ void startMatch(Server& s) {
     s.bestProgress_[0] = s.bestProgress_[1] = 0;
     s.completeTime_[0] = s.completeTime_[1] = 0;
     s.bestTime_[0] = s.bestTime_[1] = 0;
-    for (auto& p : s.players_) { p.kills = p.deaths = p.score = 0; p.dmgDealt = p.objTime = 0; p.hideSurvived = 0; p.shotsFired = p.shotsHit = 0; p.out = false; p.it = false; }
+    for (auto& p : s.players_) { p.kills = p.deaths = p.score = 0; p.dmgDealt = p.objTime = 0; p.hideSurvived = 0; p.resetAccuracy(); p.out = false; p.it = false; }
     s.lastIt_ = -1;
     s.tagOut_.clear();   // tag knockouts last one match: everyone is back in for the next
     for (auto& p : s.players_) p.sought = false;
@@ -666,7 +666,7 @@ const char* teamName(int t) { return t == TEAM_A ? "TEAM A" : "TEAM B"; }
 // Who won, as the calls name them: the player in 1v1, duel and tourney (both, in a 2v2 duel), else the team.
 std::string sideName(const Server& s, int team) {
     const int mode = s.ms_.mode;
-    if (mode != MODE_ARENA && mode != MODE_TOURNEY && mode != MODE_DUEL) return teamName(team);
+    if (!isOneVsOneMode(mode) && mode != MODE_TOURNEY && mode != MODE_DUEL) return teamName(team);
     std::string who;
     for (auto& p : s.players_) if (p.connected && p.team == team) who += (who.empty() ? "" : " & ") + p.name;
     return who.empty() ? std::string(teamName(team)) : who;
@@ -728,6 +728,11 @@ void endRound(Server& s, int winner, const std::string& why, bool award = true) 
                 text += std::string(teamName(first)) + "'s " + markText(s, first);
             }
         }
+    } else if (winner >= 0 && m.mode == MODE_WINNER) {   // (the round win is the player's: their score)
+        if (award)
+            for (auto& p : s.players_) if (p.connected && p.team == winner) { p.score++; break; }
+        s.syncWinnerScores();
+        text = sideName(s, winner) + " wins the round";
     } else if (winner >= 0) {
         if (award) (winner == TEAM_A ? m.scoreA : m.scoreB)++;
         text = sideName(s, winner) + " wins the round";   // (1v1, duel, tourney: the player's name)
@@ -744,7 +749,16 @@ void endRound(Server& s, int winner, const std::string& why, bool award = true) 
     s.glog(LOG_SIMPLE, "round %d end: %s (score %d-%d)", m.round, text.c_str(), m.scoreA, m.scoreB);
     m.actionPlayer = 255;
     m.actionProgress = 0;
+    s.roundWinner_ = isRaceMode(m.mode) ? -1 : winner;   // (winner stays: who stays)
     setPhase(s, PHASE_ROUND_END, P(s).roundEndTime);
+}
+
+// Winner stays, between rounds: the round's loser to the back of the line, the first in line in (a draw: nobody
+// moves); an empty seat (a player who left) to the next in line.
+void winnerStaysNext(Server& s) {
+    s.rotateWinnerStays(s.roundWinner_);
+    s.roundWinner_ = -1;
+    s.fillOneVsOneSeats();
 }
 
 // The roundOver slot, when the round-end screen is over: true if the match is decided (or its tiebreak started).
@@ -765,6 +779,14 @@ bool nativeRoundOver(Server& s) {
                 enterMatchEnd(s, sideName(s, w) + " wins the match", w);
                 return true;
             }
+            return false;
+        case MODE_WINNER:   // first to rtw round wins (the team scores are the two playing); else the loser out, the next in
+            if (m.scoreA >= rtw || m.scoreB >= rtw) {
+                int w = m.scoreA >= rtw ? TEAM_A : TEAM_B;
+                enterMatchEnd(s, sideName(s, w) + " wins the match", w);
+                return true;
+            }
+            winnerStaysNext(s);
             return false;
         case MODE_RACE: case MODE_SURF:
             for (int i = 0; i < kMaxPlayers; i++)
@@ -1341,6 +1363,7 @@ void nativeTick(Server& s) {
         case MODE_VS:
         case MODE_DUEL:
         case MODE_ARENA:
+        case MODE_WINNER:
         case MODE_TOURNEY: tickVS(s); break;
         case MODE_BOMB: tickBomb(s); break;
         case MODE_RACE: case MODE_SURF: tickRace(s); break;
@@ -1399,7 +1422,7 @@ void nativeKill(Server& s, int victim, int killer) {
         ServerPlayer& k = s.players_[killer];
         bool teamkill = modeIsTeamBased(s.cfg_.mode) && k.team == v.team;
         if (teamkill) k.score--;
-        else k.score += m.mode == MODE_HIDE ? 0 : 1;   // (hide and seek: 1 a find, below)
+        else k.score += m.mode == MODE_HIDE || m.mode == MODE_WINNER ? 0 : 1;   // (hide and seek: 1 a find, below; winner stays: round wins)
     } else if (s.cfg_.mode == MODE_FFA && m.phase == PHASE_LIVE) {
         v.score--; // suicide
     }
@@ -1695,8 +1718,9 @@ int rulesSpawnType(const Server& s, int id) {
 int modeSpawnType(const Map& m, int mode, int team, int attackers, bool tourneyMatch) {
     // a mode's own spawn set, when the map has one for this side ("spawn koth-a": Mine's hill apart from its bomb sides)
     auto own = [&](int side) {
-        if (!modeSetAllowed(mode)) return side;
-        const int t = modeSpawn(mode, side);
+        const int set = spawnSetFor(mode);   // (winner stays: 1v1's)
+        if (!modeSetAllowed(set)) return side;
+        const int t = modeSpawn(set, side);
         for (auto& sp : m.spawns) if (sp.team == t) return t;
         return side;
     };
@@ -1999,6 +2023,7 @@ public:
             case MA_TOURNEY_ADVANCE: { int t = (int)arg(0); if (t == TEAM_A || t == TEAM_B) tourneyMatchWon(s, t); return 0; }
             case MA_PICK_DUEL_MODIFIER: pickDuelModifier(s); return 0;
             case MA_POOL_STEP: poolStep(s); return 0;
+            case MA_WINNER_STAYS: winnerStaysNext(s); return 0;
             default: return 0;
         }
     }

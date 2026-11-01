@@ -326,7 +326,7 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     if (cfg_.vsBots) {
         cfg_.autoStart = true;
         // 1v1 is one enemy and no allies, duel its team size a side (the team sliders made both 2v3: F7)
-        if (cfg_.mode == MODE_ARENA) { cfg_.botsEnemy = 1; cfg_.botsAlly = 0; }
+        if (isOneVsOneMode(cfg_.mode)) { cfg_.botsEnemy = 1; cfg_.botsAlly = 0; }
         else if (cfg_.mode == MODE_DUEL) { int n = std::min(std::max(cfg_.duelTeamSize, 1), 2); cfg_.botsEnemy = n; cfg_.botsAlly = n - 1; }
         bool teams = modeIsTeamBased(cfg_.mode);
         for (int k = 0; k < cfg_.botsEnemy; k++) addBot(teams ? TEAM_B : TEAM_A, cfg_.botSkill);
@@ -1290,7 +1290,7 @@ void Server::moveToSpectator(int id) {
 }
 
 bool Server::oneVsOne() const {
-    return !cfg_.vsBots && (cfg_.mode == MODE_ARENA || (cfg_.mode == MODE_DUEL && std::max(cfg_.duelTeamSize, 1) == 1));
+    return !cfg_.vsBots && (isOneVsOneMode(cfg_.mode) || (cfg_.mode == MODE_DUEL && std::max(cfg_.duelTeamSize, 1) == 1));
 }
 
 void Server::queueToPlay(int id) {
@@ -1303,7 +1303,8 @@ void Server::queueToPlay(int id) {
         ahead += i != id && o.connected && o.team == TEAM_SPECTATOR && o.queueSeq > 0 && o.queueSeq < p.queueSeq;
     }
     GameEvent e; e.type = EV_MESSAGE;
-    e.text = ahead == 0 ? "you're next in line: you play the winner of this match" : "you're in line to play: " + std::to_string(ahead) + " ahead of you (winner stays)";
+    const char* what = cfg_.mode == MODE_WINNER ? "round" : "match";
+    e.text = ahead == 0 ? std::string("you're next in line: you play the winner of this ") + what : "you're in line to play: " + std::to_string(ahead) + " ahead of you (winner stays)";
     sendEvent(id, e);
 }
 
@@ -1341,6 +1342,18 @@ void Server::rotateWinnerStays(int winner) {
     text += n.name + " steps in" + (champ >= 0 ? " against " + players_[champ].name + " (winner stays)" : "");
     message(text);
     glog(LOG_SIMPLE, "winner stays: %s", text.c_str());
+    syncWinnerScores();
+}
+
+// Winner stays: the team scores show the two playing, each one's round wins (their score)
+void Server::syncWinnerScores() {
+    if (cfg_.mode != MODE_WINNER) return;
+    ms_.scoreA = ms_.scoreB = 0;
+    for (const auto& o : players_)
+        if (o.connected && !o.balanceBot && (o.team == TEAM_A || o.team == TEAM_B)) (o.team == TEAM_A ? ms_.scoreA : ms_.scoreB) = (int16_t)std::max(0, o.score);
+    for (const auto& o : players_)   // (a balance bot: only when no human holds the seat)
+        if (o.connected && o.balanceBot && (o.team == TEAM_A || o.team == TEAM_B) && (o.team == TEAM_A ? ms_.scoreA : ms_.scoreB) == 0)
+            (o.team == TEAM_A ? ms_.scoreA : ms_.scoreB) = (int16_t)std::max(0, o.score);
 }
 
 void Server::fillOneVsOneSeats() {
@@ -1356,6 +1369,7 @@ void Server::fillOneVsOneSeats() {
         if (rulesRespawnDelay(*this, next) >= 0) n.respawnAt = time() + 0.5f;
         message(n.name + " steps in (first in line)");
     }
+    syncWinnerScores();
 }
 
 void Server::autoTeam(int id) {
@@ -1364,7 +1378,7 @@ void Server::autoTeam(int id) {
     if (cfg_.mode == MODE_TOURNEY) { p.team = tourney_.running ? TEAM_SPECTATOR : TEAM_A; return; } // joins the next tourney
     if (rulesTeamLocked(*this)) { p.team = TEAM_SPECTATOR; p.waitingToPlay = true; return; }   // tag: watches this match, plays the next
     if (!modeIsTeamBased(cfg_.mode) || (cfg_.vsBots && !p.isBot)) { p.team = TEAM_A; return; }
-    if (cfg_.mode == MODE_DUEL || cfg_.mode == MODE_ARENA) { // duelTeamSize (1v1: 1) humans per side; balance bots make way, anyone else spectates
+    if (cfg_.mode == MODE_DUEL || isOneVsOneMode(cfg_.mode)) { // duelTeamSize (1v1: 1) humans per side; balance bots make way, anyone else spectates
         int takenA = 0, takenB = 0;
         for (int i = 0; i < kMaxPlayers; i++) {
             const auto& o = players_[i];
@@ -1372,7 +1386,7 @@ void Server::autoTeam(int id) {
             if (o.team == TEAM_A) takenA++;
             else if (o.team == TEAM_B) takenB++;
         }
-        int size = cfg_.mode == MODE_ARENA ? 1 : std::min(std::max(cfg_.duelTeamSize, 1), 2);
+        int size = isOneVsOneMode(cfg_.mode) ? 1 : std::min(std::max(cfg_.duelTeamSize, 1), 2);
         p.team = takenA < size && takenA <= takenB ? TEAM_A : takenB < size ? TEAM_B : takenA < size ? TEAM_A : TEAM_SPECTATOR;
         if (p.team == TEAM_SPECTATOR && p.queueSeq == 0) queueToPlay(id);   // (1v1: in line to play the winner)
         return;
@@ -1603,11 +1617,11 @@ void Server::handleStringCmd(int id, const std::string& s) {
             return;
         }
         if (!modeIsTeamBased(cfg_.mode) && t == TEAM_B) t = TEAM_A;
-        if ((cfg_.mode == MODE_DUEL || cfg_.mode == MODE_ARENA) && t != TEAM_SPECTATOR && !p.letIn) {
+        if ((cfg_.mode == MODE_DUEL || isOneVsOneMode(cfg_.mode)) && t != TEAM_SPECTATOR && !p.letIn) {
             int n[2] = {0, 0};
             for (int i = 0; i < kMaxPlayers; i++)
                 if (i != id && players_[i].connected && !players_[i].balanceBot && (players_[i].team == TEAM_A || players_[i].team == TEAM_B)) n[players_[i].team == TEAM_B]++;
-            int size = cfg_.mode == MODE_ARENA ? 1 : std::min(std::max(cfg_.duelTeamSize, 1), 2);
+            int size = isOneVsOneMode(cfg_.mode) ? 1 : std::min(std::max(cfg_.duelTeamSize, 1), 2);
             int mine = n[t == TEAM_B], other = n[t != TEAM_B];
             if (mine >= size) {
                 if (other < size) {            // uneven: no vote needed, take the side with room
@@ -2338,7 +2352,7 @@ void Server::clientHitReport(int id, const std::string& rest) {
         headHit_[v] = false;
         any = true;
     }
-    if (any && shotHit(id)) p.shotsHit++;
+    if (any && shotHit(id)) p.addHit(weapon);
 }
 
 void Server::flushHit(int attacker, int victim) {
@@ -3040,7 +3054,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
             pr.id = nextProjId_++;
             pr.type = p.weapon;
             pr.owner = id;
-            if (p.weapon != WPN_SYRINGE) p.shotsFired++;   // accuracy: a hit is counted when it lands
+            if (p.weapon != WPN_SYRINGE) p.addShot(p.weapon);   // accuracy: a hit is counted when it lands
             pr.pos = eye + aim * 0.3f;
             pr.vel = spreadAim(aim, spread, 0, 1, p.burstShot) * wd.projSpeed;
             if (p.weapon == WPN_ROCKET && alt) { pr.vel = pr.vel * weaponAlt().lobSpeed; pr.gravMul = kRocketLobGravity; pr.alt = true; }
@@ -3051,7 +3065,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
         }
         return false;
     }
-    p.shotsFired++;
+    p.addShot(p.weapon);
     for (bool& h : headHit_) h = false;
     uint64_t vt = fromWireMs(cmd.viewTick); // ms on the server clock
     if (vt > timeMs_) vt = timeMs_;
@@ -3093,7 +3107,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
         any = true;
     }
     if (reported) for (int i = 0; i < kMaxPlayers; i++) any |= dmgPer[i] > 0;   // (as the server sees it: the swing's end)
-    else if (shotHit(id)) p.shotsHit++;
+    else if (shotHit(id)) p.addHit(p.weapon);
     for (bool& h : headHit_) h = false;
     return any;
 }
@@ -3242,7 +3256,7 @@ void Server::stepProjectile(Projectile& pr) {
                 float k = pr.type == WPN_CROSSBOW ? ex.knock : pr.type == WPN_KNIFE ? 3.0f * ex.knock : 3.0f;
                 weaponHit(hitPlayer, pr.owner, dmg, dir * k, pr.type, pr.alt, dist, true, 1.0f);
                 headHit_[hitPlayer] = false;
-                if (pr.owner >= 0 && shotHit(pr.owner)) players_[pr.owner].shotsHit++;
+                if (pr.owner >= 0 && shotHit(pr.owner)) players_[pr.owner].addHit(pr.type);
             }
             pr.pos = at;
             pr.active = false;
@@ -3586,7 +3600,7 @@ void Server::explode(const Vec3& at, int owner, int weapon, int direct, bool alt
         if (!self) knock.y *= 2.0f; // enemies get launched: twice the vertical knockback
         weaponHit(i, owner, dmg, knock, weapon, alt, self ? 0.0f : ownerDist, i == direct, frac);
     }
-    if (owner >= 0 && weapon != WPN_BUBBLE && !reported && shotHit(owner)) players_[owner].shotsHit++;
+    if (owner >= 0 && weapon != WPN_BUBBLE && !reported && shotHit(owner)) players_[owner].addHit(weapon);
     // Blasts set off any sticky in range, anyone's (yours and the enemy's): chain reactions. Each one is
     // switched off before it goes, so a chain always ends.
     for (auto& pr : projectiles_) {
@@ -3788,7 +3802,7 @@ void Server::sendSnapshots() {
         ps.score = (int16_t)p.score;
         ps.dmg = (int16_t)std::min(p.dmgDealt, 32000.0f);
         ps.obj = (int16_t)std::min(p.objTime, 32000.0f);
-        ps.acc = (uint8_t)(p.shotsFired ? std::min(100, p.shotsHit * 100 / p.shotsFired) : 0);
+        ps.acc = (uint8_t)p.accuracy();
         ps.ping = (uint16_t)p.ping;
         ps.checkpoint = (uint8_t)p.checkpoint;
         ps.keys = p.alive ? (uint16_t)(p.keys | p.moveEv) : 0;
