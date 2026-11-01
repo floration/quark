@@ -1368,6 +1368,34 @@ void Server::rotateWinnerStays(int winner) {
     syncWinnerScores();
 }
 
+bool Server::someoneInLine() const { return firstInLine(*this) >= 0; }
+
+bool Server::rotateEveryRound() const {
+    return cfg_.rotate1v1 > 0 && oneVsOne() && cfg_.mode != MODE_WINNER && someoneInLine();
+}
+
+void Server::rotateBothOut() {
+    if (!oneVsOne()) return;
+    int seat[2] = {-1, -1};
+    for (int i = 0; i < kMaxPlayers; i++) {
+        const auto& o = players_[i];
+        if (!o.connected || o.balanceBot) continue;
+        if (o.team == TEAM_A && seat[0] < 0) seat[0] = i;
+        if (o.team == TEAM_B && seat[1] < 0) seat[1] = i;
+    }
+    // the winner queues first, the loser behind them (a draw: seat A first)
+    if (matchWinner_ == TEAM_B) std::swap(seat[0], seat[1]);
+    std::string out;
+    for (int i : seat) {
+        if (i < 0) continue;
+        moveToSpectator(i);
+        if (!players_[i].isBot) queueToPlay(i);
+        out += (out.empty() ? "" : " and ") + players_[i].name;
+    }
+    if (!out.empty()) message(out + " go to the back of the line");
+    fillOneVsOneSeats();
+}
+
 // Winner stays: the team scores show the two playing, each one's round wins (their score)
 void Server::syncWinnerScores() {
     if (cfg_.mode != MODE_WINNER) return;

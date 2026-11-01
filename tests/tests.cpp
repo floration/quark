@@ -4392,6 +4392,56 @@ static void testWinnerStaysMode(uint16_t port) {
     s.stop();
 }
 
+// 1v1 with someone in line (owner, 2026-11-01: "by default 1v1s should cycle people every round even in ranked, so in
+// ranked it acts like an ffa but of 1v1's"; winner stays): every round is a match of its own, the loser to the back of
+// the line, the next match straight away (no warmup). Two players alone play whole matches as before; rotate1v1 0 too.
+static void testRotateEveryRound(uint16_t port) {
+    printf("1v1 every round: each round its own match, winner stays, no warmup between\n");
+    for (int rule : {2, 0}) {
+        Server s;
+        ServerConfig cfg;
+        cfg.autoStart = true;
+        cfg.rotate1v1 = rule;
+        cfg.map = "dojo"; cfg.mode = MODE_ARENA; cfg.port = port;
+        s.setLog([](const std::string&) {});
+        { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+        NetClient a, b, c;
+        std::vector<NetClient*> cls;
+        const char* names[] = {"ann", "bob", "cat"};
+        NetClient* all[] = {&a, &b, &c};
+        for (int i = 0; i < 3; i++) { all[i]->connect("127.0.0.1:" + std::to_string(port), names[i]); cls.push_back(all[i]); pump(s, cls, 0.4, idle); }
+        auto P = [&](NetClient& n) -> ServerPlayer& { return s.players_[n.clientId()]; };
+        CHECK(P(c).team == TEAM_SPECTATOR && P(c).queueSeq > 0);
+        const int annTeam = P(a).team, other = annTeam == TEAM_A ? TEAM_B : TEAM_A;
+        bool sawWarmup = false;
+        auto live = [&] {
+            for (int i = 0; i < 400 && s.ms_.phase != PHASE_LIVE; i++) { sawWarmup |= s.ms_.phase == PHASE_WARMUP; skipCountdowns(s); pump(s, cls, 0.05, idle); }
+        };
+        live();
+        CHECK(s.ms_.phase == PHASE_LIVE);
+        sawWarmup = false;
+        s.killPlayer(b.clientId(), a.clientId(), WPN_RIFLE);   // ann beats bob
+        pump(s, cls, 0.1, idle);
+        CHECK(s.ms_.phase == PHASE_ROUND_END);
+        if (rule == 2) {
+            for (int i = 0; i < 200 && s.ms_.phase == PHASE_ROUND_END; i++) pump(s, cls, 0.05, idle);
+            CHECK(s.ms_.phase == PHASE_MATCH_END && s.matchWinner_ == annTeam);   // (the round was the match)
+            live();
+            CHECK(!sawWarmup);
+            CHECK(P(a).team == annTeam && P(c).team == other && P(b).team == TEAM_SPECTATOR && P(b).queueSeq > 0);
+            CHECK(s.ms_.round == 1 && s.ms_.scoreA == 0 && s.ms_.scoreB == 0);   // (a new match)
+            s.killPlayer(a.clientId(), c.clientId(), WPN_RIFLE);   // cat beats ann: ann out, bob in
+            pump(s, cls, 0.1, idle);
+            live();
+            CHECK(P(c).team == other && P(b).team == annTeam && P(a).team == TEAM_SPECTATOR);
+        } else {   // (the old rule: the match goes on to its 5 rounds; bob stays seated)
+            live();
+            CHECK(s.ms_.round == 2 && P(b).team != TEAM_SPECTATOR && P(c).team == TEAM_SPECTATOR);
+        }
+        s.stop();
+    }
+}
+
 // Accuracy is the mean of each weapon's own (owner, 2026-11-01): a second of the laser doesn't swamp the rest.
 static void testAccuracyPerWeapon() {
     printf("accuracy: the average of each fired weapon's hits / shots, reset each match\n");
@@ -10327,7 +10377,7 @@ int main(int argc, char** argv) {
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); testRemoteMoveSounds(TP(28585)); testRefillPrediction(TP(28586)); testHookPrediction(TP(28588)); }},
         {"brains", [] { g_fail += brainTests(TP(29150)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
-        {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); testWinnerStays(TP(28522)); testWinnerStaysMode(TP(28523)); testAccuracyPerWeapon(); }},
+        {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); testWinnerStays(TP(28522)); testWinnerStaysMode(TP(28523)); testRotateEveryRound(TP(28524)); testAccuracyPerWeapon(); }},
         {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testGrappleAgainstWall(); testAcid(); testLiquids(); testFeatureBlocks(); testStrafeEase(); testSeeThrough(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testModeSpawnSets(); testMapFix(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},
