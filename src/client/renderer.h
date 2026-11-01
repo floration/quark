@@ -38,12 +38,16 @@ inline Color rgba(const Vec3& c, float a = 1) { return {c.x, c.y, c.z, a}; }
 class Renderer {
 public:
     bool init(int shadowRes, std::string* err);
+    // VIDEO > MORE > SHADOW QUALITY: the shadow map at a new size (clamped to the GPU's limit), in place. Returns the size used.
+    int setShadowRes(int res);
+    int shadowRes() const { return shadowRes_; }
+    const std::string& gpuName() const { return gpuName_; }   // GL_RENDERER (VIDEO > MORE shows it)
     void resize(int w, int h) { width_ = w; height_ = h; }
     int width() const { return width_; }
     int height() const { return height_; }
     // World geometry grouped into spatial chunks (12 m columns) so the world pass only draws what's in
     // the view frustum: one glMultiDrawArrays over the visible ranges.
-    struct WorldChunk { Vec3 mn, mx; int first, count; };
+    struct WorldChunk { Vec3 mn, mx; int first, count; bool far = false; };   // (far: distant scenery's own chunks)
     // A map's world, built and lit but not on the GPU yet: prepareWorld needs no GL context (any thread, on its
     // own copy of the map), uploadWorld puts it on the GPU (the GL thread). loadWorld = both, here and now.
     struct PreparedWorld { BakedWorld bw; std::vector<WorldChunk> chunks; };
@@ -85,6 +89,7 @@ public:
     void overlayBox(const Vec3& center, const Vec3& half, const Vec3& color); // world space, drawn over everything (editor handles)
     Vec3 viewPoint(const Vec3& offset) const;  // where a camera-relative point (as viewBox takes) is in the world
     void translucentBox(const AABB& b, const Color& c);
+    void translucentBrush(const Brush& b, const Color& c);   // a box as translucentBox, a slope or cut as its own faces
     // A static batch of boxes (the editor's unbaked map, PERF-12): box() calls made inside emit go to a buffer that's
     // uploaded once and drawn every frame useStaticBoxes() is called, culled per box, instead of being streamed again
     // each frame (~21 MB a frame on Midtown). Rebuild it only when the boxes change.
@@ -109,6 +114,18 @@ public:
     // Every 2D colour's alpha times a (a HUD element's theme opacity, set around its drawing); 1: as given.
     void setAlpha(float a) { alpha_ = a; }
     float alpha() const { return alpha_; }
+    // Moving a group of 2D draws after the fact (HUD elements drawn by fixed code, moved and sized by the HUD settings):
+    // uiMark() before them, then uiTransform scales what was drawn since about (px, py) by k and moves it by (dx, dy).
+    // Callers skip it at offset 0 / size 1, so the default HUD costs nothing; else one pass over those vertices.
+    size_t uiMark() const { return ui_.size(); }
+    // The lowest pixel row drawn on since uiMark() `from` (a glyph: its ink box, without the quad's padding), leaving out
+    // quads that lie wholly in the band [skipTop, skipBottom]: the UI test's check that a settings page's content stays
+    // clear of its footer (only called while the UI test probes: a pass over that stretch's vertices). -1: nothing.
+    float uiInkBottom(size_t from, float skipTop, float skipBottom) const;
+    // one solid quad with free corners (xy: 4 points, clockwise or not; convex): the PLAYER tab's model preview's faces
+    void quad2D(const float xy[8], const Color& c);
+    void setTextOutline(float k) { textOutline_ = k < 0 ? 0 : k > 1.5f ? 1.5f : k; }   // the text outline's width, x (0: none)
+    void uiTransform(size_t from, float px, float py, float k, float dx, float dy);
     // The QUARK title (the menus'): centred on cx, its line top at y (as text() takes it), at text scale ts (fractional
     // is fine); the Q split along a slanted line with a black seam: its left and UARK in `friendly`, its right in
     // `enemy` (the player's team colours); friendly's alpha fades all of it. In Rubik: the baked logo
@@ -142,6 +159,10 @@ public:
     // palette, on top of this frame's 2D batch (drawn after it: put nothing over a swatch). Each is rendered into a slot
     // of an atlas the first frame it's asked for (again when the palette changes).
     void swatch(float x, float y, float w, float h, int material);
+    // Map previews (the map picker): small RGBA images (w x h each, all the same size), kept in one atlas uploaded the
+    // next frame after they change; preview() draws image `slot` like a swatch (over this frame's 2D batch).
+    void setPreviews(std::vector<std::vector<uint8_t>> images, int w, int h);
+    void preview(float x, float y, float w, float h, int slot);
     // The 2D batch so far uploaded now (the HUD before the late latch): flush2D then only draws it, unless more was added.
     void prepare2D();
 
@@ -152,11 +173,14 @@ public:
     // RENDER SCALE (VIDEO): the 3D scene drawn at the window's size times pct / 100 (50 - 200), then stretched to the
     // window, filtered; the 2D layer (HUD, text, menus) is drawn after at the window's own size, so it stays sharp.
     // sharpen: below 100%, a contrast-adaptive sharpen in the stretch (not with EDGES, which smooths instead).
-    void setRenderScale(int pct, bool sharpen) { scalePct_ = std::max(50, std::min(200, pct)); sharpen_ = sharpen; }
+    void setRenderScale(int pct, bool sharpen) { scalePct_ = std::max(25, std::min(400, pct)); sharpen_ = sharpen; }
     // the size the scene was last drawn at (the window's, at 100% or with no world drawn yet): F3
     int sceneWidth() const { return sceneW_; }
     int sceneHeight() const { return sceneH_; }
     bool screenshot(const std::string& path);
+    void setFog(float mul);
+    void setGrade(float gamma, float contrast, float saturation);   // VIDEO > MORE 2 (1, 1, 1: none), the 3D scene only   // VIDEO > MORE: FOG, x the default distance fog (0 = none)
+    static constexpr float kFogDensity = 0.0035f;
 
     // palette
     Vec3 skyColor = {0.62f, 0.66f, 0.72f};
@@ -169,8 +193,41 @@ public:
     Vec3 fullbrightColor = {1, 1, 1};   // ...that colour instead of white (VISUALS > FULLBRIGHT COLOUR)
     float brightness = 1.0f;   // the player's brightness setting (scales the lit scene before tonemapping)
     float worldOutline = 1.0f; // the baked world's outline width in pixels (settings); 0 = none
+    // VIDEO + AUDIO > MORE 2 / 4 (1.19.4): the look's shader switches (setLook: uniforms, only when they change)
+    struct Look {
+        bool tone = true, dither = false, clean = false, flatLight = false, simpleSky = false;
+        int pcf = 1;            // the shadow edge: 0 hard, 1 soft, 2 softer
+        float emit = 0.3f;      // models' own light share
+        float outlineA = 1.0f;  // players' outline opacity
+        float fadeAt = 0.18f;   // PATTERN FADE: metres a pixel where a look starts fading to its average (0: never)
+        float fadeLen = 2.0f;   // ...where it's all average, as a multiple of fadeAt
+        bool operator==(const Look& o) const {
+            return tone == o.tone && dither == o.dither && clean == o.clean && flatLight == o.flatLight && simpleSky == o.simpleSky &&
+                   pcf == o.pcf && emit == o.emit && outlineA == o.outlineA && fadeAt == o.fadeAt && fadeLen == o.fadeLen;
+        }
+    };
+    void setLook(const Look& l);
+    bool farScenery = true;     // distant scenery's chunks drawn
+    float farPlane = 400.0f;    // DRAW DISTANCE: metres to the far plane (the next setCamera)
+    float shadowRange = 32.0f;  // SHADOW DISTANCE: the shadow map's half-width around its focus (metres)
+    bool shadowWorld = true, shadowPlayers = true;   // dynamic shadows onto the map / onto players
+    int maxSamples();           // the driver's most MSAA samples (asked once)
+    // 1.19.4 batch 4 (VIDEO + AUDIO > MORE 2 / 4): x < 0 = the map's own
+    Vec3 skyOverride = {-1, -1, -1}, glowOverride = {-1, -1, -1}, wallbangTint = {-1, -1, -1};
+    Vec3 worldEdge = {0, 0, 0}; // the world's outline colour (black: as before)
+    float glowMul = 1.0f;       // GLOW STRENGTH
+    bool liquidFlow = true;     // water / lava / acid flowing
+    bool highContrast = false;  // HIGH CONTRAST MAP: lighter base, darker accent
+    bool lightmapNearest = false;   // LIGHTMAP FILTER: nearest
+    float smoothAmt = 1.0f;     // SMOOTH (the edge pass) strength, 0.25 - 1
+    int outputBits();           // the window's bits per colour (asked once): 10 with 10-BIT OUTPUT where it's given
 
 private:
+    Look look_;
+    bool lmFilterSet_ = false; float edgeAmtSet_ = 1.0f;
+    void lookUniforms(unsigned prog);
+    float fogMul_ = 1.0f;
+    Vec3 grade_ = {1, 1, 1};
     unsigned compile(const char* vs, const char* fs, std::string* err);
     void aim(float yaw, float pitch);   // (setCamera's view half: the view, its vectors, viewProj_ and the frustum planes)
     void addQuad(std::vector<DynVertex>& out, const Vec3* c, const Vec3& n, const Vec3& col, float sv);
@@ -191,7 +248,9 @@ private:
     struct { GLint fwd, right, up, tan, sky, sunDir, bright; } uSky_ = {};
     GLint uDynFade_ = -1, uFlatFade_ = -1;   // (the view pass's see-through amount: WEAPON MODEL OPACITY)
     GLint uFlatViewProj_ = -1, uShadowViewProj_ = -1, uUiScreen_ = -1, uEdgeRcp_ = -1, uSharpRcp_ = -1, uWorldPx_ = -1, uDynPx_ = -1;
-    GLint uLogoA_ = -1, uLogoB_ = -1, uSplitP_ = -1, uSplitN_ = -1, uSplitSeam_ = -1;   // (the title: Renderer::logo)
+    GLint uLogoA_ = -1, uLogoB_ = -1, uSplitP_ = -1, uSplitN_ = -1, uSplitSeam_ = -1;
+    GLint uOutline_ = -1;
+    float textOutline_ = 1.0f, outlineSet_ = -1.0f;   // (HUD > MORE: TEXT OUTLINE; the uniform as last set)   // (the title: Renderer::logo)
     float uiScreen_[2] = {}, edgeRcp_[2] = {}, sharpRcp_[2] = {};   // (the values last set: uScreen / uRcp change only with the size)
     float pxScale_ = 1;                          // (uPxScale's value: scene pixels per window pixel)
     float clear_[3] = {};                        // (the sky colour in display space: prepareScene works it out)
@@ -219,6 +278,9 @@ private:
     void initWorldUniforms();
     // the material swatches (swatch): their atlas, its framebuffer, a one-texel lightmap, the quads, the 2D program
     unsigned swatchProg_ = 0;   // (the world program with every look: compileWorld(nullptr))
+    unsigned cleanTex_ = 0, cleanVao_ = 0, cleanVbo_ = 0;   // CLEAN SURFACES' averages (buildCleanMeans), texture unit 5
+    std::vector<bool> cleanUsed_;   // the looks in the map (12 on, the large ones as their base)
+    std::vector<float> cleanKey_;   // what the averages were made with (program, palette); cleared: make them again
     unsigned swatchTex_ = 0, swatchFbo_ = 0, swatchLm_ = 0, swatchVao_ = 0, swatchVbo_ = 0, imgProg_ = 0, imgVao_ = 0, imgVbo_ = 0;
     GLint uImgScreen_ = -1;
     float swatchKey_[13] = {};
@@ -227,6 +289,13 @@ private:
     std::vector<unsigned> swatchSlotUsed_;            // (the frame each slot was last drawn)
     unsigned swatchFrame_ = 0;
     void buildSwatches();
+    void buildCleanMeans(const std::vector<float>& key);   // CLEAN SURFACES: each look's average (uCleanTex)
+    std::vector<std::vector<uint8_t>> previewImgs_;   // (setPreviews': uploaded into previewTex_ when previewDirty_)
+    int previewW_ = 0, previewH_ = 0, previewCols_ = 1, previewRows_ = 1;
+    bool previewDirty_ = false;
+    unsigned previewTex_ = 0;
+    std::vector<float> previewQuads_;   // (this frame's: x0 y0 x1 y1 slot per quad)
+    void drawImageQuads(std::vector<float>& quads, unsigned tex, int cols, int rows, const std::vector<int>* slotOf);
     int worldVerts_ = 0;
     std::vector<WorldChunk> chunks_;
     std::vector<int> drawFirst_, drawCount_;
@@ -251,6 +320,7 @@ private:
     unsigned dynVao_ = 0, dynVbo_ = 0, flatVao_ = 0, flatVbo_ = 0, uiVao_ = 0, uiVbo_ = 0;
     unsigned shadowFbo_ = 0, shadowTex_ = 0;
     int shadowRes_ = 2048;
+    std::string gpuName_;
     bool shadowsOn_ = true;
     unsigned fontTex_ = 0;
     unsigned logoTex_ = 0;     // (logo_data.h, RGBA, mipmapped; bound to unit 1 by a flush that draws it)

@@ -879,6 +879,7 @@ void objectiveSensors(const Server& s, int id, BrainCall& c) {
     in[S_IT] = me.it;
     in[S_SITECOUNT] = (double)map.bombSites.size();
     in[S_TEAMRANK] = teamRank(s, id);
+    in[S_ROUNDNO] = m.round;
 }
 
 // ---- perception: look (view cone + line of sight) and listen, at 20 Hz of game time
@@ -1067,6 +1068,26 @@ Vec3 objective(Server& s, int id, BotBrain& b, const BrainParams& sp, Interp* ip
         case MODE_RACE: case MODE_SURF:
             if (me.checkpoint < (int)map.raceCheckpoints.size()) return map.raceCheckpoints[me.checkpoint].center();
             break;
+        case MODE_BALL:   // get behind the ball (on the far side from the enemy goal), then run through it
+            if (map.bombSites.size() == 2) {
+                float d[2][2] = {{1e30f, 1e30f}, {1e30f, 1e30f}};   // [site][team]: the nearest spawn
+                for (auto& sp : map.spawns)
+                    if (sp.team == SPAWN_A || sp.team == SPAWN_B)
+                        for (int k = 0; k < 2; k++) d[k][sp.team == SPAWN_A ? 0 : 1] = std::min(d[k][sp.team == SPAWN_A ? 0 : 1], length(sp.pos - map.bombSites[k].center()));
+                const int mine = me.team == TEAM_A ? 0 : 1;
+                const int enemyGoal = (d[0][mine] <= d[0][1 - mine]) ? 1 : 0;   // (site 0 nearer my spawns: it's mine)
+                Vec3 away = m.bombPos - map.bombSites[enemyGoal].center();
+                away.y = 0;
+                const float len = length(away);
+                if (len > 0.1f) {
+                    const Vec3 behind = m.bombPos + away / len * 1.6f;
+                    Vec3 to = behind - me.move.pos;
+                    to.y = 0;
+                    if (length(to) > 1.0f && dot(me.move.pos - m.bombPos, away) < 0) return behind;   // (on the wrong side: round it)
+                }
+                return m.bombPos;
+            }
+            break;
         case MODE_KOTH:
             if (map.hasHill) return {map.hill.center().x, map.hill.mn.y, map.hill.center().z}; // the hill's floor
             break;
@@ -1082,9 +1103,12 @@ Vec3 objective(Server& s, int id, BotBrain& b, const BrainParams& sp, Interp* ip
             if (m.bombState == BOMB_PLANTED) return m.bombPos;
             if (m.bombState == BOMB_DROPPED && att) return m.bombPos;
             if (!map.bombSites.empty()) {
-                // carrier (and attackers) head for the nearest site; defenders guard a site each, dealt out by their
-                // rank in the team (by slot id they could all draw the same site: every defender bot had odd ids - F10)
-                const AABB& site = map.bombSites[(att ? 0 : teamRank(s, id)) % map.bombSites.size()];
+                // defenders guard a site each, dealt out by their rank in the team (by slot id they could all draw the
+                // same site: every defender bot had odd ids - F10); the carrier (and the other attackers, until
+                // someone has the bomb) goes for site round + rank: every site in turn, round by round (always the
+                // first one, they never went to Datacenter's B, 8 m further)
+                const int rank = teamRank(s, id);
+                const AABB& site = map.bombSites[(size_t)(att ? m.round + rank : rank) % map.bombSites.size()];
                 if (att && m.bombState == BOMB_CARRIED && m.bombCarrier != id) {
                     const auto& c = s.players_[m.bombCarrier];
                     if (c.connected && c.alive) return c.move.pos; // escort (a teammate: shown on the HUD)
@@ -1408,8 +1432,8 @@ UserCmd botThinkDirect(Server& s, int id) {
             aimAt += b.velEst * (tf * b.leadFactor);
             aimAt.y += 0.5f * weaponAlt().knifeThrowGravity * tf * tf * b.dropFactor;
         }
-        if (wd.projectile) {
-            float tf = dist / wd.projSpeed;
+        if (wd.projectile) {   // (the primary rocket speeds up as it goes: its flight time with the thrust)
+            float tf = projectileFlightTime(dist, wd.projSpeed, w == WPN_ROCKET ? weaponAlt().rocketAccel : 0.0f);
             aimAt += b.velEst * (tf * b.leadFactor);
             if (w == WPN_ROCKET && sp.canLead) aimAt.y = perceived.y + sp.rocketFeetHeight; // splash at the feet
             if (wd.gravity > 0) aimAt.y += 0.5f * wd.gravity * tf * tf * b.dropFactor;
@@ -1656,8 +1680,9 @@ UserCmd botThinkDirect(Server& s, int id) {
                     if (!want) continue;
                     Vec3 tgt = cand - Vec3(0, 0.1f, 0); // just into the walkable surface, so the hook catches on it
                     Vec3 d = normalize(tgt - eye);
-                    float t = s.map_.raycast(eye, d, kGrappleRange * moveValue(me.move, MV_HOOK_RANGE, &s.map_));
-                    if (t >= 0 && length(eye + d * t - tgt) < 3.0f && safeHook(s, me, eye + d * t)) {
+                    int hm = -1;
+                    float t = s.map_.raycast(eye, d, kGrappleRange * moveValue(me.move, MV_HOOK_RANGE, &s.map_), nullptr, &hm, true);
+                    if (t >= 0 && hm != 9 && hm != kMatNoGrapple && length(eye + d * t - tgt) < 3.0f && safeHook(s, me, eye + d * t)) {
                         b.hookAnchor = eye + d * t;
                         b.hookUntil = now + 1.6;
                         b.hookChecked = false;

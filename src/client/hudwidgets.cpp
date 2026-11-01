@@ -17,7 +17,8 @@
 #include <thread>
 
 static const char* kValueNames[HV_COUNT] = {"health", "speed", "dash", "hook", "fps", "fpsmin", "ping", "loss", "time",
-                                            "enemies", "teammates", "kills", "deaths", "score", "tickrate"};
+                                            "enemies", "teammates", "kills", "deaths", "score", "tickrate",
+                                            "snaprate", "accuracy", "damage", "streak", "round", "vspeed", "height", "weapon"};
 const char* hudValueName(int v) { return v >= 0 && v < HV_COUNT ? kValueNames[v] : "?"; }
 
 // 7x7 icons, one row per string ('#' = filled)

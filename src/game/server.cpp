@@ -110,6 +110,7 @@ constexpr size_t kMaxUnackedEvents = 256;
 }
 
 bool g_serverRateCheck = true;
+bool g_legacyTickOrder = false;
 
 // Detached cleanup (stop()): counted, so an exiting process can wait for them a little (waitBackground).
 namespace {
@@ -220,6 +221,7 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     if (cfg_.maxPlayers > kMaxPlayers) cfg_.maxPlayers = kMaxPlayers;
     // ranked and time trials (their runs reach the leaderboard) play by the standard rules: no custom numbers, no logic
     if (cfg_.ranked || cfg_.timeTrial) cfg_.custom = CustomRules();
+    if (cfg_.timeTrial) rankedRaceMaps();   // (read the ranked race maps now, not on the first tick's snapshot)
     if (cfg_.custom.active()) { // a custom mode: its mode, limits and map pool
         const CustomRules& c = cfg_.custom;
         cfg_.mode = c.baseMode;
@@ -267,6 +269,18 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     nav_.buildAsync(map_);   // bot navigation, built off the tick thread
     if (cfg_.editMode && !map_.supportsMode(cfg_.mode)) // an edit session runs whatever the map can't play yet
         cfg_.mode = map_.supportsMode(MODE_FFA) ? MODE_FFA : cfg_.mode;
+    if (cfg_.ranked && !isRankedMap(map_, cfg_.arenaVariant) && isLegacyMap(cfg_.map)) {
+        // a ranked server set up for an old ranked map (temple, furnace, gantry, anvil: legacy since 1.19.6, never
+        // ranked): it plays the map its ladder is designed for instead of refusing to start after the update
+        Map d;
+        const std::string designed = rankedDefaultMap(cfg_.arenaVariant);
+        if (!designed.empty() && d.load(designed) && isRankedMap(d, cfg_.arenaVariant)) {
+            log(cfg_.map + " is a legacy map (never ranked): ranked plays " + designed + " instead");
+            cfg_.map = designed;
+            map_ = d;
+            nav_.buildAsync(map_);
+        }
+    }
     if (cfg_.ranked && !isRankedMap(map_, cfg_.arenaVariant)) { if (err) *err = "ranked only runs on the ranked maps for its ladder"; return false; }
     if (cfg_.ranked) cfg_.editMode = false;
     // any map runs any mode (one not built for it may be missing what the mode needs: the host was warned)
@@ -312,7 +326,7 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     if (cfg_.vsBots) {
         cfg_.autoStart = true;
         // 1v1 is one enemy and no allies, duel its team size a side (the team sliders made both 2v3: F7)
-        if (cfg_.mode == MODE_ARENA) { cfg_.botsEnemy = 1; cfg_.botsAlly = 0; }
+        if (isOneVsOneMode(cfg_.mode)) { cfg_.botsEnemy = 1; cfg_.botsAlly = 0; }
         else if (cfg_.mode == MODE_DUEL) { int n = std::min(std::max(cfg_.duelTeamSize, 1), 2); cfg_.botsEnemy = n; cfg_.botsAlly = n - 1; }
         bool teams = modeIsTeamBased(cfg_.mode);
         for (int k = 0; k < cfg_.botsEnemy; k++) addBot(teams ? TEAM_B : TEAM_A, cfg_.botSkill);
@@ -1266,6 +1280,29 @@ void Server::sendRules(int id) {
     }
 }
 
+// The voted modifiers as a custom mode (kVotedRules), sent to everyone; "" goes back to the standard rules. `damage`
+// is every weapon's damage multiplier.
+void Server::applyVotedRules(const std::string& mods, int mode) {
+    CustomRules r;
+    if (!mods.empty()) {
+        std::string t = std::string("custommode=") + kVotedRules + "\nmode=" + modeName(mode) + "\n";
+        std::istringstream ls(mods);
+        for (std::string line; std::getline(ls, line);) {
+            if (line.rfind("damage=", 0) == 0) { for (int w = 0; w < WPN_COUNT; w++) t += "weapon=" + std::to_string(w) + ",1," + line.substr(7) + ",1\n"; }
+            else t += line + "\n";
+        }
+        r.fromText(t);
+    }
+    cfg_.custom = r;
+    setActiveRules(r);
+    for (int i = 0; i < kMaxPlayers; i++) {
+        if (!players_[i].connected || players_[i].isBot) continue;
+        if (r.active()) sendRules(i);
+        else { GameEvent e; e.type = EV_RULES; e.a = 0; e.b = 1; e.text = "custommode="; sendEvent(i, e); }   // (the standard rules again)
+    }
+    glog(LOG_SIMPLE, "voted rules: %s", mods.empty() ? "standard" : votedModsTitle(mods).c_str());
+}
+
 void Server::moveToSpectator(int id) {
     ServerPlayer& p = players_[id];
     rulesOnSpectate(*this, id);   // (tag: that's elimination)
@@ -1275,13 +1312,96 @@ void Server::moveToSpectator(int id) {
     p.team = TEAM_SPECTATOR;
 }
 
+bool Server::oneVsOne() const {
+    return !cfg_.vsBots && (isOneVsOneMode(cfg_.mode) || (cfg_.mode == MODE_DUEL && std::max(cfg_.duelTeamSize, 1) == 1));
+}
+
+void Server::queueToPlay(int id) {
+    ServerPlayer& p = players_[id];
+    if (!oneVsOne() || p.isBot || p.specLocked) return;
+    p.queueSeq = ++queueNext_;
+    int ahead = 0;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        const auto& o = players_[i];
+        ahead += i != id && o.connected && o.team == TEAM_SPECTATOR && o.queueSeq > 0 && o.queueSeq < p.queueSeq;
+    }
+    GameEvent e; e.type = EV_MESSAGE;
+    const char* what = cfg_.mode == MODE_WINNER ? "round" : "match";
+    e.text = ahead == 0 ? std::string("you're next in line: you play the winner of this ") + what : "you're in line to play: " + std::to_string(ahead) + " ahead of you (winner stays)";
+    sendEvent(id, e);
+}
+
+// the first in line: a connected human spectator with the lowest queueSeq, or -1
+static int firstInLine(const Server& s) {
+    int best = -1;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        const auto& o = s.players_[i];
+        if (!o.connected || o.isBot || o.specLocked || o.team != TEAM_SPECTATOR || o.queueSeq == 0) continue;
+        if (best < 0 || o.queueSeq < s.players_[best].queueSeq) best = i;
+    }
+    return best;
+}
+
+void Server::rotateWinnerStays(int winner) {
+    if (!oneVsOne() || (winner != TEAM_A && winner != TEAM_B)) return;   // (a draw: the same two play again)
+    const int next = firstInLine(*this);
+    if (next < 0) return;   // nobody waiting: a rematch
+    const int seat = winner == TEAM_A ? TEAM_B : TEAM_A;
+    int loser = -1, champ = -1;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        const auto& o = players_[i];
+        if (!o.connected || o.balanceBot) continue;
+        if (o.team == seat && loser < 0) loser = i;
+        if (o.team == winner && champ < 0) champ = i;
+    }
+    std::string text;
+    if (loser >= 0) {
+        moveToSpectator(loser);
+        if (!players_[loser].isBot) queueToPlay(loser);
+        text = players_[loser].name + " goes to the back of the line; ";
+    }
+    ServerPlayer& n = players_[next];
+    n.team = seat; n.queueSeq = 0; n.letIn = false;
+    text += n.name + " steps in" + (champ >= 0 ? " against " + players_[champ].name + " (winner stays)" : "");
+    message(text);
+    glog(LOG_SIMPLE, "winner stays: %s", text.c_str());
+    syncWinnerScores();
+}
+
+// Winner stays: the team scores show the two playing, each one's round wins (their score)
+void Server::syncWinnerScores() {
+    if (cfg_.mode != MODE_WINNER) return;
+    ms_.scoreA = ms_.scoreB = 0;
+    for (const auto& o : players_)
+        if (o.connected && !o.balanceBot && (o.team == TEAM_A || o.team == TEAM_B)) (o.team == TEAM_A ? ms_.scoreA : ms_.scoreB) = (int16_t)std::max(0, o.score);
+    for (const auto& o : players_)   // (a balance bot: only when no human holds the seat)
+        if (o.connected && o.balanceBot && (o.team == TEAM_A || o.team == TEAM_B) && (o.team == TEAM_A ? ms_.scoreA : ms_.scoreB) == 0)
+            (o.team == TEAM_A ? ms_.scoreA : ms_.scoreB) = (int16_t)std::max(0, o.score);
+}
+
+void Server::fillOneVsOneSeats() {
+    if (!oneVsOne()) return;
+    for (int t : {TEAM_A, TEAM_B}) {
+        bool taken = false;
+        for (int i = 0; i < kMaxPlayers && !taken; i++) taken = players_[i].connected && !players_[i].balanceBot && players_[i].team == t;
+        if (taken) continue;
+        const int next = firstInLine(*this);
+        if (next < 0) return;
+        ServerPlayer& n = players_[next];
+        n.team = t; n.queueSeq = 0; n.letIn = false;
+        if (rulesRespawnDelay(*this, next) >= 0) n.respawnAt = time() + 0.5f;
+        message(n.name + " steps in (first in line)");
+    }
+    syncWinnerScores();
+}
+
 void Server::autoTeam(int id) {
     ServerPlayer& p = players_[id];
     if (p.specLocked) { p.team = TEAM_SPECTATOR; return; }   // voted to spectate: until the next map
     if (cfg_.mode == MODE_TOURNEY) { p.team = tourney_.running ? TEAM_SPECTATOR : TEAM_A; return; } // joins the next tourney
     if (rulesTeamLocked(*this)) { p.team = TEAM_SPECTATOR; p.waitingToPlay = true; return; }   // tag: watches this match, plays the next
     if (!modeIsTeamBased(cfg_.mode) || (cfg_.vsBots && !p.isBot)) { p.team = TEAM_A; return; }
-    if (cfg_.mode == MODE_DUEL || cfg_.mode == MODE_ARENA) { // duelTeamSize (1v1: 1) humans per side; balance bots make way, anyone else spectates
+    if (cfg_.mode == MODE_DUEL || isOneVsOneMode(cfg_.mode)) { // duelTeamSize (1v1: 1) humans per side; balance bots make way, anyone else spectates
         int takenA = 0, takenB = 0;
         for (int i = 0; i < kMaxPlayers; i++) {
             const auto& o = players_[i];
@@ -1289,8 +1409,9 @@ void Server::autoTeam(int id) {
             if (o.team == TEAM_A) takenA++;
             else if (o.team == TEAM_B) takenB++;
         }
-        int size = cfg_.mode == MODE_ARENA ? 1 : std::min(std::max(cfg_.duelTeamSize, 1), 2);
+        int size = isOneVsOneMode(cfg_.mode) ? 1 : std::min(std::max(cfg_.duelTeamSize, 1), 2);
         p.team = takenA < size && takenA <= takenB ? TEAM_A : takenB < size ? TEAM_B : takenA < size ? TEAM_A : TEAM_SPECTATOR;
+        if (p.team == TEAM_SPECTATOR && p.queueSeq == 0) queueToPlay(id);   // (1v1: in line to play the winner)
         return;
     }
     int a = 0, b = 0;
@@ -1457,7 +1578,9 @@ void Server::handleStringCmd(int id, const std::string& s) {
     if (cmd == "quip") { // a random quip (each listener's voice's set), heard from where they stand; one every 1.5 s at most
         if (time() < p.quipAt) return;
         p.quipAt = time() + 1.5f;
-        GameEvent e; e.type = EV_QUIP; e.a = (uint8_t)id; e.b = (uint8_t)(qrand() & 255);
+        // ("quip <n>", 1.19.4: the sender picked one, PLAYER > MORE: MY QUIP; each listener still plays n modulo their set)
+        const int pick = rest.empty() ? -1 : atoi(rest.c_str());
+        GameEvent e; e.type = EV_QUIP; e.a = (uint8_t)id; e.b = (uint8_t)(pick >= 0 && pick < 256 ? pick : (int)(qrand() & 255));
         broadcastEvent(e);
         return;
     }
@@ -1466,7 +1589,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
         p.typingAt = time() + 0.25f;
         GameEvent e; e.type = EV_TYPING; e.a = (uint8_t)id;
         for (int i = 0; i < kMaxPlayers; i++) if (i != id && players_[i].connected && !players_[i].isBot) sendEvent(i, e);
-    } else if (cmd == "say") {
+    } else if (cmd == "say" || cmd == "sayteam") {   // (sayteam: the TEAM CHAT key; to your own team in a team mode)
         if (rest.empty()) return;
         if (rest.size() > 120) rest.resize(120);
         for (auto& c : rest) if ((unsigned char)c < 32 || (unsigned char)c > 126) c = '?';   // (no control or escape codes in anyone's console or log)
@@ -1475,8 +1598,11 @@ void Server::handleStringCmd(int id, const std::string& s) {
         if (p.chatTokens < 1) { GameEvent e; e.type = EV_MESSAGE; e.text = "chat: slow down"; sendEvent(id, e); return; }
         p.chatTokens -= 1;
         GameEvent e; e.type = EV_CHAT; e.a = (uint8_t)id; e.text = rest;
-        broadcastEvent(e);
-        log(p.name + ": " + rest);
+        if (cmd == "sayteam" && modeIsTeamBased(cfg_.mode)) {   // (b = 1: shown as (TEAM); spectators talk among themselves)
+            e.b = 1;
+            for (int i = 0; i < kMaxPlayers; i++) if (players_[i].connected && players_[i].team == p.team) sendEvent(i, e);
+        } else broadcastEvent(e);
+        log(p.name + (e.b ? " (team): " : ": ") + rest);
         glog(LOG_SIMPLE, "chat %d \"%s\": %s", id, p.name.c_str(), rest.c_str());
     } else if (cmd == "ticketsig") { // the player's signature of the live ranked match id (EV_RANKSIGN): goes with the ticket
         // (or of the time trial's race ticket id, from its racer)
@@ -1494,9 +1620,17 @@ void Server::handleStringCmd(int id, const std::string& s) {
         if (cs >> c.x >> c.y >> c.z && std::isfinite(c.x + c.y + c.z)) p.move.pos = vmax(vmin(c, Vec3(4096, 4096, 4096)), Vec3(-4096, -4096, -4096));
     } else if (cmd == "team") {
         int t = rest == "a" ? TEAM_A : rest == "b" ? TEAM_B : rest == "spec" ? TEAM_SPECTATOR : -1;
+        if (t == TEAM_SPECTATOR && p.team == TEAM_SPECTATOR && p.queueSeq > 0) {   // (1v1: watching only, out of the line)
+            p.queueSeq = 0;
+            GameEvent e; e.type = EV_MESSAGE; e.text = "you left the line - join a team to get back in it"; sendEvent(id, e);
+            return;
+        }
         if (t < 0 || t == p.team) return;
         if (p.specLocked && t != TEAM_SPECTATOR) { GameEvent e; e.type = EV_MESSAGE; e.text = "you were voted to spectate - you can play again on the next map"; sendEvent(id, e); return; }
-        if (rankedLive()) { GameEvent e; e.type = EV_MESSAGE; e.text = "a ranked match is being played - teams stay as they are until it's over"; sendEvent(id, e); return; }
+        if (rankedLive()) {
+            if (oneVsOne() && t != TEAM_SPECTATOR && p.team == TEAM_SPECTATOR) { if (p.queueSeq == 0) queueToPlay(id); return; }   // (in line for the winner)
+            GameEvent e; e.type = EV_MESSAGE; e.text = "a ranked match is being played - teams stay as they are until it's over"; sendEvent(id, e); return;
+        }
         if (tourney_.running && t != TEAM_SPECTATOR) { // the bracket decides who plays
             GameEvent e; e.type = EV_MESSAGE; e.text = "a tourney is running - you can join the next one"; sendEvent(id, e);
             return;
@@ -1506,17 +1640,22 @@ void Server::handleStringCmd(int id, const std::string& s) {
             return;
         }
         if (!modeIsTeamBased(cfg_.mode) && t == TEAM_B) t = TEAM_A;
-        if ((cfg_.mode == MODE_DUEL || cfg_.mode == MODE_ARENA) && t != TEAM_SPECTATOR && !p.letIn) {
+        if ((cfg_.mode == MODE_DUEL || isOneVsOneMode(cfg_.mode)) && t != TEAM_SPECTATOR && !p.letIn) {
             int n[2] = {0, 0};
             for (int i = 0; i < kMaxPlayers; i++)
                 if (i != id && players_[i].connected && !players_[i].balanceBot && (players_[i].team == TEAM_A || players_[i].team == TEAM_B)) n[players_[i].team == TEAM_B]++;
-            int size = cfg_.mode == MODE_ARENA ? 1 : std::min(std::max(cfg_.duelTeamSize, 1), 2);
+            int size = isOneVsOneMode(cfg_.mode) ? 1 : std::min(std::max(cfg_.duelTeamSize, 1), 2);
             int mine = n[t == TEAM_B], other = n[t != TEAM_B];
             if (mine >= size) {
                 if (other < size) {            // uneven: no vote needed, take the side with room
                     t = t == TEAM_A ? TEAM_B : TEAM_A;
-                } else if (n[0] == n[1] && !cfg_.ranked) {   // even and full: the players decide
+                } else if (n[0] == n[1] && !cfg_.ranked) {   // even and full: the players decide (and in line meanwhile)
+                    if (p.queueSeq == 0) queueToPlay(id);
                     callVote(id, VOTE_LETIN, id);
+                    return;
+                } else if (oneVsOne()) {   // ranked 1v1: in line to play the winner
+                    if (p.queueSeq == 0) queueToPlay(id);
+                    else { GameEvent e; e.type = EV_MESSAGE; e.text = "you're already in line to play"; sendEvent(id, e); }
                     return;
                 } else {
                     GameEvent e; e.type = EV_MESSAGE; e.text = cfg_.ranked ? "that side is full (ranked is 1v1)" : "that side is full"; sendEvent(id, e);
@@ -1524,8 +1663,8 @@ void Server::handleStringCmd(int id, const std::string& s) {
                 }
             }
         }
-        if (t == TEAM_SPECTATOR) moveToSpectator(id);
-        else { if (p.alive) killPlayer(id, -1, 255); p.team = t; }
+        if (t == TEAM_SPECTATOR) { moveToSpectator(id); p.queueSeq = 0; }   // (chose to watch: out of the line)
+        else { if (p.alive) killPlayer(id, -1, 255); p.team = t; p.queueSeq = 0; }
         message(p.name + (t == TEAM_SPECTATOR ? " is spectating" : !modeIsTeamBased(cfg_.mode) ? " joined the game" : t == TEAM_A ? " joined team A" : " joined team B"));
         if (t != TEAM_SPECTATOR && rulesRespawnDelay(*this, id) >= 0) p.respawnAt = time() + 1.0f;
     } else if (cmd == "name") {
@@ -1579,8 +1718,18 @@ void Server::handleStringCmd(int id, const std::string& s) {
                 if (k >= 0) callVote(id, VOTE_BOTSKILL, k);
             }
         } }
-        else if (what == "spec") { // callvote spec <name|id>: move a player to spectator until the next map
-            std::string who = rest.substr(std::min(rest.size(), rest.find("spec") + 4));   // (names can have spaces)
+        else if (what == "restart") callVote(id, VOTE_RESTART, 0);   // (1.19.4: restart the match, back to warmup)
+        else if (what == "extend") {   // +5 minutes on a timed round
+            if (ms_.phase != PHASE_LIVE || phaseEnd_ <= 0) { GameEvent e; e.type = EV_MESSAGE; e.text = "only a timed round can be extended"; sendEvent(id, e); }
+            else callVote(id, VOTE_EXTEND, 300);
+        }
+        else if (what == "shuffle") {   // shuffle the teams and restart
+            if (!modeIsTeamBased(cfg_.mode)) { GameEvent e; e.type = EV_MESSAGE; e.text = "not a team mode"; sendEvent(id, e); }
+            else callVote(id, VOTE_SHUFFLE, 0);
+        }
+        else if (what == "spec" || what == "kick") { // callvote spec|kick <name|id>: move a player to spectator until the next map, or kick them
+            const bool kick = what == "kick";
+            std::string who = rest.substr(std::min(rest.size(), rest.find(what) + what.size()));   // (names can have spaces)
             size_t a = who.find_first_not_of(" \t"), b = who.find_last_not_of(" \t\r\n");
             who = a == std::string::npos ? std::string() : who.substr(a, b - a + 1);
             auto refuse = [&](const std::string& t) { GameEvent e; e.type = EV_MESSAGE; e.text = t; sendEvent(id, e); };
@@ -1593,11 +1742,12 @@ void Server::handleStringCmd(int id, const std::string& s) {
             else if (target < 0) refuse(err);
             else if (target == id) refuse("to watch, join the spectators yourself (team spec)");
             else if (players_[target].isBot) refuse("that's a bot - vote bots off instead");
-            else if (players_[target].team == TEAM_SPECTATOR) refuse(players_[target].name + " is already spectating");
+            else if (!kick && players_[target].team == TEAM_SPECTATOR) refuse(players_[target].name + " is already spectating");
             else if (p.specVoted >> target & 1) refuse("you already called a vote on " + players_[target].name + " this map");
             else {
-                callVote(id, VOTE_SPEC, target, "", (int)players_[target].joinId);
-                if (vote_.kind == VOTE_SPEC && vote_.caller == id && vote_.arg == target) p.specVoted |= 1u << target;   // (once per map, pass or fail)
+                const int kind = kick ? VOTE_KICK : VOTE_SPEC;
+                callVote(id, kind, target, "", (int)players_[target].joinId);
+                if (vote_.kind == kind && vote_.caller == id && vote_.arg == target) p.specVoted |= 1u << target;   // (once per map, pass or fail)
             }
         }
         else if (what == "start") {
@@ -1626,11 +1776,33 @@ void Server::handleStringCmd(int id, const std::string& s) {
             int mode = what == "mode" ? modeFromName(arg.c_str()) : m2.empty() ? cfg_.mode : modeFromName(m2.c_str());
             MapInfo m = mapInfo(mapName);
             std::string why;   // say exactly what's wrong instead of a generic refusal
-            if (mode < 0) why = "unknown mode '" + (what == "mode" ? arg : m2) + "'";
-            else if (cfg_.custom.active() && !cfg_.custom.maps.empty() && std::find(cfg_.custom.maps.begin(), cfg_.custom.maps.end(), mapName) == cfg_.custom.maps.end())
+            // modifiers after the ruleset: "mods" then key=value words ("mods" alone: back to the standard rules)
+            bool setMods = false;
+            std::string mods;
+            for (std::string w; vs >> w;) {
+                if (w == "mods") { setMods = true; continue; }
+                const size_t eq = w.find('=');
+                const std::string k = eq == std::string::npos ? w : w.substr(0, eq), v = eq == std::string::npos ? "" : w.substr(eq + 1);
+                static const char* const kNum[] = {"gravity", "speed", "jump", "knockback", "damage", "health"};
+                static const char* const kBool[] = {"vampire", "regen", "selfdamage", "dash", "grapple", "instagib"};
+                bool known = false, num = false;
+                for (const char* n : kNum) if (k == n) known = num = true;
+                for (const char* n : kBool) if (k == n) known = true;
+                char* end = nullptr;
+                const double f = v.empty() ? 0 : strtod(v.c_str(), &end);
+                if (!setMods || !known || v.empty() || !end || *end || !std::isfinite(f) || f < 0 || f > 1000 || (!num && f != 0 && f != 1)) { why = "bad modifier '" + w + "'"; break; }
+                mods += k + "=" + v + "\n";
+            }
+            if (!why.empty()) {}
+            else if (mode < 0) why = "unknown mode '" + (what == "mode" ? arg : m2) + "'";
+            else if (setMods && (cfg_.ranked || cfg_.timeTrial)) why = "no modifiers on a ranked or time trial server";
+            else if (setMods && hostCustom()) why = "this server plays the custom mode " + cfg_.custom.name;
+            else if (setMods && mode == MODE_TOURNEY && !mods.empty()) why = "tourney plays its rulesets only";
+            else if (hostCustom() && !cfg_.custom.maps.empty() && std::find(cfg_.custom.maps.begin(), cfg_.custom.maps.end(), mapName) == cfg_.custom.maps.end())
                 why = mapName + " isn't in this custom mode's map pool";
-            else if (cfg_.custom.active() && mode != cfg_.custom.baseMode) why = "this server plays the custom mode " + cfg_.custom.name;
+            else if (hostCustom() && mode != cfg_.custom.baseMode) why = "this server plays the custom mode " + cfg_.custom.name;
             else if (!m.ok) why = "this server doesn't have the map '" + mapName + "' (it may be on an older version)";
+            else if (isLegacyMap(mapName) && !legacyMapsListed()) why = mapName + " is a legacy map (this server doesn't list the old maps)";   // (owner, 2026-10-31)
 
             bool ok = why.empty();
             if (ok && cfg_.ranked && (!arenaVariantRanked(variant) || mode != rankedMode(variant) || !(m.ranked >> variant & 1))) {
@@ -1638,7 +1810,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
                 return;
             }
             if (!ok) { GameEvent e; e.type = EV_MESSAGE; e.text = "can't vote: " + why; sendEvent(id, e); }
-            else callVote(id, VOTE_MAP, mode, mapName, variant);
+            else callVote(id, VOTE_MAP, mode, mapName, variant, setMods ? &mods : nullptr);
         }
     } else if (cmd == "vote") {
         castVote(id, rest == "yes" || rest == "y" || rest == "1");
@@ -1649,6 +1821,14 @@ void Server::handleStringCmd(int id, const std::string& s) {
         p.specTarget = w >= 0 && w < kMaxPlayers ? w : -1;
     } else if (cmd == "kill") {
         if (p.alive) killPlayer(id, ringOutKiller(id), 255);   // (knocked off, then "kill": still theirs)
+    } else if (cmd == "racereset") {   // race / surf (the R key): back to your last checkpoint, or ("full") to the start
+        if (isRaceMode(ms_.mode) && p.alive && !p.finished && p.team != TEAM_SPECTATOR && !editing_) {
+            if (rest == "full" || p.checkpoint == 0) {
+                p.checkpoint = 0;
+                p.raceSplits.clear();   // (a run from the start again: the splits begin anew)
+            }
+            spawnPlayer(id);   // (at checkpoint p.checkpoint's spot, or a race spawn; EV_SPAWN resets the client's prediction)
+        }
     } else if (isAdmin(id)) {
         command(s, id);
     }
@@ -1678,6 +1858,34 @@ void Server::command(const std::string& line, int fromPlayer) {
         if (blocked) { reply("a ranked match is being played: '" + cmd + "' has to wait until it's over"); return; }
     }
     if (cmd == "editmode" && cfg_.ranked) { reply("no map editing on a ranked server (vote ranked off first)"); return; }
+    if (cmd == "practice") {   // practice savepos|loadpos|god|passive|reset: the host alone with bots (no other human: no unfair edge)
+        int humans = 0;
+        for (auto& o : players_) humans += o.connected && !o.isBot;
+        if (fromPlayer < 0 || cfg_.ranked || humans > 1) { reply("practice: only when you host and no one else has joined"); return; }
+        ServerPlayer& p = players_[fromPlayer];
+        if (arg == "savepos" && p.alive) {
+            p.practiceSaved = true; p.practicePos = p.move.pos; p.practiceVel = p.move.vel; p.practiceYaw = p.yaw; p.practicePitch = p.pitch;
+            reply("practice: position saved");
+        } else if (arg == "loadpos") {
+            if (!p.practiceSaved) { reply("practice: no position saved yet"); return; }
+            if (!p.alive) spawnPlayer(fromPlayer);
+            p.move = MoveState();   // (a fresh move state there: dashes and grapple ready, as a spawn's)
+            p.move.pos = p.practicePos; p.move.vel = p.practiceVel; p.yaw = p.practiceYaw; p.pitch = p.practicePitch;
+            GameEvent e;   // (EV_SPAWN: the client's prediction starts again from here, facing the saved way)
+            e.type = EV_SPAWN; e.a = (uint8_t)fromPlayer; e.c = (int16_t)std::lround(std::remainder(p.yaw, 2 * PI) * 1000.0f);
+            sendEvent(fromPlayer, e);
+        } else if (arg == "setpos") {   // (1.19.4: the editor's TEST PLAY: START AT CAMERA: "practice setpos x y z yaw pitch", then loadpos)
+            float x, y, z, yw = 0, pt = 0;
+            if (!(ss >> x >> y >> z) || !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) { reply("practice setpos x y z [yaw pitch]"); return; }
+            ss >> yw >> pt;
+            p.practiceSaved = true; p.practicePos = vmax(vmin(Vec3(x, y, z), Vec3(4096, 4096, 4096)), Vec3(-4096, -4096, -4096)); p.practiceVel = Vec3(); p.practiceYaw = std::isfinite(yw) ? yw : 0; p.practicePitch = std::isfinite(pt) ? clampf(pt, -1.5f, 1.5f) : 0;
+            reply("practice: position saved");
+        } else if (arg == "god") { p.practiceGod = !p.practiceGod; reply(p.practiceGod ? "practice: you take no damage" : "practice: you take damage again"); }
+        else if (arg == "passive") { practicePassive_ = !practicePassive_; reply(practicePassive_ ? "practice: bots won't fire" : "practice: bots fire again"); }
+        else if (arg == "reset") { p.practiceGod = false; practicePassive_ = false; p.practiceSaved = false; reply("practice: all off"); }
+        else reply("practice savepos | loadpos | setpos | god | passive | reset");
+        return;
+    }
     if (cmd == "editmode") { // editmode on|off: switch between editing the map together and playing it
         if (arg == "on") { if (!editing_) setEditing(true); return; }
         if (!editing_) return;
@@ -1878,7 +2086,7 @@ void Server::spawnPlayer(int id) {
         // teammate stands on is taken (-1e5: behind any seen one, ahead of a crouch-only one).
         const bool teams = modeIsTeamBased(ms_.mode) && p.team != TEAM_SPECTATOR;
         const bool unseen = ms_.mode == MODE_FFA || (arenaRules() & AR_INSTAGIB) || teams;
-        auto rival = [&](int i) { return i != id && players_[i].connected && players_[i].alive && (!teams || players_[i].team != p.team); };
+        auto rival = [&](int i) { return i != id && players_[i].connected && players_[i].alive && (!teams || (players_[i].team != p.team && !(spawnBatch_ && (batchSpawned_ >> i & 1)))); };
         const SpawnPoint* best = cands[qrand() % cands.size()];
         float bestScore = -1e9f;
         bool bestCrouched = false;
@@ -2047,7 +2255,7 @@ void Server::killPlayer(int victim, int killer, int weapon) {
 void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const Vec3& knock) {
     ServerPlayer& v = players_[victim];
     if (!v.alive) return;
-    bool canHurt = rulesCanDamage(*this, attacker, victim, weapon);
+    bool canHurt = rulesCanDamage(*this, attacker, victim, weapon) && !v.practiceGod;   // (practice: TAKE NO DAMAGE)
     bool friendly = attacker >= 0 && attacker != victim && modeIsTeamBased(cfg_.mode) && players_[attacker].team == v.team;
     // Race: you can only affect yourself (rocket jumps etc.); hide and seek / tag: only "it" touches anyone (the rules)
     if (!rulesCanHit(*this, attacker, victim, weapon)) return;
@@ -2068,8 +2276,15 @@ void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const
     if (attacker >= 0 && attacker != victim) dmg *= duelModDef(duelMod()).damageMul; // glass cannons / double damage
     if (attacker >= 0 && attacker != victim && (rules & AR_INSTAGIB)) dmg = std::max(dmg, v.health + 1);
     if (attacker >= 0 && attacker != victim && !friendly) players_[attacker].hitSinceShot = true;
-    if (attacker >= 0 && attacker != victim && !friendly) players_[attacker].dmgDealt += std::min(dmg, std::max(0.0f, v.health)); // (the health it took)
-    v.health -= dmg;
+    // Power: nobody dies of damage. An enemy's hit comes off the victim's team pool (while the round is live), never
+    // their own health; your own and the world's hits take nothing (the knockback above still lands).
+    const bool power = ms_.mode == MODE_POWER;
+    if (power && (attacker < 0 || attacker == victim || friendly)) return;
+    if (attacker >= 0 && attacker != victim && !friendly) players_[attacker].dmgDealt += power ? dmg : std::min(dmg, std::max(0.0f, v.health)); // (the health it took)
+    if (power) {
+        float& pool = v.team == TEAM_A ? ms_.payloadDist : ms_.payloadLen;
+        if (ms_.phase == PHASE_LIVE && (v.team == TEAM_A || v.team == TEAM_B)) pool = std::max(0.0f, pool - dmg);
+    } else v.health -= dmg;
     v.lastDamagedAt = time();
     if (attacker >= 0 && attacker != victim) {
         lastProgress_ = time();
@@ -2147,7 +2362,7 @@ bool Server::takeAcid(int id) {
         p.health = std::min(lifeMaxHealth(), p.health - share * lifeMaxHealth());
         return false;
     }
-    if (share <= 0 || !p.alive || !acidHurts(ms_.phase)) return false;
+    if (share <= 0 || !p.alive || !acidHurts(ms_.phase) || ms_.mode == MODE_POWER) return false;   // (power: the world takes nothing)
     p.health -= share * lifeMaxHealth();
     p.lastDamagedAt = time();
     glog(LOG_VERBOSE, "acid victim=%d dmg=%.3f health=%.2f", id, share * lifeMaxHealth(), p.health);
@@ -2181,7 +2396,7 @@ void Server::clientHitReport(int id, const std::string& rest) {
         headHit_[v] = false;
         any = true;
     }
-    if (any && shotHit(id)) p.shotsHit++;
+    if (any && shotHit(id)) p.addHit(weapon);
 }
 
 void Server::flushHit(int attacker, int victim) {
@@ -2228,16 +2443,32 @@ void Server::simulate() {
     }
     for (auto& p : players_)   // voted to spectate: whatever put them back on a team (a tourney ending...), they watch
         if (p.specLocked && p.connected && p.team != TEAM_SPECTATOR) { p.team = TEAM_SPECTATOR; p.alive = false; p.respawnAt = -1; p.waitingToPlay = false; }
-    for (int i = 0; i < kMaxPlayers; i++) {
+    // Who moves first (a map worker, 2026-10-30: the bots added second won ~3% more): every bot thinks first, all on
+    // the same world (as the tick found it), then everyone's commands run, starting from a different player each tick
+    // (the connected ones in slot order, turned by the tick). Before, each bot thought just before its own command ran,
+    // in slot order, so a higher slot saw the lower ones' moves, shots and deaths of this tick, and the route-search
+    // budget and every same-tick trade went to the lower slots every time.
+    int order[kMaxPlayers], nOrder = 0;
+    for (int i = 0; i < kMaxPlayers; i++) if (players_[i].connected) order[nOrder++] = i;
+    const bool legacy = g_legacyTickOrder;
+    const int first = nOrder && !legacy ? (int)(tick_ % (uint32_t)nOrder) : 0;
+    UserCmd botCmd[kMaxPlayers];
+    auto think = [&](int i) {
+        UserCmd& c = botCmd[i];
+        { QZONE("bot think"); c = botThink(*this, i); }
+        if (practicePassive_) c.buttons &= ~(BTN_FIRE | BTN_ALTFIRE);   // (practice: PASSIVE BOTS)
+        c.seq = tick_; // (a command number like a client's; spread doesn't depend on it, NET-9)
+        c.msec = (uint8_t)(1000 / tickRate());
+        c.viewTick = (uint32_t)timeMs_;   // (as a client sends it: 32 bits)
+    };
+    if (!legacy) for (int k = 0; k < nOrder; k++) { const int i = order[(first + k) % nOrder]; if (players_[i].isBot) think(i); }
+    for (int k = 0; k < nOrder; k++) {
+        const int i = order[(first + k) % nOrder];
         ServerPlayer& p = players_[i];
-        if (!p.connected) continue;
+        if (!p.connected) continue;   // (dropped by an earlier command: a kick vote, say)
         if (p.isBot) {
-            UserCmd c;
-            { QZONE("bot think"); c = botThink(*this, i); }
-            c.seq = tick_; // (a command number like a client's; spread doesn't depend on it, NET-9)
-            c.msec = (uint8_t)(1000 / tickRate());
-            c.viewTick = (uint32_t)timeMs_;   // (as a client sends it: 32 bits)
-            { QZONE("bot cmd"); runPlayerCmd(i, c); }
+            if (legacy) think(i);
+            { QZONE("bot cmd"); runPlayerCmd(i, botCmd[i]); }
             continue;
         }
         p.cmdTokensMs = std::min(p.cmdTokensMs + 1000.0f / tickRate(), kMaxCmdTokensMs);
@@ -2298,7 +2529,9 @@ void Server::drainCmds(int id) {
     }
 }
 
-void Server::runPlayerCmd(int id, const UserCmd& cmd) {
+void Server::runPlayerCmd(int id, const UserCmd& cmdIn) {
+    UserCmd cmd = cmdIn;
+    if (bombRooted(ms_, id)) rootCmd(cmd);   // (planting / defusing: no moving or shooting of your own; knockback still moves you)
     ServerPlayer& p = players_[id];
     p.lastCmdSeq = cmd.seq;
     p.cmdsRun++;
@@ -2322,7 +2555,7 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     {
         HookProbe probe;   // a grapple that may fire in this command: the enemies it can catch
         grappleTargets(id, cmd, probe);
-        pmove(p.move, cmd, map_, probe.n || probe.nr ? &probe : nullptr);
+        pmove(p.move, cmd, map_, probe.n || probe.nr || probe.ball ? &probe : nullptr);
         if (p.move.events & (ME_JUMP | ME_LAND | ME_DASH | ME_SUPER | ME_HYPER))   // (for everyone else's sounds: PlayerSnap::keys)
             p.moveEv |= (uint16_t)((p.move.events & 31) << kKeyEvShift) | (p.move.landSpeed > kHardLandSpeed ? KEY_EV_LAND_HARD : 0);
         if (probe.hit >= 0) startLatch(id, probe.id[probe.hit], probe.head);
@@ -2346,7 +2579,7 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     if (p.weapon != heldWeapon) p.prevWeapon = heldWeapon;
     bool disabled = away(p.weapon);
     // a weapon switch never fires the new weapon with a button held from before: let go and press again
-    if (p.weapon != heldWeapon && (cmd.buttons & (BTN_FIRE | BTN_ALTFIRE))) p.fireLocked = true;
+    if (p.weapon != heldWeapon && (cmd.buttons & fireButtons(p.weapon))) p.fireLocked = true;
     // Sticky launcher: alt-fire detonates your armed stickies.
     if (p.weapon == WPN_STICKY && (cmd.buttons & BTN_ALTFIRE) && !p.fireLocked)
         for (auto& pr : projectiles_)
@@ -2358,7 +2591,7 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     // The locator (hide and seek / tag, "it" only): fire shows one random hider / runner, every kLocatorCooldown.
     if (p.weapon == WPN_LOCATOR) {
         if ((cmd.buttons & BTN_FIRE) && !p.fireLocked && !(p.move.flags & MF_FROZEN)) useLocator(id);
-        if (p.fireLocked && !(cmd.buttons & (BTN_FIRE | BTN_ALTFIRE))) p.fireLocked = false;
+        if (p.fireLocked && !(cmd.buttons & fireButtons(p.weapon))) p.fireLocked = false;
         p.knifeSwingUntil = -1;
         return;
     }
@@ -2367,7 +2600,7 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     bool altShot = altFires(p.weapon) && (cmd.buttons & BTN_ALTFIRE) && !itMode; // no throwing in hide and seek / tag
     bool wantFire = ((cmd.buttons & BTN_FIRE) != 0 || altShot) && (!itMode || p.it) && !disabled; // only "it" has a knife
     if (p.fireLocked) { // the click that threw the knife doesn't also fire the weapon you switched to
-        if (!(cmd.buttons & (BTN_FIRE | BTN_ALTFIRE))) p.fireLocked = false;
+        if (!(cmd.buttons & fireButtons(p.weapon))) p.fireLocked = false;
         else wantFire = altShot = false;
     }
     const double now = p.cmdTime;   // refire runs on the command clock (F22)
@@ -2485,6 +2718,7 @@ void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint
     glassFromRay(eye, dir, wall, id);   // (a pane stops the shot, and breaks)
     blockFromRay(eye, dir, wall, dmg, id);   // (a breakable block takes the shot's damage)
     float best = wall >= 0 ? wall : range;
+    ballShot(*this, eye, dir, best, dmg, id);   // (ball mode: the shot pushes the ball it meets)
     int hit = -1;
     bool hitHead = false;
     Vec3 inv = safeInv(dir);
@@ -2601,6 +2835,10 @@ void Server::grappleTargets(int id, const UserCmd& cmd, HookProbe& probe) {
         probe.box[probe.n] = hitBox(pos, crouched);
         probe.id[probe.n++] = (uint8_t)i;
     }
+    if (ms_.mode == MODE_BALL && ballSet_ && ballRespawnAt_ <= 0) {   // the ball (where it is: it isn't rewound)
+        const Vec3 h(kBallHalf, kBallHalf, kBallHalf);
+        probe.ball = true; probe.ballBox = AABB{ms_.bombPos - h, ms_.bombPos + h};
+    }
     // Rocket riding: the rockets in reach, anyone's. Your own are tested where they are now (the client draws them that
     // far ahead: X5), anyone else's rewound along their path to where you saw them (the view time plus the
     // interpolation delay the client draws projectiles ahead by: rocketSeenMs). Bots don't ride rockets.
@@ -2614,7 +2852,7 @@ void Server::grappleTargets(int id, const UserCmd& cmd, HookProbe& probe) {
         if (!pr.active || pr.type != WPN_ROCKET || pr.stuck) continue;
         const Vec3 d = pr.pos - eye;
         if (dot(d, d) > reach * reach) continue;
-        const float g = projectileGravity(pr.type, pr.gravMul);
+        const ProjFlight g = projectileFlight(pr.type, pr.gravMul);
         Vec3 at = pr.pos;
         if (pr.owner != id) {
             if (!haveSeen) {
@@ -2626,7 +2864,7 @@ void Server::grappleTargets(int id, const UserCmd& cmd, HookProbe& probe) {
             projectileRewind(at, v, g, (float)(timeMs_ - seen) * 0.001f);
         }
         const int k = probe.nr++;
-        probe.at[k] = at; probe.pos[k] = pr.pos; probe.vel[k] = pr.vel; probe.grav[k] = g; probe.rid[k] = pr.id;
+        probe.at[k] = at; probe.pos[k] = pr.pos; probe.vel[k] = pr.vel; probe.grav[k] = g.grav; probe.accel[k] = g.accel; probe.rid[k] = pr.id;
     }
 }
 
@@ -2645,7 +2883,7 @@ void Server::tickRocketRides() {
             hold = dist <= kGrappleRange * moveValue(p.move, MV_HOOK_RANGE, &map_) && !(dist > 1e-3f && map_.raycastAny(from, d / dist, dist));
         }
         if (hold) {
-            p.move.hookPoint = pr->pos; p.move.hookVel = pr->vel; p.move.hookGrav = projectileGravity(pr->type, pr->gravMul);
+            p.move.hookPoint = pr->pos; p.move.hookVel = pr->vel; p.move.hookGrav = projectileGravity(pr->type, pr->gravMul); p.move.hookAccel = projectileAccel(pr->type, pr->gravMul);
             continue;
         }
         p.move.flags &= ~MF_HOOKED;
@@ -2867,7 +3105,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
             pr.id = nextProjId_++;
             pr.type = p.weapon;
             pr.owner = id;
-            if (p.weapon != WPN_SYRINGE) p.shotsFired++;   // accuracy: a hit is counted when it lands
+            if (p.weapon != WPN_SYRINGE) p.addShot(p.weapon);   // accuracy: a hit is counted when it lands
             pr.pos = eye + aim * 0.3f;
             pr.vel = spreadAim(aim, spread, 0, 1, p.burstShot) * wd.projSpeed;
             if (p.weapon == WPN_ROCKET && alt) { pr.vel = pr.vel * weaponAlt().lobSpeed; pr.gravMul = kRocketLobGravity; pr.alt = true; }
@@ -2878,7 +3116,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
         }
         return false;
     }
-    p.shotsFired++;
+    p.addShot(p.weapon);
     for (bool& h : headHit_) h = false;
     uint64_t vt = fromWireMs(cmd.viewTick); // ms on the server clock
     if (vt > timeMs_) vt = timeMs_;
@@ -2920,7 +3158,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
         any = true;
     }
     if (reported) for (int i = 0; i < kMaxPlayers; i++) any |= dmgPer[i] > 0;   // (as the server sees it: the swing's end)
-    else if (shotHit(id)) p.shotsHit++;
+    else if (shotHit(id)) p.addHit(p.weapon);
     for (bool& h : headHit_) h = false;
     return any;
 }
@@ -2955,7 +3193,7 @@ void Server::stepProjectile(Projectile& pr) {
     {
         const WeaponDef& wd = weaponDef(pr.type);
         const float h = kMoveStep * map_.projectileRate(pr.pos);   // (a slow-mo field: half a step)
-        pr.vel.y -= projectileGravity(pr.type, pr.gravMul, wd) * h;
+        projectileStepVel(pr.vel, {projectileGravity(pr.type, pr.gravMul, wd), projectileAccel(pr.type, pr.gravMul)}, h);   // (the drop, the primary rocket's thrust)
         Vec3 step = pr.vel * h;
         float len = length(step);
         if (len < 1e-6f) return;
@@ -2976,8 +3214,23 @@ void Server::stepProjectile(Projectile& pr) {
             if (t >= 0 && t <= best) { best = t; hitPlayer = i; hitHead = inHead; hitBb = projTargetBox_[k]; }
         }
         if (hitPlayer >= 0) hitBb = hitHead ? headBox(hitBb) : bodyBox(hitBb);
+        // ball mode: projectiles hit the ball (owner, 2026-11-01: "projectiles should interact with it"). A blast goes off
+        // on it (and pushes it as any blast does), a sticky drops off it; anything else gives it a quarter of its speed
+        if (ms_.mode == MODE_BALL && ballSet_ && ballRespawnAt_ <= 0) {
+            const Vec3 bh(kBallHalf, kBallHalf, kBallHalf);
+            const float tb = rayAABB(pr.pos, inv, AABB{ms_.bombPos - bh, ms_.bombPos + bh}, best);
+            if (tb >= 0 && tb <= best) {
+                const Vec3 at = pr.pos + dir * tb;
+                if (wd.splashRadius > 0 && !wd.sticky) { pr.pos = at; pr.active = false; explode(at, pr.owner, pr.type, -1, pr.alt); return; }
+                const float sp = length(pr.vel);
+                ballHit(*this, dir * std::min(sp * 0.25f, 15.0f), pr.owner);
+                if (wd.sticky) { pr.pos = at - dir * 0.05f; pr.vel = {}; return; }   // (it falls off and sticks where it lands)
+                pr.pos = at; pr.active = false;
+                return;
+            }
+        }
         if (wall < 0 && hitPlayer < 0) { pr.pos += step; return; }
-        Vec3 at = pr.pos + dir * std::max(0.0f, best - 0.05f);
+        Vec3 at = blastPoint(pr.pos, dir, best);
         // a teleporter: out of the next one with its link, 10 cm off its exit face, at its speed straight out of it
         if (hitPlayer < 0 && wallMat == kMatTeleport) {
             const Vec3 in = pr.pos + dir * (wall + 0.01f);
@@ -3069,7 +3322,7 @@ void Server::stepProjectile(Projectile& pr) {
                 float k = pr.type == WPN_CROSSBOW ? ex.knock : pr.type == WPN_KNIFE ? 3.0f * ex.knock : 3.0f;
                 weaponHit(hitPlayer, pr.owner, dmg, dir * k, pr.type, pr.alt, dist, true, 1.0f);
                 headHit_[hitPlayer] = false;
-                if (pr.owner >= 0 && shotHit(pr.owner)) players_[pr.owner].shotsHit++;
+                if (pr.owner >= 0 && shotHit(pr.owner)) players_[pr.owner].addHit(pr.type);
             }
             pr.pos = at;
             pr.active = false;
@@ -3165,7 +3418,7 @@ bool Server::breakGlass(int brush, int how, const Vec3& at, const Vec3& dir, int
     d.seed = glassRand(glassSeed_);
     broadcastEvent(destructEvent(d));
     static thread_local std::vector<GlassShard> sh;
-    glassShards(pane, how, at, dir, d.seed, sh);
+    glassShards(pane, how, at, dir, d.seed, sh, &map_.brushes[(size_t)brush]);
     const int8_t spare = glassSparesBreaker(how) ? (int8_t)by : (int8_t)-1;
     for (const GlassShard& g : sh)
         if (shards_.size() < kMaxShards) shards_.push_back({g.pos, g.vel, g.size, g.damage, time() + kShardLife, (int8_t)by, spare, (uint32_t)brush});
@@ -3384,6 +3637,7 @@ void Server::explode(const Vec3& at, int owner, int weapon, int direct, bool alt
     blastBreaks(at, weapon, owner);   // (first: the pieces and the hole are there for the blast's own rays)
     const WeaponDef& wd = weaponDef(weapon);
     const WeaponExtra& ex = weaponExtra(weapon);
+    ballBlast(*this, at, wd.splashRadius, ex.knock * (weapon == WPN_BUBBLE ? kBubbleKnock : 1.0f), owner);   // (ball mode)
     const bool wantDist = ex.falloff || activeWeaponLogic();   // (falloff and the logic's dist: only a weapon set needs it)
     const float ownerDist = wantDist && owner >= 0 && owner < kMaxPlayers ? length(at - shooterEye(owner)) : 0.0f;
     const bool reported = reportsHits(owner, weapon);   // (the owner's game reports this blast's hits, as its screen had them)
@@ -3394,23 +3648,12 @@ void Server::explode(const Vec3& at, int owner, int weapon, int direct, bool alt
         Vec3 closest = hitboxClosest(b, at);   // (the body or the head: a blast over the shoulders is as far as the head)
         float d = length(closest - at);
         if (d > wd.splashRadius) continue;
-        // Splash is blocked by walls between the blast and the target's center.
+        // Splash is blocked by walls between the blast and the target's center (a half-peeking player still takes it:
+        // blastReaches, F16 - the shooter's game runs the same test on its reported blasts)
+        if (!blastReaches(map_, at, b)) continue;
         Vec3 c = b.center();
         Vec3 to = c - at;
         float dist = length(to);
-        if (dist > 0.01f) {
-            float w = map_.raycast(at, to / dist, dist);
-            if (w >= 0 && w < dist - 0.1f) {
-                // the centre is behind cover: a half-peeking player still takes it if the blast reaches the box's
-                // nearest point or the head (F16: 0 instead of ~30). At most these 2 rays, and only here.
-                auto clear = [&](const Vec3& pt) {
-                    Vec3 v = pt - at;
-                    float len = length(v);
-                    return len < 0.11f || !map_.raycastAny(at, v / len, len - 0.1f);
-                };
-                if (!clear(closest) && !clear(Vec3(c.x, b.mx.y - 0.15f * (b.mx.y - b.mn.y), c.z))) continue;
-            }
-        }
         float frac = 1.0f - d / wd.splashRadius;
         Vec3 push = dist > 0.01f ? to / dist : Vec3(0, 1, 0);
         bool self = i == owner;
@@ -3424,7 +3667,7 @@ void Server::explode(const Vec3& at, int owner, int weapon, int direct, bool alt
         if (!self) knock.y *= 2.0f; // enemies get launched: twice the vertical knockback
         weaponHit(i, owner, dmg, knock, weapon, alt, self ? 0.0f : ownerDist, i == direct, frac);
     }
-    if (owner >= 0 && weapon != WPN_BUBBLE && !reported && shotHit(owner)) players_[owner].shotsHit++;
+    if (owner >= 0 && weapon != WPN_BUBBLE && !reported && shotHit(owner)) players_[owner].addHit(weapon);
     // Blasts set off any sticky in range, anyone's (yours and the enemy's): chain reactions. Each one is
     // switched off before it goes, so a chain always ends.
     for (auto& pr : projectiles_) {
@@ -3597,8 +3840,8 @@ void Server::sendSnapshots() {
     ModeState ms = ms_;
     if (editing_) ms.flags |= MS_EDITING | (tempEdit_ ? MS_TEMP_EDIT : 0);
     if (cfg_.ranked) ms.flags |= MS_RANKED;
-    // a time trial counts for the race board only on the shipped Viaduct, unchanged
-    if (cfg_.timeTrial && cfg_.map == "viaduct" && isOfficialMap(map_)) ms.flags |= MS_TIMETRIAL;
+    // a time trial counts for the race boards only on a ranked race map, shipped and unchanged
+    if (timeTrialCounts()) ms.flags |= MS_TIMETRIAL;
     const uint16_t snapRate = (uint16_t)(tickRate() / snapEvery());
     std::vector<PlayerSnap>& all = snapPlayers_;
     all.clear();
@@ -3626,7 +3869,7 @@ void Server::sendSnapshots() {
         ps.score = (int16_t)p.score;
         ps.dmg = (int16_t)std::min(p.dmgDealt, 32000.0f);
         ps.obj = (int16_t)std::min(p.objTime, 32000.0f);
-        ps.acc = (uint8_t)(p.shotsFired ? std::min(100, p.shotsHit * 100 / p.shotsFired) : 0);
+        ps.acc = (uint8_t)p.accuracy();
         ps.ping = (uint16_t)p.ping;
         ps.checkpoint = (uint8_t)p.checkpoint;
         ps.keys = p.alive ? (uint16_t)(p.keys | p.moveEv) : 0;
@@ -3853,12 +4096,13 @@ int Server::addBot(int team, int skill, bool balance, const std::string* brainNa
     if (waits) { team = TEAM_SPECTATOR; p.waitingToPlay = true; }
     p.team = team;
     p.lastRecv = timeNow();
-    p.name = uniqueName(std::string("BOT ") + names[(id * 7 + tick_) % 16], id);
+    const size_t nn = cfg_.botNames.size();   // (the host's own list, else the built-in names)
+    p.name = uniqueName(std::string("BOT ") + (nn ? cfg_.botNames[(size_t)(id * 7 + tick_) % nn] : std::string(names[(id * 7 + tick_) % 16])), id);
     bots_[id] = BotBrain();
     bots_[id].skill = skill;
     bots_[id].rng = (qrand() ^ (uint32_t)(id * 2654435761u)) | 1u;   // (qrand: seeded per thread at random, not from the tick count: REVIEW GAME-12)
     { GameEvent r; r.type = EV_RANKINFO; r.a = (uint8_t)id; broadcastEvent(r); }
-    p.model = cfg_.ranked ? 0 : (int)(bots_[id].rng % kPlayerModels); // bots: a mix of looks (ranked: default)
+    p.model = cfg_.ranked || cfg_.botLooks == 1 ? 0 : (int)(bots_[id].rng % kPlayerModels); // bots: a mix of looks (ranked, or the host's BOT LOOKS: STANDARD: default)
     p.soundPack = (int)((bots_[id].rng >> 8) % kSoundPacks);
     GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = looksByte(p); e.c = (int16_t)p.nameColor; e.text = p.name;
     broadcastEvent(e);
@@ -3905,10 +4149,11 @@ void Server::updateBalanceBots(bool matchStarting) {
     while (haveB < needB && addBot(TEAM_B, cfg_.balanceBotSkill, true) >= 0) haveB++;
 }
 
-void Server::callVote(int caller, int kind, int arg, const std::string& map, int arg2) {
+void Server::callVote(int caller, int kind, int arg, const std::string& map, int arg2, const std::string* mods) {
     if (vote_.kind != VOTE_NONE) {
         // calling the same vote that's already running is a yes to it
-        if (caller >= 0 && kind == vote_.kind && arg == vote_.arg && arg2 == vote_.arg2 && map == vote_.map) { castVote(caller, true); return; }
+        if (caller >= 0 && kind == vote_.kind && arg == vote_.arg && arg2 == vote_.arg2 && map == vote_.map && vote_.setMods == (mods != nullptr) &&
+            (!mods || *mods == vote_.mods)) { castVote(caller, true); return; }
         GameEvent e; e.type = EV_MESSAGE; e.text = "a vote is already in progress";
         sendEvent(caller, e);
         return;
@@ -3919,16 +4164,23 @@ void Server::callVote(int caller, int kind, int arg, const std::string& map, int
     vote_.arg = arg;
     vote_.map = map;
     vote_.arg2 = arg2;
+    vote_.setMods = mods != nullptr;
+    if (mods) vote_.mods = *mods;
     vote_.endsAt = time() + 30.0f;
     vote_.text = kind == VOTE_BOTS        ? std::string("BALANCE BOTS ") + (arg ? "ON" : "OFF")
                : kind == VOTE_BOTSKILL    ? std::string("BOT DIFFICULTY: ") + botSkillName(arg)
                : kind == VOTE_START       ? std::string("START THE MATCH")
-               : kind == VOTE_MAP         ? "PLAY " + map + " - " + modeTitle(arg) + (modeHasRuleset(arg) ? std::string(" (") + arenaVariant(vote_.arg2).title + ")" : "")
+               : kind == VOTE_MAP         ? "PLAY " + map + " - " + modeTitle(arg) + (modeHasRuleset(arg) ? std::string(" (") + arenaVariant(vote_.arg2).title + ")" : "") +
+                                            (!vote_.setMods ? std::string() : vote_.mods.empty() ? std::string(" - STANDARD RULES") : " - " + votedModsTitle(vote_.mods))
                : kind == VOTE_TMAPS       ? "TOURNEY MAPS: " + map
                : kind == VOTE_TMODES      ? "TOURNEY RULESETS: " + map
                : kind == VOTE_EDIT        ? std::string(arg ? "EDIT THE MAP TOGETHER (CHANGES LAST UNTIL THE MAP CHANGES)" : "STOP EDITING AND PLAY THE MAP")
                : kind == VOTE_LETIN       ? "LET " + players_[arg].name + " IN (TEAMS GO UNEVEN)"
                : kind == VOTE_SPEC        ? "MOVE " + players_[arg].name + " TO SPECTATOR (UNTIL THE NEXT MAP)"
+               : kind == VOTE_KICK        ? "KICK " + players_[arg].name
+               : kind == VOTE_RESTART     ? std::string("RESTART THE MATCH")
+               : kind == VOTE_EXTEND      ? std::string("5 MORE MINUTES")
+               : kind == VOTE_SHUFFLE     ? std::string("SHUFFLE THE TEAMS (THE MATCH RESTARTS)")
                : kind == VOTE_RANKED      ? (arg < 0 ? std::string("RANKED OFF") : std::string("RANKED ON - ") + arenaVariant(arg).title + " 1V1")
                                           : std::string("FILL THE UNEVEN TEAMS WITH BOTS?");
     GameEvent e; e.type = EV_VOTE; e.a = (uint8_t)(caller < 0 ? 255 : caller); e.text = vote_.text;
@@ -3939,7 +4191,7 @@ void Server::callVote(int caller, int kind, int arg, const std::string& map, int
 
 void Server::castVote(int id, bool yes) {
     if (vote_.kind == VOTE_NONE || players_[id].isBot) return;
-    if (vote_.kind == VOTE_SPEC && id == vote_.arg) return;   // the player a spectate vote is about has no say in it
+    if ((vote_.kind == VOTE_SPEC || vote_.kind == VOTE_KICK) && id == vote_.arg) return;   // the player a spectate / kick vote is about has no say in it
     uint32_t bit = 1u << id;
     vote_.yes &= ~bit;
     vote_.no &= ~bit;
@@ -3953,7 +4205,7 @@ void Server::tickVote() {
     int humans = 0, y = 0, n = 0;
     for (int i = 0; i < kMaxPlayers; i++) {
         if (!players_[i].connected || players_[i].isBot || players_[i].awayUntil > 0) continue;   // (away: can't vote)
-        if (vote_.kind == VOTE_SPEC && i == vote_.arg) continue;   // (nor does the player a spectate vote is about)
+        if ((vote_.kind == VOTE_SPEC || vote_.kind == VOTE_KICK) && i == vote_.arg) continue;   // (nor does the player a spectate vote is about)
         humans++;
         y += (vote_.yes >> i) & 1;
         n += (vote_.no >> i) & 1;
@@ -4027,6 +4279,35 @@ void Server::tickVote() {
             }
             return;
         }
+        if (vote_.kind == VOTE_KICK) {
+            int who = vote_.arg;
+            uint32_t join = (uint32_t)vote_.arg2;
+            message("vote passed: " + vote_.text);
+            vote_ = Vote();
+            if (players_[who].connected && players_[who].joinId == join) dropPlayer(who, "kicked by a vote", true);
+            return;
+        }
+        if (vote_.kind == VOTE_RESTART || vote_.kind == VOTE_SHUFFLE) {
+            const bool shuffle = vote_.kind == VOTE_SHUFFLE;
+            message("vote passed: " + vote_.text);
+            vote_ = Vote();
+            if (shuffle) {   // the humans in play dealt out alternately in a random order (bots rebalance after)
+                std::vector<int> ids;
+                for (int i = 0; i < kMaxPlayers; i++)
+                    if (players_[i].connected && !players_[i].isBot && (players_[i].team == TEAM_A || players_[i].team == TEAM_B)) ids.push_back(i);
+                for (size_t i = ids.size(); i > 1; i--) std::swap(ids[i - 1], ids[qrand() % i]);
+                for (size_t i = 0; i < ids.size(); i++) players_[ids[i]].team = i % 2 ? TEAM_B : TEAM_A;
+                updateBalanceBots();
+            }
+            command("restart");
+            return;
+        }
+        if (vote_.kind == VOTE_EXTEND) {
+            message("vote passed: " + vote_.text);
+            vote_ = Vote();
+            if (ms_.phase == PHASE_LIVE && phaseEnd_ > 0) phaseEnd_ += 300;
+            return;
+        }
         if (vote_.kind == VOTE_RANKED) {
             int v = vote_.arg;
             message("vote passed: " + vote_.text);
@@ -4037,6 +4318,8 @@ void Server::tickVote() {
         if (vote_.kind == VOTE_MAP) {
             std::string cmd = "map " + vote_.map + " " + modeName(vote_.arg) + " " + arenaVariant(vote_.arg2).name;
             message("vote passed: " + vote_.text);
+            if (vote_.setMods) applyVotedRules(vote_.mods, vote_.arg);
+            else if (cfg_.custom.active() && !hostCustom()) cfg_.custom.baseMode = vote_.arg;   // (voted rules carry on into the new mode)
             vote_ = Vote();
             command(cmd);
             return;
@@ -4459,7 +4742,11 @@ void Server::maybeSendRankedTicket(bool giveUp) {
     glog(LOG_SIMPLE, "ranked ticket %s players %s", rankedMatch_.c_str(), players.c_str());
 }
 
-bool Server::timeTrialCounts() const { return cfg_.timeTrial && cfg_.map == "viaduct" && isOfficialMap(map_); }
+bool Server::timeTrialCounts() const {   // (a ranked race / surf map, in its own mode: surf's rules are part of its time)
+    if (!cfg_.timeTrial) return false;
+    const RaceMapInfo* r = rankedRaceMap(cfg_.map);
+    return r && ms_.mode == r->mode && isOfficialMap(map_);
+}
 
 // A time trial's race ticket: the racer's game signs its id (EV_RANKSIGN -> "ticketsig", as for a ranked match),
 // then sendRaceTicket opens it on the Worker with the racer's key and signature.
@@ -4600,9 +4887,12 @@ void Server::setRanked(bool on, int ladder) {
     std::string mapName = cfg_.map;
     auto fits = [&](const MapInfo& mi) { return mi.ok && (mi.ranked >> ladder & 1) && (mi.supports >> rankedMode(ladder) & 1); };
     if (!fits(mapInfo(mapName))) {
-        // the ladder's own map first (built for just that ruleset), else any ranked map that takes it
+        // the map the ladder is designed for, else its own map (built for just that ruleset), else any that takes it
         mapName.clear();
+        const std::string designed = rankedDefaultMap(ladder);
+        if (!designed.empty() && std::find(mapList_.begin(), mapList_.end(), designed) != mapList_.end() && fits(mapInfo(designed))) mapName = designed;
         for (auto& n : mapList_) {   // (the list cached at start / saveas: no folder scan on the tick)
+            if (!designed.empty() && mapName == designed) break;
             MapInfo c = mapInfo(n);
             if (!fits(c)) continue;
             bool own = c.ranked == (1u << ladder);

@@ -56,6 +56,7 @@ enum ModeField : uint8_t {
     MF_POINT_INDEX, MF_POINT_CAPTURE, MF_CART_CHECKPOINT_COUNT, MF_STAGED_SPAWNS,
     // per team (a = team; out of range: get 0, set ignored)
     MF_ALIVE_COUNT, MF_TEAM_COUNT, MF_TEAM_SCORE /*rw*/, MF_CART_BEST /*rw*/, MF_CART_COMPLETED /*rw*/, MF_CART_NEAR, MF_CART_BEST_TIME,
+    MF_TEAM_POOL /*rw*/, MF_TEAM_POOL_MAX,
     // per player (a = player; out of range: get 0, set ignored)
     MF_ALIVE, MF_TEAM, MF_IS_BOT, MF_ON_GROUND, MF_USE_HELD, MF_HEALTH, MF_NEAR_CART, MF_MAP_SPAWN,
     MF_SCORE /*rw*/, MF_OBJ_TIME /*rw*/, MF_IT /*rw*/, MF_OUT /*rw*/, MF_FOUND /*rw*/, MF_SOUGHT /*rw*/, MF_KILLS,
@@ -76,13 +77,13 @@ enum ModeAction : uint8_t {
     MA_KILL, MA_DAMAGE, MA_RESPAWN, MA_FREEZE, MA_SWAP_TEAMS,
     MA_BOMB_STEP, MA_GIVE_BOMB, MA_CART_STEP, MA_NEUTRAL_CART_STEP, MA_POINT_STEP, MA_RACE_STEP, MA_RACE_PRACTICE,
     MA_STALEMATE_DRAIN, MA_PICK_SEEKER, MA_PICK_RANDOM_IT, MA_TAG_OUT, MA_PASS_IT, MA_START_TIEBREAK,
-    MA_TOURNEY_BEGIN, MA_TOURNEY_WALKOVER, MA_TOURNEY_ADVANCE, MA_PICK_DUEL_MODIFIER,
+    MA_TOURNEY_BEGIN, MA_TOURNEY_WALKOVER, MA_TOURNEY_ADVANCE, MA_PICK_DUEL_MODIFIER, MA_POOL_STEP, MA_WINNER_STAYS, MA_BALL_STEP,
     // text actions (say)
     MA_END_ROUND, MA_END_ROUND_NO_SCORE, MA_END_ROUND_TEXT, MA_END_MATCH, MA_ANNOUNCE, MA_LOG,
     MA_COUNT
 };
 // Native mechanics a mode switches on with `use` (bit per object in ModeLogic::uses).
-enum ModeObject : uint8_t { MO_BOMB, MO_CART, MO_NCART, MO_POINTS, MO_RACE, MO_DRAIN, MO_IT, MO_TIEBREAK, MO_BRACKET, MO_DUELMODS, MO_COUNT };
+enum ModeObject : uint8_t { MO_BOMB, MO_CART, MO_NCART, MO_POINTS, MO_RACE, MO_DRAIN, MO_IT, MO_TIEBREAK, MO_BRACKET, MO_DUELMODS, MO_POOL, MO_LINE, MO_BALL, MO_COUNT };
 
 // One argument of a text action, as the host gets it (the host builds the string, like Server::message).
 struct ModeTextPart {

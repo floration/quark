@@ -34,19 +34,10 @@ AABB toBox(const Json& j) {
 }
 
 const char* spawnTeamName(int t, char* buf) {
-    static const char* teams[] = {"a", "b", "any", "race"};
-    if (isStagedSpawn(t)) { snprintf(buf, 16, "%s%d", spawnDefends(t) ? "def" : "att", spawnStage(t) % 10); return buf; }
-    return t >= 0 && t < 4 ? teams[t] : "any";
+    snprintf(buf, 16, "%s", spawnTeamWord(t).c_str());   // (map.cpp's words: a, b, any, race, att0, def1, koth-a ...)
+    return buf;
 }
-int spawnTeamFromName(const std::string& s) {
-    if (s == "a") return SPAWN_A;
-    if (s == "b") return SPAWN_B;
-    if (s == "any") return SPAWN_ANY;
-    if (s == "race") return SPAWN_RACE;
-    if (s.size() == 4 && (s.compare(0, 3, "att") == 0 || s.compare(0, 3, "def") == 0) && s[3] >= '0' && s[3] <= '0' + kMaxSpawnStage)
-        return stagedSpawn(s[3] - '0', s[0] == 'd');
-    return -1;
-}
+int spawnTeamFromName(const std::string& s) { return spawnTeamFromWord(s); }
 int modeFromJson(const Json& j, int def) {
     if (j.isNum()) { int v = j.i(); return v >= 0 && v < MODE_COUNT ? v : def; }
     if (j.isStr()) { int v = modeFromName(j.str().c_str()); return v >= 0 ? v : def; }
@@ -109,13 +100,14 @@ Json mapToJson(const Map& m) {
     j.set("killY", m.killY());
     j.set("indoor", m.indoor ? Json(m.ceilingY) : Json());
     j.set("holdfire", m.holdFire);
+    j.set("racedefault", m.raceDefault);   // (map format 13: a race map's default time, s; 0 = none)
     Json br = Json::array(), gen = Json::array();
     for (auto& b : m.brushes) {
         Json o = Json::object();
         o.set("mat", b.material); o.set("min", jvec(b.box.mn)); o.set("max", jvec(b.box.mx));
         if (b.shape == BRUSH_CUT) { o.set("shape", "cut"); o.set("cuts", jcuts(b)); }   // (a cut box: its planes, map.h)
         else if (b.shape != BRUSH_BOX) { o.set("shape", slopeWord(b.shape)); o.set("dir", (int)b.dir); if (b.up) o.set("up", (int)b.up); }   // (map format 5)
-        if (b.material == kMatTeleport) { o.set("link", (int)b.link); o.set("exitFace", (int)b.exitFace); }   // (map format 10)
+        if (b.material == kMatTeleport) { o.set("link", (int)b.link); o.set("exitFace", (int)b.exitFace); if (b.tpWalk) o.set("speed", "walk"); }   // (map format 10; speed: 12)
         (b.generated ? gen : br).push(std::move(o));
     }
     j.set("brushes", std::move(br));
@@ -208,6 +200,7 @@ bool mapFromJson(const Json& j, Map& m, std::string& err) {
     if (j["void"].isNum()) { m.hasVoid = true; m.voidY = j["void"].f(); }
     if (j["indoor"].isNum()) { m.indoor = true; m.ceilingY = j["indoor"].f(); }
     m.holdFire = j["holdfire"].f(0);
+    m.raceDefault = j["racedefault"].f(0);
     // a brush's or a group part's shape, dir and up (absent: a box)
     auto readShape = [&](const Json& b, Brush& br, const char* what) {
         const std::string shape = b["shape"].str("box");
@@ -242,6 +235,9 @@ bool mapFromJson(const Json& j, Map& m, std::string& err) {
             const int link = b["link"].i(1), face = b["exitFace"].i(2);
             if (link < 0 || link > 255 || face < 0 || face >= kFaces) { err = "teleporter link " + std::to_string(link) + " / exitFace " + std::to_string(face) + " isn't 0..255 / 0..5"; return false; }
             br.link = (uint8_t)link; br.exitFace = (uint8_t)face;
+            const std::string sp = b["speed"].str("carry");   // (map format 12: "walk" caps the way out at the run speed)
+            if (sp != "carry" && sp != "walk") { err = "teleporter speed \"" + sp + "\" isn't carry / walk"; return false; }
+            br.tpWalk = sp == "walk";
         }
         m.brushes.push_back(br);
     }

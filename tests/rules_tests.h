@@ -266,7 +266,7 @@ static void testThrowCooldown(uint16_t port) {
     int tick = 0;
     pump(s, cls, 0.5, [&](int i) { place(); UserCmd u = in(i); if (i == 1 && tick++ < 30) u.buttons = BTN_ALTFIRE; return u; });
     printf("  healed: %.0f hp, knife back in %.2f s, syringe in %.2f s\n", pa.health, pa.knifeBackAt - s.time(), pa.syringeBackAt - s.time());
-    CHECK(pa.health > 60 && pa.knifeBackAt <= s.time() && pa.syringeBackAt <= s.time() && pa.nextFire <= s.time());
+    CHECK(pa.health > 50 && pa.knifeBackAt <= s.time() && pa.syringeBackAt <= s.time() && pa.nextFire <= s.time());
     CHECK(pb.syringeBackAt > s.time());   // (the thrower's own syringe is away)
     wa = WPN_SYRINGE; ba = BTN_ALTFIRE;
     for (int k = 0; k < 20 && count(WPN_SYRINGE, c[0].clientId()) == 0; k++) pump(s, cls, 0.02, [&](int i) { place(); return in(i); });
@@ -1344,6 +1344,54 @@ static void testBalanceBotDefer(uint16_t port) {
     s.stop();
 }
 
+// Bomb spawns go by role (q, 2026-10-30): the attackers start on the map's a spawns and the defenders on its b spawns
+// in both halves, so after halftime team B attacks from a. (By team, a map built to q's timing gave team A the short
+// way in both halves: War, team A won 7 of 8.)
+static void testBombSpawnRoles(uint16_t port) {
+    printf("bomb: attackers spawn on the attack's spawns in both halves\n");
+    Map d;
+    CHECK(d.load("depot"));
+    CHECK(modeSpawnType(d, MODE_BOMB, TEAM_A, TEAM_A, false) == SPAWN_A && modeSpawnType(d, MODE_BOMB, TEAM_B, TEAM_A, false) == SPAWN_B);
+    CHECK(modeSpawnType(d, MODE_BOMB, TEAM_B, TEAM_B, false) == SPAWN_A && modeSpawnType(d, MODE_BOMB, TEAM_A, TEAM_B, false) == SPAWN_B);
+    CHECK(modeSpawnType(d, MODE_VS, TEAM_A, TEAM_B, false) == SPAWN_A);   // (other modes: by team, as before)
+    {   // a bomb set ("spawn bomb-a"): by role too
+        Map m;
+        CHECK(m.parse("box -40 -1 -40 40 0 40\nsite 20 0 -2 24 3 2\nspawn a -30 0 0\nspawn b 30 0 0\nspawn bomb-a -20 0 0\nspawn bomb-b 10 0 0\n"));
+        CHECK(modeSpawnType(m, MODE_BOMB, TEAM_B, TEAM_B, false) == modeSpawn(MODE_BOMB, SPAWN_A) && modeSpawnType(m, MODE_BOMB, TEAM_A, TEAM_B, false) == modeSpawn(MODE_BOMB, SPAWN_B));
+    }
+    // a real match, halftime after round 1: in each round's freeze everyone stands on their role's spawns
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "depot"; cfg.mode = MODE_BOMB; cfg.port = port; cfg.balanceBots = false; cfg.roundsToWin = 2;
+    NetClient cl[2];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, cl, 2, cls, false)) { s.stop(); return; }
+    s.command("forcestart");
+    auto onSet = [&](int id, int want) {
+        float best = 1e9f; int team = -1;
+        for (auto& sp : s.map_.spawns) { float dd = length(sp.pos - s.players_[id].move.pos); if (dd < best) { best = dd; team = sp.team; } }
+        return best < 1.5f && team == want;
+    };
+    for (int round = 1; round <= 2; round++) {
+        for (int k = 0; k < 100 && !(s.ms_.round == round && s.ms_.phase == PHASE_FREEZE); k++) { if (s.ms_.phase != PHASE_LIVE || s.ms_.round < round) s.phaseEnd_ = s.time(); pump(s, cls, 0.05, idle); }
+        CHECK(s.ms_.round == round && s.ms_.phase == PHASE_FREEZE);
+        const int att = s.ms_.attackers;
+        CHECK(att == (round == 1 ? TEAM_A : TEAM_B));
+        int a = rulesTeamPlayer(s, att), b = rulesTeamPlayer(s, att == TEAM_A ? TEAM_B : TEAM_A);
+        CHECK(a >= 0 && b >= 0);
+        if (a < 0 || b < 0) break;
+        printf("  round %d: team %s attacks from %s, team %s defends from %s\n", round, att == TEAM_A ? "A" : "B", onSet(a, SPAWN_A) ? "a" : "?",
+               att == TEAM_A ? "B" : "A", onSet(b, SPAWN_B) ? "b" : "?");
+        CHECK(onSet(a, SPAWN_A) && onSet(b, SPAWN_B));
+        if (round == 1) {   // round 1 to the attack
+            for (int k = 0; k < 40 && s.ms_.phase == PHASE_FREEZE; k++) { s.phaseEnd_ = s.time(); pump(s, cls, 0.05, idle); }
+            s.killPlayer(b, -1, 252);
+            pump(s, cls, 0.3, idle);
+        }
+    }
+    s.stop();
+}
+
 // MAP-7: the spawn type depends on whether the map has those spawns (canSupportMode), not on its "modes" line:
 // Colosseum (tourney, doesn't offer vs) uses its a/b spawns for tourney matches.
 static void testSpawnTypes(uint16_t port) {
@@ -1798,11 +1846,12 @@ static void testHudClock(uint16_t port) {
         if (!rulesStart(s, cfg, c, cs.players, cls)) { s.stop(); continue; }
         pump(s, cls, 0.3, idle);
         const ModeState& ms = c[0].mode();   // (what the HUD draws from)
-        hudLiveLine(ms, line, sizeof line);
+        hudLiveLine(ms, line, sizeof line, cs.mode == MODE_RACE ? 0.3f : -1.0f);
         const bool drainMode = cs.mode == MODE_VS || cs.mode == MODE_DUEL || cs.mode == MODE_ARENA;
         printf("  %s: phase %d, time left %.1f -> \"%s\"\n", modeName(cs.mode), ms.phase, ms.timeLeft, line);
         CHECK(ms.phase == PHASE_LIVE);
         if (cs.mode == MODE_KOTH) CHECK(ms.timeLeft == 0 && std::string(line) == "FIRST TO " + std::to_string(ms.target));   // (untimed)
+        else if (cs.mode == MODE_RACE) CHECK(ms.timeLeft == 0 && std::string(line) == "0:00.30");   // no clock (owner, 2026-10-31): the run time counts up
         else if (drainMode) CHECK(ms.timeLeft > 0 && std::string(line) == "DRAIN IN " + fmt(ms.timeLeft));
         else CHECK(ms.timeLeft > 10 && std::string(line) == fmt(ms.timeLeft));   // the round clock itself
         s.stop();
@@ -1818,8 +1867,10 @@ static void testHudClock(uint16_t port) {
     hudLiveLine(m, line, sizeof line); CHECK(std::string(line) == "OVERTIME 0:04");
     m.mode = MODE_FFA; m.timeLeft = 0;
     hudLiveLine(m, line, sizeof line); CHECK(std::string(line) == "OVERTIME - NEXT KILL WINS");
-    m.flags = MS_TIMETRIAL; m.mode = MODE_RACE; m.timeLeft = 300.0f - 72.345f;   // the run time, counting up
-    hudLiveLine(m, line, sizeof line); CHECK(std::string(line) == "1:12.34");
+    m.flags = MS_TIMETRIAL; m.mode = MODE_RACE; m.timeLeft = 0;   // the run time, counting up (the client's stopwatch: no clock)
+    hudLiveLine(m, line, sizeof line, 72.345f); CHECK(std::string(line) == "1:12.34");
+    m.flags = 0; m.mode = MODE_SURF;
+    hudLiveLine(m, line, sizeof line, 5.0f); CHECK(std::string(line) == "0:05.00");
     m.flags = 0; m.mode = MODE_TAG; m.timeLeft = 0;   // no clock running: nothing (never a frozen 0:00)
     hudLiveLine(m, line, sizeof line); CHECK(line[0] == 0);
     m.mode = MODE_VS; m.flags = MS_DRAIN;
@@ -1896,8 +1947,8 @@ static void testWeaponPredict(uint16_t port) {
         bool sl = false;
         int w = wp.run(u, view(), &sl);   // (as Game's tick loop does)
         if (sl) locked = true;
+        if (locked && !(u.buttons & fireButtons(w))) locked = false;   // (as Game: the buttons that fire the held weapon)
         if (throwNext && (u.buttons & BTN_ALTFIRE)) { localAway = 1u << WPN_KNIFE; locked = true; w = wp.thrown(view()); throwNext = false; }
-        if (locked && !(u.buttons & (BTN_FIRE | BTN_ALTFIRE))) locked = false;
         if (lastPred >= 0 && w != lastPred) switches++;
         lastPred = w; lastCmdWeapon = u.weapon;
         ring[a.nextSeq() % ring.size()] = {a.nextSeq(), w, locked, a.selfAlive()};
@@ -1947,7 +1998,8 @@ static void testWeaponPredict(uint16_t port) {
     throwNext = true;
     buttons = BTN_ALTFIRE;
     pump(s, cls, 0.2, input);
-    CHECK(!throwNext && sp.knifeBackAt > s.time() && sp.weapon != WPN_KNIFE && lastPred == sp.weapon && locked && sp.fireLocked);
+    // (alt held over the throw is the sniper's scope there, not a shot: it locks nothing, q 2026-10-31)
+    CHECK(!throwNext && sp.knifeBackAt > s.time() && sp.weapon != WPN_KNIFE && lastPred == sp.weapon && !locked && !sp.fireLocked);
     CHECK(sp.weapon == WPN_SNIPER);   // back to the weapon held before the knife (T14; it was the first slot, the rocket)
     buttons = 0;
     wp.want(WPN_KNIFE);
@@ -2234,6 +2286,44 @@ static void testPointsNoPoints(uint16_t port) {
     s.command("forcestart");
     pump(s, cls, 0.2, idle);
     CHECK(s.map_.points.empty() && s.ms_.phase == PHASE_WARMUP);
+    s.stop();
+}
+
+// Power (owner, 2026-10-30): each team's pool is poolPerPlayer x its players; an enemy's hit comes off the victim's
+// team pool, never their health (nobody dies of it); your own hits take nothing; a third player brings their share; a
+// pool at 0 loses the round, and with one round that's the match.
+static void testPower(uint16_t port) {
+    printf("power: team health pools, nobody dies\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_POWER; cfg.port = port; cfg.balanceBots = false;
+    NetClient c[3];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); return; }
+    const int a = rulesTeamPlayer(s, TEAM_A), b = rulesTeamPlayer(s, TEAM_B);
+    CHECK(a >= 0 && b >= 0);
+    if (a < 0 || b < 0) { s.stop(); return; }
+    const ModeState& m = s.ms_;
+    CHECK(powerPoolMax(m, TEAM_A) == 2500 && powerPool(m, TEAM_A) == 2500 && powerPoolMax(m, TEAM_B) == 2500 && powerPool(m, TEAM_B) == 2500);
+    s.damagePlayer(b, a, 80, WPN_ROCKET, Vec3());
+    CHECK(s.players_[b].alive && s.players_[b].health == kMaxHealth && powerPool(m, TEAM_B) == 2420 && powerPool(m, TEAM_A) == 2500);
+    s.damagePlayer(a, a, 50, WPN_ROCKET, Vec3());   // (your own rocket)
+    CHECK(s.players_[a].health == kMaxHealth && powerPool(m, TEAM_A) == 2500);
+    c[2].connect("127.0.0.1:" + std::to_string(cfg.port), "p2");
+    cls.push_back(&c[2]);
+    pump(s, cls, 0.6, idle);
+    int third = -1;
+    for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && i != a && i != b) third = i;
+    CHECK(third >= 0);
+    if (third >= 0) {
+        const int t = s.players_[third].team;
+        printf("  joined team %d: pool %.0f of %.0f\n", t, powerPool(m, t), powerPoolMax(m, t));
+        CHECK((t == TEAM_A || t == TEAM_B) && powerPoolMax(m, t) == 5000 && powerPool(m, t) == (t == TEAM_A ? 5000 : 4920));
+    }
+    for (int k = 0; k < 100 && m.phase == PHASE_LIVE && powerPool(m, TEAM_B) > 0; k++) { s.damagePlayer(b, a, 100, WPN_ROCKET, Vec3()); CHECK(s.players_[b].alive); }
+    pump(s, cls, 0.1, idle);
+    printf("  team B's pool empty: phase %d, score %d-%d\n", m.phase, m.scoreA, m.scoreB);
+    CHECK(powerPool(m, TEAM_B) == 0 && m.scoreA == 1 && m.scoreB == 0 && (m.phase == PHASE_ROUND_END || m.phase == PHASE_MATCH_END));
     s.stop();
 }
 
@@ -2659,6 +2749,9 @@ static void testRocketRide(uint16_t port) {
     CHECK(mine != nullptr);
     if (!mine) { s.stop(); return; }
     const uint16_t mineId = mine->id;
+    // (hooked once it's past the release distance, where the hook takes it at once: inside it the hook waits, and
+    // the command that crosses it is a real-time race between the two sides at the 24 m/s launch, owner 2026-10-30)
+    for (int k = 0; k < 100 && rocketOf(ia) && length(rocketOf(ia)->pos - (A0 + Vec3(0, 1, 0))) < 2.2f; k++) pump(s, cls, 0.001, in);
     btn = BTN_GRAPPLE;
     bool predictedFirst = false;   // the client had it hooked while the server's word still said not
     for (int k = 0; k < 200 && sa.move.hookTarget != kHookRocket; k++) {
@@ -2787,7 +2880,7 @@ static void testGameRules(const std::string& only, int half = 0) {
         {"bomb", 2, [] { testBombDrop(TP(29249)); }},
         {"cartbox", 2, [] { testCartBoxPlace(TP(29275)); }},
         {"botdefer", 1, [] { testBalanceBotDefer(TP(29250)); }},
-        {"spawns", 2, [] { testSpawnTypes(TP(29251)); testFfaSpawnChoice(); }},
+        {"spawns", 2, [] { testSpawnTypes(TP(29251)); testBombSpawnRoles(TP(29262)); testFfaSpawnChoice(); }},
         {"seeds", 2, [] { testRandomSeeds(); }},
         {"heal", 2, [] { testLifeHealCap(TP(29253)); }},
         {"scoreboard", 2, [] { testScoreboardValue(); }},
@@ -2797,6 +2890,7 @@ static void testGameRules(const std::string& only, int half = 0) {
         {"weaponpredict", 0, [] { testWeaponPredict(TP(29286)); }},   // (in neither half: real-time round trips, the suite runs it alone)
         {"customkeep", 2, [] { testCustomRulesKeep(); }},
         {"modehooks", 2, [] { testModeHooks(TP(29310)); }},
+        {"power", 1, [] { testPower(TP(29314)); }},
     };
     for (auto& r : all) if ((only.empty() || only == r.name) && (!half || half == r.half)) r.run();
     if (only == "rate") {

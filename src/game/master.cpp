@@ -90,6 +90,36 @@ static bool fetchServerListImpl(std::vector<std::string>& out, std::string* err)
     return true;
 }
 
+const OfficialServer kOfficialServers[] = {
+    {75u << 24 | 127u << 16 | 7u << 8 | 139u, 27500},   // production
+    {75u << 24 | 127u << 16 | 7u << 8 | 139u, 27501},   // testing
+};
+const size_t kOfficialServerCount = sizeof kOfficialServers / sizeof kOfficialServers[0];
+
+bool isOfficialServer(uint32_t ip, uint16_t port) {
+    for (size_t i = 0; i < kOfficialServerCount; i++)
+        if (kOfficialServers[i].ip == ip && kOfficialServers[i].port == port) return true;
+    return false;
+}
+
+bool isOfficialServer(const std::string& addr) {
+    uint32_t ip = 0, part = 0;
+    int dots = 0, digits = 0;
+    bool inPort = false;
+    for (char c : addr) {
+        if (c >= '0' && c <= '9') {
+            if (digits > 0 && part == 0) return false;   // a leading zero
+            part = part * 10 + (uint32_t)(c - '0');
+            if (++digits > 5 || part > (inPort ? 65535u : 255u)) return false;
+        } else if (!inPort && digits > 0 && (c == '.' ? dots < 3 : c == ':' && dots == 3)) {
+            ip = ip << 8 | part;
+            if (c == '.') dots++; else inPort = true;
+            part = 0; digits = 0;
+        } else return false;
+    }
+    return inPort && digits > 0 && isOfficialServer(ip, (uint16_t)part);
+}
+
 static std::string publicIpv4Impl();
 std::string publicIpv4() {
     try { return publicIpv4Impl(); } catch (const std::exception&) { return ""; }

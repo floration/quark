@@ -26,7 +26,7 @@ constexpr float kAirControlFrom = 9.5f;   // m/s: where W-only steering starts l
 constexpr float kAirControlW = 0.9f;      // W-only air control's turn rate x this at every speed: 3.6 rad/s under 9.5 m/s,
                                           // 0.9 x 38 / speed above (owner 1.18: "reduce w strafing by 10%"; `cross` below
                                           // still comes from the unscaled 4)
-constexpr float kAirDriftAccel = 8.0f;  // m/s2: below run speed, held direction also pushes you this hard in the air (owner
+constexpr float kAirDriftAccel = 0.0f;  // m/s2 (owner, 2026-11-01: "change air drift to 0"; was 8): below run speed, held direction also pushes you this hard in the air (owner
                                         // 1.17: a standing jump drifts like a run-up one would, never past run speed)
 constexpr float kStrafeBoost = 0.10f;   // a strafe key held: air acceleration x (1 + this), ramping in from 12.65 m/s to
                                         // 1.25x that (15.8), so at speed A/D turns beat W-only (owner 1.17)
@@ -310,6 +310,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
 
     const bool grappleOnly = (s.mods & MOVE_GRAPPLE_ONLY) != 0;
     bool jumpHeld = (cmd.buttons & BTN_JUMP) != 0 && !grappleOnly;
+    if (jumpHeld) s.dashSlide = false;   // (a jump ends the dash slide)
     bool frozen = (s.flags & MF_FROZEN) != 0;
     const bool grounded = onGround;          // on the floor as this step starts (the dash jump / super dash need it)
     const bool dashActive = s.dashTimer > 0; // a dash from an earlier step still running
@@ -444,6 +445,10 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             dashing = false;
             onGround = false;
         }
+        // Dash slide (owner, 2026-11-01: "if you dash down into the ground, without holding space, it should put you on
+        // ice level of sliding until you go back to regular speed, or until you press jump"): a dash aimed down that
+        // meets the floor with no jump leaves you on ice's grip until you're down to run speed or jump
+        if (dashing && grounded && down && !wantJump) s.dashSlide = true;
     }
     if (dashing) {
         // Short, strong burst, tilted a little by where you look: no gravity, no steering.
@@ -473,9 +478,10 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         const Vec3 dir = angleForward(cmd.yaw, cmd.pitch);
         const float range = kGrappleRange * mt.m[MV_HOOK_RANGE];
         int wallMat = -1;
-        float t = map.raycast(eye, dir, range, nullptr, &wallMat);
+        float t = map.raycast(eye, dir, range, nullptr, &wallMat, true);   // (clip refuses it, owner 2026-10-30: it hits it and lets go)
         int caught = -1, rocket = -1;   // a player or a rocket in front of the wall (or in the open) catches it instead
-        if (hp && (hp->n > 0 || hp->nr > 0)) {
+        bool ballCaught = false;
+        if (hp && (hp->n > 0 || hp->nr > 0 || hp->ball)) {
             float best = t >= 0 ? t : range;
             Vec3 inv = safeInv(dir);
             for (int k = 0; k < hp->n && k < HookProbe::kMax; k++) {
@@ -487,16 +493,29 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
                 float tk = rayAABB(eye, inv, rocketCatchBox(hp->at[k]), best);
                 if (tk >= 0 && tk < best) { best = tk; rocket = k; caught = -1; }
             }
+            if (hp->ball) {   // the ball (owner, 2026-11-01: "you should be able to hook the ball")
+                float tk = rayAABB(eye, inv, hp->ballBox, best);
+                if (tk >= 0 && tk < best) { best = tk; rocket = -1; caught = -1; ballCaught = true; }
+            }
         }
         // (a rocket still inside the release distance, one you just fired: the hook waits for it rather than catching it
         // and letting go at once, or going past it to the wall; held, it catches it a few ms later)
         const float release = kHookRelease * mt.m[MV_HOOK_RELEASE];
         if (rocket >= 0 && length(hp->pos[rocket] - (s.pos + Vec3(0, 1.0f * scale, 0))) < release) {
+        } else if (ballCaught) {   // latched onto the ball: pulled to it as to a player, the server reels it in and moves the anchor
+            hp->hitBall = true;
+            s.hookPoint = hp->ballBox.center();
+            s.hookTarget = kHookBall;
+            s.flags |= MF_HOOKED | MF_HOOKHELD;
+            s.flags &= ~MF_PULLED;
+            s.events |= ME_HOOK;
+            grabbed = true;
         } else if (rocket >= 0) {   // riding it: the anchor is the rocket as the server has it, flown with it from here on
             hp->hitRocket = rocket;
             s.hookPoint = hp->pos[rocket];
             s.hookVel = hp->vel[rocket];
             s.hookGrav = hp->grav[rocket];
+            s.hookAccel = hp->accel[rocket];
             s.hookProj = hp->rid[rocket];
             s.hookTarget = kHookRocket;
             s.flags |= MF_HOOKED | MF_HOOKHELD;
@@ -518,7 +537,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             if (pane >= 0 && s.glassBrush < 0) { s.glassBrush = pane; s.glassHow = GLASS_HOOK_BACK; s.glassAt = eye + dir * t; s.glassDir = dir * -1.0f; }
             s.flags |= MF_HOOKHELD;
             grabbed = true;
-        } else if (t >= 0 && wallMat != kMatNoGrapple) {   // (nograpple: the hook hits it and lets go)
+        } else if (t >= 0 && wallMat != kMatNoGrapple && wallMat != 9) {   // (nograpple and clip: the hook hits it and lets go)
             s.hookPoint = eye + dir * t;
             s.hookTarget = 0;
             s.flags |= MF_HOOKED | MF_HOOKHELD;
@@ -529,7 +548,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     }
     if (hp)   // (the rockets a held grapple could still catch fly on with this step, as the server's do)
         for (int k = 0; k < hp->nr && k < HookProbe::kRockets; k++) {
-            hp->vel[k].y -= hp->grav[k] * kMoveStep; hp->pos[k] += hp->vel[k] * kMoveStep;
+            projectileStepVel(hp->vel[k], {hp->grav[k], hp->accel[k]}, kMoveStep); hp->pos[k] += hp->vel[k] * kMoveStep;
             hp->at[k] += hp->vel[k] * kMoveStep;   // (where it's seen moves on at the same speed)
         }
     if (!hookHeld || frozen) s.flags &= ~MF_HOOKED;
@@ -537,7 +556,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         // riding a rocket: the anchor flies its step the way Server::stepProjectile does (the same arithmetic, so the
         // two agree), and lets go where the rocket meets a wall (it explodes there). A player it hits is the server's
         // word: it lets go a snapshot later.
-        s.hookVel.y -= s.hookGrav * kMoveStep;
+        projectileStepVel(s.hookVel, {s.hookGrav, s.hookAccel}, kMoveStep);
         const Vec3 step = s.hookVel * kMoveStep;
         const float len = length(step);
         if (len >= 1e-6f && map.raycast(s.hookPoint, step / len, len) >= 0) s.flags &= ~MF_HOOKED;
@@ -606,7 +625,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         // the floor's grip: ice slippery (little friction, little push), rubber and asphalt grippy (more of both), mud
         // sticky (it stops you hard)
         float grip = 1.0f, push = 1.0f;
-        if (floorMat == kMatIce) { grip = kIceFriction; push = kIceAccel; }
+        if (floorMat == kMatIce || (s.dashSlide && !dashing)) { grip = kIceFriction; push = kIceAccel; }
         else if (floorMat == kMatRubber) { grip = kRubberGrip; push = kRubberGrip; }
         else if (floorMat == kMatAsphalt) { grip = kAsphaltGrip; push = kAsphaltGrip; }
         else if (floorMat == kMatMud) grip = kMudGrip;
@@ -620,6 +639,8 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         }
         accelerate(s.vel, wishDir, wishSpeed, (kGroundAccel * mt.m[MV_GROUND_ACCEL]) * push, dt);
         s.vel.y = 0;
+        if (s.dashSlide && !dashing && s.vel.x * s.vel.x + s.vel.z * s.vel.z <= (kGroundSpeed * mt.speed) * (kGroundSpeed * mt.speed))
+            s.dashSlide = false;   // (back to run speed: the slide is over)
     } else {
         if (!dashing && !onLadder) {
             // surf: strafing into a ramp you touch holds you on it (kRampAirAccel: the wish-speed cap stays, so it's grip,
@@ -667,6 +688,11 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     Vec3 wall;
     int blocked = slideMove(s, map, delta, crouched, &wall);
     const bool steep = wall.x != 0 || wall.y != 0 || wall.z != 0;
+    // an upright face (a cut box's side at any angle in plan, a turned box): a riser like a box's own side, so it's
+    // stepped up when it's low enough (owner, 2026-10-31: "sometimes you cant stepup on cut boxes even though the
+    // height distance is still below 0.55"); a sloped face stays a wall you never step up
+    const bool riser = steep && std::fabs(wall.y) < 0.01f;
+    const Vec3 velIn = s.vel;   // (what the face takes off below: given back if the step is taken)
     // against a slope's wall face: the velocity along it (what goes into it is gone), so you slide down it as you
     // fall and along it as you run; it never lifts you off the floor (no climbing a steep slope by running at it; in
     // the air it's a plain clip, so a ramp turns a fall along it: surfing). A dash does go
@@ -703,7 +729,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     // of stopping you dead. Only ledges up to a step's height qualify, so walls still block. Walking up a slope is
     // this too (each step's rise is a sliver); a steep one is a wall, never stepped up.
     bool airStep = !onGround;
-    if ((onGround || airStep) && (blocked & 0b101) && !steep) {
+    if ((onGround || airStep) && ((blocked & 0b101) || riser) && (!steep || riser)) {
         MoveState step = before;
         AABB b = playerBox(step.pos, crouched, scale);
         float up = map.sweepAxis(b, 1, (kStepHeight * mt.m[MV_STEP]));
@@ -718,7 +744,11 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         float d1 = (step.pos.x - before.pos.x) * (step.pos.x - before.pos.x) + (step.pos.z - before.pos.z) * (step.pos.z - before.pos.z);
         // take the step if it gets further, or if the raised path was clear (a hair short of the riser, both
         // moves stop at the same spot: refusing would zero your speed and leave you stuck against a 0.5 m step)
-        if (d1 > d0 + 1e-6f || (!(sb & 0b101) && d1 >= d0)) { s.pos = step.pos; blocked &= ~0b101; }
+        const bool rose = step.pos.y > s.pos.y + 1e-4f;   // (an upright face: only a step that lands higher is one)
+        if ((!riser || rose) && (d1 > d0 + 1e-6f || (!(sb & 0b101) && d1 >= d0))) {
+            s.pos = step.pos; blocked &= ~0b101;
+            if (riser && !dashing) { s.vel.x = velIn.x; s.vel.z = velIn.z; }   // (over it, keeping your speed, as on a box's side)
+        }
     }
     // Dash wall bounce: a dash (this step's, including its last) that runs into a wall under kDashBounceAngle from
     // the wall's normal reflects off it (d' = d - 2(d.n)n: walls are axis-aligned, so one horizontal component
@@ -834,7 +864,12 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             const Vec3 at = c - off;
             if (!map.boxSolid(playerBox(at, crouched, scale))) {
                 s.pos = at;
-                s.vel = n * length(s.vel);
+                // (a wall teleporter is solid: the slide clipped the speed into it this step, so keep the speed you
+                // came in with). A walk teleporter (the one you went INTO: Brush::tpWalk, map format 12) lets you out at
+                // no more than the run speed, never faster than you came in.
+                float sp = std::max(length(s.vel), length(before.vel));
+                if (map.brushes[(size_t)from].tpWalk) sp = std::min(sp, kGroundSpeed * mt.speed);
+                s.vel = n * sp;
                 s.flags &= ~MF_ONGROUND;
                 s.dashTimer = 0;
             }
@@ -955,6 +990,56 @@ void dashRefillAll(MoveState& s, const Map* map) {
     s.dashRecharging = 0;
     for (uint16_t& v : s.dashRechargeMs) v = 0;
 }
+bool ballMove(Vec3& c, Vec3& v, const Map& map, float dt) {
+    constexpr float h = 0.001f;   // (owner, 2026-11-01: "ball should also treat every surface as if its rubber floor, bouncy")
+    const Vec3 half(kBallHalf, kBallHalf, kBallHalf);
+    bool onGround = false;
+    for (float left = dt; left > 1e-6f; left -= h) {
+        const float step = std::min(left, h);
+        const float below = map.sweepAxis(AABB{c - half, c + half}, 1, -0.01f);
+        onGround = below > -0.01f + 1e-5f && v.y <= 0;
+        if (onGround) {   // a player standing on ice, no input: friction x kIceFriction, no push
+            const float sp = std::sqrt(v.x * v.x + v.z * v.z);
+            if (sp > 0) {
+                const float drop = std::max(sp, kStopSpeed) * kFriction * kIceFriction * step, k = std::max(sp - drop, 0.0f) / sp;
+                v.x *= k; v.z *= k;
+            }
+            v.y = 0;
+        } else v.y -= kGravity * 0.5f * step;
+        const int order[3] = {1, 0, 2};
+        Vec3 delta = v * step;
+        for (int o = 0; o < 3; o++) {
+            const int i = order[o];
+            const float want = delta[i];
+            if (want == 0) continue;
+            const AABB box{c - half, c + half};
+            const Brush* hit = nullptr;
+            const float got = map.sweepAxis(box, i, want, &hit);
+            c[i] += got;
+            if (std::fabs(got) + 1e-6f >= std::fabs(want)) continue;
+            Vec3 n;
+            if (slopeContact(hit, shifted(box, i, got), n) && dot(v, n) < 0) {
+                // a slope's face, at any angle (owner, 2026-11-01: "balls should also try to go up ramps that are more
+                // than 45 and launch up still"): what goes into it bounces as off rubber when it's a hard hit landing
+                // on it, else the ball turns along the face keeping its speed, up it and off its top
+                const float into = dot(v, n), sp = length(v);
+                Vec3 along = v - n * into;
+                const float al = length(along);
+                if (i == 1 && -into > kRubberMin) v = along - n * (into * kRubberBounce);
+                else if (al > 1e-4f) v = along * (sp / al);
+                else v = along;
+                Vec3 r; r[i] = want - got;   // (the rest of this axis's move, along the face, on the axes still to come)
+                r -= n * dot(n, r);
+                for (int k = o + 1; k < 3; k++) delta[order[k]] += r[order[k]];
+                continue;
+            }
+            // every other surface is rubber: back at kRubberBounce, a slow touch stops
+            v[i] = std::fabs(v[i]) > kRubberMin ? -v[i] * kRubberBounce : 0.0f;
+        }
+    }
+    return onGround;
+}
+
 float moveBaseGravity() { return kGravity; }
 float moveBaseSpeed() { return kGroundSpeed; }
 float moveBaseJump() { return kJumpSpeed; }

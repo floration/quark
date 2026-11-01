@@ -43,6 +43,7 @@ struct MoveState {
     float jumpBuffer = 0;    // a fresh jump press still counts this long for a dash jump / super dash (frozen while dashing)
     float jumpGrace = 0;     // jumped off the ground by a press this recently: a dash now is still a ground dash jump
     uint8_t dashBounces = 0; // wall bounces this dash has made
+    bool dashSlide = false;  // a dash aimed down met the floor with no jump: ice's grip until run speed or a jump (protocol 64)
     float hookCooldown = 0;
     Vec3 hookPoint;    // grapple anchor while MF_HOOKED (latched onto a player: their body, moved by the server every tick)
     uint8_t mods = 0;  // MOVE_* rule modifiers (duel)
@@ -53,6 +54,7 @@ struct MoveState {
     uint16_t hookProj = 0;
     Vec3 hookVel;
     float hookGrav = 0;
+    float hookAccel = 0;   // ...and its thrust (m/s2 along its velocity: the primary rocket's, projectileAccel; protocol 55)
     Vec3 pullPoint;    // while MF_PULLED: the body of the player whose grapple holds you (set by the server every tick)
     // What the last pmove call did (ME_*; each call clears it), for sounds: a frame or a snapshot can hold several 1 ms
     // steps, and comparing states across it missed a jump and a landing in the same step (a bhop) or a dash and its dash
@@ -101,6 +103,7 @@ enum : uint8_t {
 };
 constexpr float kGrappleRange = 45.0f;
 constexpr uint8_t kHookRocket = kMaxPlayers + 1;   // MoveState::hookTarget: the grapple rides a rocket (PlayerSnap hooked: 1 + it)
+constexpr uint8_t kHookBall = kMaxPlayers + 2;     // ...latched onto the ball (ball mode; protocol 65: the server moves hookPoint with it)
 // Rocket riding (owner 2026-10-27): the grapple catches a live rocket in flight, anyone's, as this box round it: 0.8 m
 // across, a player's width. The rocket is 0.6 m long and 0.3 m over its fins, and at 48 m/s it moves 0.8 m in a 60 Hz
 // frame, so a box the size of one frame's flight catches a hook aimed at it in any frame, and covers the few ms the
@@ -149,6 +152,28 @@ inline Vec3 hitboxClosest(const AABB& hitbox, const Vec3& p) {
     const Vec3 a = vmax(body.mn, vmin(p, body.mx)), b = vmax(hd.mn, vmin(p, hd.mx));
     return dot(a - p, a - p) <= dot(b - p, b - p) ? a : b;
 }
+// Where a projectile that met a wall, the floor or a player `hit` metres along its step from `from` (unit `dir`) goes
+// off: 5 cm short of the surface, so a blast's cover rays (Server::explode, Game::reportBlast) don't start on the
+// surface they then hit at t = 0 (every splash victim "behind cover"). The server's stepProjectile and the shooter's
+// game (reportImpact) both use it, so a reported blast is where the server's would be.
+constexpr float kBlastBackoff = 0.05f;
+inline Vec3 blastPoint(const Vec3& from, const Vec3& dir, float hit) { return from + dir * (hit > kBlastBackoff ? hit - kBlastBackoff : 0.0f); }
+// A blast at `at` reaches the player in `hitbox` (Server::explode and the shooter's Game::reportBlast, the same test):
+// the ray to the box's centre is clear, or, the centre behind cover, a half-peeking player still takes it if the blast
+// reaches the box's nearest point or the head (F16). At most three rays.
+inline bool blastReaches(const Map& map, const Vec3& at, const AABB& hitbox) {
+    const Vec3 c = hitbox.center(), to = c - at;
+    const float dist = length(to);
+    if (dist <= 0.01f) return true;
+    const float w = map.raycast(at, to / dist, dist);
+    if (w < 0 || w >= dist - 0.1f) return true;
+    auto clear = [&](const Vec3& pt) {
+        const Vec3 v = pt - at;
+        const float len = length(v);
+        return len < 0.11f || !map.raycastAny(at, v / len, len - 0.1f);
+    };
+    return clear(hitboxClosest(hitbox, at)) || clear(Vec3(c.x, hitbox.mx.y - 0.15f * (hitbox.mx.y - hitbox.mn.y), c.z));
+}
 // the standard values a custom mode scales (MOVEMENT / GENERAL pages show "standard -> this mode"), and their units
 float moveParamBase(int param);           // MV_*
 const char* moveParamUnit(int param);
@@ -193,10 +218,19 @@ struct HookProbe {
     static constexpr int kRockets = 6;
     int nr = 0;
     Vec3 at[kRockets], pos[kRockets], vel[kRockets];
-    float grav[kRockets] = {};
+    float grav[kRockets] = {}, accel[kRockets] = {};   // (accel: its thrust, projectileAccel)
     uint16_t rid[kRockets] = {};   // the rocket's id (0: your own predicted copy, not named by the server yet)
     int hitRocket = -1;   // out: index of the rocket the hook caught (-1: none)
+    bool ball = false;    // ball mode: the ball can catch it (ballBox: where it's seen)
+    AABB ballBox;
+    bool hitBall = false; // out: the hook caught the ball
 };
 // Advances movement by cmd.msec milliseconds, in fixed 1 ms steps (tick-rate independent). `probe`: players and rockets
 // the grapple can catch (the server's lag compensated picks; the client's, as it sees them: NetClient::hookProbe).
 void pmove(MoveState& s, const UserCmd& cmd, const Map& map, HookProbe* probe = nullptr);
+// The ball (MODE_BALL; owner, 2026-11-01: "the same physics as a player on ice at 50% gravity"): its box (kBallHalf each
+// side of its centre `c`) moves like a player's hull with no input on an ice floor: half the gravity, the ground's
+// friction x kIceFriction on any floor, 1 ms steps. A wall or a ceiling sends it back at half the speed it hit with (a
+// player's hull would stop dead: a ball against a wall would stick there); a landing stops its fall, like a player's.
+// Returns whether it ends the call on the floor.
+bool ballMove(Vec3& c, Vec3& v, const Map& map, float dt);

@@ -40,6 +40,8 @@ constexpr float kVerifyBurst = 50, kVerifyPerSec = 50;      // connect signature
 
 // Tests running on a sped-up clock turn off the warmup tick-rate check (it would see "late" ticks).
 extern bool g_serverRateCheck;
+// Tests only (orderbias): the old tick order, each bot thinking just before its own command, in slot order
+extern bool g_legacyTickOrder;
 struct GameEvent;
 class Server;
 struct ModeHooks;
@@ -49,7 +51,7 @@ extern void (*g_eventHook)(const Server& s, const GameEvent& e);
 
 struct ServerConfig {
     std::string name = "quark server";
-    std::string map = "bastion";
+    std::string map = "sewer";   // (built for free for all; bastion until 1.19.6)
     int mode = MODE_FFA;
     uint16_t port = kDefaultPort;
     int maxPlayers = 8;         // up to kMaxPlayers (32); big servers start at a lower tick rate
@@ -63,6 +65,8 @@ struct ServerConfig {
     int balanceBotSkill = BOT_INTERMEDIATE;
     bool vsBots = false;        // "play vs bots": fixed bots, humans always on team A
     bool autoStart = false;     // start the match automatically once both sides have players (else: vote)
+    std::vector<std::string> botNames;   // the bots' names (bots/names.txt on the host; empty: the built-in 16), "BOT " added
+    int botLooks = 0;           // 0 the bots wear a mix of models, 1 all STANDARD
     int botsEnemy = 0, botsAlly = 0, botSkill = BOT_INTERMEDIATE;
     std::string botBrain;       // bots/<name>.qbrain that bots play (tools/bots/GRAMMAR.md); empty = the built-in one. Never on ranked or time trial
     bool lanOnly = false;
@@ -90,7 +94,7 @@ struct ServerConfig {
     std::vector<int> tourneyVariants;
     bool editMode = false;      // start as a map edit session (anyone connected can edit; the host autosaves)
     std::string restartFlag;    // if this file appears (an update was installed), restart once no match is being played
-    bool timeTrial = false;     // solo ranked race on Viaduct: no bots, checkpoint splits sent to the racer
+    bool timeTrial = false;     // solo ranked race on a ranked race map (rankedRaceMaps): no bots, checkpoint splits sent to the racer
     bool ranked = false;        // matches are rated (OpenSkill) once every player reports the same result; no bots
     // Release channel this server runs for (GOV_PROD / GOV_TESTING; -1: by the build, testing for a testing version).
     // A testing server (or any testing build) plays ranked normally but never sends anything to the ranking server.
@@ -114,6 +118,7 @@ struct ServerPlayer {
     bool isBot = false;
     bool balanceBot = false;    // added automatically to even out teams
     bool letIn = false;         // duel: voted in past the side's size (joined when the sides were even and full)
+    uint32_t queueSeq = 0;      // 1v1 (arena / a 1v1 duel): place in the line to play (lowest first), 0 = not in it
     NetAddr addr;
     uint32_t nonce = 0;
     std::string name;
@@ -150,12 +155,26 @@ struct ServerPlayer {
     double fireQueuedUntil = -1; // semi-auto: a click waiting for the weapon to be ready
     int kills = 0, deaths = 0, score = 0;
     double respawnAt = -1;
+    // practice (the host alone with bots, "practice ..."): a saved spot to go back to, and taking no damage
+    bool practiceSaved = false, practiceGod = false;
+    Vec3 practicePos, practiceVel; float practiceYaw = 0, practicePitch = 0;
     int checkpoint = 0;         // race: next checkpoint index
     std::vector<int> raceSplits;   // race: ms at each checkpoint of the current run (time trials report it)
     uint32_t joinId = 0;        // unique per connection (a new player in a reused slot gets a new one)
     float dmgDealt = 0, objTime = 0;    // scoreboard: damage to enemies, seconds on the objective (score = dmg / 10 + obj)
     double hideSurvived = 0;    // hide and seek: seconds hidden (alive, not seeking) in live rounds this match: the first tiebreak (T23)
     int shotsFired = 0, shotsHit = 0;   // accuracy: shots (hitscan or projectile) that damaged an enemy
+    // ...and each weapon's own: the accuracy shown is the average of the weapons fired (owner, 2026-11-01: by total
+    // shots, a second of the laser at 100 shots a second outweighed everything else)
+    int wpnShots[WPN_COUNT] = {}, wpnHits[WPN_COUNT] = {};
+    void addShot(int w) { shotsFired++; if (w >= 0 && w < WPN_COUNT) wpnShots[w]++; }
+    void addHit(int w) { shotsHit++; if (w >= 0 && w < WPN_COUNT) wpnHits[w]++; }
+    void resetAccuracy() { shotsFired = shotsHit = 0; for (int w = 0; w < WPN_COUNT; w++) wpnShots[w] = wpnHits[w] = 0; }
+    int accuracy() const {   // %: the mean of each fired weapon's hits / shots
+        int sum = 0, n = 0;
+        for (int w = 0; w < WPN_COUNT; w++) if (wpnShots[w] > 0) { sum += std::min(100, wpnHits[w] * 100 / wpnShots[w]); n++; }
+        return n ? sum / n : 0;
+    }
     bool hitSinceShot = false;
     // The game reports its own hits (owner, 2026-10-28: "all damage should be client side ... high trust society game"):
     // its hitscan shots and its rockets' and bolts' hits count as its screen showed them ("hit" commands); the server
@@ -349,6 +368,17 @@ public:
     // voted to spectate this map ({rank id, name}): leaving and coming back doesn't get them back into play
     std::vector<std::pair<std::string, std::string>> specOut_;
     void moveToSpectator(int id);   // out of play (as "team spec" does: tag counts it as elimination)
+    // 1v1 winner stays (owner, 2026-11-01: "make 1v1 modes swap in specators cyclicly winner stays, even ranked"): the
+    // spectators wanting to play wait in a line (queueSeq); at each match's end the loser goes to its back and the
+    // first in line plays the winner. An open seat (a leaver) is filled from the line in warmup.
+    bool oneVsOne() const;
+    void queueToPlay(int id);       // to the back of the line (and tells them where they are)
+    void rotateWinnerStays(int winner);   // after a match (winner stays: a round): winner the winning team (else nothing)
+    void syncWinnerScores();          // winner stays: scoreA / scoreB = the seated players' round wins
+    void fillOneVsOneSeats();       // warmup: an empty 1v1 seat gets the first in line
+    uint32_t queueNext_ = 0;
+    int roundWinner_ = -1;          // the team that won the round that just ended (-1: a draw)
+    int matchWinner_ = -1;          // the team that won the match that just ended (-1: a draw / none)
     // Stuck knives / bolts / syringes (StuckProp, EV_PROP; cosmetic): the world ones go to everyone as they land (the
     // newest kPropReplay are replayed to whoever joins later); one in a player goes to each client once that player is
     // in its sight (NET-10: a hit out of sight isn't told), and a clear follows when the player dies / respawns / leaves.
@@ -420,6 +450,11 @@ public:
     GameEvent rpsEvent_;
     uint32_t nextJoinId_ = 1;   // ServerPlayer::joinId of the next connection (a newcomer in a reused slot isn't its old owner)
     float drainAccum_ = 0;
+    // a round's start spawns everyone, one after another in slot order: in a team mode the enemies spawned in the same
+    // batch don't count for where you spawn (the team that spawned second used to pick its spawns away from the
+    // first's, and the first saw last round's survivors where they stood)
+    bool spawnBatch_ = false;
+    uint32_t batchSpawned_ = 0;
     // not ranked: a match that had both sides and lost one (or everyone) is on hold (short_), since shortSince_ (F5)
     bool short_ = false;
     double shortSince_ = 0;
@@ -435,6 +470,14 @@ public:
     Vec3 bombVel_;               // a dropped bomb still moving: over ice (sliding) or rubber (bouncing); zero once it rests
     bool bombMoving_ = false;
     Vec3 bombLastGround_;        // ...and where its carrier last stood (it goes back there from the void or lava)
+    // ball (MODE_BALL): its velocity (the centre is ms_.bombPos), where it starts, whether it's been placed this round,
+    // who touched it last (named when it goes in)
+    Vec3 ballVel_, ballSpawn_;
+    bool ballSet_ = false;
+    int ballToucher_ = -1;
+    double ballRespawnAt_ = 0;
+    double ballHurtAt_[kMaxPlayers] = {};
+    double ballKnifeAt_[kMaxPlayers] = {};   // a knife swing's push on the ball: once a swing (it keeps cutting every tick for kKnifeSwingTime)   // when the ball last hurt each player (once per kBallHurtGap)   // > 0: the ball waits (in the goal it went into, or the void) until then, then back to the middle
     double objTouch_ = -1e9;     // payload / multi point / bomb / neutral payload: when the side that needs time last touched the objective (overtime)
     // the mode's rules (gamemodes.cpp)
     const ModeParams* mp_ = &kBuiltinModeParams[MODE_FFA];   // the numbers the native rules read (set by rulesReset)
@@ -466,10 +509,17 @@ public:
     // Votes (bots on/off, bot difficulty): majority of human players decides.
     // VOTE_SPEC: move a player (arg; arg2 = their joinId) to spectator until the next map. Never a kick: kicking stays
     // with the dedicated server's console and the host (isAdmin), and isn't votable (OWNER_DECISIONS_2 B10).
-    enum VoteKind { VOTE_NONE = 0, VOTE_BOTS, VOTE_BOTSKILL, VOTE_START, VOTE_STARTBOTS, VOTE_MAP, VOTE_TMAPS, VOTE_TMODES, VOTE_RANKED, VOTE_EDIT, VOTE_LETIN, VOTE_SPEC };
+    enum VoteKind { VOTE_NONE = 0, VOTE_BOTS, VOTE_BOTSKILL, VOTE_START, VOTE_STARTBOTS, VOTE_MAP, VOTE_TMAPS, VOTE_TMODES, VOTE_RANKED, VOTE_EDIT, VOTE_LETIN, VOTE_SPEC,
+                    VOTE_RESTART, VOTE_EXTEND, VOTE_SHUFFLE, VOTE_KICK };   // (1.19.4: restart, +5 minutes, shuffle teams, kick)
     static constexpr int kSpecVoteMinPlayers = 3;   // connected human players a spectate vote needs (so never in a 1v1)
-    struct Vote { int kind = VOTE_NONE; int caller = -1; int arg = 0, arg2 = 0; std::string map; uint32_t yes = 0, no = 0; double endsAt = 0; std::string text; } vote_;
-    void callVote(int caller, int kind, int arg, const std::string& map = "", int arg2 = 0);
+    struct Vote { int kind = VOTE_NONE; int caller = -1; int arg = 0, arg2 = 0; std::string map; uint32_t yes = 0, no = 0; double endsAt = 0; std::string text;
+                  bool setMods = false; std::string mods; } vote_;   // (a map vote's modifiers: setMods, then key=value lines; "" = the standard rules)
+    void callVote(int caller, int kind, int arg, const std::string& map = "", int arg2 = 0, const std::string* mods = nullptr);
+    // Voted modifiers (owner, 2026-11-01: the vote's MODIFIERS step): a custom mode named kVotedRules built from them. A
+    // host's own custom mode can't be voted over; voted rules can (and change with the next vote).
+    static constexpr const char* kVotedRules = "voted";
+    bool hostCustom() const { return cfg_.custom.active() && cfg_.custom.name != kVotedRules; }
+    void applyVotedRules(const std::string& mods, int mode);
     // Tourney: single elimination bracket of everyone in the server, one 1v1 at a time.
     struct Tourney {
         bool running = false;
@@ -511,6 +561,7 @@ public:
     // Map edit sessions: everyone flies around and edits the map together; edits go through here so all
     // copies stay identical. The map file is autosaved (it's the host's copy) while dirty.
     bool editing_ = false, editDirty_ = false;
+    bool practicePassive_ = false;   // practice: bots move but never fire
     bool tempEdit_ = false;     // editing was voted on a normal server: never saved, reverts at the next map change
     bool mapEdited_ = false;    // map_ differs from its file (temporary edits being played)
     bool autosaveBackedUp_ = false; // this edit session's first autosave copied the file to <name>.qmap.bak
@@ -565,7 +616,7 @@ public:
     // While a ranked match is live (ticket opened at the first round going live, until the match ends) nothing may
     // change it: no votes, no map / mode / ranked changes, no team switches, no kicking its players (OWNER 3.4).
     // Exactly the three rated ladders are locked (JUDGMENT_CALLS C15): 1v1 vanilla, 1v1 laser vampire and instagib free
-    // for all. The Viaduct time trial (best times only, no rating), tourneys and everything else never are.
+    // for all. The race time trial (best times only, no rating), tourneys and everything else never are.
     bool rankedLadderPlayed() const { return cfg_.ranked && arenaVariantRanked(cfg_.arenaVariant) && cfg_.mode == rankedMode(cfg_.arenaVariant) && !cfg_.timeTrial; }
     bool rankedLive() const { return rankedLadderPlayed() && !rankedMatch_.empty() && ms_.phase != PHASE_WARMUP && ms_.phase != PHASE_MATCH_END; }
     bool rankedTicketSent_ = false;   // the ticket went out (or was given up on): no more signatures needed

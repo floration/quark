@@ -35,6 +35,10 @@ public:
     // out every `batch` ticks (setInputBatch; 1 = every tick) and at flushInput().
     void tick(UserCmd cmd);
     void setInputBatch(int n) { inputBatch_ = n < 1 ? 1 : n; }
+    // the newest commands each input packet carries (2 - 8; the server reads up to 16): more ride out more packet loss
+    void setCmdsPerPacket(int n) { cmdsPerPacket_ = n < 1 ? 1 : n > 16 ? 16 : n; }
+    // a server's map that isn't on disk is downloaded (off: the connection ends with an error instead)
+    void setAllowDownloads(bool on) { allowDownloads_ = on; }
     void flushInput() { if (unsentCmds_ > 0) sendInput(); }   // after a frame's ticks: what's not sent yet
     void sendCommand(const std::string& s); // reliable string command ("say hi", "team b", ...)
     void setReportHits(bool on) { reportHits_ = on; }   // the game: its shots' hits are its own (Server::clientHitReport)
@@ -66,7 +70,7 @@ public:
     uint32_t lastReplayCount() const { return lastReplay_; } // commands the last reconcile re-ran (0 = prediction matched)
     // Rocket riding: your own rockets the server hasn't sent yet (the client's predicted copies, X5), where they are as
     // the next tick() starts, so a grapple can catch one at once. Set before each tick (n = 0: none).
-    struct RocketCopy { Vec3 pos, vel; float grav = 0; };
+    struct RocketCopy { Vec3 pos, vel; float grav = 0, accel = 0; };
     void setRocketCopies(const RocketCopy* c, int n) { nCopies_ = std::min(std::max(n, 0), (int)HookProbe::kRockets); for (int k = 0; k < nCopies_; k++) copies_[k] = c[k]; }
     Vec3 smoothedPos(float alpha) const; // predicted position interpolated between ticks + error smoothing
     void updateVisualPos(double tickAcc, float yaw, float pitch); // once a frame after the ticks: smoothedPos is then as of now
@@ -107,7 +111,7 @@ public:
     // Glass and blown holes (glass.h): each break the server sent, or one this client predicted (its own shot, dash or
     // grapple), as something to show: shards, a sound. takeGlassFx hands over what came since the last call.
     static constexpr uint8_t kGlassFxShake = 250;   // (how: a crumble platform shaking, about to fall)
-    struct GlassFx { AABB pane; uint8_t how; Vec3 at, dir; uint32_t seed; bool hole; int material = -1; };   // (hole with how 1: a wall that fell, pane its box)
+    struct GlassFx { AABB pane; uint8_t how; Vec3 at, dir; uint32_t seed; bool hole; int material = -1; int brush = -1; };   // (hole with how 1: a wall that fell, pane its box)
     std::vector<AABB> crumbled_;
     void takeGlassFx(std::vector<GlassFx>& out) { out.swap(glassFx_); glassFx_.clear(); }
     bool predictGlass(int brush, int how, const Vec3& at, const Vec3& dir);   // false: no standing pane
@@ -184,6 +188,8 @@ private:
     bool havePendingOffset_ = false, reconcilePending_ = false;
     void sendInput();
     int inputBatch_ = 1, unsentCmds_ = 0;
+    int cmdsPerPacket_ = 0;   // (0: kCmdsPerPacket)
+    bool allowDownloads_ = true;
     bool useMap(const std::string& name, const MapId& id); // load name (own copy, else a downloaded one) if it's that map
     void pumpDownload(double now);
 
@@ -199,6 +205,9 @@ private:
     std::string tokenAddr_;
     int clientId_ = -1;
     double lastSend_ = 0, lastRecv_ = 0, connectStart_ = 0;
+public:
+    double lastRecvTime() const { return lastRecv_; }   // (the HUD's STALL warning: when a packet last came in, timeNow())
+private:
     Map map_;
     bool mapReady_ = false;
     uint32_t mapGen_ = 0, editRev_ = 0;
@@ -247,7 +256,7 @@ private:
     RocketCopy copies_[HookProbe::kRockets];
     int nCopies_ = 0;
     // the last predicted catch, for replays: a player (box, id) or a rocket (rocket: at, pos, vel, grav, rid as the probe had them)
-    struct HookCatch { uint32_t seq = 0; AABB box; uint8_t id = 0; bool rocket = false; Vec3 at, pos, vel; float grav = 0; uint16_t rid = 0; } hookCatch_;
+    struct HookCatch { uint32_t seq = 0; AABB box; uint8_t id = 0; bool rocket = false; Vec3 at, pos, vel; float grav = 0, accel = 0; uint16_t rid = 0; } hookCatch_;
     uint8_t moveEv_ = 0;
     float moveLand_ = 0;
     static constexpr uint32_t kRemoteEvRing = 128;   // (a power of two: the counters wrap cleanly)
@@ -293,6 +302,7 @@ struct ServerInfo {
     int mode = 0, players = 0, maxPlayers = 0;
     float ping = 0;
     bool noReply = false; // on the internet list but didn't answer (port not open?); still clickable
+    bool official = false; // an official Quark server (isOfficialServer, master.h: by its address, never its name)
 };
 
 // LAN discovery and direct server queries.

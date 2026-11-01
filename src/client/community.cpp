@@ -2,6 +2,8 @@
 // (the discord-bot branch): linking your Discord name, queues you can join from inside the game (the bot pings
 // Discord users, the game tells you), and crowns for the ranked leaders (gold #1, silver #2-10).
 #include "game.h"
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
 #include <algorithm>
 #include <sstream>
 
@@ -45,6 +47,12 @@ void Game::linkDiscord() {
     rank_.request("link", "/link", "secret=" + rankKey_.secret + (unlink ? std::string("&unlink=1") : "&code=" + code) + "&name=" + toHex(cfg_.name));
 }
 
+void Game::saveQueues() {   // (REMEMBER QUEUES: what you're in now, for the next start)
+    std::string q;
+    for (auto& m : queued_) q += (q.empty() ? "" : ",") + m;
+    if (q != cfg_.lastQueues) { cfg_.lastQueues = q; cfg_.save(); }
+}
+
 void Game::queueAction(const std::string& mode, const char* action) {
     if (rankKey_.secret.empty()) { notify("QUEUES NEED A RANKED KEY (quark.key) - COULDN'T MAKE ONE", 4); return; }
     std::string body = "secret=" + rankKey_.secret + "&mode=" + mode + "&action=" + action + "&name=" + toHex(cfg_.name);
@@ -52,12 +60,22 @@ void Game::queueAction(const std::string& mode, const char* action) {
     if (std::string(action) == "join") queued_.insert(mode);
     else if (std::string(action) == "leave") queued_.erase(mode);
     else queued_.clear();
+    saveQueues();
     nextQueuePoll_ = time_ + 0.5;   // fresh counts soon
 }
 
 // Every frame (cheap: only timers until something is due; the requests run on the RankService thread).
 void Game::updateCommunity() {
     std::string out;
+    // PLAYER > MORE: REMEMBER QUEUES: the queues you were in last time, joined again once (not in the UI test)
+    if (!queuesRestored_ && !uiTest_ && !rankKey_.secret.empty()) {
+        queuesRestored_ = true;
+        if (cfg_.rememberQueues && !cfg_.lastQueues.empty()) {
+            std::istringstream qs(cfg_.lastQueues);
+            std::string m;
+            while (std::getline(qs, m, ',')) if (!m.empty() && m.size() < 32) queueAction(m, "join");
+        }
+    }
     // crowns: who's top 10 on any board, by ranked id (best place wins)
     if (time_ >= nextCrownFetch_) { nextCrownFetch_ = time_ + 120; rank_.request("crowns", "/crowns"); }
     if (rank_.takeText("crowns", out) && (out.empty() || out[0] != '!')) {
@@ -109,6 +127,7 @@ void Game::updateCommunity() {
             }
             if (!mine) continue;
             queued_.clear();   // (filled players leave every queue)
+            saveQueues();
             pendingFilled_ = std::string("YOUR QUEUE FOR ") + queueTitle(row.mode) + " HAS BEEN FILLED (" + with + ") - FIND A SERVER AND BEGIN THE GAME";
         }
     }
@@ -119,6 +138,8 @@ void Game::updateCommunity() {
         if (screen_ == Screen::InGame) addChat({pendingFilled_, rgba(cfg_.colorFriendly), time_ + 15});
         else error_ = pendingFilled_;
         audio_.play(SND_STREAK, 1.0f);
+        audio_.play(SND_FINISH, 1.0f);   // (and the finish chime: it's heard over a match or from another window)
+        if (cfg_.queueFlash && !glfwGetWindowAttrib(win_, GLFW_FOCUSED)) glfwRequestWindowAttention(win_);   // (the taskbar button flashes)
         pendingFilled_.clear();
     }
     updateLifetime();

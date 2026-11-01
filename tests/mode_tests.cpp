@@ -137,7 +137,8 @@ std::string firstDiff(const std::string& a, const std::string& b) {
     }
 }
 
-const char* const kModeFiles[] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "arena", "tourney", "hide", "tag", "points", "surf"};
+const char* const kModeFiles[] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "arena", "tourney", "hide", "tag", "points", "surf", "power", "winner", "ball"};
+static_assert(sizeof kModeFiles / sizeof kModeFiles[0] == MODE_COUNT, "a mode file name per mode");
 
 void testFormat() {
     printf("  format: every default canonical, numbers, the JSON AST\n");
@@ -796,6 +797,9 @@ const LockCase kLockCases[] = {
     {MODE_HIDE, "hamlet", 4, "param roundTime f32 = 12\nparam hideTime f32 = 3\nparam rpsPickTime f32 = 2\nparam rpsRevealTime f32 = 1\n"},
     {MODE_TAG, "foundry", 5, "param roundTime f32 = 8\nparam tagFreeze f32 = 1\n"},
     {MODE_POINTS, "midtown", 8, "param roundTime f32 = 25\nparam captureTime f32 = 3\nparam pointBonus f32 = 5\n"},
+    {MODE_POWER, "bastion", 6, "param rounds int = 2\nparam roundTime f32 = 20\nparam poolPerPlayer f32 = 150\n"},
+    {MODE_BALL, "qk8", 6, "param roundTime f32 = 25\n"},
+    {MODE_WINNER, "temple", 2, "param rounds int = 2\nparam stalemate f32 = 5\nparam drainRate f32 = 50\n"},
 };
 const char* const kCommonFast = "param freezeTime f32 = 1\nparam roundEndTime f32 = 1\nparam matchEndTime f32 = 1.5\nparam warmupCountdown f32 = 1\n";
 
@@ -1020,12 +1024,13 @@ void testLogicServers() {
     {   // ranked: the custom mode and its logic are dropped (a preset one too)
         Server s;
         ServerConfig cfg;
-        cfg.map = "temple"; cfg.port = 0; cfg.lanOnly = true; cfg.ranked = true; cfg.arenaVariant = 0;
+        cfg.map = "qk1"; cfg.port = 0; cfg.lanOnly = true; cfg.ranked = true; cfg.arenaVariant = 0;
         cfg.custom = custom("custommode=r\nmode=1v1\nlogic 1\nslot kill:\n  pass\n");
         s.presetModeLogic(compileModeLogic("logic 1\nbase arena\nslot kill:\n  pass\n", MODE_ARENA));
         s.setLog([](const std::string&) {});
         std::string err;
         MCHECK(s.start(cfg, &err));
+        if (!err.empty()) printf("  start: %s\n", err.c_str());
         MCHECK(s.modeLogic() == nullptr && s.modeHooks_ == nullptr && !s.cfg_.custom.active() && s.modeLabel().empty() && s.mp_ == &builtinModeParams(MODE_ARENA));
         s.stop();
     }

@@ -13,18 +13,18 @@ Every automatic update follows **production releases only**, meaning a `v<x.y.z>
 
 ## 1. Dedicated servers (automatic since 1.17.0)
 
-`tools/server/install.sh` sets everything up: a production server and a testing server on the next port, each with an update timer.
+`tools/server/install.sh` sets everything up: by default a production server and a testing server on the next port, each with an update timer.
 
-**Once per box** (or again after pulling a new `install.sh`):
+**Once per box** (or again after pulling a new `install.sh`), one command on a fresh Ubuntu / Debian VPS, as a user with sudo:
 ```
-git clone https://github.com/floration/quark /opt/quark-src   # (any folder; install.sh copies what it needs)
-cd /opt/quark-src && sudo sh tools/server/install.sh            # --no-testing: production only; --port N
+sudo apt-get update && sudo apt-get install -y git cmake g++ curl python3 && sudo git clone https://github.com/floration/quark /opt/quark-src && sudo sh /opt/quark-src/tools/server/install.sh --public --name "my server"
 ```
-Forward the UDP port, and the next port up for the testing server.
+(Any folder works for the checkout, cloned as root as here so git doesn't refuse it under sudo; install.sh copies what it needs.) Options: `--port N` (default 27500), `--no-testing` (production only), `--testing-only` (only the testing server, on the production port, always running: see below), `--both` (back to the default). The choice is remembered in `/etc/quark/install.conf`. Until a production release has `--testing-only`, clone the `testing` branch for it (`sudo git clone -b testing ...`). Forward the UDP port, and the next port up for the testing server (a testing-only box needs only its one port).
 
 **What the updater does:**
 - **Production server:** every minute, it updates to the newest production release.
 - **Testing server:** every 2 minutes, it updates to the newest testing build. It only runs while that build is newer than production. Testing builds are `<VERSION>.<N>` (1.19.0 to 1.19.1: `<VERSION>.testing.<N>`) with `VERSION` at the last production release, so they sort above it; the build a production release was merged from counts as caught up too (its commit is in the production tag). When production catches up (same update), it stops after its current match and starts again by itself with the next newer testing build (`/var/lib/quark-testing/active`, `quark-testing-active.path`).
+  - **Testing-only box** (`install.sh --testing-only`, owner 2026-10-30): no production server (an existing one is stopped and disabled, its data kept in `/var/lib/quark`). The testing server never stops: it runs the newest testing build, or the production release once that is newer (`QUARK_TESTING_ALWAYS=1` in `quark-testing-update.service`; no `active` file, no path unit, no load governor, normal CPU priority).
   - **Once, for the 1.19.1 numbering switch:** an updater from before it only knows `test-X.Y.Z.testing.N` tags, so it never sees a `test-X.Y.Z.N` build: it keeps the testing server on its last build, and once production 1.19.1 is out (newer than that build) it stops the testing server for good (a testing updater never builds production). On each box run `sudo sh tools/server/install.sh` once from a checkout of the `testing` branch (to run 1.19.1.1 before the release) or of `v1.19.1` or newer: it re-clones both instances, and the testing updater then follows the new builds. **This is the last time** (owner, 2026-10-28: "once install.sh is run a single time, you should not have to rerun it"): from this version on the updater reads any `test-X.Y.Z<suffix>` tag (the signed manifest is what's checked), and a testing updater installs a production release that is newer than every testing build (the testing server stays stopped), so its own code never falls behind production. Only a change to the systemd units themselves would need install.sh again; keep those stable.
   - **Once, for the 1.19.0 numbering switch:** a testing server's updater runs from its own checkout (`/opt/quark-testing`), which sits on the last testing build it built. An updater from before the switch only knows `test-X.Y.Z-test.N` tags, so it never sees a `test-X.Y.Z.testing.N` build and keeps the testing server stopped. On each box, after production 1.19.0 is out, run `sudo sh tools/server/install.sh` once from a checkout of `v1.19.0` (or newer): it re-clones both instances from that commit, and the testing updater then follows the new builds.
 - **Each update:**

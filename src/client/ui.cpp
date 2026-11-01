@@ -31,8 +31,41 @@ void Ui::begin(Renderer* r, const UiInput& in, float scale) {
 }
 
 bool Ui::hover(float x, float y, float w, float h) const {
+    if (quiet()) return false;   // (settings SEARCH: only placed widgets take input)
     if (muted || (blocked_ && !unblock_)) return false;   // (under a modal / a popup is open: only it takes input)
     return in_.mx >= x && in_.mx < x + w && in_.my >= y && in_.my < y + h;
+}
+
+Ui::RelocScope::RelocScope(Ui& ui, const std::string& label, const std::vector<std::string>* names, const UiExp& e, float& x, float& y,
+                            float& w, float& h)
+    : u(ui) {
+    if (!u.reloc || u.relocActive_) return;   // (none, or a widget drawn by a placed one: as it is)
+    const float ox = x, oy = y, ow = w, oh = h;
+    u.lastPlaced_ = false;
+    if (!u.reloc->place(label, names, e, x, y, w, h)) return;
+    u.relocId_ = u.probe ? u.reloc->reportId(label, e) : nullptr;
+    u.lastPlaced_ = true;
+    u.lastOrig_[0] = ox; u.lastOrig_[1] = oy; u.lastOrig_[2] = ow; u.lastOrig_[3] = oh;
+    u.lastAt_[0] = x; u.lastAt_[1] = y; u.lastAt_[2] = w; u.lastAt_[3] = h;
+    on = true;
+    u.relocActive_ = true;
+    alpha = u.r_->alpha();
+    u.r_->setAlpha(1);   // (the search draws the pages with alpha 0: a page's own rects and text don't show)
+}
+// (settings SEARCH: a placed widget is reported under its page's name, "VIDEO 3 > FOG", as the same label can be on
+// two pages, and as optional: the list scrolls under the test, and each widget is tested on its own page anyway)
+void Ui::emitWidget(UiWidget& wd) {
+    if (relocActive_) {
+        if (relocId_) wd.exp.id = relocId_;
+        wd.exp.flags |= UiExp::OPTIONAL;
+    }
+    probe->widget(wd);
+}
+
+Ui::RelocScope::~RelocScope() {
+    if (!on) return;
+    u.relocActive_ = false;
+    u.r_->setAlpha(alpha);
 }
 
 float Ui::hintScale() const { return std::max(r_->minTextScale(), textScale_ * 0.75f); }
@@ -40,14 +73,18 @@ float Ui::hintScale() const { return std::max(r_->minTextScale(), textScale_ * 0
 void Ui::hint(float x, float y, const std::string& t, const Color& c, float maxW) { drawFitted(x, y, t, c, hintScale(), maxW > 0 ? maxW : boxWidth(x)); }
 
 void Ui::panel(float x, float y, float w, float h, float alpha) {
-    r_->rect(x, y, w, h, {0.05f, 0.06f, 0.08f, alpha});
+    // (PLAYER > MORE: PANEL DARKNESS scales its opacity; HIGH CONTRAST: black)
+    const float a = std::min(1.0f, alpha * panelDark);
+    r_->rect(x, y, w, h, contrast ? Color{0, 0, 0, std::max(a, 0.9f)} : Color{0.05f, 0.06f, 0.08f, a});
     r_->rect(x, y, w, 2 * scale_, accent);
     box(x, x + w);   // (labels after it fit inside it, until a narrower box is set)
 }
 
 // A label's text in at most maxW (0: as wide as it is): tighter, then smaller, then cut (fitted()), vertically centred
 // on where the full-size line would be.
-void Ui::drawFitted(float x, float y, const std::string& t, const Color& c, float ts, float maxW) {
+void Ui::drawFitted(float x, float y, const std::string& t, const Color& c0, float ts, float maxW) {
+    if (quiet()) return;   // (settings SEARCH: a page's own labels and hints aren't shown)
+    const Color c = textMul == 1.0f ? c0 : Color{std::min(1.0f, c0.r * textMul), std::min(1.0f, c0.g * textMul), std::min(1.0f, c0.b * textMul), c0.a};
     if (maxW <= 0 || t.empty() || r_->textWidth(t, ts) <= maxW) { r_->text(x, y, ts, t, c); return; }
     TextFit f = fitted(t, ts, maxW);
     float dy = (r_->textHeight(ts) - r_->textHeight(f.scale)) * 0.5f;
@@ -61,6 +98,7 @@ void Ui::label(float x, float y, const std::string& t, const Color& c, float siz
 }
 
 void Ui::labelFit(float x, float y, float maxW, std::string t, const Color& c) {
+    if (quiet()) return;   // (settings SEARCH: a page's own labels and hints aren't shown)
     float tk = 0, ts = fit(t, maxW, nullptr, &tk);
     r_->text(x, y + (r_->textHeight(textScale_) - r_->textHeight(ts)) * 0.5f, ts, t, c, tk);
 }
@@ -72,6 +110,7 @@ void Ui::labelCentered(float cx, float y, const std::string& t, const Color& c, 
 void Ui::hintCentered(float cx, float y, const std::string& t, const Color& c, float maxW) { drawCentered(cx, y, t, c, hintScale(), maxW); }
 
 void Ui::drawCentered(float cx, float y, const std::string& t, const Color& c, float ts, float maxW) {
+    if (quiet()) return;   // (settings SEARCH: a page's own labels and hints aren't shown)
     if (maxW <= 0 && boxR_ > boxL_) maxW = 2 * std::max(0.0f, std::min(cx - boxL_, boxR_ - cx));   // (centred in its box)
     float w = r_->textWidth(t, ts);
     if (maxW <= 0 || t.empty() || w <= maxW) { r_->text(cx - w * 0.5f, y, ts, t, c); return; }
@@ -180,34 +219,40 @@ void Ui::report(UiWidget::Kind k, float x, float y, float w, float h, const std:
     wd.where = where; wd.scope = scope;
     wd.kind = k; wd.x = x; wd.y = y; wd.w = w; wd.h = h;
     wd.label = label; wd.value = value; wd.exp = e; wd.enabled = enabled; wd.clipped = clipped;
-    probe->widget(wd);
+    emitWidget(wd);
 }
 
 void Ui::keyAction(const std::string& label, int key, int mods, const UiExp& e, int hold) {
+    if (quiet()) return;   // (settings SEARCH: not a settings row)
     if (!reporting()) return;
     UiWidget wd;
     wd.where = where; wd.scope = scope;
     wd.kind = UiWidget::KEY; wd.key = key; wd.mods = mods; wd.label = label; wd.exp = e; wd.count = hold + 1;
-    probe->widget(wd);
+    emitWidget(wd);
 }
 
 void Ui::handle(float x, float y, float w, float h, float dx, float dy, const std::string& label, const UiExp& e) {
+    if (quiet()) return;   // (settings SEARCH: not a settings row)
     if (!reporting()) return;
     UiWidget wd;
     wd.where = where; wd.scope = scope;
     wd.kind = UiWidget::HANDLE; wd.x = x; wd.y = y; wd.w = w; wd.h = h; wd.dx = dx; wd.dy = dy; wd.label = label; wd.exp = e;
-    probe->widget(wd);
+    emitWidget(wd);
 }
 
 void Ui::view(float x, float y, float w, float h, const std::string& label, const UiExp& e) {
+    if (quiet()) return;   // (settings SEARCH: not a settings row)
     if (reporting()) report(UiWidget::VIEW, x, y, w, h, label, "", e, true, false);
 }
 
 void Ui::custom(float x, float y, float w, float h, const std::string& label, const UiExp& e) {
+    if (quiet()) return;   // (settings SEARCH: not a settings row)
     if (reporting()) report(UiWidget::BUTTON, x, y, w, h, label, "", e, true, false);
 }
 
 bool Ui::button(float x, float y, float w, float h, const std::string& label, const UiExp& e, bool enabled) {
+    RelocScope rs(*this, label, nullptr, e, x, y, w, h);
+    if (rs.skip()) return false;
     bool clipped = false;
     bool hit = buttonImpl(x, y, w, h, label, enabled, &clipped);
     if (reporting()) report(UiWidget::BUTTON, x, y, w, h, label, "", e, enabled, clipped);
@@ -215,6 +260,8 @@ bool Ui::button(float x, float y, float w, float h, const std::string& label, co
 }
 
 bool Ui::tab(float x, float y, float w, float h, const std::string& label, bool current, const UiExp& e, bool sub) {
+    RelocScope rs(*this, label, nullptr, e, x, y, w, h);
+    if (rs.skip()) return false;
     if (!current) return button(x, y, w, h, label, e);
     const bool hv = hover(x, y, w, h);
     const float k = sub ? 0.35f : 0.6f;
@@ -223,7 +270,7 @@ bool Ui::tab(float x, float y, float w, float h, const std::string& label, bool 
     std::string shown = label;
     bool clipped = false;
     float tk = 0, ts = fit(shown, w - 8 * scale_, &clipped, &tk);
-    r_->text(x + (w - r_->textWidth(shown, ts, tk)) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, shown, {1, 1, 1, 1}, tk);
+    r_->text(x + (w - r_->textWidth(shown, ts, tk)) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, shown, textC(), tk);
     if (reporting()) report(UiWidget::BUTTON, x, y, w, h, label, "", e, true, clipped);
     return hv && in_.pressed;
 }
@@ -231,10 +278,15 @@ bool Ui::tab(float x, float y, float w, float h, const std::string& label, bool 
 bool Ui::buttonImpl(float x, float y, float w, float h, const std::string& label, bool enabled, bool* clipped) {
     bool hv = enabled && hover(x, y, w, h);
     Color bg = !enabled ? Color{0.12f, 0.12f, 0.14f, 0.8f} : hv ? Color{accent.r * 0.5f, accent.g * 0.5f, accent.b * 0.5f, 0.95f}
-                                                             : Color{0.14f, 0.16f, 0.2f, 0.9f};
+                                                             : btnC();
     r_->rect(x, y, w, h, bg);
+    if (contrast && enabled) {   // (HIGH CONTRAST: a light outline round every button)
+        const float o = std::max(1.0f, std::round(scale_));
+        r_->rect(x, y, w, o, {0.9f, 0.9f, 0.9f, 1}); r_->rect(x, y + h - o, w, o, {0.9f, 0.9f, 0.9f, 1});
+        r_->rect(x, y, o, h, {0.9f, 0.9f, 0.9f, 1}); r_->rect(x + w - o, y, o, h, {0.9f, 0.9f, 0.9f, 1});
+    }
     if (hv) r_->rect(x, y + h - 2 * scale_, w, 2 * scale_, accent);
-    Color tc = enabled ? Color{1, 1, 1, 1} : Color{0.5f, 0.5f, 0.5f, 1};
+    Color tc = enabled ? textC() : Color{0.5f, 0.5f, 0.5f, 1};
     std::string buf;
     float ts, tk, tw;
     const std::string& shown = fitText(label, w - 8 * scale_, buf, ts, tk, tw, clipped);
@@ -243,6 +295,8 @@ bool Ui::buttonImpl(float x, float y, float w, float h, const std::string& label
 }
 
 bool Ui::textField(int id, float x, float y, float w, float h, std::string& value, size_t maxLen, const UiExp& e) {
+    RelocScope rs(*this, std::string(), nullptr, e, x, y, w, h);   // (no label: the relocator names it by its id)
+    if (rs.skip()) return false;
     if (in_.pressed && hover(x, y, w, h)) focus_ = id;
     bool focused = focus_ == id;
     bool changed = false;
@@ -255,18 +309,18 @@ bool Ui::textField(int id, float x, float y, float w, float h, std::string& valu
     }
     r_->rect(x, y, w, h, focused ? Color{0.1f, 0.12f, 0.16f, 1} : Color{0.08f, 0.09f, 0.11f, 0.95f});
     r_->rect(x, y + h - 2 * scale_, w, 2 * scale_, focused ? accent : Color{0.3f, 0.3f, 0.35f, 1});
-    std::string shown = value;
+    std::string shown = maskText ? std::string(value.size(), '*') : value;   // (STREAMER MODE: addresses and codes)
     float cw = caretWidth(), maxW = w - 12 * scale_ - cw - 2 * scale_;
     while (!shown.empty() && r_->textWidth(shown, textScale_) > maxW) shown.erase(0, 1); // long: show the end
     float tx = x + 6 * scale_, ty = y + (h - r_->textHeight(textScale_)) * 0.5f;
-    r_->text(tx, ty, textScale_, shown, {1, 1, 1, 1});
+    r_->text(tx, ty, textScale_, shown, textC());
     if (focused) caret(tx + r_->textWidth(shown, textScale_), ty);
     if (reporting()) {
         UiWidget wd;
         wd.where = where; wd.scope = scope;
         wd.kind = UiWidget::TEXT; wd.x = x; wd.y = y; wd.w = w; wd.h = h; wd.count = (int)maxLen;
         wd.label = "FIELD " + std::to_string(id); wd.value = value; wd.exp = e;
-        probe->widget(wd);
+        emitWidget(wd);
     }
     return changed;
 }
@@ -285,6 +339,8 @@ void Ui::caret(float x, float y, float ts) {
 
 bool Ui::cycle(float x, float y, float w, float h, const std::string& label, int& index, int count,
                const std::vector<std::string>& names, const UiExp& e) {
+    RelocScope rs(*this, label, &names, e, x, y, w, h);
+    if (rs.skip()) return false;
     if (count <= 0) return false;
     float bw = h;
     bool changed = false;
@@ -298,18 +354,20 @@ bool Ui::cycle(float x, float y, float w, float h, const std::string& label, int
     std::string buf;
     float ts, tk, tw;
     const std::string& t = fitText(name, w - 2 * bw - 8 * scale_, buf, ts, tk, tw, &clipped);
-    r_->text(x + (w - tw) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, t, {1, 1, 1, 1}, tk);
+    r_->text(x + (w - tw) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, t, textC(), tk);
     if (reporting()) {
         UiWidget wd;
         wd.where = where; wd.scope = scope;
         wd.kind = UiWidget::CYCLE; wd.x = x; wd.y = y; wd.w = w; wd.h = h; wd.count = count;
         wd.label = label; wd.value = std::to_string(index); wd.exp = e; wd.clipped = clipped;
-        probe->widget(wd);
+        emitWidget(wd);
     }
     return changed;
 }
 
 bool Ui::toggle(float x, float y, float w, float h, const std::string& label, bool& v, const UiExp& e) {
+    RelocScope rs(*this, label, nullptr, e, x, y, w, h);
+    if (rs.skip()) return false;
     bool clipped = false, hit = buttonImpl(x, y, w, h, label + ": " + (v ? "ON" : "OFF"), true, &clipped);
     if (hit) v = !v;
     if (reporting()) report(UiWidget::TOGGLE, x, y, w, h, label, v ? "1" : "0", e, true, clipped);
@@ -318,6 +376,8 @@ bool Ui::toggle(float x, float y, float w, float h, const std::string& label, bo
 
 bool Ui::slider(float x, float y, float w, float h, const std::string& label, float& v, float lo, float hi, const char* fmt, const UiExp& e, float def) {
     int id = sliderCounter_++;
+    RelocScope rs(*this, label, nullptr, e, x, y, w, h);
+    if (rs.skip()) return false;
     typed_ = false;
     char buf[64];
     snprintf(buf, sizeof buf, fmt, v);
@@ -386,7 +446,7 @@ bool Ui::slider(float x, float y, float w, float h, const std::string& label, fl
         float cw = caretWidth() + 2 * scale_;
         float ex = x + (w - r_->textWidth(s, es) - cw) * 0.5f, ew = r_->textWidth(s, es), ey = y + (h - r_->textHeight(es)) * 0.5f;
         r_->rect(ex + r_->textWidth(elab + ": ", es) - 3 * scale_, y + 3 * scale_, r_->textWidth(editText_, es) + cw + 6 * scale_, h - 6 * scale_, {0, 0, 0, 0.6f});
-        r_->text(ex, ey, es, s, {1, 1, 1, 1});
+        r_->text(ex, ey, es, s, textC());
         caret(ex + ew, ey, es);
         r_->rect(x, y + h - 2 * scale_, w, 2 * scale_, accent);
     } else {
@@ -399,7 +459,7 @@ bool Ui::slider(float x, float y, float w, float h, const std::string& label, fl
         }
         clipped = bw > w - 8 * scale_;
         float sx = x + (w - tw) * 0.5f, sy = y + (h - r_->textHeight(ls)) * 0.5f;
-        r_->text(sx, sy, ls, shown, {1, 1, 1, 1});
+        r_->text(sx, sy, ls, shown, textC());
         // the number looks clickable: a faint box always, brighter with an underline under the mouse
         float bx = sx + pw;
         r_->rect(bx - 3 * scale_, y + 3 * scale_, bw + 6 * scale_, h - 6 * scale_, {1, 1, 1, overNumber ? 0.14f : 0.05f});
@@ -425,7 +485,7 @@ bool Ui::slider(float x, float y, float w, float h, const std::string& label, fl
         char vb[32];
         snprintf(vb, sizeof vb, "%.6g", v);
         wd.value = vb;
-        probe->widget(wd);
+        emitWidget(wd);
     }
     return changed;
 }
@@ -457,6 +517,8 @@ static Vec3 unpackRgb(int v) { return {((v >> 16) & 255) / 255.0f, ((v >> 8) & 2
 static std::string hexOf(const Vec3& c) { char b[8]; snprintf(b, sizeof b, "#%06X", packRgb(c)); return b; }
 
 int Ui::colorPicker(float x, float y, float w, float h, const std::string& label, Vec3& c, const UiExp& e, const Vec3& def) {
+    RelocScope rs(*this, label, nullptr, e, x, y, w, h);
+    if (rs.skip()) return UNCHANGED;
     const float s = scale_;
     bool open = popup_.kind == POP_COLOR && popup_.id == label;
     int result = UNCHANGED;
@@ -476,7 +538,7 @@ int Ui::colorPicker(float x, float y, float w, float h, const std::string& label
         }
     }
     // the widget: a button with its label on the left and the colour on the right
-    Color bg = hv ? Color{accent.r * 0.5f, accent.g * 0.5f, accent.b * 0.5f, 0.95f} : Color{0.14f, 0.16f, 0.2f, 0.9f};
+    Color bg = hv ? Color{accent.r * 0.5f, accent.g * 0.5f, accent.b * 0.5f, 0.95f} : btnC();
     r_->rect(x, y, w, h, bg);
     if (hv || open) r_->rect(x, y + h - 2 * s, w, 2 * s, accent);
     const float sw = 36 * s, sh = std::min(h - 8 * s, 22 * s), sx = x + w - sw - 8 * s, sy = y + (h - sh) * 0.5f;
@@ -485,7 +547,7 @@ int Ui::colorPicker(float x, float y, float w, float h, const std::string& label
     std::string shown = label;
     bool clipped = false;
     float tk = 0, ts = fit(shown, sx - x - 16 * s, &clipped, &tk);
-    r_->text(x + 8 * s, y + (h - r_->textHeight(ts)) * 0.5f, ts, shown, {1, 1, 1, 1}, tk);
+    r_->text(x + 8 * s, y + (h - r_->textHeight(ts)) * 0.5f, ts, shown, textC(), tk);
     if (open) {
         popup_.seen = true;
         popup_.ax = x; popup_.ay = y; popup_.aw = w; popup_.ah = h;
@@ -543,7 +605,7 @@ int Ui::colorPicker(float x, float y, float w, float h, const std::string& label
         wd.where = where; wd.scope = scope;
         wd.kind = UiWidget::COLOR; wd.x = x; wd.y = y; wd.w = w; wd.h = h;
         wd.label = label; wd.value = hexOf(c); wd.def = (float)packRgb(def); wd.exp = e; wd.clipped = clipped;
-        probe->widget(wd);
+        emitWidget(wd);
     }
     unblock_ = false;
     return result;
@@ -551,6 +613,8 @@ int Ui::colorPicker(float x, float y, float w, float h, const std::string& label
 
 bool Ui::dropdown(float x, float y, float w, float h, const std::string& label, int& index, const std::vector<std::string>& names,
                   const UiExp& opened, const UiExp& closed, const UiExp& pick) {
+    RelocScope rs(*this, label, &names, opened, x, y, w, h);
+    if (rs.skip()) return false;
     const float s = scale_;
     const int n = (int)names.size();
     bool open = popup_.kind == POP_DROP && popup_.id == label, changed = false;
@@ -573,13 +637,13 @@ bool Ui::dropdown(float x, float y, float w, float h, const std::string& label, 
         }
     }
     // the field: "LABEL: VALUE  V" (^ while open)
-    Color bg = hv ? Color{accent.r * 0.5f, accent.g * 0.5f, accent.b * 0.5f, 0.95f} : Color{0.14f, 0.16f, 0.2f, 0.9f};
+    Color bg = hv ? Color{accent.r * 0.5f, accent.g * 0.5f, accent.b * 0.5f, 0.95f} : btnC();
     r_->rect(x, y, w, h, bg);
     if (hv || open) r_->rect(x, y + h - 2 * s, w, 2 * s, accent);
     std::string shown = label + ": " + (index >= 0 && index < n ? names[index] : "?") + (open ? "  ^" : "  V");
     bool clipped = false;
     float tk = 0, ts = fit(shown, w - 8 * s, &clipped, &tk);
-    r_->text(x + (w - r_->textWidth(shown, ts, tk)) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, shown, {1, 1, 1, 1}, tk);
+    r_->text(x + (w - r_->textWidth(shown, ts, tk)) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, shown, textC(), tk);
     if (open) {
         popup_.seen = true;
         popup_.ax = x; popup_.ay = y; popup_.aw = w; popup_.ah = h;
@@ -592,7 +656,7 @@ bool Ui::dropdown(float x, float y, float w, float h, const std::string& label, 
                 wd.where = where; wd.scope = scope;
                 wd.kind = UiWidget::BUTTON; wd.x = lx + pad; wd.y = ly + pad + i * (rowH + gap); wd.w = lw - 2 * pad; wd.h = rowH;
                 wd.label = names[i]; wd.exp = (i == index ? closed : pick).withId(names[i].c_str());
-                probe->widget(wd);
+                emitWidget(wd);
             }
     }
     if (reporting()) {
@@ -600,7 +664,7 @@ bool Ui::dropdown(float x, float y, float w, float h, const std::string& label, 
         wd.where = where; wd.scope = scope;
         wd.kind = UiWidget::DROPDOWN; wd.x = x; wd.y = y; wd.w = w; wd.h = h; wd.count = n;
         wd.label = label; wd.value = std::to_string(index); wd.exp = open ? closed.withId(opened.id) : opened; wd.clipped = clipped;
-        probe->widget(wd);
+        emitWidget(wd);
     }
     unblock_ = false;
     return changed;
@@ -619,7 +683,7 @@ void Ui::popups() {
             r_->rect(ex, ey, ew, rowH, bg);
             std::string t = popup_.names[i];
             float tk = 0, ts = fit(t, ew - 8 * s, nullptr, &tk);
-            r_->text(ex + (ew - r_->textWidth(t, ts, tk)) * 0.5f, ey + (rowH - r_->textHeight(ts)) * 0.5f, ts, t, {1, 1, 1, 1}, tk);
+            r_->text(ex + (ew - r_->textWidth(t, ts, tk)) * 0.5f, ey + (rowH - r_->textHeight(ts)) * 0.5f, ts, t, textC(), tk);
         }
     } else if (popup_.kind == POP_COLOR) {
         r_->rect(b[0], b[1], b[2], b[3], {0.05f, 0.06f, 0.08f, 0.98f});
@@ -653,7 +717,7 @@ void Ui::popups() {
         r_->rect(hx[0], hx[1] + hx[3] - 2 * s, hx[2], 2 * s, focused ? accent : Color{0.3f, 0.3f, 0.35f, 1});
         std::string t = focused ? hexText_ : hexOf(popup_.last);
         float tx = hx[0] + 6 * s, ty = hx[1] + (hx[3] - r_->textHeight(textScale_)) * 0.5f;
-        r_->text(tx, ty, textScale_, t, {1, 1, 1, 1});
+        r_->text(tx, ty, textScale_, t, textC());
         if (focused) caret(tx + r_->textWidth(t, textScale_), ty);
         float swx = hx[0] + hx[2] + 8 * s, sww = 28 * s;
         r_->rect(swx, hx[1], sww, hx[3], rgba(popup_.last));

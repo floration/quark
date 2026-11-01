@@ -86,7 +86,7 @@ const char* typeName(int t) {
 bool isNumeric(int t) { return t == T_INT || t == T_F32 || t == T_F64; }
 
 const char* const kWeaponNames[WPN_COUNT] = {"rifle", "rocket", "knife", "sniper", "laser", "shotgun", "sticky", "crossbow", "bubble", "syringe", "locator"};
-const char* const kModeNames[MODE_COUNT] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "arena", "tourney", "hide", "tag", "points", "surf"};
+const char* const kModeNames[MODE_COUNT] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "arena", "tourney", "hide", "tag", "points", "surf", "power", "winner", "ball"};
 int weaponByName(const std::string& s) { for (int i = 0; i < WPN_COUNT; i++) if (s == kWeaponNames[i]) return i; return -1; }
 int modeByName(const std::string& s) { for (int i = 0; i < MODE_COUNT; i++) if (s == kModeNames[i]) return i; return -1; }
 
@@ -188,6 +188,7 @@ const SensorInfo kSensors[S_COUNT] = {
     {"it", T_BOOL, "", "hide and seek / tag: the bot is \"it\"", false},
     {"siteCount", T_INT, "", "bomb sites on the map", false},
     {"teamRank", T_INT, "", "how many players on the bot's team have a lower id (0 = the first): deals out the bomb sites", false},
+    {"roundNo", T_INT, "", "the round (1 = the first of the match; 0 before one): turns the attackers' bomb site round", false},
     {"weapon", T_WEAPON, "", "the weapon in question", false},
     {"weaponRange", T_F32, "m", "its melee range (knife)", false},
     {"err", T_F32, "rad", "aim error (yaw + pitch) to where the target is seen", false},
@@ -212,7 +213,7 @@ constexpr int kCommonSensors = S_ITMODE + 1;
 struct OutInfo { const char* name; uint8_t type; const char* doc; };
 struct SlotInfo { const char* name; const char* doc; const char* when; std::vector<uint8_t> sensors; std::vector<OutInfo> outs; };
 const std::vector<uint8_t> kObjSensors = {S_CHECKPOINTSLEFT, S_HASHILL, S_HASCART, S_POINTACTIVE, S_BOMBPLANTED, S_BOMBDROPPED,
-                                          S_BOMBCARRIED, S_ATTACKER, S_CARRIERISME, S_CARRIERALIVE, S_NAVREADY, S_IT, S_SITECOUNT, S_TEAMRANK};
+                                          S_BOMBCARRIED, S_ATTACKER, S_CARRIERISME, S_CARRIERALIVE, S_NAVREADY, S_IT, S_SITECOUNT, S_TEAMRANK, S_ROUNDNO};
 const SlotInfo kSlotsBase[SLOT_OBJECTIVE] = {
     {"react", "reaction time to a threat that just came into view", "a threat comes into view", {S_OFF, S_DIST, S_SINCESEEN}, {{"r", T_F32, "seconds until it starts aiming"}}},
     {"hearing", "is a threat out of view heard", "each look (20 Hz), per threat not in view", {S_DIST, S_GUNAGE, S_ONGROUND, S_GROUNDSPEED, S_DASHING}, {{"heard", T_BOOL, "heard"}}},

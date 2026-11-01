@@ -145,6 +145,8 @@ Json row(const RowDef& R, const WeaponValues& V, const WeaponSet* set, double H,
         notes.push("reach " + fmt(range) + " m; hit boxes +" + fmt(A.knifeGrow) + " m");
     } else {
         if (w == WPN_ROCKET && alt) { speed *= A.lobSpeed; gravity = A.lobGravity; }
+        if (w == WPN_ROCKET && !alt && A.rocketAccel > 0)
+            notes.push("speeds up " + fmt(A.rocketAccel) + " m/s² along its flight (" + fmt(speed) + " m/s at launch, " + fmt(speed + A.rocketAccel * life) + " m/s at " + fmt(life) + " s)");
         if (w == WPN_KNIFE) { speed = A.knifeThrowSpeed; gravity = A.knifeThrowGravity; life = A.knifeThrowLife; refire = std::max<double>(refire, A.knifeAway); kind = "projectile";
             notes.push("one throw, then the knife is away " + fmt(A.knifeAway) + " s"); }
         if (w == WPN_STICKY) { extraTtk = A.stickyArmTime; notes.push("arms in " + fmt(extraTtk) + " s; " + std::to_string(A.stickyMax) + " out at once"); }

@@ -124,7 +124,9 @@ esac
 # From 1.19.0 on a testing build keeps the production VERSION (X.Y.Z.N > X.Y.Z; 1.19.0 to 1.19.1 X.Y.Z.testing.N), so the build a production
 # release was merged from still sorts above it: one whose commit the newest production tag contains has caught up too.
 # (Checked once per pair of tags, $STATE/caught-up; a failed fetch decides nothing and is tried again next time.)
-if [ "$CHANNEL" = testing ]; then
+# A testing-only box (install.sh --testing-only, QUARK_TESTING_ALWAYS=1) skips all this: its testing server always
+# runs, on the newest testing build or, once production is newer, production.
+if [ "$CHANNEL" = testing ] && [ "${QUARK_TESTING_ALWAYS:-0}" != 1 ]; then
     PROD=$(sed -n 's/^production //p' "$TMP/release.txt")
     CAUGHT=0
     if [ "$WANTCH" = testing ] && [ -n "$PROD" ]; then

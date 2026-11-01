@@ -5,6 +5,7 @@ base npayload
 use ncart
 
 param roundTime f32 = 300
+param roundTimePerPlayer f32 = 120 # 2 min a player on the teams (owner, 2026-10-30): 4v4 16 min
 param respawnTime f32 = 5
 param cartRange f32 = 4 # from the cart that counts as at it
 param cartSpeed f32 = 1.6 # with one pusher (+25% for each more, up to twice)

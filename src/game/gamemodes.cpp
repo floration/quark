@@ -43,6 +43,8 @@ float nativeRoundLength(const Server& s) {
         if (s.cfg_.ranked) return P(s).rankedTime;
         return s.cfg_.timeLimit > 0 ? (float)s.cfg_.timeLimit : P(s).matchTime;
     }
+    if (P(s).roundTimePerPlayer > 0)   // neutral payload: 2 min a player on the teams (owner, 2026-10-30)
+        return P(s).roundTimePerPlayer * (float)std::max(1, s.teamCount(TEAM_A) + s.teamCount(TEAM_B));
     return P(s).roundTime;   // (0: no limit)
 }
 float roundLength(const Server& s) { double v; return hookQuery(s, MSLOT_ROUND_LENGTH, v) ? (float)v : nativeRoundLength(s); }
@@ -90,6 +92,7 @@ void enterMatchEnd(Server& s, const std::string& text, int winner) {
     s.broadcastEvent(e);
     s.log(text);
     s.glog(LOG_SIMPLE, "match end: %s", text.c_str());
+    s.matchWinner_ = winner;   // (1v1 winner stays: the rotation when the end screen is over)
     if (s.cfg_.ranked) {
         std::string why, res = s.rankedResult(winner, &why);
         if (res.empty()) s.message("not rated: " + why);
@@ -404,6 +407,8 @@ void giveBombToRandomAttacker(Server& s) {
     }
 }
 
+static void ballReset(Server& s);
+
 // The objects' round reset (the carts and the points start over; keyed on the base mode)
 void objectsRoundReset(Server& s) {
     ModeState& m = s.ms_;
@@ -419,6 +424,14 @@ void objectsRoundReset(Server& s) {
     } else if (m.mode == MODE_NPAYLOAD) {
         m.payloadLen = s.map_.payloadLength();
         m.payloadDist = m.payloadLen * 0.5f; // starts in the middle; team A pushes to the end, B to the start
+    } else if (m.mode == MODE_POWER) {   // each team's pool full: poolPerPlayer x the players on it (powerPool, protocol.h)
+        m.target = (int16_t)clampf(std::round(P(s).poolPerPlayer), 1, 10000);
+        m.point = (uint8_t)s.teamCount(TEAM_A);
+        m.pointCount = (uint8_t)s.teamCount(TEAM_B);
+        m.payloadDist = powerPoolMax(m, TEAM_A);
+        m.payloadLen = powerPoolMax(m, TEAM_B);
+    } else if (m.mode == MODE_BALL) {   // the ball back in the middle, the goals 0-0 (one round)
+        ballReset(s);
     }
 }
 
@@ -471,12 +484,19 @@ void startRound(Server& s) {
     }
     objectsRoundReset(s);
     if (!hookEvent(s, MSLOT_ROUND_SETUP)) nativeRoundSetup(s);
+    // (everyone at once: nobody's spot from last round counts, and in a team mode nor do the enemies spawned before you
+    // in this loop, so the spawns don't depend on who has the lower slots)
+    for (auto& p : s.players_) if (p.connected) p.alive = false;
+    s.spawnBatch_ = true;
+    s.batchSpawned_ = 0;
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = s.players_[i];
         if (!p.connected) continue;
         if (p.team == TEAM_SPECTATOR || (m.mode == MODE_TAG && p.out)) { p.alive = false; continue; }
         s.spawnPlayer(i);
+        s.batchSpawned_ |= 1u << i;
     }
+    s.spawnBatch_ = false;
     // Remove leftover projectiles between rounds.
     for (auto& pr : s.projectiles_) pr.active = false;
     float freeze = freezeLength(s);
@@ -614,7 +634,7 @@ void startMatch(Server& s) {
     s.bestProgress_[0] = s.bestProgress_[1] = 0;
     s.completeTime_[0] = s.completeTime_[1] = 0;
     s.bestTime_[0] = s.bestTime_[1] = 0;
-    for (auto& p : s.players_) { p.kills = p.deaths = p.score = 0; p.dmgDealt = p.objTime = 0; p.hideSurvived = 0; p.shotsFired = p.shotsHit = 0; p.out = false; p.it = false; }
+    for (auto& p : s.players_) { p.kills = p.deaths = p.score = 0; p.dmgDealt = p.objTime = 0; p.hideSurvived = 0; p.resetAccuracy(); p.out = false; p.it = false; }
     s.lastIt_ = -1;
     s.tagOut_.clear();   // tag knockouts last one match: everyone is back in for the next
     for (auto& p : s.players_) p.sought = false;
@@ -650,7 +670,7 @@ const char* teamName(int t) { return t == TEAM_A ? "TEAM A" : "TEAM B"; }
 // Who won, as the calls name them: the player in 1v1, duel and tourney (both, in a 2v2 duel), else the team.
 std::string sideName(const Server& s, int team) {
     const int mode = s.ms_.mode;
-    if (mode != MODE_ARENA && mode != MODE_TOURNEY && mode != MODE_DUEL) return teamName(team);
+    if (!isOneVsOneMode(mode) && mode != MODE_TOURNEY && mode != MODE_DUEL) return teamName(team);
     std::string who;
     for (auto& p : s.players_) if (p.connected && p.team == team) who += (who.empty() ? "" : " & ") + p.name;
     return who.empty() ? std::string(teamName(team)) : who;
@@ -712,6 +732,11 @@ void endRound(Server& s, int winner, const std::string& why, bool award = true) 
                 text += std::string(teamName(first)) + "'s " + markText(s, first);
             }
         }
+    } else if (winner >= 0 && m.mode == MODE_WINNER) {   // (the round win is the player's: their score)
+        if (award)
+            for (auto& p : s.players_) if (p.connected && p.team == winner) { p.score++; break; }
+        s.syncWinnerScores();
+        text = sideName(s, winner) + " wins the round";
     } else if (winner >= 0) {
         if (award) (winner == TEAM_A ? m.scoreA : m.scoreB)++;
         text = sideName(s, winner) + " wins the round";   // (1v1, duel, tourney: the player's name)
@@ -728,7 +753,16 @@ void endRound(Server& s, int winner, const std::string& why, bool award = true) 
     s.glog(LOG_SIMPLE, "round %d end: %s (score %d-%d)", m.round, text.c_str(), m.scoreA, m.scoreB);
     m.actionPlayer = 255;
     m.actionProgress = 0;
+    s.roundWinner_ = isRaceMode(m.mode) ? -1 : winner;   // (winner stays: who stays)
     setPhase(s, PHASE_ROUND_END, P(s).roundEndTime);
+}
+
+// Winner stays, between rounds: the round's loser to the back of the line, the first in line in (a draw: nobody
+// moves); an empty seat (a player who left) to the next in line.
+void winnerStaysNext(Server& s) {
+    s.rotateWinnerStays(s.roundWinner_);
+    s.roundWinner_ = -1;
+    s.fillOneVsOneSeats();
 }
 
 // The roundOver slot, when the round-end screen is over: true if the match is decided (or its tiebreak started).
@@ -743,11 +777,20 @@ bool nativeRoundOver(Server& s) {
         case MODE_DUEL:
         case MODE_ARENA:
         case MODE_BOMB:
+        case MODE_POWER:
             if (m.scoreA >= rtw || m.scoreB >= rtw) {
                 int w = m.scoreA >= rtw ? TEAM_A : TEAM_B;
                 enterMatchEnd(s, sideName(s, w) + " wins the match", w);
                 return true;
             }
+            return false;
+        case MODE_WINNER:   // first to rtw round wins (the team scores are the two playing); else the loser out, the next in
+            if (m.scoreA >= rtw || m.scoreB >= rtw) {
+                int w = m.scoreA >= rtw ? TEAM_A : TEAM_B;
+                enterMatchEnd(s, sideName(s, w) + " wins the match", w);
+                return true;
+            }
+            winnerStaysNext(s);
             return false;
         case MODE_RACE: case MODE_SURF:
             for (int i = 0; i < kMaxPlayers; i++)
@@ -854,6 +897,227 @@ void stalemateDrain(Server& s) {
             p.health -= 1.0f;
             if (p.health <= 0) s.killPlayer(i, -1, 254);
         }
+    }
+}
+
+// ---- the pool object (power): a player who joined a team mid-round brings their share (the pool and its size grow by
+// poolPerPlayer); one who left takes theirs off the size, and the pool shrinks to fit it. The hits come off it in
+// Server::damagePlayer.
+void poolStep(Server& s) {
+    ModeState& m = s.ms_;
+    for (int t : {TEAM_A, TEAM_B}) {
+        uint8_t& counted = t == TEAM_A ? m.point : m.pointCount;
+        float& pool = t == TEAM_A ? m.payloadDist : m.payloadLen;
+        const int n = s.teamCount(t);
+        if (n > counted) pool += float(n - counted) * (float)m.target;
+        counted = (uint8_t)n;
+        pool = std::min(pool, powerPoolMax(m, t));
+    }
+}
+
+// Power: a pool at 0 loses the round; when the clock runs out, the fuller pool (its share of its size) wins it.
+void tickPower(Server& s) {
+    const ModeState& m = s.ms_;
+    poolStep(s);
+    const float a = powerPool(m, TEAM_A), b = powerPool(m, TEAM_B);
+    if (a <= 0 || b <= 0) { endRound(s, a > 0 ? TEAM_A : b > 0 ? TEAM_B : -1, "pool empty"); return; }
+    if (s.phaseEnd_ > 0 && s.time() >= s.phaseEnd_) {
+        const float ma = powerPoolMax(m, TEAM_A), mb = powerPoolMax(m, TEAM_B);
+        const float fa = ma > 0 ? a / ma : 0.0f, fb = mb > 0 ? b / mb : 0.0f;
+        endRound(s, fa > fb ? TEAM_A : fb > fa ? TEAM_B : -1, "time");
+    }
+}
+
+// ---- the ball (MODE_BALL; owner, 2026-11-01). Its centre is ms_.bombPos (sent to everyone), its velocity ballVel_.
+// The goals are the map's two sites, each its nearer team's: the ball's centre in one scores for the other team.
+static AABB ballBox(const Vec3& c, float grow = 0) { const Vec3 h(kBallHalf + grow, kBallHalf + grow, kBallHalf + grow); return {c - h, c + h}; }
+
+// where it starts: between the two goals, lifted out of anything solid there, then down to the floor
+static Vec3 ballSpawnPoint(const Map& map) {
+    Vec3 c = map.bounds.center();
+    if (map.bombSites.size() >= 2) {
+        c = (map.bombSites[0].center() + map.bombSites[1].center()) * 0.5f;
+        c.y = std::min(map.bombSites[0].mn.y, map.bombSites[1].mn.y) + kBallHalf + 0.05f;
+    }
+    for (int k = 0; k < 400 && map.boxSolid(ballBox(c)); k++) c.y += 0.25f;
+    c.y += map.sweepAxis(ballBox(c), 1, -200.0f);
+    return c;
+}
+
+// which team's goal site k is: the one whose spawns are nearer it
+static int ballGoalTeam(const Map& map, int k) {
+    float d[2] = {1e30f, 1e30f};
+    for (auto& sp : map.spawns)
+        if (sp.team == SPAWN_A || sp.team == SPAWN_B) {
+            float& t = d[sp.team == SPAWN_A ? 0 : 1];
+            t = std::min(t, length(sp.pos - map.bombSites[k].center()));
+        }
+    return d[0] <= d[1] ? TEAM_A : TEAM_B;
+}
+
+static void ballReset(Server& s) {
+    s.ballSpawn_ = ballSpawnPoint(s.map_);
+    s.ms_.bombPos = s.ballSpawn_;
+    s.ballVel_ = {};
+    s.ballToucher_ = -1;
+    s.ballSet_ = true;
+    s.ballRespawnAt_ = 0;
+}
+
+static void ballPush(Server& s, const Vec3& dv, int by) {
+    s.ballVel_ += dv;
+    const float sp = length(s.ballVel_);
+    if (sp > 60.0f) s.ballVel_ *= 60.0f / sp;   // (a cap: stacked blasts can't fling it through the map)
+    if (by >= 0) s.ballToucher_ = by;
+}
+
+static void ballBlastIn(Server& s, const Vec3& at, float radius, float knock, int owner) {
+    if (s.ms_.mode != MODE_BALL || !s.ballSet_ || radius <= 0) return;
+    const Vec3 c = s.ms_.bombPos;
+    const float d = std::max(0.0f, length(c - at) - kBallHalf);
+    if (d > radius || !blastReaches(s.map_, at, ballBox(c))) return;
+    const float frac = 1.0f - d / radius;
+    Vec3 to = c - at;
+    const float len = length(to);
+    Vec3 dir = len > 0.01f ? to / len : Vec3(0, 1, 0);
+    Vec3 kb = dir * (knock * frac);
+    kb.y *= 2.0f;   // (launched like an enemy is)
+    ballPush(s, kb, owner);
+}
+
+static void ballShotIn(Server& s, const Vec3& o, const Vec3& dir, float maxT, float dmg, int owner) {
+    if (s.ms_.mode != MODE_BALL || !s.ballSet_ || dmg <= 0) return;
+    if (rayAABB(o, safeInv(dir), ballBox(s.ms_.bombPos), maxT) < 0) return;
+    if (owner >= 0 && owner < kMaxPlayers && s.players_[owner].weapon == WPN_LASER) {
+        // the laser (owner, 2026-11-01: "laser needs to do more knockback like 3x, and pull doesnt work"): 3 x its push on
+        // a player (kLaserPush 20 -> 60 m/s per second of beam), and the pull beam (alt) pulls it toward you as hard
+        const bool pull = (s.players_[owner].buttons & BTN_ALTFIRE) != 0;
+        ballPush(s, dir * (3.0f * weaponExtra(WPN_LASER).knock * weaponDef(WPN_LASER).refire * (pull ? -1.0f : 1.0f)), owner);
+        return;
+    }
+    if (owner >= 0 && owner < kMaxPlayers && s.players_[owner].weapon == WPN_KNIFE) {
+        // the knife pops it up more than it sends it (owner, 2026-11-01: "knife pushes too much, it should be more vertical
+        // and less horizontal"): 1.5 m/s along the swing's level aim (was 3.6 along the aim), 7 m/s up. Once a swing: a swing
+        // that hits no player keeps cutting every tick for kKnifeSwingTime, and each tick pushed it again (owner: "the knife
+        // got even crazier")
+        if (s.time() - s.ballKnifeAt_[owner] < weaponDef(WPN_KNIFE).refire * 0.9) return;
+        s.ballKnifeAt_[owner] = s.time();
+        Vec3 flat(dir.x, 0, dir.z);
+        const float fl = length(flat);
+        Vec3 dv = fl > 1e-3f ? flat * (1.5f / fl) : Vec3(0, 0, 0);
+        dv.y = std::max(0.0f, 7.0f - s.ballVel_.y);
+        ballPush(s, dv, owner);
+        return;
+    }
+    ballPush(s, dir * std::min(dmg * 0.12f, 12.0f), owner);   // (a 100 damage shot: 12 m/s; the laser's ticks a little each)
+}
+
+// this tick: bodies push it (a player running into it sends it on at 1.3 x the speed they meet it with, and lifts it
+// a little), it moves, the void or lava puts it back in the middle, and a goal scores (live only)
+void ballStep(Server& s) {
+    ModeState& m = s.ms_;
+    const Map& map = s.map_;
+    if (!s.ballSet_) ballReset(s);
+    // after a goal or the void, it waits kBallRespawn s before it's back (owner, 2026-11-01: "it shouldnt respawn instantly")
+    constexpr double kBallRespawn = 3.0;
+    if (s.ballRespawnAt_ > 0) {
+        for (auto& p : s.players_)   // (out of play: any grapple on it lets go)
+            if ((p.move.flags & MF_HOOKED) && p.move.hookTarget == kHookBall) { p.move.flags &= ~MF_HOOKED; p.move.hookTarget = 0; }
+        if (s.time() >= s.ballRespawnAt_) ballReset(s);
+        return;
+    }
+    for (int i = 0; i < kMaxPlayers; i++) {
+        const auto& p = s.players_[i];
+        if (!p.connected || !p.alive || p.team == TEAM_SPECTATOR) continue;
+        const AABB pb = playerBox(p.move);
+        const AABB bb = ballBox(m.bombPos, 0.05f);
+        if (pb.mx.x < bb.mn.x || pb.mn.x > bb.mx.x || pb.mx.y < bb.mn.y || pb.mn.y > bb.mx.y || pb.mx.z < bb.mn.z || pb.mn.z > bb.mx.z) continue;
+        Vec3 n = m.bombPos - pb.center();
+        n.y = 0;
+        float len = length(n);
+        if (len < 1e-3f) { n = Vec3(p.move.vel.x, 0, p.move.vel.z); len = length(n); }
+        if (len < 1e-3f) continue;
+        n = n / len;
+        // a fast ball hurts (owner, 2026-11-01: "if the ball hits somebody moving more than 20m/s relative to them it should
+        // damage them and knock them back"): 1 damage per m/s of its speed relative to them (21 m/s: 21), a knock along its path, and it bounces
+        // off them at half its speed; the kill is whoever touched it last. Once per player per 0.3 s
+        const Vec3 relV = s.ballVel_ - p.move.vel;
+        const float relSp = length(relV);
+        if (relSp > 20.0f && s.time() - s.ballHurtAt_[i] > 0.3) {
+            s.ballHurtAt_[i] = s.time();
+            Vec3 kb = relV * 0.5f;
+            kb.y = std::max(kb.y, 4.0f);
+            const int by = s.ballToucher_ >= 0 && s.ballToucher_ != i ? s.ballToucher_ : -1;
+            s.damagePlayer(i, by, relSp, kDamageBall, kb);   // (owner, 2026-11-01: "ball should only do 1 damage per m/s total"; was (speed - 20) x 4)
+            s.ballVel_ = p.move.vel - relV * 0.5f;
+            continue;
+        }
+        const float rel = dot(p.move.vel - s.ballVel_, n);
+        if (rel > 0) {
+            Vec3 dv = n * (rel * 1.3f);
+            dv.y = std::max(0.0f, 2.0f - s.ballVel_.y);
+            ballPush(s, dv, i);
+        }
+        // out of the body (sideways, as far as the map lets it)
+        for (int k = 0; k < 20; k++) {
+            const AABB b2 = ballBox(m.bombPos);
+            if (pb.mx.x < b2.mn.x || pb.mn.x > b2.mx.x || pb.mx.z < b2.mn.z || pb.mn.z > b2.mx.z || pb.mx.y < b2.mn.y || pb.mn.y > b2.mx.y) break;
+            m.bombPos.x += map.sweepAxis(b2, 0, n.x * 0.05f);
+            m.bombPos.z += map.sweepAxis(ballBox(m.bombPos), 2, n.z * 0.05f);
+        }
+    }
+    // grapples on it: the anchor follows it, and each one reels it in toward its owner (owner, 2026-11-01: "you should be able
+    // to hook the ball"): 30 m/s2 toward their chest while held, up to 20 m/s toward them (the owner is pulled to it in pmove)
+    for (int i = 0; i < kMaxPlayers; i++) {
+        auto& p = s.players_[i];
+        if (!p.connected || !p.alive || !(p.move.flags & MF_HOOKED) || p.move.hookTarget != kHookBall) continue;
+        p.move.hookPoint = m.bombPos;
+        Vec3 to = (p.move.pos + Vec3(0, 1.0f, 0)) - m.bombPos;
+        const float d = length(to);
+        if (d < 1e-3f) continue;
+        to = to / d;
+        if (dot(s.ballVel_ - p.move.vel, to) < 20.0f) ballPush(s, to * (30.0f * (float)s.dt()), i);
+    }
+    ballMove(m.bombPos, s.ballVel_, map, s.dt());
+    if (m.bombPos.y < map.killY() + 2.0f || (!map.lava.empty() && map.inLava(ballBox(m.bombPos)))) {
+        s.ballVel_ = {}; s.ballRespawnAt_ = s.time() + kBallRespawn; return;
+    }
+    if (m.phase != PHASE_LIVE || map.bombSites.size() < 2) return;
+    for (int k = 0; k < 2; k++) {
+        const AABB& g = map.bombSites[k];
+        const Vec3& c = m.bombPos;
+        if (c.x < g.mn.x || c.x > g.mx.x || c.y < g.mn.y || c.y > g.mx.y || c.z < g.mn.z || c.z > g.mx.z) continue;
+        const int scorer = other(ballGoalTeam(map, k));
+        (scorer == TEAM_A ? m.scoreA : m.scoreB)++;
+        const int by = s.ballToucher_;
+        std::string text = std::string(teamName(scorer)) + " SCORES";
+        if (by >= 0 && s.players_[by].connected) {
+            text += " - " + s.players_[by].name + (s.players_[by].team == scorer ? "" : " (own goal)");
+            if (s.players_[by].team == scorer) s.players_[by].score++;
+        }
+        s.message(text);
+        s.glog(LOG_SIMPLE, "goal: %s (%d-%d)", text.c_str(), m.scoreA, m.scoreB);
+        s.ballVel_ = {};   // (it sits in the goal, then back to the middle)
+        s.ballRespawnAt_ = s.time() + kBallRespawn;
+        return;
+    }
+}
+
+// Ball: the goals in ballStep; the host's score limit ends it early; when the clock runs out, the most goals win.
+void tickBall(Server& s) {
+    const ModeState& m = s.ms_;
+    ballStep(s);
+    if (s.ms_.phase != PHASE_LIVE) return;
+    const int lim = s.cfg_.scoreLimit;
+    if (lim > 0 && (m.scoreA >= lim || m.scoreB >= lim)) {
+        const int w = m.scoreA >= lim ? TEAM_A : TEAM_B;
+        enterMatchEnd(s, sideName(s, w) + " wins the match", w);
+        return;
+    }
+    if (s.phaseEnd_ > 0 && s.time() >= s.phaseEnd_) {
+        const int w = m.scoreA > m.scoreB ? TEAM_A : m.scoreB > m.scoreA ? TEAM_B : -1;
+        if (w >= 0) enterMatchEnd(s, sideName(s, w) + " wins the match", w);
+        else enterMatchEnd(s, "match over", -1);
     }
 }
 
@@ -1029,7 +1293,7 @@ void raceStep(Server& s) {
             p.checkpoint++;
             GameEvent e; // the split: race time at this checkpoint, to the ms (time trials log these)
             e.type = EV_RACE_SPLIT; e.a = (uint8_t)i; e.b = (uint8_t)p.checkpoint;
-            long long ms = std::lround((s.liveLength_ - (s.phaseEnd_ - s.time())) * 1000.0);
+            long long ms = std::lround((s.time() - s.roundStart_) * 1000.0);   // (from the round going live: there may be no clock)
             e.text = std::to_string(ms);
             s.broadcastEvent(e);
             if (p.checkpoint == 1) p.raceSplits.clear();
@@ -1049,7 +1313,7 @@ void raceStep(Server& s) {
 void tickRace(Server& s) {
     raceStep(s);
     if (s.ms_.phase != PHASE_LIVE) return;
-    if (s.time() >= s.phaseEnd_) endRound(s, -1, "time");
+    if (s.phaseEnd_ > 0 && s.time() >= s.phaseEnd_) endRound(s, -1, "time");   // (only when a host or mod set a clock)
 }
 
 // Race practice (warmup): run the course, checkpoints in order (a fall puts you back at the last one), no clock,
@@ -1296,6 +1560,7 @@ void nativeTick(Server& s) {
         case MODE_VS:
         case MODE_DUEL:
         case MODE_ARENA:
+        case MODE_WINNER:
         case MODE_TOURNEY: tickVS(s); break;
         case MODE_BOMB: tickBomb(s); break;
         case MODE_RACE: case MODE_SURF: tickRace(s); break;
@@ -1306,6 +1571,8 @@ void nativeTick(Server& s) {
         case MODE_HIDE: tickHide(s); break;
         case MODE_TAG: tickTag(s); break;
         case MODE_POINTS: tickPoints(s); break;
+        case MODE_POWER: tickPower(s); break;
+        case MODE_BALL: tickBall(s); break;
     }
 }
 
@@ -1353,7 +1620,7 @@ void nativeKill(Server& s, int victim, int killer) {
         ServerPlayer& k = s.players_[killer];
         bool teamkill = modeIsTeamBased(s.cfg_.mode) && k.team == v.team;
         if (teamkill) k.score--;
-        else k.score += m.mode == MODE_HIDE ? 0 : 1;   // (hide and seek: 1 a find, below)
+        else k.score += m.mode == MODE_HIDE || m.mode == MODE_WINNER ? 0 : 1;   // (hide and seek: 1 a find, below; winner stays: round wins)
     } else if (s.cfg_.mode == MODE_FFA && m.phase == PHASE_LIVE) {
         v.score--; // suicide
     }
@@ -1444,16 +1711,21 @@ bool nativeFrozen(const Server& s, int id) {
     if (s.ms_.mode == MODE_HIDE && s.ms_.phase == PHASE_FREEZE) return s.players_[id].it; // hiders hide, the seeker faces the wall
     if (s.ms_.mode == MODE_TAG && s.ms_.phase == PHASE_LIVE) return s.players_[id].it && s.time() < s.players_[id].itFreezeUntil;
     if (s.ms_.phase == PHASE_FREEZE) return true;
-    if (s.ms_.mode == MODE_BOMB && s.ms_.actionPlayer == id && s.ms_.phase == PHASE_LIVE) return true;
+    // (a planter / defuser isn't frozen: their command is rooted, bombRooted in protocol.h, so knockback still moves them)
     return false;
 }
 
 } // namespace
 
+void ballBlast(Server& s, const Vec3& at, float radius, float knock, int owner) { ballBlastIn(s, at, radius, knock, owner); }
+void ballHit(Server& s, const Vec3& dv, int by) { if (s.ms_.mode == MODE_BALL && s.ballSet_ && s.ballRespawnAt_ <= 0) ballPush(s, dv, by); }
+void ballShot(Server& s, const Vec3& o, const Vec3& dir, float maxT, float dmg, int owner) { ballShotIn(s, o, dir, maxT, dmg, owner); }
+
 // Tourney warmup is a free for all; during matches the two players are on teams A and B.
 bool modeIsTeamBased(int mode) { return mode != MODE_FFA && !isRaceMode(mode) && mode != MODE_TOURNEY && !isItMode(mode); }
 
 void rulesReset(Server& s) {
+    s.ballSet_ = false;   // (ball: placed again on this map)
     s.clearProps();   // (setPhase below can't tell: the mode state is reset to warmup first)
     ModeState& m = s.ms_;
     m = ModeState();
@@ -1517,8 +1789,12 @@ void rulesTick(Server& s) {
             // Warmup lasts until players vote to start (F4). Play-vs-bots / autostart servers start by themselves
             // once both sides have someone (canAutoStart). Race never starts itself: its warmup is practice (the
             // course, untimed) until someone starts the race.
-            if (!hookEvent(s, MSLOT_WARMUP) && isRaceMode(m.mode)) tickRacePractice(s);
+            if (!hookEvent(s, MSLOT_WARMUP)) {
+                if (isRaceMode(m.mode)) tickRacePractice(s);
+                else if (m.mode == MODE_BALL) ballStep(s);   // (the warmup: kick it about, no goals)
+            }
             if (m.phase != PHASE_WARMUP) break;
+            if (s.oneVsOne()) s.fillOneVsOneSeats();   // (a seat left open: the first in line takes it)
             double v;
             if (!s.cfg_.autoStart || unplayable(s) || !(hookQuery(s, MSLOT_CAN_AUTO_START, v) ? v != 0 : nativeCanAutoStart(s))) { s.phaseEnd_ = 0; m.timeLeft = 0; break; }
             if (s.phaseEnd_ == 0) {
@@ -1558,6 +1834,8 @@ void rulesTick(Server& s) {
             m.timeLeft = (float)std::max(0.0, s.phaseEnd_ - s.time());
             if (s.time() >= s.phaseEnd_) {
                 for (auto& p : s.players_) p.alive = false;
+                s.rotateWinnerStays(s.matchWinner_);   // (1v1: the loser to the back of the line, the first in line in)
+                s.matchWinner_ = -1;
                 const CustomRules& c = s.cfg_.custom;
                 if (c.active() && c.maps.size() > 1) { // a custom mode's map pool: on to the next map
                     auto it = std::find(c.maps.begin(), c.maps.end(), s.cfg_.map);
@@ -1644,18 +1922,32 @@ int rulesSpawnType(const Server& s, int id) {
 }
 
 int modeSpawnType(const Map& m, int mode, int team, int attackers, bool tourneyMatch) {
+    // a mode's own spawn set, when the map has one for this side ("spawn koth-a": Mine's hill apart from its bomb sides)
+    auto own = [&](int side) {
+        const int set = spawnSetFor(mode);   // (winner stays: 1v1's)
+        if (!modeSetAllowed(set)) return side;
+        const int t = modeSpawn(set, side);
+        for (auto& sp : m.spawns) if (sp.team == t) return t;
+        return side;
+    };
     // (canSupportMode, not supportsMode: whether the map HAS these spawns, not whether its "modes" line offers the
     // mode. Colosseum is built for tourney and doesn't offer vs, so its a/b spawns were never used: REVIEW MAP-7.)
-    if (isRaceMode(mode) && m.canSupportMode(MODE_RACE)) return SPAWN_RACE;
+    if (isRaceMode(mode) && m.canSupportMode(MODE_RACE))
+        for (auto& sp : m.spawns) if (sp.team == SPAWN_RACE) return SPAWN_RACE;   // (none: its "any" spawns, below)
     if (mode == MODE_TOURNEY && tourneyMatch && m.canSupportMode(MODE_VS))
-        return team == TEAM_B ? SPAWN_B : SPAWN_A; // a match: opposite ends
-    if (!modeIsTeamBased(mode)) return SPAWN_ANY;
+        return own(team == TEAM_B ? SPAWN_B : SPAWN_A); // a match: opposite ends
+    if (!modeIsTeamBased(mode)) return own(SPAWN_ANY);
     bool staged = false;   // (payload maps may stage their spawns by checkpoint, like multi point)
     for (auto& sp : m.spawns) staged |= isStagedSpawn(sp.team);
     if (mode == MODE_PAYLOAD && staged) return stagedSpawn(0, team != attackers);
     if (mode == MODE_POINTS && m.canSupportMode(MODE_POINTS)) // staged: the spawns for how far the attack has got
         return stagedSpawn(0, team != attackers);
-    return team == TEAM_B ? SPAWN_B : SPAWN_A;
+    // bomb: by role, not by team (q, 2026-10-30): the attack always starts on the a spawns (team A attacks the first
+    // half, bomb.qlogic), the defence on the b ones, so after halftime team B attacks from a. By team, a map built to
+    // q's timing (attackers ~5 s from a site, defenders ~6 s) handed team A the short way in both halves: War, 115 m
+    // vs 144 m, team A won 7 of 8.
+    if (mode == MODE_BOMB) return own(team == attackers ? SPAWN_A : SPAWN_B);
+    return own(team == TEAM_B ? SPAWN_B : SPAWN_A);
 }
 
 std::vector<const SpawnPoint*> spawnPool(const Map& m, int want, int pointsTaken) {
@@ -1669,6 +1961,8 @@ std::vector<const SpawnPoint*> spawnPool(const Map& m, int want, int pointsTaken
     }
     for (auto& sp : m.spawns) if (sp.team == want) cands.push_back(&sp);
     if (cands.empty()) for (auto& sp : m.spawns) if (sp.team == SPAWN_ANY) cands.push_back(&sp);
+    // (then every spawn but the mode sets' ("koth-a": only koth uses them), and those only on a map with nothing else)
+    if (cands.empty()) for (auto& sp : m.spawns) if (!isModeSpawn(sp.team)) cands.push_back(&sp);
     if (cands.empty()) for (auto& sp : m.spawns) cands.push_back(&sp);
     return cands;
 }
@@ -1788,6 +2082,8 @@ public:
             case MF_CART_COMPLETED: return team(a) ? s.completeTime_[a] : 0;
             case MF_CART_NEAR: return team(a) ? s.cartNear_[a] : 0;
             case MF_CART_BEST_TIME: return team(a) ? s.bestTime_[a] : 0;
+            case MF_TEAM_POOL: return powerPool(m, a);
+            case MF_TEAM_POOL_MAX: return powerPoolMax(m, a);
             default: break;
         }
         // per player (out of range: 0; team: none)
@@ -1848,6 +2144,7 @@ public:
             case MF_TEAM_SCORE: if (team(a)) (a == TEAM_A ? m.scoreA : m.scoreB) = i16(v); return;
             case MF_CART_BEST: if (team(a)) s.bestProgress_[a] = (float)v; return;
             case MF_CART_COMPLETED: if (team(a)) s.completeTime_[a] = (float)v; return;
+            case MF_TEAM_POOL: if (team(a)) (a == TEAM_A ? m.payloadDist : m.payloadLen) = (float)v; return;
             default: break;
         }
         if ((unsigned)a >= (unsigned)kMaxPlayers) return;
@@ -1931,6 +2228,9 @@ public:
             case MA_TOURNEY_WALKOVER: return tourneyWalkover(s);
             case MA_TOURNEY_ADVANCE: { int t = (int)arg(0); if (t == TEAM_A || t == TEAM_B) tourneyMatchWon(s, t); return 0; }
             case MA_PICK_DUEL_MODIFIER: pickDuelModifier(s); return 0;
+            case MA_POOL_STEP: poolStep(s); return 0;
+            case MA_WINNER_STAYS: winnerStaysNext(s); return 0;
+            case MA_BALL_STEP: ballStep(s); return 0;
             default: return 0;
         }
     }

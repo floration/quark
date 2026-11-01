@@ -452,5 +452,5 @@ def build():
     with m.generated(): trim_to_rock()   # (its cut pieces are generated: kept off keep-clear volumes)
     # every mode but the four that want a compact arena (team vs, duel, 1v1, tourney: 300-3000 m2 against the mine's
     # ~83,000; owner's call, 1.17): they can still be started here, with the menus' "may not work" warning
-    m.also = ["bomb", "race", "koth", "payload", "npayload", "hide", "tag"]
+    m.also = ["bomb", "race", "koth", "payload", "npayload", "hide", "tag", "power"]
     m.save("lodestone", dress=False)

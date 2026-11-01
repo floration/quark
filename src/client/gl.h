@@ -90,6 +90,10 @@ typedef struct __GLsync* GLsync;
 #define GL_COLOR_ATTACHMENT0 0x8CE0
 #define GL_DEPTH_STENCIL_ATTACHMENT 0x821A
 #define GL_RGBA8 0x8058
+#define GL_RGB10_A2 0x8059
+#define GL_BACK_LEFT 0x0402
+#define GL_FRAMEBUFFER_ATTACHMENT_RED_SIZE 0x8212
+#define GL_NO_ERROR 0
 #define GL_RGBA32F 0x8814
 #define GL_RG32F 0x8230
 #define GL_R32F 0x822E
@@ -197,7 +201,9 @@ typedef struct __GLsync* GLsync;
     X(void, glQueryCounter, (GLuint, GLenum)) \
     X(void, glGetQueryObjectiv, (GLuint, GLenum, GLint*)) \
     X(void, glGetQueryObjectui64v, (GLuint, GLenum, GLuint64*)) \
-    X(void, glGetInteger64v, (GLenum, GLint64*))
+    X(void, glGetInteger64v, (GLenum, GLint64*)) \
+    X(void, glGetFramebufferAttachmentParameteriv, (GLenum, GLenum, GLenum, GLint*)) \
+    X(GLenum, glGetError, (void))
 
 #define QGL_DECLARE(ret, name, args) typedef ret(QGLAPI* PFN_##name) args; extern PFN_##name name;
 QGL_FUNCS(QGL_DECLARE)

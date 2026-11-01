@@ -27,7 +27,7 @@ void writeSnapshotClient(Writer& w, const Snapshot& s) {
     const MoveState& m = s.self;
     uint8_t opt = ((m.flags & MF_HOOKED) ? 1 : 0) | (m.dashTimer > 0 ? 2 : 0) | (m.dashCharges != kDashCharges || m.dashCooldownMs > 0 || m.dashRecharging > 0 ? 4 : 0) | (m.hookCooldown > 0 ? 8 : 0) |
                   ((m.flags & MF_HOOKED) && m.hookTarget ? 16 : 0) | ((m.flags & MF_PULLED) ? 32 : 0) |
-                  (m.jumpBuffer > 0 || m.jumpGrace > 0 ? 64 : 0) | (m.dashTimer > 0 && m.dashBounces > 0 ? 128 : 0);
+                  (m.jumpBuffer > 0 || m.jumpGrace > 0 ? 64 : 0) | ((m.dashTimer > 0 && m.dashBounces > 0) || m.dashSlide ? 128 : 0);
     // (44: mods bit 128 = the u16 phaseMs follows the opt parts; only while a movement equation counts it, else 0;
     // 45: mods bit 64 = the u16 acidOutMs after that, while it's below kAcidRearmMs: in acid or just out)
     const bool acid = m.acidOutMs < kAcidRearmMs;
@@ -42,11 +42,11 @@ void writeSnapshotClient(Writer& w, const Snapshot& s) {
     if (opt & 8) w.f32(m.hookCooldown);
     if (opt & 16) {   // (38: the grapple latched onto a player, and the one it holds; 47: or riding a rocket, which follows)
         w.u8(m.hookTarget);
-        if (m.hookTarget == kHookRocket) { w.u16(m.hookProj); w.vec(m.hookVel); w.f32(m.hookGrav); }
+        if (m.hookTarget == kHookRocket) { w.u16(m.hookProj); w.vec(m.hookVel); w.f32(m.hookGrav); w.f32(m.hookAccel); }   // (55: + its thrust)
     }
     if (opt & 32) w.vec(m.pullPoint);
     if (opt & 64) { w.f32(m.jumpBuffer); w.f32(m.jumpGrace); }   // (protocol 39; older writers never set these bits)
-    if (opt & 128) w.u8(m.dashBounces);
+    if (opt & 128) w.u8((uint8_t)((m.dashTimer > 0 ? m.dashBounces : 0) | (m.dashSlide ? 128 : 0)));   // (64: bit 128 = the dash slide)
     if (m.phaseMs) w.u16(m.phaseMs);
     if (acid) w.u16(m.acidOutMs);
     w.u8(s.selfHealth); w.u8(s.selfWeapon); w.u8(s.knifeAway); w.u8(s.syringeAway);
@@ -91,10 +91,14 @@ bool readSnapshotClient(Reader& r, Snapshot& s, uint16_t proto) {
         m.hookProj = r.u16(); m.hookVel = r.vec();
         const float g = r.f32();
         m.hookGrav = g >= -100.0f && g <= 100.0f ? g : 0.0f;   // (a hostile value, NaN too: none)
-    } else if (m.hookTarget > kMaxPlayers) m.hookTarget = 0;
+        if (proto >= kSnapRocketThrustSince) {   // (older demos: rockets had no thrust)
+            const float a = r.f32();
+            m.hookAccel = a >= 0.0f && a <= 100.0f ? a : 0.0f;   // (the weapon set field's range; hostile / NaN: none)
+        }
+    } else if (m.hookTarget > kMaxPlayers && !(m.hookTarget == kHookBall && proto >= kSnapBallHookSince)) m.hookTarget = 0;
     if (opt & 32) m.pullPoint = r.vec();
     if (opt & 64) { m.jumpBuffer = r.f32(); m.jumpGrace = r.f32(); }
-    if (opt & 128) m.dashBounces = r.u8();
+    if (opt & 128) { const uint8_t b = r.u8(); m.dashBounces = b & 127; m.dashSlide = (b & 128) != 0; }
     if (phase) m.phaseMs = r.u16();
     if (acid) m.acidOutMs = (uint16_t)std::min<int>(r.u16(), kAcidRearmMs);
     s.selfHealth = r.u8(); s.selfWeapon = r.u8(); s.knifeAway = r.u8(); s.syringeAway = proto >= kSnapSyringeSince ? r.u8() : 0;
@@ -291,7 +295,7 @@ bool readSnapshotWorld(Reader& r, Snapshot& s, const Snapshot* base) {
             p.hooked = r.u8();
             if (p.hooked) p.hookPoint = r.vecq();
             p.hookProj = p.hooked == 1 + kHookRocket ? r.u16() : 0;
-            if (p.hooked > 1 + kHookRocket) p.hooked = 0;   // (the map, a player or a rocket: nothing else)
+            if (p.hooked > 1 + kHookRocket && p.hooked != 1 + kHookBall) p.hooked = 0;   // (the map, a player, a rocket or the ball: nothing else)
         }
         if (p.hidden) { p.hooked = 0; p.hookProj = 0; }
         if (p.weapon >= WPN_COUNT) return false;

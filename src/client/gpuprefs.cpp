@@ -103,12 +103,14 @@ struct NvName { NvStr s; };
 void copyStr(NvStr d, const wchar_t* s) { size_t i = 0; for (; s[i] && i < 2047; i++) d[i] = (NvU16)s[i]; d[i] = 0; }
 }
 
-bool nvMaxClocks(bool on, std::string* msg) {
+// One DWORD setting in this executable's driver profile: on sets it to value, off removes it (the driver's default).
+// label: the setting's name in the notices.
+static bool nvProfileSetting(NvU32 id, NvU32 value, bool on, const std::string& label, std::string* msg) {
     HMODULE dll = LoadLibraryW(L"nvapi64.dll");
-    if (!dll) { *msg = "GPU MAX CLOCKS: NVIDIA GPUS ONLY"; return false; }
+    if (!dll) { *msg = label + ": NVIDIA GPUS ONLY"; return false; }
     using Query = void*(__cdecl*)(NvU32);
     const auto q = (Query)GetProcAddress(dll, "nvapi_QueryInterface");
-    if (!q) { *msg = "GPU MAX CLOCKS: NVIDIA DRIVER NOT FOUND"; return false; }
+    if (!q) { *msg = label + ": NVIDIA DRIVER NOT FOUND"; return false; }
     const auto init = (int(__cdecl*)())q(0x0150e828);
     const auto createSession = (int(__cdecl*)(void**))q(0x0694d52e);
     const auto destroySession = (int(__cdecl*)(void*))q(0xdad9cff8);
@@ -121,9 +123,9 @@ bool nvMaxClocks(bool on, std::string* msg) {
     const auto setSetting = (int(__cdecl*)(void*, void*, NvSetting*))q(0x577dd202);
     const auto deleteSetting = (int(__cdecl*)(void*, void*, NvU32))q(0xe4a26362);
     if (!init || !createSession || !destroySession || !load || !save || !findApp || !findProfile || !createProfile ||
-        !createApp || !setSetting || !deleteSetting || init() != 0) { *msg = "GPU MAX CLOCKS: NVIDIA DRIVER NOT FOUND"; return false; }
+        !createApp || !setSetting || !deleteSetting || init() != 0) { *msg = label + ": NVIDIA DRIVER NOT FOUND"; return false; }
     void* s = nullptr;
-    if (createSession(&s) != 0 || !s) { *msg = "GPU MAX CLOCKS: DRIVER SETTINGS UNAVAILABLE"; return false; }
+    if (createSession(&s) != 0 || !s) { *msg = label + ": DRIVER SETTINGS UNAVAILABLE"; return false; }
     int st = load(s);
     // this executable's name (quark.exe): its profile, or a "Quark" one made for it
     wchar_t path[MAX_PATH] = {};
@@ -159,30 +161,37 @@ bool nvMaxClocks(bool on, std::string* msg) {
         if (on) {
             auto set = std::make_unique<NvSetting>();
             set->version = (NvU32)(sizeof(NvSetting) | (1u << 16));
-            set->id = kPreferredPState;
+            set->id = id;
             set->type = 0;   // (a DWORD)
-            set->current.u32 = kPreferMax;
+            set->current.u32 = value;
             st = setSetting(s, prof, set.get());
         } else {
-            st = deleteSetting(s, prof, kPreferredPState);
+            st = deleteSetting(s, prof, id);
             if (st == kSettingNotFound) st = 0;
         }
         if (st == 0) st = save(s);
     }
     destroySession(s);
-    if (st == 1 || st == 0) { *msg = on ? "GPU MAX CLOCKS ON: FROM THE NEXT START" : "GPU MAX CLOCKS OFF: FROM THE NEXT START"; return true; }
-    *msg = st == kNoPrivilege ? "GPU MAX CLOCKS: NEEDS THE GAME RUN AS ADMINISTRATOR ONCE" : "GPU MAX CLOCKS: THE DRIVER REFUSED (" + std::to_string(st) + ")";
+    if (st == 1 || st == 0) { *msg = label + (on ? " ON: FROM THE NEXT START" : " OFF: FROM THE NEXT START"); return true; }
+    *msg = st == kNoPrivilege ? label + ": NEEDS THE GAME RUN AS ADMINISTRATOR ONCE" : label + ": THE DRIVER REFUSED (" + std::to_string(st) + ")";
     return false;
 }
+
+bool nvMaxClocks(bool on, std::string* msg) { return nvProfileSetting(kPreferredPState, kPreferMax, on, "GPU MAX CLOCKS", msg); }
+// OGL_THREAD_CONTROL: 2 = threaded optimization off (the driver's extra thread adds a frame of queue on some PCs)
+bool nvThreadedOff(bool on, std::string* msg) { return nvProfileSetting(0x20C1221E, 2, on, "THREADED OPTIMIZATION OFF", msg); }
+// OGL_CPL_PREFER_DXPRESENT: 1 = "Vulkan/OpenGL present method: prefer layered on DXGI swapchain" (flip model in a window)
+bool nvDxgiPresent(bool on, std::string* msg) { return nvProfileSetting(0x20D690F8, 1, on, "DXGI PRESENT", msg); }
 
 // ---- setGamePriority: gdi32's D3DKMTSetProcessSchedulingPriorityClass (Windows 7+; MinGW's headers lack it) ----------
 
 static long g_gpuPrioStatus = 1;   // (the last set call's NTSTATUS: 0 done; 1 never called / not available)
 
-void setGamePriority(bool high) {
-    static int now = -1;   // (what's set: -1 nothing yet, 0 normal, 1 high)
-    if (now == (int)high) return;
-    now = high;
+void setGamePriority(int level) {
+    static int now = -1;   // (what's set: -1 nothing yet, else the level)
+    if (now == level) return;
+    now = level;
+    const bool high = level > 0;
     enum { kNormal = 2, kAboveNormal = 3, kHigh = 4 };   // (D3DKMT_SCHEDULINGPRIORITYCLASS)
     using SetClassFn = LONG(APIENTRY*)(HANDLE, int);
     static const auto setClass = gdi() ? (SetClassFn)GetProcAddress(gdi(), "D3DKMTSetProcessSchedulingPriorityClass") : nullptr;
@@ -192,9 +201,10 @@ void setGamePriority(bool high) {
         if (g_gpuPrioStatus != 0 && high) g_gpuPrioStatus = setClass(self, kAboveNormal);
         if (g_gpuPrioStatus != 0) printf("prioritize: Windows refused the GPU scheduling class (NTSTATUS 0x%08lX)\n", (unsigned long)g_gpuPrioStatus);
     }
-    // ABOVE_NORMAL, not HIGH: the hosted server's and audio threads already run raised, and a HIGH process at thousands of
-    // frames a second can starve the rest of the desktop (input, the launcher, voice chat)
-    SetPriorityClass(self, high ? ABOVE_NORMAL_PRIORITY_CLASS : NORMAL_PRIORITY_CLASS);
+    // ABOVE_NORMAL by default, not HIGH: the hosted server's and audio threads already run raised, and a HIGH process at
+    // thousands of frames a second can starve the rest of the desktop (input, the launcher, voice chat). VIDEO > MORE:
+    // CPU PRIORITY HIGH asks for it anyway (level 2).
+    SetPriorityClass(self, level >= 2 ? HIGH_PRIORITY_CLASS : high ? ABOVE_NORMAL_PRIORITY_CLASS : NORMAL_PRIORITY_CLASS);
 }
 
 std::string gamePriorityStatus() {
@@ -220,6 +230,8 @@ bool RasterClock::open(GLFWmonitor*) { return false; }
 void RasterClock::close() {}
 bool RasterClock::nextBlank(double, double*) { return false; }
 bool nvMaxClocks(bool, std::string* msg) { *msg = "GPU MAX CLOCKS: WINDOWS ONLY"; return false; }
-void setGamePriority(bool) {}
+bool nvThreadedOff(bool, std::string* msg) { *msg = "THREADED OPTIMIZATION: WINDOWS ONLY"; return false; }
+bool nvDxgiPresent(bool, std::string* msg) { *msg = "DXGI PRESENT: WINDOWS ONLY"; return false; }
+void setGamePriority(int) {}
 std::string gamePriorityStatus() { return ""; }
 #endif

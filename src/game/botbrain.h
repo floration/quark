@@ -200,16 +200,16 @@ enum BrainSlot : uint8_t {
     SLOT_REJUDGE, SLOT_FIRE, SLOT_FIGHT_HOOK, SLOT_STRAFE, SLOT_PULLED_DASH, SLOT_FIGHT_JUMP, SLOT_FIGHT_DASH,
     SLOT_GLANCE, SLOT_HOOK_RETRY, SLOT_ROUTE_HOOK, SLOT_BHOP, SLOT_RUN_DASH, SLOT_DASH_JUMP, SLOT_UNSTICK,
     SLOT_OBJECTIVE,                              // + mode (MODE_*); SLOT_OBJECTIVE + kBrainModes: `objective default`
-    SLOT_COUNT = SLOT_OBJECTIVE + 14 + 1
+    SLOT_COUNT = SLOT_OBJECTIVE + 17 + 1
 };
-constexpr int kBrainModes = 14;                  // MODE_COUNT (static_assert in botbrain.cpp)
+constexpr int kBrainModes = 17;                  // MODE_COUNT (static_assert in botbrain.cpp)
 
 // Sensors: what the bot code tells a slot (one id space; each slot gets its own few plus the common ones).
 enum BrainSensor : uint8_t {
     S_NOW, S_DT, S_MODE, S_LEVEL, S_MYID, S_HEALTH, S_ITMODE,                 // common (every slot)
     S_OFF, S_DIST, S_SINCESEEN, S_GUNAGE, S_ONGROUND, S_GROUNDSPEED, S_DASHING, S_ANGLEOFF, S_CURRENT,
     S_CHECKPOINTSLEFT, S_HASHILL, S_HASCART, S_POINTACTIVE, S_BOMBPLANTED, S_BOMBDROPPED, S_BOMBCARRIED,
-    S_ATTACKER, S_CARRIERISME, S_CARRIERALIVE, S_NAVREADY, S_IT, S_SITECOUNT, S_TEAMRANK,
+    S_ATTACKER, S_CARRIERISME, S_CARRIERALIVE, S_NAVREADY, S_IT, S_SITECOUNT, S_TEAMRANK, S_ROUNDNO,
     S_WEAPON, S_WEAPONRANGE, S_ERR, S_THROWKNIFE, S_OWNBLAST, S_HOOKRANGE, S_IDEAL, S_IDLE, S_GRAPPLEONLY,
     S_RISE, S_FLAT, S_FIGHTING, S_WPDIST, S_STRAIGHT, S_HOPPING, S_MOVING, S_MOVED, S_HASTARGET,
     S_COUNT

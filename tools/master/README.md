@@ -50,17 +50,17 @@ key itself only goes to this Worker. After a ranked match every player's game po
 match is rated (OpenSkill, Plackett-Luce) only when all of them agree. Test locally: `node tools/master/test.mjs`.
 
 ## Race time trials (1.1.0+)
-Solo Viaduct runs go to the same Worker. Each player keeps only their best time, along with the time at every checkpoint.
+Solo time trial runs on the ranked race maps (`RACE_MAPS` in worker.js: the official maps with `for race` or `for surf`, each with its `racedefault` time or 600 s; regenerate the table with `build/quark_tests racefloors`) go to the same Worker. Each player keeps only their best time, along with the time at every checkpoint.
 1. D1 → `quark` → **Console**: paste the `-- race time trials` part of `schema.sql` (the `race_times` table and index) and run it.
 2. Worker → **Edit code**: replace everything with the new `worker.js` → **Deploy**.
 
-`…/raceboard?map=viaduct` should answer with an empty page.
+`…/raceboard?map=accelerator` (one map's board) should answer with an empty page, and so should `…/racetotal` (1.19.6+: the race total, "total_ms maps_run name" per line: each racer's best on every ranked race map summed, a map they haven't run counted at its default time; no schema change).
 
 **Checking or removing a suspicious time** (D1 console):
 ```sql
 SELECT r.id, n.name, r.ms, r.splits, r.version, datetime(r.created / 1000, 'unixepoch') FROM race_times r
-  LEFT JOIN names n ON n.id = r.id WHERE r.map = 'viaduct' ORDER BY r.ms LIMIT 50;
-DELETE FROM race_times WHERE map = 'viaduct' AND id = '<id>';
+  LEFT JOIN names n ON n.id = r.id WHERE r.map = '<map>' ORDER BY r.ms LIMIT 50;
+DELETE FROM race_times WHERE map = '<map>' AND id = '<id>';
 ```
 `splits` is the run time in ms at each checkpoint, so a gap that's impossible to cover stands out.
 

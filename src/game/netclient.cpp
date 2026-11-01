@@ -185,6 +185,11 @@ void NetClient::handlePacket(const uint8_t* data, int len) {
             clientId_ = id;
             if (!mapReady_ || map_.name != mapName || map_.id() != mapId) {
                 if (useMap(mapName, mapId)) dl_ = Download();
+                else if (!allowDownloads_) {   // (MAP DOWNLOADS off: not fetched)
+                    error_ = "the server's map " + mapName + " isn't on this PC (map downloads are off in settings)";
+                    disconnect();
+                    return;
+                }
                 else if (!dl_.active || !dl_.idKnown || dl_.id != mapId) startDownload(mapName, &mapId); // not on disk (or ours differs): fetch the server's
             }
             state_ = ConnState::Connected;
@@ -512,6 +517,10 @@ bool NetClient::hookProbe(const UserCmd& cmd, HookProbe& probe) {
         probe.box[probe.n] = playerBox(q.pos, (q.flags & PS_CROUCHED) != 0, scale);
         probe.id[probe.n++] = (uint8_t)i;
     }
+    if (ms.mode == MODE_BALL) {   // the ball, where the latest snapshot has it (the server's: it isn't predicted)
+        const Vec3 h(kBallHalf, kBallHalf, kBallHalf);
+        probe.ball = true; probe.ballBox = AABB{ms.bombPos - h, ms.bombPos + h};
+    }
     // Rocket riding, as Server::grappleTargets picks them: the rockets in reach as the server will have them when it runs
     // this command (the newest snapshot's, flown on by the commands before it: one a tick), your own tested there, anyone
     // else's where the server tests them (your view time + rocketSeenMs: about where they're drawn). Then your copies.
@@ -524,7 +533,7 @@ bool NetClient::hookProbe(const UserCmd& cmd, HookProbe& probe) {
         for (const ProjectileSnap& pr : s.projectiles) {
             if (probe.nr >= HookProbe::kRockets) break;
             if (pr.hidden || pr.type != WPN_ROCKET || (pr.flags & (PROJ_STUCK | PROJ_ON_PLAYER))) continue;
-            const float g = projectileGravity(pr.type, (pr.flags & PROJ_LOB) ? kRocketLobGravity : 1.0f);
+            const ProjFlight g = projectileFlight(pr.type, (pr.flags & PROJ_LOB) ? kRocketLobGravity : 1.0f);
             Vec3 pos = pr.pos, vel = pr.vel;
             map_.flyProjectile(pos, vel, g, (float)(nowMs - (int64_t)s.timeMs) * 0.001f);
             const Vec3 d = pos - eye;
@@ -538,16 +547,16 @@ bool NetClient::hookProbe(const UserCmd& cmd, HookProbe& probe) {
                 else projectileRewind(at, v, g, (float)-dt * 0.001f);
             }
             const int k = probe.nr++;
-            probe.at[k] = at; probe.pos[k] = pos; probe.vel[k] = vel; probe.grav[k] = g; probe.rid[k] = pr.id;
+            probe.at[k] = at; probe.pos[k] = pos; probe.vel[k] = vel; probe.grav[k] = g.grav; probe.accel[k] = g.accel; probe.rid[k] = pr.id;
         }
         for (int c = 0; c < nCopies_ && probe.nr < HookProbe::kRockets; c++) {
             const Vec3 d = copies_[c].pos - eye;
             if (dot(d, d) > reach * reach) continue;
             const int k = probe.nr++;
-            probe.at[k] = probe.pos[k] = copies_[c].pos; probe.vel[k] = copies_[c].vel; probe.grav[k] = copies_[c].grav; probe.rid[k] = 0;
+            probe.at[k] = probe.pos[k] = copies_[c].pos; probe.vel[k] = copies_[c].vel; probe.grav[k] = copies_[c].grav; probe.accel[k] = copies_[c].accel; probe.rid[k] = 0;
         }
     }
-    return probe.n > 0 || probe.nr > 0;
+    return probe.n > 0 || probe.nr > 0 || probe.ball;
 }
 
 void NetClient::reconcile(const Snapshot& s) {
@@ -589,7 +598,7 @@ void NetClient::reconcile(const Snapshot& s) {
                 HookProbe probe;
                 if (hookCatch_.rocket) {
                     probe.nr = 1; probe.at[0] = hookCatch_.at; probe.pos[0] = hookCatch_.pos; probe.vel[0] = hookCatch_.vel;
-                    probe.grav[0] = hookCatch_.grav; probe.rid[0] = hookCatch_.rid;
+                    probe.grav[0] = hookCatch_.grav; probe.accel[0] = hookCatch_.accel; probe.rid[0] = hookCatch_.rid;
                 } else { probe.n = 1; probe.box[0] = hookCatch_.box; probe.id[0] = hookCatch_.id; }
                 pmove(pred_, c, map_, &probe);
             } else pmove(pred_, c, map_);
@@ -624,6 +633,7 @@ void NetClient::tick(UserCmd cmd) {
     if (play_.active || state_ != ConnState::Connected || !mapReady_) return;
     cmd.seq = nextSeq_++;
     cmd.msec = (uint8_t)(1000 / tickRate());
+    if (bombRooted(mode(), clientId_)) rootCmd(cmd);   // (planting / defusing: as the server drops it, so prediction agrees)
     cmd.viewTick = (uint32_t)(uint64_t)std::max(0.0, renderTime_ * 1000.0); // server ms we're looking at (its low 32 bits)
     // a fixed interpolation delay goes to the server, whose lag compensation then rewinds that far (FINAL_REVIEW 2.5)
     int interpMs = interpFixed_ >= 0 ? std::min((int)std::lround(interpFixed_ * 1000.0f), kMaxInterpMs) : 0;
@@ -642,7 +652,7 @@ void NetClient::tick(UserCmd cmd) {
                 const int k = probe.hitRocket;   // (as the probe had it as this command started: pmove flew it on since)
                 hookCatch_ = HookCatch(); hookCatch_.seq = cmd.seq; hookCatch_.rocket = true;
                 hookCatch_.at = at0[k]; hookCatch_.pos = pos0[k]; hookCatch_.vel = vel0[k];
-                hookCatch_.grav = probe.grav[k]; hookCatch_.rid = probe.rid[k];
+                hookCatch_.grav = probe.grav[k]; hookCatch_.accel = probe.accel[k]; hookCatch_.rid = probe.rid[k];
             }
         } else pmove(pred_, cmd, map_);
         moveEv_ |= pred_.events;
@@ -662,7 +672,8 @@ void NetClient::sendInput() {
     w.u32(hasSnapshot() ? (uint32_t)latest().timeMs : 0);
     w.u32(lastEventId_);
     w.u8(lossOverride_ >= 0 ? (uint8_t)lossOverride_ : lossPct_);
-    uint32_t first = nextSeq_ > (uint32_t)kCmdsPerPacket ? nextSeq_ - kCmdsPerPacket : 1;
+    const uint32_t per = (uint32_t)(cmdsPerPacket_ > 0 ? cmdsPerPacket_ : kCmdsPerPacket);   // (PACKET LOSS PROTECTION: 2 / 4 / 8)
+    uint32_t first = nextSeq_ > per ? nextSeq_ - per : 1;
     w.u8((uint8_t)(nextSeq_ - first));
     for (uint32_t s = first; s < nextSeq_; s++) writeCmd(w, cmds_[s % kCmdRing]);
     // every unacknowledged string command that fits (resent until the server acks it), so a burst of
@@ -869,7 +880,7 @@ void NetClient::applyDestructEvent(const GameEvent& e, bool fx) {
     }
     for (size_t k = 0; k < pendingGlass_.size(); k++)   // our own, predicted: already broken and shown
         if (pendingGlass_[k].brush == d.brush) { pendingGlass_.erase(pendingGlass_.begin() + (long)k); return; }
-    if (map_.breakGlass(d.brush) && fx && glassFx_.size() < 256) glassFx_.push_back({map_.brushes[d.brush].box, d.how, d.at, d.dir, d.seed, false, map_.brushes[d.brush].material});
+    if (map_.breakGlass(d.brush) && fx && glassFx_.size() < 256) glassFx_.push_back({map_.brushes[d.brush].box, d.how, d.at, d.dir, d.seed, false, map_.brushes[d.brush].material, (int)d.brush});
 }
 
 void NetClient::replayDestruction() {
@@ -880,7 +891,7 @@ void NetClient::replayDestruction() {
 bool NetClient::predictGlass(int brush, int how, const Vec3& at, const Vec3& dir) {
     if (play_.active || brush < 0 || !map_.breakGlass((size_t)brush)) return false;
     pendingGlass_.push_back({(uint32_t)brush, timeNow()});
-    if (glassFx_.size() < 256) glassFx_.push_back({map_.brushes[(size_t)brush].box, (uint8_t)how, at, dir, glassRand(glassSeed_), false});
+    if (glassFx_.size() < 256) glassFx_.push_back({map_.brushes[(size_t)brush].box, (uint8_t)how, at, dir, glassRand(glassSeed_), false, map_.brushes[(size_t)brush].material, brush});
     return true;
 }
 
@@ -954,7 +965,7 @@ void NetClient::interpolatedProjectiles(std::vector<ProjectileSnap>& out) const 
         // on a player: glued to them as they're drawn (players are interpolated, projectiles extrapolated: the
         // newest snapshot's spot would run ahead of their model); not in sight: where the server last put it
         if (p.flags & PROJ_ON_PLAYER) { attachedPos(p, 1.0f, &p.pos); out.push_back(p); continue; }
-        if (!(p.flags & PROJ_STUCK)) map_.flyProjectile(p.pos, p.vel, projectileGravity(p.type, (p.flags & PROJ_LOB) ? kRocketLobGravity : 1.0f), dt);
+        if (!(p.flags & PROJ_STUCK)) map_.flyProjectile(p.pos, p.vel, projectileFlight(p.type, (p.flags & PROJ_LOB) ? kRocketLobGravity : 1.0f), dt);
         out.push_back(p);
     }
 }
@@ -1037,7 +1048,7 @@ void ServerBrowser::poll() {
         if (now - l.since > 2.5) {
             bool shown = false;
             for (auto& sv : servers_) shown |= sv.addr == l.addr;
-            if (!shown) { ServerInfo si; si.addr = l.addr; si.name = l.addr.toString(); si.noReply = true; servers_.push_back(si); }
+            if (!shown) { ServerInfo si; si.addr = l.addr; si.name = l.addr.toString(); si.noReply = true; si.official = isOfficialServer(l.addr.ip, l.addr.port); servers_.push_back(si); }
         }
         i++;
     }
@@ -1049,6 +1060,7 @@ void ServerBrowser::poll() {
         if (r.u32() != kProtocolMagic || r.u8() != PKT_INFO_REPLY) continue;
         ServerInfo si;
         si.addr = from;
+        si.official = isOfficialServer(from.ip, from.port);   // (the address it answered from, not what it says)
         si.name = r.str(); si.map = r.str(); si.mode = r.u8(); si.players = r.u8(); si.maxPlayers = r.u8();
         r.u16();
         if (r.bad()) continue;

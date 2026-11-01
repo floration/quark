@@ -5,15 +5,35 @@
 #include <string>
 #include <vector>
 #include "../common/qmath.h"
+struct ProjFlight;   // gamedefs.h
 
 enum SpawnTeam { SPAWN_A = 0, SPAWN_B = 1, SPAWN_ANY = 2, SPAWN_RACE = 3, SPAWN_STAGED = 4 };
 // Multi point spawns ("spawn att2 ..." / "spawn def0 ..."): team = SPAWN_STAGED + 2 * stage + (defenders ? 1 : 0).
 // A stage's spawns are used once that many points have fallen (the highest stage reached so far wins).
 constexpr int kMaxSpawnStage = 9;
-inline int stagedSpawn(int stage, bool defenders) { return SPAWN_STAGED + 2 * stage + (defenders ? 1 : 0); }
-inline bool isStagedSpawn(int team) { return team >= SPAWN_STAGED; }
+constexpr int stagedSpawn(int stage, bool defenders) { return SPAWN_STAGED + 2 * stage + (defenders ? 1 : 0); }
+// Mode spawn sets (map format 11; owner, 2026-10-30: Mine's koth hill gets its own koth spawns, apart from the bomb
+// ones): "spawn koth-a ...", "spawn ffa-any ...": spawns only that mode uses, team = SPAWN_MODESET + 3 * mode + side
+// (SPAWN_A, SPAWN_B or SPAWN_ANY). A mode starts players on its own set's side when the map has one (modeSpawnType),
+// and no other mode uses them. Not for race (its race spawns are its set) or multi point (its staged spawns are).
+constexpr int SPAWN_MODESET = stagedSpawn(kMaxSpawnStage, true) + 1;
+constexpr int kSpawnModes = 15;   // MODE_COUNT - 1: winner stays (the last mode) plays on 1v1's set (spawnSetFor, static_assert in map.cpp)
+// the mode whose spawn set a mode starts on: winner stays plays 1v1's ("spawn 1v1-a"), so no map format change
+inline constexpr int spawnSetFor(int mode) { return mode == 15 ? 8 : mode == 16 ? -1 : mode; }   // (ball: the plain team spawns)   // (MODE_WINNER, MODE_ARENA: static_assert in map.cpp)
+constexpr int modeSpawn(int mode, int side) { return SPAWN_MODESET + 3 * mode + side; }
+constexpr int kMaxSpawnTeam = modeSpawn(kSpawnModes - 1, SPAWN_ANY);
+inline bool isStagedSpawn(int team) { return team >= SPAWN_STAGED && team < SPAWN_MODESET; }
 inline int spawnStage(int team) { return (team - SPAWN_STAGED) / 2; }
 inline bool spawnDefends(int team) { return ((team - SPAWN_STAGED) & 1) != 0; }
+inline bool isModeSpawn(int team) { return team >= SPAWN_MODESET && team <= kMaxSpawnTeam; }
+inline int spawnSetMode(int team) { return (team - SPAWN_MODESET) / 3; }
+// a spawn's side: SPAWN_A, SPAWN_B or SPAWN_ANY for a mode set's, its team for the rest
+inline int spawnSide(int team) { return isModeSpawn(team) ? (team - SPAWN_MODESET) % 3 : team; }
+// the modes that can have their own set (race and multi point have theirs already)
+bool modeSetAllowed(int mode);
+// A spawn's team as written in a map file ("a", "att2", "koth-b"), and back (-1: not a team)
+std::string spawnTeamWord(int team);
+int spawnTeamFromWord(const std::string& w);
 
 constexpr int kMaxCuts = 6;   // a cut box's planes
 
@@ -41,8 +61,12 @@ struct Brush {
     uint8_t up = 0;
     uint8_t ncut = 0;       // a cut box's planes
     // a teleporter's (map format 10: "tp <link> <face>" after the box, written only for one): the link (teleporters with
-    // the same one are linked) and the face it lets players and projectiles out of (kFace*)
+    // the same one are linked) and the face it lets players and projectiles out of (kFace*). tpWalk (map format 12: a
+    // "walk" after the face; owner, 2026-10-30: "toggle for carry all speed or max at walking velocity"): a player who
+    // goes INTO this one comes out of its pair at no more than the run speed (kGroundSpeed x the mode's speed), never
+    // faster than they went in; off (the default), all of their speed carries
     uint8_t link = 1, exitFace = 2;
+    bool tpWalk = false;
     float cut[kMaxCuts][4] = {};
     // In play only (never saved): broken glass, or brick a hole was blown in (its pieces are new generated brushes after
     // it). Out of the grid: nothing collides with it or sees it. Map::resetDestruction brings it back.
@@ -74,13 +98,18 @@ template <class S> bool readCuts(S& in, Brush& b) {
     b.dir = b.up = 0;
     return true;
 }
-// A teleporter's link and exit face after its box ("tp <link 0-255> <face 0-5>"; the word itself already read)
+// A teleporter's link and exit face after its box ("tp <link 0-255> <face 0-5> [walk]"; the word itself already read;
+// the last thing on its line or edit op). "walk" (map format 12): Brush::tpWalk; absent: carry all speed.
 template <class S> bool readTp(S& in, Brush& b) {
     int l = -1, f = -1;
     if (!(in >> l >> f) || l < 0 || l > 255 || f < 0 || f > 5) return false;
     b.link = (uint8_t)l; b.exitFace = (uint8_t)f;
-    return true;
+    std::string w;
+    b.tpWalk = (bool)(in >> w) && w == "walk";
+    return w.empty() || b.tpWalk;
 }
+// A teleporter's speed word as written after its face (" walk", or nothing: carry)
+inline const char* tpSpeedText(const Brush& b) { return b.tpWalk ? " walk" : ""; }
 // A slope's own frame: the world axes of u, h, v, and whether h is mirrored (h = box.mn + box.mx - world).
 struct SlopeFrame { int u, h, v; bool flip; };
 inline SlopeFrame slopeFrame(const Brush& b) {
@@ -410,6 +439,17 @@ inline int slopePlanes(const Brush& b, Vec3* n, float* d) {
     } else { plane(0, b.dir == 1 || b.dir == 2); plane(2, b.dir == 2 || b.dir == 3); }
     return k;
 }
+// World: p in the brush's solid grown by eps (its box, and for a slope or a cut each of its planes, by eps): the real
+// shape, where a box test would take a slope's whole box (sloped glass: which pane a shot is in, where its shards are).
+inline bool brushNear(const Brush& b, const Vec3& p, float eps) {
+    if (!(p.x >= b.box.mn.x - eps && p.y >= b.box.mn.y - eps && p.z >= b.box.mn.z - eps &&
+          p.x <= b.box.mx.x + eps && p.y <= b.box.mx.y + eps && p.z <= b.box.mx.z + eps)) return false;
+    if (b.shape == BRUSH_BOX) return true;
+    Vec3 pn[kMaxCuts]; float pd[kMaxCuts];
+    const int np = slopePlanes(b, pn, pd);
+    for (int k = 0; k < np; k++) if (dot(pn[k], p) - pd[k] > eps * length(pn[k])) return false;   // (a cut's normals aren't unit)
+    return true;
+}
 // World: the sloped plane at p (a corner's: the one whose height is the lower there, the top being the min of the two).
 inline int slopePlaneAt(const Brush& b, const Vec3& p, Vec3& n, float& d) {
     Vec3 pn[kMaxCuts]; float pd[kMaxCuts];
@@ -469,6 +509,11 @@ template <class F> void slopePolygons(const Brush& world, F fn) {
             out(p, 3, n.y < 0 ? n * -1.0f : n);
         }
     }
+}
+// World: a slope's or cut's surface as triangles, fn(a, b, c) (a fan over each slopePolygons face): what a see-through
+// one (sloped glass, a see-through look) draws, its real shape rather than its box (Renderer::translucentBrush).
+template <class F> void slopeTriangles(const Brush& world, F fn) {
+    slopePolygons(world, [&](const Vec3* p, int np, const Vec3&) { for (int k = 1; k + 1 < np; k++) fn(p[0], p[k], p[k + 1]); });
 }
 // A slope turned or mirrored: `to` (its box already the turned box) gets the dir and up whose solid is `from`'s moved
 // by pt (a 90 degree turn or a mirror: any of them maps the 24 dir / up pairs onto each other). Tried on sample points
@@ -642,7 +687,8 @@ constexpr float kWeightBreakS = 0.3f;
 // The teleporter (owner, 2026-10-29: "a value where if 2 objects have the same value they are linked ... a set face for
 // where it places the player/projectiles"): solid; a player or projectile that touches it comes out of the next
 // teleporter with the same link (Brush::link, in brush order, round to the first) on that one's exit face
-// (Brush::exitFace, kFace*), just outside it, at the same speed, all of it out along that face.
+// (Brush::exitFace, kFace*), just outside it, at the same speed, all of it out along that face; or, through a walk
+// teleporter (Brush::tpWalk, map format 12: the one you go in decides), at no more than the run speed.
 constexpr int kMatFeat = kMatBreak + kBreakCount, kFeatCount = 10;
 constexpr int kMatHealTile = kMatFeat, kMatSpikes = kMatFeat + 1, kMatLowGrav = kMatFeat + 2, kMatSlowMo = kMatFeat + 3,
               kMatGravFlip = kMatFeat + 4, kMatGate = kMatFeat + 5, kMatLightBlock = kMatFeat + 6, kMatShield = kMatFeat + 7,
@@ -775,6 +821,12 @@ inline bool solidMaterial(int m) {   // in the collision grid (a see-through one
 // what a brush in the grid stops: players (collision), shots (raycast: hitscan, projectiles, the grapple), sight
 inline bool stopsPlayers(int m) { return m != kMatShield && (!semiMaterial(m) || kSemi[m - kMatSemi].players); }
 inline bool stopsShots(int m) { return m != 9 && (!semiMaterial(m) || kSemi[m - kMatSemi].shots); }
+// Hitscan goes through it at the weapon's wallbang damage: the wallbang material, and any brush 1/8 m thin or less on
+// some axis (owner, 2026-10-30: "any 1/8m surface should have the wallbang property": coats, panels, thin trims)
+constexpr float kWallbangThin = 0.125f + 1e-3f;
+inline bool wallbangBrush(const Brush& b) {
+    return b.material == 2 || (stopsShots(b.material) && std::min(std::min(b.box.mx.x - b.box.mn.x, b.box.mx.y - b.box.mn.y), b.box.mx.z - b.box.mn.z) <= kWallbangThin);
+}
 inline bool stopsSight(int m) { return m != 9 && m != kMatShield && !glassMaterial(m) && (!semiMaterial(m) || kSemi[m - kMatSemi].sight); }
 // lit by the bake (the shader skips the lightmap for glow, far, water, lava, acid; clip and glass aren't baked: glass is
 // drawn see-through each frame, so a broken pane can go)
@@ -1406,7 +1458,7 @@ struct SpawnPoint {
 // the setting in comments; those are still read). A keyword this build doesn't know is skipped with a warning (in
 // Map::warnings), so an older build still loads a newer map; a known keyword with a bad value is an error.
 // 2: "version", "stairs", "setting", "handmade"; a second hill or an unknown spawn team is an error.
-constexpr int kMapFormatVersion = 10;   // 3: the nograpple material; 4: the acid material; 5: wedges and corners; 6: brick, cobblestone and glass never break (breakable ones are their own materials); 7: materials 139-471; 8: the liquids 472-496 and the large patterns 497-536; 9: the see-through looks 537-561; 10: the breakable blocks 562-585 and the feature blocks 586-595 (a teleporter's "tp <link> <face>")
+constexpr int kMapFormatVersion = 13;   // 3: the nograpple material; 4: the acid material; 5: wedges and corners; 6: brick, cobblestone and glass never break (breakable ones are their own materials); 7: materials 139-471; 8: the liquids 472-496 and the large patterns 497-536; 9: the see-through looks 537-561; 10: the breakable blocks 562-585 and the feature blocks 586-595 (a teleporter's "tp <link> <face>"); 11: mode spawn sets ("spawn koth-a ..."); 12: a teleporter's speed ("tp <link> <face> walk": out at no more than the run speed); 13: a race map's default time ("racedefault <s>")
 
 struct Map {
     std::string name;
@@ -1462,6 +1514,10 @@ struct Map {
     // "void <y>": falling below this height kills (pits, water, the drop off a bridge); default 20 m below the map
     bool hasVoid = false;
     float holdFire = 0;        // "holdfire <s>": nobody can fire for this long after a round goes live (the dojo's bow)
+    // "racedefault <s>": a race / surf map's default time: on the ranked race total (the sum over every official race
+    // and surf map: rankedRaceMaps, ranked.h) a player with no run on this map counts this; 0 = none (the total then
+    // counts kRaceFallbackDefaultS).
+    float raceDefault = 0;
     bool indoor = false;   // "indoor <y>": a roof over everything at y (cameras that orbit the map stay below it)
     float ceilingY = 0;
     float voidY = 0;
@@ -1534,7 +1590,7 @@ struct Map {
         return 1.0f;
     }
     // projectileExtrapolate through the slow-mo fields (in 2 ms steps there; the closed form when there are none)
-    void flyProjectile(Vec3& pos, Vec3& vel, float gravity, float t) const;
+    void flyProjectile(Vec3& pos, Vec3& vel, const ProjFlight& f, float t) const;   // (f: the drop and thrust, projectileFlight)
     struct Liquid { AABB box; uint16_t kind; };   // kind: kLiquids' index
     std::vector<Liquid> liquids;   // the liquid brushes (kMatLiquids..: pmove moves you differently in them), from rebuild()
     const LiquidDef* liquidAt(const AABB& box) const {   // the first one the box touches (none: null)
@@ -1545,7 +1601,7 @@ struct Map {
     }
     void rebuildFluids();   // lava, acid and liquids from the brushes
     // Returns hit distance or -1. normal receives the face normal on hit.
-    float raycast(const Vec3& origin, const Vec3& dir, float maxDist, Vec3* normal = nullptr, int* material = nullptr) const;   // *material: the hit brush's (-1: a moving solid)
+    float raycast(const Vec3& origin, const Vec3& dir, float maxDist, Vec3* normal = nullptr, int* material = nullptr, bool hitClip = false) const;   // *material: the hit brush's (-1: a moving solid); hitClip: clip (9) stops it too (the grapple)
     // Shadow-ray style early out: light, sight and line of fire, so clip (material 9) doesn't block it unless
     // hitClip (movement probes: clip blocks players).
     bool raycastAny(const Vec3& origin, const Vec3& dir, float maxDist, bool hitClip = false) const;
@@ -1589,7 +1645,7 @@ struct Map {
     std::vector<Brush> pristineBrushes;   // the brushes as they were before the first break (empty: none yet)
     uint32_t destructSerial = 0;          // counts every change (the renderer sends the holes again)
     bool breakGlass(size_t i);            // false: not a standing pane
-    int glassAt(const Vec3& p, float eps = 0.03f) const;   // a standing pane whose box (grown by eps) holds p, -1 none
+    int glassAt(const Vec3& p, float eps = 0.03f) const;   // a standing pane whose shape (grown by eps) holds p, -1 none
     int blockAt(const Vec3& p, float eps = 0.03f) const;   // the same for a standing breakable block
     // Blows a hole in every thin (kBreakableThick) brick / cobblestone box near `at`: kHoleSize across where it meets the
     // wall, less the distance from it to the wall's plane (owner: "if a sticky blows up 1m away ... a 1.5m hole").
@@ -1670,6 +1726,26 @@ bool plainFileName(const std::string& name);
 // Writes every shipped map back to its original text (and drops their light caches and your edited copies) and removes
 // retired ones; returns how many. shippedDir: the install's maps folder (findDataPath("maps")) unless given (tests).
 int resetOfficialMaps(const std::string& shippedDir = std::string());
+// ---- legacy maps (1.19.6): the old map pool, shipped in maps/legacy/ (tools/make_maps.py LEGACY), never official ----
+// The retired official maps (each still tools/maps/<name>.py, built into maps/legacy/).
+constexpr const char* kLegacyMapNames[] = {"clockwork", "depot", "summit", "canal", "harbor", "bastion", "foundry", "temple",
+    "colosseum", "furnace", "gantry", "anvil", "viaduct", "hamlet", "downtown", "orbital", "lodestone", "midtown", "hightown", "cascade"};
+// LEGACY MAPS (settings; the dedicated server's --legacy-maps): listMaps() also lists the shipped and your legacy
+// folders (a name that is also a current map: the current one). Off by default. A legacy map asked for by name loads
+// whatever this says (mapFilePath looks there last), so old server configs and demos keep working.
+void setLegacyMapsListed(bool on);
+bool legacyMapsListed();
+std::string userLegacyMapsDir();             // <your maps>/legacy
+bool isLegacyMap(const std::string& name);   // its file (mapFilePath) is in a legacy folder
+// Once per game version (a stamp file naming it): the untouched generated copies of shipped maps (first line
+// "# generated by tools/make_maps.py", no `handmade` line) at the top of your maps folder move into its legacy/
+// (a name taken there: <name>_2, ...; an identical copy is just removed), with their <name>.mapedit.json; their
+// light caches named after them go. Hand-made, editor-saved and other maps, downloads/ and subfolders stay. Old
+// official maps an older install left in the install's maps folder go too (maps/legacy/ has them). Tests pass dirs.
+struct LegacyMoveReport { bool ran = false; int moved = 0, shipped = 0; std::vector<std::string> log; };
+LegacyMoveReport moveOldOfficialMaps(const std::string& userMaps, const std::string& shippedMaps,
+                                     const std::string& stampPath, const std::string& version);
+LegacyMoveReport moveOldOfficialMaps();   // userMapsDir(), findDataPath("maps"), <user>/legacy_maps.stamp, this version
 // Every map embedded in the game (tools/embed_maps.py): name and original text, by name (quark --bake-maps).
 std::vector<std::pair<std::string, std::string>> officialMapTexts();
 std::string mapsFolder(); // absolute path of your maps folder (userMapsDir)

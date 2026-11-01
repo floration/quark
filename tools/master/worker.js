@@ -53,11 +53,15 @@
 //   POST /disputes form: key (ADMIN_KEY)                            "match ladder created result" per disputed match (the log)
 //   GET  /ratings?ladder=L&ids=a,b,c                                 "id mu sigma games" per line (unknown ids: defaults)
 //   GET  /leaderboard?ladder=L[&n=25]                                "rating games name" per line, best first (placed only)
-// Race time trials (single player, Viaduct): runs come from the game server (/racerun above), kept only if they
-//   beat that player's best and no leg is faster than RACE_FLOORS allows. POST /racetime (the old self-report from
-//   the racer's own game) is refused. Odd runs can still be deleted by hand:
-//   DELETE FROM race_times WHERE map = 'viaduct' AND id = '<id>' (ids: SELECT ... JOIN names).
-//   GET  /raceboard?map=M[&n=25]                                      "ms name" per line, fastest first
+// Race time trials (single player, on the ranked race and surf maps: RACE_MAPS): runs come from the game server (/racerun
+//   above), kept only if they beat that player's best and no leg is faster than the map's floors allow. POST /racetime
+//   (the old self-report from the racer's own game) is refused. Odd runs can still be deleted by hand:
+//   DELETE FROM race_times WHERE map = '<map>' AND id = '<id>' (ids: SELECT ... JOIN names).
+//   GET  /raceboard?map=M[&n=25]                                      "ms name" per line, fastest first (one map)
+//   GET  /racetotal[?n=25]                                            "total_ms maps_run name" per line, fastest first:
+//                                                                the race total, each racer with a run on any ranked
+//                                                                race map, their best on every one summed (a map
+//                                                                they haven't run counts at its defaultMs)
 // Discord link, crowns and queues (1.12.0+):
 //   POST /linkcode form: bot, discord (hex)                     the bot asks for a one-time code for a Discord user who
 //                                                                ran /link there: "code NNNNNN" (valid LINK_CODE_MS)
@@ -79,13 +83,21 @@
 const FRESH_MS = 150000;
 const MU = 25, SIGMA = 25 / 3, BETA = SIGMA / 2, TAU = MU / 300, EPS = 1e-4;
 const LADDERS = new Set(["vanilla", "vampire", "instagib"]);
-const RACE_MAPS = new Set(["viaduct"]);
 const RACE_MIN_MS = 5000; // nothing finishes faster: below this it's not a real run
-// Fastest plausible time per leg (start -> checkpoint 1, then between checkpoints), in ms: the straight-line gap
-// between the boxes at 48 m/s. Made by `build/quark_tests racefloors` (quark_tests checks this copy matches).
-const RACE_FLOORS = {
-  viaduct: [792, 606, 485, 625, 250, 928, 1333, 341, 1818, 979, 1022, 1583],
+// The ranked race maps (the official maps with "for race" or "for surf"), by name: defaultMs, what the race total
+// counts for a racer with no run on that map (its "racedefault <s>" line, or 600 s until it has one), and floors,
+// the fastest plausible time per leg (start -> checkpoint 1, then between checkpoints) in ms: the straight-line gap
+// between the boxes at 48 m/s. Written by
+// `build/quark_tests racefloors` (paste its output over this table; quark_tests checks this copy matches the maps).
+// A map taken off this table leaves its rows in race_times, unused (on no board or total) until it comes back.
+export const RACE_MAPS = {
+  accelerator: { defaultMs: 600000, floors: [1791, 3416, 1770, 2041, 2510, 781, 1683, 2291, 1895, 3942, 3671, 2106, 149, 750] },
+  jungle: { defaultMs: 180000, floors: [1041, 1583, 2000, 1984, 1418, 1460, 631, 790, 3084, 2834, 3166, 279] },
+  rooftoprun: { defaultMs: 180000, floors: [2770, 1311, 1389, 410, 3291, 1542, 1253, 2541, 252, 446, 1198, 2750] },
+  solar: { defaultMs: 600000, floors: [7630, 21422, 11625, 8047, 10983, 45419, 19582, 14865, 11091, 12515, 46109, 15571, 15369, 31324, 38624] },
+  surfy: { defaultMs: 600000, floors: [1607] },
 };
+const isRaceMap = (map) => Object.prototype.hasOwnProperty.call(RACE_MAPS, map);
 const TICKET_MS = 2 * 3600000;       // a match ticket takes reports for this long
 const MIN_MATCH_MS = 60000;          // no server result before this (no ranked match is over in under a minute) unless someone left
 const TICKET_GAP_MS = 60000;         // a server opens at most one match ticket per this
@@ -105,7 +117,7 @@ const MAX_SERVERS_PER_IP = 8;        // fresh /announce entries one address may 
 const MAX_BODY = 16384;              // bytes of form a request may carry (counted as it's read, not from Content-Length)
 // Cache API: only works on a custom domain (on *.workers.dev caches.default stores nothing); the Cache-Control
 // header still lets clients and proxies keep reads for these many seconds.
-const CACHE_S = { "/list": 20, "/leaderboard": 60, "/raceboard": 60, "/crowns": 60, "/lifetime": 30, "/bench": 30, "/queue": 10, "/filled": 5, "/ratings": 10 };
+const CACHE_S = { "/list": 20, "/leaderboard": 60, "/raceboard": 60, "/racetotal": 60, "/crowns": 60, "/lifetime": 30, "/bench": 30, "/queue": 10, "/filled": 5, "/ratings": 10 };
 const LINK_CODE_MS = 10 * 60000;
 
 // Rate limiting: token buckets kept in memory per isolate (Cloudflare runs a few isolates per region, so the
@@ -284,7 +296,7 @@ async function openTicket(env, form, addr, now) {
     if (!LADDERS.has(ladder)) return "not a ranked ladder";
     if (players.length < 2 || players.length > 16) return "bad players";
   } else if (kind === "race") {
-    if (!RACE_MAPS.has(map)) return "not a ranked race map";
+    if (!isRaceMap(map)) return "not a ranked race map";
     if (players.length !== 1) return "bad players";
   } else return "bad request";
   // every player vouched for this match / time trial: their key (which hashes to their id) signed its id in the game,
@@ -320,7 +332,7 @@ async function openTicket(env, form, addr, now) {
 async function raceRun(env, form, addr, now) {
   const ticket = String(form.get("ticket") || ""), map = String(form.get("map") || ""), me = String(form.get("id") || "");
   if (!/^[0-9a-f]{16}$/.test(ticket) || !/^[0-9a-f]{32}$/.test(me)) return "bad request";
-  if (!RACE_MAPS.has(map)) return "not a ranked race map";
+  if (!isRaceMap(map)) return "not a ranked race map";
   const t = await env.DB.prepare("SELECT kind, server, map, players, created, status FROM tickets WHERE id = ?").bind(ticket).first();
   if (!t || t.kind !== "race" || t.server !== addr || t.status !== "open" || t.map !== map || t.players !== me) return "no ticket";
   if (now - t.created > RACE_TICKET_MS) return "ticket expired";
@@ -328,7 +340,7 @@ async function raceRun(env, form, addr, now) {
   const splits = String(form.get("splits") || "").split(",").map((x) => parseInt(x, 10));
   if (!(ms >= RACE_MIN_MS && ms < 3600000)) return "bad time";
   if (ms > now - t.created + RACE_SLACK_MS) return "bad time"; // longer than the session it was run in
-  const floors = RACE_FLOORS[map];
+  const floors = RACE_MAPS[map].floors;
   if (!floors || splits.length !== floors.length || splits[splits.length - 1] !== ms) return "bad splits";
   // checkpoint times increase, and no leg is faster than the course allows
   if (splits.some((x, i) => !(x > 0) || x - (i ? splits[i - 1] : 0) < floors[i])) return "bad splits";
@@ -340,6 +352,23 @@ async function raceRun(env, form, addr, now) {
   ).bind(map, me, ms, splits.join(","), String(form.get("v") || "").slice(0, 32), now).run();
   await saveName(env, me, String(form.get("name") || ""), now);   // (only with an accepted run)
   return best ? `new best (was ${best.ms})` : "first time";
+}
+
+// The race total board: every racer with a run on at least one ranked race map, ranked by the sum over every one of
+// their best there or, where they have none, the map's defaultMs (owner, 2026-10-31). Done as the defaults' sum plus
+// each racer's (best - default) over the maps they ran, so one grouped scan of race_times (its primary key starts
+// with map) answers it. Ties: whoever set their latest counted time first.
+export async function raceTotal(env, n) {
+  const maps = Object.keys(RACE_MAPS);
+  if (!maps.length) return "";
+  n = Math.min(100, Math.max(1, n || 25));
+  const all = maps.reduce((t, m) => t + RACE_MAPS[m].defaultMs, 0);
+  const { results } = await env.DB.prepare(
+    "WITH d(map, ms) AS (VALUES " + maps.map(() => "(?, ?)").join(", ") + ") " +
+    "SELECT r.id AS id, SUM(r.ms - d.ms) AS gain, COUNT(*) AS played, MAX(r.created) AS last, COALESCE(n.name, 'player') AS name " +
+    "FROM race_times r JOIN d ON d.map = r.map LEFT JOIN names n ON n.id = r.id GROUP BY r.id ORDER BY gain ASC, last ASC LIMIT ?"
+  ).bind(...maps.flatMap((m) => [m, RACE_MAPS[m].defaultMs]), n).all();
+  return results.map((r) => `${all + r.gain} ${r.played} ${r.name}`).join("\n");
 }
 
 // Queues shared by the game and the Discord bot: when a mode has enough players, they're all taken out of every
@@ -475,7 +504,7 @@ async function crowns(env) {
     ).bind(ladder.length + 2, ladder.length + 2, PROVISIONAL_GAMES, ladder.length + 2, ladder.length + 2, ladder + ":", ladder + ";", PLACEMENT_GAMES).all();
     results.forEach((r, i) => out.push(`${ladder} ${i + 1} ${r.id} ${textHex(r.name)} ${r.discord === "-" ? "-" : textHex(r.discord)}`));
   }
-  for (const map of RACE_MAPS) {
+  for (const map of Object.keys(RACE_MAPS)) {
     const { results } = await env.DB.prepare(
       "SELECT r.id AS id, COALESCE(n.name, 'player') AS name, COALESCE(l.discord, '-') AS discord FROM race_times r " +
       "LEFT JOIN names n ON n.id = r.id LEFT JOIN links l ON l.id = r.id AND l.verified = 1 WHERE r.map = ? ORDER BY r.ms ASC, r.created ASC LIMIT 10"
@@ -915,8 +944,9 @@ export default {
         ).bind(ladder.length + 2, PROVISIONAL_GAMES, ladder.length + 2, ladder + ":", ladder + ";", PLACEMENT_GAMES, n).all();
         return text(results.map((r) => `${Math.round(Math.max(0, r.mu - 3 * r.sigma) * 40)} ${r.games} ${r.name}`).join("\n"));
       }
+      if (u.pathname === "/racetotal") return text(await raceTotal(env, parseInt(q("n"), 10)));
       if (u.pathname === "/raceboard") {
-        if (!RACE_MAPS.has(q("map"))) return text("not a ranked race map", 400);
+        if (!isRaceMap(q("map"))) return text("not a ranked race map", 400);
         const n = Math.min(100, Math.max(1, parseInt(q("n"), 10) || 25));
         const { results } = await env.DB.prepare(
           "SELECT r.ms, COALESCE(n.name, 'player') AS name FROM race_times r LEFT JOIN names n ON n.id = r.id " +

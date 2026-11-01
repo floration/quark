@@ -1,4 +1,4 @@
-// Rebindable controls. Every action has two slots; a slot holds a key, a mouse button or a
+// Rebindable controls. Every action has three slots (two until 1.19.4); a slot holds a key, a mouse button or a
 // scroll direction.
 #pragma once
 #include <string>
@@ -12,18 +12,34 @@ enum Action {
     A_QUIP,     // say a random quip (never a call-out), out loud where you stand (G); Settings QUIPS / QUIPS VOLUME
     A_TOGGLECHAT, // hide / show other players' chat (Settings::chatOff); unbound by default
     A_PERFMINI, // F4: only the F3 graph's mouse to photon number (to see what F3's text and graph cost)
+    A_RACERESET, // race / surf (R): a tap goes back to your last checkpoint; held 250 ms: the start (1.19.4, owner)
+    A_TEAMCHAT,  // chat to your team only (unbound by default)
+    A_LASTWEAPON, // back to the weapon held before this one (unbound by default)
+    A_SPECNEXT, A_SPECPREV,   // spectating / dead: the next / previous player to watch (a click still does next)
+    A_SAVEPOS, A_LOADPOS,   // practice (the host alone with bots): save your spot / go back to it (unbound by default)
+    A_HIDEHUD,   // hide / show the HUD (a clean screen; the crosshair kept unless HIDE HUD KEEPS CROSSHAIR is off); unbound
+    A_RACERESTART, // race / surf: straight back to the start (owner, 2026-10-30: "a separate full-restart key"); unbound
+    A_VOLUP, A_VOLDOWN, A_MUTE,           // master volume up / down 5%, mute / unmute (1.19.4 batch 3; unbound)
+    A_RECORD, A_JOINTEAM, A_SPECTATE,     // start / stop a demo, play (team modes: the other team), spectate (unbound)
     A_COUNT
 };
+static_assert(A_COUNT <= 64, "Game::testHeld_ holds a bit per action");
 
 // Input codes: GLFW key codes as-is, mouse buttons from kMouseCode, scroll from kWheelUp/kWheelDown.
 constexpr int kMouseCode = 1000;
 constexpr int kWheelUp = 2000;
 constexpr int kWheelDown = 2001;
 
+constexpr int kBindSlots = 3;
+
 struct Binds {
-    int code[A_COUNT][2] = {};
+    int code[A_COUNT][kBindSlots] = {};
     void setDefaults();
-    bool has(int action, int code) const { return code != 0 && (this->code[action][0] == code || this->code[action][1] == code); }
+    bool has(int action, int code) const {
+        if (code == 0) return false;
+        for (int k = 0; k < kBindSlots; k++) if (this->code[action][k] == code) return true;
+        return false;
+    }
 };
 
 const char* actionName(int action);

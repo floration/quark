@@ -16,7 +16,7 @@ static void usage() {
     printf(
         "quark_server [options]\n"
         "  --port N         UDP port (default %d)\n"
-        "  --map NAME       map from maps/ (default arena)\n"
+        "  --map NAME       map from maps/ (default sewer)\n"
         "  --mode MODE      vs | bomb | race | koth | payload | npayload | ffa | duel | 1v1 | tourney\n"
         "  --name TEXT      server name shown in the browser\n"
         "  --max N          max players (default 8, up to 32; over 16 starts at a lower tick rate)\n"
@@ -123,6 +123,7 @@ int main(int argc, char** argv) {
         }
         else if (a == "--nobalance") cfg.balanceBots = false;
         else if (a == "--ranked") cfg.ranked = true;
+        else if (a == "--legacy-maps") setLegacyMapsListed(true);   // the old map pool (maps/legacy/) in the map vote
         else if (a == "--restart-flag") cfg.restartFlag = next();
         else if (a == "--channel") {
             std::string c = next();
@@ -133,12 +134,28 @@ int main(int argc, char** argv) {
         else if (a == "-h" || a == "--help") { usage(); return 0; }
         else { printf("unknown option %s\n", a.c_str()); usage(); return 1; }
     }
-    for (auto& l : upgradeMapDir(userMapsDir()).log) printf("maps: %s\n", l.c_str());   // older map formats: converted (originals in maps/old/v<N>/)
+    for (auto& l : upgradeMapDir(userMapsDir()).log) printf("maps: %s\n", l.c_str());
+    for (auto& l : moveOldOfficialMaps().log) printf("maps: %s\n", l.c_str());   // (once per version: old official copies to maps/legacy/)   // older map formats: converted (originals in maps/old/v<N>/)
     cfg.pauseWithoutHumans = true;   // nobody to play for: bots wait (Server::updatePause; hosted and test servers keep ticking)
     netInit();
     auto srv = std::make_unique<Server>();   // (~1 MB: on the heap, not half of the main thread's 2 MB MinGW stack)
     Server& server = *srv;
     std::string err;
+    if (!cfg.ranked && !legacyMapsListed() && isLegacyMap(cfg.map)) {
+        // set up for an old map (legacy since 1.19.6, not listed here): play the listed map built for the mode
+        // instead (else one that takes it), so players never land on a map they can't vote (owner, 2026-10-31)
+        std::string pick;
+        Map d;
+        for (const std::string& n : listMaps()) {
+            if (isLegacyMap(n) || !d.load(n) || !d.supportsMode(cfg.mode)) continue;
+            if (pick.empty()) pick = n;
+            if (d.preferredMode == cfg.mode) { pick = n; break; }
+        }
+        if (!pick.empty()) {
+            printf("%s is a legacy map (this server doesn't list the old maps): playing %s instead\n", cfg.map.c_str(), pick.c_str());
+            cfg.map = pick;
+        }
+    }
     if (!server.start(cfg, &err)) {
         printf("failed to start: %s\n", err.c_str());
         return 1;

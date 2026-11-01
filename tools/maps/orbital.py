@@ -109,4 +109,5 @@ def build():
     for x in (-24, -20): m.spawn("a", x, 0, -9, -90, "b"); m.spawn("a", x, 0, 9, -90, "b")
     for (x, z, yaw) in ((-28, 0, -90), (-13, -12.5, -90), (-12, 7, -90)): m.spawn("any", x, 0, z, yaw, "any")
     m.raw("setting space station")
+    m.also = ["power"]   # (power: team vs with team health pools)
     m.save("orbital")

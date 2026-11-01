@@ -829,10 +829,13 @@ static void testVoiceSteal() {
     ACHECK(line >= 0 && shortFx >= 0 && longFx >= 0);
     if (line < 0 || shortFx < 0 || longFx < 0) { a.stop(); return; }
     const int kVoices = 64;
-    a.play(shortFx, 1.0f);                                   // slot 0: ends first
-    for (int i = 0; i < kVoices - 2; i++) a.play(longFx, 1.0f);
-    a.play(line, 1.0f);                                      // the newest: the last slot
     std::vector<int16_t> out(4096);
+    a.play(shortFx, 1.0f);                                   // slot 0: ends first
+    for (int i = 0; i < kVoices - 2; i++) {   // (a mixer period every 16: at most kMaxNewFx effects start in one)
+        a.play(longFx, 1.0f);
+        if (i % 16 == 15) a.mix(out.data(), 16);
+    }
+    a.play(line, 1.0f);                                      // the newest: the last slot
     for (size_t done = 0; done < a.samples(0, shortFx).size() + 2048; done += 512) a.mix(out.data(), 512);   // the short one ends
     ACHECK(a.voicesPlaying(shortFx) == 0 && a.voicesPlaying(line) == 1);
     a.play(longFx, 1.0f);                                    // full again...

@@ -54,7 +54,7 @@ static std::string actionKey(int a) {
 std::string controlsToText(const Binds& b, int socd, bool altToggle) {
     std::string out = "# quark controls profile\n";
     out += "socd=" + std::to_string(socd) + "\nalt_toggle=" + std::to_string(altToggle ? 1 : 0) + "\n";
-    for (int a = 0; a < A_COUNT; a++) out += "bind_" + actionKey(a) + "=" + std::to_string(b.code[a][0]) + "," + std::to_string(b.code[a][1]) + "\n";
+    for (int a = 0; a < A_COUNT; a++) out += "bind_" + actionKey(a) + "=" + std::to_string(b.code[a][0]) + "," + std::to_string(b.code[a][1]) + "," + std::to_string(b.code[a][2]) + "\n";
     return out;
 }
 
@@ -72,10 +72,10 @@ bool controlsFromText(const std::string& text, Binds& b, int& socd, bool& altTog
         else if (k == "alt_toggle") na = atoi(v.c_str()) != 0;
         else if (k.rfind("bind_", 0) == 0) {
             std::string name = k.substr(5);
-            int a = -1, c0 = 0, c1 = 0;
+            int a = -1, c0 = 0, c1 = 0, c2 = 0;
             for (int i = 0; i < A_COUNT; i++) if (actionKey(i) == name) a = i;
             if (a < 0 && !name.empty() && isdigit((unsigned char)name[0])) a = atoi(name.c_str()); // old numeric form
-            if (a >= 0 && a < A_COUNT && sscanf(v.c_str(), "%d,%d", &c0, &c1) >= 1) { nb.code[a][0] = c0; nb.code[a][1] = c1; binds++; }
+            if (a >= 0 && a < A_COUNT && sscanf(v.c_str(), "%d,%d,%d", &c0, &c1, &c2) >= 1) { nb.code[a][0] = c0; nb.code[a][1] = c1; nb.code[a][2] = c2; binds++; }
         }
     }
     if (!binds) return false;

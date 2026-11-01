@@ -211,13 +211,18 @@ add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/generated/default_brain.h
   DEPENDS ${CMAKE_SOURCE_DIR}/tools/bots/embed_brain.py ${CMAKE_SOURCE_DIR}/tools/bots/default.qbrain
   COMMENT "Embedding the built-in bot brain (tools/bots/default.qbrain)" VERBATIM)
 # The built-in modes' logic (tools/modes/common.qlogic + one .qlogic per mode, tools/modes/GRAMMAR.md) likewise.
-set(QUARK_MODE_LOGIC_FILES common vs bomb race koth payload ffa npayload duel arena tourney hide tag points)
+set(QUARK_MODE_LOGIC_FILES common vs bomb race koth payload ffa npayload duel arena tourney hide tag points surf power winner ball)
 list(TRANSFORM QUARK_MODE_LOGIC_FILES PREPEND ${CMAKE_SOURCE_DIR}/tools/modes/)
 list(TRANSFORM QUARK_MODE_LOGIC_FILES APPEND .qlogic)
 add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/generated/default_modes.h
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/modes/embed_modes.py ${CMAKE_BINARY_DIR}/generated ${CMAKE_SOURCE_DIR}/tools/modes
   DEPENDS ${CMAKE_SOURCE_DIR}/tools/modes/embed_modes.py ${QUARK_MODE_LOGIC_FILES}
   COMMENT "Embedding the built-in modes' logic (tools/modes/*.qlogic)" VERBATIM)
+# Settings search's index: every settings label and its page, read from the game's settings pages (1.19.4).
+add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/generated/settings_index.h
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/settings_index.py ${CMAKE_BINARY_DIR}/generated ${CMAKE_SOURCE_DIR}/src/client/game.cpp
+  DEPENDS ${CMAKE_SOURCE_DIR}/tools/settings_index.py ${CMAKE_SOURCE_DIR}/src/client/game.cpp
+  COMMENT "Indexing the settings pages for search" VERBATIM)
 set(QUARK_MAPS_DIR ${CMAKE_SOURCE_DIR}/maps)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/make_maps.py)
 execute_process(COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/make_maps.py --list
@@ -231,11 +236,23 @@ set(QUARK_GEN_MAPS "")
 foreach(n ${QUARK_GEN_MAP_NAMES})
   list(APPEND QUARK_GEN_MAPS ${QUARK_MAPS_DIR}/${n}.qmap)
 endforeach()
+# the old map pool (official until 1.19.6), built into maps/legacy/: shipped with maps/, never embedded (not official)
+execute_process(COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/make_maps.py --list-legacy
+  OUTPUT_VARIABLE QUARK_LEGACY_MAP_NAMES RESULT_VARIABLE rc OUTPUT_STRIP_TRAILING_WHITESPACE)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "tools/make_maps.py --list-legacy failed (${rc})")
+endif()
+string(REPLACE "\r" "" QUARK_LEGACY_MAP_NAMES "${QUARK_LEGACY_MAP_NAMES}")
+string(REPLACE "\n" ";" QUARK_LEGACY_MAP_NAMES "${QUARK_LEGACY_MAP_NAMES}")
+set(QUARK_LEGACY_MAPS "")
+foreach(n ${QUARK_LEGACY_MAP_NAMES})
+  list(APPEND QUARK_LEGACY_MAPS ${QUARK_MAPS_DIR}/legacy/${n}.qmap)
+endforeach()
 # (the owner's map overrides, assets/overrides/maps/<name>.qmap, replace generated maps: docs/ASSETS.md)
 file(GLOB QUARK_MAP_OVERRIDES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/assets/overrides/maps/*.qmap)
 # (any change to the generator, the shared builder or one map's module, regenerates; a new module re-globs)
 file(GLOB QUARK_MAP_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/maps/*.py)
-add_custom_command(OUTPUT ${QUARK_GEN_MAPS}
+add_custom_command(OUTPUT ${QUARK_GEN_MAPS} ${QUARK_LEGACY_MAPS}
   COMMAND ${CMAKE_COMMAND} -E env PYTHONHASHSEED=0 ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/make_maps.py --out ${QUARK_MAPS_DIR}
   DEPENDS ${CMAKE_SOURCE_DIR}/tools/make_maps.py ${QUARK_MAP_SOURCES} ${QUARK_MAP_OVERRIDES}
   COMMENT "Generating maps (tools/make_maps.py)" VERBATIM)
@@ -370,6 +387,7 @@ if(QUARK_BUILD_CLIENT)
 
 
   add_executable(quark WIN32 MACOSX_BUNDLE
+    ${CMAKE_BINARY_DIR}/generated/settings_index.h
     src/client/main.cpp
     src/client/game.cpp
     src/client/rawmouse.cpp
@@ -468,7 +486,9 @@ endif()
 # Copy the shipped maps (generated + hand-made, as embedded above) next to the executables so builds run in place;
 # any other *.qmap there (a map since retired from the generator, a stray file) is removed.
 string(REPLACE ";" "|" QUARK_SHIPPED_MAPS_ARG "${QUARK_GEN_MAPS};${QUARK_HAND_MAPS}")
+string(REPLACE ";" "|" QUARK_LEGACY_MAPS_ARG "${QUARK_LEGACY_MAPS}")
 add_custom_target(copy_maps ALL
   COMMAND ${CMAKE_COMMAND} "-DMAPS=${QUARK_SHIPPED_MAPS_ARG}" -DDEST=${CMAKE_BINARY_DIR}/maps -P ${CMAKE_SOURCE_DIR}/tools/copy_maps.cmake
+  COMMAND ${CMAKE_COMMAND} "-DMAPS=${QUARK_LEGACY_MAPS_ARG}" -DDEST=${CMAKE_BINARY_DIR}/maps/legacy -P ${CMAKE_SOURCE_DIR}/tools/copy_maps.cmake
   VERBATIM)
 add_dependencies(copy_maps quark_maps)

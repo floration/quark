@@ -13,8 +13,8 @@ What every map gets, whatever its mode (checked by `quark_tests`):
 - **A spawn per player.** Every mode a map offers has enough spawns for a full 8-player server in the pool the server really draws from: 8 "any" spawns for free for all, hide, tag and a tourney's warm-up, 8 race spawns behind a race's start line, 4 a side in team modes, 1.5 m apart at least. The generator tops short pools up with spread-out spots on open floor the existing spawns can walk to.
 - **Spawns that face into the map** (2 m clear ahead at eye height), and in team modes **out of sight of the enemy's spawns**: where a long lane ran spawn to spawn, a screen in front of the spawn row closes it (you leave round its ends).
 - **Every route walkable**: from every spawn to every objective (and to the enemy, or to every other free-for-all spawn), with the player's own hull against the map's collision, no movement tech needed.
-- **A clear track**: nothing stands in the payload cart's way; the generator keeps its sweep (and other keep-clear volumes, like Viaduct's slalom openings) free of anything placed by hand or by the dressing passes.
-- **Ranked maps are mirrored completely**: every brush, spawn, ladder, light and objective has its point-symmetric twin, and the sun is overhead so both halves are lit alike.
+- **A clear track**: nothing stands in the payload cart's way; the generator keeps its sweep (and other keep-clear volumes, like a race course's openings) free of anything placed by hand or by the dressing passes.
+- **Ranked maps are fair, not necessarily symmetric** (q, 2026-10-30: "would it be fair even though it's asymmetrical?"): on a ladder played 1v1 each side has as many spawns, and on a plain run both sides are within 1 s of each other to the enemy spawns and to the middle of the map. The qk maps and Dojo are point-symmetric anyway (their spawns stay in mirrored pairs, the sun overhead); Greenhouse and Spire aren't.
 - **Ladders and stairs that work**: every ladder is climbed and every staircase walked up with the real movement code, and no staircase cuts through another walkable surface or hangs over one with less than a player's height of clearance.
 - **Nothing out of bounds**: from the first spawn, with every move a good player has (bunny-hops, dashes, the grapple, measured with the game's movement code), no floor outside the playable floor's footprint is reachable (`quark_tests bounds`; `OOB_TRACE=<map>` lists what is).
 - **One mode and a setting**: a `for <mode>` line the map offers, and a `setting` line.
@@ -23,400 +23,58 @@ What every map gets, whatever its mode (checked by `quark_tests`):
 
 ---
 
-## Anvil: ranked 1v1 (all three ladders). Setting: a smithy.
-**Why it suits 1v1:**
-- It's point symmetric, so neither spawn is better (fairness 1.00). Spawns are 5.2 s apart at a run.
-- It has to work for vanilla, vampire and instagib, so it mixes ranges. Close fights happen round the anvil, mid-range ones across the troughs, and long ones from the chimney tops.
+## Surfy and Cobblestone: q's own maps (hand-made)
 
-**Structures:**
-- **The anvil, with a horn at both ends, and stairs up its flanks.** The centrepiece and the middle fight. The stairs are on the flanks, clear of the horns, so you can actually walk up.
-- **Lava troughs.** Lethal edges either side, so a careless knockback costs the round.
-- **Galleries at 3.5 m with a ladder, joining the corner towers.** An upper ring over each spawn, so you can rotate without crossing the middle. They're notched over the tower stairs and the ladder.
-- **Forge hoods over the troughs.** A flue walk at 5 m up a ladder on the hood's post, and the chimney above it up a second ladder to 8.5 m. They give the high ground, but the troughs are right below.
-- **Hammers, window walls and wallbang screens.** Break the sightlines across the middle at different heights.
+Owner, 2026-10-30: "make sure all future updates get cobblestone map and surfy map ... surfy map is default surf gamemode map". Both are q's, made in the map editor (`handmade`), shipped as they are from q's PC (`maps/surfy.qmap`, `maps/cobblestone.qmap`, un-ignored in `.gitignore`); change them by saving a new version from the editor, never by hand here. **Surfy** is built for surf and is the mode's default map (`defaultMapName`, client/game.cpp), ahead of Cascade. **Cobblestone** is the all-cobblestone map q benchmarks the cobblestone look's frame-time lows with; it has no `for` line, so no mode picks it by default.
 
-## Bastion: team vs. Setting: a castle.
-**Why it suits team vs:**
-- A big map (7700 m²) for two teams. Spawns are 7.1 s apart, each team inside its own gatehouse.
-- Three heights to fight on: the courtyard, the wall-walk and hoarding at 7 m, and the tower roofs at 12 m.
-- There are loops everywhere: around the keep, along the walls and through the gates. A losing fight can always be broken off.
 
-**Structures:**
-- **Curtain wall with a walk on top, and merlons.** The high ring. The merlons give cover from the fields side.
-- **Corner towers, with a roof at 12 m up an inside ladder.** The highest perches, overlooking walls and courtyard.
-- **Flank and gate towers.** Fighting platforms with doors onto the walk, so they're nodes, not dead ends.
-- **Gatehouses with portcullises.** Where the teams start, shut in behind bars: no spawn-killing through the gate.
-- **The hoarding (timber gallery on posts).** Widens the walk and roofs a ring of courtyard, so there are covered fights below. It's open over the wall stairs so the stairs keep their headroom.
-- **Timber breastwork in panels.** Archers' cover. It's wallbang, so it hides you without making you safe, and the gaps let you drop down.
-- **Wall stairs, and the east stairs from the raised bastions.** The ways up that aren't a grapple. Point symmetric.
-- **The keep on its island, the moat and four drawbridges.** The objective-shaped middle. The bridges are chokepoints you can be knocked off.
-- **Inner ward walls, mid-lane walls, the well and the hay cart.** Lanes and cover in the open ward.
-- **Banners, torches and lanterns.** Light the courtyard and tell you which side you're on.
+## The 1.19.6 pool
 
-## Canal: neutral payload. Setting: a canal town.
-**Why it suits neutral payload:**
-- The cart runs down a central causeway (72 m), with both teams the same distance from it (fairness 1.00).
-- The canals either side are lethal, so flanking costs something.
-- Bridges and footbridges let you cross to the cart from the banks.
+Every map before 1.19.6 was replaced (q: "every current map goes except q's two hand-made ones, surfy and cobblestone"). The new maps' plans, and why each structure is there, are in the 1.19.6 maps plan and its reviews; each module's docstring (`tools/maps/<name>.py`) describes its layout. In short:
 
-**Structures:**
-- **The causeway and track.** The cart's line.
-- **Canals.** Lethal flanks.
-- **Three flat bridges per canal.** Rotations.
-- **Humpback footbridges, one per canal.** A higher crossing, and a loop with the flat bridges. They come down onto the bank away from the water and the corner stairs.
-- **Lock gates with ladders.** The gate beam is a narrow perch 7 m over the water: a sniper spot you can be knocked off.
-- **Canal houses with ladders to the roofs.** Indoor fights on the banks, and roof perches over the canal.
-- **Boathouse canopies.** A roofed fight beside the water.
-- **Timber stacks.** Wallbang cover.
-- **Causeway blocks.** Cover beside the cart.
-- **Spawn screens.** A wall in front of each team's spawn row, at the causeway's end: the causeway was a 78 m sightline from one spawn to the other.
+| Map | Built for | Also offered | Ranked | Setting |
+|---|---|---|---|---|
+| Particle Accelerator | race | bomb | - | particle physics lab |
+| Amphitheatre Ruin | king of the hill | team vs, power, free for all | - | a ruined Greek theatre on a hillside above the sea, late in the afternoon |
+| Suspension Bridge | power | team vs, free for all | - | suspension bridge in fog |
+| Castle | king of the hill | power, free for all | - | a medieval concentric castle |
+| Desert Convoy | multi point | free for all | - | desert highway convoy |
+| Cruise Ship | hide and seek | tag, free for all | - | a cruise liner at sea at dusk |
+| Dam | neutral payload | king of the hill, power, free for all | - | hydroelectric dam in a pine valley, morning |
+| Datacenter | bomb | free for all | - | hyperscale data centre at night |
+| Dojo | 1v1 | duel, team vs, free for all | ranked vampire | a martial arts dojo in a walled garden |
+| Express | neutral payload | king of the hill, power, free for all | - | desert railway town, hot afternoon |
+| Fairground | tag | hide and seek, free for all | - | a funfair at night |
+| Glacier Summit | king of the hill | team vs, power, free for all | - | an observatory on a snowy peak, a cable car station and a climbers' hut |
+| Greenhouse | 1v1 | duel, team vs, tourney, free for all | ranked vanilla | victorian glasshouse |
+| Jungle Ruins | race | - | - | jungle temple ruins |
+| Lighthouse | team vs | power, free for all | - | a rocky headland with a lighthouse, at night in a storm |
+| Mine | bomb | king of the hill, free for all | - | a deep mine |
+| Monorail | neutral payload | king of the hill, power, free for all | - | futuristic city monorail at dusk |
+| Museum | hide and seek | tag, free for all | - | a natural history museum at night |
+| Orbit | 1v1 | duel, team vs, tourney | - | space station centrifuge |
+| QK1 Ring | 1v1 | duel, team vs, tourney, free for all | ranked vanilla vampire instagib | a ring of corridors round a pit, box and accent |
+| QK2 Stack | 1v1 | duel, team vs, tourney, free for all | ranked vanilla vampire instagib | a stacked tower of open floors, box and accent |
+| QK3 Pinwheel | 1v1 | duel, team vs, tourney, free for all | ranked vanilla vampire instagib | four decks wound round a sunken bowl like a pinwheel, box and accent |
+| QK4 Terraces | 1v1 | duel, team vs, tourney, free for all | ranked vanilla vampire instagib | terraces round a sunken court, box and accent |
+| QK5 Islands | 1v1 | duel, team vs, tourney, free for all | ranked vanilla vampire instagib | floating islands over the void |
+| QK6 Crossroads | 1v1 | duel, team vs, tourney, free for all | ranked vanilla vampire instagib | crossroads of halls |
+| QK7 Spiral | 1v1 | duel, team vs, tourney, free for all | ranked vanilla vampire instagib | a spiral tower court |
+| QK8 Canyon | 1v1 | duel, team vs, tourney, free for all | ranked vanilla vampire instagib | a desert canyon |
+| Railyard | neutral payload | payload, free for all | - | freight rail yard |
+| Twin Reactors | power | team vs, free for all | - | nuclear power plant |
+| Riverside | tag | hide and seek, power, 1v1, duel, team vs, free for all | - | riverside technology facility |
+| Rooftop Run | race | - | - | night city rooftops |
+| Rooftops | tag | hide and seek, free for all | - | city rooftops at night, in the rain |
+| Sewer | free for all | power, 1v1, duel, team vs | - | giant sewer pipes |
+| Solar System | surf | - | - | the solar system |
+| Spire | free for all | 1v1, duel, team vs, tourney | ranked instagib | the open top floors of a skyscraper going up above the clouds at sunset |
+| Rice Terraces | team vs | power, king of the hill, free for all | - | a sunny hillside of flooded rice terraces, a farm, a mill and a temple |
+| War | multi point | bomb, free for all | - | active warzone |
 
-## Cascade: surf. Setting: a frozen gorge.
+Each ranked ladder has the map it's designed for (q, 2026-10-31), which going ranked and the ranked pickers choose first: vanilla 1v1 **Greenhouse**, laser vampire 1v1 **Dojo** (`holdfire 5`), instagib free for all **Spire**. qk1-qk8 are ranked on all three.
 
-Surf (owner, 2026-10-28): race rules on a course you ride, not walk: no dash, no grapple, steep ramps you strafe along.
+## Legacy maps (the pool before 1.19.6)
 
-- **Ridges, not single ramps.** Each ramp is two 52 degree wedges back to back (6 m rise over 4.7 m either side; owner 2026-10-28: 60 was too steep to hold, CS surf ramps run about 46-60): a face on each side, so a surfer can take either, and the ridge's glow strip shows the line from the air. Steeper than 45 degrees is what makes a face something you slide on, not stand on.
-- **Each ridge lower than the last.** Riding a face loses height; the next ridge starts lower and offset to the side, so you fly from one face onto the next one's near face.
-- **Clean ramps; the run is in the transfers** (owner 2026-10-28: no obstacles on a ramp). A ridge ends and the next starts across a gap, lower and to one side: you leave one face in the air and must land on the next one's. Further on the ridges get narrower and steeper (60 degrees, 3.5 m a side), harder to hold.
-- **Not only downhill.** Stage 2 turns through 90 degrees and ends on a kicker, a 50 degree face across the way that throws you up onto the ledge only if you arrive fast; stage 4 zig-zags (each short ridge offset to the other side of the last) into a second kicker up onto the finish.
-- **A ledge per stage, its checkpoint on it.** Four stages; a fall drops you into the void (back to your checkpoint), so each stage is its own try. The last ledge is the finish.
-- **Nothing below, walls far off.** The course hangs in the gorge: the void line kills a fall well below the last ledge; the gorge walls are scenery.
-- **Not offered for free for all.** The stages can't be walked between (no spawn reaches another), so the map offers surf only.
+Clockwork, Depot, Summit, Canal, Harbor, Bastion, Foundry, Temple, Colosseum, Furnace, Gantry, Anvil, Viaduct, Hamlet, Downtown, Orbital, Lodestone, Midtown, Hightown and Cascade are still built (`tools/maps/<name>.py`, the LEGACY list in `tools/make_maps.py`) into `maps/legacy/` and shipped there. They aren't official (never ranked, not embedded) and the menus list them only with Settings > GAMEPLAY > LEGACY MAPS on; asked for by name they always load. Their design notes are in this file's history (1.19.5 and earlier).
 
-## Clockwork: duel. Setting: inside a giant clock.
-**Why it suits duel:**
-- Compact (1800 m², spawns 4.6 s apart) and point symmetric.
-- Four narrow ways into the middle over a lethal drop: positioning and knockback decide rounds.
-- An upper balcony and pinion give the loser a way out and up.
-
-**Structures:**
-- **The great wheel and its arbor.** The centrepiece you fight over. The arbor goes up to the lid as a grapple line.
-- **The pinion at 3.6 m, with a ladder on a leaf at each side.** A second level right over the middle.
-- **The works (gear teeth in the dark below).** The lethal drop round the wheel. The four spokes over it are the only ways in.
-- **Pinion stacks in the corners; two have ladders to their 9 m tops.** Perches over the works.
-- **Mainspring barrels on the flanks, with a post and ladder up to the balconies.** Cover, and the way up.
-- **Balconies at 6 m along the side walls, with stairs down to the escapement decks.** The upper loop of the duel.
-- **Escapement decks with steps.** A low second level in each corner.
-- **Ratchet blocks and gear guards in front of the spawns.** Cover at the start. The guards are perforated sheet, so they're wallbang.
-- **Pendulums.** Hang in front of each spawn: walk under the bob, hook the rod.
-- **Clock faces on the end walls and escapement wheels on the side walls.** What makes it a clock. They also light the case and give you hooks.
-
-## Colosseum: tourney. Setting: a Roman arena.
-**Why it suits tourney:**
-- The arena floor is open enough for straight duels between rounds, with the arched inner walls breaking it into arcs (spawns 5.3 s apart).
-- The ring of stands and arcade gives every fighter a way round.
-- It's a big map for 1v1 (5200 m²). Tourney uses it alongside smaller duel maps.
-
-**Structures:**
-- **Tiered stands, with an aisle cut through them.** The aisle stairs used to be buried in the solid tiers; now there's a real way up.
-- **Arched inner walls.** Break the sand into arcs.
-- **The gladiator statue.** Centre cover and a grapple anchor (the spear).
-- **Beast pits.** Lethal holes in the sand.
-- **Arcade roof ring with a ladder up every arched wall.** An upper ring all the way round, and with six ways up (two on the north and south walls, one on the east and west) it's a way round, not a perch: up one ladder, along the roof, down another.
-- **Piers down the middle of the covered ring.** The ambulatory under the arcade roof was a bare 6 m corridor; the piers split it into two aisles and give it cover.
-- **The emperor's box on each side, at 6.5 m up a ladder from the arcade roof.** The best seat in the house and the high point.
-- **Chariot wreckage and weapon racks in the sand.** Cover between the arches.
-
-## Depot: bomb. Setting: a freight depot.
-**Why it suits bomb:**
-- Both sides reach either site in the same second (attackers' arrival minus defenders': west −0.4 s, east +0.1 s; the owner's band is −1..+1 s, decision B2). The game is fast: a side that takes a site first holds it, so the race to it has to be even. Attackers come in at the south gate, defenders from the north yard, and the sites lie between them, halfway down each flank.
-- Two sites, 40 m apart across the yard, so they can't be held from one spot.
-- Three different lanes: the indoor warehouse, the open yard, and the sunken trench.
-
-**Structures:**
-- **The west site, among the racks in the warehouse.** A door at each end (one for each side), racks for cover on the site, a ladder to the roof outside.
-- **The east site, on the raised dock between two containers.** A stair up at each end of the dock (one for each side); the containers are its cover.
-- **The defenders' yard in the north: crate stacks, the wall down its middle, the perch and the screen wall.** Where the defence starts (the spawns in the yard's far corners, the screen wall keeping them out of the attackers' sight).
-- **The freight truck, with crates up onto it.** Cover and high ground in the open yard.
-- **The sunken trench and the loading canopy.** The low lane beside the dock, fought under a roof.
-- **The gatehouse.** Where the attackers stack before the push. Its front is walled (you leave round the sides): from the attackers' spawn you could see the defenders' 60 m away. Its front posts stand in the wall's ends (a post a step behind left a gap too narrow to walk, and bots stuck there).
-- **The barge basin, with a moored barge to cross on.** A lethal corner by the attackers' gate.
-- **The yard crane, up a ladder to its cab at 9.6 m.** The defenders' overwatch over both sites, exposed to everything.
-- **Pallet stacks and drums.** Cover on the way to the sites and in the defenders' yard.
-- **The warehouse roof, up a ladder at each end.** Overwatch over the west lane, and a way over the warehouse rather than a perch with one way down.
-- **The fence and floodlights.** Why the yard is a yard.
-
-## Downtown: king of the hill. Setting: a city block.
-**Why it suits king of the hill:**
-- The hill is the plaza at the crossroads. All four avenues and the underpass lead to it, so it can be attacked from every side and never sealed off.
-- The statue, fountain basin, planters and benches give cover to hold it from.
-- The office roof and cafe terrace overlook it, so holders can be pushed off from above.
-- Fairness 1.00.
-
-**Structures:**
-- **The plaza, statue and fountain.** The hill, and cover on it.
-- **The underpass, with a hatch ladder up into the plaza at each end of the fountain.** A hidden way onto the hill.
-- **Metro entrances.** The underpass's other ends, at the avenues.
-- **The office building.** Lobby, stairs to the first floor (its roof is open over the flight), and a fire-escape ladder to the roof at 8.5 m. The highest perch, overlooking the plaza.
-- **The cafe row.** An awning over the pavement, and side stairs to a roof terrace: a lower perch.
-- **Car park, cars, bus shelters (glass backs are wallbang) and lamp posts.** Cover on the streets, and what makes them streets. A shelter stands in front of each team's spawn row, so the avenue isn't a 44 m sightline spawn to spawn.
-- **Lit windows, shop signs and billboards on every facade.** The city around you.
-
-## Foundry: tag. Setting: a factory floor.
-**Why it suits tag:**
-- Tag is a chase, and a chase needs ways round: the column grid, the catwalk ring and its bridges loop everywhere.
-- The catwalk ring at 6 m gives an escape upward, and the stairs are spread round the hall.
-- The tool cribs and offices let you break line of sight.
-
-**Structures:**
-- **The sawtooth roof, ribbed walls and shutters.** What makes it a factory. The skylights light it.
-- **Steel columns.** Things to circle round in a chase, and grapple anchors.
-- **Cranes and hooks.** Swing points overhead.
-- **The casting pit and ladle.** The lethal middle.
-- **Conveyors and presses.** Low cover in lanes.
-- **Tanks.** Corner cover.
-- **The catwalk ring and bridges.** The upper loop. Its stairs now stand clear of the offices, and ladders go up the end of each spur and up each end catwalk: more ways onto the ring, so a chase can go up one way and come down another.
-- **Offices and tool cribs.** Rooms to duck into.
-
-## Furnace: ranked 1v1 (laser vampire). Setting: a blast furnace.
-**Why it suits laser vampire:**
-- Compact. Laser range is 24 m (since 1.17) and most sightlines are under it.
-- The furnace in the middle blocks the straight line between spawns, so you have to come round it.
-- The molten trenches punish a careless pull.
-
-**Structures:**
-- **The furnace and its charging deck.** The centrepiece, reached by the stokers' ladders. A ladder up the stack goes to 10 m, the top perch.
-- **Molten trenches.** Lethal edges.
-- **Inner walls with doors.** Lanes at laser range. Two ladders up each wall give a roof walk over the side bays: up one, along the roof, down the other.
-- **Roofed side bays.** The indoor half, where each player starts.
-- **Side blocks with stairs, coal heaps, pillars and the wallbang screen.** Cover and a low second level.
-
-## Gantry: ranked free for all (instagib). Setting: a crane hall.
-**Why it suits instagib:**
-- One hit kills, so the map is about sightlines.
-- Long ones run down the catwalks and from the crane bridges at 9 m (up ladders on the crane legs).
-- Breaks come from the floor blocks, cabs and containers.
-- The flooded dock under the bridge is the lethal middle.
-- The lorry docks, sunk 3 m, let you cross an end unseen. Their floor is solid (only the water kills), and 4 m of floor separates each shed's doorway from the dock edge.
-
-**Structures:**
-- **Catwalks and the bridge.** The long sightlines.
-- **The flooded dock.** Lethal, under the bridge.
-- **Cranes with cabs (the windows are wallbang) and hanging containers.** Cover in the air, and grapple points.
-- **Crane legs with ladders.** Up to the crane bridges.
-- **Loading sheds.** The roofed ends where you start.
-- **Lorry docks with steps.** The low ground, with crates and buffers on the dock floor.
-- **Wall dressing: pipes, downpipes, glow signage, cable drums, crates and bollards.** Kept against the walls and in the sheds so the instagib lanes stay clear. Every lamp and hanging container is hung from something (rods, slings and hook block).
-
-## Hamlet: hide and seek. Setting: a valley village.
-**Why it suits hide and seek:**
-- 21% of the floor is a hiding spot (seen from under 5% of the map). The dry-stone field walls are head high (1.9 m): crouch behind one and nobody across the field sees you.
-- Every building has a way in, flat roofs have ladders, and the church tower, barn loft, windmill hill and water tower give hiding spots at every height.
-- The seeker has to search, not just look.
-
-**Structures:**
-- **Houses (doors, flat roofs with ladders), the two-storey house, and the barn and hayloft.** Indoor and rooftop hiding.
-- **The church and bell tower, windmill hill, water tower and lookout.** High hiding spots and landmarks. The water tower has a ladder on each side.
-- **Pond, creek and footbridges.** Landmarks. Steps lead up out of the creek bed at both ends (it's 1.3 m deep: more than you can jump, so it used to be a trap).
-- **The gully behind the windmill hill.** Lethal: don't hide there.
-- **Orchard, hedges, haystacks and carts.** Crouch spots.
-- **Sheds and woodpiles.** Wallbang hiding spots the seeker can shoot through.
-- **Field walls and log piles.** Break up the open valley; the walls are head high.
-- **Street lamps.** Light, and they show who's coming.
-
-## Hightown: hide and seek (tag too). Setting: a skyscraper over a city.
-**Why it suits hide and seek:**
-- Six levels (five office floors and the roof) round an open atrium: seekers can look across floors but have to walk round to reach them.
-- Two big staircases on opposite facades, so every floor has two separate ways up and down and a hider can always slip round the seeker.
-- Corner storerooms, desks and cabinets give plenty of places to crouch out of sight.
-
-**Structures:**
-- **Two switchback staircases along the west and east facades.** 2.6 m flights beside the windows, alternating between the outer and inner lane each floor, with landings at both ends, railed stairwells and openings in the slab above, lobby to roof.
-- **The atrium with railed edges.** Sightlines between floors; the lobby fountain at the bottom.
-- **Corner rooms behind partitions with a door each.** Storerooms of crates and cabinets to hide among.
-- **Office wings of desks and screens, plants by the atrium.** Cover and things to hide behind.
-- **The facade of piers and windows.** You can see and shoot out; nobody falls out.
-- **The roof: parapet, plant room, water tanks, pool and helipad.** The top floor's hiding spots, high above the city.
-
-## Harbor: free for all. Setting: a harbour.
-**Why it suits free for all:**
-- 12 spawns spread round the map; only 20% of spawn pairs can see each other.
-- Loops everywhere: the quay, the piers, the ship and the yard lanes.
-- A huge map, so a free-for-all crowd spreads out.
-
-**Structures:**
-- **The quay and the sea.** A lethal edge.
-- **The freighter.** A deck and a walk-through cabin.
-- **Piers, and the lighthouse with its ladder.** The exposed perch.
-- **Containers.** Lanes.
-- **Warehouse, transit shed, and the customs office with stairs along its north wall.** Indoor fights and a mid level. The stairs are clear of the doors and the quay steps.
-- **The quay canopy and quay clutter.** Break the 60 m quay into stretches.
-- **The dock crane.** Landmark and grapple anchor.
-- **Lamp posts round the yard walls and along the quay edge, the freighter's deck and mast-head lights.** Dusk light: the yard was lit only under its roofs.
-
-## Lodestone: multi point (and every other mode). Setting: a mine.
-It's offered in every mode but four and was graded in each one it offers (decision B1; the old map report's mode fit): multi point 8.6, bomb 9.5, king of the hill 8.4, payload 9.2, neutral payload 8.8, free for all 9.1, hide 9.3, tag 8.9, race 10.0. Team vs, duel, 1v1 and tourney aren't offered (the owner's call): those modes want a compact map (300–3,000 m²) and the mine is about 83,000 m², so they scored 4.5 and no spawn placement could get them to 7. They can still be started here, with the menus' "may not work" warning.
-
-**Why it suits multi point:**
-- An attack in five stages down the mine (A pithead, B pit floor, C workings, D crystal grotto, E mother lode). Each point is 25–90 m on from the last: every capture is a push, not a hop.
-- Every stage has its own spawns for both sides, and both reach the stage's point in the same second (attackers' arrival minus defenders': A +0.3, B +0.7, C 0.0, D −0.3, E −0.5 s; the owner's band is −1..+1 s, decision B2): whoever takes a point first holds it, so the race to it is even. As a point falls, both sides' spawns move on and the fight moves down the mine.
-- Each point is a raised dais with 7+ ways onto it and a ring of crates and ore bins on it, so it can be flanked and has to be held.
-- Two storeys over the whole north half (surface over workings), and caverns with ledges at 12 m in the south. Every point can be reached from above and below.
-
-**Structures:**
-
-*The surface (14 m, open sky):*
-- **The pithead (A).** The headframe over the shaft, and a ladder down the shaft into the workings. The winding house beside it.
-- **The mill.** A walk-through shed with ore bins and the crusher. The attack's first cover.
-- **Spoil heaps, sheds and a rail line with ore tubs.** They break up the long open surface.
-
-*The open pit:*
-- **Three benches down from the rim to the pit floor, with haul ramps between them.** The way from A to B. Drops of 4.5–5 m between benches are a fast, risky way down.
-- **The pit floor (B).** Sunlit, open to the rim above. The defenders get there through the adits from the workings.
-- **Adits on three sides.** Tunnels from the pit floor into the workings: the way on to C.
-- **The pit crane.** A landmark and a grapple anchor over the pit.
-
-*The workings (0 m, under the surface):*
-- **Rock pillars on a staggered 16 m grid.** Room-and-pillar mining. Alternate rows are offset, so no lane runs across the whole level.
-- **The loading bay (C).** Ore tubs on a siding, timber cribs.
-- **Two declines and two ladders up to the surface.** Ways between the storeys besides the pit and the shaft.
-- **Overhead lamps, timbering on the walls, rails with tubs.** Light, detail and cover.
-
-*The caverns (under the mountain):*
-- **Four portals from the workings.**
-- **The spine.** A rock wall between the two caverns, with two tunnels through at floor level and one along the ledges.
-- **The shaft station.** The cage landing under a sun shaft 32 m up, with a mid-shaft platform and a catwalk to the east ledge.
-- **The mother lode (E).** Ringed by big crystals.
-- **The crystal grotto.** An underground lake (fall in and you die), crystal forests, and the shore point (D).
-- **Ledges at 12 m round both caverns, with stairs and ladders.** High ground over D and E, and the defenders' last spawns.
-- **Rock ribs across the cavern floors, stalagmites and stalactites.** They split each cavern into bays, so fights happen at rifle range rather than across 100 m. The two by the cavern wall stop 2.5 m short of it (built against it, each made a dead-end corner bots stuck in on the way to the portals).
-- **Lamp posts, crystal veins in the walls, fissures with daylight.** Light, and something to steer by.
-- **Crates, ore bins, rubble, timber cribs, rock falls and ore wagons on every floor and ledge.** Cover everywhere, and things to go round in the open bays (3.5 m apart since 1.17, and on the 12 m ledges too; 6 m before, and cover was on 28% of the floor: it's on 47% now).
-
-*Every other mode (Lodestone is the map built for all of them):*
-- **Team spawns in the two caverns, mirrored either side of the spine.** The portals into the workings are symmetric, so neither side is closer to the middle. A pit prop in the spine tunnel's mouth keeps the two spawn rows out of each other's sight, and a spoil wall on the surface does the same for the stage-0 spawns.
-- **The hill on the loading bay (C)**, as far from either cavern.
-- **Bomb sites on the loading bay (C) and in the pillar hall under the pithead**: the two places in the workings both caverns reach in the same second (+0.7 and −0.6 s). They used to be at D and E, each in one team's cavern: one side got there 10 s first (REVIEW MAP-6).
-- **An ore-cart track** from the grotto, through the spine tunnel, to the shaft station, with checkpoints at 1/3 and 2/3. Stacks of sleepers, crates and cribs stand both sides of it, a step off the cart's sweep: something to push behind and to hold the cart from (cover on 27% of the floor beside it; it ran through bare cavern, 5%).
-- **A race course** from the surface down the mine to the shaft station's cage landing (an unranked course: Viaduct is the ranked one). It used to end on the station's ledge at 12 m: 179 m round by the stairs, 66 m for a player who leaps and hooks up (a 2.7× shortcut). No leg can be cut by more than 1.06× now.
-- **Twelve free-for-all spawns** over every part of the mine (surface, workings, both caverns, the ledges): only 3% of their pairs can see each other.
-
-## Midtown: multi point. Setting: a city centre.
-**Why it suits multi point:**
-- An attack across the city in five stages: A the north intersection, B an office roof, C the park, D the elevated railway's west station, E the city hall plaza. Each point is 25–90 m on from the last.
-- Staged spawns for both sides, and both reach each stage's point in the same second (attackers' arrival minus defenders': A −0.2, B +0.5, C 0.0, D +0.7, E +0.1 s; the owner's band is −1..+1 s, decision B2). The defenders used to be there first by 3–13 s, and a defence that takes a point first holds it. Attackers spawn behind the point they just took (north of B's office, between the offices north of the park, at the crossroads by the station stairs and by the park); defenders behind the next one (east up the avenue from A, south of B's office by the railway, on city hall's plaza, down the line on the railway deck, on the west avenue behind city hall).
-- Three levels to fight on: the streets, the offices' first floors, and the roofs (with the railway deck at 9 m in between). B is on a roof and D on the railway, so the attack has to climb.
-
-**Structures:**
-- **Three avenues each way, sixteen blocks, a kerb round every block.** The street grid: lanes to push down, blocks to flank round.
-- **Two-storey offices.** Doors on all four sides, stairs to the first floor and on to the flat roof, a fire-escape ladder outside. Desks with cubicle screens inside (cover). Billboards, water tanks and air handlers on the roofs break the roof-to-roof lines.
-- **The elevated railway.** A deck at 9 m down the middle avenue on columns, two stations with stairs, stopped trains as cover on the deck.
-- **Traffic.** Parked cars and buses in the lanes, trees down the medians and at the block corners, street lamps, traffic lights, bus shelters with glass backs (wallbangs). These are the street cover, and they break the long lines down the avenues.
-- **Street furniture, skips, vans and crates** every few metres on the roads (down the avenues' middles too; only the lane under the railway is kept clear) and on every block's pavements and yards round the offices, and **plant on every office roof** (air handlers, vents, ducts, lift housings). Since 1.17: cover was on 30% of the floor (the streets 18%, the roofs 11%), it's on 45% now, and the vans and skips are things to go round.
-- **The park (C).** Lawns, hedges, trees, benches, a fountain and a pond (fall in and you drown).
-- **City hall (E).** A colonnade and a clock tower over the plaza that holds the last point.
-
-## Orbital: team vs. Setting: a space station.
-**Why it suits team vs:**
-- Each team starts in its own docking bay (fairness 1.00, spawns 5.4 s apart).
-- There are three ways across:
-  - the cargo hall in the middle;
-  - a corridor along each side, with glass you can shoot through;
-  - the upper deck on the corridor roofs, joined round the hub's catwalk ring.
-- The observation windows are open to space, so crossing the hub floor is a risk.
-- The galleries at 8 m give each team a high perch.
-
-**Structures:**
-- **Docking bays with the shuttle (boarding steps onto its back) and the bay door's force field.** The spawn rooms.
-- **Bay stairs to a landing.** The way up to the upper deck through the bulkhead.
-- **Bulkheads with doors on both levels.** The chokepoints between bay and station.
-- **Side corridors (wallbang glass) with the upper deck on their roofs and a maintenance ladder.** The flank routes.
-- **The cargo hall, with crates, lift platforms, and loading pits sunk 1.5 m.** The middle route and its cover.
-- **The hub: reactor core, consoles and the catwalk ring with bridges to the decks.** The middle fight on two levels.
-- **Observation windows.** Lethal: out into space.
-- **The observation gallery at 8 m, up a ladder.** Each side's high perch, in plain sight of the other.
-- **Ceiling lights and the spine pipe.** Light, and a hook down the middle.
-- **Hull windows (clip glass, metal frames, a mullion and a sill light strip).** Tall ones in the docking bays, one per side corridor, two beside the hub walkway and a long band at the gallery. You can see and shoot out, but nobody falls out. They're there to show that you're in orbit.
-- **The view outside: a ringed gas giant to the south, a moon and a moonlet to the north, and stars.** Unlit `far` scenery (no collision, no lightmap cost). The black sky (palette `sky`) makes the sky shader draw a starfield, so the stars need no brushes.
-
-## Railyard: payload. Setting: a rail yard.
-**Why it suits payload:**
-- The track is 136 m, long enough for a push with stages: the tunnel, the station and the footbridge.
-- There's cover beside it the whole way: wagons, sleeper stacks, buffer stops and crates.
-- Both ends are indoor fights (the engine house and the terminus shed).
-
-**Structures:**
-- **The track and the tunnel.** The cart's line, and a close fight halfway. Nothing stands on it (a box at 102-106 m used to: it's beside the track now).
-- **The station platform (two ways on).** A raised flank.
-- **The footbridge.** A high crossing. A prop that was blocking its stairs has been moved.
-- **The engine house and terminus shed.** Indoor ends. A screen in front of the attackers' spawn row in the engine house: the track was an 87 m sightline from it to the defenders' spawn.
-- **The locomotive.** Landmark and cover.
-- **The water tower with a ladder.** A lookout.
-- **Wagons, brick yard walls, sleeper stacks, crates and cable drums.** Split the yard and cover the track (denser since 1.17: cover was on 38% of the floor).
-
-## Summit: king of the hill. Setting: a mountain peak.
-**Why it suits king of the hill:**
-- The hill is the peak: three terraces up, 20 ways onto it, and both teams equally far (fairness 1.00).
-- 33% of the hill has cover (cairns, a toppled boulder), so it can be held.
-- The beacon platform at 7.5 m and the cliff ledge round the rim are where you take it back from.
-
-**Structures:**
-- **Terraces with stairs that turn a corner each tier.** You can't run straight up.
-- **The beacon, its platform at 7.5 m and the ladder on its own post.** The top of the mountain.
-- **Cairns and rocks on the peak.** Cover on the hill.
-- **Firewood stacks.** Wallbang cover on the terraces.
-- **The cliff ledge on pillars, with ramps.** A second ring, with shelter underneath.
-- **Mountain huts with ladders.** Rooms and roof perches.
-- **Crevasses.** Lethal corners.
-- **Boulders.** Cover on the slopes.
-- **Lanterns and rock strata.** Light and detail.
-
-## Temple: ranked 1v1 (vanilla). Setting: a pagoda temple.
-**Why it suits vanilla 1v1:**
-- Vanilla has every weapon, so it needs every range. The column halls give close fights, the courts mid-range, and the roof walk and pagoda lookouts at 11 m long sightlines.
-- Point symmetric (fairness 1.00).
-- It's large for a duel (7,000 m²). The extra space is the roof level, which rewards map control.
-
-**Structures:**
-- **Halls of columns.** Cover at every range.
-- **The sanctum, altar and idol.** The middle.
-- **The bridge with its pagoda shrine.** The middle's upper level.
-- **Reflecting pools.** A lower floor either side.
-- **Roofed end halls.** Indoor spawns.
-- **The roof walk (two ladders up each arched wall, its top flush with the roof).** The upper level, and a way round: up one ladder, down the other.
-- **The pagoda on each roof, with a ladder to its lookout at 11 m.** The high ground, exposed. Its roof is open over the ladder. A balcony round it at 8 m, off the ladder, is a mid perch.
-- **Wallbang screens, offering stones and toppled column drums.** Cover in the courts (more of them since 1.17).
-
-## Viaduct: race. Setting: a mountain gorge.
-**Why it suits race:**
-- Measured on the path a player takes with dash-jumps and the grapple, the course still asks for 12 jumps per 100 m.
-- 20% of it is narrow footing (beams, pads, a ledge) that a dash-jump can't skip, and only 4% of it can be grappled through.
-- No leg can be cut by more than 1.17×.
-- 12 checkpoints, so a fall costs seconds, not the run.
-
-**Structures:**
-
-*Leg 1 (ground level):*
-- **Start pavilion and bridge on arches.** The start. Crowd barriers along the start grid's open sides (and along the turn west) are the line the racers are held behind, and cover for the free-for-all fights there.
-- **Zig-zag pads up.** 0.9 m landings, rising.
-- **The covered lane.** A tunnel through a rock spur that rises to 35 m, so you can't run along its top. The floor has fallen in four times.
-- **The climb.** Up to the beam.
-- **The weaving beam.** 0.7 m, with posts in every empty stretch.
-- **The slalom.** 0.9 m openings, kept clear in the generator: a wall pillar of the dressing beside one used to leave a slot nobody could get through.
-- **Pads down.**
-- **The weaving run home, and the lap gate.**
-
-*Leg 2 (east edge):*
-- **Slalom.**
-- **The aqueduct gallery.** Roofed, with a broken floor.
-- **The collapse.** Zig-zag pads.
-- **The weaving east beam.**
-- **The corner tower ladder.**
-
-*Leg 3 (west edge):*
-- **The weaving west ridge.**
-- **The cliff path.** Weaving round rock posts under a solid overhang.
-- **The weaving west beam.**
-
-*Leg 4 (the skyway):*
-- **Slalom.**
-- **Sky pads.** 0.9 m, zig-zag, with posts beside them.
-- **The weaving last beam (0.62 m).**
-- **The finish arch.**
-
-*Around the course:*
-- **Thin rods beside every weave and pad.** Staggered in height. Hopping their tops is harder than the beam.
-- **Spandrel walls across the gorge, with an arch per leg.** What carries a viaduct. Five of them split the gorge into bays.
-- **Buttress fins beside every arch.** They stand 5 m out from both faces, so each leg threads its arch down a walled channel. Hooking the open middle of a wall and dashing along its face to an arch goes nowhere.
-- **Lanterns and strata.** Light and detail.
-- **The river far below.** What cut the gorge.

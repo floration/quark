@@ -167,7 +167,19 @@ struct ModeState {
     uint8_t arenaVariant = 0; // 1v1: ArenaVariant index
     uint16_t weaponMask = 0;  // weapons allowed right now (bit per weapon); 0 = all
 };
+// Planting or defusing (owner, 2026-11-01: "when defusing/planting you take no knockback this is wrong"): your own
+// movement and shooting are locked (the command's movement, jump, dash, grapple and fire are dropped, on the server
+// and in your own prediction alike), but knockback, blasts and pulls still move you; knocked out of range, the plant
+// or defuse stops as usual. It was the round start's full freeze, which threw every velocity away.
+inline bool bombRooted(const ModeState& m, int id) { return m.mode == MODE_BOMB && m.phase == PHASE_LIVE && m.actionPlayer == id; }
+inline void rootCmd(UserCmd& c) { c.forward = 0; c.side = 0; c.buttons &= (uint16_t)~(BTN_JUMP | BTN_DASH | BTN_GRAPPLE | BTN_FIRE | BTN_ALTFIRE); }
 enum : uint8_t { MS_DRAIN = 1, MS_OVERTIME = 2, MS_CONTESTED = 4, MS_EDITING = 8, MS_RANKED = 16, MS_TEMP_EDIT = 32, MS_TIMETRIAL = 64, MS_RPS = 128 }; // MS_RPS: the hide and seek tiebreak is on (timeLeft: its clock; EV_RPS has the rest) // MS_TIMETRIAL: solo ranked race (times go to the race board) // MS_TEMP_EDIT: voted editing, reverts at the next map change // MS_EDITING: map edit session, nobody plays
+
+// Power (MODE_POWER): the teams' health pools ride in fields the mode has no other use for, so the wire format (and
+// every demo's) stays as it was: payloadDist / payloadLen = team A's / B's pool (hp, f32), point / pointCount = the
+// players each pool counts (its size: that many x target, the hp per player).
+inline float powerPool(const ModeState& m, int team) { return team == TEAM_A ? m.payloadDist : team == TEAM_B ? m.payloadLen : 0.0f; }
+inline float powerPoolMax(const ModeState& m, int team) { return float(team == TEAM_A ? m.point : team == TEAM_B ? m.pointCount : 0) * (float)m.target; }
 
 // The scoreboard's main number for a player, and what it sorts by (REVIEW M6: it sorted by one number and showed
 // another): kills ("gibs") in instagib 1v1 / tourney / ranked FFA; the server's score in free for all (frags: what
@@ -179,7 +191,7 @@ inline bool scoreboardGibs(const ModeState& ms) {
 }
 inline int scoreboardValue(const PlayerSnap& p, const ModeState& ms) {
     if (scoreboardGibs(ms)) return p.kills;
-    if (isRaceMode(ms.mode) || isItMode(ms.mode) || ms.mode == MODE_FFA) return p.score;
+    if (isRaceMode(ms.mode) || isItMode(ms.mode) || ms.mode == MODE_FFA || ms.mode == MODE_WINNER) return p.score;   // (winner stays: round wins)
     return p.dmg / 10 + p.obj;
 }
 struct Snapshot {

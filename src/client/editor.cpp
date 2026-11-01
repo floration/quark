@@ -305,11 +305,48 @@ void Game::edNotify(const std::string& s) { edMsg_ = s; edMsgUntil_ = time_ + 3;
 
 bool Game::edSelValid() const { return edSel_.valid() && (size_t)edSel_.idx < kindCount(ed_, edSel_.kind); }
 
+// EDITOR AUTOSAVE: the map you're editing, every 60 s while it has unsaved changes, to editor-autosave.qmap in your data
+// folder (its name beside it), so a crash or a forgotten save loses at most a minute. SAVE removes it; RESTORE AUTOSAVE
+// in the panel brings it back.
+void Game::edAutosave() {
+    if (edOnline_ || !edDirty_ || time_ < edAutoAt_) return;
+    edAutoAt_ = time_ + 60;
+    if (writeFileAtomic(userDataPath("editor-autosave.qmap"), ed_.serialize()) && writeFileAtomic(userDataPath("editor-autosave.name"), edName_))
+        edHasAutosave_ = false;   // (this session's own: nothing to restore from it)
+}
+
+void Game::edRestoreAutosave() {
+    std::ifstream f(utf8Path(userDataPath("editor-autosave.qmap")), std::ios::binary), n(utf8Path(userDataPath("editor-autosave.name")), std::ios::binary);
+    std::stringstream ss, ns;
+    ss << f.rdbuf(); ns << n.rdbuf();
+    Map m;
+    std::string err;
+    if (!f || !m.parse(ss.str(), &err)) { edNotify("the autosave can't be read" + (err.empty() ? std::string() : ": " + err)); edHasAutosave_ = false; return; }
+    std::string name = ns.str();
+    while (!name.empty() && (unsigned char)name.back() <= ' ') name.pop_back();
+    ed_ = std::move(m);
+    if (validMapName(name)) edName_ = name;
+    edUndo_.clear(); edUndoFwd_.clear(); edRedo_.clear();
+    edSel_ = EdSel();
+    edMulti_.clear();
+    edChanged();
+    edMeshDirty_ = true;
+    edHasAutosave_ = false;
+    edNotify("restored the autosave of " + edName_ + " - SAVE to keep it");
+}
+
 void Game::openEditor(std::string name) {
     edOpens_++;
+    edSpeed_ = cfg_.edFlySpeed;   // (the last fly speed and grid: CONTROLS > MORE 2 / the wheel / [ ])
+    edGridIdx_ = std::min(cfg_.edGridIdx, kGridCount - (cfg_.edGridCustom > 0 ? 0 : 1));
+    {   // (an autosave left from before: RESTORE AUTOSAVE offers it)
+        std::error_code ec;
+        edHasAutosave_ = std::filesystem::exists(utf8Path(userDataPath("editor-autosave.qmap")), ec);
+        edAutoAt_ = 0;
+    }
     rescanMaps();
     ed_ = Map();
-    edUndo_.clear();
+    edUndo_.clear(); edUndoFwd_.clear(); edRedo_.clear();
     edSel_ = EdSel();
     edMulti_.clear();
     edGroupMenu_ = edExportAsk_ = false;
@@ -350,7 +387,7 @@ void Game::enterOnlineEditor() {
     ed_ = net_.map();
     edRev_ = net_.mapRevision();
     edName_ = ed_.name;
-    edUndo_.clear();
+    edUndo_.clear(); edUndoFwd_.clear(); edRedo_.clear();
     edSel_ = EdSel();
     edMulti_.clear();
     edGroupMenu_ = edExportAsk_ = false;
@@ -367,7 +404,17 @@ void Game::enterOnlineEditor() {
     captureMouse(false);
 }
 
+// the grid step: the built-in steps, then CONTROLS > MORE 2's CUSTOM GRID (when set)
+float Game::edGrid() const {
+    if (edGridIdx_ >= 0 && edGridIdx_ < kGridCount) return kGrids[edGridIdx_];
+    return cfg_.edGridCustom > 0 ? cfg_.edGridCustom : kGrids[2];
+}
+
 void Game::closeEditor() {
+    // (the fly speed, grid and last light's values, kept for next time)
+    cfg_.edFlySpeed = edSpeed_; cfg_.edGridIdx = edGridIdx_;
+    if (!edLastLight_.empty()) cfg_.edLight = edLastLight_;
+    cfg_.save();
     edLook_ = false;
     r_.clearStaticBoxes();
     edMeshDirty_ = true;
@@ -388,8 +435,8 @@ void Game::edChanged() {
 
 // Apply an edit (or send it to the session) and remember how to undo it. coalesce: repeated nudges and
 // slider drags within 0.75 s share one undo step.
-void Game::edDo(const std::string& op, const std::string& inverse, bool coalesce, bool undoable) {
-    if (op.empty() || op == inverse) return;
+bool Game::edDo(const std::string& op, const std::string& inverse, bool coalesce, bool undoable) {
+    if (op.empty() || op == inverse) return false;
     std::vector<std::string> ops;
     for (size_t a = 0; a < op.size();) {
         size_t e = op.find('\n', a);
@@ -408,27 +455,43 @@ void Game::edDo(const std::string& op, const std::string& inverse, bool coalesce
             for (auto& one : ops) if (!(ok = applyMapEdit(tmp, one))) break;
             if (ok) ed_ = std::move(tmp);
         }
-        if (!ok) { edNotify("can't do that"); return; }   // (and no undo step for what didn't happen)
+        if (!ok) { edNotify("can't do that"); return false; }   // (and no undo step for what didn't happen)
         edChanged();
         // only boxes, groups and ladders (b, g, d ops) make the static batch's boxes: a title, a slider, a spawn moved
         // doesn't rebuild it (Midtown's rebuild is a 10-30 ms hitch)
         for (auto& one : ops) if (!one.empty() && (one[0] == 'b' || one[0] == 'g' || one[0] == 'd')) { edMeshDirty_ = true; break; }
     }
     if (undoable) {
+        if (!edRedoing_) edRedo_.clear();   // (a new edit: what was undone can't be redone over it)
+        edUndoFwd_.resize(edUndo_.size());
         if (!(coalesce && time_ - edLastPush_ < 0.75)) {   // (no join: -1e9, not 0 - time_ starts near 0 in a session, and the first edit there lost its undo step)
             edUndo_.push_back(inverse);
-            if (edUndo_.size() > 500) edUndo_.erase(edUndo_.begin());
-        }
+            edUndoFwd_.push_back(op);
+            if (edUndo_.size() > 500) { edUndo_.erase(edUndo_.begin()); edUndoFwd_.erase(edUndoFwd_.begin()); }
+        } else if (!edUndoFwd_.empty()) edUndoFwd_.back() = op;   // (joined: redo goes to where the step ended)
         edLastPush_ = coalesce ? time_ : -1e9;
     }
+    return true;
 }
 
 void Game::edUndoLast() {
     if (edUndo_.empty()) { edNotify("nothing to undo"); return; }
-    std::string op = edUndo_.back();
+    edUndoFwd_.resize(edUndo_.size());
+    std::string op = edUndo_.back(), fwd = edUndoFwd_.back();
     edUndo_.pop_back();
+    edUndoFwd_.pop_back();
     edLastPush_ = -1e9;
-    edDo(op, "", false, false);
+    if (edDo(op, "", false, false) && !fwd.empty()) edRedo_.push_back({fwd, op});
+}
+
+void Game::edRedoLast() {
+    if (edRedo_.empty()) { edNotify("nothing to redo"); return; }
+    const auto step = edRedo_.back();
+    edRedo_.pop_back();
+    edLastPush_ = -1e9;
+    edRedoing_ = true;
+    edDo(step.first, step.second);
+    edRedoing_ = false;
 }
 
 AABB Game::edBounds(const Map& m, EdSel sel) const {
@@ -685,7 +748,7 @@ void Game::edFix(bool gaps) {
 
 // New object at the spot under the screen center (on top of whatever you're looking at), snapped to the grid.
 void Game::edAdd(int kind, int variant) {
-    const float g = kGrids[edGridIdx_];
+    const float g = edGrid();
     Vec3 dir = angleForward(yaw_, pitch_), n;
     float t = ed_.raycast(edCam_, dir, 200, &n);
     Vec3 at = t >= 0 ? edCam_ + dir * t + n * 0.001f : edCam_ + dir * 8.0f;
@@ -726,7 +789,12 @@ void Game::edAdd(int kind, int variant) {
             break;
         }
         case ED_SPAWN: tmp.spawns.push_back({at, std::round(yaw_ / (PI / 4)) * (PI / 4), variant}); break;
-        case ED_LIGHT: tmp.lights.push_back({at + Vec3(0, 2, 0), kNewLightRadius, kNewLightIntensity}); break;
+        case ED_LIGHT: {   // (the last light's values you set, kept in edLight)
+            float lr = kNewLightRadius, li = kNewLightIntensity;
+            if (sscanf((edLastLight_.empty() ? cfg_.edLight : edLastLight_).c_str(), "%f %f", &lr, &li) != 2 || !std::isfinite(lr) || !std::isfinite(li)) { lr = kNewLightRadius; li = kNewLightIntensity; }
+            tmp.lights.push_back({at + Vec3(0, 2, 0), clampf(lr, 1, 100), clampf(li, 0.1f, 10)});
+            break;
+        }
         case ED_SITE: tmp.bombSites.push_back({at - Vec3(3, 0, 3), at + Vec3(3, 3, 3)}); break;
         case ED_HILL: tmp.hasHill = true; tmp.hill = {at - Vec3(4, 0, 4), at + Vec3(4, 3, 4)}; break;
         case ED_CHECK: tmp.checkpoints.push_back({at - Vec3(2, 0, 2), at + Vec3(2, 4, 2)}); break;
@@ -854,7 +922,7 @@ bool Game::edBoxOpPlan(int op, std::vector<int>& gone, std::vector<Brush>& made,
         const int a = op - ED_SPLIT_X;
         float lo = 1e9f, hi = -1e9f;
         for (int i : sel) { lo = std::min(lo, ed_.brushes[i].box.mn[a]); hi = std::max(hi, ed_.brushes[i].box.mx[a]); }
-        const float g = kGrids[edGridIdx_];
+        const float g = edGrid();
         float c = std::round((lo + hi) * 0.5f / g) * g;
         bool slopes = false;
         for (int pass = 0; pass < 2 && made.empty(); pass++) {   // (on the grid it can land on an edge: then the exact middle)
@@ -968,7 +1036,7 @@ void Game::edBoxOp(int op) {
 bool Game::edPlaceGroup(const std::string& text) {
     Map::Group g;
     if (!parseGroupText(text, g)) return false;
-    const float gr = kGrids[edGridIdx_];
+    const float gr = edGrid();
     Vec3 dir = angleForward(yaw_, pitch_), n;
     float t = ed_.raycast(edCam_, dir, 200, &n);
     Vec3 at = snapTo(t >= 0 ? edCam_ + dir * t + n * 0.001f : edCam_ + dir * 8.0f, gr);
@@ -1035,7 +1103,7 @@ static const std::vector<std::string>& edHelpLines(const Renderer& r, float maxW
         "CLICK: SELECT (AGAIN: THE ONE BEHIND, SHIFT: ADD MORE, THEN GROUP)",
         "ARROWS / PGUP / PGDN: MOVE BY GRID (ALONG YOUR VIEW)",
         "SHIFT + ARROWS: GROW THAT SIDE    CTRL + ARROWS: SHRINK IT    M: MATERIAL / TEAM    N: SHAPE    K: COAT THE SIDE YOU LOOK AT",
-        "CTRL+D: DUPLICATE    DEL: DELETE    CTRL+Z: UNDO    CTRL+S: SAVE    ESC: DESELECT / LEAVE",
+        "CTRL+D: DUPLICATE    DEL: DELETE    CTRL+Z: UNDO    CTRL+Y: REDO    CTRL+S: SAVE    ESC: DESELECT / LEAVE",
         "R: ROTATE 90 (SHIFT: ABOUT X, CTRL: ABOUT Z)    F: MIRROR LEFT / RIGHT (SHIFT: FRONT / BACK, CTRL: UPSIDE DOWN)",
     };
     static std::vector<std::string> lines;
@@ -1834,17 +1902,24 @@ std::vector<Game::EdSel> Game::edPickAll(const Vec3& o, const Vec3& dir) const {
         bool inside = o.x > b.mn.x && o.x < b.mx.x && o.y > b.mn.y && o.y < b.mx.y && o.z > b.mn.z && o.z < b.mx.z;
         hits.push_back({inside ? 1e6f + length(b.mx - b.mn) : t + bias, EdSel{kind, idx}});
     };
+    // a box by its solid, not its bounds: a wedge, corner, tetra or cut box is hit where its faces are (owner,
+    // 2026-10-31: "the hitboxes for the blocks are super fuckey, with the custom cut face blocks")
+    auto testBrush = [&](int kind, int idx, const Brush& br, float bias) {
+        if (br.shape == BRUSH_BOX) { test(kind, idx, br.box, bias); return; }
+        const float t = rayBrush(o, dir, inv, br, 1000);
+        if (t >= 0) hits.push_back({t + bias, EdSel{kind, idx}});
+    };
     // markers win over the box they sit on / inside (zones are see-through, so they only win when nothing's closer)
     for (size_t i = 0; i < ed_.spawns.size(); i++) test(ED_SPAWN, (int)i, edBounds(ed_, {ED_SPAWN, (int)i}), -0.5f);
     for (size_t i = 0; i < ed_.lights.size(); i++) test(ED_LIGHT, (int)i, edBounds(ed_, {ED_LIGHT, (int)i}), -0.5f);
     for (size_t i = 0; i < ed_.payloadPath.size(); i++) test(ED_PATH, (int)i, edBounds(ed_, {ED_PATH, (int)i}), -0.5f);
     for (size_t i = 0; i < ed_.brushes.size(); i++) // (clip is drawn see-through, so like a zone it only wins when nothing's closer)
-        if (!ed_.brushes[i].generated) test(ED_BRUSH, (int)i, ed_.brushes[i].box, ed_.brushes[i].material == 9 ? 0.25f : 0);
+        if (!ed_.brushes[i].generated) testBrush(ED_BRUSH, (int)i, ed_.brushes[i], ed_.brushes[i].material == 9 ? 0.25f : 0);
     for (size_t i = 0; i < ed_.ladders.size(); i++) test(ED_LADDER, (int)i, ed_.ladders[i], -0.3f);
     for (size_t i = 0; i < ed_.groups.size(); i++) { // a group: where you hit one of its boxes (a room's inside is open)
         std::vector<Brush> parts;
         Map::groupBoxes(ed_.groups[i], parts);
-        for (auto& p : parts) test(ED_GROUP, (int)i, p.box, p.material == 9 ? 0.25f : 0);
+        for (auto& p : parts) testBrush(ED_GROUP, (int)i, p, p.material == 9 ? 0.25f : 0);
     }
     for (size_t i = 0; i < ed_.bombSites.size(); i++) test(ED_SITE, (int)i, ed_.bombSites[i], 0.25f);
     for (size_t i = 0; i < ed_.checkpoints.size(); i++) test(ED_CHECK, (int)i, ed_.checkpoints[i], 0.25f);
@@ -1901,6 +1976,12 @@ bool Game::edSave(int then) {
     }
     if (!edSaveCopy(ed_, edName_)) return false;
     edDirty_ = false;
+    {   // (saved: the autosave has nothing more)
+        std::error_code ec;
+        std::filesystem::remove(utf8Path(userDataPath("editor-autosave.qmap")), ec);
+        std::filesystem::remove(utf8Path(userDataPath("editor-autosave.name")), ec);
+        edHasAutosave_ = false;
+    }
     return true;
 }
 
@@ -1972,7 +2053,8 @@ void Game::edPromptAnswer(int answer) {
 void Game::edTest() {
     if (!edSave(ED_THEN_TEST)) return;
     int mode = -1;
-    if (ed_.preferredMode >= 0 && ed_.supportsMode(ed_.preferredMode)) mode = ed_.preferredMode;
+    if (cfg_.edTestMode >= 0 && cfg_.edTestMode < MODE_COUNT && ed_.supportsMode(cfg_.edTestMode)) mode = cfg_.edTestMode;   // (TEST PLAY: MODE)
+    else if (ed_.preferredMode >= 0 && ed_.supportsMode(ed_.preferredMode)) mode = ed_.preferredMode;
     else if (ed_.supportsMode(MODE_FFA)) mode = MODE_FFA;
     else for (int m = 0; m < MODE_COUNT && mode < 0; m++) if (ed_.supportsMode(m)) mode = m;
     if (mode < 0) { edNotify("no mode can run on this map yet"); return; }
@@ -1980,6 +2062,8 @@ void Game::edTest() {
     testMode_ = mode;
     testEdit_ = false;
     edLook_ = false;
+    edTestCam_ = edCam_; edTestYaw_ = yaw_; edTestPitch_ = pitch_;   // (TEST PLAY: START AT CAMERA)
+    cfg_.edFlySpeed = edSpeed_; cfg_.edGridIdx = edGridIdx_;   // (back from the test: the same speed and grid)
     startHost(false);
 }
 
@@ -1995,7 +2079,7 @@ void Game::edHostSession() {
 
 void Game::editorKey(int key, int mods) {
     bool ctrl = (mods & GLFW_MOD_CONTROL) || (mods & GLFW_MOD_SUPER), shift = mods & GLFW_MOD_SHIFT;
-    const float g = kGrids[edGridIdx_];
+    const float g = edGrid();
     if (edPrompt_) {   // the save question is up: it takes the keys (ESC: cancel, or "no" when there's nothing to go back to)
         if (key == GLFW_KEY_ESCAPE) edPromptAnswer(edPromptThen_ == ED_THEN_NONE ? 0 : -1);
         else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) edPromptAnswer(1);
@@ -2012,6 +2096,7 @@ void Game::editorKey(int key, int mods) {
         closeEditor();
         return;
     }
+    if (ctrl && (key == GLFW_KEY_Y || (shift && key == GLFW_KEY_Z))) { edRedoLast(); return; }
     if (ctrl && key == GLFW_KEY_Z) { edUndoLast(); return; }
     if (key == GLFW_KEY_R && edSelValid()) { edTransform(ctrl ? ED_ROT_Z : shift ? ED_ROT_X : ED_ROT_Y); return; }
     if (key == GLFW_KEY_F && edSelValid()) { edTransform(ctrl ? ED_MIR_Y : shift ? ED_MIR_Z : ED_MIR_X); return; }
@@ -2024,7 +2109,7 @@ void Game::editorKey(int key, int mods) {
     }
     if (ctrl && key == GLFW_KEY_D) { edDuplicate(); return; }
     if (key == GLFW_KEY_LEFT_BRACKET) { edGridIdx_ = std::max(0, edGridIdx_ - 1); return; }
-    if (key == GLFW_KEY_RIGHT_BRACKET) { edGridIdx_ = std::min(kGridCount - 1, edGridIdx_ + 1); return; }
+    if (key == GLFW_KEY_RIGHT_BRACKET) { edGridIdx_ = std::min(kGridCount - (cfg_.edGridCustom > 0 ? 0 : 1), edGridIdx_ + 1); return; }
     if (!edSelValid()) return;
     if (key == GLFW_KEY_DELETE || key == GLFW_KEY_BACKSPACE) { edDelete(); return; }
     int kind = edSel_.kind, i = edSel_.idx;
@@ -2032,7 +2117,10 @@ void Game::editorKey(int key, int mods) {
         edModify([&](Map& m) {
             if (kind == ED_BRUSH) edMat_ = m.brushes[i].material = nextMapMaterial(m.brushes[i].material);
             else if (kind == ED_GROUP && m.groups[i].type != Map::GROUP_CUSTOM) edMat_ = m.groups[i].material = nextMapMaterial(m.groups[i].material);
-            else if (kind == ED_SPAWN) m.spawns[i].team = (m.spawns[i].team + 1) % 4;
+            else if (kind == ED_SPAWN) {   // (a mode set's spawn: its side, a b any; the rest: a b any race)
+                int& t = m.spawns[i].team;
+                t = isModeSpawn(t) ? modeSpawn(spawnSetMode(t), (spawnSide(t) + 1) % 3) : (t + 1) % 4;
+            }
         }, false);
         return;
     }
@@ -2057,7 +2145,8 @@ void Game::editorKey(int key, int mods) {
         return;
     }
     if ((key == GLFW_KEY_Q || key == GLFW_KEY_E) && kind == ED_SPAWN && !edLook_) {
-        edModify([&](Map& m) { m.spawns[i].yaw += key == GLFW_KEY_Q ? PI / 4 : -PI / 4; }, true);
+        const float st = cfg_.edRotStep * PI / 180.0f;   // (CONTROLS > MORE 2: ROTATION STEP)
+        edModify([&](Map& m) { m.spawns[i].yaw += key == GLFW_KEY_Q ? st : -st; }, true);
         return;
     }
     // arrows move along the world axis closest to where you're looking; PgUp/PgDn move up/down.
@@ -2170,8 +2259,9 @@ void Game::drawEditorSavePrompt() {
 }
 
 void Game::editorFrame(double dt) {
+    edAutosave();
     const float W = (float)r_.width(), H = (float)r_.height();
-    const float s = H / 720.0f, g = kGrids[edGridIdx_];
+    const float s = H / 720.0f, g = edGrid();
     const float panelW = 320 * s, panelX = W - panelW;
     r_.cullPad = 0;   // (the match's late-latch pad stays set after leaving it: the editor's camera isn't late-latched)
     if (edOnline_) {
@@ -2245,7 +2335,16 @@ void Game::editorFrame(double dt) {
         if (glfwGetKey(win_, GLFW_KEY_C) == GLFW_PRESS) mv.y -= 1;
         if (edLook_ && glfwGetKey(win_, GLFW_KEY_E) == GLFW_PRESS) mv.y += 1;
         if (edLook_ && glfwGetKey(win_, GLFW_KEY_Q) == GLFW_PRESS) mv.y -= 1;
-        float sp = edSpeed_ * (glfwGetKey(win_, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ? 3.0f : 1.0f);
+        if (cfg_.edFlyBinds) {   // (CONTROLS > MORE 2: FLY KEYS FROM BINDS: your movement keys, JUMP up, CROUCH down)
+            mv = Vec3();
+            if (isDown(A_FORWARD)) mv += f;
+            if (isDown(A_BACK) && !ctrlHeld) mv -= f;
+            if (isDown(A_RIGHT) && !ctrlHeld) mv += right;
+            if (isDown(A_LEFT)) mv -= right;
+            if (isDown(A_JUMP)) mv.y += 1;
+            if (isDown(A_CROUCH)) mv.y -= 1;
+        }
+        float sp = edSpeed_ * (glfwGetKey(win_, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ? cfg_.edFastMul : 1.0f);   // (FAST X)
         if (length(mv) > 0) edCam_ += normalize(mv) * sp * (float)dt;
     }
     // ---- the 3D view covers the screen left of the panel (so its center, where things get added, is
@@ -2378,8 +2477,12 @@ void Game::editorFrame(double dt) {
             if (b) *b = keepBox;
             if (p) *p = keepPos;
             if (op != edDragLast_ && !(edDragLast_.empty() && op == edDragBaseOp_)) {
-                if (!edDragPushed_) { edUndo_.push_back(edDragBaseOp_); edDragPushed_ = true; }
+                if (!edDragPushed_) {
+                    edUndoFwd_.resize(edUndo_.size());
+                    edUndo_.push_back(edDragBaseOp_); edUndoFwd_.push_back(op); edRedo_.clear(); edDragPushed_ = true;
+                }
                 edDo(op, "", false, false);
+                if (!edUndoFwd_.empty()) edUndoFwd_.back() = op;   // (redo: to where the drag ended)
                 edDragLast_ = op;
             }
         }
@@ -2935,11 +3038,13 @@ void Game::editorFrame(double dt) {
         r_.useStaticBoxes();
     }
     mapCache();
-    if (edBaked_) for (auto& b : ed_.brushes) if (glassMaterial(b.material)) r_.translucentBox(b.box, kGlassTint);   // (the bake leaves glass out)
-    for (auto& b : edClipBoxes_) r_.translucentBox(b, kClipColor);   // clip: invisible in play (the baked world leaves it out too), see-through violet here so it can be found and edited
+    if (edBaked_) for (auto& b : ed_.brushes) if (glassMaterial(b.material)) r_.translucentBrush(b, kGlassTint);   // (the bake leaves glass out)
+    for (auto& b : edClipBoxes_) r_.translucentBox(b, {cfg_.clipColor.x, cfg_.clipColor.y, cfg_.clipColor.z, kClipColor.a});   // (CONTROLS > MORE 2: CLIP BOX COLOR)
+    // (clip: invisible in play, the baked world leaves it out too; see-through here so it can be found and edited)
     for (auto& sp : ed_.spawns) {
-        Vec3 c = kTeamColors[sp.team & 3];
+        Vec3 c = kTeamColors[spawnSide(sp.team) & 3];
         r_.box(sp.pos + Vec3(0, 0.9f, 0), {0.3f, 0.9f, 0.3f}, sp.yaw, c, 1.0f, false);
+        if (isModeSpawn(sp.team)) r_.box(sp.pos + Vec3(0, 2.0f, 0), {0.18f, 0.18f, 0.18f}, sp.yaw, {1, 1, 1}, 1.0f, false);   // (a mode set's: a white cap)
         r_.line(sp.pos + Vec3(0, 1.5f, 0), sp.pos + Vec3(0, 1.5f, 0) + angleForward(sp.yaw, 0) * 1.2f, 0.06f, rgba(c));
     }
     for (auto& l : ed_.lights) r_.box(l.pos, {0.2f, 0.2f, 0.2f}, 0, {1.0f, 0.9f, 0.4f}, 1.0f, false);
@@ -3118,6 +3223,10 @@ void Game::editorFrame(double dt) {
             }
             row();
         }
+        if (edHasAutosave_) {   // (EDITOR AUTOSAVE: unsaved edits from last time)
+            if (ui_.button(x, y, w, h, "RESTORE AUTOSAVE", UiExp::state("edmap"))) edRestoreAutosave();
+            row();
+        }
         const float hostW = 180 * s;
         if (ui_.button(x, y, hostW, h, "HOST EDIT SESSION", builtin && edDirty_ ? UiExp::nav(edKeepPath()) : UiExp::state("hosting", "1"))) { edHostSession(); if (screen_ != Screen::Editor) return; }
         bakeButton(x + hostW + gap, w - hostW - gap);
@@ -3168,8 +3277,11 @@ void Game::editorFrame(double dt) {
         row();
     }
     {
-        static const std::vector<std::string> grids = {"GRID: 1/8 M", "GRID: 1/4 M", "GRID: 1/2 M", "GRID: 1 M", "GRID: 2 M", "GRID: 4 M"};
-        ui_.cycle(x, y, w, h, "GRID ([ ])", edGridIdx_, kGridCount, grids, UiExp::local());
+        // (a CUSTOM GRID, CONTROLS > MORE 2, is one more step after 4 M; the grid picked is kept for next time)
+        static std::vector<std::string> grids;
+        grids = {"GRID: 1/8 M", "GRID: 1/4 M", "GRID: 1/2 M", "GRID: 1 M", "GRID: 2 M", "GRID: 4 M"};
+        if (cfg_.edGridCustom > 0) { char b[32]; snprintf(b, sizeof b, "GRID: %g M (CUSTOM)", cfg_.edGridCustom); grids.push_back(b); }
+        ui_.cycle(x, y, w, h, "GRID ([ ])", edGridIdx_, (int)grids.size(), grids, UiExp::local());
         row();
     }
     if (!edSelValid()) {   // clean-ups over the whole map (one undo step each; see MapFix). Only with nothing selected:
@@ -3260,6 +3372,12 @@ void Game::editorFrame(double dt) {
                 int f = ed_.brushes[i].exitFace;
                 if (ui_.cycle(x, y, w, h, "EXIT FACE", f, kFaces, faces, UiExp::edit())) edModify([&](Map& mm) { mm.brushes[i].exitFace = (uint8_t)f; }, false);
                 row();
+                // (owner, 2026-10-30: "toggle for carry all speed or max at walking velocity"; map format 12: whoever
+                // goes INTO this one comes out of its pair at all their speed, or at no more than the run speed)
+                static const std::vector<std::string> speeds = {"SPEED: CARRY", "SPEED: WALK"};
+                int sp = ed_.brushes[i].tpWalk ? 1 : 0;
+                if (ui_.cycle(x, y, w, h, "SPEED", sp, 2, speeds, UiExp::edit())) edModify([&](Map& mm) { mm.brushes[i].tpWalk = sp == 1; }, false);
+                row();
             }
         } else if (kind == ED_GROUP) {
             auto& gr = ed_.groups[i];
@@ -3279,20 +3397,42 @@ void Game::editorFrame(double dt) {
             }
         } else if (kind == ED_SPAWN) {
             static const std::vector<std::string> teams = {"TEAM: TEAM A", "TEAM: TEAM B", "TEAM: ANY TEAM", "TEAM: RACE"};
-            int t = ed_.spawns[i].team;
-            if (ui_.cycle(x, y, w, h, "TEAM (M)", t, 4, teams, UiExp::edit())) edModify([&](Map& mm) { mm.spawns[i].team = t; }, false);
+            const int team = ed_.spawns[i].team;
+            const int setMode = isModeSpawn(team) ? spawnSetMode(team) : -1;
+            int t = spawnSide(team);
+            if (ui_.cycle(x, y, w, h, "TEAM (M)", t, setMode >= 0 ? 3 : 4, teams, UiExp::edit()))
+                edModify([&](Map& mm) { mm.spawns[i].team = setMode >= 0 ? modeSpawn(setMode, t) : t; }, false);
+            row();
+            // which modes use it: every mode (as its team says), or only one mode's own set ("spawn koth-a": Mine's
+            // hill spawns apart from its bomb ones). Race and multi point have their own spawns already.
+            static std::vector<int> setModes;
+            static std::vector<std::string> setNames;
+            if (setNames.empty()) {
+                setModes.push_back(-1); setNames.push_back("USED BY: EVERY MODE");
+                for (int md = 0; md < MODE_COUNT; md++) if (modeSetAllowed(md)) { setModes.push_back(md); setNames.push_back(std::string("USED BY: ONLY ") + modeTitle(md)); }
+            }
+            int pick = 0;
+            for (size_t k = 0; k < setModes.size(); k++) if (setModes[k] == setMode) pick = (int)k;
+            if (ui_.cycle(x, y, w, h, "MODE SET", pick, (int)setNames.size(), setNames, UiExp::edit()))
+                edModify([&](Map& mm) {
+                    int side = spawnSide(mm.spawns[i].team);
+                    if (setModes[pick] < 0) mm.spawns[i].team = side;
+                    else mm.spawns[i].team = modeSpawn(setModes[pick], side == SPAWN_RACE || isStagedSpawn(side) ? SPAWN_ANY : side);
+                }, false);
             row();
             float deg = std::remainder(ed_.spawns[i].yaw * 180.0f / PI, 360.0f);
             if (ui_.slider(x, y, w, h, "FACING (Q E)", deg, -180, 180, "%.0f", UiExp::edit(), 0))
-                edModify([&](Map& mm) { mm.spawns[i].yaw = (ui_.typed() ? std::round(deg) : std::round(deg / 15) * 15) * PI / 180.0f; }, true);   // (dragged: 15 degree steps; typed: any degree)
+                edModify([&](Map& mm) { mm.spawns[i].yaw = (ui_.typed() ? std::round(deg) : std::round(deg / std::min(15.0f, cfg_.edRotStep)) * std::min(15.0f, cfg_.edRotStep)) * PI / 180.0f; }, true);   // (dragged: ROTATION STEP steps; typed: any degree)
             row();
         } else if (kind == ED_LIGHT) {
             float r = ed_.lights[i].radius, in = ed_.lights[i].intensity;
             // (typed: within what a map file allows - validMapLight)
-            if (ui_.slider(x, y, w, h, "RADIUS", r, 1, 60, "%.0f", UiExp::edit(), kNewLightRadius)) edModify([&](Map& mm) { mm.lights[i].radius = clampf(std::round(r), 1, 100); }, true);
+            bool lc = false;
+            if (ui_.slider(x, y, w, h, "RADIUS", r, 1, 60, "%.0f", UiExp::edit(), kNewLightRadius)) { edModify([&](Map& mm) { mm.lights[i].radius = clampf(std::round(r), 1, 100); }, true); lc = true; }
             row();
-            if (ui_.slider(x, y, w, h, "BRIGHTNESS", in, 0.1f, 4, "%.1f", UiExp::edit(), kNewLightIntensity)) edModify([&](Map& mm) { mm.lights[i].intensity = clampf(std::round(in * 10) / 10, 0.1f, 10); }, true);
+            if (ui_.slider(x, y, w, h, "BRIGHTNESS", in, 0.1f, 4, "%.1f", UiExp::edit(), kNewLightIntensity)) { edModify([&](Map& mm) { mm.lights[i].intensity = clampf(std::round(in * 10) / 10, 0.1f, 10); }, true); lc = true; }
             row();
+            if (lc) { char b[40]; snprintf(b, sizeof b, "%g %g", ed_.lights[i].radius, ed_.lights[i].intensity); edLastLight_ = b; }   // (the next new light: these)
         }
         // (the hill is one per map: no DUPLICATE; the last box / spawn can't go: DELETE says so instead)
         if (ui_.button(x, y, w2, h, "DUPLICATE", UiExp::edit(), kind != ED_HILL)) edDuplicate();

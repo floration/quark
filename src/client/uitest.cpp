@@ -10,7 +10,8 @@
 //          the server, so the game stays as it was)        BIND  the slot took the next key and saved it
 //   URL / QUIT  intercepted; LOCAL the widget's own value; INERT (and any greyed-out widget) nothing changed
 // It also checks Esc from every screen goes back to a screen it came through, and the layout of every screen at
-// 1280x720, 1920x1080 and 1024x768: nothing off screen, no two widgets overlapping, no label clipped.
+// 1280x720, 1920x1080 and 1024x768: nothing off screen, no two widgets overlapping, no label clipped, no settings
+// page's content (labels and hints too) running into its footer.
 // It fails if any widget has no expectation, fails its expectation, or was seen but never tested (the coverage gate),
 // so a new widget can't go in untested. Nothing here runs in normal play (Game::uiTest_ is null).
 #include "game.h"
@@ -42,13 +43,16 @@ namespace fs = std::filesystem;
 std::string Game::uiScreenPath() const {
     auto settingsSub = [&]() -> std::string {   // (the tab, then what's open on it)
         switch (setTab_) {
-            case TAB_GAMEPLAY: return "/gameplay";
-            case TAB_CONTROLS: return filePick_ == 2 ? "/controls/files" : controlsSub_ == 1 ? "/controls/movement" : "/controls";
-            case TAB_VIDEO: return devicesOpen_ ? "/video/devices" : "/video";
+            case TAB_PLAYER: if (moreOpen_) return "/player/more"; break;
+            case TAB_GAMEPLAY: return moreOpen_ >= 4 ? "/gameplay/more4" : moreOpen_ == 3 ? "/gameplay/more3" : moreOpen_ == 2 ? "/gameplay/more2" : moreOpen_ ? "/gameplay/more" : "/gameplay";
+            case TAB_CONTROLS: return moreOpen_ >= 2 ? "/controls/more2" : moreOpen_ ? "/controls/more" : filePick_ == 2 ? "/controls/files" : controlsSub_ == 1 ? "/controls/movement" : controlsSub_ == 2 ? "/controls/keys2" : "/controls";
+            case TAB_VIDEO: return devicesOpen_ ? "/video/devices" : moreOpen_ == 8 ? "/video/more8" : moreOpen_ == 7 ? "/video/more7" : moreOpen_ == 6 ? "/video/more6" : moreOpen_ == 5 ? "/video/more5" : moreOpen_ == 4 ? "/video/more4" : moreOpen_ == 3 ? "/video/more3" : moreOpen_ == 2 ? "/video/more2" : moreOpen_ ? "/video/more" : "/video";
             case TAB_CROSSHAIR: return "/crosshair";
+            case TAB_SEARCH: return "/search";
             case TAB_HUD:
                 if (hudEdit_) return "/hud/edit";
                 if (widgetEdit_) return filePick_ == 1 ? "/hud/widgets/files" : valueDrop_ && widgetSel_ >= 0 ? "/hud/widgets/values" : "/hud/widgets";
+                if (moreOpen_) return "/hud/more";
                 return ui_.dropdownOpen() ? "/hud/elements" : "/hud";
         }
         return fontsOpen_ ? "/fonts" : "";
@@ -90,8 +94,11 @@ std::string Game::uiScreenPath() const {
                 p += "/pause";
                 if (settingsInGame_) p += "/settings" + settingsSub();
                 else if (picker_ != PICK_NONE) p += pick;
+                else if (voteSetup_) { static const char* st[] = {"toggles", "group", "group", "group", "mods", "toggles", "summary"}; p += std::string("/vote/setup/") + st[std::clamp(voteStage_, 0, 6)]; }
                 else if (voteMenu_) p += specPick_ ? "/vote/spec" : "/vote";
                 else if (queueMenu_) p += "/queue";
+                else if (practiceMenu_) p += "/practice";
+                else if (playersMenu_) p += "/players";
             }
             if (chatting_) p += console_ ? "/console" : "/chat";
             return p;
@@ -102,6 +109,8 @@ std::string Game::uiScreenPath() const {
 
 std::string Game::uiContext() const {
     if (screen_ == Screen::Editor && edPrompt_) return std::string("keep:") + std::to_string(edPromptThen_);
+    if (screen_ == Screen::InGame && voteSetup_ && voteStage_ == VS_TOGGLES)   // (the vote builder: where NEXT leads)
+        return std::string("vote:") + (vsMode_ ? "g" : "") + (vsMods_ ? "m" : "") + (vsMap_ ? "p" : "");
     if (screen_ != Screen::Editor || !edSelValid()) return "";
     static const char* kinds[] = {"box", "spawn", "light", "site", "hill", "checkpoint", "path", "ladder", "group"};
     std::string k = kinds[edSel_.kind];
@@ -130,10 +139,18 @@ std::string Game::uiObserve(const std::string& w) {
     if (w == "demo") return b(net_.playback());
     if (w == "weapon") return std::to_string(wp_.desired >= 0 ? wp_.desired : heldWeapon_);
     if (w == "rps") return std::to_string(rpsMine_);
+    if (w == "votesetup") return std::to_string(vsMode_) + std::to_string(vsMods_) + std::to_string(vsMap_) + "|" + voteModsText();
     if (w == "reach") return host_ ? std::to_string((int)host_->reachability()) + " " + host_->reachStatus() : "";
     if (w == "widgets") return widgets_.toText() + "|" + std::to_string(widgetSel_) + "|" + std::to_string(filePick_) + "|" + widgetMsg_ + "@" + std::to_string(widgetMsgUntil_);
     if (w == "ctlimport") return cfg_.toText() + "|" + std::to_string(filePick_) + "|" + widgetMsg_ + "@" + std::to_string(widgetMsgUntil_);
     if (w.rfind("files:", 0) == 0) return listDir(profileDir(w.substr(6).c_str()));
+    if (w == "allset") return allMsg_ + "@" + std::to_string(allMsgUntil_) + "@" + std::to_string(resetAllArmed_);
+    if (w == "demos") return listDir(userDataPath("demos"));
+    if (w == "demodel") return demoDelArmed_ + "@" + std::to_string(demoDelUntil_);
+    if (w == "demoren") return demoRename_;
+    if (w == "confirm") return confirmArmed(confirmWhat_) ? confirmWhat_ : "";
+    if (w == "lookmsg") return cfg_.toText() + "|" + lookMsg_ + "@" + std::to_string(lookMsgUntil_);
+    if (w == "chcode") return cfg_.toText() + "|" + chCodeMsg_ + "@" + std::to_string(chCodeUntil_);
     if (w == "groups") return listDir(userDataPath("groups"));
     if (w == "bench") return listDir(userDataPath("benchmarks")) + "|" + listDir(userDataPath("benchmarks/exports"));
     if (w == "usermaps") return listDir(userMapsDir());
@@ -163,6 +180,8 @@ std::string Game::uiObserve(const std::string& w) {
     if (w == "browser") return std::to_string(browser_.refreshes());
     if (w == "fontscan") return std::to_string(fontScans_);
     if (w == "devscan") return std::to_string(devScans_);
+    if (w == "searchscroll") return std::to_string(searchScroll_);
+    if (w == "setsearch") return setSearch_;
     if (w == "scores") return b(showScores_);
     if (w == "perf") return b(perfStage_ != 0);
     if (w == "perfstage") return std::to_string(perfStage_);
@@ -254,6 +273,7 @@ void Game::uiTestActions() {
         ui_.scope = nullptr;
     }
     ui_.keyAction("CTRL+Z (UNDO)", GLFW_KEY_Z, GLFW_MOD_CONTROL, edUndo_.empty() ? UiExp::state("ednotice") : UiExp::state("edmap"));
+    ui_.keyAction("CTRL+Y (REDO)", GLFW_KEY_Y, GLFW_MOD_CONTROL, edRedo_.empty() ? UiExp::state("ednotice") : UiExp::state("edmap"));
     if (!edOnline_) ui_.keyAction("CTRL+S (SAVE)", GLFW_KEY_S, GLFW_MOD_CONTROL, UiExp::state("usermaps"));
     ui_.keyAction("] (BIGGER GRID)", GLFW_KEY_RIGHT_BRACKET, 0, edGridIdx_ < 5 ? UiExp::state("edgrid") : UiExp::inert());
     ui_.keyAction("[ (SMALLER GRID)", GLFW_KEY_LEFT_BRACKET, 0, edGridIdx_ > 0 ? UiExp::state("edgrid") : UiExp::inert());
@@ -420,6 +440,7 @@ private:
             if (holdDemo_ && g_.net_.playback() && g_.net_.hasSnapshot()) g_.net_.holdPlaybackClock();
             double now = timeNow(), dt = std::min(0.1, std::max(0.0005, now - last_));
             last_ = now;
+            g_.setInkBottom_ = -1;   // (set again if this frame draws a settings page)
             g_.frame(dt);
             glfwSwapBuffers(win_);
             g_.afterSwap();
@@ -536,6 +557,7 @@ private:
     void layoutCheck() {
         const float W = (float)g_.r_.width(), H = (float)g_.r_.height();
         std::string p = path();
+        const bool searchList = p.size() >= 15 && p.compare(p.size() - 15, 15, "settings/search") == 0;
         auto issue = [&](const std::string& id, const std::string& what) {
             std::string k = resName_ + " " + sc_->name + " :: " + p + " > " + id + " : " + what;
             layout_.emplace(k, what);
@@ -545,7 +567,8 @@ private:
             if (!hasRect(a)) continue;
             if (a.x < -0.5f || a.y < -0.5f || a.x + a.w > W + 0.5f || a.y + a.h > H + 0.5f)
                 issue(ids_[i], "off screen");
-            if (a.clipped && !(a.exp.flags & UiExp::CLIP_OK)) issue(ids_[i], "label clipped (doesn't fit)");
+            // (Settings > SEARCH's cells are a third of the page wide: a long value may be cut there; it's whole on its page)
+            if (a.clipped && !(a.exp.flags & UiExp::CLIP_OK) && !searchList) issue(ids_[i], "label clipped (doesn't fit)");
             for (size_t j = i + 1; j < cur_.size(); j++) {
                 const UiWidget& b = cur_[j];
                 if (!hasRect(b)) continue;
@@ -553,6 +576,45 @@ private:
                 if (ox > 1 && oy > 1) issue(ids_[i], "overlaps " + ids_[j]);
             }
         }
+        // a settings page's content (its rows, labels and hints, not only its widgets) ends at least 4 px (at 720p)
+        // above its footer row (BACK, the page strip, the page's own button): a page that doesn't fit moves rows to
+        // another page
+        if (g_.setInkBottom_ >= 0 && g_.setInkBottom_ > g_.setFootTop_ - 4 * H / 720.0f + 0.5f) {
+            char b[112];
+            snprintf(b, sizeof b, "content runs into the footer (down to y %.0f, footer at %.0f, 4 px clear needed)", g_.setInkBottom_, g_.setFootTop_);
+            issue("(page content)", b);
+        }
+    }
+
+    // ---- Settings > SEARCH finds a setting by a word of its name or of what it does (owner: "typing in screen should
+    // show the devices, fullscreen setting, ..."): each query lists the setting wanted (shown or scrolled off), and
+    // "fov" shows the FOV slider itself on the first rows
+    void searchCheck() {
+        leaveAll();
+        hardReset();
+        g_.setScreen(Game::Screen::Settings);
+        g_.openSettingsTab(Game::TAB_SEARCH);
+        step(2);
+        struct Q { const char* query; const char* label; bool exact, shown; };
+        static const Q qs[] = {{"screen", "FULLSCREEN", false, false}, {"screen", "DISPLAY", true, false}, {"screen", "RENDER SCALE", true, false},
+                               {"screen", "WINDOW SIZE", true, false}, {"fov", "FOV", true, true}, {"FOV", "FOV", true, true},
+                               {"fov zoom", "SNIPER ZOOM FOV", true, false}, {"volume announcer", "ANNOUNCER VOLUME", true, false}};
+        int ok = 0;
+        for (const Q& q : qs) {
+            g_.setSearch_ = q.query;
+            step(3);
+            auto has = [&](const std::string& l) { return q.exact ? l == q.label : l.find(q.label) != std::string::npos; };
+            bool found = std::any_of(g_.searchMatched_.begin(), g_.searchMatched_.end(), has);
+            if (found && q.shown) found = std::any_of(cur_.begin(), cur_.end(), [&](const UiWidget& w) { return has(w.label); });
+            if (found) ok++;
+            else setupFails_.push_back(std::string("settings search: \"") + q.query + "\" doesn't " + (q.shown ? "show " : "find ") + q.label + " (" +
+                                       std::to_string(g_.searchMatched_.size()) + " matches)");
+        }
+        g_.setSearch_.clear();
+        step(2);
+        printf("uitest: settings search: %d of %zu queries found their setting\n", ok, sizeof qs / sizeof qs[0]);
+        fflush(stdout);
+        leaveAll();
     }
 
     // ---- getting around
@@ -561,7 +623,11 @@ private:
         g.ui_.clearFocus();
         g.paused_ = g.chatting_ = g.console_ = false;
         g.chatText_.clear();
-        g.settingsInGame_ = g.voteMenu_ = g.queueMenu_ = g.fontsOpen_ = g.devicesOpen_ = false;
+        g.settingsInGame_ = g.voteMenu_ = g.queueMenu_ = g.practiceMenu_ = g.playersMenu_ = g.fontsOpen_ = g.devicesOpen_ = false;
+        g.moreOpen_ = 0;
+        g.setSearch_.clear();
+        g.searchScroll_ = 0;
+        g.searchDrag_ = false;
         for (int& d : g.devScroll_) d = 0;
         g.setTab_ = Game::TAB_PLAYER;
         g.controlsSub_ = 0;
@@ -621,7 +687,7 @@ private:
         c.save();
         g.joinAddr_ = c.lastAddress;
         g.hostPortStr_ = std::to_string(c.hostPort);
-        g.ui_.accent = rgba(c.colorFriendly);
+        g.applyMenuTheme();   // (the accent and the menu theme)
         g.audio_.setMasterVolume(c.volume);
         g.audio_.setEffectsVolume(c.volumeEffects);
         g.audio_.setAnnouncerVolume(c.volumeAnnouncer);
@@ -766,7 +832,7 @@ private:
                 break;
             }
             case UiWidget::KEY:
-                if (w.count > 0) { g_.testHeld_ |= 1u << (w.count - 1); step(3); break; }   // held (released by the caller)
+                if (w.count > 0) { g_.testHeld_ |= 1ull << (w.count - 1); step(3); break; }   // held (released by the caller)
                 if (w.exp.arg) type(w.exp.arg);
                 key(w.key, w.mods);
                 break;
@@ -1257,7 +1323,7 @@ private:
         hardReset();
         ServerConfig sc;
         sc.name = edit ? "uitest edit" : "uitest";
-        sc.map = map ? map : edit ? "harbor" : "temple";   // (the guest may save a copy: not of the ranked map the host scenarios use)
+        sc.map = map ? map : edit ? "sewer" : "qk1";   // (the guest may save a copy: not of the ranked map the host scenarios use)
         sc.mode = mode;
         sc.port = 0;
         sc.lanOnly = true;
@@ -1290,7 +1356,7 @@ private:
     void pumpServer(double seconds) { double until = timeNow() + seconds; while (timeNow() < until) { srv_->frame(); sleepMs(1); } }
     // hide and seek with us seeking (the seeker holds the knife and the locator, slot key 0)
     bool hideSeeker() {
-        if (!ownServer(false, false, MODE_HIDE, "hamlet")) return false;
+        if (!ownServer(false, false, MODE_HIDE, "museum")) return false;
         pauseServer();
         Server& s = *srv_;
         s.command("forcestart");
@@ -1304,7 +1370,7 @@ private:
     bool iAmIt() const { const PlayerSnap* me = g_.net_.findPlayer(g_.net_.clientId()); return me && (me->flags & PS_HASBOMB) && isItMode(g_.net_.mode().mode); }
     // the hide and seek tiebreak (rock paper scissors among those tied for first), held at its throw
     bool hideRps() {
-        if (!ownServer(false, false, MODE_HIDE, "hamlet")) return false;
+        if (!ownServer(false, false, MODE_HIDE, "museum")) return false;
         pauseServer();
         Server& s = *srv_;
         s.command("forcestart");
@@ -1326,7 +1392,7 @@ private:
         srv_.reset();
     }
     bool recordDemo() {
-        if (!hostGame(MODE_FFA, "temple", false, false)) return false;
+        if (!hostGame(MODE_FFA, "qk1", false, false)) return false;
         g_.startRecording();
         waitFor([] { return false; }, 2.0);
         g_.net_.stopRecording();
@@ -1348,10 +1414,11 @@ private:
         // in game: every in-game screen once (host, free for all); the other situations: what differs there
         const std::vector<std::string> inGameAll = {"ingame"};
         const std::vector<std::string> noSettings = {"ingame/pause/settings", "ingame/pause/queue"};
-        v.push_back({"host-ffa", "ingame", inGameAll, {}, [=] { return hostGame(MODE_FFA, "temple", false, false); }, hosted(MODE_FFA, false, false)});
-        v.push_back({"host-vs", "ingame", inGameAll, noSettings, [=] { return hostGame(MODE_VS, "temple", false, false); }, hosted(MODE_VS, false, false)});
-        v.push_back({"host-tourney", "ingame", inGameAll, noSettings, [=] { return hostGame(MODE_TOURNEY, "temple", false, false); }, hosted(MODE_TOURNEY, false, false)});
-        v.push_back({"host-ranked", "ingame", inGameAll, noSettings, [=] { return hostGame(MODE_ARENA, "temple", true, false); }, hosted(MODE_ARENA, true, false)});
+        // (SEARCH lists the very widgets the pages have, which host-ffa tests on them in game: the menus test the tab)
+        v.push_back({"host-ffa", "ingame", inGameAll, {"ingame/pause/settings/search"}, [=] { return hostGame(MODE_FFA, "qk1", false, false); }, hosted(MODE_FFA, false, false)});
+        v.push_back({"host-vs", "ingame", inGameAll, noSettings, [=] { return hostGame(MODE_VS, "qk1", false, false); }, hosted(MODE_VS, false, false)});
+        v.push_back({"host-tourney", "ingame", inGameAll, noSettings, [=] { return hostGame(MODE_TOURNEY, "qk1", false, false); }, hosted(MODE_TOURNEY, false, false)});
+        v.push_back({"host-ranked", "ingame", inGameAll, noSettings, [=] { return hostGame(MODE_ARENA, "qk1", true, false); }, hosted(MODE_ARENA, true, false)});
         v.push_back({"client-spectator", "ingame", inGameAll, noSettings, [=] { return ownServer(false, true); },
                      [=] { return g_.screen_ == Game::Screen::InGame && !g_.host_ && srv_ && g_.net_.state() == ConnState::Connected && g_.net_.hasSnapshot(); }});
         v.push_back({"demo", "ingame", inGameAll, noSettings,
@@ -1389,9 +1456,9 @@ private:
         Scenario builtin{"editor-builtin", "editor", {"editor"}, {"editor-online"},
                      [=] {
                          leaveAll();
-                         g_.openEditor("temple");
+                         g_.openEditor("qk1");
                          step(2);
-                         g_.edDo("t Temple (my edits)", "t " + g_.ed_.title);
+                         g_.edDo("t QK1 Ring (my edits)", "t " + g_.ed_.title);
                          step(2);
                          saveEdView();
                          return g_.screen_ == Game::Screen::Editor && g_.edDirty_ && g_.edOfficial();
@@ -1415,7 +1482,7 @@ private:
         v.push_back({"edit-guest", "editor-online", {"editor-online", "main/save-copy"}, {},
                      [=] {   // (the built-in map, changed: leaving always asks "save your copy?" - unchanged, it doesn't)
                          if (!ownServer(true, false)) return false;
-                         const std::string t0 = g_.ed_.title, t1 = "Harbor (uitest copy)";
+                         const std::string t0 = g_.ed_.title, t1 = "Sewer (uitest copy)";
                          g_.edDo("t " + t1, "t " + t0, false, false);
                          bool ok = waitFor([&] { return g_.ed_.title == t1 && g_.net_.map().title == t1; }, 10);
                          step(2);
@@ -1539,6 +1606,7 @@ int UiTest::run() {
     std::vector<Scenario> all = scenarios();
     auto wanted = [&](const std::string& n) { return o_.uiTestOnly.empty() || ("," + o_.uiTestOnly + ",").find("," + n + ",") != std::string::npos; };
     for (auto& sc : all) if (wanted(sc.name)) runScenario(sc);
+    if (wanted("menus")) searchCheck();
     // the other resolutions: the same screens, layout only (16:9 large, 4:3)
     for (auto res : {std::make_pair(1920, 1080), std::make_pair(1024, 768)}) {
         setResolution(res.first, res.second);

@@ -5,7 +5,7 @@ base race
 use race
 
 param rounds int = 3
-param roundTime f32 = 300 # two loops of Viaduct
+param roundTime f32 = 0 # no clock: a round runs until someone finishes (owner, 2026-10-31)
 param respawnTime f32 = 1
 
 slot canAutoStart:
@@ -24,7 +24,7 @@ slot canHit:
 
 slot tick:
   raceStep()
-  if now >= phaseEnd: endRound(none, "time")
+  if phaseEnd > 0 and now >= phaseEnd: endRound(none, "time") # (only a clock a host or mod set)
 
 slot finish:
   endRound(p)
