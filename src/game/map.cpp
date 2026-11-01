@@ -507,7 +507,8 @@ static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2, upgradeMap2to3, up
 static_assert(sizeof kMapUpgrades / sizeof kMapUpgrades[0] == kMapFormatVersion - 1,
               "a map format change needs its converter step in kMapUpgrades (owner rule)");
 
-static_assert(kSpawnModes == MODE_COUNT, "a mode spawn set per mode (map.h)");
+static_assert(kSpawnModes == MODE_COUNT - 1 && MODE_WINNER == MODE_COUNT - 1, "a mode spawn set per mode but winner stays (map.h: it uses 1v1's)");
+static_assert(spawnSetFor(MODE_WINNER) == MODE_ARENA && spawnSetFor(MODE_POWER) == MODE_POWER, "spawnSetFor (map.h)");
 bool modeSetAllowed(int mode) { return mode >= 0 && mode < kSpawnModes && mode != MODE_RACE && mode != MODE_POINTS; }
 std::string spawnTeamWord(int team) {
     static const char* sides[] = {"a", "b", "any", "race"};
@@ -2097,12 +2098,13 @@ bool Map::supportsMode(int mode) const {
 
 bool Map::canSupportMode(int mode) const {
     // (a side counts with the mode's own set's spawns too: modeSpawnType starts the mode on those)
-    auto has = [&](int t) { for (auto& s : spawns) if (s.team == t || (mode >= 0 && mode < kSpawnModes && s.team == modeSpawn(mode, t))) return true; return false; };
+    auto has = [&](int t) { for (auto& s : spawns) if (s.team == t || (spawnSetFor(mode) >= 0 && spawnSetFor(mode) < kSpawnModes && s.team == modeSpawn(spawnSetFor(mode), t))) return true; return false; };
     bool teams = has(SPAWN_A) && has(SPAWN_B);
     switch (mode) {
         case MODE_VS:
         case MODE_DUEL:
         case MODE_ARENA:
+        case MODE_WINNER:
         case MODE_POWER: return teams;
         case MODE_TOURNEY: return !spawns.empty();
         case MODE_BOMB: return teams && !bombSites.empty();

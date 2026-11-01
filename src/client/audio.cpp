@@ -394,21 +394,33 @@ void Audio::setListener(const Vec3& pos, float yaw) {
 // (a quip: one the voice has, and QUIPS on; never another voice's set, never one asked for while they're off)
 static bool playable(int id, int quips, bool quipsOn) { return id >= 0 && (id < SND_COUNT || (quipsOn && id >= SND_QUIP && id - SND_QUIP < quips)); }
 
+// steady seconds, for a pending sound's age
+static double steadyNow() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
+// A sound that waited longer than this for the mixer is dropped, not started late (owner, 2026-11-01: alt-tabbing back
+// in played "like 200 sounds at once": the device had stalled in the background and every sound queued meanwhile
+// started together). An announcer line may wait longer.
+constexpr double kPendingMaxAge = 0.2, kPendingLineMaxAge = 1.5;
+constexpr int kMaxNewFx = 32;   // (a rocket fight's shots, hits and blasts in one 10 ms period stay well under it)
+
 void Audio::play(int id, float volume, float pitch, int pack) {
+    if (master_.load(std::memory_order_relaxed) <= 0) return;   // (MUTE IN BACKGROUND / volume 0: nothing to queue)
     if (!running_ || !playable(id, quipCount(), quipsOn_) || (id < 64 && (muted_.load(std::memory_order_relaxed) >> id & 1))) return;
     Voice v{id, (pack < 0 || pack >= kPacks) ? pack_.load() : pack, 0, pitch, volume, volume, false, {}, volume};
+    v.queued = steadyNow();
     std::lock_guard<std::mutex> l(mu_);
     v.seq = ++voiceSeq_;
     addVoice(pending_, v, kMaxPending);
 }
 
 void Audio::play3D(int id, const Vec3& pos, float volume, float pitch, int pack) {
+    if (master_.load(std::memory_order_relaxed) <= 0) return;
     if (!running_ || !playable(id, quipCount(), quipsOn_) || (id < 64 && (muted_.load(std::memory_order_relaxed) >> id & 1))) return;
     Voice v{id, (pack < 0 || pack >= kPacks) ? pack_.load() : pack, 0, pitch, 0, 0, true, pos, volume};
     voiceGains(v, listener_, rightOf(listenerYaw_));
     if (v.gainL + v.gainR < 0.002f) return; // inaudible
     if (keepHeard && heard.size() < 64) heard.push_back({id, pos});
     if (occluder) { v.occl = clampf(occluder(listener_, pos), 0, 1); if (v.occl > 0) voiceGains(v, listener_, rightOf(listenerYaw_)); }
+    v.queued = steadyNow();
     std::lock_guard<std::mutex> l(mu_);
     v.seq = ++voiceSeq_;
     addVoice(pending_, v, kMaxPending);
@@ -445,7 +457,16 @@ void Audio::takePending() {
     }
     if (newLines)   // (a voice change cuts the lines playing in the old voice)
         voices_.erase(std::remove_if(voices_.begin(), voices_.end(), [](const Voice& v) { return v.id >= SND_VOICE_THREE; }), voices_.end());
-    for (const Voice& v : incoming_) addVoice(voices_, v, kMaxVoices);   // (in the order they were played)
+    // (in the order they were played; one that waited too long, a stalled device: dropped; and at most kMaxNewFx sound
+    // effects start in one period, the newest: a backlog of events handled in one frame after a stall stays a few)
+    const double now = incoming_.empty() ? 0 : steadyNow();
+    int fxLeft = 0;
+    for (const Voice& v : incoming_) fxLeft += v.id < SND_VOICE_THREE;
+    for (const Voice& v : incoming_) {
+        const bool fx = v.id < SND_VOICE_THREE;
+        const bool skip = fx && fxLeft-- > kMaxNewFx;   // (the oldest of a burst over the cap)
+        if (!skip && (v.queued <= 0 || now - v.queued <= (fx ? kPendingMaxAge : kPendingLineMaxAge))) addVoice(voices_, v, kMaxVoices);
+    }
     incoming_.clear();
 }
 

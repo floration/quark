@@ -897,12 +897,13 @@ class M:
             x += step
     def save(s, name, dress=True):
         MADE.append(name)
+        # (a 1v1 map also offers tourney and winner stays: q, 2026-11-01 "tourney + 1v1 can be played on any 1v1 map")
         # each map plays the mode it's built for (plus any it lists in `also`), and free for all (not a surf course: its
         # stages are ridden, not walked between). Lodestone lists most modes.
         # (any map can still be started in any mode: the menus warn that it may not work)
         mode = next((l.split()[1] for l in s.lines if l.startswith("for ")), None)
         s.lines = [l for l in s.lines if not l.startswith("modes ")]
-        if mode: s.lines.insert(4, "modes " + " ".join([mode] + getattr(s, "also", []) + ([] if mode in ("ffa", "surf") or getattr(s, "no_ffa", False) else ["ffa"])))   # (no_ffa: a one-way race course)
+        if mode: s.lines.insert(4, "modes " + " ".join([mode] + getattr(s, "also", []) + [x for x in ("tourney", "winner") if "1v1" in [mode] + getattr(s, "also", []) and x not in [mode] + getattr(s, "also", [])] + ([] if mode in ("ffa", "surf") or getattr(s, "no_ffa", False) else ["ffa"])))   # (no_ffa: a one-way race course)
         s.name = name
         offered = next((l.split()[1:] for l in s.lines if l.startswith("modes ")), None)   # (None: every mode)
         s.top_up_spawns(offered)

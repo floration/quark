@@ -67,11 +67,12 @@ constexpr ModeParams builtinModeParamsFor(int mode) {
     ModeParams p;
     p.respawnTime = modeRespawnDelay(mode);
     // 1v1, duel and tourney: rounds are one kill each way, so the round end is shorter (T22: 4 s was a large share)
-    if (mode == MODE_ARENA || mode == MODE_DUEL || mode == MODE_TOURNEY) p.roundEndTime = 2.5f;
+    if (isOneVsOneMode(mode) || mode == MODE_DUEL || mode == MODE_TOURNEY) p.roundEndTime = 2.5f;
     switch (mode) {
         case MODE_VS: p.rounds = 5; break;
         case MODE_DUEL: p.rounds = 11; break;          // first to 11 lives
         case MODE_ARENA: p.rounds = 5; break;
+        case MODE_WINNER: p.rounds = 10; break;        // first to 10 round wins (each player's own count)
         case MODE_TOURNEY: p.rounds = 3; break;        // each bracket match
         case MODE_BOMB: p.rounds = 7; p.roundTime = 105.0f; break;
         case MODE_RACE: case MODE_SURF: p.rounds = 3; break;   // no clock: a round runs until someone finishes (owner, 2026-10-31)
@@ -90,6 +91,7 @@ inline constexpr ModeParams kBuiltinModeParams[MODE_COUNT] = {
     builtinModeParamsFor(0), builtinModeParamsFor(1), builtinModeParamsFor(2), builtinModeParamsFor(3), builtinModeParamsFor(4),
     builtinModeParamsFor(5), builtinModeParamsFor(6), builtinModeParamsFor(7), builtinModeParamsFor(8), builtinModeParamsFor(9),
     builtinModeParamsFor(10), builtinModeParamsFor(11), builtinModeParamsFor(12), builtinModeParamsFor(13), builtinModeParamsFor(14),
+    builtinModeParamsFor(15),
 };
-static_assert(MODE_COUNT == 15, "a new mode needs its row in kBuiltinModeParams");
+static_assert(MODE_COUNT == 16, "a new mode needs its row in kBuiltinModeParams");
 inline const ModeParams& builtinModeParams(int mode) { return kBuiltinModeParams[mode >= 0 && mode < MODE_COUNT ? mode : MODE_FFA]; }

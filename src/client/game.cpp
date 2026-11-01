@@ -765,7 +765,8 @@ int Game::bestMapFor(int mode) const {
             preferred = m.preferredMode;
         }
         // tag plays on the hide and seek map, power on the team vs one
-        if (preferred == mode || (mode == MODE_TAG && preferred == MODE_HIDE) || (mode == MODE_POWER && preferred == MODE_VS)) return (int)i;
+        if (preferred == mode || (mode == MODE_TAG && preferred == MODE_HIDE) || (mode == MODE_POWER && preferred == MODE_VS) ||
+            (mode == MODE_WINNER && preferred == MODE_ARENA)) return (int)i;   // (winner stays: a 1v1 map)
         if (fallback < 0) fallback = (int)i;
     }
     return fallback < 0 ? 0 : fallback;
@@ -2652,7 +2653,7 @@ void Game::drawWorld(float alpha) {
                                 r_.box(face + rgt * (x0 + c * px) + Vec3(0, (2 - r) * px, 0), Vec3(px * 0.5f, px * 0.5f, 0.012f * bs), yaw, dark, sv, false);
                 }
         }
-        // health bars over other players (VISUALS > HEALTH BARS; not in ranked)
+        // health bars over other players (VISUALS > HEALTH BARS; ranked too since 2026-11-01)
         // only when the whole body is in sight (no seeing a bar through a wall or over cover: every corner and the
         // middle of the hitbox has a clear line from the camera), and exactly as wide as the hitbox on screen
         auto wholeBodySeen = [&] {
@@ -2670,7 +2671,7 @@ void Game::drawWorld(float alpha) {
             }
             return true;
         };
-        if (cfg_.healthBars && !ranked && !self && i != viewing) {
+        if (cfg_.healthBars && !self && i != viewing) {   // (ranked too: owner, 2026-11-01 "because healthbars are enabled they should be allowed in ranked")
             float sx, sy, lx, ly, rx, ry;   // over their head, or at their feet (VISUALS > HEALTH BAR POSITION)
             Vec3 at = cfg_.healthBarsBottom ? pos + Vec3(0, -0.15f, 0) : pos + Vec3(0, 2.0f * bs + 0.35f, 0);
             Vec3 side = Vec3(std::cos(camYaw), 0, -std::sin(camYaw)) * (kPlayerHalfWidth * bs);   // (the hitbox's half width, across the view)
@@ -3841,7 +3842,7 @@ void Game::scoreText(ScoreText& t, bool sample) const {
     char b[160];
     if (ms.flags & MS_TIMETRIAL) t.title = "TIME TRIAL - " + upper(net_.map().title.empty() ? net_.map().name : net_.map().title);
     else if (ms.flags & MS_RANKED) { snprintf(b, sizeof b, "%s - %s", rankedKind(ms.arenaVariant), arenaVariant(ms.arenaVariant).title); t.title = b; }
-    else if (ms.mode == MODE_ARENA || (ms.mode == MODE_TOURNEY && ms.phase != PHASE_WARMUP) || (ms.mode == MODE_FFA && ms.arenaVariant != 0)) {   // (free for all: a ruleset other than vanilla)
+    else if (isOneVsOneMode(ms.mode) || (ms.mode == MODE_TOURNEY && ms.phase != PHASE_WARMUP) || (ms.mode == MODE_FFA && ms.arenaVariant != 0)) {   // (free for all: a ruleset other than vanilla)
         snprintf(b, sizeof b, "%s - %s", modeTitle(ms.mode), arenaVariant(ms.arenaVariant).title); t.title = b;
     } else t.title = modeTitle(ms.mode);
     b[0] = 0;
@@ -3864,7 +3865,7 @@ void Game::scoreText(ScoreText& t, bool sample) const {
             hudLiveLine(ms, line, sizeof line, isRaceMode(ms.mode) ? (float)(timeNow() - raceRunStart_) : -1.0f);
             // (GAMEPLAY > MORE 3: the plain round clock as TIME PLAYED, and / or with tenths in its last 10 s)
             const bool plain = ms.timeLeft > 0 && !(ms.flags & (MS_OVERTIME | MS_TIMETRIAL)) && ms.mode != MODE_KOTH && ms.mode != MODE_VS &&
-                               ms.mode != MODE_DUEL && ms.mode != MODE_ARENA && ms.mode != MODE_TOURNEY && !(ms.mode == MODE_BOMB && ms.bombState == BOMB_PLANTED);
+                               ms.mode != MODE_DUEL && !isOneVsOneMode(ms.mode) && ms.mode != MODE_TOURNEY && !(ms.mode == MODE_BOMB && ms.bombState == BOMB_PLANTED);
             if (ms.round != clockRound_) { clockRound_ = ms.round; clockLen_ = 0; }
             if (plain) clockLen_ = std::max(clockLen_, ms.timeLeft);
             if (plain && (cfg_.clockMode == 1 || (cfg_.clockTenths && ms.timeLeft < 10))) {
@@ -4431,6 +4432,8 @@ void Game::drawHud() {
         obj = "POWER - NOBODY DIES: HITS DRAIN THE TEAM POOL";
     } else if (ms.mode == MODE_ARENA) {
         obj = arenaVariant(ms.arenaVariant).desc;
+    } else if (ms.mode == MODE_WINNER) {
+        obj = "WINNER STAYS - FIRST TO " + std::to_string(ms.roundsToWin) + " ROUND WINS - " + arenaVariant(ms.arenaVariant).desc;
     } else if (ms.mode == MODE_TOURNEY && ms.phase != PHASE_WARMUP && !bracket_.empty() && bracketRound_ < (int)bracket_.size()) {
         const auto& r = bracket_[bracketRound_];
         int a = 2 * bracketMatch_ < (int)r.size() ? r[2 * bracketMatch_] : -1, b = 2 * bracketMatch_ + 1 < (int)r.size() ? r[2 * bracketMatch_ + 1] : -1;
@@ -4532,7 +4535,7 @@ void Game::drawHud() {
     }
 
     {   // (GAMEPLAY > MORE 3: STALEMATE WARNING: the round modes' drain countdown's last 10 s over the crosshair, beeps at 10, 5)
-        const bool drainMode = ms.mode == MODE_VS || ms.mode == MODE_DUEL || ms.mode == MODE_ARENA || ms.mode == MODE_TOURNEY;
+        const bool drainMode = ms.mode == MODE_VS || ms.mode == MODE_DUEL || isOneVsOneMode(ms.mode) || ms.mode == MODE_TOURNEY;
         const int left = (int)std::ceil(ms.timeLeft);
         if (cfg_.drainWarn && drainMode && ms.phase == PHASE_LIVE && !(ms.flags & MS_DRAIN) && ms.timeLeft > 0 && left <= 10) {
             if (left != drainBeep_ && (left == 10 || left == 5)) audio_.play(SND_CHECKPOINT, 0.6f, 0.8f);
@@ -4670,8 +4673,12 @@ void Game::drawHud() {
         const ScoreboardBox b = scoreboardBox(net_.latest().players.size());
         const HudMove sm = hudMoveBegin(Settings::HUD_SCOREBOARD, b.x + b.w * 0.5f, b.y);   // (it goes with the scoreboard)
         char t[160];
+        // (accuracy: the server's, each weapon's own averaged, as the scoreboard shows it; a total over every shot let a
+        // second of the laser, 100 shots, outweigh the rest: owner, 2026-11-01)
+        const PlayerSnap* me = nullptr;
+        for (auto& p : net_.latest().players) if (p.id == net_.clientId()) me = &p;
         snprintf(t, sizeof t, "YOUR MATCH:  %d SHOTS  %d HITS  %d%% ACCURACY  %.0f DAMAGE  BEST STREAK %d", matchShots_, matchHits_,
-                 matchShots_ ? (int)std::lround(100.0 * std::min(matchHits_, matchShots_) / matchShots_) : 0, matchDmg_, matchBestStreak_);
+                 me ? (int)me->acc : 0, matchDmg_, matchBestStreak_);
         const float y0 = std::min(b.y + b.h + 12 * s, H - 40 * s);
         r_.rect(b.x, y0, b.w, 28 * s, {0, 0, 0, 0.7f});
         ui_.labelCentered(b.x + b.w * 0.5f, y0 + 6 * s, t, kWhite, 1.0f, b.w - 16 * s);
@@ -9756,6 +9763,7 @@ static const char* const kInfoPages[][48] = {
         "DUEL - 1v1 (or 2v2): every life has a random modifier (low gravity, giants, rockets only...). First to 11.",
         "1V1 - rounds on one ruleset (vanilla, laser vampire, instagib...). First to 5. Ranked 1v1 rates you on its own ladder.",
         "TOURNEY - a single-elimination bracket of 1v1s; everyone else spectates the match in progress.",
+        "WINNER STAYS - 1v1 rounds on one ruleset while everyone else waits in line. Each round's winner stays; the loser goes to the back of the line and the next in line plays the winner. Every round you win counts: first to 10 wins.",
         "# EVERYONE FOR THEMSELVES",
         "FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next kill wins).",
         "RACE - the course's checkpoints in order. It starts as untimed practice; vote start (F4) to race. TIME TRIAL (main menu, or PLAY TIME TRIAL on the leaderboard) is the ranked race on each race map; the leaderboard's RACE TOTAL adds your best on every one, a map you haven't run counting at its default time.",
@@ -10942,6 +10950,7 @@ void Game::drawPicker(float cx, float y) {
                 if (m >= 0 && m < (int)mapInfo_.size() && (mapInfo_[m].modes >> i & 1)) it.sub = "MAP: " + upper(mapInfo_[m].title);
             }
             if (i == MODE_ARENA) it.sub = "9 RULESETS >";
+            if (i == MODE_WINNER) it.sub = "1V1 ROUNDS, LOSER TO THE BACK OF THE LINE - FIRST TO 10 - RULESETS >";
             if (i == MODE_TOURNEY) it.sub = "BRACKET OF 1V1S - RULESETS >";
         } else {
             const MapInfo& mi = mapInfo_[vis[i]];

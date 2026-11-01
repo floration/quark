@@ -505,3 +505,28 @@ Worker 2's share of the 1-scored items, in the same batch-3 key table (`b3Keys`)
 - **Leavers.** In warmup, `fillOneVsOneSeats` gives an empty seat (a player gone for good, after the reconnect grace) to the first in line.
 - No protocol change: the line lives on the server, the messages are ordinary events.
 - Test: `quark_tests duel` (testWinnerStays): join order, the loser to the back, a draw, cyclic order over three matches, leaving the line, a leaver's seat.
+
+## Winner stays mode (owner, 2026-11-01: "make a new winner stays mode, its like 1v1, but winner stays 1 round at a time first to 10 wins is the winner")
+- `MODE_WINNER` 15, "winner" / WINNER STAYS; protocol 59 (an older client has no mode 15). `isOneVsOneMode()` = 1v1 or winner stays: everything 1v1 does (one human a side, the drain, the short round end, the rulesets, the HUD clock) winner stays does too.
+- **Rounds, not matches, rotate.** The 1v1 line (`queueSeq`, from winner stays for 1v1 matches) turns every round: `endRound` keeps the round's winning team (`roundWinner_`), and when the round end screen is over `winnerStaysNext` puts the loser at the back of the line and seats the first in line on the loser's side (a draw: the same two again), then fills a seat a leaver left.
+- **Score = round wins.** A round win is +1 to the player's own score (a kill scores nothing here, `nativeKill` and winner.qlogic's `slot kill`); scoreA / scoreB always show the two seated players' totals (`Server::syncWinnerScores`), so the match ends through the ordinary first-to-rounds check at 10 (`rounds` 10). The scoreboard shows the score (round wins).
+- **Mode logic:** tools/modes/winner.qlogic, with a new object `line` and its step `winnerStays()` (MA_WINNER_STAYS); the native rules match it.
+- **Maps:** winner stays plays on 1v1's spawn set (`spawnSetFor`, map.h), so there is no map format change; prefabs.py offers it (and tourney) on every map that offers 1v1. The menus pick a map built for 1v1.
+- Not ranked: the ladders stay 1v1 and FFA.
+- Test: `quark_tests duel` (testWinnerStaysMode): the loser to the back each round, round wins as the score, the match over at the 10th.
+
+## Tourney on any 1v1 map (owner, 2026-11-01: "tourney shouldnt have map overrides, tourney + 1v1 can be played on any 1v1 map")
+- prefabs.py adds `tourney` to the `modes` line of every map that offers 1v1 (before, only the qk maps, Greenhouse and Orbit listed it), so the host picker, the vote and the TOURNEY MAPS rotation list every 1v1 map.
+
+## Alt-tab sound burst (owner, 2026-11-01: "when you are alt tabbed out of the game and tab back in it plays like 200 sounds at once")
+- Each queued sound carries when it was played (`Voice::queued`); the mixer drops a sound effect that waited over 0.2 s (an announcer line 1.5 s) instead of starting it late. A device that stalls in the background (exclusive audio gives way to another app) had kept up to 256 sounds pending and started them all together.
+- At most 32 new sound effects start in one mixer period (the newest); the rest of a burst is dropped. A backlog of events handled in one frame stays a few sounds.
+- With the master gain at 0 (MUTE IN BACKGROUND, or volume 0) nothing is queued at all.
+
+## Accuracy: each weapon's own, averaged (owner, 2026-11-01: "it should count as percent of shots per weapon averaged not total shots because 30% lg for 1 second means 300 shots landed and 700 shots missed and will lock your acc to lg")
+- `ServerPlayer::wpnShots` / `wpnHits` per weapon; ACC (`PlayerSnap::acc`) is the mean of the fired weapons' hit percentages. Example: laser 30% over 100 shots and rifle 80% over 10: 55% (by total shots it was 34%).
+- The match summary's accuracy is the server's now (it was the client's total over every shot).
+- Reset: every match start (`startMatch`) and every new player, as before (`resetAccuracy`). Test: testAccuracyPerWeapon.
+
+## Health bars in ranked (owner, 2026-11-01: "because healthbars are enabled they should be allowed in ranked")
+- The ranked check on the health bars over players is gone (game.cpp): ranked draws them like any other match when HEALTH BARS OVER PLAYERS is on (the default). The server already sent visible players' health in ranked; nothing else changes.

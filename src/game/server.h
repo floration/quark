@@ -164,6 +164,17 @@ struct ServerPlayer {
     float dmgDealt = 0, objTime = 0;    // scoreboard: damage to enemies, seconds on the objective (score = dmg / 10 + obj)
     double hideSurvived = 0;    // hide and seek: seconds hidden (alive, not seeking) in live rounds this match: the first tiebreak (T23)
     int shotsFired = 0, shotsHit = 0;   // accuracy: shots (hitscan or projectile) that damaged an enemy
+    // ...and each weapon's own: the accuracy shown is the average of the weapons fired (owner, 2026-11-01: by total
+    // shots, a second of the laser at 100 shots a second outweighed everything else)
+    int wpnShots[WPN_COUNT] = {}, wpnHits[WPN_COUNT] = {};
+    void addShot(int w) { shotsFired++; if (w >= 0 && w < WPN_COUNT) wpnShots[w]++; }
+    void addHit(int w) { shotsHit++; if (w >= 0 && w < WPN_COUNT) wpnHits[w]++; }
+    void resetAccuracy() { shotsFired = shotsHit = 0; for (int w = 0; w < WPN_COUNT; w++) wpnShots[w] = wpnHits[w] = 0; }
+    int accuracy() const {   // %: the mean of each fired weapon's hits / shots
+        int sum = 0, n = 0;
+        for (int w = 0; w < WPN_COUNT; w++) if (wpnShots[w] > 0) { sum += std::min(100, wpnHits[w] * 100 / wpnShots[w]); n++; }
+        return n ? sum / n : 0;
+    }
     bool hitSinceShot = false;
     // The game reports its own hits (owner, 2026-10-28: "all damage should be client side ... high trust society game"):
     // its hitscan shots and its rockets' and bolts' hits count as its screen showed them ("hit" commands); the server
@@ -362,9 +373,11 @@ public:
     // first in line plays the winner. An open seat (a leaver) is filled from the line in warmup.
     bool oneVsOne() const;
     void queueToPlay(int id);       // to the back of the line (and tells them where they are)
-    void rotateWinnerStays(int winner);   // at the match end screen's end: winner the winning team (else nothing)
+    void rotateWinnerStays(int winner);   // after a match (winner stays: a round): winner the winning team (else nothing)
+    void syncWinnerScores();          // winner stays: scoreA / scoreB = the seated players' round wins
     void fillOneVsOneSeats();       // warmup: an empty 1v1 seat gets the first in line
     uint32_t queueNext_ = 0;
+    int roundWinner_ = -1;          // the team that won the round that just ended (-1: a draw)
     int matchWinner_ = -1;          // the team that won the match that just ended (-1: a draw / none)
     // Stuck knives / bolts / syringes (StuckProp, EV_PROP; cosmetic): the world ones go to everyone as they land (the
     // newest kPropReplay are replayed to whoever joins later); one in a player goes to each client once that player is
