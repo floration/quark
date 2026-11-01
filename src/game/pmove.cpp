@@ -26,7 +26,7 @@ constexpr float kAirControlFrom = 9.5f;   // m/s: where W-only steering starts l
 constexpr float kAirControlW = 0.9f;      // W-only air control's turn rate x this at every speed: 3.6 rad/s under 9.5 m/s,
                                           // 0.9 x 38 / speed above (owner 1.18: "reduce w strafing by 10%"; `cross` below
                                           // still comes from the unscaled 4)
-constexpr float kAirDriftAccel = 8.0f;  // m/s2: below run speed, held direction also pushes you this hard in the air (owner
+constexpr float kAirDriftAccel = 0.0f;  // m/s2 (owner, 2026-11-01: "change air drift to 0"; was 8): below run speed, held direction also pushes you this hard in the air (owner
                                         // 1.17: a standing jump drifts like a run-up one would, never past run speed)
 constexpr float kStrafeBoost = 0.10f;   // a strafe key held: air acceleration x (1 + this), ramping in from 12.65 m/s to
                                         // 1.25x that (15.8), so at speed A/D turns beat W-only (owner 1.17)
