@@ -310,6 +310,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
 
     const bool grappleOnly = (s.mods & MOVE_GRAPPLE_ONLY) != 0;
     bool jumpHeld = (cmd.buttons & BTN_JUMP) != 0 && !grappleOnly;
+    if (jumpHeld) s.dashSlide = false;   // (a jump ends the dash slide)
     bool frozen = (s.flags & MF_FROZEN) != 0;
     const bool grounded = onGround;          // on the floor as this step starts (the dash jump / super dash need it)
     const bool dashActive = s.dashTimer > 0; // a dash from an earlier step still running
@@ -444,6 +445,10 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             dashing = false;
             onGround = false;
         }
+        // Dash slide (owner, 2026-11-01: "if you dash down into the ground, without holding space, it should put you on
+        // ice level of sliding until you go back to regular speed, or until you press jump"): a dash aimed down that
+        // meets the floor with no jump leaves you on ice's grip until you're down to run speed or jump
+        if (dashing && grounded && down && !wantJump) s.dashSlide = true;
     }
     if (dashing) {
         // Short, strong burst, tilted a little by where you look: no gravity, no steering.
@@ -607,7 +612,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         // the floor's grip: ice slippery (little friction, little push), rubber and asphalt grippy (more of both), mud
         // sticky (it stops you hard)
         float grip = 1.0f, push = 1.0f;
-        if (floorMat == kMatIce) { grip = kIceFriction; push = kIceAccel; }
+        if (floorMat == kMatIce || (s.dashSlide && !dashing)) { grip = kIceFriction; push = kIceAccel; }
         else if (floorMat == kMatRubber) { grip = kRubberGrip; push = kRubberGrip; }
         else if (floorMat == kMatAsphalt) { grip = kAsphaltGrip; push = kAsphaltGrip; }
         else if (floorMat == kMatMud) grip = kMudGrip;
@@ -621,6 +626,8 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         }
         accelerate(s.vel, wishDir, wishSpeed, (kGroundAccel * mt.m[MV_GROUND_ACCEL]) * push, dt);
         s.vel.y = 0;
+        if (s.dashSlide && !dashing && s.vel.x * s.vel.x + s.vel.z * s.vel.z <= (kGroundSpeed * mt.speed) * (kGroundSpeed * mt.speed))
+            s.dashSlide = false;   // (back to run speed: the slide is over)
     } else {
         if (!dashing && !onLadder) {
             // surf: strafing into a ramp you touch holds you on it (kRampAirAccel: the wish-speed cap stays, so it's grip,
