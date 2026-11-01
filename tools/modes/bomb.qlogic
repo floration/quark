@@ -23,9 +23,9 @@ slot roundStart:
   c = random(p in team(attackers) where alive(p))
   if c != none: giveBomb(c)
 
-# A planter or defuser can't move.
+# (a planter or defuser isn't frozen: the engine drops their own movement and fire, knockback still moves them)
 slot frozen:
-  return phase == freeze or (phase == live and bomb.acting == p)
+  return phase == freeze
 
 slot tick:
   bombStep()

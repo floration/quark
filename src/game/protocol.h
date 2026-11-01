@@ -167,6 +167,12 @@ struct ModeState {
     uint8_t arenaVariant = 0; // 1v1: ArenaVariant index
     uint16_t weaponMask = 0;  // weapons allowed right now (bit per weapon); 0 = all
 };
+// Planting or defusing (owner, 2026-11-01: "when defusing/planting you take no knockback this is wrong"): your own
+// movement and shooting are locked (the command's movement, jump, dash, grapple and fire are dropped, on the server
+// and in your own prediction alike), but knockback, blasts and pulls still move you; knocked out of range, the plant
+// or defuse stops as usual. It was the round start's full freeze, which threw every velocity away.
+inline bool bombRooted(const ModeState& m, int id) { return m.mode == MODE_BOMB && m.phase == PHASE_LIVE && m.actionPlayer == id; }
+inline void rootCmd(UserCmd& c) { c.forward = 0; c.side = 0; c.buttons &= (uint16_t)~(BTN_JUMP | BTN_DASH | BTN_GRAPPLE | BTN_FIRE | BTN_ALTFIRE); }
 enum : uint8_t { MS_DRAIN = 1, MS_OVERTIME = 2, MS_CONTESTED = 4, MS_EDITING = 8, MS_RANKED = 16, MS_TEMP_EDIT = 32, MS_TIMETRIAL = 64, MS_RPS = 128 }; // MS_RPS: the hide and seek tiebreak is on (timeLeft: its clock; EV_RPS has the rest) // MS_TIMETRIAL: solo ranked race (times go to the race board) // MS_TEMP_EDIT: voted editing, reverts at the next map change // MS_EDITING: map edit session, nobody plays
 
 // Power (MODE_POWER): the teams' health pools ride in fields the mode has no other use for, so the wire format (and

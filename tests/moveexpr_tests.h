@@ -299,12 +299,12 @@ static void testMoveExprCallers() {
         setActiveRules(CustomRules());
         MoveState q;
         MoveTuning scratch;
-        CHECK(&stepTuning(q, &open, scratch) == &moveTuning() && moveValue(q, MV_HOOK_RANGE) == 1.0f && dashMaxCharges(q) == 2);
+        CHECK(&stepTuning(q, &open, scratch) == &moveTuning() && moveValue(q, MV_HOOK_RANGE) == 1.0f && dashMaxCharges(q) == 1);
         rules("move_hook_range=1.5\nexpr.friction=2\n");
         CHECK(&stepTuning(q, &open, scratch) == &moveTuning() && moveValue(q, MV_HOOK_RANGE) == 1.5f && moveValue(q, MV_FRICTION) == 2.0f);
     }
     { // dynamic: for that state
-        rules("expr.hook_range=curve(p.hspeed, 0, 20, 1, 2)\nexpr.dash_charges=p.onground ? 1.5 : 0.5\n");
+        rules("expr.hook_range=curve(p.hspeed, 0, 20, 1, 2)\nexpr.dash_charges=p.onground ? 3 : 1\n");
         MoveState slow, fast;
         fast.vel = {10, 0, 0};
         slow.flags = fast.flags = MF_ONGROUND;
@@ -348,8 +348,8 @@ static void testMoveExprCallers() {
         MoveState plain = tech("", a0), eq = tech("expr.dash_vertical=p.dashing ? 0.5 : 1\n", a1);
         printf("  10 deg down: standard vy %.2f (%d charges, aimed down %d), dash_vertical x0.5 while dashing vy %.2f (%d charges, aimed down %d)\n",
                plain.vel.y, plain.dashCharges, (int)a0, eq.vel.y, eq.dashCharges, (int)a1);
-        CHECK(!a0 && plain.vel.y > 7.0f && plain.dashCharges == 2);   // a dash jump: a full jump, every charge back
-        CHECK(a1 && eq.vel.y < plain.vel.y - 0.1f && eq.dashCharges == 1);   // a super dash: the hop (0.87 of a jump this shallow), one charge left
+        CHECK(!a0 && plain.vel.y > 7.0f && plain.dashCharges == 1);   // a dash jump: a full jump, every charge back (one by default)
+        CHECK(a1 && eq.vel.y < plain.vel.y - 0.1f && eq.dashCharges == 0);   // a super dash: the hop (0.87 of a jump this shallow); its own charge still recharging (one by default: none left)
     }
     setActiveRules(CustomRules());
 }
