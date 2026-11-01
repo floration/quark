@@ -178,3 +178,4 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 - **Ball:** a hit does 1 damage per m/s of the ball's speed relative to you (a 30 m/s hit is 30), still only above 20 m/s.
 - **Ball:** it rolls up any ramp, even past 45°, keeping its speed, and launches off the top.
 - **Website:** the game's website moves to its own address, https://quark.casa (the old floration.github.io/quark address forwards there).
+- **Fullscreen size** now has a warning: don't touch it unless you know what you're doing.

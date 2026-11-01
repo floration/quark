@@ -8117,6 +8117,8 @@ void Game::drawMoreSettings(const SetLayout& L) {
             }
             f.next();
             f.hint("EXCLUSIVE FULLSCREEN ONLY; A 4:3 SIZE IS", "STRETCHED (OR BARRED BY YOUR GPU'S SCALING)");
+            ui_.hint(f.x(), f.L.Y(f.y - 4), "WARNING: DON'T TOUCH THIS UNLESS YOU KNOW WHAT YOU'RE DOING", rgba(cfg_.warnColor), f.w());
+            f.y += 16;
         }
         if (ui_.toggle(f.x(), f.top(), w, h, "G-SYNC / FREESYNC", cfg_.vrr, UiExp::cfg("vrr"))) applyPresentMode();
         f.next();
