@@ -480,7 +480,8 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         int wallMat = -1;
         float t = map.raycast(eye, dir, range, nullptr, &wallMat, true);   // (clip refuses it, owner 2026-10-30: it hits it and lets go)
         int caught = -1, rocket = -1;   // a player or a rocket in front of the wall (or in the open) catches it instead
-        if (hp && (hp->n > 0 || hp->nr > 0)) {
+        bool ballCaught = false;
+        if (hp && (hp->n > 0 || hp->nr > 0 || hp->ball)) {
             float best = t >= 0 ? t : range;
             Vec3 inv = safeInv(dir);
             for (int k = 0; k < hp->n && k < HookProbe::kMax; k++) {
@@ -492,11 +493,23 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
                 float tk = rayAABB(eye, inv, rocketCatchBox(hp->at[k]), best);
                 if (tk >= 0 && tk < best) { best = tk; rocket = k; caught = -1; }
             }
+            if (hp->ball) {   // the ball (owner, 2026-11-01: "you should be able to hook the ball")
+                float tk = rayAABB(eye, inv, hp->ballBox, best);
+                if (tk >= 0 && tk < best) { best = tk; rocket = -1; caught = -1; ballCaught = true; }
+            }
         }
         // (a rocket still inside the release distance, one you just fired: the hook waits for it rather than catching it
         // and letting go at once, or going past it to the wall; held, it catches it a few ms later)
         const float release = kHookRelease * mt.m[MV_HOOK_RELEASE];
         if (rocket >= 0 && length(hp->pos[rocket] - (s.pos + Vec3(0, 1.0f * scale, 0))) < release) {
+        } else if (ballCaught) {   // latched onto the ball: pulled to it as to a player, the server reels it in and moves the anchor
+            hp->hitBall = true;
+            s.hookPoint = hp->ballBox.center();
+            s.hookTarget = kHookBall;
+            s.flags |= MF_HOOKED | MF_HOOKHELD;
+            s.flags &= ~MF_PULLED;
+            s.events |= ME_HOOK;
+            grabbed = true;
         } else if (rocket >= 0) {   // riding it: the anchor is the rocket as the server has it, flown with it from here on
             hp->hitRocket = rocket;
             s.hookPoint = hp->pos[rocket];

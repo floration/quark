@@ -1016,7 +1016,12 @@ void ballStep(Server& s) {
     if (!s.ballSet_) ballReset(s);
     // after a goal or the void, it waits kBallRespawn s before it's back (owner, 2026-11-01: "it shouldnt respawn instantly")
     constexpr double kBallRespawn = 3.0;
-    if (s.ballRespawnAt_ > 0) { if (s.time() >= s.ballRespawnAt_) ballReset(s); return; }
+    if (s.ballRespawnAt_ > 0) {
+        for (auto& p : s.players_)   // (out of play: any grapple on it lets go)
+            if ((p.move.flags & MF_HOOKED) && p.move.hookTarget == kHookBall) { p.move.flags &= ~MF_HOOKED; p.move.hookTarget = 0; }
+        if (s.time() >= s.ballRespawnAt_) ballReset(s);
+        return;
+    }
     for (int i = 0; i < kMaxPlayers; i++) {
         const auto& p = s.players_[i];
         if (!p.connected || !p.alive || p.team == TEAM_SPECTATOR) continue;
@@ -1056,6 +1061,18 @@ void ballStep(Server& s) {
             m.bombPos.x += map.sweepAxis(b2, 0, n.x * 0.05f);
             m.bombPos.z += map.sweepAxis(ballBox(m.bombPos), 2, n.z * 0.05f);
         }
+    }
+    // grapples on it: the anchor follows it, and each one reels it in toward its owner (owner, 2026-11-01: "you should be able
+    // to hook the ball"): 30 m/s2 toward their chest while held, up to 20 m/s toward them (the owner is pulled to it in pmove)
+    for (int i = 0; i < kMaxPlayers; i++) {
+        auto& p = s.players_[i];
+        if (!p.connected || !p.alive || !(p.move.flags & MF_HOOKED) || p.move.hookTarget != kHookBall) continue;
+        p.move.hookPoint = m.bombPos;
+        Vec3 to = (p.move.pos + Vec3(0, 1.0f, 0)) - m.bombPos;
+        const float d = length(to);
+        if (d < 1e-3f) continue;
+        to = to / d;
+        if (dot(s.ballVel_ - p.move.vel, to) < 20.0f) ballPush(s, to * (30.0f * (float)s.dt()), i);
     }
     ballMove(m.bombPos, s.ballVel_, map, s.dt());
     if (m.bombPos.y < map.killY() + 2.0f || (!map.lava.empty() && map.inLava(ballBox(m.bombPos)))) {

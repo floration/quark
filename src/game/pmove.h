@@ -103,6 +103,7 @@ enum : uint8_t {
 };
 constexpr float kGrappleRange = 45.0f;
 constexpr uint8_t kHookRocket = kMaxPlayers + 1;   // MoveState::hookTarget: the grapple rides a rocket (PlayerSnap hooked: 1 + it)
+constexpr uint8_t kHookBall = kMaxPlayers + 2;     // ...latched onto the ball (ball mode; protocol 65: the server moves hookPoint with it)
 // Rocket riding (owner 2026-10-27): the grapple catches a live rocket in flight, anyone's, as this box round it: 0.8 m
 // across, a player's width. The rocket is 0.6 m long and 0.3 m over its fins, and at 48 m/s it moves 0.8 m in a 60 Hz
 // frame, so a box the size of one frame's flight catches a hook aimed at it in any frame, and covers the few ms the
@@ -220,6 +221,9 @@ struct HookProbe {
     float grav[kRockets] = {}, accel[kRockets] = {};   // (accel: its thrust, projectileAccel)
     uint16_t rid[kRockets] = {};   // the rocket's id (0: your own predicted copy, not named by the server yet)
     int hitRocket = -1;   // out: index of the rocket the hook caught (-1: none)
+    bool ball = false;    // ball mode: the ball can catch it (ballBox: where it's seen)
+    AABB ballBox;
+    bool hitBall = false; // out: the hook caught the ball
 };
 // Advances movement by cmd.msec milliseconds, in fixed 1 ms steps (tick-rate independent). `probe`: players and rockets
 // the grapple can catch (the server's lag compensated picks; the client's, as it sees them: NetClient::hookProbe).

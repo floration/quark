@@ -95,7 +95,7 @@ bool readSnapshotClient(Reader& r, Snapshot& s, uint16_t proto) {
             const float a = r.f32();
             m.hookAccel = a >= 0.0f && a <= 100.0f ? a : 0.0f;   // (the weapon set field's range; hostile / NaN: none)
         }
-    } else if (m.hookTarget > kMaxPlayers) m.hookTarget = 0;
+    } else if (m.hookTarget > kMaxPlayers && !(m.hookTarget == kHookBall && proto >= kSnapBallHookSince)) m.hookTarget = 0;
     if (opt & 32) m.pullPoint = r.vec();
     if (opt & 64) { m.jumpBuffer = r.f32(); m.jumpGrace = r.f32(); }
     if (opt & 128) { const uint8_t b = r.u8(); m.dashBounces = b & 127; m.dashSlide = (b & 128) != 0; }
@@ -295,7 +295,7 @@ bool readSnapshotWorld(Reader& r, Snapshot& s, const Snapshot* base) {
             p.hooked = r.u8();
             if (p.hooked) p.hookPoint = r.vecq();
             p.hookProj = p.hooked == 1 + kHookRocket ? r.u16() : 0;
-            if (p.hooked > 1 + kHookRocket) p.hooked = 0;   // (the map, a player or a rocket: nothing else)
+            if (p.hooked > 1 + kHookRocket && p.hooked != 1 + kHookBall) p.hooked = 0;   // (the map, a player, a rocket or the ball: nothing else)
         }
         if (p.hidden) { p.hooked = 0; p.hookProj = 0; }
         if (p.weapon >= WPN_COUNT) return false;
