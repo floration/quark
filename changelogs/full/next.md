@@ -556,3 +556,6 @@ Worker 2's share of the 1-scored items, in the same batch-3 key table (`b3Keys`)
 - Bots: they get behind the ball on the far side from the enemy goal, then run through it.
 - Client: the goals as boxes in their team's colour (YOUR GOAL / ENEMY GOAL), the ball as three crossed boxes with a dark band that turns as it rolls, and the objective line.
 - Test: `quark_tests ball` (testBallMode): half gravity, the ice slide, the wall bounce, blast and shot pushes, a goal scoring for the other team and resetting the ball, the clock ending the match.
+
+## Movement: air drift 0 (protocol 63; owner, 2026-11-01: "change air drift to 0")
+- `kAirDriftAccel` 8 -> 0 m/s². Below run speed, a held direction in the air used to push you along it at 8 m/s² up to run speed (so a standing jump drifted like a run-up one). Now it adds nothing; strafe acceleration and air control are untouched. The `air_drift` multiplier in custom rules multiplies 0, so it does nothing now. Protocol 63, since an older client would predict the drift. Owner asked for no tests this push; the movement tests that measure drift (standing jump + W) will need their numbers updated.
