@@ -572,3 +572,6 @@ Worker 2's share of the 1-scored items, in the same batch-3 key table (`b3Keys`)
 - "if the ball hits somebody moving more than 20m/s relative to them it should damage them and knock them back": (speed - 20) x 4 damage, at most 100, a knock of half its relative velocity (at least 4 m/s up), and the ball bounces off at half that speed. The kill goes to the last player who touched it (kill cause `kDamageBall` 248, "ball"). Once per player per 0.3 s.
 - "laser needs to do more knockback like 3x, and pull doesnt work": on the ball the laser pushes 3 x its push on a player (60 m/s per second of beam; it was damage-based, about 4.8), and the pull beam pulls it toward you as hard (it used to push).
 - The ball test waits out the respawn delay.
+
+## Servers: the default install is ranked (owner, 2026-11-01: "default server config is unranked")
+- `tools/server/install.sh`'s first-install default was `--mode 1v1 --variant vampire --map dojo --public`, missing `--ranked`, though the owner's 2026-10-31 ask was "dojo ranked lg vamp". Now it adds `--ranked`. An existing install keeps its own options (run install.sh with new ones to change them).

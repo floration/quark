@@ -172,3 +172,4 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 - **No air drift:** holding a direction in the air below run speed no longer speeds you up (it pushed 8 m/s² up to run speed); air strafing is unchanged.
 - **Dash slide:** dash down into the floor without holding jump and you slide like on ice until you're back to run speed or press jump. Holding jump still gives the super dash.
 - **Ball:** it bounces off everything like rubber. After a goal (or falling out) it waits 3 s before coming back. Rockets, bolts, stickies and thrown knives hit it. A ball moving over 20 m/s into you hurts and knocks you back. The knife pops it up instead of pushing it away, and the laser pushes it 3x harder, while its pull beam now pulls it.
+- **Server install:** a new dedicated server now starts as ranked laser vampire 1v1 on Dojo, as intended (it came up unranked).
