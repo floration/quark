@@ -176,3 +176,4 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 - **Rocket:** double knockback everywhere: rocket jumps, enemies, the lob and the ball.
 - **Ball:** a knife swing pushes the ball once, not every tick of the swing.
 - **Ball:** a hit does 1 damage per m/s of the ball's speed relative to you (a 30 m/s hit is 30), still only above 20 m/s.
+- **Ball:** it rolls up any ramp, even past 45°, keeping its speed, and launches off the top.

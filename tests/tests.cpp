@@ -4454,6 +4454,16 @@ static void testBallMode(uint16_t port) {
         printf("  grapple at the ball: caught %d, target %d\n", (int)hp.hitBall, (int)mv.hookTarget);
         CHECK(hp.hitBall && mv.hookTarget == kHookBall && (mv.flags & MF_HOOKED));
     }
+    {   // a steep ramp (63 degrees, 4 m up) it rolls into at 20 m/s: it goes up it and off its top, higher than the ramp
+        Map rm;
+        std::string err;
+        CHECK(rm.parse("box -20 -1 -20 20 0 20\nspawn any 0 0 0\nwedge 0 0 6 0 -3 8 4 3\n", &err));
+        Vec3 c(0, kBallHalf + 0.01f, 0), v(20, 0, 0);
+        float top = 0;
+        for (int k = 0; k < 200; k++) { ballMove(c, v, rm, 0.005f); top = std::max(top, c.y); }
+        printf("  ball into a 63 degree ramp at 20 m/s: up to %.1f m\n", top);
+        CHECK(top > 5.0f);
+    }
     // a blast beside it pushes it away, up
     ballBlast(s, spawn - Vec3(1.5f, 0.3f, 0), 4.0f, 20.0f, -1);
     CHECK(s.ballVel_.x > 3.0f && s.ballVel_.y > 0);

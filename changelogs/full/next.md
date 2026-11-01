@@ -582,3 +582,6 @@ Worker 2's share of the 1-scored items, in the same batch-3 key table (`b3Keys`)
 ## Modes: one knife push on the ball per swing (owner, 2026-11-01: "okay so the knife got even crazier lol")
 - A swing that hits no player keeps cutting every tick for `kKnifeSwingTime` (0.12 s, so 120 hitscans at 1000 Hz), and each one pushed the ball, up to the 60 m/s cap. Now a player's knife pushes the ball at most once per 0.9 x its refire (`Server::ballKnifeAt_`): 1.5 m/s forward, 7 m/s up.
 - Ball damage (owner, 2026-11-01: "ball should only do 1 damage per m/s total"): the relative speed itself (21 to 60), no longer (speed - 20) x 4 up to 100. It still needs over 20 m/s.
+
+## Modes: the ball goes up ramps (owner, 2026-11-01: "balls should also try to go up ramps that are more than 45 and launch up still")
+- In `ballMove`, a slope's face (a wedge, corner or cut box, at any angle) is no longer a rubber wall. The ball turns along the face keeping its speed, carries the rest of the step along it, and flies off the top. A hard landing on a face (over `kRubberMin` into it) bounces like rubber about the face. Box faces stay rubber. The ball test rolls it at 20 m/s into a 63° 4 m wedge: it goes up to 8.6 m.

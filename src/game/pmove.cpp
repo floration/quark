@@ -1007,13 +1007,34 @@ bool ballMove(Vec3& c, Vec3& v, const Map& map, float dt) {
             v.y = 0;
         } else v.y -= kGravity * 0.5f * step;
         const int order[3] = {1, 0, 2};
-        for (int o : order) {
-            const float want = v[o] * step;
+        Vec3 delta = v * step;
+        for (int o = 0; o < 3; o++) {
+            const int i = order[o];
+            const float want = delta[i];
             if (want == 0) continue;
-            const float got = map.sweepAxis(AABB{c - half, c + half}, o, want);
-            c[o] += got;
-            if (std::fabs(got) + 1e-6f < std::fabs(want))   // every surface is rubber: back at kRubberBounce, a slow touch stops
-                v[o] = std::fabs(v[o]) > kRubberMin ? -v[o] * kRubberBounce : 0.0f;
+            const AABB box{c - half, c + half};
+            const Brush* hit = nullptr;
+            const float got = map.sweepAxis(box, i, want, &hit);
+            c[i] += got;
+            if (std::fabs(got) + 1e-6f >= std::fabs(want)) continue;
+            Vec3 n;
+            if (slopeContact(hit, shifted(box, i, got), n) && dot(v, n) < 0) {
+                // a slope's face, at any angle (owner, 2026-11-01: "balls should also try to go up ramps that are more
+                // than 45 and launch up still"): what goes into it bounces as off rubber when it's a hard hit landing
+                // on it, else the ball turns along the face keeping its speed, up it and off its top
+                const float into = dot(v, n), sp = length(v);
+                Vec3 along = v - n * into;
+                const float al = length(along);
+                if (i == 1 && -into > kRubberMin) v = along - n * (into * kRubberBounce);
+                else if (al > 1e-4f) v = along * (sp / al);
+                else v = along;
+                Vec3 r; r[i] = want - got;   // (the rest of this axis's move, along the face, on the axes still to come)
+                r -= n * dot(n, r);
+                for (int k = o + 1; k < 3; k++) delta[order[k]] += r[order[k]];
+                continue;
+            }
+            // every other surface is rubber: back at kRubberBounce, a slow touch stops
+            v[i] = std::fabs(v[i]) > kRubberMin ? -v[i] * kRubberBounce : 0.0f;
         }
     }
     return onGround;
