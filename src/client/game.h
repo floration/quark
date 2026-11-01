@@ -422,6 +422,9 @@ private:
     RankService rank_;
     double nextRankFetch_ = 0;
     int rankBefore_ = -1, rankGamesBefore_ = -1;
+    bool numberWanted_ = false, numberAsked_ = false;   // default name "player": its number asked from the Worker (updatePlayerNumber)
+    double nextNumberAsk_ = 0;
+    void updatePlayerNumber();
     bool helloPending_ = false;   // POST /hello in flight (retried in the background) until it took: then recorded in the config
     void updateRanked();
     double nextBoardFetch_ = 0;
