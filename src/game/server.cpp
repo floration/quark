@@ -1280,6 +1280,29 @@ void Server::sendRules(int id) {
     }
 }
 
+// The voted modifiers as a custom mode (kVotedRules), sent to everyone; "" goes back to the standard rules. `damage`
+// is every weapon's damage multiplier.
+void Server::applyVotedRules(const std::string& mods, int mode) {
+    CustomRules r;
+    if (!mods.empty()) {
+        std::string t = std::string("custommode=") + kVotedRules + "\nmode=" + modeName(mode) + "\n";
+        std::istringstream ls(mods);
+        for (std::string line; std::getline(ls, line);) {
+            if (line.rfind("damage=", 0) == 0) { for (int w = 0; w < WPN_COUNT; w++) t += "weapon=" + std::to_string(w) + ",1," + line.substr(7) + ",1\n"; }
+            else t += line + "\n";
+        }
+        r.fromText(t);
+    }
+    cfg_.custom = r;
+    setActiveRules(r);
+    for (int i = 0; i < kMaxPlayers; i++) {
+        if (!players_[i].connected || players_[i].isBot) continue;
+        if (r.active()) sendRules(i);
+        else { GameEvent e; e.type = EV_RULES; e.a = 0; e.b = 1; e.text = "custommode="; sendEvent(i, e); }   // (the standard rules again)
+    }
+    glog(LOG_SIMPLE, "voted rules: %s", mods.empty() ? "standard" : votedModsTitle(mods).c_str());
+}
+
 void Server::moveToSpectator(int id) {
     ServerPlayer& p = players_[id];
     rulesOnSpectate(*this, id);   // (tag: that's elimination)
@@ -1753,10 +1776,31 @@ void Server::handleStringCmd(int id, const std::string& s) {
             int mode = what == "mode" ? modeFromName(arg.c_str()) : m2.empty() ? cfg_.mode : modeFromName(m2.c_str());
             MapInfo m = mapInfo(mapName);
             std::string why;   // say exactly what's wrong instead of a generic refusal
-            if (mode < 0) why = "unknown mode '" + (what == "mode" ? arg : m2) + "'";
-            else if (cfg_.custom.active() && !cfg_.custom.maps.empty() && std::find(cfg_.custom.maps.begin(), cfg_.custom.maps.end(), mapName) == cfg_.custom.maps.end())
+            // modifiers after the ruleset: "mods" then key=value words ("mods" alone: back to the standard rules)
+            bool setMods = false;
+            std::string mods;
+            for (std::string w; vs >> w;) {
+                if (w == "mods") { setMods = true; continue; }
+                const size_t eq = w.find('=');
+                const std::string k = eq == std::string::npos ? w : w.substr(0, eq), v = eq == std::string::npos ? "" : w.substr(eq + 1);
+                static const char* const kNum[] = {"gravity", "speed", "jump", "knockback", "damage", "health"};
+                static const char* const kBool[] = {"vampire", "regen", "selfdamage", "dash", "grapple", "instagib"};
+                bool known = false, num = false;
+                for (const char* n : kNum) if (k == n) known = num = true;
+                for (const char* n : kBool) if (k == n) known = true;
+                char* end = nullptr;
+                const double f = v.empty() ? 0 : strtod(v.c_str(), &end);
+                if (!setMods || !known || v.empty() || !end || *end || !std::isfinite(f) || f < 0 || f > 1000 || (!num && f != 0 && f != 1)) { why = "bad modifier '" + w + "'"; break; }
+                mods += k + "=" + v + "\n";
+            }
+            if (!why.empty()) {}
+            else if (mode < 0) why = "unknown mode '" + (what == "mode" ? arg : m2) + "'";
+            else if (setMods && (cfg_.ranked || cfg_.timeTrial)) why = "no modifiers on a ranked or time trial server";
+            else if (setMods && hostCustom()) why = "this server plays the custom mode " + cfg_.custom.name;
+            else if (setMods && mode == MODE_TOURNEY && !mods.empty()) why = "tourney plays its rulesets only";
+            else if (hostCustom() && !cfg_.custom.maps.empty() && std::find(cfg_.custom.maps.begin(), cfg_.custom.maps.end(), mapName) == cfg_.custom.maps.end())
                 why = mapName + " isn't in this custom mode's map pool";
-            else if (cfg_.custom.active() && mode != cfg_.custom.baseMode) why = "this server plays the custom mode " + cfg_.custom.name;
+            else if (hostCustom() && mode != cfg_.custom.baseMode) why = "this server plays the custom mode " + cfg_.custom.name;
             else if (!m.ok) why = "this server doesn't have the map '" + mapName + "' (it may be on an older version)";
             else if (isLegacyMap(mapName) && !legacyMapsListed()) why = mapName + " is a legacy map (this server doesn't list the old maps)";   // (owner, 2026-10-31)
 
@@ -1766,7 +1810,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
                 return;
             }
             if (!ok) { GameEvent e; e.type = EV_MESSAGE; e.text = "can't vote: " + why; sendEvent(id, e); }
-            else callVote(id, VOTE_MAP, mode, mapName, variant);
+            else callVote(id, VOTE_MAP, mode, mapName, variant, setMods ? &mods : nullptr);
         }
     } else if (cmd == "vote") {
         castVote(id, rest == "yes" || rest == "y" || rest == "1");
@@ -4084,10 +4128,11 @@ void Server::updateBalanceBots(bool matchStarting) {
     while (haveB < needB && addBot(TEAM_B, cfg_.balanceBotSkill, true) >= 0) haveB++;
 }
 
-void Server::callVote(int caller, int kind, int arg, const std::string& map, int arg2) {
+void Server::callVote(int caller, int kind, int arg, const std::string& map, int arg2, const std::string* mods) {
     if (vote_.kind != VOTE_NONE) {
         // calling the same vote that's already running is a yes to it
-        if (caller >= 0 && kind == vote_.kind && arg == vote_.arg && arg2 == vote_.arg2 && map == vote_.map) { castVote(caller, true); return; }
+        if (caller >= 0 && kind == vote_.kind && arg == vote_.arg && arg2 == vote_.arg2 && map == vote_.map && vote_.setMods == (mods != nullptr) &&
+            (!mods || *mods == vote_.mods)) { castVote(caller, true); return; }
         GameEvent e; e.type = EV_MESSAGE; e.text = "a vote is already in progress";
         sendEvent(caller, e);
         return;
@@ -4098,11 +4143,14 @@ void Server::callVote(int caller, int kind, int arg, const std::string& map, int
     vote_.arg = arg;
     vote_.map = map;
     vote_.arg2 = arg2;
+    vote_.setMods = mods != nullptr;
+    if (mods) vote_.mods = *mods;
     vote_.endsAt = time() + 30.0f;
     vote_.text = kind == VOTE_BOTS        ? std::string("BALANCE BOTS ") + (arg ? "ON" : "OFF")
                : kind == VOTE_BOTSKILL    ? std::string("BOT DIFFICULTY: ") + botSkillName(arg)
                : kind == VOTE_START       ? std::string("START THE MATCH")
-               : kind == VOTE_MAP         ? "PLAY " + map + " - " + modeTitle(arg) + (modeHasRuleset(arg) ? std::string(" (") + arenaVariant(vote_.arg2).title + ")" : "")
+               : kind == VOTE_MAP         ? "PLAY " + map + " - " + modeTitle(arg) + (modeHasRuleset(arg) ? std::string(" (") + arenaVariant(vote_.arg2).title + ")" : "") +
+                                            (!vote_.setMods ? std::string() : vote_.mods.empty() ? std::string(" - STANDARD RULES") : " - " + votedModsTitle(vote_.mods))
                : kind == VOTE_TMAPS       ? "TOURNEY MAPS: " + map
                : kind == VOTE_TMODES      ? "TOURNEY RULESETS: " + map
                : kind == VOTE_EDIT        ? std::string(arg ? "EDIT THE MAP TOGETHER (CHANGES LAST UNTIL THE MAP CHANGES)" : "STOP EDITING AND PLAY THE MAP")
@@ -4249,6 +4297,8 @@ void Server::tickVote() {
         if (vote_.kind == VOTE_MAP) {
             std::string cmd = "map " + vote_.map + " " + modeName(vote_.arg) + " " + arenaVariant(vote_.arg2).name;
             message("vote passed: " + vote_.text);
+            if (vote_.setMods) applyVotedRules(vote_.mods, vote_.arg);
+            else if (cfg_.custom.active() && !hostCustom()) cfg_.custom.baseMode = vote_.arg;   // (voted rules carry on into the new mode)
             vote_ = Vote();
             command(cmd);
             return;

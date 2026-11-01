@@ -94,6 +94,7 @@ std::string Game::uiScreenPath() const {
                 p += "/pause";
                 if (settingsInGame_) p += "/settings" + settingsSub();
                 else if (picker_ != PICK_NONE) p += pick;
+                else if (voteSetup_) { static const char* st[] = {"toggles", "group", "group", "group", "mods", "toggles", "summary"}; p += std::string("/vote/setup/") + st[std::clamp(voteStage_, 0, 6)]; }
                 else if (voteMenu_) p += specPick_ ? "/vote/spec" : "/vote";
                 else if (queueMenu_) p += "/queue";
                 else if (practiceMenu_) p += "/practice";
@@ -108,6 +109,8 @@ std::string Game::uiScreenPath() const {
 
 std::string Game::uiContext() const {
     if (screen_ == Screen::Editor && edPrompt_) return std::string("keep:") + std::to_string(edPromptThen_);
+    if (screen_ == Screen::InGame && voteSetup_ && voteStage_ == VS_TOGGLES)   // (the vote builder: where NEXT leads)
+        return std::string("vote:") + (vsMode_ ? "g" : "") + (vsMods_ ? "m" : "") + (vsMap_ ? "p" : "");
     if (screen_ != Screen::Editor || !edSelValid()) return "";
     static const char* kinds[] = {"box", "spawn", "light", "site", "hill", "checkpoint", "path", "ladder", "group"};
     std::string k = kinds[edSel_.kind];
@@ -136,6 +139,7 @@ std::string Game::uiObserve(const std::string& w) {
     if (w == "demo") return b(net_.playback());
     if (w == "weapon") return std::to_string(wp_.desired >= 0 ? wp_.desired : heldWeapon_);
     if (w == "rps") return std::to_string(rpsMine_);
+    if (w == "votesetup") return std::to_string(vsMode_) + std::to_string(vsMods_) + std::to_string(vsMap_) + "|" + voteModsText();
     if (w == "reach") return host_ ? std::to_string((int)host_->reachability()) + " " + host_->reachStatus() : "";
     if (w == "widgets") return widgets_.toText() + "|" + std::to_string(widgetSel_) + "|" + std::to_string(filePick_) + "|" + widgetMsg_ + "@" + std::to_string(widgetMsgUntil_);
     if (w == "ctlimport") return cfg_.toText() + "|" + std::to_string(filePick_) + "|" + widgetMsg_ + "@" + std::to_string(widgetMsgUntil_);

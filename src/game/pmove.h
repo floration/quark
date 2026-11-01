@@ -15,7 +15,7 @@ struct UserCmd {
     float yaw = 0, pitch = 0;
 };
 
-constexpr int kDashCharges = 1;   // dashes you hold (owner 1.17: 2; owner 2026-11-01: "only 1 dash charge default").
+constexpr int kDashCharges = 2;   // dashes you hold (owner 1.17)...
 constexpr float kDashCooldown = 0.6f;   // ...a dash waits this long after the previous dash ENDS (owner 1.18.7: "you can use them 0.6
                                         // seconds apart"; it was 1.2 s between any two dashes)...
 constexpr float kDashRecharge = 1.2f;   // ...and a spent charge can only come back this long after the dash that spent it ended (owner

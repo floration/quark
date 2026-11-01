@@ -439,7 +439,7 @@ static void testJumpTapBuffer() {
 }
 
 // T2: holding dash fires each dash the moment it's allowed (like the held grapple): the charges chain 0.6 s apart (the
-// cooldown from each dash's end), each charge back 1.2 s after its dash; in the air the charge (one by default), then none.
+// cooldown from each dash's end), each charge back 1.2 s after its dash; in the air the two charges, then none.
 static void testHeldDash() {
     printf("held dash\n");
     Map m;
@@ -457,13 +457,12 @@ static void testHeldDash() {
     printf("  held on the floor for 3 s: %zu dashes, at", a.size());
     for (int t : a) printf(" %d", t);
     printf(" ms\n");
-    // (one charge, owner 2026-11-01: each waits for the charge, back 1.2 s after the dash's 0.12 s)
-    CHECK(a.size() == 3 && a[0] == 0);
-    for (size_t k = 1; k < a.size(); k++) CHECK(std::abs(a[k] - a[k - 1] - 1320) <= 1);
+    CHECK(a.size() == 5 && a[0] == 0);
+    for (size_t k = 1; k < a.size(); k++) CHECK(std::abs(a[k] - a[k - 1] - 720) <= 1);   // (the dash's 0.12 s, then the 0.6 s cooldown)
     MoveState air; air.pos = {0, 400, 0};   // (falling the whole time: no floor to refill them)
     std::vector<int> b = starts(air, 3000);
     printf("  held in the air: %zu dashes\n", b.size());
-    CHECK(b.size() == 1);   // (the one charge, then none: only the floor gives it back)
+    CHECK(b.size() == 2 && std::abs(b[1] - b[0] - 720) <= 1);
 }
 
 // F18: air-strafe speed doesn't depend on the frame rate: the frame's turn spread over its ticks (spreadYaw).
@@ -1251,15 +1250,6 @@ static void testMovementTuning() {
 // both (0.2 s apart, 0.4 s to recharge).
 static void testDashCharges() {
     printf("dash charges\n");
-    {   // the default: one charge (owner, 2026-11-01: "only 1 dash charge default")
-        MoveState d;
-        CHECK(kDashCharges == 1 && d.dashCharges == 1 && dashMaxCharges(0) == 1);
-    }
-    // the charges' rules below with two of them (a custom mode's dash_charges x2): what they do with more than one
-    CustomRules twoRules; twoRules.name = "two charges"; twoRules.move[MV_DASH_CHARGES] = 2;
-    setActiveRules(twoRules);
-    struct Restore { ~Restore() { setActiveRules(CustomRules()); } } restore;
-    auto two = [] { MoveState m; m.dashCharges = 2; return m; };
     std::string err;
     Map open;
     CHECK(open.parse("box -500 -1 -500 500 0 500\nspawn any 0 0 0\n", &err));
@@ -1287,7 +1277,7 @@ static void testDashCharges() {
     auto minStep = [](const std::vector<int>& a) { int g = 1 << 30; for (size_t i = 1; i < a.size(); i++) g = std::min(g, a[i] - a[i - 1]); return g; };
     { // in the air from full: press, press again mid-burst (dropped), press right after it ends (the cooldown: nothing), press
       // exactly 0.6 s after it ENDED (the second), then none left: both recharge in the air but only the floor gives them back
-        MoveState q = two(); q.pos = {0, 200, 0};
+        MoveState q; q.pos = {0, 200, 0};
         CHECK(q.dashCharges == 2 && dashMaxCharges(0) == 2 && dashMaxCharges(MOVE_QUICK_DASH) == 2 && dashCooldownMs() == 600 &&
               dashCooldownMs(MOVE_QUICK_DASH) == 200 && dashRechargeMs() == 1200 && dashRechargeMs(MOVE_QUICK_DASH) == 400 && dashReady(q));
         step(q, dash, open); step(q, none, open);
@@ -1323,7 +1313,7 @@ static void testDashCharges() {
         CHECK((q.flags & MF_ONGROUND) && q.dashCharges == 2);
     }
     for (int mods : {0, (int)MOVE_QUICK_DASH}) { // in the air from full, pressing every other ms: both within a second
-        MoveState a = two(); a.pos = {0, 200, 0}; a.mods = (uint8_t)mods;
+        MoveState a; a.pos = {0, 200, 0}; a.mods = (uint8_t)mods;
         std::vector<int> st, en;
         spam(a, 3000, &st, &en);
         const int want = mods ? 200 : 600;
@@ -1332,7 +1322,7 @@ static void testDashCharges() {
         CHECK(st.size() == 2 && st[1] - st[0] < 1000 && st[1] - en[0] >= want && st[1] - en[0] <= want + 1 && a.dashCharges == 0);
     }
     for (int mods : {0, (int)MOVE_QUICK_DASH}) { // on the floor the charges refill once recharged: the cooldown alone spaces the dashes
-        MoveState q = two(); q.flags = MF_ONGROUND; q.mods = (uint8_t)mods;
+        MoveState q; q.flags = MF_ONGROUND; q.mods = (uint8_t)mods;
         for (int i = 0; i < 20; i++) step(q, none, open);
         std::vector<int> st, en;
         spam(q, 4000, &st, &en);
@@ -1342,7 +1332,7 @@ static void testDashCharges() {
         CHECK(minGap(st, en) >= want && minGap(st, en) <= want + 1 && (int)st.size() == (mods ? 13 : 6));
     }
     { // on the floor a spent charge comes back 1.2 s after its dash ended, not before
-        MoveState q = two(); q.flags = MF_ONGROUND;
+        MoveState q; q.flags = MF_ONGROUND;
         for (int i = 0; i < 20; i++) step(q, none, open);
         step(q, dash, open);
         int t = 0;
@@ -1356,7 +1346,7 @@ static void testDashCharges() {
     { // holding jump (bhop landings, a hard-landing bounce) refills only up to ONE charge (owner): letting go of jump on
       // the floor gives both back
         UserCmd hop; hop.buttons = BTN_JUMP;
-        MoveState q = two(); q.pos = {0, 0.6f, 0}; q.dashCharges = 0;
+        MoveState q; q.pos = {0, 0.6f, 0}; q.dashCharges = 0;
         int landings = 0; uint8_t seen[3] = {};
         for (int i = 0; i < 3000 && landings < 3; i++) {
             bool was = q.flags & MF_ONGROUND;
@@ -1365,7 +1355,7 @@ static void testDashCharges() {
         }
         printf("  bhop landings from 0: %d %d %d\n", seen[0], seen[1], seen[2]);
         CHECK(landings == 3 && seen[0] == 1 && seen[1] == 1 && seen[2] == 1);
-        MoveState f = two(); f.pos = {0, 20, 0}; f.dashCharges = 0;
+        MoveState f; f.pos = {0, 20, 0}; f.dashCharges = 0;
         for (int i = 0; i < 3000 && f.vel.y <= 0; i++) step(f, hop, open);   // falls, bounces off the floor (no ground tick)
         CHECK(f.vel.y > moveBaseJump() && f.dashCharges == 1);
         for (int i = 0; i < 3000 && !(q.flags & MF_ONGROUND && q.vel.y <= 0); i++) step(q, none, open);   // let go: land
@@ -1374,7 +1364,7 @@ static void testDashCharges() {
         CHECK(q.dashCharges == 2);
     }
     for (int mods : {0, (int)MOVE_QUICK_DASH}) { // bunny-hopping (jump held) and pressing dash all the while: a landing gives one back once recharged
-        MoveState q = two(); q.flags = MF_ONGROUND; q.mods = (uint8_t)mods;
+        MoveState q; q.flags = MF_ONGROUND; q.mods = (uint8_t)mods;
         for (int i = 0; i < 20; i++) step(q, none, open);
         UserCmd hop; hop.buttons = BTN_JUMP; hop.forward = 127;
         std::vector<int> st, en;
@@ -1385,7 +1375,7 @@ static void testDashCharges() {
     }
     { // a dash jump refills all (it's off the floor), the charge its own dash just spent too (owner 1.18.7: "exempt the
       // dash jump"); an older charge still recharging stays out: a ground dash, 0.6 s later a ground dash + jump
-        MoveState q = two(); q.flags = MF_ONGROUND;
+        MoveState q; q.flags = MF_ONGROUND;
         for (int i = 0; i < 20; i++) step(q, none, open);
         step(q, dash, open);
         while (q.dashTimer > 0) step(q, none, open);
@@ -1397,7 +1387,7 @@ static void testDashCharges() {
         step(q, dj, open);
         printf("  dash jump with the other charge recharging: %d charge(s) (%d recharging), %.1f m/s\n", (int)q.dashCharges, (int)q.dashRecharging, std::sqrt(q.vel.x * q.vel.x + q.vel.z * q.vel.z));
         CHECK(q.dashTimer == 0 && q.dashCharges == 1 && q.dashRecharging == 1 && q.vel.y > 7.0f && q.dashCooldownMs == 600);   // (ended by the jump: the cooldown from there)
-        MoveState f = two(); f.flags = MF_ONGROUND;   // from full: both kept, nothing recharging
+        MoveState f; f.flags = MF_ONGROUND;   // from full: both kept, nothing recharging
         for (int i = 0; i < 20; i++) step(f, none, open);
         step(f, dash, open); step(f, dj, open);
         printf("  dash jump from full: %d charge(s) (%d recharging)\n", (int)f.dashCharges, (int)f.dashRecharging);
@@ -1405,7 +1395,7 @@ static void testDashCharges() {
     }
     { // a super dash leaves exactly one, from two or from one; its floor contact refills nothing on top
         for (int start : {2, 1}) {
-            MoveState q = two(); q.pos = {0, 1.0f, 0}; q.dashCharges = (uint8_t)start;
+            MoveState q; q.pos = {0, 1.0f, 0}; q.dashCharges = (uint8_t)start;
             UserCmd sd; sd.pitch = -1.2f; sd.buttons = BTN_DASH | BTN_JUMP;
             int t = 0;
             for (; t < 120 && (t == 0 || q.dashTimer > 0); t++) step(q, sd, open);
@@ -1428,7 +1418,7 @@ static void testDashCharges() {
         // chained super dashes: each needs a charge (the hop's bhop landing gives one back once it has recharged: never
         // more than that) and the cooldown since the last one ended; each adds 5 m/s to the speed it starts from, up to 36
         for (int mods : {0, (int)MOVE_QUICK_DASH}) {
-            MoveState q = two(); q.pos = {0, 1.0f, 0}; q.mods = (uint8_t)mods;
+            MoveState q; q.pos = {0, 1.0f, 0}; q.mods = (uint8_t)mods;
             int supers = 0, maxSeen = 0;
             float top = 0;
             std::vector<int> st, en;
@@ -1453,7 +1443,7 @@ static void testDashCharges() {
     { // a wall bounce leaves exactly one (twice in a corridor: still one)
         Map corridor;
         CHECK(corridor.parse("box -50 -1 -50 50 0 50\nbox -50 0 -3 50 4 -0.8\nbox -50 0 0.8 50 4 3\nspawn any 0 0 0\n", &err));
-        MoveState c = two(); c.flags = MF_ONGROUND;
+        MoveState c; c.flags = MF_ONGROUND;
         for (int i = 0; i < 20; i++) step(c, none, corridor);
         c.dashCharges = 1;
         int b1 = -1, b2 = -1;
@@ -1468,10 +1458,10 @@ static void testDashCharges() {
     { // a ladder refills nothing
         Map m;
         CHECK(m.parse("box -20 -1 -20 20 0 20\nbox -20 0 -3 20 30 -2\nladder -5 0 -2 5 30 -1.5\nspawn any 0 0 0\n", &err));
-        MoveState q = two(); q.pos = {0, 3, -1.6f}; q.dashCharges = 0;
+        MoveState q; q.pos = {0, 3, -1.6f}; q.dashCharges = 0;
         UserCmd up; up.forward = 127;
         for (int i = 0; i < 500; i++) { step(q, up, m); CHECK(q.dashCharges == 0); }
-        MoveState g = two(); g.flags = MF_ONGROUND; g.mods = MOVE_QUICK_DASH; g.dashCharges = 0;
+        MoveState g; g.flags = MF_ONGROUND; g.mods = MOVE_QUICK_DASH; g.dashCharges = 0;
         step(g, none, open);
         CHECK(g.dashCharges == 2);
     }
@@ -1482,9 +1472,9 @@ static void testDashCharges() {
             *bytes = (int)w.size();
             Reader r(buf, (int)w.size()); Snapshot o; CHECK(readSnapshotClient(r, o)); return o.self;
         };
-        MoveState q = two(); q.pos = {0, 200, 0};
+        MoveState q; q.pos = {0, 200, 0};
         int idle = 0, busy = 0;
-        { MoveState d; d.pos = q.pos; roundTrip(d, &idle); }   // (idle: the default, one charge: nothing sent for it)
+        roundTrip(q, &idle);
         step(q, dash, open); while (q.dashTimer > 0) step(q, none, open);
         for (int k = 0; k < 600; k++) step(q, none, open);
         step(q, dash, open); while (q.dashTimer > 0) step(q, none, open);
@@ -1499,17 +1489,12 @@ static void testDashCharges() {
 // without jump, no bhop bounce on top, and prediction replaying them from the snapshot's movement state.
 static void testDashTech() {
     printf("dash jump and super dash\n");
-    // (with two charges, a custom mode's dash_charges x2: what a dash jump and a super dash leave of them)
-    CustomRules twoRules; twoRules.name = "two charges"; twoRules.move[MV_DASH_CHARGES] = 2;
-    setActiveRules(twoRules);
-    struct Restore { ~Restore() { setActiveRules(CustomRules()); } } restore;
-    auto two = [] { MoveState m; m.dashCharges = 2; return m; };
     std::string err;
     Map open;
     CHECK(open.parse("box -500 -1 -500 500 0 500\nspawn any 0 0 0\n", &err));
     auto hs = [](const MoveState& q) { return std::sqrt(q.vel.x * q.vel.x + q.vel.z * q.vel.z); };
     auto step = [&](MoveState& q, UserCmd c) { c.msec = 1; pmove(q, c, open); };
-    auto standing = [&] { MoveState q = two(); q.flags = MF_ONGROUND; for (int i = 0; i < 50; i++) step(q, UserCmd()); return q; };
+    auto standing = [&] { MoveState q; q.flags = MF_ONGROUND; for (int i = 0; i < 50; i++) step(q, UserCmd()); return q; };
     const float g1 = moveBaseGravity() * 0.001f;   // one step of gravity (the jump's own step applies it)
     // a super dash (hyper) at a look pitch leaves off the floor like the dash bounced (1.18.31): the dash's down share
     // (the sine x 0.9, the most a dash points down) of its speed goes up, the rest stays level
@@ -1644,14 +1629,14 @@ static void testDashTech() {
         CHECK(std::fabs(hs(f2) - 31.0f) < 1e-4f && std::fabs(f2.vel.y - (moveBaseJump() - g1)) < 1e-4f);   // the dash jump keeps 31
     }
     { // a down dash into the floor without jump: no boost, no bounce
-        MoveState q = two(); q.pos = {0, 1.0f, 0};
+        MoveState q; q.pos = {0, 1.0f, 0};
         UserCmd d; d.pitch = -1.2f; d.buttons = BTN_DASH;
         for (int i = 0; i < 300; i++) step(q, d);
         CHECK((q.flags & MF_ONGROUND) && q.vel.y == 0 && hs(q) < 11.01f);
     }
     { // the buffer: jump tapped in the air 60 ms before a down dash counts when it lands; 150 ms before doesn't
         for (int gap : {60, 150}) {
-            MoveState q = two(); q.pos = {0, 1.0f, 0};
+            MoveState q; q.pos = {0, 1.0f, 0};
             UserCmd j; j.buttons = BTN_JUMP;
             step(q, j);
             for (int i = 1; i < gap; i++) step(q, UserCmd());
@@ -1666,7 +1651,7 @@ static void testDashTech() {
         Map wall;   // a wall across -z, its face 1.5 m ahead
         CHECK(wall.parse("box -50 -1 -50 50 0 50\nbox -50 0 -3 50 4 -1.5\nspawn any 0 0 0\n", &err));
         auto dashAt = [&](float deg, bool jumpAfter, MoveState* out) {
-            MoveState q = two(); q.flags = MF_ONGROUND;
+            MoveState q; q.flags = MF_ONGROUND;
             UserCmd d; d.msec = 1; d.yaw = deg * PI / 180; d.buttons = BTN_DASH;   // (yaw 0 faces -z: the wall's normal)
             for (int i = 0; i < 20; i++) pmove(q, UserCmd(), wall);
             int t = 0;
@@ -1675,7 +1660,7 @@ static void testDashTech() {
             *out = q;
             return t;
         };
-        MoveState q = two();
+        MoveState q;
         int t = dashAt(30, false, &q);
         printf("  wall bounce at 30 deg after %d ms: (%.3f, %.3f) m/s, %d bounce\n", t, q.vel.x, q.vel.z, q.dashBounces);
         CHECK(q.dashBounces == 1 && q.dashTimer > 0 && std::fabs(q.vel.x - (-8.0f)) < 1e-3f && std::fabs(q.vel.z - 13.8564f) < 1e-3f);
@@ -1689,7 +1674,7 @@ static void testDashTech() {
         dashAt(30, true, &q);   // bounce, then jump during the rest of the dash on the floor: a dash jump the reflected way
         CHECK(q.dashTimer == 0 && std::fabs(hs(q) - 16.0f) < 1e-3f && q.vel.z > 0 && q.vel.y > 7.0f);   // (keeps the bounce's 16)
         // head-on between two walls 2.4 m apart: two bounces, the third wall stops it (at most 2 per dash)
-        MoveState c = two(); c.flags = MF_ONGROUND;
+        MoveState c; c.flags = MF_ONGROUND;
         for (int i = 0; i < 20; i++) pmove(c, UserCmd(), wall);
         d.yaw = 0; d.buttons = BTN_DASH;
         c.pos.z = 0;
@@ -1720,7 +1705,7 @@ static void testDashTech() {
             cmds.push_back(c);
         }
         std::vector<MoveState> states;
-        MoveState s = two();
+        MoveState s;
         s.pos = {-20, 0, 20};
         for (const UserCmd& c : cmds) { pmove(s, c, m); states.push_back(s); }
         int bad = 0, buffered = 0, cooling = 0, recharging = 0;
@@ -6795,6 +6780,62 @@ static void testMapVote(uint16_t port) {
     s.stop();
 }
 
+// The vote builder's modifiers (owner, 2026-11-01): "callvote map <map> <mode> <ruleset> mods k=v ..." passes as a
+// custom mode ("voted") everyone gets; a mode vote without "mods" keeps them; "mods" alone goes back to the standard
+// rules; unknown or out-of-range words, and tourney with modifiers, are refused.
+static void testVoteModifiers(uint16_t port) {
+    printf("vote modifiers: one vote for map, mode and rules\n");
+    Server s;
+    s.voteCooldown_ = 0;
+    ServerConfig cfg;
+    cfg.map = "glacier"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient a, b;
+    a.connect("127.0.0.1:" + std::to_string(port), "a");
+    b.connect("127.0.0.1:" + std::to_string(port), "b");
+    std::vector<NetClient*> cls = {&a, &b};
+    pump(s, cls, 1.0, idle);
+    auto refused = [&](const std::string& c) {
+        b.sendCommand(c);
+        pump(s, cls, 0.3, idle);
+        const bool r = s.vote_.kind == Server::VOTE_NONE;
+        if (!r) { printf("  FAIL not refused: %s\n", c.c_str()); g_fail++; s.vote_ = Server::Vote(); }
+        s.players_[b.clientId()].voteAt = 0;
+    };
+    auto pass = [&](const std::string& c) {
+        b.sendCommand(c);
+        pump(s, cls, 0.3, idle);
+        CHECK(s.vote_.kind == Server::VOTE_MAP);
+        a.sendCommand("vote yes");
+        pump(s, cls, 1.0, idle);
+        CHECK(s.vote_.kind == Server::VOTE_NONE);
+        s.players_[b.clientId()].voteAt = 0;
+    };
+    refused("callvote map glacier ffa classic mods foo=1");
+    refused("callvote map glacier ffa classic mods vampire=2");
+    refused("callvote map glacier ffa classic mods damage=abc");
+    refused("callvote map glacier ffa classic damage=2");   // (no "mods" word)
+    refused("callvote map dojo tourney classic mods damage=2");
+    b.sendCommand("callvote map glacier ffa classic mods damage=2 vampire=1 health=150 dash=0");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_MAP && s.vote_.text.find("DAMAGE X2") != std::string::npos && s.vote_.text.find("VAMPIRE") != std::string::npos &&
+          s.vote_.text.find("NO DASH") != std::string::npos);
+    a.sendCommand("vote yes");
+    pump(s, cls, 1.0, idle);
+    const CustomRules& r = s.config().custom;
+    CHECK(r.active() && r.name == Server::kVotedRules && r.baseMode == MODE_FFA && r.vampire && !r.dash && r.health == 150 &&
+          std::fabs(r.damage[WPN_ROCKET] - 2) < 1e-4f && std::fabs(r.damage[0] - 2) < 1e-4f);
+    CHECK(activeRules().active() && activeRules().vampire);
+    printf("  passed: %s\n", votedModsTitle("damage=2\nvampire=1\nhealth=150\ndash=0\n").c_str());
+    pass("callvote map glacier koth classic");   // a mode vote without modifiers keeps them
+    CHECK(s.config().mode == MODE_KOTH && s.config().custom.active() && s.config().custom.baseMode == MODE_KOTH && s.config().custom.vampire);
+    pass("callvote map glacier ffa classic mods");   // back to the standard rules
+    CHECK(s.config().mode == MODE_FFA && !s.config().custom.active() && !activeRules().active());
+    s.stop();
+    setActiveRules(CustomRules());
+}
+
 // Handshake hardening: a CONNECT without the address cookie only gets a tiny challenge (no slot, no
 // snapshots), a spoofed CONNECT from a connected player's address can't kick them, info requests must be
 // padded, tmaps only takes known names, a failed vote has a cooldown, and chat is printable only.
@@ -10193,7 +10234,7 @@ int main(int argc, char** argv) {
         {"mapbounds", [] { g_fail += outOfBoundsTests(0, 2); }},
         {"server", [] { serverTests(); testGovernorPolicy(); testRankedNotRated(TP(28632)); }},
         {"modes", [] { testCustomMode(TP(28570)); testMoveExprNetwork(TP(28576)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},
-        {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); testSpecVote(TP(28598)); testNameColor(TP(28599)); }},
+        {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); testSpecVote(TP(28598)); testNameColor(TP(28599)); testVoteModifiers(TP(28593)); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testDemoUpgrade(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testBuiltInMapEditSession(TP(28606)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
         {"bots", [] { uint16_t p = TP(28900); testBots(p); }},

@@ -261,3 +261,20 @@ bool deleteCustomMode(const std::string& name) {
     std::error_code ec;
     return std::filesystem::remove(customModesDir() + "/" + safeName(name) + ".qmode", ec);
 }
+
+std::string votedModsTitle(const std::string& mods) {
+    std::string out;
+    std::istringstream ls(mods);
+    for (std::string line; std::getline(ls, line);) {
+        const size_t eq = line.find('=');
+        if (eq == std::string::npos) continue;
+        const std::string k = line.substr(0, eq), v = line.substr(eq + 1);
+        std::string part;
+        if (k == "health") part = "HEALTH " + v;
+        else if (k == "selfdamage" || k == "dash" || k == "grapple") { if (v == "0") part = k == "selfdamage" ? "NO SELF DAMAGE" : k == "dash" ? "NO DASH" : "NO GRAPPLE"; }
+        else if (k == "vampire" || k == "regen" || k == "instagib") { if (v == "1") part = k == "vampire" ? "VAMPIRE" : k == "regen" ? "REGEN" : "INSTAGIB"; }
+        else { part = k; for (auto& c : part) c = (char)toupper((unsigned char)c); part += " X" + v; }
+        if (!part.empty()) out += (out.empty() ? "" : ", ") + part;
+    }
+    return out.empty() ? "STANDARD RULES" : out;
+}

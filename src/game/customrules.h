@@ -50,6 +50,9 @@ bool isModeLogicLine(const std::string& line);   // `logic` or `logic <anything>
 // *err: "the mode logic doesn't compile: line:col message"). Its label: modeLabel (modelogic.h).
 std::shared_ptr<const ModeLogic> compileCustomLogic(const CustomRules& r, std::string* err = nullptr);
 
+// A vote's modifiers ("gravity=1.5\nvampire=1\n...", Server::applyVotedRules) as the vote shows them: "GRAVITY X1.5, VAMPIRE"
+std::string votedModsTitle(const std::string& mods);
+
 const CustomRules& activeRules();
 void setActiveRules(const CustomRules& r);   // the rules the CALLING THREAD plays by (and its weapon table); per thread, so a hosted server and the client never share them
 std::string customModesDir();                 // where presets are saved

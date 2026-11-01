@@ -504,8 +504,14 @@ public:
     enum VoteKind { VOTE_NONE = 0, VOTE_BOTS, VOTE_BOTSKILL, VOTE_START, VOTE_STARTBOTS, VOTE_MAP, VOTE_TMAPS, VOTE_TMODES, VOTE_RANKED, VOTE_EDIT, VOTE_LETIN, VOTE_SPEC,
                     VOTE_RESTART, VOTE_EXTEND, VOTE_SHUFFLE, VOTE_KICK };   // (1.19.4: restart, +5 minutes, shuffle teams, kick)
     static constexpr int kSpecVoteMinPlayers = 3;   // connected human players a spectate vote needs (so never in a 1v1)
-    struct Vote { int kind = VOTE_NONE; int caller = -1; int arg = 0, arg2 = 0; std::string map; uint32_t yes = 0, no = 0; double endsAt = 0; std::string text; } vote_;
-    void callVote(int caller, int kind, int arg, const std::string& map = "", int arg2 = 0);
+    struct Vote { int kind = VOTE_NONE; int caller = -1; int arg = 0, arg2 = 0; std::string map; uint32_t yes = 0, no = 0; double endsAt = 0; std::string text;
+                  bool setMods = false; std::string mods; } vote_;   // (a map vote's modifiers: setMods, then key=value lines; "" = the standard rules)
+    void callVote(int caller, int kind, int arg, const std::string& map = "", int arg2 = 0, const std::string* mods = nullptr);
+    // Voted modifiers (owner, 2026-11-01: the vote's MODIFIERS step): a custom mode named kVotedRules built from them. A
+    // host's own custom mode can't be voted over; voted rules can (and change with the next vote).
+    static constexpr const char* kVotedRules = "voted";
+    bool hostCustom() const { return cfg_.custom.active() && cfg_.custom.name != kVotedRules; }
+    void applyVotedRules(const std::string& mods, int mode);
     // Tourney: single elimination bracket of everyone in the server, one 1v1 at a time.
     struct Tourney {
         bool running = false;
