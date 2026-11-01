@@ -154,6 +154,7 @@ std::string Game::uiObserve(const std::string& w) {
     if (w == "lookmsg") return cfg_.toText() + "|" + lookMsg_ + "@" + std::to_string(lookMsgUntil_);
     if (w == "chcode") return cfg_.toText() + "|" + chCodeMsg_ + "@" + std::to_string(chCodeUntil_);
     if (w == "groups") return listDir(userDataPath("groups"));
+    if (w == "trainer") return std::to_string(trMode_) + std::to_string(trCat_) + std::to_string(trDiff_);
     if (w == "bench") return listDir(userDataPath("benchmarks")) + "|" + listDir(userDataPath("benchmarks/exports"));
     if (w == "usermaps") return listDir(userMapsDir());
     if (w == "queue") { std::string o; for (auto& q : queued_) o += q + " "; return o; }
@@ -1449,6 +1450,16 @@ private:
                          return path() == "benchmarks";
                      },
                      [=] { return (g_.screen_ == Game::Screen::Benchmarks || g_.screen_ == Game::Screen::BenchmarkResult) && !g_.host_ && !g_.net_.playback(); }});
+        // AIM TRAINER: its menu (mode / difficulty / category tabs, the six cards, PLAY), a run and its results
+        v.push_back({"trainer", "trainer", {"trainer"}, {},
+                     [=] {
+                         leaveAll();
+                         g_.trMode_ = g_.trCat_ = g_.trDiff_ = 0;   // (the root: 3D, clicking, easy)
+                         g_.openTrainer();
+                         step(2);
+                         return path() == "trainer";
+                     },
+                     [=] { return (g_.screen_ == Game::Screen::Trainer || g_.screen_ == Game::Screen::TrainerRun) && !g_.host_ && !g_.net_.playback(); }});
         // hide and seek: the seeker's locator (slot key 0), and the tiebreak's rock / paper / scissors keys
         v.push_back({"hide-seeker", "ingame", inGameAll, {"ingame/"}, [=] { return hideSeeker(); },
                      [=] { return g_.screen_ == Game::Screen::InGame && srv_ && g_.net_.hasSnapshot() && iAmIt(); }});

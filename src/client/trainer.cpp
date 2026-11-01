@@ -295,11 +295,11 @@ void Game::drawTrainerMenu(const SetLayout& L) {
     ui_.labelCentered(L.X(640), L.Y(178), "AIM TRAINER", kWhite, 1.5f, L.L(928));
     const float th = L.L(32);
     for (int m = 0; m < TR_MODES; m++)
-        if (ui_.tab(L.X(176 + m * 160), L.Y(216), L.L(152), th, trainer::modeName(m), trMode_ == m, UiExp::local())) trMode_ = m;
+        if (ui_.tab(L.X(176 + m * 160), L.Y(216), L.L(152), th, trainer::modeName(m), trMode_ == m, trMode_ == m ? UiExp::inert() : UiExp::state("trainer"))) trMode_ = m;
     for (int d = 0; d < kDiffs; d++)
-        if (ui_.tab(L.X(640 + d * 160), L.Y(216), L.L(152), th, diffName(d), trDiff_ == d, UiExp::local())) trDiff_ = d;
+        if (ui_.tab(L.X(640 + d * 160), L.Y(216), L.L(152), th, diffName(d), trDiff_ == d, trDiff_ == d ? UiExp::inert() : UiExp::state("trainer"))) trDiff_ = d;
     for (int c = 0; c < CAT_COUNT; c++)
-        if (ui_.tab(L.X(176 + c * 312), L.Y(256), L.L(304), th, catName(c), trCat_ == c, UiExp::local(), true)) trCat_ = c;
+        if (ui_.tab(L.X(176 + c * 312), L.Y(256), L.L(304), th, catName(c), trCat_ == c, trCat_ == c ? UiExp::inert() : UiExp::state("trainer"), true)) trCat_ = c;
     const auto scs = list(trMode_, trCat_);
     for (size_t i = 0; i < scs.size(); i++) {
         const Scenario* sc = scs[i];
