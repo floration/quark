@@ -978,7 +978,7 @@ void dashRefillAll(MoveState& s, const Map* map) {
     for (uint16_t& v : s.dashRechargeMs) v = 0;
 }
 bool ballMove(Vec3& c, Vec3& v, const Map& map, float dt) {
-    constexpr float h = 0.001f, kWallBounce = 0.5f;
+    constexpr float h = 0.001f;   // (owner, 2026-11-01: "ball should also treat every surface as if its rubber floor, bouncy")
     const Vec3 half(kBallHalf, kBallHalf, kBallHalf);
     bool onGround = false;
     for (float left = dt; left > 1e-6f; left -= h) {
@@ -999,7 +999,8 @@ bool ballMove(Vec3& c, Vec3& v, const Map& map, float dt) {
             if (want == 0) continue;
             const float got = map.sweepAxis(AABB{c - half, c + half}, o, want);
             c[o] += got;
-            if (std::fabs(got) + 1e-6f < std::fabs(want)) v[o] = o == 1 && v[o] < 0 ? 0.0f : -v[o] * kWallBounce;
+            if (std::fabs(got) + 1e-6f < std::fabs(want))   // every surface is rubber: back at kRubberBounce, a slow touch stops
+                v[o] = std::fabs(v[o]) > kRubberMin ? -v[o] * kRubberBounce : 0.0f;
         }
     }
     return onGround;

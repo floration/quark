@@ -80,6 +80,7 @@ const char* weaponName(int w) {
     if (w == kDamageGrapple) return "grapple";
     if (w == kDamageAcid) return "dissolved";
     if (w == kDamageGlass) return "glass";
+    if (w == kDamageBall) return "ball";
     if (w == 252) return "fell";
     if (w == 253) return "bomb";
     if (w == 254) return "drained";

@@ -3210,6 +3210,21 @@ void Server::stepProjectile(Projectile& pr) {
             if (t >= 0 && t <= best) { best = t; hitPlayer = i; hitHead = inHead; hitBb = projTargetBox_[k]; }
         }
         if (hitPlayer >= 0) hitBb = hitHead ? headBox(hitBb) : bodyBox(hitBb);
+        // ball mode: projectiles hit the ball (owner, 2026-11-01: "projectiles should interact with it"). A blast goes off
+        // on it (and pushes it as any blast does), a sticky drops off it; anything else gives it a quarter of its speed
+        if (ms_.mode == MODE_BALL && ballSet_ && ballRespawnAt_ <= 0) {
+            const Vec3 bh(kBallHalf, kBallHalf, kBallHalf);
+            const float tb = rayAABB(pr.pos, inv, AABB{ms_.bombPos - bh, ms_.bombPos + bh}, best);
+            if (tb >= 0 && tb <= best) {
+                const Vec3 at = pr.pos + dir * tb;
+                if (wd.splashRadius > 0 && !wd.sticky) { pr.pos = at; pr.active = false; explode(at, pr.owner, pr.type, -1, pr.alt); return; }
+                const float sp = length(pr.vel);
+                ballHit(*this, dir * std::min(sp * 0.25f, 15.0f), pr.owner);
+                if (wd.sticky) { pr.pos = at - dir * 0.05f; pr.vel = {}; return; }   // (it falls off and sticks where it lands)
+                pr.pos = at; pr.active = false;
+                return;
+            }
+        }
         if (wall < 0 && hitPlayer < 0) { pr.pos += step; return; }
         Vec3 at = blastPoint(pr.pos, dir, best);
         // a teleporter: out of the next one with its link, 10 cm off its exit face, at its speed straight out of it
