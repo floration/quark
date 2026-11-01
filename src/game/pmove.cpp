@@ -970,6 +970,34 @@ void dashRefillAll(MoveState& s, const Map* map) {
     s.dashRecharging = 0;
     for (uint16_t& v : s.dashRechargeMs) v = 0;
 }
+bool ballMove(Vec3& c, Vec3& v, const Map& map, float dt) {
+    constexpr float h = 0.001f, kWallBounce = 0.5f;
+    const Vec3 half(kBallHalf, kBallHalf, kBallHalf);
+    bool onGround = false;
+    for (float left = dt; left > 1e-6f; left -= h) {
+        const float step = std::min(left, h);
+        const float below = map.sweepAxis(AABB{c - half, c + half}, 1, -0.01f);
+        onGround = below > -0.01f + 1e-5f && v.y <= 0;
+        if (onGround) {   // a player standing on ice, no input: friction x kIceFriction, no push
+            const float sp = std::sqrt(v.x * v.x + v.z * v.z);
+            if (sp > 0) {
+                const float drop = std::max(sp, kStopSpeed) * kFriction * kIceFriction * step, k = std::max(sp - drop, 0.0f) / sp;
+                v.x *= k; v.z *= k;
+            }
+            v.y = 0;
+        } else v.y -= kGravity * 0.5f * step;
+        const int order[3] = {1, 0, 2};
+        for (int o : order) {
+            const float want = v[o] * step;
+            if (want == 0) continue;
+            const float got = map.sweepAxis(AABB{c - half, c + half}, o, want);
+            c[o] += got;
+            if (std::fabs(got) + 1e-6f < std::fabs(want)) v[o] = o == 1 && v[o] < 0 ? 0.0f : -v[o] * kWallBounce;
+        }
+    }
+    return onGround;
+}
+
 float moveBaseGravity() { return kGravity; }
 float moveBaseSpeed() { return kGroundSpeed; }
 float moveBaseJump() { return kJumpSpeed; }

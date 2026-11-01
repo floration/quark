@@ -738,6 +738,7 @@ int Game::bestRankedMap(int ladder) const {
 static const char* defaultMapName(int mode) {
     switch (mode) {
     case MODE_SURF: return "surfy";
+    case MODE_BALL: return "qk8";   // (owner, 2026-11-01: qk8 and the bridge)
     default: return nullptr;
     }
 }
@@ -3110,6 +3111,28 @@ void Game::drawWorld(float alpha) {
             drawProp(PROP_BOMB, bpal, bombPos, 0, {1, 0, 0}, {0, 0, 1}, 0, 1.0f);
             labelAt(bombPos + Vec3(0, 0.8f, 0), ms.bombState == BOMB_PLANTED ? "BOMB" : "BOMB (DROPPED)", rgba(teamCol(ms.attackers)));
         }
+    } else if (ms.mode == MODE_BALL && map.bombSites.size() == 2) {
+        // the goals, each in its team's colour (the team whose spawns are nearer it: the server's ballGoalTeam), and the
+        // ball: three crossed boxes (a rounded 1 m ball), turning as it rolls
+        for (int k = 0; k < 2; k++) {
+            float d[2] = {1e30f, 1e30f};
+            for (auto& sp : map.spawns)
+                if (sp.team == SPAWN_A || sp.team == SPAWN_B) { float& t = d[sp.team == SPAWN_A ? 0 : 1]; t = std::min(t, length(sp.pos - map.bombSites[k].center())); }
+            const int team = d[0] <= d[1] ? TEAM_A : TEAM_B;
+            r_.translucentBox(map.bombSites[k], rgba(teamCol(team), 0.12f * cfg_.objOpacity));
+            const Vec3 c = map.bombSites[k].center();
+            labelAt({c.x, map.bombSites[k].mx.y + 0.5f, c.z}, team == myTeam ? "YOUR GOAL" : "ENEMY GOAL", rgba(teamCol(team)));
+        }
+        {
+            const Vec3 b = ms.bombPos;
+            const float spin = (b.x + b.z) * 2.0f, h = kBallHalf, e = kBallHalf * 0.72f;
+            const Vec3 white(0.95f, 0.95f, 0.92f), dark(0.15f, 0.15f, 0.15f);
+            r_.box(b, {h, e, e}, spin, white, 1.0f, true);
+            r_.box(b, {e, h, e}, spin, white, 1.0f, true);
+            r_.box(b, {e, e, h}, spin, white, 1.0f, true);
+            r_.box(b, {h * 1.005f, e * 0.25f, e * 1.005f}, spin, dark, 1.0f, false);   // (a band: you see it turn)
+            labelAt(b + Vec3(0, 1.0f, 0), "BALL", kWhite);
+        }
     } else if (ms.mode == MODE_POINTS && !map.points.empty()) {
         // the point under attack glows (attacker colour while it fills); taken points are dim; later ones outlined
         for (size_t i = 0; i < map.points.size(); i++) {
@@ -4435,6 +4458,8 @@ void Game::drawHud() {
         if (mine > 0) progress = powerPool(ms, myTeam) / mine;
     } else if (ms.mode == MODE_POWER) {
         obj = "POWER - NOBODY DIES: HITS DRAIN THE TEAM POOL";
+    } else if (ms.mode == MODE_BALL) {
+        obj = "BALL - SHOOT, BLAST OR RUN THE BALL INTO THE ENEMY GOAL - MOST GOALS WINS";
     } else if (ms.mode == MODE_ARENA) {
         obj = arenaVariant(ms.arenaVariant).desc;
     } else if (ms.mode == MODE_WINNER) {
@@ -11068,7 +11093,7 @@ void Game::drawPicker(float cx, float y) {
     static std::vector<int> modeVis;
     modeVis.clear();
     if (modes && builder) {
-        static const int kObjective[] = {MODE_BOMB, MODE_KOTH, MODE_NPAYLOAD, MODE_PAYLOAD, MODE_POINTS, MODE_RACE, MODE_SURF};
+        static const int kObjective[] = {MODE_BOMB, MODE_KOTH, MODE_NPAYLOAD, MODE_PAYLOAD, MODE_POINTS, MODE_RACE, MODE_SURF, MODE_BALL};
         for (int m = 0; m < MODE_COUNT; m++) {
             const bool obj = std::find(std::begin(kObjective), std::end(kObjective), m) != std::end(kObjective);
             if (modeGroup_ == 0 || obj == (modeGroup_ == 1)) modeVis.push_back(m);
@@ -11136,6 +11161,7 @@ void Game::drawPicker(float cx, float y) {
                 if (m >= 0 && m < (int)mapInfo_.size() && (mapInfo_[m].modes >> i & 1)) it.sub = "MAP: " + upper(mapInfo_[m].title);
             }
             if (i == MODE_ARENA) it.sub = "9 RULESETS >";
+            if (i == MODE_BALL) it.sub = "TEAMS, A BALL, TWO GOALS - MOST GOALS IN 10 MINUTES";
             if (i == MODE_WINNER) it.sub = "1V1 ROUNDS, LOSER TO THE BACK OF THE LINE - FIRST TO 10 - RULESETS >";
             if (i == MODE_TOURNEY) it.sub = "BRACKET OF 1V1S - RULESETS >";
         } else {

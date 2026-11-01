@@ -10,8 +10,9 @@ hatch ladders up through the deck, a stair down from each end's abutment), the v
   ends    A (west): the city end, a toll plaza (six booths under a canopy, the toll office on two floors);
           B (east): the mountain end, a tunnel portal in the rock with a maintenance bay and a lay-by (a parked lorry).
 The traffic (cars, two buses with 1/8 m side panels: shoot-through, a lorry with a container, a car on its side) is
-placed point symmetrically round mid-span: different vehicles, the same footprints, a 3 m walk lane everywhere. Fog
-banks (smoke: sight only) across the deck at x +-20 and +-60 break the 160 m straight. Edge rails are 1.6 m: higher
+placed point symmetrically round mid-span: different vehicles, the same footprints, a 3 m walk lane everywhere. (The
+fog banks across the deck at x +-20 and +-60 and the haze sheets were removed, owner 2026-11-01; ball's goals cross the
+deck by each tower.) Edge rails are 1.6 m: higher
 than a jump, so a fall off the bridge (death in vs, a 2 s trip home in power) is a choice, not an accident.
 Fix round (1.19.6 review, q's answers): the cables ridged with clip and nograpple past x +-32 (about 13 m), so nobody
 stands over the fog; each tower beam has a 1.2 m solid concrete parapet on its span side (its rails were 0.1 m,
@@ -170,7 +171,7 @@ def decorate(k):
 
 def build():
     m = M("Suspension Bridge", "power", sun=(0.3, 1.0, 0.2))
-    m.also = ["vs"]
+    m.also = ["vs", "ball"]
     k = Kit(m)
     m.raw("palette base 0.66 0.66 0.66 accent 0.55 0.22 0.16 metal 0.34 0.35 0.37 glow 1.00 0.78 0.45 sky 0.80 0.82 0.84")
     m.raw(f"void {num(VOID)}")
@@ -338,20 +339,10 @@ def build():
             elif kind == "bus": bus(k, px, pz)
             else: lorry(k, px, pz)
 
-    # ---- fog banks across the deck (sight only)
-    # (each leaves a lane 8 m wide on alternate sides, so no line along the deck misses all four, and the gaps are
-    #  where the walk goes: bots and the walk checks take smoke as a wall)
-    # (each bank is three overlapping boxes of different heights and depths, so its top and ends stagger; the two
-    #  middle banks rise to 12 m; the lane gaps stay 8 m)
-    BANKS = [(-61, -59, -12, 4, 6.0), (-62.6, -60.6, -10, -1, 4.5), (-61.8, -59.8, -5, 3.5, 7.2),
-             (-21, -19, -4, 12, 12.0), (-22.6, -20.6, -1, 9, 9.0), (-20.2, -18.4, 2, 11.5, 13.5)]
-    for (x0, x1, z0, z1, h) in BANKS:      # (the half x < 0; the other half point symmetric)
-        k.box("smokewall", x0, 0, z0, x1, h, z1)
-        k.box("smokewall", -x1, 0, -z1, -x0, h, -z0)
-    # haze sheets high over the deck at x +-40 (sight only, from 7 m up): the far tower fades behind two of them, and
-    # nothing up on a cable or a tower beam sees down the whole span
-    for x in (-40.0, 40.0):
-        k.box("smokewall", x - 1.5, 7, -LAND_Z, x + 1.5, 62, LAND_Z)
+    # (the fog banks and haze sheets are gone: owner, 2026-11-01 "remove the smoke from the highway map")
+    # ---- ball (owner, 2026-11-01): a goal across the deck just inside each tower's portal (each team's own: its end)
+    m.raw("site -88 0 -12 -84 6 12")
+    m.raw("site 84 0 -12 88 6 12")
 
     # ---- the bounds: clip walls round the whole bridge up to the lid, the lid 45 m over the towers' tops; the sea
     for (x0, z0, x1, z1) in ((-END - 2, -LAND_Z - 2, END + 2, -LAND_Z), (-END - 2, LAND_Z, END + 2, LAND_Z + 2),

@@ -470,6 +470,11 @@ public:
     Vec3 bombVel_;               // a dropped bomb still moving: over ice (sliding) or rubber (bouncing); zero once it rests
     bool bombMoving_ = false;
     Vec3 bombLastGround_;        // ...and where its carrier last stood (it goes back there from the void or lava)
+    // ball (MODE_BALL): its velocity (the centre is ms_.bombPos), where it starts, whether it's been placed this round,
+    // who touched it last (named when it goes in)
+    Vec3 ballVel_, ballSpawn_;
+    bool ballSet_ = false;
+    int ballToucher_ = -1;
     double objTouch_ = -1e9;     // payload / multi point / bomb / neutral payload: when the side that needs time last touched the objective (overtime)
     // the mode's rules (gamemodes.cpp)
     const ModeParams* mp_ = &kBuiltinModeParams[MODE_FFA];   // the numbers the native rules read (set by rulesReset)

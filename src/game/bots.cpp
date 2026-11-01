@@ -1068,6 +1068,26 @@ Vec3 objective(Server& s, int id, BotBrain& b, const BrainParams& sp, Interp* ip
         case MODE_RACE: case MODE_SURF:
             if (me.checkpoint < (int)map.raceCheckpoints.size()) return map.raceCheckpoints[me.checkpoint].center();
             break;
+        case MODE_BALL:   // get behind the ball (on the far side from the enemy goal), then run through it
+            if (map.bombSites.size() == 2) {
+                float d[2][2] = {{1e30f, 1e30f}, {1e30f, 1e30f}};   // [site][team]: the nearest spawn
+                for (auto& sp : map.spawns)
+                    if (sp.team == SPAWN_A || sp.team == SPAWN_B)
+                        for (int k = 0; k < 2; k++) d[k][sp.team == SPAWN_A ? 0 : 1] = std::min(d[k][sp.team == SPAWN_A ? 0 : 1], length(sp.pos - map.bombSites[k].center()));
+                const int mine = me.team == TEAM_A ? 0 : 1;
+                const int enemyGoal = (d[0][mine] <= d[0][1 - mine]) ? 1 : 0;   // (site 0 nearer my spawns: it's mine)
+                Vec3 away = m.bombPos - map.bombSites[enemyGoal].center();
+                away.y = 0;
+                const float len = length(away);
+                if (len > 0.1f) {
+                    const Vec3 behind = m.bombPos + away / len * 1.6f;
+                    Vec3 to = behind - me.move.pos;
+                    to.y = 0;
+                    if (length(to) > 1.0f && dot(me.move.pos - m.bombPos, away) < 0) return behind;   // (on the wrong side: round it)
+                }
+                return m.bombPos;
+            }
+            break;
         case MODE_KOTH:
             if (map.hasHill) return {map.hill.center().x, map.hill.mn.y, map.hill.center().z}; // the hill's floor
             break;

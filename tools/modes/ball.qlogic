@@ -1,0 +1,21 @@
+logic 1
+base ball
+# Ball: two teams, a ball in the middle and a goal at each end (the map's two sites, each its nearer team's). The ball
+# moves like a player on ice at half gravity; bodies, shots and blasts push it. In a goal it scores for the other team
+# and goes back to the middle. When the 10 minutes run out the most goals win (level: a draw); the host's score limit
+# ends it sooner.
+use ball
+
+param roundTime f32 = 600
+param respawnTime f32 = 3
+
+slot tick:
+  ballStep()
+  if phase != live: return
+  if cfg.scoreLimit > 0 and (teamScore[A] >= cfg.scoreLimit or teamScore[B] >= cfg.scoreLimit):
+    w = teamScore[A] >= cfg.scoreLimit ? A : B
+    endMatch(w, w, " wins the match")
+  if phaseEnd > 0 and now >= phaseEnd:
+    if teamScore[A] > teamScore[B]: endMatch(A, A, " wins the match")
+    if teamScore[B] > teamScore[A]: endMatch(B, B, " wins the match")
+    endMatch(none, "match over")
