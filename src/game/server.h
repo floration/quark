@@ -476,7 +476,8 @@ public:
     bool ballSet_ = false;
     int ballToucher_ = -1;
     double ballRespawnAt_ = 0;
-    double ballHurtAt_[kMaxPlayers] = {};   // when the ball last hurt each player (once per kBallHurtGap)   // > 0: the ball waits (in the goal it went into, or the void) until then, then back to the middle
+    double ballHurtAt_[kMaxPlayers] = {};
+    double ballKnifeAt_[kMaxPlayers] = {};   // a knife swing's push on the ball: once a swing (it keeps cutting every tick for kKnifeSwingTime)   // when the ball last hurt each player (once per kBallHurtGap)   // > 0: the ball waits (in the goal it went into, or the void) until then, then back to the middle
     double objTouch_ = -1e9;     // payload / multi point / bomb / neutral payload: when the side that needs time last touched the objective (overtime)
     // the mode's rules (gamemodes.cpp)
     const ModeParams* mp_ = &kBuiltinModeParams[MODE_FFA];   // the numbers the native rules read (set by rulesReset)

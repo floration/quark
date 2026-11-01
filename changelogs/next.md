@@ -173,3 +173,6 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 - **Dash slide:** dash down into the floor without holding jump and you slide like on ice until you're back to run speed or press jump. Holding jump still gives the super dash.
 - **Ball:** it bounces off everything like rubber. After a goal (or falling out) it waits 3 s before coming back. Rockets, bolts, stickies and thrown knives hit it. A ball moving over 20 m/s into you hurts and knocks you back. The knife pops it up instead of pushing it away, and the laser pushes it 3x harder, while its pull beam now pulls it.
 - **Ball:** your grapple catches the ball. It reels the ball in toward you while it pulls you toward the ball.
+- **Rocket:** double knockback everywhere: rocket jumps, enemies, the lob and the ball.
+- **Ball:** a knife swing pushes the ball once, not every tick of the swing.
+- **Ball:** a hit does 1 damage per m/s of the ball's speed relative to you (a 30 m/s hit is 30), still only above 20 m/s.

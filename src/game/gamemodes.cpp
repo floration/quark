@@ -997,7 +997,11 @@ static void ballShotIn(Server& s, const Vec3& o, const Vec3& dir, float maxT, fl
     }
     if (owner >= 0 && owner < kMaxPlayers && s.players_[owner].weapon == WPN_KNIFE) {
         // the knife pops it up more than it sends it (owner, 2026-11-01: "knife pushes too much, it should be more vertical
-        // and less horizontal"): 1.5 m/s along the swing's level aim (was 3.6 along the aim), 7 m/s up
+        // and less horizontal"): 1.5 m/s along the swing's level aim (was 3.6 along the aim), 7 m/s up. Once a swing: a swing
+        // that hits no player keeps cutting every tick for kKnifeSwingTime, and each tick pushed it again (owner: "the knife
+        // got even crazier")
+        if (s.time() - s.ballKnifeAt_[owner] < weaponDef(WPN_KNIFE).refire * 0.9) return;
+        s.ballKnifeAt_[owner] = s.time();
         Vec3 flat(dir.x, 0, dir.z);
         const float fl = length(flat);
         Vec3 dv = fl > 1e-3f ? flat * (1.5f / fl) : Vec3(0, 0, 0);
@@ -1035,7 +1039,7 @@ void ballStep(Server& s) {
         if (len < 1e-3f) continue;
         n = n / len;
         // a fast ball hurts (owner, 2026-11-01: "if the ball hits somebody moving more than 20m/s relative to them it should
-        // damage them and knock them back"): (speed - 20) x 4 damage, at most 100, a knock along its path, and it bounces
+        // damage them and knock them back"): 1 damage per m/s of its speed relative to them (21 m/s: 21), a knock along its path, and it bounces
         // off them at half its speed; the kill is whoever touched it last. Once per player per 0.3 s
         const Vec3 relV = s.ballVel_ - p.move.vel;
         const float relSp = length(relV);
@@ -1044,7 +1048,7 @@ void ballStep(Server& s) {
             Vec3 kb = relV * 0.5f;
             kb.y = std::max(kb.y, 4.0f);
             const int by = s.ballToucher_ >= 0 && s.ballToucher_ != i ? s.ballToucher_ : -1;
-            s.damagePlayer(i, by, std::min(100.0f, (relSp - 20.0f) * 4.0f), kDamageBall, kb);
+            s.damagePlayer(i, by, relSp, kDamageBall, kb);   // (owner, 2026-11-01: "ball should only do 1 damage per m/s total"; was (speed - 20) x 4)
             s.ballVel_ = p.move.vel - relV * 0.5f;
             continue;
         }

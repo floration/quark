@@ -575,3 +575,10 @@ Worker 2's share of the 1-scored items, in the same batch-3 key table (`b3Keys`)
 
 ## Modes: the grapple catches the ball (protocol 65; owner, 2026-11-01: "you should be able to hook the ball")
 - `HookProbe` gets the ball's box (server: where it is; client: the latest snapshot's, since the ball isn't predicted), and the hook catches it ahead of any wall: `hookTarget kHookBall` (kMaxPlayers + 2). You're pulled to it as you would be to a player, the server moves the anchor with it each tick, and it reels the ball toward your chest at 30 m/s² up to 20 m/s relative to you. It lets go at the usual release distance, on release, or when the ball leaves play (a goal or the void). The wire readers keep kHookBall from 65 on (older readers drop it). The ball test checks a grapple aimed at it catches it.
+
+## Weapons: rocket knockback x2 (protocol 66; owner, 2026-11-01: "rocket should do double knockback in all cases")
+- The rocket's `knock` (a blast's centre) goes from 11 to 22 m/s. It covers your own rocket jumps (x1.3 as before), enemies (vertical x2 as before), the lob, and the ball's blast push. Stickies and bubbles stay at 11. A weapon set's own `knock` still overrides it. Protocol 66, since rocket jumps are predicted.
+
+## Modes: one knife push on the ball per swing (owner, 2026-11-01: "okay so the knife got even crazier lol")
+- A swing that hits no player keeps cutting every tick for `kKnifeSwingTime` (0.12 s, so 120 hitscans at 1000 Hz), and each one pushed the ball, up to the 60 m/s cap. Now a player's knife pushes the ball at most once per 0.9 x its refire (`Server::ballKnifeAt_`): 1.5 m/s forward, 7 m/s up.
+- Ball damage (owner, 2026-11-01: "ball should only do 1 damage per m/s total"): the relative speed itself (21 to 60), no longer (speed - 20) x 4 up to 100. It still needs over 20 m/s.
