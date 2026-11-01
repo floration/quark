@@ -27,7 +27,7 @@ void writeSnapshotClient(Writer& w, const Snapshot& s) {
     const MoveState& m = s.self;
     uint8_t opt = ((m.flags & MF_HOOKED) ? 1 : 0) | (m.dashTimer > 0 ? 2 : 0) | (m.dashCharges != kDashCharges || m.dashCooldownMs > 0 || m.dashRecharging > 0 ? 4 : 0) | (m.hookCooldown > 0 ? 8 : 0) |
                   ((m.flags & MF_HOOKED) && m.hookTarget ? 16 : 0) | ((m.flags & MF_PULLED) ? 32 : 0) |
-                  (m.jumpBuffer > 0 || m.jumpGrace > 0 ? 64 : 0) | (m.dashTimer > 0 && m.dashBounces > 0 ? 128 : 0);
+                  (m.jumpBuffer > 0 || m.jumpGrace > 0 ? 64 : 0) | ((m.dashTimer > 0 && m.dashBounces > 0) || m.dashSlide ? 128 : 0);
     // (44: mods bit 128 = the u16 phaseMs follows the opt parts; only while a movement equation counts it, else 0;
     // 45: mods bit 64 = the u16 acidOutMs after that, while it's below kAcidRearmMs: in acid or just out)
     const bool acid = m.acidOutMs < kAcidRearmMs;
@@ -46,7 +46,7 @@ void writeSnapshotClient(Writer& w, const Snapshot& s) {
     }
     if (opt & 32) w.vec(m.pullPoint);
     if (opt & 64) { w.f32(m.jumpBuffer); w.f32(m.jumpGrace); }   // (protocol 39; older writers never set these bits)
-    if (opt & 128) w.u8(m.dashBounces);
+    if (opt & 128) w.u8((uint8_t)((m.dashTimer > 0 ? m.dashBounces : 0) | (m.dashSlide ? 128 : 0)));   // (64: bit 128 = the dash slide)
     if (m.phaseMs) w.u16(m.phaseMs);
     if (acid) w.u16(m.acidOutMs);
     w.u8(s.selfHealth); w.u8(s.selfWeapon); w.u8(s.knifeAway); w.u8(s.syringeAway);
@@ -98,7 +98,7 @@ bool readSnapshotClient(Reader& r, Snapshot& s, uint16_t proto) {
     } else if (m.hookTarget > kMaxPlayers) m.hookTarget = 0;
     if (opt & 32) m.pullPoint = r.vec();
     if (opt & 64) { m.jumpBuffer = r.f32(); m.jumpGrace = r.f32(); }
-    if (opt & 128) m.dashBounces = r.u8();
+    if (opt & 128) { const uint8_t b = r.u8(); m.dashBounces = b & 127; m.dashSlide = (b & 128) != 0; }
     if (phase) m.phaseMs = r.u16();
     if (acid) m.acidOutMs = (uint16_t)std::min<int>(r.u16(), kAcidRearmMs);
     s.selfHealth = r.u8(); s.selfWeapon = r.u8(); s.knifeAway = r.u8(); s.syringeAway = proto >= kSnapSyringeSince ? r.u8() : 0;
