@@ -92,6 +92,7 @@ void enterMatchEnd(Server& s, const std::string& text, int winner) {
     s.broadcastEvent(e);
     s.log(text);
     s.glog(LOG_SIMPLE, "match end: %s", text.c_str());
+    s.matchWinner_ = winner;   // (1v1 winner stays: the rotation when the end screen is over)
     if (s.cfg_.ranked) {
         std::string why, res = s.rankedResult(winner, &why);
         if (res.empty()) s.message("not rated: " + why);
@@ -1564,6 +1565,7 @@ void rulesTick(Server& s) {
             // course, untimed) until someone starts the race.
             if (!hookEvent(s, MSLOT_WARMUP) && isRaceMode(m.mode)) tickRacePractice(s);
             if (m.phase != PHASE_WARMUP) break;
+            if (s.oneVsOne()) s.fillOneVsOneSeats();   // (a seat left open: the first in line takes it)
             double v;
             if (!s.cfg_.autoStart || unplayable(s) || !(hookQuery(s, MSLOT_CAN_AUTO_START, v) ? v != 0 : nativeCanAutoStart(s))) { s.phaseEnd_ = 0; m.timeLeft = 0; break; }
             if (s.phaseEnd_ == 0) {
@@ -1603,6 +1605,8 @@ void rulesTick(Server& s) {
             m.timeLeft = (float)std::max(0.0, s.phaseEnd_ - s.time());
             if (s.time() >= s.phaseEnd_) {
                 for (auto& p : s.players_) p.alive = false;
+                s.rotateWinnerStays(s.matchWinner_);   // (1v1: the loser to the back of the line, the first in line in)
+                s.matchWinner_ = -1;
                 const CustomRules& c = s.cfg_.custom;
                 if (c.active() && c.maps.size() > 1) { // a custom mode's map pool: on to the next map
                     auto it = std::find(c.maps.begin(), c.maps.end(), s.cfg_.map);

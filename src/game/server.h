@@ -118,6 +118,7 @@ struct ServerPlayer {
     bool isBot = false;
     bool balanceBot = false;    // added automatically to even out teams
     bool letIn = false;         // duel: voted in past the side's size (joined when the sides were even and full)
+    uint32_t queueSeq = 0;      // 1v1 (arena / a 1v1 duel): place in the line to play (lowest first), 0 = not in it
     NetAddr addr;
     uint32_t nonce = 0;
     std::string name;
@@ -356,6 +357,15 @@ public:
     // voted to spectate this map ({rank id, name}): leaving and coming back doesn't get them back into play
     std::vector<std::pair<std::string, std::string>> specOut_;
     void moveToSpectator(int id);   // out of play (as "team spec" does: tag counts it as elimination)
+    // 1v1 winner stays (owner, 2026-11-01: "make 1v1 modes swap in specators cyclicly winner stays, even ranked"): the
+    // spectators wanting to play wait in a line (queueSeq); at each match's end the loser goes to its back and the
+    // first in line plays the winner. An open seat (a leaver) is filled from the line in warmup.
+    bool oneVsOne() const;
+    void queueToPlay(int id);       // to the back of the line (and tells them where they are)
+    void rotateWinnerStays(int winner);   // at the match end screen's end: winner the winning team (else nothing)
+    void fillOneVsOneSeats();       // warmup: an empty 1v1 seat gets the first in line
+    uint32_t queueNext_ = 0;
+    int matchWinner_ = -1;          // the team that won the match that just ended (-1: a draw / none)
     // Stuck knives / bolts / syringes (StuckProp, EV_PROP; cosmetic): the world ones go to everyone as they land (the
     // newest kPropReplay are replayed to whoever joins later); one in a player goes to each client once that player is
     // in its sight (NET-10: a hit out of sight isn't told), and a clear follows when the player dies / respawns / leaves.
