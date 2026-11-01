@@ -2485,7 +2485,9 @@ void Server::drainCmds(int id) {
     }
 }
 
-void Server::runPlayerCmd(int id, const UserCmd& cmd) {
+void Server::runPlayerCmd(int id, const UserCmd& cmdIn) {
+    UserCmd cmd = cmdIn;
+    if (bombRooted(ms_, id)) rootCmd(cmd);   // (planting / defusing: no moving or shooting of your own; knockback still moves you)
     ServerPlayer& p = players_[id];
     p.lastCmdSeq = cmd.seq;
     p.cmdsRun++;

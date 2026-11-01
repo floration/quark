@@ -629,6 +629,7 @@ void NetClient::tick(UserCmd cmd) {
     if (play_.active || state_ != ConnState::Connected || !mapReady_) return;
     cmd.seq = nextSeq_++;
     cmd.msec = (uint8_t)(1000 / tickRate());
+    if (bombRooted(mode(), clientId_)) rootCmd(cmd);   // (planting / defusing: as the server drops it, so prediction agrees)
     cmd.viewTick = (uint32_t)(uint64_t)std::max(0.0, renderTime_ * 1000.0); // server ms we're looking at (its low 32 bits)
     // a fixed interpolation delay goes to the server, whose lag compensation then rewinds that far (FINAL_REVIEW 2.5)
     int interpMs = interpFixed_ >= 0 ? std::min((int)std::lround(interpFixed_ * 1000.0f), kMaxInterpMs) : 0;

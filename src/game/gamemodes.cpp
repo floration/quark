@@ -1513,7 +1513,7 @@ bool nativeFrozen(const Server& s, int id) {
     if (s.ms_.mode == MODE_HIDE && s.ms_.phase == PHASE_FREEZE) return s.players_[id].it; // hiders hide, the seeker faces the wall
     if (s.ms_.mode == MODE_TAG && s.ms_.phase == PHASE_LIVE) return s.players_[id].it && s.time() < s.players_[id].itFreezeUntil;
     if (s.ms_.phase == PHASE_FREEZE) return true;
-    if (s.ms_.mode == MODE_BOMB && s.ms_.actionPlayer == id && s.ms_.phase == PHASE_LIVE) return true;
+    // (a planter / defuser isn't frozen: their command is rooted, bombRooted in protocol.h, so knockback still moves them)
     return false;
 }
 
