@@ -531,11 +531,8 @@ Worker 2's share of the 1-scored items, in the same batch-3 key table (`b3Keys`)
 ## Health bars in ranked (owner, 2026-11-01: "because healthbars are enabled they should be allowed in ranked")
 - The ranked check on the health bars over players is gone (game.cpp): ranked draws them like any other match when HEALTH BARS OVER PLAYERS is on (the default). The server already sent visible players' health in ranked; nothing else changes.
 
-## One dash charge by default (owner, 2026-11-01: "also only 1 dash charge default")
-- `kDashCharges` 2 -> 1 (pmove.h); protocol 60: the own movement state sends the charges when they aren't the default, and an older client would predict two.
-- Everything else about charges is unchanged: the cooldown (0.6 s from a dash's end), the 1.2 s recharge, the floor refill, a bhop landing's one. With one charge the floor spaces held dashes 1.32 s apart (the dash's 0.12 s, then the recharge), and the air gives one dash.
-- A dash jump keeps its own charge (1.18.7's exemption); a super dash leaves "exactly one if one has recharged", so with one charge it leaves none until the recharge and a floor touch.
-- A custom mode's dash_charges multiplier now multiplies 1 (x2 = two charges, as before by default). The charge rule tests run with x2 so they keep checking the two-charge cases.
+## Dash charges stay at two (owner, 2026-11-01: "also only 1 dash charge default", then "nevermind change the dash back")
+- Testing build 1.19.3.23 had one charge (protocol 60); `kDashCharges` is 2 again and the protocol is 61, so a 60 client (which would predict one) can't join a 61 server. The tests are back to the two-charge defaults.
 
 ## Planting / defusing keeps knockback (owner, 2026-11-01: "when defusing/planting you take no knockback this is wrong")
 - The planter / defuser was MF_FROZEN (the round start's freeze), which zeroes velocity every step. Now `bombRooted` (protocol.h) drops the command's movement, jump, dash, grapple and fire instead, on the server (runPlayerCmd) and in the client's own prediction (NetClient::tick), so knockback, blasts and grapple pulls move them and friction slows them as usual. bomb.qlogic's `slot frozen` is the freeze phase only. Pushed out of range, the plant / defuse stops (bombStep's range check, unchanged).
