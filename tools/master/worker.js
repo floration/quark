@@ -19,6 +19,10 @@
 // goes only to this Worker. Ids before 1.17 were sha256(secret): POST /hello (or any request with the secret) moves an
 // old id's rows to the new id once (id_moves).
 //   POST /hello   form: secret                                  "id <id>" (and the move above)
+//   POST /number  form: secret                                  "num <N>": this player's number (1.20+), handed out
+//                                                                in order the first time the Worker sees a player
+//                                                                (here or with a name); a new player's game takes
+//                                                                "player<N>" as its default name
 // Match tickets (servers, with their announce token; form also carries port, token[, ip]):
 //   POST /ticket  form: kind=match, match (16 hex), ladder, map, players=id,..., keys=pub,..., sigs=sig,..., addrs=ip:port,...
 //                 when a ranked match goes live; each player's key must hash to their id and have signed
@@ -128,7 +132,7 @@ const LINK_CODE_MS = 10 * 60000;
 // and spends none of its address's: one "Queue for all" is 16 POSTs.
 const LIMITS = {
   ip: { burst: 240, perSec: 6 },        // every request except the bot's, per client IP (a few dozen games polling /queue, /filled)
-  write: { burst: 60, perSec: 0.5 },    // also, per client IP: POST /hello /report /racetime /lifetime /bench /queue /link /linkcode
+  write: { burst: 60, perSec: 0.5 },    // also, per client IP: POST /hello /number /report /racetime /lifetime /bench /queue /link /linkcode
                                         // /disputes (not /announce /remove: they're per address and token)
   id: { burst: 10, perSec: 0.1 },       // the same writes, per player id (when they carry a secret)
   bot: { burst: 200, perSec: 5 },       // instead of ip + write: requests carrying the right BOT_KEY (/queue /linkcode)
@@ -232,7 +236,7 @@ async function playerOf(env, secret, now) {
       q(`DELETE FROM players WHERE id IN (${ladderIds.map(() => "?").join(",")})`, ...ladderIds),   // (merged above)
       q("UPDATE accounts SET tgames = MAX(accounts.tgames, o.tgames), created = MIN(accounts.created, o.created) " +
         "FROM (SELECT tgames, created FROM accounts WHERE id = ?) AS o WHERE accounts.id = ?", old, id),
-      ...["accounts", "names", "links", "lifetime"].flatMap((t) => [q(`UPDATE OR IGNORE ${t} SET id = ? WHERE id = ?`, id, old), q(`DELETE FROM ${t} WHERE id = ?`, old)]),
+      ...["accounts", "names", "links", "lifetime", "player_numbers"].flatMap((t) => [q(`UPDATE OR IGNORE ${t} SET id = ? WHERE id = ?`, id, old), q(`DELETE FROM ${t} WHERE id = ?`, old)]),
       q("INSERT INTO race_times (map, id, ms, splits, version, created) SELECT map, ?, ms, splits, version, created FROM race_times WHERE id = ? AND 1 " +
         "ON CONFLICT(map, id) DO UPDATE SET ms = excluded.ms, splits = excluded.splits, version = excluded.version, created = excluded.created WHERE excluded.ms < race_times.ms", id, old),
       q("DELETE FROM race_times WHERE id = ?", old),
@@ -246,8 +250,22 @@ async function playerOf(env, secret, now) {
 }
 const randomToken = () => [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
 
+// (only when missing: a conflicting INSERT OR IGNORE would still use up an AUTOINCREMENT number; OR IGNORE stays for
+// two first requests at once, which can cost one gap and nothing else)
+const NUMBER_SQL = "INSERT OR IGNORE INTO player_numbers (id, created) SELECT ?, ? WHERE NOT EXISTS (SELECT 1 FROM player_numbers WHERE id = ?)";
+// A player's number (POST /number): the next one the first time a player is seen, kept for good. null if the table
+// isn't there yet (the worker deployed before migrations/0003): nothing else depends on it.
+async function playerNumber(env, me, now) {
+  try {
+    await env.DB.prepare(NUMBER_SQL).bind(me, now, me).run();
+    const r = await env.DB.prepare("SELECT n FROM player_numbers WHERE id = ?").bind(me).first();
+    return r ? r.n : null;
+  } catch (e) { return null; }
+}
+
 async function saveName(env, me, nameHex, now) {
   if (!/^([0-9a-f]{2}){1,20}$/.test(nameHex)) return;
+  try { await env.DB.prepare(NUMBER_SQL).bind(me, now, me).run(); } catch (e) {}   // (numbered in the order players are first seen)
   const name = nameHex.match(/../g).map((h) => String.fromCharCode(parseInt(h, 16))).join("");
   if (/^[\x20-\x7e]+$/.test(name))
     await env.DB.prepare("INSERT INTO names (id, name, updated) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, updated = excluded.updated")
@@ -834,7 +852,7 @@ async function cached(req, u, ctx, make) {
 }
 
 // (/disputes only reads, but it carries ADMIN_KEY: a POST like the writes, the key in the body, no CORS)
-const WRITES = new Set(["/announce", "/remove", "/hello", "/report", "/racetime", "/lifetime", "/bench", "/queue", "/link", "/linkcode", "/disputes"]);
+const WRITES = new Set(["/announce", "/remove", "/hello", "/number", "/report", "/racetime", "/lifetime", "/bench", "/queue", "/link", "/linkcode", "/disputes"]);
 const SERVER_WRITES = new Set(["/ticket", "/result", "/racerun"]);
 
 export default {
@@ -909,6 +927,12 @@ export default {
       if (!me) return text("bad request", 400);
       await saveName(env, me, String(form.get("name") || ""), now);
       return text("id " + me);
+    }
+    if (u.pathname === "/number") {
+      const me = await playerOf(env, String(form.get("secret") || ""), now);
+      if (!me) return text("bad request", 400);
+      const n = await playerNumber(env, me, now);
+      return n ? text("num " + n) : text("no numbers yet", 503);
     }
     if (u.pathname === "/report") return text(await report(env, form, now));
     if (u.pathname === "/racetime") return text("update the game: race times are sent by the game server");

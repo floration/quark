@@ -136,6 +136,9 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     // link, lifetime stats) over the first time it sees the secret. Sent in the background, retried until it takes
     // (REVIEW 3.6), then recorded in the config so later starts don't send it again.
     if (!rankKey_.secret.empty() && opts_.screenshot.empty() && cfg_.rankHello != rankKey_.id) { rank_.hello(rankKey_); helloPending_ = true; }
+    // A new player's default name is "player<N>", N their player number from the Worker (POST /number): asked while
+    // the name is still the plain default, then kept in the config like a typed name (see updatePlayerNumber).
+    numberWanted_ = !rankKey_.secret.empty() && opts_.screenshot.empty() && cfg_.name == "player";
     ui_.steadyCaret = !opts_.screenshot.empty();
     if (opts_.hostMode < 0 && opts_.vsBotsMode < 0 && opts_.connect.empty() && opts_.editMap.empty()) loadMenuBackdrop();
     if (opts_.debugInfo) { setScreen(Screen::Info); infoTab_ = opts_.debugInfo - 1; }
@@ -2006,6 +2009,7 @@ void Game::frame(double dt) {
     }
 
     if (helloPending_ && rank_.helloDone()) { helloPending_ = false; cfg_.rankHello = rankKey_.id; cfg_.save(); }   // (any screen)
+    if (numberWanted_) updatePlayerNumber();   // (any screen)
     if (screen_ == Screen::InGame) {
         handleEvents();
         updateAnnouncer();
@@ -6422,6 +6426,23 @@ void Game::openSettingsTab(int tab) {
     captureAction_ = -1;
     ui_.closePopup();
     cfg_.save();
+}
+
+// The default name "player" becomes "player<N>" once the Worker answers this player's number (asked again every
+// 5 minutes while it can't). Stops for good when the name changes first: a name the player typed is never replaced.
+void Game::updatePlayerNumber() {
+    if (cfg_.name != "player" || uiTest_) { numberWanted_ = false; return; }
+    if (!numberAsked_ && time_ >= nextNumberAsk_) { rank_.request("number", "/number", "secret=" + rankKey_.secret); numberAsked_ = true; }
+    std::string out;
+    if (!rank_.takeText("number", out)) return;
+    numberAsked_ = false;
+    long n = 0;
+    if (out.rfind("num ", 0) == 0) n = std::strtol(out.c_str() + 4, nullptr, 10);
+    if (n <= 0 || n > 99999999) { nextNumberAsk_ = time_ + 300; return; }   // (no server, an old Worker, offline: later)
+    numberWanted_ = false;
+    cfg_.name = "player" + std::to_string(n);
+    cfg_.save();
+    if (net_.state() == ConnState::Connected) net_.sendCommand("name " + cfg_.name);
 }
 
 // BACK and Esc: save, send what changed, back where settings was opened from (and on its first tab next time)
