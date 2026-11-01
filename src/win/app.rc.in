@@ -27,7 +27,7 @@ BEGIN
             VALUE "OriginalFilename", "@QUARK_RES_FILE@"
             VALUE "ProductName", "quark"
             VALUE "ProductVersion", "@QUARK_VERSION@"
-            VALUE "Comments", "https://floration.github.io/quark"
+            VALUE "Comments", "https://quark.casa"
         END
     END
     BLOCK "VarFileInfo"

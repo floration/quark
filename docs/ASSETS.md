@@ -131,7 +131,7 @@ logged and the default is kept. Parsed once at startup; drawing costs what the b
 - Not animated in a box override: the rocket's flame flicker, the sticky's core blink and the bubble's wobble (the
   game spins and turns it as usual).
 
-The website shows the same export: https://floration.github.io/quark/assets/ (every model and map in 3D) and
+The website shows the same export: https://quark.casa/assets/ (every model and map in 3D) and
 `/sounds/` (every sound and voice line), each with a PRODUCTION / TESTING switch and a "make your own" mode (a box
 builder that exports .glb, a synth that saves .wav). `python3 tools/site_assets.py` fills `site/assets/data/production/`
 from a local build; CI publishes production with the site and testing with each testing build (release.yml).

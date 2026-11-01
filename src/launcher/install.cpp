@@ -373,7 +373,7 @@ bool setPrograms(bool on, const fs::path& l, const std::string& version) {
     regStr(k, L"InstallLocation", appDir().wstring());
     regStr(k, L"DisplayIcon", exe);
     regStr(k, L"UninstallString", L"\"" + exe + L"\" --uninstall");
-    regStr(k, L"URLInfoAbout", L"https://floration.github.io/quark");
+    regStr(k, L"URLInfoAbout", L"https://quark.casa");
     regDword(k, L"NoModify", 1);
     regDword(k, L"NoRepair", 1);
     uintmax_t size = 0;

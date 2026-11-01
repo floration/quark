@@ -13,7 +13,7 @@ namespace {
 // the owner with `quark_sign sign-master`, over sign::kMasterSignPrefix + the file): an unsigned or wrongly signed
 // file is ignored, and so is an http:// one.
 const char* kPinnedMasterUrl = "https://quark-master.jamesrandallmcamis.workers.dev";
-const char* kMasterUrlFile = "https://floration.github.io/quark/master.txt";
+const char* kMasterUrlFile = "https://quark.casa/master.txt";
 const char* kIpv4Echo = "https://api.ipify.org"; // IPv4-only: hosts on IPv6 still announce their v4 address
 
 std::string trim(std::string s) {

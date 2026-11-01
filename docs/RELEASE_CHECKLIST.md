@@ -341,8 +341,8 @@ The site is only redeployed by a production release (a testing build only replac
 | ☐ | `changelogs/full/<VERSION>.md` exists and explains every change and why. Run `python3 tools/site_updates.py .` and open `site/updates/index.html` and `site/updates/<VERSION>/index.html`: the list shows every version, and the version page shows the full changelog. |
 | ☐ | Assets and Sounds pages: run `python3 tools/site_assets.py`, serve `site/` (`python3 -m http.server -d site`) and open `/assets/` and `/sounds/`: each tab's models and maps spin, zoom and pan with the team colour switch; sounds and voices play with waveforms; the box builder downloads a .glb and the synth a .wav; TESTING says "No testing build published yet" when there's none. **After** this testing build: the live `/assets/?channel=testing` shows it, and `SHA256SUMS` still verifies. |
 | ☐ | **First production deploy from the `site` branch** (1.19.0): the production run's pages job checks out the `site` branch into `site/` and deploys it. In Actions, the pages job is green and its log shows the `site` checkout; if it failed or was skipped, run Actions → build-and-release → Run workflow on the default branch with **site** ticked. |
-| ☐ | **After** production: https://floration.github.io/quark shows the new version and changelog; each download link works, and its `.sig` and `SHA256SUMS` are there. |
-| ☐ | **After** production: https://floration.github.io/quark/updates/ lists the new version, and https://floration.github.io/quark/updates/<VERSION>/ shows its full changelog. The Discord #updates post links to that page. |
+| ☐ | **After** production: https://quark.casa shows the new version and changelog; each download link works, and its `.sig` and `SHA256SUMS` are there. |
+| ☐ | **After** production: https://quark.casa/updates/ lists the new version, and https://quark.casa/updates/<VERSION>/ shows its full changelog. The Discord #updates post links to that page. |
 
 ## 16. Quarkology and the editors
 
