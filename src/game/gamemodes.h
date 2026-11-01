@@ -26,6 +26,7 @@ bool modeIsTeamBased(int mode);
 // weapon's); a shot along a ray (o, dir up to maxT) that meets it pushes it along the ray by its damage. No-ops in
 // other modes.
 void ballBlast(Server& s, const Vec3& at, float radius, float knock, int owner);
+void ballHit(Server& s, const Vec3& dv, int by);   // a projectile hit it: dv added (ball mode, while it's in play)
 void ballShot(Server& s, const Vec3& o, const Vec3& dir, float maxT, float dmg, int owner);
 void rulesReset(Server& s);                       // back to warmup
 void rulesTick(Server& s);                        // once per server tick

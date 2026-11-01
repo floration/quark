@@ -4451,7 +4451,10 @@ static void testBallMode(uint16_t port) {
     s.ms_.bombPos = west.center(); s.ballVel_ = {};
     for (int i = 0; i < 5; i++) { s.frame(); sleepMs(1); }
     printf("  into the west goal: %d-%d\n", s.ms_.scoreA, s.ms_.scoreB);
-    CHECK(s.ms_.scoreA == 0 && s.ms_.scoreB == 1 && length(s.ms_.bombPos - spawn) < 1.0f);
+    CHECK(s.ms_.scoreA == 0 && s.ms_.scoreB == 1 && s.ballRespawnAt_ > s.time() + 2.0);   // (it waits 3 s in the goal)
+    s.ballRespawnAt_ = s.time();
+    for (int i = 0; i < 3; i++) { s.frame(); sleepMs(1); }
+    CHECK(length(s.ms_.bombPos - spawn) < 1.0f && s.ballRespawnAt_ == 0);
     // the clock runs out: B has more goals
     s.phaseEnd_ = s.time();
     for (int i = 0; i < 5 && s.ms_.phase == PHASE_LIVE; i++) { s.frame(); sleepMs(1); }

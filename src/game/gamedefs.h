@@ -166,6 +166,7 @@ constexpr float kGlassShatterDamage = 1.0f;    // a SHATTER mode piece in flight
 constexpr float kGlassPaneMaxDamage = 50.0f;   // one pane's shards hurt a player this much at most (owner, 2026-10-29: "limit damage per broken glass, 50 per glass")
 constexpr float kGlassBreakDamage = 10.0f;   // dashing through / being pulled through (q: "make you take 10 damage")
 constexpr int kDamageGlass = 249;            // kill cause: glass
+constexpr int kDamageBall = 248;             // kill cause: the ball (ball mode: it hit you at over kBallHurtSpeed)
 #define WB(w) (1u << (w))
 
 // DUEL (1v1 or 2v2): every life (round) is played under one of these, picked at random (never the same twice

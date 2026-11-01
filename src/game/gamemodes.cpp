@@ -961,6 +961,7 @@ static void ballReset(Server& s) {
     s.ballVel_ = {};
     s.ballToucher_ = -1;
     s.ballSet_ = true;
+    s.ballRespawnAt_ = 0;
 }
 
 static void ballPush(Server& s, const Vec3& dv, int by) {
@@ -987,6 +988,23 @@ static void ballBlastIn(Server& s, const Vec3& at, float radius, float knock, in
 static void ballShotIn(Server& s, const Vec3& o, const Vec3& dir, float maxT, float dmg, int owner) {
     if (s.ms_.mode != MODE_BALL || !s.ballSet_ || dmg <= 0) return;
     if (rayAABB(o, safeInv(dir), ballBox(s.ms_.bombPos), maxT) < 0) return;
+    if (owner >= 0 && owner < kMaxPlayers && s.players_[owner].weapon == WPN_LASER) {
+        // the laser (owner, 2026-11-01: "laser needs to do more knockback like 3x, and pull doesnt work"): 3 x its push on
+        // a player (kLaserPush 20 -> 60 m/s per second of beam), and the pull beam (alt) pulls it toward you as hard
+        const bool pull = (s.players_[owner].buttons & BTN_ALTFIRE) != 0;
+        ballPush(s, dir * (3.0f * weaponExtra(WPN_LASER).knock * weaponDef(WPN_LASER).refire * (pull ? -1.0f : 1.0f)), owner);
+        return;
+    }
+    if (owner >= 0 && owner < kMaxPlayers && s.players_[owner].weapon == WPN_KNIFE) {
+        // the knife pops it up more than it sends it (owner, 2026-11-01: "knife pushes too much, it should be more vertical
+        // and less horizontal"): 1.5 m/s along the swing's level aim (was 3.6 along the aim), 7 m/s up
+        Vec3 flat(dir.x, 0, dir.z);
+        const float fl = length(flat);
+        Vec3 dv = fl > 1e-3f ? flat * (1.5f / fl) : Vec3(0, 0, 0);
+        dv.y = std::max(0.0f, 7.0f - s.ballVel_.y);
+        ballPush(s, dv, owner);
+        return;
+    }
     ballPush(s, dir * std::min(dmg * 0.12f, 12.0f), owner);   // (a 100 damage shot: 12 m/s; the laser's ticks a little each)
 }
 
@@ -996,6 +1014,9 @@ void ballStep(Server& s) {
     ModeState& m = s.ms_;
     const Map& map = s.map_;
     if (!s.ballSet_) ballReset(s);
+    // after a goal or the void, it waits kBallRespawn s before it's back (owner, 2026-11-01: "it shouldnt respawn instantly")
+    constexpr double kBallRespawn = 3.0;
+    if (s.ballRespawnAt_ > 0) { if (s.time() >= s.ballRespawnAt_) ballReset(s); return; }
     for (int i = 0; i < kMaxPlayers; i++) {
         const auto& p = s.players_[i];
         if (!p.connected || !p.alive || p.team == TEAM_SPECTATOR) continue;
@@ -1008,6 +1029,20 @@ void ballStep(Server& s) {
         if (len < 1e-3f) { n = Vec3(p.move.vel.x, 0, p.move.vel.z); len = length(n); }
         if (len < 1e-3f) continue;
         n = n / len;
+        // a fast ball hurts (owner, 2026-11-01: "if the ball hits somebody moving more than 20m/s relative to them it should
+        // damage them and knock them back"): (speed - 20) x 4 damage, at most 100, a knock along its path, and it bounces
+        // off them at half its speed; the kill is whoever touched it last. Once per player per 0.3 s
+        const Vec3 relV = s.ballVel_ - p.move.vel;
+        const float relSp = length(relV);
+        if (relSp > 20.0f && s.time() - s.ballHurtAt_[i] > 0.3) {
+            s.ballHurtAt_[i] = s.time();
+            Vec3 kb = relV * 0.5f;
+            kb.y = std::max(kb.y, 4.0f);
+            const int by = s.ballToucher_ >= 0 && s.ballToucher_ != i ? s.ballToucher_ : -1;
+            s.damagePlayer(i, by, std::min(100.0f, (relSp - 20.0f) * 4.0f), kDamageBall, kb);
+            s.ballVel_ = p.move.vel - relV * 0.5f;
+            continue;
+        }
         const float rel = dot(p.move.vel - s.ballVel_, n);
         if (rel > 0) {
             Vec3 dv = n * (rel * 1.3f);
@@ -1023,7 +1058,9 @@ void ballStep(Server& s) {
         }
     }
     ballMove(m.bombPos, s.ballVel_, map, s.dt());
-    if (m.bombPos.y < map.killY() + 2.0f || (!map.lava.empty() && map.inLava(ballBox(m.bombPos)))) { ballReset(s); return; }
+    if (m.bombPos.y < map.killY() + 2.0f || (!map.lava.empty() && map.inLava(ballBox(m.bombPos)))) {
+        s.ballVel_ = {}; s.ballRespawnAt_ = s.time() + kBallRespawn; return;
+    }
     if (m.phase != PHASE_LIVE || map.bombSites.size() < 2) return;
     for (int k = 0; k < 2; k++) {
         const AABB& g = map.bombSites[k];
@@ -1039,7 +1076,8 @@ void ballStep(Server& s) {
         }
         s.message(text);
         s.glog(LOG_SIMPLE, "goal: %s (%d-%d)", text.c_str(), m.scoreA, m.scoreB);
-        ballReset(s);
+        s.ballVel_ = {};   // (it sits in the goal, then back to the middle)
+        s.ballRespawnAt_ = s.time() + kBallRespawn;
         return;
     }
 }
@@ -1659,6 +1697,7 @@ bool nativeFrozen(const Server& s, int id) {
 } // namespace
 
 void ballBlast(Server& s, const Vec3& at, float radius, float knock, int owner) { ballBlastIn(s, at, radius, knock, owner); }
+void ballHit(Server& s, const Vec3& dv, int by) { if (s.ms_.mode == MODE_BALL && s.ballSet_ && s.ballRespawnAt_ <= 0) ballPush(s, dv, by); }
 void ballShot(Server& s, const Vec3& o, const Vec3& dir, float maxT, float dmg, int owner) { ballShotIn(s, o, dir, maxT, dmg, owner); }
 
 // Tourney warmup is a free for all; during matches the two players are on teams A and B.
