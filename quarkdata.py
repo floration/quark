@@ -32,7 +32,7 @@ import aiohttp
 MASTER_URL = "https://quark-master.jamesrandallmcamis.workers.dev"
 GITHUB_REPO = "floration/quark"
 RAW_BASE = f"https://raw.githubusercontent.com/{GITHUB_REPO}"
-SITE_URL = "https://floration.github.io/quark"
+SITE_URL = "https://quark.casa"
 DISCORD_INVITE = "https://discord.gg/RERYWNWSXg"
 
 # ---- copied from the game (src/game/gamedefs.h, src/game/protocol.h): keep in sync
