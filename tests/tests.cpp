@@ -4284,6 +4284,62 @@ static void testDuel2v2(uint16_t port) {
     s.stop();
 }
 
+// 1v1 winner stays (owner, 2026-11-01: "make 1v1 modes swap in specators cyclicly winner stays, even ranked"): the
+// spectators wait in line in join order; at each match end the loser goes to the back and the first in line plays the
+// winner. A draw keeps both; "team spec" leaves the line; a seat left open in warmup is filled from the line.
+static void testWinnerStays(uint16_t port) {
+    printf("1v1 winner stays: spectators rotate in, the loser to the back of the line\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "dojo"; cfg.mode = MODE_ARENA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient a, b, c, d;
+    std::vector<NetClient*> cls;
+    const char* names[] = {"ann", "bob", "cat", "dan"};
+    NetClient* all[] = {&a, &b, &c, &d};
+    for (int i = 0; i < 4; i++) { all[i]->connect("127.0.0.1:" + std::to_string(port), names[i]); cls.push_back(all[i]); pump(s, cls, 0.4, idle); }
+    auto P = [&](NetClient& n) -> ServerPlayer& { return s.players_[n.clientId()]; };
+    CHECK(P(a).team != TEAM_SPECTATOR && P(b).team != TEAM_SPECTATOR && P(a).team != P(b).team);
+    CHECK(P(c).team == TEAM_SPECTATOR && P(d).team == TEAM_SPECTATOR);
+    CHECK(P(c).queueSeq > 0 && P(d).queueSeq > P(c).queueSeq);   // (join order)
+    auto endMatch = [&](int winner) {   // the match end screen, then its end
+        s.matchWinner_ = winner;
+        s.ms_.phase = PHASE_MATCH_END;
+        s.phaseEnd_ = s.time();
+        pump(s, cls, 0.3, idle);
+    };
+    // ann wins: bob to the back of the line, cat (first in line) plays ann
+    const int annTeam = P(a).team, bobTeam = P(b).team;
+    endMatch(annTeam);
+    CHECK(P(a).team == annTeam);
+    CHECK(P(c).team == bobTeam && P(c).queueSeq == 0);
+    CHECK(P(b).team == TEAM_SPECTATOR && P(b).queueSeq > P(d).queueSeq);
+    CHECK(s.ms_.phase == PHASE_WARMUP);
+    // a draw: the same two again
+    endMatch(-1);
+    CHECK(P(a).team == annTeam && P(c).team == bobTeam);
+    // cat wins: ann out to the back, dan in (then bob, then ann: cyclic)
+    endMatch(bobTeam);
+    CHECK(P(c).team == bobTeam && P(d).team == annTeam && P(a).team == TEAM_SPECTATOR);
+    CHECK(P(b).queueSeq > 0 && P(a).queueSeq > P(b).queueSeq);
+    // choosing to watch leaves the line: bob is skipped
+    b.sendCommand("team spec");
+    pump(s, cls, 0.3, idle);
+    CHECK(P(b).queueSeq == 0);
+    endMatch(bobTeam);   // cat wins again: dan out, ann (next in line, bob left it) in
+    CHECK(P(a).team == annTeam && P(d).team == TEAM_SPECTATOR && P(b).team == TEAM_SPECTATOR);
+    // a leaver's seat in warmup goes to the first in line (dan), once the leaver is gone (their reconnect grace over)
+    const int cid = c.clientId();
+    c.disconnect();
+    std::vector<NetClient*> rest = {&a, &b, &d};
+    pump(s, rest, 0.2, idle);
+    s.players_[cid].awayUntil = 1e-6;   // (the grace over now)
+    pump(s, rest, 0.5, idle);
+    CHECK(P(d).team == bobTeam);
+    s.stop();
+}
+
 // Internet list end to end; only runs with QUARK_MASTER pointing at a test copy of tools/master/worker.js.
 static void testInternetList(uint16_t port) {
     if (!getenv("QUARK_MASTER") || strncmp(getenv("QUARK_MASTER"), "http", 4) != 0) return;
@@ -10033,7 +10089,7 @@ int main(int argc, char** argv) {
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); testRemoteMoveSounds(TP(28585)); testRefillPrediction(TP(28586)); testHookPrediction(TP(28588)); }},
         {"brains", [] { g_fail += brainTests(TP(29150)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
-        {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
+        {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); testWinnerStays(TP(28522)); }},
         {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testGrappleAgainstWall(); testAcid(); testLiquids(); testFeatureBlocks(); testStrafeEase(); testSeeThrough(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testModeSpawnSets(); testMapFix(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},

@@ -1289,6 +1289,75 @@ void Server::moveToSpectator(int id) {
     p.team = TEAM_SPECTATOR;
 }
 
+bool Server::oneVsOne() const {
+    return !cfg_.vsBots && (cfg_.mode == MODE_ARENA || (cfg_.mode == MODE_DUEL && std::max(cfg_.duelTeamSize, 1) == 1));
+}
+
+void Server::queueToPlay(int id) {
+    ServerPlayer& p = players_[id];
+    if (!oneVsOne() || p.isBot || p.specLocked) return;
+    p.queueSeq = ++queueNext_;
+    int ahead = 0;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        const auto& o = players_[i];
+        ahead += i != id && o.connected && o.team == TEAM_SPECTATOR && o.queueSeq > 0 && o.queueSeq < p.queueSeq;
+    }
+    GameEvent e; e.type = EV_MESSAGE;
+    e.text = ahead == 0 ? "you're next in line: you play the winner of this match" : "you're in line to play: " + std::to_string(ahead) + " ahead of you (winner stays)";
+    sendEvent(id, e);
+}
+
+// the first in line: a connected human spectator with the lowest queueSeq, or -1
+static int firstInLine(const Server& s) {
+    int best = -1;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        const auto& o = s.players_[i];
+        if (!o.connected || o.isBot || o.specLocked || o.team != TEAM_SPECTATOR || o.queueSeq == 0) continue;
+        if (best < 0 || o.queueSeq < s.players_[best].queueSeq) best = i;
+    }
+    return best;
+}
+
+void Server::rotateWinnerStays(int winner) {
+    if (!oneVsOne() || (winner != TEAM_A && winner != TEAM_B)) return;   // (a draw: the same two play again)
+    const int next = firstInLine(*this);
+    if (next < 0) return;   // nobody waiting: a rematch
+    const int seat = winner == TEAM_A ? TEAM_B : TEAM_A;
+    int loser = -1, champ = -1;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        const auto& o = players_[i];
+        if (!o.connected || o.balanceBot) continue;
+        if (o.team == seat && loser < 0) loser = i;
+        if (o.team == winner && champ < 0) champ = i;
+    }
+    std::string text;
+    if (loser >= 0) {
+        moveToSpectator(loser);
+        if (!players_[loser].isBot) queueToPlay(loser);
+        text = players_[loser].name + " goes to the back of the line; ";
+    }
+    ServerPlayer& n = players_[next];
+    n.team = seat; n.queueSeq = 0; n.letIn = false;
+    text += n.name + " steps in" + (champ >= 0 ? " against " + players_[champ].name + " (winner stays)" : "");
+    message(text);
+    glog(LOG_SIMPLE, "winner stays: %s", text.c_str());
+}
+
+void Server::fillOneVsOneSeats() {
+    if (!oneVsOne()) return;
+    for (int t : {TEAM_A, TEAM_B}) {
+        bool taken = false;
+        for (int i = 0; i < kMaxPlayers && !taken; i++) taken = players_[i].connected && !players_[i].balanceBot && players_[i].team == t;
+        if (taken) continue;
+        const int next = firstInLine(*this);
+        if (next < 0) return;
+        ServerPlayer& n = players_[next];
+        n.team = t; n.queueSeq = 0; n.letIn = false;
+        if (rulesRespawnDelay(*this, next) >= 0) n.respawnAt = time() + 0.5f;
+        message(n.name + " steps in (first in line)");
+    }
+}
+
 void Server::autoTeam(int id) {
     ServerPlayer& p = players_[id];
     if (p.specLocked) { p.team = TEAM_SPECTATOR; return; }   // voted to spectate: until the next map
@@ -1305,6 +1374,7 @@ void Server::autoTeam(int id) {
         }
         int size = cfg_.mode == MODE_ARENA ? 1 : std::min(std::max(cfg_.duelTeamSize, 1), 2);
         p.team = takenA < size && takenA <= takenB ? TEAM_A : takenB < size ? TEAM_B : takenA < size ? TEAM_A : TEAM_SPECTATOR;
+        if (p.team == TEAM_SPECTATOR && p.queueSeq == 0) queueToPlay(id);   // (1v1: in line to play the winner)
         return;
     }
     int a = 0, b = 0;
@@ -1513,9 +1583,17 @@ void Server::handleStringCmd(int id, const std::string& s) {
         if (cs >> c.x >> c.y >> c.z && std::isfinite(c.x + c.y + c.z)) p.move.pos = vmax(vmin(c, Vec3(4096, 4096, 4096)), Vec3(-4096, -4096, -4096));
     } else if (cmd == "team") {
         int t = rest == "a" ? TEAM_A : rest == "b" ? TEAM_B : rest == "spec" ? TEAM_SPECTATOR : -1;
+        if (t == TEAM_SPECTATOR && p.team == TEAM_SPECTATOR && p.queueSeq > 0) {   // (1v1: watching only, out of the line)
+            p.queueSeq = 0;
+            GameEvent e; e.type = EV_MESSAGE; e.text = "you left the line - join a team to get back in it"; sendEvent(id, e);
+            return;
+        }
         if (t < 0 || t == p.team) return;
         if (p.specLocked && t != TEAM_SPECTATOR) { GameEvent e; e.type = EV_MESSAGE; e.text = "you were voted to spectate - you can play again on the next map"; sendEvent(id, e); return; }
-        if (rankedLive()) { GameEvent e; e.type = EV_MESSAGE; e.text = "a ranked match is being played - teams stay as they are until it's over"; sendEvent(id, e); return; }
+        if (rankedLive()) {
+            if (oneVsOne() && t != TEAM_SPECTATOR && p.team == TEAM_SPECTATOR) { if (p.queueSeq == 0) queueToPlay(id); return; }   // (in line for the winner)
+            GameEvent e; e.type = EV_MESSAGE; e.text = "a ranked match is being played - teams stay as they are until it's over"; sendEvent(id, e); return;
+        }
         if (tourney_.running && t != TEAM_SPECTATOR) { // the bracket decides who plays
             GameEvent e; e.type = EV_MESSAGE; e.text = "a tourney is running - you can join the next one"; sendEvent(id, e);
             return;
@@ -1534,8 +1612,13 @@ void Server::handleStringCmd(int id, const std::string& s) {
             if (mine >= size) {
                 if (other < size) {            // uneven: no vote needed, take the side with room
                     t = t == TEAM_A ? TEAM_B : TEAM_A;
-                } else if (n[0] == n[1] && !cfg_.ranked) {   // even and full: the players decide
+                } else if (n[0] == n[1] && !cfg_.ranked) {   // even and full: the players decide (and in line meanwhile)
+                    if (p.queueSeq == 0) queueToPlay(id);
                     callVote(id, VOTE_LETIN, id);
+                    return;
+                } else if (oneVsOne()) {   // ranked 1v1: in line to play the winner
+                    if (p.queueSeq == 0) queueToPlay(id);
+                    else { GameEvent e; e.type = EV_MESSAGE; e.text = "you're already in line to play"; sendEvent(id, e); }
                     return;
                 } else {
                     GameEvent e; e.type = EV_MESSAGE; e.text = cfg_.ranked ? "that side is full (ranked is 1v1)" : "that side is full"; sendEvent(id, e);
@@ -1543,8 +1626,8 @@ void Server::handleStringCmd(int id, const std::string& s) {
                 }
             }
         }
-        if (t == TEAM_SPECTATOR) moveToSpectator(id);
-        else { if (p.alive) killPlayer(id, -1, 255); p.team = t; }
+        if (t == TEAM_SPECTATOR) { moveToSpectator(id); p.queueSeq = 0; }   // (chose to watch: out of the line)
+        else { if (p.alive) killPlayer(id, -1, 255); p.team = t; p.queueSeq = 0; }
         message(p.name + (t == TEAM_SPECTATOR ? " is spectating" : !modeIsTeamBased(cfg_.mode) ? " joined the game" : t == TEAM_A ? " joined team A" : " joined team B"));
         if (t != TEAM_SPECTATOR && rulesRespawnDelay(*this, id) >= 0) p.respawnAt = time() + 1.0f;
     } else if (cmd == "name") {
