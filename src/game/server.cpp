@@ -2555,7 +2555,7 @@ void Server::runPlayerCmd(int id, const UserCmd& cmdIn) {
     {
         HookProbe probe;   // a grapple that may fire in this command: the enemies it can catch
         grappleTargets(id, cmd, probe);
-        pmove(p.move, cmd, map_, probe.n || probe.nr ? &probe : nullptr);
+        pmove(p.move, cmd, map_, probe.n || probe.nr || probe.ball ? &probe : nullptr);
         if (p.move.events & (ME_JUMP | ME_LAND | ME_DASH | ME_SUPER | ME_HYPER))   // (for everyone else's sounds: PlayerSnap::keys)
             p.moveEv |= (uint16_t)((p.move.events & 31) << kKeyEvShift) | (p.move.landSpeed > kHardLandSpeed ? KEY_EV_LAND_HARD : 0);
         if (probe.hit >= 0) startLatch(id, probe.id[probe.hit], probe.head);
@@ -2834,6 +2834,10 @@ void Server::grappleTargets(int id, const UserCmd& cmd, HookProbe& probe) {
         Vec3 pos = rewoundPos(i, vt, &crouched);
         probe.box[probe.n] = hitBox(pos, crouched);
         probe.id[probe.n++] = (uint8_t)i;
+    }
+    if (ms_.mode == MODE_BALL && ballSet_ && ballRespawnAt_ <= 0) {   // the ball (where it is: it isn't rewound)
+        const Vec3 h(kBallHalf, kBallHalf, kBallHalf);
+        probe.ball = true; probe.ballBox = AABB{ms_.bombPos - h, ms_.bombPos + h};
     }
     // Rocket riding: the rockets in reach, anyone's. Your own are tested where they are now (the client draws them that
     // far ahead: X5), anyone else's rewound along their path to where you saw them (the view time plus the

@@ -4439,6 +4439,21 @@ static void testBallMode(uint16_t port) {
     const Vec3 spawn = s.ballSpawn_;
     printf("  the ball starts at %.1f %.1f %.1f\n", spawn.x, spawn.y, spawn.z);
     CHECK(std::fabs(spawn.x) < 1 && std::fabs(spawn.z) < 1 && !s.map_.boxSolid(AABB{spawn - Vec3(kBallHalf - 0.01f, kBallHalf - 0.01f, kBallHalf - 0.01f), spawn + Vec3(kBallHalf - 0.01f, kBallHalf - 0.01f, kBallHalf - 0.01f)}));
+    {   // the grapple catches it (aimed straight at it from 8 m along -x)
+        MoveState mv;
+        for (const Vec3& off : {Vec3(-8, 0, 0), Vec3(8, 0, 0), Vec3(0, 0, -8), Vec3(0, 0, 8), Vec3(0, 6, 0)}) {   // (one with a clear line)
+            mv.pos = spawn + off - Vec3(0, kEyeHeight, 0);
+            const Vec3 e = mv.pos + Vec3(0, kEyeHeight, 0), d = spawn - e;
+            if (!s.map_.boxSolid(playerBox(mv.pos, false, 1.0f)) && s.map_.raycast(e, d / length(d), length(d) - kBallHalf) < 0) break;
+        }
+        UserCmd c; c.msec = 1; c.buttons = BTN_GRAPPLE;
+        const Vec3 eye = mv.pos + Vec3(0, kEyeHeight, 0), to = spawn - eye;
+        c.yaw = std::atan2(-to.x, -to.z); c.pitch = std::asin(std::clamp(to.y / length(to), -1.0f, 1.0f));
+        HookProbe hp; hp.ball = true; hp.ballBox = AABB{spawn - Vec3(kBallHalf, kBallHalf, kBallHalf), spawn + Vec3(kBallHalf, kBallHalf, kBallHalf)};
+        pmove(mv, c, s.map_, &hp);
+        printf("  grapple at the ball: caught %d, target %d\n", (int)hp.hitBall, (int)mv.hookTarget);
+        CHECK(hp.hitBall && mv.hookTarget == kHookBall && (mv.flags & MF_HOOKED));
+    }
     // a blast beside it pushes it away, up
     ballBlast(s, spawn - Vec3(1.5f, 0.3f, 0), 4.0f, 20.0f, -1);
     CHECK(s.ballVel_.x > 3.0f && s.ballVel_.y > 0);

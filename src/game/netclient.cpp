@@ -517,6 +517,10 @@ bool NetClient::hookProbe(const UserCmd& cmd, HookProbe& probe) {
         probe.box[probe.n] = playerBox(q.pos, (q.flags & PS_CROUCHED) != 0, scale);
         probe.id[probe.n++] = (uint8_t)i;
     }
+    if (ms.mode == MODE_BALL) {   // the ball, where the latest snapshot has it (the server's: it isn't predicted)
+        const Vec3 h(kBallHalf, kBallHalf, kBallHalf);
+        probe.ball = true; probe.ballBox = AABB{ms.bombPos - h, ms.bombPos + h};
+    }
     // Rocket riding, as Server::grappleTargets picks them: the rockets in reach as the server will have them when it runs
     // this command (the newest snapshot's, flown on by the commands before it: one a tick), your own tested there, anyone
     // else's where the server tests them (your view time + rocketSeenMs: about where they're drawn). Then your copies.
@@ -552,7 +556,7 @@ bool NetClient::hookProbe(const UserCmd& cmd, HookProbe& probe) {
             probe.at[k] = probe.pos[k] = copies_[c].pos; probe.vel[k] = copies_[c].vel; probe.grav[k] = copies_[c].grav; probe.accel[k] = copies_[c].accel; probe.rid[k] = 0;
         }
     }
-    return probe.n > 0 || probe.nr > 0;
+    return probe.n > 0 || probe.nr > 0 || probe.ball;
 }
 
 void NetClient::reconcile(const Snapshot& s) {
