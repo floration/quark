@@ -2204,6 +2204,7 @@ void Server::spawnPlayer(int id) {
     if (crouch) p.move.flags |= MF_CROUCHED;
     if (arenaRules() & AR_QUICK_DASH) p.move.mods |= MOVE_QUICK_DASH;
     if (arenaRules() & AR_LOW_GRAVITY) p.move.mods |= MOVE_LOW_GRAVITY;
+    p.move.fly = (arenaRules() & AR_FLY) != 0;   // (3D VAMP: zero-g flight, pmove's own)
     if (ms_.mode == MODE_SURF) p.move.mods |= MOVE_RUN_ONLY;   // (surf: strafe only, no dash or grapple)
     p.nextFire = cmdClockOf(p, time()) + kSpawnFireLock;   // (on the command clock, as refire)
     p.respawnAt = -1;
@@ -2261,6 +2262,7 @@ void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const
     if (!rulesCanHit(*this, attacker, victim, weapon)) return;
     if (isItMode(ms_.mode) && attacker >= 0 && attacker != victim) { rulesStab(*this, attacker, victim); return; }   // (a find / "it" passed on)
     Vec3 kb = cfg_.custom.active() ? knock * cfg_.custom.knockback : knock;   // (a custom mode's knockback)
+    if (arenaRules() & AR_NO_KNOCKBACK) kb = {};   // (3D VAMP: nothing pushes)
     if (!friendly) {
         v.move.vel += kb;
         if (kb.y > 0.5f) v.move.flags &= ~MF_ONGROUND;
@@ -2303,10 +2305,8 @@ void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const
         }
         // Vampire laser: damage dealt heals the attacker (up to full health).
         ServerPlayer& a = players_[attacker];
-        if ((rules & AR_VAMPIRE) && a.alive) { // healing fades as the round goes on
-            float f = clampf((time() - roundStart_) / kVampireFadeTime, 0, 1);
-            a.health = std::min(lifeMaxHealth(), a.health + dmg * (1.0f - (1.0f - kVampireMinHeal) * f));
-        }
+        if ((rules & AR_VAMPIRE) && a.alive)   // healing fades as the round goes on (from each round's start)
+            a.health = std::min(lifeMaxHealth(), a.health + dmg * vampireHealShare((float)(time() - roundStart_), vampireFade()));
     }
     glog(LOG_VERBOSE, "hit attacker=%d victim=%d dmg=%.2f weapon=%d health=%.2f", attacker, victim, dmg, weapon, v.health);
     if (v.health <= 0) {
@@ -2505,7 +2505,8 @@ void Server::simulate() {
     for (int i = 0; i < kMaxPlayers; i++) {
         ServerPlayer& p = players_[i];
         if (!p.connected) continue;
-        if (p.alive && (p.move.pos.y < map_.killY() || (!map_.lava.empty() && map_.inLava(playerBox(p.move))))) killPlayer(i, ringOutKiller(i), 252);
+        if (p.alive && (p.move.pos.y < map_.killY() || (!map_.lava.empty() && map_.inLava(playerBox(p.move))) || (p.move.fly && flownOut(p.move.pos))))
+            killPlayer(i, ringOutKiller(i), 252);
         if (!p.alive && p.respawnAt >= 0 && time() >= p.respawnAt && p.team != TEAM_SPECTATOR) spawnPlayer(i);
         if (p.alive && (arenaRules() & AR_REGEN) && time() - p.lastDamagedAt > 3.0 && p.health < lifeMaxHealth())
             p.health = std::min(lifeMaxHealth(), p.health + 10.0f * dt()); // regeneration: 10 hp/s after 3 s untouched
@@ -2817,7 +2818,7 @@ void Server::grappleTargets(int id, const UserCmd& cmd, HookProbe& probe) {
     const ServerPlayer& p = players_[id];
     probe.n = 0;
     // only when this command can fire the hook (held, not caught yet this press, the cooldown about done)
-    if (!(cmd.buttons & BTN_GRAPPLE) || (p.move.flags & (MF_HOOKHELD | MF_HOOKED | MF_FROZEN)) || (p.move.mods & MOVE_RUN_ONLY)) return;
+    if (!(cmd.buttons & BTN_GRAPPLE) || (p.move.flags & (MF_HOOKHELD | MF_HOOKED | MF_FROZEN)) || (p.move.mods & MOVE_RUN_ONLY) || p.move.fly) return;   // (flying: no grapple)
     if (!moveTuning().grapple || p.move.hookCooldown > cmd.msec * kMoveStep + 1e-4f) return;
     if (isRaceMode(ms_.mode)) return;
     uint64_t vt = 0;

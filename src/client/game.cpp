@@ -797,10 +797,14 @@ bool Game::pressInput(int code) {
         slot = (code == GLFW_KEY_BACKSPACE || code == GLFW_KEY_DELETE) ? 0 : code;
         // An input does one thing: binding it here removes it from every other action (otherwise the
         // default wheel = next/prev weapon kept firing alongside e.g. wheel = jump). The page says which, with UNDO.
+        // Except flight's MOVE UP / MOVE DOWN and jump / dash: never both in one mode, so one key can be both (the defaults).
+        auto pair = [](int a, int b) {
+            return (a == A_JUMP && b == A_FLYUP) || (a == A_FLYUP && b == A_JUMP) || (a == A_DASH && b == A_FLYDOWN) || (a == A_FLYDOWN && b == A_DASH);
+        };
         if (slot)
             for (int a = 0; a < A_COUNT; a++)
                 for (int k = 0; k < kBindSlots; k++)
-                    if ((a != captureAction_ || k != captureSlot_) && cfg_.binds.code[a][k] == slot) {
+                    if ((a != captureAction_ || k != captureSlot_) && cfg_.binds.code[a][k] == slot && !pair(a, captureAction_)) {
                         cfg_.binds.code[a][k] = 0;
                         bindTakenA_ = a; bindTakenK_ = k; bindTakenCode_ = slot; bindTakenTo_ = captureAction_; bindTakenSlot_ = captureSlot_;
                         bindTakenWas_ = was; bindTakenUntil_ = time_ + 8;
@@ -1312,6 +1316,11 @@ UserCmd Game::buildCmd() {
     if (!net_.selfAlive()) useOn_ = false;
     if (cfg_.useToggle ? useOn_ : isDown(A_USE)) c.buttons |= BTN_USE;   // (MORE 6: USE: TOGGLE)
     if (isDown(A_DASH)) c.buttons |= BTN_DASH;
+    {   // flight (3D VAMP): MOVE UP / MOVE DOWN; VERTICAL KEYS: ONE KEY (CONTROLS > MORE 2): up held goes up, let go goes down
+        const bool up = isDown(A_FLYUP);
+        if (up) c.buttons |= BTN_UP;
+        if (cfg_.verticalKeys == 1 ? !up && net_.predicted().fly : isDown(A_FLYDOWN)) c.buttons |= BTN_DOWN;
+    }
     if (!net_.selfAlive()) grappleOn_ = false;
     if (cfg_.grappleToggle ? grappleOn_ : isDown(A_GRAPPLE)) c.buttons |= BTN_GRAPPLE;
     c.buttons |= moveLatched_;   // (a tap since the last command: in this one)
@@ -8603,9 +8612,13 @@ void Game::drawControlsMore2(const SetLayout& L) {
     f.hint("ROTATION STEP: Q / E ON A SPAWN; THE FLY", "SPEED, GRID AND LAST LIGHT ARE KEPT");
 
     g.header("MOVEMENT");
-    ui_.toggle(g.x(), g.top(), w, h, "AUTO-HOP", cfg_.autoHop, UiExp::cfg("auto_hop"));
+    ui_.toggle(g.x(), g.top(), hw, h, "AUTO-HOP", cfg_.autoHop, UiExp::cfg("auto_hop"));
+    {   // flight (3D VAMP): MOVE UP and MOVE DOWN, or MOVE UP alone (held: up, let go: down)
+        static const std::vector<std::string> vn = {"VERTICAL: TWO KEYS", "VERTICAL: ONE KEY"};
+        if (ui_.cycle(gx2, g.top(), hw, h, "VERTICAL KEYS", cfg_.verticalKeys, 2, vn, UiExp::cfg("vertical_keys"))) cfg_.save();
+    }
     g.next();
-    g.hint("OFF: HOLDING JUMP JUMPS ONCE; LET GO", "AND PRESS AGAIN FOR THE NEXT");
+    g.hint("AUTO-HOP OFF: HELD JUMP JUMPS ONCE", "FLYING, ONE KEY: MOVE UP HELD UP, LET GO DOWN");
     g.section("CONSOLE");
     {
         static const int keys[] = {96, 290, 299, 300, 260, 268, 92, 39};   // ` F1 F10 F11 INSERT HOME \ '
@@ -8945,7 +8958,7 @@ void Game::drawControls(const SetLayout& L) {
     if (controlsSub_ == 2) {   // (1.19.4: the keys that didn't fit the other two pages)
         keyRows(kColL, keyRows(kColL, keyRows(kColL, keyRows(kColL, 154, "WEAPONS", {A_LASTWEAPON}), "CHAT", {A_TEAMCHAT}), "PRACTICE", {A_SAVEPOS, A_LOADPOS}),
                 "MATCH", {A_RECORD, A_JOINTEAM, A_SPECTATE});
-        keyRows(kColR, keyRows(kColR, keyRows(kColR, keyRows(kColR, 154, "SPECTATING", {A_SPECNEXT, A_SPECPREV}), "SCREEN", {A_HIDEHUD}), "RACE", {A_RACERESTART}),
+        keyRows(kColR, keyRows(kColR, keyRows(kColR, keyRows(kColR, 154, "SPECTATING", {A_SPECNEXT, A_SPECPREV}), "SCREEN", {A_HIDEHUD}), "RACE + FLYING", {A_RACERESTART, A_FLYUP, A_FLYDOWN}),
                 "SOUND", {A_VOLUP, A_VOLDOWN, A_MUTE});
     } else if (controlsSub_ == 1) {
         float y = keyRows(kColL, 154, "MOVEMENT", {A_FORWARD, A_BACK, A_LEFT, A_RIGHT, A_JUMP, A_DASH, A_GRAPPLE, A_USE});
@@ -11184,7 +11197,7 @@ void Game::drawPicker(float cx, float y) {
                 int m = bestMapFor(i);
                 if (m >= 0 && m < (int)mapInfo_.size() && (mapInfo_[m].modes >> i & 1)) it.sub = "MAP: " + upper(mapInfo_[m].title);
             }
-            if (i == MODE_ARENA) it.sub = "9 RULESETS >";
+            if (i == MODE_ARENA) it.sub = std::to_string(kArenaVariants) + " RULESETS >";
             if (i == MODE_BALL) it.sub = "TEAMS, A BALL, TWO GOALS - MOST GOALS IN 10 MINUTES";
             if (i == MODE_WINNER) it.sub = "1V1 ROUNDS, LOSER TO THE BACK OF THE LINE - FIRST TO 10 - RULESETS >";
             if (i == MODE_TOURNEY) it.sub = "BRACKET OF 1V1S - RULESETS >";

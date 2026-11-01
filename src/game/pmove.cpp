@@ -115,6 +115,12 @@ constexpr float kLiquidBounce = 0.85f, kLiquidBounceFrom = 2.0f;   // pink slime
 constexpr float kHookRelease = 1.2f;    // auto-release this close to the anchor
 constexpr float kLadderSpeed = 6.75f;   // climbing speed (owner 1.17: 4.5 -> 6.75; Warfork 7.0, Cocaine Diesel 8.4)
 constexpr float kLadderSide = 4.5f;     // sideways speed on a ladder (owner 1.17: 3 -> 4.5)
+// Zero-g flight (3D VAMP, MoveState::fly; owner, 2026-11-01: "Minecraft creative" flying): one flat speed every way
+// (the run speed to start with; no strafe gain past it), reached fast and lost fast: the velocity goes straight at
+// where the keys point, so nothing drifts and letting go stops you.
+constexpr float kFlySpeed = 9.5f;       // m/s (kGroundSpeed)
+constexpr float kFlyAccel = 120.0f;     // m/s2 toward the keys' velocity: full speed from a standstill in ~80 ms (the run's)
+constexpr float kFlyStop = 120.0f;      // m/s2 to a stop with no keys held: ~80 ms from full speed
 }
 
 AABB playerBox(const Vec3& f, bool crouched, float scale) {
@@ -269,7 +275,40 @@ static void setCharges(MoveState& s, int maxCharges, int n) {
     else refillCharges(s, maxCharges, n);
 }
 
+// A step of zero-g flight (MoveState::fly): the wish is forward x W/S + right x A/D on the level (the look's pitch never
+// steers) + world up x (UP - DOWN), at most kFlySpeed whatever the keys (diagonals too); the velocity moves straight
+// toward it at kFlyAccel (kFlyStop with no keys), no gravity, no jump, dash or grapple. Walls slide you (the hull's
+// slideMove, as walking; a slope's face takes what goes into it). Frozen: held still.
+static void flyStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt, const CmdCtx& cx) {
+    const float scale = moveScale(s.mods);
+    s.flags &= (uint8_t)~(MF_HOOKED | MF_PULLED | MF_HOOKHELD | MF_DASHHELD | MF_JUMPHELD | MF_CROUCHED);
+    s.dashTimer = 0; s.dashSlide = false; s.jumpBuffer = 0; s.jumpGrace = 0;
+    if (s.flags & MF_FROZEN) { s.vel = {}; return; }
+    const float up = ((cmd.buttons & BTN_UP) ? 1.0f : 0.0f) - ((cmd.buttons & BTN_DOWN) ? 1.0f : 0.0f);
+    Vec3 wish = cx.fwd * (cmd.forward / 127.0f) + cx.right * (cmd.side / 127.0f) + Vec3(0, up, 0);
+    if (s.mods & MOVE_GRAPPLE_ONLY) wish = {};
+    const float wishLen = length(wish);
+    const Vec3 target = wishLen > 1e-4f ? wish * (kFlySpeed * cx.mt.speed * std::min(wishLen, 1.0f) / wishLen) : Vec3();
+    const Vec3 dv = target - s.vel;
+    const float dl = length(dv), most = (wishLen > 1e-4f ? kFlyAccel : kFlyStop) * dt;
+    s.vel = dl <= most ? target : s.vel + dv * (most / dl);
+    Vec3 wall;
+    const int blocked = slideMove(s, map, s.vel * dt, false, &wall);
+    if (wall.x != 0 || wall.y != 0 || wall.z != 0) {   // (a slope's face: what went into it is gone)
+        const float vn = dot(s.vel, wall);
+        if (vn < 0) s.vel -= wall * vn;
+    }
+    for (int a = 0; a < 3; a++) if (blocked & (1 << a)) s.vel[a] = 0;
+    // on the floor (for the sounds, the HUD and "airborne" kills): touching it, not rising off it
+    const AABB feet = playerBox(s.pos, false, scale);
+    const Brush* under = nullptr;
+    const bool ground = s.vel.y <= 0.01f && map.sweepAxis(feet, 1, -0.05f, &under) > -0.049f && !steepUnder(under, feet);
+    s.flags = (uint8_t)((s.flags & MF_FROZEN) | (ground ? MF_ONGROUND : 0));
+    if (s.pos.y < -100.0f) s.pos.y = -100.0f; // (kill plane: the game's)
+}
+
 static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt, HookProbe* hp, const CmdCtx& cx) {
+    if (__builtin_expect(s.fly, 0)) { flyStep(s, cmd, map, dt, cx); return; }
     const MoveTuning& mt = cx.mt; // a custom mode's movement (all 1 / on normally)
     if (s.flags & MF_FROZEN) {
         s.vel = {0, std::min(s.vel.y, 0.0f), 0};

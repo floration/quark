@@ -713,6 +713,16 @@ public:
         if (c.active()) r |= (c.instagib ? AR_INSTAGIB : 0) | (c.vampire ? AR_VAMPIRE : 0) | (c.regen ? AR_REGEN : 0) | (!c.selfDamage ? AR_NO_SELF_DAMAGE : 0);
         return r;
     }
+    // laser vampire's heal fade (vampireHealShare): the ruleset's own (3D VAMP: 30 s), else kVampireFadeTime
+    float vampireFade() const { return rulesetActive() ? arenaVariant(ms_.arenaVariant).vampireFade : kVampireFadeTime; }
+    // Flying (3D VAMP) out into space: further than kFlyKillMargin past the map's solid geometry on any side or above
+    // (below it, the void: killY) is a fall
+    static constexpr float kFlyKillMargin = 40.0f;
+    bool flownOut(const Vec3& p) const {
+        const AABB& b = map_.bounds;
+        return p.x < b.mn.x - kFlyKillMargin || p.x > b.mx.x + kFlyKillMargin || p.z < b.mn.z - kFlyKillMargin ||
+               p.z > b.mx.z + kFlyKillMargin || p.y > b.mx.y + kFlyKillMargin;
+    }
     float maxHealth() const { return cfg_.custom.active() ? (float)cfg_.custom.health : (float)kMaxHealth; }
     // This life's full health (what you spawn with): a duel life's ("1 HP", "glass cannons" 50, "tanks" 250), else
     // maxHealth(). Heals (syringe, vampire, regeneration) stop here (REVIEW GAME-2a: they capped at maxHealth()).

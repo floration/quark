@@ -2853,6 +2853,65 @@ static void testRocketRide(uint16_t port) {
     s.stop();
 }
 
+// 3D VAMP (owner, 2026-11-01): a 1v1 ruleset on lasers with zero-g flight and no knockback, its heal falling from 100% of
+// the damage dealt to 50% over 30 s, from the start of every round; flying far out past the rock is a fall.
+static void testVamp3D(uint16_t port) {
+    printf("3d vamp: flight, no knockback, the 30 s heal ramp every round\n");
+    const int v = arenaVariantFromName("3dvamp");
+    CHECK(v >= 0 && !arenaVariantRanked(v));
+    if (v < 0) return;
+    const ArenaVariant& av = arenaVariant(v);
+    CHECK(av.weapons == (1u << WPN_LASER) && (av.rules & AR_VAMPIRE) && (av.rules & AR_FLY) && (av.rules & AR_NO_KNOCKBACK) && av.vampireFade == 30.0f);
+    // the ramp itself: 100% at the start, 75% at 15 s, 50% from 30 s on
+    CHECK(vampireHealShare(0, 30) == 1.0f && std::fabs(vampireHealShare(15, 30) - 0.75f) < 1e-6f && vampireHealShare(30, 30) == 0.5f && vampireHealShare(90, 30) == 0.5f);
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "blackhole"; cfg.mode = MODE_ARENA; cfg.arenaVariant = v; cfg.port = port; cfg.balanceBots = false;
+    NetClient c[2];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); return; }
+    const int ia = c[0].clientId(), ib = c[1].clientId();
+    auto& pa = s.players_[ia];
+    auto& pb = s.players_[ib];
+    pump(s, cls, 0.1, idle);
+    CHECK(s.vampireFade() == 30.0f && pa.move.fly && pb.move.fly && c[0].predicted().fly);   // (the flag reaches prediction)
+    CHECK(s.weaponAllowed(WPN_LASER) && !s.weaponAllowed(WPN_ROCKET));
+    auto heal = [&](double into) {   // pa hits pb for 20, `into` s into the round: what pa healed
+        s.roundStart_ = s.time() - into;
+        pa.health = 50; pb.health = 80;
+        s.damagePlayer(ib, ia, 20, WPN_LASER, {});
+        return pa.health - 50.0f;
+    };
+    const double rs = s.roundStart_;
+    CHECK(std::fabs(heal(0) - 20.0f) < 0.05f);
+    CHECK(std::fabs(heal(15) - 15.0f) < 0.05f);
+    CHECK(std::fabs(heal(30) - 10.0f) < 0.05f);
+    CHECK(std::fabs(heal(45) - 10.0f) < 0.05f);
+    s.roundStart_ = rs;
+    {   // no knockback
+        pb.move.vel = {};
+        pb.health = 100;
+        s.damagePlayer(ib, ia, 5, WPN_LASER, {0, 20, 30});
+        CHECK(length(pb.move.vel) < 1e-6f);
+    }
+    // flown out into space: a fall (the round ends), and the next round's ramp starts again
+    const int round = s.ms_.round;
+    pb.move.pos = {s.map_.bounds.mx.x + Server::kFlyKillMargin + 5, 0, 0};
+    pump(s, cls, 0.1, idle);
+    CHECK(!pb.alive);
+    for (int k = 0; k < 200 && !(s.ms_.phase == PHASE_LIVE && s.ms_.round != round); k++) {
+        if (s.ms_.phase == PHASE_FREEZE || s.ms_.phase == PHASE_ROUND_END) s.phaseEnd_ = s.time();
+        pump(s, cls, 0.05, idle);
+    }
+    CHECK(s.ms_.phase == PHASE_LIVE && s.ms_.round != round && pa.alive && pb.alive);
+    CHECK(s.time() - s.roundStart_ < 2.0);   // (restarted with the round)
+    pa.health = 50; pb.health = 80;
+    s.damagePlayer(ib, ia, 20, WPN_LASER, {});
+    printf("  next round: healed %.2f of 20 at %.2f s in\n", pa.health - 50.0f, s.time() - s.roundStart_);
+    CHECK(pa.health - 50.0f > 19.0f);
+    s.stop();
+}
+
 // "quark_tests rules NAME": the one named ("quark_tests rules" alone is the rules group: the first half).
 // half: 0 every test, 1 or 2 one of two halves of about equal time (the suite's "rules" and "rules2" groups: ~24 s each
 // on an idle box; overtime ~16 s and grapplep ~8 s are the long ones, one in each). A test of half 0 is in neither: the
@@ -2891,6 +2950,7 @@ static void testGameRules(const std::string& only, int half = 0) {
         {"customkeep", 2, [] { testCustomRulesKeep(); }},
         {"modehooks", 2, [] { testModeHooks(TP(29310)); }},
         {"power", 1, [] { testPower(TP(29314)); }},
+        {"vamp3d", 1, [] { testVamp3D(TP(29316)); }},
     };
     for (auto& r : all) if ((only.empty() || only == r.name) && (!half || half == r.half)) r.run();
     if (only == "rate") {
