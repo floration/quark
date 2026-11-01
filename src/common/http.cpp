@@ -62,7 +62,7 @@ static bool curlRun(const std::string& url, const std::string* body, std::string
     out.clear();
     for (char ch : url)
         if ((unsigned char)ch < 32) { if (err) *err = "bad url"; return false; }
-    std::vector<std::string> argv = {"curl", "-fsS", "-A", "quark", "--proto", "=https,http", "--max-time", std::to_string(timeoutMs / 1000 + 1)};
+    std::vector<std::string> argv = {"curl", "-fsSL", "-A", "quark", "--proto", "=https,http", "--proto-redir", "=https", "--max-time", std::to_string(timeoutMs / 1000 + 1)};
     if (body) { argv.push_back("--data-binary"); argv.push_back("@-"); }
     argv.push_back("--url");
     argv.push_back(url);
