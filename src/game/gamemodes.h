@@ -14,6 +14,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include "../common/qmath.h"
 #include "modelogic.h"   // ModeSlot (the slots), ModeLogic
 class Server;
 struct Map;
@@ -21,6 +22,11 @@ struct SpawnPoint;
 struct ModeParams;
 
 bool modeIsTeamBased(int mode);
+// Ball (MODE_BALL): a blast at `at` pushes the ball like a player it doesn't own (radius: the splash's, knock: the
+// weapon's); a shot along a ray (o, dir up to maxT) that meets it pushes it along the ray by its damage. No-ops in
+// other modes.
+void ballBlast(Server& s, const Vec3& at, float radius, float knock, int owner);
+void ballShot(Server& s, const Vec3& o, const Vec3& dir, float maxT, float dmg, int owner);
 void rulesReset(Server& s);                       // back to warmup
 void rulesTick(Server& s);                        // once per server tick
 void rulesForceStart(Server& s);                  // start the match now, even short-handed

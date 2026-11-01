@@ -507,8 +507,8 @@ static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2, upgradeMap2to3, up
 static_assert(sizeof kMapUpgrades / sizeof kMapUpgrades[0] == kMapFormatVersion - 1,
               "a map format change needs its converter step in kMapUpgrades (owner rule)");
 
-static_assert(kSpawnModes == MODE_COUNT - 1 && MODE_WINNER == MODE_COUNT - 1, "a mode spawn set per mode but winner stays (map.h: it uses 1v1's)");
-static_assert(spawnSetFor(MODE_WINNER) == MODE_ARENA && spawnSetFor(MODE_POWER) == MODE_POWER, "spawnSetFor (map.h)");
+static_assert(kSpawnModes == MODE_COUNT - 2 && MODE_WINNER == MODE_COUNT - 2 && MODE_BALL == MODE_COUNT - 1, "a mode spawn set per mode but winner stays (map.h: it uses 1v1's)");
+static_assert(spawnSetFor(MODE_WINNER) == MODE_ARENA && spawnSetFor(MODE_POWER) == MODE_POWER && spawnSetFor(MODE_BALL) == -1, "spawnSetFor (map.h)");
 bool modeSetAllowed(int mode) { return mode >= 0 && mode < kSpawnModes && mode != MODE_RACE && mode != MODE_POINTS; }
 std::string spawnTeamWord(int team) {
     static const char* sides[] = {"a", "b", "any", "race"};
@@ -2108,6 +2108,7 @@ bool Map::canSupportMode(int mode) const {
         case MODE_POWER: return teams;
         case MODE_TOURNEY: return !spawns.empty();
         case MODE_BOMB: return teams && !bombSites.empty();
+        case MODE_BALL: return teams && bombSites.size() == 2;   // (the two goals: the sites)
         // (a map with no race spawn starts racers on its "any" spawns: q's Surfy has one, 2026-10-30)
         case MODE_RACE: case MODE_SURF: return (has(SPAWN_RACE) || has(SPAWN_ANY)) && !raceCheckpoints.empty();
         case MODE_KOTH: return teams && hasHill;

@@ -82,6 +82,7 @@ constexpr ModeParams builtinModeParamsFor(int mode) {
         case MODE_HIDE: p.roundTime = kHideRoundTime; break;
         case MODE_TAG: p.roundTime = kTagRoundTime; break;
         case MODE_POWER: p.roundTime = 600.0f; break;                // one round: a pool at 0, or the clock (the fuller pool wins)
+        case MODE_BALL: p.roundTime = 600.0f; break;                 // one 10 minute round: the most goals                // one round: a pool at 0, or the clock (the fuller pool wins)
         default: break;                                              // koth (target), ffa (matchTime): no round clock
     }
     return p;
@@ -91,7 +92,7 @@ inline constexpr ModeParams kBuiltinModeParams[MODE_COUNT] = {
     builtinModeParamsFor(0), builtinModeParamsFor(1), builtinModeParamsFor(2), builtinModeParamsFor(3), builtinModeParamsFor(4),
     builtinModeParamsFor(5), builtinModeParamsFor(6), builtinModeParamsFor(7), builtinModeParamsFor(8), builtinModeParamsFor(9),
     builtinModeParamsFor(10), builtinModeParamsFor(11), builtinModeParamsFor(12), builtinModeParamsFor(13), builtinModeParamsFor(14),
-    builtinModeParamsFor(15),
+    builtinModeParamsFor(15), builtinModeParamsFor(16),
 };
-static_assert(MODE_COUNT == 16, "a new mode needs its row in kBuiltinModeParams");
+static_assert(MODE_COUNT == 17, "a new mode needs its row in kBuiltinModeParams");
 inline const ModeParams& builtinModeParams(int mode) { return kBuiltinModeParams[mode >= 0 && mode < MODE_COUNT ? mode : MODE_FFA]; }

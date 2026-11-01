@@ -2718,6 +2718,7 @@ void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint
     glassFromRay(eye, dir, wall, id);   // (a pane stops the shot, and breaks)
     blockFromRay(eye, dir, wall, dmg, id);   // (a breakable block takes the shot's damage)
     float best = wall >= 0 ? wall : range;
+    ballShot(*this, eye, dir, best, dmg, id);   // (ball mode: the shot pushes the ball it meets)
     int hit = -1;
     bool hitHead = false;
     Vec3 inv = safeInv(dir);
@@ -3617,6 +3618,7 @@ void Server::explode(const Vec3& at, int owner, int weapon, int direct, bool alt
     blastBreaks(at, weapon, owner);   // (first: the pieces and the hole are there for the blast's own rays)
     const WeaponDef& wd = weaponDef(weapon);
     const WeaponExtra& ex = weaponExtra(weapon);
+    ballBlast(*this, at, wd.splashRadius, ex.knock * (weapon == WPN_BUBBLE ? kBubbleKnock : 1.0f), owner);   // (ball mode)
     const bool wantDist = ex.falloff || activeWeaponLogic();   // (falloff and the logic's dist: only a weapon set needs it)
     const float ownerDist = wantDist && owner >= 0 && owner < kMaxPlayers ? length(at - shooterEye(owner)) : 0.0f;
     const bool reported = reportsHits(owner, weapon);   // (the owner's game reports this blast's hits, as its screen had them)

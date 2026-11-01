@@ -1787,8 +1787,8 @@ static void testMaps() {
         CHECK(m.load(name, &err));
         if (!err.empty()) printf("  %s\n", err.c_str());
         for (int k = 0; k < MODE_COUNT; k++) {
-            if (k == MODE_SURF) continue;   // (a surf course is ramps: Lodestone has none)
-            bool compact = k == MODE_VS || k == MODE_DUEL || k == MODE_ARENA || k == MODE_TOURNEY;
+            if (k == MODE_SURF || k == MODE_BALL) continue;   // (a surf course is ramps, ball needs its two goals: Lodestone has neither)
+            bool compact = k == MODE_VS || k == MODE_DUEL || isOneVsOneMode(k) || k == MODE_TOURNEY;   // (winner stays: 1v1's)
             if (m.supportsMode(k) == compact) { printf("  %s: %s %s\n", name, compact ? "offers" : "no", modeName(k)); g_fail++; }
         }
         CHECK(m.payloadLength() > 20);
@@ -4401,6 +4401,62 @@ static void testAccuracyPerWeapon() {
     CHECK(p.accuracy() == 55);   // (30% and 80%; by total shots it was 34%)
     p.resetAccuracy();
     CHECK(p.accuracy() == 0 && p.shotsFired == 0);
+}
+
+// Ball (owner, 2026-11-01): the ball moves like a player on ice at half gravity, blasts and shots push it, a goal
+// scores for the other team and puts it back in the middle, and the clock's end gives the match to the most goals.
+static void testBallMode(uint16_t port) {
+    printf("ball: ice at half gravity, pushes, goals, the clock\n");
+    {   // the physics alone, on an open floor with a wall at x 20
+        std::string err;
+        Map m;
+        CHECK(m.parse("box -50 -1 -50 50 0 50\nbox 20 0 -50 21 10 50\nspawn any 0 0 0\n", &err));
+        Vec3 c(0, 10, 0), v;
+        ballMove(c, v, m, 0.5f);
+        printf("  falling 0.5 s: vy %.2f (a player: %.2f)\n", v.y, -moveBaseGravity() * 0.5f);
+        CHECK(std::fabs(v.y + moveBaseGravity() * 0.25f) < 0.05f);   // half gravity
+        c = Vec3(0, kBallHalf, 0); v = Vec3(10, 0, 0);
+        ballMove(c, v, m, 1.0f);
+        printf("  sliding from 10 m/s: %.2f m/s after 1 s, %.2f m on\n", v.x, c.x);
+        CHECK(v.x > 5.0f && v.x < 6.5f && c.x > 6.5f && std::fabs(c.y - kBallHalf) < 0.01f);   // ice: friction x 0.08
+        c = Vec3(19, kBallHalf, 0); v = Vec3(10, 0, 0);
+        ballMove(c, v, m, 0.3f);
+        CHECK(v.x < -3.0f && c.x < 19.5f);   // off the wall at half its speed
+    }
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "qk8"; cfg.mode = MODE_BALL; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    CHECK(s.map_.supportsMode(MODE_BALL) && s.map_.bombSites.size() == 2);
+    NetClient a;
+    std::vector<NetClient*> cls = {&a};
+    a.connect("127.0.0.1:" + std::to_string(port), "ann");
+    pumpUntilSpawned(s, cls);
+    rulesForceStart(s);
+    for (int i = 0; i < 6000 && s.ms_.phase != PHASE_LIVE; i++) { s.frame(); sleepMs(1); }
+    CHECK(s.ms_.phase == PHASE_LIVE && s.ballSet_);
+    const Vec3 spawn = s.ballSpawn_;
+    printf("  the ball starts at %.1f %.1f %.1f\n", spawn.x, spawn.y, spawn.z);
+    CHECK(std::fabs(spawn.x) < 1 && std::fabs(spawn.z) < 1 && !s.map_.boxSolid(AABB{spawn - Vec3(kBallHalf - 0.01f, kBallHalf - 0.01f, kBallHalf - 0.01f), spawn + Vec3(kBallHalf - 0.01f, kBallHalf - 0.01f, kBallHalf - 0.01f)}));
+    // a blast beside it pushes it away, up
+    ballBlast(s, spawn - Vec3(1.5f, 0.3f, 0), 4.0f, 20.0f, -1);
+    CHECK(s.ballVel_.x > 3.0f && s.ballVel_.y > 0);
+    // a shot along +z pushes it along +z
+    s.ballVel_ = {};
+    ballShot(s, spawn - Vec3(0, 0, 10), Vec3(0, 0, 1), 50, 100, -1);
+    CHECK(s.ballVel_.z > 5.0f);
+    // into team A's goal (the west door: A's spawns are there): B scores, the ball back in the middle
+    const AABB& west = s.map_.bombSites[0].center().x < 0 ? s.map_.bombSites[0] : s.map_.bombSites[1];
+    s.ms_.bombPos = west.center(); s.ballVel_ = {};
+    for (int i = 0; i < 5; i++) { s.frame(); sleepMs(1); }
+    printf("  into the west goal: %d-%d\n", s.ms_.scoreA, s.ms_.scoreB);
+    CHECK(s.ms_.scoreA == 0 && s.ms_.scoreB == 1 && length(s.ms_.bombPos - spawn) < 1.0f);
+    // the clock runs out: B has more goals
+    s.phaseEnd_ = s.time();
+    for (int i = 0; i < 5 && s.ms_.phase == PHASE_LIVE; i++) { s.frame(); sleepMs(1); }
+    CHECK(s.ms_.phase == PHASE_MATCH_END);
+    s.stop();
 }
 
 // Planting / defusing roots your own movement and fire but keeps knockback (owner, 2026-11-01): the round start's full
@@ -9268,8 +9324,8 @@ static void testBots(uint16_t& port) {
         s.stop();
     }
     // every mode with bots on both sides: no crashes, things happen
-    const char* maps[MODE_COUNT] = {"bastion", "bastion", "foundry", "bastion", "bastion", "bastion", "bastion", "clockwork", "clockwork", "clockwork", "hamlet", "hamlet", "lodestone", "cascade", "bastion", "clockwork"};
-    static_assert(MODE_COUNT == 16, "add the new mode's map here");
+    const char* maps[MODE_COUNT] = {"bastion", "bastion", "foundry", "bastion", "bastion", "bastion", "bastion", "clockwork", "clockwork", "clockwork", "hamlet", "hamlet", "lodestone", "cascade", "bastion", "clockwork", "qk8"};
+    static_assert(MODE_COUNT == 17, "add the new mode's map here");
     SimClock clock;   // (bots only: every tick runs, none waited for)
     for (int mode = 0; mode < MODE_COUNT; mode++) {
         qsrand(0x5EED0100u + mode);
@@ -10248,6 +10304,7 @@ int main(int argc, char** argv) {
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"bombsites", [] { testBombSites(TP(29090)); testPlantKnockback(TP(29091)); }},
+        {"ball", [] { testBallMode(TP(29092)); }},
         {"tickorder", [] { testTickOrder(TP(29096)); }},
         {"slopedglass", [] { testSlopedGlass(); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},

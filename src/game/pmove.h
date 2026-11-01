@@ -223,3 +223,9 @@ struct HookProbe {
 // Advances movement by cmd.msec milliseconds, in fixed 1 ms steps (tick-rate independent). `probe`: players and rockets
 // the grapple can catch (the server's lag compensated picks; the client's, as it sees them: NetClient::hookProbe).
 void pmove(MoveState& s, const UserCmd& cmd, const Map& map, HookProbe* probe = nullptr);
+// The ball (MODE_BALL; owner, 2026-11-01: "the same physics as a player on ice at 50% gravity"): its box (kBallHalf each
+// side of its centre `c`) moves like a player's hull with no input on an ice floor: half the gravity, the ground's
+// friction x kIceFriction on any floor, 1 ms steps. A wall or a ceiling sends it back at half the speed it hit with (a
+// player's hull would stop dead: a ball against a wall would stick there); a landing stops its fall, like a player's.
+// Returns whether it ends the call on the floor.
+bool ballMove(Vec3& c, Vec3& v, const Map& map, float dt);

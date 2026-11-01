@@ -211,7 +211,7 @@ add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/generated/default_brain.h
   DEPENDS ${CMAKE_SOURCE_DIR}/tools/bots/embed_brain.py ${CMAKE_SOURCE_DIR}/tools/bots/default.qbrain
   COMMENT "Embedding the built-in bot brain (tools/bots/default.qbrain)" VERBATIM)
 # The built-in modes' logic (tools/modes/common.qlogic + one .qlogic per mode, tools/modes/GRAMMAR.md) likewise.
-set(QUARK_MODE_LOGIC_FILES common vs bomb race koth payload ffa npayload duel arena tourney hide tag points surf power winner)
+set(QUARK_MODE_LOGIC_FILES common vs bomb race koth payload ffa npayload duel arena tourney hide tag points surf power winner ball)
 list(TRANSFORM QUARK_MODE_LOGIC_FILES PREPEND ${CMAKE_SOURCE_DIR}/tools/modes/)
 list(TRANSFORM QUARK_MODE_LOGIC_FILES APPEND .qlogic)
 add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/generated/default_modes.h

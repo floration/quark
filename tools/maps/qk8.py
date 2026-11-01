@@ -17,7 +17,7 @@ SW = 4.0                           # the shelves' and flights' width (and the en
 def build():
     m = M("QK8 Canyon", "1v1", sun=(0, 1, 0))
     m.raw("ranked vanilla vampire instagib")   # (q, 2026-10-31: every qk map on all three ladders)
-    m.also = ["duel", "vs", "tourney"]
+    m.also = ["duel", "vs", "tourney", "ball"]
     start = len(m.lines)
     # ---- the trench floor (its own twin) and the walls: the north wall here, the south one is its mirror
     B(m, "box", -TX, -1, -TZ, TX, 0, TZ)
@@ -76,6 +76,10 @@ def build():
     for x in (-50, -20, 10): light(m, x, 17, 8, 14, 0.7)
     for (x, y, z) in ((-75, 6, 0), (-80, 6, -10), (-80, 6, 10), (-72, 12, 12), (-83, 12, -6)): light(m, x, y, z, 16, 1.0)
     mirror_all(m, start)
+    # ---- ball (owner, 2026-11-01): the goals are the end rooms' 12 m doors (each team's own: its spawn room); the
+    # ball starts on the block under the middle bridge (sites: ball reads them as its goals, bomb isn't offered here)
+    m.raw("site -68 0 -6 -63 6 6")
+    m.raw("site 63 0 -6 68 6 6")
     # ---- bounds: a lid just over the walls (nobody stands on their tops)
     B(m, "clip", -87, 28.8, -26, 87, 29.8, 26)
     m.lines = [("accent" + l[5:]) if l.startswith("metal ") else l for l in m.lines]   # (box and accent only: the ladder rails too)

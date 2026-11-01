@@ -407,6 +407,8 @@ void giveBombToRandomAttacker(Server& s) {
     }
 }
 
+static void ballReset(Server& s);
+
 // The objects' round reset (the carts and the points start over; keyed on the base mode)
 void objectsRoundReset(Server& s) {
     ModeState& m = s.ms_;
@@ -428,6 +430,8 @@ void objectsRoundReset(Server& s) {
         m.pointCount = (uint8_t)s.teamCount(TEAM_B);
         m.payloadDist = powerPoolMax(m, TEAM_A);
         m.payloadLen = powerPoolMax(m, TEAM_B);
+    } else if (m.mode == MODE_BALL) {   // the ball back in the middle, the goals 0-0 (one round)
+        ballReset(s);
     }
 }
 
@@ -924,6 +928,140 @@ void tickPower(Server& s) {
     }
 }
 
+// ---- the ball (MODE_BALL; owner, 2026-11-01). Its centre is ms_.bombPos (sent to everyone), its velocity ballVel_.
+// The goals are the map's two sites, each its nearer team's: the ball's centre in one scores for the other team.
+static AABB ballBox(const Vec3& c, float grow = 0) { const Vec3 h(kBallHalf + grow, kBallHalf + grow, kBallHalf + grow); return {c - h, c + h}; }
+
+// where it starts: between the two goals, lifted out of anything solid there, then down to the floor
+static Vec3 ballSpawnPoint(const Map& map) {
+    Vec3 c = map.bounds.center();
+    if (map.bombSites.size() >= 2) {
+        c = (map.bombSites[0].center() + map.bombSites[1].center()) * 0.5f;
+        c.y = std::min(map.bombSites[0].mn.y, map.bombSites[1].mn.y) + kBallHalf + 0.05f;
+    }
+    for (int k = 0; k < 400 && map.boxSolid(ballBox(c)); k++) c.y += 0.25f;
+    c.y += map.sweepAxis(ballBox(c), 1, -200.0f);
+    return c;
+}
+
+// which team's goal site k is: the one whose spawns are nearer it
+static int ballGoalTeam(const Map& map, int k) {
+    float d[2] = {1e30f, 1e30f};
+    for (auto& sp : map.spawns)
+        if (sp.team == SPAWN_A || sp.team == SPAWN_B) {
+            float& t = d[sp.team == SPAWN_A ? 0 : 1];
+            t = std::min(t, length(sp.pos - map.bombSites[k].center()));
+        }
+    return d[0] <= d[1] ? TEAM_A : TEAM_B;
+}
+
+static void ballReset(Server& s) {
+    s.ballSpawn_ = ballSpawnPoint(s.map_);
+    s.ms_.bombPos = s.ballSpawn_;
+    s.ballVel_ = {};
+    s.ballToucher_ = -1;
+    s.ballSet_ = true;
+}
+
+static void ballPush(Server& s, const Vec3& dv, int by) {
+    s.ballVel_ += dv;
+    const float sp = length(s.ballVel_);
+    if (sp > 60.0f) s.ballVel_ *= 60.0f / sp;   // (a cap: stacked blasts can't fling it through the map)
+    if (by >= 0) s.ballToucher_ = by;
+}
+
+static void ballBlastIn(Server& s, const Vec3& at, float radius, float knock, int owner) {
+    if (s.ms_.mode != MODE_BALL || !s.ballSet_ || radius <= 0) return;
+    const Vec3 c = s.ms_.bombPos;
+    const float d = std::max(0.0f, length(c - at) - kBallHalf);
+    if (d > radius || !blastReaches(s.map_, at, ballBox(c))) return;
+    const float frac = 1.0f - d / radius;
+    Vec3 to = c - at;
+    const float len = length(to);
+    Vec3 dir = len > 0.01f ? to / len : Vec3(0, 1, 0);
+    Vec3 kb = dir * (knock * frac);
+    kb.y *= 2.0f;   // (launched like an enemy is)
+    ballPush(s, kb, owner);
+}
+
+static void ballShotIn(Server& s, const Vec3& o, const Vec3& dir, float maxT, float dmg, int owner) {
+    if (s.ms_.mode != MODE_BALL || !s.ballSet_ || dmg <= 0) return;
+    if (rayAABB(o, safeInv(dir), ballBox(s.ms_.bombPos), maxT) < 0) return;
+    ballPush(s, dir * std::min(dmg * 0.12f, 12.0f), owner);   // (a 100 damage shot: 12 m/s; the laser's ticks a little each)
+}
+
+// this tick: bodies push it (a player running into it sends it on at 1.3 x the speed they meet it with, and lifts it
+// a little), it moves, the void or lava puts it back in the middle, and a goal scores (live only)
+void ballStep(Server& s) {
+    ModeState& m = s.ms_;
+    const Map& map = s.map_;
+    if (!s.ballSet_) ballReset(s);
+    for (int i = 0; i < kMaxPlayers; i++) {
+        const auto& p = s.players_[i];
+        if (!p.connected || !p.alive || p.team == TEAM_SPECTATOR) continue;
+        const AABB pb = playerBox(p.move);
+        const AABB bb = ballBox(m.bombPos, 0.05f);
+        if (pb.mx.x < bb.mn.x || pb.mn.x > bb.mx.x || pb.mx.y < bb.mn.y || pb.mn.y > bb.mx.y || pb.mx.z < bb.mn.z || pb.mn.z > bb.mx.z) continue;
+        Vec3 n = m.bombPos - pb.center();
+        n.y = 0;
+        float len = length(n);
+        if (len < 1e-3f) { n = Vec3(p.move.vel.x, 0, p.move.vel.z); len = length(n); }
+        if (len < 1e-3f) continue;
+        n = n / len;
+        const float rel = dot(p.move.vel - s.ballVel_, n);
+        if (rel > 0) {
+            Vec3 dv = n * (rel * 1.3f);
+            dv.y = std::max(0.0f, 2.0f - s.ballVel_.y);
+            ballPush(s, dv, i);
+        }
+        // out of the body (sideways, as far as the map lets it)
+        for (int k = 0; k < 20; k++) {
+            const AABB b2 = ballBox(m.bombPos);
+            if (pb.mx.x < b2.mn.x || pb.mn.x > b2.mx.x || pb.mx.z < b2.mn.z || pb.mn.z > b2.mx.z || pb.mx.y < b2.mn.y || pb.mn.y > b2.mx.y) break;
+            m.bombPos.x += map.sweepAxis(b2, 0, n.x * 0.05f);
+            m.bombPos.z += map.sweepAxis(ballBox(m.bombPos), 2, n.z * 0.05f);
+        }
+    }
+    ballMove(m.bombPos, s.ballVel_, map, s.dt());
+    if (m.bombPos.y < map.killY() + 2.0f || (!map.lava.empty() && map.inLava(ballBox(m.bombPos)))) { ballReset(s); return; }
+    if (m.phase != PHASE_LIVE || map.bombSites.size() < 2) return;
+    for (int k = 0; k < 2; k++) {
+        const AABB& g = map.bombSites[k];
+        const Vec3& c = m.bombPos;
+        if (c.x < g.mn.x || c.x > g.mx.x || c.y < g.mn.y || c.y > g.mx.y || c.z < g.mn.z || c.z > g.mx.z) continue;
+        const int scorer = other(ballGoalTeam(map, k));
+        (scorer == TEAM_A ? m.scoreA : m.scoreB)++;
+        const int by = s.ballToucher_;
+        std::string text = std::string(teamName(scorer)) + " SCORES";
+        if (by >= 0 && s.players_[by].connected) {
+            text += " - " + s.players_[by].name + (s.players_[by].team == scorer ? "" : " (own goal)");
+            if (s.players_[by].team == scorer) s.players_[by].score++;
+        }
+        s.message(text);
+        s.glog(LOG_SIMPLE, "goal: %s (%d-%d)", text.c_str(), m.scoreA, m.scoreB);
+        ballReset(s);
+        return;
+    }
+}
+
+// Ball: the goals in ballStep; the host's score limit ends it early; when the clock runs out, the most goals win.
+void tickBall(Server& s) {
+    const ModeState& m = s.ms_;
+    ballStep(s);
+    if (s.ms_.phase != PHASE_LIVE) return;
+    const int lim = s.cfg_.scoreLimit;
+    if (lim > 0 && (m.scoreA >= lim || m.scoreB >= lim)) {
+        const int w = m.scoreA >= lim ? TEAM_A : TEAM_B;
+        enterMatchEnd(s, sideName(s, w) + " wins the match", w);
+        return;
+    }
+    if (s.phaseEnd_ > 0 && s.time() >= s.phaseEnd_) {
+        const int w = m.scoreA > m.scoreB ? TEAM_A : m.scoreB > m.scoreA ? TEAM_B : -1;
+        if (w >= 0) enterMatchEnd(s, sideName(s, w) + " wins the match", w);
+        else enterMatchEnd(s, "match over", -1);
+    }
+}
+
 void tickVS(Server& s) {
     if (s.ms_.mode == MODE_TOURNEY && tourneyWalkover(s)) return;
     int a = s.aliveCount(TEAM_A), b = s.aliveCount(TEAM_B);
@@ -1375,6 +1513,7 @@ void nativeTick(Server& s) {
         case MODE_TAG: tickTag(s); break;
         case MODE_POINTS: tickPoints(s); break;
         case MODE_POWER: tickPower(s); break;
+        case MODE_BALL: tickBall(s); break;
     }
 }
 
@@ -1519,10 +1658,14 @@ bool nativeFrozen(const Server& s, int id) {
 
 } // namespace
 
+void ballBlast(Server& s, const Vec3& at, float radius, float knock, int owner) { ballBlastIn(s, at, radius, knock, owner); }
+void ballShot(Server& s, const Vec3& o, const Vec3& dir, float maxT, float dmg, int owner) { ballShotIn(s, o, dir, maxT, dmg, owner); }
+
 // Tourney warmup is a free for all; during matches the two players are on teams A and B.
 bool modeIsTeamBased(int mode) { return mode != MODE_FFA && !isRaceMode(mode) && mode != MODE_TOURNEY && !isItMode(mode); }
 
 void rulesReset(Server& s) {
+    s.ballSet_ = false;   // (ball: placed again on this map)
     s.clearProps();   // (setPhase below can't tell: the mode state is reset to warmup first)
     ModeState& m = s.ms_;
     m = ModeState();
@@ -1586,7 +1729,10 @@ void rulesTick(Server& s) {
             // Warmup lasts until players vote to start (F4). Play-vs-bots / autostart servers start by themselves
             // once both sides have someone (canAutoStart). Race never starts itself: its warmup is practice (the
             // course, untimed) until someone starts the race.
-            if (!hookEvent(s, MSLOT_WARMUP) && isRaceMode(m.mode)) tickRacePractice(s);
+            if (!hookEvent(s, MSLOT_WARMUP)) {
+                if (isRaceMode(m.mode)) tickRacePractice(s);
+                else if (m.mode == MODE_BALL) ballStep(s);   // (the warmup: kick it about, no goals)
+            }
             if (m.phase != PHASE_WARMUP) break;
             if (s.oneVsOne()) s.fillOneVsOneSeats();   // (a seat left open: the first in line takes it)
             double v;
@@ -2024,6 +2170,7 @@ public:
             case MA_PICK_DUEL_MODIFIER: pickDuelModifier(s); return 0;
             case MA_POOL_STEP: poolStep(s); return 0;
             case MA_WINNER_STAYS: winnerStaysNext(s); return 0;
+            case MA_BALL_STEP: ballStep(s); return 0;
             default: return 0;
         }
     }

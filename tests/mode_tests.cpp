@@ -137,7 +137,7 @@ std::string firstDiff(const std::string& a, const std::string& b) {
     }
 }
 
-const char* const kModeFiles[] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "arena", "tourney", "hide", "tag", "points", "surf", "power", "winner"};
+const char* const kModeFiles[] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "arena", "tourney", "hide", "tag", "points", "surf", "power", "winner", "ball"};
 static_assert(sizeof kModeFiles / sizeof kModeFiles[0] == MODE_COUNT, "a mode file name per mode");
 
 void testFormat() {
@@ -798,6 +798,7 @@ const LockCase kLockCases[] = {
     {MODE_TAG, "foundry", 5, "param roundTime f32 = 8\nparam tagFreeze f32 = 1\n"},
     {MODE_POINTS, "midtown", 8, "param roundTime f32 = 25\nparam captureTime f32 = 3\nparam pointBonus f32 = 5\n"},
     {MODE_POWER, "bastion", 6, "param rounds int = 2\nparam roundTime f32 = 20\nparam poolPerPlayer f32 = 150\n"},
+    {MODE_BALL, "qk8", 6, "param roundTime f32 = 25\n"},
     {MODE_WINNER, "temple", 2, "param rounds int = 2\nparam stalemate f32 = 5\nparam drainRate f32 = 50\n"},
 };
 const char* const kCommonFast = "param freezeTime f32 = 1\nparam roundEndTime f32 = 1\nparam matchEndTime f32 = 1.5\nparam warmupCountdown f32 = 1\n";

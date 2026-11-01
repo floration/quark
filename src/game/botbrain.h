@@ -200,9 +200,9 @@ enum BrainSlot : uint8_t {
     SLOT_REJUDGE, SLOT_FIRE, SLOT_FIGHT_HOOK, SLOT_STRAFE, SLOT_PULLED_DASH, SLOT_FIGHT_JUMP, SLOT_FIGHT_DASH,
     SLOT_GLANCE, SLOT_HOOK_RETRY, SLOT_ROUTE_HOOK, SLOT_BHOP, SLOT_RUN_DASH, SLOT_DASH_JUMP, SLOT_UNSTICK,
     SLOT_OBJECTIVE,                              // + mode (MODE_*); SLOT_OBJECTIVE + kBrainModes: `objective default`
-    SLOT_COUNT = SLOT_OBJECTIVE + 16 + 1
+    SLOT_COUNT = SLOT_OBJECTIVE + 17 + 1
 };
-constexpr int kBrainModes = 16;                  // MODE_COUNT (static_assert in botbrain.cpp)
+constexpr int kBrainModes = 17;                  // MODE_COUNT (static_assert in botbrain.cpp)
 
 // Sensors: what the bot code tells a slot (one id space; each slot gets its own few plus the common ones).
 enum BrainSensor : uint8_t {

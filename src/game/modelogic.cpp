@@ -22,7 +22,7 @@
 
 static_assert(sizeof(ModeInsn) == 8, "an instruction is 8 bytes");
 static_assert(kModeRegs <= 255 && kModeTextParts <= 255, "register numbers are bytes");
-static_assert(MODE_COUNT == 16, "a .qlogic default per mode (tools/modes)");
+static_assert(MODE_COUNT == 17, "a .qlogic default per mode (tools/modes)");
 static_assert(PHASE_WARMUP == 0 && PHASE_FREEZE == 1 && PHASE_LIVE == 2 && PHASE_ROUND_END == 3 && PHASE_MATCH_END == 4, "phase constants");
 static_assert(BOMB_NONE == 0 && BOMB_CARRIED == 1 && BOMB_DROPPED == 2 && BOMB_PLANTED == 3 && BOMB_EXPLODED == 4 && BOMB_DEFUSED == 5, "bomb state constants");
 static_assert(TEAM_A == 0 && TEAM_B == 1 && TEAM_SPECTATOR == 2, "team constants");
@@ -46,7 +46,7 @@ bool isNumeric(int t) { return t == T_INT || t == T_F32 || t == T_F64; }
 bool isNullable(int t) { return t == T_TEAM || t == T_PLAYER || t == T_WEAPON || t == T_BOMBSTATE; }
 
 const char* const kWeaponNames[WPN_COUNT] = {"rifle", "rocket", "knife", "sniper", "laser", "shotgun", "sticky", "crossbow", "bubble", "syringe", "locator"};
-const char* const kBaseNames[MODE_COUNT] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "arena", "tourney", "hide", "tag", "points", "surf", "power", "winner"};
+const char* const kBaseNames[MODE_COUNT] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "arena", "tourney", "hide", "tag", "points", "surf", "power", "winner", "ball"};
 bool teamBased(int mode) { return mode != MODE_FFA && !isRaceMode(mode) && mode != MODE_TOURNEY && mode != MODE_HIDE && mode != MODE_TAG; }
 
 struct ArgInfo { const char* name; uint8_t type; const char* doc; };
@@ -249,6 +249,8 @@ const ActionInfo kActions[] = {
         "power this tick: a player who joined a team adds poolPerPlayer to its pool, one who left takes it off the size (the pool shrinks to fit)"},
     {"winnerStays", {}, T_VOID, false, MO_LINE, MA_WINNER_STAYS, AS_HOST, true, 0,
         "winner stays: the last round's loser goes to the back of the spectators' line and the first in line takes the seat (a draw: nobody moves)"},
+    {"ballStep", {}, T_VOID, false, MO_BALL, MA_BALL_STEP, AS_HOST, true, 0,
+        "ball this tick: it moves (a player's physics on ice at half gravity), bodies, shots and blasts push it; in a goal it scores for the other team (teamScore) and goes back to the middle"},
 };
 constexpr int kNumActions = (int)(sizeof kActions / sizeof kActions[0]);
 const ActionInfo* actionByName(const std::string& n) { for (auto& a : kActions) if (n == a.name) return &a; return nullptr; }
@@ -271,6 +273,7 @@ const ObjectInfo kObjects[MO_COUNT] = {
     {"duelmods", "duel: a random modifier each life", {"pickDuelModifier"}, {}, {}, MB(MODE_DUEL), 0},
     {"pool", "power: each team's health pool takes the enemy's hits (the round sets it up); nobody dies of damage", {"poolStep"}, {}, {"poolPerPlayer"}, MB(MODE_POWER), 0},
     {"line", "winner stays: spectators wait in line; each round's loser goes to the back and the first in line plays the winner", {"winnerStays"}, {}, {}, MB(MODE_WINNER), 0},
+    {"ball", "ball: the ball and the two goals (the map's sites, each its nearer team's)", {"ballStep"}, {}, {}, MB(MODE_BALL), MN_SITES},
 };
 #undef MB
 int objectByName(const std::string& n) { for (int i = 0; i < MO_COUNT; i++) if (n == kObjects[i].name) return i; return -1; }
@@ -1476,7 +1479,7 @@ struct Curve { uint8_t kind = 0, n = 0; float base = 0; float x[16] = {}, y[16] 
 
 const char* originFile(int origin, int base) {
     static const char* const files[MODE_COUNT] = {"vs.qlogic", "bomb.qlogic", "race.qlogic", "koth.qlogic", "payload.qlogic", "ffa.qlogic", "npayload.qlogic",
-                                                  "duel.qlogic", "arena.qlogic", "tourney.qlogic", "hide.qlogic", "tag.qlogic", "points.qlogic", "surf.qlogic", "power.qlogic", "winner.qlogic"};
+                                                  "duel.qlogic", "arena.qlogic", "tourney.qlogic", "hide.qlogic", "tag.qlogic", "points.qlogic", "surf.qlogic", "power.qlogic", "winner.qlogic", "ball.qlogic"};
     if (origin == 2) return "common.qlogic";
     return base >= 0 && base < MODE_COUNT ? files[base] : "the default";
 }
@@ -2430,7 +2433,7 @@ const ModeLogicUpgrade kModeLogicUpgrades[] = {nullptr};
 constexpr int kNumModeLogicUpgrades = 0;
 static_assert(kNumModeLogicUpgrades == kModeLogicVersion - 1, "every older logic version needs a converter in kModeLogicUpgrades");
 
-const char* const kDefaultNames[MODE_COUNT + 1] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "arena", "tourney", "hide", "tag", "points", "surf", "power", "winner", "common"};
+const char* const kDefaultNames[MODE_COUNT + 1] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "arena", "tourney", "hide", "tag", "points", "surf", "power", "winner", "ball", "common"};
 const char* defaultText(int mode) {   // (-1: common)
     const char* want = mode < 0 || mode >= MODE_COUNT ? "common" : kDefaultNames[mode];
     for (auto& d : kDefaultModeTexts) if (strcmp(d.name, want) == 0) return d.text;
