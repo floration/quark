@@ -1787,8 +1787,8 @@ static void testMaps() {
         CHECK(m.load(name, &err));
         if (!err.empty()) printf("  %s\n", err.c_str());
         for (int k = 0; k < MODE_COUNT; k++) {
-            if (k == MODE_SURF) continue;   // (a surf course is ramps: Lodestone has none)
-            bool compact = k == MODE_VS || k == MODE_DUEL || k == MODE_ARENA || k == MODE_TOURNEY;
+            if (k == MODE_SURF || k == MODE_BALL) continue;   // (a surf course is ramps, ball needs its two goals: Lodestone has neither)
+            bool compact = k == MODE_VS || k == MODE_DUEL || isOneVsOneMode(k) || k == MODE_TOURNEY;   // (winner stays: 1v1's)
             if (m.supportsMode(k) == compact) { printf("  %s: %s %s\n", name, compact ? "offers" : "no", modeName(k)); g_fail++; }
         }
         CHECK(m.payloadLength() > 20);

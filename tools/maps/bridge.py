@@ -340,6 +340,14 @@ def build():
             else: lorry(k, px, pz)
 
     # (the fog banks and haze sheets are gone: owner, 2026-11-01 "remove the smoke from the highway map")
+    # ---- shipping containers spilled across the deck where the fog banks stood (the same footprints, solid, two high
+    # at most): each leaves a lane 8 m wide on alternate sides, so no line along the deck from one end's spawns to the
+    # other's misses all four (the fog did that before); the walk and the bots' routes are the ones the fog left
+    SPILLS = [(-61, -59, -12, 4, 5.2), (-62.6, -60.6, -10, -1, 2.6), (-61.8, -59.8, -5, 3.5, 5.2),
+              (-21, -19, -4, 12, 5.2), (-22.6, -20.6, -1, 9, 2.6), (-20.2, -18.4, 2, 11.5, 5.2)]
+    for (x0, x1, z0, z1, h) in SPILLS:      # (the half x < 0; the other half point symmetric)
+        k.box("shippingcontainer", x0, 0, z0, x1, h, z1)
+        k.box("shippingcontainer", -x1, 0, -z1, -x0, h, -z0)
     # ---- ball (owner, 2026-11-01): a goal across the deck just inside each tower's portal (each team's own: its end)
     m.raw("site -88 0 -12 -84 6 12")
     m.raw("site 84 0 -12 88 6 12")
