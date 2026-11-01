@@ -84,6 +84,8 @@ std::string Game::uiScreenPath() const {
         case Screen::Demos: return "demos";
         case Screen::Benchmarks: return "benchmarks";
         case Screen::BenchmarkResult: return "benchmarks/result";
+        case Screen::Trainer: return "trainer";
+        case Screen::TrainerRun: return trResults_ ? "trainer/result" : "trainer/run";
         case Screen::CustomMode: return std::string("custom/") + custom[std::min(std::max(customTab_, 0), 4)];
         case Screen::Connecting: return "connecting";
         case Screen::Editor: return std::string(edPath()) + (edPrompt_ ? "/keep-edits" : edGroupMenu_ ? "/groups" : edExportAsk_ ? "/export-ask" : edMatMenu_ ? "/materials" : "") + (chatting_ ? "/chat" : "");

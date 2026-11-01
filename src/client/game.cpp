@@ -952,6 +952,7 @@ void Game::onKey(int key, int action, int mods) {
         }
         return;
     }
+    if (screen_ == Screen::TrainerRun && (!trResults_ || key == GLFW_KEY_ESCAPE || key == GLFW_KEY_R) && trainerKey(key, action)) return;   // (AIM TRAINER: Esc, R, FIRE)
     if (bench_.phase != BenchRun::OFF && (screen_ == Screen::InGame || screen_ == Screen::Connecting)) {      // BENCHMARK: Esc cancels, nothing else
         if (action == GLFW_PRESS && key == GLFW_KEY_ESCAPE) benchCancel();
         return;
@@ -1089,7 +1090,7 @@ void Game::onKey(int key, int action, int mods) {
         if (screen_ == Screen::CustomMode) { setScreen(Screen::Host); return; }                  // same as its BACK (unsaved changes dropped)
         if (screen_ == Screen::Host && hostAdvanced_) { hostAdvanced_ = false; cfg_.save(); return; }   // ADVANCED: back to HOST, as its BACK
         if (screen_ == Screen::BenchmarkResult) { setScreen(Screen::Benchmarks); return; }   // (as its BACK; a name being typed is saved as the field closes)
-        if (screen_ == Screen::Join || screen_ == Screen::Host || screen_ == Screen::VsBots || screen_ == Screen::Leaderboard || screen_ == Screen::Demos || screen_ == Screen::Info || screen_ == Screen::Benchmarks) {
+        if (screen_ == Screen::Join || screen_ == Screen::Host || screen_ == Screen::VsBots || screen_ == Screen::Leaderboard || screen_ == Screen::Demos || screen_ == Screen::Info || screen_ == Screen::Benchmarks || screen_ == Screen::Trainer) {
             cfg_.save();
             setScreen(Screen::Main);
         } else if (screen_ == Screen::Connecting) {
@@ -1132,6 +1133,10 @@ void Game::onMouseButton(int button, int action) {
         if (action == GLFW_PRESS && focusGained_ && screen_ == Screen::InGame && !paused_ && !chatting_) { swallowedBtn_ |= (uint16_t)(1u << button); return; }
     }
     markInput();
+    if (screen_ == Screen::TrainerRun && !trResults_) {   // AIM TRAINER: FIRE's button clicks (the rifle fires once a click)
+        if (action == GLFW_PRESS && binds().has(A_FIRE, kMouseCode + button)) trClick_ = true;
+        return;
+    }
     if (button == GLFW_MOUSE_BUTTON_LEFT) {
         if (action == GLFW_PRESS) { uiIn_.pressed = captureAction_ < 0; uiIn_.down = true; }
         else if (action == GLFW_RELEASE) uiIn_.down = false;
@@ -1929,6 +1934,12 @@ void Game::frame(double dt) {
         addChat({"wraith: nice shot", Color{1, 1, 1, 1}, time_ + 1e9, 0, true});
         addChat({"ember: gg", Color{1, 1, 1, 1}, time_ + 1e9, 0, true});
     }
+    if (!opts_.trainer.empty() && screen_ == Screen::Main) {   // --trainer ID[:DIFF]
+        const size_t c = opts_.trainer.find(':');
+        trDiff_ = c == std::string::npos ? 0 : std::clamp(atoi(opts_.trainer.c_str() + c + 1), 0, trainer::kDiffs - 1);
+        if (const trainer::Scenario* sc = trainer::findScenario(opts_.trainer.substr(0, c))) trainerStart(sc);
+        opts_.trainer.clear();
+    }
     if (opts_.debugPerf) { perfStage_ = 3; if (pendingInput_ < 0) pendingInput_ = timeNow(); }
     if (opts_.debugPause && screen_ == Screen::InGame && !paused_) { paused_ = true; voteMenu_ = opts_.debugVote; opts_.debugPause = false; }
     if (opts_.debugSettings && screen_ == Screen::InGame && !settingsInGame_) {
@@ -1971,7 +1982,7 @@ void Game::frame(double dt) {
     polledEarly_ = false;
     updateCommunity();
     if (!benchSending_.empty() && bench_.phase == BenchRun::OFF) benchUploads();   // (BENCHMARK: answers to the runs' uploads; never mid-run)
-    if (((screen_ == Screen::InGame && !bake_) || screen_ == Screen::Editor || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty() || opts_.menuShot) && !opts_.screenshot.empty() && shotAt_ < 0) shotAt_ = time_ + opts_.shotDelay;
+    if (((screen_ == Screen::InGame && !bake_) || screen_ == Screen::Editor || screen_ == Screen::TrainerRun || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty() || opts_.menuShot) && !opts_.screenshot.empty() && shotAt_ < 0) shotAt_ = time_ + opts_.shotDelay;
 
     if (screen_ == Screen::Join) browser_.poll();
     if (reconnectAt_ > 0 && time_ >= reconnectAt_) {   // (AUTO RECONNECT's try, from the main menu it left you on)
@@ -2268,7 +2279,9 @@ void Game::frame(double dt) {
         uiIn_.backspace = uiIn_.enter = uiIn_.tab = uiIn_.escape = uiIn_.copy = false;
         return;
     }
-    if (screen_ == Screen::Editor) {
+    if (screen_ == Screen::TrainerRun) {
+        trainerFrame(dt);
+    } else if (screen_ == Screen::Editor) {
         if (!edScript_.empty()) edScriptStep();
         editorFrame(dt);
     } else if (screen_ == Screen::InGame && bake_) {
@@ -2312,7 +2325,7 @@ void Game::frame(double dt) {
         if (screen_ == Screen::BenchmarkResult) notify((r_.screenshot(benchShot_) ? "SAVED " : "COULD NOT WRITE ") + upper(benchShot_), 6);
         benchShot_.clear();
     }
-    if (shotAt_ > 0 && time_ >= shotAt_ && (screen_ == Screen::InGame || screen_ == Screen::Editor || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty() || opts_.menuShot)) {
+    if (shotAt_ > 0 && time_ >= shotAt_ && (screen_ == Screen::InGame || screen_ == Screen::Editor || screen_ == Screen::TrainerRun || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty() || opts_.menuShot)) {
         r_.screenshot(opts_.screenshot);
         printf("screenshot written to %s\n", opts_.screenshot.c_str());
         quit_ = true;
@@ -9330,6 +9343,12 @@ void Game::debugMenuPage() {
     size_t plus = p.find('+');
     if (plus != std::string::npos) { scroll = atoi(p.c_str() + plus + 1); p = p.substr(0, plus); }
     auto under = [&](const char* a) { return p.rfind(a, 0) == 0; };
+    if (under("trainer")) {   // AIM TRAINER's menu: trainer, or trainer/<mode 0-1>/<category 0-2>/<difficulty 0-2>
+        openTrainer();
+        int m = 0, c = 0, d = 0;
+        if (sscanf(p.c_str(), "trainer/%d/%d/%d", &m, &c, &d) >= 1) { trMode_ = std::clamp(m, 0, trainer::TR_MODES - 1); trCat_ = std::clamp(c, 0, trainer::CAT_COUNT - 1); trDiff_ = std::clamp(d, 0, trainer::kDiffs - 1); }
+        return;
+    }
     if (under("benchmarks")) {   // (benchmarks/result: the newest saved run)
         setScreen(Screen::Benchmarks);
         if (p == "benchmarks/result") {
@@ -9375,7 +9394,7 @@ void Game::debugMenuPage() {
 
 void Game::drawMenu() {
     QZONE("drawMenu");
-    if (screen_ == Screen::InGame || screen_ == Screen::Editor) return;
+    if (screen_ == Screen::InGame || screen_ == Screen::Editor || screen_ == Screen::TrainerRun) return;
     const float W = (float)r_.width(), H = (float)r_.height();
     float s = H / 720.0f;
     ui_.begin(&r_, uiIn_, s);
@@ -9401,6 +9420,7 @@ void Game::drawMenu() {
         case Screen::Demos: drawDemos(menuLayout(592)); break;
         case Screen::Benchmarks: drawBenchList(menuLayout(592)); break;
         case Screen::BenchmarkResult: drawBenchResults(menuLayout(960)); break;
+        case Screen::Trainer: drawTrainerMenu(menuLayout(960)); break;
         case Screen::CustomMode: drawCustomModeEditor(menuLayout(960)); break;
         case Screen::Connecting: drawConnecting(L); break;
         default: break;
@@ -9427,7 +9447,8 @@ void Game::drawMainMenu(const SetLayout& L) {
     if (ui_.button(x2, L.Y(438), hw, h, "INFO", UiExp::nav("info/*"))) setScreen(Screen::Info);   // how everything works
     if (ui_.button(x, L.Y(486), hw, h, "DISCORD", UiExp::url())) openUrl(kDiscordUrl);
     if (ui_.button(x2, L.Y(486), hw, h, "DEMOS", UiExp::nav("demos"))) setScreen(Screen::Demos);
-    if (ui_.button(x, L.Y(534), w, h, "BENCHMARK", UiExp::nav("benchmarks"))) setScreen(Screen::Benchmarks);
+    if (ui_.button(x, L.Y(534), hw, h, "AIM TRAINER", UiExp::nav("trainer"))) openTrainer();
+    if (ui_.button(x2, L.Y(534), hw, h, "BENCHMARK", UiExp::nav("benchmarks"))) setScreen(Screen::Benchmarks);
     if (ui_.button(x, L.Y(594), w, h, confirmArmed("quit") ? "SURE? QUIT" : "QUIT", (cfg_.confirmLeave && !confirmArmed("quit") ? UiExp::state("confirm", "quit") : UiExp::quit()).withId("QUIT")) &&
         confirmed("quit")) quit_ = true;   // (destructive: its own row, 20 px below)
     if (!error_.empty()) ui_.labelCentered(L.X(640), L.Y(650), error_, kRed, 1.0f, L.L(960));

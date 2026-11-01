@@ -18,6 +18,7 @@
 #include "../game/glass.h"
 #include "../game/server.h"
 #include "../game/ranked.h"
+#include "../game/trainer.h"
 #include "audio.h"
 #include "clientfeel.h"
 #include "modecalls.h"
@@ -91,7 +92,8 @@ struct LaunchOptions {
     double bench = 0;           // --bench SECONDS: measure frame times in a vs-bots game, print, quit
     bool benchmark = false;     // --benchmark [DEMO] [SECONDS]: the main menu's BENCHMARK (benchmark.cpp), printed, then quit
     std::string benchmarkDemo;  // ...on this demo instead of the shipped one
-    double benchmarkSeconds = 0;   // ...measuring at most this long (0: to the demo's end)
+    double benchmarkSeconds = 0;
+    std::string trainer;        // --trainer ID[:DIFF]: start that AIM TRAINER scenario (difficulty 0-2) at once (screenshots)   // ...measuring at most this long (0: to the demo's end)
     bool uiTest = false;        // --uitest [report.json]: click every widget and check it does what it says (uitest.cpp)
     std::string uiTestReport;   // where the report goes (default uitest-report.json)
     std::string uiTestOnly;     // --uitest-only a,b: just these scenarios (development)
@@ -156,7 +158,7 @@ private:
     const char* edGroupsPath() const { return edOnline_ ? "editor-online/groups" : "editor/groups"; }
     const char* edKeepPath() const { return edOnline_ ? "editor-online/keep-edits" : "editor/keep-edits"; }
     bool edGroupTakesEveryBox() const;      // GROUP would leave the map without a box of its own (refused)
-    enum class Screen { Main, Join, Host, Settings, Connecting, InGame, VsBots, Editor, Leaderboard, CustomMode, Info, Demos, Benchmarks, BenchmarkResult };
+    enum class Screen { Main, Join, Host, Settings, Connecting, InGame, VsBots, Editor, Leaderboard, CustomMode, Info, Demos, Benchmarks, BenchmarkResult, Trainer, TrainerRun };
     void setScreen(Screen s);
     void startHost(bool vsBots = false);
     void stopHost();
@@ -282,6 +284,28 @@ private:
     bool socdPrev_[4] = {}, altPrev_ = false, altToggled_ = false;
     int altWeapon_ = -1;   // the weapon alt-fire was pressed with (-1 up; -2 held over a switch: ignored till let go)
     void benchFrame(double dt);
+    // ---- AIM TRAINER (trainer.cpp; owner, 2026-11-01): the scenario menu (Screen::Trainer) and a run (TrainerRun):
+    // a client-only scene like the editor, the simulation in src/game/trainer.h
+    trainer::Run trRun_;
+    const trainer::Scenario* trSc_ = nullptr;
+    int trMode_ = 0, trCat_ = 0, trDiff_ = 0;
+    bool trResults_ = false, trNewBest_ = false, trClick_ = false, trRoomDirty_ = true, trLaserOn_ = false, trScoresLoaded_ = false;
+    double trTracerUntil_ = 0, trHitUntil_ = 0, trHitSoundAt_ = 0;
+    Vec3 trTracerEnd_, trLaserEnd_, trSavedSky_;
+    float trSavedYaw_ = 0, trSavedPitch_ = 0;
+    struct TrScore { int best = 0, last = 0, plays = 0; };
+    std::map<std::string, TrScore> trScores_;   // "<scenario id>:<difficulty>" (the data folder's trainer-scores.txt)
+    ModelMesh trSphere_;
+    std::string trKey(const char* id, int diff) const;
+    void trainerLoadScores();
+    void trainerSaveScores();
+    void openTrainer();
+    void trainerStart(const trainer::Scenario* sc);
+    void trainerExit();
+    void trainerFinish();
+    bool trainerKey(int key, int action);
+    void trainerFrame(double dt);
+    void drawTrainerMenu(const SetLayout& L);
     // ---- BENCHMARK (main menu; --benchmark): a fixed bot match on Hamlet watched from a fixed camera path, then its
     // frame times (benchmark.cpp; the match and the maths: src/game/benchmark.h)
     struct BenchRun {
