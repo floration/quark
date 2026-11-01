@@ -424,7 +424,7 @@ void Game::leaveGame(const std::string& error) {
     if (widgetEdit_) widgets_.save(activeHudPath());
     hudEditClose();
     if (settingsInGame_) cfg_.save();
-    settingsInGame_ = voteMenu_ = specPick_ = queueMenu_ = practiceMenu_ = playersMenu_ = fontsOpen_ = devicesOpen_ = widgetEdit_ = false;
+    settingsInGame_ = voteSetup_ = voteMenu_ = specPick_ = queueMenu_ = practiceMenu_ = playersMenu_ = fontsOpen_ = devicesOpen_ = widgetEdit_ = false;
     setTab_ = TAB_PLAYER; controlsSub_ = 0;
     ui_.closePopup();
     picker_ = PICK_NONE;
@@ -1063,7 +1063,7 @@ void Game::onKey(int key, int action, int mods) {
             if (devicesOpen_) { devicesOpen_ = false; cfg_.save(); return; }   // (DEVICES: back to VIDEO + AUDIO)
             if (moreOpen_) { moreOpen_ = false; cfg_.save(); return; }   // (MORE: back to its tab)
             if (settingsInGame_) { leaveSettings(); return; }   // (any tab: as BACK)
-            if (voteMenu_ || queueMenu_ || practiceMenu_ || playersMenu_ || picker_ != PICK_NONE) { voteMenu_ = queueMenu_ = practiceMenu_ = playersMenu_ = specPick_ = false; picker_ = PICK_NONE; return; }
+            if (voteMenu_ || voteSetup_ || queueMenu_ || practiceMenu_ || playersMenu_ || picker_ != PICK_NONE) { voteSetup_ = voteMenu_ = queueMenu_ = practiceMenu_ = playersMenu_ = specPick_ = false; picker_ = PICK_NONE; return; }
             paused_ = !paused_;
             captureMouse(!paused_);
             return;
@@ -1752,7 +1752,12 @@ void Game::handleEvents() {
                 for (auto& p : rulesParts_) { if (p == "\x01") { done = false; break; } all += p; }
                 if (!done) break;
                 CustomRules r;
-                if (r.fromText(all)) { setActiveRules(r); notify("CUSTOM MODE: " + upper(r.name) + (r.label.empty() ? "" : " - LOGIC: " + r.label), 4); }
+                if (r.fromText(all)) {   // ("custommode=" alone: back to the standard rules, after a vote's modifiers)
+                    setActiveRules(r);
+                    if (!r.active()) notify("STANDARD RULES", 3);
+                    else if (r.name == "voted") notify("VOTED MODIFIERS ON", 3);
+                    else notify("CUSTOM MODE: " + upper(r.name) + (r.label.empty() ? "" : " - LOGIC: " + r.label), 4);
+                }
                 rulesParts_.clear();
                 break;
             }
@@ -6051,7 +6056,7 @@ void Game::drawVoteMenu(float cx, float y) {
         if (c.half(2, "RANKED OFF", UiExp::cmd("callvote ranked off"))) voted("callvote ranked off");
         c.next();
     } else {
-        if (c.half(1, "CHANGE MAP / MODE", mapMode) && !maps_.empty()) openLivePicker(PICK_LIVE_MODE, true);
+        if (c.half(1, "MAP / MODE / MODIFIERS", UiExp::nav("ingame/pause/vote/setup*")) && !maps_.empty()) openVoteSetup();
         if (c.half(2, "RANKED", ladder)) openLadders();
         c.next();
         // edit the map together; on a normal server the changes last until the map changes
@@ -6087,6 +6092,172 @@ void Game::drawVoteMenu(float cx, float y) {
     if (c.half(1, "BACK", UiExp::nav("ingame/pause"))) voteMenu_ = false;
 }
 
+// The vote builder (owner, 2026-11-01: "just a vote button / then you can toggle on options gamemode modifiers map /
+// under gamemode you pick objective based or player based / pick gamemode first, then you get to see modifiers, then
+// maps"): what the vote changes is toggled first, then each part in that order, then one vote for all of it. The mode
+// and map steps are the live pickers (the mode list filtered to the group); the rest are pages here.
+void Game::openVoteSetup() {
+    openLivePicker(PICK_NONE, true);
+    liveVariant_ = net_.mode().arenaVariant;
+    voteSetup_ = true;
+    voteStage_ = VS_TOGGLES;
+    vsMode_ = vsMods_ = vsMap_ = true;   // (all three by default: gamemode, then the modifiers, then the map)
+    modeGroup_ = 0;
+    voteMods_ = VoteMods();
+}
+
+void Game::voteAdvance() {
+    picker_ = PICK_NONE;
+    if (voteStage_ < VS_GROUP && vsMode_) { voteStage_ = VS_GROUP; return; }
+    if (voteStage_ < VS_MODS && vsMods_) { voteStage_ = VS_MODS; return; }
+    if (voteStage_ < VS_MAP && vsMap_) { voteStage_ = VS_MAP; picker_ = PICK_LIVE_MAP; return; }
+    voteStage_ = VS_SUMMARY;
+}
+
+std::string Game::voteModsText() const {
+    const VoteMods& m = voteMods_;
+    const VoteMods d;
+    std::string t;
+    auto num = [&](const char* k, float v, float dv) {
+        if (std::fabs(v - dv) < 1e-4f) return;
+        char b[48];
+        snprintf(b, sizeof b, "%s=%g\n", k, v);
+        t += b;
+    };
+    num("gravity", m.gravity, d.gravity);
+    num("speed", m.speed, d.speed);
+    num("jump", m.jump, d.jump);
+    num("knockback", m.knockback, d.knockback);
+    num("damage", m.damage, d.damage);
+    num("health", m.health, d.health);
+    if (m.vampire) t += "vampire=1\n";
+    if (m.regen) t += "regen=1\n";
+    if (m.instagib) t += "instagib=1\n";
+    if (!m.selfDamage) t += "selfdamage=0\n";
+    if (!m.dash) t += "dash=0\n";
+    if (!m.grapple) t += "grapple=0\n";
+    return t;
+}
+
+std::string Game::voteModsWords() const {
+    std::string w = " mods", t = voteModsText();
+    for (char& c : t) if (c == '\n') c = ' ';
+    if (!t.empty()) { t.pop_back(); w += " " + t; }
+    return w;
+}
+
+void Game::drawVoteSetup() {
+    if (net_.state() != ConnState::Connected || !net_.hasSnapshot()) { voteSetup_ = false; return; }
+    // a picker step closed with its BACK: the page before it
+    if (voteStage_ == VS_MODE || voteStage_ == VS_RULESET) voteStage_ = VS_GROUP;
+    if (voteStage_ == VS_MAP) voteStage_ = VS_TOGGLES;
+    const SetLayout L = ingameLayout(kPW + 32);
+    auto onOff = [](const char* t, bool on) { return std::string(t) + (on ? ": ON" : ": OFF"); };
+    if (voteStage_ == VS_TOGGLES) {
+        const float kH = 40 + 24 + pauseH(4, 0, true);
+        PauseCol c{ui_, L, ingameTop(L, kH)};
+        ui_.panel(L.X(kPX - 16), L.Y(c.y - 16), L.L(kPW + 32), L.L(kH + 32), 0.95f);
+        ui_.labelCentered(L.X(640), L.Y(c.y), "VOTE", kWhite, 1.5f, L.L(kPW));
+        c.y += 40;
+        ui_.hintCentered(L.X(640), L.Y(c.y), "WHAT THE VOTE CHANGES", kGrey, L.L(kPW));
+        c.y += 24;
+        if (c.full(onOff("GAMEMODE", vsMode_), UiExp::state("votesetup").withId("GAMEMODE"))) vsMode_ = !vsMode_;
+        c.next();
+        if (c.full(onOff("MODIFIERS", vsMods_), UiExp::state("votesetup").withId("MODIFIERS"))) vsMods_ = !vsMods_;
+        c.next();
+        if (c.full(onOff("MAP", vsMap_), UiExp::state("votesetup").withId("MAP"))) vsMap_ = !vsMap_;
+        c.next();
+        const bool any = vsMode_ || vsMods_ || vsMap_;
+        if (c.full("NEXT", any ? UiExp::nav("ingame/pause*") : UiExp::inert(), any)) voteAdvance();
+        c.next();
+        c.last();
+        if (c.half(1, "BACK", UiExp::nav("ingame/pause/vote"))) voteSetup_ = false;
+        return;
+    }
+    if (voteStage_ == VS_GROUP) {
+        const float kH = 40 + pauseH(2, 0, true);
+        PauseCol c{ui_, L, ingameTop(L, kH)};
+        ui_.panel(L.X(kPX - 16), L.Y(c.y - 16), L.L(kPW + 32), L.L(kH + 32), 0.95f);
+        ui_.labelCentered(L.X(640), L.Y(c.y), "VOTE: GAMEMODE", kWhite, 1.5f, L.L(kPW));
+        c.y += 40;
+        auto pick = [&](int g) { modeGroup_ = g; voteStage_ = VS_MODE; picker_ = PICK_LIVE_MODE; };
+        if (c.full("OBJECTIVE BASED", UiExp::nav("ingame/pause/picker:livemode"))) pick(1);
+        c.next();
+        if (c.full("PLAYER BASED", UiExp::nav("ingame/pause/picker:livemode"))) pick(2);
+        c.next();
+        c.last();
+        if (c.half(1, "BACK", UiExp::nav("ingame/pause/vote/setup*"))) voteStage_ = VS_TOGGLES;
+        return;
+    }
+    if (voteStage_ == VS_MODS) {
+        // two columns: the numbers as x multipliers in steps (health in points) on the left, the rules on / off on the
+        // right; BACK, STANDARD and NEXT on the last row
+        VoteMods& m = voteMods_;
+        struct Num { const char* name; float* v; float step, lo, hi; bool points; };
+        const Num nums[] = {{"DAMAGE", &m.damage, 0.25f, 0.25f, 4, false}, {"SPEED", &m.speed, 0.25f, 0.25f, 3, false},
+                            {"GRAVITY", &m.gravity, 0.25f, 0.25f, 3, false}, {"JUMP", &m.jump, 0.25f, 0.25f, 3, false},
+                            {"KNOCKBACK", &m.knockback, 0.25f, 0, 5, false}, {"HEALTH", &m.health, 25, 25, 500, true}};
+        struct Flag { const char* on; bool* v; };
+        const Flag flags[] = {{"VAMPIRE", &m.vampire}, {"REGEN", &m.regen}, {"INSTAGIB", &m.instagib},
+                              {"SELF DAMAGE", &m.selfDamage}, {"DASH", &m.dash}, {"GRAPPLE", &m.grapple}};
+        const float tw = 2 * kPW + 24, x0 = 640 - tw * 0.5f, x1 = x0 + kPW + 24;
+        const SetLayout L2 = ingameLayout(tw + 32);
+        const float kH = 40 + 6 * (kPRow + kPGap) - kPGap + 20 + kPRow;
+        float y = ingameTop(L2, kH);
+        ui_.panel(L2.X(x0 - 16), L2.Y(y - 16), L2.L(tw + 32), L2.L(kH + 32), 0.95f);
+        ui_.labelCentered(L2.X(640), L2.Y(y), "VOTE: MODIFIERS", kWhite, 1.5f, L2.L(tw));
+        y += 40;
+        const float bw = 44;
+        for (int k = 0; k < 6; k++, y += kPRow + kPGap) {
+            const Num& n = nums[k];
+            char b[64];
+            if (n.points) snprintf(b, sizeof b, "%s %d", n.name, (int)std::lround(*n.v));
+            else snprintf(b, sizeof b, "%s X%g", n.name, *n.v);
+            ui_.label(L2.X(x0), L2.Y(y + 8), b, kWhite, 1.0f, L2.L(kPW - 2 * bw - 16));
+            const bool down = *n.v > n.lo + 1e-4f, up = *n.v < n.hi - 1e-4f;
+            if (ui_.button(L2.X(x0 + kPW - 2 * bw - 8), L2.Y(y), L2.L(bw), L2.L(kPRow), "-", (down ? UiExp::state("votesetup") : UiExp::inert()).withId(n.name), down))
+                *n.v = std::max(n.lo, *n.v - n.step);
+            if (ui_.button(L2.X(x0 + kPW - bw), L2.Y(y), L2.L(bw), L2.L(kPRow), "+", (up ? UiExp::state("votesetup") : UiExp::inert()).withId(n.name), up))
+                *n.v = std::min(n.hi, *n.v + n.step);
+            const Flag& f = flags[k];
+            if (ui_.button(L2.X(x1), L2.Y(y), L2.L(kPW), L2.L(kPRow), onOff(f.on, *f.v), UiExp::state("votesetup").withId(f.on))) *f.v = !*f.v;
+        }
+        y += 20 - kPGap;
+        if (ui_.button(L2.X(x0), L2.Y(y), L2.L(kPHalf), L2.L(kPRow), "BACK", UiExp::nav("ingame/pause/vote/setup*"))) voteStage_ = VS_TOGGLES;
+        const bool std0 = voteModsText().empty();
+        if (ui_.button(L2.X(x1), L2.Y(y), L2.L(kPHalf), L2.L(kPRow), "STANDARD", std0 ? UiExp::inert() : UiExp::state("votesetup"), !std0)) m = VoteMods();
+        if (ui_.button(L2.X(x1 + kPW - kPHalf), L2.Y(y), L2.L(kPHalf), L2.L(kPRow), "NEXT", UiExp::nav("ingame/pause*"))) voteAdvance();
+        return;
+    }
+    // the summary: what's voted, then CALL VOTE
+    const int mode = vsMode_ ? liveMode_ : net_.mode().mode;
+    const int variant = vsMode_ ? liveVariant_ : net_.mode().arenaVariant;
+    const std::string map = vsMap_ && liveMap_ >= 0 && liveMap_ < (int)maps_.size() ? maps_[liveMap_] : net_.map().name;
+    bool fits = true;
+    for (int i = 0; i < (int)maps_.size() && i < (int)mapInfo_.size(); i++) if (maps_[i] == map) fits = mapInfo_[i].modes >> mode & 1;
+    const float kH = 40 + 3 * 24 + (fits ? 0 : 24) + 8 + pauseH(1, 0, true);
+    PauseCol c{ui_, L, ingameTop(L, kH)};
+    ui_.panel(L.X(kPX - 16), L.Y(c.y - 16), L.L(kPW + 32), L.L(kH + 32), 0.95f);
+    ui_.labelCentered(L.X(640), L.Y(c.y), "VOTE", kWhite, 1.5f, L.L(kPW));
+    c.y += 40;
+    std::string modeLine = std::string("MODE: ") + modeTitle(mode) + (modeHasRuleset(mode) ? std::string(" (") + arenaVariant(variant).title + ")" : "");
+    ui_.hint(L.X(kPX), L.Y(c.y), modeLine, vsMode_ ? ui_.accent : kGrey, L.L(kPW)); c.y += 24;
+    ui_.hint(L.X(kPX), L.Y(c.y), "MODIFIERS: " + (vsMods_ ? votedModsTitle(voteModsText()) : std::string("UNCHANGED")), vsMods_ ? ui_.accent : kGrey, L.L(kPW)); c.y += 24;
+    ui_.hint(L.X(kPX), L.Y(c.y), "MAP: " + upper(map), vsMap_ ? ui_.accent : kGrey, L.L(kPW)); c.y += 24;
+    if (!fits) { ui_.hint(L.X(kPX), L.Y(c.y), "THE MAP ISN'T BUILT FOR THIS MODE: IT MAY NOT WORK", Color{1.0f, 0.55f, 0.3f, 1}, L.L(kPW)); c.y += 24; }
+    c.y += 8;
+    if (c.full("CALL VOTE", UiExp::cmd("callvote map"))) {
+        std::string cmd = "callvote map " + map + " " + modeName(mode) + " " + arenaVariant(variant).name;
+        if (vsMods_) cmd += voteModsWords();
+        net_.sendCommand(cmd);
+        voteSetup_ = voteMenu_ = paused_ = false;
+        return;
+    }
+    c.next();
+    c.last();
+    if (c.half(1, "BACK", UiExp::nav("ingame/pause/vote/setup*"))) voteStage_ = VS_TOGGLES;
+}
+
 // The pause menu: RESUME; then two to a row JOIN TEAM A / B (or PLAY), SPECTATE, VOTE, QUEUE, RECORD DEMO (one left
 // over: a whole row); SETTINGS; the host's controls in a HOST section; STOP HOSTING / DISCONNECT / BACK TO EDITOR +
 // QUIT on the last row after a gap. A demo: RESUME, SETTINGS, STOP DEMO + QUIT.
@@ -6096,6 +6267,7 @@ void Game::drawPauseMenu(float cx, float y) {
         return;
     }
     if (picker_ != PICK_NONE) { drawPicker(cx, y); return; }
+    if (voteSetup_) { drawVoteSetup(); return; }
     if (voteMenu_) { drawVoteMenu(cx, y); return; }
     if (practiceMenu_) { drawPracticeMenu(); return; }
     if (playersMenu_) { drawPlayersMenu(); return; }
@@ -10890,7 +11062,20 @@ void Game::drawPicker(float cx, float y) {
     static const int kLadders[3] = {0, 1, 5};
     bool rankedTile = picker_ == PICK_HOST_MODE || picker_ == PICK_LIVE_MODE; // RANKED is one more choice, holding the ladders
     bool rankedNow = live ? serverRanked : host && cfg_.hostRanked; // vs bots is never ranked
-    int n = ladders ? 3 : variants ? kArenaVariants : modes ? MODE_COUNT + (rankedTile ? 1 : 0) : (int)maps_.size();
+    const bool builder = live && voteSetup_;   // the vote builder's mode / ruleset / map step (drawVoteSetup)
+    if (builder) rankedTile = false;
+    // the builder's mode list: objective based or player based (owner, 2026-11-01)
+    static std::vector<int> modeVis;
+    modeVis.clear();
+    if (modes && builder) {
+        static const int kObjective[] = {MODE_BOMB, MODE_KOTH, MODE_NPAYLOAD, MODE_PAYLOAD, MODE_POINTS, MODE_RACE, MODE_SURF};
+        for (int m = 0; m < MODE_COUNT; m++) {
+            const bool obj = std::find(std::begin(kObjective), std::end(kObjective), m) != std::end(kObjective);
+            if (modeGroup_ == 0 || obj == (modeGroup_ == 1)) modeVis.push_back(m);
+        }
+    }
+    auto modeAt = [&](int i) { return modes && builder ? modeVis[i] : i; };
+    int n = ladders ? 3 : variants ? kArenaVariants : modes ? (builder ? (int)modeVis.size() : MODE_COUNT + (rankedTile ? 1 : 0)) : (int)maps_.size();
     // a map list: only the maps built for the mode (owner, 2026-10-30: "you shouldnt get to pick maps that are not under the
     // playable gamemode for the map"; a tourney list: built for tourney; ranked: its ladder's maps), vis[i] is card i's map
     static std::vector<int> vis;
@@ -10906,7 +11091,7 @@ void Game::drawPicker(float cx, float y) {
     }
     // where a choice / BACK leaves you (the UI test checks it): the host / vs bots menu, or the pause menu (or its votes)
     const char* done = host ? "host" : "vsbots";
-    const char* back = screen_ == Screen::InGame ? (voteMenu_ ? "ingame/pause/vote" : "ingame/pause") : done;
+    const char* back = screen_ == Screen::InGame ? (builder ? "ingame/pause/vote/setup*" : voteMenu_ ? "ingame/pause/vote" : "ingame/pause") : done;
     if ((int)multiSel_.size() != n) multiSel_.assign(n, false);
     std::string title = picker_ == PICK_TMAPS ? "TOURNEY MAPS (PICK ANY, THEY ROTATE)" : picker_ == PICK_TMODES ? "TOURNEY RULESETS (PICK ANY, THEY ROTATE)"
                       : ladders ? "RANKED - CHOOSE A LADDER"
@@ -10928,6 +11113,7 @@ void Game::drawPicker(float cx, float y) {
     // picking it does (built: a map built for the mode; warn: one that isn't)
     struct Item { std::string label, sub; bool ok = true, cur = false, warn = false, built = false; UiExp pe; };
     auto item = [&](int i) {
+        i = modeAt(i);
         Item it;
         if (ladders) {
             it.label = arenaVariant(kLadders[i]).title;
@@ -10967,9 +11153,20 @@ void Game::drawPicker(float cx, float y) {
               : modes ? (modeHasRuleset(i) ? UiExp::nav(live ? "ingame/pause/picker:variants" : host ? "host/picker:variants" : "vsbots/picker:variants")
                          : live ? UiExp::nav("ingame/pause/picker:livemap") : UiExp::nav(done))
               : live ? UiExp::cmd(livePickVote_ ? "callvote map" : "map") : UiExp::nav(done);
+        if (builder && !multi) it.pe = UiExp::nav("ingame/pause*");   // (the builder's next step)
         return it;
     };
     auto choose = [&](int i) {
+        if (builder) {   // the vote builder: keep the choice, on to its next step
+            if (variants) { variant = i; voteAdvance(); }
+            else if (modes) {
+                mode = modeAt(i);
+                if (!((mapInfo_[mapIdx].modes >> mode) & 1)) mapIdx = bestMapFor(mode);
+                if (modeHasRuleset(mode)) { variantCtx_ = 2; voteStage_ = VS_RULESET; picker_ = PICK_VARIANT; }
+                else voteAdvance();
+            } else { mapIdx = vis[i]; voteAdvance(); }
+            return;
+        }
         if (multi) multiSel_[i] = !multiSel_[i];
         else if (ladders && live) { // host switches right away, anyone else calls a vote
             net_.sendCommand(std::string(livePickVote_ ? "callvote " : "") + "ranked on " + arenaVariant(kLadders[i]).name);

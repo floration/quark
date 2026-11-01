@@ -6795,6 +6795,62 @@ static void testMapVote(uint16_t port) {
     s.stop();
 }
 
+// The vote builder's modifiers (owner, 2026-11-01): "callvote map <map> <mode> <ruleset> mods k=v ..." passes as a
+// custom mode ("voted") everyone gets; a mode vote without "mods" keeps them; "mods" alone goes back to the standard
+// rules; unknown or out-of-range words, and tourney with modifiers, are refused.
+static void testVoteModifiers(uint16_t port) {
+    printf("vote modifiers: one vote for map, mode and rules\n");
+    Server s;
+    s.voteCooldown_ = 0;
+    ServerConfig cfg;
+    cfg.map = "glacier"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient a, b;
+    a.connect("127.0.0.1:" + std::to_string(port), "a");
+    b.connect("127.0.0.1:" + std::to_string(port), "b");
+    std::vector<NetClient*> cls = {&a, &b};
+    pump(s, cls, 1.0, idle);
+    auto refused = [&](const std::string& c) {
+        b.sendCommand(c);
+        pump(s, cls, 0.3, idle);
+        const bool r = s.vote_.kind == Server::VOTE_NONE;
+        if (!r) { printf("  FAIL not refused: %s\n", c.c_str()); g_fail++; s.vote_ = Server::Vote(); }
+        s.players_[b.clientId()].voteAt = 0;
+    };
+    auto pass = [&](const std::string& c) {
+        b.sendCommand(c);
+        pump(s, cls, 0.3, idle);
+        CHECK(s.vote_.kind == Server::VOTE_MAP);
+        a.sendCommand("vote yes");
+        pump(s, cls, 1.0, idle);
+        CHECK(s.vote_.kind == Server::VOTE_NONE);
+        s.players_[b.clientId()].voteAt = 0;
+    };
+    refused("callvote map glacier ffa classic mods foo=1");
+    refused("callvote map glacier ffa classic mods vampire=2");
+    refused("callvote map glacier ffa classic mods damage=abc");
+    refused("callvote map glacier ffa classic damage=2");   // (no "mods" word)
+    refused("callvote map dojo tourney classic mods damage=2");
+    b.sendCommand("callvote map glacier ffa classic mods damage=2 vampire=1 health=150 dash=0");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_MAP && s.vote_.text.find("DAMAGE X2") != std::string::npos && s.vote_.text.find("VAMPIRE") != std::string::npos &&
+          s.vote_.text.find("NO DASH") != std::string::npos);
+    a.sendCommand("vote yes");
+    pump(s, cls, 1.0, idle);
+    const CustomRules& r = s.config().custom;
+    CHECK(r.active() && r.name == Server::kVotedRules && r.baseMode == MODE_FFA && r.vampire && !r.dash && r.health == 150 &&
+          std::fabs(r.damage[WPN_ROCKET] - 2) < 1e-4f && std::fabs(r.damage[0] - 2) < 1e-4f);
+    CHECK(activeRules().active() && activeRules().vampire);
+    printf("  passed: %s\n", votedModsTitle("damage=2\nvampire=1\nhealth=150\ndash=0\n").c_str());
+    pass("callvote map glacier koth classic");   // a mode vote without modifiers keeps them
+    CHECK(s.config().mode == MODE_KOTH && s.config().custom.active() && s.config().custom.baseMode == MODE_KOTH && s.config().custom.vampire);
+    pass("callvote map glacier ffa classic mods");   // back to the standard rules
+    CHECK(s.config().mode == MODE_FFA && !s.config().custom.active() && !activeRules().active());
+    s.stop();
+    setActiveRules(CustomRules());
+}
+
 // Handshake hardening: a CONNECT without the address cookie only gets a tiny challenge (no slot, no
 // snapshots), a spoofed CONNECT from a connected player's address can't kick them, info requests must be
 // padded, tmaps only takes known names, a failed vote has a cooldown, and chat is printable only.
@@ -10193,7 +10249,7 @@ int main(int argc, char** argv) {
         {"mapbounds", [] { g_fail += outOfBoundsTests(0, 2); }},
         {"server", [] { serverTests(); testGovernorPolicy(); testRankedNotRated(TP(28632)); }},
         {"modes", [] { testCustomMode(TP(28570)); testMoveExprNetwork(TP(28576)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},
-        {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); testSpecVote(TP(28598)); testNameColor(TP(28599)); }},
+        {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); testSpecVote(TP(28598)); testNameColor(TP(28599)); testVoteModifiers(TP(28593)); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testDemoUpgrade(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testBuiltInMapEditSession(TP(28606)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
         {"bots", [] { uint16_t p = TP(28900); testBots(p); }},
