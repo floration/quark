@@ -791,7 +791,9 @@ private:
     bool perfMini_ = false;            // F4: only the mouse to photon number (drawPerfMini)
     bool perfOn() const { return perfStage_ >= 3 || perfMini_; }   // (the pipeline graph's measuring runs)
     std::string perfMiniText_;
-    std::vector<float> frameTimes_ = std::vector<float>(2048, 0.0f);
+    static constexpr size_t kFrameTimes = 2048;   // (a power of two: the ring index wraps with a mask)
+    static_assert((kFrameTimes & (kFrameTimes - 1)) == 0, "kFrameTimes must be a power of two");
+    std::vector<float> frameTimes_ = std::vector<float>(kFrameTimes, 0.0f);
     size_t frameIdx_ = 0, frameCount_ = 0;
     double perfNextUpdate_ = 0;
     std::string perfText_, perfText2_;   // F3's first two lines: the frame rates, then the worst frame and the ping

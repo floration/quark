@@ -2,6 +2,7 @@
 // translucent markers, first-person viewmodel and a 2D layer for HUD/menus.
 // Everything dynamic is streamed into one vertex buffer per layer each frame (few draw calls).
 #pragma once
+#include <array>
 #include <atomic>
 #include <memory>
 #include "fontatlas.h"
@@ -266,7 +267,7 @@ private:
     // Uniform locations, looked up once after linking (init): no lookups in the frame loop. Values that never change are
     // set there too, the per-frame ones that don't depend on the aim in prepareScene, the rest in drawScene (GL keeps
     // each program's values).
-    struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, baseL, accentL, wallbangL, metalL, floorL, metal, glow, full, fullColor, outlineW, time, sunDir, alphaPass, latchUse; } uWorld_ = {};
+    struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, baseL, accentL, wallbangL, metalL, floorL, metal, glow, full, fullColor, outlineW, time, sunDir, alphaPass, latchUse, worldEdge; } uWorld_ = {};
     struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, receive, sunDir, latchUse; } uDyn_ = {};
     struct { GLint fwd, right, up, tan, sky, sunDir, bright; } uSky_ = {};
     GLint uDynFade_ = -1, uFlatFade_ = -1;   // (the view pass's see-through amount: WEAPON MODEL OPACITY)
@@ -303,7 +304,7 @@ private:
     unsigned swatchProg_ = 0;   // (the world program with every look: compileWorld(nullptr))
     unsigned cleanTex_ = 0, cleanVao_ = 0, cleanVbo_ = 0;   // CLEAN SURFACES' averages (buildCleanMeans), texture unit 5
     std::vector<bool> cleanUsed_;   // the looks in the map (12 on, the large ones as their base)
-    std::vector<float> cleanKey_;   // what the averages were made with (program, palette); cleared: make them again
+    std::array<float, 14> cleanKey_ = {};   // what the averages were made with (program, palette); cleared: make them again
     unsigned swatchTex_ = 0, swatchFbo_ = 0, swatchLm_ = 0, swatchVao_ = 0, swatchVbo_ = 0, imgProg_ = 0, imgVao_ = 0, imgVbo_ = 0;
     GLint uImgScreen_ = -1;
     float swatchKey_[13] = {};
@@ -312,7 +313,7 @@ private:
     std::vector<unsigned> swatchSlotUsed_;            // (the frame each slot was last drawn)
     unsigned swatchFrame_ = 0;
     void buildSwatches();
-    void buildCleanMeans(const std::vector<float>& key);   // CLEAN SURFACES: each look's average (uCleanTex)
+    void buildCleanMeans(const std::array<float, 14>& key);   // CLEAN SURFACES: each look's average (uCleanTex)
     std::vector<std::vector<uint8_t>> previewImgs_;   // (setPreviews': uploaded into previewTex_ when previewDirty_)
     int previewW_ = 0, previewH_ = 0, previewCols_ = 1, previewRows_ = 1;
     bool previewDirty_ = false;

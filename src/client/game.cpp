@@ -2014,7 +2014,7 @@ void Game::frame(double dt) {
     if (opts_.bench > 0 && screen_ == Screen::InGame && !bake_) benchFrame(dt);
     if (bench_.phase != BenchRun::OFF) benchFrameTime(dt);   // (BENCHMARK: one store a frame while it measures)
     frameTimes_[frameIdx_] = (float)dt;
-    frameIdx_ = (frameIdx_ + 1) % frameTimes_.size();
+    frameIdx_ = (frameIdx_ + 1) & (kFrameTimes - 1);   // (a mask, not a 64-bit divide)
     frameCount_ = std::min(frameCount_ + 1, frameTimes_.size());
     if (!polledEarly_) {   // (normally done by preInput, before this frame's input was read)
         if (bake_ && net_.playback()) net_.holdPlaybackClock();   // a demo waits for its map's bake

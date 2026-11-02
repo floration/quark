@@ -794,7 +794,7 @@ void Renderer::setWorldLooks(const BakedWorld& bw) {
         if (m >= 12 && m < kMapMaterials) cleanUsed_[(size_t)(m >= kMatLarge && m < kMatSemi ? kLarge[m - kMatLarge].base : m)] = true;
     }
     for (size_t m = 0; m < seeUsed_.size(); m++) if (seeUsed_[m]) cleanUsed_[m] = true;
-    cleanKey_.clear();
+    cleanKey_ = {};
     if (used == worldUsed_ && worldProg_) return;
     QZONE("world shader");
     std::string err;
@@ -848,7 +848,8 @@ void Renderer::initWorldUniforms() {
                U(worldProg_, "uCamPos"), U(worldProg_, "uFogColor"), U(worldProg_, "uBright"), U(worldProg_, "uBaseL"),
                U(worldProg_, "uAccentL"), U(worldProg_, "uWallbangL"), U(worldProg_, "uMetalL"), U(worldProg_, "uFloorL"),
                U(worldProg_, "uMetal"), U(worldProg_, "uGlow"), U(worldProg_, "uFull"), U(worldProg_, "uFullColor"), U(worldProg_, "uOutlineW"),
-               U(worldProg_, "uTime"), U(worldProg_, "uSunDir"), U(worldProg_, "uAlphaPass"), U(worldProg_, "uLatchUse")};
+               U(worldProg_, "uTime"), U(worldProg_, "uSunDir"), U(worldProg_, "uAlphaPass"), U(worldProg_, "uLatchUse"),
+               U(worldProg_, "uWorldEdge")};
     glUniform1f(uWorld_.alphaPass, 0.0f);
     latchBlock(worldProg_);
     uHoleCount_ = U(worldProg_, "uHoleCount");
@@ -860,7 +861,7 @@ void Renderer::initWorldUniforms() {
     glUniform1i(U(worldProg_, "uLightmap"), 0);
     glUniform1i(U(worldProg_, "uShadow"), 1);
     glUniform1i(U(worldProg_, "uCleanTex"), 5);
-    cleanKey_.clear();   // (a new program: its averages again)
+    cleanKey_ = {};   // (a new program: its averages again)
     glUniform1f(U(worldProg_, "uShadowTexel"), 1.0f / shadowRes_);
     setVec3(U(worldProg_, "uSunColor"), Vec3(0.78f, 0.75f, 0.70f));
     setVec3(U(worldProg_, "uSkyColor"), Vec3(0.42f, 0.45f, 0.52f));
@@ -1824,7 +1825,7 @@ void Renderer::prepareScene(bool shadows) {
     setVec3(uWorld_.baseL, highContrast ? lin(vmin(baseColor * 1.3f + Vec3(0.12f, 0.12f, 0.12f), Vec3(1, 1, 1)), hiBase) : lin(baseColor, 1.5f));
     setVec3(uWorld_.accentL, lin(accentColor, hiAccent));
     setVec3(uWorld_.wallbangL, wallbangTint.x >= 0 ? lin(wallbangTint, 1.5f) : lin(baseColor * 0.42f, 1.5f));   // (MORE 4: WALLBANG TINT)
-    setVec3(U(worldProg_, "uWorldEdge"), lin(worldEdge, 1.0f));
+    setVec3(uWorld_.worldEdge, lin(worldEdge, 1.0f));   // (location cached: no string lookup a frame)
     setVec3(uWorld_.metalL, lin(metalColor, 1.5f));
     setVec3(uWorld_.floorL, lin(metalColor, 2.0f));
     setVec3(uWorld_.metal, metalColor);
@@ -1837,7 +1838,7 @@ void Renderer::prepareScene(bool shadows) {
     glUniform1f(uWorld_.outlineW, worldOutline);
     glUniform1f(uWorld_.time, liquidFlow ? (float)std::fmod(timeNow(), 3600.0) : 0.0f);   // (MORE 2: LIQUIDS STILL: time stands)
     setVec3(uWorld_.sunDir, sunDir_);
-    if (look_.clean || look_.fadeAt > 0.0f) buildCleanMeans({(float)worldProg_, baseColor.x, baseColor.y, baseColor.z, accentColor.x, accentColor.y, accentColor.z,
+    if (look_.clean || look_.fadeAt > 0.0f) buildCleanMeans(std::array<float, 14>{(float)worldProg_, baseColor.x, baseColor.y, baseColor.z, accentColor.x, accentColor.y, accentColor.z,
                                       metalColor.x, metalColor.y, metalColor.z, glowColor.x, glowColor.y, glowColor.z, highContrast ? 1.0f : 0.0f});
     glUseProgram(skyProg_);
     setVec3(uSky_.sky, skyColor); setVec3(uSky_.sunDir, sunDir_);
@@ -2555,7 +2556,7 @@ void Renderer::buildSwatches() {
 // 4 m square on a top and on a side (64 px: 6 cm a pixel, the fine patterns fading to their average as they do far off),
 // and its pixels averaged into uCleanTex (unit 5). With it on the world draws those averages flat: no look runs at all.
 // Again only when the program, the palette or high contrast change (key); called from prepareScene, worldProg_ bound.
-void Renderer::buildCleanMeans(const std::vector<float>& key) {
+void Renderer::buildCleanMeans(const std::array<float, 14>& key) {   // (an array: no heap allocation a frame)
     if (key == cleanKey_ || !worldProg_) return;
     cleanKey_ = key;
     QZONE("clean surfaces");
