@@ -1,0 +1,17 @@
+# Temporary: which hosted macOS runners GitHub hands out right now (removed before the PR).
+name: macos-probe
+on:
+  push:
+    branches: ['claude/project-thread-44rj0w']
+permissions:
+  contents: read
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, macos-15, macos-14, macos-26, macos-15-intel, macos-13]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - run: uname -m; sw_vers; xcodebuild -version
