@@ -30,3 +30,4 @@ What's on `testing` since production 1.19.4. The release PR renames this file to
 - 3D FLYING: bots now fly up and down (to your height, weaving), and the HUD hides the dash and hook bars while flying; the speed meter counts vertical speed too.
 - Aim trainer: the scenario name moves under the F3 / F4 box instead of being covered by it.
 - Aim trainer: hide the HUD (your HIDE HUD key, or SHOW HUD in the pause menu: only the crosshair stays) and the weapon (SHOW WEAPON in the pause menu, the same setting as in matches).
+- Aim trainer: F3's frame-time graph (the third F3 page) and F4's mouse-to-photon number now show in a run.

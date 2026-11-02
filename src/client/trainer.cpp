@@ -172,6 +172,12 @@ bool Game::trainerKey(int key, int action) {
 void Game::trainerFrame(double dt) {
     using namespace trainer;
     if (!trSc_) { setScreen(Screen::Trainer); return; }
+    // F3's pipeline graph (owner, 2026-11-02: it didn't show here): the run's update is the "ticks", its input the frame's
+    // read (no late latch), then the view (2D: none) and, in the main loop, the HUD and the swap
+    pipeMark(PM_TICKS);
+    pipeNow_[PM_LATCH] = pipeNow_[PM_POLL];
+    pipeMark(PM_SCENE0);
+    pipeGpuBegin();
     const bool flat = trRun_.flat();
     const float W = (float)r_.width(), H = (float)r_.height();
     const float fov = hfov();
@@ -310,6 +316,7 @@ void Game::trainerFrame(double dt) {
         r_.drawScene(false);
     }
 
+    pipeMark(PM_SCENE1);
     // ---- the HUD: time, score, accuracy; the countdown; the crosshair (2D: where the mouse has it)
     const float s = H / 720.0f, ts = std::max(1.0f, std::round(s * 1.5f));
     ui_.begin(&r_, uiIn_, s);

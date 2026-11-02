@@ -10600,7 +10600,7 @@ void Game::drawPerf() {
         if (lw[i] <= maxW) r_.text(x + 8 * s, y + 4 * s + lh * i, ts, *lines[i], yc);
         else ui_.label(x + 8 * s, y + 4 * s + lh * i, *lines[i], yc, ts / ui_.textScale(), maxW);
     }
-    if (perfStage_ == 3 && screen_ == Screen::InGame) drawPipeline(x, y + lh * nl + 16 * s, std::max(1.0f, ts * 0.85f));
+    if (perfStage_ == 3 && (screen_ == Screen::InGame || screen_ == Screen::TrainerRun)) drawPipeline(x, y + lh * nl + 16 * s, std::max(1.0f, ts * 0.85f));
 }
 
 // F4: only the pipeline graph's mouse to photon number, worked out twice a second. The same measuring as F3 runs
@@ -10610,7 +10610,7 @@ void Game::drawPerfMini() {
         perfNextUpdate_ = time_ + 0.5;
         pipeAverages();
         double total = 0;
-        if (screen_ == Screen::InGame) drawPipeline(0, 0, 1, &total);
+        if (screen_ == Screen::InGame || screen_ == Screen::TrainerRun) drawPipeline(0, 0, 1, &total);
         perfMiniText_ = total > 0 ? "MOUSE TO PHOTON ~" + std::to_string((long long)std::llround(total * 1e6)) + " US" : "MOUSE TO PHOTON: IN GAME ONLY";
     }
     if (perfMiniText_.empty()) return;
