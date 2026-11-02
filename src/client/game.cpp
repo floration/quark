@@ -856,7 +856,7 @@ bool Game::pressInput(int code) {
         cycleSpec(b.has(A_SPECNEXT, code) ? 1 : -1);
         return true;
     }
-    if (b.has(A_PERF, code)) { const bool was = perfOn(); perfStage_ = (perfStage_ + 1) % 4; if (!was && perfOn()) pipeReset(); return true; }
+    if (b.has(A_PERF, code)) { const bool was = perfOn(); perfStage_ = (perfStage_ + 1) % 5; if (!was && perfOn()) pipeReset(); return true; }
     const bool racing = screen_ == Screen::InGame && !paused_ && !chatting_ && isRaceMode(net_.mode().mode) && net_.state() == ConnState::Connected;
     if (b.has(A_RACERESET, code) && racing) {   // (a tap: the last checkpoint when it's let go; held 250 ms: the start, in raceResetHold)
         raceResetAt_ = time_;
@@ -10628,7 +10628,7 @@ void Game::drawPerf() {
         if (lw[i] <= maxW) r_.text(x + 8 * s, y + 4 * s + lh * i, ts, *lines[i], yc);
         else ui_.label(x + 8 * s, y + 4 * s + lh * i, *lines[i], yc, ts / ui_.textScale(), maxW);
     }
-    if (perfStage_ == 3 && (screen_ == Screen::InGame || screen_ == Screen::TrainerRun)) drawPipeline(x, y + lh * nl + 16 * s, std::max(1.0f, ts * 0.85f));
+    if (perfStage_ >= 3 && (screen_ == Screen::InGame || screen_ == Screen::TrainerRun)) drawPipeline(x, y + lh * nl + 16 * s, std::max(1.0f, ts * 0.85f));
 }
 
 // F4: only the pipeline graph's mouse to photon number, worked out twice a second. The same measuring as F3 runs
@@ -10639,7 +10639,9 @@ void Game::drawPerfMini() {
         pipeAverages();
         double total = 0;
         if (screen_ == Screen::InGame || screen_ == Screen::TrainerRun) drawPipeline(0, 0, 1, &total);
-        perfMiniText_ = total > 0 ? "MOUSE TO PHOTON ~" + std::to_string((long long)std::llround(total * 1e6)) + " US" : "MOUSE TO PHOTON: IN GAME ONLY";
+        std::string d = std::to_string((long long)std::llround(total * 1e9)), g;   // (nanoseconds, grouped like F3's)
+        for (size_t i = 0; i < d.size(); i++) { if (i && (d.size() - i) % 3 == 0) g += ','; g += d[i]; }
+        perfMiniText_ = total > 0 ? "MOUSE TO PHOTON ~" + g + " NS" : "MOUSE TO PHOTON: IN GAME ONLY";
     }
     if (perfMiniText_.empty()) return;
     const float s = r_.height() / 720.0f, ts = std::max(1.0f, std::round(s * 2.0f));   // (where F3's box is: left of the score bar)
@@ -10766,7 +10768,12 @@ void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
     const Color cIn = cb ? Color{0.34f, 0.71f, 0.91f, 1} : Color{0.55f, 0.75f, 1.0f, 1}, cWait = {0.6f, 0.6f, 0.68f, 1};
     const Color cCpu = cb ? Color{0.9f, 0.62f, 0.0f, 1} : Color{1.0f, 0.85f, 0.35f, 1}, cGpu = cb ? Color{0.0f, 0.62f, 0.45f, 1} : Color{0.45f, 0.95f, 0.5f, 1};
     const Color cEst = cb ? Color{0.8f, 0.47f, 0.65f, 1} : Color{0.85f, 0.6f, 1.0f, 1};
-    auto us = [](double sec) { return std::to_string((long long)std::llround(sec * 1e6)); };
+    // (nanoseconds, grouped by thousands: much of the game's part is under a microsecond now; owner, 2026-11-02)
+    auto ns = [](double sec) {
+        std::string d = std::to_string((long long)std::llround(std::max(0.0, sec) * 1e9)), o;
+        for (size_t i = 0; i < d.size(); i++) { if (i && (d.size() - i) % 3 == 0) o += ','; o += d[i]; }
+        return o;
+    };
     // before the game reads it: the mouse's report (half its interval on average), then the wait for the next poll
     const double queue = frame * 0.5, mouse = 0.5 / mouseRate;
     const double latch = a[PM_LATCH] > 0 ? a[PM_LATCH] : 0.0;   // (the aim is fixed at the late latch, when there's one)
@@ -10789,6 +10796,7 @@ void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
     span("SWAP", PM_SWAP0, PM_SWAP1, cCpu);
     if (ultraPaced()) span("GPU WAIT (ULTRA)", PM_SWAP1, PM_AFTER, cWait);
     rows.push_back({"GPU", a[PM_COUNT], a[PM_COUNT + 1], cGpu});
+    const size_t hwFrom = rows.size();   // (from here on: the display's part; row 0, the mouse's report, is hardware too)
     // after the GPU: how the frame reaches the screen (EST): the compositor in a window, vsync's vblank, then the
     // scanout down to the crosshair (the middle of the screen: half a refresh on average)
     double t = std::max(a[PM_COUNT + 1], a[PM_SWAP1]);
@@ -10807,29 +10815,42 @@ void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
     t += refresh * 0.5;
     const double total = t - rows.front().t0;   // (from the mouse to the photon)
     if (totalOnly) { *totalOnly = total; return; }
+    // Split (owner, 2026-11-02): the game's own part (from the mouse report's arrival to the GPU done) and the hardware's
+    // (the mouse's polling, the display's sync and scanout). F3's fifth stage (GAME ONLY) leaves the hardware rows out.
+    double hwMouse = rows.front().t1 - rows.front().t0, hwDisplay = 0;
+    for (size_t i = hwFrom; i < rows.size(); i++) hwDisplay += rows[i].t1 - rows[i].t0;
+    const double game = std::max(0.0, total - hwMouse - hwDisplay);
+    const bool gameOnly = perfStage_ == 4;
+    if (gameOnly) { rows.erase(rows.begin() + (long)hwFrom, rows.end()); rows.erase(rows.begin()); t = 0; for (const Row& r : rows) t = std::max(t, r.t1); }
     double t0 = rows.front().t0;                  // (the graph's left edge: work before the mouse bar too, e.g. pacing)
     for (const Row& r : rows) t0 = std::min(t0, r.t0);
     // the graph: a label and the time on the left, the bar on its own line on the right (a waterfall)
-    const float lh = r_.textHeight(ts) + 4, labelW = r_.textWidth("SCANOUT TO THE CROSSHAIR (EST)  000000 US", ts) + 12;
+    const float lh = r_.textHeight(ts) + 4, labelW = r_.textWidth("SCANOUT TO THE CROSSHAIR (EST)  0,000,000 NS", ts) + 12;
     const float barW = std::max(200.0f, std::min(700.0f * ts, (float)r_.width() - x - labelW - 24));
-    const float h = (rows.size() + 2) * lh + 8;
+    const float h = (rows.size() + 3) * lh + 8;
     r_.rect(x, y, labelW + barW + 16, h, {0, 0, 0, 0.6f});
     float yy = y + 4;
     char head[160];
-    snprintf(head, sizeof head, "MOUSE TO PHOTON ~%s US  (%.0f HZ DISPLAY, %s, %s)", us(total).c_str(), hz,
-             cfg_.displayMode == 2 ? "FULLSCREEN" : cfg_.displayMode == 1 ? "BORDERLESS" : "WINDOWED", cfg_.presentMode == 3 ? "LATENT SYNC" : vsync ? "VSYNC" : "NO VSYNC");
+    if (gameOnly) snprintf(head, sizeof head, "GAME LATENCY ~%s NS  (MOUSE REPORT IN TO GPU DONE; F3: NEXT VIEW)", ns(game).c_str());
+    else snprintf(head, sizeof head, "MOUSE TO PHOTON ~%s NS  (%.0f HZ DISPLAY, %s, %s)", ns(total).c_str(), hz,
+                  cfg_.displayMode == 2 ? "FULLSCREEN" : cfg_.displayMode == 1 ? "BORDERLESS" : "WINDOWED", cfg_.presentMode == 3 ? "LATENT SYNC" : vsync ? "VSYNC" : "NO VSYNC");
     r_.text(x + 6, yy, ts, head, {1, 1, 0.4f, 1});
+    yy += lh;
+    char split[160];
+    snprintf(split, sizeof split, "GAME %s NS + MOUSE POLLING %s NS (%.0f HZ) + DISPLAY %s NS (%.0f HZ)", ns(game).c_str(), ns(hwMouse).c_str(),
+             mouseRate, ns(hwDisplay).c_str(), hz);
+    r_.text(x + 6, yy, ts, split, {0.85f, 0.85f, 0.9f, 1});
     yy += lh;
     const double scale = t - t0 > 0 ? barW / (t - t0) : 0;
     for (const Row& r : rows) {
         r_.text(x + 6, yy, ts, r.name, r.c);
-        std::string v = us(r.t1 - r.t0) + " US";
+        std::string v = ns(r.t1 - r.t0) + " NS";
         r_.text(x + labelW - 6 - r_.textWidth(v, ts), yy, ts, v, r.c);
         float bx = x + labelW + (float)((r.t0 - t0) * scale), bw = std::max(2.0f, (float)((r.t1 - r.t0) * scale));
         r_.rect(bx, yy + lh * 0.3f, bw, std::max(2.0f, lh * 0.35f), r.c);
         yy += lh;
     }
-    r_.text(x + 6, yy, ts, "ONE TIME LINE; EST = WORKED OUT, NOT MEASURED; MONITOR PROCESSING NOT INCLUDED", {0.7f, 0.7f, 0.75f, 1});
+    r_.text(x + 6, yy, ts, gameOnly ? "THE GAME'S PART ONLY: NO MOUSE POLLING, NO DISPLAY; ONE TIME LINE" : "ONE TIME LINE; EST = WORKED OUT, NOT MEASURED; MONITOR PROCESSING NOT INCLUDED", {0.7f, 0.7f, 0.75f, 1});
 }
 
 
@@ -11164,7 +11185,7 @@ void Game::afterSwap() {
         gpuCalibAt_ = now;
     }
     pipeCollect();
-    if (perfStage_ != 3) return;   // (F4 / F3's shorter stages: the graph's marks only (and the clocks above); F3's input to frame latency below)
+    if (perfStage_ < 3) return;   // (F4 / F3's shorter stages: the graph's marks only (and the clocks above); F3's input to frame latency below)
     // Input-to-frame latency: GPU timestamp written after this frame's commands, converted to
     // the CPU clock, minus when the game received the input event from the OS. Read back a few
     // frames later without stalling.

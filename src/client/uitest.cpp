@@ -219,7 +219,7 @@ void Game::uiTestActions() {
         if (int k = bound(A_CHAT)) ui_.keyAction("CHAT", k, 0, UiExp::nav("ingame/chat"));
         ui_.keyAction("CONSOLE (`)", GLFW_KEY_GRAVE_ACCENT, 0, UiExp::nav("ingame/console"));
         ui_.keyAction("SCORES (HOLD)", 0, 0, UiExp::state("scores", "1"), A_SCORES);
-        if (int k = bound(A_PERF)) ui_.keyAction("PERF OVERLAY", k, 0, UiExp::state("perfstage"));   // (F3 cycles 1, 2, 3, off: each press changes the stage)
+        if (int k = bound(A_PERF)) ui_.keyAction("PERF OVERLAY", k, 0, UiExp::state("perfstage"));   // (F3 cycles 1, 2, 3, 4 (game only), off: each press changes the stage)
         if (int k = bound(A_PERFMINI)) ui_.keyAction("LATENCY NUMBER", k, 0, UiExp::state("perfmini"));
         if (int k = bound(A_VOTEYES)) ui_.keyAction("VOTE YES", k, 0, UiExp::cmd("vote yes"));
         if (int k = bound(A_VOTENO)) ui_.keyAction("VOTE NO", k, 0, UiExp::cmd("vote no"));
