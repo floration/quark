@@ -4543,6 +4543,17 @@ static void testBallMode(uint16_t port) {
         CHECK(!m.raycastAny(Vec3(5, 1, 0), Vec3(1, 0, 0), 20.0f) && !m.raycastAny(Vec3(5, 1, 0), Vec3(1, 0, 0), 20.0f, true));   // shots, the grapple
         CHECK(m.serialize().find("ballwall 10 0 -50 11 6 50") != std::string::npos);
     }
+    for (auto& name : testedMaps()) {   // every map that offers ball: one goal each, the ball starts clear between them
+        Map m;
+        if (!m.load(name) || !m.supportsMode(MODE_BALL)) continue;
+        const Vec3 c = ballStartPoint(m);
+        const Vec3 h(kBallHalf, kBallHalf, kBallHalf);
+        const bool free = !m.boxSolid(AABB{c - h, c + h}), owners = ballGoalOwner(m, 0) != ballGoalOwner(m, 1);
+        const float d0 = length(c - m.bombSites[0].center()), d1 = length(c - m.bombSites[1].center());
+        printf("  %s: the ball starts at %.1f %.1f %.1f, %.0f / %.0f m from the goals\n", name.c_str(), c.x, c.y, c.z, d0, d1);
+        HumanMadeGrace hg(name, m);
+        CHECK(free && owners && c.y > m.killY() + 2.0f && std::fabs(d0 - d1) < 3.0f);
+    }
     Server s;
     ServerConfig cfg;
     cfg.map = "qk8"; cfg.mode = MODE_BALL; cfg.port = port;

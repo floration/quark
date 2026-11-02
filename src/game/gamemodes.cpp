@@ -1748,6 +1748,10 @@ bool nativeFrozen(const Server& s, int id) {
 
 } // namespace
 
+Vec3 ballStartPoint(const Map& map) { return ballSpawnPoint(map); }
+int ballGoalOwner(const Map& map, int site) { return ballGoalTeam(map, site); }
+
+
 void ballBlast(Server& s, const Vec3& at, float radius, float knock, int owner) { ballBlastIn(s, at, radius, knock, owner); }
 void ballHit(Server& s, const Vec3& dv, int by) { if (s.ms_.mode == MODE_BALL && s.ballSet_ && s.ballRespawnAt_ <= 0) ballPush(s, dv, by); }
 void ballShot(Server& s, const Vec3& o, const Vec3& dir, float maxT, float dmg, int owner) { ballShotIn(s, o, dir, maxT, dmg, owner); }
