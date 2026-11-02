@@ -10825,7 +10825,7 @@ void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
     double t0 = rows.front().t0;                  // (the graph's left edge: work before the mouse bar too, e.g. pacing)
     for (const Row& r : rows) t0 = std::min(t0, r.t0);
     // the graph: a label and the time on the left, the bar on its own line on the right (a waterfall)
-    const float lh = r_.textHeight(ts) + 4, labelW = r_.textWidth("SCANOUT TO THE CROSSHAIR (EST)  0,000,000 NS", ts) + 12;
+    const float lh = r_.textHeight(ts) + 4, labelW = r_.textWidth("WAITING FOR THE LATE READ (AVG)  00,000,000 NS", ts) + 12;
     const float barW = std::max(200.0f, std::min(700.0f * ts, (float)r_.width() - x - labelW - 24));
     const float h = (rows.size() + 3) * lh + 8;
     r_.rect(x, y, labelW + barW + 16, h, {0, 0, 0, 0.6f});
