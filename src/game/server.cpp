@@ -3053,7 +3053,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
             if (pr.active) continue;
             pr = Projectile();
             pr.active = true;
-            pr.id = nextProjId_++;
+            pr.id = newProjId();
             pr.type = WPN_KNIFE;
             pr.owner = id;
             pr.pos = eye + aim * 0.3f;
@@ -3070,7 +3070,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
             if (pr.active) continue;
             pr = Projectile();
             pr.active = true;
-            pr.id = nextProjId_++;
+            pr.id = newProjId();
             pr.type = WPN_SYRINGE;
             pr.owner = id;
             pr.pos = eye + aim * 0.3f;
@@ -3116,7 +3116,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
                 if (pr.active) continue;
                 pr = Projectile();
                 pr.active = true;
-                pr.id = nextProjId_++;
+                pr.id = newProjId();
                 pr.type = WPN_BUBBLE;
                 pr.owner = id;
                 pr.pos = eye + aim * 0.3f;
@@ -3133,7 +3133,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
             if (pr.active) continue;
             pr = Projectile();
             pr.active = true;
-            pr.id = nextProjId_++;
+            pr.id = newProjId();
             pr.type = p.weapon;
             pr.owner = id;
             if (p.weapon != WPN_SYRINGE) p.addShot(p.weapon);   // accuracy: a hit is counted when it lands
