@@ -1,0 +1,3638 @@
+" matches more than one player: use the id (status lists them)	" 匹配到多名玩家: 请使用 ID (status 会列出)
+","color":	","color":
+"IT" IN YOUR ENEMY COLOUR, THE REST YOUR TEAM'S	"鬼" 显示为敌方颜色, 其余为本队颜色
+"path"	"path"
+# # # TO # # #	# # # 至 # # #
+# BOXES  # SPAWNS  # LIGHTS	# 个方块  # 个出生点  # 个灯光
+# CONTROL PROFILES	# 个操作配置
+# CUSTOM MODES	# 个自定义模式
+# DB	# DB
+# DEG	# 度
+# DUELS	# 场决斗
+# EVERYONE FOR THEMSELVES	# 各自为战
+# HP	# HP
+# HZ (AVG)	# HZ (平均)
+# IN GAME (ESC as host)	# 游戏中 (房主按 ESC)
+# MAPS AND MODES	# 地图与模式
+# MB	# MB
+# MOVEMENT	# 移动
+# MS	# MS
+# PLAY VS BOTS	# 人机对战
+# RANKED	# 排位
+# SETTINGS (main menu, or ESC in game)	# 设置 (主菜单, 或游戏中按 ESC)
+# TEAM MODES	# 团队模式
+# THE MAPS AND WHAT THEY'RE BUILT FOR	# 地图及其适用模式
+# US	# US
+# VOTES (ESC > VOTE, then F1 yes / F2 no)	# 投票 (ESC > 投票, 然后 F1 赞成 / F2 反对)
+# WEAPONS	# 武器
+# YOUR OWN MAPS	# 你自己的地图
+# date,	# date,
+# demo,	# demo,
+# label,	# label,
+# map,	# map,
+# maps, # s, # threads	# 张地图, # 秒, # 个线程
+# maps, # s, # threads{}	# maps, # s, # threads{}
+# of # players losing snapshots (worst #%)	# / # 名玩家丢失快照 (最差 #%)
+# quark benchmark	# quark benchmark
+# quark controls profile	# quark controls profile
+# setup:	# setup:
+# setup:{},{}	# setup:{},{}
+# uploaded,#	# uploaded,#
+# us (last 1000 ticks)	# us (最近 1000 tick)
+# version,	# version,
+#% of ticks over # ms late	#% 的 tick 延迟超过 # ms
+#-# OF # - WHEEL TO SCROLL	#-# / 共 # - 滚轮滚动
+#-# OF # - WHEEL TO SCROLL - RIGHT-CLICK: FAVORITE	#-# / 共 # - 滚轮滚动 - 右键: 收藏
+#:# LEFT	剩余 #:#
+#MS	#MS
+#X# # HZ	#X# # HZ
+#version 330 core	#version 330 core
+% of	% 的
+%WINDIR%	%WINDIR%
+' (it may be on an older version)	' (可能是旧版本)
+' (names as CONTROLS shows them: R, F5, MOUSE 4, WHEEL UP)	' (名称同操作设置中的显示: R, F5, MOUSE 4, WHEEL UP)
+' - try: list	' - 试试: list
+' has to wait until it's over	' 须等到结束
+(# MS)	(# MS)
+(# glyphs) in # ms	(# glyphs) in # ms
+(BROWSER VIDEOS, ELECTRON APPS WAIT)	(浏览器视频、ELECTRON 应用会等待)
+(BY DEFAULT ONLY THE SCOPES)	(默认仅瞄准镜)
+(CLEAR THE SELECTION TO CHANGE)	(清除选择后可更改)
+(CLICK TO CYCLE)	(点击切换)
+(DEAD)	(阵亡)
+(FINISH)	(终点)
+(HIDDEN: STREAMER MODE)	(已隐藏: 主播模式)
+(HS)	(爆头)
+(IT AFFECTS GAMEPLAY)	(影响游戏玩法)
+(LEAVE)	(离开)
+(MISSING)	(缺失)
+(NOT IN RANKED)	(排位不可用)
+(PUBLIC)	(公开)
+(REFRESH - 3)	(刷新率 - 3)
+(REFUSED 0X#)	(被拒绝 0X#)
+(TEAM MODES NEED A + B SPAWNS)	(团队模式需要 A + B 出生点)
+(TEAM)	(队伍)
+(already in use?)	(已被占用?)
+(and copied it) - rename it there	(并已复制) - 请在那里重命名
+(edited)	(已编辑)
+(exclusive: no format the device takes)	(独占: 设备不支持任何格式)
+(exclusive: the device is busy)	(独占: 设备忙)
+(first: takes the loss)	(先离开者: 判负)
+(its CONTROLS action too, if it has one)	(以及其操作设置动作, 如有)
+(legacy)	(旧版)
+(lowered)	(已降低)
+(own goal)	(乌龙球)
+(playing the built-in brain)	(使用内置 AI)
+(score #-#)	(比分 #-#)
+(team):	(队伍):
+(vote ranked off first)	(请先投票关闭排位)
+(winner stays)	(胜者留场)
++ (BIGGER)	+ (更大)
++Y (top)	+Y (上方)
+-  # AVG  # 1%	-  # 平均  # 1%
+- AUTOSAVED	- 已自动保存
+- BOTS PLAY THE BUILT-IN BRAIN	- 机器人使用内置 AI
+- CHOOSE A RULESET	- 选择规则
+- CONTESTED	- 争夺中
+- COOLDOWNS RESET	- 冷却已重置
+- FIRST TO	- 先达到
+- LOGIC:	- 逻辑:
+- OWN RATING	- 独立评分
+- REVERTS WHEN THE MAP CHANGES	- 换图时还原
+- SAVE to keep it	- 保存以保留
+- STANDARD RULES	- 标准规则
+- THE HOST SAVES IT	- 由房主保存
+- THE SERVER SENDS IT TO THE LEADERBOARD	- 服务器将其发送至排行榜
+- UPLOADED	- 已上传
+- USING RUBIK	- 使用 RUBIK
+- WATCHING	- 观战中
+- WHEEL TO SCROLL	- 滚轮滚动
+- beats	- 胜过
+- best of 3 between the last two	- 最后两人三局两胜
+- it may not work	- 可能无法正常运行
+- it moves and stretches as one	- 整体移动和拉伸
+- level with	- 持平
+- map	- 地图
+- match started	- 比赛开始
+- not played: the server plays	- 不参与: 由服务器进行
+- playing mode logic	- 运行模式逻辑
+- plays the next match	- 参加下一场比赛
+- rock paper scissors decides it	- 由石头剪刀布决定
+- short of	- 差
+- their place is kept for	- 其位置保留
+-INF DB	-INF DB
+-Wcast-function-type	-Wcast-function-type
+-Y (under)	-Y (下方)
+0.1% LOW	0.1% 低帧
+1 HP	1 HP
+1 HP KNIVES	1 HP 飞刀
+1 SETTING	1 项设置
+1% LOW	1% 低帧
+10-BIT OUTPUT	10 位输出
+10-BIT: AT THE NEXT START, WHERE SUPPORTED	10 位: 下次启动时生效 (如支持)
+10-BIT: ON (A 10-BIT WINDOW)	10 位: 开 (10 位窗口)
+12 H CLOCK	12 小时制
+144 FPS	144 FPS
+1V1 - rounds on one ruleset (vanilla, laser vampire, instagib...). First to 5. Ranked 1v1 rates you on its own ladder.	1V1 - 在同一规则下进行多回合 (原版、激光吸血、一击必杀...)。先赢 5 回合者胜。排位 1v1 有独立天梯评分。
+240 FPS	240 FPS
+2:00  -  1ST OF 6	2:00  -  6 局中第 1 局
+2D: THE VIEW STAYS STILL, YOUR MOUSE MOVES THE CROSSHAIR	2D: 视角固定, 鼠标移动准星
+30 SECONDS LEFT	剩余 30 秒
+32-bit float	32 位浮点
+3D FLYING	3D 飞行
+3D STATIC: YOU CAN'T MOVE - LOOK AND SHOOT	3D 静止: 无法移动 - 只能瞄准射击
+3D VAMP	3D 吸血
+5 MORE MINUTES	再加 5 分钟
+60 FPS	60 FPS
+A DASH PRESSED THIS SOON BEFORE IT'S READY	冲刺就绪前多早按下仍生效
+A DROPPED CONNECTION TRIES AGAIN (3 TIMES)	断线后自动重试 (3 次)
+A NEW CODE FROM /link RELINKS IT - unlink REMOVES IT	用 /link 获取新代码可重新绑定 - unlink 可解除
+A PLAYER JOINED VIA	一名玩家加入, 通过
+A SERVER	一台服务器
+A VARIABLE FONT IS DRAWN AT ITS DEFAULT WEIGHT	可变字体按默认字重绘制
+A private game with bots at your chosen level (beginner, intermediate, advanced, expert), on any mode and map.	与所选难度 (新手、中级、高级、专家) 的机器人进行私人游戏, 可选任意模式和地图。
+A thrown knife or syringe is gone for 4 s (greyed out in the weapon list, with its timer).	投出的飞刀或针筒 4 秒内不可用 (在武器列表中变灰并显示计时)。
+ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/	ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/
+ABILITIES	技能
+ABOVE NORMAL	高于正常
+ACC	命中
+ACCELERATOR / JUNGLE / ROOFTOPRUN - race (and the ranked time trials).   SOLAR / SURFY - surf.   COBBLESTONE - q's own.	ACCELERATOR / JUNGLE / ROOFTOPRUN - 竞速 (及排位计时赛)。   SOLAR / SURFY - 滑翔。   COBBLESTONE - q 的自制图。
+ACCENT	强调色
+ACCENT COLOR	强调色
+ACCESSIBILITY	辅助功能
+ACCURACY	命中率
+ADAPTIVE	自适应
+ADD (AT THE SCREEN CENTER)	添加 (屏幕中心)
+ADD BOT	添加机器人
+ADD WIDGET	添加组件
+ADD: boxes (base / accent / wallbang: bullets go through wallbangs for half damage), spawns, lights, payload path points, bomb sites, the hill, race checkpoints, and LADDERS (one object: stretch it and the rungs follow).	添加: 方块 (基础 / 强调 / 穿透墙: 子弹可穿过穿透墙, 伤害减半)、出生点、灯光、运载路径点、炸弹点、山头、竞速检查点, 以及梯子 (单个物体: 拉伸后横档随之变化)。
+ADDRESS	地址
+ADDRESS (IP:PORT)	地址 (IP:端口)
+ADVANCED	高级
+AGAIN (R)	重来 (R)
+AHEAD	领先
+AIM TRAINER	瞄准训练
+AIR	空中
+AIR ACCELERATION	空中加速
+AIR CONTROL	空中控制
+AIR DRIFT (UNDER RUN SPEED)	空中漂移 (低于跑速时)
+AIR ROCKET	空中火箭
+AIR STRAFE CAP	空中侧移上限
+ALL	全部
+ALL MODES	全部模式
+ALL OFF	全部关闭
+ALL SETTINGS	全部设置
+ALT	ALT
+ALT FIRE	辅助开火
+ALT-FIRE TOGGLE IN RANKED	排位中辅助开火切换
+ALT-FIRE TOGGLES	辅助开火切换
+ALT-FIRE TOGGLES: WITH ALT-FIRE: TOGGLE ON	辅助开火切换: 需开启 "辅助开火: 切换"
+ALT-FIRE: HOLD	辅助开火: 按住
+ALT-FIRE: TOGGLE	辅助开火: 切换
+ALT-TABBED OR MINIMIZED: LESS POWER AND HEAT	切出或最小化时: 降低功耗与发热
+ALWAYS LIT	常亮
+ALWAYS ON TOP	窗口置顶
+ANNA	ANNA
+ANNOUNCER	播报员
+ANNOUNCER CALLS	播报语音
+ANNOUNCER VOLUME	播报音量
+ANNOUNCER: ALL CALLS	播报: 全部
+ANNOUNCER: COUNTDOWN	播报: 仅倒计时
+ANNOUNCER: OFF	播报: 关
+ANTI-ALIASING	抗锯齿
+ANTI-ALIASING: MSAA 2X	抗锯齿: MSAA 2X
+ANTI-ALIASING: MSAA 2X (N/A)	抗锯齿: MSAA 2X (不可用)
+ANTI-ALIASING: MSAA 4X	抗锯齿: MSAA 4X
+ANTI-ALIASING: MSAA 4X (N/A HERE)	抗锯齿: MSAA 4X (此处不可用)
+ANTI-ALIASING: MSAA 8X	抗锯齿: MSAA 8X
+ANTI-ALIASING: OFF	抗锯齿: 关
+ANTI-ALIASING: SMOOTH (CHEAP)	抗锯齿: 平滑 (低开销)
+APEX LEGENDS	APEX LEGENDS
+APPLY IN:	应用于:
+ARC COLOR	弧线颜色
+ARC SIZE	弧线大小
+ARC TIME	弧线时长
+ARM	启动
+ARROW (NUDGE)	方向键 (微调)
+ARROWS / PGUP / PGDN: MOVE BY GRID (ALONG YOUR VIEW)	方向键 / PGUP / PGDN: 按网格移动 (沿视角)
+AS THICK	同等粗细
+ASIDE: A FRAME LESS LAG IN A WINDOW	另: 窗口模式下少一帧延迟
+ASK "SURE?" FIRST: CLICK AGAIN	先询问 "确定?": 再次点击
+ASSUMED	假定
+AT # # #	位于 # # #
+AT CAMERA	在镜头处
+ATTACK + RACE	进攻 + 竞速
+ATTACK - PLANT THE BOMB	进攻 - 安放炸弹
+ATTACK: CARRY THE BOMB TO A SITE AND PLANT IT	进攻: 将炸弹带到炸弹点并安放
+AUDIO INPUT (MICROPHONE)	音频输入 (麦克风)
+AUDIO LATENCY	音频延迟
+AUDIO LATENCY: LOW	音频延迟: 低
+AUDIO LATENCY: NORMAL	音频延迟: 正常
+AUDIO LATENCY: SAFE	音频延迟: 安全
+AUDIO OUTPUT	音频输出
+AUTO	自动
+AUTO PORT FORWARD	自动端口转发
+AUTO RECONNECT	自动重连
+AUTO RECORD	自动录制
+AUTO RECORD: EVERY MATCH	自动录制: 每场比赛
+AUTO RECORD: OFF	自动录制: 关
+AUTO RECORD: RANKED ONLY	自动录制: 仅排位
+AUTO START	自动开始
+AUTO-HIDE	自动隐藏
+AUTO-HIDE BARS	自动隐藏状态条
+AUTO-HIDE HEALTH	自动隐藏生命值
+AUTO-HIDE WEAPON LIST	自动隐藏武器列表
+AUTO-HOP	自动连跳
+AUTO-HOP OFF: HELD JUMP JUMPS ONCE	自动连跳关: 按住跳跃只跳一次
+AUTO: YOUR SYSTEM'S LANGUAGE	自动: 系统语言
+AVERAGE	平均
+AVERAGE, LAST	平均, 最近
+AVG #  1% LOW #  0.1% LOW #	平均 #  1% 低帧 #  0.1% 低帧 #
+AVG FPS	平均 FPS
+AVG FRAME	平均帧时间
+AVX2	AVX2
+Anything in the maps folder shows up in the lists. Servers send their map to players who don't have it.	maps 文件夹中的任何地图都会出现在列表中。服务器会把地图发送给没有该地图的玩家。
+AvSetMmThreadCharacteristicsW	AvSetMmThreadCharacteristicsW
+BACK	返回
+BACK TO EDITOR	返回编辑器
+BACKGROUND	背景
+BACKGROUND COLOR	背景颜色
+BACKGROUND FPS LIMIT	后台 FPS 上限
+BACKGROUND MAP	背景地图
+BACKGROUND VOLUME	后台音量
+BACKGROUND: A MAP I PICK	背景: 我选的地图
+BACKGROUND: CASTLE	背景: 城堡
+BACKGROUND: PLAIN COLOR	背景: 纯色
+BACKSPACE	BACKSPACE
+BAKE LIGHT	烘焙光照
+BAKE THREADS	烘焙线程
+BAKES DELETED (BAKED AGAIN WHEN PLAYED)	烘焙已删除 (游玩时重新烘焙)
+BAKES KEPT	烘焙已保留
+BAKES,	个烘焙,
+BAKING LIGHT -	正在烘焙光照 -
+BALANCE BOT SKILL	平衡机器人水平
+BALANCE BOTS	平衡机器人
+BALL	球赛
+BALL - SHOOT, BLAST OR RUN THE BALL INTO THE ENEMY GOAL - MOST GOALS WINS	球赛 - 射击、轰击或带球进入敌方球门 - 进球最多者胜
+BANDIT	强盗
+BAR	条
+BAR CAPTIONS	条标题
+BAR COLOR	条颜色
+BAR H	条高
+BAR W	条宽
+BARLOW CONDENSED	BARLOW CONDENSED
+BASIC	基础
+BEBAS NEUE	BEBAS NEUE
+BEGINNER	新手
+BEHIND	落后
+BEHIND (0: AS IN FRONT)	身后 (0: 同前方)
+BEHIND OTHER WINDOWS	位于其他窗口后
+BEHIND YOU	身后
+BEHIND YOU: THE DIP AND MUFFLE ON SOUNDS	身后: 声音减弱与闷音效果
+BELOW NORMAL	低于正常
+BENCH	测试
+BENCHMARK	基准测试
+BENCHMARK DEMO MISSING	缺少基准测试录像
+BENCHMARK RESULTS	基准测试结果
+BENCHMARK:	基准测试:
+BENCHMARK: COULD NOT SAVE THE RUN IN	基准测试: 无法保存结果到
+BENCHMARK: could not save the run in	基准测试: 无法保存结果到
+BENCHMARK: could not save the run in {}	基准测试: 无法保存结果到 {}
+BENCHMARK: no demo ({})	基准测试: 无录像 ({})
+BENCHMARK: {}	基准测试: {}
+BENCHMARKS	基准测试
+BEST	最佳
+BEST OF 3 - FIRST TO 2 WINS THE MATCH	三局两胜 - 先赢 2 局者胜
+BEST POSSIBLE (SEGMENTS)	理论最佳 (分段)
+BEST RUN	最佳成绩
+BEST SEGMENT	最佳分段
+BG OPACITY %	背景不透明度 %
+BHOP BOUNCE	BHOP 反弹
+BHOP BOUNCE (MAX)	BHOP 反弹 (最大)
+BIG HIT	重击
+BIG HIT: 40+ DAMAGE; NOT USABLE: THE WEAPON LIST	重击: 40+ 伤害; 不可用: 武器列表
+BIG NOODLE	BIG NOODLE
+BIND FLY KEYS	绑定飞行按键
+BIND HIDE HUD ON CONTROLS	在操作设置中绑定隐藏 HUD
+BLACK	黑色
+BLADES	刀刃
+BLEND	混合
+BLUE / ORANGE	蓝 / 橙
+BLUE-YELLOW (TRITAN)	蓝黄色盲 (TRITAN)
+BOMB	爆破
+BOMB (DROPPED)	炸弹 (已掉落)
+BOMB - attackers carry the bomb to a site and plant it (hold E). Defenders defuse it (hold E) or hold out until time runs out. 7 rounds, then the sides swap.	爆破 - 进攻方将炸弹带到炸弹点并安放 (按住 E)。防守方拆除炸弹 (按住 E) 或坚守至时间结束。7 回合后交换攻守。
+BOMB BEEP	炸弹提示音
+BOMB DEFUSED	炸弹已拆除
+BOMB DROPPED	炸弹已掉落
+BOMB DROPPED - PICK IT UP	炸弹已掉落 - 捡起它
+BOMB PLANTED	炸弹已安放
+BOMB PLANTED - DEFEND IT	炸弹已安放 - 守住它
+BOMB PLANTED - DEFUSE IT	炸弹已安放 - 拆除它
+BOMB SITE	炸弹点
+BOOM	轰
+BOOMERS	爆破手
+BORDER	边框
+BORDER COLOR	边框颜色
+BORDERLESS	无边框
+BORDERLESS FULLSCREEN	无边框全屏
+BOT	机器人
+BOT BRAIN	机器人 AI
+BOT BRAIN:	机器人 AI:
+BOT BRAIN: BUILT-IN	机器人 AI: 内置
+BOT BRAIN: OFF (RANKED)	机器人 AI: 关 (排位)
+BOT DIFFICULTY:	机器人难度:
+BOT LOOKS	机器人外观
+BOT NAMES FILE	机器人名字文件
+BOTS	机器人
+BOTS DON'T FIRE	机器人不开火
+BOTS OFF	机器人关
+BOTS ON	机器人开
+BOTS/NAMES.TXT: A NAME A LINE, USED WHEN YOU HOST	BOTS/NAMES.TXT: 每行一个名字, 你当房主时使用
+BOTS: EASY	机器人: 简单
+BOTS: EXPERT	机器人: 专家
+BOTS: HARD	机器人: 困难
+BOTS: MEDIUM	机器人: 中等
+BOTS: OFF (RANKED)	机器人: 关 (排位)
+BOX	方块
+BOX OPACITY	方块不透明度
+BOXES, STRETCHED AS ONE - UNGROUP TO EDIT THEM	方块整体拉伸 - 取消编组以编辑
+BREAKABLE	可破坏
+BRICK	砖块
+BRIGHTNESS	亮度
+BRITISH	英式
+BRUNO	BRUNO
+BUBBLE	气泡
+BUILDINGS	建筑
+BUILT FOR	适用模式
+BUILT FOR sets the mode the map is made for; the MODES grid sets what it's offered for. PLAYABLE AS shows what it has the pieces for (team modes need A and B spawns).	"适用模式" 设定地图为哪种模式而做; 模式网格设定它在哪些模式中提供。"可玩模式" 显示它具备哪些模式所需的元素 (团队模式需要 A 和 B 出生点)。
+BUILT FOR:	适用模式:
+BUILT FOR: ANY	适用模式: 任意
+BY NAME	按名称
+BY PING	按 PING
+BY PLAYERS	按玩家数
+BYE	轮空
+BYPASS COMPOSITOR	绕过合成器
+BYPASS COMPOSITOR: ALWAYS	绕过合成器: 始终
+BYPASS COMPOSITOR: FULLSCREEN	绕过合成器: 全屏时
+BYPASS COMPOSITOR: NEVER	绕过合成器: 从不
+CALL	发起
+CALL A VOTE	发起投票
+CALL VOTE	发起投票
+CALL:	发起:
+CALLOUTS	报点
+CAN'T BE READ	无法读取
+CAN'T READ '	无法读取 '
+CANCEL	取消
+CAPS LOCK	CAPS LOCK
+CAPTIONS	字幕
+CAPTIONS: THE ANNOUNCER AS TEXT TOO	字幕: 同时以文字显示播报
+CAPTURE	占领
+CAPTURE THE HILL	占领山头
+CART	运载车
+CHAMPION	冠军
+CHANGE ANYTHING AFTER (IT STAYS)	之后可随意修改 (会保留)
+CHANGE MAP / MODE	更换地图 / 模式
+CHANGE MAP / MODE (pick the mode, then the map), FORCE START, RELOAD MAP, EDIT MODE (everyone edits the map together).	更换地图 / 模式 (先选模式, 再选地图)、强制开始、重新加载地图、编辑模式 (所有人一起编辑地图)。
+CHANNELS	声道
+CHANNELS: MONO	声道: 单声道
+CHANNELS: STEREO	声道: 立体声
+CHANNELS: SWAPPED	声道: 左右互换
+CHAT	聊天
+CHAT BOX	聊天框
+CHAT COLOR	聊天颜色
+CHAT LINES	聊天行数
+CHAT OFF -	聊天关 -
+CHAT ON	聊天开
+CHAT OPACITY	聊天不透明度
+CHAT SECONDS	聊天显示秒数
+CHECK AGAIN	再次检查
+CHECKPOINT	检查点
+CHECKPT	检查点
+CHOOSE -	选择 -
+CHOOSE A MAP FOR	选择地图用于
+CHOOSE A MODE	选择模式
+CHOOSING...	选择中...
+CLASSIC	经典
+CLEAN SURFACES	干净表面
+CLEAR ALL	全部清除
+CLEAR DOWNLOADED MAPS	清除已下载地图
+CLEAR LIGHT BAKES	清除光照烘焙
+CLEAR THEME	清除主题
+CLEO	CLEO
+CLICK A SLOT TO REBIND IT - RIGHT-CLICK OR DEL UNBINDS	点击栏位重新绑定 - 右键或 DEL 解除绑定
+CLICK A WIDGET TO EDIT, DRAG TO MOVE.	点击组件编辑, 拖动移动。
+CLICK AGAIN TO RESET EVERY SETTING (NOT YOUR NAME)	再次点击以重置所有设置 (名字除外)
+CLICK ON SOMETHING TO SELECT IT	点击物体以选中
+CLICK TO CONFIRM	点击确认
+CLICK anything to select it. New things go where the crosshair (the middle of the view) points.	点击任意物体选中。新物体放在准星 (视野中心) 所指处。
+CLICK: SELECT (AGAIN: THE ONE BEHIND, SHIFT: ADD MORE, THEN GROUP)	点击: 选择 (再点: 后方物体, SHIFT: 多选, 然后编组)
+CLIP BOX COLOR	碰撞盒颜色
+CLOCK	时钟
+CLOSE	关闭
+CLOSE QUARTERS	近距离
+CLOSED by the load governor: the machine can't carry both servers (production comes first)	已被负载调控器关闭: 机器无法同时承载两台服务器 (正式服优先)
+CLOSEST FREE MATCH: APEX LEGENDS	最接近的免费游戏: APEX LEGENDS
+CLOSEST FREE MATCH: HALF-LIFE 2	最接近的免费游戏: HALF-LIFE 2
+CLOSEST FREE MATCH: OVERWATCH	最接近的免费游戏: OVERWATCH
+CLOSEST FREE MATCH: QUAKE	最接近的免费游戏: QUAKE
+CLOSEST FREE MATCH: TF2	最接近的免费游戏: TF2
+CLOSEST FREE MATCH: TF2 SECONDARY	最接近的免费游戏: TF2 副武器
+CM PER 360	CM/360
+CM PER 360: MOUSE TRAVEL FOR ONE FULL TURN	CM/360: 转一整圈所需的鼠标移动距离
+COLOR	颜色
+COLOR (FULL)	颜色 (完整)
+COLOR BLINDNESS	色盲
+COLOR SCHEME	配色方案
+COLOR: BLACK	颜色: 黑
+COLOR: TEAM	颜色: 队伍
+COLOR: WHITE	颜色: 白
+COLOR: YELLOW	颜色: 黄
+COLORBLIND: BLUE-YELLOW	色盲: 蓝黄
+COLORBLIND: RED-GREEN	色盲: 红绿
+COLORS	颜色
+COLORS COPIED: PASTE THEM ANYWHERE	颜色已复制: 可粘贴到任意处
+COLORS FROM	颜色来自
+COLORS PASTED	颜色已粘贴
+COLORS SAVED IN	颜色已保存到
+COLUMN	列
+COLUMN: ACC	列: 命中
+COLUMN: D	列: 死亡
+COLUMN: DMG	列: 伤害
+COLUMN: K	列: 击杀
+COLUMN: OBJ	列: 目标
+COLUMN: PING	列: PING
+COLUMN: TOTAL K / D	列: 总 K / D
+COMBINE	合并
+COMPASS	指南针
+COMPASS + RADAR	指南针 + 雷达
+COMPETITIVE: NO FOG OR SHADOWS, FEWER EFFECTS;	竞技: 无雾无阴影, 特效更少;
+COMPOSITED FRAME SHOWN (EST)	合成帧显示 (估计)
+COMPOSITOR ON MOST DRIVERS	多数驱动下的合成器
+COMPOSITOR: NEXT VBLANK (EST)	合成器: 下一 VBLANK (估计)
+CONCHARS is compressed	CONCHARS 已压缩
+CONCHARS isn't a 128 x 128 picture	CONCHARS 不是 128 x 128 图片
+CONCRETE	混凝土
+CONFIRM QUIT / LEAVE	退出 / 离开前确认
+CONNECT	连接
+CONNECTING TO	正在连接到
+CONSOLE	控制台
+CONSOLE IN MENUS	菜单中显示控制台
+CONSOLE KEY	控制台按键
+CONSOLE KEY: '	控制台按键: '
+CONSOLE KEY: F1	控制台按键: F1
+CONSOLE KEY: F10	控制台按键: F10
+CONSOLE KEY: F11	控制台按键: F11
+CONSOLE KEY: HOME	控制台按键: HOME
+CONSOLE KEY: INSERT	控制台按键: INSERT
+CONTESTED	争夺中
+CONTRAST	对比度
+CONTROL SCRIPTS ARE OFF IN RANKED	排位中禁用操作脚本
+CONTROLS	操作
+CONTROLS 2	操作 2
+CONTROLS 3	操作 3
+CONTROLS: MORE KEYS	操作: 更多按键
+CONTROLS: MOVE KEYS	操作: 移动按键
+CONVERTING...	转换中...
+COOLDOWN BARS	冷却条
+COOLDOWN BARS: ALWAYS	冷却条: 始终
+COOLDOWN BARS: WHEN NOT READY	冷却条: 未就绪时
+COOLDOWN RING	冷却环
+COPIED (COULDN'T WRITE FILE)	已复制 (无法写入文件)
+COPIED + SAVED CONTROLS/	已复制 + 已保存到 CONTROLS/
+COPIED + SAVED HUDS/	已复制 + 已保存到 HUDS/
+COPY CODE	复制代码
+COPY COLORS	复制颜色
+COPY NAME	复制名字
+CORNERS	角落
+COULD NOT DELETE	无法删除
+COULD NOT RENAME THE RUN	无法重命名记录
+COULD NOT SAVE	无法保存
+COULD NOT WRITE	无法写入
+COULDN'T SAVE THE SCREENSHOT	无法保存截图
+COULDN'T START RECORDING	无法开始录制
+COUNTDOWN: A TICK EACH OF THE LAST 10 S	倒计时: 最后 10 秒每秒一响
+CP	CP
+CPU	CPU
+CPU ABOVE NORMAL	CPU 高于正常
+CPU HIGH	CPU 高
+CPU NORMAL	CPU 正常
+CPU OTHER	CPU 其他
+CPU PRIORITY	CPU 优先级
+CPU PRIORITY: ABOVE NORMAL	CPU 优先级: 高于正常
+CPU PRIORITY: HIGH	CPU 优先级: 高
+CROSSBOW	弩
+CROSSBOW, STICKY AND RIFLE	弩、粘弹和步枪
+CROSSBOWS ONLY	仅限弩
+CROSSHAIR	准星
+CROSSHAIR CODE COPIED	准星代码已复制
+CROSSHAIR COLOR	准星颜色
+CROSSHAIR PASTED	准星已粘贴
+CROSSHAIR, TOWARD WHERE THEY CAME FROM	准星处, 指向来源方向
+CROUCH	蹲下
+CROUCH SPEED	蹲伏速度
+CROWN	王冠
+CTRL+D: DUPLICATE    DEL: DELETE    CTRL+Z: UNDO    CTRL+Y: REDO    CTRL+S: SAVE    ESC: DESELECT / LEAVE	CTRL+D: 复制    DEL: 删除    CTRL+Z: 撤销    CTRL+Y: 重做    CTRL+S: 保存    ESC: 取消选择 / 离开
+CTRL+F (SEARCH)	CTRL+F (搜索)
+CTRL+Y (REDO)	CTRL+Y (重做)
+CTRL+Z (UNDO)	CTRL+Z (撤销)
+CUE	提示音
+CUE SOUNDS	提示音效
+CUE: DASH	提示音: 冲刺
+CUE: DEATH	提示音: 死亡
+CUE: GRAPPLE FIRE	提示音: 发射钩索
+CUE: GRAPPLE HIT	提示音: 钩索命中
+CUE: HURT	提示音: 受伤
+CUE: HYPER	提示音: HYPER
+CUE: JUMP	提示音: 跳跃
+CUE: KILL	提示音: 击杀
+CUE: LANDING	提示音: 落地
+CUE: STREAK STING	提示音: 连杀
+CUE: SUPER	提示音: SUPER
+CUE: TYPING	提示音: 打字
+CURSOR COLOR	光标颜色
+CURSOR SIZE	光标大小
+CUSTOM	自定义
+CUSTOM ACCENT COLOR	自定义强调色
+CUSTOM COLOR	自定义颜色
+CUSTOM ENEMY	自定义敌人
+CUSTOM GRID	自定义网格
+CUSTOM GROUPS	自定义分组
+CUSTOM GUN	自定义枪械
+CUSTOM MODE	自定义模式
+CUSTOM MODE:	自定义模式:
+CUSTOM MODE: OFF (RANKED)	自定义模式: 关 (排位)
+CUSTOM MODE: pick one of your saved custom modes (or NEW / EDIT to build one).	自定义模式: 从已保存的自定义模式中选一个 (或用 新建 / 编辑 来创建)。
+CUSTOM NAME COLOR	自定义名字颜色
+CUSTOM TAG	自定义标签
+CUSTOM TEAM	自定义队伍
+CUSTOM WIDGETS	自定义组件
+CUSTOM WIDGETS: build your own HUD pieces (number, bar, icon) from any value, drag them around, and import / export layouts.	自定义组件: 用任意数值制作自己的 HUD 元素 (数字、条、图标), 随意拖动, 并可导入 / 导出布局。
+CUSTOM: PICK OUTLINE "CUSTOM" ON PLAYER; SAME: ITS	自定义: 在玩家处选择描边 "自定义"; 相同: 其
+CYAN	青色
+CYAN / RED	青 / 红
+D3DKMTCloseAdapter	D3DKMTCloseAdapter
+D3DKMTGetProcessSchedulingPriorityClass	D3DKMTGetProcessSchedulingPriorityClass
+D3DKMTGetScanLine	D3DKMTGetScanLine
+D3DKMTOpenAdapterFromHdc	D3DKMTOpenAdapterFromHdc
+D3DKMTSetProcessSchedulingPriorityClass	D3DKMTSetProcessSchedulingPriorityClass
+DAMAGE	伤害
+DAMAGE ARCS	伤害方向弧
+DAMAGE FLASH	受伤闪屏
+DAMAGE NUMBER COLOR	伤害数字颜色
+DAMAGE NUMBER SIZE	伤害数字大小
+DAMAGE NUMBERS	伤害数字
+DASH	冲刺
+DASH + GRAPPLE	冲刺 + 钩索
+DASH BUFFER	冲刺缓冲
+DASH BUFFER: 0.05 S	冲刺缓冲: 0.05 秒
+DASH BUFFER: 0.1 S	冲刺缓冲: 0.1 秒
+DASH BUFFER: 0.15 S	冲刺缓冲: 0.15 秒
+DASH BUFFER: OFF	冲刺缓冲: 关
+DASH CAPTION	冲刺标题
+DASH CHARGES	冲刺次数
+DASH COOLDOWN	冲刺冷却
+DASH EXIT SPEED (MAX)	冲刺结束速度 (最大)
+DASH EXIT SPEED (MIN)	冲刺结束速度 (最小)
+DASH JUMP WINDOW	冲刺跳窗口
+DASH LENGTH	冲刺距离
+DASH SPEED	冲刺速度
+DASH SPEED KEPT	冲刺速度保留
+DASH VERTICAL	冲刺垂直
+DASH WALL BOUNCE ANGLE	冲刺撞墙反弹角度
+DASHING BLADES	冲刺刀刃
+DATA FOLDER	数据文件夹
+DATE FORMAT	日期格式
+DATES: DD-MM	日期: DD-MM
+DATES: MM-DD	日期: MM-DD
+DATES: YYYY-MM-DD	日期: YYYY-MM-DD
+DEAD	阵亡
+DEATH	死亡
+DEATH + SPECTATING	死亡 + 观战
+DEATH CAMERA	死亡镜头
+DEATH CAMERA: A TEAMMATE	死亡镜头: 队友
+DEATH CAMERA: MY BODY	死亡镜头: 我的尸体
+DEATH CAMERA: THE KILLER	死亡镜头: 击杀者
+DEBAND	去色带
+DEBAND: A FAINT DITHER, NO BANDS IN SKY / FOG;	去色带: 轻微抖动, 天空 / 雾中无色带;
+DECALOTYPE	DECALOTYPE
+DEFAULT	默认
+DEFEND	防守
+DEFEND THE SITES	守住炸弹点
+DEFEND: KEEP THEM OFF THE SITES, DEFUSE A PLANTED BOMB	防守: 阻止他们进入炸弹点, 拆除已安放的炸弹
+DEJAVU SANS	DEJAVU SANS
+DELETE	删除
+DELETE (HIDE / SHOW)	删除 (隐藏 / 显示)
+DELETE WIDGET	删除组件
+DELETED	已删除
+DEMO	录像
+DEMO - ESC TO STOP	录像 - ESC 停止
+DEMO RATE	录像频率
+DEMO RATE: 62.5 HZ	录像频率: 62.5 HZ
+DEMO RATE: FULL	录像频率: 完整
+DEMOS	录像
+DEPTH	深度
+DESC	降序
+DEVICES	设备
+DIFFICULTY	难度
+DIFFICULTY: ADVANCED	难度: 高级
+DIFFICULTY: BEGINNER	难度: 新手
+DIFFICULTY: EXPERT	难度: 专家
+DIFFICULTY: INTERMEDIATE	难度: 中级
+DISABLE CHAT	禁用聊天
+DISCONNECT	断开连接
+DISCORD	DISCORD
+DISCORD CODE	DISCORD 代码
+DISCORD LINK NEEDS A RANKED KEY (quark.key)	绑定 DISCORD 需要排位密钥 (quark.key)
+DISCORD LINK: COULDN'T REACH THE SERVER	DISCORD 绑定: 无法连接服务器
+DISCORD LINKED - YOUR DISCORD NAME IS NOW PUBLIC WITH YOUR GAME NAME AND RANKED ID (CROWNS, QUEUE FILLS). TYPE UNLINK TO REMOVE IT	DISCORD 已绑定 - 你的 DISCORD 名称现与游戏名和排位 ID 一起公开 (王冠、排队满员通知)。输入 UNLINK 可解除
+DISCORD:	DISCORD:
+DISCORD:  (PUBLIC)	DISCORD:  (公开)
+DISCORD: TYPE THE 6-DIGIT CODE FROM /link IN DISCORD	DISCORD: 输入在 DISCORD 中用 /link 获得的 6 位代码
+DISPLAY	显示
+DISPLAY: BORDERLESS FULLSCREEN	显示: 无边框全屏
+DISPLAY: EXCLUSIVE FULLSCREEN	显示: 独占全屏
+DISPLAY: WINDOWED	显示: 窗口化
+DISTANCE	距离
+DMG	伤害
+DMITRI	DMITRI
+DON'T SAVE	不保存
+DONE	完成
+DOT	点
+DOUBLE DAMAGE	双倍伤害
+DOUBLE SIZE	双倍大小
+DOWN	下
+DOWNLOADED MAPS DELETED	已下载地图已删除
+DOWNLOADED,	已下载,
+DOWNLOADING MAP	正在下载地图
+DPI	DPI
+DRAG TO MOVE, CORNER / WHEEL / + - TO SIZE, ARROWS NUDGE (SHIFT 10), TAB NEXT, ALT: NO SNAP, CTRL+Z UNDO	拖动移动, 角落 / 滚轮 / + - 调整大小, 方向键微调 (SHIFT 10), TAB 下一个, ALT: 不吸附, CTRL+Z 撤销
+DRAG TO TURN	拖动旋转
+DRAG, ADD, IMPORT / EXPORT WIDGETS	拖动、添加、导入 / 导出组件
+DRAG, SIZE AND STYLE EVERY ELEMENT IN PLACE	就地拖动、调整大小和样式化每个元素
+DRAIN IN	淡入时间
+DRAW CALLS	绘制调用
+DRAW DISTANCE	绘制距离
+DRAW IN BACKGROUND	后台绘制
+DRAW: 150 M	绘制: 150 米
+DRAW: 250 M	绘制: 250 米
+DRAW: 400 M	绘制: 400 米
+DRIVER	驱动
+DROP MY EDITS	放弃我的修改
+DUCKING	闪避
+DUEL	决斗
+DUEL - 1v1 (or 2v2): every life has a random modifier (low gravity, giants, rockets only...). First to 11.	决斗 - 1v1 (或 2v2): 每条命都有随机修改器 (低重力、巨人、仅火箭...)。先到 11 分者胜。
+DUPLICATE	复制
+DXGI PRESENT	DXGI PRESENT
+DXGI PRESENT: WINDOWS ONLY	DXGI PRESENT: 仅限 WINDOWS
+DYNAMIC RANGE	动态范围
+DYNAMIC RANGE: CLEAN	动态范围: 纯净
+DYNAMIC RANGE: NIGHT	动态范围: 夜间
+DYNAMIC RANGE: NORMAL	动态范围: 正常
+Dash jump: jump while dashing along the floor to keep the dash's full speed through the jump (it leaves you both dashes).	冲刺跳: 贴地冲刺时跳跃, 跳起后保持冲刺全速 (两次冲刺都保留)。
+Decl: no padding (its words are hashed)	Decl: no padding (its words are hashed)
+Display: window mode, vsync, low latency mode, frame cap, player shadows, brightness, anti-aliasing and interpolation. Lower latency settings cost smoothness: the notes under them say how.	显示: 窗口模式、垂直同步、低延迟模式、帧率上限、玩家阴影、亮度、抗锯齿和插值。低延迟设置会牺牲流畅度: 下方说明会解释。
+Drag the squares on a selected box's faces to resize it; drag the arrows to move it. The keyboard works too: ARROWS / PGUP / PGDN move it by the grid, SHIFT + ARROWS grow a side, CTRL + ARROWS shrink it.	拖动选中方块表面的方块可调整大小; 拖动箭头可移动。也可用键盘: 方向键 / PGUP / PGDN 按网格移动, SHIFT + 方向键扩展一侧, CTRL + 方向键缩小。
+E - use (plant / defuse the bomb).   1-9, 0 - weapons.   MOUSE WHEEL - next / previous weapon.	E - 使用 (安放 / 拆除炸弹)。   1-9, 0 - 武器。   鼠标滚轮 - 下一把 / 上一把武器。
+E-GIRL	E-GIRL
+EACH INPUT SENT IN THIS MANY PACKETS	每个输入分成这么多个包发送
+EACH OF THE ANNOUNCER'S LINES ON OR OFF	单独开关播报员的每条语音
+EACH SLIDER SHOWS THE VALUE IN THIS MODE (STANDARD x MULTIPLIER)	每个滑块显示此模式下的数值 (标准 x 倍数)
+EASY BOTS	简单机器人
+EDGE ARROWS	边缘箭头
+EDIT	编辑
+EDIT ON SCREEN	屏幕上编辑
+EDIT THE MAP TOGETHER	共同编辑地图
+EDIT THE MAP TOGETHER (CHANGES LAST UNTIL THE MAP CHANGES)	共同编辑地图 (修改持续到换图)
+EDITOR	编辑器
+EDITOR TEST PLAY	编辑器试玩
+EFFECT COLOR	特效颜色
+EFFECTS	特效
+EFFECTS + F3	特效 + F3
+EFFECTS OPACITY	特效不透明度
+EFFECTS QUIETER WHILE THE ANNOUNCER SPEAKS	播报时降低特效音量
+EFFECTS VOLUME	特效音量
+EFFECTS: CUSTOM	特效: 自定义
+EFFECTS: OWN	特效: 自己
+EFFECTS: TEAM	特效: 队伍
+ELEMENT	元素
+ELEMENT COLOR	元素颜色
+ELEMENT: CHAT	元素: 聊天
+ELEMENT: COOLDOWN BARS	元素: 冷却条
+ELEMENT: HEALTH	元素: 生命值
+ELEMENT: KEY OVERLAY	元素: 按键显示
+ELEMENT: KILL FEED	元素: 击杀信息
+ELEMENT: SCORE BOX	元素: 比分框
+ELEMENT: SPEED METER	元素: 速度表
+ELEMENT: WEAPON LIST	元素: 武器列表
+ELEMENT: WEAPON NAME	元素: 武器名称
+END	结束
+END SESSION	结束会话
+ENEMIES ALIVE	存活敌人
+ENEMY BOTS	敌方机器人
+ENEMY COLOR	敌人颜色
+ENEMY GOAL	敌方球门
+ENEMY HOLDS THE HILL	敌方占据山头
+ENEMY IS PUSHING	敌方正在推进
+ENEMY MODEL	敌人模型
+ENEMY MODEL:	敌人模型:
+ENEMY MODEL: THEIR OWN	敌人模型: 他们自己的
+ENEMY OUTLINE	敌人描边
+ENEMY OUTLINE:	敌人描边:
+ENEMY WIDTH	敌人宽度
+ENTER	ENTER
+ERROR ON LINE	错误位于行
+ESC	ESC
+ESC (CLEAR SEARCH)	ESC (清除搜索)
+ESC TO CANCEL	ESC 取消
+ESC: PAUSE / SETTINGS   R: RESTART	ESC: 暂停 / 设置   R: 重来
+EVERY SETTING IS BACK TO ITS DEFAULT	所有设置已恢复默认
+EVERY WEAPON, ALL MOVEMENT - NO GIMMICKS	所有武器, 全部移动 - 无花招
+EVERYONE THROWS - THE LOSING SHAPE IS OUT	所有人出拳 - 输的手势出局
+EXCLUSIVE / BORDERLESS SKIP THE DESKTOP	独占 / 无边框跳过桌面合成
+EXCLUSIVE AUDIO	独占音频
+EXCLUSIVE AUDIO (BUSY)	独占音频 (忙)
+EXCLUSIVE AUDIO (N/A)	独占音频 (不可用)
+EXCLUSIVE FULLSCREEN	独占全屏
+EXCLUSIVE FULLSCREEN ONLY	仅独占全屏
+EXCLUSIVE FULLSCREEN ONLY; A 4:3 SIZE IS	仅独占全屏; 4:3 尺寸为
+EXIT	退出
+EXIT FACE	出口面
+EXIT FACE: +X	出口面: +X
+EXIT FACE: +Z	出口面: +Z
+EXIT FACE: -X	出口面: -X
+EXIT FACE: -Z	出口面: -Z
+EXIT FACE: BOTTOM (-Y)	出口面: 底部 (-Y)
+EXIT FACE: TOP (+Y)	出口面: 顶部 (+Y)
+EXPECTED NAME: VALUE	应为 名称: 值
+EXPERT	专家
+EXPERT BOTS	专家机器人
+EXPLOSION	爆炸
+EXPLOSIONS, SPARKS AND BURSTS	爆炸、火花和迸射
+EXPLOSIVES	爆炸物
+EXPORT	导出
+EXPORT / IMPORT USE THE CLIPBOARD	导出 / 导入使用剪贴板
+EXPORT CSV	导出 CSV
+EXPORT GROUP	导出分组
+EXPORT PNG	导出 PNG
+EZRA	EZRA
+Each map is built for one mode, plus free for all and any others it lists. You can still start any map in any mode: the menus warn when it isn't built for it (it may be missing spawns or objectives).	每张地图为一种模式打造, 外加自由混战及其列出的其他模式。你仍可在任意模式下启动任意地图: 若不适配, 菜单会提示 (可能缺少出生点或目标)。
+F3 - performance overlay (average, 1% and 0.1% low FPS, input latency).   F12 - screenshot.   ESC - menu, votes, settings.	F3 - 性能面板 (平均、1% 和 0.1% 低帧 FPS, 输入延迟)。   F12 - 截图。   ESC - 菜单、投票、设置。
+F3 COLORBLIND COLORS	F3 色盲配色
+FACING (Q E)	朝向 (Q E)
+FADE DISTANCE	淡出距离
+FADE LENGTH	淡出长度
+FAIRNESS: DEFAULT MODEL, HUD, CONTROLS, 10 MS INTERP	公平性: 默认模型、HUD、操作, 10 MS 插值
+FAR SCENERY	远景
+FAST FLY	快速飞行
+FASTER MOVES TURN FURTHER (AT MOST X4)	移动越快转得越多 (最多 X4)
+FAYE	FAYE
+FEATURES	功能
+FEED HS MARK	击杀信息爆头标记
+FEEDBACK	反馈
+FEMALE	女性
+FFA COLORS	FFA 颜色
+FFA: EACH OPPONENT THEIR OWN COLOUR; OWN: YOUR	FFA: 每个对手各自颜色; 自己: 你的
+FIELD	场地
+FIGHTER	战士
+FILE	文件
+FILE NAME	文件名
+FILE: NAME / TITLE	文件: 名称 / 标题
+FILL THE UNEVEN TEAMS WITH BOTS?	用机器人补齐人数不均的队伍?
+FINAL	决赛
+FIND CLIP BOXES	查找碰撞盒
+FIND INVISIBLE WALLS:	查找隐形墙:
+FINISH	终点
+FINISHED	已完成
+FIRE	开火
+FIRE RATE	射速
+FIRES THE MOMENT IT IS	就绪瞬间开火
+FIRST TO #	先达到 #
+FIX GAPS	修复缝隙
+FIX MAP	修复地图
+FIXED LOGO COLORS	固定 LOGO 颜色
+FIXED TEAMS	固定队伍
+FIXED TEAMS: SPECTATING AND DEMOS SHOW	固定队伍: 观战和录像中显示
+FLAT LIGHTING	平面光照
+FLAT MAP	平面地图
+FLAT MAP, NO LIGHTING	平面地图, 无光照
+FLYING, ONE KEY: MOVE UP HELD UP, LET GO DOWN	飞行, 单键: 按住上升, 松开下降
+FOG	雾
+FOLDER	文件夹
+FOLDER: DATA	文件夹: 数据
+FOLDER: PICTURES	文件夹: 图片
+FONT	字体
+FONT:	字体:
+FONTS GO IN MODS/FONTS; ASSETS IN OVERRIDES/	字体放在 MODS/FONTS; 资源放在 OVERRIDES/
+FOR	用于
+FOR A VARIABLE REFRESH MONITOR	适用于可变刷新率显示器
+FOR THE NEXT LAUNCH	下次启动生效
+FORCE MY PACK	强制使用我的音效包
+FORCE MY PACK: EVERYONE IN YOUR SOUND PACK	强制使用我的音效包: 所有人用你的音效包
+FORCE PLAYER MODELS	强制玩家模型
+FORCE START	强制开始
+FORMAT: PNG	格式: PNG
+FORMAT: TGA	格式: TGA
+FORWARD	前进
+FOUND - WATCH THE REST OF THE ROUND	被发现 - 观看本回合剩余部分
+FOV	FOV
+FOV #: # DEGREES ACROSS THIS SCREEN	FOV #: 此屏幕上横向 # 度
+FOV MODE	FOV 模式
+FOV: HORIZONTAL	FOV: 水平
+FOV: HORIZONTAL AT 4:3	FOV: 4:3 水平
+FOV: VERTICAL	FOV: 垂直
+FPS	FPS
+FPS LIMIT	FPS 上限
+FPS MIN (1S)	FPS 最低 (1 秒)
+FRAME CAP WAIT	帧率上限等待
+FRAME TIME (MS) OVER THE RUN	运行期间帧时间 (MS)
+FRAMES	帧
+FREE FOR ALL	自由混战
+FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next kill wins).	自由混战 - 时间结束时击杀最多者胜 (平局进入加时: 下一个击杀者胜)。
+FRIENDS JOIN WITH YOUR PUBLIC IP (STREAMER MODE)	好友通过你的公网 IP 加入 (主播模式)
+FRIENDS JOIN WITH YOUR PUBLIC IP:	好友通过你的公网 IP 加入:
+FROM	来自
+FROM: APEX LEGENDS	来自: APEX LEGENDS
+FROM: CALL OF DUTY	来自: CALL OF DUTY
+FROM: CS2 / CS:GO	来自: CS2 / CS:GO
+FROM: OVERWATCH 2	来自: OVERWATCH 2
+FROM: QUAKE	来自: QUAKE
+FROM: TEAM FORTRESS 2	来自: TEAM FORTRESS 2
+FROM: VALORANT	来自: VALORANT
+FULL RATE: EVERY SNAPSHOT (UP TO 1000 HZ) - SMOOTHER, MUCH BIGGER FILES	完整频率: 每个快照 (最高 1000 HZ) - 更流畅, 文件大得多
+FULL RESTART	完全重启
+FULL: EVERY SNAPSHOT (BIGGER FILES); ALSO ON DEMOS	完整: 每个快照 (文件更大); 录像也一样
+FULLBRIGHT	全亮
+FULLSCREEN	全屏
+FULLSCREEN AND BORDERLESS OPEN ON IT	全屏和无边框在此显示器打开
+FULLSCREEN SIZE	全屏分辨率
+FULLSCREEN SIZE:	全屏分辨率:
+FULLSCREEN SIZE: DESKTOP	全屏分辨率: 桌面
+FULLSCREEN: OFF KEEPS IT ON SCREEN	全屏: 关闭时保持在屏幕上
+G-SYNC / FREESYNC	G-SYNC / FREESYNC
+GAME FONTS: YOUR OWN COPY OF THE REAL FONT IF FOUND	游戏字体: 若找到则使用你本机的原版字体
+GAMEMODE	游戏模式
+GAMEPLAY	游戏玩法
+GAMEPLAY 2	游戏玩法 2
+GAMEPLAY 3	游戏玩法 3
+GAMEPLAY 4	游戏玩法 4
+GAMEPLAY 5	游戏玩法 5
+GAMMA	GAMMA
+GAP	间隙
+GATE	大门
+GENERAL	常规
+GENERAL + INTERFACE	常规 + 界面
+GET IT WITH /link - THE CODE IS PUBLIC	用 /link 获取 - 代码是公开的
+GIANT SNIPERS	巨人狙击
+GIBS	碎尸
+GL	GL
+GLASS CANNONS	玻璃大炮
+GLOW	发光
+GLOW STRENGTH	发光强度
+GO	GO
+GO!	GO!
+GODLIKE	超神
+GPU	GPU
+GPU + CPU GO TO THE GAME FIRST WHILE FOCUSED	聚焦时 GPU + CPU 优先分配给游戏
+GPU HUD	GPU HUD
+GPU MAX CLOCKS	GPU 最高频率
+GPU MAX CLOCKS: NOT CHANGED IN THE UI TEST	GPU 最高频率: UI 测试中不更改
+GPU MAX CLOCKS: WINDOWS ONLY	GPU 最高频率: 仅限 WINDOWS
+GPU PRIORITY	GPU 优先级
+GPU WAIT (LOW LATENCY ON)	GPU 等待 (低延迟开)
+GPU WAIT (ULTRA)	GPU 等待 (超低)
+GPU dynamic pass	GPU dynamic pass
+GPU resolve / scale	GPU resolve / scale
+GPU shadow pass	GPU shadow pass
+GPU world pass	GPU world pass
+GRADE FROM LOW COLOR	从低值颜色渐变
+GRAPPLE	钩索
+GRAPPLE + HAND	钩索 + 手
+GRAPPLE COOLDOWN	钩索冷却
+GRAPPLE GRAVITY	钩索重力
+GRAPPLE MODEL	钩索模型
+GRAPPLE MOVEMENT ONLY	仅钩索移动
+GRAPPLE PULL	钩索拉力
+GRAPPLE RANGE	钩索射程
+GRAPPLE RELEASE DISTANCE	钩索释放距离
+GRAPPLE TOP SPEED	钩索最高速度
+GRAPPLE: HOLD	钩索: 按住
+GRAPPLE: TOGGLE	钩索: 切换
+GRAVITY	重力
+GREEN	绿色
+GREEN / MAGENTA	绿 / 品红
+GREENHOUSE - ranked vanilla 1v1.   DOJO - ranked laser vampire 1v1.   SPIRE - ranked instagib free for all (5 minutes).   ORBIT - 1v1, duel.	GREENHOUSE - 排位原版 1v1。   DOJO - 排位激光吸血 1v1。   SPIRE - 排位一击必杀自由混战 (5 分钟)。   ORBIT - 1v1, 决斗。
+GRID: # M (CUSTOM)	网格: # 米 (自定义)
+GRID: 1 M	网格: 1 米
+GRID: 1/2 M	网格: 1/2 米
+GRID: 1/4 M	网格: 1/4 米
+GRID: 1/8 M	网格: 1/8 米
+GRID: 2 M	网格: 2 米
+GRID: 4 M	网格: 4 米
+GROUND	地面
+GROUND ACCELERATION	地面加速
+GROUND FRICTION	地面摩擦
+GROUP	编组
+GROUP FILE	分组文件
+GROUPS	分组
+GUN COLOR	枪械颜色
+GUN RECOIL KICK	枪械后坐力
+GUN: CUSTOM	枪械: 自定义
+GUN: MAP	枪械: 地图
+GUN: TEAM	枪械: 队伍
+GUNFIRE	枪声
+GUS	GUS
+Game::frame	Game::frame
+HALFTIME - SIDES SWITCHED	半场 - 交换攻守
+HALFTIME - SIDES SWITCHED: YOU ATTACK NOW	半场 - 交换攻守: 你现在进攻
+HALFTIME - SIDES SWITCHED: YOU DEFEND NOW	半场 - 交换攻守: 你现在防守
+HANA	HANA
+HAND	手
+HAND: LEFT	手: 左
+HAND: RIGHT	手: 右
+HARD BOTS	困难机器人
+HARD TO TELL APART WITH	难以区分, 搭配
+HAS NO BINDS	没有绑定
+HAS NO WIDGETS	没有组件
+HEADSHOT	爆头
+HEADSHOT HIT	爆头命中
+HEADSHOTS STAY RED, BIG HITS GOLD	爆头保持红色, 重击为金色
+HEAL NUMBERS	治疗数字
+HEALED BY	治疗来自
+HEALING	治疗
+HEALTH	生命值
+HEALTH BAR POSITION	生命条位置
+HEALTH BAR: AT THE FEET	生命条: 脚下
+HEALTH BAR: MODE'S MAX	生命条: 模式最大值
+HEALTH BAR: OVER THE HEAD	生命条: 头顶
+HEALTH BARS	生命条
+HEALTH BARS OVER PLAYERS	玩家头顶生命条
+HEALTH: AFTER A CHANGE + LOW	生命值: 变化后 + 低血量时
+HEALTH: ALWAYS	生命值: 始终
+HEALTH: ONLY WHEN LOW	生命值: 仅低血量时
+HEARING RANGE	听觉范围
+HEAVY	重
+HIDE AND SEEK	躲猫猫
+HIDE AND SEEK - one seeker with a knife, everyone else hides first. Everyone seeks once: 1 point for each hider you find, 1 for staying hidden to the end of a round. A tie for first is settled by rock paper scissors (keys 1 / 2 / 3).	躲猫猫 - 一名持刀寻找者, 其余人先躲藏。每人轮流当一次寻找者: 每找到一名躲藏者得 1 分, 躲到回合结束也得 1 分。并列第一以石头剪刀布决胜 (按键 1 / 2 / 3)。
+HIDE EMPTY	隐藏空服
+HIDE FULL	隐藏满服
+HIDE HUD	隐藏 HUD
+HIDE HUD KEEPS CROSSHAIR	隐藏 HUD 时保留准星
+HIDE RATINGS	隐藏评分
+HIDE REC	隐藏 REC
+HIDE REC: NO BLINKING REC WHILE RECORDING	隐藏 REC: 录制时不闪烁 REC
+HIDE! THE SEEKER IS COUNTING	快躲! 寻找者正在倒数
+HIDES ALL PLAYERS' CHAT MESSAGES	隐藏所有玩家的聊天消息
+HIGH	高
+HIGH CAN SLOW OTHER PROGRAMS	高可能拖慢其他程序
+HIGH CONTRAST	高对比度
+HIGH CONTRAST: LIGHTER WALLS, DARKER TRIM	高对比度: 墙更亮, 边饰更暗
+HIGH SCORE	最高分
+HILL	山头
+HILL CONTESTED	山头争夺中
+HILL LOST	山头失守
+HILL TAKEN	已占领山头
+HIT	命中
+HIT COLOR	命中颜色
+HIT FLASH	命中闪烁
+HIT FLASH TIME	命中闪烁时长
+HITSCAN	即时命中
+HITSCAN ONLY	仅即时命中
+HITSOUND	命中音效
+HITSOUND TIERS	命中音效分级
+HITSOUND VOLUME	命中音效音量
+HITSOUND: DEFAULT	命中音效: 默认
+HITSOUND: HEAVY METAL	命中音效: 重金属
+HITSOUND: MAGICAL	命中音效: 魔法
+HITSOUND: MOUTH	命中音效: 嘴巴
+HITSOUND: MY SOUND PACK	命中音效: 我的音效包
+HITSOUND: RETRO	命中音效: 复古
+HITSOUNDS	命中音效
+HOLD FIRE	按住开火
+HOLDING THE HILL	正在占据山头
+HOME	HOME
+HOOK	钩子
+HOOK CAPTION	钩子标题
+HOOKED	已钩住
+HOST	主机
+HOST EDIT SESSION	主持编辑会话
+HOST EDIT SESSION: friends join and build with you; everyone's camera shows in the view.	主持编辑会话: 好友加入与你一起建造; 视野中会显示每个人的镜头。
+HOST GAME	创建游戏
+HOSTING	主持中
+HOSTING ON UDP PORT	主持于 UDP 端口
+HOW OTHER PLAYERS' MOVES ARE SMOOTHED	其他玩家动作的平滑方式
+HP	HP
+HUD	HUD
+HUD & SETTINGS	HUD 与设置
+HUD 2	HUD 2
+HUD COLORS	HUD 颜色
+HUD DRAW	HUD 绘制
+HUD EDIT ELEMENT	HUD 编辑元素
+HUD ELEMENT	HUD 元素
+HUD SIZE	HUD 大小
+HUD.CFG LINE	HUD.CFG 行
+HURT	受伤
+HYPER	HYPER
+HZ	HZ
+HZ  LOSS	HZ  丢失
+HZ (NOT ON THIS MONITOR)	HZ (此显示器不支持)
+Hold the RIGHT MOUSE button to look around; W A S D to fly, SPACE / C up and down, SHIFT faster, the wheel sets the speed.	按住鼠标右键环视; W A S D 飞行, 空格 / C 上升下降, SHIFT 加速, 滚轮调整速度。
+Hz	Hz
+Hz cap applies at the next break	Hz 上限在下次中断时生效
+ICON	图标
+ICON: BOLT	图标: 闪电
+ICON: CLOCK	图标: 时钟
+ICON: EYE	图标: 眼睛
+ICON: HEART	图标: 心
+ICON: HOOK	图标: 钩子
+ICON: SHIELD	图标: 盾牌
+ICON: SKULL	图标: 骷髅
+ICON: STAR	图标: 星星
+IDAT	IDAT
+IDENTITY	身份
+IDLE	空闲
+IEND	IEND
+IF THAT ADDRESS REACHES YOU, HOST A DEDICATED SERVER WITH --own-addr	如果该地址能连到你, 用 --own-addr 开设专用服务器
+IHDR	IHDR
+IMAGE	图像
+IMPACT SPARKS	命中火花
+IMPORT	导入
+IMPORT / EXPORT USE THE CLIPBOARD.	导入 / 导出使用剪贴板。
+IMPORT GROUP	导入分组
+IMPORTANT: VOTES, KICKS, RANKED, ERRORS	重要: 投票、踢出、排位、错误
+IMPORTED	已导入
+IMPORTED CONTROLS FROM CLIPBOARD	已从剪贴板导入操作设置
+IN # S	# 秒后
+IN #/S  OUT #/S X#	入 #/S  出 #/S X#
+IN (TEAMS GO UNEVEN)	加入 (队伍人数不均)
+IN A TIME TRIAL OR A RACE	在计时赛或竞速中
+IN GAME, ESC SHOWS IF THE PORT CAN BE REACHED	游戏中按 ESC 可查看端口是否可达
+IN MY PALETTE	在我的调色板中
+IN THIS MAP	在此地图中
+INDIA	INDIA
+INDUSTRIAL	工业
+INFO	信息
+INFO LINES	信息行
+INPUT	输入
+INSERT	INSERT
+INSTAGIB	一击必杀
+INSTAGIB CROSSBOWS	一击必杀弩
+INSTAGIB SNIPERS	一击必杀狙击
+INTEL	INTEL
+INTERFACE	界面
+INTERMEDIATE	中级
+INTERP	插值
+INTERP # MS	插值 # MS
+INVERT Y	反转 Y 轴
+IOID	IOID
+IRIS	IRIS
+IS A BUILT-IN MAP: IT STAYS AS IT IS. SAVE YOUR EDITS AS YOUR OWN MAP (IN YOUR MAPS FOLDER, UNDER THIS NAME) OR DROP THEM.	是内置地图: 保持原样。把你的修改另存为你自己的地图 (在你的 maps 文件夹中, 使用此名称) 或放弃修改。
+IS GODLIKE	已经超神
+IS ON A KILLING SPREE	正在大杀特杀
+IS ON A RAMPAGE	正在暴走
+IS UNSTOPPABLE	已经无人能挡
+IT IN MY PALETTE	将其加入我的调色板
+ITS COLOURS ARE ON THE CROSSHAIR TAB	其颜色在准星标签页中
+ITS STYLE	其样式
+ITS STYLE: CIRCLE	其样式: 圆圈
+ITS STYLE: CROSS	其样式: 十字
+ITS STYLE: CROSS + DOT	其样式: 十字 + 点
+ITS STYLE: DOT	其样式: 点
+ITS STYLE: SAME AS ABOVE	其样式: 同上
+ITS STYLE: T	其样式: T
+IVO	IVO
+Input	输入
+JOIN A TEAM FROM THE MENU (ESC)	从菜单 (ESC) 加入队伍
+JOIN GAME	加入游戏
+JOIN TEAM	加入队伍
+JOIN TEAM A	加入 A 队
+JOIN TEAM B	加入 B 队
+JOIN THE GAME FROM THE MENU (ESC)	从菜单 (ESC) 加入游戏
+JOINING + PRIVACY	加入 + 隐私
+JOST	JOST
+JUMP	跳跃
+JUNE	JUNE
+KAI	KAI
+KB; OFF: A SERVER'S	KB; 关: 服务器的
+KEEP	保留
+KEEP THESE DISPLAY SETTINGS? REVERTING IN	保留这些显示设置? 还原倒计时
+KEEP YOUR EDITS AS A NEW MAP?	将你的修改保存为新地图?
+KEEP: ALL	保留: 全部
+KEEP: NEWEST 100	保留: 最新 100 个
+KEEP: NEWEST 20	保留: 最新 20 个
+KEEP: NEWEST 50	保留: 最新 50 个
+KEEPS GPU CLOCKS HIGH: LESS LAG, MORE POWER	保持 GPU 高频率: 延迟更低, 功耗更高
+KEY	按键
+KEY 1	按键 1
+KEY 2	按键 2
+KEY 3	按键 3
+KEY OVERLAY	按键显示
+KEY OVERLAY (VERBOSE)	按键显示 (详细)
+KEYS	按键
+KICK	踢出
+KICK A PLAYER	踢出玩家
+KICK BOTS	踢出机器人
+KILL	击杀
+KILL BURSTS	击杀特效
+KILL CAM TIME	击杀镜头时长
+KILL FEED	击杀信息
+KILL FEED LINES	击杀信息行数
+KILL FEED SECONDS	击杀信息秒数
+KILL MARK	击杀标记
+KILL SOUND	击杀音效
+KILL TEXT	击杀文字
+KILLED	已击杀
+KILLED BY	被击杀, 击杀者
+KILLING SPREE	大杀特杀
+KILLS	击杀
+KING OF THE HILL	山头之王
+KING OF THE HILL - stand on the hill with no enemy on it to score a point a second. First to 100.	山头之王 - 站在山头上且无敌人时每秒得 1 分。先到 100 分者胜。
+KNIFE	刀
+KNIGHT	骑士
+KNIVES ONLY	仅刀
+KNIVES ONLY - QUICK DASH, 0.2 S APART	仅刀 - 快速冲刺, 间隔 0.2 秒
+KNIVES, SYRINGES AND ORBS	飞刀、针筒和光球
+KNOCKBACK	击退
+KP ENTER	KP ENTER
+L ALT	L ALT
+L CTRL	L CTRL
+L SHIFT	L SHIFT
+LABEL	标签
+LADDER	梯子
+LADDER CLIMB SPEED	梯子攀爬速度
+LADDER SIDE SPEED	梯子横移速度
+LAND	着陆
+LANGUAGE	语言
+LARGE	大
+LASER	激光
+LASER VAMPIRE	激光吸血
+LASER. SCORE: DAMAGE X 10 X ACCURACY	激光。得分: 伤害 X 10 X 命中率
+LASER. SCORE: KILLS X 100 X ACCURACY	激光。得分: 击杀 X 100 X 命中率
+LASERS ONLY	仅激光
+LASERS ONLY - DAMAGE YOU DEAL HEALS YOU	仅激光 - 造成的伤害为你回血
+LAST	最后
+LAST RUN	上次成绩
+LAST TEAM STANDING WINS	最后存活的队伍获胜
+LAST WEAPON	上一把武器
+LATE FRAME	迟到帧
+LATE: TEAR	迟到: 撕裂
+LATE: WAIT	迟到: 等待
+LATENCY	延迟
+LATENT SAFETY	LATENT 安全余量
+LATENT SYNC	LATENT SYNC
+LATENT SYNC: HOLD FOR THE BLANK	LATENT SYNC: 等待消隐
+LATENT SYNC: WAIT FOR THE RASTER	LATENT SYNC: 等待扫描线
+LAUNCHER ON THE RIGHT	启动器在右侧
+LEADERBOARD	排行榜
+LEADERBOARD: SOON	排行榜: 即将推出
+LEAVE	离开
+LEAVE ALL	全部离开
+LEFT	左
+LEFT ARROW (PREVIOUS PAGE)	左方向键 (上一页)
+LEFT MOUSE - fire.   RIGHT MOUSE - alt-fire (scope, knife throw, rocket lob, bubble stream, syringe throw...).	鼠标左键 - 开火。   鼠标右键 - 辅助开火 (开镜、投掷飞刀、火箭抛射、气泡流、投掷针筒...)。
+LEFT: THE GUN ON THE LEFT, THE GRAPPLE	左: 枪在左手, 钩索
+LEGACY MAPS	旧版地图
+LENA	LENA
+LENGTH	长度
+LET	放行
+LG	LG
+LIBREQUAKE 8X8	LIBREQUAKE 8X8
+LIGHT	光照
+LIGHT CACHE	光照缓存
+LIGHTHOUSE / TERRACES - team vs.   REACTORS / BRIDGE - power.   DATACENTER / MINE - bomb.   CASTLE / GLACIER / AMPHITHEATRE - king of the hill.	LIGHTHOUSE / TERRACES - 团队对战。   REACTORS / BRIDGE - 能量。   DATACENTER / MINE - 爆破。   CASTLE / GLACIER / AMPHITHEATRE - 山头之王。
+LIGHTMAP FILTER	光照贴图过滤
+LIGHTMAP: NEAREST	光照贴图: 最近点
+LIGHTMAP: SMOOTH	光照贴图: 平滑
+LILITA ONE	LILITA ONE
+LINE	线
+LINE: ENEMIES	线: 敌人
+LINE: FPS	线: FPS
+LINE: FPS MIN	线: FPS 最低
+LINE: K / D	线: K / D
+LINE: LOSS	线: 丢包
+LINE: MAP	线: 地图
+LINE: MODE	线: 模式
+LINE: PING	线: PING
+LINE: SPEED	线: 速度
+LINE: TEAMMATES	线: 队友
+LINE: TICK / SNAP	线: TICK / 快照
+LINE: TIME	线: 时间
+LINE: TIME LEFT	线: 剩余时间
+LINE: VERSION	线: 版本
+LINES #-# OF # - WHEEL TO SCROLL	第 #-# 行 / 共 # - 滚轮滚动
+LINK	绑定
+LINUX (X11): THE DESKTOP'S COMPOSITOR STEPS	LINUX (X11): 桌面合成器介入
+LIQUIDS	液体
+LIQUIDS FLOW	液体流动
+LMB	LMB
+LOAD	加载
+LOAD POS	读取位置
+LOAD POSITION	读取位置
+LOADING...	加载中...
+LOCATOR	定位器
+LOCATOR (hide and seek and tag: the seeker's / tagger's second weapon, key 0) - fire it to see one random hider / runner through walls for a second; it recharges in 5 s. Everyone else hears its ping from where you stand.	定位器 (躲猫猫和抓人模式: 寻找者 / 抓人者的第二武器, 按键 0) - 开火可透墙看到一名随机躲藏者 / 逃跑者一秒; 5 秒后充能完毕。其他人都会从你所在位置听到它的提示音。
+LOCATOR READY	定位器就绪
+LOGIC:	逻辑:
+LOGO + YOUR BOTS	LOGO + 你的机器人
+LOOK	查看
+LOOKS INTEGRATED: IF THERE'S A DEDICATED GPU,	看起来是集成显卡: 如果有独立显卡,
+LOSS	丢包
+LOSS #%	丢包 #%
+LOW AT	低于
+LOW COLOR	低值颜色
+LOW COLOR (EMPTY)	低值颜色 (空)
+LOW HEALTH	低血量
+LOW HEALTH BELOW	低血量阈值
+LOW HEALTH COLOR	低血量颜色
+LOW LATENCY	低延迟
+LOW LATENCY: OFF	低延迟: 关
+LOW LATENCY: ON	低延迟: 开
+LOW LATENCY: ULTRA	低延迟: 超低
+LOW LATENCY: ULTRA STARTS EACH FRAME THIS EARLY;	低延迟: 超低模式下每帧提前这么多开始;
+LOWER RATES: LESS CPU AND UPLOAD	更低频率: 更少 CPU 和上传
+LOWER: SLOWER WHILE SCOPED	更低: 开镜时更慢
+MAGENTA	品红
+MAKE	制作
+MALE	男性
+MAP	地图
+MAP / MODE / MODIFIERS	地图 / 模式 / 修改器
+MAP COLOR	地图颜色
+MAP COLORS	地图颜色
+MAP DOWNLOADS	地图下载
+MAP EDITOR	地图编辑器
+MAP EDITOR *	地图编辑器 *
+MAP YOU DON'T HAVE ENDS THE CONNECTION	没有的地图会断开连接
+MAP:	地图:
+MAP: NONE	地图: 无
+MAPS	地图
+MAPS FOLDER	地图文件夹
+MAPS KEPT	地图已保留
+MAPS MARKED "NOT FOR THIS MODE" MAY NOT WORK IN IT	标记为 "不适用此模式" 的地图可能无法正常运行
+MARK COLOR	标记颜色
+MARK TIME	标记时长
+MARKER OPACITY	标记不透明度
+MARKER SIZE	标记大小
+MAT4	MAT4
+MATCH	比赛
+MATCH OVER	比赛结束
+MATCH START	比赛开始
+MATCH STARTS IN #	比赛将在 # 秒后开始
+MATCH SUMMARY	比赛总结
+MATERIAL	材质
+MATERIAL (M)	材质 (M)
+MATERIAL: ACCENT	材质: 强调色
+MATERIAL: ACID (HURTS)	材质: 酸液 (有伤害)
+MATERIAL: ACID-ETCHED METAL	材质: 酸蚀金属
+MATERIAL: AIRCRAFT SKIN	材质: 飞机蒙皮
+MATERIAL: AIRCRAFT WRECKAGE	材质: 飞机残骸
+MATERIAL: ALIEN BIOMASS	材质: 外星生物质
+MATERIAL: ALUMINIUM TREAD PLATE	材质: 铝制花纹板
+MATERIAL: AMBER	材质: 琥珀
+MATERIAL: AMBER GLASS	材质: 琥珀玻璃
+MATERIAL: ANODIZED BLACK	材质: 黑色阳极氧化
+MATERIAL: ASH DUNES	材质: 灰烬沙丘
+MATERIAL: ASPHALT (FAST)	材质: 沥青 (快速)
+MATERIAL: ASTROTURF	材质: 人造草皮
+MATERIAL: AUTUMN LEAVES	材质: 秋叶
+MATERIAL: BADLANDS	材质: 荒地
+MATERIAL: BALL WALL (STOPS ONLY THE BALL)	材质: 球墙 (只挡球)
+MATERIAL: BAMBOO	材质: 竹子
+MATERIAL: BAMBOO FENCE	材质: 竹篱笆
+MATERIAL: BANDED IRON	材质: 带箍铁
+MATERIAL: BAR GRATING	材质: 格栅
+MATERIAL: BARNACLES	材质: 藤壶
+MATERIAL: BARRICADE	材质: 路障
+MATERIAL: BASALT COLUMNS	材质: 玄武岩柱
+MATERIAL: BASE	材质: 基础
+MATERIAL: BASKET-WEAVE BRICK	材质: 编篮式砖
+MATERIAL: BASKET-WEAVE PARQUET	材质: 编篮式拼花地板
+MATERIAL: BATHROOM MINT	材质: 浴室薄荷绿
+MATERIAL: BATTERED YELLOW PAINT	材质: 斑驳黄漆
+MATERIAL: BEETLE-CARVED WOOD	材质: 甲虫雕刻木
+MATERIAL: BENT REBAR BUNDLE	材质: 弯曲钢筋束
+MATERIAL: BIO-SLUDGE DRAIN	材质: 生物污泥排水
+MATERIAL: BIRCH BARK	材质: 桦树皮
+MATERIAL: BIRD-SPOTTED ROOF	材质: 鸟粪屋顶
+MATERIAL: BLACK BASALT BLOCKS	材质: 黑玄武岩块
+MATERIAL: BLACK BRICK	材质: 黑砖
+MATERIAL: BLACK SAND	材质: 黑沙
+MATERIAL: BLACK SQUARE TILE	材质: 黑色方砖
+MATERIAL: BLEACHED BONES	材质: 白骨
+MATERIAL: BLISTERED PAINT	材质: 起泡油漆
+MATERIAL: BLOOD POOL	材质: 血泊
+MATERIAL: BLUE ENGINEERING BRICK	材质: 蓝色工程砖
+MATERIAL: BLUE POOL TILE	材质: 蓝色泳池砖
+MATERIAL: BLUE TINTED GLASS	材质: 蓝色有色玻璃
+MATERIAL: BLUED STEEL	材质: 烤蓝钢
+MATERIAL: BOARD-FORMED CONCRETE	材质: 木模混凝土
+MATERIAL: BOILER PLATE	材质: 锅炉板
+MATERIAL: BOLTED ACCESS PANELS	材质: 螺栓检修板
+MATERIAL: BONE	材质: 骨头
+MATERIAL: BONE-DRY WOOD	材质: 干透木头
+MATERIAL: BOTTLE GREEN GLASS	材质: 墨绿玻璃
+MATERIAL: BOULDER FIELD	材质: 巨石区
+MATERIAL: BRASS	材质: 黄铜
+MATERIAL: BREAKABLE BRICK (THIN: BLOWS OPEN)	材质: 可破坏砖 (薄: 可炸开)
+MATERIAL: BREAKABLE COBBLESTONE (THIN: BLOWS OPEN)	材质: 可破坏鹅卵石 (薄: 可炸开)
+MATERIAL: BREAKABLE GLASS	材质: 可破坏玻璃
+MATERIAL: BREEZE-BLOCK SCREEN	材质: 花格砖屏
+MATERIAL: BRICK	材质: 砖
+MATERIAL: BRIDGE GIRDER	材质: 桥梁钢梁
+MATERIAL: BRONZE	材质: 青铜
+MATERIAL: BROOM-FINISHED	材质: 扫帚纹饰面
+MATERIAL: BROWN RUSTIC BRICK	材质: 棕色仿古砖
+MATERIAL: BUBBLING TAR	材质: 冒泡沥青
+MATERIAL: BULLET-POCKED WALL	材质: 弹痕墙
+MATERIAL: BURNT BRICK	材质: 烧砖
+MATERIAL: BURNT-OUT RUIN WALL	材质: 烧毁废墟墙
+MATERIAL: BUSH-HAMMERED	材质: 剁斧面
+MATERIAL: CACTUS	材质: 仙人掌
+MATERIAL: CALICHE	材质: 钙质层
+MATERIAL: CAMOUFLAGE	材质: 迷彩
+MATERIAL: CARBON FIBRE	材质: 碳纤维
+MATERIAL: CARDBOARD	材质: 纸板
+MATERIAL: CARDBOARD BOXES	材质: 纸箱
+MATERIAL: CARGO NET	材质: 货网
+MATERIAL: CAST IRON	材质: 铸铁
+MATERIAL: CAST-IN-PLACE WALLS	材质: 现浇墙
+MATERIAL: CASTLE STONE	材质: 城堡石
+MATERIAL: CERAMIC TILE WALL	材质: 瓷砖墙
+MATERIAL: CHAIN HEAP	材质: 铁链堆
+MATERIAL: CHAIN-LINK FENCE	材质: 铁丝网围栏
+MATERIAL: CHAIN-LINK MESH	材质: 铁丝网
+MATERIAL: CHALK	材质: 粉笔
+MATERIAL: CHARCOAL FLOOR	材质: 炭黑地板
+MATERIAL: CHARRED TIMBER	材质: 焦木
+MATERIAL: CHECKERBOARD TILE	材质: 棋盘格砖
+MATERIAL: CHECKPOINT GATE	材质: 检查点门
+MATERIAL: CHIPBOARD	材质: 刨花板
+MATERIAL: CHIPPED PAINT	材质: 剥落油漆
+MATERIAL: CHROME	材质: 铬
+MATERIAL: CINDER BLOCK	材质: 煤渣砖
+MATERIAL: CINDER BLOCK WALL	材质: 煤渣砖墙
+MATERIAL: CIRCUIT	材质: 电路
+MATERIAL: CLEAR LAGOON	材质: 清澈潟湖
+MATERIAL: CLINKER BRICK	材质: 缸砖
+MATERIAL: CLIP (INVISIBLE WALL)	材质: 碰撞盒 (隐形墙)
+MATERIAL: CLOUD	材质: 云
+MATERIAL: CLOVER	材质: 三叶草
+MATERIAL: COBBLED SETTS	材质: 方石铺路
+MATERIAL: COBBLESTONE	材质: 鹅卵石
+MATERIAL: COBWEBS	材质: 蜘蛛网
+MATERIAL: COIN RUBBER FLOOR	材质: 圆点橡胶地板
+MATERIAL: COLLAPSED BRICK	材质: 坍塌砖
+MATERIAL: CONCRETE	材质: 混凝土
+MATERIAL: CONCRETE PAVERS	材质: 混凝土铺路砖
+MATERIAL: CONCRETE ROOF TILES	材质: 混凝土屋瓦
+MATERIAL: CONGLOMERATE	材质: 砾岩
+MATERIAL: CONTAMINATED SOIL	材质: 污染土壤
+MATERIAL: CONTROL PANEL	材质: 控制面板
+MATERIAL: COOLANT	材质: 冷却液
+MATERIAL: COOLED MAGMA	材质: 冷却岩浆
+MATERIAL: COPPER AND PATINA	材质: 铜与铜绿
+MATERIAL: CORAL	材质: 珊瑚
+MATERIAL: CORK	材质: 软木
+MATERIAL: CORRODED COPPER ROOF	材质: 腐蚀铜屋顶
+MATERIAL: CORRUGATED METAL	材质: 波纹金属
+MATERIAL: CRACKED EARTH	材质: 龟裂土地
+MATERIAL: CRACKED SLAB	材质: 开裂板
+MATERIAL: CRACKLE GLAZE TILE	材质: 冰裂釉砖
+MATERIAL: CRATE WOOD	材质: 木箱
+MATERIAL: CREAM BRICK	材质: 奶油色砖
+MATERIAL: CROSS-BEDDED SANDSTONE	材质: 交错层砂岩
+MATERIAL: CRUMBLE PLATFORM	材质: 崩塌平台
+MATERIAL: CRUMBLING PLASTER	材质: 剥落灰泥
+MATERIAL: CRYSTAL	材质: 水晶
+MATERIAL: CRYSTAL CLUSTER	材质: 水晶簇
+MATERIAL: DAMASCUS STEEL	材质: 大马士革钢
+MATERIAL: DARK CONCRETE	材质: 深色混凝土
+MATERIAL: DATA RAIN	材质: 数据雨
+MATERIAL: DEAD FOREST FLOOR	材质: 枯林地面
+MATERIAL: DEEP OCEAN	材质: 深海
+MATERIAL: DENTED STEEL	材质: 凹痕钢
+MATERIAL: DESERT CRUST	材质: 沙漠硬壳
+MATERIAL: DESERT PAVEMENT	材质: 沙漠砾石地
+MATERIAL: DESERT VARNISH	材质: 沙漠漆
+MATERIAL: DEWY GRASS	材质: 带露草地
+MATERIAL: DIAGONAL SETTS	材质: 斜铺方石
+MATERIAL: DIAGONAL TILE	材质: 斜铺砖
+MATERIAL: DIAMOND PLATE	材质: 花纹钢板
+MATERIAL: DIAPER BRICK	材质: 菱纹砖
+MATERIAL: DIRT	材质: 泥土
+MATERIAL: DRIED BLOOD EARTH	材质: 干血土
+MATERIAL: DRIED RIVERBED	材质: 干涸河床
+MATERIAL: DRY-STONE WALL	材质: 干砌石墙
+MATERIAL: DRYWALL	材质: 石膏板
+MATERIAL: DUST STORM HAZE	材质: 沙尘暴雾霾
+MATERIAL: DUSTY GLASS	材质: 积尘玻璃
+MATERIAL: DUSTY LINOLEUM	材质: 积尘油毡
+MATERIAL: EFFLORESCENT BRICK	材质: 泛碱砖
+MATERIAL: ELECTRICAL CABINET	材质: 电气柜
+MATERIAL: ELECTROPLATED NICKEL	材质: 电镀镍
+MATERIAL: EMBER BED	材质: 余烬床
+MATERIAL: ENCAUSTIC TILE	材质: 彩釉砖
+MATERIAL: ENGINE BLOCK	材质: 发动机缸体
+MATERIAL: ENGINE-TURNED STEEL	材质: 旋纹钢
+MATERIAL: ENGLISH BOND	材质: 英式砌法
+MATERIAL: EPOXY FLOOR	材质: 环氧地坪
+MATERIAL: EXPANDED METAL	材质: 钢板网
+MATERIAL: EXPOSED AGGREGATE	材质: 露骨料
+MATERIAL: EXPOSED REBAR	材质: 外露钢筋
+MATERIAL: FAR	材质: 远景
+MATERIAL: FEATHERS	材质: 羽毛
+MATERIAL: FERNS	材质: 蕨类
+MATERIAL: FIBRE CEMENT BOARD	材质: 纤维水泥板
+MATERIAL: FIBREGLASS GRATING	材质: 玻璃钢格栅
+MATERIAL: FIRE BRICK	材质: 耐火砖
+MATERIAL: FIRE-CRACKED EARTH	材质: 火裂土地
+MATERIAL: FISH-SCALE TILE	材质: 鱼鳞砖
+MATERIAL: FIZZING SODA	材质: 汽水
+MATERIAL: FLAGSTONE PAVING	材质: 石板铺路
+MATERIAL: FLEMISH BOND	材质: 荷兰式砌法
+MATERIAL: FLINT	材质: 燧石
+MATERIAL: FLINT AND BRICK	材质: 燧石与砖
+MATERIAL: FLOWER MEADOW	材质: 花草地
+MATERIAL: FLOWSTONE	材质: 流石
+MATERIAL: FLUSH POINTED BRICK	材质: 平缝砖
+MATERIAL: FORCE FIELD	材质: 力场
+MATERIAL: FOREST FLOOR	材质: 林地
+MATERIAL: FRESH GREY CONCRETE	材质: 新灰混凝土
+MATERIAL: FRIDGE GRAVEYARD	材质: 冰箱坟场
+MATERIAL: FROST	材质: 霜
+MATERIAL: FROSTED GLASS	材质: 磨砂玻璃
+MATERIAL: FROSTED PLANKS	材质: 结霜木板
+MATERIAL: FROZEN MUD	材质: 冻泥
+MATERIAL: FROZEN WATERFALL	材质: 冰瀑
+MATERIAL: FUMAROLE CRUST	材质: 喷气孔硬壳
+MATERIAL: FUR	材质: 毛皮
+MATERIAL: FURNACE GLOW	材质: 熔炉光芒
+MATERIAL: GABBRO BLOCKS	材质: 辉长岩块
+MATERIAL: GABION WALL	材质: 石笼墙
+MATERIAL: GALVANIZED GRATING	材质: 镀锌格栅
+MATERIAL: GALVANIZED STEEL	材质: 镀锌钢
+MATERIAL: GAUGE CLUSTER	材质: 仪表组
+MATERIAL: GEODE	材质: 晶洞
+MATERIAL: GHOST GLASS	材质: 幽灵玻璃
+MATERIAL: GLACIER ICE	材质: 冰川冰
+MATERIAL: GLACIER-POLISHED GRANITE	材质: 冰川磨光花岗岩
+MATERIAL: GLASS	材质: 玻璃
+MATERIAL: GLASS BLOCK	材质: 玻璃砖
+MATERIAL: GLASS BOTTLES	材质: 玻璃瓶
+MATERIAL: GLAZED BRICK	材质: 釉面砖
+MATERIAL: GLOW	材质: 发光
+MATERIAL: GLOWING ALGAE	材质: 发光藻类
+MATERIAL: GLOWING FISSURES	材质: 发光裂隙
+MATERIAL: GLOWING TIDE	材质: 发光潮汐
+MATERIAL: GLOWWORM CAVE	材质: 萤火虫洞
+MATERIAL: GNEISS	材质: 片麻岩
+MATERIAL: GOLD	材质: 黄金
+MATERIAL: GRAFFITI-BUFFED WALL	材质: 涂鸦清除墙
+MATERIAL: GRANITE BLOCKS	材质: 花岗岩块
+MATERIAL: GRANITE ROCK	材质: 花岗岩
+MATERIAL: GRASS	材质: 草地
+MATERIAL: GRAVEL	材质: 碎石
+MATERIAL: GRAVITY FLIP	材质: 重力翻转
+MATERIAL: GREASE-STAINED METAL	材质: 油污金属
+MATERIAL: GREEN GEL	材质: 绿色凝胶
+MATERIAL: GREEN SUBWAY TILE	材质: 绿色地铁砖
+MATERIAL: GRID-SCORED SLAB	材质: 网格刻痕板
+MATERIAL: GROUND-FACE BLOCK	材质: 磨面砌块
+MATERIAL: GUNMETAL	材质: 枪灰金属
+MATERIAL: GUTTED MACHINERY	材质: 废弃机械
+MATERIAL: GYM RUBBER TILE	材质: 健身房橡胶砖
+MATERIAL: HAIL	材质: 冰雹
+MATERIAL: HAMMERED COPPER	材质: 锤纹铜
+MATERIAL: HARDPAN	材质: 硬土层
+MATERIAL: HAY	材质: 干草
+MATERIAL: HAY BALES	材质: 干草捆
+MATERIAL: HAZARD STRIPES	材质: 警示条纹
+MATERIAL: HAZMAT TARP	材质: 防化篷布
+MATERIAL: HEALING TILE	材质: 治疗地砖
+MATERIAL: HEAT VENTS	材质: 散热口
+MATERIAL: HEAT-TINTED TITANIUM	材质: 热染钛
+MATERIAL: HEAVY SCALE RUST	材质: 重度锈蚀
+MATERIAL: HEDGE	材质: 树篱
+MATERIAL: HERRINGBONE BRICK	材质: 人字纹砖
+MATERIAL: HERRINGBONE TILE	材质: 人字纹瓷砖
+MATERIAL: HEX BOLT GRID	材质: 六角螺栓网格
+MATERIAL: HEX FLOOR TILES	材质: 六角地砖
+MATERIAL: HEX FORCE FIELD	材质: 六角力场
+MATERIAL: HEX TILE TERRACOTTA	材质: 六角陶土砖
+MATERIAL: HEX TILE WHITE	材质: 白色六角砖
+MATERIAL: HOLOGRAM PANEL	材质: 全息面板
+MATERIAL: HONEY	材质: 蜂蜜
+MATERIAL: HONEYCOMB	材质: 蜂巢
+MATERIAL: HOSPITAL TILE	材质: 医院瓷砖
+MATERIAL: HOT SPRING	材质: 温泉
+MATERIAL: HUGE BRICK	材质: 巨型砖
+MATERIAL: HUGE COBBLES	材质: 巨型卵石
+MATERIAL: HUGE PLANKS	材质: 巨型木板
+MATERIAL: HUGE STONE	材质: 巨型石块
+MATERIAL: HUGE TILE	材质: 巨型瓷砖
+MATERIAL: ICE (SLIPPERY)	材质: 冰面 (滑)
+MATERIAL: ICE CAVE	材质: 冰洞
+MATERIAL: ICE SLUSH	材质: 冰泥
+MATERIAL: ICE WALL	材质: 冰墙
+MATERIAL: ICICLES	材质: 冰柱
+MATERIAL: INDUSTRIAL TILES	材质: 工业瓷砖
+MATERIAL: INK	材质: 墨水
+MATERIAL: INSULATED PANEL	材质: 保温板
+MATERIAL: INTERLOCKING RUBBER TILES	材质: 拼接橡胶砖
+MATERIAL: IRRADIATED GLASS	材质: 辐射玻璃
+MATERIAL: IVY ON BRICK	材质: 砖上常春藤
+MATERIAL: JADE	材质: 翡翠
+MATERIAL: JASPER	材质: 碧玉
+MATERIAL: JELLY CUBE	材质: 果冻方块
+MATERIAL: JUNGLE LEAVES	材质: 丛林树叶
+MATERIAL: KELP	材质: 海带
+MATERIAL: KERB STONES	材质: 路缘石
+MATERIAL: LAKE ICE	材质: 湖冰
+MATERIAL: LARGE BASKET-WEAVE BRICK	材质: 大号编篮式砖
+MATERIAL: LARGE BASKET-WEAVE PARQUET	材质: 大号编篮式拼花地板
+MATERIAL: LARGE BRICK	材质: 大号砖
+MATERIAL: LARGE CASTLE STONE	材质: 大号城堡石
+MATERIAL: LARGE CHECKERBOARD TILE	材质: 大号棋盘格砖
+MATERIAL: LARGE COBBLED SETTS	材质: 大号方石铺路
+MATERIAL: LARGE COBBLES	材质: 大号卵石
+MATERIAL: LARGE CRATE WOOD	材质: 大号木箱
+MATERIAL: LARGE DIAGONAL SETTS	材质: 大号斜铺方石
+MATERIAL: LARGE DRY-STONE WALL	材质: 大号干砌石墙
+MATERIAL: LARGE FLAGSTONE PAVING	材质: 大号石板铺路
+MATERIAL: LARGE FORMAT PORCELAIN	材质: 大规格瓷砖
+MATERIAL: LARGE FROSTED PLANKS	材质: 大号结霜木板
+MATERIAL: LARGE GRANITE BLOCKS	材质: 大号花岗岩块
+MATERIAL: LARGE HERRINGBONE BRICK	材质: 大号人字纹砖
+MATERIAL: LARGE HERRINGBONE TILE	材质: 大号人字纹瓷砖
+MATERIAL: LARGE HEX TILE, TERRACOTTA	材质: 大号六角陶土砖
+MATERIAL: LARGE KERB STONES	材质: 大号路缘石
+MATERIAL: LARGE LIMESTONE ASHLAR	材质: 大号石灰岩方石
+MATERIAL: LARGE LOG CABIN	材质: 大号原木屋
+MATERIAL: LARGE LONDON STOCK	材质: 大号伦敦砖
+MATERIAL: LARGE MOSSY STONE BLOCKS	材质: 大号苔藓石块
+MATERIAL: LARGE POLYGONAL STONE	材质: 大号多边形石
+MATERIAL: LARGE RANDOM ASHLAR	材质: 大号乱砌方石
+MATERIAL: LARGE RED ENGINEERING BRICK	材质: 大号红色工程砖
+MATERIAL: LARGE RIVER STONE WALL	材质: 大号河石墙
+MATERIAL: LARGE SANDSTONE ASHLAR	材质: 大号砂岩方石
+MATERIAL: LARGE SCAFFOLD BOARDS	材质: 大号脚手架板
+MATERIAL: LARGE SLATE TILE	材质: 大号石板瓦
+MATERIAL: LARGE STONE	材质: 大号石块
+MATERIAL: LARGE SUBWAY TILE	材质: 大号地铁砖
+MATERIAL: LARGE TEMPLE STONE	材质: 大号神庙石
+MATERIAL: LARGE TILE	材质: 大号瓷砖
+MATERIAL: LARGE TRAVERTINE TILE	材质: 大号洞石砖
+MATERIAL: LARGE WHITE SQUARE TILE	材质: 大号白色方砖
+MATERIAL: LATH AND PLASTER	材质: 板条灰泥
+MATERIAL: LAVA (KILLS)	材质: 岩浆 (致死)
+MATERIAL: LEAD SHEET	材质: 铅板
+MATERIAL: LEAN-TO CANVAS	材质: 单坡帆布
+MATERIAL: LICHEN ROCK	材质: 地衣岩
+MATERIAL: LICHEN-CRUSTED STONE	材质: 地衣石
+MATERIAL: LIGHT BLOCK	材质: 灯块
+MATERIAL: LIGHTWEIGHT FOAM BLOCK	材质: 轻质泡沫砌块
+MATERIAL: LILY PADS	材质: 睡莲叶
+MATERIAL: LIMESTONE	材质: 石灰岩
+MATERIAL: LIMESTONE ASHLAR	材质: 石灰岩方石
+MATERIAL: LINOLEUM	材质: 油毡
+MATERIAL: LIQUID VOID	材质: 液态虚空
+MATERIAL: LOADING DOCK FLOOR	材质: 装卸平台地面
+MATERIAL: LOCKER DOORS	材质: 储物柜门
+MATERIAL: LOG CABIN	材质: 原木屋
+MATERIAL: LOG END GRAIN	材质: 原木端面
+MATERIAL: LONDON STOCK	材质: 伦敦砖
+MATERIAL: LOW GRAVITY FIELD	材质: 低重力场
+MATERIAL: MAGMA RIVER	材质: 岩浆河
+MATERIAL: MALACHITE	材质: 孔雀石
+MATERIAL: MANHOLE COVERS	材质: 井盖
+MATERIAL: MARBLE	材质: 大理石
+MATERIAL: MARBLE BLOCKS	材质: 大理石块
+MATERIAL: MELTED PLASTIC	材质: 熔化塑料
+MATERIAL: MERCURY	材质: 水银
+MATERIAL: MESH CATWALK	材质: 网格走道
+MATERIAL: METAL	材质: 金属
+MATERIAL: MICA SCHIST	材质: 云母片岩
+MATERIAL: MILL SCALE	材质: 氧化皮
+MATERIAL: MIRROR	材质: 镜面
+MATERIAL: MIRROR TILE	材质: 镜面砖
+MATERIAL: MOLTEN GOLD	材质: 熔金
+MATERIAL: MOLTEN SLAG	材质: 熔渣
+MATERIAL: MOROCCAN ZELLIGE	材质: 摩洛哥瓷砖
+MATERIAL: MOSAIC SPECKLE	材质: 马赛克斑点
+MATERIAL: MOSS CARPET	材质: 苔藓地毯
+MATERIAL: MOSSY BRICK	材质: 苔藓砖
+MATERIAL: MOSSY STONE	材质: 苔藓石
+MATERIAL: MOSSY STONE BLOCKS	材质: 苔藓石块
+MATERIAL: MOTHER OF PEARL	材质: 珍珠母
+MATERIAL: MOULD BLOOM	材质: 霉斑
+MATERIAL: MUD (STICKY)	材质: 泥地 (粘滞)
+MATERIAL: MUD AND STRAW DAUB	材质: 泥草抹墙
+MATERIAL: MUD BATH	材质: 泥浴
+MATERIAL: MUSHROOM GILLS	材质: 菌褶
+MATERIAL: MUSSEL BED	材质: 贻贝床
+MATERIAL: MUTANT GROWTH	材质: 变异增生
+MATERIAL: MYCELIUM	材质: 菌丝
+MATERIAL: NEON MAZE	材质: 霓虹迷宫
+MATERIAL: NEWSPAPER	材质: 报纸
+MATERIAL: NOGRAPPLE (NO GRAPPLE)	材质: 禁钩 (不可钩索)
+MATERIAL: OBSIDIAN	材质: 黑曜石
+MATERIAL: OCHRE EARTH	材质: 赭土
+MATERIAL: OFFICE CARPET TILES	材质: 办公地毯砖
+MATERIAL: OIL SLICK	材质: 油污
+MATERIAL: OIL-STAINED CONCRETE	材质: 油渍混凝土
+MATERIAL: OILY WATER	材质: 油水
+MATERIAL: OPAL	材质: 蛋白石
+MATERIAL: ORANGE WIRE-CUT	材质: 橙色切割砖
+MATERIAL: OXIDIZED STEEL	材质: 氧化钢
+MATERIAL: PAINTED BRICK	材质: 涂漆砖
+MATERIAL: PAINTED CONCRETE STRIPES	材质: 混凝土油漆条纹
+MATERIAL: PAINTED DRYWALL	材质: 涂漆石膏板
+MATERIAL: PAINTED RED BRICK	材质: 涂漆红砖
+MATERIAL: PALLET STACK	材质: 托盘堆
+MATERIAL: PALM TRUNK	材质: 棕榈树干
+MATERIAL: PAPER SCREEN	材质: 纸屏风
+MATERIAL: PARKING BAY LINES	材质: 停车位线
+MATERIAL: PEAT	材质: 泥炭
+MATERIAL: PEELING GREEN PAINT	材质: 剥落绿漆
+MATERIAL: PEELING WALLPAPER	材质: 剥落墙纸
+MATERIAL: PENNY ROUND TILE	材质: 圆片马赛克
+MATERIAL: PERFORATED METAL	材质: 穿孔金属
+MATERIAL: PETRIFIED WOOD	材质: 石化木
+MATERIAL: PEWTER	材质: 锡镴
+MATERIAL: PICKET FENCE	材质: 尖桩篱笆
+MATERIAL: PINE BARK	材质: 松树皮
+MATERIAL: PINE BOUGHS	材质: 松枝
+MATERIAL: PINK BRICK	材质: 粉色砖
+MATERIAL: PINK GRANITE	材质: 粉色花岗岩
+MATERIAL: PINK SLIME	材质: 粉色黏液
+MATERIAL: PLASMA POOL	材质: 等离子池
+MATERIAL: PLASTIC	材质: 塑料
+MATERIAL: PLYWOOD BOARD-UP	材质: 胶合板封窗
+MATERIAL: POLISHED CONCRETE	材质: 抛光混凝土
+MATERIAL: POLISHED GRANITE	材质: 抛光花岗岩
+MATERIAL: POLYCHROME BRICK	材质: 多彩砖
+MATERIAL: POLYGONAL STONE	材质: 多边形石
+MATERIAL: POOL TABLE FELT	材质: 台球桌绒布
+MATERIAL: POWDER-COAT GREEN	材质: 绿色粉末涂层
+MATERIAL: POWDER-COAT YELLOW	材质: 黄色粉末涂层
+MATERIAL: PRECAST CONCRETE	材质: 预制混凝土
+MATERIAL: PRESSED TIN CEILING	材质: 压花锡天花板
+MATERIAL: PRISM GLASS	材质: 棱镜玻璃
+MATERIAL: PUDDLED GROUND	材质: 积水地面
+MATERIAL: PUMICE	材质: 浮石
+MATERIAL: QUARRY TILE	材质: 缸砖地面
+MATERIAL: QUARTZ CRYSTAL	材质: 石英晶体
+MATERIAL: QUARTZ CRYSTALS	材质: 石英晶簇
+MATERIAL: QUARTZITE	材质: 石英岩
+MATERIAL: QUICKSAND	材质: 流沙
+MATERIAL: QUICKSAND (LIQUIDS)	材质: 流沙 (液体)
+MATERIAL: QUILTED LEATHER	材质: 绗缝皮革
+MATERIAL: QUILTED STAINLESS	材质: 绗缝不锈钢
+MATERIAL: RADIATION WARNING	材质: 辐射警告
+MATERIAL: RADIATOR FINS	材质: 散热片
+MATERIAL: RADIOACTIVE PUDDLES	材质: 放射性水洼
+MATERIAL: RAIL TRACK	材质: 铁轨
+MATERIAL: RAILWAY SLEEPERS	材质: 铁路枕木
+MATERIAL: RAIN WINDOW	材质: 雨窗
+MATERIAL: RAIN-WET PAVING	材质: 雨湿路面
+MATERIAL: RAISED ACCESS FLOOR	材质: 架空地板
+MATERIAL: RANDOM ASHLAR	材质: 乱砌方石
+MATERIAL: RECESSED JOINTS	材质: 凹缝
+MATERIAL: RECLAIMED BRICK	材质: 回收砖
+MATERIAL: RED CANYON ROCK	材质: 红色峡谷岩
+MATERIAL: RED CLAY	材质: 红黏土
+MATERIAL: RED DESERT SOIL	材质: 红色沙漠土
+MATERIAL: RED DUNES	材质: 红色沙丘
+MATERIAL: RED ENGINEERING BRICK	材质: 红色工程砖
+MATERIAL: RED LASER BARRIER	材质: 红色激光屏障
+MATERIAL: RED SANDSTONE	材质: 红砂岩
+MATERIAL: REEDED GLASS	材质: 条纹玻璃
+MATERIAL: REEDS	材质: 芦苇
+MATERIAL: RETAINING WALL BLOCKS	材质: 挡土墙砌块
+MATERIAL: RIBBED CONCRETE	材质: 肋纹混凝土
+MATERIAL: RIPPLE SAND	材质: 波纹沙
+MATERIAL: RIVER PEBBLES	材质: 河卵石
+MATERIAL: RIVER STONE WALL	材质: 河石墙
+MATERIAL: RIVERBANK CLAY	材质: 河岸黏土
+MATERIAL: RIVETED PLATES	材质: 铆接钢板
+MATERIAL: ROAD MARKINGS	材质: 道路标线
+MATERIAL: ROCK SALT	材质: 岩盐
+MATERIAL: ROLLER SHUTTER	材质: 卷帘门
+MATERIAL: ROMAN BRICK	材质: 罗马砖
+MATERIAL: ROOF SHINGLES	材质: 屋顶瓦片
+MATERIAL: ROOTY LOAM	材质: 根系壤土
+MATERIAL: ROPY LAVA ROCK	材质: 绳状熔岩
+MATERIAL: ROTTEN PLANKS	材质: 腐烂木板
+MATERIAL: ROTTING WOOD	材质: 腐朽木头
+MATERIAL: RUBBER (BOUNCY)	材质: 橡胶 (弹跳)
+MATERIAL: RUBBLE PILE	材质: 瓦砾堆
+MATERIAL: RUBBLE WALL	材质: 毛石墙
+MATERIAL: RUINED PARQUET	材质: 破损拼花地板
+MATERIAL: RUST	材质: 铁锈
+MATERIAL: RUST DUNES	材质: 锈色沙丘
+MATERIAL: RUST STREAKS	材质: 锈迹条纹
+MATERIAL: RUSTED SHEET	材质: 锈蚀铁板
+MATERIAL: RUSTED SHEET FENCE	材质: 锈蚀铁板围栏
+MATERIAL: RUSTIC RANDOM ASHLAR	材质: 粗犷乱砌方石
+MATERIAL: RUSTICATED BLOCKS	材质: 粗琢石块
+MATERIAL: RUTTED DIRT ROAD	材质: 车辙土路
+MATERIAL: SALT FLAT	材质: 盐滩
+MATERIAL: SALT FLAT (WASTELAND)	材质: 盐滩 (荒原)
+MATERIAL: SALT-CRUSTED STEEL	材质: 盐壳钢
+MATERIAL: SAND	材质: 沙子
+MATERIAL: SAND-BURIED ROAD	材质: 沙埋道路
+MATERIAL: SANDBAG WALL	材质: 沙袋墙
+MATERIAL: SANDBLASTED SIGN	材质: 喷砂标牌
+MATERIAL: SANDBLASTED STEEL	材质: 喷砂钢
+MATERIAL: SANDSTONE ASHLAR	材质: 砂岩方石
+MATERIAL: SANDSTONE SLAB	材质: 砂岩板
+MATERIAL: SANDSTONE STRATA	材质: 砂岩地层
+MATERIAL: SCAFFOLD BOARDS	材质: 脚手架板
+MATERIAL: SCANNER BEAM	材质: 扫描光束
+MATERIAL: SCI-FI PANELS	材质: 科幻面板
+MATERIAL: SCORCHED TILES	材质: 烧焦瓷砖
+MATERIAL: SCORIA	材质: 火山渣
+MATERIAL: SCRAP HEAP	材质: 废料堆
+MATERIAL: SCRAP METAL PLATING	材质: 废金属镀板
+MATERIAL: SCRATCHED PLEXIGLASS	材质: 刮花有机玻璃
+MATERIAL: SCREE	材质: 碎石坡
+MATERIAL: SEA FOAM	材质: 海沫
+MATERIAL: SEA GLASS	材质: 海玻璃
+MATERIAL: SEABIRD CLIFF	材质: 海鸟崖
+MATERIAL: SERVER RACK	材质: 服务器机架
+MATERIAL: SEWAGE	材质: 污水
+MATERIAL: SHALE	材质: 页岩
+MATERIAL: SHATTERED TILES	材质: 碎瓷砖
+MATERIAL: SHEET PILING	材质: 钢板桩
+MATERIAL: SHELL BEACH	材质: 贝壳海滩
+MATERIAL: SHIELD WALL	材质: 护盾墙
+MATERIAL: SHIP HULL PLATING	材质: 船体钢板
+MATERIAL: SHIPPING CONTAINER	材质: 集装箱
+MATERIAL: SHOJI SCREEN	材质: 障子屏风
+MATERIAL: SIDEWALK SLABS	材质: 人行道板
+MATERIAL: SLATE	材质: 板岩
+MATERIAL: SLATE CLADDING	材质: 板岩挂板
+MATERIAL: SLATE TILE	材质: 板岩砖
+MATERIAL: SLOW-MO FIELD	材质: 慢动作力场
+MATERIAL: SMOKE WALL	材质: 烟墙
+MATERIAL: SMOKED GLASS	材质: 烟色玻璃
+MATERIAL: SMOULDERING ASH	材质: 闷燃灰烬
+MATERIAL: SNAKE SKIN	材质: 蛇皮
+MATERIAL: SNOW	材质: 雪
+MATERIAL: SNOWFLAKE FROST	材质: 雪花霜
+MATERIAL: SOAP FILM	材质: 皂膜
+MATERIAL: SOLDIER COURSE	材质: 立砌砖
+MATERIAL: SOOTY STEEL	材质: 煤烟钢
+MATERIAL: SPALLED CONCRETE	材质: 剥落混凝土
+MATERIAL: SPIKE FLOOR	材质: 尖刺地板
+MATERIAL: SPLIT-FACE BLOCK	材质: 劈裂面砌块
+MATERIAL: SPORTS COURT	材质: 运动场地
+MATERIAL: STACK BOND	材质: 对缝砌法
+MATERIAL: STAINED GLASS	材质: 彩色玻璃
+MATERIAL: STAINED GLASS WINDOW	材质: 彩色玻璃窗
+MATERIAL: STAMPED STONE PATTERN	材质: 压印石纹
+MATERIAL: STANDING SEAM ROOF	材质: 立缝屋顶
+MATERIAL: STARFIELD	材质: 星空
+MATERIAL: STEEL	材质: 钢
+MATERIAL: STEEL CHECKER FLOOR	材质: 钢格纹地板
+MATERIAL: STEEL DECK PLATE	材质: 钢甲板
+MATERIAL: STEEL DOOR SKIN	材质: 钢门蒙皮
+MATERIAL: STEEL GRID WALL	材质: 钢网格墙
+MATERIAL: STONE BLOCKS	材质: 石块
+MATERIAL: STORM DRAIN GRATE	材质: 雨水箅子
+MATERIAL: STRIPED WALLPAPER	材质: 条纹墙纸
+MATERIAL: STUCCO	材质: 灰泥
+MATERIAL: SUBWAY TILE	材质: 地铁砖
+MATERIAL: SUGAR GLASS	材质: 糖玻璃
+MATERIAL: SULFUR CRUST	材质: 硫磺壳
+MATERIAL: SULFUR PIT CRUST	材质: 硫磺坑壳
+MATERIAL: SUN-BAKED HARDPAN	材质: 日晒硬土
+MATERIAL: SWAMP SLIME	材质: 沼泽黏液
+MATERIAL: SWAMP WATER	材质: 沼泽水
+MATERIAL: TACTILE PAVING	材质: 盲道
+MATERIAL: TANK ARMOUR	材质: 坦克装甲
+MATERIAL: TANK TRAP FIELD	材质: 反坦克障碍区
+MATERIAL: TAR PIT	材质: 沥青坑
+MATERIAL: TATAMI	材质: 榻榻米
+MATERIAL: TELEPORTER	材质: 传送门
+MATERIAL: TEMPLE STONE	材质: 神庙石
+MATERIAL: TERMITE MOUND	材质: 白蚁丘
+MATERIAL: TERMITE-EATEN BEAM	材质: 白蚁蛀梁
+MATERIAL: TERRACOTTA	材质: 陶土
+MATERIAL: TERRAZZO	材质: 水磨石
+MATERIAL: THATCH	材质: 茅草
+MATERIAL: THIN CONCRETE PANEL	材质: 薄混凝土板
+MATERIAL: TIDAL MUD FLATS	材质: 潮间泥滩
+MATERIAL: TILE	材质: 瓷砖
+MATERIAL: TILLED FIELD	材质: 耕地
+MATERIAL: TIN	材质: 锡
+MATERIAL: TINTED RED CONCRETE	材质: 红色混凝土
+MATERIAL: TOADSTOOL	材质: 毒蘑菇
+MATERIAL: TOPPLED COLUMN	材质: 倒塌石柱
+MATERIAL: TOXIC SLUDGE	材质: 有毒污泥
+MATERIAL: TRAPEZOID CLADDING	材质: 梯形挂板
+MATERIAL: TRAVERTINE	材质: 洞石
+MATERIAL: TRAVERTINE TILE	材质: 洞石砖
+MATERIAL: TREE BARK	材质: 树皮
+MATERIAL: TRIM (NOT SOLID)	材质: 装饰 (非实体)
+MATERIAL: TUDOR BRICK	材质: 都铎砖
+MATERIAL: TUFA BLOCKS	材质: 石灰华块
+MATERIAL: TUFF	材质: 凝灰岩
+MATERIAL: TUMBLEWEED BRUSH	材质: 风滚草丛
+MATERIAL: TUNDRA	材质: 苔原
+MATERIAL: TUNNEL LINING	材质: 隧道衬砌
+MATERIAL: TURTLE SHELL	材质: 龟壳
+MATERIAL: TYRE STACK	材质: 轮胎堆
+MATERIAL: VAULT DOOR	材质: 金库门
+MATERIAL: VENTILATION DUCT	材质: 通风管道
+MATERIAL: VERMICULATED STONE	材质: 虫纹石
+MATERIAL: VICTORIAN BORDER	材质: 维多利亚边饰
+MATERIAL: VINES ON STONE	材质: 石上藤蔓
+MATERIAL: VOLCANIC ASH	材质: 火山灰
+MATERIAL: WAINSCOT PANELLING	材质: 护墙板
+MATERIAL: WALLBANG	材质: 穿透墙
+MATERIAL: WARNING LIGHTS	材质: 警示灯
+MATERIAL: WARNING TAPE MESH	材质: 警示带网
+MATERIAL: WASP NEST PAPER	材质: 黄蜂巢纸
+MATERIAL: WATER (WADE IN IT)	材质: 水 (可涉水)
+MATERIAL: WATER CURTAIN	材质: 水幕
+MATERIAL: WATER-STAINED CONCRETE	材质: 水渍混凝土
+MATERIAL: WATERFALL	材质: 瀑布
+MATERIAL: WEATHERED CONCRETE	材质: 风化混凝土
+MATERIAL: WEEDS THROUGH CONCRETE	材质: 混凝土杂草
+MATERIAL: WELDED PATCHWORK	材质: 焊接拼板
+MATERIAL: WET CAVE ROCK	材质: 湿洞岩
+MATERIAL: WET CEMENT	材质: 湿水泥
+MATERIAL: WHEAT	材质: 小麦
+MATERIAL: WHITE CONCRETE	材质: 白色混凝土
+MATERIAL: WHITE GLAZED BRICK	材质: 白色釉面砖
+MATERIAL: WHITE RAPIDS	材质: 白色急流
+MATERIAL: WHITE SQUARE TILE	材质: 白色方砖
+MATERIAL: WHITEWASHED BRICK	材质: 粉刷砖
+MATERIAL: WIDE PLANKS	材质: 宽木板
+MATERIAL: WIND-PACKED SNOW	材质: 风压雪
+MATERIAL: WIND-SCOURED ROCK	材质: 风蚀岩
+MATERIAL: WITHERED VINES	材质: 枯萎藤蔓
+MATERIAL: WOOD	材质: 木头
+MATERIAL: WOODEN CRATE	材质: 木箱
+MATERIAL: WROUGHT IRON	材质: 熟铁
+MATERIAL: ZEBRA CROSSING	材质: 斑马线
+MATERIAL: ZINC	材质: 锌
+MAX PING	最大 PING
+MAX PLAYERS	最大玩家数
+MB (OFFICIAL MAPS SHIP BAKED)	MB (官方地图已预烘焙)
+MEDIUM BOTS	中等机器人
+MENU (ESC)	菜单 (ESC)
+MENU BACKGROUND	菜单背景
+MENU CURSOR	菜单光标
+MENU THEME	菜单主题
+MENU THEME: DARK	菜单主题: 深色
+MENU THEME: HIGH CONTRAST	菜单主题: 高对比度
+MENUS	菜单
+METER SCALE	速度表比例
+METER TICKS	速度表刻度
+MILO	MILO
+MIN FPS (WORST FRAME)	最低 FPS (最差帧)
+MINE	地雷
+MINIMIZE ON ALT-TAB	切出时最小化
+MIRROR	镜像
+MIRROR X	镜像 X
+MIRROR Y	镜像 Y
+MIRROR Z	镜像 Z
+MODE	模式
+MODE SET	模式已设置
+MODE:	模式:
+MODEL	模型
+MODEL OF	模型属于
+MODES	模式
+MODES (CLICK: ALLOW / BLOCK)	模式 (点击: 允许 / 禁止)
+MODES:	模式:
+MODIFIERS	修改器
+MODIFIERS:	修改器:
+MODS	MODS
+MODS FOLDER	MODS 文件夹
+MODS/FONTS	MODS/FONTS
+MONITOR	显示器
+MOON GRAVITY	月球重力
+MOON ROCKETS	月球火箭
+MOON SHOTGUN	月球霰弹枪
+MOON SHOTGUNS	月球霰弹枪
+MORE	更多
+MORE KEYS	更多按键
+MORE: FEWER GPU BUBBLES, A LITTLE MORE LAG	更多: GPU 空泡更少, 延迟稍高
+MOUSE	鼠标
+MOUSE 1	MOUSE 1
+MOUSE 2	MOUSE 2
+MOUSE 3	MOUSE 3
+MOUSE ACCELERATION	鼠标加速
+MOUSE TO PHOTON: IN GAME ONLY	鼠标到光子: 仅游戏中
+MOUSE {} # HZ (AVG)	鼠标 {} # HZ (平均)
+MOVE	移动
+MOVE + WEAPON KEYS	移动 + 武器按键
+MOVE DOWN	向下移动
+MOVE TO SPECTATOR	移至观众
+MOVE UP	向上移动
+MOVEMENT	移动
+MS	MS
+MULTI POINT	多点占领
+MULTI POINT - attackers take the points in order (A, B, C...). Only they capture; a defender on the point holds it. Each point taken adds 90 s and moves both teams' spawns forward. Each team attacks once.	多点占领 - 进攻方按顺序占领据点 (A, B, C...)。只有进攻方能占领; 防守方站在据点上即可守住。每占领一个据点加 90 秒, 双方出生点前移。每队各进攻一次。
+MUTE	静音
+MUTE IN BACKGROUND	后台时静音
+MUTED	已静音
+MUZZLE FLASH	枪口火焰
+MY	我的
+MY EFFECTS	我的特效
+MY FOOTSTEPS	我的脚步声
+MY GLOW	我的发光
+MY NAME: GOLD	我的名字: 金色
+MY NAME: PING	我的名字: PING
+MY QUIP	我的台词
+MY QUIP:	我的台词:
+MY QUIP: A RANDOM ONE	我的台词: 随机
+MY RACE STATS	我的竞速数据
+MY SKY	我的天空
+MY SKY / GLOW: THESE IN PLACE OF EVERY MAP'S;	我的天空 / 发光: 替换所有地图的;
+MY TRACER	我的弹道
+Model	模型
+ModelOverrides holds kMaxModelsPerKind models of a kind	ModelOverrides holds kMaxModelsPerKind models of a kind
+NAME	名字
+NAME COLOR	名字颜色
+NAME COLORS	名字颜色
+NAME TAGS	名字标签
+NATURE	自然
+ND	ND
+NE	NE
+NET GRAPH	网络图表
+NETWORK	网络
+NETWORK READ	网络读取
+NETWORK WARNINGS	网络警告
+NEUTRAL PAYLOAD	中立运载
+NEUTRAL PAYLOAD - either team pushes the cart toward the other team's end. The team whose side it's on when time runs out wins.	中立运载 - 双方都把运载车推向对方终点。时间结束时运载车位于哪方半场, 哪方获胜。
+NEW	新建
+NEW BEST	新纪录
+NEW LEADER	新领先者
+NEW NAME	新名字
+NEW ONES:	新的:
+NEW PERSONAL BEST	新个人最佳
+NEXT	下一个
+NEXT PAGE	下一页
+NEXT WEAP	下一把
+NEXT WEAPON	下一把武器
+NIGHT: QUIET UP, LOUD DOWN; LOW: AS NORMAL	夜间: 小声放大, 大声压低; 低: 同正常
+NIGHT: QUIET UP, LOUD DOWN; SAFE: MORE	夜间: 小声放大, 大声压低; 安全: 更多
+NINJA	忍者
+NO	否
+NO COLOR CODE ON THE CLIPBOARD	剪贴板中没有颜色代码
+NO CROSSHAIR CODE ON THE CLIPBOARD	剪贴板中没有准星代码
+NO FILES IN	没有文件在
+NO FILES IN CONTROLS/ - USE FOLDER	CONTROLS/ 中没有文件 - 使用文件夹
+NO FRAMES MEASURED	未测量到帧
+NO GAMES FOUND	未找到游戏
+NO GAMES MATCH THE FILTERS	没有符合筛选条件的游戏
+NO MAP IS BUILT FOR THIS MODE YET	暂无为此模式打造的地图
+NO MATERIAL NAMED THAT	没有该名称的材质
+NO RACE MAPS	没有竞速地图
+NO RESPONSE - CLICK TO TRY	无响应 - 点击重试
+NO RUNS SAVED YET	尚未保存成绩
+NO RUNS YET - FINISH	尚无成绩 - 完成
+NO SETTINGS ON THE CLIPBOARD (EXPORT MAKES THEM)	剪贴板中没有设置 (导出可生成)
+NO TIMES YET	尚无时间
+NO VSYNC	无垂直同步
+NOBODY RANKED YET (3 GAMES)	尚无排位玩家 (3 场)
+NONE	无
+NONE YET	暂无
+NONE YET - EXPORT ONE, OR COPY A GROUP AND IMPORT	暂无 - 导出一个, 或复制一个分组后导入
+NOOR	NOOR
+NORMAL	正常
+NOT A GROUP - MAKE IT A GROUP FIRST?	不是分组 - 先设为分组?
+NOT BUILT FOR THIS MODE - IT MAY NOT WORK	不适用此模式 - 可能无法正常运行
+NOT CHANGED IN THE UI TEST	UI 测试中不更改
+NOT FOR THIS MODE	不适用此模式
+NOT FOUND: USING THE PRIMARY	未找到: 使用主显示器
+NOT PLAYED YET	尚未玩过
+NOT REPORTED - NOT A RANKED MAP FOR THIS LADDER	未上报 - 不是此天梯的排位地图
+NOT USABLE	不可用
+NOTHING IN THE GAME RECORDS YET: THIS IS	游戏记录中尚无内容: 这是
+NOTHING MATCHES "	没有匹配 "
+NOTHING SELECTED	未选中任何物体
+NOTHING YET (NEEDS SPAWNS)	暂无 (需要出生点)
+NOTICE LINES	通知行数
+NOTICE TIME	通知时长
+NOTICES	通知
+NUM	NUM
+NUMBER TIME	数字时长
+NV DXGI PRESENT	NV DXGI PRESENT
+NV THREADED OFF	NV 线程优化关
+NVIDIA DRIVER PROFILE, FROM THE NEXT START:	NVIDIA 驱动配置, 下次启动生效:
+NW	NW
+Name, mouse sensitivity (or cm/360 with your DPI), field of view, team and enemy colours, volume, hit sounds, the announcer (off / countdown / all calls; male or female voice), player model and sound pack.	名字、鼠标灵敏度 (或结合 DPI 的 cm/360)、视野、队伍和敌人颜色、音量、命中音效、播报员 (关 / 倒计时 / 全部; 男声或女声)、玩家模型和音效包。
+New map	新地图
+OBJ	目标
+OBJECTIVE	目标
+OBJECTIVE BASED	目标类
+OBJECTIVE MARKERS	目标标记
+OBJECTIVES	目标
+OF	/
+OF #	/ #
+OFF	关
+OFF: FROM THE NEXT START	关: 下次启动生效
+OFF: THE BAR IS FULL AT 100 IN EVERY MODE	关: 在所有模式中条在 100 时为满
+OFF: THE VIEW STEPS UP STAIRS AT ONCE	关: 视角上楼梯时立即升高
+OFFICIAL	官方
+OLD MAN	老人
+ON	开
+ON HIT	命中时
+ON JOIN	加入时
+ON JOIN: ASK	加入时: 询问
+ON JOIN: PLAY	加入时: 游玩
+ON JOIN: SPECTATE	加入时: 观战
+ON PLAYERS	玩家身上
+ON THE MAP	在地图上
+ON THE RACE TOTAL (BEST TIME TRIAL)	计入竞速总分 (最佳计时赛)
+ON THE RACE TOTAL (DEFAULT: NO TIME TRIAL)	计入竞速总分 (默认: 无计时赛)
+ON THE RACE TOTAL IT COUNTS AT ITS DEFAULT,	在竞速总分中按默认值计算,
+ON WINDOWS (ALREADY ITS SHORTEST); SAFE: X2	在 WINDOWS 上 (已是最短); 安全: X2
+ON: AT MOST 1 FRAME QUEUED	开: 最多排队 1 帧
+ON: FROM THE NEXT START	开: 下次启动生效
+ON: USES YOUR TEAM COLOR, NOT THE ONE BELOW	开: 使用你的队伍颜色, 而非下方颜色
+ONE	一
+ONE CHAT COLOR	统一聊天颜色
+ONE MINUTE	一分钟
+ONE MINUTE LEFT	剩余一分钟
+ONLY KILLS I'M IN	仅显示与我相关的击杀
+OPACITY	不透明度
+OPACITY %	不透明度 %
+OPEN	打开
+OPEN DATA FOLDER	打开数据文件夹
+OPEN FOLDER	打开文件夹
+OPEN SCREENSHOTS	打开截图
+OPENS THE UDP PORT ON YOUR ROUTER (UPNP)	在路由器上开放 UDP 端口 (UPNP)
+OPPOSITE KEYS: CANCEL	相反按键: 抵消
+OPPOSITE KEYS: FIRST WINS	相反按键: 先按优先
+OPPOSITE KEYS: LAST WINS	相反按键: 后按优先
+OR RESTART: IT'S ASKED FOR AT START	或重启: 启动时会询问
+ORB	光球
+OTHER PLAYERS	其他玩家
+OTHER PLAYERS' TRACERS / BEAMS	其他玩家的弹道 / 光束
+OTHERS' FOOTSTEPS	他人脚步声
+OTTO	OTTO
+OUT	出局
+OUTLINE	描边
+OUTLINE A	描边 A
+OUTLINE OPACITY	描边不透明度
+OUTLINE PX	描边像素
+OUTLINES	描边
+OUTPUT	输出
+OVER 1: LOUDER, TO HEAR THEM COMING	大于 1: 更响, 便于听到来人
+OVERRIDES FOLDER	OVERRIDES 文件夹
+OVERRIDES OF YOURS - ON / OFF AT THE NEXT START	你的替换资源 - 下次启动时开 / 关
+OVERSTRAFE BRAKE	过度侧移制动
+OVERTIME	加时
+OVERTIME - NEXT KILL WINS	加时 - 下一个击杀者胜
+OWN ACCENT	自己的强调色
+OWN ACCENT: NOT THE TEAM COLOR	自己的强调色: 非队伍颜色
+OWN COLOR	自己的颜色
+OWN EFFECTS	自己的特效
+OWN SHADOW	自己的阴影
+OggS	OggS
+OpenGL function missing:	缺少 OpenGL 函数:
+OpenGL function missing: {}	OpenGL function missing: {}
+Output	输出
+PACING WAIT (ULTRA)	节奏等待 (超低)
+PACK	包
+PACKET LOSS PROTECTION	丢包保护
+PACKET LOSS PROTECTION: 2	丢包保护: 2
+PACKET LOSS PROTECTION: 4	丢包保护: 4
+PACKET LOSS PROTECTION: 8	丢包保护: 8
+PAD ACROSS	横向边距
+PAD DOWN	纵向边距
+PAGE 1	第 1 页
+PAGE 2	第 2 页
+PAGE 3	第 3 页
+PAGE 4	第 4 页
+PAGE 5	第 5 页
+PAGE 6	第 6 页
+PAGE 7	第 7 页
+PAGE 8	第 8 页
+PAGE 9	第 9 页
+PAGE DOWN	PAGE DOWN
+PAGE UP	PAGE UP
+PALETTE: THE BOMB'S BLINK AND CHECKPOINTS NOT	调色板: 炸弹闪烁和检查点除外
+PANEL DARKNESS	面板暗度
+PANEL SEAMS; FLAT: NO BAKED LIGHT OR SHADOW	面板接缝; 平面: 无烘焙光影
+PAPER	布
+PASTE CODE	粘贴代码
+PASTE COLORS	粘贴颜色
+PATH PT	路径点
+PATTERN FADE	图案渐隐
+PAUSED	已暂停
+PAYLOAD	运载
+PAYLOAD - attackers push the cart along its track by standing next to it; defenders stop it. Checkpoints along the track add time and stop it rolling back. Each team attacks once.	运载 - 进攻方站在运载车旁推动它沿轨道前进; 防守方阻止。轨道上的检查点会增加时间并防止后退。每队各进攻一次。
+PAYLOAD CONTESTED	运载争夺中
+PAYLOAD PATH POINT	运载路径点
+PER MODE	按模式
+PER WEAPON	按武器
+PERCEPTUAL	感知
+PERF STATS	性能统计
+PERFORMANCE	性能
+PHYSICS	物理
+PIA	PIA
+PICK A FILE TO IMPORT	选择要导入的文件
+PICK A KEY NO ACTION IS BOUND TO	选择一个未绑定动作的按键
+PICK IT IN WINDOWS' GRAPHICS SETTINGS	在 WINDOWS 图形设置中选择
+PICK VSYNC: LATENT SYNC (VIDEO + AUDIO) FIRST;	垂直同步优先选: LATENT SYNC (视频 + 音频);
+PICTURE	图片
+PICTURES: PICTURES/QUARK IN YOUR HOME FOLDER	图片: 主文件夹中的 PICTURES/QUARK
+PING	PING
+PING #	PING #
+PING # MS  LOSS #%	PING # MS  丢包 #%
+PING / LOSS GRAPH AND RATES (APART FROM F3)	PING / 丢包图表与速率 (F3 之外)
+PING: ANY	PING: 任意
+PIRATE	海盗
+PITCH	俯仰
+PLAY	开始游戏
+PLAY IT	播放
+PLAY MODE	游玩模式
+PLAY TIME TRIAL	进行计时赛
+PLAY VS BOTS	人机对战
+PLAYABLE AS:	可玩模式:
+PLAYER	玩家
+PLAYER 2	玩家 2
+PLAYER BASED	玩家类
+PLAYER BRIGHTNESS	玩家亮度
+PLAYER JOINS	玩家加入
+PLAYER MODEL:	玩家模型:
+PLAYER OUTLINE WIDTH	玩家描边宽度
+PLAYER SHADOWS	玩家阴影
+PLAYER SHADOWS (VIDEO + AUDIO); ALWAYS LIT:	玩家阴影 (视频 + 音频); 常亮:
+PLAYERS	玩家
+PLAYERS NEVER DARKENED BY THE MAP'S SHADE	玩家不受地图阴影变暗
+PLAYERS ON YOUR SERVER	你服务器上的玩家
+PLAYS	场次
+PLAYS AS	扮演
+PLAYS AS:	扮演:
+PLAYS THE BENCHMARK DEMO (HAMLET, FREE FOR ALL, FULL OF BOTS) AND MEASURES EVERY FRAME	播放基准测试录像 (HAMLET, 自由混战, 满员机器人) 并测量每一帧
+POINT	据点
+POINT LOST	据点失守
+POINT TAKEN	已占领据点
+POLLS AT	轮询频率
+POSITION	位置
+POSITION must be VEC3	POSITION must be VEC3
+POWER	能量
+POWER - NOBODY DIES: HITS DRAIN THE TEAM POOL	能量 - 无人死亡: 命中消耗队伍血池
+POWER - each team shares one health pool, 2500 for every player on it. Nobody dies: an enemy's hits come off your team's pool. A team whose pool runs out loses; when the 10 minutes are up, the fuller pool wins.	能量 - 每队共享一个血池, 每名队员 2500。无人死亡: 敌人的命中会扣除你队的血池。血池耗尽的队伍落败; 10 分钟结束时血池更多者获胜。
+PRACTICE	练习
+PRACTICE (ALONE WITH BOTS)	练习 (与机器人单独)
+PRACTICE (UNTIMED) -	练习 (不计时) -
+PRACTICE (UNTIMED) - {} TO START THE RACE	练习 (不计时) - {} 以开始竞速
+PRESENT	呈现
+PRESET	预设
+PRESET: COMPETITIVE	预设: 竞技
+PRESET: CUSTOM	预设: 自定义
+PRESET: HIGH	预设: 高
+PRESET: LOW	预设: 低
+PRESET: MEDIUM	预设: 中
+PRESETS SET BOTH COLORS BELOW	预设会同时设定下方两种颜色
+PRESS A KEY, MOUSE BUTTON OR SCROLL - ESC CANCELS, DEL CLEARS	按下按键、鼠标键或滚轮 - ESC 取消, DEL 清除
+PRESS...	请按键...
+PREV WEAP	上一把
+PREV WEAPON	上一把武器
+PREVIOUS	上一个
+PREVIOUS PAGE	上一页
+PREVIOUS:	上一个:
+PRIMARY MONITOR	主显示器
+PRIORITIZE GAME	优先游戏
+PROFILE	配置
+PROFILE:	配置:
+PROFILE: MY CONTROLS	配置: 我的操作
+PROFILE: MY HUD	配置: 我的 HUD
+PROFILES	配置
+PUBLIC	公开
+PUBLIC lists the server on the internet server list (off: friends join with your IP, shown on the host screen). Games on your network show up for everyone on it.	公开会将服务器列入互联网服务器列表 (关闭: 好友通过你的 IP 加入, 显示在主机界面)。局域网内的游戏对网络内所有人可见。
+PULSE	脉冲
+PUSH THE PAYLOAD	推进运载车
+PUSH THE PAYLOAD TO THE ENEMY END	将运载车推到敌方终点
+PUT .QBRAIN FILES IN THE BOTS FOLDER TO PICK ONE	将 .QBRAIN 文件放入 bots 文件夹即可选择
+Pick a server from the list (internet and LAN), or type its address as IP:PORT.	从列表中选择服务器 (互联网和局域网), 或以 IP:端口 格式输入地址。
+Pick an element in the dropdown (health, weapon name, cooldown bars, speed meter, weapon list) and move it, resize it, recolour it or hide it.	在下拉菜单中选择元素 (生命值、武器名称、冷却条、速度表、武器列表), 然后移动、调整大小、改色或隐藏。
+Pick the mode and map, a server name and the max players. The game picks the map built for the mode; any other map works with a warning.	选择模式和地图、服务器名称和最大玩家数。游戏会选择为该模式打造的地图; 其他地图也能用, 但会有提示。
+Player	玩家
+Q - grapple: hold to hook what you're aiming at and pull toward it; release to let go.	Q - 钩索: 按住钩住你瞄准的位置并拉向它; 松开即脱离。
+QK1 - QK8 - ranked arenas for all three ladders (vanilla and laser vampire 1v1, instagib free for all), also duel and tourney.	QK1 - QK8 - 三个天梯的排位竞技场 (原版和激光吸血 1v1, 一击必杀自由混战), 也可用于决斗和锦标赛。
+QUAKE	QUAKE
+QUARK	QUARK
+QUARK 1.17 - 1.18	QUARK 1.17 - 1.18
+QUARK CLASSIC	QUARK 经典
+QUARK V	QUARK V
+QUARTERFINALS	四分之一决赛
+QUEUE	排队
+QUEUE FILLED: FLASH TASKBAR	排队成功: 闪烁任务栏
+QUEUE FOR ALL	全部排队
+QUEUE:	排队:
+QUEUE: COULDN'T REACH THE SERVER	排队: 无法连接服务器
+QUEUED FOR	正在排队
+QUEUED, NO CRACKLE ON A BUSY PC	排队缓冲, 电脑繁忙时不爆音
+QUEUES - SHARED WITH DISCORD	排队 - 与 DISCORD 共享
+QUEUES NEED A RANKED KEY (quark.key) - COULDN'T MAKE ONE	排队需要排位密钥 (quark.key) - 无法生成
+QUICK DASH	快速冲刺
+QUIP	台词
+QUIP CAPTIONS	台词字幕
+QUIPS	台词
+QUIPS FOR YOUR ANNOUNCER VOICE	播报员语音的台词
+QUIPS OFF	台词关
+QUIPS ON	台词开
+QUIPS VOLUME	台词音量
+QUIRKY	古怪
+QUIT	退出
+QUIT, DISCONNECT AND STOP HOSTING	退出、断开连接并停止主持
+R ALT	R ALT
+R CTRL	R CTRL
+R SHIFT	R SHIFT
+R: ROTATE 90 (SHIFT: ABOUT X, CTRL: ABOUT Z)    F: MIRROR LEFT / RIGHT (SHIFT: FRONT / BACK, CTRL: UPSIDE DOWN)	R: 旋转 90 (SHIFT: 绕 X, CTRL: 绕 Z)    F: 左右镜像 (SHIFT: 前后, CTRL: 上下翻转)
+RACE	竞速
+RACE + FLYING	竞速 + 飞行
+RACE - the course's checkpoints in order. It starts as untimed practice; vote start (F4) to race. TIME TRIAL (main menu, or PLAY TIME TRIAL on the leaderboard) is the ranked race on each race map; the leaderboard's RACE TOTAL adds your best on every one, a map you haven't run counting at its default time.	竞速 - 按顺序通过赛道检查点。开始时为不计时练习; 投票开始 (F4) 即可比赛。计时赛 (主菜单, 或排行榜上的进行计时赛) 是每张竞速地图的排位赛; 排行榜的竞速总分将你在每张地图的最佳成绩相加, 未跑过的地图按默认时间计算。
+RACE GHOST	竞速幽灵
+RACE MAP	竞速地图
+RACE RESET	竞速重置
+RACE TOTAL	竞速总分
+RADAR	雷达
+RADAR RANGE	雷达范围
+RADAR: TEAMMATES AND OBJECTIVES, NEVER ENEMIES	雷达: 队友和目标, 从不显示敌人
+RADIUS	半径
+RAILYARD / DAM / EXPRESS / MONORAIL - neutral payload (Railyard: payload too).   WAR / CONVOY - multi point.	RAILYARD / DAM / EXPRESS / MONORAIL - 中立运载 (Railyard 也可用于运载)。   WAR / CONVOY - 多点占领。
+RAMPAGE	暴走
+RANKED	排位
+RANKED - CHOOSE A LADDER	排位 - 选择天梯
+RANKED - NOT RATED	排位 - 不计分
+RANKED 1V1	排位 1V1
+RANKED ALWAYS USES THE DEFAULT CONTROLS	排位始终使用默认操作
+RANKED ALWAYS USES THE DEFAULT HUD	排位始终使用默认 HUD
+RANKED BEHIND A FORWARDED PORT OR IN A CONTAINER: ranked ids are signed for the address players dial. If they reach the server at an address it can't see itself (the router forwards another port to it, or it runs in a container), the host screen says so; start a dedicated server with --own-addr host:port (that address) so their ranked ids work.	端口转发后或容器中的排位: 排位 ID 按玩家连接的地址签名。如果玩家连接的地址服务器自己看不到 (路由器把另一个端口转发给它, 或它运行在容器中), 主机界面会提示; 用 --own-addr host:port (该地址) 启动专用服务器, 他们的排位 ID 即可生效。
+RANKED FFA	排位 FFA
+RANKED GAMES HAVE NO BOTS	排位游戏没有机器人
+RANKED INSTAGIB	排位一击必杀
+RANKED LASER VAMPIRE	排位激光吸血
+RANKED LEADERBOARD	排位排行榜
+RANKED MAPS ONLY - EACH LADDER HAS ITS OWN RATING	仅排位地图 - 每个天梯有独立评分
+RANKED MATCH OVER - REPORTING THE RESULT	排位比赛结束 - 正在上报结果
+RANKED OFF	排位关
+RANKED ON -	排位开 -
+RANKED QUEUES	排位队列
+RANKED VANILLA	排位原版
+RANKED: DEFAULT MODEL, HUD, CONTROLS AND 10 MS INTERP FOR FAIRNESS	排位: 为公平起见使用默认模型、HUD、操作和 10 MS 插值
+RANKED: NO HEALTH BARS	排位: 无生命条
+RATE	速率
+RATING	评分
+RAW INPUT	原始输入
+RD	RD
+READ INPUT	读取输入
+READY	准备
+REALTIME	实时
+REC	REC
+RECENT	最近
+RECENT RUNS	最近成绩
+RECHARGING	充能中
+RECONNECT	重新连接
+RECORD	录制
+RECORD DEMO	录制录像
+RECORDED WITH	录制于
+RECORDING RATE: 62.5 HZ	录制频率: 62.5 HZ
+RECORDING RATE: FULL	录制频率: 完整
+RED	红色
+RED-GREEN (DEUTAN)	红绿色盲 (DEUTAN)
+RED-GREEN (PROTAN)	红绿色盲 (PROTAN)
+REDO	重做
+REDUCE FLASHING	减少闪烁
+REFRESH	刷新
+REFRESH LIST	刷新列表
+REFRESH RATE	刷新率
+REFRESH RATE:	刷新率:
+REGEN	回血
+REGENERATION	生命恢复
+RELOAD MAP	重新加载地图
+REMEMBER LAST TAB	记住上次标签页
+REMEMBER MY QUEUES	记住我的队列
+RENAME	重命名
+RENDER SCALE	渲染比例
+RESET ALL	全部重置
+RESET ALL KEYS	重置所有按键
+RESET CROSSHAIR	重置准星
+RESET ELEMENT	重置元素
+RESET MAP COLOR	重置地图颜色
+RESET MAPS	重置地图
+RESET MOVEMENT TO STANDARD	移动重置为标准
+RESET STYLE	重置样式
+RESET WHOLE HUD	重置整个 HUD
+RESOLUTION	分辨率
+RESPAWN IN #	# 秒后复活
+RESTART (R)	重来 (R)
+RESTART MAP	重新开始地图
+RESTART MATCH	重新开始比赛
+RESTART THE MATCH	重新开始比赛
+RESTORE AUTOSAVE	恢复自动保存
+RESUME	继续
+RESUME (ESC)	继续 (ESC)
+RETICLE COLOR	准心颜色
+RETICLE WIDTH	准心宽度
+REVERT	还原
+RIFF	RIFF
+RIFLE	步枪
+RIFLE ZOOM FOV	步枪开镜 FOV
+RIFLE, ONE SHOT A CLICK. SCORE: KILLS X 100 X ACCURACY	步枪, 每次点击一发。得分: 击杀 X 100 X 命中率
+RIFLE, SNIPER, LASER, SHOTGUN AND KNIFE	步枪、狙击、激光、霰弹枪和刀
+RIFLES ONLY	仅步枪
+RIGHT	右
+RIGHT ARROW (NEXT PAGE)	右方向键 (下一页)
+RIGHT MOUSE + MOVE: LOOK    WASD: FLY    SPACE / C: UP / DOWN    SHIFT: FAST    WHEEL: SPEED	鼠标右键 + 移动: 环视    WASD: 飞行    空格 / C: 上 / 下    SHIFT: 加速    滚轮: 速度
+RIGHT-CLICK A SERVER: FAVORITE (LISTED FIRST)	右键服务器: 收藏 (置顶)
+RIGHT-CLICK: RESET	右键: 重置
+RISING TOWARD	朝向上升
+RISING TOWARD: +X	朝向上升: +X
+RISING TOWARD: +Z	朝向上升: +Z
+RISING TOWARD: -X	朝向上升: -X
+RISING TOWARD: -Z	朝向上升: -Z
+RMB	RMB
+ROBOT	机器人
+ROCK	石头
+ROCKET	火箭
+ROCKET (splash; rocket jump off the floor for 10#amage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 10 hp, once a second; alt throws it: +30 hp and reset cooldowns for a teammate).	火箭 (溅射; 对地火箭跳造成 10# 伤害)、步枪 (全自动; 辅助开火开镜)、激光 (光束; 辅助开火牵引)、霰弹枪 (辅助: 跳弹)、狙击 (辅助开火开镜)、粘弹 (辅助开火引爆)、弩 (爆头)、气泡 (辅助: 气泡流)、刀 (辅助: 投掷)、针筒 (开火为自己回 10 hp, 每秒一次; 辅助开火投掷: 为队友 +30 hp 并重置冷却)。
+ROCKET JUMPERS	火箭跳跃者
+ROCKET RIDE	火箭骑乘
+ROCKET, LASER AND KNIFE	火箭、激光和刀
+ROCKETS AND STICKIES - NO SELF DAMAGE	火箭和粘弹 - 无自伤
+ROCKETS ONLY	仅火箭
+ROLL	翻滚
+ROOM	房间
+ROPE COLOR	绳索颜色
+ROTATE	旋转
+ROTATE X	旋转 X
+ROTATE Y	旋转 Y
+ROTATE Z	旋转 Z
+ROTATION STEP	旋转步长
+ROTATION STEP: Q / E ON A SPAWN; THE FLY	旋转步长: 出生点上按 Q / E; 飞行
+ROUND	回合
+ROUND # - STARTS IN #	第 # 回合 - # 秒后开始
+ROUND CLOCK	回合计时
+ROUND CLOCK: TIME LEFT	回合计时: 剩余时间
+ROUND CLOCK: TIME PLAYED	回合计时: 已用时间
+ROUND LOST	回合失败
+ROUND MODES	回合制模式
+ROUND OF 16	16 强
+ROUND OF 32	32 强
+ROUND OVER	回合结束
+ROUND START	回合开始
+ROUND WINS -	回合胜利数 -
+ROUND WON	回合胜利
+ROUNDS	回合
+ROWS #-# OF # (WHEEL)	第 #-# 行 / 共 # (滚轮)
+ROWS #-# OF # - WHEEL TO SCROLL	第 #-# 行 / 共 # - 滚轮滚动
+RPS BY MOUSE	鼠标石头剪刀布
+RPS BY MOUSE: CLICK A TIEBREAK CARD TO THROW IT	鼠标石头剪刀布: 点击决胜卡牌出拳
+RUBIK	RUBIK
+RULES	规则
+RUN	跑
+RUN - DON'T BE THE TAGGER WHEN TIME RUNS OUT	逃跑 - 时间结束时别当抓人者
+RUN AGAIN	再跑一次
+RUN BENCHMARK	运行基准测试
+RUN NAME	成绩名称
+RUN SPEED	跑速
+RUNS	成绩
+Ranked games use the default model, HUD and controls and 10 ms interpolation, so everyone plays the same game.	排位游戏使用默认模型、HUD 和操作以及 10 ms 插值, 让所有人玩同样的游戏。
+SAFE OK / ERROR	安全 OK / 错误
+SAFE: OK BLUE, ERRORS ORANGE; IT: TAG / HIDE'S	安全: OK 蓝色, 错误橙色; 鬼: 抓人 / 躲猫猫的
+SAME	相同
+SAME AS FPS LIMIT	同 FPS 上限
+SAME DPI: THE SAME TURN PER INCH OF MOUSE	相同 DPI: 每英寸鼠标移动转动相同
+SATURATION	饱和度
+SATURATION 0: BLACK AND WHITE	饱和度 0: 黑白
+SAVE	保存
+SAVE + DONE	保存 + 完成
+SAVE A COPY	保存副本
+SAVE A COPY AS	副本另存为
+SAVE AS	另存为
+SAVE AS NEW MAP	另存为新地图
+SAVE POS	保存位置
+SAVE POSITION	保存位置
+SAVE YOUR COPY OF	保存你的副本
+SAVED	已保存
+SAVED FOR VOICE CHAT LATER	已保存, 留待语音聊天使用
+SAVES TO MAPS/<NAME>.QMAP - YOUR OWN COPY, THE HOST KEEPS THEIRS.	保存到 MAPS/<NAME>.QMAP - 你自己的副本, 房主保留他们的。
+SAY (TEAM):	说 (队伍):
+SAY IT	说出来
+SAY:	说:
+SCALAR	标量
+SCALE: X2 TAKES TWICE THE SPEED TO FILL	比例: X2 需要两倍速度才能填满
+SCANOUT TO THE CROSSHAIR (EST)	扫描输出到准星 (估计)
+SCANOUT TO THE CROSSHAIR (EST)  000000 US	扫描输出到准星 (估计)  000000 US
+SCI-FI / DECOR	科幻 / 装饰
+SCISSORS	剪刀
+SCOPE OVERLAY	开镜覆盖层
+SCOPE SIZE	瞄准镜大小
+SCORE	得分
+SCORE BOX	比分框
+SCORE LIMIT	得分上限
+SCOREBOARD	计分板
+SCOREBOARD: HOLD	计分板: 按住
+SCOREBOARD: TOGGLE	计分板: 切换
+SCORES	得分
+SCREEN	屏幕
+SCREENSHOT	截图
+SCREENSHOT FOLDER	截图文件夹
+SCREENSHOT FORMAT	截图格式
+SCREENSHOT SAVED (NO HUD):	截图已保存 (无 HUD):
+SCREENSHOT SAVED:	截图已保存:
+SCREENSHOTS	截图
+SCROLLBAR	滚动条
+SE	SE
+SEARCH	搜索
+SEARCH MATERIALS	搜索材质
+SEE SOUNDS	声音可视化
+SEE-THROUGH	透视
+SEEKER	寻找者
+SEEKING -	寻找中 -
+SELECTED:	已选中:
+SELF DAMAGE	自伤
+SEMIFINALS	半决赛
+SENSITIVITY	灵敏度
+SENSITIVITY FROM ANOTHER GAME	从其他游戏换算灵敏度
+SERVER	服务器
+SERVER LOG	服务器日志
+SERVER LOG: EXTREME (EVERY TICK)	服务器日志: 极详细 (每 TICK)
+SERVER LOG: OFF	服务器日志: 关
+SERVER LOG: SIMPLE	服务器日志: 简单
+SERVER LOG: VERBOSE (125 HZ)	服务器日志: 详细 (125 HZ)
+SERVER NAME	服务器名称
+SERVERS (LAN + INTERNET)	服务器 (局域网 + 互联网)
+SETTINGS	设置
+SETTINGS COPIED: PASTE THEM ANYWHERE	设置已复制: 可粘贴到任意处
+SETTINGS IMPORTED	设置已导入
+SETTINGS, MAPS, DEMOS, SCREENSHOTS, HUDS	设置、地图、录像、截图、HUD
+SEWER - free for all.   RIVERSIDE / FAIRGROUND / ROOFTOPS - tag.   MUSEUM / CRUISESHIP - hide and seek.	SEWER - 自由混战。   RIVERSIDE / FAIRGROUND / ROOFTOPS - 抓人。   MUSEUM / CRUISESHIP - 躲猫猫。
+SHADOW DISTANCE	阴影距离
+SHADOW DISTANCE: 16 M	阴影距离: 16 米
+SHADOW DISTANCE: 32 M	阴影距离: 32 米
+SHADOW DISTANCE: 64 M	阴影距离: 64 米
+SHADOW EDGE	阴影边缘
+SHADOW EDGE: HARD	阴影边缘: 硬
+SHADOW EDGE: SOFT	阴影边缘: 软
+SHADOW EDGE: SOFTER	阴影边缘: 更软
+SHADOW QUALITY	阴影质量
+SHADOW QUALITY: HIGH	阴影质量: 高
+SHADOW QUALITY: LOW	阴影质量: 低
+SHADOW QUALITY: MEDIUM	阴影质量: 中
+SHADOWS	阴影
+SHAPE	形状
+SHARPEN	锐化
+SHIFT + ARROWS: GROW THAT SIDE    CTRL + ARROWS: SHRINK IT    M: MATERIAL / TEAM    N: SHAPE    K: COAT THE SIDE YOU LOOK AT	SHIFT + 方向键: 扩展该侧    CTRL + 方向键: 缩小    M: 材质 / 队伍    N: 形状    K: 为你看向的面上材质
+SHIFT - dash: a burst of speed in the direction you're moving, tilted by where you look. You hold 2 dashes, usable 0.6 s apart (from the end of the last one). A spent dash recharges for 1.2 s from the end of the dash that spent it; after that, landing gives it back (a bunny hop gives one).	SHIFT - 冲刺: 向移动方向爆发加速, 随视角倾斜。你有 2 次冲刺, 间隔 0.6 秒可用 (从上一次结束起算)。用掉的冲刺从该次冲刺结束起充能 1.2 秒; 之后落地即可恢复 (一次连跳恢复一次)。
+SHIFT+ARROW (NUDGE 10)	SHIFT+方向键 (微调 10)
+SHOT	射击
+SHOTGUN	霰弹枪
+SHOTGUNS IN LOW GRAVITY	低重力霰弹枪
+SHOTGUNS ONLY	仅霰弹枪
+SHOTS	射击数
+SHOTS, LASER AND ROPE IN OWN COLOR	射击、激光和绳索使用自己的颜色
+SHOW	显示
+SHOW COLUMN	显示列
+SHOW DB	显示 DB
+SHOW FPS	显示 FPS
+SHOW I'M TYPING	显示我正在输入
+SHOW LINE	显示行
+SHOW PING	显示 PING
+SHOW WEAPON	显示武器
+SHOWN	已显示
+SHOWN WITH VERBOSE INFO ON. DRAG TO MOVE, CORNER / WHEEL TO SIZE, ARROWS NUDGE, ALT: NO SNAP	开启详细信息时显示。拖动移动, 角落 / 滚轮调整大小, 方向键微调, ALT: 不吸附
+SHUFFLE TEAMS	随机分队
+SHUFFLE THE TEAMS (THE MATCH RESTARTS)	随机分队 (比赛重新开始)
+SIMPLE	简单
+SIMPLE SKY	简单天空
+SITE	炸弹点
+SIZE	大小
+SIZE (CORNER)	大小 (角落)
+SIZE: SYSTEM	大小: 系统
+SIZE: X1	大小: X1
+SIZE: X1.5	大小: X1.5
+SIZE: X2	大小: X2
+SIZING	尺寸
+SIZING: EXACT PIXELS	尺寸: 精确像素
+SIZING: SCALE WITH RESOLUTION	尺寸: 随分辨率缩放
+SKIP IT	跳过
+SKIP WARMUP	跳过热身
+SKY	天空
+SLOT	栏位
+SLOT 1	栏位 1
+SLOT 2	栏位 2
+SLOT 3	栏位 3
+SMOOTH EDGES	平滑边缘
+SMOOTH STRENGTH	平滑强度
+SMOOTHING (INTERP): ADAPTIVE	平滑 (插值): 自适应
+SMOOTHING (INTERP): CUSTOM	平滑 (插值): 自定义
+SMOOTHING (INTERP): OFF	平滑 (插值): 关
+SMOOTHING DELAY (MS)	平滑延迟 (MS)
+SNAPS: 125	快照: 125
+SNAPS: 250	快照: 250
+SNAPS: 500	快照: 500
+SNAPS: 62.5	快照: 62.5
+SNAPSHOT RATE	快照频率
+SNIPER	狙击枪
+SNIPER SCOPE	狙击镜
+SNIPER ZOOM FOV	狙击开镜 FOV
+SNIPERS - ANY HIT KILLS	狙击 - 一击必杀
+SNIPERS ONLY	仅狙击
+SOCD	SOCD
+SORT	排序
+SORT BY	排序方式
+SORT BY: DEATHS	排序方式: 死亡
+SORT BY: KILLS	排序方式: 击杀
+SORT BY: NAME	排序方式: 名字
+SORT BY: PING	排序方式: PING
+SORT BY: SCORE	排序方式: 得分
+SORT: BIGGEST FIRST	排序: 最大优先
+SORT: NAME	排序: 名称
+SORT: NEWEST FIRST	排序: 最新优先
+SORT: OLDEST FIRST	排序: 最旧优先
+SOUND	声音
+SOUND GROUPS	声音分组
+SOUND OCCLUSION	声音遮挡
+SOUND ON	声音开
+SOUND PACK: DEFAULT	音效包: 默认
+SOUND PACK: HEAVY METAL	音效包: 重金属
+SOUND PACK: MAGICAL	音效包: 魔法
+SOUND PACK: MOUTH	音效包: 嘴巴
+SOUND PACK: RETRO	音效包: 复古
+SOUND SWITCHES TO IT AT ONCE	声音立即切换
+SOUNDS	声音
+SOUNDS BEHIND WALLS MUFFLED: YOU HEAR LESS	墙后声音闷化: 听到的更少
+SPACE	SPACE
+SPARE TIME BEFORE THE BLANK; A LATE FRAME	消隐前的余量时间; 迟到帧
+SPAWN	出生点
+SPEC NEXT	观战下一个
+SPEC PREV	观战上一个
+SPECTATE	观战
+SPECTATING	观战中
+SPECTATOR	观众
+SPECTATOR FOV	观众 FOV
+SPECTATOR HUD	观众 HUD
+SPECTATOR HUD: FULL	观众 HUD: 完整
+SPECTATOR HUD: MINIMAL	观众 HUD: 精简
+SPEED	速度
+SPEED CAPTION	速度标题
+SPEED METER	速度表
+SPEED UNITS	速度单位
+SPEED UNITS: KM/H	速度单位: KM/H
+SPEED UNITS: M/S	速度单位: M/S
+SPEED UNITS: UPS (QUAKE)	速度单位: UPS (QUAKE)
+SPEED, GRID AND LAST LIGHT ARE KEPT	速度、网格和上次灯光会保留
+SPEED: CARRY	速度: 携带
+SPEED: FAST	速度: 快
+SPEED: HITSCAN	速度: 即时命中
+SPEED: SLOW	速度: 慢
+SPEED: WALK	速度: 行走
+SPLIT	分段
+SPLIT TIME	分段时间
+SPLITS VS	分段对比
+SPLITS: AHEAD / BEHIND	分段: 领先 / 落后
+SPLITS: PALETTE	分段: 调色板
+SPREAD CIRCLE	扩散圆
+SPREE	连杀
+SPY	间谍
+SSE4.2	SSE4.2
+ST	ST
+STACKING	叠加
+STACKING: A NUMBER A HIT	叠加: 每次命中一个数字
+STACKING: QUICK HITS ADD UP	叠加: 快速命中累加
+STACKING: RUNNING TOTAL	叠加: 累计总数
+STAIR SMOOTHING	楼梯平滑
+STAIRS	楼梯
+STALEMATE - HEALTH DRAINING	僵持 - 生命流失中
+STALEMATE - HEALTH DRAINS IN	僵持 - 生命将在以下时间后流失
+STALEMATE WARNING	僵持警告
+STALLED #S	停滞 #S
+STANDARD	标准
+STANDARD RULES	标准规则
+STANDARD: SNIPER	标准: 狙击
+START	开始
+START THE MATCH	开始比赛
+STARTING IN #	# 秒后开始
+STAY HIDDEN -	保持隐藏 -
+STDEV	标准差
+STEP	步
+STEP HEIGHT	台阶高度
+STEPS	台阶
+STEPS, SHOTS, BOOMS... AS WORDS ROUND THE	脚步、射击、爆炸... 以文字环绕
+STEREO WIDTH	立体声宽度
+STICKIES	粘弹
+STICKIES AT MAX	粘弹已满
+STICKIES ON YOU	你身上的粘弹
+STICKIES ONLY	仅粘弹
+STICKY	粘弹
+STICKY COUNTER	粘弹计数
+STICKY ON YOU	粘弹在你身上
+STILL HIDDEN	仍未被发现
+STONE	石头
+STOP DEMO	停止录像
+STOP EDITING AND PLAY THE MAP	停止编辑并游玩地图
+STOP HOSTING	停止主持
+STOP RECORDING	停止录制
+STOP THE PAYLOAD	阻止运载车
+STOPPING SPEED	停止速度
+STRAFE BOOST (AT SPEED)	侧移加速 (高速时)
+STREAK	连杀
+STREAK CALLOUTS	连杀播报
+STREAK CALLOUTS: ALL	连杀播报: 全部
+STREAK CALLOUTS: MINE	连杀播报: 仅自己
+STREAK CALLOUTS: OFF	连杀播报: 关
+STREAMER MODE	主播模式
+STREAMER: ADDRESSES, CODES, OTHERS' NAMES HIDDEN	主播: 隐藏地址、代码和他人名字
+STRETCHED (OR BARRED BY YOUR GPU'S SCALING)	拉伸 (或被你的 GPU 缩放加黑边)
+STYLE	样式
+STYLE (THEME.CFG)	样式 (THEME.CFG)
+STYLE: BAR	样式: 条
+STYLE: CIRCLE	样式: 圆圈
+STYLE: COLOR-GRADED BAR	样式: 渐变色条
+STYLE: CROSS	样式: 十字
+STYLE: CROSS + DOT	样式: 十字 + 点
+STYLE: DOT	样式: 点
+STYLE: ICON (OPACITY)	样式: 图标 (不透明度)
+STYLE: ICON + BAR	样式: 图标 + 条
+STYLE: NUMBER	样式: 数字
+STYLE: T	样式: T
+SUBTRACT	减去
+SUPER	SUPER
+SUPER DASH	超级冲刺
+SUPER DASH BOOST	超级冲刺加速
+SUPER DASH JUMP	超级冲刺跳
+SUPER DASH SPEED (MAX)	超级冲刺速度 (最大)
+SURE?	确定?
+SURE? QUIT	确定? 退出
+SURF	滑翔
+SURFACES	表面
+SW	SW
+SWAP	交换
+SWAP FIRE	交换开火
+SYRINGE	针筒
+SYSTEM DEFAULT	系统默认
+SYSTEM LINE COLOR	系统消息颜色
+SYSTEM MESSAGES	系统消息
+SYSTEM MESSAGES: ALL	系统消息: 全部
+SYSTEM MESSAGES: IMPORTANT	系统消息: 重要
+SYSTEM MESSAGES: OFF	系统消息: 关
+SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)	系统: 系统箭头光标 (颜色: 仅限我们的)
+Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).	设置 > 操作 可以导出你的绑定并导入他人的 (复制 / 粘贴文本)。
+Style, length, thickness, gap, colour and outline, with a live preview.	样式、长度、粗细、间隙、颜色和描边, 带实时预览。
+Switching weapons with fire held doesn't fire the new one: let go and press again.	按住开火时切换武器不会让新武器开火: 松开再按。
+TAB	TAB
+TAB (NEXT ELEMENT)	TAB (下一个元素)
+TAB - scoreboard.   ENTER - chat.   F1 / F2 - vote yes / no.   F5 - vote to start the match.	TAB - 计分板。   ENTER - 聊天。   F1 / F2 - 投票赞成 / 反对。   F5 - 投票开始比赛。
+TAB completes   UP/DOWN history   CTRL+V pastes   CTRL+C copies the line (empty line or CTRL+SHIFT+C: the log)	TAB 补全   上/下 历史   CTRL+V 粘贴   CTRL+C 复制该行 (空行或 CTRL+SHIFT+C: 日志)
+TAG	抓人
+TAG - whoever is the TAGGER when the timer runs out is eliminated. Last one standing wins.	抓人 - 计时结束时谁是抓人者谁就被淘汰。最后存活者获胜。
+TAG COLOR	标签颜色
+TAG OPACITY	标签不透明度
+TAG SIZE	标签大小
+TAGGER	抓人者
+TAGS: CUSTOM	标签: 自定义
+TAGS: TEAM	标签: 队伍
+TAGS: WHITE	标签: 白色
+TAKE NO DAMAGE	不受伤害
+TAKES ONE; HIDE HUD: THE 3D VIEW ONLY;	占用一个; 隐藏 HUD: 仅 3D 画面;
+TAKES THE SOUND DEVICE FOR LOWER AUDIO LAG	独占声音设备以降低音频延迟
+TANKS	坦克
+TEAM	队伍
+TEAM (M)	队伍 (M)
+TEAM A	A 队
+TEAM A AND B IN THESE, NOT YOURS / THE ENEMY'S	这里用 A 队和 B 队, 而非你方 / 敌方
+TEAM A ATTACKS - TEAM B DEFENDS	A 队进攻 - B 队防守
+TEAM A delivered the payload	A 队送达了运载车
+TEAM B	B 队
+TEAM B ATTACKS - TEAM A DEFENDS	B 队进攻 - A 队防守
+TEAM B delivered the payload	B 队送达了运载车
+TEAM CHAT	队伍聊天
+TEAM CHAT ONLY	仅队伍聊天
+TEAM COLOR	队伍颜色
+TEAM COLOR IS ALSO THE MENU ACCENT	队伍颜色也作为菜单强调色
+TEAM COLORS	队伍颜色
+TEAM COLORS:	队伍颜色:
+TEAM COLORS: CUSTOM	队伍颜色: 自定义
+TEAM MODEL	队伍模型
+TEAM MODEL:	队伍模型:
+TEAM MODEL: THEIR OWN	队伍模型: 他们自己的
+TEAM OUTLINE	队伍描边
+TEAM OUTLINE:	队伍描边:
+TEAM PANEL	队伍面板
+TEAM POOL # / #  -  ENEMY # / #	队伍血池 # / #  -  敌方 # / #
+TEAM WIDTH	队伍宽度
+TEAM, OUTLINE, CROSSHAIR, TRACER AND ROPE COLORS	队伍、描边、准星、弹道和绳索颜色
+TEAM: ANY TEAM	队伍: 任意队伍
+TEAM: RACE	队伍: 竞速
+TEAM: TEAM A	队伍: A 队
+TEAM: TEAM B	队伍: B 队
+TEAMMATE BOTS	友方机器人
+TEAMMATES ALIVE	存活队友
+TEAMMATES' NAMES OVER THEIR HEADS	队友名字显示在头顶
+TEAMS	队伍
+TEAMS, A BALL, TWO GOALS - MOST GOALS IN 10 MINUTES	两队、一个球、两个球门 - 10 分钟内进球最多
+TEAMS: 1V1	队伍: 1V1
+TEAMS: 2V2	队伍: 2V2
+TEAR LINE OFFSET (US)	撕裂线偏移 (US)
+TEARS NOW OR WAITS A REFRESH	立即撕裂或等待一次刷新
+TENTHS	十分之一秒
+TENTHS: THE LAST 10 S AS 0:09.4	十分之一秒: 最后 10 秒显示为 0:09.4
+TEST	测试
+TEST BOTS	测试机器人
+TEST MODE	测试模式
+TEST MODE:	测试模式:
+TEST MODE: THE MAP'S	测试模式: 地图的
+TEST plays the map right away; BAKE LIGHT previews the real lighting.	测试 会立即游玩地图; 烘焙光照 可预览真实光照。
+TESTING BUILD - RANKED NOT RATED (PLAYED, NEVER COUNTED)	测试版 - 排位不计分 (可玩, 不计入)
+TEXT	文本
+TEXT AFTER THE LAST RULE	最后一条规则后的文本
+TEXT ALIGN	文本对齐
+TEXT BRIGHTNESS	文本亮度
+TEXT OUTLINE	文本描边
+TEXT SIZE %	文本大小 %
+TEXT: CENTRE	文本: 居中
+TEXT: LEFT	文本: 左
+TEXT: RIGHT	文本: 右
+TF2 BUILD	TF2 BUILD
+TF2 SECONDARY	TF2 副武器
+TH	TH
+THE 3D SCENE (THE HUD STAYS AS IT IS);	3D 场景 (HUD 保持不变);
+THE BOMB IS CARRIED AGAIN	炸弹再次被携带
+THE BOMB IS DOWN	炸弹已落地
+THE CHOSEN AUDIO OUTPUT IS GONE: USING THE SYSTEM DEFAULT	所选音频输出已断开: 使用系统默认
+THE DARK EDGE ROUND ALL TEXT, MENUS TOO	所有文字周围的暗边, 菜单也是
+THE DEFAULT	默认
+THE FONT COCAINE DIESEL USES	COCAINE DIESEL 使用的字体
+THE FONT OF THE MENUS AND THE HUD	菜单和 HUD 的字体
+THE GUN'S KICK ON A SHOT (0: NONE)	射击时的枪械后坐 (0: 无)
+THE HAZE OVER DISTANT WALLS (0: NONE)	远处墙面的雾霭 (0: 无)
+THE LANGUAGE OF THE MENUS AND THE HUD	菜单和 HUD 的语言
+THE MAP ISN'T BUILT FOR THIS MODE: IT MAY NOT WORK	此地图不适用此模式: 可能无法正常运行
+THE MESSAGES UNDER THE SCORE BOX	比分框下方的消息
+THE OLD MAPS (BEFORE 1.19.6) IN THE MAP LISTS. NEVER RANKED	地图列表中的旧地图 (1.19.6 之前)。永不排位
+THE ORIGINAL PIXEL FONT	原版像素字体
+THE OTHER CONTROL SCRIPTS STAY OFF IN RANKED	其他操作脚本在排位中保持关闭
+THE QUEUES YOU'RE IN, JOINED AGAIN NEXT START	你所在的队列, 下次启动时重新加入
+THE SAVED DEVICE IS GONE: THE DEFAULT PLAYS	保存的设备已断开: 使用默认设备
+THE SAVED MICROPHONE IS GONE: THE DEFAULT	保存的麦克风已断开: 使用默认
+THE SAVED MONITOR IS GONE: THE PRIMARY	保存的显示器已断开: 使用主显示器
+THE SCROLL WHEEL PASSES OVER SKIPPED	滚轮跳过已跳过项
+THE SHARE OF THE MODE'S MAX HEALTH	占模式最大生命值的比例
+THE TASKBAR BUTTON FLASHES	任务栏按钮闪烁
+THE WINDOW'S SIZE AND PLACE ARE KEPT	保留窗口大小和位置
+THEIRS	他们的
+THEME.CFG LINE	THEME.CFG 行
+THEN REFRESH	然后刷新
+THESE ONLY APPLY TO IT	这些仅对其生效
+THEY DROPPED THE BOMB	他们掉落了炸弹
+THEY HAVE THE BOMB AGAIN	他们再次拿到了炸弹
+THEY'RE CHOOSING -	他们正在选择 -
+THICKNESS	粗细
+THIRD PERSON	第三人称
+THIRTY SECONDS	三十秒
+THIS LIFE:	本条命:
+THIS RUN	本次
+THREADED OPTIMIZATION OFF	线程优化关
+THREADED OPTIMIZATION OFF; PRESENT VIA DXGI	线程优化关; 通过 DXGI 呈现
+THREADED OPTIMIZATION: WINDOWS ONLY	线程优化: 仅限 WINDOWS
+THREE	三
+THROW	投掷
+TICK / SNAP	TICK / 快照
+TICK RATE	TICK 频率
+TICK: 1000 HZ	TICK: 1000 HZ
+TICK: 125 HZ	TICK: 125 HZ
+TICK: 250 HZ	TICK: 250 HZ
+TICK: 500 HZ	TICK: 500 HZ
+TICKS + PREDICTION	TICK + 预测
+TIEBREAK - ROCK PAPER SCISSORS	决胜 - 石头剪刀布
+TIERS OFF: ONE HITSOUND FOR EVERY HIT; DUCKING:	分级关: 所有命中一种音效; 闪避:
+TILE	瓷砖
+TIME	时间
+TIME / SCORE / ROUNDS: 0 = THE MODE'S DEFAULT	时间 / 得分 / 回合: 0 = 模式默认
+TIME LEFT	剩余时间
+TIME LIMIT (S)	时间限制 (秒)
+TIME TRIAL	计时赛
+TIME TRIAL -	计时赛 -
+TIME TRIAL RUNS	计时赛成绩
+TIME WARNINGS	时间提醒
+TIME WARNINGS ON SCREEN	屏幕时间提醒
+TIME WARNINGS: + COUNTDOWN	时间提醒: + 倒计时
+TIME WARNINGS: 60 + 30 S	时间提醒: 60 + 30 秒
+TIME WARNINGS: OFF	时间提醒: 关
+TIMESTAMPS	时间戳
+TINY PLAYERS	迷你玩家
+TITLE	标题
+TO SHOW IT AGAIN	以再次显示
+TO SPECTATOR (UNTIL THE NEXT MAP)	移至观众 (直到下一张地图)
+TO START THE RACE	以开始竞速
+TO VOTE START	以投票开始
+TOGGLE CHAT	切换聊天
+TOGGLE: PRESS THE SCOREBOARD KEY TO SHOW / HIDE	切换: 按计分板键显示 / 隐藏
+TOGGLE: PRESS TO HOOK, PRESS AGAIN TO LET GO	切换: 按下钩住, 再按松开
+TOGGLE: PRESS USE TO PLANT / DEFUSE, AGAIN TO STOP	切换: 按使用键安放 / 拆除, 再按停止
+TONE CURVE	色调曲线
+TONE CURVE OFF: FLAT, LINEAR COLOUR; CLEAN: NO	色调曲线关: 平坦线性色彩; 纯净: 无
+TOP RIGHT, WITHOUT A WIDGET (F3 HAS MORE)	右上角, 无组件 (F3 显示更多)
+TOTAL K / D	总 K / D
+TOURNEY	锦标赛
+TOURNEY - a single-elimination bracket of 1v1s; everyone else spectates the match in progress.	锦标赛 - 1v1 单败淘汰赛; 其他人观看正在进行的比赛。
+TOURNEY BRACKET	锦标赛对阵表
+TOURNEY MAPS	锦标赛地图
+TOURNEY MAPS (PICK ANY, THEY ROTATE)	锦标赛地图 (任选, 轮换)
+TOURNEY MAPS:	锦标赛地图:
+TOURNEY RULES	锦标赛规则
+TOURNEY RULESETS (PICK ANY, THEY ROTATE)	锦标赛规则集 (任选, 轮换)
+TOURNEY RULESETS:	锦标赛规则集:
+TOURNEY TAB	锦标赛标签页
+TOURNEY TAB: THE BRACKET	锦标赛标签页: 对阵表
+TOURNEY TAB: THE SCOREBOARD	锦标赛标签页: 计分板
+TRACER COLOR	弹道颜色
+TRACERS	弹道
+TRACERS + LASER START WHERE THE GUN IS	弹道 + 激光从枪口处发出
+TRACERS + TRAILS	弹道 + 尾迹
+TRACERS: CLASSIC	弹道: 经典
+TRACERS: CUSTOM	弹道: 自定义
+TRACERS: TEAM	弹道: 队伍
+TRAIL OPACITY	尾迹不透明度
+TRAILS	尾迹
+TRAILS: FULL	尾迹: 完整
+TRAILS: OFF	尾迹: 关
+TRAILS: SHORT	尾迹: 短
+TRAILS: THE STREAKS BEHIND ROCKETS, BOLTS,	尾迹: 火箭、弩箭等后方的拖尾,
+TRAINER MENU	训练菜单
+TRIAL MAP	计时赛地图
+TT	TT
+TWO	二
+TYPE TO SEARCH: A NAME OR WHAT IT DOES (CTRL+F)	输入搜索: 名称或功能 (CTRL+F)
+TYPING	输入中
+TYPING SOUNDS	打字音效
+The server listens on UDP port 27500 (change it under UDP PORT). Quark asks your router to forward it automatically (UPnP); if friends can't connect, forward that UDP port on your router by hand.	服务器监听 UDP 端口 27500 (可在 UDP 端口 中更改)。QUARK 会请求路由器自动转发 (UPnP); 如果好友无法连接, 请在路由器上手动转发该 UDP 端口。
+UARK	UARK
+UDP	UDP
+UDP PORT	UDP 端口
+UHD	UHD
+UI FONT	界面字体
+ULTRA	超低
+ULTRA SAFETY	超低安全余量
+ULTRA: 0 QUEUED + LATE INPUT SAMPLING	超低: 0 帧排队 + 延后采样输入
+UNBAKE	取消烘焙
+UNBOUND	未绑定
+UNCHANGED	未更改
+UNDO	撤销
+UNGROUP	取消编组
+UNKNOWN	未知
+UNKNOWN SELECTOR '	未知选择器 '
+UNLIMITED	无限制
+UNPLAYED MAPS COUNT AT THEIR DEFAULT TIME	未跑过的地图按默认时间计算
+UNSTOPPABLE	无人能挡
+UP	上
+UPLOAD CAP (MBIT/S)	上传上限 (MBIT/S)
+US	US
+USE	使用
+USE #	使用 #
+USE IT	使用它
+USE MY OVERRIDES	使用我的替换资源
+USE: HOLD	使用: 按住
+USE: TOGGLE	使用: 切换
+USED BY: EVERY MODE	用于: 所有模式
+USED BY: ONLY	用于: 仅
+USED WHEN SMOOTHING IS CUSTOM	平滑为自定义时使用
+USERPROFILE	USERPROFILE
+USING YOUR	使用你的
+VALUE	值
+VALUE:	值:
+VAMPIRE	吸血
+VAMPIRE LASER	吸血激光
+VANILLA	原版
+VEC2	VEC2
+VEC3	VEC3
+VEC4	VEC4
+VERBOSE INFO	详细信息
+VERBOSE INFO LINES	详细信息行
+VERDANA BOLD	VERDANA BOLD
+VERSION	版本
+VERTICAL KEYS	垂直按键
+VERTICAL SENSITIVITY	垂直灵敏度
+VERTICAL: ONE KEY	垂直: 单键
+VERTICAL: TWO KEYS	垂直: 双键
+VIDEO	视频
+VIDEO + AUDIO	视频 + 音频
+VIDEO 2	视频 2
+VIDEO 3	视频 3
+VIDEO 4	视频 4
+VIDEO 5	视频 5
+VIDEO 6	视频 6
+VIDEO 7	视频 7
+VIDEO 8	视频 8
+VIDEO 9	视频 9
+VIDEO: DEVICES	视频: 设备
+VIEW	视角
+VISUALIZE SOUNDS	声音可视化
+VOICE	语音
+VOICE:	语音:
+VOL DOWN	音量减
+VOL UP	音量加
+VOLUME	音量
+VOTE	投票
+VOTE CALLED	已发起投票
+VOTE NO	投反对
+VOTE START	投票开始
+VOTE YES	投赞成
+VOTE:	投票:
+VOTE: GAMEMODE	投票: 游戏模式
+VOTE: KICK A PLAYER	投票: 踢出玩家
+VOTE: MODIFIERS	投票: 修改器
+VOTE: MOVE TO SPECTATOR (UNTIL THE NEXT MAP)	投票: 移至观众 (直到下一张地图)
+VOTE: PLAY IT	投票: 玩这个
+VOTE: {}   YES #  NO #  OF #   F1 YES / F2 NO   #s	投票: {}   是 #  否 #  共 #   F1 是 / F2 否   #秒
+VOTED MODIFIERS ON	已投票开启修改器
+VOTES	投票
+VS	VS
+VS - one life each per round; last team standing wins the round. If nobody makes progress for 30 s, health drains. First to 5 rounds.	VS - 每回合每人一条命; 最后存活的队伍赢得回合。若 30 秒无人取得进展, 生命开始流失。先赢 5 回合者胜。
+VS: BEST RUN	对比: 最佳成绩
+VS: BEST SEGMENTS	对比: 最佳分段
+VS: LAST RUN	对比: 上次成绩
+VSYNC	垂直同步
+VSYNC / LOW LATENCY	垂直同步 / 低延迟
+VSYNC ON, FPS CAPPED 3 UNDER THE REFRESH	垂直同步开, FPS 限制为刷新率减 3
+VSYNC ON, FPS CAPPED AT	垂直同步开, FPS 限制为
+VSYNC: ADAPTIVE	垂直同步: 自适应
+VSYNC: HELD FOR ITS BLANK	垂直同步: 等待消隐
+VSYNC: LATENT SYNC	垂直同步: LATENT SYNC
+VSYNC: NEXT VBLANK (EST)	垂直同步: 下一 VBLANK (估计)
+VSYNC: OFF	垂直同步: 关
+VSYNC: ON	垂直同步: 开
+W A S D - move.   SPACE - jump (hold it as you land to bounce: bunny hop).	W A S D - 移动。   空格 - 跳跃 (落地时按住可弹跳: 连跳)。
+WAD2	WAD2
+WAITING FOR THE LATE READ (AVG)	等待延后读取 (平均)
+WAITING FOR THE NEXT READ (AVG)	等待下次读取 (平均)
+WALLBANG	穿透墙
+WALLBANG TINT	穿透墙着色
+WARMING UP	热身中
+WARMUP -	热身 -
+WARMUP - {} TO VOTE START	热身 - {} 以投票开始
+WARNING BEEP	警告提示音
+WARNING: DON'T TOUCH THIS UNLESS YOU KNOW WHAT YOU'RE DOING	警告: 除非你清楚自己在做什么, 否则不要修改
+WARNINGS	警告
+WAS ON	曾开启
+WASTELAND	荒原
+WAVE	挥手
+WEAPON	武器
+WEAPON CAPTION	武器标题
+WEAPON KICK	武器后坐
+WEAPON LIST	武器列表
+WEAPON LIST: AFTER A SWITCH	武器列表: 切换后
+WEAPON LIST: ALWAYS	武器列表: 始终
+WEAPON MODEL	武器模型
+WEAPON MODEL OPACITY	武器模型不透明度
+WEAPON MODEL and GRAPPLE MODEL (the first two entries): move the gun / the grapple launcher left / right / up / down, change its size and depth, tilt it (pitch / yaw / roll), give it its own accent colour, or hide it. Your shots come out of the gun and your rope out of the launcher wherever you put them.	武器模型和钩索模型 (前两项): 左 / 右 / 上 / 下移动枪械 / 钩索发射器, 调整大小和深度, 倾斜 (俯仰 / 偏航 / 翻滚), 设定独立强调色, 或隐藏。无论放在哪里, 子弹都从枪口射出, 绳索从发射器射出。
+WEAPON NAME	武器名称
+WEAPON SCROLL	武器滚动
+WEAPON SENSITIVITY	武器灵敏度
+WEAPON:	武器:
+WEAPONS	武器
+WEAPONS (THEIR NUMBER KEYS STILL WORK)	武器 (数字键仍可用)
+WHAT THE BOTS PLAY: .QBRAIN FILES IN THE BOTS FOLDER	机器人使用的 AI: bots 文件夹中的 .QBRAIN 文件
+WHAT THE VOTE CHANGES	投票更改的内容
+WHEEL DN	WHEEL DN
+WHEEL UP	WHEEL UP
+WHEN ONE FILLS, EVERYONE IN IT IS TOLD (HERE AND ON DISCORD)	队列满员时会通知其中所有人 (此处及 DISCORD)
+WHEN UNFOCUSED	失去焦点时
+WHEN UNFOCUSED, FLASH ON	失去焦点时闪烁
+WHERE THE HITS YOU TAKE COME FROM	你受到攻击的方向
+WHILE TYPING, CHAT IS ALWAYS FULLY SHOWN	输入时聊天始终完整显示
+WHITE	白色
+WHITE / YELLOW	白 / 黄
+WHOLE HUD	整个 HUD
+WIDGET EDITOR	组件编辑器
+WIDGETS	组件
+WIDGETS FROM CLIPBOARD	从剪贴板导入组件
+WIDTH; CUSTOM (GLTF) PLAYER MODELS HAVE NO OUTLINE	宽度; 自定义 (GLTF) 玩家模型无描边
+WINDIR	WINDIR
+WINDOW	窗口
+WINDOW + INPUT	窗口 + 输入
+WINDOW SIZE	窗口大小
+WINDOW SIZE:	窗口大小:
+WINDOWED	窗口化
+WINDOWS, WITH PRIORITIZE GAME ON;	WINDOWS, 开启优先游戏时;
+WINNER STAYS	胜者留场
+WINNER STAYS - 1v1 rounds on one ruleset while everyone else waits in line. Each round's winner stays; the loser goes to the back of the line and the next in line plays the winner. Every round you win counts: first to 10 wins.	胜者留场 - 在同一规则下进行 1v1 回合, 其他人排队等候。每回合胜者留场; 败者排到队尾, 下一位挑战胜者。每赢一回合都计分: 先赢 10 回合者胜。
+WINNER STAYS - FIRST TO	胜者留场 - 先达到
+WINNERS CROWN	胜者王冠
+WINS	胜场
+WINS THE MATCH	赢得比赛
+WIZARD	巫师
+WORD FILTER	屏蔽词过滤
+WORK SANS	WORK SANS
+WORLD	世界
+WORLD + HUD + SHADOW MAP BUILD	世界 + HUD + 阴影贴图构建
+WORLD OUTLINE	世界描边
+WORLD OUTLINE WIDTH	世界描边宽度
+WORST #MS  PING #  3D #X#	最差 #MS  PING #  3D #X#
+WRAP AROUND	循环
+X MSAA	X MSAA
+X OFFSET	X 偏移
+X SENSITIVITY WHILE THIS WEAPON IS HELD	持有此武器时的灵敏度倍数
+X1.00: THE SAME FEEL AS UNZOOMED	X1.00: 与未开镜手感相同
+XYZ	XYZ
+Y OFFSET	Y 偏移
+YAW	偏航
+YELLOW	黄色
+YES	是
+YES #  NO #  OF #   F1 YES / F2 NO   #s	赞成 #  反对 #  共 #   F1 赞成 / F2 反对   #s
+YET REACHED IN YOUR ENEMY COLOUR	尚未到达的显示为敌方颜色
+YOU DIED	你阵亡了
+YOU HAVE THE BOMB - PLANT AT A SITE	你拿到了炸弹 - 去炸弹点安放
+YOU HEALED	你治疗了
+YOU LOSE	你输了
+YOU LOST THE LEAD	你失去了领先
+YOU TOOK THE LEAD	你取得领先
+YOU WIN	你赢了
+YOU'RE	你是
+YOU'RE SEEKING - FACE THE WALL AND COUNT	你是寻找者 - 面对墙壁倒数
+YOU'RE THE TAGGER - TAG SOMEONE BEFORE TIME RUNS OUT	你是抓人者 - 在时间结束前抓到别人
+YOU:	你:
+YOU: NO TIME TRIALS YET	你: 尚无计时赛成绩
+YOUR BOTS: ALL STANDARD	你的机器人: 全部标准
+YOUR BOTS: MIXED MODELS	你的机器人: 混合模型
+YOUR GOAL	我方球门
+YOUR KILLS	你的击杀
+YOUR MATCH:  # SHOTS  # HITS  #% ACCURACY  # DAMAGE  BEST STREAK #	你的比赛:  # 次射击  # 次命中  #% 命中率  # 伤害  最佳连杀 #
+YOUR NAME (CHAT AND SCOREBOARD)	你的名字 (聊天和计分板)
+YOUR OWN MODEL FILE: NO PREVIEW HERE	你自己的模型文件: 此处无预览
+YOUR OWN: PUT .TTF / .OTF FILES IN MODS/FONTS,	你自己的: 将 .TTF / .OTF 文件放入 MODS/FONTS,
+YOUR QUEUE FOR	你的队列:
+YOUR SHOTS	你的射击
+YOUR SHOTS: ALWAYS	你的射击: 始终
+YOUR SHOTS: NEVER	你的射击: 从不
+YOUR SHOTS: WITH WEAPON MODEL	你的射击: 随武器模型
+YOUR TEAM IS PUSHING	我方正在推进
+ZERO-G FLIGHT, LASERS - HEAL 100% TO 50% OVER 30 S, NO KNOCKBACK	零重力飞行, 激光 - 30 秒内从 100% 治疗降至 50%, 无击退
+ZOMBIE	僵尸
+ZONE OPACITY	区域不透明度
+ZONE PULSE	区域脉冲
+ZOOM	缩放
+ZOOM SENSITIVITY	开镜灵敏度
+a caption for every announcer line	为每条播报语音显示字幕
+a colour per material from ice on (a large one: its base's), then the see-through, breakable and feature ones	从冰开始每种材质一个颜色 (大号: 用其基础材质的), 然后是透视、可破坏和特殊材质
+a damaged PAK	损坏的 PAK
+a damaged WAD	损坏的 WAD
+a damaged built-in atlas	损坏的内置图集
+a label per material (the cycles below index it by material)	每种材质一个标签 (下方循环按材质索引)
+a look per material from kMatBlocks on (the large ones: their base's), then the see-through, breakable and feature ones	从 kMatBlocks 开始每种材质一个外观 (大号: 用其基础材质的), 然后是透视、可破坏和特殊材质
+a map keeps at least one box outside groups - add another box first	地图需保留至少一个不在分组中的方块 - 请先再添加一个方块
+a map needs at least one box	地图至少需要一个方块
+a map needs at least one mode	地图至少需要一种模式
+a map needs at least one spawn	地图至少需要一个出生点
+a picker tab for every material (kMatTabs)	每种材质一个选择器标签页 (kMatTabs)
+a ranked match is being played - no votes until it's over	正在进行排位比赛 - 结束前不能投票
+a ranked match is being played - teams stay as they are until it's over	正在进行排位比赛 - 结束前队伍保持不变
+a ranked match is being played: '	正在进行排位比赛: '
+a reference palette per prop	每个道具一个参考调色板
+a spectate vote needs at least	观战投票至少需要
+a tag match is being played - you can join the next one	正在进行抓人比赛 - 你可以加入下一场
+a theme style per HUD element	每个 HUD 元素一个主题样式
+a tourney is running - you can join the next one	正在进行锦标赛 - 你可以加入下一场
+a vote is already in progress	已有投票正在进行
+accessor out of range	accessor 越界
+add must be 3 numbers from 0 to 16	add 必须是 3 个 0 到 16 之间的数字
+advances (walkover)	晋级 (对手弃权)
+after a session	会话结束后
+after swap (low latency wait)	交换后 (低延迟等待)
+ahead of you (winner stays)	在你前面 (胜者留场)
+alpha must be over 0 and at most 1	alpha 必须大于 0 且不超过 1
+an update is ready - the server restarts after this match	更新已就绪 - 服务器将在本场比赛后重启
+announce:	公告:
+announce: {}	announce: {}
+another program holds the engine at its period	另一个程序将引擎锁定在其周期
+apex*	apex*
+apex-*	apex-*
+as #	作为 #
+attackers eliminated	进攻方已被消灭
+audio mix	音频混合
+audio: WASAPI	音频: WASAPI
+audio: no WASAPI output, using WinMM	音频: 无 WASAPI 输出, 使用 WinMM
+audio: no output device - running without sound	音频: 无输出设备 - 无声运行
+autosave failed:	自动保存失败:
+autosave skipped, the edited map wouldn't load:	已跳过自动保存, 编辑后的地图无法加载:
+away # "	离开 # "
+away # "{}": {}	away # "{}": {}
+away:	离开:
+b del	b del
+b ins # # # # # # # #	b ins # # # # # # # #
+bad accessor	无效 accessor
+bad buffer	无效 buffer
+bad bufferView	无效 bufferView
+bad data: URI	无效 data: URI
+bad indices	无效 indices
+bad mesh	无效 mesh
+bad modifier '	无效修改器 '
+bad node	无效 node
+bad request	无效请求
+bench:	bench:
+big noodle*	big noodle*
+bignoodletitling*	bignoodletitling*
+bignoodletoo*	bignoodletoo*
+bomb defused	炸弹已拆除
+bomb exploded	炸弹已爆炸
+bomb planted	炸弹已安放
+bot brain	bot brain
+bot brain {}: {}	bot brain {}: {}
+bot cmd	bot cmd
+bot removed	已移除机器人
+bot think	bot think
+bot: nice shot	bot: 好枪法
+bots played	机器人场次
+box model:	方块模型:
+boxes into	个方块合并为
+boxes into one	个方块合并为一个
+buffer without data	buffer 没有数据
+built in # ms	构建耗时 # ms
+built-in maps reset to the original version	内置地图已重置为原始版本
+busy #%, late #%	繁忙 #%, 迟到 #%
+c must be 3 numbers within 64 m	c 必须是 3 个 64 米以内的数字
+called a vote	发起了投票
+callvote bots off	callvote bots off
+callvote bots on	callvote bots on
+callvote botskill	callvote botskill
+callvote edit off	callvote edit off
+callvote edit on	callvote edit on
+callvote extend	callvote extend
+callvote kick	callvote kick
+callvote map	callvote map
+callvote ranked off	callvote ranked off
+callvote ranked on	callvote ranked on
+callvote restart	callvote restart
+callvote shuffle	callvote shuffle
+callvote spec	callvote spec
+callvote start	callvote start
+callvote tmaps	callvote tmaps
+callvote tmodes	callvote tmodes
+can't	无法
+can't do that	无法执行
+can't go ranked: no ranked map for that ladder installed	无法进入排位: 未安装该天梯的排位地图
+can't read	无法读取
+can't save:	无法保存:
+can't turn that	无法开启/关闭
+can't vote for that list	无法为该列表投票
+can't vote:	无法投票:
+capture of every point in	占领所有据点用时
+chat # "	聊天 # "
+chat # "{}": {}	chat # "{}": {}
+chat: slow down	聊天: 请慢一点
+checking if UDP	正在检查 UDP
+clean surfaces	干净表面
+closed by the load governor	已被负载调控器关闭
+color must be 3 numbers from 0 to 16	color 必须是 3 个 0 到 16 之间的数字
+connect from	连接自
+connected from	已连接, 来自
+connection to server lost	与服务器的连接已断开
+could not bind UDP port	无法绑定 UDP 端口
+could not create an OpenGL 3.3 window - update your graphics driver	无法创建 OpenGL 3.3 窗口 - 请更新显卡驱动
+could not host:	无法主持:
+could not open	无法打开
+could not open log file	无法打开日志文件
+could not save the map	无法保存地图
+could not write to the groups folder	无法写入分组文件夹
+couldn't check reachability:	无法检查可达性:
+custom mode rules too big to send with the weapon set: sent without it	自定义模式规则太大, 无法与武器配置一起发送: 已单独发送
+daily limit	每日上限
+data:	data:
+defenders eliminated	防守方已被消灭
+delivered the payload in	送达运载车用时
+delivery in	送达用时
+demo finished	录像播放完毕
+demo:	录像:
+draw - the payload is in the middle	平局 - 运载车在中间
+dropped:	已掉线:
+dyn verts	dyn verts
+dynamic pass	dynamic pass
+edcam # # #	edcam # # #
+edit #	edit #
+edit mode on	编辑模式开
+edit mode on {}	edit mode on {}
+edit refused	编辑被拒绝
+edit refused:	编辑被拒绝:
+editmode off	editmode off
+editmode on	editmode on
+editmode saveas	editmode saveas
+edits dropped	修改已丢弃
+else if	else if
+ember: gg	ember: gg
+enough players again - the match goes on	玩家人数再次足够 - 比赛继续
+every HUD element in the dropdown	下拉菜单中的所有 HUD 元素
+every point taken	每个已占领的据点
+everyone left - back to warmup	所有人都离开了 - 回到热身
+exec: a file name in your data folder (no folders)	exec: 数据文件夹中的文件名 (不含文件夹)
+exec: no	exec: 没有
+extras.quark is not an object	extras.quark is not an object
+fell behind during the round:	本回合中落后:
+files:controls	files:controls
+files:huds	files:huds
+finding a server to test with	正在寻找用于测试的服务器
+finished the course (practice) - vote start to race	完成赛道 (练习) - 投票开始以比赛
+flush2D	flush2D
+font {}: {}	font {}: {}
+font:	字体:
+font: {} built in # ms	font: {} built in # ms
+found everyone	找到了所有人
+g del	g del
+g part # # # # # # # #	g part # # # # # # # #
+glass shards	玻璃碎片
+glfwInit failed	glfwInit failed
+go to the back of the line	排到队尾
+goal:	进球:
+goal: {} (#-#)	goal: {} (#-#)
+goes to the back of the line;	排到队尾;
+h must be 3 numbers, each over 0 and at most 32 m	h 必须是 3 个大于 0 且不超过 32 米的数字
+has no ranked id	没有排位 ID
+hdmi:	hdmi:
+high at	高于
+human cmds	human cmds
+if players reach it there, start the server with --own-addr	如果玩家通过那里连接, 请用 --own-addr 启动服务器
+in your data folder	在你的数据文件夹中
+index out of range	索引越界
+init failed:	初始化失败:
+init failed: {}	init failed: {}
+input + prediction ticks	输入 + 预测 tick
+into others, removed	并入其他方块, 已移除
+is a built-in map - nothing changed to save	是内置地图 - 没有可保存的修改
+is a built-in map - pick a new name for yours	是内置地图 - 请为你的地图取个新名字
+is a built-in map: changes last until the map changes (save a copy to keep them)	是内置地图: 修改持续到换图 (保存副本以保留)
+is a built-in map: pick a new name	是内置地图: 请取个新名字
+is a legacy map (never ranked): ranked plays	是旧版地图 (永不排位): 排位游玩
+is a legacy map (this server doesn't list the old maps)	是旧版地图 (此服务器不列出旧地图)
+is already spectating	已在观战
+is it	是鬼
+is it - run!	是鬼 - 快跑!
+is not reachable from the internet - forward UDP	无法从互联网访问 - 请转发 UDP
+is now	现在是
+is reachable from the internet - friends can join	可从互联网访问 - 好友可以加入
+is spectating	正在观战
+isn't a ranked ruleset	不是排位规则
+isn't built for	不适用于
+isn't in this custom mode's map pool	不在此自定义模式的地图池中
+joined team A	加入了 A 队
+joined team B	加入了 B 队
+joined the game	加入了游戏
+kick whom? a name or an id (status lists them)	踢谁? 名字或 ID (status 会列出)
+kicked by a vote	被投票踢出
+language:	language:
+language: {} (# glyphs) in # ms	language: {} (# glyphs) in # ms
+last rate change:	上次速率变更:
+late ticks in the last window: waiting for a second before stepping down	上个窗口有迟到 tick: 等待一秒后再降低
+leaderboard:	排行榜:
+left the match	离开了比赛
+left the ranked match - it counts as a loss	离开了排位比赛 - 判负
+link:	绑定:
+linux:	linux:
+listening on UDP	正在监听 UDP
+live (testing server: not rated)	在线 (测试服务器: 不计分)
+load governor:	负载调控器:
+look at a side of the selected box	看向所选方块的一个面
+lost connection	连接丢失
+low latency: wait for the GPU	低延迟: 等待 GPU
+mac:	mac:
+main*	main*
+map editing	地图编辑
+map editing -	地图编辑 -
+map editing - everyone can build; changes last until the map changes	地图编辑 - 所有人都能建造; 修改持续到换图
+map editing - everyone can build; the host saves	地图编辑 - 所有人都能建造; 由房主保存
+map not found	未找到地图
+map saved as	地图已保存为
+map test	地图测试
+map {} mode {}	map {} mode {}
+maps:	地图:
+maps: {}	maps: {}
+match draw	比赛平局
+match end:	比赛结束:
+match end: {}	match end: {}
+match over	比赛结束
+match over - the other players left	比赛结束 - 其他玩家已离开
+match restarted	比赛已重新开始
+match start: mode logic	比赛开始: 模式逻辑
+match start: mode logic {}, interpreted: {}	match start: mode logic {}, interpreted: {}
+match starting	比赛即将开始
+mirrored upside down	上下镜像
+missing buffer file	缺少 buffer 文件
+mode logic	模式逻辑
+mode logic:	模式逻辑:
+model name	模型名称
+mul must be 3 numbers from 0 to 16	mul 必须是 3 个 0 到 16 之间的数字
+must beat it	必须超过它
+my mode	我的模式
+net poll	net poll
+no IAudioClient3, before Windows 10	无 IAudioClient3, 早于 Windows 10
+no bots on a ranked server	排位服务器不能有机器人
+no boxes	没有方块
+no hiders left	没有剩余的躲藏者
+no key called '	没有名为 ' 的按键
+no map editing on a ranked server (vote ranked off first)	排位服务器不能编辑地图 (请先投票关闭排位)
+no mix format	无混音格式
+no mode can run on this map yet	暂时没有模式能在此地图运行
+no modifiers on a ranked or time trial server	排位或计时赛服务器不能使用修改器
+no player "	没有玩家 "
+no points	没有据点
+no response	无响应
+no small gaps to close	没有需要闭合的小缝隙
+no triangles	没有三角形
+nobody finished	无人完成
+nobody is out - throw again	无人出局 - 再出一次
+nobody left	没人了
+not a 16 x 16 character sheet	不是 16 x 16 字符表
+not a WAV, OGG, FLAC or MP3 file	不是 WAV、OGG、FLAC 或 MP3 文件
+not a file name	不是文件名
+not a font file	不是字体文件
+not a quark group file	不是 quark 分组文件
+not a queue	不是队列
+not a readable picture	不是可读取的图片
+not a team mode	不是团队模式
+not allowed	不允许
+not an object	不是对象
+not enough players	玩家不足
+not enough players - back to warmup	玩家不足 - 回到热身
+not enough players - the match ends in	玩家不足 - 比赛将结束于
+not enough players for a tourney	玩家不足, 无法举行锦标赛
+not in this build	此版本中没有
+not rated:	不计分:
+not the ladder's mode	不是该天梯的模式
+not valid JSON	不是有效的 JSON
+not valid glTF JSON	不是有效的 glTF JSON
+not version 2	不是版本 2
+not while editing the map	编辑地图时不可用
+nothing to fix	没有需要修复的
+nothing to redo	没有可重做的
+nothing to split there	那里没有可拆分的
+nothing to undo	没有可撤销的
+now playing	正在游玩
+odd sample rate	异常的采样率
+of #	/ #
+off for this match	本场比赛关闭
+on your router to this PC	在你的路由器上转发到这台电脑
+one folder per sound kit	每个音效包一个文件夹
+one name per sound, in SoundId order	每个声音一个名称, 按 SoundId 顺序
+only a timed round can be extended	只有计时回合才能延长
+over 64 MB	超过 64 MB
+override {} ({}): # triangles (at most #)	override {} ({}): # triangles (at most #)
+override {} ({}): {}	override {} ({}): {}
+override {}: {}	override {}: {}
+override:	替换:
+override: {} ({})	override: {} ({})
+override: {} ({}, a box model: # boxes)	override: {} ({}, a box model: # boxes)
+overtime!	加时!
+p# pos # # # vel # # # yaw # pitch # hp # wpn #	p# pos # # # vel # # # yaw # pitch # hp # wpn #
+p# pos # # # vel # # # yaw # pitch # hp # wpn # btn # flags # dash # cd # hook #	p# pos # # # vel # # # yaw # pitch # hp # wpn # btn # flags # dash # cd # hook #
+p0's ROCK beats SCISSORS - 1-0	p0 的石头胜过剪刀 - 1-0
+p1, p3 out (SCISSORS) - best of 3 between the last two	p1, p3 出局 (剪刀) - 最后两人三局两胜
+packet from	数据包来自
+paused: no humans (bots wait)	已暂停: 没有真人玩家 (机器人等待)
+payload delivered	运载车已送达
+pick a new name for your copy	为你的副本取个新名字
+ping up on # of # players	# / # 名玩家 ping 升高
+placed the group from the clipboard	已从剪贴板放置分组
+point # taken by team #	据点 # 被 # 队占领
+poll events	poll events
+pool empty	血池耗尽
+practice god	practice god
+practice loadpos	practice loadpos
+practice passive	practice passive
+practice reset	practice reset
+practice savepos	practice savepos
+practice setpos # # # # #	practice setpos # # # # #
+practice: all off	练习: 全部关闭
+practice: bots fire again	练习: 机器人恢复开火
+practice: bots won't fire	练习: 机器人不会开火
+practice: no position saved yet	练习: 尚未保存位置
+practice: only when you host and no one else has joined	练习: 仅限你当房主且无人加入时
+practice: position saved	练习: 位置已保存
+practice: you take damage again	练习: 你恢复受到伤害
+practice: you take no damage	练习: 你不受伤害
+press ESC again to leave the session	再按一次 ESC 离开会话
+prioritize: Windows refused the GPU scheduling class (NTSTATUS 0x#)	优先: WINDOWS 拒绝了 GPU 调度类 (NTSTATUS 0x#)
+proj # type # owner # pos # # # vel # # #	proj # type # owner # pos # # # vel # # #
+proj # type # owner # pos # # # vel # # #{}	proj # type # owner # pos # # # vel # # #{}
+properties background, color, opacity, border, radius, padding, margin, gap, font-size,	属性 background, color, opacity, border, radius, padding, margin, gap, font-size,
+puts every built-in map back to its original version and removes retired ones (your own maps are kept) - click again	将所有内置地图恢复为原始版本并移除已退役地图 (你自己的地图保留) - 再次点击
+quark server	quark server
+quark server log, level	quark server log, level
+quark server log, level {}, version {}	quark server log, level {}, version {}
+quark-colors:	quark-colors:
+quark-crosshair:	quark-crosshair:
+quark-group 1	quark-group 1
+quark-settings:	quark-settings:
+race run rejected (implausible splits)	竞速成绩被拒绝 (分段时间不合理)
+racereset full	racereset full
+racerun:	racerun:
+ranked (not rated: testing server)	排位 (不计分: 测试服务器)
+ranked (not rated: testing server) {}	ranked (not rated: testing server) {}
+ranked counts 16 players at most	排位最多计入 16 名玩家
+ranked ladders: vanilla, vampire, instagib	排位天梯: 原版、吸血、一击必杀
+ranked leaver # "	排位逃跑者 # "
+ranked leaver # "{}"{}	ranked leaver # "{}"{}
+ranked match	排位比赛
+ranked match {} live (testing server: not rated)	ranked match {} live (testing server: not rated)
+ranked off	排位关
+ranked off - matches aren't rated	排位关 - 比赛不计分
+ranked on	排位开
+ranked on -	排位开 -
+ranked only runs on the ranked maps for its ladder	排位只在其天梯的排位地图上运行
+ranked server: no	排位服务器: 无
+ranked ticket	排位凭证
+ranked ticket {} players {}	ranked ticket {} players {}
+ranked: a LAN-only server can't open match tickets - this match won't be rated	排位: 仅限局域网的服务器无法开具比赛凭证 - 本场比赛不计分
+ranked: not every player signed the match ticket - this match won't be rated	排位: 并非所有玩家都签署了比赛凭证 - 本场比赛不计分
+ranked: only vanilla, laser vampire or instagib	排位: 仅限原版、激光吸血或一击必杀
+ranked: vanilla or laser vampire 1v1, or instagib free for all, on that ladder's ranked maps	排位: 原版或激光吸血 1v1, 或一击必杀自由混战, 在该天梯的排位地图上
+ranking server reply dropped:	排位服务器回复丢失:
+rate limited	请求过于频繁
+reachability:	可达性:
+reached checkpoint	到达检查点
+reconnected from	重新连接, 来自
+renderer warmup	渲染器预热
+reopened by the load governor	已被负载调控器重新开启
+reopened by the load governor at	已被负载调控器重新开启, 于
+restarting for an update	正在重启以更新
+restarting for an update - rejoin in a few seconds	正在重启以更新 - 几秒后重新加入
+restored the autosave of	已恢复自动保存:
+rock paper scissors:	石头剪刀布:
+rotated about X	绕 X 旋转
+rotated about Y	绕 Y 旋转
+rotated about Z	绕 Z 旋转
+round # end:	第 # 回合结束:
+round # end: {}	round # end: {}
+round # end: {} (score #-#)	round # end: {} (score #-#)
+round # modifier	第 # 回合修改器
+round # modifier {}	round # modifier {}
+round draw	回合平局
+rps tiebreak:	石头剪刀布决胜:
+rps tiebreak: {}	rps tiebreak: {}
+run not sent to the leaderboard: a checkpoint was reached faster than the course allows	成绩未提交到排行榜: 到达检查点的速度超出赛道允许范围
+run not sent to the leaderboard: your game didn't sign the time trial ticket	成绩未提交到排行榜: 你的游戏未签署计时赛凭证
+runs nothing	不运行任何内容
+runs:	成绩:
+s unless someone joins	秒后, 除非有人加入
+s, on to point	秒, 前往据点
+screenshot written to	截图已写入
+screenshot written to {}	screenshot written to {}
+see-through pass	see-through pass
+select a box, look at one of its sides and press K	选择一个方块, 看向它的一个面并按 K
+select a group to export	选择要导出的分组
+select boxes first	请先选择方块
+select the cutter first, then shift+click the boxes to cut	先选择切割体, 再 shift+点击要切割的方块
+select two or more boxes (shift+click) to combine	选择两个或更多方块 (shift+点击) 以合并
+send failures #	发送失败 #
+server is full	服务器已满
+server shutting down	服务器正在关闭
+server simulate	server simulate
+server snapshot rate lowered to	服务器快照频率降至
+server snapshot rate raised to	服务器快照频率升至
+server snapshots	server snapshots
+server stopped	服务器已停止
+server tick	server tick
+server tick rate	服务器 tick 频率
+server tick rate lowered to	服务器 tick 频率降至
+server tick rate raised to	服务器 tick 频率升至
+server version	服务器版本
+server, sharing	服务器, 共享
+setup:	setup:
+shader:	shader:
+shadow pass	shadow pass
+shipped:	已发布:
+short-handed: # playing	人数不足: # 人在场
+slopes can't be coated: pick a box	斜面不能上材质: 请选择方块
+slopes can't be cut: pick plain boxes	斜面不能切割: 请选择普通方块
+slopes can't be split: pick plain boxes	斜面不能拆分: 请选择普通方块
+slot bracket	栏位对阵
+stalemate - health draining	僵持 - 生命流失中
+static boxes	static boxes
+static boxes pass	static boxes pass
+stayed hidden	保持隐藏
+steps in	上场
+steps in (first in line)	上场 (队列第一)
+swatch shader:	swatch shader:
+swatch shader: {}	swatch shader: {}
+sysdefault:	sysdefault:
+team A	A 队
+team B	B 队
+team a	team a
+team b	team b
+team spec	team spec
+teamMul must be 3 numbers from 0 to 16	teamMul 必须是 3 个 0 到 16 之间的数字
+text-align, stripe. Settings > HUD > EDIT HUD writes this file; the game reloads it within a second. */	text-align, stripe。设置 > HUD > 编辑 HUD 会写入此文件; 游戏会在一秒内重新加载。 */
+tf2build*	tf2build*
+tf2secondary*	tf2secondary*
+that side is full	该方已满
+that side is full (ranked is 1v1)	该方已满 (排位为 1v1)
+that's a bot - vote bots off instead	那是机器人 - 请改为投票关闭机器人
+that's already a group	已经是分组了
+the PAK has no gfx.wad	PAK 中没有 gfx.wad
+the WAD has no CONCHARS	WAD 中没有 CONCHARS
+the autosave can't be read	无法读取自动保存
+the bomb went back to	炸弹回到了
+the cursor wraps with uint32	光标以 uint32 循环
+the cutter (the first box selected) doesn't touch the others	切割体 (第一个选中的方块) 未接触其他方块
+the cutter (the first box selected) has to be a plain box	切割体 (第一个选中的方块) 必须是普通方块
+the driver has no shorter period	驱动没有更短的周期
+the font has no Latin letters	字体中没有拉丁字母
+the game	游戏
+the hiders win -	躲藏者获胜 -
+the match has already started	比赛已经开始
+the mix format isn't float stereo	混音格式不是浮点立体声
+the mode logic doesn't compile	模式逻辑无法编译
+the production server	正式服务器
+the seeker left	寻找者离开了
+the sheet has no letter H at character 72	字符表在第 72 个字符处没有字母 H
+the shorter period failed to open	无法开启更短的周期
+the testing server	测试服务器
+this map	此地图
+this map can't be played in any mode yet (add spawns)	此地图暂时无法以任何模式游玩 (请添加出生点)
+this map has no points - multi point can't be played here	此地图没有据点 - 无法进行多点占领
+this map has no points - multi point can't be played here (vote another map or mode)	此地图没有据点 - 无法进行多点占领 (请投票选择其他地图或模式)
+this server doesn't have the map '	此服务器没有地图 '
+this server plays the custom mode	此服务器运行自定义模式
+tick # Hz, spin # us ({}), late p99 {}	tick # Hz, spin # us ({}), late p99 {}
+tick # phase # round # score #-#	tick # phase # round # score #-#
+tick rate: late ticks in one window (#% of ticks over # ms late), waiting for a second	tick 频率: 一个窗口内有迟到 tick (#% 的 tick 延迟超过 # ms), 等待一秒
+tick rate: late ticks in one window (busy #%, late #%), waiting for a second	tick 频率: 一个窗口内有迟到 tick (繁忙 #%, 迟到 #%), 等待一秒
+tick rate: the governor's	tick 频率: 调控器的
+tick rate: the next window was clean: no step down (a one-off host pause)	tick 频率: 下一个窗口正常: 不降低 (主机偶发暂停)
+tie - overtime! next kill wins	平局 - 加时! 下一个击杀者胜
+tied for first -	并列第一 -
+tied for first:	并列第一:
+time trial	计时赛
+time trial bots play the built-in brain	计时赛机器人使用内置 AI
+timed out	超时
+to watch, join the spectators yourself (team spec)	如需观战, 请自行加入观众 (team spec)
+too big for one group	太大, 无法放入一个分组
+too deep (an alias or exec that runs itself?)	嵌套过深 (别名或 exec 调用了自身?)
+too many unacknowledged reliable messages (connection too lossy)	未确认的可靠消息过多 (连接丢包严重)
+too short	太短
+took every point in	占领所有据点用时
+took point	占领了据点
+tourney match:	锦标赛比赛:
+tourney match: {}	tourney match: {}
+tourney over	锦标赛结束
+tourney plays its rulesets only	锦标赛只使用其规则集
+tourney seed #:	锦标赛种子 #:
+tourney seed #: {} (#)	tourney seed #: {} (#)
+tourney started -	锦标赛已开始 -
+trying the next rate up: busy #%, upload # kbps	尝试提高速率: 繁忙 #%, 上传 # kbps
+ui verts	ui verts
+ungrouped into	已取消编组为
+unknown mode	未知模式
+unknown mode '	未知模式 '
+unknown ruleset	未知规则集
+unknown setting '	未知设置 '
+unknown slot "	未知栏位 "
+unreadable FLAC	无法读取的 FLAC
+unreadable OGG (Vorbis only)	无法读取的 OGG (仅支持 Vorbis)
+unsaved changes - click EXIT again to leave	有未保存的修改 - 再次点击退出以离开
+unsaved changes - press ESC again to leave	有未保存的修改 - 再按一次 ESC 离开
+unsupported WAV (PCM 8 / 16 / 24 / 32-bit or float)	不支持的 WAV (PCM 8 / 16 / 24 / 32 位或浮点)
+unsupported accessor	不支持的 accessor
+update ready: waiting for the match to end	更新已就绪: 等待比赛结束
+upload # of # kbps	上传 # / # kbps
+upload bytes	upload bytes
+user:	用户:
+vote cancelled: the ranked match is live	投票取消: 排位比赛进行中
+vote failed:	投票失败:
+vote no	投反对
+vote passed:	投票通过:
+vote passed: starting the match	投票通过: 比赛开始
+vote yes	投赞成
+voted rules:	已投票规则:
+voted rules: {}	voted rules: {}
+vs bots	人机对战
+warning:	警告:
+was it -	曾是鬼 -
+was moved to spectator until the next map	已被移至观众直到下一张地图
+wedge rising toward	楔形朝向上升
+will fill the uneven teams	将补齐人数不均的队伍
+win:	胜利:
+winner stays:	胜者留场:
+winner stays: {}	winner stays: {}
+wins - payload on their side	获胜 - 运载车在其半场
+wins - the other side left	获胜 - 对方已离开
+wins tag	赢得抓人
+wins the match	赢得比赛
+wins the match (rock paper scissors tiebreak)	赢得比赛 (石头剪刀布决胜)
+wins the race	赢得竞速
+wins the round	赢得回合
+wins the tourney!	赢得锦标赛!
+world chunks	world chunks
+world pass	world pass
+world shader	world shader
+world shader:	world shader:
+world shader: {}	world shader: {}
+world upload	world upload
+wraith: nice shot	wraith: 好枪法
+you already called a vote on	你已经发起过投票:
+you left the line - join a team to get back in it	你离开了队列 - 加入队伍即可重新排队
+you were voted to spectate - you can play again on the next map	你被投票移至观众 - 下一张地图可以再玩
+you're already in line to play	你已在排队等待上场
+you're in line to play:	你正在排队等待上场:
+you're next in line: you play the winner of this	你是下一位: 你将挑战本场的胜者
+your last vote failed: wait a few seconds	你上次的投票失败了: 请等几秒
+your map is autosaved	你的地图已自动保存
+{} # us (last 1000 ticks)	{} # us (last 1000 ticks)

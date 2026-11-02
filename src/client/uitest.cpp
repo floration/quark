@@ -43,7 +43,7 @@ namespace fs = std::filesystem;
 std::string Game::uiScreenPath() const {
     auto settingsSub = [&]() -> std::string {   // (the tab, then what's open on it)
         switch (setTab_) {
-            case TAB_PLAYER: if (moreOpen_) return "/player/more"; break;
+            case TAB_PLAYER: if (moreOpen_) return "/player/more"; if (!fontsOpen_ && ui_.dropdownOpen()) return "/language"; break;
             case TAB_GAMEPLAY: return moreOpen_ >= 4 ? "/gameplay/more4" : moreOpen_ == 3 ? "/gameplay/more3" : moreOpen_ == 2 ? "/gameplay/more2" : moreOpen_ ? "/gameplay/more" : "/gameplay";
             case TAB_CONTROLS: return moreOpen_ >= 2 ? "/controls/more2" : moreOpen_ ? "/controls/more" : filePick_ == 2 ? "/controls/files" : controlsSub_ == 1 ? "/controls/movement" : controlsSub_ == 2 ? "/controls/keys2" : "/controls";
             case TAB_VIDEO: return devicesOpen_ ? "/video/devices" : moreOpen_ == 8 ? "/video/more8" : moreOpen_ == 7 ? "/video/more7" : moreOpen_ == 6 ? "/video/more6" : moreOpen_ == 5 ? "/video/more5" : moreOpen_ == 4 ? "/video/more4" : moreOpen_ == 3 ? "/video/more3" : moreOpen_ == 2 ? "/video/more2" : moreOpen_ ? "/video/more" : "/video";
@@ -1670,6 +1670,8 @@ void uiTestPrepare(LaunchOptions& o) {
     s.binds.code[A_TOGGLECHAT][0] = GLFW_KEY_F6;   // (unbound by default: bound here so the key is tested too)
     // QUARK_UITEST_FONT=<ui_font>: the whole test (layout checks too) in that font (docs/UI_TEST.md)
     { const char* f = getenv("QUARK_UITEST_FONT"); if (f && *f) { s.uiFont = f; printf("uitest: font %s\n", f); } }
+    // QUARK_UITEST_LANG=<code>: the whole test in that language (lang.h); otherwise English, whatever the system's is
+    { const char* l = getenv("QUARK_UITEST_LANG"); s.language = l && *l ? l : "en"; if (l && *l) printf("uitest: language %s\n", l); }
     s.save();
     {   // two bot brains for HOST > ADVANCED's BOT BRAIN: one that compiles, one that doesn't (its error line shows)
         fs::create_directories(dir / "bots", ec);

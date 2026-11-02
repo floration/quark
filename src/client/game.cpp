@@ -12,6 +12,7 @@
 #include "gpuprofile.h"
 #include <array>
 #include "game.h"
+#include "lang.h"
 #include "complete.h"
 #include "openurl.h"
 #include "../game/benchmark.h"
@@ -1932,6 +1933,8 @@ void Game::frame(double dt) {
     struct CpuTime { double t0 = timeNow(); double* out; ~CpuTime() { *out = timeNow() - t0; } } cpuTime{timeNow(), &lastCpu_}; // --bench: CPU part of the frame
     time_ += dt;
     if (cfg_.uiFont != fontTried_) applyUiFontSetting();   // (a string compare; the font is built only when it changed)
+    if (cfg_.language != langTried_) applyLanguageSetting();   // (likewise: the table and atlas load only when it changed)
+    lang::frame();
     if (g_monitorEvent) { g_monitorEvent = false; monitorsChanged(); }   // (a bool; set by a monitor plugged in or out)
     if (audio_.takeOutputMissing()) notify("THE CHOSEN AUDIO OUTPUT IS GONE: USING THE SYSTEM DEFAULT", 5);   // (an atomic, set by the audio thread)
     swallowChar_ = false;   // (a key that opened the chat and typed no character: don't eat a later one)
@@ -6731,6 +6734,19 @@ void Game::drawPlayerSettings(const SetLayout& L) {
                    UiExp::nav("~settings/fonts").withId("FONT"))) { fontsOpen_ = true; fontListed_ = false; fontScroll_ = 0; ui_.closePopup(); }
     g.next();
     g.hint("THE FONT OF THE MENUS AND THE HUD");
+    {   // LANGUAGE (lang.h): AUTO (the system's), then each language in its own name
+        static std::vector<std::string> names;
+        const auto& L = lang::languages();
+        if (names.empty()) { names.push_back("AUTO"); for (const auto& l : L) names.push_back(l.name); }
+        int li = cfg_.language == "auto" ? 0 : lang::indexOf(cfg_.language) + 1;
+        if (li < 0) li = 0;
+        if (ui_.dropdown(g.x(), g.top(), w, h, "LANGUAGE", li, names, UiExp::nav("~settings/language").withId("LANGUAGE"), UiExp::nav("~settings"), UiExp::cfg("language"))) {
+            cfg_.language = li <= 0 ? "auto" : L[li - 1].code;
+            cfg_.save();
+        }
+        g.next();
+        g.hint(cfg_.language == "auto" ? "AUTO: YOUR SYSTEM'S LANGUAGE" : "THE LANGUAGE OF THE MENUS AND THE HUD");
+    }
 }
 
 // HUD > MORE: a COMPASS strip at the bottom centre (N / E / S / W and the degrees between, turning with your view) and
@@ -12288,6 +12304,19 @@ bool Game::loadUiFont(const std::string& id, std::string* err, std::string* name
     if (fa) printf("font: %s built in %.0f ms\n", name ? name->c_str() : id.c_str(), (timeNow() - t0) * 1000);
     r_.setUiFont(std::move(fa));   // (null: the baked default)
     return true;
+}
+
+// LANGUAGE (lang.h): the table and glyph atlas of the setting's language (auto: the system's), once when it changes
+void Game::applyLanguageSetting() {
+    langTried_ = cfg_.language;
+    const std::string code = lang::resolve(cfg_.language);
+    const double t0 = timeNow();
+    lang::ExtGlyphs g;
+    if (!lang::setLanguage(code)) { lang::setLanguage("en"); }
+    if (lang::loadGlyphs(lang::current(), g)) r_.setExtGlyphs(g.cp, g.adv, g.tex.data(), g.texW, g.texH, g.cols);
+    else r_.setExtGlyphs({}, {}, nullptr, 0, 0, 0);
+    Renderer::setTranslate(lang::active() ? &lang::tr : nullptr);
+    printf("language: %s (%zu glyphs) in %.0f ms\n", lang::current().c_str(), g.cp.size(), (timeNow() - t0) * 1000);
 }
 
 void Game::applyUiFontSetting() {

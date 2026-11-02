@@ -1078,6 +1078,8 @@ private:
     std::vector<uifonts::Entry> fontList_;
     bool fontListed_ = false;      // (fontList_ is current: cleared on opening the page and by REFRESH)
     int fontScans_ = 0, fontScroll_ = 0;
+    std::string langTried_ = "\x01";   // the language setting last applied (frame() applies cfg_.language when it differs)
+    void applyLanguageSetting();
     std::string fontTried_;        // the ui_font value last applied (frame() applies cfg_.uiFont when it differs)
     bool loadUiFont(const std::string& id, std::string* err, std::string* name);   // built and on the GPU, or false
     void applyUiFontSetting();     // cfg_.uiFont, or Rubik with a notice when it can't be loaded

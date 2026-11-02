@@ -101,3 +101,13 @@ bool decodeImage(const uint8_t* data, size_t size, int& w, int& h, std::vector<u
     stbi_image_free(p);
     return true;
 }
+
+bool decodeImageGrey(const uint8_t* data, size_t size, int& w, int& h, std::vector<uint8_t>& grey) {
+    int n = 0;
+    if (size > (size_t)1 << 30) return false;
+    unsigned char* p = stbi_load_from_memory(data, (int)size, &w, &h, &n, 1);
+    if (!p) return false;
+    grey.assign(p, p + (size_t)w * h);
+    stbi_image_free(p);
+    return true;
+}
