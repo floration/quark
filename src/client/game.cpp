@@ -952,7 +952,7 @@ void Game::onKey(int key, int action, int mods) {
         }
         return;
     }
-    if (screen_ == Screen::TrainerRun && (!trResults_ || key == GLFW_KEY_ESCAPE || key == GLFW_KEY_R) && trainerKey(key, action)) return;   // (AIM TRAINER: Esc, R, FIRE)
+    if (screen_ == Screen::TrainerRun && trainerKey(key, action)) return;   // (AIM TRAINER: Esc pauses, R, FIRE; F3 / F4 / screenshot and the settings pass)
     if (bench_.phase != BenchRun::OFF && (screen_ == Screen::InGame || screen_ == Screen::Connecting)) {      // BENCHMARK: Esc cancels, nothing else
         if (action == GLFW_PRESS && key == GLFW_KEY_ESCAPE) benchCancel();
         return;
@@ -1133,7 +1133,7 @@ void Game::onMouseButton(int button, int action) {
         if (action == GLFW_PRESS && focusGained_ && screen_ == Screen::InGame && !paused_ && !chatting_) { swallowedBtn_ |= (uint16_t)(1u << button); return; }
     }
     markInput();
-    if (screen_ == Screen::TrainerRun && !trResults_) {   // AIM TRAINER: FIRE's button clicks (the rifle fires once a click)
+    if (screen_ == Screen::TrainerRun && !trResults_ && !trPaused_) {   // AIM TRAINER: FIRE's button clicks (the rifle fires once a click)
         if (action == GLFW_PRESS && binds().has(A_FIRE, kMouseCode + button)) trClick_ = true;
         return;
     }

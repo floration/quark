@@ -70,6 +70,7 @@ void Game::trainerSaveScores() {
 }
 
 void Game::openTrainer() {
+    if (screen_ == Screen::TrainerRun) { trainerExit(); return; }   // (from a run: as its menu button)
     if (!trScoresLoaded_) trainerLoadScores();
     setScreen(Screen::Trainer);
 }
@@ -81,7 +82,8 @@ void Game::trainerStart(const trainer::Scenario* sc) {
     trMode_ = sc->mode;
     trCat_ = sc->cat;
     trRun_.start(*sc, trDiff_, (uint32_t)(timeNow() * 1000.0) ^ 0x51ED5EEDu);
-    trResults_ = false;
+    trResults_ = trPaused_ = false;
+    settingsInGame_ = false;
     trNewBest_ = false;
     trClick_ = false;
     trTracerUntil_ = trHitUntil_ = 0;
@@ -104,7 +106,8 @@ void Game::trainerExit() {
     r_.clearStaticBoxes();
     r_.setFog(cfg_.fog);
     r_.skyColor = trSavedSky_;
-    trResults_ = false;
+    trResults_ = trPaused_ = false;
+    if (settingsInGame_) { settingsInGame_ = false; cfg_.save(); }
     yaw_ = trSavedYaw_; pitch_ = trSavedPitch_;
     setScreen(Screen::Trainer);
     loadMenuBackdrop();
@@ -122,13 +125,28 @@ void Game::trainerFinish() {
     captureMouse(false);
 }
 
-// keys while a run or its result is up: Esc back to the menu, R again; FIRE bound to a key clicks too
+// keys while a run or its result is up: Esc pauses (the pause menu: RESUME, SETTINGS, RESTART, MENU), R again; FIRE
+// bound to a key clicks too. F3 / F4 / the screenshot key pass on to the game's own handling, and so does every key
+// while SETTINGS is open (its Esc closes what's open on the page first, then the page: back to the pause menu).
 bool Game::trainerKey(int key, int action) {
     if (screen_ != Screen::TrainerRun) return false;
+    const Binds& b = binds();
+    if (b.has(A_PERF, key) || b.has(A_PERFMINI, key) || b.has(A_SCREENSHOT, key)) return false;
+    if (trPaused_ && settingsInGame_) {
+        if (action == GLFW_PRESS && key == GLFW_KEY_ESCAPE &&
+            !(ui_.popupOpen() || filePick_ || widgetEdit_ || hudEdit_ || fontsOpen_ || devicesOpen_ || moreOpen_)) { leaveSettings(); return true; }
+        return false;
+    }
     if (action != GLFW_PRESS) return true;
-    if (key == GLFW_KEY_ESCAPE) { trainerExit(); return true; }
+    if (key == GLFW_KEY_ESCAPE) {
+        if (trResults_) { trainerExit(); return true; }
+        trPaused_ = !trPaused_;
+        trClick_ = false;
+        captureMouse(!trPaused_);
+        return true;
+    }
     if (key == GLFW_KEY_R) { trainerStart(trSc_); return true; }
-    if (!trResults_ && binds().has(A_FIRE, key)) trClick_ = true;
+    if (!trResults_ && !trPaused_ && b.has(A_FIRE, key)) trClick_ = true;
     return true;
 }
 
@@ -148,7 +166,7 @@ void Game::trainerFrame(double dt) {
     }
     const Vec3 aim = angleForward(yaw_, pitch_);
     // ---- the step: the shot against what the last frame showed, then the targets move
-    if (!trResults_) {
+    if (!trResults_ && !trPaused_) {
         const bool fire = isDown(A_FIRE) && mouseCaptured_;
         const StepEvents ev = trRun_.step((float)dt, aim, fire, trClick_);
         trClick_ = false;
@@ -169,31 +187,26 @@ void Game::trainerFrame(double dt) {
         if (ev.shotHit || ev.laserOn) trHitUntil_ = time_ + 0.12;
         if (ev.kills > 0 && trSc_->cat != CAT_TRACK) audio_.play(ev.shot ? SND_HIT_MED : SND_KILL, 0.8f * cfg_.hitVolume);
         if (trRun_.finished()) trainerFinish();
-    } else trLaserOn_ = false;
+    } else trLaserOn_ = false;   // (paused: the run holds still)
     recoil_ = std::max(0.0, recoil_ - 8.0 * dt);
 
     // ---- the room: a static batch, built when the scenario changes
     sceneSettings();
+    r_.setFog(0);   // (again each frame: a setting changed in SETTINGS may have set the game's)
+    r_.skyColor = {0.05f, 0.055f, 0.07f};
     if (trRoomDirty_) {
         const Room rm = trRun_.room();
         const bool wallRoom = rm.mn.z == kWallZ;
         r_.setStaticBoxes([&] {
             const float t = 0.5f;
             const Vec3 c = (rm.mn + rm.mx) * 0.5f, e = (rm.mx - rm.mn) * 0.5f;
-            const Vec3 wall(0.17f, 0.18f, 0.21f), floor(0.11f, 0.12f, 0.14f), front(0.21f, 0.22f, 0.26f), line(0.27f, 0.29f, 0.34f);
+            const Vec3 wall(0.17f, 0.18f, 0.21f), floor(0.11f, 0.12f, 0.14f), front(0.21f, 0.22f, 0.26f);   // (no grid lines: owner, "distracting")
             r_.box({c.x, rm.mn.y - t, c.z}, {e.x + t, t, e.z + t}, 0, floor, 1.0f, false);
             r_.box({c.x, rm.mx.y + t, c.z}, {e.x + t, t, e.z + t}, 0, wall * 0.8f, 1.0f, false);
             r_.box({rm.mn.x - t, c.y, c.z}, {t, e.y + t, e.z + t}, 0, wall, 1.0f, false);
             r_.box({rm.mx.x + t, c.y, c.z}, {t, e.y + t, e.z + t}, 0, wall, 1.0f, false);
             r_.box({c.x, c.y, rm.mn.z - t}, {e.x + t, e.y + t, t}, 0, wallRoom ? front : wall, 1.0f, false);
             r_.box({c.x, c.y, rm.mx.z + t}, {e.x + t, e.y + t, t}, 0, wall, 1.0f, false);
-            // a 4 m grid on the floor and the far wall (depth and speed to read against)
-            for (float x = std::ceil(rm.mn.x / 4) * 4; x <= rm.mx.x; x += 4) {
-                r_.box({x, rm.mn.y + 0.01f, c.z}, {0.03f, 0.01f, e.z}, 0, line, 1.0f, false);
-                r_.box({x, c.y, rm.mn.z + 0.01f}, {0.03f, e.y, 0.01f}, 0, line, 1.0f, false);
-            }
-            for (float z = std::ceil(rm.mn.z / 4) * 4; z <= rm.mx.z; z += 4) r_.box({c.x, rm.mn.y + 0.01f, z}, {e.x, 0.01f, 0.03f}, 0, line, 1.0f, false);
-            for (float y = std::ceil(rm.mn.y / 4) * 4; y <= rm.mx.y; y += 4) r_.box({c.x, y, rm.mn.z + 0.01f}, {e.x, 0.03f, 0.01f}, 0, line, 1.0f, false);
             if (wallRoom) {   // the target area's frame on the wall
                 const Vec3 a(0.4f, 0.42f, 0.5f);
                 const float hx = trSc_->motion == MO_CROSS ? kCrossHX : trSc_->motion == MO_AIR ? kAir2HX : kWallHX;
@@ -259,13 +272,27 @@ void Game::trainerFrame(double dt) {
         r_.text(W * 0.5f - r_.textWidth(ac, ts) * 0.5f, 20 * s + ts * 34, ts, ac, kGrey);
         const std::string nm = std::string(trSc_->name) + "  -  " + trainer::modeName(trSc_->mode) + " " + catName(trSc_->cat) + " - " + diffName(trRun_.diff());
         r_.text(16 * s, 16 * s, std::max(1.0f, std::round(s)), nm, kGrey);
-        r_.text(16 * s, 16 * s + 16 * s, std::max(1.0f, std::round(s)), "ESC: MENU   R: RESTART", kGrey);
+        r_.text(16 * s, 16 * s + 16 * s, std::max(1.0f, std::round(s)), "ESC: PAUSE / SETTINGS   R: RESTART", kGrey);
     }
     if (trRun_.countdown() > 0 && !trResults_) {
         const std::string c = std::to_string((int)std::ceil(trRun_.countdown()));
         r_.text(W * 0.5f - r_.textWidth(c, ts * 4) * 0.5f, H * 0.32f, ts * 4, c, kWhite);
     }
-    if (!trResults_) {
+    if (trPaused_ && !trResults_) {   // the pause menu, or SETTINGS over the run
+        if (settingsInGame_) { drawSettings(); hudBuilt_ = false; return; }
+        const float pw = 320 * s, bh = 40 * s, gap = 10 * s, ph = 4 * bh + 3 * gap + 80 * s, px = W * 0.5f - pw * 0.5f, py = H * 0.5f - ph * 0.5f;
+        ui_.panel(px, py, pw, ph, 0.92f);
+        ui_.labelCentered(W * 0.5f, py + 16 * s, "PAUSED", kWhite, 1.5f, pw - 20 * s);
+        float y = py + 60 * s;
+        const float bx = px + 20 * s, bw = pw - 40 * s;
+        if (ui_.button(bx, y, bw, bh, "RESUME (ESC)", UiExp::nav("trainer/run"))) { trPaused_ = false; captureMouse(true); }
+        y += bh + gap;
+        if (ui_.button(bx, y, bw, bh, "SETTINGS", UiExp::nav("trainer/run/pause/settings"))) { settingsInGame_ = true; openSettingsTab(settingsStartTab()); }
+        y += bh + gap;
+        if (ui_.button(bx, y, bw, bh, "RESTART (R)", UiExp::nav("trainer/run"))) { trainerStart(trSc_); return; }
+        y += bh + gap;
+        if (ui_.button(bx, y, bw, bh, "TRAINER MENU", UiExp::nav("trainer"))) { trainerExit(); return; }
+    } else if (!trResults_) {
         float cx = W * 0.5f, cy = H * 0.5f;
         if (flat) { float sx, sy; if (r_.project(aim * 24.0f, sx, sy)) { cx = sx; cy = sy; } }
         drawCrosshair(cx, cy, s, time_ < trHitUntil_, w);
@@ -284,6 +311,7 @@ void Game::trainerFrame(double dt) {
         if (ui_.button(W * 0.5f - bw - 6 * s, by, bw, bh, "AGAIN (R)", UiExp::nav("trainer/run"))) trainerStart(trSc_);
         else if (ui_.button(W * 0.5f + 6 * s, by, bw, bh, "MENU (ESC)", UiExp::nav("trainer"))) trainerExit();
     }
+    if (ui_.probing()) uiTestActions();   // (the UI test: Esc, F3)
     hudBuilt_ = false;
 }
 

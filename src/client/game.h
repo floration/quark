@@ -289,7 +289,7 @@ private:
     trainer::Run trRun_;
     const trainer::Scenario* trSc_ = nullptr;
     int trMode_ = 0, trCat_ = 0, trDiff_ = 0;
-    bool trResults_ = false, trNewBest_ = false, trClick_ = false, trRoomDirty_ = true, trLaserOn_ = false, trScoresLoaded_ = false;
+    bool trResults_ = false, trPaused_ = false, trNewBest_ = false, trClick_ = false, trRoomDirty_ = true, trLaserOn_ = false, trScoresLoaded_ = false;
     double trTracerUntil_ = 0, trHitUntil_ = 0, trHitSoundAt_ = 0;
     Vec3 trTracerEnd_, trLaserEnd_, trSavedSky_;
     float trSavedYaw_ = 0, trSavedPitch_ = 0;
