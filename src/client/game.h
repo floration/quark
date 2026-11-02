@@ -889,6 +889,8 @@ private:
     bool grappleOn_ = false;           // GRAPPLE TOGGLE: hooked by the last press
     int lastWeapon_ = -1, lastWeaponFrom_ = -1;   // LAST WEAPON: the weapon held before the current one
     std::string keyOf(int action) const;   // its key's name, for hints ("UNBOUND")
+    bool specWatchable(int id) const;  // spectating: may this player be watched
+    float perfBoxBottom() const;       // where the F3 / F4 box ends (0: not shown)
     void cycleSpec(int dir);           // the next (1) / previous (-1) player to watch
     double cornerAt_ = 0; int cornerFrames_ = 0, cornerFps_ = 0;   // SHOW FPS: frames counted over half a second
     float hpMax_ = 100; bool hpAlive_ = false;   // HEALTH BARS: MODE'S MAX: the most health seen this life (from its spawn)
@@ -1170,7 +1172,7 @@ private:
     int hudSel_ = 0;         // HUD settings: the element (its ELEMENT dropdown)
     // The HUD's elements, each drawn from its values (the live HUD and the HUD tab's preview share them); each returns
     // where it is on screen when draw is false (nothing drawn: the preview's outline; drawn, it may return an empty rect)
-    struct HudBarVals { float wRem = 0, wTot = 1; int dashN = 2, dashHave = 2; bool dashReady = true; float hookRem = 0, hookTot = 1; };
+    struct HudBarVals { float wRem = 0, wTot = 1; int dashN = 2, dashHave = 2; bool dashReady = true; float hookRem = 0, hookTot = 1; bool fly = false; };   // (fly: 3D FLYING, no dash or grapple: their rows aren't drawn)
     HudRect drawHudHealth(const Settings::HudElem& e, float W, float H, float s, int hp, Color num, Color bar, bool draw = true);
     HudRect drawHudWeaponName(const Settings::HudElem& e, float W, float H, float s, const std::string& name, Color c, bool draw = true);
     HudRect drawHudBars(const Settings::HudElem& e, float W, float H, float s, const HudBarVals& v, Color full, bool draw = true);

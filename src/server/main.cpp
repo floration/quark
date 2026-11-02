@@ -53,7 +53,8 @@ static void usage() {
         "  --data-dir DIR   where logs, edited maps and custom modes go (default: the per-user data folder;\n"
         "                   QUARK_DATA_DIR does the same)\n"
         "  --teamsize N     duel: 1 (1v1, default) or 2 (2v2)\n"
-        "  --rotate R       1v1 with someone in line: winner (default: every round its own match, winner stays), round (every round, both players to the back), match (a whole match, winner stays)\n"
+        "  --rotate R       1v1 with someone in line: winner (default: the line moves every death, winner stays), round (every death, both players to the back), match (a whole match, winner stays)\n"
+        "  --rotate-kills N 1v1 with --rotate winner / round: the first to N kills (carried over) wins the match (default 11)\n"
         "  --public         list this server on the internet server list (players see it under Join)\n"
         "  --own-addr H:P   players reach this server at H:P although it can't see that address itself (a router\n"
         "                   forwarding another port here, a container): ranked ids are signed for the address dialled\n"
@@ -108,11 +109,12 @@ int main(int argc, char** argv) {
         }
         else if (a == "--logfile") { cfg.logFile = next(); if (!cfg.logLevel) cfg.logLevel = LOG_SIMPLE; }
         else if (a == "--teamsize") cfg.duelTeamSize = atoi(next().c_str());
-        else if (a == "--rotate") {   // 1v1 with someone in line: match (winner stays after a match), round (default), winner (every round, winner stays)
+        else if (a == "--rotate") {   // 1v1 with someone in line: match (winner stays after a match), round, winner (default: every round, winner stays)
             std::string v = next();
             cfg.rotate1v1 = v == "match" ? 0 : v == "round" ? 1 : v == "winner" ? 2 : -1;
             if (cfg.rotate1v1 < 0) { printf("unknown --rotate %s (match | round | winner)\n", v.c_str()); return 1; }
         }
+        else if (a == "--rotate-kills") cfg.rotateKills = std::max(1, atoi(next().c_str()));
         else if (a == "--public") cfg.publicList = true;
         else if (a == "--own-addr") cfg.ownAddrs.push_back(next());
         else if (a == "--variant") {

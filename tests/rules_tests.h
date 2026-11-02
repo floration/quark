@@ -2930,6 +2930,19 @@ static void testFlyModifier(uint16_t port) {
     pump(s, cls, 0.2, idle);
     auto& pa = s.players_[c[0].clientId()];
     CHECK(pa.alive && pa.move.fly && c[0].predicted().fly);
+    // a bot flies up and down too: to its target's height (and not through the floor)
+    const int bot = s.addBot(TEAM_A, BOT_ADVANCED);
+    pump(s, cls, 0.5, idle);
+    ServerPlayer& bp = s.players_[bot];
+    CHECK(bp.alive && bp.move.fly);
+    int up = 0;
+    for (int k = 0; k < 20 && bp.alive && pa.alive; k++) {
+        pa.move.pos = bp.move.pos + Vec3(3, 8, 0);   // (well above it, whatever weave it picks)
+        s.bots_[bot].target = c[0].clientId();
+        up += (botThink(s, bot).buttons & BTN_UP) != 0;
+    }
+    printf("  bot below its target: MOVE UP %d of 20 thinks\n", up);
+    CHECK(up >= 15);
     s.stop();
 }
 
