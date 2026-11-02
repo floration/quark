@@ -728,9 +728,9 @@ EFFECTS + F3	ЭФФЕКТЫ + F3
 EFFECTS OPACITY	ПРОЗРАЧН. ЭФФЕКТОВ
 EFFECTS QUIETER WHILE THE ANNOUNCER SPEAKS	ЭФФЕКТЫ ТИШЕ, ПОКА ГОВОРИТ КОММЕНТАТОР
 EFFECTS VOLUME	ГРОМКОСТЬ ЭФФЕКТОВ
-EFFECTS: CUSTOM	ЭФФЕКТЫ: СВОИ
-EFFECTS: OWN	ЭФФЕКТЫ: СВОИ
-EFFECTS: TEAM	ЭФФЕКТЫ: КОМАНДЫ
+EFFECTS: CUSTOM	ЭФФ.: СВОЙ ЦВЕТ
+EFFECTS: OWN	ЭФФ.: МОИ
+EFFECTS: TEAM	ЭФФ.: КОМАНДА
 ELEMENT	ЭЛЕМЕНТ
 ELEMENT COLOR	ЦВЕТ ЭЛЕМЕНТА
 ELEMENT: CHAT	ЭЛЕМЕНТ: ЧАТ
@@ -837,7 +837,7 @@ FLYING, ONE KEY: MOVE UP HELD UP, LET GO DOWN	ПОЛЁТ, ОДНА КЛАВИШ�
 FOG	ТУМ.
 FOLDER	ПАПКА
 FOLDER: DATA	ПАПКА: ДАННЫЕ
-FOLDER: PICTURES	ПАПКА: ИЗОБРАЖЕНИЯ
+FOLDER: PICTURES	ПАПКА: ИЗОБР.
 FONT	ШРИФТ
 FONT:	ШРИФТ:
 FONTS GO IN MODS/FONTS; ASSETS IN OVERRIDES/	ШРИФТЫ - В MODS/FONTS; РЕСУРСЫ - В OVERRIDES/
