@@ -10525,12 +10525,15 @@ int main(int argc, char** argv) {
         //  full run of 3 with 12 groups on 4 cores, and in 10 of 20 runs beside 8 busy loops; ~1 in 30 even idle)
         {"weaponpredict", [] { timingTest("weapon prediction", [] { testGameRules("weaponpredict"); }); }},
     };
-    // `groups` lists the groups (tools/release_check.sh runs each); `group NAME`, or just `NAME`, runs exactly that one
+    // `groups` lists the groups (tools/release_check.sh runs each; `groups alone`: only the timing-sensitive ones it runs
+    // alone, after the others); `group NAME`, or just `NAME`, runs exactly that one
     // group in this process (`group NAME --child`: as one of the run's processes on Windows, below: no summary, and the
     // exit code is the failure count, at most 100, as a forked group's)
     if (argc >= 2 && std::string(argv[1]) == "groups") {
+        const bool aloneOnly = argc >= 3 && std::string(argv[2]) == "alone";
         for (auto* list : {&par, &alone})
-            for (auto& g : *list) printf("%s\n", g.name);
+            if (!aloneOnly || list == &alone)
+                for (auto& g : *list) printf("%s\n", g.name);
         return 0;
     }
     if (argc >= 2 && std::string(argv[1]) != "serial") {
