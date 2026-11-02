@@ -1008,6 +1008,79 @@ static void testAcid() {
     }
 }
 
+// 3D FLYING's zero-g flight (MoveState::fly; owner, 2026-11-01 / 11-02): no gravity and no drift with no keys, MOVE UP /
+// MOVE DOWN straight up and down, the ground's acceleration and friction every way (full speed as fast as a run, a stop
+// as quick as one), the run speed's cap, walls slide you, and no jump, dash or grapple.
+static void testFlyMove() {
+    printf("flying (3d vamp)\n");
+    Map m;
+    std::string err;
+    CHECK(m.parse("box -50 -1 -50 50 0 50\nbox 10 0 -50 11 30 50\nspawn any 0 0 0\n", &err));
+    auto hs = [](const MoveState& q) { return std::sqrt(q.vel.x * q.vel.x + q.vel.z * q.vel.z); };
+    MoveState s;
+    s.fly = true;
+    s.pos = {0, 5, 0};
+    UserCmd c;
+    c.msec = 8;
+    for (int i = 0; i < 250; i++) pmove(s, c, m);   // 2 s, no keys: hangs where it is
+    CHECK(s.pos.y == 5.0f && s.pos.x == 0.0f && s.pos.z == 0.0f && length(s.vel) == 0.0f);
+    c.buttons = BTN_UP;
+    for (int i = 0; i < 125; i++) pmove(s, c, m);   // 1 s up
+    printf("  1 s of MOVE UP: %.2f m up, %.2f m/s\n", s.pos.y - 5.0f, s.vel.y);
+    CHECK(s.pos.y > 5.0f + 8.5f && s.pos.y < 5.0f + 9.6f && std::fabs(s.vel.y - 9.5f) < 1e-3f && std::fabs(s.pos.x) < 1e-5f);
+    c.buttons = BTN_UP | BTN_JUMP | BTN_DASH | BTN_GRAPPLE;   // (jump, dash and grapple do nothing)
+    pmove(s, c, m);
+    CHECK(s.dashTimer == 0 && !(s.flags & (MF_HOOKED | MF_HOOKHELD)) && std::fabs(s.vel.y - 9.5f) < 1e-3f);
+    c.buttons = 0;   // let go: the ground's friction stops you as fast as letting go of a run (~0.4 s), and you stay put
+    c.msec = 1;
+    for (int i = 0; i < 500; i++) pmove(s, c, m);
+    CHECK(length(s.vel) == 0.0f);
+    const float y = s.pos.y;
+    c.msec = 8;
+    for (int i = 0; i < 125; i++) pmove(s, c, m);
+    CHECK(s.pos.y == y);
+    c.buttons = BTN_DOWN;
+    for (int i = 0; i < 50; i++) pmove(s, c, m);
+    CHECK(s.pos.y < y - 3.0f && std::fabs(s.vel.y + 9.5f) < 1e-3f);
+    c.buttons = BTN_UP | BTN_DOWN;   // both: no vertical push (friction stops it)
+    for (int i = 0; i < 75; i++) pmove(s, c, m);
+    CHECK(s.vel.y == 0.0f);
+    // the speed cap: W + A + MOVE UP together is still 9.5 m/s, and the look's pitch never steers
+    c.buttons = BTN_UP; c.forward = 127; c.side = -127; c.yaw = 0; c.pitch = 1.2f;
+    for (int i = 0; i < 125; i++) pmove(s, c, m);
+    printf("  W + A + UP: %.3f m/s (%.3f level, %.3f up)\n", length(s.vel), hs(s), s.vel.y);
+    CHECK(std::fabs(length(s.vel) - 9.5f) < 1e-3f && std::fabs(hs(s) - 9.5f * std::sqrt(2.0f / 3.0f)) < 1e-2f);
+    // ...and holding it longer, or turning, never gains past it (no strafe gain)
+    float most = 0;
+    for (int i = 0; i < 2000; i++) { c.msec = 1; c.yaw += 0.002f; c.side = (i / 100) % 2 ? 127 : -127; pmove(s, c, m); most = std::max(most, length(s.vel)); }
+    {   // ...the same as running on the ground with the same keys and turn (owner: "the same as regular ground accel")
+        MoveState g; g.pos = {-20, 0, 0};
+        UserCmd gc; gc.msec = 1; gc.forward = 127; gc.yaw = 0;
+        float gmost = 0;
+        for (int i = 0; i < 125; i++) { gc.side = -127; pmove(g, gc, m); }
+        for (int i = 0; i < 2000; i++) { gc.yaw += 0.002f; gc.side = (i / 100) % 2 ? 127 : -127; pmove(g, gc, m); gmost = std::max(gmost, hs(g)); }
+        printf("  turning while flying: at most %.3f m/s (running on the ground: %.3f)\n", most, gmost);
+        CHECK(std::fabs(most - gmost) < 0.05f * gmost);
+    }
+    // the floor stops a fall; the wall at x 10 slides you along it (z keeps going)
+    MoveState w; w.fly = true; w.pos = {8, 2, 0};
+    UserCmd d; d.msec = 8; d.yaw = -PI / 4; d.forward = 127; d.buttons = BTN_DOWN;   // (toward +x and -z, and down)
+    for (int i = 0; i < 125; i++) pmove(w, d, m);
+    printf("  into the wall and the floor: x %.2f y %.2f z %.2f\n", w.pos.x, w.pos.y, w.pos.z);
+    CHECK(w.pos.x < 10.0f - kPlayerHalfWidth + 0.01f && w.pos.x > 9.0f && std::fabs(w.pos.y) < 0.01f && w.pos.z < -4.0f);   // (along the wall: the keys' share of it, ~4.75 m/s)
+    CHECK(w.flags & MF_ONGROUND);
+    // frozen (the round's countdown): held still
+    MoveState f; f.fly = true; f.pos = {0, 3, 0}; f.flags = MF_FROZEN; f.vel = {3, 3, 3};
+    pmove(f, d, m);
+    CHECK(f.pos.y == 3.0f && length(f.vel) == 0.0f);
+    // the wire: a flying state survives a snapshot (opt bit 128's byte, bit 64), and an older protocol reads none
+    Snapshot sn; sn.tickRate = 1000; sn.snapRate = 1000; sn.self = s;
+    uint8_t buf[512]; Writer wr(buf, sizeof buf); writeSnapshotClient(wr, sn);
+    Snapshot back;
+    { Reader rd(buf, (int)wr.size()); CHECK(readSnapshotClient(rd, back, kProtocolVersion) && back.self.fly); }
+    { Reader rd(buf, (int)wr.size()); CHECK(readSnapshotClient(rd, back, 66) && !back.self.fly); }
+}
+
 static void testMovement() {
     printf("movement\n");
     Map m;
@@ -4170,17 +4243,14 @@ static void testDuel(uint16_t port) {
     pump(s, cls, 0.5, idle);
     CHECK(s.players_[a.clientId()].team != s.players_[b.clientId()].team);
     CHECK(s.players_[c.clientId()].team == TEAM_SPECTATOR);
-    {   // the sides are even and full: joining calls a vote to let them in; passing it makes the teams uneven
+    {   // the sides are even and full: joining a 1v1 puts them in line to play, no vote (owner, 2026-11-02)
         c.sendCommand("team a");
         pump(s, cls, 0.3, idle);
-        CHECK(s.vote_.kind == Server::VOTE_LETIN);
-        a.sendCommand("vote yes");
+        CHECK(s.vote_.kind == Server::VOTE_NONE);
+        CHECK(s.players_[c.clientId()].team == TEAM_SPECTATOR && s.players_[c.clientId()].queueSeq > 0);
+        c.sendCommand("team spec");                  // (out of the line, so the rest is a plain 1v1)
         pump(s, cls, 0.3, idle);
-        CHECK(s.players_[c.clientId()].team == TEAM_A || s.players_[c.clientId()].team == TEAM_B);
-        CHECK(s.players_[c.clientId()].letIn);
-        c.sendCommand("team spec");                  // (back out, so the rest is a plain 1v1)
-        pump(s, cls, 0.3, idle);
-        CHECK(s.players_[c.clientId()].team == TEAM_SPECTATOR && !s.players_[c.clientId()].letIn);
+        CHECK(s.players_[c.clientId()].team == TEAM_SPECTATOR && s.players_[c.clientId()].queueSeq == 0);
     }
     for (int i = 0; i < 100 && s.ms_.phase == PHASE_WARMUP; i++) { skipCountdowns(s); pump(s, cls, 0.05, idle); }   // -> round 1
     CHECK(s.ms_.phase == PHASE_FREEZE || s.ms_.phase == PHASE_LIVE);
@@ -4340,56 +4410,83 @@ static void testWinnerStays(uint16_t port) {
     s.stop();
 }
 
-// Winner stays mode (MODE_WINNER): rounds, the round's loser to the back of the line, round wins are the score, first to 10.
+// Winner stays mode is retired (owner, 2026-11-02: "remove winner stays mode because 1v1 is automatically winner stays
+// now"): a server, a custom mode or a map change asking for it plays 1v1, and no map offers it.
 static void testWinnerStaysMode(uint16_t port) {
-    printf("winner stays mode: each round's loser to the back of the line, first to 10 round wins\n");
+    printf("winner stays mode retired: asking for it starts 1v1\n");
     Server s;
     ServerConfig cfg;
-    cfg.autoStart = true;
     cfg.map = "dojo"; cfg.mode = MODE_WINNER; cfg.port = port;
     s.setLog([](const std::string&) {});
     { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
-    CHECK(s.map_.supportsMode(MODE_WINNER));   // (a 1v1 map offers it: prefabs.py)
-    NetClient a, b, c;
-    std::vector<NetClient*> cls;
-    const char* names[] = {"ann", "bob", "cat"};
-    NetClient* all[] = {&a, &b, &c};
-    for (int i = 0; i < 3; i++) { all[i]->connect("127.0.0.1:" + std::to_string(port), names[i]); cls.push_back(all[i]); pump(s, cls, 0.4, idle); }
-    auto P = [&](NetClient& n) -> ServerPlayer& { return s.players_[n.clientId()]; };
-    CHECK(P(c).team == TEAM_SPECTATOR && P(c).queueSeq > 0);
-    const int annTeam = P(a).team, other = annTeam == TEAM_A ? TEAM_B : TEAM_A;
-    auto live = [&] { for (int i = 0; i < 200 && s.ms_.phase != PHASE_LIVE && s.ms_.phase != PHASE_MATCH_END; i++) { skipCountdowns(s); pump(s, cls, 0.05, idle); } };
-    auto seated = [&](int team) { for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].team == team) return i; return -1; };
-    live();
-    CHECK(s.ms_.phase == PHASE_LIVE);
-    CHECK(s.ms_.roundsToWin == 10);
-    // round 1: ann beats bob; bob to the back, cat in
-    s.killPlayer(b.clientId(), a.clientId(), WPN_RIFLE);
-    pump(s, cls, 0.1, idle);
-    CHECK(s.ms_.phase == PHASE_ROUND_END);
-    live();
-    CHECK(P(a).team == annTeam && P(c).team == other && P(b).team == TEAM_SPECTATOR && P(b).queueSeq > 0);
-    CHECK(P(a).score == 1 && P(b).score == 0);   // (a round win, not the kill: 1)
-    CHECK((annTeam == TEAM_A ? s.ms_.scoreA : s.ms_.scoreB) == 1 && (annTeam == TEAM_A ? s.ms_.scoreB : s.ms_.scoreA) == 0);
-    // round 2: cat beats ann: ann out, bob in; cat's 1 against bob's 0
-    s.killPlayer(a.clientId(), c.clientId(), WPN_RIFLE);
-    pump(s, cls, 0.1, idle);
-    live();
-    CHECK(P(c).team == other && P(b).team == annTeam && P(a).team == TEAM_SPECTATOR);
-    CHECK((annTeam == TEAM_A ? s.ms_.scoreB : s.ms_.scoreA) == 1 && P(a).score == 1);
-    // cat wins every round from here: first to 10 ends the match, after 9 more rounds won
-    int rounds = 0;
-    for (; rounds < 20 && s.ms_.phase == PHASE_LIVE; rounds++) {
-        const int foe = seated(annTeam);
-        CHECK(foe >= 0);
-        if (foe < 0) break;
-        s.killPlayer(foe, c.clientId(), WPN_RIFLE);
-        pump(s, cls, 0.1, idle);
-        live();
-    }
-    CHECK(rounds == 9);
-    CHECK(s.ms_.phase == PHASE_MATCH_END && s.matchWinner_ == other && P(c).score == 10);
+    CHECK(s.cfg_.mode == MODE_ARENA && !s.map_.supportsMode(MODE_WINNER) && modeRetired(MODE_WINNER));
+    s.playMap(MODE_WINNER);
+    CHECK(s.cfg_.mode == MODE_ARENA);
+    CustomRules r;
+    CHECK(r.fromText("custommode=old\nmode=winner\n") && r.baseMode == MODE_ARENA);
     s.stop();
+}
+
+static void testRotateEveryRound(uint16_t port) {
+    printf("1v1 with a line: it moves every death (winner stays), kills carry over, first to N kills wins\n");
+    for (int rule : {2, 0}) {
+        Server s;
+        ServerConfig cfg;
+        cfg.autoStart = true;
+        cfg.rotate1v1 = rule;
+        cfg.rotateKills = 3;
+        cfg.map = "dojo"; cfg.mode = MODE_ARENA; cfg.port = port;
+        s.setLog([](const std::string&) {});
+        { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+        NetClient a, b, c;
+        std::vector<NetClient*> cls;
+        const char* names[] = {"ann", "bob", "cat"};
+        NetClient* all[] = {&a, &b, &c};
+        for (int i = 0; i < 3; i++) { all[i]->connect("127.0.0.1:" + std::to_string(port), names[i]); cls.push_back(all[i]); pump(s, cls, 0.4, idle); }
+        auto P = [&](NetClient& n) -> ServerPlayer& { return s.players_[n.clientId()]; };
+        CHECK(P(c).team == TEAM_SPECTATOR && P(c).queueSeq > 0);
+        const int annTeam = P(a).team, other = annTeam == TEAM_A ? TEAM_B : TEAM_A;
+        bool sawEnd = false;
+        auto live = [&] {
+            for (int i = 0; i < 400 && s.ms_.phase != PHASE_LIVE; i++) { sawEnd |= s.ms_.phase == PHASE_MATCH_END || s.ms_.phase == PHASE_WARMUP; skipCountdowns(s); pump(s, cls, 0.05, idle); }
+        };
+        live();
+        CHECK(s.ms_.phase == PHASE_LIVE);
+        sawEnd = false;
+        s.killPlayer(b.clientId(), a.clientId(), WPN_RIFLE);   // ann beats bob
+        pump(s, cls, 0.1, idle);
+        CHECK(s.ms_.phase == PHASE_ROUND_END);
+        if (rule == 2) {
+            live();
+            CHECK(!sawEnd);   // (the same match: no match end, no warmup)
+            CHECK(P(a).team == annTeam && P(c).team == other && P(b).team == TEAM_SPECTATOR && P(b).queueSeq > 0);
+            CHECK(s.ms_.round == 2 && P(a).score == 1 && P(b).score == 0);   // (kills carried over)
+            s.killPlayer(a.clientId(), c.clientId(), WPN_RIFLE);   // cat beats ann: ann out, bob in
+            pump(s, cls, 0.1, idle);
+            live();
+            CHECK(!sawEnd && P(c).team == other && P(b).team == annTeam && P(a).team == TEAM_SPECTATOR && P(a).score == 1 && P(c).score == 1);
+            CHECK((s.ms_.scoreA == 1 && s.ms_.scoreB == 0) == (P(c).team == TEAM_A));   // (the team scores: the two playing, their kills)
+            s.killPlayer(b.clientId(), -1, 255);   // a drawn round (both die at once): the line still moves, ann in
+            s.killPlayer(c.clientId(), -1, 255);
+            pump(s, cls, 0.1, idle);
+            live();
+            CHECK(!sawEnd && P(a).team != TEAM_SPECTATOR && (P(b).team == TEAM_SPECTATOR) != (P(c).team == TEAM_SPECTATOR));
+            for (int k = 0; k < 2 && s.ms_.phase == PHASE_LIVE; k++) {   // ann to 3 kills (whoever is in): the match
+                NetClient& foe = P(b).team == TEAM_SPECTATOR ? c : b;
+                s.killPlayer(foe.clientId(), a.clientId(), WPN_RIFLE);
+                pump(s, cls, 0.1, idle);
+                if (k == 0) { live(); CHECK(!sawEnd); }
+            }
+            for (int i = 0; i < 200 && s.ms_.phase == PHASE_ROUND_END; i++) pump(s, cls, 0.05, idle);
+            CHECK(s.ms_.phase == PHASE_MATCH_END && P(a).score == 3);
+            live();
+            CHECK(P(a).team != TEAM_SPECTATOR && P(a).score == 0 && s.ms_.round == 1);   // (a new match: scores reset, ann stays)
+        } else {   // (the old rule: the match goes on to its 5 rounds; bob stays seated)
+            live();
+            CHECK(s.ms_.round == 2 && P(b).team != TEAM_SPECTATOR && P(c).team == TEAM_SPECTATOR);
+        }
+        s.stop();
+    }
 }
 
 // Accuracy is the mean of each weapon's own (owner, 2026-11-01): a second of the laser doesn't swamp the rest.
@@ -10068,6 +10165,7 @@ static void testReachProbe(uint16_t port) {
     prober.stop();
 }
 
+#include "trainer_tests.h"   // the aim trainer's scenarios (src/game/trainer.h)
 #include "rules_tests.h"   // game rule tests (owner answers 5.x, REVIEW batch 2)
 #include "weapon_tests.h"  // weapon sets (.qweapons: the weapons editor's) + the exportweapons / checkweapons tools
 #include "server_tests.h"  // server / netcode tests (FINAL_REVIEW 2.8-2.11, 6.4, 6.5, clock, PERF-8 / 9, ENG-2)
@@ -10312,6 +10410,7 @@ int main(int argc, char** argv) {
         {"mapbounds2", [] { g_fail += outOfBoundsTests(1, 2); }},
         {"maps", [] { testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders(); }},
         {"slopes", [] { testSlopes(); }},
+        {"trainer", [] { testTrainer(); }},
         {"surf", [] { testSurf(); }},
         {"groupslopes", [] { testGroupSlopes(); }},
         {"materials", [] { testMaterials(); testProjectileMaterials(TP(28931)); testDestruction(TP(28932)); testClientHits(); }},
@@ -10327,8 +10426,8 @@ int main(int argc, char** argv) {
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); testRemoteMoveSounds(TP(28585)); testRefillPrediction(TP(28586)); testHookPrediction(TP(28588)); }},
         {"brains", [] { g_fail += brainTests(TP(29150)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
-        {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); testWinnerStays(TP(28522)); testWinnerStaysMode(TP(28523)); testAccuracyPerWeapon(); }},
-        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testGrappleAgainstWall(); testAcid(); testLiquids(); testFeatureBlocks(); testStrafeEase(); testSeeThrough(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testModeSpawnSets(); testMapFix(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); testWinnerStays(TP(28522)); testWinnerStaysMode(TP(28523)); testRotateEveryRound(TP(28524)); testAccuracyPerWeapon(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testFlyMove(); testGrappleAgainstWall(); testAcid(); testLiquids(); testFeatureBlocks(); testStrafeEase(); testSeeThrough(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testModeSpawnSets(); testMapFix(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"bombsites", [] { testBombSites(TP(29090)); testPlantKnockback(TP(29091)); }},

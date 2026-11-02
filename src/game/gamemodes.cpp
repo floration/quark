@@ -82,7 +82,23 @@ void setPhase(Server& s, Phase p, float duration) {
     }
 }
 
-void enterMatchEnd(Server& s, const std::string& text, int winner) {
+// ranked: the result of what was just played (winner: a team, -1 a draw) to the ranking server; the next to go live
+// gets a new ticket. The match end, and each duel of a rotating 1v1.
+static void rankedPlayed(Server& s, int winner) {
+    std::string why, res = s.rankedResult(winner, &why);
+    if (res.empty()) s.message("not rated: " + why);
+    else if (!s.rated()) {   // a testing server: no EV_RANKED (players' games would report it), no result posted
+        s.message(std::string(kUnratedNotice) + ": the result isn't sent to the ranking server");
+        s.glog(LOG_SIMPLE, "ranked (not rated: testing server) %s", res.c_str());
+    } else {
+        GameEvent r; r.type = EV_RANKED; r.text = res; s.broadcastEvent(r); s.glog(LOG_SIMPLE, "ranked %s", res.c_str());
+        // the server's own account goes to the Worker under the ticket; players' reports must agree with it
+        s.postRankedResult(res);
+    }
+    s.rankedMatch_.clear(); // the next match gets a new ticket
+}
+
+void enterMatchEnd(Server& s, const std::string& text, int winner, float duration = -1) {
     s.ms_.flags &= ~MS_RPS;   // (a hide and seek tiebreak is over too)
     GameEvent e;
     e.type = EV_ROUND_WIN;
@@ -93,20 +109,8 @@ void enterMatchEnd(Server& s, const std::string& text, int winner) {
     s.log(text);
     s.glog(LOG_SIMPLE, "match end: %s", text.c_str());
     s.matchWinner_ = winner;   // (1v1 winner stays: the rotation when the end screen is over)
-    if (s.cfg_.ranked) {
-        std::string why, res = s.rankedResult(winner, &why);
-        if (res.empty()) s.message("not rated: " + why);
-        else if (!s.rated()) {   // a testing server: no EV_RANKED (players' games would report it), no result posted
-            s.message(std::string(kUnratedNotice) + ": the result isn't sent to the ranking server");
-            s.glog(LOG_SIMPLE, "ranked (not rated: testing server) %s", res.c_str());
-        } else {
-            GameEvent r; r.type = EV_RANKED; r.text = res; s.broadcastEvent(r); s.glog(LOG_SIMPLE, "ranked %s", res.c_str());
-            // the server's own account goes to the Worker under the ticket; players' reports must agree with it
-            s.postRankedResult(res);
-        }
-        s.rankedMatch_.clear(); // the next match gets a new ticket
-    }
-    setPhase(s, PHASE_MATCH_END, P(s).matchEndTime);
+    if (s.cfg_.ranked) rankedPlayed(s, winner);
+    setPhase(s, PHASE_MATCH_END, duration >= 0 ? duration : P(s).matchEndTime);
 }
 
 // ---- hide and seek / tag ----
@@ -628,7 +632,8 @@ void startMatch(Server& s) {
     ModeState& m = s.ms_;
     m.round = 0;
     m.scoreA = m.scoreB = 0;
-    m.roundsToWin = (uint8_t)roundsToWin(s);
+    s.rotationMatch_ = false;   // (a rotating 1v1: from its first round with someone in line)
+    m.roundsToWin = (uint8_t)(s.rotateEveryRound() && (m.mode == MODE_ARENA || m.mode == MODE_DUEL) ? std::min(std::max(1, s.cfg_.rotateKills), 255) : roundsToWin(s));   // (the HUD's "first to")
     m.target = 0;
     s.kothPoints_[0] = s.kothPoints_[1] = 0;
     s.bestProgress_[0] = s.bestProgress_[1] = 0;
@@ -737,6 +742,11 @@ void endRound(Server& s, int winner, const std::string& why, bool award = true) 
             for (auto& p : s.players_) if (p.connected && p.team == winner) { p.score++; break; }
         s.syncWinnerScores();
         text = sideName(s, winner) + " wins the round";
+    } else if (winner >= 0 && (m.mode == MODE_ARENA || m.mode == MODE_DUEL) && s.rotateEveryRound()) {
+        s.rotationMatch_ = true;   // (a rotating 1v1: the scores are the two players' kills, carried over)
+        m.roundsToWin = (uint8_t)std::min(std::max(1, s.cfg_.rotateKills), 255);
+        s.syncWinnerScores();
+        text = sideName(s, winner) + " wins the round";
     } else if (winner >= 0) {
         if (award) (winner == TEAM_A ? m.scoreA : m.scoreB)++;
         text = sideName(s, winner) + " wins the round";   // (1v1, duel, tourney: the player's name)
@@ -769,6 +779,27 @@ void winnerStaysNext(Server& s) {
 bool nativeRoundOver(Server& s) {
     ModeState& m = s.ms_;
     int rtw = roundsToWin(s);
+    // 1v1 with someone in line (rotate1v1): the line moves every round (each death), kills carry over, and the first to
+    // rotateKills kills wins the match (owner, 2026-11-02); ranked rates each duel on its own
+    if ((m.mode == MODE_ARENA || m.mode == MODE_DUEL) && s.rotateEveryRound()) {
+        const int w = s.roundWinner_;
+        s.rotationMatch_ = true;
+        int best = -1;
+        for (int i = 0; i < kMaxPlayers; i++)
+            if (s.players_[i].connected && (best < 0 || s.players_[i].score > s.players_[best].score)) best = i;
+        if (best >= 0 && s.players_[best].score >= std::max(1, s.cfg_.rotateKills)) {
+            enterMatchEnd(s, s.players_[best].name + " wins the match", w);
+            return true;
+        }
+        if (s.cfg_.ranked) rankedPlayed(s, w);
+        if (s.cfg_.rotate1v1 == 1 || (w != TEAM_A && w != TEAM_B)) { s.matchWinner_ = w; s.rotateBothOut(); }   // (a draw too)
+        else s.rotateWinnerStays(w);
+        s.matchWinner_ = -1;
+        s.roundWinner_ = -1;
+        s.fillOneVsOneSeats();
+        s.syncWinnerScores();
+        return false;
+    }
     switch (m.mode) {
         case MODE_TOURNEY:   // match decided: the winner advances
             if (m.scoreA >= rtw || m.scoreB >= rtw) return tourneyMatchWon(s, m.scoreA >= rtw ? TEAM_A : TEAM_B);
@@ -1834,8 +1865,19 @@ void rulesTick(Server& s) {
             m.timeLeft = (float)std::max(0.0, s.phaseEnd_ - s.time());
             if (s.time() >= s.phaseEnd_) {
                 for (auto& p : s.players_) p.alive = false;
-                s.rotateWinnerStays(s.matchWinner_);   // (1v1: the loser to the back of the line, the first in line in)
+                const bool rotation = s.rotationMatch_;
+                s.rotationMatch_ = false;
+                const bool draw = s.matchWinner_ != TEAM_A && s.matchWinner_ != TEAM_B;
+                // (every round: both to the back, the next two in; a drawn round too, which kept the same two before)
+                if (rotation && (s.cfg_.rotate1v1 == 1 || draw)) s.rotateBothOut();
+                else s.rotateWinnerStays(s.matchWinner_);   // (1v1: the loser to the back of the line, the first in line in)
                 s.matchWinner_ = -1;
+                if (rotation) {   // (the same map; straight into the next match when both seats are filled, no warmup)
+                    rulesReset(s);
+                    s.fillOneVsOneSeats();
+                    if (nativeCanAutoStart(s)) startMatch(s);
+                    break;
+                }
                 const CustomRules& c = s.cfg_.custom;
                 if (c.active() && c.maps.size() > 1) { // a custom mode's map pool: on to the next map
                     auto it = std::find(c.maps.begin(), c.maps.end(), s.cfg_.map);

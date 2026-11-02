@@ -21,6 +21,8 @@ enum Action {
     A_RACERESTART, // race / surf: straight back to the start (owner, 2026-10-30: "a separate full-restart key"); unbound
     A_VOLUP, A_VOLDOWN, A_MUTE,           // master volume up / down 5%, mute / unmute (1.19.4 batch 3; unbound)
     A_RECORD, A_JOINTEAM, A_SPECTATE,     // start / stop a demo, play (team modes: the other team), spectate (unbound)
+    A_FLYUP, A_FLYDOWN,   // 3D VAMP's flight: MOVE UP / MOVE DOWN (space / left shift by default, beside jump and dash: they
+                          // never act in the same mode, so binding one doesn't take the key off the other; Game::pressInput)
     A_COUNT
 };
 static_assert(A_COUNT <= 64, "Game::testHeld_ holds a bit per action");

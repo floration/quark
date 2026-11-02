@@ -105,6 +105,7 @@ struct Settings {
     bool leftHanded = false;           // CONTROLS > MORE: HAND: the gun on the left, the grapple launcher on the right
     bool grappleToggle = false;        // CONTROLS > MORE: GRAPPLE press to hook, press again to let go (not held)
     int enemyModel = -1;               // GAMEPLAY > MORE: every enemy drawn as this player model (-1: their own)
+    int teamModel = -1;                // GAMEPLAY > MORE: every teammate drawn as this player model (-1: their own)
     bool hpScaled = true;              // health bars against the mode's max health (not 100)
     bool exclusiveAudio = false;   // Windows: the sound device to the game alone (lower latency; other programs silent)
     // Settings > VIDEO + AUDIO > DEVICES (devices.h): stable ids, "" = the default; one that's gone falls back to it
@@ -382,6 +383,7 @@ struct Settings {
     int altToggleWpns = -1;            // ALT-FIRE: TOGGLE applies to these weapons (bits; -1: the ones that zoom)
     int swapFire = 0;                  // these weapons swap FIRE and ALT FIRE (bits)
     bool autoHop = true;               // holding jump jumps again on landing (off: a press a jump)
+    int verticalKeys = 0;              // flying (3D VAMP): 0 TWO KEYS (MOVE UP / MOVE DOWN), 1 ONE KEY (MOVE UP held goes up, let go goes down)
     int consoleKey = 96;               // the console's key (GLFW code; ` by default)
     bool consoleMenus = false;         // ...also opens in the menus
     bool rankedAltToggle = true;       // ALT-FIRE: TOGGLE in ranked too
@@ -449,7 +451,8 @@ struct Settings {
     // which used to run on every load: unbinding the knife, syringe or quip came back after a restart (UI test).
     // 3: F4 shows the mouse to photon number (LATENCY); VOTE START moved from F4 to F5.
     // 4: RACE RESET (R) added; unbound if R was taken.
-    int bindVersion = 4;
+    // 5: MOVE UP / MOVE DOWN (3D VAMP's flight) added, on the keys jump and dash have.
+    int bindVersion = 5;
     Settings() { binds.setDefaults(); for (int& w : chWStyle) w = -1; for (float& s : wpnSens) s = 1.0f; }
     bool setBatch3(const std::string& key, const std::string& value);   // (config.cpp: the batch 3 keys)
     std::string batch3Text() const;

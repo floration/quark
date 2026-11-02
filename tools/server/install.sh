@@ -333,9 +333,13 @@ ExecCondition=/bin/test -e $TSTATE/active" 2min
 [ "$BOTH" = 1 ] && $SUDO tee /etc/systemd/system/quark-testing-active.path >/dev/null <<UNIT
 [Unit]
 Description=start the quark testing server while there's a testing build newer than production
+# (no start / trigger limit: a burst of server restarts put this unit in "failed" on 2026-10-30, and nothing started the
+# testing server again when the next testing build made the file reappear: it stayed down until reset by hand)
+StartLimitIntervalSec=0
 [Path]
 PathExists=$TSTATE/active
 Unit=quark-testing.service
+TriggerLimitIntervalSec=0
 [Install]
 WantedBy=paths.target
 UNIT
@@ -344,6 +348,7 @@ if [ "$PRODUCTION" = 0 ] && [ -f /etc/systemd/system/quark-testing-active.path ]
     $SUDO rm -f /etc/systemd/system/quark-testing-active.path
 fi
 $SUDO systemctl daemon-reload
+$SUDO systemctl reset-failed quark-testing-active.path quark-testing.service 2>/dev/null || true   # (a unit left "failed" by an old start limit: cleared on every install)
 if [ "$PRODUCTION" = 1 ]; then
     $SUDO systemctl enable --now quark.service quark-update.timer
     $SUDO systemctl restart quark.service

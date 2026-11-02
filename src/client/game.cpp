@@ -136,6 +136,9 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     // link, lifetime stats) over the first time it sees the secret. Sent in the background, retried until it takes
     // (REVIEW 3.6), then recorded in the config so later starts don't send it again.
     if (!rankKey_.secret.empty() && opts_.screenshot.empty() && cfg_.rankHello != rankKey_.id) { rank_.hello(rankKey_); helloPending_ = true; }
+    // A new player's default name is "player<N>", N their player number from the Worker (POST /number): asked while
+    // the name is still the plain default, then kept in the config like a typed name (see updatePlayerNumber).
+    numberWanted_ = !rankKey_.secret.empty() && opts_.screenshot.empty() && cfg_.name == "player";
     ui_.steadyCaret = !opts_.screenshot.empty();
     if (opts_.hostMode < 0 && opts_.vsBotsMode < 0 && opts_.connect.empty() && opts_.editMap.empty()) loadMenuBackdrop();
     if (opts_.debugInfo) { setScreen(Screen::Info); infoTab_ = opts_.debugInfo - 1; }
@@ -794,10 +797,14 @@ bool Game::pressInput(int code) {
         slot = (code == GLFW_KEY_BACKSPACE || code == GLFW_KEY_DELETE) ? 0 : code;
         // An input does one thing: binding it here removes it from every other action (otherwise the
         // default wheel = next/prev weapon kept firing alongside e.g. wheel = jump). The page says which, with UNDO.
+        // Except flight's MOVE UP / MOVE DOWN and jump / dash: never both in one mode, so one key can be both (the defaults).
+        auto pair = [](int a, int b) {
+            return (a == A_JUMP && b == A_FLYUP) || (a == A_FLYUP && b == A_JUMP) || (a == A_DASH && b == A_FLYDOWN) || (a == A_FLYDOWN && b == A_DASH);
+        };
         if (slot)
             for (int a = 0; a < A_COUNT; a++)
                 for (int k = 0; k < kBindSlots; k++)
-                    if ((a != captureAction_ || k != captureSlot_) && cfg_.binds.code[a][k] == slot) {
+                    if ((a != captureAction_ || k != captureSlot_) && cfg_.binds.code[a][k] == slot && !pair(a, captureAction_)) {
                         cfg_.binds.code[a][k] = 0;
                         bindTakenA_ = a; bindTakenK_ = k; bindTakenCode_ = slot; bindTakenTo_ = captureAction_; bindTakenSlot_ = captureSlot_;
                         bindTakenWas_ = was; bindTakenUntil_ = time_ + 8;
@@ -949,6 +956,7 @@ void Game::onKey(int key, int action, int mods) {
         }
         return;
     }
+    if (screen_ == Screen::TrainerRun && trainerKey(key, action)) return;   // (AIM TRAINER: Esc pauses, R, FIRE; F3 / F4 / screenshot and the settings pass)
     if (bench_.phase != BenchRun::OFF && (screen_ == Screen::InGame || screen_ == Screen::Connecting)) {      // BENCHMARK: Esc cancels, nothing else
         if (action == GLFW_PRESS && key == GLFW_KEY_ESCAPE) benchCancel();
         return;
@@ -1086,7 +1094,7 @@ void Game::onKey(int key, int action, int mods) {
         if (screen_ == Screen::CustomMode) { setScreen(Screen::Host); return; }                  // same as its BACK (unsaved changes dropped)
         if (screen_ == Screen::Host && hostAdvanced_) { hostAdvanced_ = false; cfg_.save(); return; }   // ADVANCED: back to HOST, as its BACK
         if (screen_ == Screen::BenchmarkResult) { setScreen(Screen::Benchmarks); return; }   // (as its BACK; a name being typed is saved as the field closes)
-        if (screen_ == Screen::Join || screen_ == Screen::Host || screen_ == Screen::VsBots || screen_ == Screen::Leaderboard || screen_ == Screen::Demos || screen_ == Screen::Info || screen_ == Screen::Benchmarks) {
+        if (screen_ == Screen::Join || screen_ == Screen::Host || screen_ == Screen::VsBots || screen_ == Screen::Leaderboard || screen_ == Screen::Demos || screen_ == Screen::Info || screen_ == Screen::Benchmarks || screen_ == Screen::Trainer) {
             cfg_.save();
             setScreen(Screen::Main);
         } else if (screen_ == Screen::Connecting) {
@@ -1129,6 +1137,10 @@ void Game::onMouseButton(int button, int action) {
         if (action == GLFW_PRESS && focusGained_ && screen_ == Screen::InGame && !paused_ && !chatting_) { swallowedBtn_ |= (uint16_t)(1u << button); return; }
     }
     markInput();
+    if (screen_ == Screen::TrainerRun && !trResults_ && !trPaused_) {   // AIM TRAINER: FIRE's button clicks (the rifle fires once a click)
+        if (action == GLFW_PRESS && binds().has(A_FIRE, kMouseCode + button)) trClick_ = true;
+        return;
+    }
     if (button == GLFW_MOUSE_BUTTON_LEFT) {
         if (action == GLFW_PRESS) { uiIn_.pressed = captureAction_ < 0; uiIn_.down = true; }
         else if (action == GLFW_RELEASE) uiIn_.down = false;
@@ -1273,6 +1285,7 @@ UserCmd Game::buildCmd() {
     bool block = paused_ || chatting_ || screen_ != Screen::InGame;
     if (block) { // keep key edge tracking current, so keys held through a menu aren't fresh presses after it
         socdPrev_[0] = isDown(A_FORWARD); socdPrev_[1] = isDown(A_BACK); socdPrev_[2] = isDown(A_RIGHT); socdPrev_[3] = isDown(A_LEFT);
+        socdPrevV_[0] = isDown(A_FLYUP); socdPrevV_[1] = isDown(A_FLYDOWN);
         altPrev_ = altKey();
         fireLatched_ = false;   // (a click just before Esc / chat / console fired on the first tick after it)
         moveLatched_ = 0;
@@ -1309,6 +1322,16 @@ UserCmd Game::buildCmd() {
     if (!net_.selfAlive()) useOn_ = false;
     if (cfg_.useToggle ? useOn_ : isDown(A_USE)) c.buttons |= BTN_USE;   // (MORE 6: USE: TOGGLE)
     if (isDown(A_DASH)) c.buttons |= BTN_DASH;
+    {   // flight (3D VAMP): MOVE UP / MOVE DOWN; VERTICAL KEYS: ONE KEY (CONTROLS > MORE 2): up held goes up, let go goes down
+        // (two keys: both held follow SOCD like left + right: cancel, LAST WINS = snap tap, or first wins)
+        const int v = axis(A_FLYUP, A_FLYDOWN, socdLastV_, socdPrevV_[0], socdPrevV_[1]);
+        if (cfg_.verticalKeys == 1) {
+            const bool up = isDown(A_FLYUP);
+            if (up) c.buttons |= BTN_UP;
+            else if (net_.predicted().fly) c.buttons |= BTN_DOWN;
+        } else if (v > 0) c.buttons |= BTN_UP;
+        else if (v < 0) c.buttons |= BTN_DOWN;
+    }
     if (!net_.selfAlive()) grappleOn_ = false;
     if (cfg_.grappleToggle ? grappleOn_ : isDown(A_GRAPPLE)) c.buttons |= BTN_GRAPPLE;
     c.buttons |= moveLatched_;   // (a tap since the last command: in this one)
@@ -1560,12 +1583,19 @@ std::string Game::keyOf(int action) const {
     return "UNBOUND";
 }
 
+// who you may watch: anyone as a spectator (1v1 / duel line: both players), only a teammate while dead in a team match
+bool Game::specWatchable(int id) const {
+    if (!modeIsTeamBased(net_.mode().mode) || isFriendly(id)) return true;
+    const PlayerSnap* me = net_.findPlayer(net_.clientId());
+    return me && (me->flags & PS_SPECTATOR);
+}
+
 void Game::cycleSpec(int dir) {
     deathBody_ = false;   // (YOUR BODY: until you pick someone)
     const auto& ps = framePlayers();
     for (int k = 1; k <= kMaxPlayers; k++) {
         int id = (specTarget_ + dir * k + kMaxPlayers * 2) % kMaxPlayers;   // (-1, none yet: from 0)
-        if (ps[id].valid && (ps[id].snap.flags & PS_ALIVE) && id != net_.clientId() && (!modeIsTeamBased(net_.mode().mode) || isFriendly(id))) { specTarget_ = id; break; }
+        if (ps[id].valid && (ps[id].snap.flags & PS_ALIVE) && id != net_.clientId() && specWatchable(id)) { specTarget_ = id; break; }
     }
 }
 
@@ -1926,6 +1956,12 @@ void Game::frame(double dt) {
         addChat({"wraith: nice shot", Color{1, 1, 1, 1}, time_ + 1e9, 0, true});
         addChat({"ember: gg", Color{1, 1, 1, 1}, time_ + 1e9, 0, true});
     }
+    if (!opts_.trainer.empty() && screen_ == Screen::Main) {   // --trainer ID[:DIFF]
+        const size_t c = opts_.trainer.find(':');
+        trDiff_ = c == std::string::npos ? 0 : std::clamp(atoi(opts_.trainer.c_str() + c + 1), 0, trainer::kDiffs - 1);
+        if (const trainer::Scenario* sc = trainer::findScenario(opts_.trainer.substr(0, c))) trainerStart(sc);
+        opts_.trainer.clear();
+    }
     if (opts_.debugPerf) { perfStage_ = 3; if (pendingInput_ < 0) pendingInput_ = timeNow(); }
     if (opts_.debugPause && screen_ == Screen::InGame && !paused_) { paused_ = true; voteMenu_ = opts_.debugVote; opts_.debugPause = false; }
     if (opts_.debugSettings && screen_ == Screen::InGame && !settingsInGame_) {
@@ -1968,7 +2004,7 @@ void Game::frame(double dt) {
     polledEarly_ = false;
     updateCommunity();
     if (!benchSending_.empty() && bench_.phase == BenchRun::OFF) benchUploads();   // (BENCHMARK: answers to the runs' uploads; never mid-run)
-    if (((screen_ == Screen::InGame && !bake_) || screen_ == Screen::Editor || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty() || opts_.menuShot) && !opts_.screenshot.empty() && shotAt_ < 0) shotAt_ = time_ + opts_.shotDelay;
+    if (((screen_ == Screen::InGame && !bake_) || screen_ == Screen::Editor || screen_ == Screen::TrainerRun || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty() || opts_.menuShot) && !opts_.screenshot.empty() && shotAt_ < 0) shotAt_ = time_ + opts_.shotDelay;
 
     if (screen_ == Screen::Join) browser_.poll();
     if (reconnectAt_ > 0 && time_ >= reconnectAt_) {   // (AUTO RECONNECT's try, from the main menu it left you on)
@@ -2006,6 +2042,7 @@ void Game::frame(double dt) {
     }
 
     if (helloPending_ && rank_.helloDone()) { helloPending_ = false; cfg_.rankHello = rankKey_.id; cfg_.save(); }   // (any screen)
+    if (numberWanted_) updatePlayerNumber();   // (any screen)
     if (screen_ == Screen::InGame) {
         handleEvents();
         updateAnnouncer();
@@ -2264,7 +2301,9 @@ void Game::frame(double dt) {
         uiIn_.backspace = uiIn_.enter = uiIn_.tab = uiIn_.escape = uiIn_.copy = false;
         return;
     }
-    if (screen_ == Screen::Editor) {
+    if (screen_ == Screen::TrainerRun) {
+        trainerFrame(dt);
+    } else if (screen_ == Screen::Editor) {
         if (!edScript_.empty()) edScriptStep();
         editorFrame(dt);
     } else if (screen_ == Screen::InGame && bake_) {
@@ -2308,7 +2347,7 @@ void Game::frame(double dt) {
         if (screen_ == Screen::BenchmarkResult) notify((r_.screenshot(benchShot_) ? "SAVED " : "COULD NOT WRITE ") + upper(benchShot_), 6);
         benchShot_.clear();
     }
-    if (shotAt_ > 0 && time_ >= shotAt_ && (screen_ == Screen::InGame || screen_ == Screen::Editor || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty() || opts_.menuShot)) {
+    if (shotAt_ > 0 && time_ >= shotAt_ && (screen_ == Screen::InGame || screen_ == Screen::Editor || screen_ == Screen::TrainerRun || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty() || opts_.menuShot)) {
         r_.screenshot(opts_.screenshot);
         printf("screenshot written to %s\n", opts_.screenshot.c_str());
         quit_ = true;
@@ -2458,14 +2497,14 @@ void Game::drawWorld(float alpha) {
     } else {
         stepCam_ = 0; stepGround_ = false;
         // team modes: an enemy (the killer) only for kKillCamTime, then a teammate (F11)
-        const bool enemyCam = specTarget_ >= 0 && modeIsTeamBased(ms.mode) && !isFriendly(specTarget_) && time_ >= killCamUntil_;
+        const bool enemyCam = specTarget_ >= 0 && !specWatchable(specTarget_) && time_ >= killCamUntil_;
         const PlayerSnap* meSnap = net_.findPlayer(me);
         if (deathBody_ && (!meSnap || (meSnap->flags & PS_SPECTATOR))) deathBody_ = false;   // (YOUR BODY: only while dead in the match)
         if (deathBody_) specTarget_ = -1;
         else if (enemyCam || specTarget_ < 0 || !players[specTarget_].valid || !(players[specTarget_].snap.flags & PS_ALIVE)) {
             specTarget_ = -1;
             for (int i = 0; i < kMaxPlayers; i++)
-                if (i != me && players[i].valid && (players[i].snap.flags & PS_ALIVE) && (isFriendly(i) || !modeIsTeamBased(ms.mode))) { specTarget_ = i; break; }
+                if (i != me && players[i].valid && (players[i].snap.flags & PS_ALIVE) && specWatchable(i)) { specTarget_ = i; break; }
         }
         if (specTarget_ >= 0) {
             const PlayerSnap& t = players[specTarget_].snap;
@@ -2549,9 +2588,11 @@ void Game::drawWorld(float alpha) {
         auto at = [&](float h) { return pos + Vec3(0, h * hs * bs, 0); };
         Vec3 fwd = {-std::sin(yaw), 0, -std::cos(yaw)}, rgt = {std::cos(yaw), 0, -std::sin(yaw)};
         // the player model (cosmetic: every model fits the same hitbox); ranked / time trial: the default for everyone
-        // (GAMEPLAY > MORE: ENEMY MODEL draws every enemy as one model)
+        // (GAMEPLAY > MORE: ENEMY MODEL / TEAM MODEL draw every enemy / teammate as one model)
+        const bool friendly = !self && isFriendly(i);
         const int pm = ranked ? 0 : opts_.debugModels && i >= kMaxPlayers - kPlayerModels ? i - (kMaxPlayers - kPlayerModels)
-                     : cfg_.enemyModel >= 0 && !self && !isFriendly(i) ? cfg_.enemyModel : net_.playerModel(i);
+                     : cfg_.enemyModel >= 0 && !self && !friendly ? cfg_.enemyModel
+                     : cfg_.teamModel >= 0 && friendly ? cfg_.teamModel : net_.playerModel(i);
         const ModelMesh* ov = modelOverride(MODEL_PLAYER, pm);
         // sunlight on them: only coloured geometry uses it (the shadow pass doesn't), so not for yourself in first
         // person, nor for a box model out of view (its boxes and what it holds, all within 2.5 m: shadow pass only).
@@ -3664,7 +3705,7 @@ Game::HudRect Game::drawHudBars(const Settings::HudElem& e, float W, float H, fl
     lay::Rect c;
     const lay::Rect r = hudSimple(el, W, H, 0.5f, 0.5f, left + cw * 0.5f, top + ch * 0.5f, k, cw, ch, c);
     if (!draw) return {r.x, r.y, r.w, r.h};
-    if (cfg_.autoHideBars && !paused_ && v.wRem <= 0 && v.hookRem <= 0 && v.dashHave >= v.dashN && v.dashReady) return {r.x, r.y, r.w, r.h};   // (AUTO-HIDE: all ready)
+    if (cfg_.autoHideBars && !paused_ && v.wRem <= 0 && (v.fly || (v.hookRem <= 0 && v.dashHave >= v.dashN && v.dashReady))) return {r.x, r.y, r.w, r.h};   // (AUTO-HIDE: all ready)
     AlphaScope a(r_, hudOpacity(el));
     hudBoxDraw(el, r, k, {0, 0, 0, 0});
     const float bx = c.x + capW, y0 = c.y + 1;
@@ -3676,6 +3717,7 @@ Game::HudRect Game::drawHudBars(const Settings::HudElem& e, float W, float H, fl
     };
     const int caps = cfg_.barCaps;   // (GAMEPLAY > MORE 3: CAPTIONS: bit 0 WEAPON, 1 DASH, 2 HOOK)
     bar(y0, caps & 1 ? "WEAPON" : nullptr, wW, v.wRem, v.wTot);
+    if (v.fly) return {r.x, r.y, r.w, r.h};   // (3D FLYING: no dash, no grapple)
     {   // dash: a pip per charge (the ground refills them, a bhop landing one): a spent charge is empty; a charge
         // that's there but can't be dashed yet (the dash still running, or the 0.6 s cooldown since it ended) is a
         // whole pip in the off color (light grey, no progress fill), and the moment that dash is allowed it turns
@@ -4144,12 +4186,14 @@ Game::HudRect Game::drawHudElement(int el, float W, float H, float s, bool sampl
                                                // blue flash before the cooldown starts)
                 v.hookRem = mv.hookCooldown;
                 v.hookTot = kHookCooldown * moveValue(mv, MV_HOOK_COOLDOWN, &net_.map());
+                v.fly = mv.fly;
             }
             return drawHudBars(e, W, H, s, v, hudTint(el, fc), draw);
         }
         case Settings::HUD_SPEED: {
             const MoveState& mv = net_.predicted();
-            return drawHudSpeed(e, W, H, s, sample ? 12.0f : std::sqrt(mv.vel.x * mv.vel.x + mv.vel.z * mv.vel.z), draw);
+            // (3D FLYING: the whole speed, up and down too)
+            return drawHudSpeed(e, W, H, s, sample ? 12.0f : std::sqrt(mv.vel.x * mv.vel.x + mv.vel.z * mv.vel.z + (mv.fly ? mv.vel.y * mv.vel.y : 0.0f)), draw);
         }
         case Settings::HUD_SLOTS: {
             const ModeState& ms = net_.mode();
@@ -4489,7 +4533,8 @@ void Game::drawHud() {
         r_.rect(cx - bw * 0.5f, by, bw, bh, {0.05f, 0.06f, 0.08f, 0.8f});
         r_.rect(cx - bw * 0.5f, by, bw, 3 * s, rgba(cfg_.colorFriendly));
         r_.text(cx - r_.textWidth(t, bts) * 0.5f, by + 8 * s, bts, t, kWhite);
-        ui_.hintCentered(cx, by + bh + 4 * s, "JOIN A TEAM FROM THE MENU (ESC)", infoC);
+        const int sm = net_.mode().mode;
+        ui_.hintCentered(cx, by + bh + 4 * s, modeIsTeamBased(sm) && !isOneVsOneMode(sm) && sm != MODE_DUEL ? "JOIN A TEAM FROM THE MENU (ESC)" : "JOIN THE GAME FROM THE MENU (ESC)", infoC);
         ny = by + bh + 4 * s + hh + 4 * s;
     }
     if (itBanner && !seekerWall) {
@@ -6159,6 +6204,7 @@ std::string Game::voteModsText() const {
     if (m.vampire) t += "vampire=1\n";
     if (m.regen) t += "regen=1\n";
     if (m.instagib) t += "instagib=1\n";
+    if (m.fly) t += "fly=1\n";
     if (!m.selfDamage) t += "selfdamage=0\n";
     if (!m.dash) t += "dash=0\n";
     if (!m.grapple) t += "grapple=0\n";
@@ -6225,16 +6271,21 @@ void Game::drawVoteSetup() {
                             {"KNOCKBACK", &m.knockback, 0.25f, 0, 5, false}, {"HEALTH", &m.health, 25, 25, 500, true}};
         struct Flag { const char* on; bool* v; };
         const Flag flags[] = {{"VAMPIRE", &m.vampire}, {"REGEN", &m.regen}, {"INSTAGIB", &m.instagib},
-                              {"SELF DAMAGE", &m.selfDamage}, {"DASH", &m.dash}, {"GRAPPLE", &m.grapple}};
+                              {"SELF DAMAGE", &m.selfDamage}, {"DASH", &m.dash}, {"GRAPPLE", &m.grapple}, {"3D FLYING", &m.fly}};
         const float tw = 2 * kPW + 24, x0 = 640 - tw * 0.5f, x1 = x0 + kPW + 24;
         const SetLayout L2 = ingameLayout(tw + 32);
-        const float kH = 40 + 6 * (kPRow + kPGap) - kPGap + 20 + kPRow;
+        const float kH = 40 + 7 * (kPRow + kPGap) - kPGap + 20 + kPRow;
         float y = ingameTop(L2, kH);
         ui_.panel(L2.X(x0 - 16), L2.Y(y - 16), L2.L(tw + 32), L2.L(kH + 32), 0.95f);
         ui_.labelCentered(L2.X(640), L2.Y(y), "VOTE: MODIFIERS", kWhite, 1.5f, L2.L(tw));
         y += 40;
         const float bw = 44;
-        for (int k = 0; k < 6; k++, y += kPRow + kPGap) {
+        for (int k = 0; k < 7; k++, y += kPRow + kPGap) {
+            const Flag& f = flags[k];
+            if (k == 6) {   // (the last flag, 3D FLYING: a row of its own, under the numbers)
+                if (ui_.button(L2.X(x1), L2.Y(y), L2.L(kPW), L2.L(kPRow), onOff(f.on, *f.v), UiExp::state("votesetup").withId(f.on))) *f.v = !*f.v;
+                continue;
+            }
             const Num& n = nums[k];
             char b[64];
             if (n.points) snprintf(b, sizeof b, "%s %d", n.name, (int)std::lround(*n.v));
@@ -6245,7 +6296,6 @@ void Game::drawVoteSetup() {
                 *n.v = std::max(n.lo, *n.v - n.step);
             if (ui_.button(L2.X(x0 + kPW - bw), L2.Y(y), L2.L(bw), L2.L(kPRow), "+", (up ? UiExp::state("votesetup") : UiExp::inert()).withId(n.name), up))
                 *n.v = std::min(n.hi, *n.v + n.step);
-            const Flag& f = flags[k];
             if (ui_.button(L2.X(x1), L2.Y(y), L2.L(kPW), L2.L(kPRow), onOff(f.on, *f.v), UiExp::state("votesetup").withId(f.on))) *f.v = !*f.v;
         }
         y += 20 - kPGap;
@@ -6312,7 +6362,10 @@ void Game::drawPauseMenu(float cx, float y) {
         if (c.half(2, confirmArmed("quit") ? "SURE? QUIT" : "QUIT", (cfg_.confirmLeave && !confirmArmed("quit") ? UiExp::state("confirm", "quit") : UiExp::quit()).withId("QUIT")) && confirmed("quit")) quit_ = true;
         return;
     }
-    const bool teamMode = modeIsTeamBased(net_.mode().mode), ranked = net_.mode().flags & MS_RANKED;
+    // (1v1s and duels have sides but no teams to pick: one JOIN GAME, the server seats you or puts you in line; owner,
+    // 2026-11-02: "it should say join game instead of join team a/b when theres no teams")
+    const int pm = net_.mode().mode;
+    const bool teamMode = modeIsTeamBased(pm) && !isOneVsOneMode(pm) && pm != MODE_DUEL, ranked = net_.mode().flags & MS_RANKED;
     const int pairs = (teamMode ? 2 : 1) + 4 + (host_ ? 0 : 1);   // (JOIN A + B or PLAY), SPECTATE, VOTE, QUEUE, RECORD DEMO (, PLAYERS: the host's is under HOST)
     const int rows = 1 + (pairs + 1) / 2 + 1 + (host_ ? 2 + (ranked ? 0 : 2) : 0);
     const float kH = pauseH(rows, host_ ? 1 : 0, true);
@@ -6331,7 +6384,7 @@ void Game::drawPauseMenu(float cx, float y) {
     if (teamMode) {
         if (pair("JOIN TEAM A", UiExp::cmd("team a"))) { net_.sendCommand("team a"); paused_ = false; }
         if (pair("JOIN TEAM B", UiExp::cmd("team b"))) { net_.sendCommand("team b"); paused_ = false; }
-    } else if (pair("PLAY", UiExp::cmd("team a"))) { net_.sendCommand("team a"); paused_ = false; }
+    } else if (pair("JOIN GAME", UiExp::cmd("team a"))) { net_.sendCommand("team a"); paused_ = false; }
     if (pair("SPECTATE", UiExp::cmd("team spec"))) { net_.sendCommand("team spec"); paused_ = false; }
     if (pair("VOTE", UiExp::nav("ingame/pause/vote"))) voteMenu_ = true;
     if (pair(queued_.empty() ? "QUEUE" : "QUEUE (" + std::to_string(queued_.size()) + ")", UiExp::nav("ingame/pause/queue").withId("QUEUE"))) queueMenu_ = true;
@@ -6422,6 +6475,23 @@ void Game::openSettingsTab(int tab) {
     captureAction_ = -1;
     ui_.closePopup();
     cfg_.save();
+}
+
+// The default name "player" becomes "player<N>" once the Worker answers this player's number (asked again every
+// 5 minutes while it can't). Stops for good when the name changes first: a name the player typed is never replaced.
+void Game::updatePlayerNumber() {
+    if (cfg_.name != "player" || uiTest_) { numberWanted_ = false; return; }
+    if (!numberAsked_ && time_ >= nextNumberAsk_) { rank_.request("number", "/number", "secret=" + rankKey_.secret); numberAsked_ = true; }
+    std::string out;
+    if (!rank_.takeText("number", out)) return;
+    numberAsked_ = false;
+    long n = 0;
+    if (out.rfind("num ", 0) == 0) n = std::strtol(out.c_str() + 4, nullptr, 10);
+    if (n <= 0 || n > 99999999) { nextNumberAsk_ = time_ + 300; return; }   // (no server, an old Worker, offline: later)
+    numberWanted_ = false;
+    cfg_.name = "player" + std::to_string(n);
+    cfg_.save();
+    if (net_.state() == ConnState::Connected) net_.sendCommand("name " + cfg_.name);
 }
 
 // BACK and Esc: save, send what changed, back where settings was opened from (and on its first tab next time)
@@ -7440,14 +7510,19 @@ void Game::drawMoreSettings(const SetLayout& L) {
         cfg_.chatOpacity = clampf(cfg_.chatOpacity, 0.1f, 1.0f);
         f.next();
         f.hint("WHILE TYPING, CHAT IS ALWAYS FULLY SHOWN");
-        f.section("ENEMIES");
+        f.section("FORCE PLAYER MODELS");
         {
             static std::vector<std::string> en;
             if (en.empty()) { en.push_back("ENEMY MODEL: THEIR OWN"); for (int m = 0; m < kPlayerModels; m++) en.push_back(std::string("ENEMY MODEL: ") + playerModelName(m)); }
             int ei = cfg_.enemyModel + 1;
             if (ui_.cycle(f.x(), f.top(), w, h, "ENEMY MODEL", ei, kPlayerModels + 1, en, UiExp::cfg("enemy_model"))) cfg_.enemyModel = ei - 1;
             f.next();
-            f.hint("EVERY ENEMY AS ONE MODEL (NOT IN RANKED,", "WHERE EVERYONE IS STANDARD)");
+            static std::vector<std::string> tm;
+            if (tm.empty()) { tm.push_back("TEAM MODEL: THEIR OWN"); for (int m = 0; m < kPlayerModels; m++) tm.push_back(std::string("TEAM MODEL: ") + playerModelName(m)); }
+            int ti = cfg_.teamModel + 1;
+            if (ui_.cycle(f.x(), f.top(), w, h, "TEAM MODEL", ti, kPlayerModels + 1, tm, UiExp::cfg("team_model"))) cfg_.teamModel = ti - 1;
+            f.next();
+            f.hint("EVERY ENEMY / TEAMMATE AS ONE MODEL (NOT IN", "RANKED, WHERE EVERYONE IS STANDARD)");
         }
         f.section("ALL SETTINGS");   // every setting as text on the clipboard (your name, Discord and servers stay yours)
         {
@@ -8582,9 +8657,13 @@ void Game::drawControlsMore2(const SetLayout& L) {
     f.hint("ROTATION STEP: Q / E ON A SPAWN; THE FLY", "SPEED, GRID AND LAST LIGHT ARE KEPT");
 
     g.header("MOVEMENT");
-    ui_.toggle(g.x(), g.top(), w, h, "AUTO-HOP", cfg_.autoHop, UiExp::cfg("auto_hop"));
+    ui_.toggle(g.x(), g.top(), hw, h, "AUTO-HOP", cfg_.autoHop, UiExp::cfg("auto_hop"));
+    {   // flight (3D VAMP): MOVE UP and MOVE DOWN, or MOVE UP alone (held: up, let go: down)
+        static const std::vector<std::string> vn = {"VERTICAL: TWO KEYS", "VERTICAL: ONE KEY"};
+        if (ui_.cycle(gx2, g.top(), hw, h, "VERTICAL KEYS", cfg_.verticalKeys, 2, vn, UiExp::cfg("vertical_keys"))) cfg_.save();
+    }
     g.next();
-    g.hint("OFF: HOLDING JUMP JUMPS ONCE; LET GO", "AND PRESS AGAIN FOR THE NEXT");
+    g.hint("AUTO-HOP OFF: HELD JUMP JUMPS ONCE", "FLYING, ONE KEY: MOVE UP HELD UP, LET GO DOWN");
     g.section("CONSOLE");
     {
         static const int keys[] = {96, 290, 299, 300, 260, 268, 92, 39};   // ` F1 F10 F11 INSERT HOME \ '
@@ -8924,7 +9003,7 @@ void Game::drawControls(const SetLayout& L) {
     if (controlsSub_ == 2) {   // (1.19.4: the keys that didn't fit the other two pages)
         keyRows(kColL, keyRows(kColL, keyRows(kColL, keyRows(kColL, 154, "WEAPONS", {A_LASTWEAPON}), "CHAT", {A_TEAMCHAT}), "PRACTICE", {A_SAVEPOS, A_LOADPOS}),
                 "MATCH", {A_RECORD, A_JOINTEAM, A_SPECTATE});
-        keyRows(kColR, keyRows(kColR, keyRows(kColR, keyRows(kColR, 154, "SPECTATING", {A_SPECNEXT, A_SPECPREV}), "SCREEN", {A_HIDEHUD}), "RACE", {A_RACERESTART}),
+        keyRows(kColR, keyRows(kColR, keyRows(kColR, keyRows(kColR, 154, "SPECTATING", {A_SPECNEXT, A_SPECPREV}), "SCREEN", {A_HIDEHUD}), "RACE + FLYING", {A_RACERESTART, A_FLYUP, A_FLYDOWN}),
                 "SOUND", {A_VOLUP, A_VOLDOWN, A_MUTE});
     } else if (controlsSub_ == 1) {
         float y = keyRows(kColL, 154, "MOVEMENT", {A_FORWARD, A_BACK, A_LEFT, A_RIGHT, A_JUMP, A_DASH, A_GRAPPLE, A_USE});
@@ -8962,7 +9041,7 @@ void Game::drawControls(const SetLayout& L) {
         static const std::vector<std::string> an = {"ALT-FIRE: HOLD", "ALT-FIRE: TOGGLE"};
         if (ui_.cycle(f.x(), f.top(), w, h, "SOCD", cfg_.socd, 3, sn, UiExp::cfg("socd"))) cfg_.save();
         f.next();
-        f.hint("LEFT + RIGHT HELD: LAST WINS = SNAP TAP");
+        f.hint("LEFT + RIGHT HELD: LAST WINS = SNAP TAP (FLYING UP + DOWN TOO)");
         int at = cfg_.altToggle;
         if (ui_.cycle(f.x(), f.top(), w, h, "ALT", at, 2, an, UiExp::cfg("alt_toggle"))) { cfg_.altToggle = at; cfg_.save(); }
         f.next();
@@ -9309,6 +9388,12 @@ void Game::debugMenuPage() {
     size_t plus = p.find('+');
     if (plus != std::string::npos) { scroll = atoi(p.c_str() + plus + 1); p = p.substr(0, plus); }
     auto under = [&](const char* a) { return p.rfind(a, 0) == 0; };
+    if (under("trainer")) {   // AIM TRAINER's menu: trainer, or trainer/<mode 0-1>/<category 0-2>/<difficulty 0-2>
+        openTrainer();
+        int m = 0, c = 0, d = 0;
+        if (sscanf(p.c_str(), "trainer/%d/%d/%d", &m, &c, &d) >= 1) { trMode_ = std::clamp(m, 0, trainer::TR_MODES - 1); trCat_ = std::clamp(c, 0, trainer::CAT_COUNT - 1); trDiff_ = std::clamp(d, 0, trainer::kDiffs - 1); }
+        return;
+    }
     if (under("benchmarks")) {   // (benchmarks/result: the newest saved run)
         setScreen(Screen::Benchmarks);
         if (p == "benchmarks/result") {
@@ -9354,7 +9439,7 @@ void Game::debugMenuPage() {
 
 void Game::drawMenu() {
     QZONE("drawMenu");
-    if (screen_ == Screen::InGame || screen_ == Screen::Editor) return;
+    if (screen_ == Screen::InGame || screen_ == Screen::Editor || screen_ == Screen::TrainerRun) return;
     const float W = (float)r_.width(), H = (float)r_.height();
     float s = H / 720.0f;
     ui_.begin(&r_, uiIn_, s);
@@ -9380,6 +9465,7 @@ void Game::drawMenu() {
         case Screen::Demos: drawDemos(menuLayout(592)); break;
         case Screen::Benchmarks: drawBenchList(menuLayout(592)); break;
         case Screen::BenchmarkResult: drawBenchResults(menuLayout(960)); break;
+        case Screen::Trainer: drawTrainerMenu(menuLayout(960)); break;
         case Screen::CustomMode: drawCustomModeEditor(menuLayout(960)); break;
         case Screen::Connecting: drawConnecting(L); break;
         default: break;
@@ -9406,7 +9492,8 @@ void Game::drawMainMenu(const SetLayout& L) {
     if (ui_.button(x2, L.Y(438), hw, h, "INFO", UiExp::nav("info/*"))) setScreen(Screen::Info);   // how everything works
     if (ui_.button(x, L.Y(486), hw, h, "DISCORD", UiExp::url())) openUrl(kDiscordUrl);
     if (ui_.button(x2, L.Y(486), hw, h, "DEMOS", UiExp::nav("demos"))) setScreen(Screen::Demos);
-    if (ui_.button(x, L.Y(534), w, h, "BENCHMARK", UiExp::nav("benchmarks"))) setScreen(Screen::Benchmarks);
+    if (ui_.button(x, L.Y(534), hw, h, "AIM TRAINER", UiExp::nav("trainer"))) openTrainer();
+    if (ui_.button(x2, L.Y(534), hw, h, "BENCHMARK", UiExp::nav("benchmarks"))) setScreen(Screen::Benchmarks);
     if (ui_.button(x, L.Y(594), w, h, confirmArmed("quit") ? "SURE? QUIT" : "QUIT", (cfg_.confirmLeave && !confirmArmed("quit") ? UiExp::state("confirm", "quit") : UiExp::quit()).withId("QUIT")) &&
         confirmed("quit")) quit_ = true;   // (destructive: its own row, 20 px below)
     if (!error_.empty()) ui_.labelCentered(L.X(640), L.Y(650), error_, kRed, 1.0f, L.L(960));
@@ -9858,10 +9945,10 @@ void Game::drawCustomModeEditor(const SetLayout& L) {
         p = at(1, 3);
         ui_.slider(p.first, p.second, cw, h, "KNOCKBACK", r.knockback, 0, 5, "%.2fX", ce, kStd.knockback);
         r.gravity = clampf(r.gravity, 0.1f, 3); r.moveSpeed = clampf(r.moveSpeed, 0.25f, 3); r.jump = clampf(r.jump, 0.25f, 3); r.knockback = clampf(r.knockback, 0, 5);
-        struct { const char* name; bool* v; } abil[7] = {{"DASH", &r.dash}, {"GRAPPLE", &r.grapple}, {"ROCKET RIDE", &r.rocketRide},
+        struct { const char* name; bool* v; } abil[8] = {{"DASH", &r.dash}, {"GRAPPLE", &r.grapple}, {"ROCKET RIDE", &r.rocketRide},
                                                          {"SELF DAMAGE", &r.selfDamage}, {"INSTAGIB", &r.instagib}, {"VAMPIRE", &r.vampire},
-                                                         {"REGEN", &r.regen}};
-        for (int i = 0; i < 7; i++) { p = at(2, i); ui_.toggle(p.first, p.second, cw, h, abil[i].name, *abil[i].v, ce); }
+                                                         {"REGEN", &r.regen}, {"3D FLYING", &r.fly}};
+        for (int i = 0; i < 8; i++) { p = at(2, i); ui_.toggle(p.first, p.second, cw, h, abil[i].name, *abil[i].v, ce); }
     } else if (customTab_ == 1) {   // a row per weapon: on / off, then FIRE RATE, DAMAGE, SPEED as this mode makes them
         static const CustomRules kStdW;
         int row = 0;
@@ -10448,6 +10535,16 @@ void Game::drawInfo(const SetLayout& L) {
     }
 }
 
+// where the F3 / F4 box at the top left ends (0: neither shown): what's drawn there goes under it
+float Game::perfBoxBottom() const {
+    const float s = r_.height() / 720.0f, ts = std::max(1.0f, std::round(s * 2.0f));
+    if (perfStage_) {
+        const int nl = perfStage_ == 1 ? 1 : perfStage_ == 2 ? 3 : perfPrio_.empty() ? 4 : 5;
+        return 8 * s + (r_.textHeight(ts) + 4 * s) * nl + 4 * s;
+    }
+    return perfMini_ && !perfMiniText_.empty() ? 8 * s + r_.textHeight(ts) + 8 * s : 0.0f;
+}
+
 void Game::drawPerf() {
     if (time_ >= latNextUpdate_) {
         latNextUpdate_ = time_ + 1.0;
@@ -10503,7 +10600,7 @@ void Game::drawPerf() {
         if (lw[i] <= maxW) r_.text(x + 8 * s, y + 4 * s + lh * i, ts, *lines[i], yc);
         else ui_.label(x + 8 * s, y + 4 * s + lh * i, *lines[i], yc, ts / ui_.textScale(), maxW);
     }
-    if (perfStage_ == 3 && screen_ == Screen::InGame) drawPipeline(x, y + lh * nl + 16 * s, std::max(1.0f, ts * 0.85f));
+    if (perfStage_ == 3 && (screen_ == Screen::InGame || screen_ == Screen::TrainerRun)) drawPipeline(x, y + lh * nl + 16 * s, std::max(1.0f, ts * 0.85f));
 }
 
 // F4: only the pipeline graph's mouse to photon number, worked out twice a second. The same measuring as F3 runs
@@ -10513,7 +10610,7 @@ void Game::drawPerfMini() {
         perfNextUpdate_ = time_ + 0.5;
         pipeAverages();
         double total = 0;
-        if (screen_ == Screen::InGame) drawPipeline(0, 0, 1, &total);
+        if (screen_ == Screen::InGame || screen_ == Screen::TrainerRun) drawPipeline(0, 0, 1, &total);
         perfMiniText_ = total > 0 ? "MOUSE TO PHOTON ~" + std::to_string((long long)std::llround(total * 1e6)) + " US" : "MOUSE TO PHOTON: IN GAME ONLY";
     }
     if (perfMiniText_.empty()) return;
@@ -11095,15 +11192,18 @@ void Game::drawPicker(float cx, float y) {
     // the builder's mode list: objective based or player based (owner, 2026-11-01)
     static std::vector<int> modeVis;
     modeVis.clear();
-    if (modes && builder) {
+    // (and a retired mode, winner stays, in neither; the host's list ends with the RANKED tile, "mode" MODE_COUNT)
+    if (modes) {
         static const int kObjective[] = {MODE_BOMB, MODE_KOTH, MODE_NPAYLOAD, MODE_PAYLOAD, MODE_POINTS, MODE_RACE, MODE_SURF, MODE_BALL};
         for (int m = 0; m < MODE_COUNT; m++) {
+            if (modeRetired(m)) continue;
             const bool obj = std::find(std::begin(kObjective), std::end(kObjective), m) != std::end(kObjective);
-            if (modeGroup_ == 0 || obj == (modeGroup_ == 1)) modeVis.push_back(m);
+            if (!builder || modeGroup_ == 0 || obj == (modeGroup_ == 1)) modeVis.push_back(m);
         }
+        if (!builder && rankedTile) modeVis.push_back(MODE_COUNT);
     }
-    auto modeAt = [&](int i) { return modes && builder ? modeVis[i] : i; };
-    int n = ladders ? 3 : variants ? kArenaVariants : modes ? (builder ? (int)modeVis.size() : MODE_COUNT + (rankedTile ? 1 : 0)) : (int)maps_.size();
+    auto modeAt = [&](int i) { return modes ? modeVis[i] : i; };
+    int n = ladders ? 3 : variants ? kArenaVariants : modes ? (int)modeVis.size() : (int)maps_.size();
     // a map list: only the maps built for the mode (owner, 2026-10-30: "you shouldnt get to pick maps that are not under the
     // playable gamemode for the map"; a tourney list: built for tourney; ranked: its ladder's maps), vis[i] is card i's map
     static std::vector<int> vis;
@@ -11163,9 +11263,8 @@ void Game::drawPicker(float cx, float y) {
                 int m = bestMapFor(i);
                 if (m >= 0 && m < (int)mapInfo_.size() && (mapInfo_[m].modes >> i & 1)) it.sub = "MAP: " + upper(mapInfo_[m].title);
             }
-            if (i == MODE_ARENA) it.sub = "9 RULESETS >";
+            if (i == MODE_ARENA) it.sub = std::to_string(kArenaVariants) + " RULESETS >";
             if (i == MODE_BALL) it.sub = "TEAMS, A BALL, TWO GOALS - MOST GOALS IN 10 MINUTES";
-            if (i == MODE_WINNER) it.sub = "1V1 ROUNDS, LOSER TO THE BACK OF THE LINE - FIRST TO 10 - RULESETS >";
             if (i == MODE_TOURNEY) it.sub = "BRACKET OF 1V1S - RULESETS >";
         } else {
             const MapInfo& mi = mapInfo_[vis[i]];
@@ -11196,6 +11295,7 @@ void Game::drawPicker(float cx, float y) {
             } else { mapIdx = vis[i]; voteAdvance(); }
             return;
         }
+        if (modes) i = modeAt(i);
         if (multi) multiSel_[i] = !multiSel_[i];
         else if (ladders && live) { // host switches right away, anyone else calls a vote
             net_.sendCommand(std::string(livePickVote_ ? "callvote " : "") + "ranked on " + arenaVariant(kLadders[i]).name);

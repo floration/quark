@@ -2104,8 +2104,8 @@ bool Map::canSupportMode(int mode) const {
         case MODE_VS:
         case MODE_DUEL:
         case MODE_ARENA:
-        case MODE_WINNER:
         case MODE_POWER: return teams;
+        case MODE_WINNER: return false;   // (retired: 1v1 is winner stays now; a map's "modes winner" offers nothing)
         case MODE_TOURNEY: return !spawns.empty();
         case MODE_BOMB: return teams && !bombSites.empty();
         case MODE_BALL: return teams && bombSites.size() == 2;   // (the two goals: the sites)

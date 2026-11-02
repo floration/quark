@@ -684,5 +684,24 @@ check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", lad
   check((await P.result("7c7c7c7c7c7c7c7c", p)) === nr, "and its result");
   check(!db.prepare("SELECT 1 FROM matches WHERE id = ?").get("7c7c7c7c7c7c7c7c"), "nothing pending for it");
 }
+// Player numbers (POST /number): the next number the first time a player is seen, the same one after; the migration
+// numbers the players already known in the order they were first named
+{
+  const mig = new DatabaseSync(":memory:");
+  mig.exec(readFileSync(new URL("./schema.sql", import.meta.url), "utf8").replace(/CREATE TABLE IF NOT EXISTS player_numbers[^;]*;/, ""));
+  for (const [id, name] of [["a1", "Kev"], ["b2", "player"], ["c3", "diana"]]) mig.prepare("INSERT INTO names (id, name, updated) VALUES (?, ?, ?)").run(id, name, 5);
+  mig.exec(readFileSync(new URL("./migrations/0003_player_numbers.sql", import.meta.url), "utf8"));
+  check(mig.prepare("SELECT group_concat(id || '=' || n) AS s FROM (SELECT * FROM player_numbers ORDER BY n)").get().s === "a1=1,b2=2,c3=3", "migration numbers the known players in order");
+  mig.exec(readFileSync(new URL("./migrations/0003_player_numbers.sql", import.meta.url), "utf8"));
+  check(mig.prepare("SELECT COUNT(*) AS n FROM player_numbers").get().n === 3, "the migration runs twice harmlessly");
+  const seq = () => db.prepare("SELECT seq FROM sqlite_sequence WHERE name = 'player_numbers'").get()?.seq ?? 0;
+  const before = seq();   // (AUTOINCREMENT: a number is never handed out twice, even after an id move deletes its row)
+  check((await call("/number", { secret: secret(900) })) === "num " + (before + 1), "a new player gets the next number");
+  check((await call("/number", { secret: secret(900) })) === "num " + (before + 1), "and keeps it");
+  check((await call("/number", { secret: secret(901) })) === "num " + (before + 2), "the next player the one after (no number used up by a repeat)");
+  check((await call("/number", { secret: "x" })) === "bad request", "number needs the secret");
+  await call("/lifetime", { secret: secret(902), kills: "1", deaths: "0", name: Buffer.from("named").toString("hex") });
+  check(db.prepare("SELECT n FROM player_numbers WHERE id = ?").get(id(902))?.n === before + 3, "a player seen with a name is numbered too");
+}
 console.log(fails ? fails + " FAILURE(S)" : "worker tests passed");
 process.exit(fails ? 1 : 0);

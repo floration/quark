@@ -37,6 +37,7 @@ Every map before 1.19.6 was replaced (q: "every current map goes except q's two 
 | Particle Accelerator | race | bomb | - | particle physics lab |
 | Amphitheatre Ruin | king of the hill | team vs, power, free for all | - | a ruined Greek theatre on a hillside above the sea, late in the afternoon |
 | Suspension Bridge | power | team vs, free for all | - | suspension bridge in fog |
+| Black Hole | 1v1 (3D VAMP) | tourney, winner stays, free for all | - | a lone asteroid drifting toward a black hole |
 | Castle | king of the hill | power, free for all | - | a medieval concentric castle |
 | Desert Convoy | multi point | free for all | - | desert highway convoy |
 | Cruise Ship | hide and seek | tag, free for all | - | a cruise liner at sea at dusk |
@@ -71,6 +72,8 @@ Every map before 1.19.6 was replaced (q: "every current map goes except q's two 
 | Spire | free for all | 1v1, duel, team vs, tourney | ranked instagib | the open top floors of a skyscraper going up above the clouds at sunset |
 | Rice Terraces | team vs | power, king of the hill, free for all | - | a sunny hillside of flooded rice terraces, a farm, a mill and a temple |
 | War | multi point | bomb, free for all | - | active warzone |
+
+**Black Hole** is built for the 3D VAMP ruleset (zero-g flight, lasers): a flat 40 x 20 m asteroid top with no cover at all (the fight is in the air round it, so cover would only be something to orbit), the rock tapering away under it in layers so its underside has no ledges to stand on. Everything else is scenery: the black hole (far boxes), its lensed ring and accretion disc (lava: bright and not solid, so the map's bounds, and with them the flyers' 40 m kill box, stay round the rock). `void -50`; `holdfire 3`: the spawns face each other across the bare floor, so nobody fires for the first 3 s.
 
 Each ranked ladder has the map it's designed for (q, 2026-10-31), which going ranked and the ranked pickers choose first: vanilla 1v1 **Greenhouse**, laser vampire 1v1 **Dojo** (`holdfire 5`), instagib free for all **Spire**. qk1-qk8 are ranked on all three.
 

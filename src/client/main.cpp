@@ -109,6 +109,7 @@ int main(int argc, char** argv) {
         else if (a == "--chatshot") opts.chatShot = next();
         else if (a == "--consoleshot") opts.consoleShot = next();
         else if (a == "--bench") opts.bench = atof(next().c_str());
+        else if (a == "--trainer") opts.trainer = next();   // AIM TRAINER: that scenario at once, "ID[:DIFF]" (screenshots)
         else if (a == "--benchmark") {   // the main menu's BENCHMARK, printed, then quit: [demo file] [seconds measured]
             opts.benchmark = true;
             while (i + 1 < argc && argv[i + 1][0] != '-') {

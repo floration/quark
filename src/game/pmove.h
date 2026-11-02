@@ -44,6 +44,10 @@ struct MoveState {
     float jumpGrace = 0;     // jumped off the ground by a press this recently: a dash now is still a ground dash jump
     uint8_t dashBounces = 0; // wall bounces this dash has made
     bool dashSlide = false;  // a dash aimed down met the floor with no jump: ice's grip until run speed or a jump (protocol 64)
+    // Zero-g flight (3D VAMP, AR_FLY; owner, 2026-11-01: "Minecraft creative" flying): no gravity, no jump, dash or grapple;
+    // W/S/A/D on the level, MOVE UP / MOVE DOWN (BTN_UP / BTN_DOWN) straight up and down, at a flat kFlySpeed. The server
+    // sets it at spawn from the rules, like mods (protocol 67)
+    bool fly = false;
     float hookCooldown = 0;
     Vec3 hookPoint;    // grapple anchor while MF_HOOKED (latched onto a player: their body, moved by the server every tick)
     uint8_t mods = 0;  // MOVE_* rule modifiers (duel)

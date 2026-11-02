@@ -221,6 +221,8 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     if (cfg_.maxPlayers > kMaxPlayers) cfg_.maxPlayers = kMaxPlayers;
     // ranked and time trials (their runs reach the leaderboard) play by the standard rules: no custom numbers, no logic
     if (cfg_.ranked || cfg_.timeTrial) cfg_.custom = CustomRules();
+    cfg_.mode = retiredTo(cfg_.mode);   // (winner stays: 1v1, which rotates the line itself now)
+    cfg_.custom.baseMode = retiredTo(cfg_.custom.baseMode);
     if (cfg_.timeTrial) rankedRaceMaps();   // (read the ranked race maps now, not on the first tick's snapshot)
     if (cfg_.custom.active()) { // a custom mode: its mode, limits and map pool
         const CustomRules& c = cfg_.custom;
@@ -1368,9 +1370,37 @@ void Server::rotateWinnerStays(int winner) {
     syncWinnerScores();
 }
 
+bool Server::someoneInLine() const { return firstInLine(*this) >= 0; }
+
+bool Server::rotateEveryRound() const {
+    return cfg_.rotate1v1 > 0 && oneVsOne() && cfg_.mode != MODE_WINNER && (rotationMatch_ || someoneInLine());
+}
+
+void Server::rotateBothOut() {
+    if (!oneVsOne()) return;
+    int seat[2] = {-1, -1};
+    for (int i = 0; i < kMaxPlayers; i++) {
+        const auto& o = players_[i];
+        if (!o.connected || o.balanceBot) continue;
+        if (o.team == TEAM_A && seat[0] < 0) seat[0] = i;
+        if (o.team == TEAM_B && seat[1] < 0) seat[1] = i;
+    }
+    // the winner queues first, the loser behind them (a draw: seat A first)
+    if (matchWinner_ == TEAM_B) std::swap(seat[0], seat[1]);
+    std::string out;
+    for (int i : seat) {
+        if (i < 0) continue;
+        moveToSpectator(i);
+        if (!players_[i].isBot) queueToPlay(i);
+        out += (out.empty() ? "" : " and ") + players_[i].name;
+    }
+    if (!out.empty()) message(out + " go to the back of the line");
+    fillOneVsOneSeats();
+}
+
 // Winner stays: the team scores show the two playing, each one's round wins (their score)
 void Server::syncWinnerScores() {
-    if (cfg_.mode != MODE_WINNER) return;
+    if (cfg_.mode != MODE_WINNER && !rotationMatch_) return;   // (a rotating 1v1 too: the two playing, their kills)
     ms_.scoreA = ms_.scoreB = 0;
     for (const auto& o : players_)
         if (o.connected && !o.balanceBot && (o.team == TEAM_A || o.team == TEAM_B)) (o.team == TEAM_A ? ms_.scoreA : ms_.scoreB) = (int16_t)std::max(0, o.score);
@@ -1649,13 +1679,13 @@ void Server::handleStringCmd(int id, const std::string& s) {
             if (mine >= size) {
                 if (other < size) {            // uneven: no vote needed, take the side with room
                     t = t == TEAM_A ? TEAM_B : TEAM_A;
-                } else if (n[0] == n[1] && !cfg_.ranked) {   // even and full: the players decide (and in line meanwhile)
-                    if (p.queueSeq == 0) queueToPlay(id);
-                    callVote(id, VOTE_LETIN, id);
-                    return;
-                } else if (oneVsOne()) {   // ranked 1v1: in line to play the winner
+                } else if (oneVsOne()) {   // 1v1 (ranked or not): in line to play, no vote (owner, 2026-11-02: queue spectators, don't ask to let them in)
                     if (p.queueSeq == 0) queueToPlay(id);
                     else { GameEvent e; e.type = EV_MESSAGE; e.text = "you're already in line to play"; sendEvent(id, e); }
+                    return;
+                } else if (n[0] == n[1] && !cfg_.ranked) {   // a 2v2 duel, even and full: the players decide (and in line meanwhile)
+                    if (p.queueSeq == 0) queueToPlay(id);
+                    callVote(id, VOTE_LETIN, id);
                     return;
                 } else {
                     GameEvent e; e.type = EV_MESSAGE; e.text = cfg_.ranked ? "that side is full (ranked is 1v1)" : "that side is full"; sendEvent(id, e);
@@ -1784,7 +1814,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
                 const size_t eq = w.find('=');
                 const std::string k = eq == std::string::npos ? w : w.substr(0, eq), v = eq == std::string::npos ? "" : w.substr(eq + 1);
                 static const char* const kNum[] = {"gravity", "speed", "jump", "knockback", "damage", "health"};
-                static const char* const kBool[] = {"vampire", "regen", "selfdamage", "dash", "grapple", "instagib"};
+                static const char* const kBool[] = {"vampire", "regen", "selfdamage", "dash", "grapple", "instagib", "fly"};
                 bool known = false, num = false;
                 for (const char* n : kNum) if (k == n) known = num = true;
                 for (const char* n : kBool) if (k == n) known = true;
@@ -2204,6 +2234,7 @@ void Server::spawnPlayer(int id) {
     if (crouch) p.move.flags |= MF_CROUCHED;
     if (arenaRules() & AR_QUICK_DASH) p.move.mods |= MOVE_QUICK_DASH;
     if (arenaRules() & AR_LOW_GRAVITY) p.move.mods |= MOVE_LOW_GRAVITY;
+    p.move.fly = (arenaRules() & AR_FLY) != 0;   // (3D VAMP: zero-g flight, pmove's own)
     if (ms_.mode == MODE_SURF) p.move.mods |= MOVE_RUN_ONLY;   // (surf: strafe only, no dash or grapple)
     p.nextFire = cmdClockOf(p, time()) + kSpawnFireLock;   // (on the command clock, as refire)
     p.respawnAt = -1;
@@ -2261,6 +2292,7 @@ void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const
     if (!rulesCanHit(*this, attacker, victim, weapon)) return;
     if (isItMode(ms_.mode) && attacker >= 0 && attacker != victim) { rulesStab(*this, attacker, victim); return; }   // (a find / "it" passed on)
     Vec3 kb = cfg_.custom.active() ? knock * cfg_.custom.knockback : knock;   // (a custom mode's knockback)
+    if (arenaRules() & AR_NO_KNOCKBACK) kb = {};   // (3D VAMP: nothing pushes)
     if (!friendly) {
         v.move.vel += kb;
         if (kb.y > 0.5f) v.move.flags &= ~MF_ONGROUND;
@@ -2303,10 +2335,8 @@ void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const
         }
         // Vampire laser: damage dealt heals the attacker (up to full health).
         ServerPlayer& a = players_[attacker];
-        if ((rules & AR_VAMPIRE) && a.alive) { // healing fades as the round goes on
-            float f = clampf((time() - roundStart_) / kVampireFadeTime, 0, 1);
-            a.health = std::min(lifeMaxHealth(), a.health + dmg * (1.0f - (1.0f - kVampireMinHeal) * f));
-        }
+        if ((rules & AR_VAMPIRE) && a.alive)   // healing fades as the round goes on (from each round's start)
+            a.health = std::min(lifeMaxHealth(), a.health + dmg * vampireHealShare((float)(time() - roundStart_), vampireFade()));
     }
     glog(LOG_VERBOSE, "hit attacker=%d victim=%d dmg=%.2f weapon=%d health=%.2f", attacker, victim, dmg, weapon, v.health);
     if (v.health <= 0) {
@@ -2505,7 +2535,8 @@ void Server::simulate() {
     for (int i = 0; i < kMaxPlayers; i++) {
         ServerPlayer& p = players_[i];
         if (!p.connected) continue;
-        if (p.alive && (p.move.pos.y < map_.killY() || (!map_.lava.empty() && map_.inLava(playerBox(p.move))))) killPlayer(i, ringOutKiller(i), 252);
+        if (p.alive && (p.move.pos.y < map_.killY() || (!map_.lava.empty() && map_.inLava(playerBox(p.move))) || (p.move.fly && flownOut(p.move.pos))))
+            killPlayer(i, ringOutKiller(i), 252);
         if (!p.alive && p.respawnAt >= 0 && time() >= p.respawnAt && p.team != TEAM_SPECTATOR) spawnPlayer(i);
         if (p.alive && (arenaRules() & AR_REGEN) && time() - p.lastDamagedAt > 3.0 && p.health < lifeMaxHealth())
             p.health = std::min(lifeMaxHealth(), p.health + 10.0f * dt()); // regeneration: 10 hp/s after 3 s untouched
@@ -2817,7 +2848,7 @@ void Server::grappleTargets(int id, const UserCmd& cmd, HookProbe& probe) {
     const ServerPlayer& p = players_[id];
     probe.n = 0;
     // only when this command can fire the hook (held, not caught yet this press, the cooldown about done)
-    if (!(cmd.buttons & BTN_GRAPPLE) || (p.move.flags & (MF_HOOKHELD | MF_HOOKED | MF_FROZEN)) || (p.move.mods & MOVE_RUN_ONLY)) return;
+    if (!(cmd.buttons & BTN_GRAPPLE) || (p.move.flags & (MF_HOOKHELD | MF_HOOKED | MF_FROZEN)) || (p.move.mods & MOVE_RUN_ONLY) || p.move.fly) return;   // (flying: no grapple)
     if (!moveTuning().grapple || p.move.hookCooldown > cmd.msec * kMoveStep + 1e-4f) return;
     if (isRaceMode(ms_.mode)) return;
     uint64_t vt = 0;
@@ -4509,7 +4540,7 @@ void Server::logTick() {
 
 // Start playing map_ (already loaded or edited) in `mode`: everyone respawns, clients get the map again.
 void Server::playMap(int mode) {
-    cfg_.mode = mode;
+    cfg_.mode = retiredTo(mode);   // (a retired mode: what replaced it)
     specOut_.clear();   // a new map: whoever was voted to spectate may play again, and every spectate vote can be called again
     for (auto& p : players_) { p.specLocked = false; p.specVoted = 0; }
     for (auto& pr : projectiles_) pr.active = false;

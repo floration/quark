@@ -497,7 +497,7 @@ static bool sameCharges(const MoveState& a, const MoveState& b) {
 bool NetClient::hookProbe(const UserCmd& cmd, HookProbe& probe) {
     probe.n = 0;
     const MoveState& m = pred_;
-    if (!(cmd.buttons & BTN_GRAPPLE) || (m.flags & (MF_HOOKHELD | MF_HOOKED | MF_FROZEN)) || (m.mods & MOVE_RUN_ONLY)) return false;
+    if (!(cmd.buttons & BTN_GRAPPLE) || (m.flags & (MF_HOOKHELD | MF_HOOKED | MF_FROZEN)) || (m.mods & MOVE_RUN_ONLY) || m.fly) return false;   // (flying: no grapple)
     if (!moveTuning().grapple || m.hookCooldown > cmd.msec * kMoveStep + 1e-4f || !hasSnapshot()) return false;
     const ModeState& ms = mode();
     if (isRaceMode(ms.mode) || ms.phase == PHASE_ROUND_END || ms.phase == PHASE_MATCH_END || ms.phase == PHASE_FREEZE) return false;
@@ -633,7 +633,7 @@ void NetClient::tick(UserCmd cmd) {
     if (play_.active || state_ != ConnState::Connected || !mapReady_) return;
     cmd.seq = nextSeq_++;
     cmd.msec = (uint8_t)(1000 / tickRate());
-    if (bombRooted(mode(), clientId_)) rootCmd(cmd);   // (planting / defusing: as the server drops it, so prediction agrees)
+    if (hasSnapshot() && bombRooted(mode(), clientId_)) rootCmd(cmd);   // (mode() is the newest snapshot's: none yet, no read)   // (planting / defusing: as the server drops it, so prediction agrees)
     cmd.viewTick = (uint32_t)(uint64_t)std::max(0.0, renderTime_ * 1000.0); // server ms we're looking at (its low 32 bits)
     // a fixed interpolation delay goes to the server, whose lag compensation then rewinds that far (FINAL_REVIEW 2.5)
     int interpMs = interpFixed_ >= 0 ? std::min((int)std::lround(interpFixed_ * 1000.0f), kMaxInterpMs) : 0;
