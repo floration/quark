@@ -797,10 +797,14 @@ bool Game::pressInput(int code) {
         slot = (code == GLFW_KEY_BACKSPACE || code == GLFW_KEY_DELETE) ? 0 : code;
         // An input does one thing: binding it here removes it from every other action (otherwise the
         // default wheel = next/prev weapon kept firing alongside e.g. wheel = jump). The page says which, with UNDO.
+        // Except flight's MOVE UP / MOVE DOWN and jump / dash: never both in one mode, so one key can be both (the defaults).
+        auto pair = [](int a, int b) {
+            return (a == A_JUMP && b == A_FLYUP) || (a == A_FLYUP && b == A_JUMP) || (a == A_DASH && b == A_FLYDOWN) || (a == A_FLYDOWN && b == A_DASH);
+        };
         if (slot)
             for (int a = 0; a < A_COUNT; a++)
                 for (int k = 0; k < kBindSlots; k++)
-                    if ((a != captureAction_ || k != captureSlot_) && cfg_.binds.code[a][k] == slot) {
+                    if ((a != captureAction_ || k != captureSlot_) && cfg_.binds.code[a][k] == slot && !pair(a, captureAction_)) {
                         cfg_.binds.code[a][k] = 0;
                         bindTakenA_ = a; bindTakenK_ = k; bindTakenCode_ = slot; bindTakenTo_ = captureAction_; bindTakenSlot_ = captureSlot_;
                         bindTakenWas_ = was; bindTakenUntil_ = time_ + 8;
@@ -952,6 +956,7 @@ void Game::onKey(int key, int action, int mods) {
         }
         return;
     }
+    if (screen_ == Screen::TrainerRun && trainerKey(key, action)) return;   // (AIM TRAINER: Esc pauses, R, FIRE; F3 / F4 / screenshot and the settings pass)
     if (bench_.phase != BenchRun::OFF && (screen_ == Screen::InGame || screen_ == Screen::Connecting)) {      // BENCHMARK: Esc cancels, nothing else
         if (action == GLFW_PRESS && key == GLFW_KEY_ESCAPE) benchCancel();
         return;
@@ -1089,7 +1094,7 @@ void Game::onKey(int key, int action, int mods) {
         if (screen_ == Screen::CustomMode) { setScreen(Screen::Host); return; }                  // same as its BACK (unsaved changes dropped)
         if (screen_ == Screen::Host && hostAdvanced_) { hostAdvanced_ = false; cfg_.save(); return; }   // ADVANCED: back to HOST, as its BACK
         if (screen_ == Screen::BenchmarkResult) { setScreen(Screen::Benchmarks); return; }   // (as its BACK; a name being typed is saved as the field closes)
-        if (screen_ == Screen::Join || screen_ == Screen::Host || screen_ == Screen::VsBots || screen_ == Screen::Leaderboard || screen_ == Screen::Demos || screen_ == Screen::Info || screen_ == Screen::Benchmarks) {
+        if (screen_ == Screen::Join || screen_ == Screen::Host || screen_ == Screen::VsBots || screen_ == Screen::Leaderboard || screen_ == Screen::Demos || screen_ == Screen::Info || screen_ == Screen::Benchmarks || screen_ == Screen::Trainer) {
             cfg_.save();
             setScreen(Screen::Main);
         } else if (screen_ == Screen::Connecting) {
@@ -1132,6 +1137,10 @@ void Game::onMouseButton(int button, int action) {
         if (action == GLFW_PRESS && focusGained_ && screen_ == Screen::InGame && !paused_ && !chatting_) { swallowedBtn_ |= (uint16_t)(1u << button); return; }
     }
     markInput();
+    if (screen_ == Screen::TrainerRun && !trResults_ && !trPaused_) {   // AIM TRAINER: FIRE's button clicks (the rifle fires once a click)
+        if (action == GLFW_PRESS && binds().has(A_FIRE, kMouseCode + button)) trClick_ = true;
+        return;
+    }
     if (button == GLFW_MOUSE_BUTTON_LEFT) {
         if (action == GLFW_PRESS) { uiIn_.pressed = captureAction_ < 0; uiIn_.down = true; }
         else if (action == GLFW_RELEASE) uiIn_.down = false;
@@ -1312,6 +1321,11 @@ UserCmd Game::buildCmd() {
     if (!net_.selfAlive()) useOn_ = false;
     if (cfg_.useToggle ? useOn_ : isDown(A_USE)) c.buttons |= BTN_USE;   // (MORE 6: USE: TOGGLE)
     if (isDown(A_DASH)) c.buttons |= BTN_DASH;
+    {   // flight (3D VAMP): MOVE UP / MOVE DOWN; VERTICAL KEYS: ONE KEY (CONTROLS > MORE 2): up held goes up, let go goes down
+        const bool up = isDown(A_FLYUP);
+        if (up) c.buttons |= BTN_UP;
+        if (cfg_.verticalKeys == 1 ? !up && net_.predicted().fly : isDown(A_FLYDOWN)) c.buttons |= BTN_DOWN;
+    }
     if (!net_.selfAlive()) grappleOn_ = false;
     if (cfg_.grappleToggle ? grappleOn_ : isDown(A_GRAPPLE)) c.buttons |= BTN_GRAPPLE;
     c.buttons |= moveLatched_;   // (a tap since the last command: in this one)
@@ -1929,6 +1943,12 @@ void Game::frame(double dt) {
         addChat({"wraith: nice shot", Color{1, 1, 1, 1}, time_ + 1e9, 0, true});
         addChat({"ember: gg", Color{1, 1, 1, 1}, time_ + 1e9, 0, true});
     }
+    if (!opts_.trainer.empty() && screen_ == Screen::Main) {   // --trainer ID[:DIFF]
+        const size_t c = opts_.trainer.find(':');
+        trDiff_ = c == std::string::npos ? 0 : std::clamp(atoi(opts_.trainer.c_str() + c + 1), 0, trainer::kDiffs - 1);
+        if (const trainer::Scenario* sc = trainer::findScenario(opts_.trainer.substr(0, c))) trainerStart(sc);
+        opts_.trainer.clear();
+    }
     if (opts_.debugPerf) { perfStage_ = 3; if (pendingInput_ < 0) pendingInput_ = timeNow(); }
     if (opts_.debugPause && screen_ == Screen::InGame && !paused_) { paused_ = true; voteMenu_ = opts_.debugVote; opts_.debugPause = false; }
     if (opts_.debugSettings && screen_ == Screen::InGame && !settingsInGame_) {
@@ -1971,7 +1991,7 @@ void Game::frame(double dt) {
     polledEarly_ = false;
     updateCommunity();
     if (!benchSending_.empty() && bench_.phase == BenchRun::OFF) benchUploads();   // (BENCHMARK: answers to the runs' uploads; never mid-run)
-    if (((screen_ == Screen::InGame && !bake_) || screen_ == Screen::Editor || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty() || opts_.menuShot) && !opts_.screenshot.empty() && shotAt_ < 0) shotAt_ = time_ + opts_.shotDelay;
+    if (((screen_ == Screen::InGame && !bake_) || screen_ == Screen::Editor || screen_ == Screen::TrainerRun || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty() || opts_.menuShot) && !opts_.screenshot.empty() && shotAt_ < 0) shotAt_ = time_ + opts_.shotDelay;
 
     if (screen_ == Screen::Join) browser_.poll();
     if (reconnectAt_ > 0 && time_ >= reconnectAt_) {   // (AUTO RECONNECT's try, from the main menu it left you on)
@@ -2268,7 +2288,9 @@ void Game::frame(double dt) {
         uiIn_.backspace = uiIn_.enter = uiIn_.tab = uiIn_.escape = uiIn_.copy = false;
         return;
     }
-    if (screen_ == Screen::Editor) {
+    if (screen_ == Screen::TrainerRun) {
+        trainerFrame(dt);
+    } else if (screen_ == Screen::Editor) {
         if (!edScript_.empty()) edScriptStep();
         editorFrame(dt);
     } else if (screen_ == Screen::InGame && bake_) {
@@ -2312,7 +2334,7 @@ void Game::frame(double dt) {
         if (screen_ == Screen::BenchmarkResult) notify((r_.screenshot(benchShot_) ? "SAVED " : "COULD NOT WRITE ") + upper(benchShot_), 6);
         benchShot_.clear();
     }
-    if (shotAt_ > 0 && time_ >= shotAt_ && (screen_ == Screen::InGame || screen_ == Screen::Editor || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty() || opts_.menuShot)) {
+    if (shotAt_ > 0 && time_ >= shotAt_ && (screen_ == Screen::InGame || screen_ == Screen::Editor || screen_ == Screen::TrainerRun || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty() || opts_.menuShot)) {
         r_.screenshot(opts_.screenshot);
         printf("screenshot written to %s\n", opts_.screenshot.c_str());
         quit_ = true;
@@ -8603,9 +8625,13 @@ void Game::drawControlsMore2(const SetLayout& L) {
     f.hint("ROTATION STEP: Q / E ON A SPAWN; THE FLY", "SPEED, GRID AND LAST LIGHT ARE KEPT");
 
     g.header("MOVEMENT");
-    ui_.toggle(g.x(), g.top(), w, h, "AUTO-HOP", cfg_.autoHop, UiExp::cfg("auto_hop"));
+    ui_.toggle(g.x(), g.top(), hw, h, "AUTO-HOP", cfg_.autoHop, UiExp::cfg("auto_hop"));
+    {   // flight (3D VAMP): MOVE UP and MOVE DOWN, or MOVE UP alone (held: up, let go: down)
+        static const std::vector<std::string> vn = {"VERTICAL: TWO KEYS", "VERTICAL: ONE KEY"};
+        if (ui_.cycle(gx2, g.top(), hw, h, "VERTICAL KEYS", cfg_.verticalKeys, 2, vn, UiExp::cfg("vertical_keys"))) cfg_.save();
+    }
     g.next();
-    g.hint("OFF: HOLDING JUMP JUMPS ONCE; LET GO", "AND PRESS AGAIN FOR THE NEXT");
+    g.hint("AUTO-HOP OFF: HELD JUMP JUMPS ONCE", "FLYING, ONE KEY: MOVE UP HELD UP, LET GO DOWN");
     g.section("CONSOLE");
     {
         static const int keys[] = {96, 290, 299, 300, 260, 268, 92, 39};   // ` F1 F10 F11 INSERT HOME \ '
@@ -8945,7 +8971,7 @@ void Game::drawControls(const SetLayout& L) {
     if (controlsSub_ == 2) {   // (1.19.4: the keys that didn't fit the other two pages)
         keyRows(kColL, keyRows(kColL, keyRows(kColL, keyRows(kColL, 154, "WEAPONS", {A_LASTWEAPON}), "CHAT", {A_TEAMCHAT}), "PRACTICE", {A_SAVEPOS, A_LOADPOS}),
                 "MATCH", {A_RECORD, A_JOINTEAM, A_SPECTATE});
-        keyRows(kColR, keyRows(kColR, keyRows(kColR, keyRows(kColR, 154, "SPECTATING", {A_SPECNEXT, A_SPECPREV}), "SCREEN", {A_HIDEHUD}), "RACE", {A_RACERESTART}),
+        keyRows(kColR, keyRows(kColR, keyRows(kColR, keyRows(kColR, 154, "SPECTATING", {A_SPECNEXT, A_SPECPREV}), "SCREEN", {A_HIDEHUD}), "RACE + FLYING", {A_RACERESTART, A_FLYUP, A_FLYDOWN}),
                 "SOUND", {A_VOLUP, A_VOLDOWN, A_MUTE});
     } else if (controlsSub_ == 1) {
         float y = keyRows(kColL, 154, "MOVEMENT", {A_FORWARD, A_BACK, A_LEFT, A_RIGHT, A_JUMP, A_DASH, A_GRAPPLE, A_USE});
@@ -9330,6 +9356,12 @@ void Game::debugMenuPage() {
     size_t plus = p.find('+');
     if (plus != std::string::npos) { scroll = atoi(p.c_str() + plus + 1); p = p.substr(0, plus); }
     auto under = [&](const char* a) { return p.rfind(a, 0) == 0; };
+    if (under("trainer")) {   // AIM TRAINER's menu: trainer, or trainer/<mode 0-1>/<category 0-2>/<difficulty 0-2>
+        openTrainer();
+        int m = 0, c = 0, d = 0;
+        if (sscanf(p.c_str(), "trainer/%d/%d/%d", &m, &c, &d) >= 1) { trMode_ = std::clamp(m, 0, trainer::TR_MODES - 1); trCat_ = std::clamp(c, 0, trainer::CAT_COUNT - 1); trDiff_ = std::clamp(d, 0, trainer::kDiffs - 1); }
+        return;
+    }
     if (under("benchmarks")) {   // (benchmarks/result: the newest saved run)
         setScreen(Screen::Benchmarks);
         if (p == "benchmarks/result") {
@@ -9375,7 +9407,7 @@ void Game::debugMenuPage() {
 
 void Game::drawMenu() {
     QZONE("drawMenu");
-    if (screen_ == Screen::InGame || screen_ == Screen::Editor) return;
+    if (screen_ == Screen::InGame || screen_ == Screen::Editor || screen_ == Screen::TrainerRun) return;
     const float W = (float)r_.width(), H = (float)r_.height();
     float s = H / 720.0f;
     ui_.begin(&r_, uiIn_, s);
@@ -9401,6 +9433,7 @@ void Game::drawMenu() {
         case Screen::Demos: drawDemos(menuLayout(592)); break;
         case Screen::Benchmarks: drawBenchList(menuLayout(592)); break;
         case Screen::BenchmarkResult: drawBenchResults(menuLayout(960)); break;
+        case Screen::Trainer: drawTrainerMenu(menuLayout(960)); break;
         case Screen::CustomMode: drawCustomModeEditor(menuLayout(960)); break;
         case Screen::Connecting: drawConnecting(L); break;
         default: break;
@@ -9427,7 +9460,8 @@ void Game::drawMainMenu(const SetLayout& L) {
     if (ui_.button(x2, L.Y(438), hw, h, "INFO", UiExp::nav("info/*"))) setScreen(Screen::Info);   // how everything works
     if (ui_.button(x, L.Y(486), hw, h, "DISCORD", UiExp::url())) openUrl(kDiscordUrl);
     if (ui_.button(x2, L.Y(486), hw, h, "DEMOS", UiExp::nav("demos"))) setScreen(Screen::Demos);
-    if (ui_.button(x, L.Y(534), w, h, "BENCHMARK", UiExp::nav("benchmarks"))) setScreen(Screen::Benchmarks);
+    if (ui_.button(x, L.Y(534), hw, h, "AIM TRAINER", UiExp::nav("trainer"))) openTrainer();
+    if (ui_.button(x2, L.Y(534), hw, h, "BENCHMARK", UiExp::nav("benchmarks"))) setScreen(Screen::Benchmarks);
     if (ui_.button(x, L.Y(594), w, h, confirmArmed("quit") ? "SURE? QUIT" : "QUIT", (cfg_.confirmLeave && !confirmArmed("quit") ? UiExp::state("confirm", "quit") : UiExp::quit()).withId("QUIT")) &&
         confirmed("quit")) quit_ = true;   // (destructive: its own row, 20 px below)
     if (!error_.empty()) ui_.labelCentered(L.X(640), L.Y(650), error_, kRed, 1.0f, L.L(960));
@@ -11184,7 +11218,7 @@ void Game::drawPicker(float cx, float y) {
                 int m = bestMapFor(i);
                 if (m >= 0 && m < (int)mapInfo_.size() && (mapInfo_[m].modes >> i & 1)) it.sub = "MAP: " + upper(mapInfo_[m].title);
             }
-            if (i == MODE_ARENA) it.sub = "9 RULESETS >";
+            if (i == MODE_ARENA) it.sub = std::to_string(kArenaVariants) + " RULESETS >";
             if (i == MODE_BALL) it.sub = "TEAMS, A BALL, TWO GOALS - MOST GOALS IN 10 MINUTES";
             if (i == MODE_WINNER) it.sub = "1V1 ROUNDS, LOSER TO THE BACK OF THE LINE - FIRST TO 10 - RULESETS >";
             if (i == MODE_TOURNEY) it.sub = "BRACKET OF 1V1S - RULESETS >";

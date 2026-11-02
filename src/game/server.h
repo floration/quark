@@ -88,6 +88,10 @@ struct ServerConfig {
     std::string logFile;
     int duelTeamSize = 1;       // duel: players per side, 1 (1v1) or 2 (2v2)
     int arenaVariant = 0;       // 1v1 mode: ArenaVariant index
+    // 1v1 and 1v1 duel with someone in line (owner, 2026-11-01: "by default 1v1s should cycle people every round even
+    // in ranked, so in ranked it acts like an ffa but of 1v1's"): 0 a whole match, then winner stays (the old rule);
+    // 1 every round is its own (rated) match, then both players go to the back of the line; 2 every round, winner stays
+    int rotate1v1 = 2;   // (owner, 2026-11-01: winner stays every round)
     bool publicList = false;    // announce on the internet server list (Join screen)
     // tourney: maps and 1v1 rulesets the matches rotate through (empty = current map / arenaVariant)
     std::vector<std::string> tourneyMaps;
@@ -376,6 +380,10 @@ public:
     void rotateWinnerStays(int winner);   // after a match (winner stays: a round): winner the winning team (else nothing)
     void syncWinnerScores();          // winner stays: scoreA / scoreB = the seated players' round wins
     void fillOneVsOneSeats();       // warmup: an empty 1v1 seat gets the first in line
+    bool someoneInLine() const;     // a human spectator is waiting to play
+    bool rotateEveryRound() const;  // 1v1 (not winner stays / tourney) with rotate1v1 > 0 and someone in line
+    void rotateBothOut();           // rotate1v1 1: both players to the back of the line (the loser behind), the next two in
+    bool rotationMatch_ = false;    // the match that just ended was one round of the every-round rotation
     uint32_t queueNext_ = 0;
     int roundWinner_ = -1;          // the team that won the round that just ended (-1: a draw)
     int matchWinner_ = -1;          // the team that won the match that just ended (-1: a draw / none)
@@ -712,6 +720,16 @@ public:
         const CustomRules& c = cfg_.custom;
         if (c.active()) r |= (c.instagib ? AR_INSTAGIB : 0) | (c.vampire ? AR_VAMPIRE : 0) | (c.regen ? AR_REGEN : 0) | (!c.selfDamage ? AR_NO_SELF_DAMAGE : 0);
         return r;
+    }
+    // laser vampire's heal fade (vampireHealShare): the ruleset's own (3D VAMP: 30 s), else kVampireFadeTime
+    float vampireFade() const { return rulesetActive() ? arenaVariant(ms_.arenaVariant).vampireFade : kVampireFadeTime; }
+    // Flying (3D VAMP) out into space: further than kFlyKillMargin past the map's solid geometry on any side or above
+    // (below it, the void: killY) is a fall
+    static constexpr float kFlyKillMargin = 40.0f;
+    bool flownOut(const Vec3& p) const {
+        const AABB& b = map_.bounds;
+        return p.x < b.mn.x - kFlyKillMargin || p.x > b.mx.x + kFlyKillMargin || p.z < b.mn.z - kFlyKillMargin ||
+               p.z > b.mx.z + kFlyKillMargin || p.y > b.mx.y + kFlyKillMargin;
     }
     float maxHealth() const { return cfg_.custom.active() ? (float)cfg_.custom.health : (float)kMaxHealth; }
     // This life's full health (what you spawn with): a duel life's ("1 HP", "glass cannons" 50, "tanks" 250), else

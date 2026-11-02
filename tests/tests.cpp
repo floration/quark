@@ -1008,6 +1008,71 @@ static void testAcid() {
     }
 }
 
+// 3D VAMP's zero-g flight (MoveState::fly; owner, 2026-11-01): no gravity and no drift with no keys, MOVE UP / MOVE
+// DOWN straight up and down, a quick stop when the keys are let go, one flat speed cap every way, walls slide you, and
+// no jump, dash or grapple.
+static void testFlyMove() {
+    printf("flying (3d vamp)\n");
+    Map m;
+    std::string err;
+    CHECK(m.parse("box -50 -1 -50 50 0 50\nbox 10 0 -50 11 30 50\nspawn any 0 0 0\n", &err));
+    auto hs = [](const MoveState& q) { return std::sqrt(q.vel.x * q.vel.x + q.vel.z * q.vel.z); };
+    MoveState s;
+    s.fly = true;
+    s.pos = {0, 5, 0};
+    UserCmd c;
+    c.msec = 8;
+    for (int i = 0; i < 250; i++) pmove(s, c, m);   // 2 s, no keys: hangs where it is
+    CHECK(s.pos.y == 5.0f && s.pos.x == 0.0f && s.pos.z == 0.0f && length(s.vel) == 0.0f);
+    c.buttons = BTN_UP;
+    for (int i = 0; i < 125; i++) pmove(s, c, m);   // 1 s up
+    printf("  1 s of MOVE UP: %.2f m up, %.2f m/s\n", s.pos.y - 5.0f, s.vel.y);
+    CHECK(s.pos.y > 5.0f + 8.5f && s.pos.y < 5.0f + 9.6f && std::fabs(s.vel.y - 9.5f) < 1e-3f && std::fabs(s.pos.x) < 1e-5f);
+    c.buttons = BTN_UP | BTN_JUMP | BTN_DASH | BTN_GRAPPLE;   // (jump, dash and grapple do nothing)
+    pmove(s, c, m);
+    CHECK(s.dashTimer == 0 && !(s.flags & (MF_HOOKED | MF_HOOKHELD)) && std::fabs(s.vel.y - 9.5f) < 1e-3f);
+    c.buttons = 0;   // let go: stopped within 0.1 s, and stays put
+    c.msec = 1;
+    for (int i = 0; i < 100; i++) pmove(s, c, m);
+    CHECK(length(s.vel) == 0.0f);
+    const float y = s.pos.y;
+    c.msec = 8;
+    for (int i = 0; i < 125; i++) pmove(s, c, m);
+    CHECK(s.pos.y == y);
+    c.buttons = BTN_DOWN;
+    for (int i = 0; i < 50; i++) pmove(s, c, m);
+    CHECK(s.pos.y < y - 3.0f && std::fabs(s.vel.y + 9.5f) < 1e-3f);
+    c.buttons = BTN_UP | BTN_DOWN;   // both: no vertical push (stops)
+    for (int i = 0; i < 25; i++) pmove(s, c, m);
+    CHECK(s.vel.y == 0.0f);
+    // the speed cap: W + A + MOVE UP together is still 9.5 m/s, and the look's pitch never steers
+    c.buttons = BTN_UP; c.forward = 127; c.side = -127; c.yaw = 0; c.pitch = 1.2f;
+    for (int i = 0; i < 125; i++) pmove(s, c, m);
+    printf("  W + A + UP: %.3f m/s (%.3f level, %.3f up)\n", length(s.vel), hs(s), s.vel.y);
+    CHECK(std::fabs(length(s.vel) - 9.5f) < 1e-3f && std::fabs(hs(s) - 9.5f * std::sqrt(2.0f / 3.0f)) < 1e-2f);
+    // ...and holding it longer, or turning, never gains past it (no strafe gain)
+    float most = 0;
+    for (int i = 0; i < 2000; i++) { c.msec = 1; c.yaw += 0.002f; c.side = (i / 100) % 2 ? 127 : -127; pmove(s, c, m); most = std::max(most, length(s.vel)); }
+    CHECK(most <= 9.5f + 1e-3f);
+    // the floor stops a fall; the wall at x 10 slides you along it (z keeps going)
+    MoveState w; w.fly = true; w.pos = {8, 2, 0};
+    UserCmd d; d.msec = 8; d.yaw = -PI / 4; d.forward = 127; d.buttons = BTN_DOWN;   // (toward +x and -z, and down)
+    for (int i = 0; i < 125; i++) pmove(w, d, m);
+    printf("  into the wall and the floor: x %.2f y %.2f z %.2f\n", w.pos.x, w.pos.y, w.pos.z);
+    CHECK(w.pos.x < 10.0f - kPlayerHalfWidth + 0.01f && w.pos.x > 9.0f && std::fabs(w.pos.y) < 0.01f && w.pos.z < -4.0f);   // (along the wall: the keys' share of it, ~4.75 m/s)
+    CHECK(w.flags & MF_ONGROUND);
+    // frozen (the round's countdown): held still
+    MoveState f; f.fly = true; f.pos = {0, 3, 0}; f.flags = MF_FROZEN; f.vel = {3, 3, 3};
+    pmove(f, d, m);
+    CHECK(f.pos.y == 3.0f && length(f.vel) == 0.0f);
+    // the wire: a flying state survives a snapshot (opt bit 128's byte, bit 64), and an older protocol reads none
+    Snapshot sn; sn.tickRate = 1000; sn.snapRate = 1000; sn.self = s;
+    uint8_t buf[512]; Writer wr(buf, sizeof buf); writeSnapshotClient(wr, sn);
+    Snapshot back;
+    { Reader rd(buf, (int)wr.size()); CHECK(readSnapshotClient(rd, back, kProtocolVersion) && back.self.fly); }
+    { Reader rd(buf, (int)wr.size()); CHECK(readSnapshotClient(rd, back, 66) && !back.self.fly); }
+}
+
 static void testMovement() {
     printf("movement\n");
     Map m;
@@ -4390,6 +4455,56 @@ static void testWinnerStaysMode(uint16_t port) {
     CHECK(rounds == 9);
     CHECK(s.ms_.phase == PHASE_MATCH_END && s.matchWinner_ == other && P(c).score == 10);
     s.stop();
+}
+
+// 1v1 with someone in line (owner, 2026-11-01: "by default 1v1s should cycle people every round even in ranked, so in
+// ranked it acts like an ffa but of 1v1's"; winner stays): every round is a match of its own, the loser to the back of
+// the line, the next match straight away (no warmup). Two players alone play whole matches as before; rotate1v1 0 too.
+static void testRotateEveryRound(uint16_t port) {
+    printf("1v1 every round: each round its own match, winner stays, no warmup between\n");
+    for (int rule : {2, 0}) {
+        Server s;
+        ServerConfig cfg;
+        cfg.autoStart = true;
+        cfg.rotate1v1 = rule;
+        cfg.map = "dojo"; cfg.mode = MODE_ARENA; cfg.port = port;
+        s.setLog([](const std::string&) {});
+        { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+        NetClient a, b, c;
+        std::vector<NetClient*> cls;
+        const char* names[] = {"ann", "bob", "cat"};
+        NetClient* all[] = {&a, &b, &c};
+        for (int i = 0; i < 3; i++) { all[i]->connect("127.0.0.1:" + std::to_string(port), names[i]); cls.push_back(all[i]); pump(s, cls, 0.4, idle); }
+        auto P = [&](NetClient& n) -> ServerPlayer& { return s.players_[n.clientId()]; };
+        CHECK(P(c).team == TEAM_SPECTATOR && P(c).queueSeq > 0);
+        const int annTeam = P(a).team, other = annTeam == TEAM_A ? TEAM_B : TEAM_A;
+        bool sawWarmup = false;
+        auto live = [&] {
+            for (int i = 0; i < 400 && s.ms_.phase != PHASE_LIVE; i++) { sawWarmup |= s.ms_.phase == PHASE_WARMUP; skipCountdowns(s); pump(s, cls, 0.05, idle); }
+        };
+        live();
+        CHECK(s.ms_.phase == PHASE_LIVE);
+        sawWarmup = false;
+        s.killPlayer(b.clientId(), a.clientId(), WPN_RIFLE);   // ann beats bob
+        pump(s, cls, 0.1, idle);
+        CHECK(s.ms_.phase == PHASE_ROUND_END);
+        if (rule == 2) {
+            for (int i = 0; i < 200 && s.ms_.phase == PHASE_ROUND_END; i++) pump(s, cls, 0.05, idle);
+            CHECK(s.ms_.phase == PHASE_MATCH_END && s.matchWinner_ == annTeam);   // (the round was the match)
+            live();
+            CHECK(!sawWarmup);
+            CHECK(P(a).team == annTeam && P(c).team == other && P(b).team == TEAM_SPECTATOR && P(b).queueSeq > 0);
+            CHECK(s.ms_.round == 1 && s.ms_.scoreA == 0 && s.ms_.scoreB == 0);   // (a new match)
+            s.killPlayer(a.clientId(), c.clientId(), WPN_RIFLE);   // cat beats ann: ann out, bob in
+            pump(s, cls, 0.1, idle);
+            live();
+            CHECK(P(c).team == other && P(b).team == annTeam && P(a).team == TEAM_SPECTATOR);
+        } else {   // (the old rule: the match goes on to its 5 rounds; bob stays seated)
+            live();
+            CHECK(s.ms_.round == 2 && P(b).team != TEAM_SPECTATOR && P(c).team == TEAM_SPECTATOR);
+        }
+        s.stop();
+    }
 }
 
 // Accuracy is the mean of each weapon's own (owner, 2026-11-01): a second of the laser doesn't swamp the rest.
@@ -10068,6 +10183,7 @@ static void testReachProbe(uint16_t port) {
     prober.stop();
 }
 
+#include "trainer_tests.h"   // the aim trainer's scenarios (src/game/trainer.h)
 #include "rules_tests.h"   // game rule tests (owner answers 5.x, REVIEW batch 2)
 #include "weapon_tests.h"  // weapon sets (.qweapons: the weapons editor's) + the exportweapons / checkweapons tools
 #include "server_tests.h"  // server / netcode tests (FINAL_REVIEW 2.8-2.11, 6.4, 6.5, clock, PERF-8 / 9, ENG-2)
@@ -10312,6 +10428,7 @@ int main(int argc, char** argv) {
         {"mapbounds2", [] { g_fail += outOfBoundsTests(1, 2); }},
         {"maps", [] { testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders(); }},
         {"slopes", [] { testSlopes(); }},
+        {"trainer", [] { testTrainer(); }},
         {"surf", [] { testSurf(); }},
         {"groupslopes", [] { testGroupSlopes(); }},
         {"materials", [] { testMaterials(); testProjectileMaterials(TP(28931)); testDestruction(TP(28932)); testClientHits(); }},
@@ -10327,8 +10444,8 @@ int main(int argc, char** argv) {
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); testRemoteMoveSounds(TP(28585)); testRefillPrediction(TP(28586)); testHookPrediction(TP(28588)); }},
         {"brains", [] { g_fail += brainTests(TP(29150)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
-        {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); testWinnerStays(TP(28522)); testWinnerStaysMode(TP(28523)); testAccuracyPerWeapon(); }},
-        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testGrappleAgainstWall(); testAcid(); testLiquids(); testFeatureBlocks(); testStrafeEase(); testSeeThrough(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testModeSpawnSets(); testMapFix(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); testWinnerStays(TP(28522)); testWinnerStaysMode(TP(28523)); testRotateEveryRound(TP(28524)); testAccuracyPerWeapon(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testFlyMove(); testGrappleAgainstWall(); testAcid(); testLiquids(); testFeatureBlocks(); testStrafeEase(); testSeeThrough(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testModeSpawnSets(); testMapFix(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"bombsites", [] { testBombSites(TP(29090)); testPlantKnockback(TP(29091)); }},

@@ -497,7 +497,7 @@ static bool sameCharges(const MoveState& a, const MoveState& b) {
 bool NetClient::hookProbe(const UserCmd& cmd, HookProbe& probe) {
     probe.n = 0;
     const MoveState& m = pred_;
-    if (!(cmd.buttons & BTN_GRAPPLE) || (m.flags & (MF_HOOKHELD | MF_HOOKED | MF_FROZEN)) || (m.mods & MOVE_RUN_ONLY)) return false;
+    if (!(cmd.buttons & BTN_GRAPPLE) || (m.flags & (MF_HOOKHELD | MF_HOOKED | MF_FROZEN)) || (m.mods & MOVE_RUN_ONLY) || m.fly) return false;   // (flying: no grapple)
     if (!moveTuning().grapple || m.hookCooldown > cmd.msec * kMoveStep + 1e-4f || !hasSnapshot()) return false;
     const ModeState& ms = mode();
     if (isRaceMode(ms.mode) || ms.phase == PHASE_ROUND_END || ms.phase == PHASE_MATCH_END || ms.phase == PHASE_FREEZE) return false;

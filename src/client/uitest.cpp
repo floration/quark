@@ -84,6 +84,8 @@ std::string Game::uiScreenPath() const {
         case Screen::Demos: return "demos";
         case Screen::Benchmarks: return "benchmarks";
         case Screen::BenchmarkResult: return "benchmarks/result";
+        case Screen::Trainer: return "trainer";
+        case Screen::TrainerRun: return trResults_ ? "trainer/result" : !trPaused_ ? "trainer/run" : settingsInGame_ ? "trainer/run/pause/settings" + settingsSub() : "trainer/run/pause";
         case Screen::CustomMode: return std::string("custom/") + custom[std::min(std::max(customTab_, 0), 4)];
         case Screen::Connecting: return "connecting";
         case Screen::Editor: return std::string(edPath()) + (edPrompt_ ? "/keep-edits" : edGroupMenu_ ? "/groups" : edExportAsk_ ? "/export-ask" : edMatMenu_ ? "/materials" : "") + (chatting_ ? "/chat" : "");
@@ -152,6 +154,7 @@ std::string Game::uiObserve(const std::string& w) {
     if (w == "lookmsg") return cfg_.toText() + "|" + lookMsg_ + "@" + std::to_string(lookMsgUntil_);
     if (w == "chcode") return cfg_.toText() + "|" + chCodeMsg_ + "@" + std::to_string(chCodeUntil_);
     if (w == "groups") return listDir(userDataPath("groups"));
+    if (w == "trainer") return std::to_string(trMode_) + std::to_string(trCat_) + std::to_string(trDiff_);
     if (w == "bench") return listDir(userDataPath("benchmarks")) + "|" + listDir(userDataPath("benchmarks/exports"));
     if (w == "usermaps") return listDir(userMapsDir());
     if (w == "queue") { std::string o; for (auto& q : queued_) o += q + " "; return o; }
@@ -195,6 +198,11 @@ void Game::uiTestActions() {
     const float W = (float)r_.width(), H = (float)r_.height(), s = H / 720.0f;
     auto bound = [&](int a) { int c = binds().code[a][0]; return c > 0 && c < kMouseCode ? c : 0; };
     auto say = [&] { ui_.keyAction("SAY", GLFW_KEY_ENTER, 0, UiExp::cmd("say hello").typing("hello")); };
+    if (screen_ == Screen::TrainerRun && !trResults_ && !trPaused_) {   // AIM TRAINER's run: Esc pauses, F3 works there too
+        ui_.keyAction("ESC (PAUSE)", GLFW_KEY_ESCAPE, 0, UiExp::nav("trainer/run/pause"));
+        if (int k = bound(A_PERF)) ui_.keyAction("PERF OVERLAY", k, 0, UiExp::state("perfstage"));
+        return;
+    }
     if (screen_ == Screen::InGame) {
         if (bake_) return;
         if (chatting_ && console_) {
@@ -631,6 +639,7 @@ private:
         for (int& d : g.devScroll_) d = 0;
         g.setTab_ = Game::TAB_PLAYER;
         g.controlsSub_ = 0;
+        g.trMode_ = g.trCat_ = g.trDiff_ = 0;   // (AIM TRAINER's tabs: the root is 3D / clicking / easy)
         g.ui_.closePopup();
         g.fontScroll_ = 0;   // (the font itself follows the settings put back below: Game::frame applies ui_font)
         if (g.widgetEdit_) g.widgets_.save(g.activeHudPath());
@@ -1159,7 +1168,7 @@ private:
         step(2);
         escChecks_++;
         std::string p = path();
-        if (!back.count(p) && nodes_[ni].path.rfind(p + "/", 0) != 0)   // (a screen it came through, or the one it's part of)
+        if (!back.count(p) && nodes_[ni].path.rfind(p + "/", 0) != 0 && p != nodes_[ni].path + "/pause")   // (a screen it came through, the one it's part of, or its own pause menu: AIM TRAINER's run)
             escFails_.push_back(sc_->name + " :: " + nodes_[ni].path + " : Esc went to " + p + " (not a screen on the way here)");
     }
 
@@ -1289,6 +1298,7 @@ private:
     void leaveAll() {
         g_.testMap_.clear();
         g_.testEdit_ = false;
+        if (g_.screen_ == Game::Screen::TrainerRun) g_.trainerExit();   // (its room, fog and sky back as a player's ESC leaves them)
         if (g_.screen_ == Game::Screen::Editor && !g_.edOnline_) { g_.edLook_ = false; g_.r_.clearStaticBoxes(); g_.edMeshDirty_ = true; }
         g_.leaveGame();
         g_.edPrompt_ = false;
@@ -1447,6 +1457,16 @@ private:
                          return path() == "benchmarks";
                      },
                      [=] { return (g_.screen_ == Game::Screen::Benchmarks || g_.screen_ == Game::Screen::BenchmarkResult) && !g_.host_ && !g_.net_.playback(); }});
+        // AIM TRAINER: its menu (mode / difficulty / category tabs, the six cards, PLAY), a run and its results
+        v.push_back({"trainer", "trainer", {"trainer"}, {"trainer/run/pause/settings"},   // (the settings pages: their own scenario)
+                     [=] {
+                         leaveAll();
+                         g_.trMode_ = g_.trCat_ = g_.trDiff_ = 0;   // (the root: 3D, clicking, easy)
+                         g_.openTrainer();
+                         step(2);
+                         return path() == "trainer";
+                     },
+                     [=] { return (g_.screen_ == Game::Screen::Trainer || g_.screen_ == Game::Screen::TrainerRun) && !g_.host_ && !g_.net_.playback(); }});
         // hide and seek: the seeker's locator (slot key 0), and the tiebreak's rock / paper / scissors keys
         v.push_back({"hide-seeker", "ingame", inGameAll, {"ingame/"}, [=] { return hideSeeker(); },
                      [=] { return g_.screen_ == Game::Screen::InGame && srv_ && g_.net_.hasSnapshot() && iAmIt(); }});
