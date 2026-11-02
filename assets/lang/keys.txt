@@ -7,12 +7,16 @@
 # CONTROL PROFILES
 # CUSTOM MODES
 # DB
+# DEFAULT KEYS (Settings > CONTROLS to change any of them, two keys per action)
 # DEG
 # DUELS
 # EVERYONE FOR THEMSELVES
+# HOST A GAME (main menu > HOST GAME)
 # HP
+# HUD LAYOUT (Settings > HUD LAYOUT)
 # HZ (AVG)
 # IN GAME (ESC as host)
+# JOIN A GAME (main menu > JOIN GAME)
 # MAPS AND MODES
 # MB
 # MOVEMENT
@@ -21,6 +25,7 @@
 # RANKED
 # SETTINGS (main menu, or ESC in game)
 # TEAM MODES
+# THE MAP EDITOR (main menu > MAP EDITOR)
 # THE MAPS AND WHAT THEY'RE BUILT FOR
 # US
 # VOTES (ESC > VOTE, then F1 yes / F2 no)
@@ -28,13 +33,16 @@
 # YOUR OWN MAPS
 # date,
 # demo,
+# frames,#
 # label,
 # map,
 # maps, # s, # threads
 # maps, # s, # threads{}
 # of # players losing snapshots (worst #%)
 # quark benchmark
+# quark benchmark 1
 # quark controls profile
+# seconds,#
 # setup:
 # setup:{},{}
 # uploaded,#
@@ -161,6 +169,7 @@ ACCENT
 ACCENT COLOR
 ACCESSIBILITY
 ACCURACY
+ACE
 ADAPTIVE
 ADD (AT THE SCREEN CENTER)
 ADD BOT
@@ -169,6 +178,7 @@ ADD: boxes (base / accent / wallbang: bullets go through wallbangs for half dama
 ADDRESS
 ADDRESS (IP:PORT)
 ADVANCED
+ADVANCED > BOT BRAIN: what your bots play: the built-in brain, or a .qbrain file from the bots folder in your data folder. A file that doesn't compile shows its error line and the bots play the built-in brain. Never in ranked.
 AGAIN (R)
 AHEAD
 AIM TRAINER
@@ -272,6 +282,7 @@ BAKES,
 BAKING LIGHT -
 BALANCE BOT SKILL
 BALANCE BOTS
+BALANCE BOTS evens out uneven teams with bots. MODE > RANKED runs rated 1v1 on the ranked maps (no bots). SERVER LOG keeps a log of the match.
 BALL
 BALL - SHOOT, BLAST OR RUN THE BALL INTO THE ENEMY GOAL - MOST GOALS WINS
 BANDIT
@@ -316,6 +327,7 @@ BIND FLY KEYS
 BIND HIDE HUD ON CONTROLS
 BLACK
 BLADES
+BLAZE
 BLEND
 BLUE / ORANGE
 BLUE-YELLOW (TRITAN)
@@ -464,6 +476,7 @@ COLUMN: OBJ
 COLUMN: PING
 COLUMN: TOTAL K / D
 COMBINE
+COMET
 COMPASS
 COMPASS + RADAR
 COMPETITIVE: NO FOG OR SHADOWS, FEWER EFFECTS;
@@ -630,6 +643,7 @@ DEMO - ESC TO STOP
 DEMO RATE
 DEMO RATE: 62.5 HZ
 DEMO RATE: FULL
+DEMO SAVED - MAIN MENU > DEMOS
 DEMOS
 DEPTH
 DESC
@@ -683,12 +697,14 @@ DUCKING
 DUEL
 DUEL - 1v1 (or 2v2): every life has a random modifier (low gravity, giants, rockets only...). First to 11.
 DUPLICATE
+DUSK
 DXGI PRESENT
 DXGI PRESENT: WINDOWS ONLY
 DYNAMIC RANGE
 DYNAMIC RANGE: CLEAN
 DYNAMIC RANGE: NIGHT
 DYNAMIC RANGE: NORMAL
+Dash into a wall head-on (under 45 degrees) and you bounce off it at 16 m/s (it leaves you 1 dash).
 Dash jump: jump while dashing along the floor to keep the dash's full speed through the jump (it leaves you both dashes).
 Decl: no padding (its words are hashed)
 Display: window mode, vsync, low latency mode, frame cap, player shadows, brightness, anti-aliasing and interpolation. Lower latency settings cost smoothness: the notes under them say how.
@@ -776,6 +792,7 @@ EXPORT CSV
 EXPORT GROUP
 EXPORT PNG
 EZRA
+Each dash leaves you 1 m/s faster than you went in (at least 11, at most 32 m/s).
 Each map is built for one mode, plus free for all and any others it lists. You can still start any map in any mode: the menus warn when it isn't built for it (it may be missing spawns or objectives).
 F3 - performance overlay (average, 1% and 0.1% low FPS, input latency).   F12 - screenshot.   ESC - menu, votes, settings.
 F3 COLORBLIND COLORS
@@ -943,6 +960,7 @@ GUN: TEAM
 GUNFIRE
 GUS
 Game::frame
+Game::testHeld_ holds a bit per action
 HALFTIME - SIDES SWITCHED
 HALFTIME - SIDES SWITCHED: YOU ATTACK NOW
 HALFTIME - SIDES SWITCHED: YOU DEFEND NOW
@@ -1025,6 +1043,7 @@ HP
 HUD
 HUD & SETTINGS
 HUD 2
+HUD > VERBOSE INFO TURNS THE BLOCK ON
 HUD COLORS
 HUD DRAW
 HUD EDIT ELEMENT
@@ -1037,6 +1056,7 @@ HZ
 HZ  LOSS
 HZ (NOT ON THIS MONITOR)
 Hold the RIGHT MOUSE button to look around; W A S D to fly, SPACE / C up and down, SHIFT faster, the wheel sets the speed.
+Host Game > CUSTOM MODE > NEW: any base mode with your own health, gravity, speed, jump, knockback, weapons (fire rate, damage, projectile speed) and map pool. Players who join get the rules automatically.
 Hz
 Hz cap applies at the next break
 ICON
@@ -1074,6 +1094,8 @@ INDUSTRIAL
 INFO
 INFO LINES
 INPUT
+INPUT->FRAME AVG #MS  MIN #MS  99% #MS
+INPUT->FRAME: MOVE THE MOUSE
 INSERT
 INSTAGIB
 INSTAGIB CROSSBOWS
@@ -1141,6 +1163,7 @@ KILL FEED SECONDS
 KILL MARK
 KILL SOUND
 KILL TEXT
+KILL TEXT: "KILLED <NAME>" OVER THE CROSSHAIR
 KILLED
 KILLED BY
 KILLING SPREE
@@ -1161,6 +1184,7 @@ LABEL
 LADDER
 LADDER CLIMB SPEED
 LADDER SIDE SPEED
+LADDERS (1V1, INSTAGIB FFA) - DEFAULT MODEL, HUD, CONTROLS >
 LAND
 LANGUAGE
 LARGE
@@ -1192,6 +1216,7 @@ LEFT ARROW (PREVIOUS PAGE)
 LEFT MOUSE - fire.   RIGHT MOUSE - alt-fire (scope, knife throw, rocket lob, bubble stream, syringe throw...).
 LEFT: THE GUN ON THE LEFT, THE GRAPPLE
 LEGACY MAPS
+LEGACY MAPS (settings > GAMEPLAY) lists the old maps from before 1.19.6 too. They are never ranked.
 LENA
 LENGTH
 LET
@@ -1954,6 +1979,8 @@ MY SKY / GLOW: THESE IN PLACE OF EVERY MAP'S;
 MY TRACER
 Model
 ModelOverrides holds kMaxModelsPerKind models of a kind
+N/A HERE: LATENT SYNC IS WINDOWS ONLY
+N/A HERE: WINDOWS + NVIDIA ONLY
 NAME
 NAME COLOR
 NAME COLORS
@@ -2001,6 +2028,7 @@ NOBODY RANKED YET (3 GAMES)
 NONE
 NONE YET
 NONE YET - EXPORT ONE, OR COPY A GROUP AND IMPORT
+NONE YET - IN A GAME, ESC > RECORD DEMO
 NOOR
 NORMAL
 NOT A GROUP - MAKE IT A GROUP FIRST?
@@ -2157,6 +2185,7 @@ PLAY VS BOTS
 PLAYABLE AS:
 PLAYER
 PLAYER 2
+PLAYER > MORE SETS THE MENU ACCENT
 PLAYER BASED
 PLAYER BRIGHTNESS
 PLAYER JOINS
@@ -2296,6 +2325,8 @@ RECONNECT
 RECORD
 RECORD DEMO
 RECORDED WITH
+RECORDING DEMO (62.5 HZ) - ESC > STOP RECORDING
+RECORDING DEMO (FULL RATE) - ESC > STOP RECORDING
 RECORDING RATE: 62.5 HZ
 RECORDING RATE: FULL
 RED
@@ -2502,6 +2533,7 @@ SHOW PING
 SHOW WEAPON
 SHOWN
 SHOWN WITH VERBOSE INFO ON. DRAG TO MOVE, CORNER / WHEEL TO SIZE, ARROWS NUDGE, ALT: NO SNAP
+SHOWS INPUT->FRAME LATENCY
 SHUFFLE TEAMS
 SHUFFLE THE TEAMS (THE MATCH RESTARTS)
 SIMPLE
@@ -2679,7 +2711,9 @@ SYSTEM MESSAGES: IMPORTANT
 SYSTEM MESSAGES: OFF
 SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)
 Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).
+Start the match, change map / mode, ranked on / off, edit the map together, bots on. A majority of the human players decides.
 Style, length, thickness, gap, colour and outline, with a live preview.
+Super dash: look down and dash into the floor while holding jump: you leave 5 m/s faster than you went into the dash (at least 11, at most 36 m/s), with a hop that gets higher the further down you look (it leaves you 1 dash).
 Switching weapons with fire held doesn't fire the new one: let go and press again.
 TAB
 TAB (NEXT ELEMENT)
@@ -2887,6 +2921,7 @@ UNLIMITED
 UNPLAYED MAPS COUNT AT THEIR DEFAULT TIME
 UNSTOPPABLE
 UP
+UP / DOWN AS A MULTIPLE OF SENSITIVITY
 UPLOAD CAP (MBIT/S)
 US
 USE
@@ -3068,6 +3103,8 @@ YOUR SHOTS: ALWAYS
 YOUR SHOTS: NEVER
 YOUR SHOTS: WITH WEAPON MODEL
 YOUR TEAM IS PUSHING
+You run at 9.5 m/s. In the air, holding a direction drifts you up to run speed (a standing jump moves too).
+You step up anything 0.55 m high, including stairs mid-jump. Ladders: walk into them, look up or down to climb (6.75 m/s).
 ZERO-G FLIGHT, LASERS - HEAL 100% TO 50% OVER 30 S, NO KNOCKBACK
 ZOMBIE
 ZONE OPACITY
@@ -3134,6 +3171,7 @@ bench:
 big noodle*
 bignoodletitling*
 bignoodletoo*
+bind <key> <commands>   a key runs console lines (';' between)   unbind <key>   binds
 bomb defused
 bomb exploded
 bomb planted
@@ -3166,6 +3204,7 @@ callvote ranked on
 callvote restart
 callvote shuffle
 callvote spec
+callvote spec <name or id> (status lists them)
 callvote start
 callvote tmaps
 callvote tmodes
@@ -3193,7 +3232,9 @@ could not create an OpenGL 3.3 window - update your graphics driver
 could not host:
 could not open
 could not open log file
+could not save maps/
 could not save the map
+could not write maps/
 could not write to the groups folder
 couldn't check reachability:
 custom mode rules too big to send with the weapon set: sent without it
@@ -3206,8 +3247,10 @@ demo finished
 demo:
 draw - the payload is in the middle
 dropped:
+duelUsed_ is a 32-bit mask
 dyn verts
 dynamic pass
+e.g.  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5
 edcam # # #
 edit #
 edit mode on
@@ -3276,6 +3319,8 @@ isn't in this custom mode's map pool
 joined team A
 joined team B
 joined the game
+kElemNames follows Settings::HUD_*
+kbps (# packets/s), download # kbps (#/s)
 kick whom? a name or an id (status lists them)
 kicked by a vote
 language:
@@ -3299,6 +3344,7 @@ map editing
 map editing -
 map editing - everyone can build; changes last until the map changes
 map editing - everyone can build; the host saves
+map name: letters, digits, - and _ only (not a device name like con)
 map not found
 map saved as
 map test
@@ -3322,13 +3368,17 @@ model name
 mul must be 3 numbers from 0 to 16
 must beat it
 my mode
+name: letters, digits, - and _ only (not a device name like con)
 net poll
 no IAudioClient3, before Windows 10
+no aliases - alias <name> <commands>
 no bots on a ranked server
 no boxes
+no command binds - bind <key> <commands>
 no hiders left
 no key called '
 no map editing on a ranked server (vote ranked off first)
+no maps found in maps/
 no mix format
 no mode can run on this map yet
 no modifiers on a ranked or time trial server
@@ -3341,6 +3391,7 @@ nobody finished
 nobody is out - throw again
 nobody left
 not a 16 x 16 character sheet
+not a TrueType / OpenType font
 not a WAV, OGG, FLAC or MP3 file
 not a file name
 not a font file
@@ -3414,6 +3465,7 @@ proj # type # owner # pos # # # vel # # #
 proj # type # owner # pos # # # vel # # #{}
 properties background, color, opacity, border, radius, padding, margin, gap, font-size,
 puts every built-in map back to its original version and removes retired ones (your own maps are kept) - click again
+quark --bake-maps <dir>
 quark server
 quark server log, level
 quark server log, level {}, version {}
@@ -3437,6 +3489,7 @@ ranked off - matches aren't rated
 ranked on
 ranked on -
 ranked only runs on the ranked maps for its ladder
+ranked server: a ranked map for the ladder (vanilla / vampire 1v1, instagib free for all), or vote ranked off
 ranked server: no
 ranked ticket
 ranked ticket {} players {}
@@ -3478,6 +3531,7 @@ screenshot written to {}
 see-through pass
 select a box, look at one of its sides and press K
 select a group to export
+select boxes / groups (shift+click to add more)
 select boxes first
 select the cutter first, then shift+click the boxes to cut
 select two or more boxes (shift+click) to combine
@@ -3497,13 +3551,16 @@ server version
 server, sharing
 setup:
 shader:
+shadow / visOnly / crouch must be true or false
 shadow pass
 shipped:
 short-handed: # playing
+size # # #
 slopes can't be coated: pick a box
 slopes can't be cut: pick plain boxes
 slopes can't be split: pick plain boxes
 slot bracket
+snapshots #/s{}, stalls #% (over # ms late)
 stalemate - health draining
 static boxes
 static boxes pass

@@ -109,6 +109,11 @@ static void parseTable(const EmbeddedLang& e, std::unordered_map<std::string, st
         std::string key(a, t), val(t + 1, b);
         if (val.empty() || val == key) return;   // (untranslated: drawn as it is, no entry)
         if (key.find("{}") != std::string::npos && key != "{}") g_patterns.push_back({key, val});
+        // "MATERIAL: X": X alone too (the editor's material list draws the names without the label)
+        if (key.compare(0, 10, "MATERIAL: ") == 0) {
+            const size_t c = val.find(": ");
+            if (c != std::string::npos && key.size() > 10 && c + 2 < val.size()) out.emplace(key.substr(10), val.substr(c + 2));
+        }
         out.emplace(std::move(key), std::move(val));
     });
 }

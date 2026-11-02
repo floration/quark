@@ -622,9 +622,10 @@ bool Ui::dropdown(float x, float y, float w, float h, const std::string& label, 
     bool open = popup_.kind == POP_DROP && popup_.id == label, changed = false;
     unblock_ = open;
     const bool hv = hover(x, y, w, h);
-    // the list: under the field, an entry a row
+    // the list: under the field, an entry a row (over it when it would run off the bottom of the window)
     const float rowH = h, gap = 4 * s, pad = 8 * s;
-    const float lx = x, ly = y + h + 4 * s, lw = w, lh = pad * 2 + n * rowH + (n - 1) * gap;
+    const float lw = w, lh = pad * 2 + n * rowH + (n - 1) * gap, lx = x;
+    const float ly = (y + h + 4 * s + lh > (float)r_->height() && y - 4 * s - lh >= 0) ? y - 4 * s - lh : y + h + 4 * s;
     if (in_.pressed && hv) {
         if (open) { closePopup(); open = false; }
         else { popup_ = Popup(); popup_.kind = POP_DROP; popup_.id = label; open = true; }

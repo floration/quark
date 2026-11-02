@@ -7,12 +7,16 @@
 # CONTROL PROFILES	# 조작 프로필
 # CUSTOM MODES	# 커스텀 모드
 # DB	# DB
+# DEFAULT KEYS (Settings > CONTROLS to change any of them, two keys per action)	# 기본 키 (설정 > 조작에서 변경, 동작마다 키 2개)
 # DEG	# 도
 # DUELS	# 1대1 대결
 # EVERYONE FOR THEMSELVES	# 개인전
+# HOST A GAME (main menu > HOST GAME)	# 게임 호스트 (메인 메뉴 > 게임 호스트)
 # HP	# HP
+# HUD LAYOUT (Settings > HUD LAYOUT)	# HUD 레이아웃 (설정 > HUD 레이아웃)
 # HZ (AVG)	# HZ (평균)
 # IN GAME (ESC as host)	# 게임 중 (호스트는 ESC)
+# JOIN A GAME (main menu > JOIN GAME)	# 게임 참가 (메인 메뉴 > 게임 참가)
 # MAPS AND MODES	# 맵과 모드
 # MB	# MB
 # MOVEMENT	# 이동
@@ -21,6 +25,7 @@
 # RANKED	# 랭크
 # SETTINGS (main menu, or ESC in game)	# 설정 (메인 메뉴 또는 게임 중 ESC)
 # TEAM MODES	# 팀 모드
+# THE MAP EDITOR (main menu > MAP EDITOR)	# 맵 에디터 (메인 메뉴 > 맵 에디터)
 # THE MAPS AND WHAT THEY'RE BUILT FOR	# 맵과 각 맵의 용도
 # US	# US
 # VOTES (ESC > VOTE, then F1 yes / F2 no)	# 투표 (ESC > 투표, F1 찬성 / F2 반대)
@@ -28,13 +33,16 @@
 # YOUR OWN MAPS	# 내 맵
 # date,	# date,
 # demo,	# demo,
+# frames,#	# frames,#
 # label,	# label,
 # map,	# map,
 # maps, # s, # threads	맵 #개, #초, 스레드 #개
 # maps, # s, # threads{}	# maps, # s, # threads{}
 # of # players losing snapshots (worst #%)	플레이어 #/#명 스냅샷 손실 (최대 #%)
 # quark benchmark	# quark benchmark
+# quark benchmark 1	# quark benchmark 1
 # quark controls profile	# quark controls profile
+# seconds,#	# seconds,#
 # setup:	# setup:
 # setup:{},{}	# setup:{},{}
 # uploaded,#	# 업로드됨,#
@@ -161,6 +169,7 @@ ACCENT	강조
 ACCENT COLOR	강조 색상
 ACCESSIBILITY	접근성
 ACCURACY	정확도
+ACE	ACE
 ADAPTIVE	적응형
 ADD (AT THE SCREEN CENTER)	추가 (화면 중앙에)
 ADD BOT	봇 추가
@@ -169,6 +178,7 @@ ADD: boxes (base / accent / wallbang: bullets go through wallbangs for half dama
 ADDRESS	주소
 ADDRESS (IP:PORT)	주소 (IP:PORT)
 ADVANCED	상급
+ADVANCED > BOT BRAIN: what your bots play: the built-in brain, or a .qbrain file from the bots folder in your data folder. A file that doesn't compile shows its error line and the bots play the built-in brain. Never in ranked.	상급 > 봇 AI: 봇의 플레이 방식: 내장 AI 또는 데이터 폴더의 bots 폴더에 있는 .qbrain 파일. 컴파일되지 않는 파일은 오류 줄을 표시하고 봇은 내장 AI로 플레이합니다. 랭크에서는 사용하지 않습니다.
 AGAIN (R)	다시 (R)
 AHEAD	앞섬
 AIM TRAINER	에임 트레이너
@@ -272,6 +282,7 @@ BAKES,	굽기,
 BAKING LIGHT -	조명 굽는 중 -
 BALANCE BOT SKILL	봇 실력 균형
 BALANCE BOTS	봇 균형
+BALANCE BOTS evens out uneven teams with bots. MODE > RANKED runs rated 1v1 on the ranked maps (no bots). SERVER LOG keeps a log of the match.	봇 균형은 인원이 고르지 않은 팀을 봇으로 맞춥니다. 모드 > 랭크는 랭크 맵에서 레이팅 1v1을 진행합니다 (봇 없음). 서버 로그는 경기 로그를 남깁니다.
 BALL	볼
 BALL - SHOOT, BLAST OR RUN THE BALL INTO THE ENEMY GOAL - MOST GOALS WINS	볼 - 공을 쏘거나 폭발로 밀거나 몰고 가서 적 골대에 넣기 - 최다 득점 승리
 BANDIT	BANDIT
@@ -316,6 +327,7 @@ BIND FLY KEYS	비행 키 지정
 BIND HIDE HUD ON CONTROLS	조작 설정에서 HUD 숨기기 키 지정
 BLACK	검정
 BLADES	칼날
+BLAZE	BLAZE
 BLEND	블렌드
 BLUE / ORANGE	파랑 / 주황
 BLUE-YELLOW (TRITAN)	파랑-노랑 (청황색맹)
@@ -464,6 +476,7 @@ COLUMN: OBJ	열: 목표
 COLUMN: PING	열: PING
 COLUMN: TOTAL K / D	열: 총 K / D
 COMBINE	합치기
+COMET	COMET
 COMPASS	나침반
 COMPASS + RADAR	나침반 + 레이더
 COMPETITIVE: NO FOG OR SHADOWS, FEWER EFFECTS;	경쟁: 안개·그림자 없음, 효과 감소;
@@ -630,6 +643,7 @@ DEMO - ESC TO STOP	데모 - ESC로 중지
 DEMO RATE	데모 빈도
 DEMO RATE: 62.5 HZ	데모 빈도: 62.5 HZ
 DEMO RATE: FULL	데모 빈도: 전체
+DEMO SAVED - MAIN MENU > DEMOS	데모 저장됨 - 메인 메뉴 > 데모
 DEMOS	데모
 DEPTH	깊이
 DESC	내림차순
@@ -683,12 +697,14 @@ DUCKING	더킹
 DUEL	결투
 DUEL - 1v1 (or 2v2): every life has a random modifier (low gravity, giants, rockets only...). First to 11.	결투 - 1v1 (또는 2v2): 목숨마다 무작위 변형(저중력, 거인, 로켓만...)이 적용됩니다. 11선승.
 DUPLICATE	복제
+DUSK	DUSK
 DXGI PRESENT	DXGI PRESENT
 DXGI PRESENT: WINDOWS ONLY	DXGI PRESENT: WINDOWS 전용
 DYNAMIC RANGE	다이나믹 레인지
 DYNAMIC RANGE: CLEAN	다이나믹 레인지: 클린
 DYNAMIC RANGE: NIGHT	다이나믹 레인지: 야간
 DYNAMIC RANGE: NORMAL	다이나믹 레인지: 보통
+Dash into a wall head-on (under 45 degrees) and you bounce off it at 16 m/s (it leaves you 1 dash).	벽에 정면으로 (45도 미만) 대시하면 16 m/s로 튕겨 나옵니다 (대시 1회 남음).
 Dash jump: jump while dashing along the floor to keep the dash's full speed through the jump (it leaves you both dashes).	대시 점프: 바닥에서 대시 중 점프하면 대시 속도를 그대로 유지합니다 (대시 두 번 모두 남음).
 Decl: no padding (its words are hashed)	Decl: 패딩 없음 (단어가 해시됨)
 Display: window mode, vsync, low latency mode, frame cap, player shadows, brightness, anti-aliasing and interpolation. Lower latency settings cost smoothness: the notes under them say how.	화면: 창 모드, 수직 동기화, 저지연 모드, 프레임 제한, 플레이어 그림자, 밝기, 안티앨리어싱, 보간. 지연을 낮추는 설정은 부드러움을 희생합니다: 아래 설명에 자세히 나와 있습니다.
@@ -776,6 +792,7 @@ EXPORT CSV	CSV 내보내기
 EXPORT GROUP	그룹 내보내기
 EXPORT PNG	PNG 내보내기
 EZRA	EZRA
+Each dash leaves you 1 m/s faster than you went in (at least 11, at most 32 m/s).	대시할 때마다 들어갈 때보다 1 m/s 빠르게 나옵니다 (최소 11, 최대 32 m/s).
 Each map is built for one mode, plus free for all and any others it lists. You can still start any map in any mode: the menus warn when it isn't built for it (it may be missing spawns or objectives).	각 맵은 하나의 모드용으로 제작되며, 개인전 및 목록에 있는 다른 모드도 지원합니다. 어떤 맵이든 어떤 모드로도 시작할 수 있지만, 해당 모드용이 아니면 메뉴에서 경고합니다 (스폰이나 목표가 없을 수 있음).
 F3 - performance overlay (average, 1% and 0.1% low FPS, input latency).   F12 - screenshot.   ESC - menu, votes, settings.	F3 - 성능 오버레이 (평균, 1% 및 0.1% LOW FPS, 입력 지연).   F12 - 스크린샷.   ESC - 메뉴, 투표, 설정.
 F3 COLORBLIND COLORS	F3 색맹 색상
@@ -943,6 +960,7 @@ GUN: TEAM	총기: 팀
 GUNFIRE	총성
 GUS	GUS
 Game::frame	Game::frame
+Game::testHeld_ holds a bit per action	Game::testHeld_ holds a bit per action
 HALFTIME - SIDES SWITCHED	하프타임 - 진영 교체
 HALFTIME - SIDES SWITCHED: YOU ATTACK NOW	하프타임 - 진영 교체: 이제 공격
 HALFTIME - SIDES SWITCHED: YOU DEFEND NOW	하프타임 - 진영 교체: 이제 수비
@@ -1025,6 +1043,7 @@ HP	HP
 HUD	HUD
 HUD & SETTINGS	HUD 및 설정
 HUD 2	HUD 2
+HUD > VERBOSE INFO TURNS THE BLOCK ON	HUD > 상세 정보로 이 블록을 켭니다
 HUD COLORS	HUD 색상
 HUD DRAW	HUD 렌더링
 HUD EDIT ELEMENT	HUD 요소 편집
@@ -1037,6 +1056,7 @@ HZ	HZ
 HZ  LOSS	HZ  손실
 HZ (NOT ON THIS MONITOR)	HZ (이 모니터에선 불가)
 Hold the RIGHT MOUSE button to look around; W A S D to fly, SPACE / C up and down, SHIFT faster, the wheel sets the speed.	마우스 오른쪽 버튼을 누른 채 둘러보세요; W A S D로 비행, SPACE / C로 상승·하강, SHIFT로 가속, 휠로 속도 조절.
+Host Game > CUSTOM MODE > NEW: any base mode with your own health, gravity, speed, jump, knockback, weapons (fire rate, damage, projectile speed) and map pool. Players who join get the rules automatically.	게임 호스트 > 커스텀 모드 > 새로 만들기: 아무 기본 모드에 체력, 중력, 속도, 점프, 넉백, 무기 (연사 속도, 피해, 투사체 속도)와 맵 풀을 직접 설정. 참가한 플레이어는 규칙을 자동으로 받습니다.
 Hz	Hz
 Hz cap applies at the next break	Hz 제한은 다음 휴식 시 적용
 ICON	아이콘
@@ -1074,6 +1094,8 @@ INDUSTRIAL	산업
 INFO	정보
 INFO LINES	정보 줄
 INPUT	입력
+INPUT->FRAME AVG #MS  MIN #MS  99% #MS	INPUT->FRAME 평균 #MS  최소 #MS  99% #MS
+INPUT->FRAME: MOVE THE MOUSE	INPUT->FRAME: 마우스를 움직이세요
 INSERT	INSERT
 INSTAGIB	인스타깁
 INSTAGIB CROSSBOWS	인스타깁 석궁
@@ -1141,6 +1163,7 @@ KILL FEED SECONDS	킬 피드 표시 시간(초)
 KILL MARK	킬 표시
 KILL SOUND	킬 사운드
 KILL TEXT	킬 텍스트
+KILL TEXT: "KILLED <NAME>" OVER THE CROSSHAIR	킬 텍스트: 조준점 위에 "<이름> 처치"
 KILLED	처치됨
 KILLED BY	처치자:
 KILLING SPREE	연속 처치
@@ -1161,6 +1184,7 @@ LABEL	라벨
 LADDER	사다리
 LADDER CLIMB SPEED	사다리 오르기 속도
 LADDER SIDE SPEED	사다리 옆 이동 속도
+LADDERS (1V1, INSTAGIB FFA) - DEFAULT MODEL, HUD, CONTROLS >	래더 (1V1, 인스타기브 FFA) - 기본 모델, HUD, 조작 >
 LAND	착지
 LANGUAGE	언어
 LARGE	크게
@@ -1192,6 +1216,7 @@ LEFT ARROW (PREVIOUS PAGE)	왼쪽 화살표 (이전 페이지)
 LEFT MOUSE - fire.   RIGHT MOUSE - alt-fire (scope, knife throw, rocket lob, bubble stream, syringe throw...).	마우스 왼쪽 - 사격.   마우스 오른쪽 - 보조 사격 (스코프, 나이프 투척, 로켓 곡사, 버블 분사, 주사기 투척...).
 LEFT: THE GUN ON THE LEFT, THE GRAPPLE	왼쪽: 총은 왼쪽, 그래플은
 LEGACY MAPS	레거시 맵
+LEGACY MAPS (settings > GAMEPLAY) lists the old maps from before 1.19.6 too. They are never ranked.	레거시 맵 (설정 > 게임플레이)은 1.19.6 이전의 옛 맵도 보여 줍니다. 랭크에는 쓰이지 않습니다.
 LENA	LENA
 LENGTH	길이
 LET	허용
@@ -1954,6 +1979,8 @@ MY SKY / GLOW: THESE IN PLACE OF EVERY MAP'S;	내 하늘 / 광원: 모든 맵 �
 MY TRACER	내 궤적
 Model	모델
 ModelOverrides holds kMaxModelsPerKind models of a kind	ModelOverrides holds kMaxModelsPerKind models of a kind
+N/A HERE: LATENT SYNC IS WINDOWS ONLY	여기선 사용 불가: LATENT SYNC는 WINDOWS 전용
+N/A HERE: WINDOWS + NVIDIA ONLY	여기선 사용 불가: WINDOWS + NVIDIA 전용
 NAME	이름
 NAME COLOR	이름 색상
 NAME COLORS	이름 색상
@@ -2001,6 +2028,7 @@ NOBODY RANKED YET (3 GAMES)	아직 랭크된 사람 없음 (3게임)
 NONE	없음
 NONE YET	아직 없음
 NONE YET - EXPORT ONE, OR COPY A GROUP AND IMPORT	아직 없음 - 하나를 내보내거나 그룹을 복사해 가져오기
+NONE YET - IN A GAME, ESC > RECORD DEMO	아직 없음 - 게임 중 ESC > 데모 녹화
 NOOR	NOOR
 NORMAL	보통
 NOT A GROUP - MAKE IT A GROUP FIRST?	그룹이 아님 - 먼저 그룹으로 만들까요?
@@ -2157,6 +2185,7 @@ PLAY VS BOTS	봇과 대전
 PLAYABLE AS:	플레이 가능 모드:
 PLAYER	플레이어
 PLAYER 2	플레이어 2
+PLAYER > MORE SETS THE MENU ACCENT	플레이어 > 더 보기에서 메뉴 강조색 설정
 PLAYER BASED	플레이어 기반
 PLAYER BRIGHTNESS	플레이어 밝기
 PLAYER JOINS	플레이어 참가
@@ -2296,6 +2325,8 @@ RECONNECT	재접속
 RECORD	녹화
 RECORD DEMO	데모 녹화
 RECORDED WITH	녹화 버전
+RECORDING DEMO (62.5 HZ) - ESC > STOP RECORDING	데모 녹화 중 (62.5 HZ) - ESC > 녹화 중지
+RECORDING DEMO (FULL RATE) - ESC > STOP RECORDING	데모 녹화 중 (전체 속도) - ESC > 녹화 중지
 RECORDING RATE: 62.5 HZ	녹화 빈도: 62.5 HZ
 RECORDING RATE: FULL	녹화 빈도: 전체
 RED	빨강
@@ -2502,6 +2533,7 @@ SHOW PING	PING 표시
 SHOW WEAPON	무기 표시
 SHOWN	표시됨
 SHOWN WITH VERBOSE INFO ON. DRAG TO MOVE, CORNER / WHEEL TO SIZE, ARROWS NUDGE, ALT: NO SNAP	상세 정보 켜기 시 표시. 드래그로 이동, 모서리 / 휠로 크기, 화살표로 미세 이동, ALT: 스냅 없음
+SHOWS INPUT->FRAME LATENCY	INPUT->FRAME 지연 시간 표시
 SHUFFLE TEAMS	팀 섞기
 SHUFFLE THE TEAMS (THE MATCH RESTARTS)	팀 섞기 (경기 재시작)
 SIMPLE	간단
@@ -2679,7 +2711,9 @@ SYSTEM MESSAGES: IMPORTANT	시스템 메시지: 중요
 SYSTEM MESSAGES: OFF	시스템 메시지: 끄기
 SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)	시스템: OS 기본 화살표 (색상: 게임 커서만)
 Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).	설정 > 조작에서 키 설정을 내보내거나 다른 사람의 설정을 가져올 수 있습니다 (텍스트 복사 / 붙여넣기).
+Start the match, change map / mode, ranked on / off, edit the map together, bots on. A majority of the human players decides.	경기 시작, 맵 / 모드 변경, 랭크 켜기 / 끄기, 맵 함께 편집, 봇 켜기. 사람 플레이어 과반수가 결정합니다.
 Style, length, thickness, gap, colour and outline, with a live preview.	스타일, 길이, 두께, 간격, 색상, 외곽선을 실시간 미리보기로 조절.
+Super dash: look down and dash into the floor while holding jump: you leave 5 m/s faster than you went into the dash (at least 11, at most 36 m/s), with a hop that gets higher the further down you look (it leaves you 1 dash).	슈퍼 대시: 점프를 누른 채 아래를 보고 바닥으로 대시: 대시에 들어갈 때보다 5 m/s 빠르게 나오며 (최소 11, 최대 36 m/s), 아래를 볼수록 더 높이 튀어 오릅니다 (대시 1회 남음).
 Switching weapons with fire held doesn't fire the new one: let go and press again.	사격 버튼을 누른 채 무기를 바꾸면 새 무기는 발사되지 않습니다: 뗐다가 다시 누르세요.
 TAB	TAB
 TAB (NEXT ELEMENT)	TAB (다음 요소)
@@ -2887,6 +2921,7 @@ UNLIMITED	무제한
 UNPLAYED MAPS COUNT AT THEIR DEFAULT TIME	플레이하지 않은 맵은 기본 시간으로 계산
 UNSTOPPABLE	아무도 못 막음
 UP	위
+UP / DOWN AS A MULTIPLE OF SENSITIVITY	위 / 아래를 감도의 배수로
 UPLOAD CAP (MBIT/S)	업로드 한도 (MBIT/S)
 US	US
 USE	사용
@@ -3068,6 +3103,8 @@ YOUR SHOTS: ALWAYS	내 총탄: 항상
 YOUR SHOTS: NEVER	내 총탄: 안 함
 YOUR SHOTS: WITH WEAPON MODEL	내 총탄: 무기 모델과 함께
 YOUR TEAM IS PUSHING	우리 팀이 화물 미는 중
+You run at 9.5 m/s. In the air, holding a direction drifts you up to run speed (a standing jump moves too).	달리기 속도는 9.5 m/s입니다. 공중에서 방향을 누르고 있으면 달리기 속도까지 밀려갑니다 (제자리 점프도 움직입니다).
+You step up anything 0.55 m high, including stairs mid-jump. Ladders: walk into them, look up or down to climb (6.75 m/s).	높이 0.55 m까지는 무엇이든 올라서며, 점프 중 계단도 포함됩니다. 사다리: 다가가서 위나 아래를 보면 오릅니다 (6.75 m/s).
 ZERO-G FLIGHT, LASERS - HEAL 100% TO 50% OVER 30 S, NO KNOCKBACK	무중력 비행, 레이저 - 30초에 걸쳐 회복량 100%에서 50%로, 넉백 없음
 ZOMBIE	좀비
 ZONE OPACITY	구역 불투명도
@@ -3134,6 +3171,7 @@ bench:	bench:
 big noodle*	big noodle*
 bignoodletitling*	bignoodletitling*
 bignoodletoo*	bignoodletoo*
+bind <key> <commands>   a key runs console lines (';' between)   unbind <key>   binds	bind <키> <명령>   키로 콘솔 줄 실행 (';'로 구분)   unbind <키>   binds
 bomb defused	폭탄 해체됨
 bomb exploded	폭탄 폭발
 bomb planted	폭탄 설치됨
@@ -3166,6 +3204,7 @@ callvote ranked on	callvote ranked on
 callvote restart	callvote restart
 callvote shuffle	callvote shuffle
 callvote spec	callvote spec
+callvote spec <name or id> (status lists them)	callvote spec <이름 또는 id> (status로 목록 확인)
 callvote start	callvote start
 callvote tmaps	callvote tmaps
 callvote tmodes	callvote tmodes
@@ -3193,7 +3232,9 @@ could not create an OpenGL 3.3 window - update your graphics driver	OpenGL 3.3 �
 could not host:	호스트 불가:
 could not open	열 수 없음
 could not open log file	로그 파일을 열 수 없음
+could not save maps/	저장할 수 없음: maps/
 could not save the map	맵을 저장할 수 없음
+could not write maps/	쓸 수 없음: maps/
 could not write to the groups folder	그룹 폴더에 쓸 수 없음
 couldn't check reachability:	접속 가능 여부 확인 불가:
 custom mode rules too big to send with the weapon set: sent without it	커스텀 모드 규칙이 무기 세트와 함께 보내기엔 너무 큼: 무기 세트 없이 전송
@@ -3206,8 +3247,10 @@ demo finished	데모 종료
 demo:	데모:
 draw - the payload is in the middle	무승부 - 화물이 중앙에 있음
 dropped:	탈락:
+duelUsed_ is a 32-bit mask	duelUsed_ is a 32-bit mask
 dyn verts	dyn verts
 dynamic pass	dynamic pass
+e.g.  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5	예:  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5
 edcam # # #	edcam # # #
 edit #	edit #
 edit mode on	편집 모드 켜짐
@@ -3276,6 +3319,8 @@ isn't in this custom mode's map pool	은(는) 이 커스텀 모드의 맵 풀에
 joined team A	님이 A팀에 참가
 joined team B	님이 B팀에 참가
 joined the game	님이 게임에 참가
+kElemNames follows Settings::HUD_*	kElemNames follows Settings::HUD_*
+kbps (# packets/s), download # kbps (#/s)	kbps (# 패킷/s), 다운로드 # kbps (#/s)
 kick whom? a name or an id (status lists them)	누구를 강퇴할까요? 이름 또는 ID (status에 표시됨)
 kicked by a vote	투표로 강퇴됨
 language:	language:
@@ -3299,6 +3344,7 @@ map editing	맵 편집
 map editing -	맵 편집 -
 map editing - everyone can build; changes last until the map changes	맵 편집 - 누구나 제작 가능; 맵이 바뀔 때까지 변경 유지
 map editing - everyone can build; the host saves	맵 편집 - 누구나 제작 가능; 호스트가 저장
+map name: letters, digits, - and _ only (not a device name like con)	맵 이름: 영문자, 숫자, -와 _만 (con 같은 장치 이름 불가)
 map not found	맵을 찾을 수 없음
 map saved as	맵 저장됨:
 map test	맵 테스트
@@ -3322,13 +3368,17 @@ model name	모델 이름
 mul must be 3 numbers from 0 to 16	mul은 0에서 16 사이의 숫자 3개여야 함
 must beat it	이 기록을 넘어야 함
 my mode	내 모드
+name: letters, digits, - and _ only (not a device name like con)	이름: 영문자, 숫자, -와 _만 (con 같은 장치 이름 불가)
 net poll	net poll
 no IAudioClient3, before Windows 10	IAudioClient3 없음, Windows 10 이전
+no aliases - alias <name> <commands>	별칭 없음 - alias <이름> <명령>
 no bots on a ranked server	랭크 서버에서는 봇 불가
 no boxes	박스 없음
+no command binds - bind <key> <commands>	명령 바인드 없음 - bind <키> <명령>
 no hiders left	남은 숨은 플레이어 없음
 no key called '	해당 이름의 키 없음: '
 no map editing on a ranked server (vote ranked off first)	랭크 서버에서는 맵 편집 불가 (먼저 랭크 끄기 투표)
+no maps found in maps/	maps/에서 맵을 찾을 수 없음
 no mix format	믹스 포맷 없음
 no mode can run on this map yet	아직 이 맵에서 실행 가능한 모드 없음
 no modifiers on a ranked or time trial server	랭크 또는 타임 트라이얼 서버에서는 변형 불가
@@ -3341,6 +3391,7 @@ nobody finished	아무도 완주 못 함
 nobody is out - throw again	탈락자 없음 - 다시 내세요
 nobody left	남은 사람 없음
 not a 16 x 16 character sheet	16 x 16 문자 시트가 아님
+not a TrueType / OpenType font	TrueType / OpenType 폰트가 아닙니다
 not a WAV, OGG, FLAC or MP3 file	WAV, OGG, FLAC, MP3 파일이 아님
 not a file name	파일 이름이 아님
 not a font file	폰트 파일이 아님
@@ -3414,6 +3465,7 @@ proj # type # owner # pos # # # vel # # #	proj # type # owner # pos # # # vel # 
 proj # type # owner # pos # # # vel # # #{}	proj # type # owner # pos # # # vel # # #{}
 properties background, color, opacity, border, radius, padding, margin, gap, font-size,	properties background, color, opacity, border, radius, padding, margin, gap, font-size,
 puts every built-in map back to its original version and removes retired ones (your own maps are kept) - click again	모든 기본 맵을 원래 버전으로 되돌리고 폐기된 맵을 제거합니다 (내 맵은 유지) - 다시 클릭
+quark --bake-maps <dir>	quark --bake-maps <dir>
 quark server	quark server
 quark server log, level	quark server log, level
 quark server log, level {}, version {}	quark server log, level {}, version {}
@@ -3437,6 +3489,7 @@ ranked off - matches aren't rated	랭크 꺼짐 - 경기가 레이팅에 반영�
 ranked on	랭크 켜짐
 ranked on -	랭크 켜짐 -
 ranked only runs on the ranked maps for its ladder	랭크는 해당 래더의 랭크 맵에서만 진행
+ranked server: a ranked map for the ladder (vanilla / vampire 1v1, instagib free for all), or vote ranked off	랭크 서버: 래더용 랭크 맵 (바닐라 / 뱀파이어 1v1, 인스타기브 개인전), 또는 랭크 끄기 투표
 ranked server: no	랭크 서버: 없음
 ranked ticket	랭크 티켓
 ranked ticket {} players {}	ranked ticket {} players {}
@@ -3478,6 +3531,7 @@ screenshot written to {}	screenshot written to {}
 see-through pass	see-through pass
 select a box, look at one of its sides and press K	박스를 선택하고 한 면을 바라본 뒤 K를 누르세요
 select a group to export	내보낼 그룹을 선택하세요
+select boxes / groups (shift+click to add more)	박스 / 그룹 선택 (shift+클릭으로 추가)
 select boxes first	먼저 박스를 선택하세요
 select the cutter first, then shift+click the boxes to cut	먼저 자를 박스를 선택한 뒤, shift+클릭으로 잘라낼 박스를 선택하세요
 select two or more boxes (shift+click) to combine	합칠 박스를 두 개 이상 선택하세요 (shift+클릭)
@@ -3497,13 +3551,16 @@ server version	서버 버전
 server, sharing	서버, 공유
 setup:	setup:
 shader:	셰이더:
+shadow / visOnly / crouch must be true or false	shadow / visOnly / crouch는 true 또는 false여야 합니다
 shadow pass	shadow pass
 shipped:	기본 제공:
 short-handed: # playing	인원 부족: #명 플레이 중
+size # # #	size # # #
 slopes can't be coated: pick a box	경사면은 칠할 수 없음: 박스를 선택하세요
 slopes can't be cut: pick plain boxes	경사면은 자를 수 없음: 일반 박스를 선택하세요
 slopes can't be split: pick plain boxes	경사면은 분할할 수 없음: 일반 박스를 선택하세요
 slot bracket	슬롯 대진
+snapshots #/s{}, stalls #% (over # ms late)	스냅샷 #/s{}, 끊김 #% (# ms 넘게 지연)
 stalemate - health draining	교착 상태 - 체력 감소 중
 static boxes	정적 박스
 static boxes pass	static boxes pass

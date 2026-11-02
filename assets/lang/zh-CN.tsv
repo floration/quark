@@ -7,12 +7,16 @@
 # CONTROL PROFILES	# 个操作配置
 # CUSTOM MODES	# 个自定义模式
 # DB	# DB
+# DEFAULT KEYS (Settings > CONTROLS to change any of them, two keys per action)	# 默认按键 (设置 > 操作 中可更改, 每个动作两个按键)
 # DEG	# 度
 # DUELS	# 场决斗
 # EVERYONE FOR THEMSELVES	# 各自为战
+# HOST A GAME (main menu > HOST GAME)	# 创建游戏 (主菜单 > 创建游戏)
 # HP	# HP
+# HUD LAYOUT (Settings > HUD LAYOUT)	# HUD 布局 (设置 > HUD 布局)
 # HZ (AVG)	# HZ (平均)
 # IN GAME (ESC as host)	# 游戏中 (房主按 ESC)
+# JOIN A GAME (main menu > JOIN GAME)	# 加入游戏 (主菜单 > 加入游戏)
 # MAPS AND MODES	# 地图与模式
 # MB	# MB
 # MOVEMENT	# 移动
@@ -21,6 +25,7 @@
 # RANKED	# 排位
 # SETTINGS (main menu, or ESC in game)	# 设置 (主菜单, 或游戏中按 ESC)
 # TEAM MODES	# 团队模式
+# THE MAP EDITOR (main menu > MAP EDITOR)	# 地图编辑器 (主菜单 > 地图编辑器)
 # THE MAPS AND WHAT THEY'RE BUILT FOR	# 地图及其适用模式
 # US	# US
 # VOTES (ESC > VOTE, then F1 yes / F2 no)	# 投票 (ESC > 投票, 然后 F1 赞成 / F2 反对)
@@ -28,13 +33,16 @@
 # YOUR OWN MAPS	# 你自己的地图
 # date,	# date,
 # demo,	# demo,
+# frames,#	# frames,#
 # label,	# label,
 # map,	# map,
 # maps, # s, # threads	# 张地图, # 秒, # 个线程
 # maps, # s, # threads{}	# maps, # s, # threads{}
 # of # players losing snapshots (worst #%)	# / # 名玩家丢失快照 (最差 #%)
 # quark benchmark	# quark benchmark
+# quark benchmark 1	# quark benchmark 1
 # quark controls profile	# quark controls profile
+# seconds,#	# seconds,#
 # setup:	# setup:
 # setup:{},{}	# setup:{},{}
 # uploaded,#	# uploaded,#
@@ -161,6 +169,7 @@ ACCENT	强调色
 ACCENT COLOR	强调色
 ACCESSIBILITY	辅助功能
 ACCURACY	命中率
+ACE	ACE
 ADAPTIVE	自适应
 ADD (AT THE SCREEN CENTER)	添加 (屏幕中心)
 ADD BOT	添加机器人
@@ -169,6 +178,7 @@ ADD: boxes (base / accent / wallbang: bullets go through wallbangs for half dama
 ADDRESS	地址
 ADDRESS (IP:PORT)	地址 (IP:端口)
 ADVANCED	高级
+ADVANCED > BOT BRAIN: what your bots play: the built-in brain, or a .qbrain file from the bots folder in your data folder. A file that doesn't compile shows its error line and the bots play the built-in brain. Never in ranked.	高级 > 机器人 AI: 机器人的玩法: 内置 AI, 或数据文件夹中 bots 文件夹里的 .qbrain 文件. 无法编译的文件会显示出错行, 机器人改用内置 AI. 排位中从不使用.
 AGAIN (R)	重来 (R)
 AHEAD	领先
 AIM TRAINER	瞄准训练
@@ -272,6 +282,7 @@ BAKES,	个烘焙,
 BAKING LIGHT -	正在烘焙光照 -
 BALANCE BOT SKILL	平衡机器人水平
 BALANCE BOTS	平衡机器人
+BALANCE BOTS evens out uneven teams with bots. MODE > RANKED runs rated 1v1 on the ranked maps (no bots). SERVER LOG keeps a log of the match.	平衡机器人 用机器人补齐人数不均的队伍. 模式 > 排位 在排位地图上进行计分 1v1 (无机器人). 服务器日志 记录比赛日志.
 BALL	球赛
 BALL - SHOOT, BLAST OR RUN THE BALL INTO THE ENEMY GOAL - MOST GOALS WINS	球赛 - 射击、轰击或带球进入敌方球门 - 进球最多者胜
 BANDIT	强盗
@@ -316,6 +327,7 @@ BIND FLY KEYS	绑定飞行按键
 BIND HIDE HUD ON CONTROLS	在操作设置中绑定隐藏 HUD
 BLACK	黑色
 BLADES	刀刃
+BLAZE	BLAZE
 BLEND	混合
 BLUE / ORANGE	蓝 / 橙
 BLUE-YELLOW (TRITAN)	蓝黄色盲 (TRITAN)
@@ -464,6 +476,7 @@ COLUMN: OBJ	列: 目标
 COLUMN: PING	列: PING
 COLUMN: TOTAL K / D	列: 总 K / D
 COMBINE	合并
+COMET	COMET
 COMPASS	指南针
 COMPASS + RADAR	指南针 + 雷达
 COMPETITIVE: NO FOG OR SHADOWS, FEWER EFFECTS;	竞技: 无雾无阴影, 特效更少;
@@ -630,6 +643,7 @@ DEMO - ESC TO STOP	录像 - ESC 停止
 DEMO RATE	录像频率
 DEMO RATE: 62.5 HZ	录像频率: 62.5 HZ
 DEMO RATE: FULL	录像频率: 完整
+DEMO SAVED - MAIN MENU > DEMOS	录像已保存 - 主菜单 > 录像
 DEMOS	录像
 DEPTH	深度
 DESC	降序
@@ -683,12 +697,14 @@ DUCKING	闪避
 DUEL	决斗
 DUEL - 1v1 (or 2v2): every life has a random modifier (low gravity, giants, rockets only...). First to 11.	决斗 - 1v1 (或 2v2): 每条命都有随机修改器 (低重力、巨人、仅火箭...)。先到 11 分者胜。
 DUPLICATE	复制
+DUSK	DUSK
 DXGI PRESENT	DXGI PRESENT
 DXGI PRESENT: WINDOWS ONLY	DXGI PRESENT: 仅限 WINDOWS
 DYNAMIC RANGE	动态范围
 DYNAMIC RANGE: CLEAN	动态范围: 纯净
 DYNAMIC RANGE: NIGHT	动态范围: 夜间
 DYNAMIC RANGE: NORMAL	动态范围: 正常
+Dash into a wall head-on (under 45 degrees) and you bounce off it at 16 m/s (it leaves you 1 dash).	正面冲刺撞墙 (小于 45 度) 会以 16 m/s 弹开 (剩余 1 次冲刺).
 Dash jump: jump while dashing along the floor to keep the dash's full speed through the jump (it leaves you both dashes).	冲刺跳: 贴地冲刺时跳跃, 跳起后保持冲刺全速 (两次冲刺都保留)。
 Decl: no padding (its words are hashed)	Decl: no padding (its words are hashed)
 Display: window mode, vsync, low latency mode, frame cap, player shadows, brightness, anti-aliasing and interpolation. Lower latency settings cost smoothness: the notes under them say how.	显示: 窗口模式、垂直同步、低延迟模式、帧率上限、玩家阴影、亮度、抗锯齿和插值。低延迟设置会牺牲流畅度: 下方说明会解释。
@@ -776,6 +792,7 @@ EXPORT CSV	导出 CSV
 EXPORT GROUP	导出分组
 EXPORT PNG	导出 PNG
 EZRA	EZRA
+Each dash leaves you 1 m/s faster than you went in (at least 11, at most 32 m/s).	每次冲刺结束时比进入时快 1 m/s (最低 11, 最高 32 m/s).
 Each map is built for one mode, plus free for all and any others it lists. You can still start any map in any mode: the menus warn when it isn't built for it (it may be missing spawns or objectives).	每张地图为一种模式打造, 外加自由混战及其列出的其他模式。你仍可在任意模式下启动任意地图: 若不适配, 菜单会提示 (可能缺少出生点或目标)。
 F3 - performance overlay (average, 1% and 0.1% low FPS, input latency).   F12 - screenshot.   ESC - menu, votes, settings.	F3 - 性能面板 (平均、1% 和 0.1% 低帧 FPS, 输入延迟)。   F12 - 截图。   ESC - 菜单、投票、设置。
 F3 COLORBLIND COLORS	F3 色盲配色
@@ -943,6 +960,7 @@ GUN: TEAM	枪械: 队伍
 GUNFIRE	枪声
 GUS	GUS
 Game::frame	Game::frame
+Game::testHeld_ holds a bit per action	Game::testHeld_ holds a bit per action
 HALFTIME - SIDES SWITCHED	半场 - 交换攻守
 HALFTIME - SIDES SWITCHED: YOU ATTACK NOW	半场 - 交换攻守: 你现在进攻
 HALFTIME - SIDES SWITCHED: YOU DEFEND NOW	半场 - 交换攻守: 你现在防守
@@ -1025,6 +1043,7 @@ HP	HP
 HUD	HUD
 HUD & SETTINGS	HUD 与设置
 HUD 2	HUD 2
+HUD > VERBOSE INFO TURNS THE BLOCK ON	HUD > 详细信息 开启此区块
 HUD COLORS	HUD 颜色
 HUD DRAW	HUD 绘制
 HUD EDIT ELEMENT	HUD 编辑元素
@@ -1037,6 +1056,7 @@ HZ	HZ
 HZ  LOSS	HZ  丢失
 HZ (NOT ON THIS MONITOR)	HZ (此显示器不支持)
 Hold the RIGHT MOUSE button to look around; W A S D to fly, SPACE / C up and down, SHIFT faster, the wheel sets the speed.	按住鼠标右键环视; W A S D 飞行, 空格 / C 上升下降, SHIFT 加速, 滚轮调整速度。
+Host Game > CUSTOM MODE > NEW: any base mode with your own health, gravity, speed, jump, knockback, weapons (fire rate, damage, projectile speed) and map pool. Players who join get the rules automatically.	创建游戏 > 自定义模式 > 新建: 任意基础模式, 自定生命值, 重力, 速度, 跳跃, 击退, 武器 (射速, 伤害, 弹速) 和地图池. 加入的玩家会自动获得规则.
 Hz	Hz
 Hz cap applies at the next break	Hz 上限在下次中断时生效
 ICON	图标
@@ -1074,6 +1094,8 @@ INDUSTRIAL	工业
 INFO	信息
 INFO LINES	信息行
 INPUT	输入
+INPUT->FRAME AVG #MS  MIN #MS  99% #MS	INPUT->FRAME 平均 #MS  最低 #MS  99% #MS
+INPUT->FRAME: MOVE THE MOUSE	INPUT->FRAME: 请移动鼠标
 INSERT	INSERT
 INSTAGIB	一击必杀
 INSTAGIB CROSSBOWS	一击必杀弩
@@ -1141,6 +1163,7 @@ KILL FEED SECONDS	击杀信息秒数
 KILL MARK	击杀标记
 KILL SOUND	击杀音效
 KILL TEXT	击杀文字
+KILL TEXT: "KILLED <NAME>" OVER THE CROSSHAIR	击杀文字: 准星上方显示 "已击杀 <名字>"
 KILLED	已击杀
 KILLED BY	被击杀, 击杀者
 KILLING SPREE	大杀特杀
@@ -1161,6 +1184,7 @@ LABEL	标签
 LADDER	梯子
 LADDER CLIMB SPEED	梯子攀爬速度
 LADDER SIDE SPEED	梯子横移速度
+LADDERS (1V1, INSTAGIB FFA) - DEFAULT MODEL, HUD, CONTROLS >	天梯 (1V1, 瞬杀 FFA) - 默认模型, HUD, 操作 >
 LAND	着陆
 LANGUAGE	语言
 LARGE	大
@@ -1192,6 +1216,7 @@ LEFT ARROW (PREVIOUS PAGE)	左方向键 (上一页)
 LEFT MOUSE - fire.   RIGHT MOUSE - alt-fire (scope, knife throw, rocket lob, bubble stream, syringe throw...).	鼠标左键 - 开火。   鼠标右键 - 辅助开火 (开镜、投掷飞刀、火箭抛射、气泡流、投掷针筒...)。
 LEFT: THE GUN ON THE LEFT, THE GRAPPLE	左: 枪在左手, 钩索
 LEGACY MAPS	旧版地图
+LEGACY MAPS (settings > GAMEPLAY) lists the old maps from before 1.19.6 too. They are never ranked.	旧版地图 (设置 > 游戏玩法) 也会列出 1.19.6 之前的旧地图. 它们永远不计排位.
 LENA	LENA
 LENGTH	长度
 LET	放行
@@ -1954,6 +1979,8 @@ MY SKY / GLOW: THESE IN PLACE OF EVERY MAP'S;	我的天空 / 发光: 替换所�
 MY TRACER	我的弹道
 Model	模型
 ModelOverrides holds kMaxModelsPerKind models of a kind	ModelOverrides holds kMaxModelsPerKind models of a kind
+N/A HERE: LATENT SYNC IS WINDOWS ONLY	此处不可用: LATENT SYNC 仅限 WINDOWS
+N/A HERE: WINDOWS + NVIDIA ONLY	此处不可用: 仅限 WINDOWS + NVIDIA
 NAME	名字
 NAME COLOR	名字颜色
 NAME COLORS	名字颜色
@@ -2001,6 +2028,7 @@ NOBODY RANKED YET (3 GAMES)	尚无排位玩家 (3 场)
 NONE	无
 NONE YET	暂无
 NONE YET - EXPORT ONE, OR COPY A GROUP AND IMPORT	暂无 - 导出一个, 或复制一个分组后导入
+NONE YET - IN A GAME, ESC > RECORD DEMO	暂无 - 游戏中按 ESC > 录制录像
 NOOR	NOOR
 NORMAL	正常
 NOT A GROUP - MAKE IT A GROUP FIRST?	不是分组 - 先设为分组?
@@ -2157,6 +2185,7 @@ PLAY VS BOTS	人机对战
 PLAYABLE AS:	可玩模式:
 PLAYER	玩家
 PLAYER 2	玩家 2
+PLAYER > MORE SETS THE MENU ACCENT	玩家 > 更多 设置菜单强调色
 PLAYER BASED	玩家类
 PLAYER BRIGHTNESS	玩家亮度
 PLAYER JOINS	玩家加入
@@ -2296,6 +2325,8 @@ RECONNECT	重新连接
 RECORD	录制
 RECORD DEMO	录制录像
 RECORDED WITH	录制于
+RECORDING DEMO (62.5 HZ) - ESC > STOP RECORDING	正在录制录像 (62.5 HZ) - ESC > 停止录制
+RECORDING DEMO (FULL RATE) - ESC > STOP RECORDING	正在录制录像 (全速率) - ESC > 停止录制
 RECORDING RATE: 62.5 HZ	录制频率: 62.5 HZ
 RECORDING RATE: FULL	录制频率: 完整
 RED	红色
@@ -2502,6 +2533,7 @@ SHOW PING	显示 PING
 SHOW WEAPON	显示武器
 SHOWN	已显示
 SHOWN WITH VERBOSE INFO ON. DRAG TO MOVE, CORNER / WHEEL TO SIZE, ARROWS NUDGE, ALT: NO SNAP	开启详细信息时显示。拖动移动, 角落 / 滚轮调整大小, 方向键微调, ALT: 不吸附
+SHOWS INPUT->FRAME LATENCY	显示 INPUT->FRAME 延迟
 SHUFFLE TEAMS	随机分队
 SHUFFLE THE TEAMS (THE MATCH RESTARTS)	随机分队 (比赛重新开始)
 SIMPLE	简单
@@ -2679,7 +2711,9 @@ SYSTEM MESSAGES: IMPORTANT	系统消息: 重要
 SYSTEM MESSAGES: OFF	系统消息: 关
 SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)	系统: 系统箭头光标 (颜色: 仅限我们的)
 Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).	设置 > 操作 可以导出你的绑定并导入他人的 (复制 / 粘贴文本)。
+Start the match, change map / mode, ranked on / off, edit the map together, bots on. A majority of the human players decides.	开始比赛, 更换地图 / 模式, 开关排位, 一起编辑地图, 开启机器人. 由多数真人玩家决定.
 Style, length, thickness, gap, colour and outline, with a live preview.	样式、长度、粗细、间隙、颜色和描边, 带实时预览。
+Super dash: look down and dash into the floor while holding jump: you leave 5 m/s faster than you went into the dash (at least 11, at most 36 m/s), with a hop that gets higher the further down you look (it leaves you 1 dash).	超级冲刺: 按住跳跃时向下看并冲刺撞向地面: 离开时比进入冲刺时快 5 m/s (最低 11, 最高 36 m/s), 并带有一次小跳, 看得越低跳得越高 (剩余 1 次冲刺).
 Switching weapons with fire held doesn't fire the new one: let go and press again.	按住开火时切换武器不会让新武器开火: 松开再按。
 TAB	TAB
 TAB (NEXT ELEMENT)	TAB (下一个元素)
@@ -2887,6 +2921,7 @@ UNLIMITED	无限制
 UNPLAYED MAPS COUNT AT THEIR DEFAULT TIME	未跑过的地图按默认时间计算
 UNSTOPPABLE	无人能挡
 UP	上
+UP / DOWN AS A MULTIPLE OF SENSITIVITY	上 / 下 按灵敏度的倍数
 UPLOAD CAP (MBIT/S)	上传上限 (MBIT/S)
 US	US
 USE	使用
@@ -3068,6 +3103,8 @@ YOUR SHOTS: ALWAYS	你的射击: 始终
 YOUR SHOTS: NEVER	你的射击: 从不
 YOUR SHOTS: WITH WEAPON MODEL	你的射击: 随武器模型
 YOUR TEAM IS PUSHING	我方正在推进
+You run at 9.5 m/s. In the air, holding a direction drifts you up to run speed (a standing jump moves too).	跑动速度为 9.5 m/s. 空中按住方向会把你推到跑动速度 (原地起跳也能移动).
+You step up anything 0.55 m high, including stairs mid-jump. Ladders: walk into them, look up or down to climb (6.75 m/s).	可直接迈上 0.55 m 高的任何东西, 包括跳跃中的台阶. 梯子: 走进梯子, 向上或向下看即可攀爬 (6.75 m/s).
 ZERO-G FLIGHT, LASERS - HEAL 100% TO 50% OVER 30 S, NO KNOCKBACK	零重力飞行, 激光 - 30 秒内从 100% 治疗降至 50%, 无击退
 ZOMBIE	僵尸
 ZONE OPACITY	区域不透明度
@@ -3134,6 +3171,7 @@ bench:	bench:
 big noodle*	big noodle*
 bignoodletitling*	bignoodletitling*
 bignoodletoo*	bignoodletoo*
+bind <key> <commands>   a key runs console lines (';' between)   unbind <key>   binds	bind <按键> <命令>   按键执行控制台命令 (用 ';' 分隔)   unbind <按键>   binds
 bomb defused	炸弹已拆除
 bomb exploded	炸弹已爆炸
 bomb planted	炸弹已安放
@@ -3166,6 +3204,7 @@ callvote ranked on	callvote ranked on
 callvote restart	callvote restart
 callvote shuffle	callvote shuffle
 callvote spec	callvote spec
+callvote spec <name or id> (status lists them)	callvote spec <名字或 id> (status 可列出)
 callvote start	callvote start
 callvote tmaps	callvote tmaps
 callvote tmodes	callvote tmodes
@@ -3193,7 +3232,9 @@ could not create an OpenGL 3.3 window - update your graphics driver	无法创建
 could not host:	无法主持:
 could not open	无法打开
 could not open log file	无法打开日志文件
+could not save maps/	无法保存 maps/
 could not save the map	无法保存地图
+could not write maps/	无法写入 maps/
 could not write to the groups folder	无法写入分组文件夹
 couldn't check reachability:	无法检查可达性:
 custom mode rules too big to send with the weapon set: sent without it	自定义模式规则太大, 无法与武器配置一起发送: 已单独发送
@@ -3206,8 +3247,10 @@ demo finished	录像播放完毕
 demo:	录像:
 draw - the payload is in the middle	平局 - 运载车在中间
 dropped:	已掉线:
+duelUsed_ is a 32-bit mask	duelUsed_ is a 32-bit mask
 dyn verts	dyn verts
 dynamic pass	dynamic pass
+e.g.  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5	例如  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5
 edcam # # #	edcam # # #
 edit #	edit #
 edit mode on	编辑模式开
@@ -3276,6 +3319,8 @@ isn't in this custom mode's map pool	不在此自定义模式的地图池中
 joined team A	加入了 A 队
 joined team B	加入了 B 队
 joined the game	加入了游戏
+kElemNames follows Settings::HUD_*	kElemNames follows Settings::HUD_*
+kbps (# packets/s), download # kbps (#/s)	kbps (# 包/秒), 下载 # kbps (#/秒)
 kick whom? a name or an id (status lists them)	踢谁? 名字或 ID (status 会列出)
 kicked by a vote	被投票踢出
 language:	language:
@@ -3299,6 +3344,7 @@ map editing	地图编辑
 map editing -	地图编辑 -
 map editing - everyone can build; changes last until the map changes	地图编辑 - 所有人都能建造; 修改持续到换图
 map editing - everyone can build; the host saves	地图编辑 - 所有人都能建造; 由房主保存
+map name: letters, digits, - and _ only (not a device name like con)	地图名: 只能用字母, 数字, - 和 _ (不能是 con 这类设备名)
 map not found	未找到地图
 map saved as	地图已保存为
 map test	地图测试
@@ -3322,13 +3368,17 @@ model name	模型名称
 mul must be 3 numbers from 0 to 16	mul 必须是 3 个 0 到 16 之间的数字
 must beat it	必须超过它
 my mode	我的模式
+name: letters, digits, - and _ only (not a device name like con)	名字: 只能用字母, 数字, - 和 _ (不能是 con 这类设备名)
 net poll	net poll
 no IAudioClient3, before Windows 10	无 IAudioClient3, 早于 Windows 10
+no aliases - alias <name> <commands>	没有别名 - alias <名字> <命令>
 no bots on a ranked server	排位服务器不能有机器人
 no boxes	没有方块
+no command binds - bind <key> <commands>	没有命令绑定 - bind <按键> <命令>
 no hiders left	没有剩余的躲藏者
 no key called '	没有名为 ' 的按键
 no map editing on a ranked server (vote ranked off first)	排位服务器不能编辑地图 (请先投票关闭排位)
+no maps found in maps/	maps/ 中没有找到地图
 no mix format	无混音格式
 no mode can run on this map yet	暂时没有模式能在此地图运行
 no modifiers on a ranked or time trial server	排位或计时赛服务器不能使用修改器
@@ -3341,6 +3391,7 @@ nobody finished	无人完成
 nobody is out - throw again	无人出局 - 再出一次
 nobody left	没人了
 not a 16 x 16 character sheet	不是 16 x 16 字符表
+not a TrueType / OpenType font	不是 TrueType / OpenType 字体
 not a WAV, OGG, FLAC or MP3 file	不是 WAV、OGG、FLAC 或 MP3 文件
 not a file name	不是文件名
 not a font file	不是字体文件
@@ -3414,6 +3465,7 @@ proj # type # owner # pos # # # vel # # #	proj # type # owner # pos # # # vel # 
 proj # type # owner # pos # # # vel # # #{}	proj # type # owner # pos # # # vel # # #{}
 properties background, color, opacity, border, radius, padding, margin, gap, font-size,	属性 background, color, opacity, border, radius, padding, margin, gap, font-size,
 puts every built-in map back to its original version and removes retired ones (your own maps are kept) - click again	将所有内置地图恢复为原始版本并移除已退役地图 (你自己的地图保留) - 再次点击
+quark --bake-maps <dir>	quark --bake-maps <dir>
 quark server	quark server
 quark server log, level	quark server log, level
 quark server log, level {}, version {}	quark server log, level {}, version {}
@@ -3437,6 +3489,7 @@ ranked off - matches aren't rated	排位关 - 比赛不计分
 ranked on	排位开
 ranked on -	排位开 -
 ranked only runs on the ranked maps for its ladder	排位只在其天梯的排位地图上运行
+ranked server: a ranked map for the ladder (vanilla / vampire 1v1, instagib free for all), or vote ranked off	排位服务器: 选择一张天梯排位地图 (原版 / 吸血 1v1, 瞬杀混战), 或投票关闭排位
 ranked server: no	排位服务器: 无
 ranked ticket	排位凭证
 ranked ticket {} players {}	ranked ticket {} players {}
@@ -3478,6 +3531,7 @@ screenshot written to {}	screenshot written to {}
 see-through pass	see-through pass
 select a box, look at one of its sides and press K	选择一个方块, 看向它的一个面并按 K
 select a group to export	选择要导出的分组
+select boxes / groups (shift+click to add more)	选择方块 / 组 (shift+点击 添加更多)
 select boxes first	请先选择方块
 select the cutter first, then shift+click the boxes to cut	先选择切割体, 再 shift+点击要切割的方块
 select two or more boxes (shift+click) to combine	选择两个或更多方块 (shift+点击) 以合并
@@ -3497,13 +3551,16 @@ server version	服务器版本
 server, sharing	服务器, 共享
 setup:	setup:
 shader:	shader:
+shadow / visOnly / crouch must be true or false	shadow / visOnly / crouch 必须为 true 或 false
 shadow pass	shadow pass
 shipped:	已发布:
 short-handed: # playing	人数不足: # 人在场
+size # # #	size # # #
 slopes can't be coated: pick a box	斜面不能上材质: 请选择方块
 slopes can't be cut: pick plain boxes	斜面不能切割: 请选择普通方块
 slopes can't be split: pick plain boxes	斜面不能拆分: 请选择普通方块
 slot bracket	栏位对阵
+snapshots #/s{}, stalls #% (over # ms late)	快照 #/秒{}, 卡顿 #% (延迟超过 # ms)
 stalemate - health draining	僵持 - 生命流失中
 static boxes	static boxes
 static boxes pass	static boxes pass

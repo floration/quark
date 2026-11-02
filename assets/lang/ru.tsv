@@ -7,12 +7,16 @@
 # CONTROL PROFILES	# ПРОФИЛИ УПРАВЛЕНИЯ
 # CUSTOM MODES	# СВОИ РЕЖИМЫ
 # DB	# ДБ
+# DEFAULT KEYS (Settings > CONTROLS to change any of them, two keys per action)	# КЛАВИШИ ПО УМОЛЧАНИЮ (Настройки > УПРАВЛЕНИЕ, чтобы изменить, две клавиши на действие)
 # DEG	# ГРАД
 # DUELS	# ДУЭЛИ
 # EVERYONE FOR THEMSELVES	# КАЖДЫЙ САМ ЗА СЕБЯ
+# HOST A GAME (main menu > HOST GAME)	# СОЗДАТЬ ИГРУ (главное меню > СОЗДАТЬ ИГРУ)
 # HP	# HP
+# HUD LAYOUT (Settings > HUD LAYOUT)	# РАСКЛАДКА HUD (Настройки > РАСКЛАДКА HUD)
 # HZ (AVG)	# ГЦ (СРЕДН.)
 # IN GAME (ESC as host)	# В ИГРЕ (ESC для хоста)
+# JOIN A GAME (main menu > JOIN GAME)	# ПРИСОЕДИНИТЬСЯ К ИГРЕ (главное меню > ПРИСОЕДИНИТЬСЯ)
 # MAPS AND MODES	# КАРТЫ И РЕЖИМЫ
 # MB	# МБ
 # MOVEMENT	# ПЕРЕДВИЖЕНИЕ
@@ -20,7 +24,8 @@
 # PLAY VS BOTS	# ИГРА С БОТАМИ
 # RANKED	# РЕЙТИНГ
 # SETTINGS (main menu, or ESC in game)	# НАСТРОЙКИ (главное меню или ESC в игре)
-# TEAM MODES	# КОМАНДНЫЕ РЕЖИМЫ
+# TEAM MODES	# КОМАНД. РЕЖИМЫ
+# THE MAP EDITOR (main menu > MAP EDITOR)	# РЕДАКТОР КАРТ (главное меню > РЕДАКТОР КАРТ)
 # THE MAPS AND WHAT THEY'RE BUILT FOR	# КАРТЫ И ДЛЯ ЧЕГО ОНИ СДЕЛАНЫ
 # US	# МКС
 # VOTES (ESC > VOTE, then F1 yes / F2 no)	# ГОЛОСОВАНИЯ (ESC > ГОЛОСОВАНИЕ, затем F1 за / F2 против)
@@ -28,13 +33,16 @@
 # YOUR OWN MAPS	# СВОИ КАРТЫ
 # date,	# дата,
 # demo,	# демо,
+# frames,#	# frames,#
 # label,	# метка,
 # map,	# карта,
 # maps, # s, # threads	# карт, # с, # потоков
 # maps, # s, # threads{}	# maps, # s, # threads{}
 # of # players losing snapshots (worst #%)	# из # игроков теряют снапшоты (худший #%)
 # quark benchmark	# бенчмарк quark
+# quark benchmark 1	# quark benchmark 1
 # quark controls profile	# профиль управления quark
+# seconds,#	# seconds,#
 # setup:	# конфигурация:
 # setup:{},{}	# setup:{},{}
 # uploaded,#	# загружено,#
@@ -43,7 +51,7 @@
 #% of ticks over # ms late	#% тиков опаздывают более чем на # мс
 #-# OF # - WHEEL TO SCROLL	#-# ИЗ # - КОЛЕСО ДЛЯ ПРОКРУТКИ
 #-# OF # - WHEEL TO SCROLL - RIGHT-CLICK: FAVORITE	#-# ИЗ # - КОЛЕСО ДЛЯ ПРОКРУТКИ - ПКМ: В ИЗБРАННОЕ
-#:# LEFT	#:# ОСТАЛОСЬ
+#:# LEFT	#:# ОСТ.
 #MS	#МС
 #X# # HZ	#X# # ГЦ
 #version 330 core	#version 330 core
@@ -58,7 +66,7 @@
 (BROWSER VIDEOS, ELECTRON APPS WAIT)	(ВИДЕО В БРАУЗЕРЕ, ELECTRON-ПРИЛОЖЕНИЯ ЖДУТ)
 (BY DEFAULT ONLY THE SCOPES)	(ПО УМОЛЧАНИЮ ТОЛЬКО ПРИЦЕЛЫ)
 (CLEAR THE SELECTION TO CHANGE)	(СНИМИТЕ ВЫДЕЛЕНИЕ, ЧТОБЫ ИЗМЕНИТЬ)
-(CLICK TO CYCLE)	(КЛИК ДЛЯ ПЕРЕКЛЮЧЕНИЯ)
+(CLICK TO CYCLE)	(КЛИК - СМЕНА)
 (DEAD)	(МЁРТВ)
 (FINISH)	(ФИНИШ)
 (HIDDEN: STREAMER MODE)	(СКРЫТО: РЕЖИМ СТРИМЕРА)
@@ -67,11 +75,11 @@
 (LEAVE)	(ВЫЙТИ)
 (MISSING)	(НЕТ)
 (NOT IN RANKED)	(НЕ В РЕЙТИНГЕ)
-(PUBLIC)	(ПУБЛИЧНЫЙ)
+(PUBLIC)	(ОТКРЫТ.)
 (REFRESH - 3)	(ОБНОВИТЬ - 3)
 (REFUSED 0X#)	(ОТКАЗ 0X#)
 (TEAM MODES NEED A + B SPAWNS)	(КОМАНДНЫМ РЕЖИМАМ НУЖНЫ СПАВНЫ A + B)
-(TEAM)	(КОМАНДА)
+(TEAM)	(КОМ.)
 (already in use?)	(уже используется?)
 (and copied it) - rename it there	(и скопирован) - переименуйте его там
 (edited)	(изменено)
@@ -131,7 +139,7 @@
 10-BIT OUTPUT	10-БИТНЫЙ ВЫВОД
 10-BIT: AT THE NEXT START, WHERE SUPPORTED	10 БИТ: ПРИ СЛЕДУЮЩЕМ ЗАПУСКЕ, ГДЕ ПОДДЕРЖИВАЕТСЯ
 10-BIT: ON (A 10-BIT WINDOW)	10 БИТ: ВКЛ (10-БИТНОЕ ОКНО)
-12 H CLOCK	12-ЧАСОВОЙ ФОРМАТ
+12 H CLOCK	12-Ч ЧАСЫ
 144 FPS	144 FPS
 1V1 - rounds on one ruleset (vanilla, laser vampire, instagib...). First to 5. Ranked 1v1 rates you on its own ladder.	1V1 - раунды по одним правилам (ванилла, лазерный вампир, инстагиб...). До 5 побед. Рейтинговый 1v1 считается в отдельной таблице.
 240 FPS	240 FPS
@@ -161,23 +169,25 @@ ACCENT	АКЦЕНТ
 ACCENT COLOR	ЦВЕТ АКЦЕНТА
 ACCESSIBILITY	СПЕЦ. ВОЗМОЖНОСТИ
 ACCURACY	ТОЧНОСТЬ
+ACE	ACE
 ADAPTIVE	АДАПТИВНЫЙ
 ADD (AT THE SCREEN CENTER)	ДОБАВИТЬ (В ЦЕНТРЕ ЭКРАНА)
-ADD BOT	ДОБАВИТЬ БОТА
-ADD WIDGET	ДОБАВИТЬ ВИДЖЕТ
+ADD BOT	+ БОТ
+ADD WIDGET	+ ВИДЖЕТ
 ADD: boxes (base / accent / wallbang: bullets go through wallbangs for half damage), spawns, lights, payload path points, bomb sites, the hill, race checkpoints, and LADDERS (one object: stretch it and the rungs follow).	ДОБАВИТЬ: блоки (основа / акцент / прострел: пули проходят сквозь прострел с половиной урона), спавны, свет, точки пути вагонетки, точки закладки, холм, чекпоинты гонки и ЛЕСТНИЦЫ (один объект: растяните, ступени подстроятся).
 ADDRESS	АДРЕС
 ADDRESS (IP:PORT)	АДРЕС (IP:ПОРТ)
 ADVANCED	ПРОДВИНУТЫЙ
+ADVANCED > BOT BRAIN: what your bots play: the built-in brain, or a .qbrain file from the bots folder in your data folder. A file that doesn't compile shows its error line and the bots play the built-in brain. Never in ranked.	ПРОДВИНУТЫЙ > ИИ БОТА: как играют ваши боты: встроенный ИИ или файл .qbrain из папки bots в папке данных. Если файл не компилируется, показывается строка с ошибкой, а боты играют со встроенным ИИ. Никогда в рейтинге.
 AGAIN (R)	ЕЩЁ РАЗ (R)
 AHEAD	ВПЕРЕДИ
 AIM TRAINER	АИМ-ТРЕНАЖЁР
-AIR	ВОЗДУХ
+AIR	ВОЗД
 AIR ACCELERATION	УСКОРЕНИЕ В ВОЗДУХЕ
-AIR CONTROL	КОНТРОЛЬ В ВОЗДУХЕ
+AIR CONTROL	КОНТР. В ВОЗД.
 AIR DRIFT (UNDER RUN SPEED)	ДРЕЙФ В ВОЗДУХЕ (НИЖЕ СКОРОСТИ БЕГА)
-AIR ROCKET	ВОЗДУШНАЯ РАКЕТА
-AIR STRAFE CAP	ЛИМИТ СТРЕЙФА В ВОЗДУХЕ
+AIR ROCKET	РАКЕТА В ВОЗД.
+AIR STRAFE CAP	ЛИМИТ СТРЕЙФА
 ALL	ВСЕ
 ALL MODES	ВСЕ РЕЖИМЫ
 ALL OFF	ВСЁ ВЫКЛ
@@ -187,10 +197,10 @@ ALT FIRE	АЛЬТ. ОГОНЬ
 ALT-FIRE TOGGLE IN RANKED	АЛЬТ. ОГОНЬ ПЕРЕКЛЮЧЕНИЕМ В РЕЙТИНГЕ
 ALT-FIRE TOGGLES	АЛЬТ. ОГОНЬ ПЕРЕКЛЮЧАЕТ
 ALT-FIRE TOGGLES: WITH ALT-FIRE: TOGGLE ON	АЛЬТ. ОГОНЬ ПЕРЕКЛЮЧАЕТ: ПРИ АЛЬТ. ОГНЕ: ПЕРЕКЛЮЧЕНИЕ
-ALT-FIRE: HOLD	АЛЬТ. ОГОНЬ: УДЕРЖАНИЕ
-ALT-FIRE: TOGGLE	АЛЬТ. ОГОНЬ: ПЕРЕКЛЮЧЕНИЕ
+ALT-FIRE: HOLD	АЛЬТ. ОГОНЬ: УДЕРЖ.
+ALT-FIRE: TOGGLE	АЛЬТ. ОГОНЬ: ПЕРЕКЛ.
 ALT-TABBED OR MINIMIZED: LESS POWER AND HEAT	ALT-TAB ИЛИ СВЁРНУТО: МЕНЬШЕ НАГРУЗКИ И НАГРЕВА
-ALWAYS LIT	ВСЕГДА ОСВЕЩЕНО
+ALWAYS LIT	ВСЕГДА СВЕТЛО
 ALWAYS ON TOP	ПОВЕРХ ВСЕХ ОКОН
 ANNA	ANNA
 ANNOUNCER	КОММЕНТАТОР
@@ -215,10 +225,10 @@ ARC TIME	ВРЕМЯ ДУГИ
 ARM	РУКА
 ARROW (NUDGE)	СТРЕЛКА (СДВИГ)
 ARROWS / PGUP / PGDN: MOVE BY GRID (ALONG YOUR VIEW)	СТРЕЛКИ / PGUP / PGDN: СДВИГ ПО СЕТКЕ (ПО ВЗГЛЯДУ)
-AS THICK	ТАКОЙ ЖЕ ТОЛЩИНЫ
+AS THICK	ТА ЖЕ ТОЛЩ.
 ASIDE: A FRAME LESS LAG IN A WINDOW	ПОПУТНО: НА КАДР МЕНЬШЕ ЗАДЕРЖКИ В ОКНЕ
 ASK "SURE?" FIRST: CLICK AGAIN	СПРАШИВАТЬ «ТОЧНО?»: КЛИКНИТЕ ЕЩЁ РАЗ
-ASSUMED	ПРЕДПОЛАГАЕТСЯ
+ASSUMED	ПРЕДПОЛ.
 AT # # #	В # # #
 AT CAMERA	У КАМЕРЫ
 ATTACK + RACE	АТАКА + ГОНКА
@@ -267,21 +277,22 @@ BACKSPACE	BACKSPACE
 BAKE LIGHT	ЗАПЕЧЬ СВЕТ
 BAKE THREADS	ПОТОКИ ЗАПЕКАНИЯ
 BAKES DELETED (BAKED AGAIN WHEN PLAYED)	ЗАПЕЧКИ УДАЛЕНЫ (ЗАПЕКУТСЯ ПРИ ИГРЕ)
-BAKES KEPT	ЗАПЕЧКИ СОХРАНЕНЫ
+BAKES KEPT	ЗАПЕЧКИ ЦЕЛЫ
 BAKES,	ЗАПЕЧЕК,
 BAKING LIGHT -	ЗАПЕКАНИЕ СВЕТА -
 BALANCE BOT SKILL	БАЛАНС СИЛЫ БОТОВ
 BALANCE BOTS	БАЛАНС БОТОВ
+BALANCE BOTS evens out uneven teams with bots. MODE > RANKED runs rated 1v1 on the ranked maps (no bots). SERVER LOG keeps a log of the match.	БАЛАНС БОТОВ выравнивает неравные команды ботами. РЕЖИМ > РЕЙТИНГ запускает рейтинговые 1v1 на рейтинговых картах (без ботов). ЛОГ СЕРВЕРА ведёт лог матча.
 BALL	МЯЧ
 BALL - SHOOT, BLAST OR RUN THE BALL INTO THE ENEMY GOAL - MOST GOALS WINS	МЯЧ - ЗАБИВАЙТЕ МЯЧ В ВОРОТА ВРАГА ВЫСТРЕЛОМ, ВЗРЫВОМ ИЛИ С РАЗБЕГА - ПОБЕЖДАЕТ БОЛЬШЕ ГОЛОВ
 BANDIT	БАНДИТ
-BAR	ПОЛОСА
+BAR	ПОЛ.
 BAR CAPTIONS	ПОДПИСИ ПОЛОС
 BAR COLOR	ЦВЕТ ПОЛОСЫ
-BAR H	ВЫС. ПОЛОСЫ
-BAR W	ШИР. ПОЛОСЫ
+BAR H	ВЫС.
+BAR W	ШИР.
 BARLOW CONDENSED	BARLOW CONDENSED
-BASIC	БАЗОВЫЙ
+BASIC	БАЗОВ.
 BEBAS NEUE	BEBAS NEUE
 BEGINNER	НОВИЧОК
 BEHIND	ПОЗАДИ
@@ -301,22 +312,23 @@ BENCHMARK: could not save the run in {}	БЕНЧМАРК: не удалось с
 BENCHMARK: no demo ({})	БЕНЧМАРК: нет демо ({})
 BENCHMARK: {}	БЕНЧМАРК: {}
 BENCHMARKS	БЕНЧМАРКИ
-BEST	ЛУЧШЕЕ
+BEST	ЛУЧШ.
 BEST OF 3 - FIRST TO 2 WINS THE MATCH	ДО 2 ПОБЕД - КТО ВЫИГРАЛ 2, ПОБЕДИЛ В МАТЧЕ
 BEST POSSIBLE (SEGMENTS)	ЛУЧШЕЕ ВОЗМОЖНОЕ (ОТРЕЗКИ)
-BEST RUN	ЛУЧШИЙ ЗАЕЗД
+BEST RUN	ЛУЧШ. ЗАЕЗД
 BEST SEGMENT	ЛУЧШИЙ ОТРЕЗОК
 BG OPACITY %	ПРОЗРАЧН. ФОНА %
 BHOP BOUNCE	ОТСКОК BHOP
 BHOP BOUNCE (MAX)	ОТСКОК BHOP (МАКС.)
-BIG HIT	МОЩНОЕ ПОПАДАНИЕ
+BIG HIT	СИЛ. УДАР
 BIG HIT: 40+ DAMAGE; NOT USABLE: THE WEAPON LIST	МОЩНОЕ ПОПАДАНИЕ: 40+ УРОНА; НЕДОСТУПНО: СПИСОК ОРУЖИЯ
 BIG NOODLE	BIG NOODLE
-BIND FLY KEYS	НАЗНАЧИТЬ КЛАВИШИ ПОЛЁТА
+BIND FLY KEYS	КЛАВИШИ ПОЛЁТА
 BIND HIDE HUD ON CONTROLS	НАЗНАЧИТЬ СКРЫТИЕ HUD В УПРАВЛЕНИИ
 BLACK	ЧЁРНЫЙ
 BLADES	КЛИНКИ
-BLEND	СМЕШИВАНИЕ
+BLAZE	BLAZE
+BLEND	СМЕШ.
 BLUE / ORANGE	СИНИЙ / ОРАНЖЕВЫЙ
 BLUE-YELLOW (TRITAN)	СИНИЙ-ЖЁЛТЫЙ (ТРИТАН)
 BOMB	БОМБА
@@ -329,7 +341,7 @@ BOMB DROPPED - PICK IT UP	БОМБА ВЫРОНЕНА - ПОДБЕРИТЕ
 BOMB PLANTED	БОМБА ЗАЛОЖЕНА
 BOMB PLANTED - DEFEND IT	БОМБА ЗАЛОЖЕНА - ЗАЩИЩАЙТЕ
 BOMB PLANTED - DEFUSE IT	БОМБА ЗАЛОЖЕНА - ОБЕЗВРЕДЬТЕ
-BOMB SITE	ТОЧКА ЗАКЛАДКИ
+BOMB SITE	ТОЧКА БОМБЫ
 BOOM	БУМ
 BOOMERS	БУМЕРЫ
 BORDER	РАМКА
@@ -342,7 +354,7 @@ BOT BRAIN:	ИИ БОТА:
 BOT BRAIN: BUILT-IN	ИИ БОТА: ВСТРОЕННЫЙ
 BOT BRAIN: OFF (RANKED)	ИИ БОТА: ВЫКЛ (РЕЙТИНГ)
 BOT DIFFICULTY:	СЛОЖНОСТЬ БОТОВ:
-BOT LOOKS	ВНЕШНОСТЬ БОТОВ
+BOT LOOKS	ВИД БОТОВ
 BOT NAMES FILE	ФАЙЛ ИМЁН БОТОВ
 BOTS	БОТЫ
 BOTS DON'T FIRE	БОТЫ НЕ СТРЕЛЯЮТ
@@ -360,7 +372,7 @@ BOXES, STRETCHED AS ONE - UNGROUP TO EDIT THEM	БЛОКИ, РАСТЯГИВАЮ�
 BREAKABLE	РАЗРУШАЕМЫЙ
 BRICK	КИРПИЧ
 BRIGHTNESS	ЯРКОСТЬ
-BRITISH	БРИТАНСКИЙ
+BRITISH	БРИТАН.
 BRUNO	BRUNO
 BUBBLE	ПУЗЫРЬ
 BUILDINGS	ЗДАНИЯ
@@ -371,25 +383,25 @@ BUILT FOR: ANY	СДЕЛАНА ДЛЯ: ЛЮБОГО
 BY NAME	ПО ИМЕНИ
 BY PING	ПО ПИНГУ
 BY PLAYERS	ПО ИГРОКАМ
-BYE	ПРОПУСК
+BYE	ПРОП.
 BYPASS COMPOSITOR	ОБХОД КОМПОЗИТОРА
 BYPASS COMPOSITOR: ALWAYS	ОБХОД КОМПОЗИТОРА: ВСЕГДА
 BYPASS COMPOSITOR: FULLSCREEN	ОБХОД КОМПОЗИТОРА: ПОЛНЫЙ ЭКРАН
 BYPASS COMPOSITOR: NEVER	ОБХОД КОМПОЗИТОРА: НИКОГДА
 CALL	ГОЛОС.
 CALL A VOTE	ГОЛОСОВАНИЕ
-CALL VOTE	НАЧАТЬ ГОЛОСОВАНИЕ
-CALL:	ГОЛОСОВАНИЕ:
+CALL VOTE	ГОЛОСОВАНИЕ
+CALL:	ГОЛОС:
 CALLOUTS	КОЛЛАУТЫ
 CAN'T BE READ	НЕ ЧИТАЕТСЯ
-CAN'T READ '	НЕ УДАЁТСЯ ПРОЧИТАТЬ '
+CAN'T READ '	НЕ ЧИТАЕТСЯ '
 CANCEL	ОТМЕНА
 CAPS LOCK	CAPS LOCK
 CAPTIONS	СУБТИТРЫ
 CAPTIONS: THE ANNOUNCER AS TEXT TOO	СУБТИТРЫ: КОММЕНТАТОР ТЕКСТОМ
 CAPTURE	ЗАХВАТ
 CAPTURE THE HILL	ЗАХВАТИТЕ ХОЛМ
-CART	ВАГОНЕТКА
+CART	ВАГОН
 CHAMPION	ЧЕМПИОН
 CHANGE ANYTHING AFTER (IT STAYS)	МЕНЯЙТЕ ЧТО УГОДНО ПОТОМ (СОХРАНИТСЯ)
 CHANGE MAP / MODE	СМЕНИТЬ КАРТУ / РЕЖИМ
@@ -424,7 +436,7 @@ CLICK A SLOT TO REBIND IT - RIGHT-CLICK OR DEL UNBINDS	КЛИКНИТЕ ПО С�
 CLICK A WIDGET TO EDIT, DRAG TO MOVE.	КЛИК ПО ВИДЖЕТУ - ПРАВКА, ПЕРЕТАЩИТЕ - ПЕРЕМЕЩЕНИЕ.
 CLICK AGAIN TO RESET EVERY SETTING (NOT YOUR NAME)	КЛИКНИТЕ ЕЩЁ РАЗ ДЛЯ СБРОСА ВСЕХ НАСТРОЕК (КРОМЕ ИМЕНИ)
 CLICK ON SOMETHING TO SELECT IT	КЛИКНИТЕ ПО ОБЪЕКТУ, ЧТОБЫ ВЫБРАТЬ
-CLICK TO CONFIRM	КЛИКНИТЕ ДЛЯ ПОДТВЕРЖДЕНИЯ
+CLICK TO CONFIRM	КЛИК - ПОДТВЕРДИТЬ
 CLICK anything to select it. New things go where the crosshair (the middle of the view) points.	КЛИКНИТЕ по чему угодно, чтобы выбрать. Новое ставится туда, куда смотрит прицел (центр экрана).
 CLICK: SELECT (AGAIN: THE ONE BEHIND, SHIFT: ADD MORE, THEN GROUP)	КЛИК: ВЫБОР (ЕЩЁ РАЗ: ТОТ, ЧТО ПОЗАДИ, SHIFT: ДОБАВИТЬ, ЗАТЕМ ГРУППА)
 CLIP BOX COLOR	ЦВЕТ CLIP-БЛОКОВ
@@ -464,6 +476,7 @@ COLUMN: OBJ	СТОЛБЕЦ: ЦЕЛЬ
 COLUMN: PING	СТОЛБЕЦ: PING
 COLUMN: TOTAL K / D	СТОЛБЕЦ: ВСЕГО У / С
 COMBINE	ОБЪЕДИНИТЬ
+COMET	COMET
 COMPASS	КОМПАС
 COMPASS + RADAR	КОМПАС + РАДАР
 COMPETITIVE: NO FOG OR SHADOWS, FEWER EFFECTS;	СОРЕВНОВАТЕЛЬНЫЙ: БЕЗ ТУМАНА И ТЕНЕЙ, МЕНЬШЕ ЭФФЕКТОВ;
@@ -474,7 +487,7 @@ CONCHARS is compressed	CONCHARS сжат
 CONCHARS isn't a 128 x 128 picture	CONCHARS - не картинка 128 x 128
 CONCRETE	БЕТОН
 CONFIRM QUIT / LEAVE	ПОДТВЕРЖДАТЬ ВЫХОД
-CONNECT	ПОДКЛЮЧИТЬСЯ
+CONNECT	ПОДКЛ.
 CONNECTING TO	ПОДКЛЮЧЕНИЕ К
 CONSOLE	КОНСОЛЬ
 CONSOLE IN MENUS	КОНСОЛЬ В МЕНЮ
@@ -500,10 +513,10 @@ COOLDOWN BARS: WHEN NOT READY	ПОЛОСЫ ПЕРЕЗАРЯДКИ: КОГДА Н
 COOLDOWN RING	КОЛЬЦО ПЕРЕЗАРЯДКИ
 COPIED (COULDN'T WRITE FILE)	СКОПИРОВАНО (НЕ УДАЛОСЬ ЗАПИСАТЬ ФАЙЛ)
 COPIED + SAVED CONTROLS/	СКОПИРОВАНО + СОХРАНЕНО В CONTROLS/
-COPIED + SAVED HUDS/	СКОПИРОВАНО + СОХРАНЕНО В HUDS/
-COPY CODE	КОПИРОВАТЬ КОД
+COPIED + SAVED HUDS/	КОПИЯ + СОХР. В HUDS/
+COPY CODE	КОПИР. КОД
 COPY COLORS	КОПИРОВАТЬ ЦВЕТА
-COPY NAME	КОПИРОВАТЬ ИМЯ
+COPY NAME	КОПИР. ИМЯ
 CORNERS	УГЛЫ
 COULD NOT DELETE	НЕ УДАЛОСЬ УДАЛИТЬ
 COULD NOT RENAME THE RUN	НЕ УДАЛОСЬ ПЕРЕИМЕНОВАТЬ ЗАПУСК
@@ -536,20 +549,20 @@ CTRL+D: DUPLICATE    DEL: DELETE    CTRL+Z: UNDO    CTRL+Y: REDO    CTRL+S: SAVE
 CTRL+F (SEARCH)	CTRL+F (ПОИСК)
 CTRL+Y (REDO)	CTRL+Y (ПОВТОР)
 CTRL+Z (UNDO)	CTRL+Z (ОТМЕНА)
-CUE	СИГНАЛ
-CUE SOUNDS	ЗВУКОВЫЕ СИГНАЛЫ
+CUE	СИГН.
+CUE SOUNDS	ЗВУК. СИГНАЛЫ
 CUE: DASH	СИГНАЛ: РЫВОК
 CUE: DEATH	СИГНАЛ: СМЕРТЬ
 CUE: GRAPPLE FIRE	СИГНАЛ: ВЫСТРЕЛ КРЮКОМ
 CUE: GRAPPLE HIT	СИГНАЛ: ЗАЦЕП КРЮКА
-CUE: HURT	СИГНАЛ: РАНЕНИЕ
+CUE: HURT	СИГН.: РАНЕНИЕ
 CUE: HYPER	СИГНАЛ: ГИПЕР
-CUE: JUMP	СИГНАЛ: ПРЫЖОК
-CUE: KILL	СИГНАЛ: УБИЙСТВО
-CUE: LANDING	СИГНАЛ: ПРИЗЕМЛЕНИЕ
+CUE: JUMP	СИГН.: ПРЫЖОК
+CUE: KILL	СИГН.: УБИЙ.
+CUE: LANDING	СИГН.: ПРИЗЕМЛ.
 CUE: STREAK STING	СИГНАЛ: СЕРИЯ
 CUE: SUPER	СИГНАЛ: СУПЕР
-CUE: TYPING	СИГНАЛ: НАБОР ТЕКСТА
+CUE: TYPING	СИГН.: НАБОР
 CURSOR COLOR	ЦВЕТ КУРСОРА
 CURSOR SIZE	РАЗМЕР КУРСОРА
 CUSTOM	СВОЙ
@@ -569,8 +582,8 @@ CUSTOM TEAM	СВОЯ КОМАНДА
 CUSTOM WIDGETS	СВОИ ВИДЖЕТЫ
 CUSTOM WIDGETS: build your own HUD pieces (number, bar, icon) from any value, drag them around, and import / export layouts.	СВОИ ВИДЖЕТЫ: создавайте элементы HUD (число, полоса, значок) из любого значения, перетаскивайте их, импортируйте / экспортируйте раскладки.
 CUSTOM: PICK OUTLINE "CUSTOM" ON PLAYER; SAME: ITS	СВОЙ: ВЫБЕРИТЕ КОНТУР «СВОЙ» НА ИГРОКЕ; ТАКОЙ ЖЕ: ЕГО
-CYAN	ГОЛУБОЙ
-CYAN / RED	ГОЛУБОЙ / КРАСНЫЙ
+CYAN	ГОЛУБ.
+CYAN / RED	ГОЛУБ. / КРАСН.
 D3DKMTCloseAdapter	D3DKMTCloseAdapter
 D3DKMTGetProcessSchedulingPriorityClass	D3DKMTGetProcessSchedulingPriorityClass
 D3DKMTGetScanLine	D3DKMTGetScanLine
@@ -592,12 +605,12 @@ DASH BUFFER: OFF	БУФЕР РЫВКА: ВЫКЛ
 DASH CAPTION	ПОДПИСЬ РЫВКА
 DASH CHARGES	ЗАРЯДЫ РЫВКА
 DASH COOLDOWN	ПЕРЕЗАРЯДКА РЫВКА
-DASH EXIT SPEED (MAX)	СКОРОСТЬ ВЫХОДА ИЗ РЫВКА (МАКС.)
-DASH EXIT SPEED (MIN)	СКОРОСТЬ ВЫХОДА ИЗ РЫВКА (МИН.)
+DASH EXIT SPEED (MAX)	СКОР. ВЫХОДА ИЗ РЫВКА (МАКС.)
+DASH EXIT SPEED (MIN)	СКОР. ВЫХОДА ИЗ РЫВКА (МИН.)
 DASH JUMP WINDOW	ОКНО ПРЫЖКА С РЫВКА
 DASH LENGTH	ДЛИНА РЫВКА
 DASH SPEED	СКОРОСТЬ РЫВКА
-DASH SPEED KEPT	СОХРАНЯЕМАЯ СКОРОСТЬ РЫВКА
+DASH SPEED KEPT	СОХР. СКОР. РЫВКА
 DASH VERTICAL	РЫВОК ПО ВЕРТИКАЛИ
 DASH WALL BOUNCE ANGLE	УГОЛ ОТСКОКА РЫВКА ОТ СТЕНЫ
 DASHING BLADES	КЛИНКИ С РЫВКОМ
@@ -616,7 +629,7 @@ DEATH CAMERA: THE KILLER	КАМЕРА СМЕРТИ: УБИЙЦА
 DEBAND	ДЕБАНДИНГ
 DEBAND: A FAINT DITHER, NO BANDS IN SKY / FOG;	ДЕБАНДИНГ: ЛЁГКИЙ ДИЗЕРИНГ, БЕЗ ПОЛОС В НЕБЕ / ТУМАНЕ;
 DECALOTYPE	DECALOTYPE
-DEFAULT	ПО УМОЛЧАНИЮ
+DEFAULT	СТАНДАРТ
 DEFEND	ЗАЩИТА
 DEFEND THE SITES	ЗАЩИЩАЙТЕ ТОЧКИ
 DEFEND: KEEP THEM OFF THE SITES, DEFUSE A PLANTED BOMB	ЗАЩИТА: НЕ ПУСКАЙТЕ ИХ НА ТОЧКИ, ОБЕЗВРЕДЬТЕ ЗАЛОЖЕННУЮ БОМБУ
@@ -630,6 +643,7 @@ DEMO - ESC TO STOP	ДЕМО - ESC ДЛЯ ОСТАНОВКИ
 DEMO RATE	ЧАСТОТА ДЕМО
 DEMO RATE: 62.5 HZ	ЧАСТОТА ДЕМО: 62.5 ГЦ
 DEMO RATE: FULL	ЧАСТОТА ДЕМО: ПОЛНАЯ
+DEMO SAVED - MAIN MENU > DEMOS	ДЕМО СОХРАНЕНО - ГЛАВНОЕ МЕНЮ > ДЕМО
 DEMOS	ДЕМО
 DEPTH	ГЛУБИНА
 DESC	ОПИС.
@@ -658,7 +672,7 @@ DMG	УРОН
 DMITRI	DMITRI
 DON'T SAVE	НЕ СОХРАНЯТЬ
 DONE	ГОТОВО
-DOT	ТОЧКА
+DOT	ТОЧ.
 DOUBLE DAMAGE	ДВОЙНОЙ УРОН
 DOUBLE SIZE	ДВОЙНОЙ РАЗМЕР
 DOWN	ВНИЗ
@@ -667,28 +681,30 @@ DOWNLOADED,	СКАЧАНО,
 DOWNLOADING MAP	СКАЧИВАНИЕ КАРТЫ
 DPI	DPI
 DRAG TO MOVE, CORNER / WHEEL / + - TO SIZE, ARROWS NUDGE (SHIFT 10), TAB NEXT, ALT: NO SNAP, CTRL+Z UNDO	ТАЩИТЕ ДЛЯ ПЕРЕМЕЩЕНИЯ, УГОЛ / КОЛЕСО / + - РАЗМЕР, СТРЕЛКИ СДВИГ (SHIFT 10), TAB СЛЕД., ALT: БЕЗ ПРИВЯЗКИ, CTRL+Z ОТМЕНА
-DRAG TO TURN	ТАЩИТЕ ДЛЯ ПОВОРОТА
+DRAG TO TURN	ТЯНИ - ПОВОРОТ
 DRAG, ADD, IMPORT / EXPORT WIDGETS	ПЕРЕТАСКИВАНИЕ, ДОБАВЛЕНИЕ, ИМПОРТ / ЭКСПОРТ ВИДЖЕТОВ
 DRAG, SIZE AND STYLE EVERY ELEMENT IN PLACE	ПЕРЕМЕЩАЙТЕ, МЕНЯЙТЕ РАЗМЕР И СТИЛЬ КАЖДОГО ЭЛЕМЕНТА НА МЕСТЕ
 DRAIN IN	УХОДИТ ЗА
-DRAW CALLS	ВЫЗОВЫ ОТРИСОВКИ
-DRAW DISTANCE	ДАЛЬНОСТЬ ПРОРИСОВКИ
+DRAW CALLS	ВЫЗОВЫ ОТРИС.
+DRAW DISTANCE	ДАЛЬН. ПРОРИСОВКИ
 DRAW IN BACKGROUND	РИСОВАТЬ В ФОНЕ
-DRAW: 150 M	ПРОРИСОВКА: 150 М
-DRAW: 250 M	ПРОРИСОВКА: 250 М
-DRAW: 400 M	ПРОРИСОВКА: 400 М
+DRAW: 150 M	ПРОРИС.: 150 М
+DRAW: 250 M	ПРОРИС.: 250 М
+DRAW: 400 M	ПРОРИС.: 400 М
 DRIVER	ДРАЙВЕР
-DROP MY EDITS	ОТМЕНИТЬ МОИ ПРАВКИ
-DUCKING	ПРИГЛУШЕНИЕ
+DROP MY EDITS	СБРОС МОИХ ПРАВОК
+DUCKING	ПРИГЛУШ.
 DUEL	ДУЭЛЬ
 DUEL - 1v1 (or 2v2): every life has a random modifier (low gravity, giants, rockets only...). First to 11.	ДУЭЛЬ - 1v1 (или 2v2): у каждой жизни случайный модификатор (низкая гравитация, гиганты, только ракеты...). До 11.
 DUPLICATE	ДУБЛИРОВАТЬ
+DUSK	DUSK
 DXGI PRESENT	DXGI PRESENT
 DXGI PRESENT: WINDOWS ONLY	DXGI PRESENT: ТОЛЬКО WINDOWS
-DYNAMIC RANGE	ДИНАМИЧЕСКИЙ ДИАПАЗОН
+DYNAMIC RANGE	ДИНАМ. ДИАПАЗОН
 DYNAMIC RANGE: CLEAN	ДИН. ДИАПАЗОН: ЧИСТЫЙ
 DYNAMIC RANGE: NIGHT	ДИН. ДИАПАЗОН: НОЧЬ
 DYNAMIC RANGE: NORMAL	ДИН. ДИАПАЗОН: ОБЫЧНЫЙ
+Dash into a wall head-on (under 45 degrees) and you bounce off it at 16 m/s (it leaves you 1 dash).	Рывок в стену в лоб (меньше 45 градусов) отбрасывает вас на 16 м/с (остаётся 1 рывок).
 Dash jump: jump while dashing along the floor to keep the dash's full speed through the jump (it leaves you both dashes).	Прыжок с рывка: прыгните во время рывка по полу, чтобы сохранить полную скорость рывка в прыжке (оба рывка остаются).
 Decl: no padding (its words are hashed)	Decl: без выравнивания (его слова хешируются)
 Display: window mode, vsync, low latency mode, frame cap, player shadows, brightness, anti-aliasing and interpolation. Lower latency settings cost smoothness: the notes under them say how.	Экран: режим окна, vsync, режим низкой задержки, лимит кадров, тени игроков, яркость, сглаживание и интерполяция. Настройки меньшей задержки стоят плавности: подсказки под ними объясняют как.
@@ -700,7 +716,7 @@ EACH OF THE ANNOUNCER'S LINES ON OR OFF	КАЖДАЯ ФРАЗА КОММЕНТА
 EACH SLIDER SHOWS THE VALUE IN THIS MODE (STANDARD x MULTIPLIER)	КАЖДЫЙ ПОЛЗУНОК ПОКАЗЫВАЕТ ЗНАЧЕНИЕ В ЭТОМ РЕЖИМЕ (СТАНДАРТ x МНОЖИТЕЛЬ)
 EASY BOTS	ЛЁГКИЕ БОТЫ
 EDGE ARROWS	СТРЕЛКИ ПО КРАЯМ
-EDIT	ИЗМЕНИТЬ
+EDIT	РЕД.
 EDIT ON SCREEN	ПРАВКА НА ЭКРАНЕ
 EDIT THE MAP TOGETHER	ПРАВИТЬ КАРТУ ВМЕСТЕ
 EDIT THE MAP TOGETHER (CHANGES LAST UNTIL THE MAP CHANGES)	ПРАВИТЬ КАРТУ ВМЕСТЕ (ПРАВКИ ДЕЙСТВУЮТ ДО СМЕНЫ КАРТЫ)
@@ -713,7 +729,7 @@ EFFECTS OPACITY	ПРОЗРАЧН. ЭФФЕКТОВ
 EFFECTS QUIETER WHILE THE ANNOUNCER SPEAKS	ЭФФЕКТЫ ТИШЕ, ПОКА ГОВОРИТ КОММЕНТАТОР
 EFFECTS VOLUME	ГРОМКОСТЬ ЭФФЕКТОВ
 EFFECTS: CUSTOM	ЭФФЕКТЫ: СВОИ
-EFFECTS: OWN	ЭФФЕКТЫ: СОБСТВЕННЫЕ
+EFFECTS: OWN	ЭФФЕКТЫ: СВОИ
 EFFECTS: TEAM	ЭФФЕКТЫ: КОМАНДЫ
 ELEMENT	ЭЛЕМЕНТ
 ELEMENT COLOR	ЦВЕТ ЭЛЕМЕНТА
@@ -727,7 +743,7 @@ ELEMENT: SPEED METER	ЭЛЕМЕНТ: СПИДОМЕТР
 ELEMENT: WEAPON LIST	ЭЛЕМЕНТ: СПИСОК ОРУЖИЯ
 ELEMENT: WEAPON NAME	ЭЛЕМЕНТ: НАЗВАНИЕ ОРУЖИЯ
 END	END
-END SESSION	ЗАВЕРШИТЬ СЕССИЮ
+END SESSION	ЗАВЕРШИТЬ
 ENEMIES ALIVE	ВРАГОВ ЖИВО
 ENEMY BOTS	ВРАЖЕСКИЕ БОТЫ
 ENEMY COLOR	ЦВЕТ ВРАГА
@@ -756,7 +772,7 @@ EXCLUSIVE AUDIO (N/A)	ЭКСКЛЮЗИВНЫЙ ЗВУК (Н/Д)
 EXCLUSIVE FULLSCREEN	ЭКСКЛЮЗИВНЫЙ ПОЛНЫЙ ЭКРАН
 EXCLUSIVE FULLSCREEN ONLY	ТОЛЬКО ЭКСКЛЮЗИВНЫЙ ПОЛНЫЙ ЭКРАН
 EXCLUSIVE FULLSCREEN ONLY; A 4:3 SIZE IS	ТОЛЬКО ЭКСКЛЮЗИВНЫЙ ПОЛНЫЙ ЭКРАН; РАЗМЕР 4:3 -
-EXIT	ВЫХОД
+EXIT	ВЫХ.
 EXIT FACE	ГРАНЬ ВЫХОДА
 EXIT FACE: +X	ГРАНЬ ВЫХОДА: +X
 EXIT FACE: +Z	ГРАНЬ ВЫХОДА: +Z
@@ -776,19 +792,20 @@ EXPORT CSV	ЭКСПОРТ CSV
 EXPORT GROUP	ЭКСПОРТ ГРУППЫ
 EXPORT PNG	ЭКСПОРТ PNG
 EZRA	EZRA
+Each dash leaves you 1 m/s faster than you went in (at least 11, at most 32 m/s).	Каждый рывок выводит вас на 1 м/с быстрее, чем вы вошли (минимум 11, максимум 32 м/с).
 Each map is built for one mode, plus free for all and any others it lists. You can still start any map in any mode: the menus warn when it isn't built for it (it may be missing spawns or objectives).	Каждая карта сделана для одного режима, а также для «каждый сам за себя» и других указанных. Любую карту можно запустить в любом режиме: меню предупредят, если она не для него (могут не быть спавнов или целей).
 F3 - performance overlay (average, 1% and 0.1% low FPS, input latency).   F12 - screenshot.   ESC - menu, votes, settings.	F3 - оверлей производительности (средний, 1% и 0.1% low FPS, задержка ввода).   F12 - скриншот.   ESC - меню, голосования, настройки.
 F3 COLORBLIND COLORS	ЦВЕТА F3 ДЛЯ ДАЛЬТОНИКОВ
-FACING (Q E)	НАПРАВЛЕНИЕ (Q E)
-FADE DISTANCE	ДИСТАНЦИЯ ЗАТУХАНИЯ
+FACING (Q E)	НАПРАВЛ. (Q E)
+FADE DISTANCE	ДИСТ. ЗАТУХАНИЯ
 FADE LENGTH	ДЛИНА ЗАТУХАНИЯ
 FAIRNESS: DEFAULT MODEL, HUD, CONTROLS, 10 MS INTERP	ЧЕСТНОСТЬ: МОДЕЛЬ, HUD, УПРАВЛЕНИЕ ПО УМОЛЧ., ИНТЕРП. 10 МС
-FAR SCENERY	ДАЛЬНИЕ ДЕКОРАЦИИ
-FAST FLY	БЫСТРЫЙ ПОЛЁТ
+FAR SCENERY	ДАЛЬН. ДЕКОР
+FAST FLY	БЫСТ. ПОЛЁТ
 FASTER MOVES TURN FURTHER (AT MOST X4)	БЫСТРЫЕ ДВИЖЕНИЯ ПОВОРАЧИВАЮТ СИЛЬНЕЕ (МАКС. X4)
 FAYE	FAYE
 FEATURES	ФУНКЦИИ
-FEED HS MARK	МЕТКА HS В КИЛЛФИДЕ
+FEED HS MARK	МЕТКА HS В ФИДЕ
 FEEDBACK	ОТЗЫВ
 FEMALE	ЖЕНСКИЙ
 FFA COLORS	ЦВЕТА FFA
@@ -803,21 +820,21 @@ FINAL	ФИНАЛ
 FIND CLIP BOXES	НАЙТИ CLIP-БЛОКИ
 FIND INVISIBLE WALLS:	НАЙТИ НЕВИДИМЫЕ СТЕНЫ:
 FINISH	ФИНИШ
-FINISHED	ФИНИШИРОВАЛ
+FINISHED	ФИНИШ
 FIRE	ОГОНЬ
-FIRE RATE	СКОРОСТРЕЛЬНОСТЬ
+FIRE RATE	СКОРОСТР.
 FIRES THE MOMENT IT IS	СТРЕЛЯЕТ В ТОТ ЖЕ МИГ, КАК
 FIRST TO #	ДО #
-FIX GAPS	ЗАКРЫТЬ ЩЕЛИ
-FIX MAP	ИСПРАВИТЬ КАРТУ
+FIX GAPS	ЗАКР. ЩЕЛИ
+FIX MAP	ПОЧИНИТЬ
 FIXED LOGO COLORS	ФИКС. ЦВЕТА ЛОГОТИПА
 FIXED TEAMS	ФИКС. КОМАНДЫ
 FIXED TEAMS: SPECTATING AND DEMOS SHOW	ФИКС. КОМАНДЫ: НАБЛЮДЕНИЕ И ДЕМО ПОКАЗЫВАЮТ
 FLAT LIGHTING	ПЛОСКОЕ ОСВЕЩЕНИЕ
-FLAT MAP	ПЛОСКАЯ КАРТА
+FLAT MAP	ПЛОСК. КАРТА
 FLAT MAP, NO LIGHTING	ПЛОСКАЯ КАРТА, БЕЗ ОСВЕЩЕНИЯ
 FLYING, ONE KEY: MOVE UP HELD UP, LET GO DOWN	ПОЛЁТ, ОДНА КЛАВИША: УДЕРЖАНИЕ - ВВЕРХ, ОТПУСК - ВНИЗ
-FOG	ТУМАН
+FOG	ТУМ.
 FOLDER	ПАПКА
 FOLDER: DATA	ПАПКА: ДАННЫЕ
 FOLDER: PICTURES	ПАПКА: ИЗОБРАЖЕНИЯ
@@ -844,10 +861,10 @@ FOV: VERTICAL	FOV: ВЕРТИКАЛЬНЫЙ
 FPS	FPS
 FPS LIMIT	ЛИМИТ FPS
 FPS MIN (1S)	МИН. FPS (1С)
-FRAME CAP WAIT	ОЖИДАНИЕ ЛИМИТА КАДРОВ
+FRAME CAP WAIT	ОЖИД. ЛИМИТА КАДРОВ
 FRAME TIME (MS) OVER THE RUN	ВРЕМЯ КАДРА (МС) ЗА ЗАПУСК
 FRAMES	КАДРЫ
-FREE FOR ALL	КАЖДЫЙ САМ ЗА СЕБЯ
+FREE FOR ALL	КАЖДЫЙ ЗА СЕБЯ
 FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next kill wins).	КАЖДЫЙ САМ ЗА СЕБЯ - побеждает больше убийств к концу времени (при ничьей овертайм: следующее убийство побеждает).
 FRIENDS JOIN WITH YOUR PUBLIC IP (STREAMER MODE)	ДРУЗЬЯ ЗАХОДЯТ ПО ВАШЕМУ ВНЕШНЕМУ IP (РЕЖИМ СТРИМЕРА)
 FRIENDS JOIN WITH YOUR PUBLIC IP:	ДРУЗЬЯ ЗАХОДЯТ ПО ВАШЕМУ ВНЕШНЕМУ IP:
@@ -865,9 +882,9 @@ FULL: EVERY SNAPSHOT (BIGGER FILES); ALSO ON DEMOS	ПОЛНАЯ: КАЖДЫЙ С
 FULLBRIGHT	FULLBRIGHT
 FULLSCREEN	ПОЛНЫЙ ЭКРАН
 FULLSCREEN AND BORDERLESS OPEN ON IT	ПОЛНЫЙ ЭКРАН И БЕЗ РАМКИ ОТКРЫВАЮТСЯ НА НЁМ
-FULLSCREEN SIZE	РАЗРЕШЕНИЕ ПОЛНОГО ЭКРАНА
-FULLSCREEN SIZE:	РАЗРЕШЕНИЕ ПОЛНОГО ЭКРАНА:
-FULLSCREEN SIZE: DESKTOP	РАЗРЕШЕНИЕ ПОЛНОГО ЭКРАНА: КАК У СТОЛА
+FULLSCREEN SIZE	РАЗРЕШ. ПОЛН. ЭКРАНА
+FULLSCREEN SIZE:	РАЗРЕШ. ПОЛН. ЭКРАНА:
+FULLSCREEN SIZE: DESKTOP	РАЗРЕШ. ПОЛН. ЭКРАНА: КАК У СТОЛА
 FULLSCREEN: OFF KEEPS IT ON SCREEN	ПОЛНЫЙ ЭКРАН: ВЫКЛ ДЕРЖИТ ЕГО НА ЭКРАНЕ
 G-SYNC / FREESYNC	G-SYNC / FREESYNC
 GAME FONTS: YOUR OWN COPY OF THE REAL FONT IF FOUND	ИГРОВЫЕ ШРИФТЫ: ВАША КОПИЯ НАСТОЯЩЕГО ШРИФТА, ЕСЛИ НАЙДЕНА
@@ -878,20 +895,20 @@ GAMEPLAY 3	ГЕЙМПЛЕЙ 3
 GAMEPLAY 4	ГЕЙМПЛЕЙ 4
 GAMEPLAY 5	ГЕЙМПЛЕЙ 5
 GAMMA	ГАММА
-GAP	ЗАЗОР
+GAP	ЗАЗ.
 GATE	ВОРОТА
 GENERAL	ОБЩЕЕ
 GENERAL + INTERFACE	ОБЩЕЕ + ИНТЕРФЕЙС
 GET IT WITH /link - THE CODE IS PUBLIC	ПОЛУЧИТЕ ЧЕРЕЗ /link - КОД ПУБЛИЧНЫЙ
-GIANT SNIPERS	ГИГАНТСКИЕ СНАЙПЕРЫ
+GIANT SNIPERS	ГИГАНТ. СНАЙПЕРЫ
 GIBS	ГИБЫ
 GL	GL
 GLASS CANNONS	СТЕКЛЯННЫЕ ПУШКИ
-GLOW	СВЕЧЕНИЕ
+GLOW	СВЕЧ.
 GLOW STRENGTH	СИЛА СВЕЧЕНИЯ
-GO	ВПЕРЁД
-GO!	ВПЕРЁД!
-GODLIKE	БОГОПОДОБНО
+GO	ИДИ
+GO!	ИДИ!
+GODLIKE	БОЖЕСТВ.
 GPU	GPU
 GPU + CPU GO TO THE GAME FIRST WHILE FOCUSED	GPU + ЦП В ПРИОРИТЕТЕ У ИГРЫ, ПОКА ОНА В ФОКУСЕ
 GPU HUD	HUD GPU
@@ -938,11 +955,12 @@ GROUPS	ГРУППЫ
 GUN COLOR	ЦВЕТ ОРУЖИЯ
 GUN RECOIL KICK	ОТДАЧА ОРУЖИЯ
 GUN: CUSTOM	ОРУЖИЕ: СВОЁ
-GUN: MAP	ОРУЖИЕ: КАРТЫ
-GUN: TEAM	ОРУЖИЕ: КОМАНДЫ
+GUN: MAP	ОРУЖ.: КАРТЫ
+GUN: TEAM	ОРУЖ.: КОМАНД.
 GUNFIRE	СТРЕЛЬБА
 GUS	GUS
 Game::frame	Game::frame
+Game::testHeld_ holds a bit per action	Game::testHeld_ holds a bit per action
 HALFTIME - SIDES SWITCHED	ПЕРЕРЫВ - СМЕНА СТОРОН
 HALFTIME - SIDES SWITCHED: YOU ATTACK NOW	ПЕРЕРЫВ - СМЕНА СТОРОН: ТЕПЕРЬ ВЫ АТАКУЕТЕ
 HALFTIME - SIDES SWITCHED: YOU DEFEND NOW	ПЕРЕРЫВ - СМЕНА СТОРОН: ТЕПЕРЬ ВЫ ЗАЩИЩАЕТЕСЬ
@@ -970,12 +988,12 @@ HEALTH BARS OVER PLAYERS	ПОЛОСЫ ЗДОРОВЬЯ НАД ИГРОКАМИ
 HEALTH: AFTER A CHANGE + LOW	ЗДОРОВЬЕ: ПОСЛЕ ИЗМЕНЕНИЯ + МАЛО
 HEALTH: ALWAYS	ЗДОРОВЬЕ: ВСЕГДА
 HEALTH: ONLY WHEN LOW	ЗДОРОВЬЕ: ТОЛЬКО КОГДА МАЛО
-HEARING RANGE	ДАЛЬНОСТЬ СЛЫШИМОСТИ
+HEARING RANGE	ДАЛЬН. СЛЫШИМОСТИ
 HEAVY	ТЯЖЁЛЫЙ
 HIDE AND SEEK	ПРЯТКИ
 HIDE AND SEEK - one seeker with a knife, everyone else hides first. Everyone seeks once: 1 point for each hider you find, 1 for staying hidden to the end of a round. A tie for first is settled by rock paper scissors (keys 1 / 2 / 3).	ПРЯТКИ - один ищущий с ножом, остальные сначала прячутся. Каждый ищет по разу: 1 очко за каждого найденного, 1 за то, что не нашли до конца раунда. Ничья за первое место решается камнем-ножницами-бумагой (клавиши 1 / 2 / 3).
 HIDE EMPTY	СКРЫТЬ ПУСТЫЕ
-HIDE FULL	СКРЫТЬ ПОЛНЫЕ
+HIDE FULL	СКРЫТЬ ПОЛН.
 HIDE HUD	СКРЫТЬ HUD
 HIDE HUD KEEPS CROSSHAIR	СКРЫТИЕ HUD ОСТАВЛЯЕТ ПРИЦЕЛ
 HIDE RATINGS	СКРЫТЬ РЕЙТИНГИ
@@ -983,7 +1001,7 @@ HIDE REC	СКРЫТЬ REC
 HIDE REC: NO BLINKING REC WHILE RECORDING	СКРЫТЬ REC: БЕЗ МИГАЮЩЕГО REC ПРИ ЗАПИСИ
 HIDE! THE SEEKER IS COUNTING	ПРЯЧЬТЕСЬ! ИЩУЩИЙ СЧИТАЕТ
 HIDES ALL PLAYERS' CHAT MESSAGES	СКРЫВАЕТ СООБЩЕНИЯ ЧАТА ВСЕХ ИГРОКОВ
-HIGH	ВЫСОКИЙ
+HIGH	ВЫС.
 HIGH CAN SLOW OTHER PROGRAMS	ВЫСОКИЙ МОЖЕТ ЗАМЕДЛИТЬ ДРУГИЕ ПРОГРАММЫ
 HIGH CONTRAST	ВЫСОКИЙ КОНТРАСТ
 HIGH CONTRAST: LIGHTER WALLS, DARKER TRIM	ВЫСОКИЙ КОНТРАСТ: СТЕНЫ СВЕТЛЕЕ, ОТДЕЛКА ТЕМНЕЕ
@@ -992,10 +1010,10 @@ HILL	ХОЛМ
 HILL CONTESTED	ХОЛМ ОСПАРИВАЕТСЯ
 HILL LOST	ХОЛМ ПОТЕРЯН
 HILL TAKEN	ХОЛМ ЗАХВАЧЕН
-HIT	ПОПАДАНИЕ
-HIT COLOR	ЦВЕТ ПОПАДАНИЯ
-HIT FLASH	ВСПЫШКА ПОПАДАНИЯ
-HIT FLASH TIME	ВРЕМЯ ВСПЫШКИ ПОПАДАНИЯ
+HIT	ПОП.
+HIT COLOR	ЦВЕТ ПОПАД.
+HIT FLASH	ВСПЫШКА ПОП.
+HIT FLASH TIME	ВРЕМЯ ВСПЫШКИ ПОП.
 HITSCAN	ХИТСКАН
 HITSCAN ONLY	ТОЛЬКО ХИТСКАН
 HITSOUND	ХИТСАУНД
@@ -1025,22 +1043,24 @@ HP	HP
 HUD	HUD
 HUD & SETTINGS	HUD И НАСТРОЙКИ
 HUD 2	HUD 2
+HUD > VERBOSE INFO TURNS THE BLOCK ON	HUD > ПОДРОБНАЯ ИНФО ВКЛЮЧАЕТ БЛОК
 HUD COLORS	ЦВЕТА HUD
-HUD DRAW	ОТРИСОВКА HUD
+HUD DRAW	ОТРИС. HUD
 HUD EDIT ELEMENT	ПРАВКА ЭЛЕМЕНТА HUD
 HUD ELEMENT	ЭЛЕМЕНТ HUD
 HUD SIZE	РАЗМЕР HUD
 HUD.CFG LINE	СТРОКА HUD.CFG
-HURT	РАНЕНИЕ
+HURT	РАНЕН.
 HYPER	ГИПЕР
 HZ	ГЦ
 HZ  LOSS	ГЦ  ПОТЕРИ
 HZ (NOT ON THIS MONITOR)	ГЦ (НЕ НА ЭТОМ МОНИТОРЕ)
 Hold the RIGHT MOUSE button to look around; W A S D to fly, SPACE / C up and down, SHIFT faster, the wheel sets the speed.	Удерживайте ПКМ, чтобы осматриваться; W A S D - полёт, SPACE / C - вверх и вниз, SHIFT - быстрее, колесо задаёт скорость.
+Host Game > CUSTOM MODE > NEW: any base mode with your own health, gravity, speed, jump, knockback, weapons (fire rate, damage, projectile speed) and map pool. Players who join get the rules automatically.	Создать игру > СВОЙ РЕЖИМ > НОВЫЙ: любой базовый режим со своими здоровьем, гравитацией, скоростью, прыжком, отбрасыванием, оружием (скорострельность, урон, скорость снарядов) и пулом карт. Зашедшие игроки получают правила автоматически.
 Hz	Гц
 Hz cap applies at the next break	Лимит Гц применится при следующей паузе
-ICON	ЗНАЧОК
-ICON: BOLT	ЗНАЧОК: МОЛНИЯ
+ICON	ЗНАЧ.
+ICON: BOLT	ЗНАЧ.: МОЛНИЯ
 ICON: CLOCK	ЗНАЧОК: ЧАСЫ
 ICON: EYE	ЗНАЧОК: ГЛАЗ
 ICON: HEART	ЗНАЧОК: СЕРДЦЕ
@@ -1050,19 +1070,19 @@ ICON: SKULL	ЗНАЧОК: ЧЕРЕП
 ICON: STAR	ЗНАЧОК: ЗВЕЗДА
 IDAT	IDAT
 IDENTITY	ПРОФИЛЬ
-IDLE	ПРОСТОЙ
+IDLE	АФК
 IEND	IEND
 IF THAT ADDRESS REACHES YOU, HOST A DEDICATED SERVER WITH --own-addr	ЕСЛИ ЭТОТ АДРЕС ДО ВАС ДОХОДИТ, ЗАПУСТИТЕ ВЫДЕЛЕННЫЙ СЕРВЕР С --own-addr
 IHDR	IHDR
-IMAGE	ИЗОБРАЖЕНИЕ
+IMAGE	ИЗОБР.
 IMPACT SPARKS	ИСКРЫ ПОПАДАНИЙ
 IMPORT	ИМПОРТ
 IMPORT / EXPORT USE THE CLIPBOARD.	ИМПОРТ / ЭКСПОРТ ЧЕРЕЗ БУФЕР ОБМЕНА.
 IMPORT GROUP	ИМПОРТ ГРУППЫ
 IMPORTANT: VOTES, KICKS, RANKED, ERRORS	ВАЖНОЕ: ГОЛОСОВАНИЯ, КИКИ, РЕЙТИНГ, ОШИБКИ
-IMPORTED	ИМПОРТИРОВАНО
+IMPORTED	ИМПОРТ
 IMPORTED CONTROLS FROM CLIPBOARD	УПРАВЛЕНИЕ ИМПОРТИРОВАНО ИЗ БУФЕРА
-IN # S	ЧЕРЕЗ # С
+IN # S	ЧЕРЕЗ #
 IN #/S  OUT #/S X#	ВХ #/С  ИСХ #/С X#
 IN (TEAMS GO UNEVEN)	ВХОДИТ (КОМАНДЫ НЕРАВНЫ)
 IN A TIME TRIAL OR A RACE	В ЗАЕЗДЕ НА ВРЕМЯ ИЛИ ГОНКЕ
@@ -1070,10 +1090,12 @@ IN GAME, ESC SHOWS IF THE PORT CAN BE REACHED	В ИГРЕ ESC ПОКАЗЫВАЕ
 IN MY PALETTE	В МОЕЙ ПАЛИТРЕ
 IN THIS MAP	НА ЭТОЙ КАРТЕ
 INDIA	INDIA
-INDUSTRIAL	ИНДУСТРИАЛЬНЫЙ
+INDUSTRIAL	ИНДУСТР.
 INFO	ИНФО
 INFO LINES	ИНФОСТРОКИ
 INPUT	ВВОД
+INPUT->FRAME AVG #MS  MIN #MS  99% #MS	INPUT->FRAME СР #MS  МИН #MS  99% #MS
+INPUT->FRAME: MOVE THE MOUSE	INPUT->FRAME: ПОДВИГАЙТЕ МЫШЬЮ
 INSERT	INSERT
 INSTAGIB	ИНСТАГИБ
 INSTAGIB CROSSBOWS	ИНСТАГИБ-АРБАЛЕТЫ
@@ -1103,18 +1125,18 @@ ITS STYLE: T	ЕГО СТИЛЬ: T
 IVO	IVO
 Input	Ввод
 JOIN A TEAM FROM THE MENU (ESC)	ВСТУПИТЕ В КОМАНДУ ЧЕРЕЗ МЕНЮ (ESC)
-JOIN GAME	ПРИСОЕДИНИТЬСЯ
-JOIN TEAM	ВСТУПИТЬ В КОМАНДУ
-JOIN TEAM A	ВСТУПИТЬ В КОМАНДУ A
-JOIN TEAM B	ВСТУПИТЬ В КОМАНДУ B
+JOIN GAME	ВОЙТИ В ИГРУ
+JOIN TEAM	В КОМАНДУ
+JOIN TEAM A	В КОМАНДУ A
+JOIN TEAM B	В КОМАНДУ B
 JOIN THE GAME FROM THE MENU (ESC)	ВОЙДИТЕ В ИГРУ ЧЕРЕЗ МЕНЮ (ESC)
-JOINING + PRIVACY	ПОДКЛЮЧЕНИЕ + ПРИВАТНОСТЬ
+JOINING + PRIVACY	ВХОД + ПРИВАТНОСТЬ
 JOST	JOST
-JUMP	ПРЫЖОК
+JUMP	ПРЫЖ.
 JUNE	JUNE
 KAI	KAI
 KB; OFF: A SERVER'S	КБ; ВЫКЛ: СЕРВЕРНЫЙ
-KEEP	ОСТАВИТЬ
+KEEP	ОСТ.
 KEEP THESE DISPLAY SETTINGS? REVERTING IN	ОСТАВИТЬ ЭТИ НАСТРОЙКИ ЭКРАНА? ОТКАТ ЧЕРЕЗ
 KEEP YOUR EDITS AS A NEW MAP?	СОХРАНИТЬ ПРАВКИ КАК НОВУЮ КАРТУ?
 KEEP: ALL	ХРАНИТЬ: ВСЕ
@@ -1122,29 +1144,30 @@ KEEP: NEWEST 100	ХРАНИТЬ: ПОСЛЕДНИЕ 100
 KEEP: NEWEST 20	ХРАНИТЬ: ПОСЛЕДНИЕ 20
 KEEP: NEWEST 50	ХРАНИТЬ: ПОСЛЕДНИЕ 50
 KEEPS GPU CLOCKS HIGH: LESS LAG, MORE POWER	ДЕРЖИТ ЧАСТОТЫ GPU ВЫСОКИМИ: МЕНЬШЕ ЛАГА, БОЛЬШЕ ЭНЕРГИИ
-KEY	КЛАВИША
-KEY 1	КЛАВИША 1
-KEY 2	КЛАВИША 2
-KEY 3	КЛАВИША 3
+KEY	КЛ.
+KEY 1	КЛ. 1
+KEY 2	КЛ. 2
+KEY 3	КЛ. 3
 KEY OVERLAY	ОВЕРЛЕЙ КЛАВИШ
 KEY OVERLAY (VERBOSE)	ОВЕРЛЕЙ КЛАВИШ (ПОДРОБНО)
-KEYS	КЛАВИШИ
+KEYS	КЛАВ.
 KICK	КИК
 KICK A PLAYER	КИКНУТЬ ИГРОКА
-KICK BOTS	КИКНУТЬ БОТОВ
-KILL	УБИЙСТВО
-KILL BURSTS	ВСПЫШКИ УБИЙСТВ
+KICK BOTS	КИК БОТОВ
+KILL	УБИЙ.
+KILL BURSTS	ВСПЫШКИ УБИЙ.
 KILL CAM TIME	ВРЕМЯ КИЛЛКАМА
 KILL FEED	КИЛЛФИД
 KILL FEED LINES	СТРОК КИЛЛФИДА
 KILL FEED SECONDS	СЕКУНД КИЛЛФИДА
-KILL MARK	МЕТКА УБИЙСТВА
+KILL MARK	МЕТКА УБИЙ.
 KILL SOUND	ЗВУК УБИЙСТВА
-KILL TEXT	ТЕКСТ УБИЙСТВА
+KILL TEXT	ТЕКСТ УБИЙ.
+KILL TEXT: "KILLED <NAME>" OVER THE CROSSHAIR	ТЕКСТ УБИЙСТВА: "<ИМЯ> УБИТ" НАД ПРИЦЕЛОМ
 KILLED	УБИТ
 KILLED BY	УБИТ ИГРОКОМ
 KILLING SPREE	СЕРИЯ УБИЙСТВ
-KILLS	УБИЙСТВА
+KILLS	УБИЙ.
 KING OF THE HILL	ЦАРЬ ГОРЫ
 KING OF THE HILL - stand on the hill with no enemy on it to score a point a second. First to 100.	ЦАРЬ ГОРЫ - стойте на холме без врагов, чтобы получать очко в секунду. До 100.
 KNIFE	НОЖ
@@ -1159,9 +1182,10 @@ L CTRL	L CTRL
 L SHIFT	L SHIFT
 LABEL	МЕТКА
 LADDER	ЛЕСТНИЦА
-LADDER CLIMB SPEED	СКОРОСТЬ ПОДЪЁМА ПО ЛЕСТНИЦЕ
+LADDER CLIMB SPEED	СКОР. ПОДЪЁМА ПО ЛЕСТНИЦЕ
 LADDER SIDE SPEED	СКОРОСТЬ ВБОК НА ЛЕСТНИЦЕ
-LAND	ПРИЗЕМЛЕНИЕ
+LADDERS (1V1, INSTAGIB FFA) - DEFAULT MODEL, HUD, CONTROLS >	РЕЙТИНГИ (1V1, INSTAGIB FFA) - МОДЕЛЬ ПО УМОЛЧАНИЮ, HUD, УПРАВЛЕНИЕ >
+LAND	ПРИЗ.
 LANGUAGE	ЯЗЫК
 LARGE	БОЛЬШОЙ
 LASER	ЛАЗЕР
@@ -1170,13 +1194,13 @@ LASER. SCORE: DAMAGE X 10 X ACCURACY	ЛАЗЕР. ОЧКИ: УРОН X 10 X ТО�
 LASER. SCORE: KILLS X 100 X ACCURACY	ЛАЗЕР. ОЧКИ: УБИЙСТВА X 100 X ТОЧНОСТЬ
 LASERS ONLY	ТОЛЬКО ЛАЗЕРЫ
 LASERS ONLY - DAMAGE YOU DEAL HEALS YOU	ТОЛЬКО ЛАЗЕРЫ - НАНЕСЁННЫЙ УРОН ЛЕЧИТ ВАС
-LAST	ПОСЛЕДНЕЕ
-LAST RUN	ПОСЛЕДНИЙ ЗАЕЗД
-LAST TEAM STANDING WINS	ПОБЕЖДАЕТ ПОСЛЕДНЯЯ ВЫЖИВШАЯ КОМАНДА
+LAST	ПОСЛ.
+LAST RUN	ПОСЛ. ЗАЕЗД
+LAST TEAM STANDING WINS	ПОБЕЖДАЕТ ПОСЛЕДНЯЯ КОМАНДА
 LAST WEAPON	ПОСЛЕДНЕЕ ОРУЖИЕ
 LATE FRAME	ПОЗДНИЙ КАДР
-LATE: TEAR	ОПОЗДАНИЕ: РАЗРЫВ
-LATE: WAIT	ОПОЗДАНИЕ: ЖДАТЬ
+LATE: TEAR	ОПОЗД.: РАЗРЫВ
+LATE: WAIT	ОПОЗД.: ЖДАТЬ
 LATENCY	ЗАДЕРЖКА
 LATENT SAFETY	ЗАПАС LATENT
 LATENT SYNC	LATENT SYNC
@@ -1192,9 +1216,10 @@ LEFT ARROW (PREVIOUS PAGE)	СТРЕЛКА ВЛЕВО (ПРЕД. СТРАНИЦА
 LEFT MOUSE - fire.   RIGHT MOUSE - alt-fire (scope, knife throw, rocket lob, bubble stream, syringe throw...).	ЛКМ - огонь.   ПКМ - альт. огонь (прицел, бросок ножа, навесная ракета, поток пузырей, бросок шприца...).
 LEFT: THE GUN ON THE LEFT, THE GRAPPLE	ЛЕВАЯ: ОРУЖИЕ СЛЕВА, КРЮК
 LEGACY MAPS	СТАРЫЕ КАРТЫ
+LEGACY MAPS (settings > GAMEPLAY) lists the old maps from before 1.19.6 too. They are never ranked.	СТАРЫЕ КАРТЫ (настройки > ГЕЙМПЛЕЙ) показывает и старые карты до 1.19.6. Они никогда не рейтинговые.
 LENA	LENA
 LENGTH	ДЛИНА
-LET	ПУСТИТЬ
+LET	ПУСК
 LG	LG
 LIBREQUAKE 8X8	LIBREQUAKE 8X8
 LIGHT	СВЕТ
@@ -1204,7 +1229,7 @@ LIGHTMAP FILTER	ФИЛЬТР ЛАЙТМАПОВ
 LIGHTMAP: NEAREST	ЛАЙТМАП: БЛИЖАЙШИЙ
 LIGHTMAP: SMOOTH	ЛАЙТМАП: СГЛАЖЕННЫЙ
 LILITA ONE	LILITA ONE
-LINE	ЛИНИЯ
+LINE	ЛИН.
 LINE: ENEMIES	ЛИНИЯ: ВРАГИ
 LINE: FPS	ЛИНИЯ: FPS
 LINE: FPS MIN	ЛИНИЯ: МИН. FPS
@@ -1217,15 +1242,15 @@ LINE: SPEED	ЛИНИЯ: СКОРОСТЬ
 LINE: TEAMMATES	ЛИНИЯ: СОЮЗНИКИ
 LINE: TICK / SNAP	ЛИНИЯ: ТИК / СНАПШОТ
 LINE: TIME	ЛИНИЯ: ВРЕМЯ
-LINE: TIME LEFT	ЛИНИЯ: ОСТАЛОСЬ ВРЕМЕНИ
+LINE: TIME LEFT	ЛИНИЯ: ОСТ. ВРЕМЯ
 LINE: VERSION	ЛИНИЯ: ВЕРСИЯ
 LINES #-# OF # - WHEEL TO SCROLL	СТРОКИ #-# ИЗ # - КОЛЕСО ДЛЯ ПРОКРУТКИ
-LINK	ПРИВЯЗАТЬ
+LINK	СВЯЗЬ
 LINUX (X11): THE DESKTOP'S COMPOSITOR STEPS	LINUX (X11): КОМПОЗИТОР РАБОЧЕГО СТОЛА ВМЕШИВАЕТСЯ
 LIQUIDS	ЖИДКОСТИ
-LIQUIDS FLOW	ТЕЧЕНИЕ ЖИДКОСТЕЙ
+LIQUIDS FLOW	ТЕЧЕНИЕ ЖИДК.
 LMB	ЛКМ
-LOAD	ЗАГРУЗИТЬ
+LOAD	ЗАГР.
 LOAD POS	ЗАГР. ПОЗ.
 LOAD POSITION	ЗАГРУЗИТЬ ПОЗИЦИЮ
 LOADING...	ЗАГРУЗКА...
@@ -1234,7 +1259,7 @@ LOCATOR (hide and seek and tag: the seeker's / tagger's second weapon, key 0) - 
 LOCATOR READY	ЛОКАТОР ГОТОВ
 LOGIC:	ЛОГИКА:
 LOGO + YOUR BOTS	ЛОГОТИП + ВАШИ БОТЫ
-LOOK	ВНЕШНИЙ ВИД
+LOOK	ВИД
 LOOKS INTEGRATED: IF THERE'S A DEDICATED GPU,	ПОХОЖЕ НА ВСТРОЕННУЮ: ЕСЛИ ЕСТЬ ДИСКРЕТНАЯ GPU,
 LOSS	ПОТЕРИ
 LOSS #%	ПОТЕРИ #%
@@ -1252,8 +1277,8 @@ LOW LATENCY: ULTRA STARTS EACH FRAME THIS EARLY;	НИЗКАЯ ЗАДЕРЖКА: 
 LOWER RATES: LESS CPU AND UPLOAD	НИЖЕ ЧАСТОТА: МЕНЬШЕ ЦП И ОТДАЧИ
 LOWER: SLOWER WHILE SCOPED	НИЖЕ: МЕДЛЕННЕЕ В ПРИЦЕЛЕ
 MAGENTA	ПУРПУРНЫЙ
-MAKE	СОЗДАТЬ
-MALE	МУЖСКОЙ
+MAKE	СОЗД.
+MALE	МУЖ.
 MAP	КАРТА
 MAP / MODE / MODIFIERS	КАРТА / РЕЖИМ / МОДИФИКАТОРЫ
 MAP COLOR	ЦВЕТ КАРТЫ
@@ -1266,7 +1291,7 @@ MAP:	КАРТА:
 MAP: NONE	КАРТА: НЕТ
 MAPS	КАРТЫ
 MAPS FOLDER	ПАПКА КАРТ
-MAPS KEPT	КАРТЫ СОХРАНЕНЫ
+MAPS KEPT	КАРТЫ ЦЕЛЫ
 MAPS MARKED "NOT FOR THIS MODE" MAY NOT WORK IN IT	КАРТЫ С ПОМЕТКОЙ «НЕ ДЛЯ ЭТОГО РЕЖИМА» МОГУТ НЕ РАБОТАТЬ В НЁМ
 MARK COLOR	ЦВЕТ МЕТКИ
 MARK TIME	ВРЕМЯ МЕТКИ
@@ -1292,7 +1317,7 @@ MATERIAL: AMBER GLASS	МАТЕРИАЛ: ЯНТАРНОЕ СТЕКЛО
 MATERIAL: ANODIZED BLACK	МАТЕРИАЛ: ЧЁРНЫЙ АНОДИРОВАННЫЙ
 MATERIAL: ASH DUNES	МАТЕРИАЛ: ПЕПЕЛЬНЫЕ ДЮНЫ
 MATERIAL: ASPHALT (FAST)	МАТЕРИАЛ: АСФАЛЬТ (БЫСТРО)
-MATERIAL: ASTROTURF	МАТЕРИАЛ: ИСКУССТВЕННЫЙ ГАЗОН
+MATERIAL: ASTROTURF	МАТЕРИАЛ: ИСК. ГАЗОН
 MATERIAL: AUTUMN LEAVES	МАТЕРИАЛ: ОСЕННИЕ ЛИСТЬЯ
 MATERIAL: BADLANDS	МАТЕРИАЛ: БЕДЛЕНДЫ
 MATERIAL: BALL WALL (STOPS ONLY THE BALL)	МАТЕРИАЛ: СТЕНА ДЛЯ МЯЧА (ДЕРЖИТ ТОЛЬКО МЯЧ)
@@ -1505,20 +1530,20 @@ MATERIAL: HAMMERED COPPER	МАТЕРИАЛ: КОВАНАЯ МЕДЬ
 MATERIAL: HARDPAN	МАТЕРИАЛ: ТВЁРДАЯ КОРКА
 MATERIAL: HAY	МАТЕРИАЛ: СЕНО
 MATERIAL: HAY BALES	МАТЕРИАЛ: ТЮКИ СЕНА
-MATERIAL: HAZARD STRIPES	МАТЕРИАЛ: ПРЕДУПРЕДИТЕЛЬНЫЕ ПОЛОСЫ
+MATERIAL: HAZARD STRIPES	МАТЕРИАЛ: ПРЕДУПР. ПОЛОСЫ
 MATERIAL: HAZMAT TARP	МАТЕРИАЛ: ЗАЩИТНЫЙ БРЕЗЕНТ
 MATERIAL: HEALING TILE	МАТЕРИАЛ: ЛЕЧАЩАЯ ПЛИТКА
 MATERIAL: HEAT VENTS	МАТЕРИАЛ: ТЕПЛОВЫЕ РЕШЁТКИ
 MATERIAL: HEAT-TINTED TITANIUM	МАТЕРИАЛ: ТИТАН С ЦВЕТАМИ ПОБЕЖАЛОСТИ
 MATERIAL: HEAVY SCALE RUST	МАТЕРИАЛ: СИЛЬНАЯ РЖАВЧИНА
-MATERIAL: HEDGE	МАТЕРИАЛ: ЖИВАЯ ИЗГОРОДЬ
+MATERIAL: HEDGE	МАТЕРИАЛ: ИЗГОРОДЬ
 MATERIAL: HERRINGBONE BRICK	МАТЕРИАЛ: КИРПИЧ «ЁЛОЧКА»
 MATERIAL: HERRINGBONE TILE	МАТЕРИАЛ: ПЛИТКА «ЁЛОЧКА»
-MATERIAL: HEX BOLT GRID	МАТЕРИАЛ: СЕТКА ШЕСТИГРАННЫХ БОЛТОВ
+MATERIAL: HEX BOLT GRID	МАТЕРИАЛ: СЕТКА ШЕСТИГР. БОЛТОВ
 MATERIAL: HEX FLOOR TILES	МАТЕРИАЛ: ШЕСТИГРАННАЯ ПЛИТКА ПОЛА
-MATERIAL: HEX FORCE FIELD	МАТЕРИАЛ: ШЕСТИГРАННОЕ СИЛОВОЕ ПОЛЕ
+MATERIAL: HEX FORCE FIELD	МАТЕРИАЛ: ШЕСТИГР. СИЛОВОЕ ПОЛЕ
 MATERIAL: HEX TILE TERRACOTTA	МАТЕРИАЛ: ШЕСТИГРАННАЯ ТЕРРАКОТА
-MATERIAL: HEX TILE WHITE	МАТЕРИАЛ: БЕЛАЯ ШЕСТИГРАННАЯ ПЛИТКА
+MATERIAL: HEX TILE WHITE	МАТЕРИАЛ: БЕЛАЯ ШЕСТИГР. ПЛИТКА
 MATERIAL: HOLOGRAM PANEL	МАТЕРИАЛ: ГОЛОГРАФИЧЕСКАЯ ПАНЕЛЬ
 MATERIAL: HONEY	МАТЕРИАЛ: МЁД
 MATERIAL: HONEYCOMB	МАТЕРИАЛ: СОТЫ
@@ -1592,7 +1617,7 @@ MATERIAL: LIGHT BLOCK	МАТЕРИАЛ: СВЕТОВОЙ БЛОК
 MATERIAL: LIGHTWEIGHT FOAM BLOCK	МАТЕРИАЛ: ЛЁГКИЙ ПЕНОБЛОК
 MATERIAL: LILY PADS	МАТЕРИАЛ: КУВШИНКИ
 MATERIAL: LIMESTONE	МАТЕРИАЛ: ИЗВЕСТНЯК
-MATERIAL: LIMESTONE ASHLAR	МАТЕРИАЛ: ИЗВЕСТНЯКОВЫЙ ТЁСАНЫЙ КАМЕНЬ
+MATERIAL: LIMESTONE ASHLAR	МАТЕРИАЛ: ИЗВЕСТНЯК. ТЁСАНЫЙ КАМЕНЬ
 MATERIAL: LINOLEUM	МАТЕРИАЛ: ЛИНОЛЕУМ
 MATERIAL: LIQUID VOID	МАТЕРИАЛ: ЖИДКАЯ ПУСТОТА
 MATERIAL: LOADING DOCK FLOOR	МАТЕРИАЛ: ПОЛ ПОГРУЗОЧНОЙ ЗОНЫ
@@ -1657,7 +1682,7 @@ MATERIAL: PEELING WALLPAPER	МАТЕРИАЛ: ОТСЛАИВАЮЩИЕСЯ ОБ�
 MATERIAL: PENNY ROUND TILE	МАТЕРИАЛ: КРУГЛАЯ МОЗАИКА
 MATERIAL: PERFORATED METAL	МАТЕРИАЛ: ПЕРФОРИРОВАННЫЙ МЕТАЛЛ
 MATERIAL: PETRIFIED WOOD	МАТЕРИАЛ: ОКАМЕНЕВШЕЕ ДЕРЕВО
-MATERIAL: PEWTER	МАТЕРИАЛ: ОЛОВЯННЫЙ СПЛАВ
+MATERIAL: PEWTER	МАТЕРИАЛ: ОЛОВО
 MATERIAL: PICKET FENCE	МАТЕРИАЛ: ШТАКЕТНИК
 MATERIAL: PINE BARK	МАТЕРИАЛ: СОСНОВАЯ КОРА
 MATERIAL: PINE BOUGHS	МАТЕРИАЛ: СОСНОВЫЕ ВЕТВИ
@@ -1676,7 +1701,7 @@ MATERIAL: POWDER-COAT GREEN	МАТЕРИАЛ: ЗЕЛЁНАЯ ПОРОШКОВА�
 MATERIAL: POWDER-COAT YELLOW	МАТЕРИАЛ: ЖЁЛТАЯ ПОРОШКОВАЯ КРАСКА
 MATERIAL: PRECAST CONCRETE	МАТЕРИАЛ: СБОРНЫЙ БЕТОН
 MATERIAL: PRESSED TIN CEILING	МАТЕРИАЛ: ЖЕСТЯНОЙ ПОТОЛОК
-MATERIAL: PRISM GLASS	МАТЕРИАЛ: ПРИЗМАТИЧЕСКОЕ СТЕКЛО
+MATERIAL: PRISM GLASS	МАТЕРИАЛ: ПРИЗМ. СТЕКЛО
 MATERIAL: PUDDLED GROUND	МАТЕРИАЛ: ЗЕМЛЯ В ЛУЖАХ
 MATERIAL: PUMICE	МАТЕРИАЛ: ПЕМЗА
 MATERIAL: QUARRY TILE	МАТЕРИАЛ: КЛИНКЕРНАЯ ПЛИТКА
@@ -1819,7 +1844,7 @@ MATERIAL: TERMITE MOUND	МАТЕРИАЛ: ТЕРМИТНИК
 MATERIAL: TERMITE-EATEN BEAM	МАТЕРИАЛ: БАЛКА, ИЗЪЕДЕННАЯ ТЕРМИТАМИ
 MATERIAL: TERRACOTTA	МАТЕРИАЛ: ТЕРРАКОТА
 MATERIAL: TERRAZZO	МАТЕРИАЛ: ТЕРРАЦЦО
-MATERIAL: THATCH	МАТЕРИАЛ: СОЛОМЕННАЯ КРОВЛЯ
+MATERIAL: THATCH	МАТЕРИАЛ: СОЛОМА
 MATERIAL: THIN CONCRETE PANEL	МАТЕРИАЛ: ТОНКАЯ БЕТОННАЯ ПАНЕЛЬ
 MATERIAL: TIDAL MUD FLATS	МАТЕРИАЛ: ПРИЛИВНЫЕ ГРЯЗИ
 MATERIAL: TILE	МАТЕРИАЛ: ПЛИТКА
@@ -1906,8 +1931,8 @@ MODEL OF	МОДЕЛЬ ДЛЯ
 MODES	РЕЖИМЫ
 MODES (CLICK: ALLOW / BLOCK)	РЕЖИМЫ (КЛИК: РАЗРЕШИТЬ / ЗАПРЕТИТЬ)
 MODES:	РЕЖИМЫ:
-MODIFIERS	МОДИФИКАТОРЫ
-MODIFIERS:	МОДИФИКАТОРЫ:
+MODIFIERS	МОДИФИК.
+MODIFIERS:	МОДИФИК.:
 MODS	МОДЫ
 MODS FOLDER	ПАПКА МОДОВ
 MODS/FONTS	MODS/FONTS
@@ -1917,7 +1942,7 @@ MOON ROCKETS	ЛУННЫЕ РАКЕТЫ
 MOON SHOTGUN	ЛУННЫЙ ДРОБОВИК
 MOON SHOTGUNS	ЛУННЫЕ ДРОБОВИКИ
 MORE	ЕЩЁ
-MORE KEYS	ДРУГИЕ КЛАВИШИ
+MORE KEYS	ЕЩЁ КЛАВИШИ
 MORE: FEWER GPU BUBBLES, A LITTLE MORE LAG	БОЛЬШЕ: МЕНЬШЕ ПРОСТОЕВ GPU, ЧУТЬ БОЛЬШЕ ЛАГА
 MOUSE	МЫШЬ
 MOUSE 1	MOUSE 1
@@ -1926,7 +1951,7 @@ MOUSE 3	MOUSE 3
 MOUSE ACCELERATION	УСКОРЕНИЕ МЫШИ
 MOUSE TO PHOTON: IN GAME ONLY	ОТ МЫШИ ДО ФОТОНА: ТОЛЬКО В ИГРЕ
 MOUSE {} # HZ (AVG)	МЫШЬ {} # ГЦ (СРЕДН.)
-MOVE	ДВИЖЕНИЕ
+MOVE	ДВИЖ.
 MOVE + WEAPON KEYS	КЛАВИШИ ДВИЖЕНИЯ + ОРУЖИЯ
 MOVE DOWN	ВНИЗ
 MOVE TO SPECTATOR	В НАБЛЮДАТЕЛИ
@@ -1935,25 +1960,27 @@ MOVEMENT	ПЕРЕДВИЖЕНИЕ
 MS	МС
 MULTI POINT	МУЛЬТИТОЧКА
 MULTI POINT - attackers take the points in order (A, B, C...). Only they capture; a defender on the point holds it. Each point taken adds 90 s and moves both teams' spawns forward. Each team attacks once.	МУЛЬТИТОЧКА - атакующие берут точки по порядку (A, B, C...). Захватывают только они; защитник на точке удерживает её. Каждая взятая точка добавляет 90 с и сдвигает спавны обеих команд вперёд. Каждая команда атакует по разу.
-MUTE	ЗАГЛУШИТЬ
+MUTE	ЗАГЛ.
 MUTE IN BACKGROUND	БЕЗ ЗВУКА В ФОНЕ
-MUTED	ЗАГЛУШЕН
+MUTED	ЗАГЛУШ.
 MUZZLE FLASH	ВСПЫШКА ВЫСТРЕЛА
 MY	МОЙ
 MY EFFECTS	МОИ ЭФФЕКТЫ
 MY FOOTSTEPS	МОИ ШАГИ
-MY GLOW	МОЁ СВЕЧЕНИЕ
+MY GLOW	МОЁ СВЕЧ.
 MY NAME: GOLD	МОЁ ИМЯ: ЗОЛОТО
 MY NAME: PING	МОЁ ИМЯ: PING
 MY QUIP	МОЯ ФРАЗА
 MY QUIP:	МОЯ ФРАЗА:
 MY QUIP: A RANDOM ONE	МОЯ ФРАЗА: СЛУЧАЙНАЯ
-MY RACE STATS	МОЯ СТАТИСТИКА ГОНОК
+MY RACE STATS	МОЯ СТАТ. ГОНОК
 MY SKY	МОЁ НЕБО
 MY SKY / GLOW: THESE IN PLACE OF EVERY MAP'S;	МОЁ НЕБО / СВЕЧЕНИЕ: ВМЕСТО ТЕХ, ЧТО НА КАРТАХ;
 MY TRACER	МОЙ ТРАССЕР
 Model	Модель
 ModelOverrides holds kMaxModelsPerKind models of a kind	ModelOverrides holds kMaxModelsPerKind models of a kind
+N/A HERE: LATENT SYNC IS WINDOWS ONLY	НЕДОСТУПНО: LATENT SYNC ТОЛЬКО В WINDOWS
+N/A HERE: WINDOWS + NVIDIA ONLY	НЕДОСТУПНО: ТОЛЬКО WINDOWS + NVIDIA
 NAME	ИМЯ
 NAME COLOR	ЦВЕТ ИМЕНИ
 NAME COLORS	ЦВЕТА ИМЁН
@@ -1961,20 +1988,20 @@ NAME TAGS	ТАБЛИЧКИ ИМЁН
 NATURE	ПРИРОДА
 ND	ND
 NE	NE
-NET GRAPH	СЕТЕВОЙ ГРАФИК
+NET GRAPH	ГРАФИК СЕТИ
 NETWORK	СЕТЬ
 NETWORK READ	ЧТЕНИЕ СЕТИ
 NETWORK WARNINGS	СЕТЕВЫЕ ПРЕДУПРЕЖДЕНИЯ
 NEUTRAL PAYLOAD	НЕЙТРАЛЬНАЯ ВАГОНЕТКА
 NEUTRAL PAYLOAD - either team pushes the cart toward the other team's end. The team whose side it's on when time runs out wins.	НЕЙТРАЛЬНАЯ ВАГОНЕТКА - любая команда толкает вагонетку к концу соперника. Побеждает команда, на чьей стороне она к концу времени.
-NEW	НОВЫЙ
-NEW BEST	НОВЫЙ РЕКОРД
+NEW	НОВ.
+NEW BEST	РЕКОРД
 NEW LEADER	НОВЫЙ ЛИДЕР
 NEW NAME	НОВОЕ ИМЯ
 NEW ONES:	НОВЫЕ:
 NEW PERSONAL BEST	НОВЫЙ ЛИЧНЫЙ РЕКОРД
 NEXT	ДАЛЕЕ
-NEXT PAGE	СЛЕД. СТРАНИЦА
+NEXT PAGE	СЛЕД. СТР.
 NEXT WEAP	СЛЕД. ОРУЖ.
 NEXT WEAPON	СЛЕД. ОРУЖИЕ
 NIGHT: QUIET UP, LOUD DOWN; LOW: AS NORMAL	НОЧЬ: ТИХОЕ ГРОМЧЕ, ГРОМКОЕ ТИШЕ; НИЗКАЯ: КАК ОБЫЧНАЯ
@@ -1993,7 +2020,7 @@ NO MATERIAL NAMED THAT	НЕТ МАТЕРИАЛА С ТАКИМ ИМЕНЕМ
 NO RACE MAPS	НЕТ КАРТ ДЛЯ ГОНКИ
 NO RESPONSE - CLICK TO TRY	НЕТ ОТВЕТА - КЛИК ДЛЯ ПОВТОРА
 NO RUNS SAVED YET	ЗАПУСКОВ ПОКА НЕТ
-NO RUNS YET - FINISH	ЗАЕЗДОВ ПОКА НЕТ - ФИНИШИРУЙТЕ
+NO RUNS YET - FINISH	ЗАЕЗДОВ НЕТ - ФИНИШИРУЙТЕ
 NO SETTINGS ON THE CLIPBOARD (EXPORT MAKES THEM)	НЕТ НАСТРОЕК В БУФЕРЕ (ИХ СОЗДАЁТ ЭКСПОРТ)
 NO TIMES YET	ВРЕМЁН ПОКА НЕТ
 NO VSYNC	БЕЗ VSYNC
@@ -2001,6 +2028,7 @@ NOBODY RANKED YET (3 GAMES)	В РЕЙТИНГЕ ПОКА НИКОГО (3 ИГР�
 NONE	НЕТ
 NONE YET	ПОКА НЕТ
 NONE YET - EXPORT ONE, OR COPY A GROUP AND IMPORT	ПОКА НЕТ - ЭКСПОРТИРУЙТЕ ИЛИ СКОПИРУЙТЕ ГРУППУ И ИМПОРТИРУЙТЕ
+NONE YET - IN A GAME, ESC > RECORD DEMO	ПОКА НЕТ - В ИГРЕ ESC > ЗАПИСАТЬ ДЕМО
 NOOR	NOOR
 NORMAL	ОБЫЧНЫЙ
 NOT A GROUP - MAKE IT A GROUP FIRST?	НЕ ГРУППА - СНАЧАЛА СДЕЛАТЬ ГРУППОЙ?
@@ -2015,9 +2043,9 @@ NOTHING IN THE GAME RECORDS YET: THIS IS	В ИГРЕ ЕЩЁ НЕТ РЕКОРД�
 NOTHING MATCHES "	НИЧЕГО НЕ НАЙДЕНО ПО "
 NOTHING SELECTED	НИЧЕГО НЕ ВЫБРАНО
 NOTHING YET (NEEDS SPAWNS)	ПОКА НИЧЕГО (НУЖНЫ СПАВНЫ)
-NOTICE LINES	СТРОК УВЕДОМЛЕНИЙ
-NOTICE TIME	ВРЕМЯ УВЕДОМЛЕНИЙ
-NOTICES	УВЕДОМЛЕНИЯ
+NOTICE LINES	СТРОК УВЕДОМЛ.
+NOTICE TIME	ВРЕМЯ УВЕДОМЛ.
+NOTICES	УВЕДОМЛ.
 NUM	NUM
 NUMBER TIME	ВРЕМЯ ЦИФР
 NV DXGI PRESENT	NV DXGI PRESENT
@@ -2037,12 +2065,12 @@ OFF	ВЫКЛ
 OFF: FROM THE NEXT START	ВЫКЛ: СО СЛЕДУЮЩЕГО ЗАПУСКА
 OFF: THE BAR IS FULL AT 100 IN EVERY MODE	ВЫКЛ: ПОЛОСА ПОЛНАЯ ПРИ 100 В ЛЮБОМ РЕЖИМЕ
 OFF: THE VIEW STEPS UP STAIRS AT ONCE	ВЫКЛ: ВИД ПОДНИМАЕТСЯ ПО СТУПЕНЯМ СРАЗУ
-OFFICIAL	ОФИЦИАЛЬНЫЙ
+OFFICIAL	ОФИЦ.
 OLD MAN	СТАРИК
 ON	ВКЛ
-ON HIT	ПРИ ПОПАДАНИИ
+ON HIT	ПРИ ПОП.
 ON JOIN	ПРИ ВХОДЕ
-ON JOIN: ASK	ПРИ ВХОДЕ: СПРОСИТЬ
+ON JOIN: ASK	ПРИ ВХОДЕ: СПРОС
 ON JOIN: PLAY	ПРИ ВХОДЕ: ИГРАТЬ
 ON JOIN: SPECTATE	ПРИ ВХОДЕ: НАБЛЮДАТЬ
 ON PLAYERS	НА ИГРОКАХ
@@ -2058,24 +2086,24 @@ ONE	ОДИН
 ONE CHAT COLOR	ОДИН ЦВЕТ ЧАТА
 ONE MINUTE	ОДНА МИНУТА
 ONE MINUTE LEFT	ОСТАЛАСЬ МИНУТА
-ONLY KILLS I'M IN	ТОЛЬКО УБИЙСТВА С МОИМ УЧАСТИЕМ
-OPACITY	ПРОЗРАЧНОСТЬ
-OPACITY %	ПРОЗРАЧНОСТЬ %
-OPEN	ОТКРЫТЬ
+ONLY KILLS I'M IN	ТОЛЬКО МОИ УБИЙСТВА
+OPACITY	ПРОЗРАЧН.
+OPACITY %	ПРОЗРАЧН. %
+OPEN	ОТКР.
 OPEN DATA FOLDER	ОТКРЫТЬ ПАПКУ ДАННЫХ
 OPEN FOLDER	ОТКРЫТЬ ПАПКУ
 OPEN SCREENSHOTS	ОТКРЫТЬ СКРИНШОТЫ
 OPENS THE UDP PORT ON YOUR ROUTER (UPNP)	ОТКРЫВАЕТ UDP-ПОРТ НА РОУТЕРЕ (UPNP)
-OPPOSITE KEYS: CANCEL	ПРОТИВОПОЛОЖНЫЕ КЛАВИШИ: ОТМЕНА
+OPPOSITE KEYS: CANCEL	ПРОТИВОП. КЛАВИШИ: ОТМЕНА
 OPPOSITE KEYS: FIRST WINS	ПРОТИВОПОЛОЖНЫЕ КЛАВИШИ: ПЕРВАЯ
-OPPOSITE KEYS: LAST WINS	ПРОТИВОПОЛОЖНЫЕ КЛАВИШИ: ПОСЛЕДНЯЯ
+OPPOSITE KEYS: LAST WINS	ПРОТИВОП. КЛАВИШИ: ПОСЛЕДНЯЯ
 OR RESTART: IT'S ASKED FOR AT START	ИЛИ ПЕРЕЗАПУСК: ЗАПРАШИВАЕТСЯ ПРИ СТАРТЕ
-ORB	СФЕРА
+ORB	СФЕР.
 OTHER PLAYERS	ДРУГИЕ ИГРОКИ
 OTHER PLAYERS' TRACERS / BEAMS	ТРАССЕРЫ / ЛУЧИ ДРУГИХ ИГРОКОВ
 OTHERS' FOOTSTEPS	ЧУЖИЕ ШАГИ
 OTTO	OTTO
-OUT	ВЫХОДИТ
+OUT	ВЫБ.
 OUTLINE	КОНТУР
 OUTLINE A	КОНТУР A
 OUTLINE OPACITY	ПРОЗРАЧН. КОНТУРА
@@ -2087,11 +2115,11 @@ OVERRIDES FOLDER	ПАПКА OVERRIDES
 OVERRIDES OF YOURS - ON / OFF AT THE NEXT START	ВАШИ ЗАМЕНЫ - ВКЛ / ВЫКЛ ПРИ СЛЕДУЮЩЕМ ЗАПУСКЕ
 OVERSTRAFE BRAKE	ТОРМОЗ ПРИ ПЕРЕСТРЕЙФЕ
 OVERTIME	ОВЕРТАЙМ
-OVERTIME - NEXT KILL WINS	ОВЕРТАЙМ - СЛЕДУЮЩЕЕ УБИЙСТВО ПОБЕЖДАЕТ
+OVERTIME - NEXT KILL WINS	ОВЕРТАЙМ - ДО ПЕРВОГО УБИЙСТВА
 OWN ACCENT	СВОЙ АКЦЕНТ
 OWN ACCENT: NOT THE TEAM COLOR	СВОЙ АКЦЕНТ: НЕ ЦВЕТ КОМАНДЫ
 OWN COLOR	СВОЙ ЦВЕТ
-OWN EFFECTS	СОБСТВЕННЫЕ ЭФФЕКТЫ
+OWN EFFECTS	СВОИ ЭФФЕКТЫ
 OWN SHADOW	СВОЯ ТЕНЬ
 OggS	OggS
 OpenGL function missing:	Нет функции OpenGL:
@@ -2105,15 +2133,15 @@ PACKET LOSS PROTECTION: 4	ЗАЩИТА ОТ ПОТЕРИ ПАКЕТОВ: 4
 PACKET LOSS PROTECTION: 8	ЗАЩИТА ОТ ПОТЕРИ ПАКЕТОВ: 8
 PAD ACROSS	ОТСТУП ПО ГОРИЗ.
 PAD DOWN	ОТСТУП ВНИЗ
-PAGE 1	СТРАНИЦА 1
-PAGE 2	СТРАНИЦА 2
-PAGE 3	СТРАНИЦА 3
-PAGE 4	СТРАНИЦА 4
-PAGE 5	СТРАНИЦА 5
-PAGE 6	СТРАНИЦА 6
-PAGE 7	СТРАНИЦА 7
-PAGE 8	СТРАНИЦА 8
-PAGE 9	СТРАНИЦА 9
+PAGE 1	СТР. 1
+PAGE 2	СТР. 2
+PAGE 3	СТР. 3
+PAGE 4	СТР. 4
+PAGE 5	СТР. 5
+PAGE 6	СТР. 6
+PAGE 7	СТР. 7
+PAGE 8	СТР. 8
+PAGE 9	СТР. 9
 PAGE DOWN	PAGE DOWN
 PAGE UP	PAGE UP
 PALETTE: THE BOMB'S BLINK AND CHECKPOINTS NOT	ПАЛИТРА: МИГАНИЕ БОМБЫ И ЧЕКПОИНТЫ НЕ
@@ -2132,15 +2160,15 @@ PAYLOAD PATH POINT	ТОЧКА ПУТИ ВАГОНЕТКИ
 PER MODE	ПО РЕЖИМАМ
 PER WEAPON	ПО ОРУЖИЮ
 PERCEPTUAL	ПЕРЦЕПТИВНЫЙ
-PERF STATS	СТАТИСТИКА ПРОИЗВ.
-PERFORMANCE	ПРОИЗВОДИТЕЛЬНОСТЬ
+PERF STATS	СТАТ. ПРОИЗВ.
+PERFORMANCE	ПРОИЗВОДИТ.
 PHYSICS	ФИЗИКА
 PIA	PIA
 PICK A FILE TO IMPORT	ВЫБЕРИТЕ ФАЙЛ ДЛЯ ИМПОРТА
 PICK A KEY NO ACTION IS BOUND TO	ВЫБЕРИТЕ КЛАВИШУ БЕЗ НАЗНАЧЕНИЯ
 PICK IT IN WINDOWS' GRAPHICS SETTINGS	ВЫБЕРИТЕ ЕЁ В НАСТРОЙКАХ ГРАФИКИ WINDOWS
 PICK VSYNC: LATENT SYNC (VIDEO + AUDIO) FIRST;	ВЫБОР VSYNC: СНАЧАЛА LATENT SYNC (ВИДЕО + ЗВУК);
-PICTURE	ИЗОБРАЖЕНИЕ
+PICTURE	ИЗОБР.
 PICTURES: PICTURES/QUARK IN YOUR HOME FOLDER	ИЗОБРАЖЕНИЯ: PICTURES/QUARK В ДОМАШНЕЙ ПАПКЕ
 PING	PING
 PING #	PING #
@@ -2157,6 +2185,7 @@ PLAY VS BOTS	ИГРА С БОТАМИ
 PLAYABLE AS:	ИГРАБЕЛЬНА КАК:
 PLAYER	ИГРОК
 PLAYER 2	ИГРОК 2
+PLAYER > MORE SETS THE MENU ACCENT	ИГРОК > ЕЩЁ ЗАДАЁТ АКЦЕНТ МЕНЮ
 PLAYER BASED	НА ИГРОКАХ
 PLAYER BRIGHTNESS	ЯРКОСТЬ ИГРОКОВ
 PLAYER JOINS	ИГРОК ЗАШЁЛ
@@ -2206,7 +2235,7 @@ PROFILE:	ПРОФИЛЬ:
 PROFILE: MY CONTROLS	ПРОФИЛЬ: МОЁ УПРАВЛЕНИЕ
 PROFILE: MY HUD	ПРОФИЛЬ: МОЙ HUD
 PROFILES	ПРОФИЛИ
-PUBLIC	ПУБЛИЧНЫЙ
+PUBLIC	ОТКРЫТ.
 PUBLIC lists the server on the internet server list (off: friends join with your IP, shown on the host screen). Games on your network show up for everyone on it.	ПУБЛИЧНЫЙ показывает сервер в интернет-списке (выкл: друзья заходят по вашему IP, он на экране хоста). Игры в вашей сети видны всем в ней.
 PULSE	ПУЛЬС
 PUSH THE PAYLOAD	ТОЛКАЙТЕ ВАГОНЕТКУ
@@ -2241,8 +2270,8 @@ QUIPS FOR YOUR ANNOUNCER VOICE	ФРАЗЫ ДЛЯ ГОЛОСА КОММЕНТАТ
 QUIPS OFF	ФРАЗЫ ВЫКЛ
 QUIPS ON	ФРАЗЫ ВКЛ
 QUIPS VOLUME	ГРОМКОСТЬ ФРАЗ
-QUIRKY	ЧУДАКОВАТЫЙ
-QUIT	ВЫХОД
+QUIRKY	ЧУДАК.
+QUIT	ВЫХ.
 QUIT, DISCONNECT AND STOP HOSTING	ВЫЙТИ, ОТКЛЮЧИТЬСЯ И ОСТАНОВИТЬ ХОСТИНГ
 R ALT	R ALT
 R CTRL	R CTRL
@@ -2264,11 +2293,11 @@ RAMPAGE	БУЙСТВО
 RANKED	РЕЙТИНГ
 RANKED - CHOOSE A LADDER	РЕЙТИНГ - ВЫБЕРИТЕ ТАБЛИЦУ
 RANKED - NOT RATED	РЕЙТИНГ - НЕ ЗАСЧИТАН
-RANKED 1V1	РЕЙТИНГОВЫЙ 1V1
+RANKED 1V1	РЕЙТИНГ 1V1
 RANKED ALWAYS USES THE DEFAULT CONTROLS	В РЕЙТИНГЕ ВСЕГДА УПРАВЛЕНИЕ ПО УМОЛЧАНИЮ
 RANKED ALWAYS USES THE DEFAULT HUD	В РЕЙТИНГЕ ВСЕГДА HUD ПО УМОЛЧАНИЮ
 RANKED BEHIND A FORWARDED PORT OR IN A CONTAINER: ranked ids are signed for the address players dial. If they reach the server at an address it can't see itself (the router forwards another port to it, or it runs in a container), the host screen says so; start a dedicated server with --own-addr host:port (that address) so their ranked ids work.	РЕЙТИНГ ЗА ПРОБРОШЕННЫМ ПОРТОМ ИЛИ В КОНТЕЙНЕРЕ: рейтинговые id подписываются для адреса, который набирают игроки. Если они заходят на сервер по адресу, которого он сам не видит (роутер пробрасывает на него другой порт, или он работает в контейнере), экран хоста об этом скажет; запустите выделенный сервер с --own-addr host:port (этот адрес), чтобы их рейтинговые id работали.
-RANKED FFA	РЕЙТИНГОВЫЙ FFA
+RANKED FFA	РЕЙТИНГ FFA
 RANKED GAMES HAVE NO BOTS	В РЕЙТИНГЕ НЕТ БОТОВ
 RANKED INSTAGIB	РЕЙТИНГОВЫЙ ИНСТАГИБ
 RANKED LASER VAMPIRE	РЕЙТИНГОВЫЙ ЛАЗЕРНЫЙ ВАМПИР
@@ -2281,41 +2310,43 @@ RANKED QUEUES	РЕЙТИНГОВЫЕ ОЧЕРЕДИ
 RANKED VANILLA	РЕЙТИНГОВАЯ ВАНИЛЛА
 RANKED: DEFAULT MODEL, HUD, CONTROLS AND 10 MS INTERP FOR FAIRNESS	РЕЙТИНГ: МОДЕЛЬ, HUD, УПРАВЛЕНИЕ ПО УМОЛЧ. И ИНТЕРП. 10 МС ДЛЯ ЧЕСТНОСТИ
 RANKED: NO HEALTH BARS	РЕЙТИНГ: БЕЗ ПОЛОС ЗДОРОВЬЯ
-RATE	ЧАСТОТА
+RATE	ЧАСТ.
 RATING	РЕЙТИНГ
 RAW INPUT	RAW INPUT
 RD	RD
 READ INPUT	ЧТЕНИЕ ВВОДА
 READY	ГОТОВ
-REALTIME	РЕАЛЬНОЕ ВРЕМЯ
+REALTIME	РЕАЛ. ВРЕМЯ
 REC	REC
 RECENT	НЕДАВНИЕ
 RECENT RUNS	НЕДАВНИЕ ЗАПУСКИ
 RECHARGING	ПЕРЕЗАРЯДКА
-RECONNECT	ПЕРЕПОДКЛЮЧИТЬСЯ
+RECONNECT	ПЕРЕПОДКЛ.
 RECORD	ЗАПИСЬ
 RECORD DEMO	ЗАПИСАТЬ ДЕМО
 RECORDED WITH	ЗАПИСАНО В
+RECORDING DEMO (62.5 HZ) - ESC > STOP RECORDING	ЗАПИСЬ ДЕМО (62.5 ГЦ) - ESC > ОСТАНОВИТЬ ЗАПИСЬ
+RECORDING DEMO (FULL RATE) - ESC > STOP RECORDING	ЗАПИСЬ ДЕМО (ПОЛНАЯ ЧАСТОТА) - ESC > ОСТАНОВИТЬ ЗАПИСЬ
 RECORDING RATE: 62.5 HZ	ЧАСТОТА ЗАПИСИ: 62.5 ГЦ
 RECORDING RATE: FULL	ЧАСТОТА ЗАПИСИ: ПОЛНАЯ
-RED	КРАСНЫЙ
+RED	КРАС.
 RED-GREEN (DEUTAN)	КРАСНЫЙ-ЗЕЛЁНЫЙ (ДЕЙТАН)
 RED-GREEN (PROTAN)	КРАСНЫЙ-ЗЕЛЁНЫЙ (ПРОТАН)
 REDO	ПОВТОР
 REDUCE FLASHING	МЕНЬШЕ ВСПЫШЕК
 REFRESH	ОБНОВИТЬ
 REFRESH LIST	ОБНОВИТЬ СПИСОК
-REFRESH RATE	ЧАСТОТА ОБНОВЛЕНИЯ
+REFRESH RATE	ЧАСТОТА ОБНОВЛ.
 REFRESH RATE:	ЧАСТОТА ОБНОВЛЕНИЯ:
 REGEN	РЕГЕН
 REGENERATION	РЕГЕНЕРАЦИЯ
-RELOAD MAP	ПЕРЕЗАГРУЗИТЬ КАРТУ
+RELOAD MAP	ПЕРЕЗАГР. КАРТУ
 REMEMBER LAST TAB	ПОМНИТЬ ВКЛАДКУ
 REMEMBER MY QUEUES	ПОМНИТЬ МОИ ОЧЕРЕДИ
-RENAME	ПЕРЕИМЕНОВАТЬ
+RENAME	ПЕРЕИМ.
 RENDER SCALE	МАСШТАБ РЕНДЕРА
 RESET ALL	СБРОСИТЬ ВСЁ
-RESET ALL KEYS	СБРОСИТЬ ВСЕ КЛАВИШИ
+RESET ALL KEYS	СБРОС ВСЕХ КЛАВИШ
 RESET CROSSHAIR	СБРОСИТЬ ПРИЦЕЛ
 RESET ELEMENT	СБРОСИТЬ ЭЛЕМЕНТ
 RESET MAP COLOR	СБРОСИТЬ ЦВЕТ КАРТЫ
@@ -2324,19 +2355,19 @@ RESET MOVEMENT TO STANDARD	СТАНДАРТНОЕ ПЕРЕДВИЖЕНИЕ
 RESET STYLE	СБРОСИТЬ СТИЛЬ
 RESET WHOLE HUD	СБРОСИТЬ ВЕСЬ HUD
 RESOLUTION	РАЗРЕШЕНИЕ
-RESPAWN IN #	ВОЗРОЖДЕНИЕ ЧЕРЕЗ #
+RESPAWN IN #	ВОЗРОЖД. ЧЕРЕЗ #
 RESTART (R)	ЗАНОВО (R)
-RESTART MAP	ПЕРЕЗАПУСТИТЬ КАРТУ
+RESTART MAP	ПЕРЕЗАПУСК КАРТЫ
 RESTART MATCH	ПЕРЕЗАПУСТИТЬ МАТЧ
 RESTART THE MATCH	ПЕРЕЗАПУСТИТЬ МАТЧ
-RESTORE AUTOSAVE	ВОССТАНОВИТЬ АВТОСОХРАНЕНИЕ
-RESUME	ПРОДОЛЖИТЬ
+RESTORE AUTOSAVE	ВОССТ. АВТОСОХР.
+RESUME	ДАЛЕЕ
 RESUME (ESC)	ПРОДОЛЖИТЬ (ESC)
-RETICLE COLOR	ЦВЕТ ПРИЦЕЛЬНОЙ МЕТКИ
-RETICLE WIDTH	ШИРИНА ПРИЦЕЛЬНОЙ МЕТКИ
+RETICLE COLOR	ЦВЕТ ПРИЦЕЛА
+RETICLE WIDTH	ШИРИНА ПРИЦЕЛА
 REVERT	ОТКАТИТЬ
 RIFF	RIFF
-RIFLE	ВИНТОВКА
+RIFLE	ВИНТ.
 RIFLE ZOOM FOV	FOV ЗУМА ВИНТОВКИ
 RIFLE, ONE SHOT A CLICK. SCORE: KILLS X 100 X ACCURACY	ВИНТОВКА, ВЫСТРЕЛ НА КЛИК. ОЧКИ: УБИЙСТВА X 100 X ТОЧНОСТЬ
 RIFLE, SNIPER, LASER, SHOTGUN AND KNIFE	ВИНТОВКА, СНАЙПЕРКА, ЛАЗЕР, ДРОБОВИК И НОЖ
@@ -2362,7 +2393,7 @@ ROCKET, LASER AND KNIFE	РАКЕТА, ЛАЗЕР И НОЖ
 ROCKETS AND STICKIES - NO SELF DAMAGE	РАКЕТЫ И ЛИПУЧКИ - БЕЗ УРОНА СЕБЕ
 ROCKETS ONLY	ТОЛЬКО РАКЕТЫ
 ROLL	КРЕН
-ROOM	КОМНАТА
+ROOM	КОМН.
 ROPE COLOR	ЦВЕТ ТРОСА
 ROTATE	ПОВЕРНУТЬ
 ROTATE X	ПОВЕРНУТЬ X
@@ -2381,7 +2412,7 @@ ROUND OF 16	1/8 ФИНАЛА
 ROUND OF 32	1/16 ФИНАЛА
 ROUND OVER	РАУНД ОКОНЧЕН
 ROUND START	НАЧАЛО РАУНДА
-ROUND WINS -	ПОБЕДЫ В РАУНДАХ -
+ROUND WINS -	ПОБЕДЫ В РАУНД. -
 ROUND WON	РАУНД ВЫИГРАН
 ROUNDS	РАУНДЫ
 ROWS #-# OF # (WHEEL)	СТРОКИ #-# ИЗ # (КОЛЕСО)
@@ -2392,34 +2423,34 @@ RUBIK	RUBIK
 RULES	ПРАВИЛА
 RUN	БЕГ
 RUN - DON'T BE THE TAGGER WHEN TIME RUNS OUT	БЕГИТЕ - НЕ БУДЬТЕ ВОДЯЩИМ К КОНЦУ ВРЕМЕНИ
-RUN AGAIN	ЗАПУСТИТЬ СНОВА
+RUN AGAIN	ЕЩЁ РАЗ
 RUN BENCHMARK	ЗАПУСТИТЬ БЕНЧМАРК
 RUN NAME	ИМЯ ЗАПУСКА
 RUN SPEED	СКОРОСТЬ БЕГА
-RUNS	ЗАПУСКИ
+RUNS	ЗАПУСК.
 Ranked games use the default model, HUD and controls and 10 ms interpolation, so everyone plays the same game.	В рейтинговых играх модель, HUD и управление по умолчанию и интерполяция 10 мс, чтобы все играли в одну и ту же игру.
 SAFE OK / ERROR	НАДЁЖНО ОК / ОШИБКА
 SAFE: OK BLUE, ERRORS ORANGE; IT: TAG / HIDE'S	НАДЁЖНО: ОК СИНИЙ, ОШИБКИ ОРАНЖЕВЫЕ; IT: САЛКИ / ПРЯТКИ
-SAME	ТАКОЙ ЖЕ
+SAME	ТОТ ЖЕ
 SAME AS FPS LIMIT	КАК ЛИМИТ FPS
 SAME DPI: THE SAME TURN PER INCH OF MOUSE	ТОТ ЖЕ DPI: ТОТ ЖЕ ПОВОРОТ НА ДЮЙМ МЫШИ
 SATURATION	НАСЫЩЕННОСТЬ
 SATURATION 0: BLACK AND WHITE	НАСЫЩЕННОСТЬ 0: ЧЁРНО-БЕЛОЕ
-SAVE	СОХРАНИТЬ
-SAVE + DONE	СОХРАНИТЬ + ГОТОВО
+SAVE	СОХР.
+SAVE + DONE	СОХР. + ГОТОВО
 SAVE A COPY	СОХРАНИТЬ КОПИЮ
 SAVE A COPY AS	СОХРАНИТЬ КОПИЮ КАК
-SAVE AS	СОХРАНИТЬ КАК
-SAVE AS NEW MAP	СОХРАНИТЬ КАК НОВУЮ КАРТУ
+SAVE AS	СОХР. КАК
+SAVE AS NEW MAP	СОХР. КАК НОВУЮ
 SAVE POS	СОХР. ПОЗ.
 SAVE POSITION	СОХРАНИТЬ ПОЗИЦИЮ
 SAVE YOUR COPY OF	СОХРАНИТЬ СВОЮ КОПИЮ
-SAVED	СОХРАНЕНО
+SAVED	СОХРАН.
 SAVED FOR VOICE CHAT LATER	СОХРАНЕНО ДЛЯ ГОЛОСОВОГО ЧАТА
 SAVES TO MAPS/<NAME>.QMAP - YOUR OWN COPY, THE HOST KEEPS THEIRS.	СОХРАНЯЕТ В MAPS/<NAME>.QMAP - ВАША КОПИЯ, У ХОСТА ОСТАЁТСЯ СВОЯ.
-SAY (TEAM):	СКАЗАТЬ (КОМАНДЕ):
+SAY (TEAM):	ЧАТ (КОМАНДЕ):
 SAY IT	СКАЗАТЬ
-SAY:	СКАЗАТЬ:
+SAY:	ЧАТ:
 SCALAR	СКАЛЯР
 SCALE: X2 TAKES TWICE THE SPEED TO FILL	МАСШТАБ: X2 - НУЖНА ВДВОЕ БОЛЬШАЯ СКОРОСТЬ
 SCANOUT TO THE CROSSHAIR (EST)	ВЫВОД ДО ПРИЦЕЛА (ОЦЕНКА)
@@ -2427,7 +2458,7 @@ SCANOUT TO THE CROSSHAIR (EST)  000000 US	ВЫВОД ДО ПРИЦЕЛА (ОЦЕ
 SCI-FI / DECOR	SCI-FI / ДЕКОР
 SCISSORS	НОЖНИЦЫ
 SCOPE OVERLAY	ОВЕРЛЕЙ ПРИЦЕЛА
-SCOPE SIZE	РАЗМЕР ПРИЦЕЛА
+SCOPE SIZE	РАЗМЕР ОПТИКИ
 SCORE	СЧЁТ
 SCORE BOX	БЛОК СЧЁТА
 SCORE LIMIT	ЛИМИТ ОЧКОВ
@@ -2442,7 +2473,7 @@ SCREENSHOT FORMAT	ФОРМАТ СКРИНШОТОВ
 SCREENSHOT SAVED (NO HUD):	СКРИНШОТ СОХРАНЁН (БЕЗ HUD):
 SCREENSHOT SAVED:	СКРИНШОТ СОХРАНЁН:
 SCREENSHOTS	СКРИНШОТЫ
-SCROLLBAR	ПОЛОСА ПРОКРУТКИ
+SCROLLBAR	ПРОКРУТКА
 SE	SE
 SEARCH	ПОИСК
 SEARCH MATERIALS	ПОИСК МАТЕРИАЛОВ
@@ -2453,7 +2484,7 @@ SEEKING -	ПОИСК -
 SELECTED:	ВЫБРАНО:
 SELF DAMAGE	УРОН СЕБЕ
 SEMIFINALS	ПОЛУФИНАЛ
-SENSITIVITY	ЧУВСТВИТЕЛЬНОСТЬ
+SENSITIVITY	ЧУВСТВИТ.
 SENSITIVITY FROM ANOTHER GAME	ЧУВСТВИТЕЛЬНОСТЬ ИЗ ДРУГОЙ ИГРЫ
 SERVER	СЕРВЕР
 SERVER LOG	ЛОГ СЕРВЕРА
@@ -2486,38 +2517,39 @@ SHARPEN	РЕЗКОСТЬ
 SHIFT + ARROWS: GROW THAT SIDE    CTRL + ARROWS: SHRINK IT    M: MATERIAL / TEAM    N: SHAPE    K: COAT THE SIDE YOU LOOK AT	SHIFT + СТРЕЛКИ: РАСТИТЬ СТОРОНУ    CTRL + СТРЕЛКИ: УМЕНЬШИТЬ    M: МАТЕРИАЛ / КОМАНДА    N: ФОРМА    K: ПОКРЫТЬ СТОРОНУ ПОД ВЗГЛЯДОМ
 SHIFT - dash: a burst of speed in the direction you're moving, tilted by where you look. You hold 2 dashes, usable 0.6 s apart (from the end of the last one). A spent dash recharges for 1.2 s from the end of the dash that spent it; after that, landing gives it back (a bunny hop gives one).	SHIFT - рывок: всплеск скорости в направлении движения с наклоном по взгляду. У вас 2 рывка с интервалом 0.6 с (от конца предыдущего). Потраченный рывок восстанавливается 1.2 с от конца потратившего его рывка; после этого его возвращает приземление (бхоп возвращает один).
 SHIFT+ARROW (NUDGE 10)	SHIFT+СТРЕЛКА (СДВИГ НА 10)
-SHOT	ВЫСТРЕЛ
+SHOT	ВЫСТР.
 SHOTGUN	ДРОБОВИК
 SHOTGUNS IN LOW GRAVITY	ДРОБОВИКИ В НИЗКОЙ ГРАВИТАЦИИ
 SHOTGUNS ONLY	ТОЛЬКО ДРОБОВИКИ
-SHOTS	ВЫСТРЕЛЫ
+SHOTS	ВЫСТР.
 SHOTS, LASER AND ROPE IN OWN COLOR	ВЫСТРЕЛЫ, ЛАЗЕР И ТРОС СВОИМ ЦВЕТОМ
-SHOW	ПОКАЗАТЬ
+SHOW	ПОКАЗ
 SHOW COLUMN	ПОКАЗАТЬ СТОЛБЕЦ
 SHOW DB	ПОКАЗАТЬ ДБ
 SHOW FPS	ПОКАЗАТЬ FPS
-SHOW I'M TYPING	ПОКАЗЫВАТЬ, ЧТО Я ПИШУ
-SHOW LINE	ПОКАЗАТЬ ЛИНИЮ
+SHOW I'M TYPING	ПОКАЗ. НАБОР ТЕКСТА
+SHOW LINE	ПОКАЗ ЛИНИИ
 SHOW PING	ПОКАЗАТЬ PING
 SHOW WEAPON	ПОКАЗАТЬ ОРУЖИЕ
 SHOWN	ПОКАЗАНО
 SHOWN WITH VERBOSE INFO ON. DRAG TO MOVE, CORNER / WHEEL TO SIZE, ARROWS NUDGE, ALT: NO SNAP	ПОКАЗАН С ПОДРОБНОЙ ИНФОЙ. ТАЩИТЕ ДЛЯ ПЕРЕМЕЩЕНИЯ, УГОЛ / КОЛЕСО - РАЗМЕР, СТРЕЛКИ - СДВИГ, ALT: БЕЗ ПРИВЯЗКИ
+SHOWS INPUT->FRAME LATENCY	ПОКАЗЫВАЕТ ЗАДЕРЖКУ INPUT->FRAME
 SHUFFLE TEAMS	ПЕРЕМЕШАТЬ КОМАНДЫ
 SHUFFLE THE TEAMS (THE MATCH RESTARTS)	ПЕРЕМЕШАТЬ КОМАНДЫ (МАТЧ ПЕРЕЗАПУСТИТСЯ)
 SIMPLE	ПРОСТОЙ
 SIMPLE SKY	ПРОСТОЕ НЕБО
 SITE	ТОЧКА
-SIZE	РАЗМЕР
+SIZE	РАЗМ.
 SIZE (CORNER)	РАЗМЕР (УГОЛ)
-SIZE: SYSTEM	РАЗМЕР: СИСТЕМНЫЙ
+SIZE: SYSTEM	РАЗМЕР: СИСТЕМН.
 SIZE: X1	РАЗМЕР: X1
 SIZE: X1.5	РАЗМЕР: X1.5
 SIZE: X2	РАЗМЕР: X2
-SIZING	МАСШТАБИРОВАНИЕ
-SIZING: EXACT PIXELS	МАСШТАБИРОВАНИЕ: ТОЧНЫЕ ПИКСЕЛИ
+SIZING	МАСШТ.
+SIZING: EXACT PIXELS	МАСШТ.: ТОЧНЫЕ ПИКСЕЛИ
 SIZING: SCALE WITH RESOLUTION	МАСШТАБИРОВАНИЕ: ПО РАЗРЕШЕНИЮ
-SKIP IT	ПРОПУСТИТЬ
-SKIP WARMUP	ПРОПУСТИТЬ РАЗМИНКУ
+SKIP IT	ПРОПУСК
+SKIP WARMUP	БЕЗ РАЗМИНКИ
 SKY	НЕБО
 SLOT	СЛОТ
 SLOT 1	СЛОТ 1
@@ -2534,23 +2566,23 @@ SNAPS: 250	СНАПШОТЫ: 250
 SNAPS: 500	СНАПШОТЫ: 500
 SNAPS: 62.5	СНАПШОТЫ: 62.5
 SNAPSHOT RATE	ЧАСТОТА СНАПШОТОВ
-SNIPER	СНАЙПЕРКА
-SNIPER SCOPE	СНАЙПЕРСКИЙ ПРИЦЕЛ
+SNIPER	СНАЙП.
+SNIPER SCOPE	СНАЙП. ПРИЦЕЛ
 SNIPER ZOOM FOV	FOV ЗУМА СНАЙПЕРКИ
-SNIPERS - ANY HIT KILLS	СНАЙПЕРЫ - ЛЮБОЕ ПОПАДАНИЕ УБИВАЕТ
+SNIPERS - ANY HIT KILLS	СНАЙПЕРЫ - УБИВАЕТ ЛЮБОЕ ПОП.
 SNIPERS ONLY	ТОЛЬКО СНАЙПЕРКИ
 SOCD	SOCD
-SORT	СОРТИРОВКА
-SORT BY	СОРТИРОВАТЬ ПО
+SORT	СОРТ.
+SORT BY	СОРТ. ПО
 SORT BY: DEATHS	СОРТИРОВКА: СМЕРТИ
-SORT BY: KILLS	СОРТИРОВКА: УБИЙСТВА
+SORT BY: KILLS	СОРТ.: УБИЙСТВА
 SORT BY: NAME	СОРТИРОВКА: ИМЯ
 SORT BY: PING	СОРТИРОВКА: PING
 SORT BY: SCORE	СОРТИРОВКА: ОЧКИ
-SORT: BIGGEST FIRST	СОРТИРОВКА: СНАЧАЛА БОЛЬШИЕ
-SORT: NAME	СОРТИРОВКА: ИМЯ
+SORT: BIGGEST FIRST	СОРТ.: СНАЧАЛА БОЛЬШИЕ
+SORT: NAME	СОРТ.: ИМЯ
 SORT: NEWEST FIRST	СОРТИРОВКА: СНАЧАЛА НОВЫЕ
-SORT: OLDEST FIRST	СОРТИРОВКА: СНАЧАЛА СТАРЫЕ
+SORT: OLDEST FIRST	СОРТ.: СНАЧАЛА СТАРЫЕ
 SOUND	ЗВУК
 SOUND GROUPS	ГРУППЫ ЗВУКОВ
 SOUND OCCLUSION	ОККЛЮЗИЯ ЗВУКА
@@ -2575,10 +2607,10 @@ SPECTATOR FOV	FOV НАБЛЮДАТЕЛЯ
 SPECTATOR HUD	HUD НАБЛЮДАТЕЛЯ
 SPECTATOR HUD: FULL	HUD НАБЛЮДАТЕЛЯ: ПОЛНЫЙ
 SPECTATOR HUD: MINIMAL	HUD НАБЛЮДАТЕЛЯ: МИНИМУМ
-SPEED	СКОРОСТЬ
+SPEED	СКОР.
 SPEED CAPTION	ПОДПИСЬ СКОРОСТИ
 SPEED METER	СПИДОМЕТР
-SPEED UNITS	ЕДИНИЦЫ СКОРОСТИ
+SPEED UNITS	ЕДИНИЦЫ СКОР.
 SPEED UNITS: KM/H	ЕДИНИЦЫ СКОРОСТИ: КМ/Ч
 SPEED UNITS: M/S	ЕДИНИЦЫ СКОРОСТИ: М/С
 SPEED UNITS: UPS (QUAKE)	ЕДИНИЦЫ СКОРОСТИ: UPS (QUAKE)
@@ -2586,24 +2618,24 @@ SPEED, GRID AND LAST LIGHT ARE KEPT	СКОРОСТЬ, СЕТКА И ПОСЛЕД
 SPEED: CARRY	СКОРОСТЬ: С ГРУЗОМ
 SPEED: FAST	СКОРОСТЬ: БЫСТРО
 SPEED: HITSCAN	СКОРОСТЬ: ХИТСКАН
-SPEED: SLOW	СКОРОСТЬ: МЕДЛЕННО
+SPEED: SLOW	СКОРОСТЬ: МЕДЛ.
 SPEED: WALK	СКОРОСТЬ: ШАГ
 SPLIT	СПЛИТ
 SPLIT TIME	ВРЕМЯ СПЛИТА
-SPLITS VS	СПЛИТЫ ПРОТИВ
+SPLITS VS	СПЛИТЫ VS
 SPLITS: AHEAD / BEHIND	СПЛИТЫ: ВПЕРЕДИ / ПОЗАДИ
 SPLITS: PALETTE	СПЛИТЫ: ПАЛИТРА
 SPREAD CIRCLE	КРУГ РАЗБРОСА
 SPREE	СЕРИЯ
-SPY	ШПИОН
+SPY	ШПИК
 SSE4.2	SSE4.2
 ST	ST
 STACKING	НАКОПЛЕНИЕ
 STACKING: A NUMBER A HIT	НАКОПЛЕНИЕ: ЧИСЛО НА ПОПАДАНИЕ
-STACKING: QUICK HITS ADD UP	НАКОПЛЕНИЕ: БЫСТРЫЕ ПОПАДАНИЯ СУММИРУЮТСЯ
+STACKING: QUICK HITS ADD UP	НАКОПЛЕНИЕ: БЫСТРЫЕ ПОП. СУММИРУЮТСЯ
 STACKING: RUNNING TOTAL	НАКОПЛЕНИЕ: ТЕКУЩАЯ СУММА
 STAIR SMOOTHING	СГЛАЖИВАНИЕ СТУПЕНЕЙ
-STAIRS	ЛЕСТНИЦЫ
+STAIRS	ЛЕСТН.
 STALEMATE - HEALTH DRAINING	ПАТ - ЗДОРОВЬЕ УБЫВАЕТ
 STALEMATE - HEALTH DRAINS IN	ПАТ - ЗДОРОВЬЕ НАЧНЁТ УБЫВАТЬ ЧЕРЕЗ
 STALEMATE WARNING	ПРЕДУПРЕЖДЕНИЕ О ПАТЕ
@@ -2630,9 +2662,9 @@ STICKY COUNTER	СЧЁТЧИК ЛИПУЧЕК
 STICKY ON YOU	НА ВАС ЛИПУЧКА
 STILL HIDDEN	ВСЁ ЕЩЁ СПРЯТАН
 STONE	КАМЕНЬ
-STOP DEMO	ОСТАНОВИТЬ ДЕМО
+STOP DEMO	СТОП ДЕМО
 STOP EDITING AND PLAY THE MAP	ЗАКОНЧИТЬ ПРАВКУ И СЫГРАТЬ НА КАРТЕ
-STOP HOSTING	ОСТАНОВИТЬ ХОСТИНГ
+STOP HOSTING	СТОП ХОСТИНГ
 STOP RECORDING	ОСТАНОВИТЬ ЗАПИСЬ
 STOP THE PAYLOAD	ОСТАНОВИТЕ ВАГОНЕТКУ
 STOPPING SPEED	СКОРОСТЬ ОСТАНОВКИ
@@ -2668,10 +2700,10 @@ SURE? QUIT	ТОЧНО? ВЫЙТИ
 SURF	СЁРФ
 SURFACES	ПОВЕРХНОСТИ
 SW	SW
-SWAP	ПОМЕНЯТЬ
-SWAP FIRE	ПОМЕНЯТЬ ОГОНЬ
+SWAP	СМЕНА
+SWAP FIRE	СМЕНА ОГНЯ
 SYRINGE	ШПРИЦ
-SYSTEM DEFAULT	СИСТЕМНЫЙ ПО УМОЛЧАНИЮ
+SYSTEM DEFAULT	СИСТЕМНЫЙ
 SYSTEM LINE COLOR	ЦВЕТ СИСТЕМНЫХ СТРОК
 SYSTEM MESSAGES	СИСТЕМНЫЕ СООБЩЕНИЯ
 SYSTEM MESSAGES: ALL	СИСТЕМНЫЕ СООБЩЕНИЯ: ВСЕ
@@ -2679,32 +2711,34 @@ SYSTEM MESSAGES: IMPORTANT	СИСТЕМНЫЕ СООБЩЕНИЯ: ВАЖНЫЕ
 SYSTEM MESSAGES: OFF	СИСТЕМНЫЕ СООБЩЕНИЯ: ВЫКЛ
 SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)	СИСТЕМНЫЙ: СТРЕЛКА ВАШЕЙ ОС (ЦВЕТ: ТОЛЬКО НАШ)
 Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).	Настройки > УПРАВЛЕНИЕ позволяют экспортировать свои бинды и импортировать чужие (копировать / вставить текст).
+Start the match, change map / mode, ranked on / off, edit the map together, bots on. A majority of the human players decides.	Начать матч, сменить карту / режим, рейтинг вкл / выкл, редактировать карту вместе, включить ботов. Решает большинство живых игроков.
 Style, length, thickness, gap, colour and outline, with a live preview.	Стиль, длина, толщина, зазор, цвет и контур, с живым превью.
+Super dash: look down and dash into the floor while holding jump: you leave 5 m/s faster than you went into the dash (at least 11, at most 36 m/s), with a hop that gets higher the further down you look (it leaves you 1 dash).	Суперрывок: посмотрите вниз и сделайте рывок в пол, удерживая прыжок: вы выходите на 5 м/с быстрее, чем вошли в рывок (минимум 11, максимум 36 м/с), с подскоком тем выше, чем ниже вы смотрите (остаётся 1 рывок).
 Switching weapons with fire held doesn't fire the new one: let go and press again.	Смена оружия с зажатым огнём не стреляет из нового: отпустите и нажмите снова.
 TAB	TAB
 TAB (NEXT ELEMENT)	TAB (СЛЕД. ЭЛЕМЕНТ)
 TAB - scoreboard.   ENTER - chat.   F1 / F2 - vote yes / no.   F5 - vote to start the match.	TAB - таблица счёта.   ENTER - чат.   F1 / F2 - голос за / против.   F5 - голос за старт матча.
 TAB completes   UP/DOWN history   CTRL+V pastes   CTRL+C copies the line (empty line or CTRL+SHIFT+C: the log)	TAB дополняет   ВВЕРХ/ВНИЗ история   CTRL+V вставка   CTRL+C копирует строку (пустая строка или CTRL+SHIFT+C: лог)
-TAG	САЛКИ
+TAG	САЛК.
 TAG - whoever is the TAGGER when the timer runs out is eliminated. Last one standing wins.	САЛКИ - тот, кто ВОДЯЩИЙ, когда таймер истекает, выбывает. Побеждает последний оставшийся.
 TAG COLOR	ЦВЕТ ТАБЛИЧКИ
-TAG OPACITY	ПРОЗРАЧН. ТАБЛИЧКИ
-TAG SIZE	РАЗМЕР ТАБЛИЧКИ
+TAG OPACITY	ПРОЗР. ТАБЛИЧКИ
+TAG SIZE	РАЗМ. ТАБЛ.
 TAGGER	ВОДЯЩИЙ
 TAGS: CUSTOM	ТАБЛИЧКИ: СВОИ
-TAGS: TEAM	ТАБЛИЧКИ: КОМАНДЫ
+TAGS: TEAM	ТАБЛ.: КОМАНДЫ
 TAGS: WHITE	ТАБЛИЧКИ: БЕЛЫЕ
 TAKE NO DAMAGE	БЕЗ ПОЛУЧЕНИЯ УРОНА
 TAKES ONE; HIDE HUD: THE 3D VIEW ONLY;	СНИМАЕТ ОДИН; СКРЫТЬ HUD: ТОЛЬКО 3D-ВИД;
 TAKES THE SOUND DEVICE FOR LOWER AUDIO LAG	ЗАНИМАЕТ ЗВУКОВОЕ УСТРОЙСТВО РАДИ МЕНЬШЕЙ ЗАДЕРЖКИ
 TANKS	ТАНКИ
-TEAM	КОМАНДА
+TEAM	КОМ.
 TEAM (M)	КОМАНДА (M)
-TEAM A	КОМАНДА A
+TEAM A	КОМ. A
 TEAM A AND B IN THESE, NOT YOURS / THE ENEMY'S	КОМАНДЫ A И B В НИХ, А НЕ ВАША / ВРАЖЕСКАЯ
 TEAM A ATTACKS - TEAM B DEFENDS	КОМАНДА A АТАКУЕТ - КОМАНДА B ЗАЩИЩАЕТСЯ
 TEAM A delivered the payload	КОМАНДА A доставила вагонетку
-TEAM B	КОМАНДА B
+TEAM B	КОМ. B
 TEAM B ATTACKS - TEAM A DEFENDS	КОМАНДА B АТАКУЕТ - КОМАНДА A ЗАЩИЩАЕТСЯ
 TEAM B delivered the payload	КОМАНДА B доставила вагонетку
 TEAM CHAT	КОМАНДНЫЙ ЧАТ
@@ -2721,12 +2755,12 @@ TEAM OUTLINE	КОНТУР КОМАНДЫ
 TEAM OUTLINE:	КОНТУР КОМАНДЫ:
 TEAM PANEL	ПАНЕЛЬ КОМАНДЫ
 TEAM POOL # / #  -  ENEMY # / #	ЗАПАС КОМАНДЫ # / #  -  ВРАГ # / #
-TEAM WIDTH	ШИРИНА КОМАНДЫ
+TEAM WIDTH	ШИРИНА КОМ.
 TEAM, OUTLINE, CROSSHAIR, TRACER AND ROPE COLORS	ЦВЕТА КОМАНДЫ, КОНТУРА, ПРИЦЕЛА, ТРАССЕРА И ТРОСА
 TEAM: ANY TEAM	КОМАНДА: ЛЮБАЯ
 TEAM: RACE	КОМАНДА: ГОНКА
-TEAM: TEAM A	КОМАНДА: КОМАНДА A
-TEAM: TEAM B	КОМАНДА: КОМАНДА B
+TEAM: TEAM A	КОМАНДА: КОМ. A
+TEAM: TEAM B	КОМАНДА: КОМ. B
 TEAMMATE BOTS	БОТЫ-СОЮЗНИКИ
 TEAMMATES ALIVE	СОЮЗНИКОВ ЖИВО
 TEAMMATES' NAMES OVER THEIR HEADS	ИМЕНА СОЮЗНИКОВ НАД ГОЛОВАМИ
@@ -2747,7 +2781,7 @@ TEST plays the map right away; BAKE LIGHT previews the real lighting.	ТЕСТ �
 TESTING BUILD - RANKED NOT RATED (PLAYED, NEVER COUNTED)	ТЕСТОВАЯ СБОРКА - РЕЙТИНГ НЕ ЗАСЧИТЫВАЕТСЯ (ИГРАЕТСЯ, НО НЕ СЧИТАЕТСЯ)
 TEXT	ТЕКСТ
 TEXT AFTER THE LAST RULE	ТЕКСТ ПОСЛЕ ПОСЛЕДНЕГО ПРАВИЛА
-TEXT ALIGN	ВЫРАВНИВАНИЕ ТЕКСТА
+TEXT ALIGN	ВЫРАВН. ТЕКСТА
 TEXT BRIGHTNESS	ЯРКОСТЬ ТЕКСТА
 TEXT OUTLINE	КОНТУР ТЕКСТА
 TEXT SIZE %	РАЗМЕР ТЕКСТА %
@@ -2807,27 +2841,27 @@ TICK: 500 HZ	ТИК: 500 ГЦ
 TICKS + PREDICTION	ТИКИ + ПРЕДСКАЗАНИЕ
 TIEBREAK - ROCK PAPER SCISSORS	ТАЙБРЕЙК - КАМЕНЬ-НОЖНИЦЫ-БУМАГА
 TIERS OFF: ONE HITSOUND FOR EVERY HIT; DUCKING:	УРОВНИ ВЫКЛ: ОДИН ХИТСАУНД НА ЛЮБОЕ ПОПАДАНИЕ; ПРИГЛУШЕНИЕ:
-TILE	ПЛИТКА
+TILE	ПЛИТ.
 TIME	ВРЕМЯ
 TIME / SCORE / ROUNDS: 0 = THE MODE'S DEFAULT	ВРЕМЯ / ОЧКИ / РАУНДЫ: 0 = ПО УМОЛЧАНИЮ РЕЖИМА
-TIME LEFT	ОСТАЛОСЬ ВРЕМЕНИ
+TIME LEFT	ОСТ. ВРЕМЕНИ
 TIME LIMIT (S)	ЛИМИТ ВРЕМЕНИ (С)
 TIME TRIAL	ЗАЕЗД НА ВРЕМЯ
 TIME TRIAL -	ЗАЕЗД НА ВРЕМЯ -
 TIME TRIAL RUNS	ЗАЕЗДЫ НА ВРЕМЯ
-TIME WARNINGS	ПРЕДУПРЕЖДЕНИЯ О ВРЕМЕНИ
-TIME WARNINGS ON SCREEN	ПРЕДУПРЕЖДЕНИЯ О ВРЕМЕНИ НА ЭКРАНЕ
+TIME WARNINGS	ПРЕДУПР. О ВРЕМЕНИ
+TIME WARNINGS ON SCREEN	ПРЕДУПР. О ВРЕМЕНИ НА ЭКРАНЕ
 TIME WARNINGS: + COUNTDOWN	ПРЕДУПРЕЖДЕНИЯ О ВРЕМЕНИ: + ОТСЧЁТ
-TIME WARNINGS: 60 + 30 S	ПРЕДУПРЕЖДЕНИЯ О ВРЕМЕНИ: 60 + 30 С
-TIME WARNINGS: OFF	ПРЕДУПРЕЖДЕНИЯ О ВРЕМЕНИ: ВЫКЛ
+TIME WARNINGS: 60 + 30 S	ПРЕДУПР. О ВРЕМЕНИ: 60 + 30 С
+TIME WARNINGS: OFF	ПРЕДУПР. О ВРЕМЕНИ: ВЫКЛ
 TIMESTAMPS	ОТМЕТКИ ВРЕМЕНИ
 TINY PLAYERS	КРОШЕЧНЫЕ ИГРОКИ
-TITLE	НАЗВАНИЕ
+TITLE	НАЗВ.
 TO SHOW IT AGAIN	ЧТОБЫ ПОКАЗАТЬ СНОВА
 TO SPECTATOR (UNTIL THE NEXT MAP)	В НАБЛЮДАТЕЛИ (ДО СЛЕДУЮЩЕЙ КАРТЫ)
 TO START THE RACE	ЧТОБЫ НАЧАТЬ ГОНКУ
-TO VOTE START	ЧТОБЫ ГОЛОСОВАТЬ ЗА СТАРТ
-TOGGLE CHAT	ПОКАЗАТЬ / СКРЫТЬ ЧАТ
+TO VOTE START	ЗА СТАРТ
+TOGGLE CHAT	ВКЛ/ВЫКЛ ЧАТ
 TOGGLE: PRESS THE SCOREBOARD KEY TO SHOW / HIDE	ПЕРЕКЛЮЧЕНИЕ: КЛАВИША ТАБЛИЦЫ ПОКАЗЫВАЕТ / СКРЫВАЕТ
 TOGGLE: PRESS TO HOOK, PRESS AGAIN TO LET GO	ПЕРЕКЛЮЧЕНИЕ: НАЖМИТЕ - ЗАЦЕП, ЕЩЁ РАЗ - ОТЦЕП
 TOGGLE: PRESS USE TO PLANT / DEFUSE, AGAIN TO STOP	ПЕРЕКЛЮЧЕНИЕ: ИСПОЛЬЗОВАТЬ - ЗАЛОЖИТЬ / ОБЕЗВРЕДИТЬ, ЕЩЁ РАЗ - СТОП
@@ -2865,43 +2899,44 @@ TRIAL MAP	КАРТА ЗАЕЗДА
 TT	TT
 TWO	ДВА
 TYPE TO SEARCH: A NAME OR WHAT IT DOES (CTRL+F)	ВВЕДИТЕ ДЛЯ ПОИСКА: ИМЯ ИЛИ ЧТО ДЕЛАЕТ (CTRL+F)
-TYPING	НАБОР ТЕКСТА
+TYPING	НАБОР
 TYPING SOUNDS	ЗВУКИ НАБОРА
 The server listens on UDP port 27500 (change it under UDP PORT). Quark asks your router to forward it automatically (UPnP); if friends can't connect, forward that UDP port on your router by hand.	Сервер слушает UDP-порт 27500 (меняется в UDP-ПОРТ). Quark просит роутер пробросить его автоматически (UPnP); если друзья не могут подключиться, пробросьте этот UDP-порт на роутере вручную.
 UARK	UARK
 UDP	UDP
 UDP PORT	UDP-ПОРТ
 UHD	UHD
-UI FONT	ШРИФТ ИНТЕРФЕЙСА
+UI FONT	ШРИФТ UI
 ULTRA	УЛЬТРА
 ULTRA SAFETY	ЗАПАС УЛЬТРА
 ULTRA: 0 QUEUED + LATE INPUT SAMPLING	УЛЬТРА: 0 В ОЧЕРЕДИ + ПОЗДНИЙ ОПРОС ВВОДА
-UNBAKE	УБРАТЬ ЗАПЕЧКУ
+UNBAKE	УБР. ЗАПЕЧ.
 UNBOUND	НЕ НАЗНАЧЕНО
 UNCHANGED	БЕЗ ИЗМЕНЕНИЙ
-UNDO	ОТМЕНИТЬ
-UNGROUP	РАЗГРУППИРОВАТЬ
+UNDO	ОТМЕН.
+UNGROUP	РАЗГРУПП.
 UNKNOWN	НЕИЗВЕСТНО
 UNKNOWN SELECTOR '	НЕИЗВЕСТНЫЙ СЕЛЕКТОР '
 UNLIMITED	БЕЗ ЛИМИТА
 UNPLAYED MAPS COUNT AT THEIR DEFAULT TIME	НЕПРОЙДЕННЫЕ КАРТЫ ИДУТ ПО ВРЕМЕНИ ПО УМОЛЧАНИЮ
 UNSTOPPABLE	НЕУДЕРЖИМ
 UP	ВВЕРХ
+UP / DOWN AS A MULTIPLE OF SENSITIVITY	ВВЕРХ / ВНИЗ КАК МНОЖИТЕЛЬ ЧУВСТВИТЕЛЬНОСТИ
 UPLOAD CAP (MBIT/S)	ЛИМИТ ОТДАЧИ (МБИТ/С)
 US	МКС
-USE	ИСПОЛЬЗОВАТЬ
-USE #	ИСПОЛЬЗОВАТЬ #
-USE IT	ИСПОЛЬЗОВАТЬ
+USE	ИСП.
+USE #	ИСП. #
+USE IT	ИСП.
 USE MY OVERRIDES	МОИ ЗАМЕНЫ
-USE: HOLD	ИСПОЛЬЗОВАТЬ: УДЕРЖАНИЕ
-USE: TOGGLE	ИСПОЛЬЗОВАТЬ: ПЕРЕКЛЮЧЕНИЕ
-USED BY: EVERY MODE	ИСПОЛЬЗУЕТСЯ: ВСЕМИ РЕЖИМАМИ
-USED BY: ONLY	ИСПОЛЬЗУЕТСЯ: ТОЛЬКО
+USE: HOLD	ИСП.: УДЕРЖ.
+USE: TOGGLE	ИСП.: ПЕРЕКЛ.
+USED BY: EVERY MODE	ИСП.: ВСЕ РЕЖИМЫ
+USED BY: ONLY	ИСП.: ТОЛЬКО
 USED WHEN SMOOTHING IS CUSTOM	ПРИ СВОЁМ СГЛАЖИВАНИИ
 USERPROFILE	USERPROFILE
-USING YOUR	ИСПОЛЬЗУЕТСЯ ВАШ
-VALUE	ЗНАЧЕНИЕ
-VALUE:	ЗНАЧЕНИЕ:
+USING YOUR	ИСП. ВАШ
+VALUE	ЗНАЧ.
+VALUE:	ЗНАЧ.:
 VAMPIRE	ВАМПИР
 VAMPIRE LASER	ЛАЗЕРНЫЙ ВАМПИР
 VANILLA	ВАНИЛЛА
@@ -2912,8 +2947,8 @@ VERBOSE INFO	ПОДРОБНАЯ ИНФО
 VERBOSE INFO LINES	ПОДРОБНЫЕ ИНФОСТРОКИ
 VERDANA BOLD	VERDANA BOLD
 VERSION	ВЕРСИЯ
-VERTICAL KEYS	ВЕРТИКАЛЬНЫЕ КЛАВИШИ
-VERTICAL SENSITIVITY	ВЕРТИКАЛЬНАЯ ЧУВСТВИТЕЛЬНОСТЬ
+VERTICAL KEYS	ВЕРТИК. КЛАВИШИ
+VERTICAL SENSITIVITY	ВЕРТИК. ЧУВСТВИТЕЛЬНОСТЬ
 VERTICAL: ONE KEY	ВЕРТИКАЛЬ: ОДНА КЛАВИША
 VERTICAL: TWO KEYS	ВЕРТИКАЛЬ: ДВЕ КЛАВИШИ
 VIDEO	ВИДЕО
@@ -2934,25 +2969,25 @@ VOICE:	ГОЛОС:
 VOL DOWN	ГРОМК. -
 VOL UP	ГРОМК. +
 VOLUME	ГРОМКОСТЬ
-VOTE	ГОЛОСОВАТЬ
-VOTE CALLED	ГОЛОСОВАНИЕ НАЧАТО
+VOTE	ГОЛОС
+VOTE CALLED	ГОЛОСОВАНИЕ!
 VOTE NO	ПРОТИВ
 VOTE START	ГОЛОС ЗА СТАРТ
 VOTE YES	ЗА
-VOTE:	ГОЛОСОВАНИЕ:
-VOTE: GAMEMODE	ГОЛОСОВАНИЕ: РЕЖИМ ИГРЫ
-VOTE: KICK A PLAYER	ГОЛОСОВАНИЕ: КИКНУТЬ ИГРОКА
-VOTE: MODIFIERS	ГОЛОСОВАНИЕ: МОДИФИКАТОРЫ
+VOTE:	ГОЛОС:
+VOTE: GAMEMODE	ГОЛОС: РЕЖИМ ИГРЫ
+VOTE: KICK A PLAYER	ГОЛОС: КИКНУТЬ ИГРОКА
+VOTE: MODIFIERS	ГОЛОС: МОДИФИКАТОРЫ
 VOTE: MOVE TO SPECTATOR (UNTIL THE NEXT MAP)	ГОЛОСОВАНИЕ: В НАБЛЮДАТЕЛИ (ДО СЛЕДУЮЩЕЙ КАРТЫ)
-VOTE: PLAY IT	ГОЛОСОВАНИЕ: СЫГРАТЬ
+VOTE: PLAY IT	ГОЛОС: ИГРАТЬ
 VOTE: {}   YES #  NO #  OF #   F1 YES / F2 NO   #s	ГОЛОСОВАНИЕ: {}   ДА #  НЕТ #  ИЗ #   F1 ДА / F2 НЕТ   #с
-VOTED MODIFIERS ON	МОДИФИКАТОРЫ ВКЛЮЧЕНЫ ГОЛОСОВАНИЕМ
-VOTES	ГОЛОСОВАНИЯ
+VOTED MODIFIERS ON	МОДИФИК. ВКЛ. ГОЛОСОМ
+VOTES	ГОЛОСА
 VS	VS
 VS - one life each per round; last team standing wins the round. If nobody makes progress for 30 s, health drains. First to 5 rounds.	VS - одна жизнь на раунд; раунд выигрывает последняя выжившая команда. Если 30 с никто не продвигается, здоровье убывает. До 5 раундов.
 VS: BEST RUN	VS: ЛУЧШИЙ ЗАЕЗД
 VS: BEST SEGMENTS	VS: ЛУЧШИЕ ОТРЕЗКИ
-VS: LAST RUN	VS: ПОСЛЕДНИЙ ЗАЕЗД
+VS: LAST RUN	VS: ПОСЛ. ЗАЕЗД
 VSYNC	VSYNC
 VSYNC / LOW LATENCY	VSYNC / НИЗКАЯ ЗАДЕРЖКА
 VSYNC ON, FPS CAPPED 3 UNDER THE REFRESH	VSYNC ВКЛ, ЛИМИТ FPS НА 3 НИЖЕ ЧАСТОТЫ
@@ -2971,10 +3006,10 @@ WALLBANG	ПРОСТРЕЛ
 WALLBANG TINT	ОТТЕНОК ПРОСТРЕЛА
 WARMING UP	РАЗМИНКА
 WARMUP -	РАЗМИНКА -
-WARMUP - {} TO VOTE START	РАЗМИНКА - {} ЧТОБЫ ГОЛОСОВАТЬ ЗА СТАРТ
-WARNING BEEP	ПРЕДУПРЕДИТЕЛЬНЫЙ ПИСК
+WARMUP - {} TO VOTE START	РАЗМИНКА - {} ЗА СТАРТ
+WARNING BEEP	СИГНАЛ ПРЕДУПР.
 WARNING: DON'T TOUCH THIS UNLESS YOU KNOW WHAT YOU'RE DOING	ВНИМАНИЕ: НЕ ТРОГАЙТЕ, ЕСЛИ НЕ ЗНАЕТЕ, ЧТО ДЕЛАЕТЕ
-WARNINGS	ПРЕДУПРЕЖДЕНИЯ
+WARNINGS	ПРЕДУПР.
 WAS ON	БЫЛ НА
 WASTELAND	ПУСТОШЬ
 WAVE	ВОЛНА
@@ -3016,13 +3051,13 @@ WINDOW SIZE	РАЗМЕР ОКНА
 WINDOW SIZE:	РАЗМЕР ОКНА:
 WINDOWED	В ОКНЕ
 WINDOWS, WITH PRIORITIZE GAME ON;	WINDOWS, С ВКЛЮЧЁННЫМ ПРИОРИТЕТОМ ИГРЕ;
-WINNER STAYS	ПОБЕДИТЕЛЬ ОСТАЁТСЯ
+WINNER STAYS	ПОБЕДИТЕЛЬ ОСТ.
 WINNER STAYS - 1v1 rounds on one ruleset while everyone else waits in line. Each round's winner stays; the loser goes to the back of the line and the next in line plays the winner. Every round you win counts: first to 10 wins.	ПОБЕДИТЕЛЬ ОСТАЁТСЯ - раунды 1v1 по одним правилам, остальные ждут в очереди. Победитель раунда остаётся; проигравший уходит в конец очереди, а следующий играет с победителем. Каждый выигранный раунд засчитывается: до 10 побед.
 WINNER STAYS - FIRST TO	ПОБЕДИТЕЛЬ ОСТАЁТСЯ - ДО
 WINNERS CROWN	КОРОНА ПОБЕДИТЕЛЯ
-WINS	ПОБЕДЫ
+WINS	ПОБЕД.
 WINS THE MATCH	ПОБЕЖДАЕТ В МАТЧЕ
-WIZARD	ВОЛШЕБНИК
+WIZARD	МАГ
 WORD FILTER	ФИЛЬТР СЛОВ
 WORK SANS	WORK SANS
 WORLD	МИР
@@ -3037,7 +3072,7 @@ X SENSITIVITY WHILE THIS WEAPON IS HELD	ЧУВСТВИТЕЛЬНОСТЬ X С Э
 X1.00: THE SAME FEEL AS UNZOOMED	X1.00: ТО ЖЕ ОЩУЩЕНИЕ, ЧТО БЕЗ ЗУМА
 XYZ	XYZ
 Y OFFSET	СМЕЩЕНИЕ Y
-YAW	РЫСКАНИЕ
+YAW	РЫСК.
 YELLOW	ЖЁЛТЫЙ
 YES	ДА
 YES #  NO #  OF #   F1 YES / F2 NO   #s	ЗА #  ПРОТИВ #  ИЗ #   F1 ЗА / F2 ПРОТИВ   #с
@@ -3068,12 +3103,14 @@ YOUR SHOTS: ALWAYS	ВАШИ ВЫСТРЕЛЫ: ВСЕГДА
 YOUR SHOTS: NEVER	ВАШИ ВЫСТРЕЛЫ: НИКОГДА
 YOUR SHOTS: WITH WEAPON MODEL	ВАШИ ВЫСТРЕЛЫ: С МОДЕЛЬЮ ОРУЖИЯ
 YOUR TEAM IS PUSHING	ВАША КОМАНДА ТОЛКАЕТ
+You run at 9.5 m/s. In the air, holding a direction drifts you up to run speed (a standing jump moves too).	Вы бегаете со скоростью 9.5 м/с. В воздухе удерживаемое направление разгоняет вас до скорости бега (прыжок с места тоже движется).
+You step up anything 0.55 m high, including stairs mid-jump. Ladders: walk into them, look up or down to climb (6.75 m/s).	Вы поднимаетесь на всё высотой до 0.55 м, включая ступени в прыжке. Лестницы: подойдите вплотную, смотрите вверх или вниз, чтобы лезть (6.75 м/с).
 ZERO-G FLIGHT, LASERS - HEAL 100% TO 50% OVER 30 S, NO KNOCKBACK	НЕВЕСОМОСТЬ, ЛАЗЕРЫ - ЛЕЧЕНИЕ ОТ 100% ДО 50% ЗА 30 С, БЕЗ ОТБРАСЫВАНИЯ
 ZOMBIE	ЗОМБИ
 ZONE OPACITY	ПРОЗРАЧН. ЗОНЫ
 ZONE PULSE	ПУЛЬС ЗОНЫ
 ZOOM	ЗУМ
-ZOOM SENSITIVITY	ЧУВСТВИТЕЛЬНОСТЬ ПРИ ЗУМЕ
+ZOOM SENSITIVITY	ЧУВСТВ. ПРИ ЗУМЕ
 a caption for every announcer line	субтитры для каждой фразы комментатора
 a colour per material from ice on (a large one: its base's), then the see-through, breakable and feature ones	цвет для каждого материала начиная со льда (крупные: как у основы), затем прозрачные, разрушаемые и особые
 a damaged PAK	повреждённый PAK
@@ -3134,6 +3171,7 @@ bench:	бенч:
 big noodle*	big noodle*
 bignoodletitling*	bignoodletitling*
 bignoodletoo*	bignoodletoo*
+bind <key> <commands>   a key runs console lines (';' between)   unbind <key>   binds	bind <клавиша> <команды>   клавиша выполняет строки консоли (';' между ними)   unbind <клавиша>   binds
 bomb defused	бомба обезврежена
 bomb exploded	бомба взорвалась
 bomb planted	бомба заложена
@@ -3166,6 +3204,7 @@ callvote ranked on	callvote ranked on
 callvote restart	callvote restart
 callvote shuffle	callvote shuffle
 callvote spec	callvote spec
+callvote spec <name or id> (status lists them)	callvote spec <имя или id> (список в status)
 callvote start	callvote start
 callvote tmaps	callvote tmaps
 callvote tmodes	callvote tmodes
@@ -3193,7 +3232,9 @@ could not create an OpenGL 3.3 window - update your graphics driver	не уда�
 could not host:	не удалось запустить хост:
 could not open	не удалось открыть
 could not open log file	не удалось открыть файл лога
+could not save maps/	не удалось сохранить maps/
 could not save the map	не удалось сохранить карту
+could not write maps/	не удалось записать maps/
 could not write to the groups folder	не удалось записать в папку groups
 couldn't check reachability:	не удалось проверить доступность:
 custom mode rules too big to send with the weapon set: sent without it	правила своего режима слишком велики для отправки с набором оружия: отправлены без него
@@ -3206,8 +3247,10 @@ demo finished	демо окончено
 demo:	демо:
 draw - the payload is in the middle	ничья - вагонетка посередине
 dropped:	выбыл:
+duelUsed_ is a 32-bit mask	duelUsed_ is a 32-bit mask
 dyn verts	dyn verts
 dynamic pass	динамический проход
+e.g.  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5	напр.  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5
 edcam # # #	edcam # # #
 edit #	правка #
 edit mode on	режим правки вкл
@@ -3276,6 +3319,8 @@ isn't in this custom mode's map pool	нет в пуле карт этого св
 joined team A	вступил в команду A
 joined team B	вступил в команду B
 joined the game	вошёл в игру
+kElemNames follows Settings::HUD_*	kElemNames follows Settings::HUD_*
+kbps (# packets/s), download # kbps (#/s)	кбит/с (# пакетов/с), загрузка # кбит/с (#/с)
 kick whom? a name or an id (status lists them)	кого кикнуть? имя или id (список в status)
 kicked by a vote	кикнут голосованием
 language:	language:
@@ -3299,6 +3344,7 @@ map editing	правка карты
 map editing -	правка карты -
 map editing - everyone can build; changes last until the map changes	правка карты - строить могут все; правки действуют до смены карты
 map editing - everyone can build; the host saves	правка карты - строить могут все; сохраняет хост
+map name: letters, digits, - and _ only (not a device name like con)	имя карты: только буквы, цифры, - и _ (не имя устройства вроде con)
 map not found	карта не найдена
 map saved as	карта сохранена как
 map test	тест карты
@@ -3322,13 +3368,17 @@ model name	имя модели
 mul must be 3 numbers from 0 to 16	mul - это 3 числа от 0 до 16
 must beat it	нужно побить
 my mode	мой режим
+name: letters, digits, - and _ only (not a device name like con)	имя: только буквы, цифры, - и _ (не имя устройства вроде con)
 net poll	опрос сети
 no IAudioClient3, before Windows 10	нет IAudioClient3, до Windows 10
+no aliases - alias <name> <commands>	нет алиасов - alias <имя> <команды>
 no bots on a ranked server	на рейтинговом сервере нет ботов
 no boxes	нет блоков
+no command binds - bind <key> <commands>	нет биндов команд - bind <клавиша> <команды>
 no hiders left	прячущихся не осталось
 no key called '	нет клавиши '
 no map editing on a ranked server (vote ranked off first)	на рейтинговом сервере нельзя править карту (сначала отключите рейтинг голосованием)
+no maps found in maps/	в maps/ нет карт
 no mix format	нет формата микса
 no mode can run on this map yet	на этой карте пока не работает ни один режим
 no modifiers on a ranked or time trial server	на рейтинговом сервере и в заезде на время нет модификаторов
@@ -3341,6 +3391,7 @@ nobody finished	никто не финишировал
 nobody is out - throw again	никто не выбыл - бросайте снова
 nobody left	никого не осталось
 not a 16 x 16 character sheet	не таблица символов 16 x 16
+not a TrueType / OpenType font	не шрифт TrueType / OpenType
 not a WAV, OGG, FLAC or MP3 file	не файл WAV, OGG, FLAC или MP3
 not a file name	не имя файла
 not a font file	не файл шрифта
@@ -3414,6 +3465,7 @@ proj # type # owner # pos # # # vel # # #	proj # type # owner # pos # # # vel # 
 proj # type # owner # pos # # # vel # # #{}	proj # type # owner # pos # # # vel # # #{}
 properties background, color, opacity, border, radius, padding, margin, gap, font-size,	properties background, color, opacity, border, radius, padding, margin, gap, font-size,
 puts every built-in map back to its original version and removes retired ones (your own maps are kept) - click again	возвращает все встроенные карты к исходной версии и удаляет снятые (ваши карты остаются) - кликните ещё раз
+quark --bake-maps <dir>	quark --bake-maps <dir>
 quark server	сервер quark
 quark server log, level	лог сервера quark, уровень
 quark server log, level {}, version {}	quark server log, level {}, version {}
@@ -3437,6 +3489,7 @@ ranked off - matches aren't rated	рейтинг выкл - матчи не за
 ranked on	рейтинг вкл
 ranked on -	рейтинг вкл -
 ranked only runs on the ranked maps for its ladder	рейтинг работает только на рейтинговых картах своей таблицы
+ranked server: a ranked map for the ladder (vanilla / vampire 1v1, instagib free for all), or vote ranked off	рейтинговый сервер: рейтинговая карта для ладдера (vanilla / vampire 1v1, instagib каждый сам за себя) или голосуйте за отключение рейтинга
 ranked server: no	рейтинговый сервер: нет
 ranked ticket	рейтинговый билет
 ranked ticket {} players {}	ranked ticket {} players {}
@@ -3478,6 +3531,7 @@ screenshot written to {}	screenshot written to {}
 see-through pass	прозрачный проход
 select a box, look at one of its sides and press K	выберите блок, посмотрите на одну из сторон и нажмите K
 select a group to export	выберите группу для экспорта
+select boxes / groups (shift+click to add more)	выберите блоки / группы (shift+клик добавляет)
 select boxes first	сначала выберите блоки
 select the cutter first, then shift+click the boxes to cut	сначала выберите резак, затем shift+клик по блокам для разрезания
 select two or more boxes (shift+click) to combine	выберите два или больше блока (shift+клик) для объединения
@@ -3497,13 +3551,16 @@ server version	версия сервера
 server, sharing	сервер, делит
 setup:	конфигурация:
 shader:	шейдер:
+shadow / visOnly / crouch must be true or false	shadow / visOnly / crouch должны быть true или false
 shadow pass	проход теней
 shipped:	поставлено:
 short-handed: # playing	в меньшинстве: играет #
+size # # #	size # # #
 slopes can't be coated: pick a box	склоны нельзя покрыть: выберите блок
 slopes can't be cut: pick plain boxes	склоны нельзя резать: выберите обычные блоки
 slopes can't be split: pick plain boxes	склоны нельзя разделить: выберите обычные блоки
 slot bracket	место в сетке
+snapshots #/s{}, stalls #% (over # ms late)	снапшоты #/с{}, зависания #% (опоздание больше # мс)
 stalemate - health draining	пат - здоровье убывает
 static boxes	статичные блоки
 static boxes pass	проход статичных блоков

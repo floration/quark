@@ -17,7 +17,8 @@ NUM = re.compile(r'%[-+ 0#]*\d*(?:\.\d+)?(?:l|ll|z|h)?[diufgeExX]')
 
 def keyish(s):
     if len(s) < 2 or not re.search(r"[A-Za-z]{2}", s): return False
-    if re.search(r'[\\/_=<>{}\[\]|@`~^]', s) and not re.search(r"[A-Z]{3}.*[/]", s): return False
+    sentence = len(re.findall(r"[A-Za-z]{2,}", s)) >= 4 and " " in s and not re.search(r"[\\{}\[\]|@`~^=]", s)
+    if re.search(r'[\\/_=<>{}\[\]|@`~^]', s) and not re.search(r"[A-Z]{3}.*[/]", s) and not sentence: return False
     if re.fullmatch(r"[a-z0-9_.\-]+", s): return False          # (identifiers, file names, config keys)
     if re.fullmatch(r"[a-z]+[A-Z][A-Za-z0-9]*", s): return False   # (camelCase names)
     if not re.match(r"[A-Za-z0-9(\"'#%+\-]", s): return False   # (a fragment: ") - ...", ", mode")
@@ -40,7 +41,9 @@ def main():
         text = re.sub(r"R\"[A-Za-z]*\(.*?\)[A-Za-z]*\"", "", text, flags=re.S)   # (raw strings: shaders)
         for m in LIT.finditer(text):
             s = bytes(m.group(1), "utf-8").decode("unicode_escape", errors="replace") if "\\" in m.group(1) else m.group(1)
-            for part in s.split("%s"):
+            pieces = s.split("%s") + (s.split("\n") if "\n" in s else [])   # (a multi-line literal: each line too)
+            for part in pieces:
+                if "%s" in part: continue   # (a line of a multi-line literal with %s in it: its pieces cover it)
                 part = NUM.sub("#", part).replace("%%", "%")
                 part = part.strip()
                 if keyish(part) and "\n" not in part: keys.add(part)

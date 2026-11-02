@@ -7,12 +7,16 @@
 # CONTROL PROFILES	# 操作プロファイル
 # CUSTOM MODES	# カスタムモード
 # DB	# DB
+# DEFAULT KEYS (Settings > CONTROLS to change any of them, two keys per action)	# デフォルトキー (設定 > 操作設定 で変更可、1アクションにつき2キー)
 # DEG	# 度
 # DUELS	# デュエル
 # EVERYONE FOR THEMSELVES	# 個人戦
+# HOST A GAME (main menu > HOST GAME)	# ゲームをホスト (メインメニュー > ゲームをホスト)
 # HP	# HP
+# HUD LAYOUT (Settings > HUD LAYOUT)	# HUDレイアウト (設定 > HUDレイアウト)
 # HZ (AVG)	# HZ (平均)
 # IN GAME (ESC as host)	# ゲーム中 (ホストはESC)
+# JOIN A GAME (main menu > JOIN GAME)	# ゲームに参加 (メインメニュー > ゲームに参加)
 # MAPS AND MODES	# マップとモード
 # MB	# MB
 # MOVEMENT	# 移動
@@ -21,6 +25,7 @@
 # RANKED	# ランク
 # SETTINGS (main menu, or ESC in game)	# 設定 (メインメニュー、またはゲーム中にESC)
 # TEAM MODES	# チームモード
+# THE MAP EDITOR (main menu > MAP EDITOR)	# マップエディター (メインメニュー > マップエディター)
 # THE MAPS AND WHAT THEY'RE BUILT FOR	# マップと対応モード
 # US	# US
 # VOTES (ESC > VOTE, then F1 yes / F2 no)	# 投票 (ESC > 投票、F1 賛成 / F2 反対)
@@ -28,13 +33,16 @@
 # YOUR OWN MAPS	# 自作マップ
 # date,	# date,
 # demo,	# demo,
+# frames,#	# frames,#
 # label,	# label,
 # map,	# map,
 # maps, # s, # threads	# マップ、# 秒、# スレッド
 # maps, # s, # threads{}	# maps, # s, # threads{}
 # of # players losing snapshots (worst #%)	#/# 人がスナップショットを損失 (最大 #%)
 # quark benchmark	# quark benchmark
+# quark benchmark 1	# quark benchmark 1
 # quark controls profile	# quark controls profile
+# seconds,#	# seconds,#
 # setup:	# setup:
 # setup:{},{}	# setup:{},{}
 # uploaded,#	# アップロード済み,#
@@ -161,6 +169,7 @@ ACCENT	アクセント
 ACCENT COLOR	アクセントカラー
 ACCESSIBILITY	アクセシビリティ
 ACCURACY	命中率
+ACE	ACE
 ADAPTIVE	アダプティブ
 ADD (AT THE SCREEN CENTER)	追加 (画面中央)
 ADD BOT	ボット追加
@@ -169,6 +178,7 @@ ADD: boxes (base / accent / wallbang: bullets go through wallbangs for half dama
 ADDRESS	アドレス
 ADDRESS (IP:PORT)	アドレス (IP:ポート)
 ADVANCED	上級
+ADVANCED > BOT BRAIN: what your bots play: the built-in brain, or a .qbrain file from the bots folder in your data folder. A file that doesn't compile shows its error line and the bots play the built-in brain. Never in ranked.	上級 > ボットAI: ボットの戦い方: 内蔵AI、またはデータフォルダ内の bots フォルダにある .qbrain ファイル。コンパイルできないファイルはエラー行を表示し、ボットは内蔵AIで戦います。ランクでは使われません。
 AGAIN (R)	もう一度 (R)
 AHEAD	リード
 AIM TRAINER	エイムトレーナー
@@ -272,6 +282,7 @@ BAKES,	ベイク、
 BAKING LIGHT -	ライトをベイク中 -
 BALANCE BOT SKILL	ボットの強さを調整
 BALANCE BOTS	ボットで人数調整
+BALANCE BOTS evens out uneven teams with bots. MODE > RANKED runs rated 1v1 on the ranked maps (no bots). SERVER LOG keeps a log of the match.	ボットで人数調整 は人数の偏ったチームをボットで埋めます。モード > ランク はランクマップでレート戦の1v1を行います (ボットなし)。サーバーログ は試合のログを残します。
 BALL	ボール
 BALL - SHOOT, BLAST OR RUN THE BALL INTO THE ENEMY GOAL - MOST GOALS WINS	ボール - ボールを撃つ・爆風・運ぶで敵ゴールへ - 最多ゴールで勝利
 BANDIT	バンディット
@@ -316,6 +327,7 @@ BIND FLY KEYS	飛行キーを割り当て
 BIND HIDE HUD ON CONTROLS	操作設定でHUD非表示を割り当て
 BLACK	黒
 BLADES	ブレード
+BLAZE	BLAZE
 BLEND	ブレンド
 BLUE / ORANGE	青 / オレンジ
 BLUE-YELLOW (TRITAN)	青-黄 (第三色覚)
@@ -464,6 +476,7 @@ COLUMN: OBJ	列: OBJ
 COLUMN: PING	列: PING
 COLUMN: TOTAL K / D	列: 合計 K / D
 COMBINE	結合
+COMET	COMET
 COMPASS	コンパス
 COMPASS + RADAR	コンパス + レーダー
 COMPETITIVE: NO FOG OR SHADOWS, FEWER EFFECTS;	競技: 霧と影なし、エフェクト削減;
@@ -630,6 +643,7 @@ DEMO - ESC TO STOP	デモ - ESCで停止
 DEMO RATE	デモレート
 DEMO RATE: 62.5 HZ	デモレート: 62.5 HZ
 DEMO RATE: FULL	デモレート: フル
+DEMO SAVED - MAIN MENU > DEMOS	デモを保存しました - メインメニュー > デモ
 DEMOS	デモ
 DEPTH	奥行き
 DESC	降順
@@ -683,12 +697,14 @@ DUCKING	ダッキング
 DUEL	デュエル
 DUEL - 1v1 (or 2v2): every life has a random modifier (low gravity, giants, rockets only...). First to 11.	デュエル - 1v1 (または2v2): ライフごとにランダムな修正 (低重力、巨人、ロケットのみ...)。11本先取。
 DUPLICATE	複製
+DUSK	DUSK
 DXGI PRESENT	DXGI PRESENT
 DXGI PRESENT: WINDOWS ONLY	DXGI PRESENT: WINDOWSのみ
 DYNAMIC RANGE	ダイナミックレンジ
 DYNAMIC RANGE: CLEAN	ダイナミックレンジ: クリーン
 DYNAMIC RANGE: NIGHT	ダイナミックレンジ: ナイト
 DYNAMIC RANGE: NORMAL	ダイナミックレンジ: 通常
+Dash into a wall head-on (under 45 degrees) and you bounce off it at 16 m/s (it leaves you 1 dash).	壁に正面から (45度未満で) ダッシュすると 16 m/s で跳ね返ります (ダッシュが1回残ります)。
 Dash jump: jump while dashing along the floor to keep the dash's full speed through the jump (it leaves you both dashes).	ダッシュジャンプ: 床をダッシュ中にジャンプするとダッシュの速度を維持したまま跳べます (ダッシュは両方残ります)。
 Decl: no padding (its words are hashed)	Decl: パディングなし (ワードはハッシュ化)
 Display: window mode, vsync, low latency mode, frame cap, player shadows, brightness, anti-aliasing and interpolation. Lower latency settings cost smoothness: the notes under them say how.	ディスプレイ: ウィンドウモード、垂直同期、低遅延モード、フレーム上限、プレイヤーの影、明るさ、アンチエイリアス、補間。低遅延設定は滑らかさを犠牲にします: 詳細は各項目の説明を参照。
@@ -776,6 +792,7 @@ EXPORT CSV	CSVエクスポート
 EXPORT GROUP	グループをエクスポート
 EXPORT PNG	PNGエクスポート
 EZRA	EZRA
+Each dash leaves you 1 m/s faster than you went in (at least 11, at most 32 m/s).	ダッシュごとに入る前より 1 m/s 速く抜けます (最低 11、最大 32 m/s)。
 Each map is built for one mode, plus free for all and any others it lists. You can still start any map in any mode: the menus warn when it isn't built for it (it may be missing spawns or objectives).	各マップは1つのモード用に作られ、個人戦と記載された他モードにも対応します。どのマップもどのモードで開始できますが、非対応の場合はメニューで警告されます (スポーンや目標がない場合があります)。
 F3 - performance overlay (average, 1% and 0.1% low FPS, input latency).   F12 - screenshot.   ESC - menu, votes, settings.	F3 - パフォーマンス表示 (平均、1% / 0.1% LOW FPS、入力遅延)。   F12 - スクリーンショット。   ESC - メニュー、投票、設定。
 F3 COLORBLIND COLORS	F3 色覚補正カラー
@@ -943,6 +960,7 @@ GUN: TEAM	武器: チーム
 GUNFIRE	銃声
 GUS	GUS
 Game::frame	Game::frame
+Game::testHeld_ holds a bit per action	Game::testHeld_ holds a bit per action
 HALFTIME - SIDES SWITCHED	ハーフタイム - 攻守交代
 HALFTIME - SIDES SWITCHED: YOU ATTACK NOW	ハーフタイム - 攻守交代: 攻撃側へ
 HALFTIME - SIDES SWITCHED: YOU DEFEND NOW	ハーフタイム - 攻守交代: 防衛側へ
@@ -1025,6 +1043,7 @@ HP	HP
 HUD	HUD
 HUD & SETTINGS	HUD & 設定
 HUD 2	HUD 2
+HUD > VERBOSE INFO TURNS THE BLOCK ON	HUD > 詳細情報 でこのブロックを表示
 HUD COLORS	HUDカラー
 HUD DRAW	HUD描画
 HUD EDIT ELEMENT	HUD要素を編集
@@ -1037,6 +1056,7 @@ HZ	HZ
 HZ  LOSS	HZ  ロス
 HZ (NOT ON THIS MONITOR)	HZ (このモニターでは不可)
 Hold the RIGHT MOUSE button to look around; W A S D to fly, SPACE / C up and down, SHIFT faster, the wheel sets the speed.	右クリック長押しで視点移動; W A S D で飛行、SPACE / C で上下、SHIFTで高速、ホイールで速度設定。
+Host Game > CUSTOM MODE > NEW: any base mode with your own health, gravity, speed, jump, knockback, weapons (fire rate, damage, projectile speed) and map pool. Players who join get the rules automatically.	ゲームをホスト > カスタムモード > 新規: 任意のベースモードに、体力、重力、速度、ジャンプ、ノックバック、武器 (連射速度、ダメージ、弾速) とマッププールを自由に設定。参加したプレイヤーには自動でルールが届きます。
 Hz	Hz
 Hz cap applies at the next break	Hz上限は次の休憩時に適用
 ICON	アイコン
@@ -1074,6 +1094,8 @@ INDUSTRIAL	インダストリアル
 INFO	情報
 INFO LINES	情報行
 INPUT	入力
+INPUT->FRAME AVG #MS  MIN #MS  99% #MS	INPUT->FRAME 平均 #MS  最小 #MS  99% #MS
+INPUT->FRAME: MOVE THE MOUSE	INPUT->FRAME: マウスを動かしてください
 INSERT	INSERT
 INSTAGIB	インスタギブ
 INSTAGIB CROSSBOWS	インスタギブ クロスボウ
@@ -1141,6 +1163,7 @@ KILL FEED SECONDS	キルフィード表示秒数
 KILL MARK	キルマーク
 KILL SOUND	キル音
 KILL TEXT	キルテキスト
+KILL TEXT: "KILLED <NAME>" OVER THE CROSSHAIR	キルテキスト: クロスヘアの上に "<名前> をキル"
 KILLED	キル
 KILLED BY	キルされた相手:
 KILLING SPREE	キリングスプリー
@@ -1161,6 +1184,7 @@ LABEL	ラベル
 LADDER	はしご
 LADDER CLIMB SPEED	はしご登り速度
 LADDER SIDE SPEED	はしご横移動速度
+LADDERS (1V1, INSTAGIB FFA) - DEFAULT MODEL, HUD, CONTROLS >	ラダー (1V1、インスタギブFFA) - デフォルトモデル、HUD、操作設定 >
 LAND	着地
 LANGUAGE	言語
 LARGE	大
@@ -1192,6 +1216,7 @@ LEFT ARROW (PREVIOUS PAGE)	左矢印 (前のページ)
 LEFT MOUSE - fire.   RIGHT MOUSE - alt-fire (scope, knife throw, rocket lob, bubble stream, syringe throw...).	左クリック - 射撃。   右クリック - サブ射撃 (スコープ、ナイフ投げ、ロケット曲射、バブル放射、注射器投げ...)。
 LEFT: THE GUN ON THE LEFT, THE GRAPPLE	左: 武器を左に、グラップルを
 LEGACY MAPS	レガシーマップ
+LEGACY MAPS (settings > GAMEPLAY) lists the old maps from before 1.19.6 too. They are never ranked.	レガシーマップ (設定 > ゲームプレイ) で 1.19.6 以前の旧マップも表示します。ランクには使われません。
 LENA	LENA
 LENGTH	長さ
 LET	LET
@@ -1954,6 +1979,8 @@ MY SKY / GLOW: THESE IN PLACE OF EVERY MAP'S;	自分の空 / グロー: 全マ�
 MY TRACER	自分の弾道
 Model	モデル
 ModelOverrides holds kMaxModelsPerKind models of a kind	ModelOverrides holds kMaxModelsPerKind models of a kind
+N/A HERE: LATENT SYNC IS WINDOWS ONLY	ここでは使用不可: LATENT SYNC は WINDOWS のみ
+N/A HERE: WINDOWS + NVIDIA ONLY	ここでは使用不可: WINDOWS + NVIDIA のみ
 NAME	名前
 NAME COLOR	名前の色
 NAME COLORS	名前の色
@@ -2001,6 +2028,7 @@ NOBODY RANKED YET (3 GAMES)	ランク入りはまだいません (3試合)
 NONE	なし
 NONE YET	まだなし
 NONE YET - EXPORT ONE, OR COPY A GROUP AND IMPORT	まだなし - エクスポートするか、グループをコピーしてインポート
+NONE YET - IN A GAME, ESC > RECORD DEMO	まだありません - ゲーム中に ESC > デモを録画
 NOOR	NOOR
 NORMAL	通常
 NOT A GROUP - MAKE IT A GROUP FIRST?	グループではありません - 先にグループ化しますか?
@@ -2157,6 +2185,7 @@ PLAY VS BOTS	ボット戦
 PLAYABLE AS:	プレイ可能:
 PLAYER	プレイヤー
 PLAYER 2	プレイヤー 2
+PLAYER > MORE SETS THE MENU ACCENT	プレイヤー > 詳細 でメニューのアクセントを設定
 PLAYER BASED	プレイヤーベース
 PLAYER BRIGHTNESS	プレイヤーの明るさ
 PLAYER JOINS	プレイヤー参加
@@ -2296,6 +2325,8 @@ RECONNECT	再接続
 RECORD	録画
 RECORD DEMO	デモを録画
 RECORDED WITH	録画:
+RECORDING DEMO (62.5 HZ) - ESC > STOP RECORDING	デモを録画中 (62.5 HZ) - ESC > 録画を停止
+RECORDING DEMO (FULL RATE) - ESC > STOP RECORDING	デモを録画中 (フルレート) - ESC > 録画を停止
 RECORDING RATE: 62.5 HZ	録画レート: 62.5 HZ
 RECORDING RATE: FULL	録画レート: フル
 RED	赤
@@ -2502,6 +2533,7 @@ SHOW PING	PING表示
 SHOW WEAPON	武器を表示
 SHOWN	表示中
 SHOWN WITH VERBOSE INFO ON. DRAG TO MOVE, CORNER / WHEEL TO SIZE, ARROWS NUDGE, ALT: NO SNAP	詳細情報オン時に表示。ドラッグで移動、角 / ホイールでサイズ、矢印で微調整、ALT: スナップなし
+SHOWS INPUT->FRAME LATENCY	INPUT->FRAME の遅延を表示
 SHUFFLE TEAMS	チームをシャッフル
 SHUFFLE THE TEAMS (THE MATCH RESTARTS)	チームをシャッフル (試合はリスタート)
 SIMPLE	シンプル
@@ -2679,7 +2711,9 @@ SYSTEM MESSAGES: IMPORTANT	システムメッセージ: 重要のみ
 SYSTEM MESSAGES: OFF	システムメッセージ: オフ
 SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)	システム: OSの矢印 (色: 独自のみ)
 Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).	設定 > 操作設定 でキー割り当てをエクスポートしたり、他人のものをインポートできます (テキストをコピー / 貼り付け)。
+Start the match, change map / mode, ranked on / off, edit the map together, bots on. A majority of the human players decides.	試合開始、マップ / モード変更、ランクのオン / オフ、マップの共同編集、ボットのオン。人間プレイヤーの過半数で決定します。
 Style, length, thickness, gap, colour and outline, with a live preview.	スタイル、長さ、太さ、間隔、色、輪郭をライブプレビューで調整。
+Super dash: look down and dash into the floor while holding jump: you leave 5 m/s faster than you went into the dash (at least 11, at most 36 m/s), with a hop that gets higher the further down you look (it leaves you 1 dash).	スーパーダッシュ: ジャンプを押しながら下を向いて床へダッシュ: ダッシュに入る前より 5 m/s 速く抜け (最低 11、最大 36 m/s)、下を向くほど高く跳ねます (ダッシュが1回残ります)。
 Switching weapons with fire held doesn't fire the new one: let go and press again.	射撃を押したまま武器を切り替えても新しい武器は撃ちません: 一度離して押し直してください。
 TAB	TAB
 TAB (NEXT ELEMENT)	TAB (次の要素)
@@ -2887,6 +2921,7 @@ UNLIMITED	無制限
 UNPLAYED MAPS COUNT AT THEIR DEFAULT TIME	未プレイのマップはデフォルトタイムで計算
 UNSTOPPABLE	アンストッパブル
 UP	上
+UP / DOWN AS A MULTIPLE OF SENSITIVITY	上 / 下 を感度の倍率で
 UPLOAD CAP (MBIT/S)	アップロード上限 (MBIT/S)
 US	US
 USE	使用
@@ -3068,6 +3103,8 @@ YOUR SHOTS: ALWAYS	自分の弾: 常に
 YOUR SHOTS: NEVER	自分の弾: 表示しない
 YOUR SHOTS: WITH WEAPON MODEL	自分の弾: 武器モデル表示時
 YOUR TEAM IS PUSHING	味方が押し進めている
+You run at 9.5 m/s. In the air, holding a direction drifts you up to run speed (a standing jump moves too).	走る速さは 9.5 m/s。空中では方向キーを押し続けると走る速さまで流れます (その場ジャンプでも動きます)。
+You step up anything 0.55 m high, including stairs mid-jump. Ladders: walk into them, look up or down to climb (6.75 m/s).	高さ 0.55 m までなら何でも段差として上れます (ジャンプ中の階段も)。はしご: 向かって歩き、上か下を見て登ります (6.75 m/s)。
 ZERO-G FLIGHT, LASERS - HEAL 100% TO 50% OVER 30 S, NO KNOCKBACK	無重力飛行、レーザー - 30秒で100%から50%に回復、ノックバックなし
 ZOMBIE	ゾンビ
 ZONE OPACITY	ゾーンの不透明度
@@ -3134,6 +3171,7 @@ bench:	bench:
 big noodle*	big noodle*
 bignoodletitling*	bignoodletitling*
 bignoodletoo*	bignoodletoo*
+bind <key> <commands>   a key runs console lines (';' between)   unbind <key>   binds	bind <キー> <コマンド>   キーでコンソール行を実行 (';' で区切る)   unbind <キー>   binds
 bomb defused	爆弾解除
 bomb exploded	爆弾爆発
 bomb planted	爆弾設置
@@ -3166,6 +3204,7 @@ callvote ranked on	callvote ranked on
 callvote restart	callvote restart
 callvote shuffle	callvote shuffle
 callvote spec	callvote spec
+callvote spec <name or id> (status lists them)	callvote spec <名前または id> (status で一覧)
 callvote start	callvote start
 callvote tmaps	callvote tmaps
 callvote tmodes	callvote tmodes
@@ -3193,7 +3232,9 @@ could not create an OpenGL 3.3 window - update your graphics driver	OpenGL 3.3�
 could not host:	ホストできません:
 could not open	開けません
 could not open log file	ログファイルを開けません
+could not save maps/	保存できませんでした: maps/
 could not save the map	マップを保存できません
+could not write maps/	書き込めませんでした: maps/
 could not write to the groups folder	groupsフォルダに書き込めません
 couldn't check reachability:	到達性を確認できません:
 custom mode rules too big to send with the weapon set: sent without it	カスタムモードのルールが大きすぎて武器セットと送信できません: 武器セットなしで送信
@@ -3206,8 +3247,10 @@ demo finished	デモ終了
 demo:	デモ:
 draw - the payload is in the middle	引き分け - ペイロードは中央
 dropped:	ドロップ:
+duelUsed_ is a 32-bit mask	duelUsed_ is a 32-bit mask
 dyn verts	dyn verts
 dynamic pass	dynamic pass
+e.g.  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5	例:  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5
 edcam # # #	edcam # # #
 edit #	編集 #
 edit mode on	編集モード オン
@@ -3276,6 +3319,8 @@ isn't in this custom mode's map pool	はこのカスタムモードのマップ�
 joined team A	がチームAに参加
 joined team B	がチームBに参加
 joined the game	がゲームに参加
+kElemNames follows Settings::HUD_*	kElemNames follows Settings::HUD_*
+kbps (# packets/s), download # kbps (#/s)	kbps (# パケット/s)、ダウンロード # kbps (#/s)
 kick whom? a name or an id (status lists them)	誰をキック? 名前かID (statusで一覧表示)
 kicked by a vote	投票でキックされました
 language:	language:
@@ -3299,6 +3344,7 @@ map editing	マップ編集
 map editing -	マップ編集 -
 map editing - everyone can build; changes last until the map changes	マップ編集 - 全員が制作可能; 変更はマップ変更まで有効
 map editing - everyone can build; the host saves	マップ編集 - 全員が制作可能; ホストが保存
+map name: letters, digits, - and _ only (not a device name like con)	マップ名: 英字、数字、- と _ のみ (con などのデバイス名は不可)
 map not found	マップが見つかりません
 map saved as	マップを保存:
 map test	マップテスト
@@ -3322,13 +3368,17 @@ model name	モデル名
 mul must be 3 numbers from 0 to 16	mul は0から16の数値3つである必要があります
 must beat it	これを超える必要あり
 my mode	マイモード
+name: letters, digits, - and _ only (not a device name like con)	名前: 英字、数字、- と _ のみ (con などのデバイス名は不可)
 net poll	net poll
 no IAudioClient3, before Windows 10	IAudioClient3なし、Windows 10以前
+no aliases - alias <name> <commands>	エイリアスなし - alias <名前> <コマンド>
 no bots on a ranked server	ランクサーバーにボットは不可
 no boxes	ボックスなし
+no command binds - bind <key> <commands>	コマンドのバインドなし - bind <キー> <コマンド>
 no hiders left	隠れ役が残っていません
 no key called '	その名前のキーはありません '
 no map editing on a ranked server (vote ranked off first)	ランクサーバーではマップ編集不可 (先にランクオフを投票)
+no maps found in maps/	maps/ にマップがありません
 no mix format	ミックス形式なし
 no mode can run on this map yet	このマップで動作するモードはまだありません
 no modifiers on a ranked or time trial server	ランクやタイムアタックのサーバーでは修正不可
@@ -3341,6 +3391,7 @@ nobody finished	誰も完走しませんでした
 nobody is out - throw again	脱落者なし - もう一度
 nobody left	誰も残っていません
 not a 16 x 16 character sheet	16 x 16 の文字シートではありません
+not a TrueType / OpenType font	TrueType / OpenType フォントではありません
 not a WAV, OGG, FLAC or MP3 file	WAV、OGG、FLAC、MP3ファイルではありません
 not a file name	ファイル名ではありません
 not a font file	フォントファイルではありません
@@ -3414,6 +3465,7 @@ proj # type # owner # pos # # # vel # # #	proj # type # owner # pos # # # vel # 
 proj # type # owner # pos # # # vel # # #{}	proj # type # owner # pos # # # vel # # #{}
 properties background, color, opacity, border, radius, padding, margin, gap, font-size,	properties background, color, opacity, border, radius, padding, margin, gap, font-size,
 puts every built-in map back to its original version and removes retired ones (your own maps are kept) - click again	全内蔵マップを元のバージョンに戻し、廃止されたものを削除 (自作マップは保持) - もう一度クリック
+quark --bake-maps <dir>	quark --bake-maps <dir>
 quark server	quark server
 quark server log, level	quark server log, level
 quark server log, level {}, version {}	quark server log, level {}, version {}
@@ -3437,6 +3489,7 @@ ranked off - matches aren't rated	ランク オフ - 試合はレート対象外
 ranked on	ランク オン
 ranked on -	ランク オン -
 ranked only runs on the ranked maps for its ladder	ランクはそのラダーのランクマップでのみ実行
+ranked server: a ranked map for the ladder (vanilla / vampire 1v1, instagib free for all), or vote ranked off	ランクサーバー: ラダー用のランクマップ (バニラ / ヴァンパイア 1v1、インスタギブFFA)、またはランクオフに投票
 ranked server: no	ランクサーバー: 不可:
 ranked ticket	ランクチケット
 ranked ticket {} players {}	ranked ticket {} players {}
@@ -3478,6 +3531,7 @@ screenshot written to {}	screenshot written to {}
 see-through pass	see-through pass
 select a box, look at one of its sides and press K	ボックスを選択し、その面を見てKを押してください
 select a group to export	エクスポートするグループを選択
+select boxes / groups (shift+click to add more)	ボックス / グループを選択 (shift+クリックで追加)
 select boxes first	先にボックスを選択してください
 select the cutter first, then shift+click the boxes to cut	先にカッターを選択し、次に切るボックスをshift+クリック
 select two or more boxes (shift+click) to combine	結合するボックスを2つ以上選択 (shift+クリック)
@@ -3497,13 +3551,16 @@ server version	サーバーバージョン
 server, sharing	サーバー、共有
 setup:	setup:
 shader:	シェーダー:
+shadow / visOnly / crouch must be true or false	shadow / visOnly / crouch は true か false にしてください
 shadow pass	shadow pass
 shipped:	同梱:
 short-handed: # playing	人数不足: # 人でプレイ中
+size # # #	size # # #
 slopes can't be coated: pick a box	斜面は塗れません: ボックスを選んでください
 slopes can't be cut: pick plain boxes	斜面は切れません: 通常のボックスを選んでください
 slopes can't be split: pick plain boxes	斜面は分割できません: 通常のボックスを選んでください
 slot bracket	枠のトーナメント表
+snapshots #/s{}, stalls #% (over # ms late)	スナップショット #/s{}、ストール #% (# ms 超の遅延)
 stalemate - health draining	膠着 - 体力減少中
 static boxes	static boxes
 static boxes pass	static boxes pass
