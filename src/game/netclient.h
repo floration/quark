@@ -238,7 +238,6 @@ private:
     double lastJitterUpdate_ = 0;
     void resetJitter();   // a new server or demo: the old one's arrival pattern doesn't apply
     uint32_t baseMisses_ = 0;
-    double snapRecvTime_ = 0;
     double clockOffset_ = 0;      // estimated serverTime - localTime
     bool clockInit_ = false;
     // server time (s) used for interpolating others. Double: a float of server uptime is 8 ms off after 18 h and 31 ms

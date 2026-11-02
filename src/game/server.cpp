@@ -75,7 +75,6 @@ constexpr double kUploadShort = 0.9, kUploadRoom = 0.8;
 constexpr float kPingRiseMs = 25, kPingBaseCreepMs = 1;   // (the uncongested ping follows a lasting change: +1 ms a window)
 constexpr int kSnapSteps[] = {500, 333, 250, 125};       // snapshots per second (125: the floor)
 constexpr int kUdpHeaderBytes = 28;                      // IPv4 + UDP, counted with each datagram
-constexpr float kRocketLife = 5.0f;
 // Visibility (PERF-9): each viewer's line to each player is re-checked every kVisInterval, spread over the ticks in
 // between (round robin over the pairs that are due) instead of all at once 20 times a second, which on Midtown with
 // 32 players was a ~10 ms tick. A tick casts at most kVisRaysPerSecond / tick rate rays; past that the rest wait for
@@ -104,7 +103,6 @@ bool isLoopback(const NetAddr& a) { return (a.ip >> 24) == 127; }
 constexpr double kProbeTimeout = 3.0;     // no PKT_PROBE_REPLY on the game port by then: not reachable
 constexpr double kProbeRecheck = 300.0;   // re-check every 5 minutes (and on the menu button)
 constexpr double kCookieBucket = 10.0;     // connect cookies are good for 10-20 s
-constexpr size_t kMaxVoteListItems = 8;    // callvote tmaps / tmodes
 constexpr size_t kMaxMapInfo = 1024;       // map facts cached (only maps whose file exists; past this it starts over)
 constexpr size_t kMaxUnackedEvents = 256;
 }
