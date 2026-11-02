@@ -1735,7 +1735,8 @@ static const char* const matLabels[] = {"MATERIAL: BASE", "MATERIAL: ACCENT", "M
                                         "MATERIAL: LIGHT BLOCK",
                                         "MATERIAL: SHIELD WALL",
                                         "MATERIAL: CRUMBLE PLATFORM",
-                                        "MATERIAL: TELEPORTER"};
+                                        "MATERIAL: TELEPORTER",
+                                        "MATERIAL: BALL WALL (STOPS ONLY THE BALL)"};
 static_assert(sizeof matLabels / sizeof *matLabels == kMapMaterials, "a label per material (the cycles below index it by material)");
 
 // the picker's tabs: the ones this map uses, the last 10 picked, then by kind, then all of them. kMatTabs: the kinds,
@@ -2379,7 +2380,7 @@ void Game::editorFrame(double dt) {
         edCacheGen_ = edGen_;
         edClipBoxes_.clear();
         edClipCount_ = 0;
-        for (auto& b : ed_.brushes) if (b.material == 9) { edClipBoxes_.push_back(b.box); edClipCount_ += !b.generated; }
+        for (auto& b : ed_.brushes) if (hiddenMaterial(b.material)) { edClipBoxes_.push_back(b.box); edClipCount_ += !b.generated && b.material == 9; }
         edCanModes_ = 0;
         edModesText_.clear();
         for (int m = 0; m < MODE_COUNT; m++) {
@@ -3013,7 +3014,7 @@ void Game::editorFrame(double dt) {
                                          {0.98f, 0.09f, 0.98f},
                                          {0.45f, 0.44f, 0.37f},
                                          {0.60f, 0.53f, 0.44f},
-                                         {0.42f, 0.32f, 0.58f}};
+                                         {0.42f, 0.32f, 0.58f}, {0.92f, 0.92f, 0.96f}};
     // ice .. diamond plate, brick, glass, asphalt, mud, cobblestone, concrete, tile, marble, corrugated, hazard, snow, stone,
     // crystal, circuit, rust, terracotta, then breakable brick, glass and cobblestone (their plain ones' colours), then
     // the 100 block looks and the 333 picks of the earlier rounds (each one's mean colour in its preview render)
@@ -3025,7 +3026,7 @@ void Game::editorFrame(double dt) {
             r_.outlineWidth = cfg_.outlineWorld;
             r_.setStaticBoxes([&] {
                 for (auto& b : ed_.brushes) { // (water, lava, trim, nograpple, acid past the table: blue, orange, accent, slate, green; clip below)
-                    if (b.material == 9) continue;
+                    if (hiddenMaterial(b.material)) continue;   // (clip and the ball wall: drawn see-through below)
                     Vec3 c = b.material < 6 ? matColor[b.material] : b.material == 6 ? Vec3(0.2f, 0.4f, 0.8f) : b.material == 7 ? Vec3(1.0f, 0.4f, 0.1f) : b.material == kMatNoGrapple ? Vec3(0.3f, 0.33f, 0.42f) : b.material == kMatAcid ? Vec3(0.36f, 1.0f, 0.23f) : b.material >= kMatIce ? kNewMatColors[b.material >= kMatSemi ? kMatLarge - kMatIce + (b.material - kMatSemi) : (b.material >= kMatLarge ? kLarge[b.material - kMatLarge].base : b.material) - kMatIce] : r_.accentColor;
                     if (b.shape != BRUSH_BOX) r_.slope(b, c);
                     else r_.box(b.box.center(), (b.box.mx - b.box.mn) * 0.5f, 0, c, 1.0f, false);

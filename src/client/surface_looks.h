@@ -523,4 +523,5 @@ static const char* const kSurfaceLooks[] = {
     /* 593 Shield wall */ R"L(vec4 h=hexc(q*5.0); float e=smoothstep(0.4,0.5,h.z); albedo=lin(vec3(1.0,0.7,0.2)); alpha=0.12+0.4*e; emit=vec3(1.6,0.9,0.2)*(0.1+0.6*e)*(0.8+0.2*sin(uTime*3.0+h.w*6.0));)L",
     /* 594 Crumble platform */ R"L(vec3 w=cells(q*2.0); float cr=1.0-smoothstep(0.0,0.03,w.y-w.x); albedo=lin(vec3(0.62,0.55,0.45)*(0.8+0.3*w.z))*(1.0-0.6*cr); emit=vec3(0.6,0.2,0.0)*cr*(0.5+0.5*sin(uTime*10.0));)L",
     /* 595 Teleporter */ R"L(vec2 f=fract(q/2.0)-0.5; float r=length(f); float a=atan(f.y,f.x); float sw=0.5+0.5*sin(a*3.0+r*20.0-uTime*4.0); albedo=lin(vec3(0.1,0.08,0.15)); emit=vec3(0.6,0.3,1.8)*sw*smoothstep(0.48,0.2,r);)L",
+    /* 596 Ball wall (never drawn in play: hidden like clip) */ R"L(float g=step(0.94,fract(q.x))+step(0.94,fract(q.y)); albedo=lin(vec3(0.9,0.9,0.95)); alpha=0.15+0.4*min(g,1.0);)L",
 };

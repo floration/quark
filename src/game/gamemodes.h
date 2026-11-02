@@ -27,6 +27,8 @@ bool modeIsTeamBased(int mode);
 // other modes.
 void ballBlast(Server& s, const Vec3& at, float radius, float knock, int owner);
 void ballHit(Server& s, const Vec3& dv, int by);   // a projectile hit it: dv added (ball mode, while it's in play)
+Vec3 ballStartPoint(const Map& map);           // where the ball starts on a map (between its two goals)
+int ballGoalOwner(const Map& map, int site);   // whose goal a site is (TEAM_A / TEAM_B: the team whose spawns are nearer)
 void ballShot(Server& s, const Vec3& o, const Vec3& dir, float maxT, float dmg, int owner);
 void rulesReset(Server& s);                       // back to warmup
 void rulesTick(Server& s);                        // once per server tick

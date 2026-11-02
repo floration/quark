@@ -1,0 +1,30 @@
+# Next (testing builds since 1.19.5)
+
+What's on `testing` since production 1.19.5. The release PR renames this file to `changelogs/<VERSION>.md`.
+
+**The network protocol is now 68 (1.19.5 used 67) and maps are format 14 (the ball wall)**: update games and servers together. Older maps convert by themselves.
+
+## Maps
+- **New map, Stadium** (built for ball): a football pitch under floodlights, a net goal at each end, stands round it. Kickoff: both teams line up facing each other and nobody fires for the first 3 s.
+- **Ball** is now on Express (a goal in each canyon gap) and Railyard (the front of each team's building), as well as Bridge, QK8 and Stadium.
+- **Bomb** is on Museum: site A in Mammals, site B in Minerals; attackers from the entrance hall, defenders from the service hall.
+- **Neutral payload** is on Suspension Bridge: the cart starts mid-span and weaves through the deck's traffic to each end. The median has three new gaps where the track crosses it.
+- **Black Hole**: four slim pillars on the floor (landmarks to read your height by while flying, too thin to hide behind), and more out in space: two jets from the hole's poles, a broken debris ring round the accretion disc, and stray rocks drifting toward the hole.
+
+## Map editor
+- **Ball wall** (MATERIAL: BALL WALL, with the feature blocks): an invisible block only the ball bounces off. Players, shots and grapples go through it. Build it as a wall round a pitch (it has no lid). The editor shows it see-through like clip.
+
+## Bots
+- Team bots no longer have an edge as team A: in power, team A bots won about 60% of matches on every map; now it's even.
+
+## Modes
+- WINNER STAYS is no longer listed on any map's modes (1v1 is winner stays now).
+
+## Map cleanup
+- **Dam:** steps out of the river below the dam (it had no way out once you dropped in).
+- **Datacenter:** the two roof gaps at the top of the yard stairs are full height now (you had to crouch through them).
+- **Monorail:** steps out of the two canal / pool lengths between bridges that had none, and a 2 m deep slot past the end steps filled in; the hanging shop signs touch their walls.
+- **Mine:** a gap by the ore-bay pile you could fall into and not walk out of is filled; the ore-bay heap is a step (0.5 m) instead of a hop.
+- **Fairground:** the step up to the big top's seats is a real step (0.5 m, was 0.6).
+- **Greenhouse:** the two walkway spawns sit a little off the glass.
+- **Lighthouse:** a mooring ring hanging in mid-air over the east shore is gone.

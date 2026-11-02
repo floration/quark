@@ -67,6 +67,10 @@ def build():
         B("graniterock", -5, -3.2, 40, 0, -2.2, Z1, s)                        # the river bed
         B("kerbstones", -5.4, -2.2, 40, -5, 0, Z1, s)                         # its banks
     k.box("clearlagoon", -5, -2.2, 40, 5, -0.6, Z1)
+    # (cleanup: the river's 2.2 m banks had no way out: steps up at its south end and up each bank north of the bridge)
+    k.stairs("kerbstones", -1.5, 40, 1.5, 43, 0, "z", -1, base=-2.2)
+    for s in (-1, 1):
+        stairs("kerbstones", -5, 70, -2, 72, 0, "x", -1, s, base=-2.2)
     k.box("wideplanks", -6, -0.35, 60, 6, 0, 66)                              # a footbridge
     k.box("wideplanks", -6, 0, 60, 6, 1.0, 60.12); k.box("wideplanks", -6, 0, 65.88, 6, 1.0, 66)
     # rock round the play area, clip over it
