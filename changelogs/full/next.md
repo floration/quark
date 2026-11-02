@@ -35,3 +35,19 @@ Every change on `testing` since production 1.19.5, with what changed and why. Th
 ## Modes lines
 
 - `prefabs.py` no longer adds `winner` to 1v1 maps' modes lines (WINNER STAYS was retired in 1.19.5: 1v1 is winner stays).
+
+# Next (full)
+
+Every change on `testing` since production 1.19.5, with what changed and why. The release PR renames this file to `changelogs/full/<VERSION>.md`.
+
+## Map cleanup (owner, 2026-11-02: "do a final cleanup check of every map any awkward spots or steps too tall or whatever", "no major changes in the cleanup check only minor stuff")
+
+Every generated map was checked with the walk grid of `tests/walkgrid.h` (a scratch audit: spots you can walk into but not back out of to a spawn, rises between 0.57 and 0.95 m in a run of steps, crouch-only floor and crouch-only passages, spawns within 0.2 m of a wall) and by reading the map scripts; only small fixes were made. The step-up is 0.55 m (pmove `kStepHeight`), so every new step is 0.5 m or less.
+
+- **Dam** (`tools/maps/dam.py`): the river below the dam (bed 2.2 m under the banks, x -5..5, z 40..76) had no way out on foot: anyone knocked in needed the grapple or a dash. New flights of five 0.44 m steps: one at its south end (x -1.5..1.5, z 40..43) and one up each bank north of the footbridge (x 2..5 / -5..-2, z 70..72).
+- **Datacenter** (`tools/maps/datacenter.py`): the parapet's coping strip (y 9.6) ran across the two gaps where the yard stairs reach the roof (x -46..-41 and 41..46, z 62..63), leaving 1.2 m over the roof: a crouch-only doorway on both stair routes. The strip now stops at the gaps.
+- **Monorail** (`tools/maps/monorail.py`): the canal / reflecting pool (sunk 1.5 m) had steps only at its two ends, and its bridges leave 1.1 m over the bed, so the lengths x -100..-82 and -74..-52 (and their turned copies) were pits with no way out; each gets a three-step flight up onto the bridge at its end (x -88..-82, -58..-52). The 2 m of canal west of the end steps (x -130..-128) was a 1.5 m deep slot: filled to the street (bed and water now start at x -128). The old town's hanging shop signs stood 10 cm off the facades (floating): they touch them now.
+- **Mine** (`tools/maps/mine.py`): in the ore bay (the koth hill), a 0.9 m pocket between the east bar stack and the crystals south of it (x -36.4..-35.6, z -18.1) was a drop-in you couldn't walk out of (the stack is 1.2 m over it): a 0.5 m heap of ore fills it, so the stack is a short hop. The ore heap under the pile was 0.6 m, just over the step-up (a hop on every side): now 0.5 m, the crystals and loose bars on it lowered with it. Cover heights (the bar stacks, 1.4 / 1.8 m) are unchanged.
+- **Fairground** (`tools/maps/fairground.py`): the ring step in front of the big top's seating was 0.6 m, over the 0.55 m step-up: 0.5 m now (the first tier, 1.6 m, stays a jump from it).
+- **Greenhouse** (`tools/maps/greenhouse.py`): the two free-for-all spawns on the walkway ring (x -1.5 / 1.5, z 11.3 / -11.3) had the player's hull 1 cm from the outer glass; moved 0.2 m in (z 11.1 / -11.1). Mirrored pair, so the ranked fairness is unchanged.
+- **Lighthouse** (`tools/maps/lighthouse.py`): the mooring ring at x 30, z -6 hung 5.5 m in the air over the low east shore with no cliff behind it (the other seven are on the rock): removed.

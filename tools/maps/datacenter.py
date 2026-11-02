@@ -372,7 +372,8 @@ def build():
     B(m, "electricalcabinet", -20, 0, NN + 3, 20, 0.8, NN + 4)
     for x in range(-24, 25, 12): B(m, "lightblock", x - 2, 6.3, -86, x + 2, 6.4, -84); B(m, "lightblock", x - 2, 6.3, -110, x + 2, 6.4, -108)
     # the office windows over the roof get a frame; the parapets a coping strip and warning lights at the corners
-    B(m, "steel", -96, U + 1.2, 61.8, 96, U + 1.3, 63.2)
+    for (x0, x1) in ((-96, -46), (-41, 41), (46, 96)):   # (not over the yard stairs' parapet gaps: 1.2 m under it was a crawl)
+        B(m, "steel", x0, U + 1.2, 61.8, x1, U + 1.3, 63.2)
     for (x, z) in ((-96, 62), (96, 62), (-46, 62), (46, 62)): B(m, "glow", x - 0.3, U + 1.3, z - 0.3, x + 0.3, U + 1.6, z + 0.3)
     # the roof: an antenna mast and a satellite dish over the west ring (out of the lanes)
     B(m, "steel", -92.5, U, -6.5, -91.5, U + 12, -5.5); B(m, "glow", -92.6, U + 12, -6.6, -91.4, U + 12.4, -5.4)
