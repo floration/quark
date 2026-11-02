@@ -246,7 +246,7 @@ AUTO RECONNECT	OTOMATİK YENİDEN BAĞLAN
 AUTO RECORD	OTOMATİK KAYIT
 AUTO RECORD: EVERY MATCH	OTOMATİK KAYIT: HER MAÇ
 AUTO RECORD: OFF	OTOMATİK KAYIT: KAPALI
-AUTO RECORD: RANKED ONLY	OTOMATİK KAYIT: SADECE DERECELİ
+AUTO RECORD: RANKED ONLY	OTO. KAYIT: SADECE DERECELİ
 AUTO START	OTOMATİK BAŞLAT
 AUTO-HIDE	OTOMATİK GİZLE
 AUTO-HIDE BARS	ÇUBUKLARI OTO GİZLE
@@ -380,9 +380,9 @@ BUILT FOR	NE İÇİN YAPILDI
 BUILT FOR sets the mode the map is made for; the MODES grid sets what it's offered for. PLAYABLE AS shows what it has the pieces for (team modes need A and B spawns).	NE İÇİN YAPILDI haritanın yapıldığı modu belirler; MODLAR tablosu hangi modlarda sunulacağını belirler. OYNANABİLİR, haritanın hangi parçalara sahip olduğunu gösterir (takım modları A ve B doğma noktası ister).
 BUILT FOR:	NE İÇİN YAPILDI:
 BUILT FOR: ANY	AMAÇ: HERHANGİ
-BY NAME	ADA GÖRE
-BY PING	PING'E GÖRE
-BY PLAYERS	OYUNCUYA GÖRE
+BY NAME	AD
+BY PING	PING
+BY PLAYERS	OYUNCU
 BYE	BAY
 BYPASS COMPOSITOR	KOMPOZİTÖRÜ ATLA
 BYPASS COMPOSITOR: ALWAYS	KOMPOZİTÖRÜ ATLA: HER ZAMAN
@@ -2985,9 +2985,9 @@ VOTED MODIFIERS ON	OYLANAN DEĞİŞTİRİCİLER AÇIK
 VOTES	OYLAR
 VS	VS
 VS - one life each per round; last team standing wins the round. If nobody makes progress for 30 s, health drains. First to 5 rounds.	VS - her raundda herkesin tek canı var; ayakta kalan son takım raundu kazanır. 30 sn kimse ilerleme kaydetmezse can azalır. 5 raund alan kazanır.
-VS: BEST RUN	KARŞI: EN İYİ KOŞU
-VS: BEST SEGMENTS	KARŞI: EN İYİ SEGMENTLER
-VS: LAST RUN	KARŞI: SON KOŞU
+VS: BEST RUN	KRŞ: EN İYİ
+VS: BEST SEGMENTS	KRŞ: EN İYİ BÖL.
+VS: LAST RUN	KRŞ: SON KOŞU
 VSYNC	VSYNC
 VSYNC / LOW LATENCY	VSYNC / DÜŞÜK GECİKME
 VSYNC ON, FPS CAPPED 3 UNDER THE REFRESH	VSYNC AÇIK, FPS YENİLEMENİN 3 ALTINDA SINIRLI

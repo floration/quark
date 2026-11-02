@@ -195,7 +195,7 @@ ALL SETTINGS	ВСЕ НАСТРОЙКИ
 ALT	ALT
 ALT FIRE	АЛЬТ. ОГОНЬ
 ALT-FIRE TOGGLE IN RANKED	АЛЬТ. ОГОНЬ ПЕРЕКЛЮЧЕНИЕМ В РЕЙТИНГЕ
-ALT-FIRE TOGGLES	АЛЬТ. ОГОНЬ ПЕРЕКЛЮЧАЕТ
+ALT-FIRE TOGGLES	АЛЬТ. ТУМБЛЕР
 ALT-FIRE TOGGLES: WITH ALT-FIRE: TOGGLE ON	АЛЬТ. ОГОНЬ ПЕРЕКЛЮЧАЕТ: ПРИ АЛЬТ. ОГНЕ: ПЕРЕКЛЮЧЕНИЕ
 ALT-FIRE: HOLD	АЛЬТ. ОГОНЬ: УДЕРЖ.
 ALT-FIRE: TOGGLE	АЛЬТ. ОГОНЬ: ПЕРЕКЛ.
@@ -246,7 +246,7 @@ AUTO RECONNECT	АВТОПЕРЕПОДКЛЮЧЕНИЕ
 AUTO RECORD	АВТОЗАПИСЬ
 AUTO RECORD: EVERY MATCH	АВТОЗАПИСЬ: КАЖДЫЙ МАТЧ
 AUTO RECORD: OFF	АВТОЗАПИСЬ: ВЫКЛ
-AUTO RECORD: RANKED ONLY	АВТОЗАПИСЬ: ТОЛЬКО РЕЙТИНГ
+AUTO RECORD: RANKED ONLY	АВТОЗАПИСЬ: РЕЙТИНГ
 AUTO START	АВТОСТАРТ
 AUTO-HIDE	АВТОСКРЫТИЕ
 AUTO-HIDE BARS	АВТОСКРЫТИЕ ПОЛОС
@@ -381,7 +381,7 @@ BUILT FOR sets the mode the map is made for; the MODES grid sets what it's offer
 BUILT FOR:	СДЕЛАНА ДЛЯ:
 BUILT FOR: ANY	СДЕЛАНА ДЛЯ: ЛЮБОГО
 BY NAME	ПО ИМЕНИ
-BY PING	ПО ПИНГУ
+BY PING	ПИНГ
 BY PLAYERS	ПО ИГРОКАМ
 BYE	ПРОП.
 BYPASS COMPOSITOR	ОБХОД КОМПОЗИТОРА
@@ -722,7 +722,7 @@ EDIT THE MAP TOGETHER	ПРАВИТЬ КАРТУ ВМЕСТЕ
 EDIT THE MAP TOGETHER (CHANGES LAST UNTIL THE MAP CHANGES)	ПРАВИТЬ КАРТУ ВМЕСТЕ (ПРАВКИ ДЕЙСТВУЮТ ДО СМЕНЫ КАРТЫ)
 EDITOR	РЕДАКТОР
 EDITOR TEST PLAY	ТЕСТ ИЗ РЕДАКТОРА
-EFFECT COLOR	ЦВЕТ ЭФФЕКТОВ
+EFFECT COLOR	ЦВЕТ ЭФФ.
 EFFECTS	ЭФФЕКТЫ
 EFFECTS + F3	ЭФФЕКТЫ + F3
 EFFECTS OPACITY	ПРОЗРАЧН. ЭФФЕКТОВ
@@ -1225,9 +1225,9 @@ LIBREQUAKE 8X8	LIBREQUAKE 8X8
 LIGHT	СВЕТ
 LIGHT CACHE	КЭШ ОСВЕЩЕНИЯ
 LIGHTHOUSE / TERRACES - team vs.   REACTORS / BRIDGE - power.   DATACENTER / MINE - bomb.   CASTLE / GLACIER / AMPHITHEATRE - king of the hill.	LIGHTHOUSE / TERRACES - командный бой.   REACTORS / BRIDGE - энергия.   DATACENTER / MINE - бомба.   CASTLE / GLACIER / AMPHITHEATRE - царь горы.
-LIGHTMAP FILTER	ФИЛЬТР ЛАЙТМАПОВ
-LIGHTMAP: NEAREST	ЛАЙТМАП: БЛИЖАЙШИЙ
-LIGHTMAP: SMOOTH	ЛАЙТМАП: СГЛАЖЕННЫЙ
+LIGHTMAP FILTER	ФИЛЬТР СВЕТА
+LIGHTMAP: NEAREST	ЛАЙТМАП: РЕЗКИЙ
+LIGHTMAP: SMOOTH	ЛАЙТМАП: ГЛАДКИЙ
 LILITA ONE	LILITA ONE
 LINE	ЛИН.
 LINE: ENEMIES	ЛИНИЯ: ВРАГИ
@@ -1280,7 +1280,7 @@ MAGENTA	ПУРПУРНЫЙ
 MAKE	СОЗД.
 MALE	МУЖ.
 MAP	КАРТА
-MAP / MODE / MODIFIERS	КАРТА / РЕЖИМ / МОДИФИКАТОРЫ
+MAP / MODE / MODIFIERS	КАРТА / РЕЖИМ / МОД.
 MAP COLOR	ЦВЕТ КАРТЫ
 MAP COLORS	ЦВЕТА КАРТЫ
 MAP DOWNLOADS	ЗАГРУЗКА КАРТ
@@ -1991,7 +1991,7 @@ NE	NE
 NET GRAPH	ГРАФИК СЕТИ
 NETWORK	СЕТЬ
 NETWORK READ	ЧТЕНИЕ СЕТИ
-NETWORK WARNINGS	СЕТЕВЫЕ ПРЕДУПРЕЖДЕНИЯ
+NETWORK WARNINGS	ПРЕДУПР. СЕТИ
 NEUTRAL PAYLOAD	НЕЙТРАЛЬНАЯ ВАГОНЕТКА
 NEUTRAL PAYLOAD - either team pushes the cart toward the other team's end. The team whose side it's on when time runs out wins.	НЕЙТРАЛЬНАЯ ВАГОНЕТКА - любая команда толкает вагонетку к концу соперника. Побеждает команда, на чьей стороне она к концу времени.
 NEW	НОВ.
@@ -2468,7 +2468,7 @@ SCOREBOARD: TOGGLE	ТАБЛИЦА СЧЁТА: ПЕРЕКЛЮЧЕНИЕ
 SCORES	ОЧКИ
 SCREEN	ЭКРАН
 SCREENSHOT	СКРИНШОТ
-SCREENSHOT FOLDER	ПАПКА СКРИНШОТОВ
+SCREENSHOT FOLDER	ПАПКА СНИМКОВ
 SCREENSHOT FORMAT	ФОРМАТ СКРИНШОТОВ
 SCREENSHOT SAVED (NO HUD):	СКРИНШОТ СОХРАНЁН (БЕЗ HUD):
 SCREENSHOT SAVED:	СКРИНШОТ СОХРАНЁН:
@@ -2622,7 +2622,7 @@ SPEED: SLOW	СКОРОСТЬ: МЕДЛ.
 SPEED: WALK	СКОРОСТЬ: ШАГ
 SPLIT	СПЛИТ
 SPLIT TIME	ВРЕМЯ СПЛИТА
-SPLITS VS	СПЛИТЫ VS
+SPLITS VS	СПЛИТЫ
 SPLITS: AHEAD / BEHIND	СПЛИТЫ: ВПЕРЕДИ / ПОЗАДИ
 SPLITS: PALETTE	СПЛИТЫ: ПАЛИТРА
 SPREAD CIRCLE	КРУГ РАЗБРОСА
@@ -2881,13 +2881,13 @@ TOURNEY RULESETS:	НАБОРЫ ПРАВИЛ ТУРНИРА:
 TOURNEY TAB	TAB В ТУРНИРЕ
 TOURNEY TAB: THE BRACKET	TAB В ТУРНИРЕ: СЕТКА
 TOURNEY TAB: THE SCOREBOARD	TAB В ТУРНИРЕ: ТАБЛИЦА СЧЁТА
-TRACER COLOR	ЦВЕТ ТРАССЕРА
+TRACER COLOR	ЦВЕТ ТРАССЫ
 TRACERS	ТРАССЕРЫ
 TRACERS + LASER START WHERE THE GUN IS	ТРАССЕРЫ + ЛАЗЕР ИДУТ ОТ ОРУЖИЯ
 TRACERS + TRAILS	ТРАССЕРЫ + СЛЕДЫ
-TRACERS: CLASSIC	ТРАССЕРЫ: КЛАССИКА
-TRACERS: CUSTOM	ТРАССЕРЫ: СВОИ
-TRACERS: TEAM	ТРАССЕРЫ: КОМАНДЫ
+TRACERS: CLASSIC	ТРАССЫ: КЛАССИКА
+TRACERS: CUSTOM	ТРАССЫ: СВОИ
+TRACERS: TEAM	ТРАССЫ: КОМАНДА
 TRAIL OPACITY	ПРОЗРАЧН. СЛЕДОВ
 TRAILS	СЛЕДЫ
 TRAILS: FULL	СЛЕДЫ: ПОЛНЫЕ
@@ -2947,10 +2947,10 @@ VERBOSE INFO	ПОДРОБНАЯ ИНФО
 VERBOSE INFO LINES	ПОДРОБНЫЕ ИНФОСТРОКИ
 VERDANA BOLD	VERDANA BOLD
 VERSION	ВЕРСИЯ
-VERTICAL KEYS	ВЕРТИК. КЛАВИШИ
+VERTICAL KEYS	ВВЕРХ/ВНИЗ
 VERTICAL SENSITIVITY	ВЕРТИК. ЧУВСТВИТЕЛЬНОСТЬ
-VERTICAL: ONE KEY	ВЕРТИКАЛЬ: ОДНА КЛАВИША
-VERTICAL: TWO KEYS	ВЕРТИКАЛЬ: ДВЕ КЛАВИШИ
+VERTICAL: ONE KEY	ВЕРТ.: 1 КЛАВИША
+VERTICAL: TWO KEYS	ВЕРТ.: 2 КЛАВИШИ
 VIDEO	ВИДЕО
 VIDEO + AUDIO	ВИДЕО + ЗВУК
 VIDEO 2	ВИДЕО 2
@@ -2985,9 +2985,9 @@ VOTED MODIFIERS ON	МОДИФИК. ВКЛ. ГОЛОСОМ
 VOTES	ГОЛОСА
 VS	VS
 VS - one life each per round; last team standing wins the round. If nobody makes progress for 30 s, health drains. First to 5 rounds.	VS - одна жизнь на раунд; раунд выигрывает последняя выжившая команда. Если 30 с никто не продвигается, здоровье убывает. До 5 раундов.
-VS: BEST RUN	VS: ЛУЧШИЙ ЗАЕЗД
-VS: BEST SEGMENTS	VS: ЛУЧШИЕ ОТРЕЗКИ
-VS: LAST RUN	VS: ПОСЛ. ЗАЕЗД
+VS: BEST RUN	VS: ЛУЧШИЙ
+VS: BEST SEGMENTS	VS: ЛУЧШ. ОТРЕЗКИ
+VS: LAST RUN	VS: ПОСЛЕДНИЙ
 VSYNC	VSYNC
 VSYNC / LOW LATENCY	VSYNC / НИЗКАЯ ЗАДЕРЖКА
 VSYNC ON, FPS CAPPED 3 UNDER THE REFRESH	VSYNC ВКЛ, ЛИМИТ FPS НА 3 НИЖЕ ЧАСТОТЫ
