@@ -107,7 +107,7 @@ std::string CustomRules::toNetText() const {
     o << "custommode=" << name << "\nmode=" << modeName(baseMode) << "\nweapons=" << weapons
       << "\ngravity=" << gravity << "\nspeed=" << moveSpeed << "\njump=" << jump << "\nknockback=" << knockback
       << "\nhealth=" << health << "\ndash=" << dash << "\ngrapple=" << grapple << (rocketRide ? "" : "\nrocketride=0") << "\nselfdamage=" << selfDamage
-      << "\ninstagib=" << instagib << "\nvampire=" << vampire << "\nregen=" << regen
+      << "\ninstagib=" << instagib << "\nvampire=" << vampire << "\nregen=" << regen << (fly ? "\nfly=1" : "")
       << "\ntimelimit=" << timeLimit << "\nscorelimit=" << scoreLimit << "\nrounds=" << roundsToWin;
     for (int k = 0; k < MV_COUNT; k++) if (move[k] != 1) o << "\nmove_" << moveParamKey(k) << "=" << move[k];   // (only the changed ones)
     for (auto& e : exprs) o << "\nexpr." << e.first << "=" << e.second;
@@ -183,6 +183,7 @@ bool CustomRules::fromText(const std::string& text) {
         else if (k == "instagib") instagib = i != 0;
         else if (k == "vampire") vampire = i != 0;
         else if (k == "regen") regen = i != 0;
+        else if (k == "fly") fly = i != 0;
         else if (k == "timelimit") timeLimit = std::max(0, std::min(3600, i));
         else if (k == "scorelimit") scoreLimit = std::max(0, std::min(10000, i));
         else if (k == "rounds") roundsToWin = std::max(0, std::min(50, i));
@@ -272,7 +273,7 @@ std::string votedModsTitle(const std::string& mods) {
         std::string part;
         if (k == "health") part = "HEALTH " + v;
         else if (k == "selfdamage" || k == "dash" || k == "grapple") { if (v == "0") part = k == "selfdamage" ? "NO SELF DAMAGE" : k == "dash" ? "NO DASH" : "NO GRAPPLE"; }
-        else if (k == "vampire" || k == "regen" || k == "instagib") { if (v == "1") part = k == "vampire" ? "VAMPIRE" : k == "regen" ? "REGEN" : "INSTAGIB"; }
+        else if (k == "vampire" || k == "regen" || k == "instagib" || k == "fly") { if (v == "1") part = k == "vampire" ? "VAMPIRE" : k == "regen" ? "REGEN" : k == "fly" ? "3D FLYING" : "INSTAGIB"; }
         else { part = k; for (auto& c : part) c = (char)toupper((unsigned char)c); part += " X" + v; }
         if (!part.empty()) out += (out.empty() ? "" : ", ") + part;
     }

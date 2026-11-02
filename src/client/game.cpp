@@ -4521,7 +4521,8 @@ void Game::drawHud() {
         r_.rect(cx - bw * 0.5f, by, bw, bh, {0.05f, 0.06f, 0.08f, 0.8f});
         r_.rect(cx - bw * 0.5f, by, bw, 3 * s, rgba(cfg_.colorFriendly));
         r_.text(cx - r_.textWidth(t, bts) * 0.5f, by + 8 * s, bts, t, kWhite);
-        ui_.hintCentered(cx, by + bh + 4 * s, "JOIN A TEAM FROM THE MENU (ESC)", infoC);
+        const int sm = net_.mode().mode;
+        ui_.hintCentered(cx, by + bh + 4 * s, modeIsTeamBased(sm) && !isOneVsOneMode(sm) && sm != MODE_DUEL ? "JOIN A TEAM FROM THE MENU (ESC)" : "JOIN THE GAME FROM THE MENU (ESC)", infoC);
         ny = by + bh + 4 * s + hh + 4 * s;
     }
     if (itBanner && !seekerWall) {
@@ -6191,6 +6192,7 @@ std::string Game::voteModsText() const {
     if (m.vampire) t += "vampire=1\n";
     if (m.regen) t += "regen=1\n";
     if (m.instagib) t += "instagib=1\n";
+    if (m.fly) t += "fly=1\n";
     if (!m.selfDamage) t += "selfdamage=0\n";
     if (!m.dash) t += "dash=0\n";
     if (!m.grapple) t += "grapple=0\n";
@@ -6257,16 +6259,21 @@ void Game::drawVoteSetup() {
                             {"KNOCKBACK", &m.knockback, 0.25f, 0, 5, false}, {"HEALTH", &m.health, 25, 25, 500, true}};
         struct Flag { const char* on; bool* v; };
         const Flag flags[] = {{"VAMPIRE", &m.vampire}, {"REGEN", &m.regen}, {"INSTAGIB", &m.instagib},
-                              {"SELF DAMAGE", &m.selfDamage}, {"DASH", &m.dash}, {"GRAPPLE", &m.grapple}};
+                              {"SELF DAMAGE", &m.selfDamage}, {"DASH", &m.dash}, {"GRAPPLE", &m.grapple}, {"3D FLYING", &m.fly}};
         const float tw = 2 * kPW + 24, x0 = 640 - tw * 0.5f, x1 = x0 + kPW + 24;
         const SetLayout L2 = ingameLayout(tw + 32);
-        const float kH = 40 + 6 * (kPRow + kPGap) - kPGap + 20 + kPRow;
+        const float kH = 40 + 7 * (kPRow + kPGap) - kPGap + 20 + kPRow;
         float y = ingameTop(L2, kH);
         ui_.panel(L2.X(x0 - 16), L2.Y(y - 16), L2.L(tw + 32), L2.L(kH + 32), 0.95f);
         ui_.labelCentered(L2.X(640), L2.Y(y), "VOTE: MODIFIERS", kWhite, 1.5f, L2.L(tw));
         y += 40;
         const float bw = 44;
-        for (int k = 0; k < 6; k++, y += kPRow + kPGap) {
+        for (int k = 0; k < 7; k++, y += kPRow + kPGap) {
+            const Flag& f = flags[k];
+            if (k == 6) {   // (the last flag, 3D FLYING: a row of its own, under the numbers)
+                if (ui_.button(L2.X(x1), L2.Y(y), L2.L(kPW), L2.L(kPRow), onOff(f.on, *f.v), UiExp::state("votesetup").withId(f.on))) *f.v = !*f.v;
+                continue;
+            }
             const Num& n = nums[k];
             char b[64];
             if (n.points) snprintf(b, sizeof b, "%s %d", n.name, (int)std::lround(*n.v));
@@ -6277,7 +6284,6 @@ void Game::drawVoteSetup() {
                 *n.v = std::max(n.lo, *n.v - n.step);
             if (ui_.button(L2.X(x0 + kPW - bw), L2.Y(y), L2.L(bw), L2.L(kPRow), "+", (up ? UiExp::state("votesetup") : UiExp::inert()).withId(n.name), up))
                 *n.v = std::min(n.hi, *n.v + n.step);
-            const Flag& f = flags[k];
             if (ui_.button(L2.X(x1), L2.Y(y), L2.L(kPW), L2.L(kPRow), onOff(f.on, *f.v), UiExp::state("votesetup").withId(f.on))) *f.v = !*f.v;
         }
         y += 20 - kPGap;
@@ -6344,7 +6350,10 @@ void Game::drawPauseMenu(float cx, float y) {
         if (c.half(2, confirmArmed("quit") ? "SURE? QUIT" : "QUIT", (cfg_.confirmLeave && !confirmArmed("quit") ? UiExp::state("confirm", "quit") : UiExp::quit()).withId("QUIT")) && confirmed("quit")) quit_ = true;
         return;
     }
-    const bool teamMode = modeIsTeamBased(net_.mode().mode), ranked = net_.mode().flags & MS_RANKED;
+    // (1v1s and duels have sides but no teams to pick: one JOIN GAME, the server seats you or puts you in line; owner,
+    // 2026-11-02: "it should say join game instead of join team a/b when theres no teams")
+    const int pm = net_.mode().mode;
+    const bool teamMode = modeIsTeamBased(pm) && !isOneVsOneMode(pm) && pm != MODE_DUEL, ranked = net_.mode().flags & MS_RANKED;
     const int pairs = (teamMode ? 2 : 1) + 4 + (host_ ? 0 : 1);   // (JOIN A + B or PLAY), SPECTATE, VOTE, QUEUE, RECORD DEMO (, PLAYERS: the host's is under HOST)
     const int rows = 1 + (pairs + 1) / 2 + 1 + (host_ ? 2 + (ranked ? 0 : 2) : 0);
     const float kH = pauseH(rows, host_ ? 1 : 0, true);
@@ -6363,7 +6372,7 @@ void Game::drawPauseMenu(float cx, float y) {
     if (teamMode) {
         if (pair("JOIN TEAM A", UiExp::cmd("team a"))) { net_.sendCommand("team a"); paused_ = false; }
         if (pair("JOIN TEAM B", UiExp::cmd("team b"))) { net_.sendCommand("team b"); paused_ = false; }
-    } else if (pair("PLAY", UiExp::cmd("team a"))) { net_.sendCommand("team a"); paused_ = false; }
+    } else if (pair("JOIN GAME", UiExp::cmd("team a"))) { net_.sendCommand("team a"); paused_ = false; }
     if (pair("SPECTATE", UiExp::cmd("team spec"))) { net_.sendCommand("team spec"); paused_ = false; }
     if (pair("VOTE", UiExp::nav("ingame/pause/vote"))) voteMenu_ = true;
     if (pair(queued_.empty() ? "QUEUE" : "QUEUE (" + std::to_string(queued_.size()) + ")", UiExp::nav("ingame/pause/queue").withId("QUEUE"))) queueMenu_ = true;
@@ -9919,10 +9928,10 @@ void Game::drawCustomModeEditor(const SetLayout& L) {
         p = at(1, 3);
         ui_.slider(p.first, p.second, cw, h, "KNOCKBACK", r.knockback, 0, 5, "%.2fX", ce, kStd.knockback);
         r.gravity = clampf(r.gravity, 0.1f, 3); r.moveSpeed = clampf(r.moveSpeed, 0.25f, 3); r.jump = clampf(r.jump, 0.25f, 3); r.knockback = clampf(r.knockback, 0, 5);
-        struct { const char* name; bool* v; } abil[7] = {{"DASH", &r.dash}, {"GRAPPLE", &r.grapple}, {"ROCKET RIDE", &r.rocketRide},
+        struct { const char* name; bool* v; } abil[8] = {{"DASH", &r.dash}, {"GRAPPLE", &r.grapple}, {"ROCKET RIDE", &r.rocketRide},
                                                          {"SELF DAMAGE", &r.selfDamage}, {"INSTAGIB", &r.instagib}, {"VAMPIRE", &r.vampire},
-                                                         {"REGEN", &r.regen}};
-        for (int i = 0; i < 7; i++) { p = at(2, i); ui_.toggle(p.first, p.second, cw, h, abil[i].name, *abil[i].v, ce); }
+                                                         {"REGEN", &r.regen}, {"3D FLYING", &r.fly}};
+        for (int i = 0; i < 8; i++) { p = at(2, i); ui_.toggle(p.first, p.second, cw, h, abil[i].name, *abil[i].v, ce); }
     } else if (customTab_ == 1) {   // a row per weapon: on / off, then FIRE RATE, DAMAGE, SPEED as this mode makes them
         static const CustomRules kStdW;
         int row = 0;

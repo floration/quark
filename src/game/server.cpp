@@ -1812,7 +1812,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
                 const size_t eq = w.find('=');
                 const std::string k = eq == std::string::npos ? w : w.substr(0, eq), v = eq == std::string::npos ? "" : w.substr(eq + 1);
                 static const char* const kNum[] = {"gravity", "speed", "jump", "knockback", "damage", "health"};
-                static const char* const kBool[] = {"vampire", "regen", "selfdamage", "dash", "grapple", "instagib"};
+                static const char* const kBool[] = {"vampire", "regen", "selfdamage", "dash", "grapple", "instagib", "fly"};
                 bool known = false, num = false;
                 for (const char* n : kNum) if (k == n) known = num = true;
                 for (const char* n : kBool) if (k == n) known = true;

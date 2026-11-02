@@ -11,6 +11,8 @@ What's on `testing` since production 1.19.4. The release PR renames this file to
 ## 3D VAMP
 - **New 1v1 ruleset, 3D VAMP** (HOST > MODE > 1V1, or the vote menu's PLAYER BASED > 1V1): fly in zero gravity like creative mode in Minecraft. W/S/A/D move you on the level, MOVE UP (space) and MOVE DOWN (left shift) straight up and down, all at run speed with a quick stop when you let go. No jump, dash or grapple. Lasers only, hits don't push anyone, and vampire healing starts at 100% of your damage each round and falls to 50% over 30 s. Not ranked.
 - **New map, Black Hole**: a lone flat asteroid in space with no cover, a black hole eating the galaxy beside it. Nobody can fire for the first 3 s of a round. Fly too far out and you're lost.
+- **3D FLYING is a modifier:** turn it on for any mode and map (the vote's MODIFIERS page, or a custom mode's GENERAL page). 3D VAMP stays as the 1v1 ruleset that has it on.
+- **Flying moves like running:** the same acceleration and friction as on the ground, in every direction, up and down too.
 - **Snap tap for flying:** with OPPOSITE KEYS: LAST WINS (CONTROLS > MORE 2), holding MOVE UP and MOVE DOWN together goes the way of the last one pressed, as left + right do.
 - **New keys**: MOVE UP and MOVE DOWN (CONTROLS > MORE KEYS), and VERTICAL KEYS (CONTROLS > MORE 2): ONE KEY flies up while MOVE UP is held and down when it isn't.
 
@@ -19,3 +21,6 @@ What's on `testing` since production 1.19.4. The release PR renames this file to
 
 ## Servers
 - The testing server now always starts again when a new testing build comes out (it could stay down after a production release).
+
+## Menus
+- **JOIN GAME:** the pause menu of a 1v1 or duel shows one JOIN GAME button (it seats you, or puts you in line) instead of JOIN TEAM A / B; free for all modes say JOIN GAME instead of PLAY.

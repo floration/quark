@@ -418,7 +418,7 @@ private:
     bool vsMode_ = true, vsMods_ = true, vsMap_ = true;
     int modeGroup_ = 0;                 // 0 all, 1 objective, 2 player (the mode picker's filter in the builder)
     struct VoteMods { float gravity = 1, speed = 1, jump = 1, knockback = 1, damage = 1; float health = 100;
-                      bool vampire = false, regen = false, selfDamage = true, dash = true, grapple = true, instagib = false; } voteMods_;
+                      bool vampire = false, regen = false, selfDamage = true, dash = true, grapple = true, instagib = false, fly = false; } voteMods_;
     void openVoteSetup();
     void voteAdvance();                 // on to the next part the toggles ask for (a picker, or the builder's own page)
     std::string voteModsWords() const;  // " mods k=v ..." (the non-standard ones)
