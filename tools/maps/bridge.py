@@ -171,7 +171,7 @@ def decorate(k):
 
 def build():
     m = M("Suspension Bridge", "power", sun=(0.3, 1.0, 0.2))
-    m.also = ["vs", "ball"]
+    m.also = ["vs", "ball", "npayload"]
     k = Kit(m)
     m.raw("palette base 0.66 0.66 0.66 accent 0.55 0.22 0.16 metal 0.34 0.35 0.37 glow 1.00 0.78 0.45 sky 0.80 0.82 0.84")
     m.raw(f"void {num(VOID)}")
@@ -181,7 +181,8 @@ def build():
         k.box("asphalt", t[0], -1.2, t[1], t[2], 0, t[3])
     for z in (-6.0, 6.0):
         for x in range(-88, 89, 8): k.box("roadmarkings", x - 2, 0, z - 0.1, x + 2, 0.01, z + 0.1)
-    for (a, b) in ((-90, -62), (-58, -22), (-18, 18), (22, 58), (62, 90)):          # (gaps to cross every 40 m)
+    # (gaps to cross every 40 m, and where the payload's track crosses: x +-38 and mid-span, 2026-11-02)
+    for (a, b) in ((-90, -62), (-58, -43), (-33, -22), (-18, -5), (5, 18), (22, 33), (43, 58), (62, 90)):
         k.box("precastconcrete", a, 0, -0.4, b, 1.1, 0.4)
     for sz in (-1, 1):
         z0, z1 = sorted((sz * DECK_Z, sz * (DECK_Z + 0.3)))
@@ -349,6 +350,13 @@ def build():
         k.box("shippingcontainer", x0, 0, z0, x1, h, z1)
         k.box("shippingcontainer", -x1, 0, -z1, -x0, h, -z0)
     # ---- ball (owner, 2026-11-01): a goal across the deck just inside each tower's portal (each team's own: its end)
+    # ---- neutral payload (owner, 2026-11-02): the cart starts at mid-span; A (west) pushes it east to B's apron, B west
+    # to A's toll plaza. The track weaves through the staggered container spills like the walk lanes do: the inner lane
+    # past x -60 (z 6.5), across the median's gap at x -37.5, the far lane past x -20 (z -6.5), across mid-span; the east
+    # half is its point mirror, so both teams' pushes are the same
+    WEST = [(-100, 6.5), (-41, 6.5), (-34, -6.5), (-10, -6.5)]
+    for (x, z) in WEST + [(0, 0)] + [(-x, -z) for (x, z) in reversed(WEST)]:
+        m.raw(f"path {num(x)} 0 {num(z)}")
     m.raw("site -88 0 -12 -84 6 12")
     m.raw("site 84 0 -12 88 6 12")
 
