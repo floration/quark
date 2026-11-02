@@ -6,7 +6,8 @@
 # (quark-release-macos.txt, which the launcher prefers for its platform), as release-testing-macos did before.
 #   prep     (Linux) waits for this commit's build-and-release run: its meta (channel, tag, version: the meta artifact)
 #            and its light bakes (the lightcache artifact), so both builds are the same version with the same light
-#   macos    (the Mac) builds and packages, as the macos job of release.yml did
+#   macos    (an Intel Mac) builds and packages, as the macos job of release.yml did (.github/actions/macos-build)
+#   macos-arm (an arm64 Mac) the same, only when no Intel Mac took macos or its build failed
 #   publish  (Linux, testing and production only) waits for the release to exist, then signs and uploads the files
 # A run whose build-and-release was cancelled (a newer push to a work branch) or had nothing to build stops in prep.
 name: macos
@@ -61,10 +62,14 @@ jobs:
           { echo "run=$run"; echo "build=$build"; echo "channel=$channel"; echo "tag=$tag"; echo "version=$version"; echo "suffix=$suffix"; } >> "$GITHUB_OUTPUT"
           echo "### macOS for build-and-release run $run: $channel ${tag:-(build only)} $version" >> "$GITHUB_STEP_SUMMARY"
 
+  # GitHub's macOS arm64 pool is often full (2026-11-02: from 13:39 to 23:08 UTC no macos-latest job got a runner;
+  # each sat queued ~15 min, then ended "not acquired by Runner", and the run went red). The Intel pool (macos-15-intel)
+  # took a probe in 19 s while macos-latest took 13 min and macos-15 none, so the Mac build goes there first and falls
+  # back to arm64 only when no Intel Mac picks it up (or that build fails). Both build the same universal files.
   macos:
     needs: prep
     if: needs.prep.outputs.build == 'true'
-    runs-on: macos-latest
+    runs-on: macos-15-intel
     timeout-minutes: 60
     permissions:
       actions: read   # (the light bakes from build-and-release's run)
@@ -73,27 +78,27 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with: { name: lightcache, path: lightcache, run-id: "${{ needs.prep.outputs.run }}", github-token: "${{ github.token }}" }
-      - run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15 \
-            -DQUARK_VERSION_SUFFIX="$QUARK_VERSION_SUFFIX"
-          cmake --build build -j
-          sh tools/launcher_build.sh -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15
-          mkdir -p pkg && cp -r build/quark.app build/quark_server build-launcher/quark_launcher pkg/ && cp -r maps pkg/
-          mkdir -p pkg/quark.app/Contents/Resources && cp -r maps mods pkg/quark.app/Contents/Resources/
-          # (the bakes only where the game reads its maps: pkg/maps is the dedicated server's, which draws nothing)
-          cp -r lightcache pkg/quark.app/Contents/Resources/maps/lightcache && sh tools/check_lightcache.sh build pkg/quark.app/Contents/Resources/maps/lightcache
-          python3 tools/pack.py pkg quark-macos.qpak
-          mkdir -p quark-macos && cp -r pkg/* README.md quark-macos/
-          zip -qry quark-macos.zip quark-macos
-          zip -j quark-launcher-macos.zip build-launcher/quark_launcher
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with: { name: macos, path: "quark-macos.zip\nquark-macos.qpak\nquark-launcher-macos.zip" }
+      - uses: ./.github/actions/macos-build
+        with: { run-id: "${{ needs.prep.outputs.run }}" }
+
+  macos-arm:   # (the fallback: only when the Intel job above didn't build)
+    needs: [prep, macos]
+    if: "!cancelled() && needs.prep.outputs.build == 'true' && needs.macos.result != 'success'"
+    runs-on: macos-latest
+    timeout-minutes: 60
+    permissions:
+      actions: read
+    env: { QUARK_VERSION_SUFFIX: "${{ needs.prep.outputs.suffix }}" }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/macos-build
+        with: { run-id: "${{ needs.prep.outputs.run }}" }
 
   publish:   # into the release build-and-release made for this commit (testing prerelease or production release)
-    needs: [prep, macos]
-    if: needs.prep.outputs.channel == 'testing' || needs.prep.outputs.channel == 'production'
+    needs: [prep, macos, macos-arm]
+    if: "!cancelled() && (needs.prep.outputs.channel == 'testing' || needs.prep.outputs.channel == 'production') && (needs.macos.result == 'success' || needs.macos-arm.result == 'success')"
     runs-on: ubuntu-24.04
     environment: ${{ needs.prep.outputs.channel }}   # (the signing key: testing / production, as their release jobs)
     timeout-minutes: 120

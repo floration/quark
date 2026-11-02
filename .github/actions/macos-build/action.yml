@@ -1,0 +1,31 @@
+# The macOS build and packaging (universal arm64 + x86_64), shared by macos.yml's two Mac jobs: whichever Mac runner
+# GitHub hands out builds the same files. Checkout first (this file comes with it).
+name: macos-build
+description: Build, package and upload the macOS game, launcher and server
+inputs:
+  run-id:
+    description: build-and-release's run on this commit (its light bakes)
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with: { name: lightcache, path: lightcache, run-id: "${{ inputs.run-id }}", github-token: "${{ github.token }}" }
+    - shell: bash
+      run: |
+        set -eo pipefail
+        uname -m; sw_vers -productVersion
+        cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15 \
+          -DQUARK_VERSION_SUFFIX="$QUARK_VERSION_SUFFIX"
+        cmake --build build -j
+        sh tools/launcher_build.sh -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15
+        mkdir -p pkg && cp -r build/quark.app build/quark_server build-launcher/quark_launcher pkg/ && cp -r maps pkg/
+        mkdir -p pkg/quark.app/Contents/Resources && cp -r maps mods pkg/quark.app/Contents/Resources/
+        # (the bakes only where the game reads its maps: pkg/maps is the dedicated server's, which draws nothing)
+        cp -r lightcache pkg/quark.app/Contents/Resources/maps/lightcache && sh tools/check_lightcache.sh build pkg/quark.app/Contents/Resources/maps/lightcache
+        python3 tools/pack.py pkg quark-macos.qpak
+        mkdir -p quark-macos && cp -r pkg/* README.md quark-macos/
+        zip -qry quark-macos.zip quark-macos
+        zip -j quark-launcher-macos.zip build-launcher/quark_launcher
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with: { name: macos, path: "quark-macos.zip\nquark-macos.qpak\nquark-launcher-macos.zip" }
