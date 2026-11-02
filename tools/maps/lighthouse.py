@@ -241,7 +241,8 @@ def decorate(k):
         k.box("musselbed", x0, COVE_F, z0, x1, 2.2, z1)
     k.box("barnacles", -20, LOW, 8, 20, 2.0, 8.06)
     # mooring rings: iron loops on the cliffs every 15 m, 6-8 m up (grapple anchors)
-    for (x, z, f) in ((-45, -6, "z"), (-30, -6, "z"), (30, -6, "z"), (-12, 8, "z"), (3, 8, "z"), (14, 8, "z"), (20, -20, "x"), (-20, 0, "x")):
+    # (cleanup: the one at x 30, z -6 hung in the air 5.5 m over the low east shore, no cliff behind it: dropped)
+    for (x, z, f) in ((-45, -6, "z"), (-30, -6, "z"), (-12, 8, "z"), (3, 8, "z"), (14, 8, "z"), (20, -20, "x"), (-20, 0, "x")):
         if f == "z": k.box("castiron", x - 0.3, 6.5, z - 0.25 if z < 0 else z, x + 0.3, 7.3, z + 0.25 if z > 0 else z)
         else: k.box("castiron", x if x > 0 else x - 0.25, 6.5, z - 0.3, x + 0.25 if x > 0 else x, 7.3, z + 0.3)
     # the surf line along the beach's sea edge

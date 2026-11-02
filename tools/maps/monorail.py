@@ -78,13 +78,18 @@ def build():
         B(g, -HX, -1, -54, 0, 0, -46.5, s)                                    # (the outer street opposite the canal)
         # the canal (old town, north) / reflecting pool (new district, south): sunk 1.5 m, water to -0.5, a bridge
         # at every cross street, steps out at both ends
-        B("rainwetpaving" if s < 0 else "polishedconcrete", -HX, -2.5, 46.5, -22, -1.5, 53.5, s)
-        B("clearlagoon", -HX, -1.5, 46.5, -22, -0.5, 53.5, s)
+        B("rainwetpaving" if s < 0 else "polishedconcrete", -128, -2.5, 46.5, -22, -1.5, 53.5, s)
+        B("clearlagoon", -128, -1.5, 46.5, -22, -0.5, 53.5, s)
         B(g, -HX, -1, 53.5, 0, 0, 54, s); B(g, -22, -1, 46.5, 0, 0, 53.5, s)
         for (x0, x1) in ((-108, -100), (-82, -74), (-52, -44)):
             B("largeformatporcelain" if s > 0 else "largecobbledsetts", x0, -0.4, 46.5, x1, 0, 53.5, s)
         stairs("concretepavers", -128, 46.5, -122, 53.5, 0, "x", -1, s, base=-1.5)
         stairs("concretepavers", -28, 46.5, -22, 53.5, 0, "x", 1, s, base=-1.5)
+        # (cleanup: the two lengths between bridges had no way out (the bridges leave 1.1 m over the bed), and the 2 m
+        # past the west steps was a 1.5 m deep slot: steps up onto a bridge in each, the slot filled)
+        stairs("concretepavers", -88, 46.5, -82, 53.5, 0, "x", 1, s, base=-1.5)
+        stairs("concretepavers", -58, 46.5, -52, 53.5, 0, "x", 1, s, base=-1.5)
+        B(g, -HX, -1, 46.5, -128, 0, 53.5, s)
     # the perimeter blocks (clipped)
     for s in (-1, 1):
         x = -HX
@@ -301,7 +306,7 @@ def build():
             if s < 0:
                 for ax in range(int(x0) + 1, int(x1) - 3, 5):
                     B(("leantocanvas", "pooltablefelt", "paintedconcretestripes")[(ax // 5) % 3], ax, 3.1, zf - 1.3 * sg if sg > 0 else zf, ax + 4, 3.2, zf if sg > 0 else zf + 1.3, s)
-                    B("castiron", ax + 1.8, 3.6, zf - 0.9 * sg if sg > 0 else zf + 0.1, ax + 1.86, 4.4, zf - 0.1 if sg > 0 else zf + 0.9, s)
+                    B("castiron", ax + 1.8, 3.6, zf - 0.9 * sg if sg > 0 else zf, ax + 1.86, 4.4, zf if sg > 0 else zf + 0.9, s)   # (on the facade: 10 cm off it, they floated)
             else:
                 B("bluetintedglass", x0 + 1, 3.6, zf - 1.6 if sg > 0 else zf, x1 - 1, 3.68, zf if sg > 0 else zf + 1.6, s)
                 for ax in range(int(x0) + 3, int(x1) - 1, 7):

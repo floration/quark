@@ -250,7 +250,7 @@ def build():
         for a in (-22.5 + 45 * sk, 22.5 + 45 * sk):
             t = math.radians(a)
             k.bar("charredtimber", (BX + 7.3 * math.cos(t), BZ + 7.3 * math.sin(t)), (BX + 11.1 * math.cos(t), BZ + 11.1 * math.sin(t)), 0.15, 0, 1.3)
-    k.ring("cratewood", BX, BZ, 6.8, 7.3, 0, 0.6, n=8, a0=-22.5, skip=(0, 2, 4, 6))   # the step up
+    k.ring("cratewood", BX, BZ, 6.8, 7.3, 0, 0.5, n=8, a0=-22.5, skip=(0, 2, 4, 6))   # the step up (0.5: 0.6 was over the 0.55 step-up)
     bulbs(k, circle(BX, 4.95, BZ, 12.5, step=1.4, a0=math.radians(10)))              # bulbs round the eave
     for i in range(8):                                                                # and down the ridges
         a = math.radians(-22.5 + 45 * i)

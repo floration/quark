@@ -39,7 +39,7 @@ ROOF = 9.5                        # the wings' ceiling
 CORR = (-24.0, -18.0, 24.0, -15.0)  # the boiler corridor
 DOOR_H = 4.0
 ANY = [(-9.0, 0, 0.0, -13, 0), (9.0, 0, 0.0, 13, 0), (-12.0, 0, -16.5, -24, -16.5), (12.0, 0, -16.5, 24, -16.5),
-       (-1.5, WALK_Y, 11.3, -8, 8.5), (1.5, WALK_Y, -11.3, 8, -8.5), (-17, 0, -2, -26, -2), (17, FERN_Y, 5.5, 26, 5.5)]
+       (-1.5, WALK_Y, 11.1, -8, 8.5), (1.5, WALK_Y, -11.1, 8, -8.5), (-17, 0, -2, -26, -2), (17, FERN_Y, 5.5, 26, 5.5)]
 BASIN = 2.5                       # the basin's half width (5 x 5 m: a smaller slow patch on the cross lines)
 
 
