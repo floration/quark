@@ -4,7 +4,7 @@ handmade
 title Museum
 setting a natural history museum at night
 for hide
-modes ffa hide tag
+modes ffa hide tag bomb
 sun 0.2296576 0.9186304 -0.32152066
 
 palette base 0.78 0.75 0.7 accent 0.42 0.3 0.22 metal 0.3 0.3 0.32 glow 0.55 1 0.6 sky 0.02 0.025 0.05
@@ -1843,3 +1843,17 @@ light 52 14 4 9 0.35
 light 52 14 -14 9 0.35
 light 52 14 -2 9 0.35
 light -45 19 18 6 0.4
+# bomb (owner, 2026-11-02: "add bomb to museum"): site A in Mammals (west), site B in Minerals (east); attackers from
+# the entrance hall (north), defenders from the service hall (south)
+site -45 0 -1 -33 3 9
+site 36 0 0 48 3 9
+spawn bomb-a -12 0 -26 180
+spawn bomb-a -8 0 -26 180
+spawn bomb-a 8 0 -26 180
+spawn bomb-a 12 0 -26 180
+spawn bomb-a -10 0 -23 180
+spawn bomb-b -8 0 34 0
+spawn bomb-b -5 0 34 0
+spawn bomb-b -2 0 34 0
+spawn bomb-b 1 0 34 0
+spawn bomb-b 11 0 34 0
