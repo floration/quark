@@ -3850,7 +3850,9 @@ void Server::updatePlayerVisibility(uint32_t need, int viewers, int targets, int
         // and both shoulders, where they are and where they'll be in 0.25 s (and where you'll be).
         Vec3 eye = pv.move.pos + Vec3(0, eyeH, 0);
         Vec3 lead = pt.move.vel * 0.25f, mine = pv.move.vel * 0.15f;
-        Vec3 side = normalize(Vec3(-d.z, 0, d.x)) * 0.45f;
+        // (the target's points at its size: a giant's head is twice as high, MOVE_BIG / MOVE_TINY; the eye: eyeH)
+        const float ts = moveScale(pt.move.mods);
+        Vec3 side = normalize(Vec3(-d.z, 0, d.x)) * 0.45f, tside = side * ts;
         bool seen = false;
         int rays = 0;
         for (const Vec3& from : {eye, eye + side * 0.7f, eye - side * 0.7f, eye + mine})
