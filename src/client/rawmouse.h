@@ -21,6 +21,9 @@ public:
     // messages at all. GLFW's own captured mode re-centred the cursor after every frame's motion (SetCursorPos) and
     // handled a legacy mouse-move message: ~50 us a frame on the owner's PC with an 8 kHz mouse. Off: let it go.
     void hold(GLFWwindow* w, bool on);
+    // Called on the mouse's thread after each report with the counts since the last take (GPU LATE LATCH); null: none.
+    std::atomic<void (*)(void*, long long, long long)> onMotion{nullptr};
+    void* onMotionCtx = nullptr;
 
 private:
     void run();
