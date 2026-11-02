@@ -145,6 +145,7 @@
 240 FPS	240 FPS
 2:00  -  1ST OF 6	2:00  -  6명 중 1위
 2D: THE VIEW STAYS STILL, YOUR MOUSE MOVES THE CROSSHAIR	2D: 시점 고정, 마우스로 조준점 이동
+3 TIMES: THE GRAPH; 4 TIMES: THE GAME'S PART ONLY	3번: 그래프; 4번: 게임 부분만
 30 SECONDS LEFT	30초 남음
 32-bit float	32비트 float
 3D FLYING	3D 비행
@@ -177,6 +178,16 @@ ADD WIDGET	위젯 추가
 ADD: boxes (base / accent / wallbang: bullets go through wallbangs for half damage), spawns, lights, payload path points, bomb sites, the hill, race checkpoints, and LADDERS (one object: stretch it and the rungs follow).	추가: 박스 (기본 / 강조 / 월뱅: 총알이 월뱅을 관통하며 피해 절반), 스폰, 조명, 화물 경로 지점, 폭탄 설치 지점, 점령 지역, 레이스 체크포인트, 사다리 (하나의 오브젝트: 늘리면 발판이 따라옴).
 ADDRESS	주소
 ADDRESS (IP:PORT)	주소 (IP:PORT)
+ADLXInitialize	ADLXInitialize
+ADLXInitializeWithIncompatibleDriver	ADLXInitializeWithIncompatibleDriver
+ADLXTerminate	ADLXTerminate
+ADRENALIN > GAMING > GRAPHICS: ENHANCED SYNC OFF	ADRENALIN > 게임 > 그래픽: ENHANCED SYNC 끔
+ADRENALIN > GAMING > GRAPHICS: FRAME RATE TARGET CONTROL OFF	ADRENALIN > 게임 > 그래픽: FRAME RATE TARGET CONTROL 끔
+ADRENALIN > GAMING > GRAPHICS: RADEON ANTI-LAG ON	ADRENALIN > 게임 > 그래픽: RADEON ANTI-LAG 켜짐
+ADRENALIN > GAMING > GRAPHICS: RADEON BOOST OFF	ADRENALIN > 게임 > 그래픽: RADEON BOOST 끔
+ADRENALIN > GAMING > GRAPHICS: RADEON CHILL OFF	ADRENALIN > 게임 > 그래픽: RADEON CHILL 끔
+ADRENALIN > GAMING > GRAPHICS: WAIT FOR VERTICAL REFRESH: OFF, UNLESS APPLICATION SPECIFIES	ADRENALIN > 게임 > 그래픽: 수직 새로 고침 대기: 끔 (응용 프로그램이 지정하지 않는 한)
+ADRENALIN: ANTI-LAG ON; CHILL, BOOST, ENHANCED SYNC, WAIT FOR VERTICAL REFRESH OFF	ADRENALIN: ANTI-LAG 켜짐; CHILL, BOOST, ENHANCED SYNC, 수직 새로 고침 대기 끔
 ADVANCED	상급
 ADVANCED > BOT BRAIN: what your bots play: the built-in brain, or a .qbrain file from the bots folder in your data folder. A file that doesn't compile shows its error line and the bots play the built-in brain. Never in ranked.	상급 > 봇 AI: 봇의 플레이 방식: 내장 AI 또는 데이터 폴더의 bots 폴더에 있는 .qbrain 파일. 컴파일되지 않는 파일은 오류 줄을 표시하고 봇은 내장 AI로 플레이합니다. 랭크에서는 사용하지 않습니다.
 AGAIN (R)	다시 (R)
@@ -202,6 +213,14 @@ ALT-FIRE: TOGGLE	보조 사격: 토글
 ALT-TABBED OR MINIMIZED: LESS POWER AND HEAT	ALT-TAB 또는 최소화: 전력·발열 감소
 ALWAYS LIT	항상 밝게
 ALWAYS ON TOP	항상 위
+AMD	AMD
+AMD DRIVER SETTINGS COULDN'T BE READ	AMD 드라이버 설정을 읽지 못함
+AMD ENHANCED SYNC IS ON	AMD ENHANCED SYNC가 켜져 있음
+AMD FRAME RATE TARGET CONTROL CAPS YOUR FRAME RATE	AMD FRAME RATE TARGET CONTROL가 FPS를 제한함
+AMD RADEON ANTI-LAG IS OFF	AMD RADEON ANTI-LAG가 꺼져 있음
+AMD RADEON BOOST LOWERS THE RESOLUTION IN MOTION	AMD RADEON BOOST가 움직일 때 해상도를 낮춤
+AMD RADEON CHILL CAPS YOUR FRAME RATE	AMD RADEON CHILL가 FPS를 제한함
+AMD WAIT FOR VERTICAL REFRESH IS ALWAYS ON	AMD 수직 새로 고침 대기가 항상 켜져 있음
 ANNA	ANNA
 ANNOUNCER	아나운서
 ANNOUNCER CALLS	아나운서 안내
@@ -225,6 +244,7 @@ ARC TIME	호 시간
 ARM	설치
 ARROW (NUDGE)	화살표 (미세 이동)
 ARROWS / PGUP / PGDN: MOVE BY GRID (ALONG YOUR VIEW)	화살표 / PGUP / PGDN: 그리드 단위 이동 (시점 방향)
+AS THEY'RE DRAWN, NOT AT THE SWAP	그리자마자 보냄 (SWAP 때가 아님)
 AS THICK	같은 두께
 ASIDE: A FRAME LESS LAG IN A WINDOW	참고: 창 모드에서 1프레임 지연 감소
 ASK "SURE?" FIRST: CLICK AGAIN	"확실합니까?" 먼저 묻기: 다시 클릭
@@ -419,6 +439,7 @@ CHAT ON	채팅 켜기
 CHAT OPACITY	채팅 불투명도
 CHAT SECONDS	채팅 표시 시간(초)
 CHECK AGAIN	다시 확인
+CHECKING...	확인 중...
 CHECKPOINT	체크포인트
 CHECKPT	체크포인트
 CHOOSE -	선택 -
@@ -500,6 +521,7 @@ CONSOLE KEY: HOME	콘솔 키: HOME
 CONSOLE KEY: INSERT	콘솔 키: INSERT
 CONTESTED	경합 중
 CONTRAST	대비
+CONTROL PANEL > POWER OPTIONS: HIGH PERFORMANCE	제어판 > 전원 옵션: 고성능
 CONTROL SCRIPTS ARE OFF IN RANKED	랭크에서는 조작 스크립트 사용 불가
 CONTROLS	조작
 CONTROLS 2	조작 2
@@ -529,6 +551,8 @@ CP	CP
 CPU	CPU
 CPU ABOVE NORMAL	CPU 보통 이상
 CPU HIGH	CPU 높음
+CPU LATCH	CPU LATCH
+CPU LATE LATCH	CPU 늦은 읽기
 CPU NORMAL	CPU 보통
 CPU OTHER	CPU 기타
 CPU PRIORITY	CPU 우선순위
@@ -714,6 +738,7 @@ E-GIRL	E-GIRL
 EACH INPUT SENT IN THIS MANY PACKETS	각 입력을 이 개수의 패킷으로 전송
 EACH OF THE ANNOUNCER'S LINES ON OR OFF	아나운서 대사별 켜기 / 끄기
 EACH SLIDER SHOWS THE VALUE IN THIS MODE (STANDARD x MULTIPLIER)	각 슬라이더는 이 모드의 값을 표시 (표준 x 배율)
+EARLY FLUSH	조기 전송
 EASY BOTS	쉬움 봇
 EDGE ARROWS	가장자리 화살표
 EDIT	편집
@@ -833,6 +858,7 @@ FIXED TEAMS: SPECTATING AND DEMOS SHOW	팀 고정: 관전과 데모에서 표시
 FLAT LIGHTING	평면 조명
 FLAT MAP	평면 맵
 FLAT MAP, NO LIGHTING	평면 맵, 조명 없음
+FLUSH	FLUSH
 FLYING, ONE KEY: MOVE UP HELD UP, LET GO DOWN	비행, 키 하나: 누르고 있으면 상승, 떼면 하강
 FOG	안개
 FOLDER	폴더
@@ -904,6 +930,7 @@ GAMEPLAY 5	게임플레이 5
 GAMMA	감마
 GAP	간격
 GATE	게이트
+GEFORCE	GEFORCE
 GENERAL	일반
 GENERAL + INTERFACE	일반 + 인터페이스
 GET IT WITH /link - THE CODE IS PUBLIC	/link로 받기 - 코드는 공개됨
@@ -919,6 +946,8 @@ GODLIKE	신급
 GPU	GPU
 GPU + CPU GO TO THE GAME FIRST WHILE FOCUSED	창 활성 시 GPU + CPU를 게임에 우선 할당
 GPU HUD	GPU HUD
+GPU LATCH	GPU LATCH
+GPU LATE LATCH	GPU 늦은 읽기
 GPU MAX CLOCKS	GPU 최대 클럭
 GPU MAX CLOCKS: NOT CHANGED IN THE UI TEST	GPU 최대 클럭: UI 테스트에서는 변경 안 함
 GPU MAX CLOCKS: WINDOWS ONLY	GPU 최대 클럭: WINDOWS 전용
@@ -926,6 +955,7 @@ GPU PRIORITY	GPU 우선순위
 GPU SCHED: N/A	GPU 스케줄링: 해당 없음
 GPU SCHED: ON	GPU 스케줄링: 켜짐
 GPU SCHED: TURN ON	GPU 스케줄링: 켜기
+GPU SCHED: WINDOWS' HARDWARE GPU SCHEDULING;	GPU 스케줄링: WINDOWS 하드웨어 GPU 스케줄링;
 GPU SCHEDULING	GPU 스케줄링
 GPU SCHEDULING ON: RESTART YOUR PC FOR IT TO TAKE EFFECT	GPU 스케줄링 켜짐: PC를 다시 시작하면 적용
 GPU SCHEDULING: NOT CHANGED (THE ADMIN PROMPT WAS DECLINED)	GPU 스케줄링: 변경 안 됨 (관리자 확인 거부)
@@ -985,6 +1015,7 @@ HAND: LEFT	손: 왼쪽
 HAND: RIGHT	손: 오른쪽
 HARD BOTS	어려움 봇
 HARD TO TELL APART WITH	구분하기 어려운 색:
+HARDWARE GPU SCHEDULING IS OFF	하드웨어 GPU 스케줄링이 꺼져 있음
 HAS NO BINDS	키 지정 없음
 HAS NO WIDGETS	위젯 없음
 HEADSHOT	헤드샷
@@ -1059,10 +1090,12 @@ HUD	HUD
 HUD & SETTINGS	HUD 및 설정
 HUD 2	HUD 2
 HUD > VERBOSE INFO TURNS THE BLOCK ON	HUD > 상세 정보로 이 블록을 켭니다
+HUD BEFORE WORLD	HUD 먼저 그리기
 HUD COLORS	HUD 색상
 HUD DRAW	HUD 렌더링
 HUD EDIT ELEMENT	HUD 요소 편집
 HUD ELEMENT	HUD 요소
+HUD FIRST	HUD FIRST
 HUD SIZE	HUD 크기
 HUD.CFG LINE	HUD.CFG 줄
 HURT	피격
@@ -1116,6 +1149,16 @@ INSTAGIB	인스타깁
 INSTAGIB CROSSBOWS	인스타깁 석궁
 INSTAGIB SNIPERS	인스타깁 저격수
 INTEL	INTEL
+INTEL DRIVER SETTINGS COULDN'T BE READ	INTEL 드라이버 설정을 읽지 못함
+INTEL ENDURANCE GAMING SAVES POWER OVER FRAMES	INTEL ENDURANCE GAMING가 FPS보다 전력 절약을 우선함
+INTEL FORCES ITS OWN VSYNC MODE	INTEL이 자체 VSYNC 모드를 강제함
+INTEL FRAME RATE LIMITER CAPS YOUR FRAME RATE	INTEL 프레임 속도 제한이 FPS를 제한함
+INTEL GRAPHICS SOFTWARE > GRAPHICS: ENDURANCE GAMING OFF	INTEL GRAPHICS SOFTWARE > 그래픽: ENDURANCE GAMING 끔
+INTEL GRAPHICS SOFTWARE > GRAPHICS: FRAME RATE LIMITER OFF	INTEL GRAPHICS SOFTWARE > 그래픽: 프레임 속도 제한 끔
+INTEL GRAPHICS SOFTWARE > GRAPHICS: LOW LATENCY ON	INTEL GRAPHICS SOFTWARE > 그래픽: 저지연 켜짐
+INTEL GRAPHICS SOFTWARE > GRAPHICS: VERTICAL SYNC: APPLICATION CHOICE	INTEL GRAPHICS SOFTWARE > 그래픽: 수직 동기: 응용 프로그램 선택
+INTEL GRAPHICS SOFTWARE: ENDURANCE GAMING OFF, LOW LATENCY ON, VSYNC: APPLICATION CHOICE	INTEL GRAPHICS SOFTWARE: ENDURANCE GAMING 끔, 저지연 켜짐, VSYNC: 응용 프로그램
+INTEL LOW LATENCY IS OFF	INTEL 저지연이 꺼져 있음
 INTERFACE	인터페이스
 INTERMEDIATE	중급
 INTERP	보간
@@ -1200,6 +1243,7 @@ LADDER	사다리
 LADDER CLIMB SPEED	사다리 오르기 속도
 LADDER SIDE SPEED	사다리 옆 이동 속도
 LADDERS (1V1, INSTAGIB FFA) - DEFAULT MODEL, HUD, CONTROLS >	래더 (1V1, 인스타기브 FFA) - 기본 모델, HUD, 조작 >
+LAID OVER THE WORLD AFTER IT	그 뒤 월드 위에 위에 그림
 LAND	착지
 LANGUAGE	언어
 LARGE	크게
@@ -1217,6 +1261,7 @@ LATE FRAME	지연 프레임
 LATE: TEAR	지연 시: 티어링
 LATE: WAIT	지연 시: 대기
 LATENCY	지연 시간
+LATENCY: GPU SCHED: TURN ON (THEN RESTART)	지연 시간: GPU 스케줄링: 켜기 (그 후 재시작)
 LATENT SAFETY	LATENT 안전 여유
 LATENT SYNC	LATENT SYNC
 LATENT SYNC: HOLD FOR THE BLANK	LATENT SYNC: 블랭크까지 대기
@@ -1285,12 +1330,14 @@ LOW HEALTH	체력 낮음
 LOW HEALTH BELOW	체력 낮음 기준
 LOW HEALTH COLOR	체력 낮음 색상
 LOW LATENCY	저지연
+LOW LATENCY {}, TWEAKS: {}	저지연 {}, 조정: {}
 LOW LATENCY: OFF	저지연: 끄기
 LOW LATENCY: ON	저지연: 켜기
 LOW LATENCY: ULTRA	저지연: 울트라
 LOW LATENCY: ULTRA STARTS EACH FRAME THIS EARLY;	저지연: 울트라는 각 프레임을 이만큼 일찍 시작;
 LOWER RATES: LESS CPU AND UPLOAD	낮은 빈도: CPU 및 업로드 감소
 LOWER: SLOWER WHILE SCOPED	낮을수록: 스코프 중 더 느림
+Latch	Latch
 MAGENTA	자홍
 MAKE	만들기
 MALE	남성
@@ -1996,6 +2043,7 @@ Model	모델
 ModelOverrides holds kMaxModelsPerKind models of a kind	ModelOverrides holds kMaxModelsPerKind models of a kind
 N/A HERE: LATENT SYNC IS WINDOWS ONLY	여기선 사용 불가: LATENT SYNC는 WINDOWS 전용
 N/A HERE: WINDOWS + NVIDIA ONLY	여기선 사용 불가: WINDOWS + NVIDIA 전용
+N/A: THE DRIVER LACKS GL 4.4 BUFFER STORAGE	N/A: 드라이버에 GL 4.4 BUFFER STORAGE 없음
 NAME	이름
 NAME COLOR	이름 색상
 NAME COLORS	이름 색상
@@ -2029,6 +2077,7 @@ NO FILES IN	파일 없음:
 NO FILES IN CONTROLS/ - USE FOLDER	CONTROLS/에 파일 없음 - 폴더 사용
 NO FRAMES MEASURED	측정된 프레임 없음
 NO FULLSCREEN OPT.	전체 화면 최적화 끄기
+NO FULLSCREEN OPT.: TRUE EXCLUSIVE FULLSCREEN (NEXT START)	전체 화면 최적화 끄기: 진짜 독점 전체 화면 (다음 실행)
 NO GAMES FOUND	게임 없음
 NO GAMES MATCH THE FILTERS	필터에 맞는 게임 없음
 NO MAP IS BUILT FOR THIS MODE YET	아직 이 모드용 맵 없음
@@ -2055,6 +2104,7 @@ NOT FOUND: USING THE PRIMARY	찾을 수 없음: 기본 모니터 사용
 NOT PLAYED YET	아직 플레이 안 함
 NOT REPORTED - NOT A RANKED MAP FOR THIS LADDER	보고 안 됨 - 이 래더의 랭크 맵이 아님
 NOT USABLE	사용 불가
+NOTHING FOUND: YOUR DRIVER AND WINDOWS SETTINGS LOOK RIGHT	문제 없음: 드라이버와 WINDOWS 설정이 맞음
 NOTHING IN THE GAME RECORDS YET: THIS IS	아직 게임 기록 없음: 이것이
 NOTHING MATCHES "	일치하는 항목 없음: "
 NOTHING SELECTED	선택 안 됨
@@ -2071,7 +2121,19 @@ NUM	NUM
 NUMBER TIME	숫자 표시 시간
 NV DXGI PRESENT	NV DXGI PRESENT
 NV THREADED OFF	NV 스레드 최적화 끄기
+NVIDIA	NVIDIA
+NVIDIA CAPS YOUR FRAME RATE (MAX FRAME RATE)	NVIDIA가 FPS를 제한함 (MAX FRAME RATE)
+NVIDIA CONTROL PANEL > MANAGE 3D SETTINGS > LOW LATENCY MODE: ON	NVIDIA 제어판 > 3D 설정 > 저지연 모드: 켜짐
+NVIDIA CONTROL PANEL > MANAGE 3D SETTINGS > MAX FRAME RATE: OFF	NVIDIA 제어판 > 3D 설정 > 최대 프레임 속도: 끔
+NVIDIA CONTROL PANEL > MANAGE 3D SETTINGS > POWER MANAGEMENT MODE (OR GPU MAX CLOCKS)	NVIDIA 제어판 > 3D 설정 > 전원 관리 모드 (또는 GPU MAX CLOCKS)
+NVIDIA CONTROL PANEL > MANAGE 3D SETTINGS > TRIPLE BUFFERING: OFF	NVIDIA 제어판 > 3D 설정 > 트리플 버퍼링: 끔
+NVIDIA CONTROL PANEL > MANAGE 3D SETTINGS > VERTICAL SYNC: USE THE 3D APPLICATION SETTING	NVIDIA 제어판 > 3D 설정 > 수직 동기: 3D 응용 프로그램 설정 사용
 NVIDIA DRIVER PROFILE, FROM THE NEXT START:	NVIDIA 드라이버 프로필, 다음 실행부터:
+NVIDIA LETS FRAMES QUEUE UP (MAX PRE-RENDERED FRAMES)	NVIDIA가 프레임을 쌓음 (MAX PRE-RENDERED FRAMES)
+NVIDIA POWER MANAGEMENT ISN'T MAXIMUM PERFORMANCE	NVIDIA 전원 관리가 최대 성능이 아님
+NVIDIA THREADED OPTIMIZATION IS ON	NVIDIA 스레드 최적화가 켜져 있음
+NVIDIA TRIPLE BUFFERING IS ON	NVIDIA 트리플 버퍼링이 켜져 있음
+NVIDIA VERTICAL SYNC IS FORCED ON	NVIDIA가 수직 동기를 강제로 켜짐
 NW	NW
 Name, mouse sensitivity (or cm/360 with your DPI), field of view, team and enemy colours, volume, hit sounds, the announcer (off / countdown / all calls; male or female voice), player model and sound pack.	이름, 마우스 감도 (또는 DPI 기준 cm/360), 시야각, 팀 및 적 색상, 볼륨, 타격음, 아나운서 (끄기 / 카운트다운 / 모든 안내; 남성 또는 여성 음성), 플레이어 모델 및 사운드 팩.
 New map	새 맵
@@ -2183,6 +2245,7 @@ PER WEAPON	무기별
 PERCEPTUAL	지각적
 PERF STATS	성능 통계
 PERFORMANCE	성능
+PERFORMANCE CHECK	성능 점검
 PHYSICS	물리
 PIA	PIA
 PICK A FILE TO IMPORT	가져올 파일 선택
@@ -2221,6 +2284,7 @@ PLAYS	플레이 횟수
 PLAYS AS	플레이 모드
 PLAYS AS:	플레이 모드:
 PLAYS THE BENCHMARK DEMO (HAMLET, FREE FOR ALL, FULL OF BOTS) AND MEASURES EVERY FRAME	벤치마크 데모 (HAMLET, 개인전, 봇 가득) 재생 후 모든 프레임 측정
+PLUG IT IN: ON BATTERY THE GPU AND CPU CLOCK DOWN	전원을 연결: 배터리로는 GPU와 CPU가 느려짐
 POINT	지점
 POINT LOST	지점 빼앗김
 POINT TAKEN	지점 점령
@@ -2266,6 +2330,8 @@ Pick a server from the list (internet and LAN), or type its address as IP:PORT.	
 Pick an element in the dropdown (health, weapon name, cooldown bars, speed meter, weapon list) and move it, resize it, recolour it or hide it.	드롭다운에서 요소(체력, 무기 이름, 쿨다운 바, 속도계, 무기 목록)를 골라 이동, 크기 조절, 색상 변경, 숨기기를 하세요.
 Pick the mode and map, a server name and the max players. The game picks the map built for the mode; any other map works with a warning.	모드와 맵, 서버 이름, 최대 인원을 정하세요. 게임은 모드에 맞게 제작된 맵을 고릅니다; 다른 맵도 경고와 함께 사용 가능합니다.
 Player	플레이어
+PowerGetActiveScheme	PowerGetActiveScheme
+PowerGetEffectiveOverlayScheme	PowerGetEffectiveOverlayScheme
 Q - grapple: hold to hook what you're aiming at and pull toward it; release to let go.	Q - 그래플: 누르고 있으면 조준한 곳에 훅을 걸어 그쪽으로 당겨집니다; 떼면 놓습니다.
 QK1 - QK8 - ranked arenas for all three ladders (vanilla and laser vampire 1v1, instagib free for all), also duel and tourney.	QK1 - QK8 - 세 래더 모두의 랭크 아레나 (바닐라 및 레이저 뱀파이어 1v1, 인스타깁 개인전), 결투와 토너먼트도 지원.
 QUAKE	QUAKE
@@ -2308,6 +2374,8 @@ RACE TOTAL	레이스 합계
 RADAR	레이더
 RADAR RANGE	레이더 범위
 RADAR: TEAMMATES AND OBJECTIVES, NEVER ENEMIES	레이더: 팀원과 목표만, 적은 표시 안 함
+RADEON	RADEON
+RADEON(TM) GRAPHICS	RADEON(TM) GRAPHICS
 RADIUS	반경
 RAILYARD / DAM / EXPRESS / MONORAIL - neutral payload (Railyard: payload too).   WAR / CONVOY - multi point.	RAILYARD / DAM / EXPRESS / MONORAIL - 중립 화물 (Railyard: 화물도 가능).   WAR / CONVOY - 멀티 포인트.
 RAMPAGE	광란
@@ -2440,6 +2508,7 @@ ROWS #-# OF # (WHEEL)	#-#행 / # (휠)
 ROWS #-# OF # - WHEEL TO SCROLL	#-#행 / # - 휠로 스크롤
 RPS BY MOUSE	마우스로 가위바위보
 RPS BY MOUSE: CLICK A TIEBREAK CARD TO THROW IT	마우스로 가위바위보: 결승 카드를 클릭해 내기
+RTX	RTX
 RUBIK	RUBIK
 RULES	규칙
 RUN	도망
@@ -2819,12 +2888,16 @@ THE DARK EDGE ROUND ALL TEXT, MENUS TOO	모든 텍스트와 메뉴의 어두운 
 THE DEFAULT	기본값
 THE FONT COCAINE DIESEL USES	COCAINE DIESEL이 사용하는 폰트
 THE FONT OF THE MENUS AND THE HUD	메뉴와 HUD의 폰트
+THE FRAME	프레임
+THE GAME RUNS ON YOUR INTEGRATED GPU	게임이 내장 GPU에서 실행 중
 THE GAME'S PART ONLY: NO MOUSE POLLING, NO DISPLAY; ONE TIME LINE	게임만: 마우스 폴링과 디스플레이 제외; 하나의 시간선
+THE GPU READS YOUR AIM AS IT STARTS DRAWING;	GPU가 그리기 시작할 때 조준을 읽음;
 THE GUN'S KICK ON A SHOT (0: NONE)	사격 시 총기 반동 (0: 없음)
 THE HAZE OVER DISTANT WALLS (0: NONE)	먼 벽 위의 연무 (0: 없음)
 THE LANGUAGE OF THE MENUS AND THE HUD	메뉴와 HUD의 언어
 THE MAP ISN'T BUILT FOR THIS MODE: IT MAY NOT WORK	이 맵은 이 모드용이 아님: 작동하지 않을 수 있음
 THE MESSAGES UNDER THE SCORE BOX	점수판 아래 메시지
+THE MOUSE READ AGAIN JUST BEFORE THE WORLD IS DRAWN	월드를 그리기 직전에 마우스를 다시 읽음
 THE OLD MAPS (BEFORE 1.19.6) IN THE MAP LISTS. NEVER RANKED	맵 목록의 구 맵 (1.19.6 이전). 랭크 불가
 THE ORIGINAL PIXEL FONT	원래 픽셀 폰트
 THE OTHER CONTROL SCRIPTS STAY OFF IN RANKED	다른 조작 스크립트는 랭크에서 꺼진 상태 유지
@@ -2833,6 +2906,7 @@ THE SAVED DEVICE IS GONE: THE DEFAULT PLAYS	저장된 장치 없음: 기본 장�
 THE SAVED MICROPHONE IS GONE: THE DEFAULT	저장된 마이크 없음: 기본값 사용
 THE SAVED MONITOR IS GONE: THE PRIMARY	저장된 모니터 없음: 기본 모니터 사용
 THE SCROLL WHEEL PASSES OVER SKIPPED	스크롤 휠은 건너뛴 항목을 넘어감
+THE SHADOWS AND THE WORLD GO TO THE GPU AS SOON	그림자와 월드를 GPU로
 THE SHARE OF THE MODE'S MAX HEALTH	모드 최대 체력 대비 비율
 THE TASKBAR BUTTON FLASHES	작업 표시줄 버튼 깜빡임
 THE WINDOW'S SIZE AND PLACE ARE KEPT	창 크기와 위치 유지
@@ -2847,6 +2921,7 @@ THICKNESS	두께
 THIRD PERSON	3인칭
 THIRTY SECONDS	30초
 THIS LIFE:	이번 목숨:
+THIS PC IS RUNNING ON BATTERY	이 PC는 배터리로 작동 중
 THIS RUN	이번 기록
 THREADED OPTIMIZATION OFF	스레드 최적화 끄기
 THREADED OPTIMIZATION OFF; PRESENT VIA DXGI	스레드 최적화 끄기; DXGI로 표시
@@ -2929,7 +3004,9 @@ UDP PORT	UDP 포트
 UHD	UHD
 UI FONT	UI 폰트
 ULTRA	울트라
+ULTRA ONLY: THE HUD DRAWN BEFORE THE LATE READ,	ULTRA 전용: HUD를 늦은 읽기 전에 그리고,
 ULTRA SAFETY	울트라 안전 여유
+ULTRA: 0 QUEUED + EACH FRAME STARTED LATE	ULTRA: 대기 0 + 각 프레임을 늦게 시작
 ULTRA: 0 QUEUED + LATE INPUT SAMPLING	울트라: 대기 0 + 늦은 입력 샘플링
 UNBAKE	굽기 해제
 UNBOUND	미지정
@@ -2963,6 +3040,7 @@ VANILLA	바닐라
 VEC2	VEC2
 VEC3	VEC3
 VEC4	VEC4
+VEGA	VEGA
 VERBOSE INFO	상세 정보
 VERBOSE INFO LINES	상세 정보 줄
 VERDANA BOLD	VERDANA BOLD
@@ -2973,6 +3051,7 @@ VERTICAL: ONE KEY	수직: 키 하나
 VERTICAL: TWO KEYS	수직: 키 두 개
 VIDEO	비디오
 VIDEO + AUDIO	비디오 + 오디오
+VIDEO + AUDIO > MORE: NV THREADED OFF (OR THE NVIDIA CONTROL PANEL)	비디오 + 오디오 > 더 보기: NV THREADED 끔 (또는 NVIDIA 제어판)
 VIDEO 2	비디오 2
 VIDEO 3	비디오 3
 VIDEO 4	비디오 4
@@ -3071,6 +3150,15 @@ WINDOW + INPUT	창 + 입력
 WINDOW SIZE	창 크기
 WINDOW SIZE:	창 크기:
 WINDOWED	창 모드
+WINDOWS	WINDOWS
+WINDOWS GAME MODE IS OFF	WINDOWS 게임 모드가 꺼져 있음
+WINDOWS IS ON THE POWER SAVER PLAN	WINDOWS가 절전 모드 전원 관리 옵션임
+WINDOWS ONLY	WINDOWS 전용
+WINDOWS POWER MODE IS BEST POWER EFFICIENCY	WINDOWS 전원 모드가 최고의 전원 효율
+WINDOWS RAW INPUT, NO MOUSE ACCEL	WINDOWS RAW INPUT, 마우스 가속 없음
+WINDOWS SETTINGS > GAMING > GAME MODE: ON	WINDOWS 설정 > 게임 > 게임 모드: 켜짐
+WINDOWS SETTINGS > SYSTEM > DISPLAY > GRAPHICS > QUARK: HIGH PERFORMANCE	WINDOWS 설정 > 시스템 > 디스플레이 > 그래픽 > QUARK: 고성능
+WINDOWS SETTINGS > SYSTEM > POWER: POWER MODE BEST PERFORMANCE	WINDOWS 설정 > 시스템 > 전원: 최고 성능
 WINDOWS, WITH PRIORITIZE GAME ON;	WINDOWS, 게임 우선 켜짐 시;
 WINNER STAYS	승자 잔류
 WINNER STAYS - 1v1 rounds on one ruleset while everyone else waits in line. Each round's winner stays; the loser goes to the back of the line and the next in line plays the winner. Every round you win counts: first to 10 wins.	승자 잔류 - 나머지가 줄을 서서 기다리는 동안 한 가지 규칙으로 1v1 라운드를 진행합니다. 라운드 승자는 남고, 패자는 줄 맨 뒤로 가며 다음 사람이 승자와 대결합니다. 이긴 라운드는 모두 집계됩니다: 10승 선취.

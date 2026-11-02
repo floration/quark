@@ -145,6 +145,7 @@
 240 FPS	240 FPS
 2:00  -  1ST OF 6	2:00  -  6人中1位
 2D: THE VIEW STAYS STILL, YOUR MOUSE MOVES THE CROSSHAIR	2D: 視点固定、マウスでクロスヘアを移動
+3 TIMES: THE GRAPH; 4 TIMES: THE GAME'S PART ONLY	3 回: グラフ; 4 回: ゲームの分だけ
 30 SECONDS LEFT	残り30秒
 32-bit float	32-bit float
 3D FLYING	3D 飛行
@@ -177,6 +178,16 @@ ADD WIDGET	ウィジェット追加
 ADD: boxes (base / accent / wallbang: bullets go through wallbangs for half damage), spawns, lights, payload path points, bomb sites, the hill, race checkpoints, and LADDERS (one object: stretch it and the rungs follow).	追加: ボックス (ベース / アクセント / ウォールバン: 弾が貫通しダメージ半減)、スポーン、ライト、ペイロード経路、爆破サイト、ヒル、レースのチェックポイント、はしご (1つのオブジェクト: 伸ばすと段も追従)。
 ADDRESS	アドレス
 ADDRESS (IP:PORT)	アドレス (IP:ポート)
+ADLXInitialize	ADLXInitialize
+ADLXInitializeWithIncompatibleDriver	ADLXInitializeWithIncompatibleDriver
+ADLXTerminate	ADLXTerminate
+ADRENALIN > GAMING > GRAPHICS: ENHANCED SYNC OFF	ADRENALIN > ゲーム > グラフィックス: ENHANCED SYNC オフ
+ADRENALIN > GAMING > GRAPHICS: FRAME RATE TARGET CONTROL OFF	ADRENALIN > ゲーム > グラフィックス: FRAME RATE TARGET CONTROL オフ
+ADRENALIN > GAMING > GRAPHICS: RADEON ANTI-LAG ON	ADRENALIN > ゲーム > グラフィックス: RADEON ANTI-LAG オン
+ADRENALIN > GAMING > GRAPHICS: RADEON BOOST OFF	ADRENALIN > ゲーム > グラフィックス: RADEON BOOST オフ
+ADRENALIN > GAMING > GRAPHICS: RADEON CHILL OFF	ADRENALIN > ゲーム > グラフィックス: RADEON CHILL オフ
+ADRENALIN > GAMING > GRAPHICS: WAIT FOR VERTICAL REFRESH: OFF, UNLESS APPLICATION SPECIFIES	ADRENALIN > ゲーム > グラフィックス: 垂直リフレッシュ待ち: オフ (アプリが指定しない限り)
+ADRENALIN: ANTI-LAG ON; CHILL, BOOST, ENHANCED SYNC, WAIT FOR VERTICAL REFRESH OFF	ADRENALIN: ANTI-LAG オン; CHILL, BOOST, ENHANCED SYNC, 垂直リフレッシュ待ち オフ
 ADVANCED	上級
 ADVANCED > BOT BRAIN: what your bots play: the built-in brain, or a .qbrain file from the bots folder in your data folder. A file that doesn't compile shows its error line and the bots play the built-in brain. Never in ranked.	上級 > ボットAI: ボットの戦い方: 内蔵AI、またはデータフォルダ内の bots フォルダにある .qbrain ファイル。コンパイルできないファイルはエラー行を表示し、ボットは内蔵AIで戦います。ランクでは使われません。
 AGAIN (R)	もう一度 (R)
@@ -202,6 +213,14 @@ ALT-FIRE: TOGGLE	サブ射撃: トグル
 ALT-TABBED OR MINIMIZED: LESS POWER AND HEAT	ALT-TAB中・最小化時: 省電力・低発熱
 ALWAYS LIT	常時点灯
 ALWAYS ON TOP	常に最前面
+AMD	AMD
+AMD DRIVER SETTINGS COULDN'T BE READ	AMD ドライバーの設定を読めなかった
+AMD ENHANCED SYNC IS ON	AMD ENHANCED SYNC がオン
+AMD FRAME RATE TARGET CONTROL CAPS YOUR FRAME RATE	AMD FRAME RATE TARGET CONTROL が FPS を制限
+AMD RADEON ANTI-LAG IS OFF	AMD RADEON ANTI-LAG がオフ
+AMD RADEON BOOST LOWERS THE RESOLUTION IN MOTION	AMD RADEON BOOST が動きの中で解像度を下げる
+AMD RADEON CHILL CAPS YOUR FRAME RATE	AMD RADEON CHILL が FPS を制限
+AMD WAIT FOR VERTICAL REFRESH IS ALWAYS ON	AMD の垂直リフレッシュ待ちが常にオン
 ANNA	ANNA
 ANNOUNCER	アナウンサー
 ANNOUNCER CALLS	アナウンサー音声
@@ -225,6 +244,7 @@ ARC TIME	アークの時間
 ARM	腕
 ARROW (NUDGE)	矢印キー (微調整)
 ARROWS / PGUP / PGDN: MOVE BY GRID (ALONG YOUR VIEW)	矢印 / PGUP / PGDN: グリッド単位で移動 (視点方向)
+AS THEY'RE DRAWN, NOT AT THE SWAP	描いたらすぐ送る (SWAP を待たない)
 AS THICK	同じ太さ
 ASIDE: A FRAME LESS LAG IN A WINDOW	補足: ウィンドウで1フレーム遅延減
 ASK "SURE?" FIRST: CLICK AGAIN	先に確認: もう一度クリック
@@ -419,6 +439,7 @@ CHAT ON	チャット オン
 CHAT OPACITY	チャット不透明度
 CHAT SECONDS	チャット表示秒数
 CHECK AGAIN	再確認
+CHECKING...	確認中...
 CHECKPOINT	チェックポイント
 CHECKPT	CP
 CHOOSE -	選択 -
@@ -500,6 +521,7 @@ CONSOLE KEY: HOME	コンソールキー: HOME
 CONSOLE KEY: INSERT	コンソールキー: INSERT
 CONTESTED	争奪中
 CONTRAST	コントラスト
+CONTROL PANEL > POWER OPTIONS: HIGH PERFORMANCE	コントロールパネル > パワーオプション: 高パフォーマンス
 CONTROL SCRIPTS ARE OFF IN RANKED	ランクでは操作スクリプト無効
 CONTROLS	操作設定
 CONTROLS 2	操作設定 2
@@ -529,6 +551,8 @@ CP	CP
 CPU	CPU
 CPU ABOVE NORMAL	CPU 通常以上
 CPU HIGH	CPU 高
+CPU LATCH	CPU LATCH
+CPU LATE LATCH	CPU 遅延読み取り
 CPU NORMAL	CPU 通常
 CPU OTHER	CPU その他
 CPU PRIORITY	CPU優先度
@@ -714,6 +738,7 @@ E-GIRL	E-GIRL
 EACH INPUT SENT IN THIS MANY PACKETS	各入力をこの数のパケットで送信
 EACH OF THE ANNOUNCER'S LINES ON OR OFF	アナウンサーの各セリフのオン / オフ
 EACH SLIDER SHOWS THE VALUE IN THIS MODE (STANDARD x MULTIPLIER)	各スライダーはこのモードでの値を表示 (標準 x 倍率)
+EARLY FLUSH	早期送信
 EASY BOTS	イージーボット
 EDGE ARROWS	端の矢印
 EDIT	編集
@@ -833,6 +858,7 @@ FIXED TEAMS: SPECTATING AND DEMOS SHOW	チーム色固定: 観戦とデモでの
 FLAT LIGHTING	フラットライティング
 FLAT MAP	フラットマップ
 FLAT MAP, NO LIGHTING	フラットマップ、ライティングなし
+FLUSH	FLUSH
 FLYING, ONE KEY: MOVE UP HELD UP, LET GO DOWN	飛行 1キー: 押している間上昇、離すと下降
 FOG	霧
 FOLDER	フォルダ
@@ -904,6 +930,7 @@ GAMEPLAY 5	ゲームプレイ 5
 GAMMA	ガンマ
 GAP	間隔
 GATE	ゲート
+GEFORCE	GEFORCE
 GENERAL	一般
 GENERAL + INTERFACE	一般 + インターフェース
 GET IT WITH /link - THE CODE IS PUBLIC	/link で取得 - コードは公開されます
@@ -919,6 +946,8 @@ GODLIKE	ゴッドライク
 GPU	GPU
 GPU + CPU GO TO THE GAME FIRST WHILE FOCUSED	フォーカス中はGPU + CPUをゲーム優先
 GPU HUD	GPU HUD
+GPU LATCH	GPU LATCH
+GPU LATE LATCH	GPU 遅延読み取り
 GPU MAX CLOCKS	GPU最大クロック
 GPU MAX CLOCKS: NOT CHANGED IN THE UI TEST	GPU最大クロック: UIテストでは変更しない
 GPU MAX CLOCKS: WINDOWS ONLY	GPU最大クロック: WINDOWSのみ
@@ -926,6 +955,7 @@ GPU PRIORITY	GPU優先度
 GPU SCHED: N/A	GPU スケジューリング: 利用不可
 GPU SCHED: ON	GPU スケジューリング: オン
 GPU SCHED: TURN ON	GPU スケジューリング: オンにする
+GPU SCHED: WINDOWS' HARDWARE GPU SCHEDULING;	GPU スケジューリング: WINDOWS のハードウェア GPU スケジューリング;
 GPU SCHEDULING	GPU スケジューリング
 GPU SCHEDULING ON: RESTART YOUR PC FOR IT TO TAKE EFFECT	GPU スケジューリング オン: PC を再起動すると有効
 GPU SCHEDULING: NOT CHANGED (THE ADMIN PROMPT WAS DECLINED)	GPU スケジューリング: 変更なし (確認が拒否されました)
@@ -985,6 +1015,7 @@ HAND: LEFT	手: 左
 HAND: RIGHT	手: 右
 HARD BOTS	ハードボット
 HARD TO TELL APART WITH	見分けにくい色覚:
+HARDWARE GPU SCHEDULING IS OFF	ハードウェア GPU スケジューリングがオフ
 HAS NO BINDS	割り当てなし
 HAS NO WIDGETS	ウィジェットなし
 HEADSHOT	ヘッドショット
@@ -1059,10 +1090,12 @@ HUD	HUD
 HUD & SETTINGS	HUD & 設定
 HUD 2	HUD 2
 HUD > VERBOSE INFO TURNS THE BLOCK ON	HUD > 詳細情報 でこのブロックを表示
+HUD BEFORE WORLD	HUD を先に描く
 HUD COLORS	HUDカラー
 HUD DRAW	HUD描画
 HUD EDIT ELEMENT	HUD要素を編集
 HUD ELEMENT	HUD要素
+HUD FIRST	HUD FIRST
 HUD SIZE	HUDサイズ
 HUD.CFG LINE	HUD.CFG 行
 HURT	被弾
@@ -1116,6 +1149,16 @@ INSTAGIB	インスタギブ
 INSTAGIB CROSSBOWS	インスタギブ クロスボウ
 INSTAGIB SNIPERS	インスタギブ スナイパー
 INTEL	INTEL
+INTEL DRIVER SETTINGS COULDN'T BE READ	INTEL ドライバーの設定を読めなかった
+INTEL ENDURANCE GAMING SAVES POWER OVER FRAMES	INTEL ENDURANCE GAMING が FPS より省電力を優先
+INTEL FORCES ITS OWN VSYNC MODE	INTEL が独自の VSYNC モードを強制
+INTEL FRAME RATE LIMITER CAPS YOUR FRAME RATE	INTEL のフレームレート制限が FPS を制限
+INTEL GRAPHICS SOFTWARE > GRAPHICS: ENDURANCE GAMING OFF	INTEL GRAPHICS SOFTWARE > グラフィックス: ENDURANCE GAMING オフ
+INTEL GRAPHICS SOFTWARE > GRAPHICS: FRAME RATE LIMITER OFF	INTEL GRAPHICS SOFTWARE > グラフィックス: フレームレート制限 オフ
+INTEL GRAPHICS SOFTWARE > GRAPHICS: LOW LATENCY ON	INTEL GRAPHICS SOFTWARE > グラフィックス: 低遅延 オン
+INTEL GRAPHICS SOFTWARE > GRAPHICS: VERTICAL SYNC: APPLICATION CHOICE	INTEL GRAPHICS SOFTWARE > グラフィックス: 垂直同期: アプリケーションの選択
+INTEL GRAPHICS SOFTWARE: ENDURANCE GAMING OFF, LOW LATENCY ON, VSYNC: APPLICATION CHOICE	INTEL GRAPHICS SOFTWARE: ENDURANCE GAMING オフ, 低遅延 オン, VSYNC: アプリ
+INTEL LOW LATENCY IS OFF	INTEL の低遅延がオフ
 INTERFACE	インターフェース
 INTERMEDIATE	中級
 INTERP	補間
@@ -1200,6 +1243,7 @@ LADDER	はしご
 LADDER CLIMB SPEED	はしご登り速度
 LADDER SIDE SPEED	はしご横移動速度
 LADDERS (1V1, INSTAGIB FFA) - DEFAULT MODEL, HUD, CONTROLS >	ラダー (1V1、インスタギブFFA) - デフォルトモデル、HUD、操作設定 >
+LAID OVER THE WORLD AFTER IT	その後ワールドの上に重ねる
 LAND	着地
 LANGUAGE	言語
 LARGE	大
@@ -1217,6 +1261,7 @@ LATE FRAME	遅延フレーム
 LATE: TEAR	遅延時: ティアリング
 LATE: WAIT	遅延時: 待機
 LATENCY	遅延
+LATENCY: GPU SCHED: TURN ON (THEN RESTART)	遅延: GPU スケジューリング: オンにする (その後再起動)
 LATENT SAFETY	レイテント安全マージン
 LATENT SYNC	レイテントシンク
 LATENT SYNC: HOLD FOR THE BLANK	レイテントシンク: ブランクを待つ
@@ -1285,12 +1330,14 @@ LOW HEALTH	低体力
 LOW HEALTH BELOW	低体力の閾値
 LOW HEALTH COLOR	低体力の色
 LOW LATENCY	低遅延
+LOW LATENCY {}, TWEAKS: {}	低遅延 {}, 調整: {}
 LOW LATENCY: OFF	低遅延: オフ
 LOW LATENCY: ON	低遅延: オン
 LOW LATENCY: ULTRA	低遅延: ウルトラ
 LOW LATENCY: ULTRA STARTS EACH FRAME THIS EARLY;	低遅延: ウルトラは各フレームをこれだけ早く開始;
 LOWER RATES: LESS CPU AND UPLOAD	低レート: CPUとアップロードを削減
 LOWER: SLOWER WHILE SCOPED	低くするとスコープ中に遅く
+Latch	Latch
 MAGENTA	マゼンタ
 MAKE	作成
 MALE	男性
@@ -1996,6 +2043,7 @@ Model	モデル
 ModelOverrides holds kMaxModelsPerKind models of a kind	ModelOverrides holds kMaxModelsPerKind models of a kind
 N/A HERE: LATENT SYNC IS WINDOWS ONLY	ここでは使用不可: LATENT SYNC は WINDOWS のみ
 N/A HERE: WINDOWS + NVIDIA ONLY	ここでは使用不可: WINDOWS + NVIDIA のみ
+N/A: THE DRIVER LACKS GL 4.4 BUFFER STORAGE	N/A: ドライバーに GL 4.4 BUFFER STORAGE がない
 NAME	名前
 NAME COLOR	名前の色
 NAME COLORS	名前の色
@@ -2029,6 +2077,7 @@ NO FILES IN	ファイルがありません:
 NO FILES IN CONTROLS/ - USE FOLDER	CONTROLS/ にファイルがありません - フォルダを使用
 NO FRAMES MEASURED	計測フレームなし
 NO FULLSCREEN OPT.	フルスクリーン最適化 オフ
+NO FULLSCREEN OPT.: TRUE EXCLUSIVE FULLSCREEN (NEXT START)	フルスクリーン最適化 オフ: 真の排他フルスクリーン (次回起動)
 NO GAMES FOUND	ゲームが見つかりません
 NO GAMES MATCH THE FILTERS	フィルターに一致するゲームがありません
 NO MAP IS BUILT FOR THIS MODE YET	このモード用のマップはまだありません
@@ -2055,6 +2104,7 @@ NOT FOUND: USING THE PRIMARY	見つかりません: プライマリを使用
 NOT PLAYED YET	未プレイ
 NOT REPORTED - NOT A RANKED MAP FOR THIS LADDER	未送信 - このラダーのランクマップではありません
 NOT USABLE	使用不可
+NOTHING FOUND: YOUR DRIVER AND WINDOWS SETTINGS LOOK RIGHT	異常なし: ドライバーと WINDOWS の設定は正しい
 NOTHING IN THE GAME RECORDS YET: THIS IS	ゲーム記録はまだありません: これは
 NOTHING MATCHES "	一致なし "
 NOTHING SELECTED	未選択
@@ -2071,7 +2121,19 @@ NUM	NUM
 NUMBER TIME	数値表示時間
 NV DXGI PRESENT	NV DXGI PRESENT
 NV THREADED OFF	NV スレッド最適化オフ
+NVIDIA	NVIDIA
+NVIDIA CAPS YOUR FRAME RATE (MAX FRAME RATE)	NVIDIA が FPS を制限 (MAX FRAME RATE)
+NVIDIA CONTROL PANEL > MANAGE 3D SETTINGS > LOW LATENCY MODE: ON	NVIDIA コントロールパネル > 3D 設定 > 低遅延モード: オン
+NVIDIA CONTROL PANEL > MANAGE 3D SETTINGS > MAX FRAME RATE: OFF	NVIDIA コントロールパネル > 3D 設定 > 最大フレームレート: オフ
+NVIDIA CONTROL PANEL > MANAGE 3D SETTINGS > POWER MANAGEMENT MODE (OR GPU MAX CLOCKS)	NVIDIA コントロールパネル > 3D 設定 > パワーモード (または GPU MAX CLOCKS)
+NVIDIA CONTROL PANEL > MANAGE 3D SETTINGS > TRIPLE BUFFERING: OFF	NVIDIA コントロールパネル > 3D 設定 > トリプルバッファリング: オフ
+NVIDIA CONTROL PANEL > MANAGE 3D SETTINGS > VERTICAL SYNC: USE THE 3D APPLICATION SETTING	NVIDIA コントロールパネル > 3D 設定 > 垂直同期: 3D アプリケーションの設定を使用
 NVIDIA DRIVER PROFILE, FROM THE NEXT START:	NVIDIAドライバープロファイル、次回起動から:
+NVIDIA LETS FRAMES QUEUE UP (MAX PRE-RENDERED FRAMES)	NVIDIA がフレームをためている (MAX PRE-RENDERED FRAMES)
+NVIDIA POWER MANAGEMENT ISN'T MAXIMUM PERFORMANCE	NVIDIA のパワー設定が最大パフォーマンスではない
+NVIDIA THREADED OPTIMIZATION IS ON	NVIDIA のスレッド最適化がオン
+NVIDIA TRIPLE BUFFERING IS ON	NVIDIA のトリプルバッファリングがオン
+NVIDIA VERTICAL SYNC IS FORCED ON	NVIDIA が垂直同期を強制オン
 NW	NW
 Name, mouse sensitivity (or cm/360 with your DPI), field of view, team and enemy colours, volume, hit sounds, the announcer (off / countdown / all calls; male or female voice), player model and sound pack.	名前、マウス感度 (またはDPIからcm/360)、視野角、味方と敵の色、音量、ヒット音、アナウンサー (オフ / カウントダウン / すべて; 男性または女性の声)、プレイヤーモデルとサウンドパック。
 New map	新しいマップ
@@ -2183,6 +2245,7 @@ PER WEAPON	武器別
 PERCEPTUAL	知覚
 PERF STATS	パフォーマンス統計
 PERFORMANCE	パフォーマンス
+PERFORMANCE CHECK	パフォーマンスチェック
 PHYSICS	物理
 PIA	PIA
 PICK A FILE TO IMPORT	インポートするファイルを選択
@@ -2221,6 +2284,7 @@ PLAYS	プレイ数
 PLAYS AS	プレイ可能
 PLAYS AS:	プレイ可能:
 PLAYS THE BENCHMARK DEMO (HAMLET, FREE FOR ALL, FULL OF BOTS) AND MEASURES EVERY FRAME	ベンチマークデモ (HAMLET、個人戦、ボット満員) を再生し全フレームを計測
+PLUG IT IN: ON BATTERY THE GPU AND CPU CLOCK DOWN	AC アダプターをつなぐ: バッテリーでは GPU と CPU が遅くなる
 POINT	ポイント
 POINT LOST	ポイントを失った
 POINT TAKEN	ポイント占拠
@@ -2266,6 +2330,8 @@ Pick a server from the list (internet and LAN), or type its address as IP:PORT.	
 Pick an element in the dropdown (health, weapon name, cooldown bars, speed meter, weapon list) and move it, resize it, recolour it or hide it.	ドロップダウンで要素 (体力、武器名、クールダウンバー、スピードメーター、武器リスト) を選び、移動・サイズ変更・色変更・非表示ができます。
 Pick the mode and map, a server name and the max players. The game picks the map built for the mode; any other map works with a warning.	モードとマップ、サーバー名、最大人数を選択。モード用のマップが自動で選ばれます; 他のマップも警告付きで使用可能。
 Player	プレイヤー
+PowerGetActiveScheme	PowerGetActiveScheme
+PowerGetEffectiveOverlayScheme	PowerGetEffectiveOverlayScheme
 Q - grapple: hold to hook what you're aiming at and pull toward it; release to let go.	Q - グラップル: 長押しで狙った場所に引っ掛けて引き寄せる; 離すと解除。
 QK1 - QK8 - ranked arenas for all three ladders (vanilla and laser vampire 1v1, instagib free for all), also duel and tourney.	QK1 - QK8 - 3つのラダー全て (バニラとレーザーヴァンパイア1v1、インスタギブ個人戦) のランクアリーナ、デュエルとトーナメントにも対応。
 QUAKE	QUAKE
@@ -2308,6 +2374,8 @@ RACE TOTAL	レース合計
 RADAR	レーダー
 RADAR RANGE	レーダー範囲
 RADAR: TEAMMATES AND OBJECTIVES, NEVER ENEMIES	レーダー: 味方と目標のみ、敵は表示しない
+RADEON	RADEON
+RADEON(TM) GRAPHICS	RADEON(TM) GRAPHICS
 RADIUS	半径
 RAILYARD / DAM / EXPRESS / MONORAIL - neutral payload (Railyard: payload too).   WAR / CONVOY - multi point.	RAILYARD / DAM / EXPRESS / MONORAIL - ニュートラルペイロード (Railyard: ペイロードも)。   WAR / CONVOY - マルチポイント。
 RAMPAGE	ランペイジ
@@ -2440,6 +2508,7 @@ ROWS #-# OF # (WHEEL)	行 #-# / # (ホイール)
 ROWS #-# OF # - WHEEL TO SCROLL	行 #-# / # - ホイールでスクロール
 RPS BY MOUSE	マウスでじゃんけん
 RPS BY MOUSE: CLICK A TIEBREAK CARD TO THROW IT	マウスでじゃんけん: タイブレークのカードをクリックで出す
+RTX	RTX
 RUBIK	RUBIK
 RULES	ルール
 RUN	逃げろ
@@ -2819,12 +2888,16 @@ THE DARK EDGE ROUND ALL TEXT, MENUS TOO	全テキストの暗い縁取り、メ�
 THE DEFAULT	デフォルト
 THE FONT COCAINE DIESEL USES	COCAINE DIESEL が使うフォント
 THE FONT OF THE MENUS AND THE HUD	メニューとHUDのフォント
+THE FRAME	フレーム
+THE GAME RUNS ON YOUR INTEGRATED GPU	ゲームが内蔵 GPU で動いている
 THE GAME'S PART ONLY: NO MOUSE POLLING, NO DISPLAY; ONE TIME LINE	ゲームのみ: マウスとディスプレイを除く; 一本の時間軸
+THE GPU READS YOUR AIM AS IT STARTS DRAWING;	GPU が描き始めるときに照準を読む;
 THE GUN'S KICK ON A SHOT (0: NONE)	射撃時の武器の反動 (0: なし)
 THE HAZE OVER DISTANT WALLS (0: NONE)	遠くの壁にかかる霞 (0: なし)
 THE LANGUAGE OF THE MENUS AND THE HUD	メニューと HUD の言語
 THE MAP ISN'T BUILT FOR THIS MODE: IT MAY NOT WORK	このマップはこのモード非対応: 動作しない場合があります
 THE MESSAGES UNDER THE SCORE BOX	スコアボックス下のメッセージ
+THE MOUSE READ AGAIN JUST BEFORE THE WORLD IS DRAWN	ワールドを描く直前にマウスを読み直す
 THE OLD MAPS (BEFORE 1.19.6) IN THE MAP LISTS. NEVER RANKED	旧マップ (1.19.6以前) をマップリストに表示。ランク対象外
 THE ORIGINAL PIXEL FONT	オリジナルのピクセルフォント
 THE OTHER CONTROL SCRIPTS STAY OFF IN RANKED	他の操作スクリプトはランクでは無効のまま
@@ -2833,6 +2906,7 @@ THE SAVED DEVICE IS GONE: THE DEFAULT PLAYS	保存したデバイスがありま
 THE SAVED MICROPHONE IS GONE: THE DEFAULT	保存したマイクがありません: デフォルトを使用
 THE SAVED MONITOR IS GONE: THE PRIMARY	保存したモニターがありません: プライマリを使用
 THE SCROLL WHEEL PASSES OVER SKIPPED	ホイールはスキップした武器を飛ばす
+THE SHADOWS AND THE WORLD GO TO THE GPU AS SOON	影とワールドを GPU へ
 THE SHARE OF THE MODE'S MAX HEALTH	モードの最大体力に対する割合
 THE TASKBAR BUTTON FLASHES	タスクバーのボタンが点滅
 THE WINDOW'S SIZE AND PLACE ARE KEPT	ウィンドウのサイズと位置を保持
@@ -2847,6 +2921,7 @@ THICKNESS	太さ
 THIRD PERSON	三人称
 THIRTY SECONDS	30秒
 THIS LIFE:	このライフ:
+THIS PC IS RUNNING ON BATTERY	この PC はバッテリーで動いている
 THIS RUN	今回のラン
 THREADED OPTIMIZATION OFF	スレッド最適化オフ
 THREADED OPTIMIZATION OFF; PRESENT VIA DXGI	スレッド最適化オフ; DXGI経由でPRESENT
@@ -2929,7 +3004,9 @@ UDP PORT	UDPポート
 UHD	UHD
 UI FONT	UIフォント
 ULTRA	ウルトラ
+ULTRA ONLY: THE HUD DRAWN BEFORE THE LATE READ,	ULTRA のみ: HUD を遅延読み取りの前に描き,
 ULTRA SAFETY	ウルトラ安全マージン
+ULTRA: 0 QUEUED + EACH FRAME STARTED LATE	ULTRA: キュー 0 + 各フレームを遅く開始
 ULTRA: 0 QUEUED + LATE INPUT SAMPLING	ウルトラ: キュー0 + 遅延入力サンプリング
 UNBAKE	ベイク解除
 UNBOUND	未割り当て
@@ -2963,6 +3040,7 @@ VANILLA	バニラ
 VEC2	VEC2
 VEC3	VEC3
 VEC4	VEC4
+VEGA	VEGA
 VERBOSE INFO	詳細情報
 VERBOSE INFO LINES	詳細情報の行
 VERDANA BOLD	VERDANA BOLD
@@ -2973,6 +3051,7 @@ VERTICAL: ONE KEY	上下: 1キー
 VERTICAL: TWO KEYS	上下: 2キー
 VIDEO	ビデオ
 VIDEO + AUDIO	ビデオ + オーディオ
+VIDEO + AUDIO > MORE: NV THREADED OFF (OR THE NVIDIA CONTROL PANEL)	ビデオ + オーディオ > 詳細: NV THREADED オフ (または NVIDIA パネル)
 VIDEO 2	ビデオ 2
 VIDEO 3	ビデオ 3
 VIDEO 4	ビデオ 4
@@ -3071,6 +3150,15 @@ WINDOW + INPUT	ウィンドウ + 入力
 WINDOW SIZE	ウィンドウサイズ
 WINDOW SIZE:	ウィンドウサイズ:
 WINDOWED	ウィンドウ
+WINDOWS	WINDOWS
+WINDOWS GAME MODE IS OFF	WINDOWS のゲームモードがオフ
+WINDOWS IS ON THE POWER SAVER PLAN	WINDOWS が省電力プラン
+WINDOWS ONLY	WINDOWS のみ
+WINDOWS POWER MODE IS BEST POWER EFFICIENCY	WINDOWS のパワーモードが最適な電力効率
+WINDOWS RAW INPUT, NO MOUSE ACCEL	WINDOWS の RAW INPUT, マウス加速なし
+WINDOWS SETTINGS > GAMING > GAME MODE: ON	WINDOWS の設定 > ゲーム > ゲームモード: オン
+WINDOWS SETTINGS > SYSTEM > DISPLAY > GRAPHICS > QUARK: HIGH PERFORMANCE	WINDOWS の設定 > システム > ディスプレイ > グラフィックス > QUARK: 高パフォーマンス
+WINDOWS SETTINGS > SYSTEM > POWER: POWER MODE BEST PERFORMANCE	WINDOWS の設定 > システム > パワー: 最適なパフォーマンス
 WINDOWS, WITH PRIORITIZE GAME ON;	WINDOWS、ゲーム優先オン時;
 WINNER STAYS	勝ち残り
 WINNER STAYS - 1v1 rounds on one ruleset while everyone else waits in line. Each round's winner stays; the loser goes to the back of the line and the next in line plays the winner. Every round you win counts: first to 10 wins.	勝ち残り - 1つのルールで1v1ラウンド、他の全員は順番待ち。各ラウンドの勝者は残り、敗者は列の最後尾へ、次の人が勝者と対戦。勝ったラウンドはすべてカウント: 10勝先取で勝利。

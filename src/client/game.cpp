@@ -166,6 +166,12 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     audio_.setExclusive(cfg_.exclusiveAudio);
     if (!opts_.uiTest) setGamePriority(prioLevel(glfwGetWindowAttrib(win_, GLFW_FOCUSED) != 0));
     audio_.setOutputDevice(cfg_.audioOutput);   // (Settings > DEVICES; "" the default)
+    // GPU LATE LATCH: the raw mouse thread hands each report's counts to the renderer's latch (armed only while the
+    // setting is on, in your own view); the driver needs ARB_buffer_storage (GL 4.4) for the persistent buffer
+    r_.latchSupported = glfwExtensionSupported("GL_ARB_buffer_storage") == GLFW_TRUE;
+    r_.latchClock = &timeNow;
+    rawMouse_.onMotionCtx = &r_;
+    rawMouse_.onMotion.store([](void* r, long long dx, long long dy) { static_cast<Renderer*>(r)->latchMouse((double)dx, (double)dy); });
     if (!opts_.uiTest && cfg_.rawInput) rawMouse_.start();   // (the UI test drives the mouse through GLFW; RAW INPUT off: the OS's motion)
     if (!audio_.start()) printf("audio: no output device - running without sound\n");
     audio_.setMasterVolume(cfg_.volume);
@@ -1162,6 +1168,15 @@ void Game::onMouseButton(int button, int action) {
 }
 
 // Mouse motion (counts) into the view.
+// The yaw / pitch (radians) one mouse count turns now, as turn() does it without MOUSE ACCEL (the GPU late latch)
+void Game::turnGain(float* kYaw, float* kPitch) const {
+    float k = deg2rad(modeSens_ > 0 ? modeSens_ : cfg_.sensitivity) * 0.01f * 2.2f;
+    if (heldWeapon_ >= 0 && heldWeapon_ < WPN_COUNT) k *= cfg_.wpnSens[heldWeapon_];
+    if (scoped_) k *= std::tan(deg2rad(viewFov()) * 0.5f) / std::tan(deg2rad(hfov()) * 0.5f) * cfg_.zoomSens;
+    *kYaw = k;
+    *kPitch = k * cfg_.sensY * (cfg_.invertY ? -1.0f : 1.0f);
+}
+
 void Game::turn(double dx, double dy) {
     float k = deg2rad(modeSens_ > 0 ? modeSens_ : cfg_.sensitivity) * 0.01f * 2.2f;   // (a mode's controls profile may set its own)
     // (CONTROLS > MORE 2: the held weapon's own multiple; MOUSE ACCEL: x (1 + accel x counts per ms this frame), at most x4)
@@ -1213,6 +1228,7 @@ void Game::readMouse(bool late) {
         if (mouseCaptured_ && mouseFocused_ && (!mouseHeld_ || time_ - mouseHeldAt_ > 0.5)) { rawMouse_.hold(win_, true); mouseHeld_ = true; mouseHeldAt_ = time_; }
         else if (mouseHeld_ && (!mouseCaptured_ || !mouseFocused_)) { rawMouse_.hold(win_, false); mouseHeld_ = false; }
     }
+    r_.latchDisarm();   // (GPU LATE LATCH: the counts are the game's from here; the next arm starts from its aim)
     if (!rawMouse_.take(&dx, &dy, &n, &firstAt) || !mouseCaptured_ || !mouseFocused_) return;   // (motion meanwhile: dropped)
     // (F3: when it arrived; 0: a report raced the take and lost its stamp, motion kept)
     if (firstAt > 0 && (pendingInput_ < 0 || firstAt < pendingInput_)) pendingInput_ = firstAt;
@@ -3321,19 +3337,31 @@ void Game::drawWorld(float alpha) {
     else if (perfMini_) drawPerfMini();
     r_.prepare2D();
     hudBuilt_ = true;
+    // LATENCY > HUD BEFORE WORLD (ULTRA only): the HUD drawn now, into its own layer, and laid over the world after it:
+    // its draw calls leave the stretch between the late read and the GPU starting the world (one triangle stays there)
+    const bool hudLayer = cfg_.hudFirst && cfg_.lowLatency == 2 && r_.hudLayerDraw();
     // The dynamic geometry's upload and the shadow pass don't depend on the aim either: before the read too (ULTRA:
     // flushed, so the GPU draws the shadow map meanwhile). After the read: only the view's own draws.
     r_.prepareScene(cfg_.shadows && (cfg_.shadowWorld || cfg_.shadowPlayers));   // (MORE 4: on neither: no shadow pass)
-    if (ultraPaced() || cfg_.lowLatency == 1) glFlush();
+    if (cfg_.earlyFlush) glFlush();   // (LATENCY > EARLY FLUSH: the shadow pass to the GPU before the read)
     // Late latch: the newest mouse motion, read just before the world is drawn (everything above, world, players and
     // effects, was built in world space: only the view turns). The command this frame sent keeps its aim; the next
     // carries this. What was projected onto the screen above (name tags, health bars) is off by this sliver of a turn.
-    if (lateLatch) {
+    // (LATENCY > CPU LATE LATCH: this read; off: the aim stays the frame's first read)
+    if (lateLatch && cfg_.cpuLatch) {
         readMouse(true);
         r_.relatch(yaw_, pitch_);
         if (pendingInput_ >= 0) { if (frameInput_ < 0) frameInput_ = pendingInput_; pendingInput_ = -1; }   // (F3: shown this frame, not the next)
         pipeMark(PM_LATCH);
     } else pipeNow_[PM_LATCH] = pipeNow_[PM_POLL];   // (no late read: the mouse is fixed at the frame's read)
+    // LATENCY > GPU LATE LATCH: from here the mouse's thread writes each newer aim straight into the buffer the GPU reads
+    // the view from when it starts the world (Windows' raw mouse thread; no MOUSE ACCEL: its gain depends on the frame)
+    float kYaw = 0, kPitch = 0;
+    const bool gpuLatch = cfg_.gpuLatch && lateLatch && rawMouse_.active() && cfg_.mouseAccel <= 0 && mouseFocused_;
+    if (gpuLatch) turnGain(&kYaw, &kPitch);
+    r_.latchArm(gpuLatch, kYaw, kPitch);
+    gpuLatchOn_ = gpuLatch && r_.latchActive();
+    hudLayerOn_ = hudLayer;   // (F3 names both: drawn before this point, it shows the last frame's)
     pipeMark(PM_SCENE0);
     pipeGpuBegin();
     r_.drawScene(cfg_.shadows && (cfg_.shadowWorld || cfg_.shadowPlayers));
@@ -3344,7 +3372,8 @@ void Game::drawWorld(float alpha) {
     }
     // (ULTRA, and LOW LATENCY ON: the world sent now, so the GPU draws it while the HUD is built and drawn, instead of
     // waiting for the swap to submit the whole frame: F3's gap between SWAP and GPU, ~45-65 us on Windows; 2026-11-02)
-    if (ultraPaced() || cfg_.lowLatency == 1) glFlush();
+    if (cfg_.earlyFlush) glFlush();   // (LATENCY > EARLY FLUSH)
+    if (hudLayer) r_.hudLayerComposite();
     pipeMark(PM_SCENE1);   // (ULTRA: the GPU starts the world while the HUD is built; it sits idle otherwise)
 }
 
@@ -6472,6 +6501,7 @@ int packOf(const Vec3& c) {
 void Game::openSettingsTab(int tab) {
     hudEditClose();
     setTab_ = tab;
+    if (tab == TAB_LATENCY && !perfFuture_.valid()) perfChecked_ = false;   // (the performance check read again on each visit)
     controlsSub_ = 0;
     fontsOpen_ = devicesOpen_ = widgetEdit_ = false;
     moreOpen_ = 0;
@@ -6518,8 +6548,8 @@ void Game::debugSettingsTab() {
     if (t.empty()) return;
     size_t plus = t.find('+');
     if (plus != std::string::npos) { pick = t.substr(plus + 1); t = t.substr(0, plus); }
-    static const char* tabs[] = {"player", "gameplay", "controls", "video", "crosshair", "hud", "search"};
-    for (int i = 0; i < 7; i++) if (t.rfind(tabs[i], 0) == 0) setTab_ = i;
+    static const char* tabs[] = {"player", "gameplay", "controls", "video", "crosshair", "hud", "latency", "search"};
+    for (int i = 0; i < 8; i++) if (t.rfind(tabs[i], 0) == 0) setTab_ = i;
     if (t.rfind("search/", 0) == 0) setSearch_ = upper(t.substr(7));   // (search/QUERY: that typed)
     if (t == "fonts") fontsOpen_ = true;
     if (t == "video/devices") { devicesOpen_ = true; devListed_ = false; }
@@ -6557,13 +6587,13 @@ void Game::drawSettings() {
     const float footY = setTab_ == TAB_HUD && !moreOpen_ ? kHudFootY : 640;
     ui_.panel(L.X(252), L.Y(32), L.L(776), L.L(footY + 48 - 32), hudPreview ? 0.6f : 1.0f);
     {   // the tab row, an accent line under it
-        static const char* names[] = {"PLAYER", "GAMEPLAY", "CONTROLS", "VIDEO + AUDIO", "CROSSHAIR", "HUD", "SEARCH"};
+        static const char* names[] = {"PLAYER", "GAMEPLAY", "CONTROLS", "VIDEO + AUDIO", "CROSSHAIR", "HUD", "LATENCY", "SEARCH"};
         static const char* navs[] = {"~settings", "~settings/gameplay", "~settings/controls", "~settings/video", "~settings/crosshair", "~settings/hud",
-                                     "~settings/search"};
-        // (SEARCH last: the tabs before it are where settings live, it looks through all of them)
-        static const float tx[] = {268, 364, 480, 596, 742, 862, 924}, tw[] = {92, 112, 112, 142, 116, 58, 88};
+                                     "~settings/latency", "~settings/search"};
+        // (SEARCH last: the tabs before it are where settings live, it looks through all of them. LATENCY: 2026-11-02)
+        static const float tx[] = {268, 348, 450, 552, 682, 788, 842, 932}, tw[] = {76, 98, 98, 126, 102, 50, 86, 80};
         int pick = -1;
-        for (int t = 0; t < 7; t++)
+        for (int t = 0; t < 8; t++)
             if (ui_.tab(L.X(tx[t]), L.Y(40), L.L(tw[t]), L.L(kRowH), names[t], t == setTab_, UiExp::nav(navs[t]))) pick = t;
         r_.rect(L.X(268), L.Y(72), L.L(744), L.L(2), ui_.accent);
         if (pick >= 0) { openSettingsTab(pick); return; }   // (next frame: the new tab)
@@ -6580,6 +6610,7 @@ void Game::drawSettings() {
         case TAB_VIDEO: drawVideoSettings(L); break;
         case TAB_CROSSHAIR: drawCrosshairSettings(L); break;
         case TAB_HUD: drawHudSettings(L); break;
+        case TAB_LATENCY: drawLatencySettings(L); break;
     }
     if (setTab_ == TAB_HUD && (widgetEdit_ || hudEdit_)) return;   // (WIDGET EDITOR / EDIT ON SCREEN was just clicked)
     // (the UI test: the content's lowest pixel, leaving out what the page drew in its footer row: RESET, DEVICES)
@@ -7289,7 +7320,8 @@ void Game::drawSearchTab(const SetLayout& L) {
             {TAB_VIDEO, 0, 0, false, "VIDEO"}, {TAB_VIDEO, 1, 0, false, "VIDEO 2"}, {TAB_VIDEO, 2, 0, false, "VIDEO 3"}, {TAB_VIDEO, 3, 0, false, "VIDEO 4"},
             {TAB_VIDEO, 4, 0, false, "VIDEO 5"}, {TAB_VIDEO, 5, 0, false, "VIDEO 6"}, {TAB_VIDEO, 6, 0, false, "VIDEO 7"}, {TAB_VIDEO, 7, 0, false, "VIDEO 8"},
             {TAB_VIDEO, 8, 0, false, "VIDEO 9"}, {TAB_VIDEO, 0, 0, true, "VIDEO: DEVICES"},
-            {TAB_CROSSHAIR, 0, 0, false, "CROSSHAIR"}, {TAB_HUD, 0, 0, false, "HUD"}, {TAB_HUD, 1, 0, false, "HUD 2"}};
+            {TAB_CROSSHAIR, 0, 0, false, "CROSSHAIR"}, {TAB_HUD, 0, 0, false, "HUD"}, {TAB_HUD, 1, 0, false, "HUD 2"},
+            {TAB_LATENCY, 0, 0, false, "LATENCY"}};
         const int tab0 = setTab_, more0 = moreOpen_, sub0 = controlsSub_;
         const Pg* jump = nullptr;
         const bool dev0 = devicesOpen_;
@@ -7322,6 +7354,7 @@ void Game::drawSearchTab(const SetLayout& L) {
                 case TAB_VIDEO: drawVideoSettings(L); break;
                 case TAB_CROSSHAIR: drawCrosshairSettings(L); break;
                 case TAB_HUD: drawHudSettings(L); break;
+                case TAB_LATENCY: drawLatencySettings(L); break;
             }
             counts[pi] = sl.n - start;
             // (a row that opens something of its page's own - CONTROLS' IMPORT and its file list, an editor - takes you
@@ -8171,22 +8204,6 @@ void Game::drawMoreSettings(const SetLayout& L) {
 #else
         g.hint("N/A HERE: WINDOWS + NVIDIA ONLY");
 #endif
-        {   // Windows' hardware-accelerated GPU scheduling: a system setting (admin prompt, then a restart). Elsewhere N/A.
-            static int hags = hwSchedState();
-            const std::string lbl = hags == 1 ? "GPU SCHED: ON" : hags == 0 ? "GPU SCHED: TURN ON" : "GPU SCHED: N/A";
-            if (ui_.button(g.x(), g.top(), hw, h, lbl, UiExp::inert().withId("GPU SCHEDULING")) && hags == 0) {
-                std::string msg = "NOT CHANGED IN THE UI TEST";
-                if (!uiTest_ && hwSchedEnable(&msg)) hags = 1;
-                notify(msg);
-            }
-            // "Disable fullscreen optimizations" for quark.exe (per user, no admin): real exclusive fullscreen
-            if (ui_.toggle(xr, g.top(), hw, h, "NO FULLSCREEN OPT.", cfg_.disableFso, UiExp::cfg("disable_fso"))) {
-                std::string msg = "NOT CHANGED IN THE UI TEST";
-                if (!uiTest_ && !fsoDisable(cfg_.disableFso, &msg)) cfg_.disableFso = !cfg_.disableFso;
-                notify(msg);
-            }
-            g.next();
-        }
         g.section("SOUND");
         ui_.toggle(g.x(), g.top(), hw, h, "HITSOUND TIERS", cfg_.hitTiers, UiExp::cfg("hit_tiers"));
         {
@@ -9132,6 +9149,78 @@ void Game::drawImportDialog(const SetLayout& L) {
             return;
         }
     if (ui_.button(bx, L.Y(y), bw, bh, "CANCEL", UiExp::nav("~settings/controls"))) filePick_ = 0;
+}
+
+// LATENCY (owner, 2026-11-02: "make a latency settings tab and each tweak gets its own toggle, so i can test every
+// combination myself"): every tweak between the mouse and the photon on its own, F3's graph to compare them with, and a
+// check of the driver's and Windows' settings that cost frames
+void Game::drawLatencySettings(const SetLayout& L) {
+    const float w = L.L(kColW), h = L.L(kRowH), hw = L.L(kHalfW), xr = L.X(kColR + kColW - kHalfW);
+    SetFlow f{ui_, L, kColL, 90};
+    f.header("THE FRAME");
+    static const std::vector<std::string> llNames = {"LOW LATENCY: OFF", "LOW LATENCY: ON", "LOW LATENCY: ULTRA"};
+    ui_.cycle(f.x(), f.top(), w, h, "LOW LATENCY", cfg_.lowLatency, 3, llNames, UiExp::cfg("low_latency"));
+    f.next();
+    f.hint("ON: AT MOST 1 FRAME QUEUED", "ULTRA: 0 QUEUED + EACH FRAME STARTED LATE");
+    ui_.toggle(f.x(), f.top(), w, h, "EARLY FLUSH", cfg_.earlyFlush, UiExp::cfg("early_flush"));
+    f.next();
+    f.hint("THE SHADOWS AND THE WORLD GO TO THE GPU AS SOON", "AS THEY'RE DRAWN, NOT AT THE SWAP");
+    ui_.toggle(f.x(), f.top(), w, h, "CPU LATE LATCH", cfg_.cpuLatch, UiExp::cfg("cpu_latch"));
+    f.next();
+    f.hint("THE MOUSE READ AGAIN JUST BEFORE THE WORLD IS DRAWN");
+    ui_.toggle(f.x(), f.top(), w, h, "GPU LATE LATCH", cfg_.gpuLatch, UiExp::cfg("gpu_latch"));
+    f.next();
+    f.hint(r_.latchSupported ? "THE GPU READS YOUR AIM AS IT STARTS DRAWING;" : "N/A: THE DRIVER LACKS GL 4.4 BUFFER STORAGE",
+           "WINDOWS RAW INPUT, NO MOUSE ACCEL");
+    ui_.toggle(f.x(), f.top(), w, h, "HUD BEFORE WORLD", cfg_.hudFirst, UiExp::cfg("hud_first"));
+    f.next();
+    f.hint("ULTRA ONLY: THE HUD DRAWN BEFORE THE LATE READ,", "LAID OVER THE WORLD AFTER IT");
+    f.hint(keyOf(A_PERF) + " 3 TIMES: THE GRAPH; 4 TIMES: THE GAME'S PART ONLY");
+
+    SetFlow g{ui_, L, kColR, 90};
+    g.header("WINDOWS");
+    {   // Windows' hardware-accelerated GPU scheduling: a system setting (admin prompt, then a restart). Elsewhere N/A.
+        static int hags = hwSchedState();
+        const std::string lbl = hags == 1 ? "GPU SCHED: ON" : hags == 0 ? "GPU SCHED: TURN ON" : "GPU SCHED: N/A";
+        if (ui_.button(g.x(), g.top(), hw, h, lbl, UiExp::inert().withId("GPU SCHEDULING")) && hags == 0) {
+            std::string msg = "NOT CHANGED IN THE UI TEST";
+            if (!uiTest_ && hwSchedEnable(&msg)) { hags = 1; perfChecked_ = false; }
+            notify(msg);
+        }
+        // "Disable fullscreen optimizations" for quark.exe (per user, no admin): real exclusive fullscreen
+        if (ui_.toggle(xr, g.top(), hw, h, "NO FULLSCREEN OPT.", cfg_.disableFso, UiExp::cfg("disable_fso"))) {
+            std::string msg = "NOT CHANGED IN THE UI TEST";
+            if (!uiTest_ && !fsoDisable(cfg_.disableFso, &msg)) cfg_.disableFso = !cfg_.disableFso;
+            notify(msg);
+        }
+        g.next();
+        g.hint("GPU SCHED: WINDOWS' HARDWARE GPU SCHEDULING;", "NO FULLSCREEN OPT.: TRUE EXCLUSIVE FULLSCREEN (NEXT START)");
+    }
+    g.section("PERFORMANCE CHECK");
+    // (on its own thread: loading the drivers' libraries can take a moment, and the menu keeps its frame rate meanwhile)
+    if (!perfChecked_ && !perfFuture_.valid()) {
+        const std::string gpu = r_.gpuName();
+        perfFuture_ = std::async(std::launch::async, [gpu] { return perfCheck(gpu); });
+    }
+    if (perfFuture_.valid() && perfFuture_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        perfFindings_ = perfFuture_.get();
+        perfChecked_ = true;
+    }
+    if (!perfChecked_) g.label("CHECKING...");
+    else if (perfFindings_.empty()) g.label(
+#ifdef _WIN32
+        "NOTHING FOUND: YOUR DRIVER AND WINDOWS SETTINGS LOOK RIGHT"
+#else
+        "WINDOWS ONLY"
+#endif
+    );
+    for (size_t i = 0; i < perfFindings_.size() && i < 9; i++) {
+        ui_.label(g.x(), g.top(), perfFindings_[i].what, Color{1.0f, 0.75f, 0.35f, 1}, 1.0f, w);
+        g.y += 18;
+        ui_.hint(g.x(), g.top(), perfFindings_[i].fix, kGrey, w);
+        g.y += 18;
+    }
+    if (ui_.button(g.x(), g.top() + L.L(4), hw, h, "CHECK AGAIN", UiExp::inert()) && !perfFuture_.valid()) perfChecked_ = false;
 }
 
 void Game::drawCrosshairSettings(const SetLayout& L) {
@@ -10833,7 +10922,7 @@ void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
     // the graph: a label and the time on the left, the bar on its own line on the right (a waterfall)
     const float lh = r_.textHeight(ts) + 4, labelW = r_.textWidth("WAITING FOR THE LATE READ (AVG)  00,000,000 NS", ts) + 12;
     const float barW = std::max(200.0f, std::min(700.0f * ts, (float)r_.width() - x - labelW - 24));
-    const float h = (rows.size() + 3) * lh + 8;
+    const float h = (rows.size() + 4) * lh + 8;
     r_.rect(x, y, labelW + barW + 16, h, {0, 0, 0, 0.6f});
     float yy = y + 4;
     char head[160];
@@ -10847,6 +10936,19 @@ void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
              mouseRate, ns(hwDisplay).c_str(), hz);
     r_.text(x + 6, yy, ts, split, {0.85f, 0.85f, 0.9f, 1});
     yy += lh;
+    {   // which of the LATENCY tab's tweaks this graph was taken with (owner: "test every combination myself")
+        std::string on;
+        auto add = [&](bool b, const char* n) { if (b) on += on.empty() ? n : std::string(" + ") + n; };
+        add(cfg_.earlyFlush, "FLUSH");
+        add(cfg_.cpuLatch && cfg_.lowLatency > 0, "CPU LATCH");
+        add(gpuLatchOn_, "GPU LATCH");
+        add(hudLayerOn_, "HUD FIRST");
+        char tw[160];
+        snprintf(tw, sizeof tw, "LOW LATENCY %s, TWEAKS: %s", cfg_.lowLatency == 2 ? "ULTRA" : cfg_.lowLatency == 1 ? "ON" : "OFF",
+                 on.empty() ? "NONE" : on.c_str());
+        r_.text(x + 6, yy, ts, tw, {0.6f, 0.85f, 1.0f, 1});
+        yy += lh;
+    }
     const double scale = t - t0 > 0 ? barW / (t - t0) : 0;
     for (const Row& r : rows) {
         r_.text(x + 6, yy, ts, r.name, r.c);
