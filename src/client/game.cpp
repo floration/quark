@@ -11192,15 +11192,18 @@ void Game::drawPicker(float cx, float y) {
     // the builder's mode list: objective based or player based (owner, 2026-11-01)
     static std::vector<int> modeVis;
     modeVis.clear();
-    if (modes && builder) {
+    // (and a retired mode, winner stays, in neither; the host's list ends with the RANKED tile, "mode" MODE_COUNT)
+    if (modes) {
         static const int kObjective[] = {MODE_BOMB, MODE_KOTH, MODE_NPAYLOAD, MODE_PAYLOAD, MODE_POINTS, MODE_RACE, MODE_SURF, MODE_BALL};
         for (int m = 0; m < MODE_COUNT; m++) {
+            if (modeRetired(m)) continue;
             const bool obj = std::find(std::begin(kObjective), std::end(kObjective), m) != std::end(kObjective);
-            if (modeGroup_ == 0 || obj == (modeGroup_ == 1)) modeVis.push_back(m);
+            if (!builder || modeGroup_ == 0 || obj == (modeGroup_ == 1)) modeVis.push_back(m);
         }
+        if (!builder && rankedTile) modeVis.push_back(MODE_COUNT);
     }
-    auto modeAt = [&](int i) { return modes && builder ? modeVis[i] : i; };
-    int n = ladders ? 3 : variants ? kArenaVariants : modes ? (builder ? (int)modeVis.size() : MODE_COUNT + (rankedTile ? 1 : 0)) : (int)maps_.size();
+    auto modeAt = [&](int i) { return modes ? modeVis[i] : i; };
+    int n = ladders ? 3 : variants ? kArenaVariants : modes ? (int)modeVis.size() : (int)maps_.size();
     // a map list: only the maps built for the mode (owner, 2026-10-30: "you shouldnt get to pick maps that are not under the
     // playable gamemode for the map"; a tourney list: built for tourney; ranked: its ladder's maps), vis[i] is card i's map
     static std::vector<int> vis;
@@ -11262,7 +11265,6 @@ void Game::drawPicker(float cx, float y) {
             }
             if (i == MODE_ARENA) it.sub = std::to_string(kArenaVariants) + " RULESETS >";
             if (i == MODE_BALL) it.sub = "TEAMS, A BALL, TWO GOALS - MOST GOALS IN 10 MINUTES";
-            if (i == MODE_WINNER) it.sub = "1V1 ROUNDS, LOSER TO THE BACK OF THE LINE - FIRST TO 10 - RULESETS >";
             if (i == MODE_TOURNEY) it.sub = "BRACKET OF 1V1S - RULESETS >";
         } else {
             const MapInfo& mi = mapInfo_[vis[i]];
@@ -11293,6 +11295,7 @@ void Game::drawPicker(float cx, float y) {
             } else { mapIdx = vis[i]; voteAdvance(); }
             return;
         }
+        if (modes) i = modeAt(i);
         if (multi) multiSel_[i] = !multiSel_[i];
         else if (ladders && live) { // host switches right away, anyone else calls a vote
             net_.sendCommand(std::string(livePickVote_ ? "callvote " : "") + "ranked on " + arenaVariant(kLadders[i]).name);

@@ -221,6 +221,8 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     if (cfg_.maxPlayers > kMaxPlayers) cfg_.maxPlayers = kMaxPlayers;
     // ranked and time trials (their runs reach the leaderboard) play by the standard rules: no custom numbers, no logic
     if (cfg_.ranked || cfg_.timeTrial) cfg_.custom = CustomRules();
+    cfg_.mode = retiredTo(cfg_.mode);   // (winner stays: 1v1, which rotates the line itself now)
+    cfg_.custom.baseMode = retiredTo(cfg_.custom.baseMode);
     if (cfg_.timeTrial) rankedRaceMaps();   // (read the ranked race maps now, not on the first tick's snapshot)
     if (cfg_.custom.active()) { // a custom mode: its mode, limits and map pool
         const CustomRules& c = cfg_.custom;
@@ -4538,7 +4540,7 @@ void Server::logTick() {
 
 // Start playing map_ (already loaded or edited) in `mode`: everyone respawns, clients get the map again.
 void Server::playMap(int mode) {
-    cfg_.mode = mode;
+    cfg_.mode = retiredTo(mode);   // (a retired mode: what replaced it)
     specOut_.clear();   // a new map: whoever was voted to spectate may play again, and every spectate vote can be called again
     for (auto& p : players_) { p.specLocked = false; p.specVoted = 0; }
     for (auto& pr : projectiles_) pr.active = false;
