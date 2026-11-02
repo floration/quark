@@ -281,6 +281,7 @@ private:
     double lastCpu_ = 0;
     double modelSentAt_ = -10;
     int socdLastF_ = 0, socdLastS_ = 0;     // control scripts: SOCD press order, alt-fire toggle state
+    int socdLastV_ = 0; bool socdPrevV_[2] = {false, false};   // (flight's MOVE UP / MOVE DOWN: the same SOCD as the move keys)
     bool socdPrev_[4] = {}, altPrev_ = false, altToggled_ = false;
     int altWeapon_ = -1;   // the weapon alt-fire was pressed with (-1 up; -2 held over a switch: ignored till let go)
     void benchFrame(double dt);
@@ -417,7 +418,7 @@ private:
     bool vsMode_ = true, vsMods_ = true, vsMap_ = true;
     int modeGroup_ = 0;                 // 0 all, 1 objective, 2 player (the mode picker's filter in the builder)
     struct VoteMods { float gravity = 1, speed = 1, jump = 1, knockback = 1, damage = 1; float health = 100;
-                      bool vampire = false, regen = false, selfDamage = true, dash = true, grapple = true, instagib = false; } voteMods_;
+                      bool vampire = false, regen = false, selfDamage = true, dash = true, grapple = true, instagib = false, fly = false; } voteMods_;
     void openVoteSetup();
     void voteAdvance();                 // on to the next part the toggles ask for (a picker, or the builder's own page)
     std::string voteModsWords() const;  // " mods k=v ..." (the non-standard ones)

@@ -2912,6 +2912,27 @@ static void testVamp3D(uint16_t port) {
     s.stop();
 }
 
+// 3D FLYING as a modifier (owner, 2026-11-02: "3d movement should just be its own modifier not its own gamemode, so you
+// can play it on anything"): fly=1 in the rules (a vote's mods, a custom mode) flies everyone on any mode and map
+static void testFlyModifier(uint16_t port) {
+    printf("3d flying modifier: fly=1 on a free for all\n");
+    CustomRules r;
+    CHECK(r.fromText("custommode=flying\nmode=ffa\nfly=1\n") && r.fly);
+    CustomRules back;
+    CHECK(back.fromText(r.toNetText()) && back.fly && votedModsTitle("fly=1\n") == "3D FLYING");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "harbor"; cfg.mode = MODE_FFA; cfg.port = port; cfg.balanceBots = false;
+    cfg.custom = r;
+    NetClient c[2];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); return; }
+    pump(s, cls, 0.2, idle);
+    auto& pa = s.players_[c[0].clientId()];
+    CHECK(pa.alive && pa.move.fly && c[0].predicted().fly);
+    s.stop();
+}
+
 // "quark_tests rules NAME": the one named ("quark_tests rules" alone is the rules group: the first half).
 // half: 0 every test, 1 or 2 one of two halves of about equal time (the suite's "rules" and "rules2" groups: ~24 s each
 // on an idle box; overtime ~16 s and grapplep ~8 s are the long ones, one in each). A test of half 0 is in neither: the
@@ -2951,6 +2972,7 @@ static void testGameRules(const std::string& only, int half = 0) {
         {"modehooks", 2, [] { testModeHooks(TP(29310)); }},
         {"power", 1, [] { testPower(TP(29314)); }},
         {"vamp3d", 1, [] { testVamp3D(TP(29316)); }},
+        {"flymod", 1, [] { testFlyModifier(TP(29317)); }},
     };
     for (auto& r : all) if ((only.empty() || only == r.name) && (!half || half == r.half)) r.run();
     if (only == "rate") {

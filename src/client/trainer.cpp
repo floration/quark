@@ -69,6 +69,24 @@ void Game::trainerSaveScores() {
     out << o.str();
 }
 
+// 2D drawing (the 2D mode draws nothing in 3D): a filled disc as a fan of triangles, a thick line as one quad
+static void disc2D(Renderer& r, float x, float y, float rad, const Color& c) {
+    const int n = std::clamp((int)(rad * 1.5f), 32, 96);
+    for (int i = 0; i < n; i++) {
+        const float a0 = 6.2831853f * i / n, a1 = 6.2831853f * (i + 1) / n;
+        const float q[8] = {x, y, x + rad * std::cos(a0), y + rad * std::sin(a0), x + rad * std::cos(a1), y + rad * std::sin(a1), x, y};
+        r.quad2D(q, c);
+    }
+}
+static void line2D(Renderer& r, float x0, float y0, float x1, float y1, float w, const Color& c) {
+    float dx = x1 - x0, dy = y1 - y0;
+    const float l = std::sqrt(dx * dx + dy * dy);
+    if (l < 1e-3f) return;
+    dx *= w * 0.5f / l; dy *= w * 0.5f / l;
+    const float q[8] = {x0 - dy, y0 + dx, x1 - dy, y1 + dx, x1 + dy, y1 - dx, x0 + dy, y0 - dx};
+    r.quad2D(q, c);
+}
+
 void Game::openTrainer() {
     if (screen_ == Screen::TrainerRun) { trainerExit(); return; }   // (from a run: as its menu button)
     if (!trScoresLoaded_) trainerLoadScores();
@@ -156,15 +174,18 @@ void Game::trainerFrame(double dt) {
     const bool flat = trRun_.flat();
     const float W = (float)r_.width(), H = (float)r_.height();
     const float fov = hfov();
-    // the camera: 3D, where you look; 2D, straight at the wall (your aim moves the crosshair, held inside the view)
-    r_.setCamera({0, 0, 0}, flat ? 0.0f : yaw_, flat ? 0.0f : pitch_, fov);
+    // the camera: 3D, where you look. 2D draws nothing in 3D (owner, 2026-11-02: "straight up real 2d only"): the target
+    // wall is the screen, mapped linearly (the view's width at 24 m), and the mouse moves the crosshair over it at the
+    // 3D aim's sensitivity at the centre (a radian of turn = 24 m on the wall), held inside the screen.
+    r_.setCamera({0, 0, 0}, flat ? 0.0f : yaw_, flat ? 0.0f : pitch_, fov);   // (2D: only for the screen's extent, tanX / tanY)
+    const float vx = -kWallZ * r_.tanX(), vy = -kWallZ * r_.tanY();          // the screen's half width / height on the wall, m
     if (flat) {
-        const float mx = std::atan(r_.tanX() * 0.97f), my = std::atan(r_.tanY() * 0.97f);
-        yaw_ = clampf(yaw_, -mx, mx);
-        pitch_ = clampf(pitch_, -my, my);
-        r_.setCamera({0, 0, 0}, 0, 0, fov);
+        yaw_ = clampf(yaw_, -vx * 0.99f / -kWallZ, vx * 0.99f / -kWallZ);
+        pitch_ = clampf(pitch_, -vy * 0.99f / -kWallZ, vy * 0.99f / -kWallZ);
     }
-    const Vec3 aim = angleForward(yaw_, pitch_);
+    const Vec3 wallAim(yaw_ * kWallZ, pitch_ * -kWallZ, kWallZ);   // (2D: the cursor's point on the wall; yaw left = -x)
+    const Vec3 aim = flat ? normalize(wallAim) : angleForward(yaw_, pitch_);
+    auto toScreen = [&](float x, float y, float& sx, float& sy) { sx = W * 0.5f * (1.0f + x / vx); sy = H * 0.5f * (1.0f - y / vy); };
     // ---- the step: the shot against what the last frame showed, then the targets move
     if (!trResults_ && !trPaused_) {
         const bool fire = isDown(A_FIRE) && mouseCaptured_;
@@ -190,74 +211,103 @@ void Game::trainerFrame(double dt) {
     } else trLaserOn_ = false;   // (paused: the run holds still)
     recoil_ = std::max(0.0, recoil_ - 8.0 * dt);
 
-    // ---- the room: a static batch, built when the scenario changes
-    sceneSettings();
-    r_.setFog(0);   // (again each frame: a setting changed in SETTINGS may have set the game's)
-    r_.skyColor = {0.05f, 0.055f, 0.07f};
-    if (trRoomDirty_) {
-        const Room rm = trRun_.room();
-        const bool wallRoom = rm.mn.z == kWallZ;
-        r_.setStaticBoxes([&] {
-            const float t = 0.5f;
-            const Vec3 c = (rm.mn + rm.mx) * 0.5f, e = (rm.mx - rm.mn) * 0.5f;
-            const Vec3 wall(0.17f, 0.18f, 0.21f), floor(0.11f, 0.12f, 0.14f), front(0.21f, 0.22f, 0.26f);   // (no grid lines: owner, "distracting")
-            r_.box({c.x, rm.mn.y - t, c.z}, {e.x + t, t, e.z + t}, 0, floor, 1.0f, false);
-            r_.box({c.x, rm.mx.y + t, c.z}, {e.x + t, t, e.z + t}, 0, wall * 0.8f, 1.0f, false);
-            r_.box({rm.mn.x - t, c.y, c.z}, {t, e.y + t, e.z + t}, 0, wall, 1.0f, false);
-            r_.box({rm.mx.x + t, c.y, c.z}, {t, e.y + t, e.z + t}, 0, wall, 1.0f, false);
-            r_.box({c.x, c.y, rm.mn.z - t}, {e.x + t, e.y + t, t}, 0, wallRoom ? front : wall, 1.0f, false);
-            r_.box({c.x, c.y, rm.mx.z + t}, {e.x + t, e.y + t, t}, 0, wall, 1.0f, false);
-            if (wallRoom) {   // the target area's frame on the wall
-                const Vec3 a(0.4f, 0.42f, 0.5f);
-                const float hx = trSc_->motion == MO_CROSS ? kCrossHX : trSc_->motion == MO_AIR ? kAir2HX : kWallHX;
-                const float hy = trSc_->motion == MO_CROSS ? kCrossHY : trSc_->motion == MO_AIR ? kAir2HY : kWallHY;
-                r_.box({0, hy, kWallZ + 0.02f}, {hx, 0.05f, 0.02f}, 0, a, 1.0f, false);
-                r_.box({0, -hy, kWallZ + 0.02f}, {hx, 0.05f, 0.02f}, 0, a, 1.0f, false);
-                r_.box({hx, 0, kWallZ + 0.02f}, {0.05f, hy, 0.02f}, 0, a, 1.0f, false);
-                r_.box({-hx, 0, kWallZ + 0.02f}, {0.05f, hy, 0.02f}, 0, a, 1.0f, false);
-            }
-            if (rm.pillar && !flat) r_.box({0, (rm.mn.y - 1.7f) * 0.5f, 0}, {0.5f, (-1.7f - rm.mn.y) * 0.5f, 0.5f}, 0, front, 1.0f, false);   // (what you stand on)
-        });
-        trRoomDirty_ = false;
-    }
-    r_.useStaticBoxes();
-    // ---- the targets (switching: dimmer as their health goes)
-    if (trSphere_.opaque.empty()) buildSphere(trSphere_);
-    const Vec3 tcol = cfg_.colorEnemy;
-    for (const Target& t : trRun_.targets()) {
-        if (t.hide > 0) continue;
-        Vec3 c = tcol;
-        if (trSc_->hp > 0) c = tcol * (0.45f + 0.55f * clampf(t.hp / trSc_->hp, 0, 1));
-        Vec3 tint[TINT_COUNT];
-        for (auto& v : tint) v = c;
-        Mat4 xf = Mat4::translate(t.pos);
-        xf.m[0] = xf.m[5] = xf.m[10] = t.r;
-        r_.mesh(trSphere_, xf, tint, 1.0f, false);
-    }
-    // ---- the gun (3D), your shots
-    const Vec3 eye(0, 0, 0);
     const int w = trSc_->laser ? WPN_LASER : WPN_RIFLE;
-    if (!flat && !vmHidden(w)) {
-        r_.viewOpacity = cfg_.viewmodelOpacity;
-        ModelPalette vpal;
-        vpal.c[TINT_METAL] = cfg_.gunColor == 1 ? cfg_.colorFriendly * 0.55f : cfg_.gunColor == 2 ? cfg_.gunCustom : viewmodelMetal(r_.metalColor);
-        vpal.c[TINT_BASE] = viewmodelBase(r_.baseColor);
-        vpal.c[TINT_TEAM] = cfg_.colorFriendly;
-        vpal.c[TINT_GLOW] = r_.glowColor;
-        const auto& vm = cfg_.hud[Settings::HUD_VIEWMODEL];
-        const Mat4 wf = weaponFrame(cfg_.viewRecoil ? (float)recoil_ * 0.06f * cfg_.recoilAmount : 0.0f, w);
-        const Vec3 at = {wf.m[12], wf.m[13], wf.m[14]};
-        viewmodelParts(w, vpal, parts_);
-        for (const ModelPart& q : parts_) {
-            if (tilted(vm)) r_.viewBoxXf(wf * Mat4::translate(q.c * vm.scale), q.h * vm.scale, q.color);
-            else r_.viewBox(at + q.c * vm.scale, q.h * vm.scale, q.color);
-        }
-    }
-    const Vec3 from = flat ? Vec3(0, -6, -2) : muzzlePoint(w, eye);
     const Color fx = rgba(cfg_.ownFx ? cfg_.ownFxColor : cfg_.colorFriendly, 0.9f);
-    if (trLaserOn_ && !flat) r_.line(from, trLaserEnd_, 0.05f, fx);
-    if (time_ < trTracerUntil_ && !flat) r_.line(from, trTracerEnd_, 0.03f, fx);
-    r_.drawScene(false);
+    if (flat) {   // ---- 2D: flat colour, the target area's frame, discs, the shot as a line from the screen's bottom
+        r_.rect(0, 0, W, H, Color{0.11f, 0.12f, 0.15f, 1});
+        const float hx = trSc_->motion == MO_CROSS ? kCrossHX : trSc_->motion == MO_AIR ? kAir2HX : kWallHX;
+        const float hy = trSc_->motion == MO_CROSS ? kCrossHY : trSc_->motion == MO_AIR ? kAir2HY : kWallHY;
+        float x0, y0, x1, y1;
+        toScreen(-hx, hy, x0, y0); toScreen(hx, -hy, x1, y1);
+        const float lw = std::max(1.0f, std::round(H / 720.0f * 2));
+        const Color frame{0.4f, 0.42f, 0.5f, 1};
+        r_.rect(x0, y0, x1 - x0, lw, frame); r_.rect(x0, y1 - lw, x1 - x0, lw, frame);
+        r_.rect(x0, y0, lw, y1 - y0, frame); r_.rect(x1 - lw, y0, lw, y1 - y0, frame);
+        const Vec3 tcol = cfg_.colorEnemy;
+        for (const Target& t : trRun_.targets()) {
+            if (t.hide > 0) continue;
+            Vec3 c = tcol;
+            if (trSc_->hp > 0) c = tcol * (0.45f + 0.55f * clampf(t.hp / trSc_->hp, 0, 1));
+            float sx, sy;
+            toScreen(t.pos.x, t.pos.y, sx, sy);
+            disc2D(r_, sx, sy, t.r / vx * W * 0.5f, rgba(c));
+        }
+        float cx, cy, ex, ey;
+        toScreen(wallAim.x, wallAim.y, cx, cy);
+        const bool tracer = time_ < trTracerUntil_;
+        if (trLaserOn_ || tracer) {
+            if (tracer) toScreen(trTracerEnd_.x * (kWallZ / std::min(trTracerEnd_.z, -0.01f)), trTracerEnd_.y * (kWallZ / std::min(trTracerEnd_.z, -0.01f)), ex, ey);
+            else { ex = cx; ey = cy; }
+            line2D(r_, W * 0.5f, H, ex, ey, (trLaserOn_ ? 4.0f : 2.5f) * H / 720.0f, fx);
+        }
+    } else {
+        // ---- the room: a static batch, built when the scenario changes
+        sceneSettings();
+        r_.setFog(0);   // (again each frame: a setting changed in SETTINGS may have set the game's)
+        r_.skyColor = {0.05f, 0.055f, 0.07f};
+        if (trRoomDirty_) {
+            const Room rm = trRun_.room();
+            const bool wallRoom = rm.mn.z == kWallZ;
+            r_.setStaticBoxes([&] {
+                const float t = 0.5f;
+                const Vec3 c = (rm.mn + rm.mx) * 0.5f, e = (rm.mx - rm.mn) * 0.5f;
+                const Vec3 wall(0.17f, 0.18f, 0.21f), floor(0.11f, 0.12f, 0.14f), front(0.21f, 0.22f, 0.26f);   // (no grid lines: owner, "distracting")
+                r_.box({c.x, rm.mn.y - t, c.z}, {e.x + t, t, e.z + t}, 0, floor, 1.0f, false);
+                r_.box({c.x, rm.mx.y + t, c.z}, {e.x + t, t, e.z + t}, 0, wall * 0.8f, 1.0f, false);
+                r_.box({rm.mn.x - t, c.y, c.z}, {t, e.y + t, e.z + t}, 0, wall, 1.0f, false);
+                r_.box({rm.mx.x + t, c.y, c.z}, {t, e.y + t, e.z + t}, 0, wall, 1.0f, false);
+                r_.box({c.x, c.y, rm.mn.z - t}, {e.x + t, e.y + t, t}, 0, wallRoom ? front : wall, 1.0f, false);
+                r_.box({c.x, c.y, rm.mx.z + t}, {e.x + t, e.y + t, t}, 0, wall, 1.0f, false);
+                if (wallRoom) {   // the target area's frame on the wall
+                    const Vec3 a(0.4f, 0.42f, 0.5f);
+                    const float hx = trSc_->motion == MO_CROSS ? kCrossHX : trSc_->motion == MO_AIR ? kAir2HX : kWallHX;
+                    const float hy = trSc_->motion == MO_CROSS ? kCrossHY : trSc_->motion == MO_AIR ? kAir2HY : kWallHY;
+                    r_.box({0, hy, kWallZ + 0.02f}, {hx, 0.05f, 0.02f}, 0, a, 1.0f, false);
+                    r_.box({0, -hy, kWallZ + 0.02f}, {hx, 0.05f, 0.02f}, 0, a, 1.0f, false);
+                    r_.box({hx, 0, kWallZ + 0.02f}, {0.05f, hy, 0.02f}, 0, a, 1.0f, false);
+                    r_.box({-hx, 0, kWallZ + 0.02f}, {0.05f, hy, 0.02f}, 0, a, 1.0f, false);
+                }
+                if (rm.pillar && !flat) r_.box({0, (rm.mn.y - 1.7f) * 0.5f, 0}, {0.5f, (-1.7f - rm.mn.y) * 0.5f, 0.5f}, 0, front, 1.0f, false);   // (what you stand on)
+            });
+            trRoomDirty_ = false;
+        }
+        r_.useStaticBoxes();
+        // ---- the targets (switching: dimmer as their health goes)
+        if (trSphere_.opaque.empty()) buildSphere(trSphere_);
+        const Vec3 tcol = cfg_.colorEnemy;
+        for (const Target& t : trRun_.targets()) {
+            if (t.hide > 0) continue;
+            Vec3 c = tcol;
+            if (trSc_->hp > 0) c = tcol * (0.45f + 0.55f * clampf(t.hp / trSc_->hp, 0, 1));
+            Vec3 tint[TINT_COUNT];
+            for (auto& v : tint) v = c;
+            Mat4 xf = Mat4::translate(t.pos);
+            xf.m[0] = xf.m[5] = xf.m[10] = t.r;
+            r_.mesh(trSphere_, xf, tint, 1.0f, false);
+        }
+        // ---- the gun (3D), your shots
+        const Vec3 eye(0, 0, 0);
+        if (!flat && !vmHidden(w)) {
+            r_.viewOpacity = cfg_.viewmodelOpacity;
+            ModelPalette vpal;
+            vpal.c[TINT_METAL] = cfg_.gunColor == 1 ? cfg_.colorFriendly * 0.55f : cfg_.gunColor == 2 ? cfg_.gunCustom : viewmodelMetal(r_.metalColor);
+            vpal.c[TINT_BASE] = viewmodelBase(r_.baseColor);
+            vpal.c[TINT_TEAM] = cfg_.colorFriendly;
+            vpal.c[TINT_GLOW] = r_.glowColor;
+            const auto& vm = cfg_.hud[Settings::HUD_VIEWMODEL];
+            const Mat4 wf = weaponFrame(cfg_.viewRecoil ? (float)recoil_ * 0.06f * cfg_.recoilAmount : 0.0f, w);
+            const Vec3 at = {wf.m[12], wf.m[13], wf.m[14]};
+            viewmodelParts(w, vpal, parts_);
+            for (const ModelPart& q : parts_) {
+                if (tilted(vm)) r_.viewBoxXf(wf * Mat4::translate(q.c * vm.scale), q.h * vm.scale, q.color);
+                else r_.viewBox(at + q.c * vm.scale, q.h * vm.scale, q.color);
+            }
+        }
+        const Vec3 from = muzzlePoint(w, eye);
+        if (trLaserOn_ && !flat) r_.line(from, trLaserEnd_, 0.05f, fx);
+        if (time_ < trTracerUntil_ && !flat) r_.line(from, trTracerEnd_, 0.03f, fx);
+        r_.drawScene(false);
+    }
 
     // ---- the HUD: time, score, accuracy; the countdown; the crosshair (2D: where the mouse has it)
     const float s = H / 720.0f, ts = std::max(1.0f, std::round(s * 1.5f));
@@ -294,7 +344,7 @@ void Game::trainerFrame(double dt) {
         if (ui_.button(bx, y, bw, bh, "TRAINER MENU", UiExp::nav("trainer"))) { trainerExit(); return; }
     } else if (!trResults_) {
         float cx = W * 0.5f, cy = H * 0.5f;
-        if (flat) { float sx, sy; if (r_.project(aim * 24.0f, sx, sy)) { cx = sx; cy = sy; } }
+        if (flat) toScreen(wallAim.x, wallAim.y, cx, cy);
         drawCrosshair(cx, cy, s, time_ < trHitUntil_, w);
     } else {   // the result
         const float pw = 420 * s, ph = 300 * s, px = W * 0.5f - pw * 0.5f, py = H * 0.5f - ph * 0.5f;

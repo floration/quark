@@ -718,7 +718,7 @@ public:
     uint8_t arenaRules() const {
         uint8_t r = rulesetActive() ? arenaVariant(ms_.arenaVariant).rules : duelModDef(duelMod()).rules;
         const CustomRules& c = cfg_.custom;
-        if (c.active()) r |= (c.instagib ? AR_INSTAGIB : 0) | (c.vampire ? AR_VAMPIRE : 0) | (c.regen ? AR_REGEN : 0) | (!c.selfDamage ? AR_NO_SELF_DAMAGE : 0);
+        if (c.active()) r |= (c.instagib ? AR_INSTAGIB : 0) | (c.vampire ? AR_VAMPIRE : 0) | (c.regen ? AR_REGEN : 0) | (!c.selfDamage ? AR_NO_SELF_DAMAGE : 0) | (c.fly ? AR_FLY : 0);
         return r;
     }
     // laser vampire's heal fade (vampireHealShare): the ruleset's own (3D VAMP: 30 s), else kVampireFadeTime

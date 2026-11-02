@@ -115,12 +115,9 @@ constexpr float kLiquidBounce = 0.85f, kLiquidBounceFrom = 2.0f;   // pink slime
 constexpr float kHookRelease = 1.2f;    // auto-release this close to the anchor
 constexpr float kLadderSpeed = 6.75f;   // climbing speed (owner 1.17: 4.5 -> 6.75; Warfork 7.0, Cocaine Diesel 8.4)
 constexpr float kLadderSide = 4.5f;     // sideways speed on a ladder (owner 1.17: 3 -> 4.5)
-// Zero-g flight (3D VAMP, MoveState::fly; owner, 2026-11-01: "Minecraft creative" flying): one flat speed every way
-// (the run speed to start with; no strafe gain past it), reached fast and lost fast: the velocity goes straight at
-// where the keys point, so nothing drifts and letting go stops you.
-constexpr float kFlySpeed = 9.5f;       // m/s (kGroundSpeed)
-constexpr float kFlyAccel = 120.0f;     // m/s2 toward the keys' velocity: full speed from a standstill in ~80 ms (the run's)
-constexpr float kFlyStop = 120.0f;      // m/s2 to a stop with no keys held: ~80 ms from full speed
+// Zero-g flight (3D FLYING, MoveState::fly; owner, 2026-11-01: "Minecraft creative" flying; 2026-11-02: "the accel for
+// 3d mode should be the same as regular ground accel in every direction"): running on the ground in three dimensions:
+// the ground's friction and acceleration on the whole velocity, at the run speed, up and down included.
 }
 
 AABB playerBox(const Vec3& f, bool crouched, float scale) {
@@ -276,8 +273,8 @@ static void setCharges(MoveState& s, int maxCharges, int n) {
 }
 
 // A step of zero-g flight (MoveState::fly): the wish is forward x W/S + right x A/D on the level (the look's pitch never
-// steers) + world up x (UP - DOWN), at most kFlySpeed whatever the keys (diagonals too); the velocity moves straight
-// toward it at kFlyAccel (kFlyStop with no keys), no gravity, no jump, dash or grapple. Walls slide you (the hull's
+// steers) + world up x (UP - DOWN); the ground's friction on the whole velocity, then its acceleration toward the wish
+// at the run speed (a diagonal no faster); no gravity, no jump, dash or grapple. Walls slide you (the hull's
 // slideMove, as walking; a slope's face takes what goes into it). Frozen: held still.
 static void flyStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt, const CmdCtx& cx) {
     const float scale = moveScale(s.mods);
@@ -288,10 +285,14 @@ static void flyStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt, 
     Vec3 wish = cx.fwd * (cmd.forward / 127.0f) + cx.right * (cmd.side / 127.0f) + Vec3(0, up, 0);
     if (s.mods & MOVE_GRAPPLE_ONLY) wish = {};
     const float wishLen = length(wish);
-    const Vec3 target = wishLen > 1e-4f ? wish * (kFlySpeed * cx.mt.speed * std::min(wishLen, 1.0f) / wishLen) : Vec3();
-    const Vec3 dv = target - s.vel;
-    const float dl = length(dv), most = (wishLen > 1e-4f ? kFlyAccel : kFlyStop) * dt;
-    s.vel = dl <= most ? target : s.vel + dv * (most / dl);
+    const MoveTuning& mt = cx.mt;
+    const float sp = length(s.vel);   // (the ground's friction, on all three axes)
+    if (sp > 0) {
+        const float drop = std::max(sp, kStopSpeed * mt.m[MV_STOP_SPEED]) * (kFriction * mt.m[MV_FRICTION]) * dt;
+        s.vel *= std::max(sp - drop, 0.0f) / sp;
+    }
+    if (wishLen > 1e-4f)   // (and its acceleration toward the keys, at the run speed: a diagonal no faster)
+        accelerate(s.vel, wish / wishLen, kGroundSpeed * mt.speed * std::min(wishLen, 1.0f), kGroundAccel * mt.m[MV_GROUND_ACCEL], dt);
     Vec3 wall;
     const int blocked = slideMove(s, map, s.vel * dt, false, &wall);
     if (wall.x != 0 || wall.y != 0 || wall.z != 0) {   // (a slope's face: what went into it is gone)

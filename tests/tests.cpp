@@ -1008,9 +1008,9 @@ static void testAcid() {
     }
 }
 
-// 3D VAMP's zero-g flight (MoveState::fly; owner, 2026-11-01): no gravity and no drift with no keys, MOVE UP / MOVE
-// DOWN straight up and down, a quick stop when the keys are let go, one flat speed cap every way, walls slide you, and
-// no jump, dash or grapple.
+// 3D FLYING's zero-g flight (MoveState::fly; owner, 2026-11-01 / 11-02): no gravity and no drift with no keys, MOVE UP /
+// MOVE DOWN straight up and down, the ground's acceleration and friction every way (full speed as fast as a run, a stop
+// as quick as one), the run speed's cap, walls slide you, and no jump, dash or grapple.
 static void testFlyMove() {
     printf("flying (3d vamp)\n");
     Map m;
@@ -1031,9 +1031,9 @@ static void testFlyMove() {
     c.buttons = BTN_UP | BTN_JUMP | BTN_DASH | BTN_GRAPPLE;   // (jump, dash and grapple do nothing)
     pmove(s, c, m);
     CHECK(s.dashTimer == 0 && !(s.flags & (MF_HOOKED | MF_HOOKHELD)) && std::fabs(s.vel.y - 9.5f) < 1e-3f);
-    c.buttons = 0;   // let go: stopped within 0.1 s, and stays put
+    c.buttons = 0;   // let go: the ground's friction stops you as fast as letting go of a run (~0.4 s), and you stay put
     c.msec = 1;
-    for (int i = 0; i < 100; i++) pmove(s, c, m);
+    for (int i = 0; i < 500; i++) pmove(s, c, m);
     CHECK(length(s.vel) == 0.0f);
     const float y = s.pos.y;
     c.msec = 8;
@@ -1042,8 +1042,8 @@ static void testFlyMove() {
     c.buttons = BTN_DOWN;
     for (int i = 0; i < 50; i++) pmove(s, c, m);
     CHECK(s.pos.y < y - 3.0f && std::fabs(s.vel.y + 9.5f) < 1e-3f);
-    c.buttons = BTN_UP | BTN_DOWN;   // both: no vertical push (stops)
-    for (int i = 0; i < 25; i++) pmove(s, c, m);
+    c.buttons = BTN_UP | BTN_DOWN;   // both: no vertical push (friction stops it)
+    for (int i = 0; i < 75; i++) pmove(s, c, m);
     CHECK(s.vel.y == 0.0f);
     // the speed cap: W + A + MOVE UP together is still 9.5 m/s, and the look's pitch never steers
     c.buttons = BTN_UP; c.forward = 127; c.side = -127; c.yaw = 0; c.pitch = 1.2f;
@@ -1053,7 +1053,15 @@ static void testFlyMove() {
     // ...and holding it longer, or turning, never gains past it (no strafe gain)
     float most = 0;
     for (int i = 0; i < 2000; i++) { c.msec = 1; c.yaw += 0.002f; c.side = (i / 100) % 2 ? 127 : -127; pmove(s, c, m); most = std::max(most, length(s.vel)); }
-    CHECK(most <= 9.5f + 1e-3f);
+    {   // ...the same as running on the ground with the same keys and turn (owner: "the same as regular ground accel")
+        MoveState g; g.pos = {-20, 0, 0};
+        UserCmd gc; gc.msec = 1; gc.forward = 127; gc.yaw = 0;
+        float gmost = 0;
+        for (int i = 0; i < 125; i++) { gc.side = -127; pmove(g, gc, m); }
+        for (int i = 0; i < 2000; i++) { gc.yaw += 0.002f; gc.side = (i / 100) % 2 ? 127 : -127; pmove(g, gc, m); gmost = std::max(gmost, hs(g)); }
+        printf("  turning while flying: at most %.3f m/s (running on the ground: %.3f)\n", most, gmost);
+        CHECK(std::fabs(most - gmost) < 0.05f * gmost);
+    }
     // the floor stops a fall; the wall at x 10 slides you along it (z keeps going)
     MoveState w; w.fly = true; w.pos = {8, 2, 0};
     UserCmd d; d.msec = 8; d.yaw = -PI / 4; d.forward = 127; d.buttons = BTN_DOWN;   // (toward +x and -z, and down)
@@ -4235,17 +4243,14 @@ static void testDuel(uint16_t port) {
     pump(s, cls, 0.5, idle);
     CHECK(s.players_[a.clientId()].team != s.players_[b.clientId()].team);
     CHECK(s.players_[c.clientId()].team == TEAM_SPECTATOR);
-    {   // the sides are even and full: joining calls a vote to let them in; passing it makes the teams uneven
+    {   // the sides are even and full: joining a 1v1 puts them in line to play, no vote (owner, 2026-11-02)
         c.sendCommand("team a");
         pump(s, cls, 0.3, idle);
-        CHECK(s.vote_.kind == Server::VOTE_LETIN);
-        a.sendCommand("vote yes");
+        CHECK(s.vote_.kind == Server::VOTE_NONE);
+        CHECK(s.players_[c.clientId()].team == TEAM_SPECTATOR && s.players_[c.clientId()].queueSeq > 0);
+        c.sendCommand("team spec");                  // (out of the line, so the rest is a plain 1v1)
         pump(s, cls, 0.3, idle);
-        CHECK(s.players_[c.clientId()].team == TEAM_A || s.players_[c.clientId()].team == TEAM_B);
-        CHECK(s.players_[c.clientId()].letIn);
-        c.sendCommand("team spec");                  // (back out, so the rest is a plain 1v1)
-        pump(s, cls, 0.3, idle);
-        CHECK(s.players_[c.clientId()].team == TEAM_SPECTATOR && !s.players_[c.clientId()].letIn);
+        CHECK(s.players_[c.clientId()].team == TEAM_SPECTATOR && s.players_[c.clientId()].queueSeq == 0);
     }
     for (int i = 0; i < 100 && s.ms_.phase == PHASE_WARMUP; i++) { skipCountdowns(s); pump(s, cls, 0.05, idle); }   // -> round 1
     CHECK(s.ms_.phase == PHASE_FREEZE || s.ms_.phase == PHASE_LIVE);
