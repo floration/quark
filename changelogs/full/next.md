@@ -29,3 +29,15 @@ Every change since 1.19.7, with what changed and why.
   - Intel, integrated and Arc: through the Graphics Control Library (`ControlLib.dll`, installed with the driver; IGCL API 1.1), read only, the game's own profile first and then the global one: Endurance Gaming on (it trades frames for battery), a forced vsync mode (not "application choice" or off), Low Latency off, the frame rate limiter on. Same approach: the driver's DLL, the few calls and structures as Intel's header declares them, nothing linked in.
   - The check runs on its own thread (loading three drivers' libraries can take a moment), so the menu keeps its frame rate; the tab shows CHECKING... meanwhile.
   - Not Windows: WINDOWS ONLY.
+
+## Languages (fixes from a screenshot sweep of every language on the desktop PC after 1.19.7: 69 screenshots and the untranslated-lines list per language)
+
+- **The aim trainer was in English.** `extract.py` didn't read `trainer.cpp` / `trainer.h`. Its scenario descriptions, kinds and difficulties are now keys; scenario names stay English, like map names.
+- **Info-page headings never translated.** Their keys are `# TEAM MODES` and so on, but `#` is the number placeholder, so the drawn heading (without the `# `) never matched. The whole `# ...` line is now translated, then its `# ` is cut.
+- **`extract.py` mangled or dropped paragraphs:** its printf rule read "10% damage" as `% d` (the key said "10#amage"); it now ignores the space flag. It dropped the "~13 m/s" paragraph for the `~` and the ".qmap" one under its file-name rule. Upper-case hints with `=`, `<`, `>` or `/` ("WIDTH 0 = NO OUTLINE", "PING: < 50", "SNAPS: = TICK") are kept now. 73 new keys, 3787 in all.
+- **"LABEL: VALUE" with an unknown value:** when the left side of ": " isn't a key by itself, the lookup now tries it with its colon ("PLAYER MODEL:"), so the label translates and the value stays.
+- **F3's latency column** was sized for English row names, so translated names ran into the numbers; it's now as wide as the widest translated name.
+- **CJK lines wrapped too early,** because a line could only break at a space. Chinese, Japanese and Korean text may now break between characters (never before `:` `,` `)` `.` `;`), so lines fill the width as English does.
+- **Squeezed labels lost their word spaces** ("BOTSAUSGLEICHEN"): closing up a label tightened a space from both sides, about 30% of its width. A space now closes by 10% at most, and the letters take the rest.
+- **Wrong words:** Russian VOTES was "voices" (now ГОЛОСОВАНИЕ), Turkish ADVANCED was "forward" (now GELİŞMİŞ), and the spectator FOV's MINE ("my own") was translated as the explosive in Portuguese, Russian, Turkish, Chinese and German (now possessive; French too).
+- The CJK atlases were rebaked for the new characters: zh-CN 1632, ja 1323, ko 1094 glyphs.

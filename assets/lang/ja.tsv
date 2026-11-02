@@ -132,6 +132,7 @@
 -Wcast-function-type	-Wcast-function-type
 -Y (under)	-Y (下)
 0.1% LOW	0.1% LOW
+00,000,000 NS	00,000,000 NS
 1 HP	1 HP
 1 HP KNIVES	1 HP ナイフ
 1 SETTING	1 設定
@@ -142,6 +143,7 @@
 12 H CLOCK	12時間表示
 144 FPS	144 FPS
 1V1 - rounds on one ruleset (vanilla, laser vampire, instagib...). First to 5. Ranked 1v1 rates you on its own ladder.	1V1 - 1つのルール (バニラ、レーザーヴァンパイア、インスタギブ...) でラウンド制。5本先取。ランク1v1は専用ラダーでレート計算。
+2 BALL	2 BALL
 240 FPS	240 FPS
 2:00  -  1ST OF 6	2:00  -  6人中1位
 2D: THE VIEW STAYS STILL, YOUR MOUSE MOVES THE CROSSHAIR	2D: 視点固定、マウスでクロスヘアを移動
@@ -149,6 +151,7 @@
 30 SECONDS LEFT	残り30秒
 32-bit float	32-bit float
 3D FLYING	3D 飛行
+3D STATIC	3D 静止
 3D STATIC: YOU CAN'T MOVE - LOOK AND SHOOT	3D 固定: 移動不可 - 狙って撃つ
 3D VAMP	3D ヴァンプ
 5 MORE MINUTES	あと5分
@@ -156,11 +159,14 @@
 A DASH PRESSED THIS SOON BEFORE IT'S READY	使用可能になる直前に押したダッシュの受付時間
 A DROPPED CONNECTION TRIES AGAIN (3 TIMES)	切断時に再接続 (3回)
 A NEW CODE FROM /link RELINKS IT - unlink REMOVES IT	/link の新コードで再連携 - unlink で解除
+A NEW DIAGONAL EVERY 0.3 S	0.3 秒ごとに新しい斜め
+A NEW DIAGONAL EVERY 0.3 S, 10 HP	0.3 秒ごとに新しい斜め, 10 HP
 A PLAYER JOINED VIA	プレイヤーが参加 経由:
 A SERVER	サーバー
 A VARIABLE FONT IS DRAWN AT ITS DEFAULT WEIGHT	可変フォントはデフォルトの太さで描画
 A private game with bots at your chosen level (beginner, intermediate, advanced, expert), on any mode and map.	選んだレベル (初級、中級、上級、エキスパート) のボットとのプライベートゲーム。モードとマップは自由。
 A thrown knife or syringe is gone for 4 s (greyed out in the weapon list, with its timer).	投げたナイフや注射器は4秒間使えません (武器リストでグレー表示、タイマー付き)。
+AA / SHADOWS	AA / 影
 ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/	ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/
 ABILITIES	アビリティ
 ABOVE NORMAL	通常以上
@@ -171,6 +177,8 @@ ACCENT COLOR	アクセントカラー
 ACCESSIBILITY	アクセシビリティ
 ACCURACY	命中率
 ACE	ACE
+ACROSS THE WALL, 10 HP	壁いっぱいに, 10 HP
+ACROSS THE WALL, SIDE TO SIDE	壁いっぱいに左右へ
 ADAPTIVE	アダプティブ
 ADD (AT THE SCREEN CENTER)	追加 (画面中央)
 ADD BOT	ボット追加
@@ -189,12 +197,14 @@ ADRENALIN > GAMING > GRAPHICS: RADEON CHILL OFF	ADRENALIN > ゲーム > グラ�
 ADRENALIN > GAMING > GRAPHICS: WAIT FOR VERTICAL REFRESH: OFF, UNLESS APPLICATION SPECIFIES	ADRENALIN > ゲーム > グラフィックス: 垂直リフレッシュ待ち: オフ (アプリが指定しない限り)
 ADRENALIN: ANTI-LAG ON; CHILL, BOOST, ENHANCED SYNC, WAIT FOR VERTICAL REFRESH OFF	ADRENALIN: ANTI-LAG オン; CHILL, BOOST, ENHANCED SYNC, 垂直リフレッシュ待ち オフ
 ADVANCED	上級
+ADVANCED  >	上級  >
 ADVANCED > BOT BRAIN: what your bots play: the built-in brain, or a .qbrain file from the bots folder in your data folder. A file that doesn't compile shows its error line and the bots play the built-in brain. Never in ranked.	上級 > ボットAI: ボットの戦い方: 内蔵AI、またはデータフォルダ内の bots フォルダにある .qbrain ファイル。コンパイルできないファイルはエラー行を表示し、ボットは内蔵AIで戦います。ランクでは使われません。
 AGAIN (R)	もう一度 (R)
 AHEAD	リード
 AIM TRAINER	エイムトレーナー
 AIR	空中
 AIR ACCELERATION	空中加速
+AIR BALL	AIR BALL
 AIR CONTROL	空中制御
 AIR DRIFT (UNDER RUN SPEED)	空中ドリフト (走行速度以下)
 AIR ROCKET	エアロケット
@@ -203,6 +213,7 @@ ALL	すべて
 ALL MODES	全モード
 ALL OFF	すべてオフ
 ALL SETTINGS	全設定
+ALONG A 3 X 3 GRID'S LINES	3 X 3 のグリッドの線に沿って
 ALT	ALT
 ALT FIRE	サブ射撃
 ALT-FIRE TOGGLE IN RANKED	ランクでのサブ射撃トグル
@@ -236,6 +247,7 @@ ANTI-ALIASING: MSAA 4X (N/A HERE)	アンチエイリアス: MSAA 4X (この環�
 ANTI-ALIASING: MSAA 8X	アンチエイリアス: MSAA 8X
 ANTI-ALIASING: OFF	アンチエイリアス: オフ
 ANTI-ALIASING: SMOOTH (CHEAP)	アンチエイリアス: スムーズ (軽量)
+ANYWHERE AROUND YOU, 12-24 M AWAY	周囲のどこでも, 12-24 M 先
 APEX LEGENDS	APEX LEGENDS
 APPLY IN:	適用先:
 ARC COLOR	アークの色
@@ -305,6 +317,11 @@ BALANCE BOTS	ボットで人数調整
 BALANCE BOTS evens out uneven teams with bots. MODE > RANKED runs rated 1v1 on the ranked maps (no bots). SERVER LOG keeps a log of the match.	ボットで人数調整 は人数の偏ったチームをボットで埋めます。モード > ランク はランクマップでレート戦の1v1を行います (ボットなし)。サーバーログ は試合のログを残します。
 BALL	ボール
 BALL - SHOOT, BLAST OR RUN THE BALL INTO THE ENEMY GOAL - MOST GOALS WINS	ボール - ボールを撃つ・爆風・運ぶで敵ゴールへ - 最多ゴールで勝利
+BALLS ANYWHERE IN A 24 M ROOM	24 M の部屋のどこにでもボール
+BALLS ANYWHERE ON A WIDE WALL	広い壁のどこにでもボール
+BALLS DRIFTING IN THE ROOM, 10 HP	部屋を漂うボール, 10 HP
+BALLS DRIFTING SIDE TO SIDE, 10 HP	左右に漂うボール, 10 HP
+BALLS ON THE WALL, BACK AT ONCE	壁のボール, すぐに戻る
 BANDIT	バンディット
 BAR	バー
 BAR CAPTIONS	バーのキャプション
@@ -386,9 +403,15 @@ BOTS: EXPERT	ボット: エキスパート
 BOTS: HARD	ボット: ハード
 BOTS: MEDIUM	ボット: ノーマル
 BOTS: OFF (RANKED)	ボット: オフ (ランク)
+BOUNCING ROUND A 24 M CIRCLE	24 M の円を跳ね回る
+BOUNCING ROUND A 24 M CIRCLE, 20 HP	24 M の円を跳ね回る, 20 HP
+BOUNCING ROUND THE WALL	壁を跳ね回る
+BOUNCY BALL	BOUNCY BALL
+BOUNCY BALLS	BOUNCY BALLS
 BOX	ボックス
 BOX OPACITY	ボックス不透明度
 BOXES, STRETCHED AS ONE - UNGROUP TO EDIT THEM	ボックスをまとめて伸縮 - 編集するにはグループ解除
+BRACKET OF 1V1S - RULESETS >	1V1 のトーナメント - ルール >
 BREAKABLE	破壊可能
 BRICK	レンガ
 BRIGHTNESS	明るさ
@@ -400,6 +423,8 @@ BUILT FOR	対応モード
 BUILT FOR sets the mode the map is made for; the MODES grid sets what it's offered for. PLAYABLE AS shows what it has the pieces for (team modes need A and B spawns).	対応モードはマップの想定モードを設定; モード表は提供先を設定します。プレイ可能は必要な要素が揃っているモードを表示 (チームモードにはAとBのスポーンが必要)。
 BUILT FOR:	対応モード:
 BUILT FOR: ANY	対応モード: すべて
+BURSTS UP TO 24 M/S ON A 180 WALL	180 の壁で最大 24 M/S のダッシュ
+BURSTS UP TO 24 M/S ON THE WALL	壁で最大 24 M/S のダッシュ
 BY NAME	名前順
 BY PING	PING順
 BY PLAYERS	人数順
@@ -460,6 +485,7 @@ CLICK ON SOMETHING TO SELECT IT	クリックで選択
 CLICK TO CONFIRM	クリックで確定
 CLICK anything to select it. New things go where the crosshair (the middle of the view) points.	クリックで何でも選択。新しいものはクロスヘア (画面中央) の位置に置かれます。
 CLICK: SELECT (AGAIN: THE ONE BEHIND, SHIFT: ADD MORE, THEN GROUP)	クリック: 選択 (再度: 背後のもの、SHIFT: 追加してグループ化)
+CLICKING	クリック
 CLIP BOX COLOR	クリップボックスの色
 CLOCK	時計
 CLOSE	閉じる
@@ -558,6 +584,7 @@ CPU OTHER	CPU その他
 CPU PRIORITY	CPU優先度
 CPU PRIORITY: ABOVE NORMAL	CPU優先度: 通常以上
 CPU PRIORITY: HIGH	CPU優先度: 高
+CRAZY BALL	CRAZY BALL
 CROSSBOW	クロスボウ
 CROSSBOW, STICKY AND RIFLE	クロスボウ、スティッキー、ライフル
 CROSSBOWS ONLY	クロスボウのみ
@@ -566,6 +593,7 @@ CROSSHAIR CODE COPIED	クロスヘアコードをコピー
 CROSSHAIR COLOR	クロスヘアの色
 CROSSHAIR PASTED	クロスヘアを貼り付け
 CROSSHAIR, TOWARD WHERE THEY CAME FROM	クロスヘア、攻撃元の方向
+CROSSING GUARD	CROSSING GUARD
 CROUCH	しゃがみ
 CROUCH SPEED	しゃがみ速度
 CROWN	クラウン
@@ -672,6 +700,7 @@ DEMOS	デモ
 DEPTH	奥行き
 DESC	降順
 DEVICES	デバイス
+DEVICES  >	デバイス  >
 DIFFICULTY	難易度
 DIFFICULTY: ADVANCED	難易度: 上級
 DIFFICULTY: BEGINNER	難易度: 初級
@@ -739,6 +768,7 @@ EACH INPUT SENT IN THIS MANY PACKETS	各入力をこの数のパケットで送�
 EACH OF THE ANNOUNCER'S LINES ON OR OFF	アナウンサーの各セリフのオン / オフ
 EACH SLIDER SHOWS THE VALUE IN THIS MODE (STANDARD x MULTIPLIER)	各スライダーはこのモードでの値を表示 (標準 x 倍率)
 EARLY FLUSH	早期送信
+EASY	かんたん
 EASY BOTS	イージーボット
 EDGE ARROWS	端の矢印
 EDIT	編集
@@ -892,6 +922,7 @@ FRAME TIME (MS) OVER THE RUN	ラン中のフレームタイム (MS)
 FRAMES	フレーム
 FREE FOR ALL	個人戦
 FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next kill wins).	個人戦 - 時間切れ時に最多キルで勝利 (同点は延長戦: 次のキルで勝利)。
+FRENZY	FRENZY
 FRIENDS JOIN WITH YOUR PUBLIC IP (STREAMER MODE)	フレンドはグローバルIPで参加 (配信者モード)
 FRIENDS JOIN WITH YOUR PUBLIC IP:	フレンドはグローバルIPで参加:
 FROM	から
@@ -920,6 +951,8 @@ FULLSCREEN: OFF KEEPS IT ON SCREEN	フルスクリーン: オフで画面上に�
 G-SYNC / FREESYNC	G-SYNC / FREESYNC
 GAME	ゲーム
 GAME FONTS: YOUR OWN COPY OF THE REAL FONT IF FOUND	ゲームフォント: 本物のフォントがあればそれを使用
+GAME LATENCY ~	ゲームの遅延 ~
+GAME LATENCY ~{} NS  (MOUSE REPORT IN TO GPU DONE; F3: NEXT VIEW)	ゲームの遅延 ~{} NS  (マウス入力から GPU 完了まで; F3: 次の表示)
 GAME {} NS + MOUSE POLLING {} NS (# HZ) + DISPLAY {} NS (# HZ)	ゲーム {} NS + マウス {} NS (# HZ) + ディスプレイ {} NS (# HZ)
 GAMEMODE	ゲームモード
 GAMEPLAY	ゲームプレイ
@@ -937,6 +970,7 @@ GET IT WITH /link - THE CODE IS PUBLIC	/link で取得 - コードは公開さ�
 GIANT SNIPERS	巨人スナイパー
 GIBS	肉片
 GL	GL
+GL {} / {}	GL {} / {}
 GLASS CANNONS	グラスキャノン
 GLOW	グロー
 GLOW STRENGTH	グローの強さ
@@ -984,6 +1018,7 @@ GRAVITY	重力
 GREEN	緑
 GREEN / MAGENTA	緑 / マゼンタ
 GREENHOUSE - ranked vanilla 1v1.   DOJO - ranked laser vampire 1v1.   SPIRE - ranked instagib free for all (5 minutes).   ORBIT - 1v1, duel.	GREENHOUSE - ランク バニラ1v1。   DOJO - ランク レーザーヴァンパイア1v1。   SPIRE - ランク インスタギブ個人戦 (5分)。   ORBIT - 1v1、デュエル。
+GRID	GRID
 GRID: # M (CUSTOM)	グリッド: # M (カスタム)
 GRID: 1 M	グリッド: 1 M
 GRID: 1/2 M	グリッド: 1/2 M
@@ -1013,6 +1048,7 @@ HANA	HANA
 HAND	手
 HAND: LEFT	手: 左
 HAND: RIGHT	手: 右
+HARD	むずかしい
 HARD BOTS	ハードボット
 HARD TO TELL APART WITH	見分けにくい色覚:
 HARDWARE GPU SCHEDULING IS OFF	ハードウェア GPU スケジューリングがオフ
@@ -1272,6 +1308,8 @@ LEADERBOARD: SOON	リーダーボード: 近日公開
 LEAVE	退出
 LEAVE ALL	すべて退出
 LEFT	左
+LEFT + RIGHT HELD: LAST WINS = SNAP TAP (FLYING UP + DOWN TOO)	左 + 右を押したまま: 後の方が勝つ = SNAP TAP (飛行中の上 + 下も)
+LEFT AND RIGHT, CHANGING SPEED	左右に, 速さが変わる
 LEFT ARROW (PREVIOUS PAGE)	左矢印 (前のページ)
 LEFT MOUSE - fire.   RIGHT MOUSE - alt-fire (scope, knife throw, rocket lob, bubble stream, syringe throw...).	左クリック - 射撃。   右クリック - サブ射撃 (スコープ、ナイフ投げ、ロケット曲射、バブル放射、注射器投げ...)。
 LEFT: THE GUN ON THE LEFT, THE GRAPPLE	左: 武器を左に、グラップルを
@@ -1348,6 +1386,7 @@ MAP COLORS	マップカラー
 MAP DOWNLOADS	マップのダウンロード
 MAP EDITOR	マップエディター
 MAP EDITOR *	マップエディター *
+MAP POOL (ROTATES EACH MATCH; NONE = THE HOST'S MAP)	マッププール (試合ごとに回る; なし = ホストのマップ)
 MAP YOU DON'T HAVE ENDS THE CONNECTION	持っていないマップは接続を終了
 MAP:	マップ:
 MAP: NONE	マップ: なし
@@ -1964,9 +2003,11 @@ MATERIAL: WOODEN CRATE	素材: 木箱
 MATERIAL: WROUGHT IRON	素材: 錬鉄
 MATERIAL: ZEBRA CROSSING	素材: 横断歩道
 MATERIAL: ZINC	素材: 亜鉛
+MAX (0=AUTO)	最大 (0=自動)
 MAX PING	最大PING
 MAX PLAYERS	最大人数
 MB (OFFICIAL MAPS SHIP BAKED)	MB (公式マップはベイク済み)
+MEDIUM	ふつう
 MEDIUM BOTS	ノーマルボット
 MENU (ESC)	メニュー (ESC)
 MENU BACKGROUND	メニュー背景
@@ -2011,6 +2052,8 @@ MOUSE 1	MOUSE 1
 MOUSE 2	MOUSE 2
 MOUSE 3	MOUSE 3
 MOUSE ACCELERATION	マウス加速
+MOUSE TO PHOTON ~	マウスから光まで ~
+MOUSE TO PHOTON ~{} NS  (# HZ DISPLAY, {}, {})	マウスから光まで ~{} NS  (# HZ ディスプレイ, {}, {})
 MOUSE TO PHOTON: IN GAME ONLY	マウスから表示まで: ゲーム中のみ
 MOUSE {} # HZ (AVG)	マウス {} # HZ (平均)
 MOVE	移動
@@ -2039,9 +2082,11 @@ MY RACE STATS	自分のレース記録
 MY SKY	自分の空
 MY SKY / GLOW: THESE IN PLACE OF EVERY MAP'S;	自分の空 / グロー: 全マップのものの代わりに使用;
 MY TRACER	自分の弾道
+Maps are saved to the maps folder (MAPS FOLDER opens it) as .qmap text files. RESET MAPS puts the built-in maps back.	マップは maps フォルダー (MAPS FOLDER で開く) に .qmap テキストファイルとして保存される. RESET MAPS で内蔵マップに戻る.
 Model	モデル
 ModelOverrides holds kMaxModelsPerKind models of a kind	ModelOverrides holds kMaxModelsPerKind models of a kind
 N/A HERE: LATENT SYNC IS WINDOWS ONLY	ここでは使用不可: LATENT SYNC は WINDOWS のみ
+N/A HERE: LINUX (X11) ONLY	ここでは N/A: LINUX (X11) のみ
 N/A HERE: WINDOWS + NVIDIA ONLY	ここでは使用不可: WINDOWS + NVIDIA のみ
 N/A: THE DRIVER LACKS GL 4.4 BUFFER STORAGE	N/A: ドライバーに GL 4.4 BUFFER STORAGE がない
 NAME	名前
@@ -2145,6 +2190,7 @@ OBJECTIVES	目標
 OF	/
 OF #	/ #
 OFF	オフ
+OFF = LOWEST LATENCY, MAY TEAR	オフ = 最小の遅延, ティアリングあり
 OFF: FROM THE NEXT START	オフ: 次回起動から
 OFF: THE BAR IS FULL AT 100 IN EVERY MODE	オフ: 全モードで100で満タン
 OFF: THE VIEW STEPS UP STAIRS AT ONCE	オフ: 階段で視点が一気に上がる
@@ -2166,9 +2212,11 @@ ON: AT MOST 1 FRAME QUEUED	オン: キューは最大1フレーム
 ON: FROM THE NEXT START	オン: 次回起動から
 ON: USES YOUR TEAM COLOR, NOT THE ONE BELOW	オン: 下の色ではなくチームカラーを使用
 ONE	1つ
+ONE BIG BALL, BACK AFTER 1 S	大きなボール 1 つ, 1 秒後に戻る
 ONE CHAT COLOR	チャット単色
 ONE MINUTE	1分
 ONE MINUTE LEFT	残り1分
+ONE TIME LINE; EST = WORKED OUT, NOT MEASURED; MONITOR PROCESSING NOT INCLUDED	1 本の時間軸; EST = 計算値, 実測ではない; モニターの処理は含まない
 ONLY KILLS I'M IN	自分が関わるキルのみ
 OPACITY	不透明度
 OPACITY %	不透明度 %
@@ -2258,6 +2306,9 @@ PING	PING
 PING #	PING #
 PING # MS  LOSS #%	PING # MS  ロス #%
 PING / LOSS GRAPH AND RATES (APART FROM F3)	PING / ロスのグラフとレート (F3とは別)
+PING: < 100	PING: < 100
+PING: < 150	PING: < 150
+PING: < 50	PING: < 50
 PING: ANY	PING: 指定なし
 PIRATE	海賊
 PITCH	ピッチ
@@ -2379,6 +2430,7 @@ RADEON(TM) GRAPHICS	RADEON(TM) GRAPHICS
 RADIUS	半径
 RAILYARD / DAM / EXPRESS / MONORAIL - neutral payload (Railyard: payload too).   WAR / CONVOY - multi point.	RAILYARD / DAM / EXPRESS / MONORAIL - ニュートラルペイロード (Railyard: ペイロードも)。   WAR / CONVOY - マルチポイント。
 RAMPAGE	ランペイジ
+RANDOM TURNS ON THE WALL	壁でランダムに曲がる
 RANKED	ランク
 RANKED - CHOOSE A LADDER	ランク - ラダーを選択
 RANKED - NOT RATED	ランク - レート対象外
@@ -2403,6 +2455,7 @@ RATE	レート
 RATING	レート
 RAW INPUT	RAW入力
 RD	RD
+REACTOR	REACTOR
 READ INPUT	入力読取
 READY	準備完了
 REALTIME	リアルタイム
@@ -2466,6 +2519,7 @@ RIGHT ARROW (NEXT PAGE)	右矢印 (次のページ)
 RIGHT MOUSE + MOVE: LOOK    WASD: FLY    SPACE / C: UP / DOWN    SHIFT: FAST    WHEEL: SPEED	右クリック + 移動: 視点    WASD: 飛行    SPACE / C: 上 / 下    SHIFT: 高速    ホイール: 速度
 RIGHT-CLICK A SERVER: FAVORITE (LISTED FIRST)	サーバーを右クリック: お気に入り (先頭に表示)
 RIGHT-CLICK: RESET	右クリック: リセット
+RING	RING
 RISING TOWARD	上昇方向
 RISING TOWARD: +X	上昇方向: +X
 RISING TOWARD: +Z	上昇方向: +Z
@@ -2475,7 +2529,7 @@ RMB	右クリック
 ROBOT	ロボット
 ROCK	グー
 ROCKET	ロケット
-ROCKET (splash; rocket jump off the floor for 10#amage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 10 hp, once a second; alt throws it: +30 hp and reset cooldowns for a teammate).	ロケット (範囲攻撃; 床でロケットジャンプすると10#ダメージ)、ライフル (フルオート; サブでスコープ)、レーザー (ビーム; サブで引き寄せ)、ショットガン (サブ: 跳弾)、スナイパー (サブでスコープ)、スティッキー (サブで起爆)、クロスボウ (ヘッドショット)、バブル (サブ: バブルを連射)、ナイフ (サブ: 投擲)、注射器 (射撃で毎秒1回10 HP回復; サブで投擲: 味方に +30 HP とクールダウンリセット)。
+ROCKET (splash; rocket jump off the floor for 10% damage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 10 hp, once a second; alt throws it: +30 hp and reset cooldowns for a teammate).	ロケット (範囲攻撃; 床でロケットジャンプすると10% ダメージ)、ライフル (フルオート; サブでスコープ)、レーザー (ビーム; サブで引き寄せ)、ショットガン (サブ: 跳弾)、スナイパー (サブでスコープ)、スティッキー (サブで起爆)、クロスボウ (ヘッドショット)、バブル (サブ: バブルを連射)、ナイフ (サブ: 投擲)、注射器 (射撃で毎秒1回10 HP回復; サブで投擲: 味方に +30 HP とクールダウンリセット)。
 ROCKET JUMPERS	ロケットジャンパー
 ROCKET RIDE	ロケットライド
 ROCKET, LASER AND KNIFE	ロケット、レーザー、ナイフ
@@ -2503,6 +2557,7 @@ ROUND OVER	ラウンド終了
 ROUND START	ラウンド開始
 ROUND WINS -	ラウンド勝利数 -
 ROUND WON	ラウンド勝利
+ROUND YOU AT ONE HEIGHT, CHANGING SPEED	同じ高さで周囲を, 速さが変わる
 ROUNDS	ラウンド
 ROWS #-# OF # (WHEEL)	行 #-# / # (ホイール)
 ROWS #-# OF # - WHEEL TO SCROLL	行 #-# / # - ホイールでスクロール
@@ -2511,6 +2566,7 @@ RPS BY MOUSE: CLICK A TIEBREAK CARD TO THROW IT	マウスでじゃんけん: タ
 RTX	RTX
 RUBIK	RUBIK
 RULES	ルール
+RULESETS >	ルール >
 RUN	逃げろ
 RUN - DON'T BE THE TAGGER WHEN TIME RUNS OUT	逃げろ - 時間切れ時に鬼にならないように
 RUN AGAIN	もう一度実行
@@ -2556,6 +2612,7 @@ SCOREBOARD: HOLD	スコアボード: 長押し
 SCOREBOARD: TOGGLE	スコアボード: トグル
 SCORES	スコア
 SCREEN	画面
+SCREEN EDGES FLASH WHEN HIT. 0 = OFF	被弾すると画面の端が光る. 0 = オフ
 SCREENSHOT	スクリーンショット
 SCREENSHOT FOLDER	スクリーンショットフォルダ
 SCREENSHOT FORMAT	スクリーンショット形式
@@ -2654,6 +2711,7 @@ SNAPS: 125	スナップ: 125
 SNAPS: 250	スナップ: 250
 SNAPS: 500	スナップ: 500
 SNAPS: 62.5	スナップ: 62.5
+SNAPS: = TICK	スナップ: = ティック
 SNAPSHOT RATE	スナップショットレート
 SNIPER	スナイパー
 SNIPER SCOPE	スナイパースコープ
@@ -2757,6 +2815,7 @@ STOP HOSTING	ホストを停止
 STOP RECORDING	録画を停止
 STOP THE PAYLOAD	ペイロードを止めろ
 STOPPING SPEED	停止速度
+STRAFE	STRAFE
 STRAFE BOOST (AT SPEED)	ストレイフブースト (高速時)
 STREAK	連続キル
 STREAK CALLOUTS	連続キルのコール
@@ -2791,6 +2850,7 @@ SURFACES	表面
 SW	SW
 SWAP	入れ替え
 SWAP FIRE	射撃ボタン入れ替え
+SWITCHING	切り替え
 SYRINGE	注射器
 SYSTEM DEFAULT	システムデフォルト
 SYSTEM LINE COLOR	システム行の色
@@ -2801,6 +2861,7 @@ SYSTEM MESSAGES: OFF	システムメッセージ: オフ
 SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)	システム: OSの矢印 (色: 独自のみ)
 Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).	設定 > 操作設定 でキー割り当てをエクスポートしたり、他人のものをインポートできます (テキストをコピー / 貼り付け)。
 Start the match, change map / mode, ranked on / off, edit the map together, bots on. A majority of the human players decides.	試合開始、マップ / モード変更、ランクのオン / オフ、マップの共同編集、ボットのオン。人間プレイヤーの過半数で決定します。
+Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping. Above ~13 m/s A / D turns you faster than W alone.	ストレイフジャンプで加速: 横移動キーを押したまま同じ向きにマウスを回し, ジャンプを続ける. ~13 m/s を超えると A / D の方が W だけより速く曲がれる.
 Style, length, thickness, gap, colour and outline, with a live preview.	スタイル、長さ、太さ、間隔、色、輪郭をライブプレビューで調整。
 Super dash: look down and dash into the floor while holding jump: you leave 5 m/s faster than you went into the dash (at least 11, at most 36 m/s), with a hop that gets higher the further down you look (it leaves you 1 dash).	スーパーダッシュ: ジャンプを押しながら下を向いて床へダッシュ: ダッシュに入る前より 5 m/s 速く抜け (最低 11、最大 36 m/s)、下を向くほど高く跳ねます (ダッシュが1回残ります)。
 Switching weapons with fire held doesn't fire the new one: let go and press again.	射撃を押したまま武器を切り替えても新しい武器は撃ちません: 一度離して押し直してください。
@@ -2910,6 +2971,7 @@ THE SHADOWS AND THE WORLD GO TO THE GPU AS SOON	影とワールドを GPU へ
 THE SHARE OF THE MODE'S MAX HEALTH	モードの最大体力に対する割合
 THE TASKBAR BUTTON FLASHES	タスクバーのボタンが点滅
 THE WINDOW'S SIZE AND PLACE ARE KEPT	ウィンドウのサイズと位置を保持
+THEIR OWN LIGHT: 1 = THEIR FULL COLOUR IN ANY SHADE	自身の光: 1 = どの影でも本来の色
 THEIRS	相手
 THEME.CFG LINE	THEME.CFG 行
 THEN REFRESH	その後更新
@@ -2927,6 +2989,8 @@ THREADED OPTIMIZATION OFF	スレッド最適化オフ
 THREADED OPTIMIZATION OFF; PRESENT VIA DXGI	スレッド最適化オフ; DXGI経由でPRESENT
 THREADED OPTIMIZATION: WINDOWS ONLY	スレッド最適化: WINDOWSのみ
 THREE	3つ
+THREE HUGE BALLS, AS FAST AS YOU CAN	巨大なボール 3 つ, できるだけ速く
+THREE HUGE BALLS, JUST HOLD FIRE, 10 HP	巨大なボール 3 つ, 射撃を押し続ける, 10 HP
 THROW	投擲
 TICK / SNAP	ティック / スナップ
 TICK RATE	ティックレート
@@ -2984,6 +3048,7 @@ TRACERS + TRAILS	弾道 + 軌跡
 TRACERS: CLASSIC	弾道: クラシック
 TRACERS: CUSTOM	弾道: カスタム
 TRACERS: TEAM	弾道: チーム
+TRACKING	トラッキング
 TRAIL OPACITY	軌跡の不透明度
 TRAILS	軌跡
 TRAILS: FULL	軌跡: フル
@@ -2994,6 +3059,9 @@ TRAINER MENU	トレーナーメニュー
 TRIAL MAP	タイムアタックマップ
 TT	TT
 TWO	2つ
+TWO BALLS ON 9 SPOTS, 20 HP	9 か所に 2 つのボール, 20 HP
+TWO TINY BALLS	小さなボール 2 つ
+TWO TINY DRIFTING BALLS, 10 HP	漂う小さなボール 2 つ, 10 HP
 TYPE TO SEARCH: A NAME OR WHAT IT DOES (CTRL+F)	入力して検索: 名前または機能 (CTRL+F)
 TYPING	入力中
 TYPING SOUNDS	入力音
@@ -3100,10 +3168,12 @@ VSYNC: ON	垂直同期: オン
 W A S D - move.   SPACE - jump (hold it as you land to bounce: bunny hop).	W A S D - 移動。   SPACE - ジャンプ (着地時に押し続けると跳ねる: バニーホップ)。
 WAD2	WAD2
 WAITING FOR THE LATE READ (AVG)	遅延読取待ち (平均)
-WAITING FOR THE LATE READ (AVG)  00,000,000 NS	遅延読取待ち (平均)  00,000,000 NS
 WAITING FOR THE NEXT READ (AVG)	次の読取待ち (平均)
+WALL BALL	WALL BALL
+WALL WANDER	WALL WANDER
 WALLBANG	ウォールバン
 WALLBANG TINT	ウォールバンの色調
+WANDERING, SWELLING AND SHRINKING	さまよい, 大きくなったり小さくなったり
 WARMING UP	ウォームアップ中
 WARMUP -	ウォームアップ -
 WARMUP - {} TO VOTE START	ウォームアップ - {} で開始に投票
@@ -3143,6 +3213,7 @@ WHOLE HUD	HUD全体
 WIDGET EDITOR	ウィジェットエディター
 WIDGETS	ウィジェット
 WIDGETS FROM CLIPBOARD	クリップボードからウィジェット
+WIDTH 0 = NO OUTLINE	幅 0 = 輪郭なし
 WIDTH; CUSTOM (GLTF) PLAYER MODELS HAVE NO OUTLINE	幅; カスタム (GLTF) プレイヤーモデルには輪郭なし
 WINDIR	WINDIR
 WINDOW	ウィンドウ

@@ -132,6 +132,7 @@
 -Wcast-function-type	-Wcast-function-type
 -Y (under)	-Y (снизу)
 0.1% LOW	0.1% LOW
+00,000,000 NS	00,000,000 NS
 1 HP	1 HP
 1 HP KNIVES	1 HP НОЖИ
 1 SETTING	1 НАСТРОЙКА
@@ -142,6 +143,7 @@
 12 H CLOCK	12-Ч ЧАСЫ
 144 FPS	144 FPS
 1V1 - rounds on one ruleset (vanilla, laser vampire, instagib...). First to 5. Ranked 1v1 rates you on its own ladder.	1V1 - раунды по одним правилам (ванилла, лазерный вампир, инстагиб...). До 5 побед. Рейтинговый 1v1 считается в отдельной таблице.
+2 BALL	2 BALL
 240 FPS	240 FPS
 2:00  -  1ST OF 6	2:00  -  1-Й ИЗ 6
 2D: THE VIEW STAYS STILL, YOUR MOUSE MOVES THE CROSSHAIR	2D: ВИД НЕПОДВИЖЕН, МЫШЬ ДВИГАЕТ ПРИЦЕЛ
@@ -149,6 +151,7 @@
 30 SECONDS LEFT	ОСТАЛОСЬ 30 СЕКУНД
 32-bit float	32-bit float
 3D FLYING	3D ПОЛЁТ
+3D STATIC	3D СТАТИКА
 3D STATIC: YOU CAN'T MOVE - LOOK AND SHOOT	3D СТАТИКА: ДВИГАТЬСЯ НЕЛЬЗЯ - ЦЕЛЬТЕСЬ И СТРЕЛЯЙТЕ
 3D VAMP	3D ВАМП
 5 MORE MINUTES	ЕЩЁ 5 МИНУТ
@@ -156,11 +159,14 @@
 A DASH PRESSED THIS SOON BEFORE IT'S READY	РЫВОК, НАЖАТЫЙ ЗА СТОЛЬКО ДО ГОТОВНОСТИ
 A DROPPED CONNECTION TRIES AGAIN (3 TIMES)	ОБОРВАННОЕ СОЕДИНЕНИЕ ПОВТОРЯЕТСЯ (3 РАЗА)
 A NEW CODE FROM /link RELINKS IT - unlink REMOVES IT	НОВЫЙ КОД ИЗ /link ПРИВЯЖЕТ ЗАНОВО - unlink ОТВЯЖЕТ
+A NEW DIAGONAL EVERY 0.3 S	НОВАЯ ДИАГОНАЛЬ КАЖДЫЕ 0.3 С
+A NEW DIAGONAL EVERY 0.3 S, 10 HP	НОВАЯ ДИАГОНАЛЬ КАЖДЫЕ 0.3 С, 10 HP
 A PLAYER JOINED VIA	ИГРОК ЗАШЁЛ ЧЕРЕЗ
 A SERVER	СЕРВЕР
 A VARIABLE FONT IS DRAWN AT ITS DEFAULT WEIGHT	ВАРИАТИВНЫЙ ШРИФТ РИСУЕТСЯ С НАЧЕРТАНИЕМ ПО УМОЛЧАНИЮ
 A private game with bots at your chosen level (beginner, intermediate, advanced, expert), on any mode and map.	Закрытая игра с ботами нужного уровня (новичок, средний, продвинутый, эксперт) в любом режиме и на любой карте.
 A thrown knife or syringe is gone for 4 s (greyed out in the weapon list, with its timer).	Брошенный нож или шприц пропадает на 4 с (серый в списке оружия, с таймером).
+AA / SHADOWS	AA / ТЕНИ
 ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/	ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/
 ABILITIES	СПОСОБНОСТИ
 ABOVE NORMAL	ВЫШЕ ОБЫЧНОГО
@@ -171,6 +177,8 @@ ACCENT COLOR	ЦВЕТ АКЦЕНТА
 ACCESSIBILITY	СПЕЦ. ВОЗМОЖНОСТИ
 ACCURACY	ТОЧНОСТЬ
 ACE	ACE
+ACROSS THE WALL, 10 HP	ПО ВСЕЙ СТЕНЕ, 10 HP
+ACROSS THE WALL, SIDE TO SIDE	ПО СТЕНЕ, ИЗ СТОРОНЫ В СТОРОНУ
 ADAPTIVE	АДАПТИВНЫЙ
 ADD (AT THE SCREEN CENTER)	ДОБАВИТЬ (В ЦЕНТРЕ ЭКРАНА)
 ADD BOT	+ БОТ
@@ -189,12 +197,14 @@ ADRENALIN > GAMING > GRAPHICS: RADEON CHILL OFF	ADRENALIN > ИГРЫ > ГРАФ�
 ADRENALIN > GAMING > GRAPHICS: WAIT FOR VERTICAL REFRESH: OFF, UNLESS APPLICATION SPECIFIES	ADRENALIN > ИГРЫ > ГРАФИКА: ВЕРТ. СИНХР.: ВЫКЛ, ЕСЛИ НЕ ЗАДАНО ПРИЛОЖЕНИЕМ
 ADRENALIN: ANTI-LAG ON; CHILL, BOOST, ENHANCED SYNC, WAIT FOR VERTICAL REFRESH OFF	ADRENALIN: ANTI-LAG ВКЛ; CHILL, BOOST, ENHANCED SYNC, ВЕРТ. СИНХР. ВЫКЛ
 ADVANCED	ПРОДВИНУТЫЙ
+ADVANCED  >	ПРОДВИНУТЫЙ  >
 ADVANCED > BOT BRAIN: what your bots play: the built-in brain, or a .qbrain file from the bots folder in your data folder. A file that doesn't compile shows its error line and the bots play the built-in brain. Never in ranked.	ПРОДВИНУТЫЙ > ИИ БОТА: как играют ваши боты: встроенный ИИ или файл .qbrain из папки bots в папке данных. Если файл не компилируется, показывается строка с ошибкой, а боты играют со встроенным ИИ. Никогда в рейтинге.
 AGAIN (R)	ЕЩЁ РАЗ (R)
 AHEAD	ВПЕРЕДИ
 AIM TRAINER	АИМ-ТРЕНАЖЁР
 AIR	ВОЗД
 AIR ACCELERATION	УСКОРЕНИЕ В ВОЗДУХЕ
+AIR BALL	AIR BALL
 AIR CONTROL	КОНТР. В ВОЗД.
 AIR DRIFT (UNDER RUN SPEED)	ДРЕЙФ В ВОЗДУХЕ (НИЖЕ СКОРОСТИ БЕГА)
 AIR ROCKET	РАКЕТА В ВОЗД.
@@ -203,6 +213,7 @@ ALL	ВСЕ
 ALL MODES	ВСЕ РЕЖИМЫ
 ALL OFF	ВСЁ ВЫКЛ
 ALL SETTINGS	ВСЕ НАСТРОЙКИ
+ALONG A 3 X 3 GRID'S LINES	ПО ЛИНИЯМ СЕТКИ 3 X 3
 ALT	ALT
 ALT FIRE	АЛЬТ. ОГОНЬ
 ALT-FIRE TOGGLE IN RANKED	АЛЬТ. ОГОНЬ ПЕРЕКЛЮЧЕНИЕМ В РЕЙТИНГЕ
@@ -236,6 +247,7 @@ ANTI-ALIASING: MSAA 4X (N/A HERE)	СГЛАЖИВАНИЕ: MSAA 4X (ЗДЕСЬ Н
 ANTI-ALIASING: MSAA 8X	СГЛАЖИВАНИЕ: MSAA 8X
 ANTI-ALIASING: OFF	СГЛАЖИВАНИЕ: ВЫКЛ
 ANTI-ALIASING: SMOOTH (CHEAP)	СГЛАЖИВАНИЕ: SMOOTH (ДЁШЕВО)
+ANYWHERE AROUND YOU, 12-24 M AWAY	ГДЕ УГОДНО ВОКРУГ, В 12-24 М
 APEX LEGENDS	APEX LEGENDS
 APPLY IN:	ПРИМЕНИТЬ В:
 ARC COLOR	ЦВЕТ ДУГИ
@@ -305,6 +317,11 @@ BALANCE BOTS	БАЛАНС БОТОВ
 BALANCE BOTS evens out uneven teams with bots. MODE > RANKED runs rated 1v1 on the ranked maps (no bots). SERVER LOG keeps a log of the match.	БАЛАНС БОТОВ выравнивает неравные команды ботами. РЕЖИМ > РЕЙТИНГ запускает рейтинговые 1v1 на рейтинговых картах (без ботов). ЛОГ СЕРВЕРА ведёт лог матча.
 BALL	МЯЧ
 BALL - SHOOT, BLAST OR RUN THE BALL INTO THE ENEMY GOAL - MOST GOALS WINS	МЯЧ - ЗАБИВАЙТЕ МЯЧ В ВОРОТА ВРАГА ВЫСТРЕЛОМ, ВЗРЫВОМ ИЛИ С РАЗБЕГА - ПОБЕЖДАЕТ БОЛЬШЕ ГОЛОВ
+BALLS ANYWHERE IN A 24 M ROOM	ШАРЫ В ЛЮБОМ МЕСТЕ КОМНАТЫ 24 М
+BALLS ANYWHERE ON A WIDE WALL	ШАРЫ В ЛЮБОМ МЕСТЕ ШИРОКОЙ СТЕНЫ
+BALLS DRIFTING IN THE ROOM, 10 HP	ШАРЫ ДРЕЙФУЮТ ПО КОМНАТЕ, 10 HP
+BALLS DRIFTING SIDE TO SIDE, 10 HP	ШАРЫ ПЛЫВУТ ИЗ СТОРОНЫ В СТОРОНУ, 10 HP
+BALLS ON THE WALL, BACK AT ONCE	ШАРЫ НА СТЕНЕ, ВОЗВРАЩАЮТСЯ СРАЗУ
 BANDIT	БАНДИТ
 BAR	ПОЛ.
 BAR CAPTIONS	ПОДПИСИ ПОЛОС
@@ -386,9 +403,15 @@ BOTS: EXPERT	БОТЫ: ЭКСПЕРТ
 BOTS: HARD	БОТЫ: СЛОЖНО
 BOTS: MEDIUM	БОТЫ: СРЕДНЕ
 BOTS: OFF (RANKED)	БОТЫ: ВЫКЛ (РЕЙТИНГ)
+BOUNCING ROUND A 24 M CIRCLE	ПРЫГАЕТ ПО КРУГУ 24 М
+BOUNCING ROUND A 24 M CIRCLE, 20 HP	ПРЫГАЕТ ПО КРУГУ 24 М, 20 HP
+BOUNCING ROUND THE WALL	ПРЫГАЕТ ПО СТЕНЕ
+BOUNCY BALL	BOUNCY BALL
+BOUNCY BALLS	BOUNCY BALLS
 BOX	БЛОК
 BOX OPACITY	ПРОЗРАЧН. БЛОКА
 BOXES, STRETCHED AS ONE - UNGROUP TO EDIT THEM	БЛОКИ, РАСТЯГИВАЮТСЯ ВМЕСТЕ - РАЗГРУППИРУЙТЕ ДЛЯ ПРАВКИ
+BRACKET OF 1V1S - RULESETS >	СЕТКА 1V1 - ПРАВИЛА >
 BREAKABLE	РАЗРУШАЕМЫЙ
 BRICK	КИРПИЧ
 BRIGHTNESS	ЯРКОСТЬ
@@ -400,6 +423,8 @@ BUILT FOR	СДЕЛАНА ДЛЯ
 BUILT FOR sets the mode the map is made for; the MODES grid sets what it's offered for. PLAYABLE AS shows what it has the pieces for (team modes need A and B spawns).	СДЕЛАНА ДЛЯ задаёт режим, под который сделана карта; сетка РЕЖИМЫ - для каких режимов она предлагается. ИГРАБЕЛЬНА КАК показывает, для чего на ней есть всё нужное (командным режимам нужны спавны A и B).
 BUILT FOR:	СДЕЛАНА ДЛЯ:
 BUILT FOR: ANY	СДЕЛАНА ДЛЯ: ЛЮБОГО
+BURSTS UP TO 24 M/S ON A 180 WALL	РЫВКИ ДО 24 М/С НА СТЕНЕ 180
+BURSTS UP TO 24 M/S ON THE WALL	РЫВКИ ДО 24 М/С НА СТЕНЕ
 BY NAME	ПО ИМЕНИ
 BY PING	ПИНГ
 BY PLAYERS	ПО ИГРОКАМ
@@ -460,6 +485,7 @@ CLICK ON SOMETHING TO SELECT IT	КЛИКНИТЕ ПО ОБЪЕКТУ, ЧТОБЫ
 CLICK TO CONFIRM	КЛИК - ПОДТВЕРДИТЬ
 CLICK anything to select it. New things go where the crosshair (the middle of the view) points.	КЛИКНИТЕ по чему угодно, чтобы выбрать. Новое ставится туда, куда смотрит прицел (центр экрана).
 CLICK: SELECT (AGAIN: THE ONE BEHIND, SHIFT: ADD MORE, THEN GROUP)	КЛИК: ВЫБОР (ЕЩЁ РАЗ: ТОТ, ЧТО ПОЗАДИ, SHIFT: ДОБАВИТЬ, ЗАТЕМ ГРУППА)
+CLICKING	КЛИКИ
 CLIP BOX COLOR	ЦВЕТ CLIP-БЛОКОВ
 CLOCK	ЧАСЫ
 CLOSE	ЗАКРЫТЬ
@@ -558,6 +584,7 @@ CPU OTHER	ЦП ПРОЧЕЕ
 CPU PRIORITY	ПРИОРИТЕТ ЦП
 CPU PRIORITY: ABOVE NORMAL	ПРИОРИТЕТ ЦП: ВЫШЕ ОБЫЧНОГО
 CPU PRIORITY: HIGH	ПРИОРИТЕТ ЦП: ВЫСОКИЙ
+CRAZY BALL	CRAZY BALL
 CROSSBOW	АРБАЛЕТ
 CROSSBOW, STICKY AND RIFLE	АРБАЛЕТ, ЛИПУЧКА И ВИНТОВКА
 CROSSBOWS ONLY	ТОЛЬКО АРБАЛЕТЫ
@@ -566,6 +593,7 @@ CROSSHAIR CODE COPIED	КОД ПРИЦЕЛА СКОПИРОВАН
 CROSSHAIR COLOR	ЦВЕТ ПРИЦЕЛА
 CROSSHAIR PASTED	ПРИЦЕЛ ВСТАВЛЕН
 CROSSHAIR, TOWARD WHERE THEY CAME FROM	ПРИЦЕЛ, В СТОРОНУ ИСТОЧНИКА
+CROSSING GUARD	CROSSING GUARD
 CROUCH	ПРИСЕСТЬ
 CROUCH SPEED	СКОРОСТЬ В ПРИСЕДЕ
 CROWN	КОРОНА
@@ -672,6 +700,7 @@ DEMOS	ДЕМО
 DEPTH	ГЛУБИНА
 DESC	ОПИС.
 DEVICES	УСТРОЙСТВА
+DEVICES  >	УСТРОЙСТВА  >
 DIFFICULTY	СЛОЖНОСТЬ
 DIFFICULTY: ADVANCED	СЛОЖНОСТЬ: ПРОДВИНУТЫЙ
 DIFFICULTY: BEGINNER	СЛОЖНОСТЬ: НОВИЧОК
@@ -739,6 +768,7 @@ EACH INPUT SENT IN THIS MANY PACKETS	КАЖДЫЙ ВВОД ШЛЁТСЯ В СТ�
 EACH OF THE ANNOUNCER'S LINES ON OR OFF	КАЖДАЯ ФРАЗА КОММЕНТАТОРА ВКЛ ИЛИ ВЫКЛ
 EACH SLIDER SHOWS THE VALUE IN THIS MODE (STANDARD x MULTIPLIER)	КАЖДЫЙ ПОЛЗУНОК ПОКАЗЫВАЕТ ЗНАЧЕНИЕ В ЭТОМ РЕЖИМЕ (СТАНДАРТ x МНОЖИТЕЛЬ)
 EARLY FLUSH	РАННЯЯ ОТПРАВКА
+EASY	ЛЕГКО
 EASY BOTS	ЛЁГКИЕ БОТЫ
 EDGE ARROWS	СТРЕЛКИ ПО КРАЯМ
 EDIT	РЕД.
@@ -892,6 +922,7 @@ FRAME TIME (MS) OVER THE RUN	ВРЕМЯ КАДРА (МС) ЗА ЗАПУСК
 FRAMES	КАДРЫ
 FREE FOR ALL	КАЖДЫЙ ЗА СЕБЯ
 FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next kill wins).	КАЖДЫЙ САМ ЗА СЕБЯ - побеждает больше убийств к концу времени (при ничьей овертайм: следующее убийство побеждает).
+FRENZY	FRENZY
 FRIENDS JOIN WITH YOUR PUBLIC IP (STREAMER MODE)	ДРУЗЬЯ ЗАХОДЯТ ПО ВАШЕМУ ВНЕШНЕМУ IP (РЕЖИМ СТРИМЕРА)
 FRIENDS JOIN WITH YOUR PUBLIC IP:	ДРУЗЬЯ ЗАХОДЯТ ПО ВАШЕМУ ВНЕШНЕМУ IP:
 FROM	ИЗ
@@ -920,6 +951,8 @@ FULLSCREEN: OFF KEEPS IT ON SCREEN	ПОЛНЫЙ ЭКРАН: ВЫКЛ ДЕРЖИ�
 G-SYNC / FREESYNC	G-SYNC / FREESYNC
 GAME	ИГРА
 GAME FONTS: YOUR OWN COPY OF THE REAL FONT IF FOUND	ИГРОВЫЕ ШРИФТЫ: ВАША КОПИЯ НАСТОЯЩЕГО ШРИФТА, ЕСЛИ НАЙДЕНА
+GAME LATENCY ~	ЗАДЕРЖКА ИГРЫ ~
+GAME LATENCY ~{} NS  (MOUSE REPORT IN TO GPU DONE; F3: NEXT VIEW)	ЗАДЕРЖКА ИГРЫ ~{} НС  (ОТ ОТЧЁТА МЫШИ ДО ГОТОВОЙ GPU; F3: СЛЕД. ВИД)
 GAME {} NS + MOUSE POLLING {} NS (# HZ) + DISPLAY {} NS (# HZ)	ИГРА {} NS + ОПРОС МЫШИ {} NS (# HZ) + ДИСПЛЕЙ {} NS (# HZ)
 GAMEMODE	GAMEMODE
 GAMEPLAY	ГЕЙМПЛЕЙ
@@ -937,6 +970,7 @@ GET IT WITH /link - THE CODE IS PUBLIC	ПОЛУЧИТЕ ЧЕРЕЗ /link - КО�
 GIANT SNIPERS	ГИГАНТ. СНАЙПЕРЫ
 GIBS	ГИБЫ
 GL	GL
+GL {} / {}	GL {} / {}
 GLASS CANNONS	СТЕКЛЯННЫЕ ПУШКИ
 GLOW	СВЕЧ.
 GLOW STRENGTH	СИЛА СВЕЧЕНИЯ
@@ -984,6 +1018,7 @@ GRAVITY	ГРАВИТАЦИЯ
 GREEN	ЗЕЛЁНЫЙ
 GREEN / MAGENTA	ЗЕЛЁНЫЙ / ПУРПУРНЫЙ
 GREENHOUSE - ranked vanilla 1v1.   DOJO - ranked laser vampire 1v1.   SPIRE - ranked instagib free for all (5 minutes).   ORBIT - 1v1, duel.	GREENHOUSE - рейтинговый ванильный 1v1.   DOJO - рейтинговый 1v1 лазерный вампир.   SPIRE - рейтинговый инстагиб FFA (5 минут).   ORBIT - 1v1, дуэль.
+GRID	GRID
 GRID: # M (CUSTOM)	СЕТКА: # М (СВОЯ)
 GRID: 1 M	СЕТКА: 1 М
 GRID: 1/2 M	СЕТКА: 1/2 М
@@ -1013,6 +1048,7 @@ HANA	HANA
 HAND	РУКА
 HAND: LEFT	РУКА: ЛЕВАЯ
 HAND: RIGHT	РУКА: ПРАВАЯ
+HARD	СЛОЖНО
 HARD BOTS	СЛОЖНЫЕ БОТЫ
 HARD TO TELL APART WITH	ТРУДНО РАЗЛИЧИТЬ ПРИ
 HARDWARE GPU SCHEDULING IS OFF	АППАРАТНОЕ ПЛАНИРОВАНИЕ GPU ВЫКЛЮЧЕНО
@@ -1272,6 +1308,8 @@ LEADERBOARD: SOON	ТАБЛИЦА ЛИДЕРОВ: СКОРО
 LEAVE	ВЫЙТИ
 LEAVE ALL	ВЫЙТИ ИЗ ВСЕХ
 LEFT	ВЛЕВО
+LEFT + RIGHT HELD: LAST WINS = SNAP TAP (FLYING UP + DOWN TOO)	ЛЕВО + ПРАВО ЗАЖАТЫ: ПОБЕЖДАЕТ ПОСЛЕДНЯЯ = SNAP TAP (В ПОЛЁТЕ ВВЕРХ + ВНИЗ ТОЖЕ)
+LEFT AND RIGHT, CHANGING SPEED	ВЛЕВО И ВПРАВО, С МЕНЯЮЩЕЙСЯ СКОРОСТЬЮ
 LEFT ARROW (PREVIOUS PAGE)	СТРЕЛКА ВЛЕВО (ПРЕД. СТРАНИЦА)
 LEFT MOUSE - fire.   RIGHT MOUSE - alt-fire (scope, knife throw, rocket lob, bubble stream, syringe throw...).	ЛКМ - огонь.   ПКМ - альт. огонь (прицел, бросок ножа, навесная ракета, поток пузырей, бросок шприца...).
 LEFT: THE GUN ON THE LEFT, THE GRAPPLE	ЛЕВАЯ: ОРУЖИЕ СЛЕВА, КРЮК
@@ -1348,6 +1386,7 @@ MAP COLORS	ЦВЕТА КАРТЫ
 MAP DOWNLOADS	ЗАГРУЗКА КАРТ
 MAP EDITOR	РЕДАКТОР КАРТ
 MAP EDITOR *	РЕДАКТОР КАРТ *
+MAP POOL (ROTATES EACH MATCH; NONE = THE HOST'S MAP)	ПУЛ КАРТ (МЕНЯЕТСЯ КАЖДЫЙ МАТЧ; НЕТ = КАРТА ХОСТА)
 MAP YOU DON'T HAVE ENDS THE CONNECTION	КАРТА, КОТОРОЙ У ВАС НЕТ, РАЗРЫВАЕТ СОЕДИНЕНИЕ
 MAP:	КАРТА:
 MAP: NONE	КАРТА: НЕТ
@@ -1964,9 +2003,11 @@ MATERIAL: WOODEN CRATE	МАТЕРИАЛ: ДЕРЕВЯННЫЙ ЯЩИК
 MATERIAL: WROUGHT IRON	МАТЕРИАЛ: КОВАНОЕ ЖЕЛЕЗО
 MATERIAL: ZEBRA CROSSING	МАТЕРИАЛ: ЗЕБРА
 MATERIAL: ZINC	МАТЕРИАЛ: ЦИНК
+MAX (0=AUTO)	МАКС. (0=АВТО)
 MAX PING	МАКС. PING
 MAX PLAYERS	МАКС. ИГРОКОВ
 MB (OFFICIAL MAPS SHIP BAKED)	МБ (ОФИЦИАЛЬНЫЕ КАРТЫ УЖЕ ЗАПЕЧЕНЫ)
+MEDIUM	СРЕДНЕ
 MEDIUM BOTS	СРЕДНИЕ БОТЫ
 MENU (ESC)	МЕНЮ (ESC)
 MENU BACKGROUND	ФОН МЕНЮ
@@ -1979,7 +2020,7 @@ METER SCALE	МАСШТАБ ШКАЛЫ
 METER TICKS	ДЕЛЕНИЯ ШКАЛЫ
 MILO	MILO
 MIN FPS (WORST FRAME)	МИН. FPS (ХУДШИЙ КАДР)
-MINE	ШАХТА
+MINE	МОЙ
 MINIMIZE ON ALT-TAB	СВОРАЧИВАТЬ ПРИ ALT-TAB
 MIRROR	ОТРАЗИТЬ
 MIRROR X	ОТРАЗИТЬ X
@@ -2011,6 +2052,8 @@ MOUSE 1	MOUSE 1
 MOUSE 2	MOUSE 2
 MOUSE 3	MOUSE 3
 MOUSE ACCELERATION	УСКОРЕНИЕ МЫШИ
+MOUSE TO PHOTON ~	ОТ МЫШИ ДО ФОТОНА ~
+MOUSE TO PHOTON ~{} NS  (# HZ DISPLAY, {}, {})	ОТ МЫШИ ДО ФОТОНА ~{} НС  (ЭКРАН # ГЦ, {}, {})
 MOUSE TO PHOTON: IN GAME ONLY	ОТ МЫШИ ДО ФОТОНА: ТОЛЬКО В ИГРЕ
 MOUSE {} # HZ (AVG)	МЫШЬ {} # ГЦ (СРЕДН.)
 MOVE	ДВИЖ.
@@ -2039,9 +2082,11 @@ MY RACE STATS	МОЯ СТАТ. ГОНОК
 MY SKY	МОЁ НЕБО
 MY SKY / GLOW: THESE IN PLACE OF EVERY MAP'S;	МОЁ НЕБО / СВЕЧЕНИЕ: ВМЕСТО ТЕХ, ЧТО НА КАРТАХ;
 MY TRACER	МОЙ ТРАССЕР
+Maps are saved to the maps folder (MAPS FOLDER opens it) as .qmap text files. RESET MAPS puts the built-in maps back.	Карты сохраняются в папку maps (MAPS FOLDER открывает её) как текстовые файлы .qmap. RESET MAPS возвращает встроенные карты.
 Model	Модель
 ModelOverrides holds kMaxModelsPerKind models of a kind	ModelOverrides holds kMaxModelsPerKind models of a kind
 N/A HERE: LATENT SYNC IS WINDOWS ONLY	НЕДОСТУПНО: LATENT SYNC ТОЛЬКО В WINDOWS
+N/A HERE: LINUX (X11) ONLY	НЕДОСТУПНО: ТОЛЬКО LINUX (X11)
 N/A HERE: WINDOWS + NVIDIA ONLY	НЕДОСТУПНО: ТОЛЬКО WINDOWS + NVIDIA
 N/A: THE DRIVER LACKS GL 4.4 BUFFER STORAGE	Н/Д: В ДРАЙВЕРЕ НЕТ GL 4.4 BUFFER STORAGE
 NAME	ИМЯ
@@ -2145,6 +2190,7 @@ OBJECTIVES	ЦЕЛИ
 OF	ИЗ
 OF #	ИЗ #
 OFF	ВЫКЛ
+OFF = LOWEST LATENCY, MAY TEAR	ВЫКЛ = МИНИМАЛЬНАЯ ЗАДЕРЖКА, ВОЗМОЖНЫ РАЗРЫВЫ
 OFF: FROM THE NEXT START	ВЫКЛ: СО СЛЕДУЮЩЕГО ЗАПУСКА
 OFF: THE BAR IS FULL AT 100 IN EVERY MODE	ВЫКЛ: ПОЛОСА ПОЛНАЯ ПРИ 100 В ЛЮБОМ РЕЖИМЕ
 OFF: THE VIEW STEPS UP STAIRS AT ONCE	ВЫКЛ: ВИД ПОДНИМАЕТСЯ ПО СТУПЕНЯМ СРАЗУ
@@ -2166,9 +2212,11 @@ ON: AT MOST 1 FRAME QUEUED	ВКЛ: НЕ БОЛЕЕ 1 КАДРА В ОЧЕРЕД�
 ON: FROM THE NEXT START	ВКЛ: СО СЛЕДУЮЩЕГО ЗАПУСКА
 ON: USES YOUR TEAM COLOR, NOT THE ONE BELOW	ВКЛ: ЦВЕТ ВАШЕЙ КОМАНДЫ, А НЕ ТОТ, ЧТО НИЖЕ
 ONE	ОДИН
+ONE BIG BALL, BACK AFTER 1 S	ОДИН БОЛЬШОЙ ШАР, ВОЗВРАЩАЕТСЯ ЧЕРЕЗ 1 С
 ONE CHAT COLOR	ОДИН ЦВЕТ ЧАТА
 ONE MINUTE	ОДНА МИНУТА
 ONE MINUTE LEFT	ОСТАЛАСЬ МИНУТА
+ONE TIME LINE; EST = WORKED OUT, NOT MEASURED; MONITOR PROCESSING NOT INCLUDED	ОДНА ЛИНИЯ ВРЕМЕНИ; EST = РАССЧИТАНО, НЕ ИЗМЕРЕНО; ОБРАБОТКА МОНИТОРА НЕ ВКЛЮЧЕНА
 ONLY KILLS I'M IN	ТОЛЬКО МОИ УБИЙСТВА
 OPACITY	ПРОЗРАЧН.
 OPACITY %	ПРОЗРАЧН. %
@@ -2258,6 +2306,9 @@ PING	PING
 PING #	PING #
 PING # MS  LOSS #%	PING # МС  ПОТЕРИ #%
 PING / LOSS GRAPH AND RATES (APART FROM F3)	ГРАФИК PING / ПОТЕРЬ И ЧАСТОТЫ (ОТДЕЛЬНО ОТ F3)
+PING: < 100	PING: < 100
+PING: < 150	PING: < 150
+PING: < 50	PING: < 50
 PING: ANY	PING: ЛЮБОЙ
 PIRATE	ПИРАТ
 PITCH	ТАНГАЖ
@@ -2379,6 +2430,7 @@ RADEON(TM) GRAPHICS	RADEON(TM) GRAPHICS
 RADIUS	РАДИУС
 RAILYARD / DAM / EXPRESS / MONORAIL - neutral payload (Railyard: payload too).   WAR / CONVOY - multi point.	RAILYARD / DAM / EXPRESS / MONORAIL - нейтральная вагонетка (Railyard: и вагонетка).   WAR / CONVOY - мультиточка.
 RAMPAGE	БУЙСТВО
+RANDOM TURNS ON THE WALL	СЛУЧАЙНЫЕ ПОВОРОТЫ НА СТЕНЕ
 RANKED	РЕЙТИНГ
 RANKED - CHOOSE A LADDER	РЕЙТИНГ - ВЫБЕРИТЕ ТАБЛИЦУ
 RANKED - NOT RATED	РЕЙТИНГ - НЕ ЗАСЧИТАН
@@ -2403,6 +2455,7 @@ RATE	ЧАСТ.
 RATING	РЕЙТИНГ
 RAW INPUT	RAW INPUT
 RD	RD
+REACTOR	REACTOR
 READ INPUT	ЧТЕНИЕ ВВОДА
 READY	ГОТОВ
 REALTIME	РЕАЛ. ВРЕМЯ
@@ -2466,6 +2519,7 @@ RIGHT ARROW (NEXT PAGE)	СТРЕЛКА ВПРАВО (СЛЕД. СТРАНИЦА)
 RIGHT MOUSE + MOVE: LOOK    WASD: FLY    SPACE / C: UP / DOWN    SHIFT: FAST    WHEEL: SPEED	ПКМ + ДВИЖЕНИЕ: ОБЗОР    WASD: ПОЛЁТ    SPACE / C: ВВЕРХ / ВНИЗ    SHIFT: БЫСТРО    КОЛЕСО: СКОРОСТЬ
 RIGHT-CLICK A SERVER: FAVORITE (LISTED FIRST)	ПКМ ПО СЕРВЕРУ: В ИЗБРАННОЕ (В НАЧАЛЕ СПИСКА)
 RIGHT-CLICK: RESET	ПКМ: СБРОС
+RING	RING
 RISING TOWARD	ПОДЪЁМ В СТОРОНУ
 RISING TOWARD: +X	ПОДЪЁМ В СТОРОНУ: +X
 RISING TOWARD: +Z	ПОДЪЁМ В СТОРОНУ: +Z
@@ -2475,7 +2529,7 @@ RMB	ПКМ
 ROBOT	РОБОТ
 ROCK	КАМЕНЬ
 ROCKET	РАКЕТА
-ROCKET (splash; rocket jump off the floor for 10#amage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 10 hp, once a second; alt throws it: +30 hp and reset cooldowns for a teammate).	РАКЕТА (сплэш; рокет-джамп от пола за 10#урона), ВИНТОВКА (автомат; прицел на альт.), ЛАЗЕР (луч; альт. притягивает), ДРОБОВИК (альт.: рикошет), СНАЙПЕРКА (прицел на альт.), ЛИПУЧКА (альт. взрывает), АРБАЛЕТ (хедшоты), ПУЗЫРЬ (альт.: поток пузырей), НОЖ (альт.: бросок), ШПРИЦ (огонь лечит вас на 10 hp раз в секунду; альт. бросает его: +30 hp и сброс перезарядок союзнику).
+ROCKET (splash; rocket jump off the floor for 10% damage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 10 hp, once a second; alt throws it: +30 hp and reset cooldowns for a teammate).	РАКЕТА (сплэш; рокет-джамп от пола за 10% урона), ВИНТОВКА (автомат; прицел на альт.), ЛАЗЕР (луч; альт. притягивает), ДРОБОВИК (альт.: рикошет), СНАЙПЕРКА (прицел на альт.), ЛИПУЧКА (альт. взрывает), АРБАЛЕТ (хедшоты), ПУЗЫРЬ (альт.: поток пузырей), НОЖ (альт.: бросок), ШПРИЦ (огонь лечит вас на 10 hp раз в секунду; альт. бросает его: +30 hp и сброс перезарядок союзнику).
 ROCKET JUMPERS	РОКЕТ-ДЖАМПЕРЫ
 ROCKET RIDE	ВЕРХОМ НА РАКЕТЕ
 ROCKET, LASER AND KNIFE	РАКЕТА, ЛАЗЕР И НОЖ
@@ -2503,6 +2557,7 @@ ROUND OVER	РАУНД ОКОНЧЕН
 ROUND START	НАЧАЛО РАУНДА
 ROUND WINS -	ПОБЕДЫ В РАУНД. -
 ROUND WON	РАУНД ВЫИГРАН
+ROUND YOU AT ONE HEIGHT, CHANGING SPEED	ВОКРУГ ВАС НА ОДНОЙ ВЫСОТЕ, С МЕНЯЮЩЕЙСЯ СКОРОСТЬЮ
 ROUNDS	РАУНДЫ
 ROWS #-# OF # (WHEEL)	СТРОКИ #-# ИЗ # (КОЛЕСО)
 ROWS #-# OF # - WHEEL TO SCROLL	СТРОКИ #-# ИЗ # - КОЛЕСО ДЛЯ ПРОКРУТКИ
@@ -2511,6 +2566,7 @@ RPS BY MOUSE: CLICK A TIEBREAK CARD TO THROW IT	КНБ МЫШЬЮ: КЛИКНИ�
 RTX	RTX
 RUBIK	RUBIK
 RULES	ПРАВИЛА
+RULESETS >	ПРАВИЛА >
 RUN	БЕГ
 RUN - DON'T BE THE TAGGER WHEN TIME RUNS OUT	БЕГИТЕ - НЕ БУДЬТЕ ВОДЯЩИМ К КОНЦУ ВРЕМЕНИ
 RUN AGAIN	ЕЩЁ РАЗ
@@ -2556,6 +2612,7 @@ SCOREBOARD: HOLD	ТАБЛИЦА СЧЁТА: УДЕРЖАНИЕ
 SCOREBOARD: TOGGLE	ТАБЛИЦА СЧЁТА: ПЕРЕКЛЮЧЕНИЕ
 SCORES	ОЧКИ
 SCREEN	ЭКРАН
+SCREEN EDGES FLASH WHEN HIT. 0 = OFF	КРАЯ ЭКРАНА ВСПЫХИВАЮТ ПРИ ПОПАДАНИИ. 0 = ВЫКЛ
 SCREENSHOT	СКРИНШОТ
 SCREENSHOT FOLDER	ПАПКА СНИМКОВ
 SCREENSHOT FORMAT	ФОРМАТ СКРИНШОТОВ
@@ -2654,6 +2711,7 @@ SNAPS: 125	СНАПШОТЫ: 125
 SNAPS: 250	СНАПШОТЫ: 250
 SNAPS: 500	СНАПШОТЫ: 500
 SNAPS: 62.5	СНАПШОТЫ: 62.5
+SNAPS: = TICK	СНАПШОТЫ: = ТИК
 SNAPSHOT RATE	ЧАСТОТА СНАПШОТОВ
 SNIPER	СНАЙП.
 SNIPER SCOPE	СНАЙП. ПРИЦЕЛ
@@ -2757,6 +2815,7 @@ STOP HOSTING	СТОП ХОСТИНГ
 STOP RECORDING	ОСТАНОВИТЬ ЗАПИСЬ
 STOP THE PAYLOAD	ОСТАНОВИТЕ ВАГОНЕТКУ
 STOPPING SPEED	СКОРОСТЬ ОСТАНОВКИ
+STRAFE	STRAFE
 STRAFE BOOST (AT SPEED)	БУСТ СТРЕЙФА (НА СКОРОСТИ)
 STREAK	СЕРИЯ
 STREAK CALLOUTS	ОБЪЯВЛЕНИЯ СЕРИЙ
@@ -2791,6 +2850,7 @@ SURFACES	ПОВЕРХНОСТИ
 SW	SW
 SWAP	СМЕНА
 SWAP FIRE	СМЕНА ОГНЯ
+SWITCHING	ПЕРЕКЛЮЧЕНИЕ
 SYRINGE	ШПРИЦ
 SYSTEM DEFAULT	СИСТЕМНЫЙ
 SYSTEM LINE COLOR	ЦВЕТ СИСТЕМНЫХ СТРОК
@@ -2801,6 +2861,7 @@ SYSTEM MESSAGES: OFF	СИСТЕМНЫЕ СООБЩЕНИЯ: ВЫКЛ
 SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)	СИСТЕМНЫЙ: СТРЕЛКА ВАШЕЙ ОС (ЦВЕТ: ТОЛЬКО НАШ)
 Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).	Настройки > УПРАВЛЕНИЕ позволяют экспортировать свои бинды и импортировать чужие (копировать / вставить текст).
 Start the match, change map / mode, ranked on / off, edit the map together, bots on. A majority of the human players decides.	Начать матч, сменить карту / режим, рейтинг вкл / выкл, редактировать карту вместе, включить ботов. Решает большинство живых игроков.
+Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping. Above ~13 m/s A / D turns you faster than W alone.	Стрейф-джамп набирает скорость: держите клавишу стрейфа, поворачивайте мышь в ту же сторону и продолжайте прыгать. Выше ~13 м/с A / D поворачивают быстрее, чем одна W.
 Style, length, thickness, gap, colour and outline, with a live preview.	Стиль, длина, толщина, зазор, цвет и контур, с живым превью.
 Super dash: look down and dash into the floor while holding jump: you leave 5 m/s faster than you went into the dash (at least 11, at most 36 m/s), with a hop that gets higher the further down you look (it leaves you 1 dash).	Суперрывок: посмотрите вниз и сделайте рывок в пол, удерживая прыжок: вы выходите на 5 м/с быстрее, чем вошли в рывок (минимум 11, максимум 36 м/с), с подскоком тем выше, чем ниже вы смотрите (остаётся 1 рывок).
 Switching weapons with fire held doesn't fire the new one: let go and press again.	Смена оружия с зажатым огнём не стреляет из нового: отпустите и нажмите снова.
@@ -2910,6 +2971,7 @@ THE SHADOWS AND THE WORLD GO TO THE GPU AS SOON	ТЕНИ И МИР УХОДЯТ 
 THE SHARE OF THE MODE'S MAX HEALTH	ДОЛЯ МАКС. ЗДОРОВЬЯ РЕЖИМА
 THE TASKBAR BUTTON FLASHES	КНОПКА НА ПАНЕЛИ ЗАДАЧ МИГАЕТ
 THE WINDOW'S SIZE AND PLACE ARE KEPT	РАЗМЕР И ПОЛОЖЕНИЕ ОКНА СОХРАНЯЮТСЯ
+THEIR OWN LIGHT: 1 = THEIR FULL COLOUR IN ANY SHADE	СОБСТВЕННЫЙ СВЕТ: 1 = ПОЛНЫЙ ЦВЕТ В ЛЮБОЙ ТЕНИ
 THEIRS	ИХ
 THEME.CFG LINE	СТРОКА THEME.CFG
 THEN REFRESH	ЗАТЕМ ОБНОВИТЕ
@@ -2927,6 +2989,8 @@ THREADED OPTIMIZATION OFF	THREADED OPTIMIZATION ВЫКЛ
 THREADED OPTIMIZATION OFF; PRESENT VIA DXGI	THREADED OPTIMIZATION ВЫКЛ; ВЫВОД ЧЕРЕЗ DXGI
 THREADED OPTIMIZATION: WINDOWS ONLY	THREADED OPTIMIZATION: ТОЛЬКО WINDOWS
 THREE	ТРИ
+THREE HUGE BALLS, AS FAST AS YOU CAN	ТРИ ОГРОМНЫХ ШАРА, КАК МОЖНО БЫСТРЕЕ
+THREE HUGE BALLS, JUST HOLD FIRE, 10 HP	ТРИ ОГРОМНЫХ ШАРА, ПРОСТО ДЕРЖИТЕ ОГОНЬ, 10 HP
 THROW	БРОСОК
 TICK / SNAP	ТИК / СНАПШОТ
 TICK RATE	ТИКРЕЙТ
@@ -2984,6 +3048,7 @@ TRACERS + TRAILS	ТРАССЕРЫ + СЛЕДЫ
 TRACERS: CLASSIC	ТРАССЫ: КЛАССИКА
 TRACERS: CUSTOM	ТРАССЫ: СВОИ
 TRACERS: TEAM	ТРАССЫ: КОМАНДА
+TRACKING	ВЕДЕНИЕ
 TRAIL OPACITY	ПРОЗРАЧН. СЛЕДОВ
 TRAILS	СЛЕДЫ
 TRAILS: FULL	СЛЕДЫ: ПОЛНЫЕ
@@ -2994,6 +3059,9 @@ TRAINER MENU	МЕНЮ ТРЕНАЖЁРА
 TRIAL MAP	КАРТА ЗАЕЗДА
 TT	TT
 TWO	ДВА
+TWO BALLS ON 9 SPOTS, 20 HP	ДВА ШАРА НА 9 ТОЧКАХ, 20 HP
+TWO TINY BALLS	ДВА КРОШЕЧНЫХ ШАРА
+TWO TINY DRIFTING BALLS, 10 HP	ДВА КРОШЕЧНЫХ ДРЕЙФУЮЩИХ ШАРА, 10 HP
 TYPE TO SEARCH: A NAME OR WHAT IT DOES (CTRL+F)	ВВЕДИТЕ ДЛЯ ПОИСКА: ИМЯ ИЛИ ЧТО ДЕЛАЕТ (CTRL+F)
 TYPING	НАБОР
 TYPING SOUNDS	ЗВУКИ НАБОРА
@@ -3081,7 +3149,7 @@ VOTE: MOVE TO SPECTATOR (UNTIL THE NEXT MAP)	ГОЛОСОВАНИЕ: В НАБЛ
 VOTE: PLAY IT	ГОЛОС: ИГРАТЬ
 VOTE: {}   YES #  NO #  OF #   F1 YES / F2 NO   #s	ГОЛОСОВАНИЕ: {}   ДА #  НЕТ #  ИЗ #   F1 ДА / F2 НЕТ   #с
 VOTED MODIFIERS ON	МОДИФИК. ВКЛ. ГОЛОСОМ
-VOTES	ГОЛОСА
+VOTES	ГОЛОСОВАНИЕ
 VS	VS
 VS - one life each per round; last team standing wins the round. If nobody makes progress for 30 s, health drains. First to 5 rounds.	VS - одна жизнь на раунд; раунд выигрывает последняя выжившая команда. Если 30 с никто не продвигается, здоровье убывает. До 5 раундов.
 VS: BEST RUN	VS: ЛУЧШИЙ
@@ -3100,10 +3168,12 @@ VSYNC: ON	VSYNC: ВКЛ
 W A S D - move.   SPACE - jump (hold it as you land to bounce: bunny hop).	W A S D - движение.   SPACE - прыжок (держите при приземлении, чтобы отскочить: бхоп).
 WAD2	WAD2
 WAITING FOR THE LATE READ (AVG)	ОЖИДАНИЕ ПОЗДНЕГО ЧТЕНИЯ (СРЕДН.)
-WAITING FOR THE LATE READ (AVG)  00,000,000 NS	ОЖИДАНИЕ ПОЗДНЕГО ЧТЕНИЯ (СРЕДН.)  00,000,000 NS
 WAITING FOR THE NEXT READ (AVG)	ОЖИДАНИЕ СЛЕД. ЧТЕНИЯ (СРЕДН.)
+WALL BALL	WALL BALL
+WALL WANDER	WALL WANDER
 WALLBANG	ПРОСТРЕЛ
 WALLBANG TINT	ОТТЕНОК ПРОСТРЕЛА
+WANDERING, SWELLING AND SHRINKING	БЛУЖДАЕТ, РАСТЁТ И СЖИМАЕТСЯ
 WARMING UP	РАЗМИНКА
 WARMUP -	РАЗМИНКА -
 WARMUP - {} TO VOTE START	РАЗМИНКА - {} ЗА СТАРТ
@@ -3143,6 +3213,7 @@ WHOLE HUD	ВЕСЬ HUD
 WIDGET EDITOR	РЕДАКТОР ВИДЖЕТОВ
 WIDGETS	ВИДЖЕТЫ
 WIDGETS FROM CLIPBOARD	ВИДЖЕТЫ ИЗ БУФЕРА
+WIDTH 0 = NO OUTLINE	ШИРИНА 0 = БЕЗ КОНТУРА
 WIDTH; CUSTOM (GLTF) PLAYER MODELS HAVE NO OUTLINE	ТОЛЩИНА; У СВОИХ МОДЕЛЕЙ (GLTF) НЕТ КОНТУРА
 WINDIR	WINDIR
 WINDOW	ОКНО

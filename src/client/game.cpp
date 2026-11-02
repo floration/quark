@@ -10630,7 +10630,10 @@ void Game::drawInfo(const SetLayout& L) {
         for (const char* line : kInfoPages[infoTab_]) {
             if (!line) break;
             const bool head = line[0] == '#';
-            const std::string text = head ? std::string(line + 2) : std::string(line);
+            // (a heading's key keeps its "# ": translated whole, then the "# " dropped; the lookup can't see it as a
+            // number placeholder that way. A paragraph: ui_.wrap translates it)
+            std::string text = head ? Renderer::translated(line) : std::string(line);
+            if (head) text = text.rfind("# ", 0) == 0 ? text.substr(2) : text.rfind("#", 0) == 0 ? text.substr(1) : text;
             bool first = true;
             for (const std::string& part : ui_.wrap(text, ts, colW, 80)) {
                 if (!rows.empty()) y += !first ? 20 : head ? 32 : lastHead ? 24 : 26;
@@ -10920,7 +10923,11 @@ void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
     double t0 = rows.front().t0;                  // (the graph's left edge: work before the mouse bar too, e.g. pacing)
     for (const Row& r : rows) t0 = std::min(t0, r.t0);
     // the graph: a label and the time on the left, the bar on its own line on the right (a waterfall)
-    const float lh = r_.textHeight(ts) + 4, labelW = r_.textWidth("WAITING FOR THE LATE READ (AVG)  00,000,000 NS", ts) + 12;
+    // (the label column fits the longest row name in the language drawn, and the widest time: a translated label,
+    // CJK above all, is wider than the English one this was sized by and ran into its value)
+    float nameW = r_.textWidth(Renderer::translated("WAITING FOR THE LATE READ (AVG)"), ts);
+    for (const Row& r : rows) nameW = std::max(nameW, r_.textWidth(Renderer::translated(r.name), ts));
+    const float lh = r_.textHeight(ts) + 4, labelW = nameW + r_.textWidth("  00,000,000 NS", ts) + 12;
     const float barW = std::max(200.0f, std::min(700.0f * ts, (float)r_.width() - x - labelW - 24));
     const float h = (rows.size() + 4) * lh + 8;
     r_.rect(x, y, labelW + barW + 16, h, {0, 0, 0, 0.6f});
