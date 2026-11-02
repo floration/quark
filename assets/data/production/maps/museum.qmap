@@ -1,0 +1,1845 @@
+# made with the quark map editor
+version 13
+handmade
+title Museum
+setting a natural history museum at night
+for hide
+modes ffa hide tag
+sun 0.2296576 0.9186304 -0.32152066
+
+palette base 0.78 0.75 0.7 accent 0.42 0.3 0.22 metal 0.3 0.3 0.32 glow 0.55 1 0.6 sky 0.02 0.025 0.05
+
+dustylinoleum -55 -6.4 10 -40 -6 20
+dustylinoleum -55 -6.4 20 -40 -6 40
+dustylinoleum -40 -6.4 10 -20 -6 20
+dustylinoleum -40 -6.4 20 -20 -6 40
+dustylinoleum -20 -6.4 10 0 -6 20
+dustylinoleum -20 -6.4 20 0 -6 40
+dustylinoleum 0 -6.4 10 20 -6 20
+dustylinoleum 0 -6.4 20 20 -6 40
+dustylinoleum 20 -6.4 10 40 -6 20
+dustylinoleum 20 -6.4 20 40 -6 40
+dustylinoleum 40 -6.4 10 55 -6 20
+dustylinoleum 40 -6.4 20 55 -6 40
+polishedgranite -20 -0.4 -40 0 0 -20
+polishedgranite -20 -0.4 -20 0 0 -14
+polishedgranite 0 -0.4 -40 20 0 -20
+polishedgranite 0 -0.4 -20 20 0 -14
+terrazzo -20 -0.4 -14 0 0 0
+terrazzo -20 -0.4 0 0 0 10
+terrazzo 0 -0.4 -14 20 0 0
+terrazzo 0 -0.4 0 20 0 10
+basketweaveparquet -55 -0.4 -24 -40 0 -20
+basketweaveparquet -55 -0.4 -20 -40 0 0
+basketweaveparquet -55 -0.4 0 -40 0 10
+basketweaveparquet -40 -0.4 -24 -20 0 -20
+basketweaveparquet -40 -0.4 -20 -20 0 0
+basketweaveparquet -40 -0.4 0 -20 0 10
+basketweaveparquet 20 -0.4 -24 40 0 -20
+basketweaveparquet 20 -0.4 -20 40 0 0
+basketweaveparquet 20 -0.4 0 40 0 10
+basketweaveparquet 40 -0.4 -24 55 0 -20
+basketweaveparquet 40 -0.4 -20 55 0 0
+basketweaveparquet 40 -0.4 0 55 0 10
+terrazzo -55 -0.4 -40 -40 0 -24
+terrazzo -40 -0.4 -40 -20 0 -24
+officecarpettiles 20 -0.4 -40 40 0 -24
+officecarpettiles 40 -0.4 -40 55 0 -24
+linoleum -55 -0.4 10 -40 0 14
+linoleum -40 -0.4 10 -20 0 14
+linoleum -55 -0.4 14 -52 0 20
+linoleum -55 -0.4 20 -52 0 26
+linoleum -48 -0.4 14 -40 0 20
+linoleum -48 -0.4 20 -40 0 26
+linoleum -40 -0.4 14 -20 0 20
+linoleum -40 -0.4 20 -20 0 26
+linoleum -55 -0.4 26 -40 0 40
+linoleum -40 -0.4 26 -20 0 40
+polishedconcrete -20 -0.4 10 0 0 14
+polishedconcrete 0 -0.4 10 20 0 14
+polishedconcrete -20 -0.4 14 -18 0 20
+polishedconcrete -20 -0.4 20 -18 0 22.2
+polishedconcrete -14 -0.4 14 0 0 20
+polishedconcrete -14 -0.4 20 0 0 22.2
+polishedconcrete 0 -0.4 14 20 0 20
+polishedconcrete 0 -0.4 20 20 0 22.2
+polishedconcrete -20 -0.4 22.2 -18 0 23.6
+polishedconcrete -14 -0.4 22.2 -5 0 23.6
+polishedconcrete -3 -0.4 22.2 0 0 23.6
+polishedconcrete 0 -0.4 22.2 20 0 23.6
+polishedconcrete -20 -0.4 23.6 -18 0 26
+polishedconcrete -14 -0.4 23.6 0 0 26
+polishedconcrete 0 -0.4 23.6 20 0 26
+polishedconcrete -20 -0.4 26 0 0 40
+polishedconcrete 0 -0.4 26 20 0 40
+largesandstoneashlar 20 -0.4 10 40 0 20
+largesandstoneashlar 20 -0.4 20 40 0 40
+largesandstoneashlar 40 -0.4 10 55 0 20
+largesandstoneashlar 40 -0.4 20 55 0 40
+basketweaveparquet -55 7.6 -24 -40 8 -20
+basketweaveparquet -55 7.6 -20 -40 8 0
+basketweaveparquet -55 7.6 0 -40 8 20
+basketweaveparquet -55 7.6 20 -40 8 26
+basketweaveparquet -40 7.6 -24 -20 8 -20
+basketweaveparquet -40 7.6 -20 -20 8 0
+basketweaveparquet -40 7.6 0 -20 8 20
+basketweaveparquet -40 7.6 20 -20 8 26
+slatetile 20 7.6 -24 40 8 -20
+slatetile 20 7.6 -20 40 8 0
+slatetile 20 7.6 0 40 8 10
+slatetile 40 7.6 -24 55 8 -20
+slatetile 40 7.6 -20 55 8 0
+slatetile 40 7.6 0 55 8 10
+basketweaveparquet 20 7.6 10 40 8 20
+basketweaveparquet 20 7.6 20 40 8 26
+basketweaveparquet 40 7.6 10 55 8 20
+basketweaveparquet 40 7.6 20 55 8 26
+basketweaveparquet -20 7.6 10 0 8 14
+basketweaveparquet 0 7.6 10 20 8 14
+basketweaveparquet -20 7.6 14 0 8 20
+basketweaveparquet -20 7.6 20 0 8 21
+basketweaveparquet 0 7.6 14 14 8 20
+basketweaveparquet 0 7.6 20 14 8 21
+basketweaveparquet 18 7.6 14 20 8 20
+basketweaveparquet 18 7.6 20 20 8 21
+basketweaveparquet -20 7.6 21 0 8 22.2
+basketweaveparquet 0 7.6 21 20 8 22.2
+basketweaveparquet -20 7.6 22.2 -5 8 23.6
+basketweaveparquet -3 7.6 22.2 0 8 23.6
+basketweaveparquet 0 7.6 22.2 20 8 23.6
+basketweaveparquet -20 7.6 23.6 0 8 26
+basketweaveparquet 0 7.6 23.6 20 8 26
+polishedgranite -20 7.6 -20 0 8 -14
+polishedgranite 0 7.6 -20 20 8 -14
+terrazzo -20 7.6 -14 0 8 -10
+terrazzo 0 7.6 -14 20 8 -10
+terrazzo -20 7.6 -10 -16 8 0
+terrazzo -20 7.6 0 -16 8 6
+terrazzo 16 7.6 -10 20 8 0
+terrazzo 16 7.6 0 20 8 6
+terrazzo -20 7.6 6 0 8 10
+terrazzo 0 7.6 6 20 8 10
+leadsheet -55 7.6 -40 -40 8 -24
+leadsheet -40 7.6 -40 -20 8 -24
+leadsheet 20 7.6 -40 40 8 -24
+leadsheet 40 7.6 -40 55 8 -24
+leadsheet -55 7.6 26 -40 8 40
+leadsheet -40 7.6 26 -20 8 40
+leadsheet -20 7.6 26 0 8 40
+leadsheet 0 7.6 26 20 8 40
+leadsheet 20 7.6 26 40 8 40
+leadsheet 40 7.6 26 55 8 40
+leadsheet -20 12 -40 0 12.4 -20
+leadsheet -20 12 -20 0 12.4 -14
+leadsheet 0 12 -40 20 12.4 -20
+leadsheet 0 12 -20 20 12.4 -14
+concreterooftiles -55 16 -24 -40 16.4 -20
+concreterooftiles -55 16 -20 -40 16.4 -1
+concreterooftiles -40 16 -24 -20 16.4 -20
+concreterooftiles -40 16 -20 -20 16.4 -1
+concreterooftiles -53.5 16 -1 -40 16.4 0
+concreterooftiles -53.5 16 0 -40 16.4 1
+concreterooftiles -40 16 -1 -20 16.4 0
+concreterooftiles -40 16 0 -20 16.4 1
+concreterooftiles -55 16 1 -40 16.4 20
+concreterooftiles -55 16 20 -40 16.4 26
+concreterooftiles -40 16 1 -20 16.4 20
+concreterooftiles -40 16 20 -20 16.4 26
+concreterooftiles 20 16 -24 40 16.4 -20
+concreterooftiles 20 16 -20 40 16.4 0
+concreterooftiles 20 16 0 40 16.4 20
+concreterooftiles 20 16 20 40 16.4 26
+concreterooftiles 40 16 -24 55 16.4 -20
+concreterooftiles 40 16 -20 55 16.4 0
+concreterooftiles 40 16 0 55 16.4 20
+concreterooftiles 40 16 20 55 16.4 26
+concreterooftiles -20 16 10 0 16.4 20
+concreterooftiles -20 16 20 0 16.4 26
+concreterooftiles 0 16 10 20 16.4 20
+concreterooftiles 0 16 20 20 16.4 26
+limestoneashlar -55.6 -6.6 -40.6 -55 17.6 40.6
+limestoneashlar 55 -6.6 -40.6 55.6 17.6 40.6
+limestoneashlar -55 -6.6 -40.6 55 17.6 -40
+limestoneashlar -55 -6.6 40 55 17.6 40.6
+rubblewall -55 -6.6 9.8 55 -0.4 10.2
+clip -57 17.6 -42 -55 72 42
+clip 55 17.6 -42 57 72 42
+clip -55 17.6 -42 55 72 -40
+clip -55 17.6 40 55 72 42
+clip -55 72 -40 55 73 40
+clip -55 8 -40 -20 72 -24
+clip 20 8 -40 55 72 -24
+clip -20 12.4 -40 20 72 -14
+clip -55 8 26 55 72 40
+clip 20.4 16.4 -24 55 72 26
+limestoneashlar -55 16.4 -24.3 -20 17.6 -24
+limestoneashlar -55 16.4 26 20.3 17.6 26.3
+limestoneashlar -20.3 16.4 -24 -20 17.6 -14
+limestoneashlar 20 16.4 -24 20.3 17.6 -14
+limestoneashlar 20 16.4 10 20.3 17.6 26
+wainscotpanelling -55 0 -24.2 -54.9 7.6 -23.8
+wainscotpanelling -54.9 1.4 -24.2 -53.7 7.6 -23.8
+wainscotpanelling -53.7 0 -24.2 -41.5 7.6 -23.8
+wainscotpanelling -41.5 3.6 -24.2 -38.5 7.6 -23.8
+wainscotpanelling -38.5 0 -24.2 -20 7.6 -23.8
+painteddrywall 20 0 -24.2 38.5 7.6 -23.8
+painteddrywall 38.5 3.6 -24.2 41.5 7.6 -23.8
+painteddrywall 41.5 0 -24.2 55 7.6 -23.8
+limestoneashlar -20.2 0 -40 -19.8 7.6 -34
+limestoneashlar -20.2 3.6 -34 -19.8 7.6 -30
+limestoneashlar -20.2 0 -30 -19.8 7.6 -20.5
+limestoneashlar -20.2 3.6 -20.5 -19.8 7.6 -17.5
+limestoneashlar -20.2 0 -17.5 -19.8 7.6 -14
+limestoneashlar -20.2 7.6 -40 -19.8 12.4 -24
+limestoneashlar -20.2 0 -14 -19.8 7.6 -5
+limestoneashlar -20.2 5 -5 -19.8 7.6 1
+limestoneashlar -20.2 0 1 -19.8 7.6 10
+painteddrywall -20.2 0 10 -19.8 7.6 32.5
+painteddrywall -20.2 3.6 32.5 -19.8 7.6 35.5
+painteddrywall -20.2 0 35.5 -19.8 7.6 40
+limestoneashlar 19.8 0 -40 20.2 7.6 -34
+limestoneashlar 19.8 3.6 -34 20.2 7.6 -30
+limestoneashlar 19.8 0 -30 20.2 7.6 -20.5
+limestoneashlar 19.8 3.6 -20.5 20.2 7.6 -17.5
+limestoneashlar 19.8 0 -17.5 20.2 7.6 -14
+limestoneashlar 19.8 7.6 -40 20.2 12.4 -24
+limestoneashlar 19.8 0 -14 20.2 7.6 -5
+limestoneashlar 19.8 5 -5 20.2 7.6 1
+limestoneashlar 19.8 0 1 20.2 7.6 10
+painteddrywall 19.8 0 10 20.2 7.6 32.5
+painteddrywall 19.8 3.6 32.5 20.2 7.6 35.5
+painteddrywall 19.8 0 35.5 20.2 7.6 40
+limestoneashlar -20 0 -14.2 -3 7.6 -13.8
+limestoneashlar -3 5 -14.2 3 7.6 -13.8
+limestoneashlar 3 0 -14.2 20 7.6 -13.8
+limestoneashlar -20 8 -14.2 -8 16.4 -13.8
+limestoneashlar -8 11.6 -14.2 8 16.4 -13.8
+limestoneashlar 8 8 -14.2 20 16.4 -13.8
+limestoneashlar -20 0 9.8 -3 7.6 10.2
+limestoneashlar -3 5 9.8 3 7.6 10.2
+limestoneashlar 3 0 9.8 20 7.6 10.2
+wainscotpanelling -55 0 9.8 -54.9 7.6 10.2
+wainscotpanelling -54.9 1.4 9.8 -53.7 7.6 10.2
+wainscotpanelling -53.7 0 9.8 -41.5 7.6 10.2
+wainscotpanelling -41.5 3.6 9.8 -38.5 7.6 10.2
+wainscotpanelling -38.5 0 9.8 -20 7.6 10.2
+sandstoneashlar 20 0 9.8 37.8 7.6 10.2
+sandstoneashlar 37.8 3.6 9.8 40.8 7.6 10.2
+sandstoneashlar 40.8 0 9.8 55 7.6 10.2
+stripedwallpaper -20.2 8 -24 -19.8 16.4 -18.5
+stripedwallpaper -20.2 11.4 -18.5 -19.8 16.4 -15.5
+stripedwallpaper -20.2 8 -15.5 -19.8 16.4 -14
+limestoneashlar -20.2 8 -14 -19.8 16.4 -4
+limestoneashlar -20.2 11.4 -4 -19.8 16.4 0
+limestoneashlar -20.2 8 0 -19.8 16.4 10
+stripedwallpaper -20.2 8 10 -19.8 16.4 16.5
+stripedwallpaper -20.2 11.4 16.5 -19.8 16.4 19.5
+stripedwallpaper -20.2 8 19.5 -19.8 16.4 26
+stripedwallpaper -55 8 9.8 -41.5 16.4 10.2
+stripedwallpaper -41.5 11.4 9.8 -38.5 16.4 10.2
+stripedwallpaper -38.5 8 9.8 -20 16.4 10.2
+stripedwallpaper 19.8 8 -24 20.2 16.4 -18.5
+stripedwallpaper 19.8 11.4 -18.5 20.2 16.4 -15.5
+stripedwallpaper 19.8 8 -15.5 20.2 16.4 -14
+limestoneashlar 19.8 8 -14 20.2 16.4 -4
+limestoneashlar 19.8 11.4 -4 20.2 16.4 0
+limestoneashlar 19.8 8 0 20.2 16.4 10
+stripedwallpaper 19.8 8 10 20.2 16.4 16.5
+stripedwallpaper 19.8 11.4 16.5 20.2 16.4 19.5
+stripedwallpaper 19.8 8 19.5 20.2 16.4 26
+stripedwallpaper 20 8 9.8 38.5 16.4 10.2
+stripedwallpaper 38.5 11.4 9.8 41.5 16.4 10.2
+stripedwallpaper 41.5 8 9.8 55 16.4 10.2
+limestoneashlar -55 8 -24.2 -20 16.4 -23.8
+limestoneashlar 20 8 -24.2 55 16.4 -23.8
+limestoneashlar -55 8 25.8 55 16.4 26.2
+limestoneashlar -20 8 9.8 -2 16.4 10.2
+limestoneashlar -2 11.4 9.8 2 16.4 10.2
+limestoneashlar 2 8 9.8 20 16.4 10.2
+limestoneashlar -20.4 16.4 -14 -20 16.8 10
+limestoneashlar 20 16.4 -14 20.4 16.8 10
+limestoneashlar -20 16.4 9.8 20 16.8 10.4
+cut 164 4 0 0.5843 -0.8115 0.0487 0 -0.5843 0.8115 -0.0174 -0.9568 0 0.2908 0 0.9568 0 0.2908 0.9568 -20.4 15.8 -14.4 20.4 23 -2
+cut 318 3 0 0.5843 -0.8115 0.0174 0 -0.5843 0.8115 0.0191 -0.0242 0 0.9997 0.6651 -12.15 15.8 -14.4 -11.85 23 -2
+cut 318 2 0 0.5843 -0.8115 0.0174 0 -0.5843 0.8115 0.0191 -6.15 15.8 -14.4 -5.85 23 -2
+cut 318 2 0 0.5843 -0.8115 0.0174 0 -0.5843 0.8115 0.0191 -0.15 15.8 -14.4 0.15 23 -2
+cut 318 2 0 0.5843 -0.8115 0.0174 0 -0.5843 0.8115 0.0191 5.85 15.8 -14.4 6.15 23 -2
+cut 318 3 0 0.5843 -0.8115 0.0174 0 -0.5843 0.8115 0.0191 0.0242 0 0.9997 0.6893 11.85 15.8 -14.4 12.15 23 -2
+cut 164 4 0 0.5843 0.8115 0.8602 0 -0.5843 -0.8115 -0.8289 -0.9568 0 -0.2908 -0.2908 0.9568 0 -0.2908 0.666 -20.4 15.8 -2 20.4 23 10.4
+cut 318 3 0 0.5843 0.8115 0.8289 0 -0.5843 -0.8115 -0.7925 -0.0242 0 -0.9997 -0.3346 -12.15 15.8 -2 -11.85 23 10.4
+cut 318 2 0 0.5843 0.8115 0.8289 0 -0.5843 -0.8115 -0.7925 -6.15 15.8 -2 -5.85 23 10.4
+cut 318 2 0 0.5843 0.8115 0.8289 0 -0.5843 -0.8115 -0.7925 -0.15 15.8 -2 0.15 23 10.4
+cut 318 2 0 0.5843 0.8115 0.8289 0 -0.5843 -0.8115 -0.7925 5.85 15.8 -2 6.15 23 10.4
+cut 318 3 0 0.5843 0.8115 0.8289 0 -0.5843 -0.8115 -0.7925 0.0242 0 -0.9997 -0.3104 11.85 15.8 -2 12.15 23 10.4
+cut 164 4 -0.8115 0.5843 0 0.0487 0.8115 -0.5843 0 -0.0174 0.4472 0 -0.8944 0 0.4472 0 0.8944 0.8944 -20.4 15.8 -14.4 -8 23 10.4
+cut 164 4 0.8115 0.5843 0 0.8602 -0.8115 -0.5843 0 -0.8289 -0.4472 0 -0.8944 -0.4472 -0.4472 0 0.8944 0.4472 8 15.8 -14.4 20.4 23 10.4
+glass -12 23 -6.075 12 24.8 -5.925
+glass -12 23 1.925 12 24.8 2.075
+glass -12.075 23 -6 -11.925 24.8 2
+glass 11.925 23 -6 12.075 24.8 2
+castiron -12.1 23 -6.12 -11.9 24.8 -5.88
+castiron -12.1 23 1.88 -11.9 24.8 2.12
+castiron -9.1 23 -6.12 -8.9 24.8 -5.88
+castiron -9.1 23 1.88 -8.9 24.8 2.12
+castiron -6.1 23 -6.12 -5.9 24.8 -5.88
+castiron -6.1 23 1.88 -5.9 24.8 2.12
+castiron -3.1 23 -6.12 -2.9 24.8 -5.88
+castiron -3.1 23 1.88 -2.9 24.8 2.12
+castiron -0.1 23 -6.12 0.1 24.8 -5.88
+castiron -0.1 23 1.88 0.1 24.8 2.12
+castiron 2.9 23 -6.12 3.1 24.8 -5.88
+castiron 2.9 23 1.88 3.1 24.8 2.12
+castiron 5.9 23 -6.12 6.1 24.8 -5.88
+castiron 5.9 23 1.88 6.1 24.8 2.12
+castiron 8.9 23 -6.12 9.1 24.8 -5.88
+castiron 8.9 23 1.88 9.1 24.8 2.12
+castiron 11.9 23 -6.12 12.1 24.8 -5.88
+castiron 11.9 23 1.88 12.1 24.8 2.12
+castiron -12.12 23 -2.1 -11.88 24.8 -1.9
+castiron 11.88 23 -2.1 12.12 24.8 -1.9
+glass -12 24.8 -6 12 24.95 -4
+glass -12 24.8 -4 -6 24.95 0
+glass 6 24.8 -4 12 24.95 0
+glass -12 24.8 0 12 24.95 2
+castiron -12.12 24.8 -6.12 12.12 25.05 -5.88
+castiron -12.12 24.8 1.88 12.12 25.05 2.12
+castiron -12.12 24.8 -6 -11.88 25.05 2
+castiron 11.88 24.8 -6 12.12 25.05 2
+castiron -9.06 24.95 -6 -8.94 25.05 2
+castiron -6.06 24.95 -6 -5.94 25.05 2
+castiron -3.06 24.95 -6 -2.94 25.05 2
+castiron -0.06 24.95 -6 0.06 25.05 2
+castiron 2.94 24.95 -6 3.06 25.05 2
+castiron 5.94 24.95 -6 6.06 25.05 2
+castiron 8.94 24.95 -6 9.06 25.05 2
+glass -6 24.95 -4.075 6 25.95 -3.925
+glass -6 24.95 -0.075 6 25.95 0.075
+glass -6.075 24.95 -4 -5.925 25.95 0
+glass 5.925 24.95 -4 6.075 25.95 0
+castiron -6.1 24.95 -4.12 -5.9 25.95 -3.88
+castiron -6.1 24.95 -0.12 -5.9 25.95 0.12
+castiron -3.1 24.95 -4.12 -2.9 25.95 -3.88
+castiron -3.1 24.95 -0.12 -2.9 25.95 0.12
+castiron -0.1 24.95 -4.12 0.1 25.95 -3.88
+castiron -0.1 24.95 -0.12 0.1 25.95 0.12
+castiron 2.9 24.95 -4.12 3.1 25.95 -3.88
+castiron 2.9 24.95 -0.12 3.1 25.95 0.12
+castiron 5.9 24.95 -4.12 6.1 25.95 -3.88
+castiron 5.9 24.95 -0.12 6.1 25.95 0.12
+castiron -6.12 24.95 -2.1 -5.88 25.95 -1.9
+castiron 5.88 24.95 -2.1 6.12 25.95 -1.9
+glass -6 25.95 -4 6 26.1 0
+castiron -6.12 25.95 -4.12 6.12 26.2 -3.88
+castiron -6.12 25.95 -0.12 6.12 26.2 0.12
+castiron -6.12 25.95 -4 -5.88 26.2 0
+castiron 5.88 25.95 -4 6.12 26.2 0
+castiron -3.06 26.1 -4 -2.94 26.2 0
+castiron -0.06 26.1 -4 0.06 26.2 0
+castiron 2.94 26.1 -4 3.06 26.2 0
+castiron -12.2 16.7 -14 -11.8 17.2 10
+castiron -4.2 16.7 -14 -3.8 17.2 10
+castiron 3.8 16.7 -14 4.2 17.2 10
+castiron 11.8 16.7 -14 12.2 17.2 10
+marble -4 0 -36 4 0.5 -35
+marble -4 0 -35 4 1 -34
+marble -4 0 -34 4 1.5 -33
+marble -4 0 -33 4 2 -32
+marble -4 0 -32 4 2.5 -31
+marble -4 0 -31 4 3 -30
+marble -4 0 -30 4 3.5 -29
+marble -4 0 -29 4 4 -28
+marble -4 0 -28 4 4.5 -27
+marble -4 0 -27 4 5 -26
+marble -4 0 -26 4 5.5 -25
+marble -4 0 -25 4 6 -24
+marble -4 0 -24 4 6.5 -23
+marble -4 0 -23 4 7 -22
+marble -4 0 -22 4 7.5 -21
+marble -4 0 -21 4 8 -20
+wedge 27 2 -4.3 0 -36 -4 9.1 -20
+wedge 27 2 4 0 -36 4.3 9.1 -20
+castiron -20 8 -20.15 -4 9 -20
+brass -20 9 -20.2 -4 9.1 -19.95
+castiron 4 8 -20.15 20 9 -20
+brass 4 9 -20.2 20 9.1 -19.95
+castiron -16 8 -10.1 16 9 -10
+brass -16.05 9 -10.15 16.05 9.1 -9.95
+castiron -16 8 6 16 9 6.1
+brass -16.05 9 5.95 16.05 9.1 6.15
+castiron -16.1 8 -10 -16 9 6
+brass -16.15 9 -10.05 -15.95 9.1 6.05
+castiron 16 8 -10 16.1 9 6
+brass 15.95 9 -10.05 16.15 9.1 6.05
+polishedconcrete 14 0 14 18 8 15
+polishedconcrete 14 0 15 18 7.5 16
+polishedconcrete 14 0 16 18 7 17
+polishedconcrete 14 0 17 18 6.5 18
+polishedconcrete 14 0 18 18 6 19
+polishedconcrete 14 0 19 18 5.5 20
+polishedconcrete 14 0 20 18 5 21
+polishedconcrete 14 0 21 18 4.5 22
+polishedconcrete 14 0 22 18 4 23
+polishedconcrete 14 0 23 18 3.5 24
+polishedconcrete 14 0 24 18 3 25
+polishedconcrete 14 0 25 18 2.5 26
+polishedconcrete 14 0 26 18 2 27
+polishedconcrete 14 0 27 18 1.5 28
+polishedconcrete 14 0 28 18 1 29
+polishedconcrete 14 0 29 18 0.5 30
+galvanizedsteel 13.85 8 14 14 9.1 21
+galvanizedsteel 18 8 14 18.15 9.1 21
+galvanizedsteel 14 8 21 18 9.1 21.15
+polishedconcrete -52 -7 14 -48 0 15
+polishedconcrete -52 -7 15 -48 -0.5 16
+polishedconcrete -52 -7 16 -48 -1 17
+polishedconcrete -52 -7 17 -48 -1.5 18
+polishedconcrete -52 -7 18 -48 -2 19
+polishedconcrete -52 -7 19 -48 -2.5 20
+polishedconcrete -52 -7 20 -48 -3 21
+polishedconcrete -52 -7 21 -48 -3.5 22
+polishedconcrete -52 -7 22 -48 -4 23
+polishedconcrete -52 -7 23 -48 -4.5 24
+polishedconcrete -52 -7 24 -48 -5 25
+polishedconcrete -52 -7 25 -48 -5.5 26
+galvanizedsteel -52.15 0 15 -52 1.1 26
+galvanizedsteel -48 0 15 -47.85 1.1 26
+galvanizedsteel -52.15 0 26 -47.85 1.1 26.15
+polishedconcrete -18 -7 14 -14 0 15
+polishedconcrete -18 -7 15 -14 -0.5 16
+polishedconcrete -18 -7 16 -14 -1 17
+polishedconcrete -18 -7 17 -14 -1.5 18
+polishedconcrete -18 -7 18 -14 -2 19
+polishedconcrete -18 -7 19 -14 -2.5 20
+polishedconcrete -18 -7 20 -14 -3 21
+polishedconcrete -18 -7 21 -14 -3.5 22
+polishedconcrete -18 -7 22 -14 -4 23
+polishedconcrete -18 -7 23 -14 -4.5 24
+polishedconcrete -18 -7 24 -14 -5 25
+polishedconcrete -18 -7 25 -14 -5.5 26
+galvanizedsteel -18.15 0 15 -18 1.1 26
+galvanizedsteel -14 0 15 -13.85 1.1 26
+galvanizedsteel -18.15 0 26 -13.85 1.1 26.15
+steeldoorskin -6.4 -6 22 -1.6 8 22.2
+expandedmetal -6.4 -6 22 -6.28 -0.4 26
+expandedmetal -6.4 0 22 -6.28 7.6 26
+expandedmetal -1.72 -6 22 -1.6 -0.4 26
+expandedmetal -1.72 0 22 -1.6 7.6 26
+galvanizedsteel -4.49 -6 22.2 -4.41 8 22.26
+galvanizedsteel -3.59 -6 22.2 -3.51 8 22.26
+galvanizedsteel -4.45 -5.65 22.2 -3.55 -5.59 22.26
+galvanizedsteel -4.45 -5.25 22.2 -3.55 -5.19 22.26
+galvanizedsteel -4.45 -4.85 22.2 -3.55 -4.79 22.26
+galvanizedsteel -4.45 -4.45 22.2 -3.55 -4.39 22.26
+galvanizedsteel -4.45 -4.05 22.2 -3.55 -3.99 22.26
+galvanizedsteel -4.45 -3.65 22.2 -3.55 -3.59 22.26
+galvanizedsteel -4.45 -3.25 22.2 -3.55 -3.19 22.26
+galvanizedsteel -4.45 -2.85 22.2 -3.55 -2.79 22.26
+galvanizedsteel -4.45 -2.45 22.2 -3.55 -2.39 22.26
+galvanizedsteel -4.45 -2.05 22.2 -3.55 -1.99 22.26
+galvanizedsteel -4.45 -1.65 22.2 -3.55 -1.59 22.26
+galvanizedsteel -4.45 -1.25 22.2 -3.55 -1.19 22.26
+galvanizedsteel -4.45 -0.85 22.2 -3.55 -0.79 22.26
+galvanizedsteel -4.45 -0.45 22.2 -3.55 -0.39 22.26
+galvanizedsteel -4.45 -0.05 22.2 -3.55 0.01 22.26
+galvanizedsteel -4.45 0.35 22.2 -3.55 0.41 22.26
+galvanizedsteel -4.45 0.75 22.2 -3.55 0.81 22.26
+galvanizedsteel -4.45 1.15 22.2 -3.55 1.21 22.26
+galvanizedsteel -4.45 1.55 22.2 -3.55 1.61 22.26
+galvanizedsteel -4.45 1.95 22.2 -3.55 2.01 22.26
+galvanizedsteel -4.45 2.35 22.2 -3.55 2.41 22.26
+galvanizedsteel -4.45 2.75 22.2 -3.55 2.81 22.26
+galvanizedsteel -4.45 3.15 22.2 -3.55 3.21 22.26
+galvanizedsteel -4.45 3.55 22.2 -3.55 3.61 22.26
+galvanizedsteel -4.45 3.95 22.2 -3.55 4.01 22.26
+galvanizedsteel -4.45 4.35 22.2 -3.55 4.41 22.26
+galvanizedsteel -4.45 4.75 22.2 -3.55 4.81 22.26
+galvanizedsteel -4.45 5.15 22.2 -3.55 5.21 22.26
+galvanizedsteel -4.45 5.55 22.2 -3.55 5.61 22.26
+galvanizedsteel -4.45 5.95 22.2 -3.55 6.01 22.26
+galvanizedsteel -4.45 6.35 22.2 -3.55 6.41 22.26
+galvanizedsteel -4.45 6.75 22.2 -3.55 6.81 22.26
+galvanizedsteel -4.45 7.15 22.2 -3.55 7.21 22.26
+galvanizedsteel -4.45 7.55 22.2 -3.55 7.61 22.26
+galvanizedsteel -4.45 7.95 22.2 -3.55 8.01 22.26
+polishedgranite 8 0 -31 16 1.1 -30
+polishedgranite 15 0 -30 16 1.1 -26
+wainscotpanelling -20 0 -34.2 -14.8 4 -33.8
+wainscotpanelling -14.8 3 -34.2 -13.2 4 -33.8
+wainscotpanelling -13.2 0 -34.2 -12 4 -33.8
+wainscotpanelling -12.2 0 -40 -11.8 4 -34
+wainscotpanelling -20 4 -40 -12 4.3 -34
+polishedgranite -11.5 0 -4.5 5.5 0.4 2.5
+polishedgranite -11 0.4 -4 5 0.8 2
+wedge 428 1 5 5 -1.6 15 6 -0.4
+bleachedbones -6 5.4 -1.6 5 6 -0.4
+wedge 428 1 -11 6 -1.6 -6 8.4 -0.4
+bleachedbones -11 5.4 -1.6 -6 6 -0.4
+bleachedbones -11 14.4 -0.3 11 14.9 0.3
+bone -9.1 13.4 -1.8 -8.9 14.4 -1.6
+bone -9.1 13.4 1.6 -8.9 14.4 1.8
+bone -9.1 13.2 -1.8 -8.9 13.4 1.8
+bone -7.1 13.4 -1.8 -6.9 14.4 -1.6
+bone -7.1 13.4 1.6 -6.9 14.4 1.8
+bone -7.1 13.2 -1.8 -6.9 13.4 1.8
+bone -5.1 13.4 -1.8 -4.9 14.4 -1.6
+bone -5.1 13.4 1.6 -4.9 14.4 1.8
+bone -5.1 13.2 -1.8 -4.9 13.4 1.8
+bone -3.1 13.4 -1.8 -2.9 14.4 -1.6
+bone -3.1 13.4 1.6 -2.9 14.4 1.8
+bone -3.1 13.2 -1.8 -2.9 13.4 1.8
+bone -1.1 13.4 -1.8 -0.9 14.4 -1.6
+bone -1.1 13.4 1.6 -0.9 14.4 1.8
+bone -1.1 13.2 -1.8 -0.9 13.4 1.8
+bone 0.9 13.4 -1.8 1.1 14.4 -1.6
+bone 0.9 13.4 1.6 1.1 14.4 1.8
+bone 0.9 13.2 -1.8 1.1 13.4 1.8
+bone 2.9 13.4 -1.8 3.1 14.4 -1.6
+bone 2.9 13.4 1.6 3.1 14.4 1.8
+bone 2.9 13.2 -1.8 3.1 13.4 1.8
+bone 4.9 13.4 -1.8 5.1 14.4 -1.6
+bone 4.9 13.4 1.6 5.1 14.4 1.8
+bone 4.9 13.2 -1.8 5.1 13.4 1.8
+bone 6.9 13.4 -1.8 7.1 14.4 -1.6
+bone 6.9 13.4 1.6 7.1 14.4 1.8
+bone 6.9 13.2 -1.8 7.1 13.4 1.8
+bone 8.9 13.4 -1.8 9.1 14.4 -1.6
+bone 8.9 13.4 1.6 9.1 14.4 1.8
+bone 8.9 13.2 -1.8 9.1 13.4 1.8
+bone 11 13.6 -1.2 14.6 15 1.2
+bone -14 14.5 -2.2 -11 14.7 2.2
+galvanizedsteel -12.04 14.9 -0.04 -11.96 16.7 0.04
+galvanizedsteel -4.04 14.9 -0.04 -3.96 16.7 0.04
+galvanizedsteel 3.96 14.9 -0.04 4.04 16.7 0.04
+galvanizedsteel 11.96 14.9 -0.04 12.04 16.7 0.04
+painteddrywall -53.6 0 -24 -53.2 7.6 10
+wainscotpanelling -55 1.4 -24 -53.6 7.6 10
+forestfloor -53.2 0 -23 -47.4 0.9 -15
+glass -47.4 0.9 -23 -47.2 4.2 -15
+wainscotpanelling -47.4 0 -23 -47 0.9 -15
+wainscotpanelling -53.2 4.2 -23 -47 7.6 -15
+fur -51 0.9 -20.2 -49 2.4 -18.2
+boulderfield -53.2 0 -14 -47.4 0.9 -6
+glass -47.4 0.9 -14 -47.2 4.2 -6
+wainscotpanelling -47.4 0 -14 -47 0.9 -6
+wainscotpanelling -53.2 4.2 -14 -47 7.6 -6
+fur -51 0.9 -11.2 -49 2.4 -9.2
+dewygrass -53.2 0 -5 -47.4 0.9 3
+glass -47.4 0.9 -5 -47.2 4.2 3
+wainscotpanelling -47.4 0 -5 -47 0.9 3
+wainscotpanelling -53.2 4.2 -5 -47 7.6 3
+fur -51 0.9 -2.2 -49 2.4 -0.2
+snow -53.2 0 4 -47.4 0.9 9.6
+glass -47.4 0.9 4 -47.2 4.2 9.6
+wainscotpanelling -47.4 0 4 -47 0.9 9.6
+wainscotpanelling -53.2 4.2 4 -47 7.6 9.6
+fur -51 0.9 5.6 -49 2.4 7.6
+wainscotpanelling -53.2 0 -24 -47 7.6 -23
+wainscotpanelling -53.2 0 -15 -47 7.6 -14
+wainscotpanelling -53.2 0 -6 -47 7.6 -5
+wainscotpanelling -53.2 0 3 -47 7.6 4
+wainscotpanelling -53.2 0 9.6 -47 7.6 10
+cut 227 4 -0.3511 0 -0.9363 -0.2341 0.8824 0 -0.4706 0.5882 0.5595 0 0.8288 1.0775 -0.8603 0 0.5098 0.1275 -40 0 -20 -31 3.2 -12
+cut 227 4 -0.3939 0 -0.9191 -0.2626 0.9062 0 -0.4229 0.6041 0.3939 0 0.9191 1.0505 -0.9062 0 0.4229 0.1208 -28 0 2 -22 2.8 9
+wainscotpanelling -42 0 -10 -41 4.5 -9.6
+wainscotpanelling -41 3.6 -10 -31 4.5 -9.6
+wainscotpanelling -41 0 -10 -31 0.9 -9.6
+glass -41 0.9 -10 -31 3.6 -9.6
+wainscotpanelling -31 0 -10 -30 4.5 -9.6
+wainscotpanelling -42 0 -2.4 -41 4.5 -2
+wainscotpanelling -41 3.6 -2.4 -31 4.5 -2
+wainscotpanelling -41 0 -2.4 -31 0.9 -2
+glass -41 0.9 -2.4 -31 3.6 -2
+wainscotpanelling -31 0 -2.4 -30 4.5 -2
+wainscotpanelling -42 0 -10 -41.6 4.5 -2
+wainscotpanelling -30.4 0 -10 -30 4.5 -6.6
+wainscotpanelling -30.4 2.4 -6.6 -30 4.5 -5.4
+wainscotpanelling -30.4 0 -5.4 -30 4.5 -2
+painteddrywall -41.6 0 -7.3 -30.4 4.5 -7.1
+painteddrywall -41.6 0 -4.9 -30.4 4.5 -4.7
+dewygrass -41.6 0 -9.6 -30.4 0.9 -7.3
+ochreearth -41.6 0 -4.7 -30.4 0.9 -2.4
+fur -38 0.9 -9.2 -36 2.3 -8
+fur -34 0.9 -3.8 -32.4 1.9 -2.8
+wainscotpanelling -42 4.5 -10 -30 4.8 -2
+cratewood -27.5 0 -21.5 -24.5 0.8 -18.5
+glass -27.4 0.8 -21.4 -24.6 3 -18.6
+fur -26.8 0.8 -20.6 -25.2 2 -19.4
+cratewood -27.5 0 -11.5 -24.5 0.8 -8.5
+glass -27.4 0.8 -11.4 -24.6 3 -8.6
+fur -26.8 0.8 -10.6 -25.2 2 -9.4
+cratewood -47.5 0 4.5 -44.5 0.8 7.5
+glass -47.4 0.8 4.6 -44.6 3 7.4
+fur -46.8 0.8 5.4 -45.2 2 6.6
+wainscotpanelling 24 0 -21 25.4 0.9 -13
+glass 24.1 0.9 -20.9 25.3 1.2 -13.1
+wainscotpanelling 24 0 -9 25.4 0.9 -1
+glass 24.1 0.9 -8.9 25.3 1.2 -1.1
+wainscotpanelling 24 0 3 25.4 0.9 8
+glass 24.1 0.9 3.1 25.3 1.2 7.9
+wainscotpanelling 30 0 -21 31.4 0.9 -13
+glass 30.1 0.9 -20.9 31.3 1.2 -13.1
+wainscotpanelling 30 0 -9 31.4 0.9 -1
+glass 30.1 0.9 -8.9 31.3 1.2 -1.1
+wainscotpanelling 30 0 3 31.4 0.9 8
+glass 30.1 0.9 3.1 31.3 1.2 7.9
+wetcaverock 36 0 -20 40 5 -17
+wetcaverock 42 0 -20 53 5 -17
+wetcaverock 51 0 -17 53 5 -15
+wetcaverock 36 0 -15 44 5 -13
+wetcaverock 46 0 -15 53 5 -13
+wetcaverock 36 0 -13 44 5 -11
+wetcaverock 50 0 -13 53 5 -11
+wetcaverock 36 0 -11 44 5 -8
+wetcaverock 46 0 -11 53 5 -8
+wetcaverock 46 0 -8 53 5 -6
+wetcaverock 36 0 -6 40 5 -4.6
+wetcaverock 42 0 -6 53 5 -4.6
+wetcaverock 36 0 -4.6 53 5 -4
+geode 36 5 -20 53 5.6 -4
+quartzcrystal 49.2 0 -12.8 49.8 1.4 -12.2
+quartzcrystal 50.2 0 -16.8 50.8 1.4 -16.2
+quartzcrystal 40.4 0 -5.2 41.6 1.4 -4.7
+wideplanks -30 0 -32 -22 1.1 -31
+cratewood -50 0 -38 -36 2.2 -37
+cratewood -50 0 -35 -36 2.2 -34
+drywall 24 0 -36 34 4 -35.88
+drywall 30 0 -32 46 4 -31.88
+drywall 40 0 -38 40.12 4 -32
+drywall 24 0 -28 36 4 -27.88
+drywall 46 0 -36 52 4 -35.88
+drywall 46 0 -36 46.12 4 -27
+drywall 36 0 -32 36.12 4 -24.5
+drywall 50 0 -31 55 4 -30.88
+whitesquaretile -30 0 -35.2 -27.8 7.6 -34.8
+whitesquaretile -27.8 2.8 -35.2 -26.2 7.6 -34.8
+whitesquaretile -26.2 0 -35.2 -20 7.6 -34.8
+whitesquaretile -30.2 0 -40 -29.8 7.6 -35
+chrome -29.6 0 -39.6 -21 1 -38.6
+painteddrywall -32 0 29.8 -30 7.6 30.2
+painteddrywall -30 3 29.8 -28 7.6 30.2
+painteddrywall -28 0 29.8 -20 7.6 30.2
+painteddrywall -32.2 0 30 -31.8 7.6 40
+cratewood -31 0 33 -23 2.4 34
+cratewood -31 0 36.5 -23 2.4 37.5
+cratewood -42 0 19 -38 1 21
+cratewood -34 0 19 -30 1 21
+cratewood -42 0 31 -38 1 33
+cratewood -28 0 21 -24 1 23
+rollershutter -10 0 39.6 4 5 40
+palletstack 2.8 0 29.8 5.2 2.6 32.2
+palletstack 6.8 0 34.3 9.2 2.6 36.7
+palletstack 2.8 0 34.8 5.2 2.6 37.2
+palletstack 8.3 0 29.3 10.7 2.6 31.7
+painteddrywall -20 0 31.8 -17.8 7.6 32.2
+painteddrywall -17.8 2.8 31.8 -16.2 7.6 32.2
+painteddrywall -16.2 0 31.8 -15 7.6 32.2
+painteddrywall -15 2.4 31.8 -11 7.6 32.2
+painteddrywall -15 0 31.8 -11 1 32.2
+frostedglass -15 1 31.8 -11 2.4 32.2
+painteddrywall -11 0 31.8 -10 7.6 32.2
+painteddrywall -10.2 0 32 -9.8 7.6 40
+controlpanel -19.6 0 38.4 -12 1.1 39.6
+sandstoneashlar 30 0 16 38.6 5 20.6
+sandstoneashlar 40 0 16 50 5 20.6
+sandstoneashlar 30 0 20.6 34 5 22
+sandstoneashlar 40 0 20.6 50 5 22
+sandstoneashlar 30 0 22 34 5 28.6
+sandstoneashlar 35.4 0 22 50 5 28.6
+sandstoneashlar 30 0 28.6 34 5 30
+sandstoneashlar 44 0 28.6 50 5 30
+sandstoneashlar 30 0 30 40 5 34
+sandstoneashlar 46 0 30 50 5 34
+sandstoneashlar 30 0 34 50 5 36
+largesandstoneashlar 30 5 16 50 5.4 36
+gold 41.5 0 31 44.5 1 33
+cut 115 4 0.7071 0 0.7071 1.2071 -0.7071 0 0.7071 0.5 -0.7071 0 -0.7071 -0.2071 0.7071 0 -0.7071 0.5 24.3533 0 13.3533 25.6467 7.6 14.6467
+cut 115 4 0.7071 0 0.7071 1.2071 -0.7071 0 0.7071 0.5 -0.7071 0 -0.7071 -0.2071 0.7071 0 -0.7071 0.5 24.3533 0 21.3533 25.6467 7.6 22.6467
+cut 115 4 0.7071 0 0.7071 1.2071 -0.7071 0 0.7071 0.5 -0.7071 0 -0.7071 -0.2071 0.7071 0 -0.7071 0.5 24.3533 0 29.3533 25.6467 7.6 30.6467
+cut 115 4 0.7071 0 0.7071 1.2071 -0.7071 0 0.7071 0.5 -0.7071 0 -0.7071 -0.2071 0.7071 0 -0.7071 0.5 24.3533 0 36.3533 25.6467 7.6 37.6467
+stripedwallpaper -38.2 8 -24 -37.8 16.4 -16
+stripedwallpaper -38.2 11.4 -16 -37.8 16.4 -12
+stripedwallpaper -38.2 8 -12 -37.8 16.4 1
+stripedwallpaper -38.2 11.4 1 -37.8 16.4 5
+stripedwallpaper -38.2 8 5 -37.8 16.4 10
+wainscotpanelling -33 8 -18 -29 8.8 -14
+glass -32.9 8.8 -17.9 -29.1 12.6 -14.1
+wainscotpanelling -33 12.6 -18 -29 13 -14
+wainscotpanelling -27 8 -7 -23 8.8 -3
+glass -26.9 8.8 -6.9 -23.1 12.6 -3.1
+wainscotpanelling -27 12.6 -7 -23 13 -3
+wainscotpanelling -33 8 3 -29 8.8 7
+glass -32.9 8.8 3.1 -29.1 12.6 6.9
+wainscotpanelling -33 12.6 3 -29 13 7
+wainscotpanelling -48 8 2 -44 8.8 6
+glass -47.9 8.8 2.1 -44.1 12.6 5.9
+wainscotpanelling -48 12.6 2 -44 13 6
+brass -31.49 8 -18.06 -31.41 13 -18
+brass -30.59 8 -18.06 -30.51 13 -18
+brass -31.45 8.35 -18.06 -30.55 8.41 -18
+brass -31.45 8.75 -18.06 -30.55 8.81 -18
+brass -31.45 9.15 -18.06 -30.55 9.21 -18
+brass -31.45 9.55 -18.06 -30.55 9.61 -18
+brass -31.45 9.95 -18.06 -30.55 10.01 -18
+brass -31.45 10.35 -18.06 -30.55 10.41 -18
+brass -31.45 10.75 -18.06 -30.55 10.81 -18
+brass -31.45 11.15 -18.06 -30.55 11.21 -18
+brass -31.45 11.55 -18.06 -30.55 11.61 -18
+brass -31.45 11.95 -18.06 -30.55 12.01 -18
+brass -31.45 12.35 -18.06 -30.55 12.41 -18
+brass -31.45 12.75 -18.06 -30.55 12.81 -18
+galvanizedsteel -55 8 -0.49 -54.94 16.4 -0.41
+galvanizedsteel -55 8 0.41 -54.94 16.4 0.49
+galvanizedsteel -55 8.35 -0.45 -54.94 8.41 0.45
+galvanizedsteel -55 8.75 -0.45 -54.94 8.81 0.45
+galvanizedsteel -55 9.15 -0.45 -54.94 9.21 0.45
+galvanizedsteel -55 9.55 -0.45 -54.94 9.61 0.45
+galvanizedsteel -55 9.95 -0.45 -54.94 10.01 0.45
+galvanizedsteel -55 10.35 -0.45 -54.94 10.41 0.45
+galvanizedsteel -55 10.75 -0.45 -54.94 10.81 0.45
+galvanizedsteel -55 11.15 -0.45 -54.94 11.21 0.45
+galvanizedsteel -55 11.55 -0.45 -54.94 11.61 0.45
+galvanizedsteel -55 11.95 -0.45 -54.94 12.01 0.45
+galvanizedsteel -55 12.35 -0.45 -54.94 12.41 0.45
+galvanizedsteel -55 12.75 -0.45 -54.94 12.81 0.45
+galvanizedsteel -55 13.15 -0.45 -54.94 13.21 0.45
+galvanizedsteel -55 13.55 -0.45 -54.94 13.61 0.45
+galvanizedsteel -55 13.95 -0.45 -54.94 14.01 0.45
+galvanizedsteel -55 14.35 -0.45 -54.94 14.41 0.45
+galvanizedsteel -55 14.75 -0.45 -54.94 14.81 0.45
+galvanizedsteel -55 15.15 -0.45 -54.94 15.21 0.45
+galvanizedsteel -55 15.55 -0.45 -54.94 15.61 0.45
+galvanizedsteel -55 15.95 -0.45 -54.94 16.01 0.45
+galvanizedsteel -55 16.35 -0.45 -54.94 16.41 0.45
+wainscotpanelling -50 8 14 -26 9.4 15.2
+wainscotpanelling -50 8 18 -26 9.4 19.2
+wainscotpanelling -50 8 22 -26 9.4 23.2
+polishedgranite -15 8 15 -9 8.8 20
+bone -14 8.8 17 -10 10.6 18
+polishedgranite -3 8 15 3 8.8 20
+bone -2 8.8 17 2 10.6 18
+cratewood 26 8 13.5 48 11 14.5
+cratewood 26 8 17.5 48 11 18.5
+cratewood 26 8 21.5 48 11 22.5
+waterstainedconcrete 32 8 -22 33 14 -20
+waterstainedconcrete 32 12.2 -20 33 14 -16
+waterstainedconcrete 32 8 -20 33 9.2 -16
+bluetintedglass 32 9.2 -20 33 12.2 -16
+waterstainedconcrete 32 8 -16 33 14 -14
+waterstainedconcrete 32 8 -8 33 14 -6
+waterstainedconcrete 32 12.2 -6 33 14 -2
+waterstainedconcrete 32 8 -6 33 9.2 -2
+bluetintedglass 32 9.2 -6 33 12.2 -2
+waterstainedconcrete 32 8 -2 33 14 0
+wetcaverock 50 8 -23 55 15.6 -22.6
+wetcaverock 50 8 -17.4 55 15.6 -17
+wetcaverock 50 12.4 -22.6 55 15.6 -17.4
+wetcaverock 50 8 -11 55 15.6 -10.6
+wetcaverock 50 8 -5.4 55 15.6 -5
+wetcaverock 50 12.4 -10.6 55 15.6 -5.4
+wetcaverock 50 8 1 55 15.6 1.4
+wetcaverock 50 8 6.6 55 15.6 7
+wetcaverock 50 12.4 1.4 55 15.6 6.6
+waterstainedconcrete 42 8 -24 43 14 -21.5
+waterstainedconcrete 42 11.8 -21.5 43 14 -18.5
+waterstainedconcrete 42 8 -21.5 43 9.4 -18.5
+bluetintedglass 42 9.4 -21.5 43 11.8 -18.5
+waterstainedconcrete 42 8 -18.5 43 14 -16
+waterstainedconcrete 42 8 -4 43 14 -0.5
+waterstainedconcrete 42 11.8 -0.5 43 14 2.5
+waterstainedconcrete 42 8 -0.5 43 9.4 2.5
+bluetintedglass 42 9.4 -0.5 43 11.8 2.5
+waterstainedconcrete 42 8 2.5 43 14 6
+steelgridwall -46 -6 13 -45 -3 23
+steelgridwall -46 -6 26 -45 -3 36
+steelgridwall -43.6 -6 13 -42.6 -3 23
+steelgridwall -43.6 -6 26 -42.6 -3 36
+steelgridwall -41.2 -6 13 -40.2 -3 23
+steelgridwall -41.2 -6 26 -40.2 -3 36
+steelgridwall -38.8 -6 13 -37.8 -3 23
+steelgridwall -38.8 -6 26 -37.8 -3 36
+steelgridwall -36.4 -6 13 -35.4 -3 23
+steelgridwall -36.4 -6 26 -35.4 -3 36
+steelgridwall -34 -6 13 -33 -3 23
+steelgridwall -34 -6 26 -33 -3 36
+steelgridwall -31.6 -6 13 -30.6 -3 23
+steelgridwall -31.6 -6 26 -30.6 -3 36
+steelgridwall -29.2 -6 13 -28.2 -3 23
+steelgridwall -29.2 -6 26 -28.2 -3 36
+steelgridwall -26.8 -6 13 -25.8 -3 23
+steelgridwall -26.8 -6 26 -25.8 -3 36
+steelgridwall -24.4 -6 13 -23.4 -3 23
+steelgridwall -24.4 -6 26 -23.4 -3 36
+painteddrywall -22 -6 30 -21.8 -0.4 32
+painteddrywall -22 -2.8 32 -21.8 -0.4 38
+painteddrywall -22 -6 32 -21.8 -5.1 38
+frostedglass -22 -5.1 32 -21.8 -2.8 38
+painteddrywall -22 -6 38 -21.8 -0.4 40
+painteddrywall -22 -6 30 -21 -0.4 30.2
+painteddrywall -21 -2.8 30 -17 -0.4 30.2
+painteddrywall -21 -6 30 -17 -5.1 30.2
+frostedglass -21 -5.1 30 -17 -2.8 30.2
+painteddrywall -17 -6 30 -14 -0.4 30.2
+painteddrywall -14 -3 30 -12.4 -0.4 30.2
+painteddrywall -12.4 -6 30 -10.2 -0.4 30.2
+cinderblock -10.2 -6 10 -9.8 -0.4 16.5
+cinderblock -10.2 -2.8 16.5 -9.8 -0.4 19.5
+cinderblock -10.2 -6 19.5 -9.8 -0.4 23.2
+cinderblock -10.2 -2.8 23.2 -9.8 -0.4 25.8
+cinderblock -10.2 -6 25.8 -9.8 -0.4 40
+cinderblock 6 -6 29.8 8 -0.4 30.2
+cinderblock 8 -3 29.8 10 -0.4 30.2
+cinderblock 10 -6 29.8 20 -0.4 30.2
+cinderblock 5.8 -6 30 6.2 -0.4 40
+quiltedstainless 10 -6 36 18 -5 38
+fur 12 -5 36.4 14 -4.2 37.4
+cratewood 0.5 -6 13 3.5 -5 15
+cratewood 6.5 -6 33 9.5 -5 35
+cratewood 12.5 -6 13 15.5 -5 15
+cinderblock 19.8 -6 10 20.2 -0.4 23.5
+cinderblock 19.8 -2.8 23.5 20.2 -0.4 26.5
+cinderblock 19.8 -6 26.5 20.2 -0.4 40
+boilerplate 44 -6 16 52 -2 40
+cut 340 4 0.7071 0 0.7071 1.2071 -0.7071 0 0.7071 0.5 -0.7071 0 -0.7071 -0.2071 0.7071 0 -0.7071 0.5 31.7827 -6 15.7827 36.2173 -1.8 20.2173
+cut 340 4 0.7071 0 0.7071 1.2071 -0.7071 0 0.7071 0.5 -0.7071 0 -0.7071 -0.2071 0.7071 0 -0.7071 0.5 31.7827 -6 29.7827 36.2173 -1.8 34.2173
+castiron 24 -1.6 12 54 -1.1 12.6
+glow -0.6 5.4 -14.3 0.6 5.75 -13.7
+glow -0.6 5.4 9.7 0.6 5.75 10.3
+glow -20.3 5.4 -2.6 -19.7 5.75 -1.4
+glow 19.7 5.4 -2.6 20.3 5.75 -1.4
+glow -20.3 4 -32.6 -19.7 4.35 -31.4
+glow 19.7 4 -32.6 20.3 4.35 -31.4
+glow -0.6 11.6 9.7 0.6 11.95 10.3
+glow -20.3 11.6 -2.6 -19.7 11.95 -1.4
+glow 19.7 11.6 -2.6 20.3 11.95 -1.4
+glow -40.6 4 -24.3 -39.4 4.35 -23.7
+glow 39.4 4 -24.3 40.6 4.35 -23.7
+glow -40.6 4 9.7 -39.4 4.35 10.3
+glow 38.7 4 9.7 39.9 4.35 10.3
+marble -19.8 0 -38.5 -19.2 12.4 -37.5
+marble 19.2 0 -38.5 19.8 12.4 -37.5
+marble -19.8 0 -27.5 -19.2 12.4 -26.5
+marble 19.2 0 -27.5 19.8 12.4 -26.5
+marble -19.8 0 -23.5 -19.2 12.4 -22.5
+marble 19.2 0 -23.5 19.8 12.4 -22.5
+bronze -3 0 -40 3 6 -39.8
+bronze -0.1 0 -40.1 0.1 6 -39.7
+wideplanks -16 0 -39.6 -12 0.5 -39
+wideplanks 12 0 -39.6 16 0.5 -39
+polishedgranite -14.4 0 -13.6 -13.6 16.4 -13.2
+polishedgranite -14.4 0 9.2 -13.6 16.4 9.6
+polishedgranite -8.4 0 -13.6 -7.6 16.4 -13.2
+polishedgranite -8.4 0 9.2 -7.6 16.4 9.6
+polishedgranite 7.6 0 -13.6 8.4 16.4 -13.2
+polishedgranite 7.6 0 9.2 8.4 16.4 9.6
+polishedgranite 13.6 0 -13.6 14.4 16.4 -13.2
+polishedgranite 13.6 0 9.2 14.4 16.4 9.6
+brass 9.6 0 4.7 10.4 1.1 5.3
+brass -10.4 0 -8.3 -9.6 1.1 -7.7
+wainscotpanelling -36 10 -23.6 -32 12.6 -23.5
+wainscotpanelling -28 10 -23.6 -24 12.6 -23.5
+wainscotpanelling 24 10 -23.6 28 12.6 -23.5
+wainscotpanelling -36 10 9.5 -32 12.6 9.6
+wainscotpanelling -12 10 25.5 -8 12.6 25.6
+wainscotpanelling 4 10 25.5 8 12.6 25.6
+wainscotpanelling 30 10 25.5 34 12.6 25.6
+wainscotpanelling -52 10 25.5 -48 12.6 25.6
+galvanizedsteel -5.15 8 22.2 -5 9.1 23.75
+galvanizedsteel -3 8 22.2 -2.85 9.1 23.75
+galvanizedsteel -5 8 23.6 -3 9.1 23.75
+trapezoidcladding -50 16.4 13.85 -45.8 19.6 14.15
+trapezoidcladding -45.8 19 13.85 -44.2 19.6 14.15
+trapezoidcladding -44.2 16.4 13.85 -40 19.6 14.15
+trapezoidcladding -50 16.4 21.85 -40 19.6 22.15
+trapezoidcladding -50.15 16.4 14 -49.85 19.6 22
+trapezoidcladding -40.15 16.4 14 -39.85 19.6 22
+leadsheet -50.3 19.6 13.7 -39.7 19.9 22.3
+ventilationduct -49.5 16.4 17 -46 18.4 21.6
+radiatorfins -53.2 16.4 -20.9 -50.8 17.8 -19.1
+radiatorfins -53.2 16.4 23.1 -50.8 17.8 24.9
+radiatorfins -31.2 16.4 23.1 -28.8 17.8 24.9
+radiatorfins -9.2 16.4 23.1 -6.8 17.8 24.9
+radiatorfins 8.8 16.4 23.1 11.2 17.8 24.9
+wroughtiron -35 16.4 -11 -29 17 -5
+dustyglass -34.8 17 -10.8 -29.2 17.1 -5.2
+wroughtiron -35 16.4 15 -29 17 21
+dustyglass -34.8 17 15.2 -29.2 17.1 20.8
+ventilationduct -20 16.4 24.2 6 17.3 25.4
+greasestainedmetal -55 -1.2 11.2 -10 -0.8 11.6
+greasestainedmetal -10 -1.2 24.2 20 -0.8 24.6
+cut 497 4 0.7071 0 0.7071 1.2071 -0.7071 0 0.7071 0.5 -0.7071 0 -0.7071 -0.2071 0.7071 0 -0.7071 0.5 -24.5543 0 -28.5543 -23.4457 0.75 -27.4457
+cut 497 4 0.7071 0 0.7071 1.2071 -0.7071 0 0.7071 0.5 -0.7071 0 -0.7071 -0.2071 0.7071 0 -0.7071 0.5 -28.5543 0 -28.5543 -27.4457 0.75 -27.4457
+sandstonestrata 52 0 12.5 53.5 6 14
+cut 191 4 0.8944 0.4472 0 0.8944 -0.8944 0.4472 0 0 0 0.4472 0.8944 0.8944 0 0.4472 -0.8944 0 52 6 12.5 53.5 7 14
+wainscotpanelling 53.6 0 -2 55 0.9 1.6
+glass 53.6 0.9 -2 53.7 2.6 1.6
+wainscotpanelling 53.6 2.6 -2 55 2.85 1.6
+geode 54.3 0.9 -1.6 54.5 1.6 -0.9
+malachite 54.3 0.9 -0.5 54.5 1.85 0.2
+crystal 54.3 0.9 0.6 54.5 2.1 1.3
+wainscotpanelling 53.6 0 2 55 0.9 5.6
+glass 53.6 0.9 2 53.7 2.6 5.6
+wainscotpanelling 53.6 2.6 2 55 2.85 5.6
+jasper 54.3 0.9 2.4 54.5 1.85 3.1
+opal 54.3 0.9 3.5 54.5 2.1 4.2
+obsidian 54.3 0.9 4.6 54.5 1.6 5.3
+wainscotpanelling 53.6 0 6 55 0.9 9.6
+glass 53.6 0.9 6 53.7 2.6 9.6
+wainscotpanelling 53.6 2.6 6 55 2.85 9.6
+jade 54.3 0.9 6.4 54.5 2.1 7.1
+quartzcrystals 54.3 0.9 7.5 54.5 1.6 8.2
+geode 54.3 0.9 8.6 54.5 1.85 9.3
+cut 573 2 -0.7919 -0.6107 0 -0.5464 0.7919 0.6107 0 0.8561 35.17 -0.13 -18.13 35.88 1.33 -17.87
+cut 573 4 -0.7603 0 -0.6496 -0.4668 0.7603 0 0.6496 0.9431 -0.3673 -0.6978 0.615 -0.0441 0.3673 0.6978 -0.615 0.406 35.37 -0.13 -18.13 35.88 0.97 -17.52
+cut 573 4 0.7071 0 -0.7071 0.2321 -0.7071 0 0.7071 0.2321 -0.4923 -0.7179 -0.4923 -0.6636 0.4923 0.7179 0.4923 1.0388 35.32 -0.13 -18.43 35.88 0.85 -17.87
+cut 573 2 -0.7658 -0.6431 0 -0.5436 0.7658 0.6431 0 0.8653 35.17 -0.13 -14.33 35.88 0.93 -14.07
+cut 573 4 -0.7603 0 -0.6496 -0.4668 0.7603 0 0.6496 0.9431 -0.3467 -0.7367 0.5806 -0.0597 0.3467 0.7367 -0.5806 0.4431 35.37 -0.13 -14.33 35.88 0.69 -13.72
+cut 573 4 0.7071 0 -0.7071 0.2321 -0.7071 0 0.7071 0.2321 -0.4599 -0.7596 -0.4599 -0.6382 0.4599 0.7596 0.4599 1.0412 35.32 -0.13 -14.63 35.88 0.61 -14.07
+cut 573 2 -0.7814 -0.624 0 -0.5458 0.7814 0.624 0 0.8596 35.17 -0.13 -8.93 35.88 1.13 -8.67
+cut 573 4 -0.7603 0 -0.6496 -0.4668 0.7603 0 0.6496 0.9431 -0.3589 -0.7142 0.601 -0.0513 0.3589 0.7142 -0.601 0.4208 35.37 -0.13 -8.93 35.88 0.83 -8.32
+cut 573 4 0.7071 0 -0.7071 0.2321 -0.7071 0 0.7071 0.2321 -0.479 -0.7356 -0.479 -0.6542 0.479 0.7356 0.479 1.0394 35.32 -0.13 -9.23 35.88 0.73 -8.67
+cut 573 2 -0.7547 -0.656 0 -0.5411 0.7547 0.656 0 0.8697 35.17 -0.13 -5.33 35.88 0.83 -5.07
+cut 573 4 -0.7603 0 -0.6496 -0.4668 0.7603 0 0.6496 0.9431 -0.3383 -0.7514 0.5665 -0.0642 0.3383 0.7514 -0.5665 0.459 35.37 -0.13 -5.33 35.88 0.62 -4.72
+cut 573 4 0.7071 0 -0.7071 0.2321 -0.7071 0 0.7071 0.2321 -0.4468 -0.7751 -0.4468 -0.6258 0.4468 0.7751 0.4468 1.0428 35.32 -0.13 -5.63 35.88 0.55 -5.07
+cut 573 2 -0.7744 -0.6326 0 -0.545 0.7744 0.6326 0 0.8621 38.87 -0.13 -20.73 39.58 1.03 -20.47
+cut 573 4 -0.7603 0 -0.6496 -0.4668 0.7603 0 0.6496 0.9431 -0.3534 -0.7245 0.5918 -0.0554 0.3534 0.7245 -0.5918 0.4307 39.07 -0.13 -20.73 39.58 0.76 -20.12
+cut 573 4 0.7071 0 -0.7071 0.2321 -0.7071 0 0.7071 0.2321 -0.4704 -0.7466 -0.4704 -0.6473 0.4704 0.7466 0.4704 1.0401 39.02 -0.13 -21.03 39.58 0.67 -20.47
+geode 35.6 0 -17.5 36 4.4 -17
+geode 35.6 0 -15 36 4.4 -14.5
+geode 35.6 3.8 -17.5 36 4.6 -14.5
+geode 35.6 0 -8.5 36 4.4 -8
+geode 35.6 0 -6 36 4.4 -5.5
+geode 35.6 3.8 -8.5 36 4.6 -5.5
+cut 183 4 0.7071 0 0.7071 1.2071 -0.7071 0 0.7071 0.5 -0.7071 0 -0.7071 -0.2071 0.7071 0 -0.7071 0.5 43.337 0 1.337 46.663 0.5 4.663
+cut 295 6 -0.2759 0 -0.9612 -0.178 0.796 0 -0.6053 0.5136 0.8326 0 0.5539 1.0911 -0.4216 0 0.9068 0.6347 -0.9928 0 -0.1201 -0.0841 0.3344 0.9062 -0.2589 0.9493 43.4 0.5 1.5 46.5 2.6 4.5
+polishedgranite 37 0 2.6 40.4 0.5 4.4
+geode 37.2 0.5 3.1 40.2 3.4 3.9
+crystal 37.6 0.9 3.9 39.8 3 4
+crystal 37.6 0.9 3 39.8 3 3.1
+crossbeddedsandstone -44 0 25.6 -36 3.4 26.4
+bone -43.3 1.2 25.5 -41.7 1.45 25.6
+bone -43.3 1.2 26.4 -41.7 1.45 26.5
+bone -41.1 2.2 25.5 -38.9 2.45 25.6
+bone -41.1 2.2 26.4 -38.9 2.45 26.5
+bone -38.6 1 25.5 -37.4 1.25 25.6
+bone -38.6 1 26.4 -37.4 1.25 26.5
+steelgridwall -21.4 0 12 -20.2 2.8 16
+bone -21.6 0.9 12.4 -21.4 1.4 15.6
+bone -21.6 1.9 12.4 -21.4 2.4 15.6
+treebark -31.08 8.8 -16.08 -30.92 10.3 -15.92
+treebark -31.06 10.2 -16.8 -30.94 10.32 -15.2
+cut 314 2 0 -0.9127 0.4085 0.0871 0 0.9127 -0.4085 0.5913 -31.221 10.424 -16.211 -30.779 11.035 -15.054
+cut 314 2 0 -0.6566 0.7542 0.3613 0 0.6566 -0.7542 0.2637 -31.143 10.762 -15.353 -30.857 11.243 -14.911
+cut 191 2 0 -0.8926 -0.4508 -0.3808 0 0.8926 0.4508 0.9627 -31.0455 10.9505 -14.9955 -30.9545 11.0935 -14.6705
+cut 314 2 0 -0.8135 0.5816 0.0948 0 0.8135 -0.5816 0.3266 -31.078 10.398 -16.484 -30.922 10.723 -15.912
+cut 314 4 -0.6764 0 -0.7365 -0.5772 0.6764 0 0.7365 0.8358 -0.476 -0.8387 0.2645 -0.371 0.476 0.8387 -0.2645 0.6793 -31.585 10.775 -15.86 -31 11.165 -15.405
+cut 314 4 -0.6764 0 0.7365 0.1594 0.6764 0 -0.7365 0.0992 0.476 -0.8387 0.2645 0.105 -0.476 0.8387 -0.2645 0.2033 -31 10.775 -15.86 -30.415 11.165 -15.405
+treebark -31.039 10.385 -15.639 -30.961 10.619 -15.561
+forestfloor -32.85 8.8 -17.85 -29.15 8.9 -14.15
+treebark -25.08 8.8 -5.08 -24.92 10.3 -4.92
+treebark -25.8 10.2 -5.06 -24.2 10.32 -4.94
+cut 314 2 0.4085 -0.9127 0 0.0871 -0.4085 0.9127 0 0.5913 -25.211 10.424 -5.221 -24.054 11.035 -4.779
+cut 314 2 0.7542 -0.6566 0 0.3613 -0.7542 0.6566 0 0.2637 -24.353 10.762 -5.143 -23.911 11.243 -4.857
+cut 191 2 -0.4508 -0.8926 0 -0.3808 0.4508 0.8926 0 0.9627 -23.9955 10.9505 -5.0455 -23.6705 11.0935 -4.9545
+cut 314 2 0.5816 -0.8135 0 0.0948 -0.5816 0.8135 0 0.3266 -25.484 10.398 -5.078 -24.912 10.723 -4.922
+cut 314 4 0.7365 0 0.6764 0.8358 -0.7365 0 -0.6764 -0.5772 0.2645 -0.8387 -0.476 -0.371 -0.2645 0.8387 0.476 0.6793 -24.86 10.775 -5.585 -24.405 11.165 -5
+cut 314 4 -0.7365 0 0.6764 0.0992 0.7365 0 -0.6764 0.1594 0.2645 -0.8387 0.476 0.105 -0.2645 0.8387 -0.476 0.2033 -24.86 10.775 -5 -24.405 11.165 -4.415
+treebark -24.639 10.385 -5.039 -24.561 10.619 -4.961
+dewygrass -26.85 8.8 -6.85 -23.15 8.9 -3.15
+treebark -31.08 8.8 4.92 -30.92 10.3 5.08
+treebark -31.06 10.2 4.2 -30.94 10.32 5.8
+cut 314 2 0 -0.9127 0.4085 0.0871 0 0.9127 -0.4085 0.5913 -31.221 10.424 4.789 -30.779 11.035 5.946
+cut 314 2 0 -0.6566 0.7542 0.3613 0 0.6566 -0.7542 0.2637 -31.143 10.762 5.647 -30.857 11.243 6.089
+cut 191 2 0 -0.8926 -0.4508 -0.3808 0 0.8926 0.4508 0.9627 -31.0455 10.9505 6.0045 -30.9545 11.0935 6.3295
+cut 314 2 0 -0.8135 0.5816 0.0948 0 0.8135 -0.5816 0.3266 -31.078 10.398 4.516 -30.922 10.723 5.088
+cut 314 4 -0.6764 0 -0.7365 -0.5772 0.6764 0 0.7365 0.8358 -0.476 -0.8387 0.2645 -0.371 0.476 0.8387 -0.2645 0.6793 -31.585 10.775 5.14 -31 11.165 5.595
+cut 314 4 -0.6764 0 0.7365 0.1594 0.6764 0 -0.7365 0.0992 0.476 -0.8387 0.2645 0.105 -0.476 0.8387 -0.2645 0.2033 -31 10.775 5.14 -30.415 11.165 5.595
+treebark -31.039 10.385 5.361 -30.961 10.619 5.439
+forestfloor -32.85 8.8 3.15 -29.15 8.9 6.85
+treebark -46.08 8.8 3.92 -45.92 10.3 4.08
+treebark -46.8 10.2 3.94 -45.2 10.32 4.06
+cut 314 2 0.4085 -0.9127 0 0.0871 -0.4085 0.9127 0 0.5913 -46.211 10.424 3.779 -45.054 11.035 4.221
+cut 314 2 0.7542 -0.6566 0 0.3613 -0.7542 0.6566 0 0.2637 -45.353 10.762 3.857 -44.911 11.243 4.143
+cut 191 2 -0.4508 -0.8926 0 -0.3808 0.4508 0.8926 0 0.9627 -44.9955 10.9505 3.9545 -44.6705 11.0935 4.0455
+cut 314 2 0.5816 -0.8135 0 0.0948 -0.5816 0.8135 0 0.3266 -46.484 10.398 3.922 -45.912 10.723 4.078
+cut 314 4 0.7365 0 0.6764 0.8358 -0.7365 0 -0.6764 -0.5772 0.2645 -0.8387 -0.476 -0.371 -0.2645 0.8387 0.476 0.6793 -45.86 10.775 3.415 -45.405 11.165 4
+cut 314 4 -0.7365 0 0.6764 0.0992 0.7365 0 -0.6764 0.1594 0.2645 -0.8387 0.476 0.105 -0.2645 0.8387 -0.476 0.2033 -45.86 10.775 4 -45.405 11.165 4.585
+treebark -45.639 10.385 3.961 -45.561 10.619 4.039
+dewygrass -47.85 8.8 2.15 -44.15 8.9 5.85
+cut 247 2 0.9615 0 -0.2747 0.8089 0.9995 0 -0.0317 0.9678 -55 8 -21.6 -48.7 9 -8.6
+cut 263 4 0.4472 0 0.8944 1.118 -0.4472 0 0.8944 0.6708 -0.4472 0 -0.8944 -0.2236 0.4472 0 -0.8944 0.2236 -50.2031 9 -10.15 -49.5969 9.18 -9.45
+cut 247 2 0.9968 0 0.0797 0.9968 0.9285 0 0.3714 1.077 -55 8 -22 -50 10 -8.2
+cut 263 4 0.4472 0 0.8944 1.118 -0.4472 0 0.8944 0.6708 -0.4472 0 -0.8944 -0.2236 0.4472 0 -0.8944 0.2236 -51.6031 10 -21.15 -50.9969 10.18 -20.45
+cut 44 2 0 -0.9127 0.4085 0.0871 0 0.9127 -0.4085 0.5913 -51.436 10.164 -20.276 -51.164 10.54 -19.564
+cut 44 2 0 -0.6566 0.7542 0.3613 0 0.6566 -0.7542 0.2637 -51.388 10.372 -19.748 -51.212 10.668 -19.476
+cut 191 2 0 -0.8926 -0.4508 -0.3808 0 0.8926 0.4508 0.9627 -51.328 10.488 -19.528 -51.272 10.576 -19.328
+cut 44 2 0 -0.8135 0.5816 0.0948 0 0.8135 -0.5816 0.3266 -51.348 10.148 -20.444 -51.252 10.348 -20.092
+cut 44 4 -0.6764 0 -0.7365 -0.5772 0.6764 0 0.7365 0.8358 -0.476 -0.8387 0.2645 -0.371 0.476 0.8387 -0.2645 0.6793 -51.66 10.38 -20.06 -51.3 10.62 -19.78
+cut 44 4 -0.6764 0 0.7365 0.1594 0.6764 0 -0.7365 0.0992 0.476 -0.8387 0.2645 0.105 -0.476 0.8387 -0.2645 0.2033 -51.3 10.38 -20.06 -50.94 10.62 -19.78
+treebark -51.324 10.14 -19.924 -51.276 10.284 -19.876
+cut 247 2 0.8992 0 -0.4375 0.6562 0.9985 0 -0.054 0.9446 -55 8 -21.2 -51.3 11 -9.6
+cut 263 4 0.4472 0 0.8944 1.118 -0.4472 0 0.8944 0.6708 -0.4472 0 -0.8944 -0.2236 0.4472 0 -0.8944 0.2236 -52.8031 11 -11.15 -52.1969 11.18 -10.45
+cut 247 2 0.9884 0 0.1521 0.9884 0.7926 0 0.6097 1.0365 -55 8 -22 -52.4 12 -11
+cut 263 4 0.4472 0 0.8944 1.118 -0.4472 0 0.8944 0.6708 -0.4472 0 -0.8944 -0.2236 0.4472 0 -0.8944 0.2236 -54.0031 12 -21.15 -53.3969 12.18 -20.45
+cut 44 2 0 -0.9127 0.4085 0.0871 0 0.9127 -0.4085 0.5913 -53.836 12.164 -20.276 -53.564 12.54 -19.564
+cut 44 2 0 -0.6566 0.7542 0.3613 0 0.6566 -0.7542 0.2637 -53.788 12.372 -19.748 -53.612 12.668 -19.476
+cut 191 2 0 -0.8926 -0.4508 -0.3808 0 0.8926 0.4508 0.9627 -53.728 12.488 -19.528 -53.672 12.576 -19.328
+cut 44 2 0 -0.8135 0.5816 0.0948 0 0.8135 -0.5816 0.3266 -53.748 12.148 -20.444 -53.652 12.348 -20.092
+cut 44 4 -0.6764 0 -0.7365 -0.5772 0.6764 0 0.7365 0.8358 -0.476 -0.8387 0.2645 -0.371 0.476 0.8387 -0.2645 0.6793 -54.06 12.38 -20.06 -53.7 12.62 -19.78
+cut 44 4 -0.6764 0 0.7365 0.1594 0.6764 0 -0.7365 0.0992 0.476 -0.8387 0.2645 0.105 -0.476 0.8387 -0.2645 0.2033 -53.7 12.38 -20.06 -53.34 12.62 -19.78
+treebark -53.724 12.14 -19.924 -53.676 12.284 -19.876
+cut 247 2 0.6402 0 -0.7682 0.2134 0.9912 0 -0.1322 0.8591 -55 8 -20.4 -53.5 13 -13
+cut 263 4 0.4472 0 0.8944 1.118 -0.4472 0 0.8944 0.6708 -0.4472 0 -0.8944 -0.2236 0.4472 0 -0.8944 0.2236 -55.0031 13 -14.55 -54.3969 13.18 -13.85
+cut 115 4 0.9903 0.1386 0 0.9903 -0.9903 0.1386 0 0 0 0.1835 0.983 0.983 0 0.1835 -0.983 0 33.8 0 12.8 37.8 7 15.8
+cut 75 1 0 0.0797 -0.9968 -0.317 34.4 4.6 12.8 37.2 5.6 13.8
+gold 34.1 6.6 13.1 37.5 7 15.5
+cut 115 4 0.9903 0.1386 0 0.9903 -0.9903 0.1386 0 0 0 0.1835 0.983 0.983 0 0.1835 -0.983 0 40.8 0 12.8 44.8 7 15.8
+cut 75 1 0 0.0797 -0.9968 -0.317 41.4 4.6 12.8 44.2 5.6 13.8
+gold 41.1 6.6 13.1 44.5 7 15.5
+sandstoneashlar 37 5.6 13.4 41.6 6.6 15.2
+sandstoneashlar 33.9 0 10.4 35.3 0.6 12
+sandstonestrata 34.05 0.6 10.5 35.15 1.5 11.9
+sandstonestrata 34.15 1.5 11.6 35.05 2.9 12.2
+sandstonestrata 34 2.4 11.65 35.2 2.9 12.15
+sandstonestrata 34.35 2.9 11.65 34.85 3.3 12.15
+wedge 191 3 34.25 3 11.55 34.95 3.6 12.25
+sandstonestrata 34.08 1.5 10.7 34.32 1.65 11.9
+sandstonestrata 34.88 1.5 10.7 35.12 1.65 11.9
+sandstoneashlar 35.9 0 10.4 37.3 0.6 12
+sandstonestrata 36.05 0.6 10.5 37.15 1.5 11.9
+sandstonestrata 36.15 1.5 11.6 37.05 2.9 12.2
+sandstonestrata 36 2.4 11.65 37.2 2.9 12.15
+sandstonestrata 36.35 2.9 11.65 36.85 3.3 12.15
+wedge 191 3 36.25 3 11.55 36.95 3.6 12.25
+sandstonestrata 36.08 1.5 10.7 36.32 1.65 11.9
+sandstonestrata 36.88 1.5 10.7 37.12 1.65 11.9
+sandstoneashlar 41.3 0 10.4 42.7 0.6 12
+sandstonestrata 41.45 0.6 10.5 42.55 1.5 11.9
+sandstonestrata 41.55 1.5 11.6 42.45 2.9 12.2
+sandstonestrata 41.4 2.4 11.65 42.6 2.9 12.15
+sandstonestrata 41.75 2.9 11.65 42.25 3.3 12.15
+wedge 191 3 41.65 3 11.55 42.35 3.6 12.25
+sandstonestrata 41.48 1.5 10.7 41.72 1.65 11.9
+sandstonestrata 42.28 1.5 10.7 42.52 1.65 11.9
+sandstoneashlar 43.3 0 10.4 44.7 0.6 12
+sandstonestrata 43.45 0.6 10.5 44.55 1.5 11.9
+sandstonestrata 43.55 1.5 11.6 44.45 2.9 12.2
+sandstonestrata 43.4 2.4 11.65 44.6 2.9 12.15
+sandstonestrata 43.75 2.9 11.65 44.25 3.3 12.15
+wedge 191 3 43.65 3 11.55 44.35 3.6 12.25
+sandstonestrata 43.48 1.5 10.7 43.72 1.65 11.9
+sandstonestrata 44.28 1.5 10.7 44.52 1.65 11.9
+stampedstonepattern 30 1.8 15.94 38.6 2.5 16
+stampedstonepattern 30 3.4 15.94 38.6 4.1 16
+stampedstonepattern 40 1.8 15.94 50 2.5 16
+stampedstonepattern 40 3.4 15.94 50 4.1 16
+stampedstonepattern 29.94 1.8 16 30 2.5 36
+stampedstonepattern 29.94 3.4 16 30 4.1 36
+stampedstonepattern 50 1.8 16 50.06 2.5 36
+stampedstonepattern 50 3.4 16 50.06 4.1 36
+stampedstonepattern 30 1.8 36 50 2.5 36.06
+stampedstonepattern 30 3.4 36 50 4.1 36.06
+cut 153 4 0.7071 0 0.7071 1.2071 -0.7071 0 0.7071 0.5 -0.7071 0 -0.7071 -0.2071 0.7071 0 -0.7071 0.5 36.4837 13.2 -12.0163 38.5163 14.8 -9.9837
+cut 153 4 0.7071 0 0.7071 1.2071 -0.7071 0 0.7071 0.5 -0.7071 0 -0.7071 -0.2071 0.7071 0 -0.7071 0.5 36.8533 14.8 -11.6467 38.1467 15.6 -10.3533
+galvanizedsteel 37.46 15.6 -11.04 37.54 15.9 -10.96
+cut 153 4 -0.5939 0 0.8045 0.2998 0.5939 0 -0.8045 0.0893 -0.6405 -0.7534 -0.1488 -0.6422 0.6405 0.7534 0.1488 0.9005 37.9767 12.13 -10.9021 39.333 13.47 -10.1412
+cut 153 4 -0.6295 0 0.777 0.2099 0.6295 0 -0.777 0.0625 -0.5053 -0.8563 -0.107 -0.5476 0.5053 0.8563 0.107 0.921 39.053 11.89 -10.4212 40.3816 12.41 -9.7419
+cut 153 4 -0.8045 0 0.5939 0.0893 0.8045 0 -0.5939 0.2998 -0.1488 -0.7534 -0.6405 -0.6422 0.1488 0.7534 0.6405 0.9005 37.5979 12.13 -10.5233 38.3588 13.47 -9.167
+cut 153 2 -0.7589 0 0.6513 0.0456 0.7589 0 -0.6513 0.1532 38.0788 12.19 -9.447 38.9877 12.41 -7.564
+cut 153 4 -0.8045 0 -0.5939 -0.5047 0.8045 0 0.5939 0.8938 0.1488 -0.7534 -0.6405 -0.4933 -0.1488 0.7534 0.6405 0.7517 36.6412 12.13 -10.5233 37.4021 13.47 -9.167
+cut 153 4 -0.7589 0 -0.6513 -0.6056 0.7589 0 0.6513 0.8045 0.0969 -0.8693 -0.4847 -0.4421 -0.0969 0.8693 0.4847 0.815 36.0123 11.89 -9.447 36.9212 12.41 -7.564
+cut 153 4 -0.5939 0 -0.8045 -0.5047 0.5939 0 0.8045 0.8938 0.6405 -0.7534 -0.1488 -0.0017 -0.6405 0.7534 0.1488 0.2601 35.667 12.13 -10.9021 37.0233 13.47 -10.1412
+cut 153 2 -0.6295 0 -0.777 -0.5671 0.6295 0 0.777 0.8395 34.6184 12.19 -10.4212 35.947 12.41 -9.7419
+cut 153 4 0.5939 0 -0.8045 0.0893 -0.5939 0 0.8045 0.2998 0.6405 -0.7534 0.1488 0.1471 -0.6405 0.7534 -0.1488 0.1112 35.667 12.13 -11.8588 37.0233 13.47 -11.0979
+cut 153 4 0.6295 0 -0.777 0.0625 -0.6295 0 0.777 0.2099 0.5053 -0.8563 0.107 0.0647 -0.5053 0.8563 -0.107 0.3087 34.6184 11.89 -12.2581 35.947 12.41 -11.5788
+cut 153 4 0.8045 0 -0.5939 0.2998 -0.8045 0 0.5939 0.0893 0.1488 -0.7534 0.6405 0.1471 -0.1488 0.7534 -0.6405 0.1112 36.6412 12.13 -12.833 37.4021 13.47 -11.4767
+cut 153 2 0.7589 0 -0.6513 0.1532 -0.7589 0 0.6513 0.0456 36.0123 12.19 -14.436 36.9212 12.41 -12.553
+cut 153 4 0.8045 0 0.5939 0.8938 -0.8045 0 -0.5939 -0.5047 -0.1488 -0.7534 0.6405 -0.0017 0.1488 0.7534 -0.6405 0.2601 37.5979 12.13 -12.833 38.3588 13.47 -11.4767
+cut 153 4 0.7589 0 0.6513 0.8045 -0.7589 0 -0.6513 -0.6056 -0.0969 -0.8693 0.4847 -0.0543 0.0969 0.8693 -0.4847 0.4272 38.0788 11.89 -14.436 38.9877 12.41 -12.553
+cut 153 4 0.5939 0 0.8045 0.8938 -0.5939 0 -0.8045 -0.5047 -0.6405 -0.7534 0.1488 -0.4933 0.6405 0.7534 -0.1488 0.7517 37.9767 12.13 -11.8588 39.333 13.47 -11.0979
+cut 153 2 0.6295 0 0.777 0.8395 -0.6295 0 -0.777 -0.5671 39.053 12.19 -12.2581 40.3816 12.41 -11.5788
+cut 153 4 0.8185 0 0.5745 0.8403 -0.8185 0 -0.5745 -0.5527 -0.02 -0.7261 0.6873 0.0152 0.02 0.7261 -0.6873 0.074 37.42 11.72 -13.58 37.88 13.28 -11.32
+cut 153 4 0.7786 0 -0.6276 0.1717 -0.7786 0 0.6276 0.0207 0.0275 -0.8315 0.5548 0.021 -0.0275 0.8315 -0.5548 0.2702 37.22 11.42 -16.08 37.88 11.88 -13.42
+cut 153 4 0.7508 0 0.6605 0.7916 -0.7508 0 -0.6605 -0.6197 0.1086 -0.8472 -0.5201 -0.4792 -0.1086 0.8472 0.5201 0.7795 37.22 11.42 -17.48 37.98 11.88 -15.92
+cut 153 4 -0.8185 0 0.5745 0.0218 0.8185 0 -0.5745 0.2658 -0.02 -0.7261 -0.6873 -0.6721 0.02 0.7261 0.6873 0.7613 37.42 11.72 -10.68 37.88 13.28 -8.42
+cut 153 4 -0.7786 0 -0.6276 -0.6068 0.7786 0 0.6276 0.7993 0.0275 -0.8315 -0.5548 -0.5338 -0.0275 0.8315 0.5548 0.825 37.22 11.42 -8.58 37.88 11.88 -5.92
+cut 153 4 -0.7508 0 0.6605 0.0408 0.7508 0 -0.6605 0.1311 0.1086 -0.8472 0.5201 0.0409 -0.1086 0.8472 -0.5201 0.2594 37.22 11.42 -6.08 37.98 11.88 -4.52
+darkconcrete 49.8 8 -17 55 8.6 -11
+bluetintedglass 49.85 8.6 -17 50.05 14 -11
+waterstainedconcrete 49.8 14 -17 55 15.6 -11
+bluepooltile 54.7 8.6 -17 55 14 -11
+kelp 51 8.6 -16.2 51.3 11.6 -15.95
+kelp 52.6 8.6 -14.8 52.9 12.6 -14.55
+kelp 51 8.6 -13.4 51.3 13.6 -13.15
+kelp 52.6 8.6 -12 52.9 11.6 -11.75
+darkconcrete 49.8 8 -5 55 8.6 1
+bluetintedglass 49.85 8.6 -5 50.05 14 1
+waterstainedconcrete 49.8 14 -5 55 15.6 1
+bluepooltile 54.7 8.6 -5 55 14 1
+kelp 51 8.6 -4.2 51.3 11.6 -3.95
+kelp 52.6 8.6 -2.8 52.9 12.6 -2.55
+kelp 51 8.6 -1.4 51.3 13.6 -1.15
+kelp 52.6 8.6 0 52.9 11.6 0.25
+cut 162 2 0 -0.7634 0.6459 0.0726 0 0.7634 -0.6459 0.19 -4.7 4.9 -2.5 -4.5 5.55 -1.4
+cut 162 2 0 -0.6011 0.7992 0.2516 0 0.6011 -0.7992 0.0534 -4.7 3.8 -2.85 -4.5 5.1 -2.3
+cut 162 2 0 -0.6332 -0.774 -0.5749 0 0.6332 0.774 0.8322 -4.7 2.7 -2.85 -4.5 4 -2.2
+cut 162 2 0 -0.7634 -0.6459 -0.5734 0 0.7634 0.6459 0.836 -4.7 4.9 -0.6 -4.5 5.55 0.5
+cut 162 2 0 -0.6011 -0.7992 -0.5476 0 0.6011 0.7992 0.8526 -4.7 3.8 0.3 -4.5 5.1 0.85
+cut 162 2 0 -0.6332 0.774 0.199 0 0.6332 -0.774 0.0583 -4.7 2.7 0.2 -4.5 4 0.85
+cut 162 2 0 -0.7634 0.6459 0.0726 0 0.7634 -0.6459 0.19 -3.3 4.9 -2.5 -3.1 5.55 -1.4
+cut 162 2 0 -0.6011 0.7992 0.2516 0 0.6011 -0.7992 0.0534 -3.3 3.8 -2.85 -3.1 5.1 -2.3
+cut 162 2 0 -0.6332 -0.774 -0.5749 0 0.6332 0.774 0.8322 -3.3 2.7 -2.85 -3.1 4 -2.2
+cut 162 2 0 -0.7634 -0.6459 -0.5734 0 0.7634 0.6459 0.836 -3.3 4.9 -0.6 -3.1 5.55 0.5
+cut 162 2 0 -0.6011 -0.7992 -0.5476 0 0.6011 0.7992 0.8526 -3.3 3.8 0.3 -3.1 5.1 0.85
+cut 162 2 0 -0.6332 0.774 0.199 0 0.6332 -0.774 0.0583 -3.3 2.7 0.2 -3.1 4 0.85
+cut 162 2 0 -0.7634 0.6459 0.0726 0 0.7634 -0.6459 0.19 -1.9 4.9 -2.5 -1.7 5.55 -1.4
+cut 162 2 0 -0.6011 0.7992 0.2516 0 0.6011 -0.7992 0.0534 -1.9 3.8 -2.85 -1.7 5.1 -2.3
+cut 162 2 0 -0.6332 -0.774 -0.5749 0 0.6332 0.774 0.8322 -1.9 2.7 -2.85 -1.7 4 -2.2
+cut 162 2 0 -0.7634 -0.6459 -0.5734 0 0.7634 0.6459 0.836 -1.9 4.9 -0.6 -1.7 5.55 0.5
+cut 162 2 0 -0.6011 -0.7992 -0.5476 0 0.6011 0.7992 0.8526 -1.9 3.8 0.3 -1.7 5.1 0.85
+cut 162 2 0 -0.6332 0.774 0.199 0 0.6332 -0.774 0.0583 -1.9 2.7 0.2 -1.7 4 0.85
+cut 162 2 0 -0.7634 0.6459 0.0726 0 0.7634 -0.6459 0.19 -0.5 4.9 -2.5 -0.3 5.55 -1.4
+cut 162 2 0 -0.6011 0.7992 0.2516 0 0.6011 -0.7992 0.0534 -0.5 3.8 -2.85 -0.3 5.1 -2.3
+cut 162 2 0 -0.6332 -0.774 -0.5749 0 0.6332 0.774 0.8322 -0.5 2.7 -2.85 -0.3 4 -2.2
+cut 162 2 0 -0.7634 -0.6459 -0.5734 0 0.7634 0.6459 0.836 -0.5 4.9 -0.6 -0.3 5.55 0.5
+cut 162 2 0 -0.6011 -0.7992 -0.5476 0 0.6011 0.7992 0.8526 -0.5 3.8 0.3 -0.3 5.1 0.85
+cut 162 2 0 -0.6332 0.774 0.199 0 0.6332 -0.774 0.0583 -0.5 2.7 0.2 -0.3 4 0.85
+cut 162 2 0 -0.7634 0.6459 0.0726 0 0.7634 -0.6459 0.19 0.9 4.9 -2.5 1.1 5.55 -1.4
+cut 162 2 0 -0.6011 0.7992 0.2516 0 0.6011 -0.7992 0.0534 0.9 3.8 -2.85 1.1 5.1 -2.3
+cut 162 2 0 -0.6332 -0.774 -0.5749 0 0.6332 0.774 0.8322 0.9 2.7 -2.85 1.1 4 -2.2
+cut 162 2 0 -0.7634 -0.6459 -0.5734 0 0.7634 0.6459 0.836 0.9 4.9 -0.6 1.1 5.55 0.5
+cut 162 2 0 -0.6011 -0.7992 -0.5476 0 0.6011 0.7992 0.8526 0.9 3.8 0.3 1.1 5.1 0.85
+cut 162 2 0 -0.6332 0.774 0.199 0 0.6332 -0.774 0.0583 0.9 2.7 0.2 1.1 4 0.85
+cut 162 2 0 -0.7634 0.6459 0.0726 0 0.7634 -0.6459 0.19 2.3 4.9 -2.5 2.5 5.55 -1.4
+cut 162 2 0 -0.6011 0.7992 0.2516 0 0.6011 -0.7992 0.0534 2.3 3.8 -2.85 2.5 5.1 -2.3
+cut 162 2 0 -0.6332 -0.774 -0.5749 0 0.6332 0.774 0.8322 2.3 2.7 -2.85 2.5 4 -2.2
+cut 162 2 0 -0.7634 -0.6459 -0.5734 0 0.7634 0.6459 0.836 2.3 4.9 -0.6 2.5 5.55 0.5
+cut 162 2 0 -0.6011 -0.7992 -0.5476 0 0.6011 0.7992 0.8526 2.3 3.8 0.3 2.5 5.1 0.85
+cut 162 2 0 -0.6332 0.774 0.199 0 0.6332 -0.774 0.0583 2.3 2.7 0.2 2.5 4 0.85
+bone -14.2 8 -2 -11 9 0
+wedge 162 0 -15.4 7.6 -1.8 -14.2 8.8 -0.2
+bone -14 7.6 -1.9 -11 8 -0.1
+bone -15 6.8 -1.7 -11.6 7.2 -0.3
+bone -14.66 7.2 -1.66 -14.54 7.55 -1.54
+bone -14.66 7.2 -0.46 -14.54 7.55 -0.34
+bone -14.06 7.2 -1.66 -13.94 7.55 -1.54
+bone -14.06 7.2 -0.46 -13.94 7.55 -0.34
+bone -13.46 7.2 -1.66 -13.34 7.55 -1.54
+bone -13.46 7.2 -0.46 -13.34 7.55 -0.34
+bone -12.86 7.2 -1.66 -12.74 7.55 -1.54
+bone -12.86 7.2 -0.46 -12.74 7.55 -0.34
+bone -11.8 6 -1.6 -11 8 -0.4
+cut 162 4 0.7071 0 0.7071 0.9485 -0.7071 0 -0.7071 -0.4657 -0.521 -0.6761 0.521 -0.1475 0.521 0.6761 -0.521 0.5287 -5.28 2.92 -3.68 -4.12 5.68 -2.52
+cut 162 2 0.7844 -0.6202 0 0.2216 -0.7844 0.6202 0 0.0574 -5.4 0.85 -3.6 -4.2 3.4 -3.2
+bone -5.6 0.8 -3.75 -4.4 1.05 -3.05
+wedge 162 0 -6 0.8 -3.73 -5.6 1 -3.57
+wedge 162 0 -6 0.8 -3.48 -5.6 1 -3.32
+wedge 162 0 -6 0.8 -3.23 -5.6 1 -3.07
+cut 162 4 -0.7071 0 0.7071 0.2414 0.7071 0 -0.7071 0.2414 -0.521 -0.6761 -0.521 -0.6684 0.521 0.6761 0.521 1.0497 -5.28 2.92 0.52 -4.12 5.68 1.68
+cut 162 2 0.7844 -0.6202 0 0.2216 -0.7844 0.6202 0 0.0574 -5.4 0.85 1.2 -4.2 3.4 1.6
+bone -5.6 0.8 1.05 -4.4 1.05 1.75
+wedge 162 0 -6 0.8 1.07 -5.6 1 1.23
+wedge 162 0 -6 0.8 1.32 -5.6 1 1.48
+wedge 162 0 -6 0.8 1.57 -5.6 1 1.73
+cut 162 4 0.7071 0 0.7071 0.9485 -0.7071 0 -0.7071 -0.4657 -0.521 -0.6761 0.521 -0.1475 0.521 0.6761 -0.521 0.5287 2.72 2.92 -3.68 3.88 5.68 -2.52
+cut 162 2 0.7844 -0.6202 0 0.2216 -0.7844 0.6202 0 0.0574 2.6 0.85 -3.6 3.8 3.4 -3.2
+bone 2.4 0.8 -3.75 3.6 1.05 -3.05
+wedge 162 0 2 0.8 -3.73 2.4 1 -3.57
+wedge 162 0 2 0.8 -3.48 2.4 1 -3.32
+wedge 162 0 2 0.8 -3.23 2.4 1 -3.07
+cut 162 4 -0.7071 0 0.7071 0.2414 0.7071 0 -0.7071 0.2414 -0.521 -0.6761 -0.521 -0.6684 0.521 0.6761 0.521 1.0497 2.72 2.92 0.52 3.88 5.68 1.68
+cut 162 2 0.7844 -0.6202 0 0.2216 -0.7844 0.6202 0 0.0574 2.6 0.85 1.2 3.8 3.4 1.6
+bone 2.4 0.8 1.05 3.6 1.05 1.75
+wedge 162 0 2 0.8 1.07 2.4 1 1.23
+wedge 162 0 2 0.8 1.32 2.4 1 1.48
+wedge 162 0 2 0.8 1.57 2.4 1 1.73
+pressedtinceiling -55 -0.5 10 -40 -0.4 14
+pressedtinceiling -40 -0.5 10 -20 -0.4 14
+pressedtinceiling -20 -0.5 10 0 -0.4 14
+pressedtinceiling 0 -0.5 10 20 -0.4 14
+pressedtinceiling 20 -0.5 10 40 -0.4 14
+pressedtinceiling 40 -0.5 10 55 -0.4 14
+pressedtinceiling -55 -0.5 14 -52 -0.4 20
+pressedtinceiling -55 -0.5 20 -52 -0.4 22.2
+pressedtinceiling -48 -0.5 14 -40 -0.4 20
+pressedtinceiling -48 -0.5 20 -40 -0.4 22.2
+pressedtinceiling -40 -0.5 14 -20 -0.4 20
+pressedtinceiling -40 -0.5 20 -20 -0.4 22.2
+pressedtinceiling -20 -0.5 14 -18 -0.4 20
+pressedtinceiling -20 -0.5 20 -18 -0.4 22.2
+pressedtinceiling -14 -0.5 14 0 -0.4 20
+pressedtinceiling -14 -0.5 20 0 -0.4 22.2
+pressedtinceiling 0 -0.5 14 20 -0.4 20
+pressedtinceiling 0 -0.5 20 20 -0.4 22.2
+pressedtinceiling 20 -0.5 14 40 -0.4 20
+pressedtinceiling 20 -0.5 20 40 -0.4 22.2
+pressedtinceiling 40 -0.5 14 55 -0.4 20
+pressedtinceiling 40 -0.5 20 55 -0.4 22.2
+pressedtinceiling -55 -0.5 22.2 -52 -0.4 23.6
+pressedtinceiling -48 -0.5 22.2 -40 -0.4 23.6
+pressedtinceiling -40 -0.5 22.2 -20 -0.4 23.6
+pressedtinceiling -20 -0.5 22.2 -18 -0.4 23.6
+pressedtinceiling -14 -0.5 22.2 -5 -0.4 23.6
+pressedtinceiling -3 -0.5 22.2 0 -0.4 23.6
+pressedtinceiling 0 -0.5 22.2 20 -0.4 23.6
+pressedtinceiling 20 -0.5 22.2 40 -0.4 23.6
+pressedtinceiling 40 -0.5 22.2 55 -0.4 23.6
+pressedtinceiling -55 -0.5 23.6 -52 -0.4 26
+pressedtinceiling -48 -0.5 23.6 -40 -0.4 26
+pressedtinceiling -40 -0.5 23.6 -20 -0.4 26
+pressedtinceiling -20 -0.5 23.6 -18 -0.4 26
+pressedtinceiling -14 -0.5 23.6 0 -0.4 26
+pressedtinceiling 0 -0.5 23.6 20 -0.4 26
+pressedtinceiling 20 -0.5 23.6 40 -0.4 26
+pressedtinceiling 40 -0.5 23.6 55 -0.4 26
+pressedtinceiling -55 -0.5 26 -40 -0.4 40
+pressedtinceiling -40 -0.5 26 -20 -0.4 40
+pressedtinceiling -20 -0.5 26 0 -0.4 40
+pressedtinceiling 0 -0.5 26 20 -0.4 40
+pressedtinceiling 20 -0.5 26 40 -0.4 40
+pressedtinceiling 40 -0.5 26 55 -0.4 40
+pressedtinceiling -55 7.5 -40 -40 7.6 -20
+pressedtinceiling -40 7.5 -40 -20 7.6 -20
+pressedtinceiling 20 7.5 -40 40 7.6 -20
+pressedtinceiling 40 7.5 -40 55 7.6 -20
+pressedtinceiling -55 7.5 -20 -40 7.6 -10
+pressedtinceiling -40 7.5 -20 -20 7.6 -10
+pressedtinceiling -20 7.5 -20 0 7.6 -10
+pressedtinceiling 0 7.5 -20 20 7.6 -10
+pressedtinceiling 20 7.5 -20 40 7.6 -10
+pressedtinceiling 40 7.5 -20 55 7.6 -10
+pressedtinceiling -55 7.5 -10 -40 7.6 0
+pressedtinceiling -55 7.5 0 -40 7.6 6
+pressedtinceiling -40 7.5 -10 -20 7.6 0
+pressedtinceiling -40 7.5 0 -20 7.6 6
+pressedtinceiling -20 7.5 -10 -16 7.6 0
+pressedtinceiling -20 7.5 0 -16 7.6 6
+pressedtinceiling 16 7.5 -10 20 7.6 0
+pressedtinceiling 16 7.5 0 20 7.6 6
+pressedtinceiling 20 7.5 -10 40 7.6 0
+pressedtinceiling 20 7.5 0 40 7.6 6
+pressedtinceiling 40 7.5 -10 55 7.6 0
+pressedtinceiling 40 7.5 0 55 7.6 6
+pressedtinceiling -55 7.5 6 -40 7.6 14
+pressedtinceiling -40 7.5 6 -20 7.6 14
+pressedtinceiling -20 7.5 6 0 7.6 14
+pressedtinceiling 0 7.5 6 20 7.6 14
+pressedtinceiling 20 7.5 6 40 7.6 14
+pressedtinceiling 40 7.5 6 55 7.6 14
+pressedtinceiling -55 7.5 14 -40 7.6 20
+pressedtinceiling -55 7.5 20 -40 7.6 21
+pressedtinceiling -40 7.5 14 -20 7.6 20
+pressedtinceiling -40 7.5 20 -20 7.6 21
+pressedtinceiling -20 7.5 14 0 7.6 20
+pressedtinceiling -20 7.5 20 0 7.6 21
+pressedtinceiling 0 7.5 14 14 7.6 20
+pressedtinceiling 0 7.5 20 14 7.6 21
+pressedtinceiling 18 7.5 14 20 7.6 20
+pressedtinceiling 18 7.5 20 20 7.6 21
+pressedtinceiling 20 7.5 14 40 7.6 20
+pressedtinceiling 20 7.5 20 40 7.6 21
+pressedtinceiling 40 7.5 14 55 7.6 20
+pressedtinceiling 40 7.5 20 55 7.6 21
+pressedtinceiling -55 7.5 21 -40 7.6 22.2
+pressedtinceiling -40 7.5 21 -20 7.6 22.2
+pressedtinceiling -20 7.5 21 0 7.6 22.2
+pressedtinceiling 0 7.5 21 20 7.6 22.2
+pressedtinceiling 20 7.5 21 40 7.6 22.2
+pressedtinceiling 40 7.5 21 55 7.6 22.2
+pressedtinceiling -55 7.5 22.2 -40 7.6 23.6
+pressedtinceiling -40 7.5 22.2 -20 7.6 23.6
+pressedtinceiling -20 7.5 22.2 -5 7.6 23.6
+pressedtinceiling -3 7.5 22.2 0 7.6 23.6
+pressedtinceiling 0 7.5 22.2 20 7.6 23.6
+pressedtinceiling 20 7.5 22.2 40 7.6 23.6
+pressedtinceiling 40 7.5 22.2 55 7.6 23.6
+pressedtinceiling -55 7.5 23.6 -40 7.6 40
+pressedtinceiling -40 7.5 23.6 -20 7.6 40
+pressedtinceiling -20 7.5 23.6 0 7.6 40
+pressedtinceiling 0 7.5 23.6 20 7.6 40
+pressedtinceiling 20 7.5 23.6 40 7.6 40
+pressedtinceiling 40 7.5 23.6 55 7.6 40
+pressedtinceiling -20 11.9 -40 0 12 -20
+pressedtinceiling -20 11.9 -20 0 12 -14
+pressedtinceiling 0 11.9 -40 20 12 -20
+pressedtinceiling 0 11.9 -20 20 12 -14
+pressedtinceiling -55 15.9 -24 -40 16 -20
+pressedtinceiling -55 15.9 -20 -40 16 -1
+pressedtinceiling -40 15.9 -24 -20 16 -20
+pressedtinceiling -40 15.9 -20 -20 16 -1
+pressedtinceiling -53.5 15.9 -1 -40 16 0
+pressedtinceiling -53.5 15.9 0 -40 16 1
+pressedtinceiling -40 15.9 -1 -20 16 0
+pressedtinceiling -40 15.9 0 -20 16 1
+pressedtinceiling -55 15.9 1 -40 16 20
+pressedtinceiling -55 15.9 20 -40 16 26
+pressedtinceiling -40 15.9 1 -20 16 20
+pressedtinceiling -40 15.9 20 -20 16 26
+pressedtinceiling 20 15.9 -24 40 16 -20
+pressedtinceiling 20 15.9 -20 40 16 0
+pressedtinceiling 20 15.9 0 40 16 20
+pressedtinceiling 20 15.9 20 40 16 26
+pressedtinceiling 40 15.9 -24 55 16 -20
+pressedtinceiling 40 15.9 -20 55 16 0
+pressedtinceiling 40 15.9 0 55 16 20
+pressedtinceiling 40 15.9 20 55 16 26
+pressedtinceiling -20 15.9 10 0 16 20
+pressedtinceiling -20 15.9 20 0 16 26
+pressedtinceiling 0 15.9 10 20 16 20
+pressedtinceiling 0 15.9 20 20 16 26
+stucco -16.2 11.4 -40 -15.8 11.9 -14
+stucco -12.2 11.4 -40 -11.8 11.9 -14
+stucco -8.2 11.4 -40 -7.8 11.9 -14
+stucco -4.2 11.4 -40 -3.8 11.9 -14
+stucco -0.2 11.4 -40 0.2 11.9 -14
+stucco 3.8 11.4 -40 4.2 11.9 -14
+stucco 7.8 11.4 -40 8.2 11.9 -14
+stucco 11.8 11.4 -40 12.2 11.9 -14
+stucco 15.8 11.4 -40 16.2 11.9 -14
+stucco -20 11.4 -36.2 20 11.9 -35.8
+stucco -20 11.4 -32.2 20 11.9 -31.8
+stucco -20 11.4 -28.2 20 11.9 -27.8
+stucco -20 11.4 -24.2 20 11.9 -23.8
+stucco -55 7 -18.25 -20 7.5 -17.75
+stucco -55 7 -12.25 -20 7.5 -11.75
+stucco -55 7 -6.25 -20 7.5 -5.75
+stucco -55 7 -0.25 -20 7.5 0.25
+stucco -55 7 5.75 -20 7.5 6.25
+stucco 20 7 -18.25 55 7.5 -17.75
+stucco 20 7 -12.25 55 7.5 -11.75
+stucco 20 7 -6.25 55 7.5 -5.75
+stucco 20 7 -0.25 55 7.5 0.25
+stucco 20 7 5.75 55 7.5 6.25
+stucco -55 7 15.75 -20 7.5 16.25
+stucco -55 7 21.75 -20 7.5 22.25
+stucco -55 7 31.75 -20 7.5 32.25
+stucco -38 15.4 -18.25 -20 15.9 -17.75
+stucco -38 15.4 -12.25 -20 15.9 -11.75
+stucco -38 15.4 -6.25 -20 15.9 -5.75
+stucco -38 15.4 -0.25 -20 15.9 0.25
+stucco -38 15.4 5.75 -20 15.9 6.25
+stucco 20 15.4 -18.25 55 15.9 -17.75
+stucco 20 15.4 -6.25 55 15.9 -5.75
+stucco 20 15.4 5.75 55 15.9 6.25
+stucco -20 15.4 13.75 20 15.9 14.25
+stucco -20 15.4 17.75 20 15.9 18.25
+stucco -20 15.4 21.75 20 15.9 22.25
+polishedgranite -55 0 -24.26 -54.9 0.22 -24.2
+polishedgranite -53.7 0 -24.26 -41.5 0.22 -24.2
+marble -41.8 0 -24.3 -41.5 3.9 -24.2
+marble -38.5 0 -24.3 -38.2 3.9 -24.2
+marble -41.8 3.6 -24.3 -38.2 3.9 -24.2
+polishedgranite -38.5 0 -24.26 -20 0.22 -24.2
+stucco -55 7.2 -24.42 -20 7.5 -24.2
+polishedgranite -55 0 -23.8 -54.9 0.22 -23.74
+polishedgranite -53.7 0 -23.8 -41.5 0.22 -23.74
+marble -41.8 0 -23.8 -41.5 3.9 -23.7
+marble -38.5 0 -23.8 -38.2 3.9 -23.7
+marble -41.8 3.6 -23.8 -38.2 3.9 -23.7
+polishedgranite -38.5 0 -23.8 -20 0.22 -23.74
+stucco -55 7.2 -23.8 -20 7.5 -23.58
+polishedgranite 20 0 -24.26 38.5 0.22 -24.2
+marble 38.2 0 -24.3 38.5 3.9 -24.2
+marble 41.5 0 -24.3 41.8 3.9 -24.2
+marble 38.2 3.6 -24.3 41.8 3.9 -24.2
+polishedgranite 41.5 0 -24.26 55 0.22 -24.2
+stucco 20 7.2 -24.42 55 7.5 -24.2
+polishedgranite 20 0 -23.8 38.5 0.22 -23.74
+marble 38.2 0 -23.8 38.5 3.9 -23.7
+marble 41.5 0 -23.8 41.8 3.9 -23.7
+marble 38.2 3.6 -23.8 41.8 3.9 -23.7
+polishedgranite 41.5 0 -23.8 55 0.22 -23.74
+stucco 20 7.2 -23.8 55 7.5 -23.58
+polishedgranite -20.26 0 -40 -20.2 0.22 -34
+marble -20.3 0 -34.3 -20.2 3.9 -34
+marble -20.3 0 -30 -20.2 3.9 -29.7
+marble -20.3 3.6 -34.3 -20.2 3.9 -29.7
+polishedgranite -20.26 0 -30 -20.2 0.22 -20.5
+marble -20.3 0 -20.8 -20.2 3.9 -20.5
+marble -20.3 0 -17.5 -20.2 3.9 -17.2
+marble -20.3 3.6 -20.8 -20.2 3.9 -17.2
+polishedgranite -20.26 0 -17.5 -20.2 0.22 -14
+stucco -20.42 7.2 -40 -20.2 7.5 -14
+polishedgranite -19.8 0 -40 -19.74 0.22 -34
+marble -19.8 0 -34.3 -19.7 3.9 -34
+marble -19.8 0 -30 -19.7 3.9 -29.7
+marble -19.8 3.6 -34.3 -19.7 3.9 -29.7
+polishedgranite -19.8 0 -30 -19.74 0.22 -20.5
+marble -19.8 0 -20.8 -19.7 3.9 -20.5
+marble -19.8 0 -17.5 -19.7 3.9 -17.2
+marble -19.8 3.6 -20.8 -19.7 3.9 -17.2
+polishedgranite -19.8 0 -17.5 -19.74 0.22 -14
+stucco -19.8 7.2 -40 -19.58 7.5 -14
+polishedgranite -20.26 0 -14 -20.2 0.22 -5
+marble -20.3 0 -5.3 -20.2 5.3 -5
+marble -20.3 0 1 -20.2 5.3 1.3
+marble -20.3 5 -5.3 -20.2 5.3 1.3
+polishedgranite -20.26 0 1 -20.2 0.22 10
+stucco -20.42 7.2 -14 -20.2 7.5 10
+polishedgranite -19.8 0 -14 -19.74 0.22 -5
+marble -19.8 0 -5.3 -19.7 5.3 -5
+marble -19.8 0 1 -19.7 5.3 1.3
+marble -19.8 5 -5.3 -19.7 5.3 1.3
+polishedgranite -19.8 0 1 -19.74 0.22 10
+stucco -19.8 7.2 -14 -19.58 7.5 10
+polishedgranite -20.26 0 10 -20.2 0.22 32.5
+marble -20.3 0 32.2 -20.2 3.9 32.5
+marble -20.3 0 35.5 -20.2 3.9 35.8
+marble -20.3 3.6 32.2 -20.2 3.9 35.8
+polishedgranite -20.26 0 35.5 -20.2 0.22 40
+stucco -20.42 7.2 10 -20.2 7.5 40
+polishedgranite -19.8 0 10 -19.74 0.22 32.5
+marble -19.8 0 32.2 -19.7 3.9 32.5
+marble -19.8 0 35.5 -19.7 3.9 35.8
+marble -19.8 3.6 32.2 -19.7 3.9 35.8
+polishedgranite -19.8 0 35.5 -19.74 0.22 40
+stucco -19.8 7.2 10 -19.58 7.5 40
+polishedgranite 19.74 0 -40 19.8 0.22 -34
+marble 19.7 0 -34.3 19.8 3.9 -34
+marble 19.7 0 -30 19.8 3.9 -29.7
+marble 19.7 3.6 -34.3 19.8 3.9 -29.7
+polishedgranite 19.74 0 -30 19.8 0.22 -20.5
+marble 19.7 0 -20.8 19.8 3.9 -20.5
+marble 19.7 0 -17.5 19.8 3.9 -17.2
+marble 19.7 3.6 -20.8 19.8 3.9 -17.2
+polishedgranite 19.74 0 -17.5 19.8 0.22 -14
+stucco 19.58 7.2 -40 19.8 7.5 -14
+polishedgranite 20.2 0 -40 20.26 0.22 -34
+marble 20.2 0 -34.3 20.3 3.9 -34
+marble 20.2 0 -30 20.3 3.9 -29.7
+marble 20.2 3.6 -34.3 20.3 3.9 -29.7
+polishedgranite 20.2 0 -30 20.26 0.22 -20.5
+marble 20.2 0 -20.8 20.3 3.9 -20.5
+marble 20.2 0 -17.5 20.3 3.9 -17.2
+marble 20.2 3.6 -20.8 20.3 3.9 -17.2
+polishedgranite 20.2 0 -17.5 20.26 0.22 -14
+stucco 20.2 7.2 -40 20.42 7.5 -14
+polishedgranite 19.74 0 -14 19.8 0.22 -5
+marble 19.7 0 -5.3 19.8 5.3 -5
+marble 19.7 0 1 19.8 5.3 1.3
+marble 19.7 5 -5.3 19.8 5.3 1.3
+polishedgranite 19.74 0 1 19.8 0.22 10
+stucco 19.58 7.2 -14 19.8 7.5 10
+polishedgranite 20.2 0 -14 20.26 0.22 -5
+marble 20.2 0 -5.3 20.3 5.3 -5
+marble 20.2 0 1 20.3 5.3 1.3
+marble 20.2 5 -5.3 20.3 5.3 1.3
+polishedgranite 20.2 0 1 20.26 0.22 10
+stucco 20.2 7.2 -14 20.42 7.5 10
+polishedgranite 19.74 0 10 19.8 0.22 32.5
+marble 19.7 0 32.2 19.8 3.9 32.5
+marble 19.7 0 35.5 19.8 3.9 35.8
+marble 19.7 3.6 32.2 19.8 3.9 35.8
+polishedgranite 19.74 0 35.5 19.8 0.22 40
+stucco 19.58 7.2 10 19.8 7.5 40
+polishedgranite 20.2 0 10 20.26 0.22 32.5
+marble 20.2 0 32.2 20.3 3.9 32.5
+marble 20.2 0 35.5 20.3 3.9 35.8
+marble 20.2 3.6 32.2 20.3 3.9 35.8
+polishedgranite 20.2 0 35.5 20.26 0.22 40
+stucco 20.2 7.2 10 20.42 7.5 40
+polishedgranite -20 0 -14.26 -3 0.22 -14.2
+marble -3.3 0 -14.3 -3 5.3 -14.2
+marble 3 0 -14.3 3.3 5.3 -14.2
+marble -3.3 5 -14.3 3.3 5.3 -14.2
+polishedgranite 3 0 -14.26 20 0.22 -14.2
+stucco -20 7.2 -14.42 20 7.5 -14.2
+polishedgranite -20 0 -13.8 -3 0.22 -13.74
+marble -3.3 0 -13.8 -3 5.3 -13.7
+marble 3 0 -13.8 3.3 5.3 -13.7
+marble -3.3 5 -13.8 3.3 5.3 -13.7
+polishedgranite 3 0 -13.8 20 0.22 -13.74
+stucco -20 7.2 -13.8 20 7.5 -13.58
+polishedgranite -20 8 -14.26 -8 8.22 -14.2
+marble -8.3 8 -14.3 -8 11.9 -14.2
+marble 8 8 -14.3 8.3 11.9 -14.2
+marble -8.3 11.6 -14.3 8.3 11.9 -14.2
+polishedgranite 8 8 -14.26 20 8.22 -14.2
+stucco -20 15.6 -14.42 20 15.9 -14.2
+polishedgranite -20 8 -13.8 -8 8.22 -13.74
+marble -8.3 8 -13.8 -8 11.9 -13.7
+marble 8 8 -13.8 8.3 11.9 -13.7
+marble -8.3 11.6 -13.8 8.3 11.9 -13.7
+polishedgranite 8 8 -13.8 20 8.22 -13.74
+stucco -20 15.6 -13.8 20 15.9 -13.58
+polishedgranite -20 0 9.74 -3 0.22 9.8
+marble -3.3 0 9.7 -3 5.3 9.8
+marble 3 0 9.7 3.3 5.3 9.8
+marble -3.3 5 9.7 3.3 5.3 9.8
+polishedgranite 3 0 9.74 20 0.22 9.8
+stucco -20 7.2 9.58 20 7.5 9.8
+polishedgranite -20 0 10.2 -3 0.22 10.26
+marble -3.3 0 10.2 -3 5.3 10.3
+marble 3 0 10.2 3.3 5.3 10.3
+marble -3.3 5 10.2 3.3 5.3 10.3
+polishedgranite 3 0 10.2 20 0.22 10.26
+stucco -20 7.2 10.2 20 7.5 10.42
+polishedgranite -55 0 9.74 -54.9 0.22 9.8
+polishedgranite -53.7 0 9.74 -41.5 0.22 9.8
+marble -41.8 0 9.7 -41.5 3.9 9.8
+marble -38.5 0 9.7 -38.2 3.9 9.8
+marble -41.8 3.6 9.7 -38.2 3.9 9.8
+polishedgranite -38.5 0 9.74 -20 0.22 9.8
+stucco -55 7.2 9.58 -20 7.5 9.8
+polishedgranite -55 0 10.2 -54.9 0.22 10.26
+polishedgranite -53.7 0 10.2 -41.5 0.22 10.26
+marble -41.8 0 10.2 -41.5 3.9 10.3
+marble -38.5 0 10.2 -38.2 3.9 10.3
+marble -41.8 3.6 10.2 -38.2 3.9 10.3
+polishedgranite -38.5 0 10.2 -20 0.22 10.26
+stucco -55 7.2 10.2 -20 7.5 10.42
+polishedgranite 20 0 9.74 37.8 0.22 9.8
+marble 37.5 0 9.7 37.8 3.9 9.8
+marble 40.8 0 9.7 41.1 3.9 9.8
+marble 37.5 3.6 9.7 41.1 3.9 9.8
+polishedgranite 40.8 0 9.74 55 0.22 9.8
+stucco 20 7.2 9.58 55 7.5 9.8
+polishedgranite 20 0 10.2 37.8 0.22 10.26
+marble 37.5 0 10.2 37.8 3.9 10.3
+marble 40.8 0 10.2 41.1 3.9 10.3
+marble 37.5 3.6 10.2 41.1 3.9 10.3
+polishedgranite 40.8 0 10.2 55 0.22 10.26
+stucco 20 7.2 10.2 55 7.5 10.42
+polishedgranite -20.26 8 -24 -20.2 8.22 -18.5
+marble -20.3 8 -18.8 -20.2 11.7 -18.5
+marble -20.3 8 -15.5 -20.2 11.7 -15.2
+marble -20.3 11.4 -18.8 -20.2 11.7 -15.2
+polishedgranite -20.26 8 -15.5 -20.2 8.22 -14
+stucco -20.42 15.6 -24 -20.2 15.9 -14
+polishedgranite -19.8 8 -24 -19.74 8.22 -18.5
+marble -19.8 8 -18.8 -19.7 11.7 -18.5
+marble -19.8 8 -15.5 -19.7 11.7 -15.2
+marble -19.8 11.4 -18.8 -19.7 11.7 -15.2
+polishedgranite -19.8 8 -15.5 -19.74 8.22 -14
+stucco -19.8 15.6 -24 -19.58 15.9 -14
+polishedgranite -20.26 8 -14 -20.2 8.22 -4
+marble -20.3 8 -4.3 -20.2 11.7 -4
+marble -20.3 8 0 -20.2 11.7 0.3
+marble -20.3 11.4 -4.3 -20.2 11.7 0.3
+polishedgranite -20.26 8 0 -20.2 8.22 10
+stucco -20.42 15.6 -14 -20.2 15.9 10
+polishedgranite -19.8 8 -14 -19.74 8.22 -4
+marble -19.8 8 -4.3 -19.7 11.7 -4
+marble -19.8 8 0 -19.7 11.7 0.3
+marble -19.8 11.4 -4.3 -19.7 11.7 0.3
+polishedgranite -19.8 8 0 -19.74 8.22 10
+stucco -19.8 15.6 -14 -19.58 15.9 10
+polishedgranite -20.26 8 10 -20.2 8.22 16.5
+marble -20.3 8 16.2 -20.2 11.7 16.5
+marble -20.3 8 19.5 -20.2 11.7 19.8
+marble -20.3 11.4 16.2 -20.2 11.7 19.8
+polishedgranite -20.26 8 19.5 -20.2 8.22 26
+stucco -20.42 15.6 10 -20.2 15.9 26
+polishedgranite -19.8 8 10 -19.74 8.22 16.5
+marble -19.8 8 16.2 -19.7 11.7 16.5
+marble -19.8 8 19.5 -19.7 11.7 19.8
+marble -19.8 11.4 16.2 -19.7 11.7 19.8
+polishedgranite -19.8 8 19.5 -19.74 8.22 26
+stucco -19.8 15.6 10 -19.58 15.9 26
+polishedgranite -55 8 9.74 -41.5 8.22 9.8
+marble -41.8 8 9.7 -41.5 11.7 9.8
+marble -38.5 8 9.7 -38.2 11.7 9.8
+marble -41.8 11.4 9.7 -38.2 11.7 9.8
+polishedgranite -38.5 8 9.74 -20 8.22 9.8
+stucco -55 15.6 9.58 -20 15.9 9.8
+polishedgranite -55 8 10.2 -41.5 8.22 10.26
+marble -41.8 8 10.2 -41.5 11.7 10.3
+marble -38.5 8 10.2 -38.2 11.7 10.3
+marble -41.8 11.4 10.2 -38.2 11.7 10.3
+polishedgranite -38.5 8 10.2 -20 8.22 10.26
+stucco -55 15.6 10.2 -20 15.9 10.42
+polishedgranite 19.74 8 -24 19.8 8.22 -18.5
+marble 19.7 8 -18.8 19.8 11.7 -18.5
+marble 19.7 8 -15.5 19.8 11.7 -15.2
+marble 19.7 11.4 -18.8 19.8 11.7 -15.2
+polishedgranite 19.74 8 -15.5 19.8 8.22 -14
+stucco 19.58 15.6 -24 19.8 15.9 -14
+polishedgranite 20.2 8 -24 20.26 8.22 -18.5
+marble 20.2 8 -18.8 20.3 11.7 -18.5
+marble 20.2 8 -15.5 20.3 11.7 -15.2
+marble 20.2 11.4 -18.8 20.3 11.7 -15.2
+polishedgranite 20.2 8 -15.5 20.26 8.22 -14
+stucco 20.2 15.6 -24 20.42 15.9 -14
+polishedgranite 19.74 8 -14 19.8 8.22 -4
+marble 19.7 8 -4.3 19.8 11.7 -4
+marble 19.7 8 0 19.8 11.7 0.3
+marble 19.7 11.4 -4.3 19.8 11.7 0.3
+polishedgranite 19.74 8 0 19.8 8.22 10
+stucco 19.58 15.6 -14 19.8 15.9 10
+polishedgranite 20.2 8 -14 20.26 8.22 -4
+marble 20.2 8 -4.3 20.3 11.7 -4
+marble 20.2 8 0 20.3 11.7 0.3
+marble 20.2 11.4 -4.3 20.3 11.7 0.3
+polishedgranite 20.2 8 0 20.26 8.22 10
+stucco 20.2 15.6 -14 20.42 15.9 10
+polishedgranite 19.74 8 10 19.8 8.22 16.5
+marble 19.7 8 16.2 19.8 11.7 16.5
+marble 19.7 8 19.5 19.8 11.7 19.8
+marble 19.7 11.4 16.2 19.8 11.7 19.8
+polishedgranite 19.74 8 19.5 19.8 8.22 26
+stucco 19.58 15.6 10 19.8 15.9 26
+polishedgranite 20.2 8 10 20.26 8.22 16.5
+marble 20.2 8 16.2 20.3 11.7 16.5
+marble 20.2 8 19.5 20.3 11.7 19.8
+marble 20.2 11.4 16.2 20.3 11.7 19.8
+polishedgranite 20.2 8 19.5 20.26 8.22 26
+stucco 20.2 15.6 10 20.42 15.9 26
+polishedgranite 20 8 9.74 38.5 8.22 9.8
+marble 38.2 8 9.7 38.5 11.7 9.8
+marble 41.5 8 9.7 41.8 11.7 9.8
+marble 38.2 11.4 9.7 41.8 11.7 9.8
+polishedgranite 41.5 8 9.74 55 8.22 9.8
+stucco 20 15.6 9.58 55 15.9 9.8
+polishedgranite 20 8 10.2 38.5 8.22 10.26
+marble 38.2 8 10.2 38.5 11.7 10.3
+marble 41.5 8 10.2 41.8 11.7 10.3
+marble 38.2 11.4 10.2 41.8 11.7 10.3
+polishedgranite 41.5 8 10.2 55 8.22 10.26
+stucco 20 15.6 10.2 55 15.9 10.42
+polishedgranite -20 8 9.74 -2 8.22 9.8
+marble -2.3 8 9.7 -2 11.7 9.8
+marble 2 8 9.7 2.3 11.7 9.8
+marble -2.3 11.4 9.7 2.3 11.7 9.8
+polishedgranite 2 8 9.74 20 8.22 9.8
+stucco -20 15.6 9.58 20 15.9 9.8
+polishedgranite -20 8 10.2 -2 8.22 10.26
+marble -2.3 8 10.2 -2 11.7 10.3
+marble 2 8 10.2 2.3 11.7 10.3
+marble -2.3 11.4 10.2 2.3 11.7 10.3
+polishedgranite 2 8 10.2 20 8.22 10.26
+stucco -20 15.6 10.2 20 15.9 10.42
+polishedgranite -20 0 -34.26 -14.8 0.22 -34.2
+polishedgranite -13.2 0 -34.26 -12 0.22 -34.2
+polishedgranite -20 0 -33.8 -14.8 0.22 -33.74
+polishedgranite -13.2 0 -33.8 -12 0.22 -33.74
+polishedgranite -12.26 0 -40 -12.2 0.22 -34
+polishedgranite -11.8 0 -40 -11.74 0.22 -34
+polishedgranite -42 0 -10.06 -41 0.22 -10
+polishedgranite -31 0 -10.06 -30 0.22 -10
+polishedgranite -42 0 -9.6 -41 0.22 -9.54
+polishedgranite -31 0 -9.6 -30 0.22 -9.54
+polishedgranite -42 0 -2.46 -41 0.22 -2.4
+polishedgranite -31 0 -2.46 -30 0.22 -2.4
+polishedgranite -42 0 -2 -41 0.22 -1.94
+polishedgranite -31 0 -2 -30 0.22 -1.94
+polishedgranite -42.06 0 -10 -42 0.22 -2
+polishedgranite -41.6 0 -10 -41.54 0.22 -2
+polishedgranite -30.46 0 -10 -30.4 0.22 -6.6
+polishedgranite -30.46 0 -5.4 -30.4 0.22 -2
+polishedgranite -30 0 -10 -29.94 0.22 -6.6
+polishedgranite -30 0 -5.4 -29.94 0.22 -2
+polishedgranite -41.6 0 -7.36 -30.4 0.22 -7.3
+polishedgranite -41.6 0 -7.1 -30.4 0.22 -7.04
+polishedgranite -41.6 0 -4.96 -30.4 0.22 -4.9
+polishedgranite -41.6 0 -4.7 -30.4 0.22 -4.64
+polishedgranite -30 0 -35.26 -27.8 0.22 -35.2
+polishedgranite -26.2 0 -35.26 -20 0.22 -35.2
+stucco -30 7.2 -35.42 -20 7.5 -35.2
+polishedgranite -30 0 -34.8 -27.8 0.22 -34.74
+polishedgranite -26.2 0 -34.8 -20 0.22 -34.74
+stucco -30 7.2 -34.8 -20 7.5 -34.58
+polishedgranite -30.26 0 -40 -30.2 0.22 -35
+stucco -30.42 7.2 -40 -30.2 7.5 -35
+polishedgranite -29.8 0 -40 -29.74 0.22 -35
+stucco -29.8 7.2 -40 -29.58 7.5 -35
+polishedgranite -32 0 29.74 -30 0.22 29.8
+marble -30.3 0 29.7 -30 3.3 29.8
+marble -28 0 29.7 -27.7 3.3 29.8
+marble -30.3 3 29.7 -27.7 3.3 29.8
+polishedgranite -28 0 29.74 -20 0.22 29.8
+stucco -32 7.2 29.58 -20 7.5 29.8
+polishedgranite -32 0 30.2 -30 0.22 30.26
+marble -30.3 0 30.2 -30 3.3 30.3
+marble -28 0 30.2 -27.7 3.3 30.3
+marble -30.3 3 30.2 -27.7 3.3 30.3
+polishedgranite -28 0 30.2 -20 0.22 30.26
+stucco -32 7.2 30.2 -20 7.5 30.42
+polishedgranite -32.26 0 30 -32.2 0.22 40
+stucco -32.42 7.2 30 -32.2 7.5 40
+polishedgranite -31.8 0 30 -31.74 0.22 40
+stucco -31.8 7.2 30 -31.58 7.5 40
+polishedgranite -20 0 31.74 -17.8 0.22 31.8
+polishedgranite -16.2 0 31.74 -15 0.22 31.8
+polishedgranite -11 0 31.74 -10 0.22 31.8
+stucco -20 7.2 31.58 -10 7.5 31.8
+polishedgranite -20 0 32.2 -17.8 0.22 32.26
+polishedgranite -16.2 0 32.2 -15 0.22 32.26
+polishedgranite -11 0 32.2 -10 0.22 32.26
+stucco -20 7.2 32.2 -10 7.5 32.42
+polishedgranite -10.26 0 32 -10.2 0.22 40
+stucco -10.42 7.2 32 -10.2 7.5 40
+polishedgranite -9.8 0 32 -9.74 0.22 40
+stucco -9.8 7.2 32 -9.58 7.5 40
+polishedgranite -38.26 8 -24 -38.2 8.22 -16
+marble -38.3 8 -16.3 -38.2 11.7 -16
+marble -38.3 8 -12 -38.2 11.7 -11.7
+marble -38.3 11.4 -16.3 -38.2 11.7 -11.7
+polishedgranite -38.26 8 -12 -38.2 8.22 1
+marble -38.3 8 0.7 -38.2 11.7 1
+marble -38.3 8 5 -38.2 11.7 5.3
+marble -38.3 11.4 0.7 -38.2 11.7 5.3
+polishedgranite -38.26 8 5 -38.2 8.22 10
+stucco -38.42 15.6 -24 -38.2 15.9 10
+polishedgranite -37.8 8 -24 -37.74 8.22 -16
+marble -37.8 8 -16.3 -37.7 11.7 -16
+marble -37.8 8 -12 -37.7 11.7 -11.7
+marble -37.8 11.4 -16.3 -37.7 11.7 -11.7
+polishedgranite -37.8 8 -12 -37.74 8.22 1
+marble -37.8 8 0.7 -37.7 11.7 1
+marble -37.8 8 5 -37.7 11.7 5.3
+marble -37.8 11.4 0.7 -37.7 11.7 5.3
+polishedgranite -37.8 8 5 -37.74 8.22 10
+stucco -37.8 15.6 -24 -37.58 15.9 10
+polishedgranite 31.94 8 -22 32 8.22 -20
+polishedgranite 31.94 8 -16 32 8.22 -14
+polishedgranite 33 8 -22 33.06 8.22 -20
+polishedgranite 33 8 -16 33.06 8.22 -14
+polishedgranite 31.94 8 -8 32 8.22 -6
+polishedgranite 31.94 8 -2 32 8.22 0
+polishedgranite 33 8 -8 33.06 8.22 -6
+polishedgranite 33 8 -2 33.06 8.22 0
+polishedgranite 41.94 8 -24 42 8.22 -21.5
+polishedgranite 41.94 8 -18.5 42 8.22 -16
+polishedgranite 43 8 -24 43.06 8.22 -21.5
+polishedgranite 43 8 -18.5 43.06 8.22 -16
+polishedgranite 41.94 8 -4 42 8.22 -0.5
+polishedgranite 41.94 8 2.5 42 8.22 6
+polishedgranite 43 8 -4 43.06 8.22 -0.5
+polishedgranite 43 8 2.5 43.06 8.22 6
+polishedgranite -22.06 -6 30 -22 -5.78 32
+polishedgranite -22.06 -6 38 -22 -5.78 40
+stucco -22.22 -0.8 30 -22 -0.5 40
+polishedgranite -21.8 -6 30 -21.74 -5.78 32
+polishedgranite -21.8 -6 38 -21.74 -5.78 40
+stucco -21.8 -0.8 30 -21.58 -0.5 40
+polishedgranite -22 -6 29.94 -21 -5.78 30
+polishedgranite -17 -6 29.94 -14 -5.78 30
+polishedgranite -12.4 -6 29.94 -10.2 -5.78 30
+stucco -22 -0.8 29.78 -10.2 -0.5 30
+polishedgranite -22 -6 30.2 -21 -5.78 30.26
+polishedgranite -17 -6 30.2 -14 -5.78 30.26
+polishedgranite -12.4 -6 30.2 -10.2 -5.78 30.26
+stucco -22 -0.8 30.2 -10.2 -0.5 30.42
+polishedgranite -10.26 -6 10 -10.2 -5.78 16.5
+marble -10.3 -6 16.2 -10.2 -2.5 16.5
+marble -10.3 -6 19.5 -10.2 -2.5 19.8
+marble -10.3 -2.8 16.2 -10.2 -2.5 19.8
+polishedgranite -10.26 -6 19.5 -10.2 -5.78 23.2
+marble -10.3 -6 22.9 -10.2 -2.5 23.2
+marble -10.3 -6 25.8 -10.2 -2.5 26.1
+marble -10.3 -2.8 22.9 -10.2 -2.5 26.1
+polishedgranite -10.26 -6 25.8 -10.2 -5.78 40
+stucco -10.42 -0.8 10 -10.2 -0.5 40
+polishedgranite -9.8 -6 10 -9.74 -5.78 16.5
+marble -9.8 -6 16.2 -9.7 -2.5 16.5
+marble -9.8 -6 19.5 -9.7 -2.5 19.8
+marble -9.8 -2.8 16.2 -9.7 -2.5 19.8
+polishedgranite -9.8 -6 19.5 -9.74 -5.78 23.2
+marble -9.8 -6 22.9 -9.7 -2.5 23.2
+marble -9.8 -6 25.8 -9.7 -2.5 26.1
+marble -9.8 -2.8 22.9 -9.7 -2.5 26.1
+polishedgranite -9.8 -6 25.8 -9.74 -5.78 40
+stucco -9.8 -0.8 10 -9.58 -0.5 40
+polishedgranite 6 -6 29.74 8 -5.78 29.8
+marble 7.7 -6 29.7 8 -2.7 29.8
+marble 10 -6 29.7 10.3 -2.7 29.8
+marble 7.7 -3 29.7 10.3 -2.7 29.8
+polishedgranite 10 -6 29.74 20 -5.78 29.8
+stucco 6 -0.8 29.58 20 -0.5 29.8
+polishedgranite 6 -6 30.2 8 -5.78 30.26
+marble 7.7 -6 30.2 8 -2.7 30.3
+marble 10 -6 30.2 10.3 -2.7 30.3
+marble 7.7 -3 30.2 10.3 -2.7 30.3
+polishedgranite 10 -6 30.2 20 -5.78 30.26
+stucco 6 -0.8 30.2 20 -0.5 30.42
+polishedgranite 5.74 -6 30 5.8 -5.78 40
+stucco 5.58 -0.8 30 5.8 -0.5 40
+polishedgranite 6.2 -6 30 6.26 -5.78 40
+stucco 6.2 -0.8 30 6.42 -0.5 40
+polishedgranite 19.74 -6 10 19.8 -5.78 23.5
+marble 19.7 -6 23.2 19.8 -2.5 23.5
+marble 19.7 -6 26.5 19.8 -2.5 26.8
+marble 19.7 -2.8 23.2 19.8 -2.5 26.8
+polishedgranite 19.74 -6 26.5 19.8 -5.78 40
+stucco 19.58 -0.8 10 19.8 -0.5 40
+polishedgranite 20.2 -6 10 20.26 -5.78 23.5
+marble 20.2 -6 23.2 20.3 -2.5 23.5
+marble 20.2 -6 26.5 20.3 -2.5 26.8
+marble 20.2 -2.8 23.2 20.3 -2.5 26.8
+polishedgranite 20.2 -6 26.5 20.26 -5.78 40
+stucco 20.2 -0.8 10 20.42 -0.5 40
+
+spawn any -16 0 -28 -131
+spawn any -9 0 -27 -145
+spawn any 9 0 -23 135
+spawn any 17 0 -21 112
+spawn any -16 0 -22 -117
+spawn any -9 0 -33 -155
+spawn any 9 0 -36 158
+spawn any 17 0 -36 142
+spawn ffa-any 12 0 -8 117
+spawn ffa-any -14 0 4 -67
+spawn ffa-any -26 0 -16 135
+spawn ffa-any 27.7 0 -4 -90
+spawn ffa-any -36 0 22 -143
+spawn ffa-any 12 0 -17 43
+spawn ffa-any -44 8 -12 -98
+spawn ffa-any 37 8 6 0
+spawn ffa-any 6 8 22 37
+spawn ffa-any -46 -6 24.5 -90
+spawn ffa-any 8 -6 20 117
+ladder -4.45 -6 22.32 -3.55 9 23.02
+ladder -31.45 8 -18.82 -30.55 14 -18.12
+ladder -54.88 8 -0.45 -54.18 17.4 0.45
+stairs -4 -36 4 -20 0 8 z 1 1
+stairs 14 14 18 30 0 8 z -1 1
+stairs -52 14 -48 26 -6 0 z -1 1
+stairs -18 14 -14 26 -6 0 z -1 1
+light 0 10 -30 16 0.75
+light 0 21 -2 30 1
+light -12 4 -2 12 0.7
+light 12 4 -2 12 0.7
+light -38 6 -6 16 0.7
+light -50 3.5 -10 8 0.6
+light 38 6 -6 16 0.7
+light 44 3 -11 8 0.5
+light -38 6 -32 12 0.7
+light 38 3.5 -32 12 0.6
+light -38 6 26 14 0.7
+light 0 6 26 14 0.7
+light 38 6 25 14 0.7
+light 40 3.5 32 6 0.6
+light 37 3.5 21 6 0.4
+light -38 14 -6 16 0.6
+light -38 14 18 14 0.55
+light 0 14 18 14 0.6
+light 38 14 18 14 0.55
+light 0 11 -17 12 0.6
+light -32 -2 24 14 0.45
+light -32 -2 18 10 0.3
+light 5 -2 25 14 0.5
+light 37 -2 25 14 0.5
+light -16 -3 35 6 0.4
+light -38 18 0 20 0.35
+light 0 18 18 14 0.35
+light -28 6 4 14 0.65
+light 30 6 -16 14 0.65
+light 46 6 4 12 0.6
+light 48 6 14 12 0.6
+light -46 6 -32 10 0.6
+light -44 6 34 12 0.6
+light 8 6 34 12 0.6
+light -28 14 -18 12 0.55
+light 12 14 14 12 0.5
+light 0 6 -36 12 0.6
+light 0 3 -2 14 0.6
+light -50.5 3.6 -19 6 0.6
+light -50.5 3.6 -10 6 0.6
+light -50.5 3.6 -1 6 0.6
+light -50.5 3.6 6.8 6 0.6
+light 42 14 -14 9 0.35
+light 52 14 -20 9 0.35
+light 52 14 -8 9 0.35
+light 52 14 4 9 0.35
+light 52 14 -14 9 0.35
+light 52 14 -2 9 0.35
+light -45 19 18 6 0.4

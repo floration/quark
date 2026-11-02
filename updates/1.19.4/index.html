@@ -1,0 +1,1031 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.19.4: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Latest update</p>
+<h1>quark 1.19.4</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<p>1.19.4 is the production release after 1.19.3: the testing line <code>1.19.3.&lt;N&gt;</code> promoted as it stands (owner, 2026-11-01: &quot;1.19.4 release checklist is finished ready for takeoff&quot;, then yes on the release card). Every change below was made, explained and built in one of those testing builds. The short version is on the <a href="../">updates page</a>.</p>
+<ul>
+<li><b>Network protocol 66</b> (1.19.3 used 53: 54 power; 55-58 rocket thrust and launch speed; 56 walk teleporters; 59 winner stays; 60-61 dash charges (back to two); 62 ball; 63 no air drift; 64 the dash slide; 65 the grapple catches the ball; 66 rocket knockback doubled). A 1.19.4 game only plays with a 1.19.4 server, so update games and servers together.
+</li>
+<li><b>Map format 13</b> (1.19.3 wrote 10: 11 mode spawn sets, 12 walk teleporters, 13 a race map&#x27;s default time). Older maps convert on load and on disk, originals kept in <code>maps/old/</code>.
+</li>
+<li><b>Human-made assets: 16.1%</b> (no asset changes since 1.19.3).
+</li></ul>
+<h3>Settings: batch 1, the 4s (owner, 2026-10-30: &quot;go ahead and start working on implementing all of the settings ... score all the setting out of 4&quot;; q ticked all 231 on the scored list)</h3>
+<ul>
+<li><b>MORE pages.</b> CONTROLS and VIDEO + AUDIO were full (the VIDEO page&#x27;s comments already say a row more pushes SOUND into DEVICES), so each gets a MORE page (footer middle, <code>moreOpen_</code>, screen paths <code>/controls/more</code>, <code>/video/more</code>, <code>--settingstab controls/more</code>). The rest of 1.19.4&#x27;s settings go on pages like these instead of squeezing the tabs.
+</li>
+<li><b>Mouse (#4).</b> <code>sens_y</code> (vertical as a multiple of SENSITIVITY), <code>invert_y</code>, <code>zoom_sens</code> (a multiple of the existing &quot;same feel&quot; zoom scaling, so x1.00 is today&#x27;s behaviour). Applied in <code>Game::turn</code>.
+</li>
+<li><b>Scoreboard toggle (#67).</b> <code>score_toggle</code>: the key flips <code>scoresOn_</code> instead of being held.
+</li>
+<li><b>Background cap and mute (#9).</b> <code>bg_fps</code> (default 60, 0 = FPS LIMIT as usual) caps <code>Game::maxFps()</code> while the window isn&#x27;t focused or is minimized (new iconify callback); <code>bg_mute</code> sets the master volume to 0 then. Why: an alt-tabbed game running uncapped burns power and heat for nothing; focused play is untouched.
+</li>
+<li><b>Window (#119, #1, #166).</b> The windowed size and position are saved on every move / resize (not while maximized or fullscreen) and restored at launch if the title bar lands on a monitor that&#x27;s still there; WINDOW SIZE offers 720p up to 4K that fit the monitor. A display change (DISPLAY or WINDOW SIZE) shows KEEP / REVERT with a 10 s count and reverts by itself (not in the UI test, whose clicks would race the count).
+</li>
+<li><b>Dedicated GPU (#113).</b> <code>NvOptimusEnablement</code> and <code>AmdPowerXpressRequestHighPerformance</code> exported from the Windows game, so hybrid laptops use the dedicated GPU; VIDEO &gt; MORE shows GL_RENDERER and hints when it looks integrated.
+</li>
+<li><b>Shadow quality (#3).</b> <code>Renderer::setShadowRes</code> reallocates the shadow map in place (1024 / 2048 / 4096, clamped to the GPU&#x27;s limit) and updates both programs&#x27; texel size; it used to be cfg-only and read at startup.
+</li>
+<li><b>HUD size (#7).</b> <code>hud_size</code> multiplies every HUD element&#x27;s own SIZE (each element&#x27;s <code>k</code> and <code>hudFont</code>). The menus already scale with the window height, so no separate menu scale was added.
+</li>
+<li><b>Crosshair (#13).</b> <code>ch_dot</code> (0 = THICKNESS), <code>ch_opacity</code>, <code>ch_outline_w</code>, <code>ch_outline_a</code>, <code>ch_wstyle_&lt;weapon&gt;</code> (a weapon&#x27;s own style, -1 = the normal one), and COPY / PASTE CODE: the ch_ lines as one <code>quark-crosshair:</code> line; pasting reads only ch_ keys, so a code can&#x27;t change anything else.
+</li>
+<li><b>Hitsounds (#14, #152).</b> <code>hit_volume</code> (0-2), <code>hit_pack</code> (-1 = your SOUNDS pack), <code>headshot_sound</code> (a higher ding over the hit on a headshot), <code>kill_sound</code> (was tied to HITSOUND).
+</li>
+<li><b>Server list (#78).</b> <code>browser_sort</code>, <code>browser_hide_full</code>, <code>browser_hide_empty</code>, <code>browser_max_ping</code>, <code>fav_servers</code> (right-click a row; favourites are listed first and never filtered out), <code>recent_servers</code> (the last 8 joined; RECENT cycles them into the address field). The list shows 5 rows instead of 6 to make room for the filter row.
+</li>
+<li><b>Race reset (owner, 2026-10-30: &quot;keybind R should restart the map/reset to checkpoint in race/surf modes&quot;).</b> New action RACE RESET (R; bind_version 4 leaves it unbound if R was already taken) sends <code>racereset</code>; the server respawns you at your last checkpoint, or with <code>racereset full</code> (no checkpoint yet, or the full restart) at the start with the checkpoint count and splits cleared. Nothing new on the wire: it&#x27;s a player command and the existing EV_SPAWN. Tap or hold (owner, 2026-10-30: &quot;r tapped = checkpoint, r held for 250ms = full restart&quot;; it was a double press): the checkpoint is sent when R is let go before 250 ms, so a tap acts on release, the earliest moment a tap can be told from a hold. A separate FULL RESTART action (MORE KEYS, unbound) sends <code>racereset full</code> on press.
+</li></ul>
+<h3>Settings: batch 2, the 3s (first half)</h3>
+<ul>
+<li><b>Pages.</b> <code>moreOpen_</code> is now a page number: GAMEPLAY &gt; MORE (1 page), CONTROLS &gt; MORE (1), VIDEO + AUDIO &gt; MORE (3, the footer button reads MORE 2 / MORE 3). Screen paths <code>/gameplay/more</code>, <code>/video/more2</code>, <code>/video/more3</code>; CONTROLS gets a third keys sub-page, MORE KEYS (<code>/controls/keys2</code>), because the other two key pages have no free rows.
+</li>
+<li><b>Render scale 25-400% (#250).</b> Was 50-200%. The renderer already capped the target at the GPU&#x27;s largest texture, so 400% of a 4K window is clamped to what the driver allows rather than failing.
+</li>
+<li><b>Fog (#43).</b> <code>fog</code>: a multiple of the old fixed density 0.0035 (0 = none), set in both the world and model programs (<code>Renderer::setFog</code>; the world program keeps it across map changes).
+</li>
+<li><b>Gamma / contrast / saturation (#29).</b> <code>gamma</code>, <code>contrast</code>, <code>saturation</code>, a <code>grade()</code> at the end of the world, model and sky shaders (after tonemapping and gamma encoding), so the HUD and menus aren&#x27;t touched. At the default (1, 1, 1) it&#x27;s one uniform compare per pixel and returns unchanged. Why in those shaders: there&#x27;s no full-screen post pass at render scale 100% with AA off, and adding one would cost a full-screen draw every frame.
+</li>
+<li><b>Video presets (#56).</b> <code>video_preset</code> cycle: LOW (no player shadows, 1024 shadows, no AA, 75% scale, effects 0.6), MEDIUM (shadows 2048, SMOOTH AA), HIGH (4096, MSAA 4x), COMPETITIVE (no shadows, no AA, no fog, effects 0.5, no kill bursts or recoil kick). It sets those settings once; anything changed afterwards stays.
+</li>
+<li><b>Effects (#30, #49).</b> <code>fx_opacity</code> scales every explosion / spark / burst box&#x27;s alpha (0 = none drawn), <code>kill_bursts</code>, <code>tracers</code>, <code>view_recoil</code> (the gun model&#x27;s kick; also moves the muzzle point, so shots still leave the gun you see). Muzzle flash and impact sparks were already switches.
+</li>
+<li><b>Colourblind presets (#11).</b> Two more TEAM COLORS presets: RED-GREEN (blue / yellow-orange) and BLUE-YELLOW (cyan / red). <code>colorPairClash</code> simulates protan, deutan and tritan vision (Machado et al. 2009, full severity, linear RGB) and the PLAYER tab warns when the pair&#x27;s simulated colours are under 0.4 apart (out of 1.73). Checked: cyan / red, blue / orange and both new presets pass; red / green fails for deutans (0.37), white / yellow for tritans (0.29).
+</li>
+<li><b>Enemy model (#15).</b> <code>enemy_model</code> draws every non-friendly player as that model (client only; ranked already forces STANDARD for everyone and is left alone).
+</li>
+<li><b>Sound groups (#33, #174).</b> <code>vol_steps</code> (your footsteps, jumps, landings), <code>vol_others_steps</code> (0-2, everyone else&#x27;s), <code>vol_weapons</code> (every gunshot sound), <code>vol_objective</code>: the planted bomb now beeps from where it is, in step with the model&#x27;s blink (every bomb timer / 20 s, at least 0.15 s), reusing the sticky beep a fifth higher. No UI sounds exist yet, so there&#x27;s no UI volume.
+</li>
+<li><b>Kill feed / chat (#22).</b> <code>feed_time</code> (6 s), <code>feed_lines</code> (6), <code>feed_mine</code>, <code>chat_time</code> (10 s), <code>chat_lines</code> (8), <code>chat_opacity</code> (not while typing). Chat history (#138): typing shows 12 lines of the 30 kept, scrolled by the wheel or Page Up / Down.
+</li>
+<li><b>Team chat (#41).</b> New player command <code>sayteam</code>: in a team mode the server sends the EV_CHAT only to the sender&#x27;s team, with <code>b = 1</code> so it shows &quot;(TEAM)&quot;; elsewhere it&#x27;s an ordinary say. Old clients just show such a line without the tag.
+</li>
+<li><b>Keys (#41, #137, #148, #178).</b> New actions TEAM CHAT, LAST WEAPON (the weapon held before the current one), SPEC NEXT / SPEC PREV (dead or spectating; a click still cycles), HIDE HUD (<code>hide_hud_crosshair</code> keeps the crosshair; the scoreboard still works) - all unbound by default. A bind that takes a key from another action shows &quot;&lt;KEY&gt; WAS ON &lt;ACTION&gt;: UNBOUND THERE&quot; with UNDO for 8 s. The bomb objective line and the F3 hints name your bound key (<code>Game::keyOf</code>). INFO&#x27;s key list said F4 for VOTE START, which has been F5 since bind version 3. <code>testHeld_</code> (the UI test&#x27;s held keys) was 32 bits wide while actions passed 32: now 64, with a static_assert. Ready and inspect have no game system behind them yet, so they&#x27;re not here.
+</li>
+<li><b>Screen (#28, #60, #176, #25).</b> <code>show_fps</code> / <code>show_ping</code> (top right, frames counted over 0.5 s; hidden while F3 is up), <code>captions</code> (each announcer line as text under the crosshair for 2 s, through one <code>Game::announce</code>), <code>hp_scaled</code> (the health bar against the most health seen this life, so 200-health customs and 50-health ones fill correctly; the client isn&#x27;t told the mode&#x27;s max, so its spawn health stands in), <code>ch_head_color</code> (a headshot&#x27;s crosshair flash).
+</li>
+<li><b>Controls (#18, #73, #5).</b> <code>grapple_toggle</code> (press to hook, press again to let go; reset on death), <code>scroll_wrap</code> / <code>scroll_skip</code> (a bit per weapon; number keys still select them), <code>left_handed</code> (both first-person models mirror sides and their tilt). Dash stays a tap (a toggle makes no sense for an impulse); CROUCH was already off every key page. A separate viewmodel FOV isn&#x27;t done: the models are drawn in the world pass with the scene&#x27;s projection, and their SIZE / DEPTH settings already do what a viewmodel FOV is used for.
+</li>
+<li><b>Display (#218, #121, #112).</b> <code>vrr</code>: swap interval 1 and <code>maxFps()</code> capped at refresh - 3 (from the monitor&#x27;s mode, or DEVICES&#x27; REFRESH RATE in fullscreen), the usual G-SYNC / FreeSync recipe that keeps the frame out of vsync&#x27;s queue. <code>auto_iconify</code> (GLFW_AUTO_ICONIFY). <code>cpu_priority</code>: PRIORITIZE GAME can ask for HIGH_PRIORITY_CLASS instead of ABOVE_NORMAL (<code>setGamePriority(level)</code>).
+</li>
+<li><b>Menus (#161, #165, #193, #77).</b> <code>remember_tab</code>; <code>confirm_leave</code> (QUIT, DISCONNECT, STOP HOSTING arm on the first click as &quot;SURE? ...&quot; and act on a second within 3 s); <code>auto_reconnect</code> (a &quot;connection to server lost&quot; drop goes back to the last address after 2 s, up to 3 tries, not for a kick, a refusal, a demo or your own server) and RECONNECT next to JOIN GAME; <code>queue_flash</code> (a filled queue also plays the finish chime and flashes the taskbar if the game isn&#x27;t focused).
+</li>
+<li><b>Editor (#195, #196).</b> Redo: each undo step now keeps its own op beside its inverse (<code>edUndoFwd_</code>), so undo moves the step to <code>edRedo_</code> and Ctrl+Y / Ctrl+Shift+Z does it again; a new edit clears the redo list; drags and coalesced nudges redo to where they ended. Autosave: every 60 s with unsaved changes the map goes to <code>editor-autosave.qmap</code> in the data folder (outside <code>maps/</code>, so it never shows in map lists); SAVE removes it; RESTORE AUTOSAVE appears in the panel when one is left from before.
+</li></ul>
+<h3>Settings: batch 2, the 3s (second half)</h3>
+<ul>
+<li><b>Settings search (#132).</b> <code>tools/settings_index.py</code> reads game.cpp&#x27;s settings draw functions at build time (a CMake step, like the embedded maps) and writes <code>settings_index.h</code>: each widget label written as a string literal, and the tab / MORE page / keys sub-page it&#x27;s on, so the index can&#x27;t go stale when a setting moves. The SEARCH field (top right of the settings panel) matches labels and key action names. While the field has focus, up to 14 matches replace the page body (an overlay over the page would sit on top of live widgets); a click on one opens its page, and a click anywhere else closes the list and goes to the page. Only this field&#x27;s focus counts (<code>Ui::focused(id)</code>), not <code>typing()</code>, which a slider or colour being typed into also sets.
+</li>
+<li><b>Third bind slot (#140).</b> <code>kBindSlots = 3</code>. Binds are saved as three values per action; older games read the first two and ignore the third, so a config still works if you go back a version. Key rows are now three 82 px slots.
+</li>
+<li><b>Console binds and aliases (#141, #142).</b> <code>bind &lt;key&gt; &lt;command&gt;</code> (<code>cbind_&lt;code&gt;</code> in the config), <code>unbind</code>, <code>binds</code>, <code>alias &lt;name&gt; &lt;commands&gt;</code> (<code>;</code>-separated, <code>alias_&lt;name&gt;</code>), <code>unalias</code>, <code>exec &lt;file&gt;</code> (from the data folder) and <code>toggle &lt;cvar&gt;</code>. A command bind runs on key press, after the action binds. <code>autoexec.cfg</code> runs once at start (not in the UI test, which must start from defaults).
+</li>
+<li><b>All settings export / import (#167).</b> EXPORT puts the config as text (<code>quark-settings:</code> then <code>key=value</code> lines, keys included, your name / Discord / servers left out) on the clipboard; IMPORT applies every line it recognises and says how many. RESET ALL arms on the first click (SURE?) and keeps name, Discord name and server lists.
+</li>
+<li><b>Demos (#143, #144, #145).</b> The DEMOS page sorts by date / name / size / map (<code>demo_sort</code>), shows sizes, and DELETE asks first. <code>auto_record</code>: OFF / EVERY MATCH / RANKED, started on entering the match. <code>demo_keep</code> (0 = all) deletes the oldest demos past N when an auto recording starts (never the one being written).
+</li>
+<li><b>Sensitivity converter (#9).</b> Quark&#x27;s yaw is 0.022 degrees per count x sensitivity, the same as Source and Quake, so CS2 / Quake / Apex / TF2 carry over 1:1; Valorant is 0.07 and Overwatch 2 / Call of Duty 0.0066. USE &lt;value&gt; sets yours.
+</li>
+<li><b>Fullscreen resolution (#113).</b> <code>fs_width</code> / <code>fs_height</code> from <code>glfwGetVideoModes</code> (0 = the desktop mode). Applied when fullscreen is (re)entered.
+</li>
+<li><b>Practice (#148).</b> Admin command <code>practice savepos|loadpos|god|passive|reset</code> on your own server, refused in ranked or when another human is connected (so it can&#x27;t be used against anyone). loadpos sets position, velocity and view and sends EV_SPAWN so prediction snaps there instead of smoothing; passive strips the bots&#x27; fire buttons; god makes <code>canHurt</code> false for you.
+</li>
+<li><b>Players menu (#156).</b> Pause &gt; HOST &gt; PLAYERS: everyone on your server with KICK (not yourself), plus ADD BOT, KICK BOTS and RESTART, through the existing admin commands.
+</li>
+<li><b>Race ghost (#179).</b> Your position every 50 ms on race maps; a finished run faster than the saved one is written to <code>ghosts/&lt;map&gt;.txt</code> and drawn as a see-through player along the run, by the time since your start. Capped at 20 minutes of points. Client only.
+</li>
+<li><b>Team panel (#17).</b> <code>team_panel</code>: teammates&#x27; names and health bars on the left edge in team modes, and a square per enemy, lit while they&#x27;re alive (off by default).
+</li>
+<li><b>Match summary (#180).</b> <code>match_summary</code>: your shots, hits, accuracy, damage dealt and best streak for the match under the end-of-match scoreboard, counted on the client.
+</li>
+<li><b>Demo rename (#139).</b> RENAME beside DELETE turns the row into a field; Enter renames the file (letters, digits and - kept, the rest _), Esc or a click away leaves it. <b>Not in this batch</b> (still 3s): a turning 3D model preview (#128) and moving the objective / notice / scoreboard boxes (#21), which come with batch 3. Viewmodel FOV: see Controls above.
+</li></ul>
+<h3>Thin surfaces are wallbang (owner, 2026-10-30: &quot;any 1/8m surface should have the wallbang property on it&quot;)</h3>
+<ul>
+<li><code>wallbangBrush(b)</code> (map.h): the wallbang material, or any shot-stopping brush whose thinnest side is 1/8 m or less (0.126 with a rounding margin), whatever its material: a Coat (K) layer, a thin panel, trim. <code>raycastBullet</code> (server hit checks and every client prediction of them) and the map&#x27;s <code>hasWallbang</code> flag use it, so a map with only thin brushes still takes the wallbang path. Movement, sight, splash and grapple rays are unchanged: a thin wall still blocks players and explosions. A bullet passes one or more wallbang brushes and takes the weapon&#x27;s wallbang damage once, as before. Test: <code>testWallbang</code> (a 1/8 m box passes, a 1/4 m one stops).
+</li></ul>
+<h3>Map picker (owner, 2026-10-30: &quot;you shouldnt get to pick maps that are not under the playable gamemode for the map, also map previews should exist in the picker in game; list should be scrollable and 7 wide&quot;)</h3>
+<ul>
+<li><b>Only the mode&#x27;s maps.</b> The host, vs bots and in-game pickers list a map only if its <code>modes</code> include the chosen mode (a tourney rotation list: tourney; ranked: maps ranked for that ladder). The &quot;NOT FOR THIS MODE&quot; tag, its legend and the ranked-but-greyed cards are gone with them. A console <code>map</code> command can still start any map in any mode.
+</li>
+<li><b>Previews.</b> Each map gets a 192x108 picture from above, made on the CPU when its info is read (once per map file, cached with its title and modes; about a millisecond): each column the colour of its highest surface by material and the map&#x27;s palette, lit by height and a light from the top left, darker where the height steps. An indoor map&#x27;s roof and any slab over most of the map are left out so the rooms show; clip and far-scenery brushes too. All previews go to the GPU as one atlas, only when the map list or a file changes, and draw through the swatch image program over the 2D batch (<code>Renderer::preview</code>; the swatch code now shares <code>drawImageQuads</code>). Why not a 3D render: the renderer holds one world (the menu backdrop or the match), so rendering 25 other maps would mean loading each one.
+</li>
+<li><b>7 wide, scrolling.</b> Cards are 122 px wide (picture over the name, the mode it&#x27;s for under it); as many rows as fit the band, the wheel scrolls the rest, and it opens scrolled to the current map. Clicking the picture picks the map too.
+</li></ul>
+<h3>Settings: batch 3, the 2s (video, visuals, audio, performance, latency, network, crosshair, accessibility)</h3>
+<p>Everything lives on VIDEO + AUDIO &gt; MORE 2 (added to), MORE 4, MORE 5 and MORE 6 (new pages), the main VIDEO + AUDIO page and CROSSHAIR. Every renderer switch is a shader uniform that is 0 at its default (so the swatch program, which never gets them, draws as before) and is only set when it changes (<code>Renderer::setLook</code> compares); <code>Game::applyLive</code> pushes the batch into the renderer, mixer and connection once a frame as compares and atomic stores. Nothing costs anything per frame at its default.</p>
+<ul>
+<li><b>Tone curve (#44).</b> <code>tone_curve</code>: off swaps the ACES-style filmic curve for a straight clamp (world, sky). The dynamic shader never had the curve, so players are unchanged.
+</li>
+<li><b>Shadows (#45, #213).</b> <code>shadow_filter</code>: HARD (1 tap), SOFT (the 4 taps as before), SOFTER (16 taps, a texel apart: inside the caster rect&#x27;s 2 texel margin, so no rect change). <code>shadow_dist</code>: the shadow map&#x27;s half-width, 16 / 32 (as before) / 64 m: wider reaches farther but each texel covers more (blurrier). <code>shadow_world</code> / <code>shadow_players</code>: where dynamic shadows land (the world&#x27;s / dynamic shader&#x27;s <code>uShadowOn</code>); with neither on, the shadow pass isn&#x27;t drawn at all. <code>own_shadow</code> off skips your first-person body entirely (it is drawn only as a shadow caster), so no shadow-pass geometry either.
+</li>
+<li><b>Clean surfaces (#46).</b> <code>clean_surfaces</code> drops the palette materials&#x27; 2 m panel seams and per-panel shade noise (materials below 12). The newer textured materials are their look, so they stay.
+</li>
+<li><b>Lighting (#47).</b> <code>flat_light</code>: the world shader ignores the lightmap (full sun and sky everywhere, as the see-through pass already does). The bake resolution and bounce count were <b>not</b> made settings: a bake is keyed and cached by map content and the official maps ship baked; another quality would bake every map again (minutes each) and need its own cache key. q&#x27;s call.
+</li>
+<li><b>Sky and far scenery (#48).</b> <code>simple_sky</code>: the sky shader returns the flat sky colour (no sun glare, no stars). <code>far_scenery</code> off skips the far-scenery chunks (they were already their own chunks; <code>WorldChunk::far</code> marks them).
+</li>
+<li><b>Draw distance (#209).</b> <code>draw_dist</code> 150 / 250 / 400 m is the projection&#x27;s far plane (was a fixed 400). The frustum&#x27;s far plane already culls world chunks and dynamic objects, so a shorter distance also draws less.
+</li>
+<li><b>Player brightness (#50) and always lit (#210).</b> <code>player_emit</code>: the dynamic shader&#x27;s own-light share (0.3 as before; 1 = full colour in any shade). <code>players_lit</code>: players get sun visibility 1 and the per-player sun ray (the costliest thing per player) is skipped.
+</li>
+<li><b>MSAA 8x (#53).</b> The cycle offers 8x; <code>msaa=8</code> loads. The renderer already clamped to <code>GL_MAX_SAMPLES</code>.
+</li>
+<li><b>Show when not supported (#219).</b> MSAA levels above the GPU&#x27;s maximum are labelled N/A with the maximum; 10-BIT OUTPUT says what the window got; BYPASS COMPOSITOR says Linux only elsewhere; the latent sync settings say Windows only, or to pick latent sync first; AUDIO LATENCY says LOW = NORMAL on Windows.
+</li>
+<li><b>FOV mode (#74).</b> <code>fov_mode</code>: FOV read as horizontal on this screen (as before), vertical, or horizontal at 4:3 (Hor+). <code>Game::hfov()</code> turns it into the horizontal degrees every camera / zoom / sensitivity use takes (at most 170).
+</li>
+<li><b>Outlines (#86, #211, #212).</b> A ninth outline preset, CUSTOM, takes <code>outline_friendly_color</code> / <code>outline_enemy_color</code> (MORE 4&#x27;s pickers; the PLAYER tab&#x27;s cycles list it automatically through <code>kOutlineColors</code>). <code>outline_alpha</code> mixes the outline toward the body colour (a uniform in the dynamic shader). <code>outline_team_width</code> / <code>outline_enemy_width</code> (-1 = PLAYER OUTLINE WIDTH). glTF player models have no edge data, so a real outline would need an inverted-hull pass per model (a cost): a hint says so instead.
+</li>
+<li><b>Fixed team colours (#87).</b> <code>fixed_teams</code> with <code>team_a_color</code> / <code>team_b_color</code>: while spectating or playing a demo, team modes draw team A and B in these instead of &quot;yours / the enemy&quot; (which made team A always your friendly colour).
+</li>
+<li><b>Tracers (#101), rope (#103), trails (#215).</b> <code>tracer_mode</code> classic pale yellow / the shooter&#x27;s team / <code>tracer_color</code> (each tracer carries its colour, so no lookups when drawn). <code>rope_color</code> (was a fixed near-black). <code>trails</code> off / short (40%) / full and <code>trail_opacity</code> for the rocket, bolt, knife, syringe and orb streaks.
+</li>
+<li><b>Colour presets (#111).</b> COPY / PASTE COLORS: every colour setting (team, outlines, crosshair, tracer, rope, fullbright, name) as one <code>quark-colors:</code> line, only those keys read back. Three slots (<code>color_preset_1..3</code>) SAVE and LOAD it.
+</li>
+<li><b>Deband and 10-bit (#204).</b> <code>dither</code>: plus or minus half an 8-bit step of interleaved gradient noise on the world, players and sky (no bands in sky and fog). <code>out10</code>: asks GLFW for a 10-bit window at the next start (falls back to 8 if none); when granted, the scene targets (MSAA / render scale) are RGB10_A2 too so the bits reach the window.
+</li>
+<li><b>Accessibility (#58, #59, #61, #108).</b> <code>it_palette</code>: tag&#x27;s &quot;it&quot; in your enemy colour and the rest in your team&#x27;s (was fixed red / blue), and the IT banner too. <code>split_palette</code> / <code>split_words</code>: race splits in your team / enemy colours, and AHEAD / BEHIND after the time. <code>reduce_flash</code>: no muzzle flashes, the bomb and stuck stickies stop blinking, explosions at 40% opacity, the damage flash at most 0.3. <code>safe_colors</code>: the OK / error colours (<code>kGreenOk</code> / <code>kRed</code>, no longer const) become blue and orange, told apart under every common colour blindness.
+</li>
+<li><b>Audio output (#34, #140, #231, #232).</b> <code>channels</code> stereo / mono / swapped, mixed after the voices. <code>stereo_width</code> (the pan factor, 0.8 before), <code>behind_muffle</code> (scales the X8 behind-you dip and low-pass), <code>hear_range</code> (the 90 m cut-off, 30 - 150 m). <code>occlusion</code>: one map ray from your ears as each 3D sound starts; a wall between makes it about 7 dB quieter and low-passed (~1 kHz); off by default because it changes what you hear. <code>dyn_range</code>: CLEAN (the soft limiter at 0.08 instead of 0.3), NORMAL (as before), NIGHT (a 5 ms / 300 ms level follower pulling loud passages down about 4:1 over -20 dB, then +6 dB). HRTF was <b>not</b> done: it needs an HRTF data set and a convolution per voice (a real mixer cost and an asset choice). Sound when unfocused: <code>bg_volume</code>, next to the existing MUTE IN BACKGROUND.
+</li>
+<li><b>Volume (#234).</b> VOLUME goes to 150% (<code>volume</code> up to 1.5, shown in %); <code>vol_db</code> shows every volume as its gain in dB; <code>vol_perceptual</code> makes the gain the slider&#x27;s square.
+</li>
+<li><b>Audio latency (#116).</b> <code>audio_latency</code>: ALSA 10 / 20 (as before) / 40 ms; CoreAudio 2 / 3 / 6 buffers; WASAPI SAFE keeps twice the queue (LOW is NORMAL there: the owner found anything under one engine period worse). The output is reopened when it changes.
+</li>
+<li><b>Sound pack, callouts and cues (#63, #65, #154, #172, #173).</b> <code>force_pack</code>: everyone&#x27;s sounds in your pack (<code>Game::soundPackOf</code>). <code>streak_calls</code> all / mine / off. <code>time_warn</code> off / 60 + 30 (as before) / also a count of the last 10 s (ticks, then THREE TWO ONE), <code>time_warn_text</code> as notices too. <code>cue_mute</code> / <code>ann_mute</code>: a bit per sound id; <code>Audio::setMuted</code> drops them at <code>play</code> / <code>play3D</code> with one bit test; muted announcer lines also skip their caption.
+</li>
+<li><b>Visualize sounds (#228).</b> <code>sound_viz</code>: the mixer keeps the 3D sounds started (game thread, only while on) and they&#x27;re drawn as STEPS / SHOT / BOOM / HOOK / HURT / DASH round the crosshair toward where they came from, fading over 0.8 s.
+</li>
+<li><b>Net graph and packet loss protection (#17, #115).</b> <code>net_graph</code>: ping and loss over 12 s, snapshots in, input packets out and how many commands each carries, and the interpolation delay, at the right edge (F3 unchanged). The command rate itself stays one packet per tick (fewer would add latency). <code>cmd_redundancy</code> 2 / 4 (as before) / 8 commands per input packet (<code>NetClient::setCmdsPerPacket</code>; the server already reads up to 16).
+</li>
+<li><b>Downloaded maps (#194).</b> <code>map_downloads</code> off: a server&#x27;s map you don&#x27;t have ends the connection with a message instead of downloading. <code>map_cache_max</code> keeps the newest N in maps/downloads (pruned after each download and when lowered); the page shows the count and size, CLEAR DOWNLOADED MAPS empties it.
+</li>
+<li><b>Light cache (#117).</b> <code>light_cache_max</code> (was a fixed 32 bakes), <code>bake_threads</code> (0 = all but one core, as before), the cache&#x27;s bakes and size, CLEAR LIGHT BAKES (shipped bakes stay). A prebake of every map was <b>not</b> added: the official maps ship baked, and baking your own maps at once would hold every core for minutes.
+</li>
+<li><b>Latent sync (#114).</b> <code>latent_safety_us</code>: the spare time before the blank (the fixed 100 us before). <code>latent_slow</code>: a frame that misses its blank flips now (a tear, as before) or WAITs for the next one (no tear, a refresh later). Windows only, like latent sync.
+</li>
+<li><b>Bypass compositor (#223).</b> <code>bypass_compositor</code>: Linux on X11, <code>_NET_WM_BYPASS_COMPOSITOR</code> on the window: GLFW&#x27;s (fullscreen only), ALWAYS (a window unredirected too) or NEVER. The X11 calls are declared by hand so Xlib&#x27;s macros stay out of game.cpp.
+</li>
+<li><b>Menu cursor (#230).</b> <code>cursor_size</code> system / x1 / x1.5 / x2 and <code>cursor_color</code> white / black / yellow / team: an arrow made with <code>glfwCreateCursor</code> (again only when they change).
+</li>
+<li><b>USE toggle (#149).</b> <code>use_toggle</code>: a press holds USE (plant / defuse) until the next press, like GRAPPLE TOGGLE; dying lets go. On VIDEO + AUDIO &gt; MORE 6 (CONTROLS is another branch&#x27;s this batch).
+</li>
+<li><b>Crosshair (#145, #217).</b> <code>ch_spread</code>: a ring of dots at the held weapon&#x27;s spread (its tangent over the view&#x27;s), shown when it&#x27;s wider than the crosshair. <code>ch_cooldown</code>: 32 dots round the crosshair that fill as the refire runs out (hidden when ready). <code>ch_pixels</code>: the crosshair&#x27;s sizes as exact pixels, not scaled from 720p. All three ride in the crosshair code.
+</li></ul>
+<h3>Settings: batch 3, the 2s (HUD, social, controls, menus, host, editor, launcher)</h3>
+<p>Worker 2&#x27;s half of the 2-scored items. Batch-3 keys are table-driven (<code>b3Keys</code> in config.cpp: type, bounds, default), parsed by <code>setBatch3</code> before the old keys and written by <code>batch3Text</code>, so each new key is one line and always clamped. Three MORE pages are new (GAMEPLAY &gt; MORE 2 / 3 / 4, CONTROLS &gt; MORE 2, PLAYER &gt; MORE), each with its screen path for the UI test and its page function in <code>tools/settings_index.py</code> so the settings search finds every label. Nothing new runs per frame at the defaults: every feature sits behind its setting&#x27;s check (a compare), and the three that track state from frame to frame (health, alerts, auto-hide) are a few compares each.</p>
+<p><b>Feedback (GAMEPLAY &gt; MORE 2)</b></p>
+<ul>
+<li><b>Damage numbers (#16).</b> <code>dmg_num_color</code> (a normal hit; headshots stay red and big hits gold so the meaning stays), <code>dmg_num_stack</code> (quick hits add up / a number a hit / one running total a target until it fades) and <code>dmg_num_time</code> (0.3 to 3 s, 0.9 as before).
+</li>
+<li><b>Damage arcs (#23).</b> <code>dmg_arcs</code>, <code>dmg_arc_color</code>, <code>dmg_arc_size</code> (x0.5 to x2) and <code>dmg_arc_time</code>: the arc pointing where a hit you took came from.
+</li>
+<li><b>Kill mark and hit flash (#24).</b> <code>kill_mark</code>, <code>kill_mark_time</code>, <code>kill_mark_color</code>; <code>hit_flash_time</code> (its colours stay on the CROSSHAIR tab, which is the other worker&#x27;s).
+</li>
+<li><b>Kill text (#153).</b> <code>kill_text</code>: &quot;KILLED &lt;NAME&gt;&quot; over the crosshair for 1.5 s.
+</li>
+<li><b>Low health (#62, #92).</b> <code>low_hp</code> (the share of the mode&#x27;s max health, so vampire and instagib work too), <code>low_hp_color</code>, <code>low_hp_pulse</code> and <code>low_hp_sound</code> (one beep on crossing the threshold, from <code>trackHealth</code>, never repeated while you stay low).
+</li>
+<li><b>Heal numbers (#177).</b> <code>heal_nums</code>: a green +N over your health when it rises (vampire, regen, the syringe); heals within a second add up.
+</li>
+<li><b>Weapon kick (#55).</b> <code>recoil_amount</code> x0 to x2 multiplies the view model&#x27;s kick (and the muzzle point that follows it); FOV and hand were #5.
+</li>
+<li><b>Per-weapon model (#144).</b> <code>wpn_vm_&lt;n&gt;=&lt;shown&gt;,&lt;x&gt;,&lt;y&gt;,&lt;depth&gt;</code> (written only when not the default): a weapon&#x27;s model hidden, or moved on top of the HUD tab&#x27;s WEAPON MODEL element (same units: 720p pixels and mm, -200 to 200). <code>weaponFrame</code> takes the weapon, so the muzzle (tracers, beams, your projectiles&#x27; start) follows the moved model; hiding one weapon&#x27;s model also hides its muzzle flash and, with YOUR SHOTS: WITH WEAPON MODEL, its tracers, as the whole-model switch does.
+</li></ul>
+<p><b>HUD info (GAMEPLAY &gt; MORE 3)</b></p>
+<ul>
+<li><b>Speed meter (#69, #200, #199).</b> <code>speed_unit</code> (m/s, the game&#x27;s own; km/h; ups at 39.37 a metre, as Quake counts), <code>speed_scale</code> (the bar&#x27;s full scale) and <code>speed_ticks</code>; <code>bar_caps</code> turns each bar&#x27;s caption on or off.
+</li>
+<li><b>Clock (#69, #158).</b> <code>clock_12h</code> for the verbose TIME line; <code>clock_mode</code> (time left / elapsed) and <code>clock_tenths</code> (tenths in the last 10 s) for the round clock, drawn after the live line so hudclock.h stays as it is.
+</li>
+<li><b>Verbose lines (#27).</b> <code>verbose_lines</code>: a bit per line of the verbose info block.
+</li>
+<li><b>Auto-hide (#159).</b> <code>autohide_health</code> always / after a change (3 s) and when low / only when low; <code>autohide_slots</code> always / after a switch; <code>autohide_bars</code> always / while one is recharging.
+</li>
+<li><b>Objective markers (#68).</b> <code>obj_size</code>, <code>obj_mark_opacity</code> (not <code>obj_opacity</code>, which is the objective zones&#x27; opacity on VIDEO + AUDIO &gt; MORE 7), <code>obj_distance</code> (the distance under the label) and <code>obj_arrow</code> (an arrow at the screen edge when the objective is off screen).
+</li>
+<li><b>Scope (#200).</b> <code>scope_size</code>, <code>scope_color</code>, <code>scope_line</code> (the reticle&#x27;s width).
+</li>
+<li><b>Network warnings (#71).</b> <code>net_icons</code>: STALLED (nothing received for 0.3 s), LOSS (3% snapshot loss or more) and PING (150 ms or more) badges. <code>NetClient::lastRecvTime()</code> was added for the stall; not on your own server or in a demo.
+</li>
+<li><b>Spectator HUD and feed (#202).</b> <code>spec_hud</code> full / minimal; <code>feed_headshot</code> adds (HS) to headshot kills in the feed.
+</li>
+<li><b>Stalemate warning (#175).</b> <code>drain_warn</code>: the round modes&#x27; last 10 s before health starts draining, over the crosshair, with a beep at 10 and 5.
+</li></ul>
+<p><b>Social (GAMEPLAY &gt; MORE 4)</b></p>
+<ul>
+<li><b>Chat (#36, #98, #168).</b> <code>team_chat_only</code>, <code>chat_filter</code> (a built-in word list, matched case-blind at a word&#x27;s start, the rest of the word starred), <code>chat_one_color</code> + <code>chat_color</code>, <code>sys_color</code>, <code>chat_box</code> + <code>chat_box_opacity</code> (a box behind the chat lines), <code>chat_stamps</code> (the local time before each line), <code>mention_hl</code> (a line naming you in gold) and <code>mention_sound</code>.
+</li>
+<li><b>System messages (#242).</b> <code>sys_msgs</code> all / important (votes, kicks, ranked, errors) / off.
+</li>
+<li><b>Name colours (#70).</b> <code>other_name_colors</code> off draws everyone else&#x27;s name white.
+</li>
+<li><b>Streamer mode (#79).</b> <code>streamer</code>: server addresses, invite codes and the Discord code shown as stars, other players&#x27; names as PLAYER 1, 2..., the data folder path hidden.
+</li>
+<li><b>Scoreboard (#185).</b> <code>score_sort</code> (score, kills, deaths, ping, name; within each team) and <code>score_cols</code> (a bit per column).
+</li>
+<li><b>Alerts (#241).</b> <code>alerts</code>: with the window in the background the taskbar button flashes on a match start, a round start, a vote called or a player joining (<code>glfwRequestWindowAttention</code>).
+</li>
+<li><b>On join (#243).</b> <code>on_join</code> play / spectate / ask, applied once when a match&#x27;s first snapshot arrives.
+</li>
+<li><b>Quips (#80, #130).</b> Pause &gt; PLAYERS is now open to every player (KICK, bots and restart stay the host&#x27;s). QUIPS ON / OFF per player writes <code>quip_block</code> (names), and their quips are not played. <code>quip_pick</code> (PLAYER &gt; MORE: MY QUIP) sends <code>quip &lt;n&gt;</code> to the server, which plays that one instead of a random one. No wheel: a picker only.
+</li>
+<li><b>Hide ratings, remember queues (#171).</b> <code>hide_ratings</code> drops the RATING column from the ranked scoreboard; <code>remember_queues</code> saves your ranked queues (<code>last_queues</code>) and queues them again at the next start (not in the UI test). Not done: fill notify / join, Discord presence and showing Discord names (each needs the Discord bot or Worker side).
+</li></ul>
+<p><b>Spectating and the death camera</b></p>
+<ul>
+<li><b>Death camera (#75, #155).</b> <code>death_cam</code> the killer / my body / a teammate, for <code>kill_cam_time</code> 0 to 3 s (the client default stays 1.5; the server&#x27;s limit <code>kKillCamTime</code> was raised from 1.5 to 3 so a longer camera isn&#x27;t cut off).
+</li>
+<li><b>Spectating (#32).</b> <code>spec_fov</code> and <code>spec_third</code> (third person behind the watched player, pulled in by a ray against the map so it never goes through a wall). Free camera already existed. Demo speed and seek are not done: playback runs through the snapshot clock, so a speed needs the interpolation clock scaled with it, and seeking back needs a replay from the start with events muted; more than a setting.
+</li></ul>
+<p><b>Controls (CONTROLS &gt; MORE 2, binds)</b></p>
+<ul>
+<li><b>Per weapon (#40, #142, #143).</b> <code>wpn_sens_&lt;n&gt;</code> (x0.1 to x5, written only when not 1), <code>alt_toggle_weapons</code> (a bit per weapon; -1 = the old rule, the scopes only) and <code>swap_fire</code> (a bit per weapon: fire and alt-fire swapped while it&#x27;s held).
+</li>
+<li><b>Mouse (#40).</b> <code>mouse_accel</code> 0 to 1 (faster moves turn further, at most x4) and <code>raw_input</code> (GLFW raw mouse motion where supported; off: the OS&#x27;s pointer motion).
+</li>
+<li><b>Auto-hop (#146).</b> <code>auto_hop</code> off: holding jump jumps once; let go and press again.
+</li>
+<li><b>Console (#123).</b> <code>console_key</code> (<code> F1 F10 F11 INSERT HOME \ &#x27;; one no action is bound to) and </code>console_menus` (open it from the menus too).
+</li>
+<li><b>Ranked (#150).</b> <code>ranked_alt_toggle</code>: the alt-fire (scope) toggle allowed in ranked; the other control scripts stay off there.
+</li>
+<li><b>New binds (#235, #237).</b> VOL UP / VOL DOWN / MUTE, RECORD (start / stop a demo), JOIN TEAM, SPECTATE, appended to the action list so older binds keep their slots.
+</li>
+<li><b>Mode profiles (#126).</b> A controls profile can now hold <code>sensitivity</code>, <code>fov</code> (taken through FOV MODE like the main FOV), <code>zoom_fov_sniper</code> and <code>zoom_fov_rifle</code>, applied while that mode is played; EXPORT writes them. Crosshair per mode is not done: the crosshair is the other worker&#x27;s tab.
+</li></ul>
+<p><b>Menus (PLAYER &gt; MORE, #52, #107, #118, #131)</b></p>
+<ul>
+<li><code>menu_theme</code> dark / high contrast (buttons outlined, brighter text), <code>menu_accent_on</code> + <code>menu_accent</code> (not the team colour), <code>text_bright</code>, <code>panel_dark</code>. No light theme: the menus are drawn over the 3D backdrop and every hint colour assumes a dark panel; it needs a design pass.
+</li>
+<li><code>menu_bg</code> clockwork / a map you pick (<code>menu_bg_map</code>) / a plain colour (<code>menu_bg_color</code>).
+</li>
+<li>The data folder&#x27;s path with OPEN (MOVE not done: moving a running game&#x27;s data folder needs a restart and a copy step).
+</li>
+<li>Mods: <code>use_overrides</code> (your own asset overrides on or off, applied at start), buttons for the overrides and mods folders, and how many overrides you have. No live reload: assets are loaded once at start.
+</li></ul>
+<p><b>HUD elements and preview (#21, #128, #26)</b></p>
+<ul>
+<li><b>Objective, notices and scoreboard as HUD elements (#21).</b> <code>HUD_OBJECTIVE</code>, <code>HUD_NOTICES</code>, <code>HUD_SCOREBOARD</code> are appended (hud_11 to hud_13), so older configs&#x27; hud_&lt;n&gt; keep their meaning, and theme.cfg gets <code>objective</code>, <code>notices</code> and <code>scoreboard</code>. They keep their own drawing code (the stacked notice column and the scoreboard&#x27;s table); <code>Renderer::uiTransform</code> moves and sizes what they drew, as a group, about their anchor (the objective line&#x27;s top centre, the notices&#x27; top centre, the scoreboard&#x27;s top centre), plus the theme&#x27;s margin and opacity. At the defaults nothing runs (one compare). The objective&#x27;s colour tints its line; NOTICES tints the notices and the round message; the scoreboard keeps its team colours, so it has no colour row. Hidden: the objective line, its bar and the bomb timer go; the scoreboard isn&#x27;t drawn on its key. Ranked keeps the default HUD. They&#x27;re on Settings &gt; HUD&#x27;s ELEMENT list; the on-screen editor doesn&#x27;t list them yet (it needs each element&#x27;s box, which a fixed-code draw doesn&#x27;t give).
+</li>
+<li><b>Model preview (#128).</b> PLAYER shows the chosen model in your team colour under the outlines, turning slowly; drag to turn it. Its boxes (<code>playerModelParts</code>, or a box override) are projected flat into the 2D batch (back faces culled, far faces first, one light): no render target, no extra pass, about 150 quads, and only while the tab is open. A mesh override shows a line instead.
+</li>
+<li><b>Widget values (#26).</b> hud.cfg widgets can show <code>snaprate</code>, <code>accuracy</code>, <code>damage</code>, <code>streak</code>, <code>round</code>, <code>vspeed</code>, <code>height</code> and <code>weapon</code> (appended to the value list). Per-mode widgets already work through the HUD profiles (HUD &gt; PER MODE).
+</li></ul>
+<p><b>Host and votes</b></p>
+<ul>
+<li><b>Votes (#187).</b> callvote <code>restart</code>, <code>extend</code> (5 more minutes), <code>shuffle</code> (the humans dealt to the teams alternately, then a restart) and <code>kick &lt;player&gt;</code> (the same checks as moving one to spectator; the target can&#x27;t vote). Text commands and vote text, so no protocol change.
+</li>
+<li><b>Host advanced (#188, #189).</b> <code>host_tick</code> and <code>host_snap</code> (cycles), <code>host_upload</code> (an upload cap), <code>host_auto_start</code>, <code>host_bot_skill</code> (balance bot skill): passed to the server config at host start. Tourney rotation not done: it needs the bracket to carry over between matches on the server.
+</li>
+<li><b>Vs bots (#192).</b> Up to 15 enemies and 15 teammates (was 7 / 7).
+</li>
+<li><b>Not done:</b> a mode rules tab from the param table (#190) and the custom mode editor&#x27;s extras (#191: weapon set, movement, logic file, duplicate, share code). Both change the custom mode format and the host flow; they need q&#x27;s call on the share code format.
+</li></ul>
+<p><b>Editor (#81, #82, #197, #198)</b></p>
+<ul>
+<li><code>ed_fly_binds</code> (fly keys follow your movement binds), <code>ed_fast_mul</code> (was a fixed x3), <code>ed_fly_speed</code> and <code>ed_grid</code> remembered, <code>ed_grid_custom</code> (a grid step after the built-in ones, reached with [ and ]), <code>ed_rot_step</code> (Q / E on a spawn; 45 as before), <code>ed_light</code> (new lights take the last light&#x27;s values). Saved when the editor closes or test play starts, never from the widgets themselves.
+</li>
+<li>Test play: <code>ed_test_mode</code> (the map&#x27;s or any mode), <code>ed_test_bots</code> (0 to 7), <code>ed_test_at_cam</code> (<code>practice setpos</code>, host alone, clamped to the map&#x27;s range), <code>ed_test_no_warmup</code>.
+</li></ul>
+<p><b>Race (#182, #183)</b></p>
+<ul>
+<li><code>race_split_vs</code> best run / best segments / last run and <code>race_split_time</code>; the race stats page&#x27;s map picker and <code>race_date</code> format. No split against #1: the leaderboard has times, not splits.
+</li></ul>
+<p><b>Launcher (#83, #203)</b></p>
+<ul>
+<li>OPTIONS (in place of the changelog panel; the bottom row is now UNINSTALL | CHANNEL | OPTIONS): <code>auto_start</code> (start the game when it&#x27;s up to date), <code>keep_open</code> (PLAY doesn&#x27;t close the launcher), <code>args</code> (launch options, passed to the game on every platform) and <code>updates</code> automatic / ask first / at next launch (an update is held back, and the next launch installs it; never for a first install or a pinned version). Asset names unchanged. Install location picker (#84) not done: it needs native folder dialogs on three platforms and moving an install.
+</li></ul>
+<p><b>Skipped, with why</b></p>
+<ul>
+<li>#76 pause offline games when unfocused: the server&#x27;s pause resets the match state and the snapshot stream; needs a server-side pause first.
+</li>
+<li>#133 practice speed: needs a timescale through prediction and the server tick.
+</li>
+<li>#170 UTF-8 chat: the font atlas is 8-bit and the server sanitises to ASCII.
+</li>
+<li>#184 leaderboard paging / around me: needs new Worker API endpoints.
+</li>
+<li>#238 instant replay buffer: needs an always-on in-memory recorder; left for a performance review.
+</li>
+<li>#127 player accent colour: other players would need it, which is a protocol change.
+</li>
+<li>#162 right-click reset on every control: sliders and colour pickers already do; toggles and cycles have no default argument, so it means changing every call site.
+</li>
+<li>#164 keyboard menu navigation: needs a focus order for every widget on every page.
+</li></ul>
+<h3>Settings: batch 4, the 1s (video, visuals, audio, latency, accessibility, cosmetics, modes, movement)</h3>
+<p>Everything is on VIDEO + AUDIO &gt; MORE 2 (added to) and two new pages, MORE 7 (colours) and MORE 8 (screenshots, demos, the window, latency, sound). As in batch 3, every renderer switch is a uniform at its old value by default and set only when it changes, and <code>Game::applyLive</code> pushes the lot once a frame as compares and stores; nothing costs anything per frame at its default.</p>
+<ul>
+<li><b>Liquids and glow (#51).</b> <code>liquid_flow</code> off gives the world shader <code>uTime</code> 0, so water and lava stand still (no animation, same cost). <code>glow_strength</code> 0 to 2 scales the map&#x27;s glow colour (1 as before).
+</li>
+<li><b>World outline colour (#57).</b> <code>world_edge_color</code>: the world shader&#x27;s panel outline now mixes towards <code>uWorldEdge</code> (black by default, which is what it was) instead of a constant.
+</li>
+<li><b>Typing sounds (#64).</b> TYPING SOUNDS flips the SND_TYPING bit in batch 3&#x27;s <code>cue_mute</code>, the same bit as its CUE row.
+</li>
+<li><b>Hitsound tiers (#66).</b> <code>hit_tiers</code> off plays the medium hitsound for every hit, whatever the damage.
+</li>
+<li><b>FFA colours (#88).</b> <code>ffa_colors</code>: in modes without teams each other player gets one of 8 distinct colours by id (<code>teamColor</code>), so you can tell opponents apart; off as before (all enemy colour).
+</li>
+<li><b>Own effects colour (#89).</b> <code>own_fx</code> / <code>own_fx_color</code>: your projectiles, laser and rope in your colour (the <code>rope</code> lambda now knows whose rope it draws).
+</li>
+<li><b>Health bars (#90).</b> <code>hb_low</code> (0 to 100 HP, 30 as before) is where bars and the HUD health number turn to <code>hb_low_color</code> (the old red until you pick one); <code>hb_custom</code> / <code>hb_color</code> set the healthy bar&#x27;s colour.
+</li>
+<li><b>Name tags (#91).</b> <code>tag_color</code> team / white / custom (<code>tag_custom</code>), <code>tag_alpha</code> 0.1 to 1, <code>tag_size</code> 0.5x to 3x.
+</li>
+<li><b>Effect colour (#102).</b> <code>fx_color_mode</code>: explosions in their own colour (as before), your team&#x27;s (explosions don&#x27;t record an owner, so &quot;team&quot; is your team&#x27;s colour) or <code>fx_color</code>. Kill bursts keep theirs: they say whose kill it was.
+</li>
+<li><b>Objectives in your palette (#104).</b> <code>obj_palette</code>: the bomb&#x27;s blink and payload checkpoints not yet reached use your enemy colour (from your colour scheme, so the batch 3 palettes apply). The other objectives were already team-coloured.
+</li>
+<li><b>Map colour overrides, high contrast (#105).</b> <code>sky_override</code> / <code>sky_color</code> and <code>glow_override</code> / <code>glow_color</code> replace every map&#x27;s sky and glow (prepareScene builds them as locals; x &lt; 0 means the map&#x27;s own). <code>high_contrast</code> lightens wall base colours and darkens trim.
+</li>
+<li><b>F3 colourblind palette (#109).</b> <code>f3_safe</code>: the F3 pipeline bars use the Okabe-Ito colours (blue / orange / bluish green / vermilion ...), distinct in every common colour blindness.
+</li>
+<li><b>Always on top (#122).</b> <code>on_top</code>: <code>GLFW_FLOATING</code>, set when it changes. Confine cursor was <b>skipped</b>: GLFW 3.3 has no confine, in play the cursor is already captured, and the menus would need per-OS code that can&#x27;t be tested here.
+</li>
+<li><b>Gun colour (#129).</b> <code>gun_color</code> map (as before) / team / custom (<code>gun_custom</code>): the viewmodel&#x27;s metal tint.
+</li>
+<li><b>Objective zones (#136).</b> <code>obj_opacity</code> 0 to 2 scales points zones&#x27; and the KOTH hill&#x27;s fill; <code>obj_pulse</code> off holds them steady.
+</li>
+<li><b>Dash buffer (#147).</b> <code>dash_buffer</code> off / 0.05 / 0.1 (as before) / 0.15 s: how long a dash pressed before it&#x27;s ready is kept.
+</li>
+<li><b>Smooth strength (#206).</b> <code>smooth_amt</code> 0.25 to 1: the FXAA pass mixes its result with the unfiltered pixel (<code>uEdgeOff</code>, 1 = full as before), set only when it changes.
+</li>
+<li><b>Lightmap filter (#208).</b> <code>lightmap_nearest</code>: the lightmap texture&#x27;s filter becomes GL_NEAREST (crisp texel blocks, the old-school look), switched only when it changes.
+</li>
+<li><b>Wallbang tint (#214).</b> <code>wallbang_tint</code> / <code>wallbang_color</code>: wallbang brushes in your colour instead of the dark grey.
+</li>
+<li><b>Ultra safety margin (#220).</b> <code>ultra_margin_us</code> 0 to 2000 µs (150 as before; the slider goes to 1000): how early low latency ULTRA starts each frame. More margin, fewer missed vblanks; less, a little lower latency.
+</li>
+<li><b>NVIDIA driver profile (#222).</b> <code>nv_threaded</code> (Threaded Optimization off, setting 0x20C1221E) and <code>nv_dxgi</code> (Vulkan/OpenGL present method: DXGI, 0x20D690F8) write the game&#x27;s NVIDIA profile through NVAPI, the same path as GPU MAX CLOCKS (now a shared <code>nvProfileSetting</code>). Windows only; the setting IDs are from NvApiDriverSettings.h and could not be tested on an NVIDIA card here. A failure says why and turns the toggle back off.
+</li>
+<li><b>Quip captions (#229).</b> <code>quip_captions</code>: player quips get a caption even with CAPTIONS off.
+</li>
+<li><b>Announcer ducking (#233).</b> <code>ann_duck</code> 0 (off, as before) to 1: effects get that much quieter while an announcer line plays (the mixer checks its voices once a buffer).
+</li>
+<li><b>Demo rate in settings (#20).</b> DEMO RATE (<code>demo_full_rate</code>, 62.5 Hz or every snapshot) is on MORE 8 as well as on DEMOS.
+</li>
+<li><b>Screenshots (#38).</b> <code>shot_format</code> PNG / TGA, <code>shot_folder</code> the game&#x27;s data folder / Pictures/Quark in your home folder, <code>shot_hide_hud</code> saves the 3D view right after it&#x27;s drawn, before the HUD (one frame later, no extra pass). OPEN FOLDER opens it. JPG was <b>not</b> added: the tree has no JPG encoder and adding one is a new third-party file.
+</li>
+<li><b>Skipped:</b> #19 voice chat (there is none), #85 language (every string would first have to move into one table), #224 HDR (parked).
+</li></ul>
+<h3>Settings: batch 4, the 1s (HUD, menus, social, editor, practice, gameplay)</h3>
+<p>Worker 2&#x27;s share of the 1-scored items, in the same batch-3 key table (<code>b3Keys</code>). Nothing runs per frame at the defaults beyond what ran before: the colours replace constants, the compass and radar draw only when on.</p>
+<ul>
+<li><b>HUD &gt; MORE (new page; morePages / moreNav / search / uiScreenPath / settings_index know it).</b> The HUD tab&#x27;s panel ends at Y 560 to leave the live HUD preview visible, so the HUD&#x27;s MORE button sits in that footer; the MORE page itself is a normal full-height page without the preview.
+</li>
+<li><b>Colours (#93, #94, #95, #96, #99).</b> <code>bar_recharge_color</code> (a bar while it recharges, and the dash pips), <code>speed_low_color</code> / <code>speed_high_color</code> (the speed meter blends from one to the other as before from gold to red), <code>slot_off_color</code> (the weapon list: a weapon not usable now, at its old 35% opacity), <code>sticky_full_color</code>, <code>warn_color</code> (the ranked and unrated notes under the score box), <code>info_color</code> (the grey lines: JOIN A TEAM..., the host&#x27;s port and listing lines), <code>dmg_head_color</code> / <code>dmg_big_color</code> (damage numbers, 40+ for big). Each defaults to the colour it replaces.
+</li>
+<li><b>Text outline (#216).</b> <code>text_outline</code> 0 to x1.5 scales the UI shader&#x27;s outline band (a uniform set only when it changes). Capped at 1.5 and kept at least 0.12 distance-field units inside the glyph edge, because the distance field&#x27;s spread runs out at small text and a thicker band blotted the letters together.
+</li>
+<li><b>Notices (#72).</b> <code>notice_lines</code> 1 to 8 (was a fixed 4) and <code>notice_time</code> x0.5 to x3 on each notice&#x27;s time.
+</li>
+<li><b>Compass and radar (#160).</b> <code>compass</code>: a 180-degree strip at the bottom centre with N / NE / E... every 45 and ticks every 15. <code>radar</code>: a 60 px disc top left, up = where you look, <code>radar_range</code> 10 to 120 m (further ones sit on the rim): your teammates in team modes and the objective markers&#x27; positions (collected from the marker labels the world pass already draws). Never enemies, and off in ranked (the default HUD). No minimap: it needs a top-down render of each map.
+</li>
+<li><b>REC (#201).</b> <code>hide_rec</code> drops the blinking REC while recording; the demo playback bar stays (it&#x27;s the playback control&#x27;s progress).
+</li>
+<li><b>Tourney TAB (#179).</b> <code>tourney_tab</code> 0 the bracket (as before), 1 the scoreboard; the bracket still shows between rounds.
+</li>
+<li><b>HUD panel colour (#97).</b> Not a new setting: theme.cfg&#x27;s <code>hud-panel</code> (background, border, opacity) already does it, and the on-screen editor edits it.
+</li>
+<li><b>Stair smoothing (#156).</b> <code>step_smooth</code> off skips the X7 camera ease on stair steps (the view jumps with your feet).
+</li>
+<li><b>Typing indicator (#169).</b> <code>send_typing</code> off: the client stops sending <code>typing</code> while you type, so nobody sees your &quot;...&quot; or hears your keys.
+</li>
+<li><b>Clickable tiebreak (#180).</b> <code>rps_click</code>: while you choose in the hide and seek tiebreak, the cursor is freed and a click on ROCK / PAPER / SCISSORS throws it (the slot keys still work).
+</li>
+<li><b>Fixed logo (#110).</b> <code>fixed_logo</code>: the title in the default cyan / red instead of your team colours.
+</li>
+<li><b>Bots (#135).</b> <code>bot_looks</code> 0 a mix of models (as before), 1 all STANDARD; <code>bots/names.txt</code> (BOT NAMES FILE makes one and opens the folder): one name a line, letters / digits / spaces / - _, up to 12 characters and 64 names, given to your server&#x27;s bots as &quot;BOT &lt;NAME&gt;&quot; (ServerConfig <code>botNames</code>, <code>botLooks</code>; text in the config, no protocol change). Hosted games only; dedicated servers keep the built-in names.
+</li>
+<li><b>Clip box colour (#106).</b> <code>clip_color</code> for the editor&#x27;s see-through clip boxes (their opacity unchanged).
+</li>
+<li><b>Race / leaderboard colours (#100).</b> Worker 1&#x27;s SPLITS: PALETTE (<code>split_palette</code>) now also colours the race stats&#x27; BEST row and the leaderboard&#x27;s #1 in your team colour instead of gold, rather than a second setting for the same thing.
+</li></ul>
+<h3>Movement: wall teleporters keep speed, clip refuses the grapple (owner, 2026-10-30: &quot;clip should also refuse hook&quot;; the teleporter bug from a map review)</h3>
+<ul>
+<li><b>Wall teleporters kept only the clipped speed.</b> A teleporter block is solid, and the touch check (pmove.cpp) ran after the slide move had already clipped the velocity against it. So whenever a step ended inside the wall rather than just short of it, <code>n * length(s.vel)</code> used what was left after the clip. At 60 m/s into a wall teleporter, 4 starts out of 8 came out at under 1 m/s. Now the exit speed is the larger of the speeds before and after the slide. Floor teleporters behaved the same before; it only showed on walls, because the speed was horizontal. Test: movement, 8 start offsets at 60 m/s, all keep 60.
+</li>
+<li><b>Clip refuses the grapple.</b> Clip (material 9) let the hook pass through it to whatever was behind, which made the invisible lids and the clip over walls hook points nobody could see. <code>Map::raycast</code> takes <code>hitClip</code> (only the grapple and the bots&#x27; hook planning pass it). A hook that reaches clip hits it and lets go, like nograpple. Shots and sight still pass clip. Cost: none on the shot path (the extra test only runs on brushes that don&#x27;t stop shots).
+</li></ul>
+<h3>Maps: q&#x27;s Surfy and Cobblestone ship (owner, 2026-10-30: &quot;make sure all future updates get cobblestone map and surfy map, use latest version; also surfy map is default surf gamemode map&quot;)</h3>
+<ul>
+<li><b>Shipped as hand-made maps.</b> <code>maps/surfy.qmap</code> (58 brushes, <code>for surf</code>, saved 2026-10-29 18:46) and <code>maps/cobblestone.qmap</code> (885 brushes, no <code>for</code> line, saved 2026-10-29 15:59) are the newest copies from q&#x27;s maps folder, byte for byte (sha256 20620ee2... and 31fbb542...). <code>.gitignore</code> un-ignores both, so CMake embeds and copies them into every build like the generated maps. As <code>handmade</code> maps they run every map check but never fail <code>quark_tests</code>.
+</li>
+<li><b>Surfy is surf&#x27;s default.</b> <code>Game::bestMapFor</code> took the first map built for a mode, alphabetically, which is Cascade. A small per-mode default (<code>defaultMapName</code>: surf -&gt; surfy) now comes first when that map is there and offers the mode. The mode picker&#x27;s &quot;MAP:&quot; line now names the map <code>bestMapFor</code> would start on, instead of the last map built for the mode, so the line and the start agree (it also fixes koth and hide naming a different map than the one you got).
+</li>
+<li><b>Race and surf on a map with no race spawn.</b> Surfy starts players on an <code>any</code> spawn, but race and surf asked for a <code>race</code> one, so the game didn&#x27;t count Surfy as a surf map at all and would have kept Cascade as the default. Now a map with race checkpoints and no race spawn offers race and surf, and <code>modeSpawnType</code> starts racers on its <code>any</code> spawns. Maps with race spawns behave as before.
+</li>
+<li><b>Hand-made maps don&#x27;t fail the test run,</b> as CLAUDE.md says: the spawn-pool check (Surfy has 1 spawn for 8 racers, Cobblestone 4 for 8 in FFA) and the save round trip&#x27;s float-noise check (Quarkology&#x27;s cut pieces write numbers like 1.0000048) now report a hand-made map&#x27;s misses as HUMAN-MADE, like the other map checks.
+</li>
+<li><b>Why Cobblestone ships:</b> it&#x27;s q&#x27;s test map for the cobblestone look&#x27;s frame-time lows (0.1% low 800 vs 2800 fps on the older looks, parked to fix later), so every build carries the same benchmark.
+</li></ul>
+<h3>Servers: testing-only install (owner, 2026-10-30: &quot;default is both, you should have the option&quot;)</h3>
+<ul>
+<li><b><code>install.sh --testing-only</code></b> sets up only the testing instance (user <code>quark-testing</code>, <code>/opt/quark-testing</code>, <code>/var/lib/quark-testing</code>) on the production port (<code>--port</code>, default 27500; <code>--testing-port</code> overrides). No <code>quark</code> user or production clone is made; an existing production server is stopped and disabled with its data kept. The testing instance builds this checkout itself (there&#x27;s no production build to copy) and runs its first update check during the install, as production does.
+</li>
+<li><b>Always on.</b> Its update unit sets <code>QUARK_TESTING_ALWAYS=1</code>, and <code>autoupdate.sh</code> then skips the &quot;only while newer than production&quot; switch: no <code>active</code> file, no <code>quark-testing-active.path</code>, no <code>ExecCondition</code>. It runs the newest testing build, and installs and runs the production release once that is newer (the updater already built production in that case to keep its own code current; now the server also runs it), so the box never sits empty after a release. Why: a box meant only for testing would otherwise be idle from each release until the next testing push.
+</li>
+<li><b>No governor, normal priority</b> when alone: the load governor and <code>Nice=5</code> / <code>CPUWeight=50</code> exist to make room for production, which isn&#x27;t there.
+</li>
+<li><b>Remembered</b> in <code>/etc/quark/install.conf</code> (<code>PRODUCTION=0</code>), so re-running install.sh with no options keeps it, taking the server options from the testing unit. <code>--both</code> goes back to both (the testing port then moves to production + 1 again unless <code>--testing-port</code> says otherwise); <code>--no-testing</code> still means production only. The default is unchanged.
+</li></ul>
+<h3>Servers: the OFFICIAL tag (owner, 2026-10-30: official servers get a tag in the server browser that can&#x27;t be faked by naming a server &quot;official&quot;)</h3>
+<ul>
+<li><b>What.</b> JOIN&#x27;s server list draws an OFFICIAL chip (the ranked gold: gold Rubik text at hint size on a dark gold chip with a gold border; dark text was tried and the text outline swallowed it) before the name of an official server and sorts the official servers first, ahead of favourites and the chosen sort. The official servers are now one box, 75.127.7.139: production on UDP 27500, testing on 27501.
+</li>
+<li><b>How it can&#x27;t be faked.</b> The client has the list built in (<code>kOfficialServers</code>, <code>src/game/master.cpp</code>; <code>isOfficialServer(ip, port)</code> / <code>isOfficialServer(&quot;a.b.c.d:port&quot;)</code>, <code>master.h</code>) and matches it against the address the info reply actually came from (<code>ServerInfo::official</code>, set once per reply in <code>ServerBrowser::poll</code>, and for a silent internet entry from its listed address), never against the name the server reports. A spoofed UDP source would also need the reply to reach the browser&#x27;s own socket for a query it sent, and joining goes to that same address. The string form is strict (four dotted parts, no leading zeros, a port required), so lookalikes such as <code>75.127.7.139:27502</code>, <code>75.127.7.13:27500</code> or <code>075.127.7.139:27500</code> don&#x27;t match (<code>testOfficialServers</code>, group ranked).
+</li>
+<li><b>Why built in, not from the Worker.</b> <code>/list</code>&#x27;s format stays one <code>ip:port</code> per line (old clients take any short line as an address), and a flag served by the Worker would only be as trustworthy as the Worker&#x27;s reply; a list in the signed game can only change with a signed release. The cost: if the official servers move, <code>kOfficialServers</code> must be updated and a release shipped (docs/HANDOVER.md says so).
+</li>
+<li><b>Cost.</b> One bool per server, computed when its reply arrives; the draw adds a static string, a measured width, one rounded rect and one text per official row: no allocation a frame.
+</li></ul>
+<h3>Modes: power (MODE_POWER 14; owner, 2026-10-30: &quot;each team has player count * 2500 health, nobody can die, just soak damage; when total team health reaches 0 they lose&quot;)</h3>
+<ul>
+<li><b>Rules.</b> Team vs with one health pool per team: <code>poolPerPlayer</code> (2500, a new param of the new <code>pool</code> object) x the players on it, full at the start of each round. In <code>Server::damagePlayer</code>, an enemy&#x27;s hit (after the ruleset&#x27;s multipliers, so instagib takes 101) comes off the victim&#x27;s team pool while the round is live, and never off the player&#x27;s own health: nobody dies of damage, and knockback lands as before. Your own hits, teammates&#x27; and the world&#x27;s (acid, spike floors and the other liquid / feature damage through <code>takeAcid</code>) take nothing, so a rocket jump or a lava touch can&#x27;t lose the match for your team; a fall out of the map still kills and respawns you after 2 s (<code>modeRespawnDelay</code>) at no cost to the pool. A pool at 0 loses the round. When the 600 s clock runs out, the pool with the larger share of its size wins (a draw starts another round). One round wins the match (<code>rounds</code> 1).
+</li>
+<li><b>Joins and leaves</b> (<code>poolStep</code>, every tick): a player who joins a team mid-round adds <code>poolPerPlayer</code> to its pool and its size; one who leaves takes their share off the size, and the pool shrinks to fit it (an emptied team&#x27;s pool goes to 0 and it loses).
+</li>
+<li><b>Wire and demos.</b> The pools ride in ModeState fields power doesn&#x27;t otherwise use (<code>powerPool</code> / <code>powerPoolMax</code>, protocol.h: payloadDist / payloadLen = the pools, point / pointCount = the players each counts, target = hp per player), so the snapshot format and every demo stay as they were. Protocol 54 anyway: an older client has no mode 14 (demos convert with no change).
+</li>
+<li><b>Mode logic.</b> <code>tools/modes/power.qlogic</code> (<code>use pool</code>, <code>poolStep()</code>, the <code>pool[team]</code> (rw) and <code>poolMax[team]</code> arrays) says what the native rules do; the lockstep test plays power on Bastion natively and through the interpreter at 1000 / 250 / 125 Hz and finds no difference. Custom modes can base on power.
+</li>
+<li><b>HUD.</b> The score box shows your pool and the enemy&#x27;s (rounded up) instead of rounds; the objective line reads &quot;TEAM POOL n / size - ENEMY n / size&quot; with your pool&#x27;s share as its bar. Main menu &gt; INFO &gt; MODES explains it. The mode pickers suggest Bastion (power plays on the team vs map).
+</li>
+<li><b>Maps.</b> Bastion and Orbital (team vs) and Lodestone also offer power (<code>also</code> in their builder files), so they&#x27;re graded for it like their other modes.
+</li>
+<li><b>Bots</b> play it as team vs (no objective; they fight).
+</li>
+<li><b>Tests.</b> <code>testPower</code> (rules): the pools start at 2500 each; an 80 hit takes 80 from the victim&#x27;s pool and none of their health; your own rocket takes nothing; a third player brings 2500 to their team; emptying team B&#x27;s pool gives team A the round. The every-mode bot run plays power on Bastion; the lockstep covers it.
+</li></ul>
+<h3>Map checks: the walk grid walks ramps (engine work list, 2026-10-30: &quot;the walk check can&#x27;t see ramps&quot;)</h3>
+<ul>
+<li><b>What was wrong.</b> <code>tests/walkgrid.h</code> (the collision-checked walk behind the spawn / route checks, <code>quark_tests maps</code>, <code>bounds</code> and <code>quark_maptool</code>&#x27;s check / route / metrics) put every solid brush into its columns as its whole box, <code>box.mn.y .. box.mx.y</code>. A wedge, corner, tetra or cut slope was a block as tall as its high end, so a 15 m decline was a 15 m wall. Mine&#x27;s haul road (a 25 degree wedge, 15 m over 31 m) was found only by an 18.6 s detour, and Mine&#x27;s lava ramp and QK7&#x27;s helix (a solid wedge, then cut ramps every 5 m) weren&#x27;t found at all.
+</li>
+<li><b>Now.</b> A slope you can walk (<code>WalkGrid::walkableSlope</code>: standing on the floor, <code>up</code> 0, or a cut box, and no steeper than pmove&#x27;s <code>floorFace</code> limit, n.y &gt;= 0.7071 - 1e-4, tan 1.0002) goes into each column as what of it is over that column&#x27;s hull footprint (<code>columnSpan</code>): a wedge / corner / tetra up to <code>brushTopOver</code> of the footprint (where pmove&#x27;s box collision rests the feet: the slope&#x27;s highest point under the hull); a cut box between its planes&#x27; bounds over the footprint&#x27;s corners (the top no higher than each up-facing plane&#x27;s highest corner, the bottom no lower than each down-facing plane&#x27;s lowest; a side plane that cuts the whole footprint away leaves the column out). That is exact on a ramp&#x27;s face and errs high (more solid, never a false way through) only where two planes meet over the column. A 45 degree ramp rises 0.25 m per 0.25 m column, well inside the 0.55 m step. Steeper slopes, and slopes on their side or hung from a ceiling, stay whole boxes: stepping up a 63 degree face column by column would climb walls pmove slides you off.
+</li>
+<li><b>Standing on a ramp.</b> The feet rest on the slope&#x27;s highest point under the hull, at its edge, so the 10 cm support check (floor within 0.3 m of the centre, 2 cm under the feet) failed on a slope. Each merged span now carries a slack, (0.4 - 0.3) x the steepness + 5 mm, and the support probe goes that much deeper there (0 on boxes: flat floors check exactly as before).
+</li>
+<li><b>Results.</b> Routes (<code>quark_maptool route</code>, before -&gt; after): Mine haul road foot to top 18.6 s (round the long way) -&gt; 3.7 s; Mine lava ramp unreachable -&gt; 3.3 s; QK7 ground to the first helix landing (5 m) unreachable -&gt; 7.0 s, to the top (30 m) unreachable -&gt; 21.1 s. Standing spots: Mine 535,394 -&gt; 543,740, QK7 264,086 -&gt; 303,058, Datacenter 1,609,545 -&gt; 1,626,575. The shipped maps are unchanged except Cobblestone (151,829 -&gt; 152,465; its slopes), and all still pass.
+</li>
+<li><b>Speed.</b> Only slope brushes take the new path (boxes are rasterised as before). Raster lap on Datacenter (166 cut boxes) about 120 -&gt; 165 ms and Mine 100 -&gt; 133 ms (best of 4, threaded, a shared CPU); the whole build is unchanged within noise (Datacenter 956 -&gt; 932 ms for the header&#x27;s single-threaded build: fewer spots fail the off-centre search). A first version clipped each cut&#x27;s faces per column (<code>cutBounds</code>) and took the raster to 670 ms; the corner bounds give the same spots.
+</li>
+<li><b>The maptool copy.</b> <code>tools/maptool/map/walkfast.cpp</code> (the threaded copy of the build) uses the same <code>walkableSlope</code> / <code>columnSpan</code> / <code>mergeSpan</code> / <code>RawSpan</code> from the header; <code>walkverify</code> still finds the two builds identical on Mine, QK7 and Datacenter.
+</li>
+<li><b>Test.</b> <code>testWalkGrid</code> (maps group): a 4 m deck with no way up is unreachable; a 27 degree wedge, a 45 degree wedge, a cut ramp (y &lt;= x over its box), a wedge rising along z and a corner ramp each make it reachable (and the way down walks); a 63 degree wedge and an upside-down wedge don&#x27;t.
+</li></ul>
+<h3>Bots: bomb attackers take every site in turn (engine work list, 2026-10-30: &quot;bomb bots always pick the nearest site&quot;)</h3>
+<ul>
+<li><b>What was wrong.</b> The objective (<code>bots.cpp</code> and the default brain&#x27;s <code>objective bomb</code> slot) sent the attackers to <code>site(0)</code> every round: the carrier always went for the first site in the file, and the others escorted it. On Datacenter, B is about 8 m further from the attackers, and no bot ever went there.
+</li>
+<li><b>Now.</b> The carrier (and any attacker before someone has the bomb) goes for site <code>(round + teamRank) % sites</code>: deterministic, no randomness, so a seeded match plays the same, and with two sites each one gets every other round (more when the carrier changes rank). The escorts follow the carrier as before. The defenders are still dealt one site each by rank (<code>teamRank % sites</code>), so both sites are covered whenever a side has two or more.
+</li>
+<li><b>Brain language.</b> A new objective sensor <code>roundNo</code> (int: the round, 1 = the match&#x27;s first, 0 before one), in GRAMMAR.md. The default brain&#x27;s line is <code>goto site(attacker ? roundNo + teamRank : teamRank)</code>, which stays the native code&#x27;s twin (the brain lockstep tests compare them). Quarkology&#x27;s bot editor (its ast.js sensor list and fixture default.qbrain) needs <code>roundNo</code> added to know the new sensor.
+</li>
+<li><b>Measured.</b> Depot, 4 v 4 expert bots, 600 s (the new <code>bombsites</code> test group): before, 16 rounds with plants A 7, B 0; now 20 rounds, A 10, B 8, defenders sent 40 / 40. Datacenter (maps-m2&#x27;s map, <code>quark_maptool bots</code>, 8 experts, 600 s): 12 plants, A 5, B 7.
+</li></ul>
+<h3>Map format 11: mode spawn sets (q, 2026-10-30: Mine&#x27;s koth hill gets its own koth spawn set, separate from the bomb spawns)</h3>
+<ul>
+<li><b>Before.</b> A spawn&#x27;s team was <code>a</code>, <code>b</code>, <code>any</code>, <code>race</code> or a multi point stage (<code>att0</code>..<code>def9</code>), shared by every mode that uses that side. A map built for bomb with a hill too (Mine) could only start koth on its bomb sides.
+</li>
+<li><b>Syntax.</b> <code>spawn &lt;mode&gt;-&lt;side&gt; x y z [yaw]</code>, side <code>a</code>, <code>b</code> or <code>any</code>, the mode as <code>modeName</code> writes it (lower case): <code>spawn koth-a -10 0 10 0</code>, <code>spawn koth-b 10 0 -10 180</code>, <code>spawn ffa-any ...</code>. One word, so every tool that reads a spawn&#x27;s coordinates as words 2-4 (tools/maps/prefabs.py, Quarkology&#x27;s readers) keeps working; <code>M.spawn(&quot;koth-a&quot;, x, y, z, yaw, mirror_team=&quot;koth-b&quot;)</code> writes a pair. Refused: race and multi point (<code>race-a</code>, <code>points-a</code>: their race and staged spawns are their sets), an unknown mode or side, upper case.
+</li>
+<li><b>Format change, by the rule.</b> An older reader refuses an unknown spawn team (since format 2), so this is a format change: <code>kMapFormatVersion</code> 10 -&gt; 11, <code>upgradeMap10to11</code> in <code>kMapUpgrades</code> (nothing to change: a format 10 map has no such spawns; only the version line moves), <code>testModeSpawnSets</code> next to <code>testMapConverter</code> (whose every-version loop now covers 10 -&gt; 11). <code>tools/maps/prefabs.py</code> writes <code>version 11</code>.
+</li>
+<li><b>In memory.</b> The team is <code>SPAWN_MODESET + 3 x mode + side</code> (24 .. 68, after the staged ones, map.h: <code>modeSpawn</code>, <code>isModeSpawn</code>, <code>spawnSetMode</code>, <code>spawnSide</code>); <code>isStagedSpawn</code> now stops at 23. <code>spawnTeamWord</code> / <code>spawnTeamFromWord</code> (map.cpp) are the one reader and writer (the parser, <code>serialize</code>, the maptool&#x27;s JSON names). Editor edit ops (<code>s set ...</code>) accept them; a race / points set is refused there too.
+</li>
+<li><b>Who uses them.</b> <code>modeSpawnType</code> returns the mode&#x27;s own set&#x27;s side when the map has a spawn of it (then <code>spawnPool</code> picks only those), and the normal side otherwise, so a map with no set plays exactly as before, and one side&#x27;s set alone leaves the other side on the normal spawns. No other mode ever starts on them: <code>spawnPool</code>&#x27;s last fallback (every spawn) leaves mode sets out unless they are all a map has. <code>canSupportMode</code> counts a mode&#x27;s own set for its sides (a koth-only map with <code>koth-a</code> / <code>koth-b</code> offers koth, not vs).
+</li>
+<li><b>Checks.</b> The walk check (<code>walkRoutesMissing</code>) routes each mode from its own sides (<code>WalkSpawnSets::forMode</code>): koth from the koth set to the hill. The spawn-pool check already asked <code>modeSpawnType</code> and the sight check too (koth sides in sight of each other are flagged); the mirror-twin check pairs <code>koth-a</code> with <code>koth-b</code>; the 1.5 m spacing check counts a mode set as its own group. <code>quark_maptool</code>: check (the same code), metrics (a mode&#x27;s objective routes from its set) and custom tests (<code>team: &quot;koth-a&quot;</code>). The pool check wants full / 2 = 4 spawns a side in koth, the same as any team mode: a map&#x27;s koth set needs 4 a side.
+</li>
+<li><b>Surfy and Cobblestone</b> (the shipped hand-made maps) get <code>version 11</code> in place of <code>version 10</code>, nothing else: what the converter writes. Left at 10 they converted on every load, and the converted text&#x27;s sha256 no longer matched the embedded one, so <code>isOfficialMap</code> refused them (ranked group, reset built-in maps).
+</li>
+<li><b>Editor.</b> A spawn&#x27;s panel gets MODE SET (EVERY MODE, or ONLY one of the 13 modes that can have a set); TEAM (M) then cycles that set&#x27;s A / B / ANY. A mode set&#x27;s spawn has a white cap over its team colour.
+</li>
+<li><b>Test.</b> <code>testModeSpawnSets</code> (movement group): read and written back, koth starts on <code>koth-a</code> / <code>koth-b</code> and bomb / vs on <code>a</code> / <code>b</code>, pools hold only their own, the fall backs (no set; one side&#x27;s set), a koth-only map, <code>ffa-any</code>, eight refused words, edit ops, and a koth spawn sealed in a box reported as &quot;can&#x27;t reach hill 1&quot; with nothing else reported.
+</li></ul>
+<h3>Map format 12: walk teleporters (owner, 2026-10-30: &quot;teleporters should have toggle for carry all speed or max at walking velocity, in solar they should all be walking speed&quot;)</h3>
+<ul>
+<li><b>What.</b> A teleporter has a speed mode: CARRY (as before, the default) or WALK. Through a walk teleporter a player comes out of its pair at <code>min(speed in, run speed)</code>: the run speed is <code>kGroundSpeed</code> (9.5 m/s) x the custom mode&#x27;s speed scale, still pointing straight out of the exit face. At 60 m/s in, out at 9.50 (8 start offsets, every one); at 6.1 m/s in, out at 6.1 (never faster than you went in).
+</li>
+<li><b>Which teleporter decides: the one you go INTO</b> (<code>Brush::tpWalk</code> on the entry). A mapper places a teleporter per route, and a pair can then be walk one way and carry the other (a stage&#x27;s arrival portal in a surf map caps the run you came in with, the way back keeps it). The exit&#x27;s own flag only matters for whoever enters it.
+</li>
+<li><b>Why the cap is the run speed and not zero.</b> You leave the exit face moving the way it points, as with carry, so a floor exit still lifts you clear and a wall exit still puts you out of the wall; standing still in the doorway would leave you on the exit&#x27;s edge.
+</li>
+<li><b>Projectiles keep all their speed</b> through either kind (server.cpp, a projectile that hits one): a rocket capped at 9.5 m/s would hang in the air and fall; the toggle is about players&#x27; runs.
+</li>
+<li><b>Format change, by the rule.</b> File: <code>teleporter x0 y0 z0 x1 y1 z1 tp &lt;link&gt; &lt;face&gt; walk</code> (the word only when set; slopes and cut boxes the same after their box). <code>readTp</code> refuses any other word there, and an older reader refuses the word, so <code>kMapFormatVersion</code> 11 -&gt; 12, <code>upgradeMap11to12</code> in <code>kMapUpgrades</code> (nothing to change: a format 11 teleporter carries, as one without the word still does; only the version line moves) and a v11 case in <code>testMapConverter</code>. <code>tools/maps/prefabs.py</code> writes <code>version 12</code> and gets <code>M.teleporter(x0, y0, z0, x1, y1, z1, link, face, speed=&quot;carry&quot;|&quot;walk&quot;)</code>. Surfy and Cobblestone get <code>version 12</code> (as at 11: left behind they would convert on every load and fail the embedded sha256).
+</li>
+<li><b>Protocol 56.</b> Edit ops carry it (<code>b set ... p &lt;link&gt; &lt;face&gt; walk</code>), and pmove reads it on both sides (prediction: an older client would carry the speed the server caps), so <code>kProtocolVersion</code> 55 -&gt; 56. Demos: no record layout changed, an older demo&#x27;s edits (<code>p &lt;link&gt; &lt;face&gt;</code>) still read as carry; the existing converter covers it.
+</li>
+<li><b>Editor and tools.</b> The teleporter&#x27;s panel gets SPEED: CARRY / WALK under EXIT FACE. <code>quark_maptool</code> parse / serialize carry it as <code>speed: &quot;walk&quot;</code> on the brush (left out for carry), so Quarkology keeps it through a save. Bots don&#x27;t plan through teleporters, nothing to change there.
+</li>
+<li><b>Test.</b> movement (testFeatureBlocks): the 60 m/s wall-teleporter run through a walk one, 8 offsets, all out at 9.50 pointing out of the face; a 4 m/s run in comes out no faster than it went in; written back and read, in an edit op and applied, an unknown word refused. The carry run still keeps 60 at all 8.
+</li></ul>
+<h3>Weapons: the primary rocket thrusts 16 m/s2 (owner, 2026-10-30: &quot;rocket starting velocity 48, accel 16m/s2 so after 2 seconds it should be travelling 80m/s&quot;)</h3>
+<ul>
+<li><b>What.</b> <code>kRocketAccel</code> 4 -&gt; 16 m/s2, launch speed 48 m/s as before: 64 m/s after 1 s (56 m covered), 80 m/s after 2 s (128 m), 128 m/s at the end of its 5 s life (440 m in all, was 290 m). Time to 10 / 20 / 40 m: 0.201 / 0.391 / 0.742 s (were 0.207 / 0.410 / 0.806 at 4 m/s2): close up it is the same rocket, and a long shot gets there much sooner.
+</li>
+<li><b>Earlier the same day</b> it was 24 m/s and 8 m/s2 for a few hours (PR #135, protocol 57; the lob held at 33.6 m/s by <code>kRocketLobSpeed</code> 1.4). Both are back: 48 m/s and <code>kRocketLobSpeed</code> 0.7, so the lob is still 33.6 m/s.
+</li>
+<li><b>A whole step short.</b> <code>projectileExtrapolate</code> / <code>projectileRewind</code> counted their 1 ms steps as <code>(int)(t / kMoveStep)</code>, and 1.0 / 0.001 in float is 999.99..., so a 1 s extrapolation ran 999 steps plus a straight 1 ms: a step of thrust short (0.016 m/s at 16 m/s2, 0.004 at 4, under the old test&#x27;s tolerance). Now <code>+ 1e-3</code> before the cut (and a rest never below 0): the closed form is 64.0000 m/s at 1 s against the server&#x27;s stepped 63.9997.
+</li>
+<li><b>Protocol 58.</b> Every copy of a rocket&#x27;s path (prediction, rocket riding, the hook probe) flies with the thrust, so a 57 client would mispredict rockets. No layout changed; the demo converter covers older demos as before.
+</li>
+<li><b>Rocket riding</b> flies its anchor with the same thrust, so the rocket you ride pulls away faster. <b>Bots</b> lead by <code>projectileFlightTime</code> with the new thrust (nothing to change).
+</li>
+<li><b>Test.</b> <code>testRocketThrust</code>: 64 ±0.01 m/s after 1 s, 48 + 16 x 1.001 / 2 m along; the base table&#x27;s 48 m/s and the lob&#x27;s 33.6 m/s checked. <code>testRocketRiding</code> hooks your own rocket once it is 2.2 m out (past the 1.2 m release distance + 1 m), which took the real-time race out of which command crosses it.
+</li></ul>
+<h3>Weapons: the primary rocket accelerates (owner, 2026-10-30: &quot;primary fire rocket should have an acceleration of 4m/s^2 on top of its current velocity / secondary unchanged&quot;)</h3>
+<ul>
+<li><b>What.</b> <code>kRocketAccel = 4</code> m/s² (gamedefs.h), along the rocket&#x27;s velocity, from its 48 m/s launch speed: 52 m/s after 1 s, 50.0 m covered in that second (48 + 2), 68 m/s at the end of its 5 s life. The lob (<code>gravMul</code> kRocketLobGravity, PROJ_LOB) gets none: <code>projectileAccel(type, gravMul)</code> is the weapon set&#x27;s <code>rocket.accel</code> for the primary rocket and 0 for everything else. A rubber bounce turns the velocity and the thrust follows it (it is along the velocity, not the launch direction).
+</li>
+<li><b>No speed cap.</b> The most it can gain is 4 x 5 s = +20 m/s (68 m/s, still under the crossbow&#x27;s 76.5), and a rocket that far out has long left any fight, so a cap would only be another number to keep in step on every copy of the path.
+</li>
+<li><b>One path everywhere.</b> A step is now <code>projectileStepVel</code> (the drop, then the thrust along what that leaves) in Server::stepProjectile, pmove&#x27;s rocket-riding anchor and the rockets its probe flies on, and Map::flyProjectile&#x27;s slow-mo steps. <code>projectileExtrapolate</code> / <code>projectileRewind</code> take a <code>ProjFlight</code> (drop + thrust) instead of a gravity: a thrust with no drop is a constant acceleration vector (it stays along the velocity), so the closed form is still one pass and exact (the old gravity sum with a vector), and the rewind is still its inverse. Only a weapon set that gives the primary rocket a drop as well bends the thrust; those few are stepped (the same steps, forwards and back) instead of summed. Every caller (the client&#x27;s drawing and snapshot extrapolation, your rockets&#x27; predicted copies, the hook probe, the server&#x27;s rewind for catching someone else&#x27;s rocket) passes <code>projectileFlight(type, gravMul)</code>.
+</li>
+<li><b>Wire: protocol 55.</b> Riding a rocket, pmove flies the anchor with the rocket on both sides, so it needs the thrust: MoveState <code>hookAccel</code> (and HookProbe / RocketCopy / HookCatch <code>accel</code>), set by the server every tick like <code>hookGrav</code>, and written after it in the own movement state (<code>kSnapRocketThrustSince</code>; the read clamps it to the field&#x27;s 0-100 range). An older client would mispredict every rocket anyway. Demos: the converter reads a 54 header without it (no thrust) and writes today&#x27;s layout, so older demos convert at startup as before.
+</li>
+<li><b>Bots.</b> They lead a rocket by <code>projectileFlightTime</code> (solving d = v t + a t² / 2) instead of distance / speed: at 40 m that&#x27;s 0.81 s, not 0.83 s, about 20 cm less lead on a target running 8 m/s. The maptool&#x27;s weapon range uses the same time for its aimed shots.
+</li>
+<li><b>Weapon sets and stats.</b> New field <code>rocket.accel</code> (m/s², 0-100, default 4; 0 turns it off). The weapon stats&#x27; travel times to 10 / 20 / 40 m count it (0.207 / 0.410 / 0.806 s, were 0.208 / 0.417 / 0.833), and the maptool&#x27;s stats row notes it.
+</li>
+<li><b>Test.</b> <code>testRocketThrust</code> (weapons group): a server-stepped primary rocket is at 52 ±0.01 m/s after 1 s, still on its line, within 2 mm of projectileExtrapolate and 50.002 m along; projectileRewind brings it back (1 s and 0.2345 s); the lob keeps its horizontal speed and drops 13.5 m/s²; the stepped drop-and-thrust path matches its steps and rewinds. The snapshot round trip carries <code>hookAccel</code>, and a protocol 54 header reads as no thrust.
+</li></ul>
+<h3>Modes: neutral payload&#x27;s clock scales with the players (owner, 2026-10-30: &quot;npayload round timer should be 2 minutes per total players&quot;)</h3>
+<ul>
+<li><b>What.</b> New mode param <code>roundTimePerPlayer</code> (modeparams.h, s, 0-3600, default 0 = off; common.qlogic declares it and its roundLength slot uses it). Above 0 the round clock is it times the players on teams A and B when the round goes live (at least 1), and it beats <code>roundTime</code>. Neutral payload sets 120 (npayload.qlogic too): 1v1 4 min, 2v2 8, 4v4 16 (it was a flat 5 min). <code>roundTime</code> 300 stays as the number a custom mode falls back to with the per-player clock set to 0.
+</li>
+<li><b>Why at the round start.</b> The clock is set once, when the freeze ends (roundLength is read there only), so someone joining mid-round doesn&#x27;t move it; the next round counts them.
+</li>
+<li><b>Test.</b> The neutral payload test (bots group): a 1v1 goes live with a 240 s clock.
+</li></ul>
+<h3>Tests: testBotFalls plays on a lava moat again (engine work list, 2026-10-30)</h3>
+<ul>
+<li><b>What was wrong.</b> <code>testBotFalls</code> (group botfalls) said it played experts on &quot;Dojo (a platform in a lava moat)&quot;. That was the old Dojo; the rebuilt Dojo (a hall, tatami, garden: maps branch) has no lava, so the test would have stopped testing edges at all once it lands.
+</li>
+<li><b>Now.</b> The test writes its own map, <code>zz_lavamoat</code> (<code>lavaMoatMap()</code>, the old Dojo&#x27;s layout: a 24 m platform, a 4.5 m lava moat round it with its bed 1.4 m down, a ring path outside at the platform&#x27;s height, walls), into the user maps folder for the run, checks it is what it says (lava under three points of the moat, none on the platform or the ring, 1v1 offered), plays 90 s of expert 1v1 on it, and removes it. The name is fixed (the bots&#x27; seed comes from it), and <code>zz_</code> keeps it out of the every-map checks. Foundry (tag, lava trenches) is unchanged.
+</li>
+<li><b>Result.</b> Lava moat: 0 falls, 0 self-kills, 6 deaths in 90 s (the old Dojo: 0 falls, 3 deaths); the limit stays at 2 falls and 1 self-kill.
+</li></ul>
+<h3>Settings: the page strip, and pages that ran into their footer (owner, 2026-10-30)</h3>
+<ul>
+<li><b>The page strip.</b> Owner: &quot;in the settings pages at the bottom you should be able to see all the page numbers, and on the end they should have left and right arrows, which you can also go to by pressing left and right arrow&quot;. Every tab with MORE pages (PLAYER 2, GAMEPLAY 5, CONTROLS 3, VIDEO + AUDIO 9, HUD 2; CROSSHAIR has one page and no strip) draws <code>&lt;  1 2 ... N  &gt;</code> in the footer&#x27;s middle (<code>Game::drawSettingsPages</code>): the 376 px between BACK and the page&#x27;s own right-hand button (DEVICES, RESET ALL KEYS, RESET CROSSHAIR...), cells up to 40 px wide, 4 px apart (nine pages: 30.5 px cells), so the strip takes no row from the content. The page open is a filled tab; a number goes straight to its page (<code>Game::settingsPage</code>, which also closes a picker and a key capture, and puts CONTROLS back on its first key page), the arrows step one. <b>Edges: clamp, not wrap</b> (the arrow at an end is greyed out and does nothing): a wrap from page 9 to page 1 reads as a jump, and every page is one click away on the strip anyway. Not shown on FONT, DEVICES, the controls import list, the HUD editors or while SEARCH&#x27;s results replace the page.
+</li>
+<li><b>Arrow keys.</b> Left / Right (no Ctrl / Alt / Super) step the page in <code>Game::onKey</code>, before the game&#x27;s binds see the key, only when <code>Game::settingsPageKeys()</code> says nothing else has the keyboard: not while a text field has focus (SEARCH, a name, a slider&#x27;s or colour picker&#x27;s typed value: <code>Ui::typing</code>), a key bind is being captured (so an arrow can still be bound), a slider is held, a colour picker or dropdown is open, chat or the console is open, or on the pages without the strip. No other settings widget takes keys (the &lt; &gt; option rows are clicked, they never hold focus), so the arrows had no job there before.
+</li>
+<li><b>Replaced buttons.</b> The single <code>MORE  &gt;</code> / <code>MORE n  &gt;</code> button and the MORE pages&#x27; BACK-to-the-tab are gone (the strip does both). BACK is now the same on every page of a tab: it leaves settings. Esc keeps its old step (a MORE page goes to its tab&#x27;s first page, then out). DEVICES &gt;, RESET and the other right-hand buttons stay where they were.
+</li>
+<li><b>The bug: content drawn over the footer.</b> On Windows, VIDEO + AUDIO&#x27;s left column has two rows Linux / macOS don&#x27;t (GPU MAX CLOCKS, PRIORITIZE GAME, each with a two-line hint: 126 px; 166 px with VSYNC: LATENT SYNC&#x27;s TEAR LINE row), which pushed FLAT MAP down until MAP COLOR (y 618-650) sat on BACK and RESET MAP COLOR on MORE (footer at y 640). Its right column ended at y 638 with EXCLUSIVE AUDIO, 2 px above the footer. GAMEPLAY&#x27;s left column ran its last hint (USED WHEN SMOOTHING IS CUSTOM) to y 642 on every platform. CROSSHAIR&#x27;s COPY / PASTE CODE answer (shown 3 s after a click) was a hint under that row, down to y 640 (found by the new UI test check): it&#x27;s now beside the PER WEAPON header.
+</li>
+<li><b>The fix: rows moved, nothing shrunk.</b> FLAT MAP (FULLBRIGHT, MAP COLOR, RESET MAP COLOR) to VIDEO + AUDIO page 2 under INTERFACE (that column ended at y 440, now 572; 602 with the integrated-GPU hint). EXCLUSIVE AUDIO (Windows) to page 6 under OUTPUT, after AUDIO LATENCY (its column: 568 to about 624 on Windows). SMOOTHING (INTERP) and SMOOTHING DELAY from GAMEPLAY&#x27;s NETWORK to page 7&#x27;s NETWORK, after PACKET LOSS PROTECTION, with the other network settings (that column: 458 to 572; GAMEPLAY&#x27;s left column now ends at about 494, the page&#x27;s lowest ink at 546). The settings search index follows by itself (<code>tools/settings_index.py</code> reads the pages at build time).
+</li>
+<li><b>Audit.</b> Every page at 1280x720, 1920x1080 and 1024x768 (Linux, measured): the closest is GAMEPLAY page 4 at 10 px (at 720p) above the footer, then PLAYER 12, CROSSHAIR 16. The Windows-only rows were added by hand: VIDEO + AUDIO page 1 left 526 (566 with latent sync), right 582; page 6 about 16 px clear; page 9&#x27;s NVIDIA hint +14 px (ends about 400); page 7&#x27;s two platform hints cancel out. The layout scales with the window height (text a little smaller at 4:3), so no resolution is tighter than 720p.
+</li>
+<li><b>UI test.</b> The strip&#x27;s <code>PREVIOUS PAGE</code>, <code>PAGE 1</code> ... <code>PAGE N</code> and <code>NEXT PAGE</code> are each <code>nav</code> to their page (the open page and an end arrow <code>inert</code>), and the arrow keys are key actions doing the same, so every number, arrow and key is clicked / pressed on every page of every tab, in the menus and in game. New layout check: a settings page&#x27;s content (every 2D quad drawn between the tab row and the footer, labels and hints too, not only widgets: <code>Renderer::uiInkBottom</code>, a pass over that frame&#x27;s UI vertices, only while the test probes) must end at least 4 px (at 720p) above its footer row, at all three resolutions; the existing widget-overlap check only saw widgets, so a hint over BACK or a row on a platform&#x27;s extra rows went unnoticed.
+</li></ul>
+<h3>Settings: the SEARCH tab (owner, 2026-10-30)</h3>
+<ul>
+<li><b>What q asked.</b> &quot;search should be its own tab, where it shows every setting in the game in a big scrollable list 3 wide, and whatever you type in the search bar should limit what is seen; you should be able to search the name of the setting, or what it does, so like typing in screen should show the devices, fullscreen setting, ...&quot;. It replaces 1.19.4&#x27;s first search (a box over the tab row&#x27;s right end that listed up to 14 labels as buttons jumping to their page).
+</li>
+<li><b>One source of truth: the pages themselves.</b> <code>Game::drawSearchTab</code> calls every page&#x27;s own draw function (PLAYER 1-2, GAMEPLAY 1-5, CONTROLS 1-3 and its two key pages, VIDEO + AUDIO 1-9 and DEVICES, CROSSHAIR, HUD 1-2; 25 in all) with a <code>UiRelocator</code> set on the Ui. Every widget call (button, toggle, cycle, slider, colour picker, dropdown, text field) asks it first: it either skips the widget (returns before any text is fitted or drawn, reports nothing, takes no input) or gives it a cell, where the widget is drawn and works with the very code and config variable it has on its page (right-click to default, typing a slider&#x27;s value, colour pickers, key rebinding). A setting added to a page later is in the search with nothing else to do. Considered and not done: a registry of every setting&#x27;s widget as data (a rewrite of ~600 immediate-mode rows), or listing labels that jump to their page (what the old search did; q asked for working rows).
+</li>
+<li><b>Keeping a page&#x27;s other drawing out.</b> While relocating, <code>Ui</code> drops a page&#x27;s labels and hints and answers no hover outside the placed widget (so e.g. PLAYER&#x27;s model preview drag can&#x27;t react), the renderer&#x27;s 2D alpha is set to 0 and <code>Renderer::rect / text / roundRect / ...</code> now return at once when it is 0 (no quads; also a small saving for HUD elements at opacity 0), <code>drawModelPreview</code> doesn&#x27;t run, and a page&#x27;s state (tab, page, CONTROLS&#x27; key page, DEVICES) is put back after each. Left out of the list: navigation (<code>nav</code> expectations: FONT &gt;, DEVICES &gt;, EDIT ON SCREEN, the CONTROLS key-page tabs: they lead to pages that are listed themselves) and things that aren&#x27;t widgets. A row that opens something of its own page (CONTROLS&#x27; IMPORT, when the clipboard holds no controls, opens its file list) takes you to that page with it open.
+</li>
+<li><b>Matching.</b> Every word typed (split on spaces, upper-cased once per change of the query) must occur in the widget&#x27;s label, its id (a key slot&#x27;s &quot;CHAT KEY 1&quot;, a monitor&#x27;s &quot;MONITOR: ...&quot;), its value names (a cycle&#x27;s / dropdown&#x27;s), its help or its keywords. Help is the hint drawn under the row, read at build time by <code>tools/settings_index.py</code> (each hint attached to the row just before it; <code>kSettingsIndex</code> gains a help field); keywords are a small table there (<code>KEYWORDS</code>, by label or by an id&#x27;s first part) for words neither has: &quot;SCREEN&quot; on DISPLAY, WINDOW SIZE, FULLSCREEN SIZE, RENDER SCALE, SHARPEN, MONITOR, REFRESH RATE, PRESENT, BRIGHTNESS, FOV MODE; &quot;RESOLUTION&quot;, &quot;MIC&quot;, &quot;FIELD OF VIEW&quot;, &quot;LAG&quot;, ... The result per widget is cached in a hash map for the query (cleared when it changes), so a frame does one lookup per widget.
+</li>
+<li><b>The list.</b> 3 columns of 235 px (at 720p), 9 rows on screen (a 14 px tag over each 32 px widget, 54 px apart; the last row ends at y 602, clear of the footer), only the rows on screen drawn. The tag names the page (&quot;VIDEO 3&quot;, &quot;CONTROLS: MOVE KEYS&quot;) and, for a widget whose label doesn&#x27;t say what it is, its id (&quot;CONTROLS: JUMP KEY 1&quot;, &quot;PLAYER: NAME&quot;). The count of matches is shown by the field. Wheel: 2 rows a notch; scrollbar: drag the thumb, or click the track for a page.
+</li>
+<li><b>Keys.</b> Ctrl+F (Cmd+F) anywhere in settings, or &quot;/&quot; when nothing is being typed (its character isn&#x27;t typed into the field), opens SEARCH with the field focused; not while a key bind is being captured, chat / the console is open, or in the HUD&#x27;s full-screen editors. Esc with text in the field clears it (an open colour picker closes first); Esc again leaves settings. SEARCH has no page strip, so Left / Right never turn pages there.
+</li>
+<li><b>Cost.</b> CPU time of the settings panel&#x27;s page per frame, best 60-frame averages on this (shared, 4-core, llvmpipe) machine: SEARCH 0.3-0.5 ms (unfiltered and &quot;screen&quot;), VIDEO + AUDIO page 2 alone 0.2-0.3 ms, other pages 0.04 ms. Most of SEARCH&#x27;s first measurement (1.6 ms of it) was VIDEO + AUDIO page 2 and DEVICES calling <code>glfwGetVideoMode</code> (an XRandR round trip) every frame for WINDOW SIZE / REFRESH RATE: <code>Game::desktopMode</code> now keeps a windowed answer for a second (cleared when a monitor is plugged in or out), which speeds those two pages up too. Between full passes a page whose rows are all above or below the screen isn&#x27;t run (its count from the last full pass stands in); every page runs when the query or scroll changes, on a click, drag or typing, with a picker open, and every 16th frame. Only the settings screen pays any of it, never a match.
+</li>
+<li><b>UI test.</b> New screen <code>settings/search</code> (<code>ingame/pause/settings/search</code> is skipped by host-ffa: the same widgets are tested on their pages in game). The field is <code>local()</code> and is typed &quot;FOV&quot;; the scrollbar is a handle (<code>state(&quot;searchscroll&quot;)</code>); CTRL+F and / are key actions to it from every other settings page, ESC (CLEAR SEARCH) one while text is typed. A widget in the list is reported as <code>&lt;PAGE&gt; &gt; &lt;ID&gt;</code> (two pages both have an IMPORT button, which the test mixed up) and as optional (the scrollbar&#x27;s drag shows rows the test then never stops on; each is tested on its own page). Clipped labels aren&#x27;t layout issues in the list (a third of a page wide; whole on their page). After the menus scenario, <code>searchCheck</code> types queries and fails the run (as SETUP) unless &quot;screen&quot; finds FULLSCREEN SIZE, DISPLAY, RENDER SCALE and WINDOW SIZE, &quot;fov&quot; and &quot;FOV&quot; show the FOV slider on screen, &quot;fov zoom&quot; finds SNIPER ZOOM FOV and &quot;volume announcer&quot; ANNOUNCER VOLUME. <code>config</code>: <code>last_tab</code> accepts 6 (SEARCH).
+</li></ul>
+<h3>Bots: the tick and round spawns don&#x27;t depend on slot order (map worker, 2026-10-30: &quot;the team listed second scores about 3% more, on any map&quot;: Mine koth, 48 seeds)</h3>
+<ul>
+<li><b>What depended on order.</b> (1) In <code>Server::simulate()</code> each bot thought and then ran its command in slot order, so bot 5 decided on a world bots 0-4 had already moved, shot in and killed in this tick (positions, <code>lastFire</code>, deaths), and the per-tick route budget (<code>kPathsPerTick</code> 2) went to the low slots first. A team added first takes the low slots. (2) <code>startRound</code> spawned players in slot order and <code>spawnPlayer</code> scores spawns by distance from and sight of alive enemies: the second team dodged the first team&#x27;s fresh spawns, and last round&#x27;s survivors still counted as alive where they stood.
+</li>
+<li><b>Now.</b> (1) Every bot thinks first, all on the tick-start world, then everyone&#x27;s commands run, starting from a different connected player each tick (<code>tick % players</code>), so no slot is always first. One extra pass over at most 32 slots and a 32-entry command array: no measurable cost. Humans&#x27; commands run in the same rotated order. (2) <code>startRound</code> marks everyone dead before the spawns and, in team modes, <code>spawnPlayer</code> ignores enemies spawned in the same batch, so each team&#x27;s spawn choice is the same whichever went first. Respawns during play are unchanged.
+</li>
+<li><b>Numbers.</b> The 3% didn&#x27;t reproduce as a significant effect. Share of the team in the high slots: <code>quark_maptool bots</code> Summit koth 180 s, 200 runs: score 0.503 +- 0.010, kills 0.502 +- 0.003; Bastion vs 120 s, 400 runs: score 0.492 +- 0.012; Mine koth 300 s, the 48 seeds both ways: score 0.506 +- 0.020 (pairwise +0.011 +- 0.044). So 3% on 48 seeds is within noise. In-process, Bastion vs 4v4 60 s, 600 seeds each way (1200 runs): before, kills 0.4925 +- 0.0050 (1.5 sigma), score 0.490 +- 0.010; with the tick fix alone 0.4920 +- 0.0051; with both fixes kills 0.5053 +- 0.0050, score 0.506 +- 0.010. Both are within noise; the fixes take away the mechanisms, so nothing depends on order by construction.
+</li>
+<li><b>Test.</b> <code>quark_tests tickorder</code>: a hook hashes every player&#x27;s position, velocity, health and alive at each bot think and checks every think in a tick sees the same world, no bot thinks twice in a tick and all 8 bots are first at some point; then Bastion vs 4v4, 40 seeds each way, the team-A score share with A listed first vs second within 4 standard errors. <code>quark_tests orderbias [seeds] [map] [mode] [seconds] [perTeam] [firstSeed]</code> measures it at scale (<code>QUARK_LEGACY_ORDER=1</code> for the old tick order).
+</li>
+<li><b>Seeded tests.</b> The rotated order changes every seeded bot match. <code>testBots</code>&#x27;s FFA-vs-experts run moved from seed 0x5EED0001 (the standing player now goes 40 s unhit, as 2 of 20 seeds did before too) to 0x5EED0003; over 20 seeds the old and new orders give the same spread (the player&#x27;s deaths 34 vs 32 in total, kills 3 to 9, grapples 4 to 16).
+</li></ul>
+<h3>Bomb: spawns by role, not by team (q, 2026-10-30: the recommended option, confirmed)</h3>
+<ul>
+<li><b>Why.</b> <code>modeSpawnType</code> started team A on the map&#x27;s <code>a</code> spawns and team B on <code>b</code> in every round. q&#x27;s timing rule for bomb maps (the attackers reach a site in about 5 s, the defenders 1 s later) is built for the side that attacks, and team A attacks the first half (bomb.qlogic: <code>attackers = half &gt; 0 and roundNo &gt; half ? B : A</code>). So after halftime team B attacked from the defence&#x27;s end and team A defended from the attack&#x27;s: one team had the short way in both halves. On War (115 m vs 144 m) team A won 7 of 8 matches.
+</li>
+<li><b>Now.</b> In bomb, the attackers start on <code>a</code> and the defenders on <code>b</code> (or the map&#x27;s <code>bomb-a</code> / <code>bomb-b</code> set, format 11), whichever team that is: <code>team == attackers ? a : b</code>. So <code>a</code> means &quot;the attack&#x27;s spawns&quot; on a bomb map, as the maps were built (team A attacks first). <code>roundSetup</code> sets the attackers before the round&#x27;s spawns, so every round, halftime included, spawns on the new sides; respawns in the warmup use the first half&#x27;s attackers (team A). Custom modes based on bomb get the same through <code>mapSpawn</code>. Other modes are unchanged.
+</li>
+<li><b>Checks.</b> The walk check already asks both sides&#x27; spawns to reach every site, and the sight check pairs <code>a</code> with <code>b</code>, so nothing changes there: <code>quark_maptool check</code> passes all 15 checks on Depot, Datacenter and War (maps-1196). Quarry isn&#x27;t in any worktree here.
+</li>
+<li><b>Test.</b> <code>testBombSpawnRoles</code> (group <code>rules spawns</code>): <code>modeSpawnType</code> for each team in each half on Depot and on a map with a <code>bomb-a</code> / <code>bomb-b</code> set, vs still by team; then a real Depot match with halftime after round 1: in round 1&#x27;s freeze team A stands on an <code>a</code> spawn and team B on a <code>b</code> one, in round 2&#x27;s team B on <code>a</code> and team A on <code>b</code>.
+</li></ul>
+<h3>Glass: sloped panes are their shape, not their box (a map review, 2026-10-30: Museum&#x27;s glass dome on maps-1196, four 40 x 6 m slabs floating over the roof)</h3>
+<ul>
+<li><b>What was a box.</b> Only the drawing and a few point tests. The game drew every pane with <code>translucentBox(brush.box)</code> (plain and breakable glass, and the editor&#x27;s baked view), and the see-through looks and breakable blocks with <code>boxFaces</code> (the box&#x27;s 6 faces), so a pane on a wedge, corner, tetra or cut drew as its bounding box: a dome face&#x27;s box is mostly air. <code>Map::glassAt</code> (which pane a shot or bolt is in), <code>blockAt</code> and <code>crumbleAt</code> tested the box grown by 3 cm: where sloped panes&#x27; boxes overlap (a dome&#x27;s four faces all do), a shot on one face could break another. Shards started anywhere in the pane&#x27;s box. Collision (<code>sweepAxis</code> with <code>brushObstacle</code>), every ray (<code>rayBrush</code>: shots, sight, the grapple) and the dash-through test already used the real shape.
+</li>
+<li><b>Now.</b> <code>Renderer::translucentBrush</code> draws a slope or cut as its faces (<code>slopeTriangles</code>, map.h: a fan over <code>slopePolygons</code>), a box as before; <code>boxFaces</code> gives see-through looks and breakable blocks on a slope their faces too, with the outline distances <code>Renderer::slope</code> uses. <code>brushNear(b, p, eps)</code> (map.h: the box and each sloped plane, grown by eps) replaces the box tests in <code>glassAt</code>, <code>blockAt</code> and <code>crumbleAt</code>. <code>glassShards</code> takes the pane&#x27;s brush: on a slope a shard&#x27;s start is drawn again (up to 12 times) until it is in the shape; a box draws exactly the same numbers as before, and the server and the clients (<code>GlassFx.brush</code>, new) pass the same brush, so they still make the same shards. A shattered sloped pane&#x27;s glitter starts at its pieces&#x27; starts when it would be off the shape. No cost for box panes; a slope&#x27;s triangles are made per frame like the box&#x27;s quads (no shipped map has a sloped pane yet).
+</li>
+<li><b>Test.</b> <code>quark_tests slopedglass</code>: a breakable wedge, a second one rising the other way in the same box, and plain glass on a cut box of the same slope. Both draw 8 triangles, 157.7 m2, every corner on the shape (the box: 208 m2); the cut is air over its low end and solid under it; a shot down at x 7 hits it at 0.50 m (the box&#x27;s top: 4); a player box drops onto the slope; <code>glassAt</code> picks the wedge whose shape holds the point (the box test picked the first); a shatter&#x27;s 600 shards are all in the wedge (290 off it with only the box), and a box pane&#x27;s shards are unchanged; breaking one wedge leaves the other standing. Checked by eye on Museum (maps-1196): the dome draws as four sloped glass faces with the rafters under them.
+</li></ul>
+<h3>Race leaderboard: the race total (owner, 2026-10-31: &quot;race leaderboard time should be combination of all times on all maps; i will complete the maps and give a default time that if you havent played the map that is your &quot;time&quot; on it&quot;)</h3>
+<ul>
+<li><b>Map format 13: <code>racedefault &lt;s&gt;</code>.</b> A race or surf map&#x27;s default time (1-3600 s; <code>Map::raceDefault</code>, 0 = none), read, written back by <code>Map::serialize</code> (so the editor keeps it) and carried by quark_maptool&#x27;s JSON as <code>racedefault</code> (so Quarkology&#x27;s editor round-trips it). Converter step 12 -&gt; 13 changes nothing but the version line (a format 12 map has no default); the shipped hand-made maps (Cobblestone, Surfy) get just that line, as the converter writes it, so they still hash as official. <code>testMapConverter</code> converts a version 12 race map and checks the line&#x27;s parse, write-back and bounds.
+</li>
+<li><b>Ranked race maps are data, not a name.</b> <code>rankedRaceMaps()</code> (ranked.h) = the official maps built for race or surf (<code>for race</code>, <code>for surf</code>; owner, 2026-10-31: &quot;the total race time also counts the 2 surf maps&quot;), sorted by name, read once from the embedded maps (only maps with such a <code>for</code> line are parsed; a time trial server reads them at start, not on its first tick). Nothing lists map names by hand: a retired map (a legacy map, no longer official, as Viaduct becomes) drops off by itself. Lodestone also offers race (its <code>modes</code> line) but is built for points: not on it. The time trial (<code>Server::timeTrialCounts</code>, the client&#x27;s split comparison, MY RACE STATS) uses the same list instead of <code>&quot;viaduct&quot;</code>.
+</li>
+<li><b>Surf time trials.</b> Surf already shared race&#x27;s checkpoints, splits, practice and the server&#x27;s /racerun post (<code>isRaceMode</code>); what was missing was a way to start one and to count it. PLAY TIME TRIAL on a surf map now hosts it in surf (knife only, no dash or grapple), and a time trial counts only in the map&#x27;s own mode (<code>RaceMapInfo::mode</code>): a surf course run in race mode with dash and grapple would post times surf can&#x27;t match.
+</li>
+<li><b>Defaults.</b> A map&#x27;s <code>racedefault</code> line, or <code>kRaceFallbackDefaultS</code> = 600 s until q gives it one (Solar System and Surfy have none yet; Surfy&#x27;s file is q&#x27;s and isn&#x27;t edited). Placeholders on the new race maps (tools/maps/&lt;name&gt;.py, about 3x a good run, until q sets them): Particle Accelerator 225 s (a good run is about 75 s), Jungle Ruins 180 s (about 60 s), Rooftop Run 180 s (about 60 s).
+</li>
+<li><b>Split floors on Surfy are weak:</b> it has one checkpoint (the finish) about 5 m from the start as the crow flies, so its floor is 109 ms and only the Worker&#x27;s 5 s minimum run guards it. More checkpoints on Surfy would fix that (q&#x27;s map).
+</li>
+<li><b>Worker: <code>GET /racetotal[?n=25]</code></b> answers &quot;total_ms maps_run name&quot; per line, fastest first, for every racer with a run on at least one ranked race map. The total is the sum of the defaults plus each racer&#x27;s (best - default) over the maps they ran, so one grouped query over race_times (joined to a VALUES table of the maps and defaults) answers it; ties go to whoever set their latest time first. A run counts as run even if slower than the default (q&#x27;s rule: &quot;if you haven&#x27;t played the map that is your time on it&quot;). Rows on a map that is no longer ranked (Viaduct&#x27;s) stay in race_times and count nowhere. No D1 schema change, so no migration. <code>/raceboard?map=M</code> still answers each map&#x27;s board, and <code>/crowns</code> lists each ranked race map&#x27;s top 10 as before.
+</li>
+<li><b>The Worker&#x27;s map table</b> <code>RACE_MAPS</code> (name -&gt; defaultMs and split floors; replaces <code>RACE_MAPS</code> + <code>RACE_FLOORS</code>) is generated: <code>build/quark_tests racefloors</code> prints it, and quark_tests fails if worker.js&#x27;s copy differs from the maps. Chosen over the game server sending the list: a server can&#x27;t change what counts, and the Worker answers the board with no server involved.
+</li>
+<li><b>Game.</b> LEADERBOARD&#x27;s fourth column is RACE TOTAL (top 10, then YOU: your total and maps run, your time on each map, grey at its default, and &quot;UNPLAYED MAPS COUNT AT THEIR DEFAULT TIME&quot;); a TRIAL MAP cycle picks the map PLAY TIME TRIAL starts (<code>--timetrial --map NAME</code> too). MY RACE STATS lists the ranked race maps first and says what the map adds to the total (your best time trial, or its default). Your own total is worked out from your local runs (race_times.log), the board&#x27;s from the Worker.
+</li>
+<li><b>Tests.</b> <code>testRaceFloors</code> checks every ranked race map (every official race / surf map is on it, floors, its default or the fallback, above the fastest plausible run, <code>raceTotalMs</code>) and the Worker table; <code>testTimeTrial</code> also checks a surf map&#x27;s trial counts in surf and not in race; <code>testTimeTrial</code> runs on the first ranked race map; <code>tools/master/test.mjs</code> runs the race tests on a map from the table and adds the total (defaults for unrun maps, a second map lowering a total, <code>n</code>, a retired map&#x27;s rows ignored).
+</li></ul>
+<h3>Maps: the old pool retired to maps/legacy/ (q, 2026-10-30: &quot;every current map goes except q&#x27;s two hand-made ones, surfy and cobblestone&quot;; 2026-10-31: a &quot;Legacy maps&quot; setting, default off, instead of deleting them)</h3>
+<ul>
+<li><b>Build.</b> <code>tools/make_maps.py</code> keeps the 20 retired modules (clockwork, depot, summit, canal, harbor, bastion, foundry, temple, colosseum, furnace, gantry, anvil, viaduct, hamlet, downtown, orbital, lodestone, midtown, hightown, cascade) in a new <code>LEGACY</code> list and writes them to <code>maps/legacy/&lt;name&gt;.qmap</code> (<code>--list-legacy</code>; CMake makes them outputs of the map step). They are not passed to <code>tools/embed_maps.py</code>, so they&#x27;re not official: not in <code>kOfficialMapData</code>, never ranked, no shipped light bake (a first load bakes, Midtown ~5 s). Packages already copy all of <code>maps/</code>, so <code>maps/legacy/</code> ships on every platform with no packaging change. make_maps.py also deletes a generated copy of a legacy name left at the top of <code>maps/</code> by an older build (it would list as an unofficial map). <code>.gitignore</code> ignores <code>maps/legacy/</code>.
+</li>
+<li><b>Listing and loading.</b> <code>setLegacyMapsListed()</code> (map.h): off, <code>listMaps()</code> lists the shipped and your maps folders as before; on, it also lists the shipped <code>maps/legacy/</code> and your <code>&lt;maps&gt;/legacy/</code> (names deduplicated, so a current map of the same name wins). <code>mapFilePath()</code> looks in the legacy folders last whatever the setting says, so <code>--map temple</code>, an old server config, a vote from an old client, a demo or the shipped Hamlet benchmark demo keep working. <code>isLegacyMap()</code> tells the picker: the title gets &quot; (legacy)&quot;. The client sets it from <code>legacy_maps</code> (GAMEPLAY &gt; MAPS &gt; LEGACY MAPS, default off for everyone, upgrades too) at start and on toggle (and rescans); the hosted server&#x27;s map list (<code>Server::start</code> -&gt; <code>listMaps()</code>) and the map vote follow it. The dedicated server takes <code>--legacy-maps</code>.
+</li>
+<li><b>Your maps folder (moveOldOfficialMaps, once per version).</b> Older versions and launchers copied official maps into <code>userMapsDir()</code>, where a copy shadows the shipped map. At the first start of a version (the game client, skipped in automated runs like the map converter; and the dedicated server), each top-level <code>.qmap</code> whose first line is <code># generated by tools/make_maps.py</code> and has no <code>handmade</code> line moves to <code>&lt;maps&gt;/legacy/</code> (a taken name becomes <code>&lt;name&gt;_2</code>, ...; an identical copy is just removed), with its <code>&lt;name&gt;.mapedit.json</code>; its light caches named after it (<code>&lt;maps&gt;/&lt;name&gt;.qlm</code>, <code>cache/&lt;name&gt;.qlm</code>) are deleted (they rebuild). Hand-made, editor-saved and custom-named maps, <code>maps/downloads/</code> and every subfolder are never touched. Retired generated maps left at the top of the install&#x27;s maps folder (an unzip over an old install; the launcher&#x27;s <code>swapInstall</code> already drops packaged files the new version lacks) are removed, or moved into <code>maps/legacy/</code> if it lacks them; a read-only install is left alone. A stamp <code>&lt;user&gt;/legacy_maps.stamp</code> holds the version, so later starts don&#x27;t scan (no startup cost). What moved is logged (<code>maps: temple.qmap: moved to legacy/temple.qmap</code>). <code>resetOfficialMaps</code> also removes the retired names from the install&#x27;s top level.
+</li>
+<li><b>Defaults off the old maps.</b> Host map (<code>host_map</code>) and the dedicated server&#x27;s default: bastion -&gt; sewer (built for free for all, the default mode). Menu background: clockwork -&gt; castle (&quot;BACKGROUND: CASTLE&quot;). The UI test hosts qk1 (was temple), edits a copy of sewer (harbor) and plays hide on museum (hamlet); <code>tools/test_editor.sh</code> edits qk1; <code>tools/server/install.sh</code>&#x27;s example is <code>--map greenhouse</code>. INFO &gt; MAPS lists the new pool. A ranked server configured for an old ranked map (temple, furnace, gantry, anvil: legacy now, never ranked) logs it and plays its ladder&#x27;s designed-for map instead of refusing to start, so the live servers survive the update without a config change.
+</li>
+<li><b>Tests.</b> <code>testLegacyMaps</code> (group resetmaps): listMaps with the setting off and on (shipped and user legacy folders, a current name winning), loading by name either way, every legacy name unofficial; the move on a made-up user folder (a generated copy with sidecars moves, a name clash gets <code>_2</code>, the hand-made, custom, downloads and subfolder maps stay, the install&#x27;s retired copy goes) and the stamp (the same version doesn&#x27;t scan again, the next one does). <code>testResetMaps</code> runs on qk1.
+</li>
+<li><b>Docs.</b> MAP_STRUCTURES.md: the retired maps&#x27; sections are dropped (they&#x27;re in git history), a table of the new pool and a legacy-maps note added. RELEASE_CHECKLIST.md: the mode rows name the new maps, plus rows for the legacy toggle / folder move and the ranked defaults.
+</li>
+<li><b>Mode coverage (q&#x27;s target: 2 built for each mode, 5 playable).</b> No map is built for duel, tourney or one-way payload (duel plays 14 maps, tourney 11 1v1 maps as q allows, payload only Railyard); bomb is playable on 4 maps, npayload 4, race 3, points 2.
+</li></ul>
+<h3>Ranked: qk1-8 on every ladder, each ladder&#x27;s designed-for map, fairness instead of symmetry (q, 2026-10-31: &quot;qk1-8 can be played in instagib, vanilla, and lgvamp. lg vamp is designed for dojo, 1v1 vanilla is designed for greenhouse, instagib is designed for spire&quot;; 2026-10-30: &quot;Maps never have to be symmetrical&quot;)</h3>
+<ul>
+<li><b>Ladders.</b> qk1-qk8: <code>ranked vanilla vampire instagib</code> (lgvamp = the <code>vampire</code> ladder, laser vampire). Greenhouse gets <code>ranked vanilla</code>, Spire <code>ranked instagib</code>; Dojo keeps <code>ranked vampire</code>. Their <code>for</code> lines already fit (Greenhouse and Dojo 1v1, Spire ffa: ranked instagib is a free for all).
+</li>
+<li><b>Designed-for map.</b> <code>rankedDefaultMap(ladder)</code> (gamedefs.h): greenhouse / dojo / spire. Going ranked (<code>Server::setRanked</code>) and the client&#x27;s ranked pickers (<code>bestRankedMap</code>) take it first when it&#x27;s ranked for that ladder; else, as before, the map ranked only for that ladder, else the first that takes it. Before, the default was whichever map was ranked for that ladder alone (temple, furnace, gantry); with qk1-8 on all three that rule would have picked qk1 for vanilla and instagib.
+</li>
+<li><b>Fairness, not symmetry.</b> The ranked check required every solid, spawn, ladder and light to have a point-mirrored twin and the sun overhead, which Greenhouse and Spire aren&#x27;t. It now checks fairness: for a ladder played 1v1, as many A as B spawns, and on the walk grid (Dijkstra, horizontal length plus climb at run speed) the two sides&#x27; mean run to the nearest enemy spawn, and to the middle of the map, within 1 s of each other. A hard failure for generated maps (human-made: reported). Instagib&#x27;s free for all draws everyone from one pool, so it needs no side check; spawn sight and spacing are testSpawnSanity&#x27;s, for every map. The test&#x27;s &quot;3 maps ranked for one ladder alone&quot; rule becomes &quot;each ladder&#x27;s designed-for map is ranked for it&quot; (and 2+ maps per ladder). <code>prefabs.top_up_spawns</code> keeps spawns in mirrored pairs only on symmetric ranked maps (a ranked map with the sun overhead: the qk maps, Dojo), so Greenhouse&#x27;s and Spire&#x27;s pools top up as before.
+</li></ul>
+<h3>Hide and seek: a 5 s head start (q, 2026-10-31: &quot;reduce hider time to 5 seconds&quot;)</h3>
+<ul>
+<li><code>kHideTime</code> 30 -&gt; 5 s (gamedefs.h): the freeze while the seeker faces the wall. It feeds the native default (<code>ModeParams::hideTime</code>), the mode logic&#x27;s <code>hideTime</code> param default (modelogic.cpp, now <code>kHideTime</code> instead of a literal 30) and <code>tools/modes/hide.qlogic</code> (<code>param hideTime f32 = 5</code>). A custom mode that sets hideTime keeps its own value.
+</li>
+<li><b>No protocol bump.</b> The client never derives the head start: the freeze is a server phase, and its end reaches clients as the phase timer in the mode state, the same as before; the &quot;hide! (N s)&quot; line is server text. An older client on a 1.19.6 server shows a 5 s freeze correctly, and the other way round a 30 s one.
+</li></ul>
+<h3>Race and surf: no time limit (q, 2026-10-31: &quot;in race and surf modes there should be no time limit lol why is there one&quot;)</h3>
+<ul>
+<li>What changed: race and surf rounds had a 300 s round clock (sized for two loops of Viaduct), and a round with no finisher ended with &quot;nobody finished&quot;. The mode default <code>roundTime</code> for race and surf is now 0, so there&#x27;s no clock and a round runs until someone finishes (first to finish wins it, as before). A host or mod that sets a clock still gets one (<code>tickRace</code> only ends a round on time when <code>phaseEnd_ &gt; 0</code>).
+</li>
+<li>Split times were worked out from the clock (<code>liveLength_ - (phaseEnd_ - now)</code>). They now count from the round going live (<code>roundStart_</code>), which gives the same number when there is a clock.
+</li>
+<li>The HUD&#x27;s run time (to the hundredth) was <code>300 - timeLeft</code>, which only worked while the clock existed. It&#x27;s now the client&#x27;s own stopwatch from the round going live, shown in every race and surf round, not only the time trial. The splits and the board still use the server&#x27;s times.
+</li>
+<li>The built-in mode scripts (tools/modes/race.qlogic, surf.qlogic) declare <code>roundTime 0</code> too, and their tick ends a round on time only when <code>phaseEnd &gt; 0</code> (with no clock, <code>now &gt;= phaseEnd</code> would have ended every round the moment it went live).
+</li>
+<li>No protocol change.
+</li></ul>
+<h3>Rockets: splash did no damage on servers (q, 2026-10-30: &quot;explosions aren&#x27;t registering, they do no damage on my Oracle box server&quot;; direct hits worked, splash did nothing, no hit markers)</h3>
+<ul>
+<li><b>Cause.</b> Since 1.19.3 the shooter&#x27;s game reports its own rocket hits (<code>Game::reportImpact</code> -&gt; <code>reportBlast</code>, <code>hit</code> commands) and <code>Server::explode</code> leaves every victim but the shooter to that report. The game reported the blast at the exact point its rocket&#x27;s path met the floor or wall (<code>q.pos + d / len * hit</code> for the predicted copy, <code>pr.pos + d / len * hit</code> for the server&#x27;s copy drawn ahead). <code>reportBlast</code>&#x27;s cover test then cast its rays from that point, on or (by rounding) a hair inside the surface, and <code>Map::raycast</code> hits a box at t = 0 from a point on its face, so the centre ray and both F16 rays were &quot;blocked&quot; and every splash victim was skipped: the report went out with no victims. The server&#x27;s own blast never had this: <code>stepProjectile</code> sets it off 5 cm short of the surface. A direct hit&#x27;s point is on the player&#x27;s box, not the map, so it still counted.
+</li>
+<li><b>Not ping.</b> Reproduced on a local dedicated server (1v1, 250 Hz, a UDP delay proxy at 20, 80 and ~220 ms round trip, with jitter and loss) with two real games under Xvfb, the shooter aiming at the floor 1.2 m beside a standing player: 1.19.3 counted 4 of 20 blasts the server would have hit (the 4 came from the &quot;vanished projectile&quot; path, which reports from a point in the air), the fix 14 of 14. Any reported blast on a surface was affected, at any ping.
+</li>
+<li><b>Fix.</b> <code>blastPoint</code> (pmove.h, <code>kBlastBackoff</code> 0.05 m) is where a projectile goes off: 5 cm back along its flight from where it met the surface or player. <code>stepProjectile</code> uses it (unchanged: it was <code>max(0, best - 0.05)</code>), and <code>reportImpact</code> backs every reported rocket blast off the same way. The cover test is one shared function, <code>blastReaches</code> (pmove.h), used by both <code>Server::explode</code> and <code>Game::reportBlast</code>, so the two can&#x27;t drift apart again. Where the explosion is drawn (<code>localBoom</code>) is unchanged. No wire change.
+</li>
+<li><b>Test.</b> <code>testClientHits</code> (group materials): a floor blast 0.8 m from a player reaches them from <code>blastPoint</code>, not from the surface point (exactly on it or 1e-5 inside), and a player under the floor stays behind cover.
+</li></ul>
+<h3>Votes: no legacy maps unless the server lists them (owner, 2026-10-31: &quot;you cant vote the old maps on the new testing server update&quot;)</h3>
+<ul>
+<li>A legacy map loads by name (an old config or demo still works), so <code>callvote map summit koth</code> used to pass. A map vote for a legacy map is now refused (&quot;&lt;map&gt; is a legacy map (this server doesn&#x27;t list the old maps)&quot;) unless the server runs with <code>--legacy-maps</code>. testMapVote checks the refusal and votes Glacier Summit instead, and its every-map loop still votes every listed map in every mode it supports.
+</li>
+<li>A dedicated server set up for a legacy map (an old <code>--map</code>, unranked, legacy maps off) now plays the listed map built for its mode instead (else the first that takes the mode), so nobody lands on a map they couldn&#x27;t vote back. A ranked one already switched to its ladder&#x27;s map. (It&#x27;s in quark_server&#x27;s start, not Server::start: there it also swapped the maps of the in-process test servers and broke ~370 weapon/rules checks.)
+</li></ul>
+<h3>Servers: a new install plays unranked laser vampire on Dojo (owner, 2026-10-31: &quot;default server position should be dojo ranked lg vamp for future updates&quot;, then &quot;actually unranked&quot;)</h3>
+<ul>
+<li><code>tools/server/install.sh</code> with no server options on a first install now runs <code>--mode 1v1 --variant vampire --map dojo --public</code> (it was <code>--public</code>: FFA on the default map). Re-running it still keeps an installed server&#x27;s options.
+</li></ul>
+<h3>Solar System: q&#x27;s own stage designs (owner, 2026-10-31: &quot;so i can design the maps, you just build them&quot;)</h3>
+<ul>
+<li>q laid out each of the 15 stages (Sun to Pluto) as a list of pieces in the Solar Stage Builder. Claude drew each one top-down, and q approved it before it was built. <code>tools/maps/solar.py</code> builds exactly those lists, in the approved layout.
+</li>
+<li>Surf conventions (q):
+<ul>
+<li>Every ramp has its own gap before the next, and an air piece is just an extra-big one.
+</li>
+<li>Ramps run about 3 s and flights about 2.2 s at the speed reached there.
+</li>
+<li>Left/right/top/bottom walls are kill walls standing in the flight, death floor to ceiling, covering 2/3 of the lane so you strafe to the open third.
+</li>
+<li>A speed check is a solid full-width wall, its top 1.2 m under an 85%-speed flight. Its height is an estimate for q to tune in the editor.
+</li>
+<li>Turnback legs are split by a wall you ride round.
+</li></ul>
+</li>
+<li>Geometry:
+<ul>
+<li>Gaps are ballistic flights at g=24, placed for a run at 85% of the ride&#x27;s speed.
+</li>
+<li>The next ramp starts as steep as the flight falls there (at most about 50°), so you land along the face.
+</li>
+<li>Faces are 56-62°, 20 m wide (10 m for narrow ramps and split lanes).
+</li>
+<li>Curves are pieces of at most 3 m and 5°.
+</li>
+<li>Walls stand 24 m each side of the line. Lower sections passing under higher ones get a kill-liquid roof.
+</li>
+<li>Jupiter&#x27;s helix has a centre column, so you can&#x27;t drop through and skip the spiral.
+</li>
+<li>Each stage ends on a platform with a framed gate; Pluto&#x27;s is the finish room.
+</li></ul>
+</li>
+<li>Some flights are very long (Mars 218 m, Asteroids 292 m, Io 252 m), so later ledges sit high (Pluto&#x27;s at 1309 m) and speeds reach about 110-130 m/s. That&#x27;s for q to tune.
+</li>
+<li>Back in MAPS, and on the ranked race total (RACE_MAPS, <code>racefloors</code>) with <code>racedefault 600</code> as a placeholder until q sets the time. About 18,300 brushes.
+</li></ul>
+<h3>Weapon switch: a held scope doesn&#x27;t lock fire (owner bug report, 2026-10-31: &quot;when holding scope on rifle and switch to laser you cant shoot until you un hold right click&quot;)</h3>
+<ul>
+<li>Cause: switching with fire OR alt-fire held locked fire until both were let go, and a held scope is alt-fire. So rifle (scoped) -&gt; laser locked the laser.
+</li>
+<li>Now only the buttons that fire the new weapon lock it: <code>fireButtons(w)</code> = fire, plus alt-fire where it is a shot (knife/syringe throw, shotgun bounce, rocket lob, bubble) or the sticky detonation. It doesn&#x27;t include the rifle/sniper scope or the laser pull. The same rule applies on the server, in the client&#x27;s mirror and in weapon prediction.
+</li>
+<li>The game also ignores an alt-fire held over a switch until it&#x27;s let go, so the laser shoots normally rather than as a pull. Toggle-scope already dropped it on a switch.
+</li>
+<li>A knife thrown with right click, landing back on the sniper with the button still held: the sniper is scoped and isn&#x27;t locked (it was locked before). Tests: testSemiAuto (scope held rifle -&gt; laser, then fire: fires) and weaponpredict.
+</li></ul>
+<h3>Syringe: half the healing (owner, 2026-10-31: &quot;half syringe healing&quot;)</h3>
+<ul>
+<li>Self-use 10 -&gt; 5 HP (the SYRINGE row&#x27;s damage, which is its heal), still once per 1 s cooldown. The thrown heal on a teammate is 30 -&gt; 15 HP (kSyringeHeal). The throw&#x27;s cooldown resets are unchanged. A custom mode&#x27;s syringe damage scale still multiplies both. testSyringe and the throw-reset test have the new numbers; the release checklist says 5 / 15.
+</li></ul>
+<h3>Clean surfaces on every look (owner, 2026-10-31: &quot;clean surfaces should apply to the custom surfaces too not just default ones&quot;)</h3>
+<ul>
+<li>VIDEO &gt; CLEAN SURFACES only took the panel seams and shade noise off the palette materials (0-11). Now every look from 12 on (ice, sand, wood, brick, the 400+ surface looks, the large patterns as their base, the see-through and feature blocks) draws as its average, flat: its albedo on tops and on sides separately (grass: green tops, earth sides), its see-through alpha and its glow. Liquids keep their motion.
+</li>
+<li>How: when it&#x27;s on, <code>Renderer::buildCleanMeans</code> draws each look the map uses once, with the map&#x27;s own world program and this frame&#x27;s palette, as a 4 m square (64 px) on a top and on a side. It averages the pixels into a small RGBA32F texture (texture unit 5, a texel per material, 3 rows). The world shader then reads that in place of running the look. That&#x27;s cheaper per pixel with it on, and unchanged with it off (one uniform branch). It&#x27;s redone only when the world program, the palette or high contrast change: a few dozen 64 px draws and one readback while a map loads.
+</li></ul>
+<h3>Legacy move: only copies named like a shipped map (owner, 2026-10-31: &quot;solar system 12 doesnt load in game... i can only see up to solar system 9&quot;)</h3>
+<ul>
+<li>moveOldOfficialMaps moved every untouched generated map (first line <code># generated by tools/make_maps.py</code>, no <code>handmade</code>) from your maps folder to maps/legacy/, whatever its name. On q&#x27;s PC that took solarsystem1-12 (live playtest copies) and solar.qmap, along with older copies of the new pool. It now also needs the file&#x27;s name to be an official map&#x27;s, a legacy one&#x27;s or a retired one&#x27;s (arena, tug, duel, sprint, crucible): those are the copies that shadow a shipped map, and anything else is yours. testLegacyMaps adds a generated map saved as solarsystem12, which stays.
+</li></ul>
+<h3>Map editor: sloped and cut pieces are picked by their solid (owner, 2026-10-31: &quot;in the editor the hitboxes for the blocks are super fuckey, with the custom cut face blocks&quot;)</h3>
+<ul>
+<li>edPickAll tested every box and group part against its bounding box. A cut box (or wedge, corner, tetra) was clicked through the empty part of its bounds, so the click took it instead of what was behind, or the wrong one of two neighbours. Non-box shapes now use rayBrush, the same ray-vs-solid test shots and the grapple use (box slabs cut by the sloped planes). Plain boxes keep the bounds test and its inside-the-box rule.
+</li>
+<li>(q, 2026-10-31: &quot;smooth faces should turn all faces into single colors&quot;) With it on, the palette materials drop their remaining detail too: the metal&#x27;s brushed streaks, nograpple&#x27;s stripes and the walls&#x27; darkening near the floor. Water, lava and acid become one still colour each. Every face is a single colour.
+</li></ul>
+<h3>Step-up on cut boxes&#x27; upright sides (owner, 2026-10-31: &quot;sometimes you cant stepup on cut boxes even though the height distance is still below 0.55&quot;)</h3>
+<ul>
+<li>slideMove treats any face of a slope or cut box that isn&#x27;t within 45 degrees of flat as a wall (<code>wall</code>), and the step-up ran only <code>!steep</code>. So a cut box&#x27;s upright side at an angle in plan (n.y = 0) blocked like a steep ramp, while an axis box of the same height was stepped onto. An upright face (|n.y| &lt; 0.01) is now a riser. The step-up is tried, taken only if it ends higher, and it gives back the speed the face took (unless dashing). Sloped faces steeper than 45 degrees still never lift you. testSlopes: a 0.4 m cut box with a 45-degree upright side ends at 0.40 m; a 0.4 m 63-degree wedge stays at 0.
+</li></ul>
+<h3>Flush faces: the thinner brush&#x27;s face shows (owner, 2026-10-31: &quot;the FACE of the SIDE OF THE STAIRS is not attached to the object itself&quot;, &quot;basically every map does it&quot;)</h3>
+<ul>
+<li>Where two boxes&#x27; faces lie in the same plane, face the same way, overlap and differ in look, the world mesh lifts one a hair off the plane so they don&#x27;t z-fight. It used to lift the higher material index, whatever the shapes, so a staircase built into a thin rail (Dam&#x27;s valley stair: steps x -32..-27, rail x -27.1..-27, sharing the plane x = -27) drew its steps&#x27; side faces over the rail&#x27;s outer face: the stair profile showed on the outside of the rail.
+</li>
+<li>Now the face whose box reaches less far behind the plane goes on top: a decoration set flush into a wall (thinner than the wall) still shows; a box or staircase overlapping a thin wall (5 m deep behind it vs the rail&#x27;s 0.1 m) stays behind the wall&#x27;s face. Equal depth: the higher material, as before. Same look: nothing lifted (no z-fight to hide).
+</li>
+<li>The lift is now 4 mm a level (a face over a lifted face goes one level higher) instead of 2 mm times the material index. With 596 looks that index runs into the hundreds, so faces floated far off their boxes: Monorail&#x27;s deck top (polishedconcrete, look 362, over its flush white edge bands) drew 72 cm above the real deck, hiding the cart line and the bases of things on it, and Dam&#x27;s stair sides (boardformedconcrete, 397) stood 79 cm out from the stairs (owner, 2026-10-31: &quot;the monorail platform face being lifted off of the actual surface&quot;). Lighting bake unchanged (no rebake).
+</li></ul>
+<h3>Pattern fade: every look fades to its average when it&#x27;s too fine to draw (owner, 2026-10-31: &quot;if you are far away from a patterned surface it should fade, like how lava does, because many many surfaces have the same problem lava does; depends on angle and screen resolution, so should have a setting... where lava changes now is the default for all textures&quot;)</h3>
+<ul>
+<li>The world shader measures each pixel&#x27;s footprint on the face in metres (fwidth of the face-plane position: grows with distance, a grazing angle and a lower resolution or render scale alike). Past PATTERN FADE&#x27;s start the surface look (every material from 12 on: the 596 looks) blends to its average colour, alpha and glow; at the end it&#x27;s all average.
+</li>
+<li>The averages are CLEAN SURFACES&#x27; (each used look rendered once on a 4 m top and side and averaged into uCleanTex), now built whenever pattern fade or clean surfaces is on: no cost per frame.
+</li>
+<li>Default = lava&#x27;s own numbers: lava&#x27;s veins fade between 0.25 and 0.5 noise cells a pixel at 0.35 x 4 cells a metre, i.e. 0.18 to 0.36 m a pixel, so every look now starts fading at 0.18 m a pixel and is flat at 0.36. FADE DISTANCE (0.25x-4x) scales the start (2x: fades from twice as far), FADE LENGTH (1.25x-8x) is the end as a multiple of the start. The liquids&#x27; and noise surfaces&#x27; own anti-aliasing (noiseFade) follows the same two numbers. PATTERN FADE off: as before.
+</li>
+<li>Speed: a fully faded pixel doesn&#x27;t run its look at all (one texel fetch), so far floors and walls of expensive looks (cobblestone&#x27;s Voronoi) cost less: better lows on big maps. Part-faded pixels pay the look plus two fetches.
+</li>
+<li>Config keys pattern_fade, fade_dist, fade_len.
+</li></ul>
+<h3>Alt-tab: frames stop, the game doesn&#x27;t (owner, 2026-10-31: &quot;you shouldnt pause the server when hosting if you alt tab it should only pause the frame generation&quot;)</h3>
+<ul>
+<li>Settings item #76 (pause offline games when unfocused) was skipped as needing a server-side pause; q&#x27;s ruling replaces it: nothing pauses, only drawing stops.
+</li>
+<li><code>bg_draw</code> (DRAW IN BACKGROUND, off by default): while the window is unfocused or minimized, <code>Game::frame</code> runs the game (network, prediction, sounds, the match) and returns before the render section, and the main loop skips the latent-sync wait, the swap and the low-latency fences. The loop then runs at BACKGROUND FPS LIMIT (60 when that&#x27;s &quot;same as FPS limit&quot;), so the network is read and commands sent as before, with no GPU work at all. On: drawn at the background limit, as before.
+</li>
+<li>The hosted server was never paused by alt-tab: it runs on its own raised thread, the process priority only drops back to normal (not below), and Windows 11&#x27;s background timer and power throttling were already opted out of (net.cpp). This removes the last cost of the background game, the frames nobody sees.
+</li>
+<li>Automated runs (screenshots, benches, the UI test, backdrop shots) always draw: a headless window is never focused.
+</li></ul>
+<h3>1v1: winner stays, spectators rotate in (owner, 2026-11-01: &quot;make 1v1 modes swap in specators cyclicly winner stays, even ranked&quot;)</h3>
+<ul>
+<li>Which modes: arena (1v1, ranked&#x27;s mode) and a duel with team size 1; never vs bots. <code>Server::oneVsOne()</code>.
+</li>
+<li><b>The line.</b> <code>ServerPlayer::queueSeq</code> (0 = not in line) from a counter (<code>queueNext_</code>), so join order decides. A newcomer <code>autoTeam</code> seats as a spectator joins it; <code>team a</code> / <code>team b</code> on a full 1v1 joins it (unranked still calls the let-in vote too; ranked, which refused before, and a ranked match in progress now queue you); <code>team spec</code> leaves it (the only way to watch without playing next). Each gets a message saying where they are.
+</li>
+<li><b>The rotation.</b> <code>enterMatchEnd</code> keeps the winning team (<code>matchWinner_</code>); when the match end screen is over, before <code>rulesReset</code>, <code>rotateWinnerStays</code> moves the loser to spectators at the back of the line and seats the first in line on the loser&#x27;s side. A draw (no winner) or an empty line: the same two play again. The ranked result is posted at match end as before, so each ranked match is rated between the two who played it, and the next match gets its own ticket.
+</li>
+<li><b>Leavers.</b> In warmup, <code>fillOneVsOneSeats</code> gives an empty seat (a player gone for good, after the reconnect grace) to the first in line.
+</li>
+<li>No protocol change: the line lives on the server, the messages are ordinary events.
+</li>
+<li>Test: <code>quark_tests duel</code> (testWinnerStays): join order, the loser to the back, a draw, cyclic order over three matches, leaving the line, a leaver&#x27;s seat.
+</li></ul>
+<h3>Winner stays mode (owner, 2026-11-01: &quot;make a new winner stays mode, its like 1v1, but winner stays 1 round at a time first to 10 wins is the winner&quot;)</h3>
+<ul>
+<li><code>MODE_WINNER</code> 15, &quot;winner&quot; / WINNER STAYS; protocol 59 (an older client has no mode 15). <code>isOneVsOneMode()</code> = 1v1 or winner stays: everything 1v1 does (one human a side, the drain, the short round end, the rulesets, the HUD clock) winner stays does too.
+</li>
+<li><b>Rounds, not matches, rotate.</b> The 1v1 line (<code>queueSeq</code>, from winner stays for 1v1 matches) turns every round: <code>endRound</code> keeps the round&#x27;s winning team (<code>roundWinner_</code>), and when the round end screen is over <code>winnerStaysNext</code> puts the loser at the back of the line and seats the first in line on the loser&#x27;s side (a draw: the same two again), then fills a seat a leaver left.
+</li>
+<li><b>Score = round wins.</b> A round win is +1 to the player&#x27;s own score (a kill scores nothing here, <code>nativeKill</code> and winner.qlogic&#x27;s <code>slot kill</code>); scoreA / scoreB always show the two seated players&#x27; totals (<code>Server::syncWinnerScores</code>), so the match ends through the ordinary first-to-rounds check at 10 (<code>rounds</code> 10). The scoreboard shows the score (round wins).
+</li>
+<li><b>Mode logic:</b> tools/modes/winner.qlogic, with a new object <code>line</code> and its step <code>winnerStays()</code> (MA_WINNER_STAYS); the native rules match it.
+</li>
+<li><b>Maps:</b> winner stays plays on 1v1&#x27;s spawn set (<code>spawnSetFor</code>, map.h), so there is no map format change; prefabs.py offers it (and tourney) on every map that offers 1v1. The menus pick a map built for 1v1.
+</li>
+<li>Not ranked: the ladders stay 1v1 and FFA.
+</li>
+<li>Test: <code>quark_tests duel</code> (testWinnerStaysMode): the loser to the back each round, round wins as the score, the match over at the 10th.
+</li></ul>
+<h3>Tourney on any 1v1 map (owner, 2026-11-01: &quot;tourney shouldnt have map overrides, tourney + 1v1 can be played on any 1v1 map&quot;)</h3>
+<ul>
+<li>prefabs.py adds <code>tourney</code> to the <code>modes</code> line of every map that offers 1v1 (before, only the qk maps, Greenhouse and Orbit listed it), so the host picker, the vote and the TOURNEY MAPS rotation list every 1v1 map.
+</li></ul>
+<h3>Alt-tab sound burst (owner, 2026-11-01: &quot;when you are alt tabbed out of the game and tab back in it plays like 200 sounds at once&quot;)</h3>
+<ul>
+<li>Each queued sound carries when it was played (<code>Voice::queued</code>); the mixer drops a sound effect that waited over 0.2 s (an announcer line 1.5 s) instead of starting it late. A device that stalls in the background (exclusive audio gives way to another app) had kept up to 256 sounds pending and started them all together.
+</li>
+<li>At most 32 new sound effects start in one mixer period (the newest); the rest of a burst is dropped. A backlog of events handled in one frame stays a few sounds.
+</li>
+<li>With the master gain at 0 (MUTE IN BACKGROUND, or volume 0) nothing is queued at all.
+</li></ul>
+<h3>Accuracy: each weapon&#x27;s own, averaged (owner, 2026-11-01: &quot;it should count as percent of shots per weapon averaged not total shots because 30% lg for 1 second means 300 shots landed and 700 shots missed and will lock your acc to lg&quot;)</h3>
+<ul>
+<li><code>ServerPlayer::wpnShots</code> / <code>wpnHits</code> per weapon; ACC (<code>PlayerSnap::acc</code>) is the mean of the fired weapons&#x27; hit percentages. Example: laser 30% over 100 shots and rifle 80% over 10: 55% (by total shots it was 34%).
+</li>
+<li>The match summary&#x27;s accuracy is the server&#x27;s now (it was the client&#x27;s total over every shot).
+</li>
+<li>Reset: every match start (<code>startMatch</code>) and every new player, as before (<code>resetAccuracy</code>). Test: testAccuracyPerWeapon.
+</li></ul>
+<h3>Health bars in ranked (owner, 2026-11-01: &quot;because healthbars are enabled they should be allowed in ranked&quot;)</h3>
+<ul>
+<li>The ranked check on the health bars over players is gone (game.cpp): ranked draws them like any other match when HEALTH BARS OVER PLAYERS is on (the default). The server already sent visible players&#x27; health in ranked; nothing else changes.
+</li></ul>
+<h3>Dash charges stay at two (owner, 2026-11-01: &quot;also only 1 dash charge default&quot;, then &quot;nevermind change the dash back&quot;)</h3>
+<ul>
+<li>Testing build 1.19.3.23 had one charge (protocol 60); <code>kDashCharges</code> is 2 again and the protocol is 61, so a 60 client (which would predict one) can&#x27;t join a 61 server. The tests are back to the two-charge defaults.
+</li></ul>
+<h3>Planting / defusing keeps knockback (owner, 2026-11-01: &quot;when defusing/planting you take no knockback this is wrong&quot;)</h3>
+<ul>
+<li>The planter / defuser was MF_FROZEN (the round start&#x27;s freeze), which zeroes velocity every step. Now <code>bombRooted</code> (protocol.h) drops the command&#x27;s movement, jump, dash, grapple and fire instead, on the server (runPlayerCmd) and in the client&#x27;s own prediction (NetClient::tick), so knockback, blasts and grapple pulls move them and friction slows them as usual. bomb.qlogic&#x27;s <code>slot frozen</code> is the freeze phase only. Pushed out of range, the plant / defuse stops (bombStep&#x27;s range check, unchanged).
+</li>
+<li>Test: <code>quark_tests bombsites</code> (testPlantKnockback).
+</li></ul>
+<h3>Votes: one VOTE builder for mode, modifiers and map (owner, 2026-11-01: &quot;just a vote button / then you can toggle on options gamemode modifiers map / under gamemode you pick objective based or player based ... pick gamemode first, then you get to see modifiers, then maps&quot;)</h3>
+<ul>
+<li>Pause &gt; VOTE &gt; MAP / MODE / MODIFIERS opens the builder (drawVoteSetup, game.cpp): three toggles (all on by default; the modifiers page starts at the standard rules, so leaving it as it is votes the standard rules), then each part that&#x27;s on, in the order q asked for. GAMEMODE: OBJECTIVE BASED (bomb, koth, neutral payload, payload, multi point, race, surf) or PLAYER BASED (1v1, vs, ffa, tag, hide and seek, power, winner stays, duel, tourney), then the mode list filtered to that group, then the ruleset for modes that have one. MODIFIERS: steppers for damage, speed, gravity, jump (x0.25 steps), knockback, health (25 steps), and VAMPIRE / REGEN / INSTAGIB / SELF DAMAGE / DASH / GRAPPLE switches, STANDARD resets them. MAP: the live map picker (the maps offered for the chosen mode). Then a summary (MODE, MODIFIERS, MAP; a warning when the map isn&#x27;t built for the mode) and CALL VOTE. The ranked server&#x27;s vote page is unchanged (ladders only).
+</li>
+<li>The vote is one command: <code>callvote map &lt;map&gt; &lt;mode&gt; &lt;ruleset&gt; [mods k=v ...]</code>. The server takes only known keys (gravity, speed, jump, knockback, damage, health; vampire, regen, selfdamage, dash, grapple, instagib as 0 / 1), finite and in range; anything else is refused with the word that&#x27;s wrong. <code>mods</code> with nothing after it = the standard rules.
+</li>
+<li>Passed modifiers become a custom mode named <code>voted</code> (applyVotedRules, server.cpp): <code>damage</code> sets every weapon&#x27;s damage multiplier, the rest are the custom mode keys of the same name. It goes to everyone through the existing EV_RULES path (no protocol change); clients say VOTED MODIFIERS ON or STANDARD RULES. A later map / mode vote without modifiers keeps them (the base mode follows the vote).
+</li>
+<li>Refused: modifiers on a ranked or time trial server, on a server the host runs a custom mode on (the host&#x27;s mode stays in charge), and tourney with modifiers (it plays its rulesets only).
+</li>
+<li>Not in it yet: player size (no custom mode key for it) and weapon bullet limits (weapons have no ammo yet); both need a design call.
+</li>
+<li>Test: <code>quark_tests votes</code> (testVoteModifiers): bad words refused, the modifiers applied on the server and in the shared rules, kept through a mode vote, cleared by <code>mods</code>. The UI test walks the builder&#x27;s pages (ingame/pause/vote/setup/...).
+</li></ul>
+<h3>Modes: ball (MODE_BALL 16, protocol 62; owner, 2026-11-01: &quot;theres goals and you have 10 minutes to score the most goals, it should have the same physics as a player on ice at 50% gravity, use qk8 and the highway bridge map for it&quot;)</h3>
+<ul>
+<li>The ball is a 1 m box (<code>kBallHalf</code>), its centre sent in <code>ModeState::bombPos</code> (unused outside bomb, so the wire format only gains the mode number). <code>ballMove</code> (pmove.cpp) moves it like a player&#x27;s hull with no input on an ice floor: half of pmove&#x27;s gravity, the ground friction x <code>kIceFriction</code> (0.08) on any floor, 1 ms steps; from 10 m/s it slides 7.6 m in the first second and is at 5.7 m/s. A landing stops its fall like a player&#x27;s; a wall or ceiling sends it back at half the speed (a player&#x27;s hull stops dead, which would leave the ball stuck on walls).
+</li>
+<li>What moves it (server, <code>ballStep</code> / <code>ballBlast</code> / <code>ballShot</code>, gamemodes.cpp): a player whose box meets it sends it on at 1.3 x the speed they meet it with, and lifts it 2 m/s; a blast pushes it like an enemy (the weapon&#x27;s knockback x the falloff, twice the vertical), through <code>blastReaches</code>; a hitscan shot that meets it pushes it along the ray, 0.12 m/s per damage point, at most 12 m/s. Its speed is capped at 60 m/s. The grapple doesn&#x27;t catch it yet. The ball is simulated by the server and drawn where the snapshot puts it (not predicted).
+</li>
+<li>Goals: the map&#x27;s two <code>site</code> boxes, each one the goal of the team whose spawns are nearer it. The ball&#x27;s centre in one scores for the other team (<code>teamScore</code>; the last player to touch it is named, and gets a point if it&#x27;s their own team&#x27;s goal), and the ball goes back to the start: halfway between the goals, lifted out of anything solid and dropped to the floor (on QK8, on top of the block under the middle bridge). Into the void or lava: back to the start, no goal.
+</li>
+<li>One 10 minute round (<code>roundTime 600</code>), 3 s respawns. The host&#x27;s score limit ends it sooner. When the clock runs out the most goals wins; level is a draw (&quot;match over&quot;).
+</li>
+<li>Mode logic: tools/modes/ball.qlogic with a new object <code>ball</code> (needs the sites) and its step <code>ballStep()</code> (MA_BALL_STEP); the native rules match it (modelockstep case on QK8).
+</li>
+<li>Maps: QK8 gets a goal in each end room&#x27;s 12 m door (<code>site -68 0 -6 -63 6 6</code> and its mirror) and offers ball; Suspension Bridge gets one across the deck just inside each tower (x +-84..88) and offers ball, and loses its fog banks and haze sheets (owner: &quot;remove the smoke from the highway map&quot;), so its long sight lines are back; spilled shipping containers (2.6 and 5.2 m tall, on the old banks&#x27; footprints at x +-19..22 and +-59..63) take the banks&#x27; place as cover, so no two enemy spawns see each other (the spawn check: 11 pairs in sight without them, 0 with). A Lodestone mode test now skips ball (no goals there) and counts winner as 1v1. The sites don&#x27;t make either a bomb map: their <code>modes</code> lines don&#x27;t list bomb. The menus start ball on QK8.
+</li>
+<li>Bots: they get behind the ball on the far side from the enemy goal, then run through it.
+</li>
+<li>Client: the goals as boxes in their team&#x27;s colour (YOUR GOAL / ENEMY GOAL), the ball as three crossed boxes with a dark band that turns as it rolls, and the objective line.
+</li>
+<li>Test: <code>quark_tests ball</code> (testBallMode): half gravity, the ice slide, the wall bounce, blast and shot pushes, a goal scoring for the other team and resetting the ball, the clock ending the match.
+</li></ul>
+<h3>Movement: air drift 0 (protocol 63; owner, 2026-11-01: &quot;change air drift to 0&quot;)</h3>
+<ul>
+<li><code>kAirDriftAccel</code> 8 -&gt; 0 m/s². Below run speed, a held direction in the air used to push you along it at 8 m/s² up to run speed (so a standing jump drifted like a run-up one). Now it adds nothing; strafe acceleration and air control are untouched. The <code>air_drift</code> multiplier in custom rules multiplies 0, so it does nothing now. Protocol 63, since an older client would predict the drift. Owner asked for no tests this push; the movement tests that measure drift (standing jump + W) will need their numbers updated.
+</li></ul>
+<h3>Movement: dash slide (protocol 64; owner, 2026-11-01: &quot;if you dash down into the ground, without holding space, it should put you on ice level of sliding until you go back to regular speed, or until you press jump&quot;)</h3>
+<ul>
+<li>A dash aimed down far enough for a super dash (the same <code>kSuperDashDown</code> test) that meets the floor with jump neither held nor buffered sets <code>MoveState::dashSlide</code>. Once the dash ends, the floor grips like ice while it lasts (friction x <code>kIceFriction</code> 0.08, push x <code>kIceAccel</code>), so the dash&#x27;s exit speed carries you a long way. It ends when your horizontal speed is back to run speed (<code>kGroundSpeed</code> x the mode&#x27;s speed) or when jump is held. With jump held or buffered, the super dash happens as before.
+</li>
+<li>Wire: the own movement state&#x27;s opt bit 128 (the dash bounces byte) is now sent while the slide lasts too, with bit 128 of that byte meaning the slide (bounces never reach 128), so prediction replays it. No tests were run, at the owner&#x27;s request.
+</li></ul>
+<h3>Modes: ball tuning (owner, 2026-11-01)</h3>
+<ul>
+<li>&quot;treat every surface as if its rubber floor, bouncy&quot;: <code>ballMove</code> bounces off any face at <code>kRubberBounce</code> (0.85) of the speed into it when that&#x27;s over <code>kRubberMin</code> (3 m/s), and stops a slower touch (it was walls x0.5 and no floor bounce). The ice glide on the floor stays.
+</li>
+<li>&quot;it shouldnt respawn instantly&quot;: after a goal it sits in the goal, and after the void or lava it stays where it went, for 3 s (<code>Server::ballRespawnAt_</code>), out of play (nothing pushes it, no second goal), then goes back to the middle.
+</li>
+<li>&quot;knife pushes too much, it should be more vertical and less horizontal&quot;: a knife swing on it gives 1.5 m/s along the swing&#x27;s level aim and lifts it to 7 m/s up (it was 3.6 m/s along the aim).
+</li>
+<li>&quot;projectiles should interact with it&quot;: rockets, lobs and bubbles go off on it (their blast pushes it), a bolt, thrown knife or syringe gives it a quarter of its speed (at most 15 m/s) and stops, and a sticky gives it that and drops off.
+</li>
+<li>&quot;if the ball hits somebody moving more than 20m/s relative to them it should damage them and knock them back&quot;: (speed - 20) x 4 damage, at most 100, a knock of half its relative velocity (at least 4 m/s up), and the ball bounces off at half that speed. The kill goes to the last player who touched it (kill cause <code>kDamageBall</code> 248, &quot;ball&quot;). Once per player per 0.3 s.
+</li>
+<li>&quot;laser needs to do more knockback like 3x, and pull doesnt work&quot;: on the ball the laser pushes 3 x its push on a player (60 m/s per second of beam; it was damage-based, about 4.8), and the pull beam pulls it toward you as hard (it used to push).
+</li>
+<li>The ball test waits out the respawn delay.
+</li></ul>
+<h3>Modes: the grapple catches the ball (protocol 65; owner, 2026-11-01: &quot;you should be able to hook the ball&quot;)</h3>
+<ul>
+<li><code>HookProbe</code> gets the ball&#x27;s box (server: where it is; client: the latest snapshot&#x27;s, since the ball isn&#x27;t predicted), and the hook catches it ahead of any wall: <code>hookTarget kHookBall</code> (kMaxPlayers + 2). You&#x27;re pulled to it as you would be to a player, the server moves the anchor with it each tick, and it reels the ball toward your chest at 30 m/s² up to 20 m/s relative to you. It lets go at the usual release distance, on release, or when the ball leaves play (a goal or the void). The wire readers keep kHookBall from 65 on (older readers drop it). The ball test checks a grapple aimed at it catches it.
+</li></ul>
+<h3>Weapons: rocket knockback x2 (protocol 66; owner, 2026-11-01: &quot;rocket should do double knockback in all cases&quot;)</h3>
+<ul>
+<li>The rocket&#x27;s <code>knock</code> (a blast&#x27;s centre) goes from 11 to 22 m/s. It covers your own rocket jumps (x1.3 as before), enemies (vertical x2 as before), the lob, and the ball&#x27;s blast push. Stickies and bubbles stay at 11. A weapon set&#x27;s own <code>knock</code> still overrides it. Protocol 66, since rocket jumps are predicted.
+</li></ul>
+<h3>Modes: one knife push on the ball per swing (owner, 2026-11-01: &quot;okay so the knife got even crazier lol&quot;)</h3>
+<ul>
+<li>A swing that hits no player keeps cutting every tick for <code>kKnifeSwingTime</code> (0.12 s, so 120 hitscans at 1000 Hz), and each one pushed the ball, up to the 60 m/s cap. Now a player&#x27;s knife pushes the ball at most once per 0.9 x its refire (<code>Server::ballKnifeAt_</code>): 1.5 m/s forward, 7 m/s up.
+</li>
+<li>Ball damage (owner, 2026-11-01: &quot;ball should only do 1 damage per m/s total&quot;): the relative speed itself (21 to 60), no longer (speed - 20) x 4 up to 100. It still needs over 20 m/s.
+</li></ul>
+<h3>Modes: the ball goes up ramps (owner, 2026-11-01: &quot;balls should also try to go up ramps that are more than 45 and launch up still&quot;)</h3>
+<ul>
+<li>In <code>ballMove</code>, a slope&#x27;s face (a wedge, corner or cut box, at any angle) is no longer a rubber wall. The ball turns along the face keeping its speed, carries the rest of the step along it, and flies off the top. A hard landing on a face (over <code>kRubberMin</code> into it) bounces like rubber about the face. Box faces stay rubber. The ball test rolls it at 20 m/s into a 63° 4 m wedge: it goes up to 8.6 m.
+</li></ul>
+<h3>Website on quark.casa (owner, 2026-11-01: &quot;help me link the website to the shit i have setup already&quot;)</h3>
+<ul>
+<li>The website (GitHub Pages, published from the <code>site</code> branch to <code>gh-pages</code>) gets the custom domain <b>quark.casa</b>: a <code>CNAME</code> file on the <code>site</code> branch, which the pages job copies onto <code>gh-pages</code> (the release-testing job keeps whatever gh-pages has, so it stays too). Once the domain is set, GitHub forwards every floration.github.io/quark URL to the same path on quark.casa, so links in older builds, Discord posts and the launcher keep working.
+</li>
+<li>Linux and macOS HTTP requests (system curl) now follow redirects (<code>-L</code>), but only to https (<code>--proto-redir =https</code>). Why: before this, curl handed back GitHub&#x27;s 301 page instead of the file, so the signed master.txt lookup at the old address would silently fail once it forwards. Windows (WinHTTP) already followed them. No effect today: master.txt names the built-in ranking address and has no signature, so every build falls back to that address anyway.
+</li>
+<li><code>play.quark.casa</code> names the official game-server VPS (production port 27500, testing 27501): players can type it in Connect instead of the IP.
+</li></ul>
+<h3>Fullscreen size warning (owner, 2026-11-01: &quot;the game should have a warning next to the fullscreen resolution setting&quot;)</h3>
+<ul>
+<li>VIDEO + AUDIO &gt; MORE 3: a line in the WARNING colour under FULLSCREEN SIZE, &quot;WARNING: DON&#x27;T TOUCH THIS UNLESS YOU KNOW WHAT YOU&#x27;RE DOING&quot;. A wrong exclusive mode can leave the screen black or stretched, so most players should leave it on DESKTOP.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.19.3/">&larr; 1.19.3</a></span><span><a href="../">All updates &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

@@ -1,0 +1,1524 @@
+# made with the quark map editor
+version 13
+handmade
+title Riverside
+setting riverside technology facility
+for tag
+modes vs ffa duel 1v1 hide tag power
+sun 0.27944785 0.9314928 0.2328732
+
+dewygrass -120 -1 -90 -90 0 -76
+dewygrass -90 -1 -90 -60 0 -76
+dewygrass -60 -1 -90 -30 0 -76
+dewygrass -30 -1 -90 0 0 -76
+dewygrass 0 -1 -90 30 0 -76
+dewygrass 30 -1 -90 60 0 -76
+dewygrass 60 -1 -90 74 0 -76
+dewygrass 80 -1 -90 90 0 -76
+dewygrass 90 -1 -90 120 0 -76
+dewygrass -120 -1 -76 -90 0 -66
+dewygrass -90 -1 -76 -60 0 -66
+dewygrass -60 -1 -76 -46 0 -66
+dewygrass -12 -1 -76 0 0 -66
+dewygrass 0 -1 -76 30 0 -66
+dewygrass 30 -1 -76 60 0 -66
+dewygrass 60 -1 -76 74 0 -66
+dewygrass 80 -1 -76 90 0 -66
+dewygrass 90 -1 -76 120 0 -66
+dewygrass -120 -1 -66 -90 0 -60
+dewygrass -120 -1 -60 -90 0 -57.5
+dewygrass -90 -1 -66 -60 0 -60
+dewygrass -90 -1 -60 -60 0 -57.5
+dewygrass -60 -1 -66 -30 0 -60
+dewygrass -60 -1 -60 -30 0 -57.5
+dewygrass -30 -1 -66 0 0 -60
+dewygrass -30 -1 -60 0 0 -57.5
+dewygrass 0 -1 -66 30 0 -60
+dewygrass 0 -1 -60 30 0 -57.5
+dewygrass 30 -1 -66 60 0 -60
+dewygrass 30 -1 -60 60 0 -57.5
+dewygrass 60 -1 -66 74 0 -60
+dewygrass 60 -1 -60 74 0 -57.5
+dewygrass 80 -1 -66 90 0 -60
+dewygrass 80 -1 -60 90 0 -57.5
+dewygrass 90 -1 -66 120 0 -60
+dewygrass 90 -1 -60 120 0 -57.5
+dewygrass 12.5 -1 -57.5 30 0 -55
+dewygrass 30 -1 -57.5 60 0 -55
+dewygrass 60 -1 -57.5 74 0 -55
+dewygrass 80 -1 -57.5 90 0 -55
+dewygrass 90 -1 -57.5 120 0 -55
+dewygrass 12.5 -1 -55 20 0 -32.5
+dewygrass 110 -1 -55 120 0 -32.5
+dewygrass -120 -1 -32.5 -90 0 -30
+dewygrass -120 -1 -30 -90 0 -25
+dewygrass -90 -1 -32.5 -60 0 -30
+dewygrass -90 -1 -30 -60 0 -25
+dewygrass -60 -1 -32.5 -30 0 -30
+dewygrass -60 -1 -30 -30 0 -25
+dewygrass -30 -1 -32.5 -12.5 0 -30
+dewygrass -30 -1 -30 -12.5 0 -25
+dewygrass 12.5 -1 -32.5 20 0 -30
+dewygrass 12.5 -1 -30 20 0 -25
+dewygrass 110 -1 -32.5 120 0 -30
+dewygrass 110 -1 -30 120 0 -25
+dewygrass -120 -1 -25 -108 0 -10
+dewygrass -66 -1 -25 -60 0 -10
+dewygrass -60 -1 -25 -30 0 -10
+dewygrass -30 -1 -25 -12.5 0 -10
+dewygrass 12.5 -1 -25 20 0 -10
+dewygrass 110 -1 -25 120 0 -10
+dewygrass -120 -1 -10 -108 0 -6
+dewygrass -66 -1 -10 -60 0 -6
+dewygrass -60 -1 -10 -30 0 -6
+dewygrass -30 -1 -10 -12.5 0 -6
+dewygrass 12.5 -1 -10 30 0 -6
+dewygrass 30 -1 -10 60 0 -6
+dewygrass 60 -1 -10 74 0 -6
+dewygrass 80 -1 -10 90 0 -6
+dewygrass 90 -1 -10 120 0 -6
+dewygrass -120 -1 6 -108 0 20
+dewygrass -66 -1 6 -60 0 20
+dewygrass -60 -1 6 -30 0 20
+dewygrass -30 -1 6 -12.5 0 20
+dewygrass 12.5 -1 6 30 0 20
+dewygrass 30 -1 6 60 0 20
+dewygrass 60 -1 6 90 0 20
+dewygrass 90 -1 6 120 0 20
+dewygrass -120 -1 20 -90 0 27
+dewygrass -90 -1 20 -60 0 27
+dewygrass -60 -1 20 -30 0 27
+dewygrass -30 -1 20 -12.5 0 27
+dewygrass 12.5 -1 20 30 0 27
+dewygrass 30 -1 20 60 0 27
+dewygrass 60 -1 20 90 0 27
+dewygrass 90 -1 20 120 0 27
+dewygrass -120 -1 27 -90 0 30
+dewygrass -90 -1 27 -60 0 30
+dewygrass 12.5 -1 27 30 0 30
+dewygrass 30 -1 27 60 0 30
+dewygrass 60 -1 27 90 0 30
+dewygrass 90 -1 27 120 0 30
+dewygrass -120 -1 30 -90 0 32
+dewygrass -90 -1 30 -72 0 32
+dewygrass 12.5 -1 30 30 0 32
+dewygrass 30 -1 30 60 0 32
+dewygrass 60 -1 30 90 0 32
+dewygrass 90 -1 30 120 0 32
+dewygrass -120 -1 32 -90 0 32.5
+dewygrass -90 -1 32 -72 0 32.5
+dewygrass -60 -1 32 -30 0 32.5
+dewygrass -30 -1 32 -12.5 0 32.5
+dewygrass 12.5 -1 32 30 0 32.5
+dewygrass 30 -1 32 60 0 32.5
+dewygrass 60 -1 32 90 0 32.5
+dewygrass 90 -1 32 120 0 32.5
+dewygrass -120 -1 32.5 -90 0 48
+dewygrass -90 -1 32.5 -72 0 48
+dewygrass -60 -1 32.5 -30 0 48
+dewygrass -30 -1 32.5 -12.5 0 48
+dewygrass -120 -1 48 -90 0 60
+dewygrass -120 -1 60 -90 0 62
+dewygrass -90 -1 48 -60 0 60
+dewygrass -90 -1 60 -60 0 62
+dewygrass -60 -1 48 -30 0 60
+dewygrass -60 -1 60 -30 0 62
+dewygrass -30 -1 48 -12.5 0 60
+dewygrass -30 -1 60 -12.5 0 62
+dewygrass -120 -1 62 -90 0 90
+dewygrass -90 -1 62 -60 0 90
+dewygrass -60 -1 62 -30 0 90
+dewygrass -30 -1 62 0 0 90
+dewygrass 0 -1 62 30 0 90
+dewygrass 30 -1 62 60 0 90
+dewygrass 60 -1 62 90 0 90
+dewygrass 90 -1 62 120 0 90
+gravel -12.5 -1 57.5 0 0 60
+gravel -12.5 -1 60 0 0 62
+gravel 0 -1 57.5 30 0 60
+gravel 0 -1 60 30 0 62
+gravel 30 -1 57.5 60 0 60
+gravel 30 -1 60 60 0 62
+gravel 60 -1 57.5 90 0 60
+gravel 60 -1 60 90 0 62
+gravel 90 -1 57.5 120 0 60
+gravel 90 -1 60 120 0 62
+gravel -60 -1 27 -30 0 30
+gravel -60 -1 30 -30 0 32
+gravel -30 -1 27 -12.5 0 30
+gravel -30 -1 30 -12.5 0 32
+gravel -72 -1 30 -60 0 48
+gravel -46 -1 -76 -30 0 -66
+gravel -30 -1 -76 -12 0 -66
+asphalt -120 -1 -6 -90 0 0
+asphalt -120 -1 0 -90 0 6
+asphalt -90 -1 -6 -60 0 0
+asphalt -90 -1 0 -60 0 6
+asphalt -60 -1 -6 -30 0 0
+asphalt -60 -1 0 -30 0 6
+asphalt -30 -1 -6 -12.5 0 0
+asphalt -30 -1 0 -12.5 0 6
+asphalt 12.5 -1 -6 30 0 0
+asphalt 12.5 -1 0 30 0 6
+asphalt 30 -1 -6 60 0 0
+asphalt 30 -1 0 60 0 6
+asphalt 60 -1 -6 90 0 0
+asphalt 60 -1 0 90 0 6
+asphalt 90 -1 -6 120 0 0
+asphalt 90 -1 0 120 0 6
+asphalt 74 -1 -90 80 0 -60
+asphalt 74 -1 -60 80 0 -30
+asphalt 74 -1 -30 80 0 -6
+concretepavers 20 -1 -55 30 0 -30
+concretepavers 20 -1 -30 30 0 -10
+concretepavers 30 -1 -55 60 0 -30
+concretepavers 30 -1 -30 60 0 -10
+concretepavers 60 -1 -55 74 0 -30
+concretepavers 60 -1 -30 74 0 -10
+concretepavers 80 -1 -55 90 0 -30
+concretepavers 80 -1 -30 90 0 -10
+concretepavers 90 -1 -55 110 0 -30
+concretepavers 90 -1 -30 110 0 -10
+dirt -108 -1 -25 -100 0 -6
+dirt -100 -1 -25 -75 0 -6
+dirt -75 -1 -25 -66 0 -6
+dirt -108 -1 6 -100 0 20
+dirt -100 -1 6 -75 0 20
+dirt -75 -1 6 -66 0 20
+riverbankclay -120 -2.4 -57.5 12.5 -1.4 -32.5
+riverbankclay -12.5 -2.4 -57.5 12.5 -1.4 57.5
+riverbankclay -12.5 -2.4 32.5 120 -1.4 57.5
+clearlagoon -12.5 -1.4 -32.5 12.5 -0.4 32.5
+clearlagoon -120 -1.4 -57.5 12.5 -0.4 -48
+clearlagoon -120 -1.4 -42 12.5 -0.4 -32.5
+whiterapids -120 -1.4 -48 12.5 -0.4 -42
+clearlagoon -12.5 -1.4 32.5 120 -0.4 42
+clearlagoon -12.5 -1.4 48 120 -0.4 57.5
+whiterapids -12.5 -1.4 42 120 -0.4 48
+precastconcrete -105 -2.4 -36 -102 -0.9333 -34.8333
+precastconcrete -105 -2.4 -34.8333 -102 -0.4667 -33.6667
+precastconcrete -105 -2.4 -33.6667 -102 0 -32.5
+precastconcrete -99 -2.4 -57.5 -96 0 -56.3333
+precastconcrete -99 -2.4 -56.3333 -96 -0.4667 -55.1667
+precastconcrete -99 -2.4 -55.1667 -96 -0.9333 -54
+precastconcrete -75 -2.4 -36 -72 -0.9333 -34.8333
+precastconcrete -75 -2.4 -34.8333 -72 -0.4667 -33.6667
+precastconcrete -75 -2.4 -33.6667 -72 0 -32.5
+precastconcrete -69 -2.4 -57.5 -66 0 -56.3333
+precastconcrete -69 -2.4 -56.3333 -66 -0.4667 -55.1667
+precastconcrete -69 -2.4 -55.1667 -66 -0.9333 -54
+precastconcrete -40 -2.4 -36 -37 -0.9333 -34.8333
+precastconcrete -40 -2.4 -34.8333 -37 -0.4667 -33.6667
+precastconcrete -40 -2.4 -33.6667 -37 0 -32.5
+precastconcrete -34 -2.4 -57.5 -31 0 -56.3333
+precastconcrete -34 -2.4 -56.3333 -31 -0.4667 -55.1667
+precastconcrete -34 -2.4 -55.1667 -31 -0.9333 -54
+precastconcrete 25 -2.4 32.5 28 0 33.6667
+precastconcrete 25 -2.4 33.6667 28 -0.4667 34.8333
+precastconcrete 25 -2.4 34.8333 28 -0.9333 36
+precastconcrete 19 -2.4 54 22 -0.9333 55.1667
+precastconcrete 19 -2.4 55.1667 22 -0.4667 56.3333
+precastconcrete 19 -2.4 56.3333 22 0 57.5
+precastconcrete 55 -2.4 32.5 58 0 33.6667
+precastconcrete 55 -2.4 33.6667 58 -0.4667 34.8333
+precastconcrete 55 -2.4 34.8333 58 -0.9333 36
+precastconcrete 49 -2.4 54 52 -0.9333 55.1667
+precastconcrete 49 -2.4 55.1667 52 -0.4667 56.3333
+precastconcrete 49 -2.4 56.3333 52 0 57.5
+precastconcrete 85 -2.4 32.5 88 0 33.6667
+precastconcrete 85 -2.4 33.6667 88 -0.4667 34.8333
+precastconcrete 85 -2.4 34.8333 88 -0.9333 36
+precastconcrete 79 -2.4 54 82 -0.9333 55.1667
+precastconcrete 79 -2.4 55.1667 82 -0.4667 56.3333
+precastconcrete 79 -2.4 56.3333 82 0 57.5
+precastconcrete 110 -2.4 32.5 113 0 33.6667
+precastconcrete 110 -2.4 33.6667 113 -0.4667 34.8333
+precastconcrete 110 -2.4 34.8333 113 -0.9333 36
+precastconcrete 104 -2.4 54 107 -0.9333 55.1667
+precastconcrete 104 -2.4 55.1667 107 -0.4667 56.3333
+precastconcrete 104 -2.4 56.3333 107 0 57.5
+precastconcrete -12.5 -2.4 -20 -11.3333 0 -17
+precastconcrete -11.3333 -2.4 -20 -10.1667 -0.4667 -17
+precastconcrete -10.1667 -2.4 -20 -9 -0.9333 -17
+precastconcrete 9 -2.4 -26 10.1667 -0.9333 -23
+precastconcrete 10.1667 -2.4 -26 11.3333 -0.4667 -23
+precastconcrete 11.3333 -2.4 -26 12.5 0 -23
+precastconcrete -12.5 -2.4 15 -11.3333 0 18
+precastconcrete -11.3333 -2.4 15 -10.1667 -0.4667 18
+precastconcrete -10.1667 -2.4 15 -9 -0.9333 18
+precastconcrete 9 -2.4 9 10.1667 -0.9333 12
+precastconcrete 10.1667 -2.4 9 11.3333 -0.4667 12
+precastconcrete 11.3333 -2.4 9 12.5 0 12
+precastconcrete -121 -2.4 -91 -120 5 91
+precastconcrete 120 -2.4 -91 121 5 91
+precastconcrete -120 -2.4 -91 120 5 -90
+precastconcrete -120 -2.4 90 120 5 91
+clip -122 5 -92 -120 85 92
+clip 120 5 -92 122 85 92
+clip -120 5 -92 120 85 -90
+clip -120 5 90 120 85 92
+clip -120 52 -90 120 53 90
+precastconcrete -13.5 -0.7 -6 13.5 0 6
+precastconcrete -12.5 0 -6 12.5 1 -5.6
+precastconcrete -12.5 0 5.6 12.5 1 6
+waterstainedconcrete -12.5 -1.4 28 -6 -0.1 32
+waterstainedconcrete -3 -1.4 28 3 -0.1 32
+waterstainedconcrete 6 -1.4 28 12.5 -0.1 32
+galvanizedgrating -12.5 -0.1 29 12.5 0 31
+galvanizedsteel -12.5 0 28.9 12.5 1 29
+galvanizedsteel -12.5 0 31 12.5 1 31.1
+steeldeckplate -60 7.6 -64 -52 8 -26
+trapezoidcladding -60 8 -64 -59.6 12.8 -56
+trapezoidcladding -52.4 8 -64 -52 12.8 -56
+trapezoidcladding -60 8 -53 -59.6 12.8 -47
+trapezoidcladding -52.4 8 -53 -52 12.8 -47
+trapezoidcladding -60 8 -44 -59.6 12.8 -38
+trapezoidcladding -52.4 8 -44 -52 12.8 -38
+trapezoidcladding -60 8 -35 -59.6 12.8 -26
+trapezoidcladding -52.4 8 -35 -52 12.8 -26
+trapezoidcladding -60 8 -56 -59.6 9.2 -53
+trapezoidcladding -52.4 8 -56 -52 9.2 -53
+trapezoidcladding -60 11.4 -56 -59.6 12.8 -53
+trapezoidcladding -52.4 11.4 -56 -52 12.8 -53
+trapezoidcladding -60 8 -47 -59.6 9.2 -44
+trapezoidcladding -52.4 8 -47 -52 9.2 -44
+trapezoidcladding -60 11.4 -47 -59.6 12.8 -44
+trapezoidcladding -52.4 11.4 -47 -52 12.8 -44
+trapezoidcladding -60 8 -38 -59.6 9.2 -35
+trapezoidcladding -52.4 8 -38 -52 9.2 -35
+trapezoidcladding -60 11.4 -38 -59.6 12.8 -35
+trapezoidcladding -52.4 11.4 -38 -52 12.8 -35
+trapezoidcladding -60.2 12.8 -64.2 -51.8 13.2 -25.8
+precastconcrete -59 -2.4 -59 -53 7.6 -56
+precastconcrete -59 -2.4 -34 -53 7.6 -31
+precastconcrete -59.6 0 -26 -52.4 8 -25
+precastconcrete -59.6 0 -25 -52.4 7.5 -24
+precastconcrete -59.6 0 -24 -52.4 7 -23
+precastconcrete -59.6 0 -23 -52.4 6.5 -22
+precastconcrete -59.6 0 -22 -52.4 6 -21
+precastconcrete -59.6 0 -21 -52.4 5.5 -20
+precastconcrete -59.6 0 -20 -52.4 5 -19
+precastconcrete -59.6 0 -19 -52.4 4.5 -18
+precastconcrete -59.6 0 -18 -52.4 4 -17
+precastconcrete -59.6 0 -17 -52.4 3.5 -16
+precastconcrete -59.6 0 -16 -52.4 3 -15
+precastconcrete -59.6 0 -15 -52.4 2.5 -14
+precastconcrete -59.6 0 -14 -52.4 2 -13
+precastconcrete -59.6 0 -13 -52.4 1.5 -12
+precastconcrete -59.6 0 -12 -52.4 1 -11
+precastconcrete -59.6 0 -11 -52.4 0.5 -10
+precastconcrete -59.6 0 -80 -52.4 0.5 -79
+precastconcrete -59.6 0 -79 -52.4 1 -78
+precastconcrete -59.6 0 -78 -52.4 1.5 -77
+precastconcrete -59.6 0 -77 -52.4 2 -76
+precastconcrete -59.6 0 -76 -52.4 2.5 -75
+precastconcrete -59.6 0 -75 -52.4 3 -74
+precastconcrete -59.6 0 -74 -52.4 3.5 -73
+precastconcrete -59.6 0 -73 -52.4 4 -72
+precastconcrete -59.6 0 -72 -52.4 4.5 -71
+precastconcrete -59.6 0 -71 -52.4 5 -70
+precastconcrete -59.6 0 -70 -52.4 5.5 -69
+precastconcrete -59.6 0 -69 -52.4 6 -68
+precastconcrete -59.6 0 -68 -52.4 6.5 -67
+precastconcrete -59.6 0 -67 -52.4 7 -66
+precastconcrete -59.6 0 -66 -52.4 7.5 -65
+precastconcrete -59.6 0 -65 -52.4 8 -64
+precastconcrete 30 0 -45 37 5 -44.6
+precastconcrete 37 3.2 -45 39 5 -44.6
+precastconcrete 37 0 -45 39 1.4 -44.6
+glass 37 1.4 -45 39 3.2 -44.6
+precastconcrete 39 0 -45 48 5 -44.6
+precastconcrete 48 4.2 -45 52 5 -44.6
+precastconcrete 52 0 -45 61 5 -44.6
+precastconcrete 61 3.2 -45 63 5 -44.6
+precastconcrete 61 0 -45 63 1.4 -44.6
+glass 61 1.4 -45 63 3.2 -44.6
+precastconcrete 63 0 -45 70 5 -44.6
+precastconcrete 30 0 -20.4 35 5 -20
+precastconcrete 35 3.2 -20.4 37 5 -20
+precastconcrete 35 0 -20.4 37 1.4 -20
+glass 35 1.4 -20.4 37 3.2 -20
+precastconcrete 37 0 -20.4 47.5 5 -20
+precastconcrete 47.5 4.2 -20.4 52.5 5 -20
+precastconcrete 52.5 0 -20.4 63 5 -20
+precastconcrete 63 3.2 -20.4 65 5 -20
+precastconcrete 63 0 -20.4 65 1.4 -20
+glass 63 1.4 -20.4 65 3.2 -20
+precastconcrete 65 0 -20.4 70 5 -20
+precastconcrete 30 0 -44.6 30.4 5 -34.5
+precastconcrete 30 4.2 -34.5 30.4 5 -30.5
+precastconcrete 30 0 -30.5 30.4 5 -20.4
+precastconcrete 69.6 0 -44.6 70 5 -34.5
+precastconcrete 69.6 4.2 -34.5 70 5 -30.5
+precastconcrete 69.6 0 -30.5 70 5 -20.4
+precastconcrete 30 5 -45 37 10 -44.6
+precastconcrete 37 8.2 -45 39 10 -44.6
+precastconcrete 37 5 -45 39 6.4 -44.6
+glass 37 6.4 -45 39 8.2 -44.6
+precastconcrete 39 5 -45 61 10 -44.6
+precastconcrete 61 8.2 -45 63 10 -44.6
+precastconcrete 61 5 -45 63 6.4 -44.6
+glass 61 6.4 -45 63 8.2 -44.6
+precastconcrete 63 5 -45 70 10 -44.6
+precastconcrete 30 5 -20.4 35 10 -20
+precastconcrete 35 8.2 -20.4 37 10 -20
+precastconcrete 35 5 -20.4 37 6.4 -20
+glass 35 6.4 -20.4 37 8.2 -20
+precastconcrete 37 5 -20.4 49 10 -20
+precastconcrete 49 8.2 -20.4 51 10 -20
+precastconcrete 49 5 -20.4 51 6.4 -20
+glass 49 6.4 -20.4 51 8.2 -20
+precastconcrete 51 5 -20.4 63 10 -20
+precastconcrete 63 8.2 -20.4 65 10 -20
+precastconcrete 63 5 -20.4 65 6.4 -20
+glass 63 6.4 -20.4 65 8.2 -20
+precastconcrete 65 5 -20.4 70 10 -20
+precastconcrete 30 5 -44.6 30.4 10 -33.5
+precastconcrete 30 8.2 -33.5 30.4 10 -31.5
+precastconcrete 30 5 -33.5 30.4 6.4 -31.5
+glass 30 6.4 -33.5 30.4 8.2 -31.5
+precastconcrete 30 5 -31.5 30.4 10 -20.4
+precastconcrete 69.6 5 -44.6 70 10 -33.5
+precastconcrete 69.6 8.2 -33.5 70 10 -31.5
+precastconcrete 69.6 5 -33.5 70 6.4 -31.5
+glass 69.6 6.4 -33.5 70 8.2 -31.5
+precastconcrete 69.6 5 -31.5 70 10 -20.4
+precastconcrete 30 10 -45 37 15 -44.6
+precastconcrete 37 13.2 -45 39 15 -44.6
+precastconcrete 37 10 -45 39 11.4 -44.6
+glass 37 11.4 -45 39 13.2 -44.6
+precastconcrete 39 10 -45 61 15 -44.6
+precastconcrete 61 13.2 -45 63 15 -44.6
+precastconcrete 61 10 -45 63 11.4 -44.6
+glass 61 11.4 -45 63 13.2 -44.6
+precastconcrete 63 10 -45 70 15 -44.6
+precastconcrete 30 10 -20.4 35 15 -20
+precastconcrete 35 13.2 -20.4 37 15 -20
+precastconcrete 35 10 -20.4 37 11.4 -20
+glass 35 11.4 -20.4 37 13.2 -20
+precastconcrete 37 10 -20.4 49 15 -20
+precastconcrete 49 13.2 -20.4 51 15 -20
+precastconcrete 49 10 -20.4 51 11.4 -20
+glass 49 11.4 -20.4 51 13.2 -20
+precastconcrete 51 10 -20.4 63 15 -20
+precastconcrete 63 13.2 -20.4 65 15 -20
+precastconcrete 63 10 -20.4 65 11.4 -20
+glass 63 11.4 -20.4 65 13.2 -20
+precastconcrete 65 10 -20.4 70 15 -20
+precastconcrete 30 10 -44.6 30.4 15 -33.5
+precastconcrete 30 13.2 -33.5 30.4 15 -31.5
+precastconcrete 30 10 -33.5 30.4 11.4 -31.5
+glass 30 11.4 -33.5 30.4 13.2 -31.5
+precastconcrete 30 10 -31.5 30.4 15 -20.4
+precastconcrete 69.6 10 -44.6 70 15 -33.5
+precastconcrete 69.6 13.2 -33.5 70 15 -31.5
+precastconcrete 69.6 10 -33.5 70 11.4 -31.5
+glass 69.6 11.4 -33.5 70 13.2 -31.5
+precastconcrete 69.6 10 -31.5 70 15 -20.4
+polishedconcrete 30.4 4.6 -44.6 33 5 -41
+polishedconcrete 43 4.6 -44.6 57 5 -41
+polishedconcrete 67 4.6 -44.6 69.6 5 -41
+polishedconcrete 30.4 4.6 -41 69.6 5 -20.4
+polishedconcrete 30.4 9.6 -44.6 33 10 -41
+polishedconcrete 43 9.6 -44.6 57 10 -41
+polishedconcrete 67 9.6 -44.6 69.6 10 -41
+polishedconcrete 30.4 9.6 -41 69.6 10 -20.4
+concreterooftiles 30 15 -45 70 15.4 -25.8
+concreterooftiles 30 15 -25.8 60.8 15.4 -23.6
+concreterooftiles 63.2 15 -25.8 70 15.4 -23.6
+concreterooftiles 30 15 -23.6 70 15.4 -20
+polishedconcrete 33 0 -44.6 34 0.5 -41
+polishedconcrete 34 0.5 -44.6 35 1 -41
+polishedconcrete 35 1 -44.6 36 1.5 -41
+polishedconcrete 36 1.5 -44.6 37 2 -41
+polishedconcrete 37 2 -44.6 38 2.5 -41
+polishedconcrete 38 2.5 -44.6 39 3 -41
+polishedconcrete 39 3 -44.6 40 3.5 -41
+polishedconcrete 40 3.5 -44.6 41 4 -41
+polishedconcrete 41 4 -44.6 42 4.5 -41
+polishedconcrete 42 4.5 -44.6 43 5 -41
+polishedconcrete 57 4.5 -44.6 58 5 -41
+polishedconcrete 58 4 -44.6 59 4.5 -41
+polishedconcrete 59 3.5 -44.6 60 4 -41
+polishedconcrete 60 3 -44.6 61 3.5 -41
+polishedconcrete 61 2.5 -44.6 62 3 -41
+polishedconcrete 62 2 -44.6 63 2.5 -41
+polishedconcrete 63 1.5 -44.6 64 2 -41
+polishedconcrete 64 1 -44.6 65 1.5 -41
+polishedconcrete 65 0.5 -44.6 66 1 -41
+polishedconcrete 66 0 -44.6 67 0.5 -41
+polishedconcrete 33 5 -44.6 34 5.5 -41
+polishedconcrete 34 5.5 -44.6 35 6 -41
+polishedconcrete 35 6 -44.6 36 6.5 -41
+polishedconcrete 36 6.5 -44.6 37 7 -41
+polishedconcrete 37 7 -44.6 38 7.5 -41
+polishedconcrete 38 7.5 -44.6 39 8 -41
+polishedconcrete 39 8 -44.6 40 8.5 -41
+polishedconcrete 40 8.5 -44.6 41 9 -41
+polishedconcrete 41 9 -44.6 42 9.5 -41
+polishedconcrete 42 9.5 -44.6 43 10 -41
+polishedconcrete 57 9.5 -44.6 58 10 -41
+polishedconcrete 58 9 -44.6 59 9.5 -41
+polishedconcrete 59 8.5 -44.6 60 9 -41
+polishedconcrete 60 8 -44.6 61 8.5 -41
+polishedconcrete 61 7.5 -44.6 62 8 -41
+polishedconcrete 62 7 -44.6 63 7.5 -41
+polishedconcrete 63 6.5 -44.6 64 7 -41
+polishedconcrete 64 6 -44.6 65 6.5 -41
+polishedconcrete 65 5.5 -44.6 66 6 -41
+polishedconcrete 66 5 -44.6 67 5.5 -41
+drywall 30.4 0 -36.2 32.7 4.6 -36
+drywall 35.3 0 -36.2 41.2 4.6 -36
+drywall 43.8 0 -36.2 46.8 4.6 -36
+drywall 49.2 0 -36.2 50.8 4.6 -36
+drywall 53.2 0 -36.2 56.2 4.6 -36
+drywall 58.8 0 -36.2 64.7 4.6 -36
+drywall 67.3 0 -36.2 69.6 4.6 -36
+drywall 32.7 4.2 -36.2 35.3 4.6 -36
+drywall 41.2 4.2 -36.2 43.8 4.6 -36
+drywall 46.8 4.2 -36.2 49.2 4.6 -36
+drywall 50.8 4.2 -36.2 53.2 4.6 -36
+drywall 56.2 4.2 -36.2 58.8 4.6 -36
+drywall 64.7 4.2 -36.2 67.3 4.6 -36
+drywall 30.4 0 -29 32 4.6 -28.8
+drywall 35 0 -29 37 4.6 -28.8
+drywall 40 0 -29 44 4.6 -28.8
+drywall 47 0 -29 53 4.6 -28.8
+drywall 56 0 -29 60 4.6 -28.8
+drywall 63 0 -29 65 4.6 -28.8
+drywall 68 0 -29 69.6 4.6 -28.8
+drywall 32 4.2 -29 35 4.6 -28.8
+drywall 37 4.2 -29 40 4.6 -28.8
+drywall 44 4.2 -29 47 4.6 -28.8
+drywall 53 4.2 -29 56 4.6 -28.8
+drywall 60 4.2 -29 63 4.6 -28.8
+drywall 65 4.2 -29 68 4.6 -28.8
+drywall 45.9 0 -44.6 46.1 4.6 -36.2
+drywall 53.9 0 -44.6 54.1 4.6 -36.2
+drywall 41.9 0 -28.8 42.1 4.6 -20.4
+drywall 57.9 0 -28.8 58.1 4.6 -20.4
+drywall 30.4 5 -36.2 32.7 9.6 -36
+drywall 35.3 5 -36.2 41.2 9.6 -36
+drywall 43.8 5 -36.2 46.8 9.6 -36
+drywall 49.2 5 -36.2 50.8 9.6 -36
+drywall 53.2 5 -36.2 56.2 9.6 -36
+drywall 58.8 5 -36.2 64.7 9.6 -36
+drywall 67.3 5 -36.2 69.6 9.6 -36
+drywall 32.7 9.2 -36.2 35.3 9.6 -36
+drywall 41.2 9.2 -36.2 43.8 9.6 -36
+drywall 46.8 9.2 -36.2 49.2 9.6 -36
+drywall 50.8 9.2 -36.2 53.2 9.6 -36
+drywall 56.2 9.2 -36.2 58.8 9.6 -36
+drywall 64.7 9.2 -36.2 67.3 9.6 -36
+drywall 30.4 5 -29 32 9.6 -28.8
+drywall 35 5 -29 37 9.6 -28.8
+drywall 40 5 -29 44 9.6 -28.8
+drywall 47 5 -29 53 9.6 -28.8
+drywall 56 5 -29 60 9.6 -28.8
+drywall 63 5 -29 65 9.6 -28.8
+drywall 68 5 -29 69.6 9.6 -28.8
+drywall 32 9.2 -29 35 9.6 -28.8
+drywall 37 9.2 -29 40 9.6 -28.8
+drywall 44 9.2 -29 47 9.6 -28.8
+drywall 53 9.2 -29 56 9.6 -28.8
+drywall 60 9.2 -29 63 9.6 -28.8
+drywall 65 9.2 -29 68 9.6 -28.8
+drywall 45.9 5 -44.6 46.1 9.6 -36.2
+drywall 53.9 5 -44.6 54.1 9.6 -36.2
+drywall 41.9 5 -28.8 42.1 9.6 -20.4
+drywall 57.9 5 -28.8 58.1 9.6 -20.4
+drywall 30.4 10 -36.2 32.7 14.6 -36
+drywall 35.3 10 -36.2 41.2 14.6 -36
+drywall 43.8 10 -36.2 46.8 14.6 -36
+drywall 49.2 10 -36.2 50.8 14.6 -36
+drywall 53.2 10 -36.2 56.2 14.6 -36
+drywall 58.8 10 -36.2 64.7 14.6 -36
+drywall 67.3 10 -36.2 69.6 14.6 -36
+drywall 32.7 14.2 -36.2 35.3 14.6 -36
+drywall 41.2 14.2 -36.2 43.8 14.6 -36
+drywall 46.8 14.2 -36.2 49.2 14.6 -36
+drywall 50.8 14.2 -36.2 53.2 14.6 -36
+drywall 56.2 14.2 -36.2 58.8 14.6 -36
+drywall 64.7 14.2 -36.2 67.3 14.6 -36
+drywall 30.4 10 -29 32 14.6 -28.8
+drywall 35 10 -29 37 14.6 -28.8
+drywall 40 10 -29 44 14.6 -28.8
+drywall 47 10 -29 53 14.6 -28.8
+drywall 56 10 -29 60 14.6 -28.8
+drywall 63 10 -29 65 14.6 -28.8
+drywall 68 10 -29 69.6 14.6 -28.8
+drywall 32 14.2 -29 35 14.6 -28.8
+drywall 37 14.2 -29 40 14.6 -28.8
+drywall 44 14.2 -29 47 14.6 -28.8
+drywall 53 14.2 -29 56 14.6 -28.8
+drywall 60 14.2 -29 63 14.6 -28.8
+drywall 65 14.2 -29 68 14.6 -28.8
+drywall 45.9 10 -44.6 46.1 14.6 -36.2
+drywall 53.9 10 -44.6 54.1 14.6 -36.2
+drywall 41.9 10 -28.8 42.1 14.6 -20.4
+drywall 57.9 10 -28.8 58.1 14.6 -20.4
+precastconcrete 61.4 10 -27 62.6 15 -25.8
+galvanizedsteel 61.51 10 -25.92 61.59 15.4 -25.86
+galvanizedsteel 62.41 10 -25.92 62.49 15.4 -25.86
+galvanizedsteel 61.55 10.35 -25.92 62.45 10.41 -25.86
+galvanizedsteel 61.55 10.75 -25.92 62.45 10.81 -25.86
+galvanizedsteel 61.55 11.15 -25.92 62.45 11.21 -25.86
+galvanizedsteel 61.55 11.55 -25.92 62.45 11.61 -25.86
+galvanizedsteel 61.55 11.95 -25.92 62.45 12.01 -25.86
+galvanizedsteel 61.55 12.35 -25.92 62.45 12.41 -25.86
+galvanizedsteel 61.55 12.75 -25.92 62.45 12.81 -25.86
+galvanizedsteel 61.55 13.15 -25.92 62.45 13.21 -25.86
+galvanizedsteel 61.55 13.55 -25.92 62.45 13.61 -25.86
+galvanizedsteel 61.55 13.95 -25.92 62.45 14.01 -25.86
+galvanizedsteel 61.55 14.35 -25.92 62.45 14.41 -25.86
+galvanizedsteel 61.55 14.75 -25.92 62.45 14.81 -25.86
+galvanizedsteel 61.55 15.15 -25.92 62.45 15.21 -25.86
+precastconcrete 30 15.4 -45 70 16.6 -44.6
+precastconcrete 30 15.4 -20.4 70 16.6 -20
+precastconcrete 30 15.4 -44.6 30.4 16.6 -20.4
+precastconcrete 69.6 15.4 -44.6 70 16.6 -20.4
+insulatedpanel 36 15.4 -42 46 18.4 -41.6
+insulatedpanel 36 15.4 -36.4 39.5 18.4 -36
+insulatedpanel 39.5 18.2 -36.4 42.5 18.4 -36
+insulatedpanel 42.5 15.4 -36.4 46 18.4 -36
+insulatedpanel 36 15.4 -41.6 36.4 18.4 -36.4
+insulatedpanel 45.6 15.4 -41.6 46 18.4 -36.4
+concreterooftiles 35.8 18.4 -42.2 46.2 18.7 -35.8
+galvanizedsteel 51.2 15.4 -43.8 52.8 16.6 -42.2
+galvanizedsteel 55.2 15.4 -43.8 56.8 16.6 -42.2
+galvanizedsteel 59.2 15.4 -43.8 60.8 16.6 -42.2
+precastconcrete 32 15.4 -21.6 37 16 -20.4
+hedge 32.2 16 -21.4 36.8 16.6 -20.6
+precastconcrete 40 15.4 -21.6 45 16 -20.4
+hedge 40.2 16 -21.4 44.8 16.6 -20.6
+precastconcrete 48 15.4 -21.6 53 16 -20.4
+hedge 48.2 16 -21.4 52.8 16.6 -20.6
+insulatedpanel 80 0 -45 87 6 -44.6
+insulatedpanel 87 3.6 -45 89 6 -44.6
+insulatedpanel 87 0 -45 89 1.6 -44.6
+glass 87 1.6 -45 89 3.6 -44.6
+insulatedpanel 89 0 -45 104 6 -44.6
+insulatedpanel 80 0 -25.4 85 6 -25
+insulatedpanel 85 3.6 -25.4 87 6 -25
+insulatedpanel 85 0 -25.4 87 1.6 -25
+glass 85 1.6 -25.4 87 3.6 -25
+insulatedpanel 87 0 -25.4 96 6 -25
+insulatedpanel 96 4.2 -25.4 100 6 -25
+insulatedpanel 100 0 -25.4 104 6 -25
+insulatedpanel 80 0 -44.6 80.4 6 -37
+insulatedpanel 80 4.2 -37 80.4 6 -33
+insulatedpanel 80 0 -33 80.4 6 -25.4
+insulatedpanel 103.6 0 -44.6 104 6 -33
+insulatedpanel 103.6 3.6 -33 104 6 -31
+insulatedpanel 103.6 0 -33 104 1.6 -31
+glass 103.6 1.6 -33 104 3.6 -31
+insulatedpanel 103.6 0 -31 104 6 -25.4
+concreterooftiles 80 6 -45 104 6.4 -44
+concreterooftiles 80 6 -44 100.5 6.4 -42
+concreterooftiles 102.5 6 -44 104 6.4 -42
+concreterooftiles 80 6 -42 104 6.4 -25
+insulatedpanel 100.9 0 -42 102.1 6 -40.8
+galvanizedsteel 101.01 0 -41.94 101.09 6.4 -41.88
+galvanizedsteel 101.91 0 -41.94 101.99 6.4 -41.88
+galvanizedsteel 101.05 0.35 -41.94 101.95 0.41 -41.88
+galvanizedsteel 101.05 0.75 -41.94 101.95 0.81 -41.88
+galvanizedsteel 101.05 1.15 -41.94 101.95 1.21 -41.88
+galvanizedsteel 101.05 1.55 -41.94 101.95 1.61 -41.88
+galvanizedsteel 101.05 1.95 -41.94 101.95 2.01 -41.88
+galvanizedsteel 101.05 2.35 -41.94 101.95 2.41 -41.88
+galvanizedsteel 101.05 2.75 -41.94 101.95 2.81 -41.88
+galvanizedsteel 101.05 3.15 -41.94 101.95 3.21 -41.88
+galvanizedsteel 101.05 3.55 -41.94 101.95 3.61 -41.88
+galvanizedsteel 101.05 3.95 -41.94 101.95 4.01 -41.88
+galvanizedsteel 101.05 4.35 -41.94 101.95 4.41 -41.88
+galvanizedsteel 101.05 4.75 -41.94 101.95 4.81 -41.88
+galvanizedsteel 101.05 5.15 -41.94 101.95 5.21 -41.88
+galvanizedsteel 101.05 5.55 -41.94 101.95 5.61 -41.88
+galvanizedsteel 101.05 5.95 -41.94 101.95 6.01 -41.88
+galvanizedsteel 101.05 6.35 -41.94 101.95 6.41 -41.88
+serverrack 84 0 -41 96 2.4 -39.8
+serverrack 84 0 -37 96 2.4 -35.8
+serverrack 84 0 -33 96 2.4 -31.8
+trapezoidcladding 30 0 0 48 9 0.4
+trapezoidcladding 48 4.2 0 52 9 0.4
+trapezoidcladding 52 0 0 58 9 0.4
+trapezoidcladding 30 0 25.6 38.8 9 26
+trapezoidcladding 38.8 3.4 25.6 41.2 9 26
+trapezoidcladding 38.8 0 25.6 41.2 1.6 26
+glass 38.8 1.6 25.6 41.2 3.4 26
+trapezoidcladding 41.2 0 25.6 58 9 26
+trapezoidcladding 30 0 0.4 30.4 9 10
+trapezoidcladding 30 5 10 30.4 9 16
+trapezoidcladding 30 0 16 30.4 9 25.6
+trapezoidcladding 57.6 0 0.4 58 9 6
+trapezoidcladding 57.6 4.2 6 58 9 10
+trapezoidcladding 57.6 0 10 58 9 18.8
+trapezoidcladding 57.6 3.4 18.8 58 9 21.2
+trapezoidcladding 57.6 0 18.8 58 1.6 21.2
+glass 57.6 1.6 18.8 58 3.4 21.2
+trapezoidcladding 57.6 0 21.2 58 9 25.6
+rollershutter 29.4 5 9.6 30 6.4 16.4
+corrugated 29.6 9 -0.4 58.4 9.4 26.4
+steeldeckplate 50 4.1 0.4 57.6 4.5 25.6
+steeldeckplate 46 0 21.6 46.4444 0.5 25.6
+steeldeckplate 46.4444 0 21.6 46.8889 1 25.6
+steeldeckplate 46.8889 0 21.6 47.3333 1.5 25.6
+steeldeckplate 47.3333 0 21.6 47.7778 2 25.6
+steeldeckplate 47.7778 0 21.6 48.2222 2.5 25.6
+steeldeckplate 48.2222 0 21.6 48.6667 3 25.6
+steeldeckplate 48.6667 0 21.6 49.1111 3.5 25.6
+steeldeckplate 49.1111 0 21.6 49.5556 4 25.6
+steeldeckplate 49.5556 0 21.6 50 4.5 25.6
+greasestainedmetal 34 0 4 40 1.1 6
+greasestainedmetal 34 0 18 40 1.1 20
+cardboardboxes 52 0 2 54 1.2 4
+galvanizedsteel 88 0 5 88.4 30 5.4
+nograpple 88 30 5 88.4 40 5.4
+galvanizedsteel 93.6 0 5 94 30 5.4
+nograpple 93.6 30 5 94 40 5.4
+galvanizedsteel 88 0 10.6 88.4 30 11
+nograpple 88 30 10.6 88.4 40 11
+galvanizedsteel 93.6 0 10.6 94 30 11
+nograpple 93.6 30 10.6 94 40 11
+galvanizedsteel 88 5 5 94 5.2 5.2
+galvanizedsteel 88 5 10.8 94 5.2 11
+galvanizedsteel 88 10 5 94 10.2 5.2
+galvanizedsteel 88 10 10.8 94 10.2 11
+galvanizedsteel 88 15 5 94 15.2 5.2
+galvanizedsteel 88 15 10.8 94 15.2 11
+galvanizedsteel 88 20 5 94 20.2 5.2
+galvanizedsteel 88 20 10.8 94 20.2 11
+galvanizedsteel 88 25 5 94 25.2 5.2
+galvanizedsteel 88 25 10.8 94 25.2 11
+nograpple 88 30 5 94 30.2 5.2
+nograpple 88 30 10.8 94 30.2 11
+nograpple 88 35 5 94 35.2 5.2
+nograpple 88 35 10.8 94 35.2 11
+cut 188 2 -0.7071 0.7071 0 0.0152 0.7071 -0.7071 0 0.0152 88.2 0 4.975 93.8 5 5.125
+cut 188 2 -0.7071 0.7071 0 0.0152 0.7071 -0.7071 0 0.0152 88.2 0 10.875 93.8 5 11.025
+cut 188 2 0 0.7071 -0.7071 0.0152 0 -0.7071 0.7071 0.0152 87.975 0 5.2 88.125 5 10.8
+cut 188 2 0 0.7071 -0.7071 0.0152 0 -0.7071 0.7071 0.0152 93.875 0 5.2 94.025 5 10.8
+cut 188 2 -0.7071 -0.7071 0 -0.6919 0.7071 0.7071 0 0.7223 88.2 5 4.975 93.8 10 5.125
+cut 188 2 -0.7071 -0.7071 0 -0.6919 0.7071 0.7071 0 0.7223 88.2 5 10.875 93.8 10 11.025
+cut 188 2 0 -0.7071 -0.7071 -0.6919 0 0.7071 0.7071 0.7223 87.975 5 5.2 88.125 10 10.8
+cut 188 2 0 -0.7071 -0.7071 -0.6919 0 0.7071 0.7071 0.7223 93.875 5 5.2 94.025 10 10.8
+cut 188 2 -0.7071 0.7071 0 0.0152 0.7071 -0.7071 0 0.0152 88.2 10 4.975 93.8 15 5.125
+cut 188 2 -0.7071 0.7071 0 0.0152 0.7071 -0.7071 0 0.0152 88.2 10 10.875 93.8 15 11.025
+cut 188 2 0 0.7071 -0.7071 0.0152 0 -0.7071 0.7071 0.0152 87.975 10 5.2 88.125 15 10.8
+cut 188 2 0 0.7071 -0.7071 0.0152 0 -0.7071 0.7071 0.0152 93.875 10 5.2 94.025 15 10.8
+cut 188 2 -0.7071 -0.7071 0 -0.6919 0.7071 0.7071 0 0.7223 88.2 15 4.975 93.8 20 5.125
+cut 188 2 -0.7071 -0.7071 0 -0.6919 0.7071 0.7071 0 0.7223 88.2 15 10.875 93.8 20 11.025
+cut 188 2 0 -0.7071 -0.7071 -0.6919 0 0.7071 0.7071 0.7223 87.975 15 5.2 88.125 20 10.8
+cut 188 2 0 -0.7071 -0.7071 -0.6919 0 0.7071 0.7071 0.7223 93.875 15 5.2 94.025 20 10.8
+cut 188 2 -0.7071 0.7071 0 0.0152 0.7071 -0.7071 0 0.0152 88.2 20 4.975 93.8 25 5.125
+cut 188 2 -0.7071 0.7071 0 0.0152 0.7071 -0.7071 0 0.0152 88.2 20 10.875 93.8 25 11.025
+cut 188 2 0 0.7071 -0.7071 0.0152 0 -0.7071 0.7071 0.0152 87.975 20 5.2 88.125 25 10.8
+cut 188 2 0 0.7071 -0.7071 0.0152 0 -0.7071 0.7071 0.0152 93.875 20 5.2 94.025 25 10.8
+cut 188 2 -0.7071 -0.7071 0 -0.6919 0.7071 0.7071 0 0.7223 88.2 25 4.975 93.8 30 5.125
+cut 188 2 -0.7071 -0.7071 0 -0.6919 0.7071 0.7071 0 0.7223 88.2 25 10.875 93.8 30 11.025
+cut 188 2 0 -0.7071 -0.7071 -0.6919 0 0.7071 0.7071 0.7223 87.975 25 5.2 88.125 30 10.8
+cut 188 2 0 -0.7071 -0.7071 -0.6919 0 0.7071 0.7071 0.7223 93.875 25 5.2 94.025 30 10.8
+galvanizedsteel 89.4 0 4 90.6 20 4.4
+galvanizedsteel 89.51 0 4.06 89.59 20 4.12
+galvanizedsteel 90.41 0 4.06 90.49 20 4.12
+galvanizedsteel 89.55 0.35 4.06 90.45 0.41 4.12
+galvanizedsteel 89.55 0.75 4.06 90.45 0.81 4.12
+galvanizedsteel 89.55 1.15 4.06 90.45 1.21 4.12
+galvanizedsteel 89.55 1.55 4.06 90.45 1.61 4.12
+galvanizedsteel 89.55 1.95 4.06 90.45 2.01 4.12
+galvanizedsteel 89.55 2.35 4.06 90.45 2.41 4.12
+galvanizedsteel 89.55 2.75 4.06 90.45 2.81 4.12
+galvanizedsteel 89.55 3.15 4.06 90.45 3.21 4.12
+galvanizedsteel 89.55 3.55 4.06 90.45 3.61 4.12
+galvanizedsteel 89.55 3.95 4.06 90.45 4.01 4.12
+galvanizedsteel 89.55 4.35 4.06 90.45 4.41 4.12
+galvanizedsteel 89.55 4.75 4.06 90.45 4.81 4.12
+galvanizedsteel 89.55 5.15 4.06 90.45 5.21 4.12
+galvanizedsteel 89.55 5.55 4.06 90.45 5.61 4.12
+galvanizedsteel 89.55 5.95 4.06 90.45 6.01 4.12
+galvanizedsteel 89.55 6.35 4.06 90.45 6.41 4.12
+galvanizedsteel 89.55 6.75 4.06 90.45 6.81 4.12
+galvanizedsteel 89.55 7.15 4.06 90.45 7.21 4.12
+galvanizedsteel 89.55 7.55 4.06 90.45 7.61 4.12
+galvanizedsteel 89.55 7.95 4.06 90.45 8.01 4.12
+galvanizedsteel 89.55 8.35 4.06 90.45 8.41 4.12
+galvanizedsteel 89.55 8.75 4.06 90.45 8.81 4.12
+galvanizedsteel 89.55 9.15 4.06 90.45 9.21 4.12
+galvanizedsteel 89.55 9.55 4.06 90.45 9.61 4.12
+galvanizedsteel 89.55 9.95 4.06 90.45 10.01 4.12
+galvanizedsteel 89.55 10.35 4.06 90.45 10.41 4.12
+galvanizedsteel 89.55 10.75 4.06 90.45 10.81 4.12
+galvanizedsteel 89.55 11.15 4.06 90.45 11.21 4.12
+galvanizedsteel 89.55 11.55 4.06 90.45 11.61 4.12
+galvanizedsteel 89.55 11.95 4.06 90.45 12.01 4.12
+galvanizedsteel 89.55 12.35 4.06 90.45 12.41 4.12
+galvanizedsteel 89.55 12.75 4.06 90.45 12.81 4.12
+galvanizedsteel 89.55 13.15 4.06 90.45 13.21 4.12
+galvanizedsteel 89.55 13.55 4.06 90.45 13.61 4.12
+galvanizedsteel 89.55 13.95 4.06 90.45 14.01 4.12
+galvanizedsteel 89.55 14.35 4.06 90.45 14.41 4.12
+galvanizedsteel 89.55 14.75 4.06 90.45 14.81 4.12
+galvanizedsteel 89.55 15.15 4.06 90.45 15.21 4.12
+galvanizedsteel 89.55 15.55 4.06 90.45 15.61 4.12
+galvanizedsteel 89.55 15.95 4.06 90.45 16.01 4.12
+galvanizedsteel 89.55 16.35 4.06 90.45 16.41 4.12
+galvanizedsteel 89.55 16.75 4.06 90.45 16.81 4.12
+galvanizedsteel 89.55 17.15 4.06 90.45 17.21 4.12
+galvanizedsteel 89.55 17.55 4.06 90.45 17.61 4.12
+galvanizedsteel 89.55 17.95 4.06 90.45 18.01 4.12
+galvanizedsteel 89.55 18.35 4.06 90.45 18.41 4.12
+galvanizedsteel 89.55 18.75 4.06 90.45 18.81 4.12
+galvanizedsteel 89.55 19.15 4.06 90.45 19.21 4.12
+galvanizedsteel 89.55 19.55 4.06 90.45 19.61 4.12
+galvanizedsteel 89.55 19.95 4.06 90.45 20.01 4.12
+galvanizedsteel 91.4 20 4 92.6 32 4.4
+galvanizedsteel 91.51 20 4.06 91.59 32 4.12
+galvanizedsteel 92.41 20 4.06 92.49 32 4.12
+galvanizedsteel 91.55 20.35 4.06 92.45 20.41 4.12
+galvanizedsteel 91.55 20.75 4.06 92.45 20.81 4.12
+galvanizedsteel 91.55 21.15 4.06 92.45 21.21 4.12
+galvanizedsteel 91.55 21.55 4.06 92.45 21.61 4.12
+galvanizedsteel 91.55 21.95 4.06 92.45 22.01 4.12
+galvanizedsteel 91.55 22.35 4.06 92.45 22.41 4.12
+galvanizedsteel 91.55 22.75 4.06 92.45 22.81 4.12
+galvanizedsteel 91.55 23.15 4.06 92.45 23.21 4.12
+galvanizedsteel 91.55 23.55 4.06 92.45 23.61 4.12
+galvanizedsteel 91.55 23.95 4.06 92.45 24.01 4.12
+galvanizedsteel 91.55 24.35 4.06 92.45 24.41 4.12
+galvanizedsteel 91.55 24.75 4.06 92.45 24.81 4.12
+galvanizedsteel 91.55 25.15 4.06 92.45 25.21 4.12
+galvanizedsteel 91.55 25.55 4.06 92.45 25.61 4.12
+galvanizedsteel 91.55 25.95 4.06 92.45 26.01 4.12
+galvanizedsteel 91.55 26.35 4.06 92.45 26.41 4.12
+galvanizedsteel 91.55 26.75 4.06 92.45 26.81 4.12
+galvanizedsteel 91.55 27.15 4.06 92.45 27.21 4.12
+galvanizedsteel 91.55 27.55 4.06 92.45 27.61 4.12
+galvanizedsteel 91.55 27.95 4.06 92.45 28.01 4.12
+galvanizedsteel 91.55 28.35 4.06 92.45 28.41 4.12
+galvanizedsteel 91.55 28.75 4.06 92.45 28.81 4.12
+galvanizedsteel 91.55 29.15 4.06 92.45 29.21 4.12
+galvanizedsteel 91.55 29.55 4.06 92.45 29.61 4.12
+galvanizedsteel 91.55 29.95 4.06 92.45 30.01 4.12
+galvanizedsteel 91.55 30.35 4.06 92.45 30.41 4.12
+galvanizedsteel 91.55 30.75 4.06 92.45 30.81 4.12
+galvanizedsteel 91.55 31.15 4.06 92.45 31.21 4.12
+galvanizedsteel 91.55 31.55 4.06 92.45 31.61 4.12
+galvanizedsteel 91.55 31.95 4.06 92.45 32.01 4.12
+galvanizedgrating 87.5 19.7 2 94.5 20 2.2
+galvanizedgrating 87.5 19.7 2.2 89.1 20 4
+galvanizedgrating 90.9 19.7 2.2 94.5 20 4
+galvanizedgrating 87.5 19.7 4 94.5 20 11.5
+galvanizedgrating 87.5 31.7 2 94.5 32 2.2
+galvanizedgrating 87.5 31.7 2.2 91.1 32 4
+galvanizedgrating 92.9 31.7 2.2 94.5 32 4
+galvanizedgrating 87.5 31.7 4 94.5 32 11.5
+insulatedpanel -104 0 -84 -92 5 -83.6
+insulatedpanel -104 0 -74.4 -99.5 5 -74
+insulatedpanel -99.5 4.2 -74.4 -96.5 5 -74
+insulatedpanel -96.5 0 -74.4 -92 5 -74
+insulatedpanel -104 0 -83.6 -103.6 5 -74.4
+insulatedpanel -92.4 0 -83.6 -92 5 -80.5
+insulatedpanel -92.4 4.2 -80.5 -92 5 -77.5
+insulatedpanel -92.4 0 -77.5 -92 5 -74.4
+concreterooftiles -104.3 5 -84.3 -91.7 5.3 -73.7
+precastconcrete -80.5 0 -90 -79.5 3.5 -74
+redengineeringbrick -84 0 -74 -81 5 -73.6
+redengineeringbrick -81 3.4 -74 -79 5 -73.6
+redengineeringbrick -81 0 -74 -79 1.4 -73.6
+glass -81 1.4 -74 -79 3.4 -73.6
+redengineeringbrick -79 0 -74 -76 5 -73.6
+redengineeringbrick -84 0 -63.4 -81 5 -63
+redengineeringbrick -81 3.4 -63.4 -79 5 -63
+redengineeringbrick -81 0 -63.4 -79 1.4 -63
+glass -81 1.4 -63.4 -79 3.4 -63
+redengineeringbrick -79 0 -63.4 -76 5 -63
+redengineeringbrick -84 0 -73.6 -83.6 5 -70.5
+redengineeringbrick -84 4.2 -70.5 -83.6 5 -66.5
+redengineeringbrick -84 0 -66.5 -83.6 5 -63.4
+redengineeringbrick -76.4 0 -73.6 -76 5 -70.5
+redengineeringbrick -76.4 4.2 -70.5 -76 5 -66.5
+redengineeringbrick -76.4 0 -66.5 -76 5 -63.4
+concreterooftiles -84.3 5 -74.3 -75.7 5.4 -62.7
+trapezoidcladding -42 0 -88 -16 6 -87.6
+trapezoidcladding -42 0 -76.4 -31.2 6 -76
+trapezoidcladding -31.2 4.2 -76.4 -26.8 6 -76
+trapezoidcladding -26.8 0 -76.4 -16 6 -76
+trapezoidcladding -42 0 -87.6 -41.6 6 -84.2
+trapezoidcladding -42 4.2 -84.2 -41.6 6 -79.8
+trapezoidcladding -42 0 -79.8 -41.6 6 -76.4
+trapezoidcladding -16.4 0 -87.6 -16 6 -84.2
+trapezoidcladding -16.4 4.2 -84.2 -16 6 -79.8
+trapezoidcladding -16.4 0 -79.8 -16 6 -76.4
+corrugated -42.3 6 -88.3 -15.7 6.4 -75.7
+cardboardboxes -38 0 -87.4 -35 2 -85.4
+cardboardboxes -21 0 -87.4 -18 2 -85.4
+aircraftskin -37 0 -70 -31.5 2.6 -67.6
+aircraftskin -22 0 -70 -16.5 2.6 -67.6
+wedge 281 2 -10 0 -72 8 2.6 -70.6667
+dewygrass -10 0 -70.6667 8 2.6 -67.3333
+wedge 281 3 -10 0 -67.3333 8 2.6 -66
+insulatedpanel 24 0 -84 56 5 -83.6
+insulatedpanel 24 0 -72.4 29 5 -72
+insulatedpanel 29 3.4 -72.4 31 5 -72
+insulatedpanel 29 0 -72.4 31 1.4 -72
+glass 29 1.4 -72.4 31 3.4 -72
+insulatedpanel 31 0 -72.4 37.8 5 -72
+insulatedpanel 37.8 4.2 -72.4 42.2 5 -72
+insulatedpanel 42.2 0 -72.4 49 5 -72
+insulatedpanel 49 3.4 -72.4 51 5 -72
+insulatedpanel 49 0 -72.4 51 1.4 -72
+glass 49 1.4 -72.4 51 3.4 -72
+insulatedpanel 51 0 -72.4 56 5 -72
+insulatedpanel 24 0 -83.6 24.4 5 -80.2
+insulatedpanel 24 4.2 -80.2 24.4 5 -75.8
+insulatedpanel 24 0 -75.8 24.4 5 -72.4
+insulatedpanel 55.6 0 -83.6 56 5 -80.2
+insulatedpanel 55.6 4.2 -80.2 56 5 -75.8
+insulatedpanel 55.6 0 -75.8 56 5 -72.4
+concreterooftiles 23.7 5 -84.3 56.3 5.4 -71.7
+precastconcrete 86 0 -82 97.5 3.2 -81.6
+precastconcrete 102.5 0 -82 114 3.2 -81.6
+precastconcrete 86 0 -56.4 97.5 3.2 -56
+precastconcrete 102.5 0 -56.4 114 3.2 -56
+precastconcrete 86 0 -81.6 86.4 3.2 -71.5
+precastconcrete 86 0 -66.5 86.4 3.2 -56.4
+precastconcrete 113.6 0 -81.6 114 3.2 -56.4
+galvanizedsteel 90 0 -78 96 2.6 -72
+steeldeckplate 91 2.6 -77 95 2.8 -73
+galvanizedsteel 90 0 -66 96 2.6 -60
+steeldeckplate 91 2.6 -65 95 2.8 -61
+galvanizedsteel 104 0 -78 110 2.6 -72
+steeldeckplate 105 2.6 -77 109 2.8 -73
+galvanizedsteel 104 0 -66 110 2.6 -60
+steeldeckplate 105 2.6 -65 109 2.8 -61
+precastconcrete 16 0 -50 16.6 3 -24
+corrugated 16 3 -50.3 21 3.3 -23.7
+galvanizedsteel 20.6 0 -50 21 3 -49.6
+galvanizedsteel 20.6 0 -37.2 21 3 -36.8
+galvanizedsteel 20.6 0 -24.4 21 3 -24
+precastconcrete -108 0 -25.4 -98 3 -25
+precastconcrete -94 0 -25.4 -80 3 -25
+precastconcrete -76 0 -25.4 -66 3 -25
+chainlinkmesh -108 0 19.9 -98 2.6 20
+chainlinkmesh -94 0 19.9 -80 2.6 20
+chainlinkmesh -76 0 19.9 -66 2.6 20
+chainlinkmesh -108 0 -25 -107.9 2.6 -14
+chainlinkmesh -108 0 -10 -107.9 2.6 6
+chainlinkmesh -108 0 10 -107.9 2.6 20
+precastconcrete -66.4 0 -25.4 -66 3 -19
+precastconcrete -66.4 0 -15 -66 3 8
+precastconcrete -66.4 0 12 -66 3 20
+electricalcabinet -103 0 -20 -97 4 -15
+radiatorfins -103.5 0.5 -19 -103 3.5 -16
+electricalcabinet -103 0 -6 -97 4 -1
+radiatorfins -103.5 0.5 -5 -103 3.5 -2
+electricalcabinet -103 0 8 -97 4 13
+radiatorfins -103.5 0.5 9 -103 3.5 12
+electricalcabinet -76 0 -20 -70 4 -15
+radiatorfins -76.5 0.5 -19 -76 3.5 -16
+electricalcabinet -76 0 -6 -70 4 -1
+radiatorfins -76.5 0.5 -5 -76 3.5 -2
+electricalcabinet -76 0 8 -70 4 13
+radiatorfins -76.5 0.5 9 -76 3.5 12
+galvanizedsteel -100.25 0 -22.25 -99.75 8 -21.75
+galvanizedsteel -100.25 0 -2.25 -99.75 8 -1.75
+galvanizedsteel -100.25 0 17.75 -99.75 8 18.25
+galvanizedsteel -100.3 8 -22.3 -99.7 8.6 18.3
+galvanizedsteel -73.25 0 -22.25 -72.75 8 -21.75
+galvanizedsteel -73.25 0 -2.25 -72.75 8 -1.75
+galvanizedsteel -73.25 0 17.75 -72.75 8 18.25
+galvanizedsteel -73.3 8 -22.3 -72.7 8.6 18.3
+shieldwall -90.25 0 -23 -90 3.5 -12
+shieldwall -86 0 -21 -85.75 3.5 -10
+shieldwall -90.25 0 -7 -90 3.5 4
+shieldwall -86 0 -5 -85.75 3.5 6
+shieldwall -90.25 0 9 -90 3.5 18
+shieldwall -86 0 11 -85.75 3.5 20
+precastconcrete -45 0 -25 -41 5.5 -24.6
+precastconcrete -41 3.6 -25 -39 5.5 -24.6
+precastconcrete -41 0 -25 -39 1.6 -24.6
+glass -41 1.6 -25 -39 3.6 -24.6
+precastconcrete -39 0 -25 -31 5.5 -24.6
+precastconcrete -31 3.6 -25 -29 5.5 -24.6
+precastconcrete -31 0 -25 -29 1.6 -24.6
+glass -31 1.6 -25 -29 3.6 -24.6
+precastconcrete -29 0 -25 -25 5.5 -24.6
+precastconcrete -45 0 -10.4 -37 5.5 -10
+precastconcrete -37 4.2 -10.4 -33 5.5 -10
+precastconcrete -33 0 -10.4 -29 5.5 -10
+precastconcrete -29 3.6 -10.4 -27 5.5 -10
+precastconcrete -29 0 -10.4 -27 1.6 -10
+glass -29 1.6 -10.4 -27 3.6 -10
+precastconcrete -27 0 -10.4 -25 5.5 -10
+precastconcrete -45 0 -24.6 -44.6 5.5 -19.5
+precastconcrete -45 4.2 -19.5 -44.6 5.5 -15.5
+precastconcrete -45 0 -15.5 -44.6 5.5 -10.4
+precastconcrete -25.4 0 -24.6 -25 5.5 -19.5
+precastconcrete -25.4 4.2 -19.5 -25 5.5 -15.5
+precastconcrete -25.4 0 -15.5 -25 5.5 -10.4
+concreterooftiles -45.3 5.5 -25.3 -24.7 5.9 -9.7
+controlpanel -42 0 -24.6 -32 1.2 -23.2
+redengineeringbrick -98 0 30 -92 6 30.4
+redengineeringbrick -92 3.6 30 -90 6 30.4
+redengineeringbrick -92 0 30 -90 1.6 30.4
+glass -92 1.6 30 -90 3.6 30.4
+redengineeringbrick -90 0 30 -80 6 30.4
+redengineeringbrick -80 3.6 30 -78 6 30.4
+redengineeringbrick -80 0 30 -78 1.6 30.4
+glass -80 1.6 30 -78 3.6 30.4
+redengineeringbrick -78 0 30 -72 6 30.4
+redengineeringbrick -98 0 45.6 -94 6 46
+redengineeringbrick -94 3.6 45.6 -92 6 46
+redengineeringbrick -94 0 45.6 -92 1.6 46
+glass -94 1.6 45.6 -92 3.6 46
+redengineeringbrick -92 0 45.6 -87.2 6 46
+redengineeringbrick -87.2 4.2 45.6 -82.8 6 46
+redengineeringbrick -82.8 0 45.6 -72 6 46
+redengineeringbrick -98 0 30.4 -97.6 6 35.8
+redengineeringbrick -98 4.2 35.8 -97.6 6 40.2
+redengineeringbrick -98 0 40.2 -97.6 6 45.6
+redengineeringbrick -72.4 0 30.4 -72 6 35.8
+redengineeringbrick -72.4 4.2 35.8 -72 6 40.2
+redengineeringbrick -72.4 0 40.2 -72 6 45.6
+concreterooftiles -98.3 6 29.7 -71.7 6.4 46.3
+electricalcabinet -93 0 32 -90 2.4 35
+electricalcabinet -84 0 32 -81 2.4 35
+electricalcabinet -77 0 32 -74 2.4 35
+controlpanel -95 0 42 -88 1.2 43.4
+boardformedconcrete -54.1421 0 28 -52 15 28.8
+boardformedconcrete -48 0 28 -45.8579 15 28.8
+boardformedconcrete -52 4.2 28 -48 15 28.8
+boardformedconcrete -54.1421 0 47.2 -52 15 48
+boardformedconcrete -48 0 47.2 -45.8579 15 48
+boardformedconcrete -52 4.2 47.2 -48 15 48
+boardformedconcrete -60 0 33.8579 -59.2 15 42.1421
+boardformedconcrete -40.8 0 33.8579 -40 15 42.1421
+cut 397 2 0.7071 0 0.7071 0.7071 -0.7071 0 -0.7071 -0.6105 -45.8579 0 42.1421 -40 15 48
+cut 397 2 0.7071 0 -0.7071 0 -0.7071 0 0.7071 0.0966 -45.8579 0 28 -40 15 33.8579
+cut 397 2 -0.7071 0 0.7071 0 0.7071 0 -0.7071 0.0966 -60 0 42.1421 -54.1421 15 48
+cut 397 2 -0.7071 0 -0.7071 -0.7071 0.7071 0 0.7071 0.8037 -60 0 28 -54.1421 15 33.8579
+galvanizedgrating -51.5 0 32 -48.5 0.5 32.6667
+galvanizedgrating -51.5 0.5 32.6667 -48.5 1 33.3333
+galvanizedgrating -51.5 1 33.3333 -48.5 1.5 34
+galvanizedgrating -51.5 1.5 34 -48.5 2 34.6667
+galvanizedgrating -51.5 2 34.6667 -48.5 2.5 35.3333
+galvanizedgrating -51.5 2.5 35.3333 -48.5 3 36
+galvanizedgrating -51.5 3 36 -48.5 3.5 36.6667
+galvanizedgrating -51.5 3.5 36.6667 -48.5 4 37.3333
+galvanizedgrating -51.5 4 37.3333 -48.5 4.5 38
+galvanizedgrating -51.5 4.5 38 -48.5 5 38.6667
+galvanizedgrating -51.5 5 38.6667 -48.5 5.5 39.3333
+galvanizedgrating -51.5 5.5 39.3333 -48.5 6 40
+galvanizedgrating -51.5 5.6 40 -45.5 6 43
+galvanizedgrating -48.5 11.5 32 -45.5 12 32.6667
+galvanizedgrating -48.5 11 32.6667 -45.5 11.5 33.3333
+galvanizedgrating -48.5 10.5 33.3333 -45.5 11 34
+galvanizedgrating -48.5 10 34 -45.5 10.5 34.6667
+galvanizedgrating -48.5 9.5 34.6667 -45.5 10 35.3333
+galvanizedgrating -48.5 9 35.3333 -45.5 9.5 36
+galvanizedgrating -48.5 8.5 36 -45.5 9 36.6667
+galvanizedgrating -48.5 8 36.6667 -45.5 8.5 37.3333
+galvanizedgrating -48.5 7.5 37.3333 -45.5 8 38
+galvanizedgrating -48.5 7 38 -45.5 7.5 38.6667
+galvanizedgrating -48.5 6.5 38.6667 -45.5 7 39.3333
+galvanizedgrating -48.5 6 39.3333 -45.5 6.5 40
+galvanizedgrating -54.1421 11.7 28.8 -45.8579 12 32.2
+galvanizedgrating -54.1421 14.5 30.8 -53.2851 15 33.2
+galvanizedgrating -53.2851 14 30.8 -52.4281 14.5 33.2
+galvanizedgrating -52.4281 13.5 30.8 -51.5711 14 33.2
+galvanizedgrating -51.5711 13 30.8 -50.714 13.5 33.2
+galvanizedgrating -50.714 12.5 30.8 -49.857 13 33.2
+galvanizedgrating -49.857 12 30.8 -49 12.5 33.2
+galvanizedgrating -54.1421 14.7 28.8 -45.8579 15 30.8
+boardformedconcrete -54.1421 15 28 -45.8579 16.2 28.4
+galvanizedsteel -108 0 42 -107.6 30 42.4
+nograpple -108 30 42 -107.6 45 42.4
+galvanizedsteel -102.4 0 42 -102 30 42.4
+nograpple -102.4 30 42 -102 45 42.4
+galvanizedsteel -108 0 47.6 -107.6 30 48
+nograpple -108 30 47.6 -107.6 45 48
+galvanizedsteel -102.4 0 47.6 -102 30 48
+nograpple -102.4 30 47.6 -102 45 48
+galvanizedsteel -108 5 42 -102 5.2 42.2
+galvanizedsteel -108 5 47.8 -102 5.2 48
+galvanizedsteel -108 10 42 -102 10.2 42.2
+galvanizedsteel -108 10 47.8 -102 10.2 48
+galvanizedsteel -108 15 42 -102 15.2 42.2
+galvanizedsteel -108 15 47.8 -102 15.2 48
+galvanizedsteel -108 20 42 -102 20.2 42.2
+galvanizedsteel -108 20 47.8 -102 20.2 48
+galvanizedsteel -108 25 42 -102 25.2 42.2
+galvanizedsteel -108 25 47.8 -102 25.2 48
+nograpple -108 30 42 -102 30.2 42.2
+nograpple -108 30 47.8 -102 30.2 48
+nograpple -108 35 42 -102 35.2 42.2
+nograpple -108 35 47.8 -102 35.2 48
+nograpple -108 40 42 -102 40.2 42.2
+nograpple -108 40 47.8 -102 40.2 48
+cut 188 2 -0.7071 0.7071 0 0.0152 0.7071 -0.7071 0 0.0152 -107.8 0 41.975 -102.2 5 42.125
+cut 188 2 -0.7071 0.7071 0 0.0152 0.7071 -0.7071 0 0.0152 -107.8 0 47.875 -102.2 5 48.025
+cut 188 2 0 0.7071 -0.7071 0.0152 0 -0.7071 0.7071 0.0152 -108.025 0 42.2 -107.875 5 47.8
+cut 188 2 0 0.7071 -0.7071 0.0152 0 -0.7071 0.7071 0.0152 -102.125 0 42.2 -101.975 5 47.8
+cut 188 2 -0.7071 -0.7071 0 -0.6919 0.7071 0.7071 0 0.7223 -107.8 5 41.975 -102.2 10 42.125
+cut 188 2 -0.7071 -0.7071 0 -0.6919 0.7071 0.7071 0 0.7223 -107.8 5 47.875 -102.2 10 48.025
+cut 188 2 0 -0.7071 -0.7071 -0.6919 0 0.7071 0.7071 0.7223 -108.025 5 42.2 -107.875 10 47.8
+cut 188 2 0 -0.7071 -0.7071 -0.6919 0 0.7071 0.7071 0.7223 -102.125 5 42.2 -101.975 10 47.8
+cut 188 2 -0.7071 0.7071 0 0.0152 0.7071 -0.7071 0 0.0152 -107.8 10 41.975 -102.2 15 42.125
+cut 188 2 -0.7071 0.7071 0 0.0152 0.7071 -0.7071 0 0.0152 -107.8 10 47.875 -102.2 15 48.025
+cut 188 2 0 0.7071 -0.7071 0.0152 0 -0.7071 0.7071 0.0152 -108.025 10 42.2 -107.875 15 47.8
+cut 188 2 0 0.7071 -0.7071 0.0152 0 -0.7071 0.7071 0.0152 -102.125 10 42.2 -101.975 15 47.8
+cut 188 2 -0.7071 -0.7071 0 -0.6919 0.7071 0.7071 0 0.7223 -107.8 15 41.975 -102.2 20 42.125
+cut 188 2 -0.7071 -0.7071 0 -0.6919 0.7071 0.7071 0 0.7223 -107.8 15 47.875 -102.2 20 48.025
+cut 188 2 0 -0.7071 -0.7071 -0.6919 0 0.7071 0.7071 0.7223 -108.025 15 42.2 -107.875 20 47.8
+cut 188 2 0 -0.7071 -0.7071 -0.6919 0 0.7071 0.7071 0.7223 -102.125 15 42.2 -101.975 20 47.8
+cut 188 2 -0.7071 0.7071 0 0.0152 0.7071 -0.7071 0 0.0152 -107.8 20 41.975 -102.2 25 42.125
+cut 188 2 -0.7071 0.7071 0 0.0152 0.7071 -0.7071 0 0.0152 -107.8 20 47.875 -102.2 25 48.025
+cut 188 2 0 0.7071 -0.7071 0.0152 0 -0.7071 0.7071 0.0152 -108.025 20 42.2 -107.875 25 47.8
+cut 188 2 0 0.7071 -0.7071 0.0152 0 -0.7071 0.7071 0.0152 -102.125 20 42.2 -101.975 25 47.8
+cut 188 2 -0.7071 -0.7071 0 -0.6919 0.7071 0.7071 0 0.7223 -107.8 25 41.975 -102.2 30 42.125
+cut 188 2 -0.7071 -0.7071 0 -0.6919 0.7071 0.7071 0 0.7223 -107.8 25 47.875 -102.2 30 48.025
+cut 188 2 0 -0.7071 -0.7071 -0.6919 0 0.7071 0.7071 0.7223 -108.025 25 42.2 -107.875 30 47.8
+cut 188 2 0 -0.7071 -0.7071 -0.6919 0 0.7071 0.7071 0.7223 -102.125 25 42.2 -101.975 30 47.8
+galvanizedsteel -106.6 0 48.6 -105.4 20 49
+galvanizedsteel -106.49 0 48.88 -106.41 20 48.94
+galvanizedsteel -105.59 0 48.88 -105.51 20 48.94
+galvanizedsteel -106.45 0.35 48.88 -105.55 0.41 48.94
+galvanizedsteel -106.45 0.75 48.88 -105.55 0.81 48.94
+galvanizedsteel -106.45 1.15 48.88 -105.55 1.21 48.94
+galvanizedsteel -106.45 1.55 48.88 -105.55 1.61 48.94
+galvanizedsteel -106.45 1.95 48.88 -105.55 2.01 48.94
+galvanizedsteel -106.45 2.35 48.88 -105.55 2.41 48.94
+galvanizedsteel -106.45 2.75 48.88 -105.55 2.81 48.94
+galvanizedsteel -106.45 3.15 48.88 -105.55 3.21 48.94
+galvanizedsteel -106.45 3.55 48.88 -105.55 3.61 48.94
+galvanizedsteel -106.45 3.95 48.88 -105.55 4.01 48.94
+galvanizedsteel -106.45 4.35 48.88 -105.55 4.41 48.94
+galvanizedsteel -106.45 4.75 48.88 -105.55 4.81 48.94
+galvanizedsteel -106.45 5.15 48.88 -105.55 5.21 48.94
+galvanizedsteel -106.45 5.55 48.88 -105.55 5.61 48.94
+galvanizedsteel -106.45 5.95 48.88 -105.55 6.01 48.94
+galvanizedsteel -106.45 6.35 48.88 -105.55 6.41 48.94
+galvanizedsteel -106.45 6.75 48.88 -105.55 6.81 48.94
+galvanizedsteel -106.45 7.15 48.88 -105.55 7.21 48.94
+galvanizedsteel -106.45 7.55 48.88 -105.55 7.61 48.94
+galvanizedsteel -106.45 7.95 48.88 -105.55 8.01 48.94
+galvanizedsteel -106.45 8.35 48.88 -105.55 8.41 48.94
+galvanizedsteel -106.45 8.75 48.88 -105.55 8.81 48.94
+galvanizedsteel -106.45 9.15 48.88 -105.55 9.21 48.94
+galvanizedsteel -106.45 9.55 48.88 -105.55 9.61 48.94
+galvanizedsteel -106.45 9.95 48.88 -105.55 10.01 48.94
+galvanizedsteel -106.45 10.35 48.88 -105.55 10.41 48.94
+galvanizedsteel -106.45 10.75 48.88 -105.55 10.81 48.94
+galvanizedsteel -106.45 11.15 48.88 -105.55 11.21 48.94
+galvanizedsteel -106.45 11.55 48.88 -105.55 11.61 48.94
+galvanizedsteel -106.45 11.95 48.88 -105.55 12.01 48.94
+galvanizedsteel -106.45 12.35 48.88 -105.55 12.41 48.94
+galvanizedsteel -106.45 12.75 48.88 -105.55 12.81 48.94
+galvanizedsteel -106.45 13.15 48.88 -105.55 13.21 48.94
+galvanizedsteel -106.45 13.55 48.88 -105.55 13.61 48.94
+galvanizedsteel -106.45 13.95 48.88 -105.55 14.01 48.94
+galvanizedsteel -106.45 14.35 48.88 -105.55 14.41 48.94
+galvanizedsteel -106.45 14.75 48.88 -105.55 14.81 48.94
+galvanizedsteel -106.45 15.15 48.88 -105.55 15.21 48.94
+galvanizedsteel -106.45 15.55 48.88 -105.55 15.61 48.94
+galvanizedsteel -106.45 15.95 48.88 -105.55 16.01 48.94
+galvanizedsteel -106.45 16.35 48.88 -105.55 16.41 48.94
+galvanizedsteel -106.45 16.75 48.88 -105.55 16.81 48.94
+galvanizedsteel -106.45 17.15 48.88 -105.55 17.21 48.94
+galvanizedsteel -106.45 17.55 48.88 -105.55 17.61 48.94
+galvanizedsteel -106.45 17.95 48.88 -105.55 18.01 48.94
+galvanizedsteel -106.45 18.35 48.88 -105.55 18.41 48.94
+galvanizedsteel -106.45 18.75 48.88 -105.55 18.81 48.94
+galvanizedsteel -106.45 19.15 48.88 -105.55 19.21 48.94
+galvanizedsteel -106.45 19.55 48.88 -105.55 19.61 48.94
+galvanizedsteel -106.45 19.95 48.88 -105.55 20.01 48.94
+galvanizedsteel -104.6 20 48.6 -103.4 32 49
+galvanizedsteel -104.49 20 48.88 -104.41 32 48.94
+galvanizedsteel -103.59 20 48.88 -103.51 32 48.94
+galvanizedsteel -104.45 20.35 48.88 -103.55 20.41 48.94
+galvanizedsteel -104.45 20.75 48.88 -103.55 20.81 48.94
+galvanizedsteel -104.45 21.15 48.88 -103.55 21.21 48.94
+galvanizedsteel -104.45 21.55 48.88 -103.55 21.61 48.94
+galvanizedsteel -104.45 21.95 48.88 -103.55 22.01 48.94
+galvanizedsteel -104.45 22.35 48.88 -103.55 22.41 48.94
+galvanizedsteel -104.45 22.75 48.88 -103.55 22.81 48.94
+galvanizedsteel -104.45 23.15 48.88 -103.55 23.21 48.94
+galvanizedsteel -104.45 23.55 48.88 -103.55 23.61 48.94
+galvanizedsteel -104.45 23.95 48.88 -103.55 24.01 48.94
+galvanizedsteel -104.45 24.35 48.88 -103.55 24.41 48.94
+galvanizedsteel -104.45 24.75 48.88 -103.55 24.81 48.94
+galvanizedsteel -104.45 25.15 48.88 -103.55 25.21 48.94
+galvanizedsteel -104.45 25.55 48.88 -103.55 25.61 48.94
+galvanizedsteel -104.45 25.95 48.88 -103.55 26.01 48.94
+galvanizedsteel -104.45 26.35 48.88 -103.55 26.41 48.94
+galvanizedsteel -104.45 26.75 48.88 -103.55 26.81 48.94
+galvanizedsteel -104.45 27.15 48.88 -103.55 27.21 48.94
+galvanizedsteel -104.45 27.55 48.88 -103.55 27.61 48.94
+galvanizedsteel -104.45 27.95 48.88 -103.55 28.01 48.94
+galvanizedsteel -104.45 28.35 48.88 -103.55 28.41 48.94
+galvanizedsteel -104.45 28.75 48.88 -103.55 28.81 48.94
+galvanizedsteel -104.45 29.15 48.88 -103.55 29.21 48.94
+galvanizedsteel -104.45 29.55 48.88 -103.55 29.61 48.94
+galvanizedsteel -104.45 29.95 48.88 -103.55 30.01 48.94
+galvanizedsteel -104.45 30.35 48.88 -103.55 30.41 48.94
+galvanizedsteel -104.45 30.75 48.88 -103.55 30.81 48.94
+galvanizedsteel -104.45 31.15 48.88 -103.55 31.21 48.94
+galvanizedsteel -104.45 31.55 48.88 -103.55 31.61 48.94
+galvanizedsteel -104.45 31.95 48.88 -103.55 32.01 48.94
+galvanizedgrating -108.5 19.7 41.5 -101.5 20 49
+galvanizedgrating -108.5 19.7 49 -106.9 20 50.8
+galvanizedgrating -105.1 19.7 49 -101.5 20 50.8
+galvanizedgrating -108.5 19.7 50.8 -101.5 20 51
+galvanizedgrating -108.5 31.7 41.5 -101.5 32 49
+galvanizedgrating -108.5 31.7 49 -104.9 32 50.8
+galvanizedgrating -103.1 31.7 49 -101.5 32 50.8
+galvanizedgrating -108.5 31.7 50.8 -101.5 32 51
+wedge 281 2 -42 0 9 -20 2.6 10.6667
+dewygrass -42 0 10.6667 -20 2.6 13.3333
+wedge 281 3 -42 0 13.3333 -20 2.6 15
+wedge 281 2 -100 0 61.6667 -76 2.6 63.6667
+dewygrass -100 0 63.6667 -76 2.6 66.3333
+wedge 281 3 -100 0 66.3333 -76 2.6 68
+trapezoidcladding -48 0 72 -43 6 72.4
+trapezoidcladding -43 3.4 72 -41 6 72.4
+trapezoidcladding -43 0 72 -41 1.4 72.4
+glass -43 1.4 72 -41 3.4 72.4
+trapezoidcladding -41 0 72 -35.2 6 72.4
+trapezoidcladding -35.2 4.2 72 -30.8 6 72.4
+trapezoidcladding -30.8 0 72 -25 6 72.4
+trapezoidcladding -25 3.4 72 -23 6 72.4
+trapezoidcladding -25 0 72 -23 1.4 72.4
+glass -25 1.4 72 -23 3.4 72.4
+trapezoidcladding -23 0 72 -18 6 72.4
+trapezoidcladding -48 0 89.6 -18 6 90
+trapezoidcladding -48 0 72.4 -47.6 6 78.8
+trapezoidcladding -48 4.2 78.8 -47.6 6 83.2
+trapezoidcladding -48 0 83.2 -47.6 6 89.6
+trapezoidcladding -18.4 0 72.4 -18 6 78.8
+trapezoidcladding -18.4 4.2 78.8 -18 6 83.2
+trapezoidcladding -18.4 0 83.2 -18 6 89.6
+corrugated -48.3 6 71.7 -17.7 6.4 90
+trapezoidcladding 34 0 74 39 5 74.4
+trapezoidcladding 39 3.2 74 41 5 74.4
+trapezoidcladding 39 0 74 41 1.4 74.4
+glass 39 1.4 74 41 3.2 74.4
+trapezoidcladding 41 0 74 46.8 5 74.4
+trapezoidcladding 46.8 4.2 74 51.2 5 74.4
+trapezoidcladding 51.2 0 74 57 5 74.4
+trapezoidcladding 57 3.2 74 59 5 74.4
+trapezoidcladding 57 0 74 59 1.4 74.4
+glass 57 1.4 74 59 3.2 74.4
+trapezoidcladding 59 0 74 64 5 74.4
+trapezoidcladding 34 0 89.6 64 5 90
+trapezoidcladding 34 0 74.4 34.4 5 79.8
+trapezoidcladding 34 4.2 79.8 34.4 5 84.2
+trapezoidcladding 34 0 84.2 34.4 5 89.6
+trapezoidcladding 63.6 0 74.4 64 5 79.8
+trapezoidcladding 63.6 4.2 79.8 64 5 84.2
+trapezoidcladding 63.6 0 84.2 64 5 89.6
+corrugated 33.7 5 73.7 64.3 5.4 90
+cut 454 4 0.7071 0 0.7071 1.2071 -0.7071 0 0.7071 0.5 -0.7071 0 -0.7071 -0.2071 0.7071 0 -0.7071 0.5 38.5218 0 78.5218 41.4782 1.2 81.4782
+cut 454 4 0.7071 0 0.7071 1.2071 -0.7071 0 0.7071 0.5 -0.7071 0 -0.7071 -0.2071 0.7071 0 -0.7071 0.5 56.5218 0 84.5218 59.4782 1.2 87.4782
+precastconcrete 2 0 62 22 2.4 62.6
+precastconcrete 21.4 0 62.6 22 2.4 72
+cut 454 4 0.7071 0 0.7071 1.2071 -0.7071 0 0.7071 0.5 -0.7071 0 -0.7071 -0.2071 0.7071 0 -0.7071 0.5 4.5218 0 64.5218 7.4782 1.2 67.4782
+cut 454 4 0.7071 0 0.7071 1.2071 -0.7071 0 0.7071 0.5 -0.7071 0 -0.7071 -0.2071 0.7071 0 -0.7071 0.5 10.5218 0 66.5218 13.4782 1.2 69.4782
+cut 454 4 0.7071 0 0.7071 1.2071 -0.7071 0 0.7071 0.5 -0.7071 0 -0.7071 -0.2071 0.7071 0 -0.7071 0.5 15.5218 0 63.5218 18.4782 1.2 66.4782
+redengineeringbrick 80 0 64 88 6 64.4
+redengineeringbrick 88 4.2 64 92 6 64.4
+redengineeringbrick 92 0 64 100 6 64.4
+redengineeringbrick 80 0 79.6 100 6 80
+redengineeringbrick 80 0 64.4 80.4 6 70
+redengineeringbrick 80 4.2 70 80.4 6 74
+redengineeringbrick 80 0 74 80.4 6 79.6
+redengineeringbrick 99.6 0 64.4 100 6 79.6
+concreterooftiles 79.7 6 63.7 100.3 6.4 80.3
+cut 318 4 0.7071 0 0.7071 1.2071 -0.7071 0 0.7071 0.5 -0.7071 0 -0.7071 -0.2071 0.7071 0 -0.7071 0.5 88.1522 0 72.1522 91.8478 2.4 75.8478
+wedge 281 0 104 0 -30 106.667 2.6 -8
+dewygrass 106.667 0 -30 109.333 2.6 -8
+wedge 281 1 109.333 0 -30 112 2.6 -8
+insulatedpanel 100 0 16 116 4.5 16.4
+insulatedpanel 100 0 25.6 116 4.5 26
+insulatedpanel 100 0 16.4 100.4 4.5 19
+insulatedpanel 100 4.2 19 100.4 4.5 23
+insulatedpanel 100 0 23 100.4 4.5 25.6
+insulatedpanel 115.6 0 16.4 116 4.5 19
+insulatedpanel 115.6 4.2 19 116 4.5 23
+insulatedpanel 115.6 0 23 116 4.5 25.6
+concreterooftiles 99.7 4.5 15.7 116.3 4.8 26.3
+cut 318 4 0.7071 0 0.7071 1.2071 -0.7071 0 0.7071 0.5 -0.7071 0 -0.7071 -0.2071 0.7071 0 -0.7071 0.5 106.522 0 19.5218 109.478 2.2 22.4782
+redengineeringbrick -24 0 34 -21 4.5 34.4
+redengineeringbrick -21 4.2 34 -17 4.5 34.4
+redengineeringbrick -17 0 34 -14.5 4.5 34.4
+redengineeringbrick -24 0 43.6 -21 4.5 44
+redengineeringbrick -21 4.2 43.6 -17 4.5 44
+redengineeringbrick -17 0 43.6 -14.5 4.5 44
+redengineeringbrick -24 0 34.4 -23.6 4.5 43.6
+redengineeringbrick -14.9 0 34.4 -14.5 4.5 37.5
+redengineeringbrick -14.9 3.4 37.5 -14.5 4.5 40.5
+redengineeringbrick -14.9 0 37.5 -14.5 1.4 40.5
+glass -14.9 1.4 37.5 -14.5 3.4 40.5
+redengineeringbrick -14.9 0 40.5 -14.5 4.5 43.6
+concreterooftiles -24.3 4.5 33.7 -14.2 4.8 44.3
+electricalcabinet -120 0 24 -111 3.5 32
+precastconcrete -120 0 -72 -112 3 -66
+precastconcrete -46 0 54 -24 2.4 55
+hedge -46 2.4 54 -24 3 55
+corrugated 60 3.4 14 84 3.7 28
+precastconcrete 60 0 27.6 84 3.4 28
+precastconcrete 83.6 0 14 84 3.4 27.6
+galvanizedsteel 60 0 14 60.4 3.4 14.4
+galvanizedsteel 72 0 14 72.4 3.4 14.4
+galvanizedsteel -31.5 0 28.5 -31.1 22 28.9
+galvanizedsteel -28.9 0 28.5 -28.5 22 28.9
+galvanizedsteel -31.5 0 31.1 -31.1 22 31.5
+galvanizedsteel -28.9 0 31.1 -28.5 22 31.5
+galvanizedsteel -31.5 5 28.5 -28.5 5.2 28.7
+galvanizedsteel -31.5 5 31.3 -28.5 5.2 31.5
+galvanizedsteel -31.5 10 28.5 -28.5 10.2 28.7
+galvanizedsteel -31.5 10 31.3 -28.5 10.2 31.5
+galvanizedsteel -31.5 15 28.5 -28.5 15.2 28.7
+galvanizedsteel -31.5 15 31.3 -28.5 15.2 31.5
+galvanizedsteel -31.5 20 28.5 -28.5 20.2 28.7
+galvanizedsteel -31.5 20 31.3 -28.5 20.2 31.5
+cut 188 2 -0.7071 0.7071 0 0.0245 0.7071 -0.7071 0 0.0245 -31.3 0 28.475 -28.7 5 28.625
+cut 188 2 -0.7071 0.7071 0 0.0245 0.7071 -0.7071 0 0.0245 -31.3 0 31.375 -28.7 5 31.525
+cut 188 2 0 0.7071 -0.7071 0.0245 0 -0.7071 0.7071 0.0245 -31.525 0 28.7 -31.375 5 31.3
+cut 188 2 0 0.7071 -0.7071 0.0245 0 -0.7071 0.7071 0.0245 -28.625 0 28.7 -28.475 5 31.3
+cut 188 2 -0.7071 -0.7071 0 -0.6826 0.7071 0.7071 0 0.7316 -31.3 5 28.475 -28.7 10 28.625
+cut 188 2 -0.7071 -0.7071 0 -0.6826 0.7071 0.7071 0 0.7316 -31.3 5 31.375 -28.7 10 31.525
+cut 188 2 0 -0.7071 -0.7071 -0.6826 0 0.7071 0.7071 0.7316 -31.525 5 28.7 -31.375 10 31.3
+cut 188 2 0 -0.7071 -0.7071 -0.6826 0 0.7071 0.7071 0.7316 -28.625 5 28.7 -28.475 10 31.3
+cut 188 2 -0.7071 0.7071 0 0.0245 0.7071 -0.7071 0 0.0245 -31.3 10 28.475 -28.7 15 28.625
+cut 188 2 -0.7071 0.7071 0 0.0245 0.7071 -0.7071 0 0.0245 -31.3 10 31.375 -28.7 15 31.525
+cut 188 2 0 0.7071 -0.7071 0.0245 0 -0.7071 0.7071 0.0245 -31.525 10 28.7 -31.375 15 31.3
+cut 188 2 0 0.7071 -0.7071 0.0245 0 -0.7071 0.7071 0.0245 -28.625 10 28.7 -28.475 15 31.3
+cut 188 2 -0.7071 -0.7071 0 -0.6826 0.7071 0.7071 0 0.7316 -31.3 15 28.475 -28.7 20 28.625
+cut 188 2 -0.7071 -0.7071 0 -0.6826 0.7071 0.7071 0 0.7316 -31.3 15 31.375 -28.7 20 31.525
+cut 188 2 0 -0.7071 -0.7071 -0.6826 0 0.7071 0.7071 0.7316 -31.525 15 28.7 -31.375 20 31.3
+cut 188 2 0 -0.7071 -0.7071 -0.6826 0 0.7071 0.7071 0.7316 -28.625 15 28.7 -28.475 20 31.3
+cut 188 2 -0.7071 0.7071 0 0.0357 0.7071 -0.7071 0 0.0357 -31.3 20 28.475 -28.7 22 28.625
+cut 188 2 -0.7071 0.7071 0 0.0357 0.7071 -0.7071 0 0.0357 -31.3 20 31.375 -28.7 22 31.525
+cut 188 2 0 0.7071 -0.7071 0.0357 0 -0.7071 0.7071 0.0357 -31.525 20 28.7 -31.375 22 31.3
+cut 188 2 0 0.7071 -0.7071 0.0357 0 -0.7071 0.7071 0.0357 -28.625 20 28.7 -28.475 22 31.3
+galvanizedsteel -34 20 29.7 -26 20.5 30.3
+galvanizedsteel 38.5 0 -61.5 38.9 22 -61.1
+galvanizedsteel 41.1 0 -61.5 41.5 22 -61.1
+galvanizedsteel 38.5 0 -58.9 38.9 22 -58.5
+galvanizedsteel 41.1 0 -58.9 41.5 22 -58.5
+galvanizedsteel 38.5 5 -61.5 41.5 5.2 -61.3
+galvanizedsteel 38.5 5 -58.7 41.5 5.2 -58.5
+galvanizedsteel 38.5 10 -61.5 41.5 10.2 -61.3
+galvanizedsteel 38.5 10 -58.7 41.5 10.2 -58.5
+galvanizedsteel 38.5 15 -61.5 41.5 15.2 -61.3
+galvanizedsteel 38.5 15 -58.7 41.5 15.2 -58.5
+galvanizedsteel 38.5 20 -61.5 41.5 20.2 -61.3
+galvanizedsteel 38.5 20 -58.7 41.5 20.2 -58.5
+cut 188 2 -0.7071 0.7071 0 0.0245 0.7071 -0.7071 0 0.0245 38.7 0 -61.525 41.3 5 -61.375
+cut 188 2 -0.7071 0.7071 0 0.0245 0.7071 -0.7071 0 0.0245 38.7 0 -58.625 41.3 5 -58.475
+cut 188 2 0 0.7071 -0.7071 0.0245 0 -0.7071 0.7071 0.0245 38.475 0 -61.3 38.625 5 -58.7
+cut 188 2 0 0.7071 -0.7071 0.0245 0 -0.7071 0.7071 0.0245 41.375 0 -61.3 41.525 5 -58.7
+cut 188 2 -0.7071 -0.7071 0 -0.6826 0.7071 0.7071 0 0.7316 38.7 5 -61.525 41.3 10 -61.375
+cut 188 2 -0.7071 -0.7071 0 -0.6826 0.7071 0.7071 0 0.7316 38.7 5 -58.625 41.3 10 -58.475
+cut 188 2 0 -0.7071 -0.7071 -0.6826 0 0.7071 0.7071 0.7316 38.475 5 -61.3 38.625 10 -58.7
+cut 188 2 0 -0.7071 -0.7071 -0.6826 0 0.7071 0.7071 0.7316 41.375 5 -61.3 41.525 10 -58.7
+cut 188 2 -0.7071 0.7071 0 0.0245 0.7071 -0.7071 0 0.0245 38.7 10 -61.525 41.3 15 -61.375
+cut 188 2 -0.7071 0.7071 0 0.0245 0.7071 -0.7071 0 0.0245 38.7 10 -58.625 41.3 15 -58.475
+cut 188 2 0 0.7071 -0.7071 0.0245 0 -0.7071 0.7071 0.0245 38.475 10 -61.3 38.625 15 -58.7
+cut 188 2 0 0.7071 -0.7071 0.0245 0 -0.7071 0.7071 0.0245 41.375 10 -61.3 41.525 15 -58.7
+cut 188 2 -0.7071 -0.7071 0 -0.6826 0.7071 0.7071 0 0.7316 38.7 15 -61.525 41.3 20 -61.375
+cut 188 2 -0.7071 -0.7071 0 -0.6826 0.7071 0.7071 0 0.7316 38.7 15 -58.625 41.3 20 -58.475
+cut 188 2 0 -0.7071 -0.7071 -0.6826 0 0.7071 0.7071 0.7316 38.475 15 -61.3 38.625 20 -58.7
+cut 188 2 0 -0.7071 -0.7071 -0.6826 0 0.7071 0.7071 0.7316 41.375 15 -61.3 41.525 20 -58.7
+cut 188 2 -0.7071 0.7071 0 0.0357 0.7071 -0.7071 0 0.0357 38.7 20 -61.525 41.3 22 -61.375
+cut 188 2 -0.7071 0.7071 0 0.0357 0.7071 -0.7071 0 0.0357 38.7 20 -58.625 41.3 22 -58.475
+cut 188 2 0 0.7071 -0.7071 0.0357 0 -0.7071 0.7071 0.0357 38.475 20 -61.3 38.625 22 -58.7
+cut 188 2 0 0.7071 -0.7071 0.0357 0 -0.7071 0.7071 0.0357 41.375 20 -61.3 41.525 22 -58.7
+galvanizedsteel 36 20 -60.3 44 20.5 -59.7
+cut 332 4 0.7036 0 0.7106 0.7109 0.9992 0 -0.0404 0.9988 -0.7036 0 -0.7106 -0.7033 -0.9992 0 0.0404 0.04 -105.016 18.6 29.9216 -29.9843 18.76 45.0784
+cut 9 4 0.6918 0 0.7221 0.7234 0.9991 0 -0.0417 0.9973 -0.6918 0 -0.7221 -0.6905 -0.9991 0 0.0417 0.0399 -105.069 18.76 29.6568 -29.9314 20 45.3432
+cut 332 4 0.7074 0 0.7069 0.7081 0.5179 0 -0.8555 0.5169 -0.7074 0 -0.7069 -0.7061 -0.5179 0 0.8555 0.8545 -30.0631 19.6 -60.0491 40.0631 19.76 30.0491
+cut 9 4 0.7082 0 0.706 0.7116 0.5188 0 -0.8549 0.5147 -0.7082 0 -0.706 -0.7027 -0.5188 0 0.8549 0.8508 -30.2763 19.76 -60.2149 40.2763 21 30.2149
+cut 332 4 -0.7075 0 0.7067 0.001 0.4907 0 0.8713 1.3608 0.7075 0 -0.7067 0.0018 -0.4907 0 -0.8713 -0.0012 39.936 18.6 -60.048 91.064 18.76 8.048
+cut 9 4 -0.7088 0 0.7054 0.0043 0.492 0 0.8706 1.3573 0.7088 0 -0.7054 0.0077 -0.492 0 -0.8706 -0.0053 39.72 18.76 -60.21 91.28 20 8.21
+treebark 93.9887 0 26.7147 94.5887 2.7287 27.3147
+jungleleaves 92.4127 2.2171 25.1387 96.1647 3.9225 28.8907
+jungleleaves 93.0949 3.9225 25.8209 95.4825 5.1164 28.2085
+treebark 94.9468 0 27.872 95.5468 3.4792 28.472
+jungleleaves 92.8549 2.8268 25.78 97.6387 5.0013 30.5639
+jungleleaves 93.7247 5.0013 26.6498 96.7689 6.5234 29.6941
+treebark 19.4223 0 21.6674 20.0223 3.4278 22.2674
+jungleleaves 17.3658 2.785 19.6108 22.0789 4.9274 24.324
+jungleleaves 18.2227 4.9274 20.4678 21.222 6.427 23.4671
+treebark 17.2809 0 20.6672 17.8809 2.8658 21.2672
+jungleleaves 15.6107 2.3285 18.997 19.5512 4.1197 22.9375
+jungleleaves 16.3271 4.1197 19.7134 18.8347 5.3735 22.221
+treebark 17.3932 0 20.5107 17.9932 3.3479 21.1107
+jungleleaves 15.3915 2.7202 18.509 19.9949 4.8126 23.1124
+jungleleaves 16.2285 4.8126 19.346 19.1579 6.2773 22.2755
+treebark -32.8041 0 39.1787 -32.2041 3.4796 39.7787
+jungleleaves -34.8963 2.8272 37.0865 -30.1119 5.002 41.871
+jungleleaves -34.0264 5.002 37.9564 -30.9818 6.5243 41.0011
+treebark -36.6045 0 48.9477 -36.0045 3.3021 49.5477
+jungleleaves -38.5748 2.683 46.9775 -34.0343 4.7468 51.5179
+jungleleaves -37.7492 4.7468 47.803 -34.8599 6.1915 50.6924
+treebark -29.634 0 42.2894 -29.034 3.658 42.8894
+jungleleaves -31.8489 2.9721 40.0745 -26.8191 5.2584 45.1042
+jungleleaves -30.9344 5.2584 40.989 -27.7336 6.8587 44.1897
+treebark -29.6111 0 46.3614 -29.0111 3.1942 46.9614
+jungleleaves -31.507 2.5953 44.4654 -27.1151 4.5916 48.8574
+jungleleaves -30.7085 4.5916 45.2639 -27.9136 5.9891 48.0588
+treebark -114.803 0 38.3889 -114.203 3.088 38.9889
+jungleleaves -116.626 2.509 36.5659 -112.38 4.439 40.8119
+jungleleaves -115.854 4.439 37.3379 -113.152 5.7899 40.0399
+treebark -116.036 0 38.9004 -115.436 3.2424 39.5004
+jungleleaves -117.965 2.6344 36.9713 -113.507 4.6609 41.4295
+jungleleaves -117.155 4.6609 37.7819 -114.318 6.0794 40.6189
+treebark -66.5063 0 76.5355 -65.9063 3.4935 77.1355
+jungleleaves -68.6081 2.8385 74.4337 -63.8045 5.0219 79.2373
+jungleleaves -67.7347 5.0219 75.3071 -64.6779 6.5503 78.3639
+treebark -72.836 0 81.4535 -72.236 3.3822 82.0535
+jungleleaves -74.8612 2.748 79.4282 -70.2107 4.8619 84.0787
+jungleleaves -74.0157 4.8619 80.2738 -71.0562 6.3416 83.2332
+treebark -64.9986 0 81.6295 -64.3986 3.2025 82.2295
+jungleleaves -66.9004 2.602 79.7278 -62.4969 4.6036 84.1313
+jungleleaves -66.0997 4.6036 80.5285 -63.2976 6.0047 83.3306
+treebark -72.8936 0 82.2524 -72.2936 3.3653 82.8524
+jungleleaves -74.9072 2.7343 80.2387 -70.2799 4.8377 84.866
+jungleleaves -74.0659 4.8377 81.08 -71.1212 6.31 84.0247
+treebark 63.1991 0 -62.5147 63.7991 2.9501 -61.9147
+jungleleaves 61.4709 2.3969 -64.2429 65.5273 4.2407 -60.1865
+jungleleaves 62.2084 4.2407 -63.5054 64.7897 5.5314 -60.924
+treebark 66.6109 0 -63.9382 67.2109 3.3554 -63.3382
+jungleleaves 64.6041 2.7263 -65.9451 69.2178 4.8234 -61.3314
+jungleleaves 65.4429 4.8234 -65.1062 68.3789 6.2914 -62.1702
+treebark -109.007 0 -59.677 -108.407 3.0671 -59.077
+jungleleaves -110.816 2.492 -61.4857 -106.599 4.409 -57.2684
+jungleleaves -110.049 4.409 -60.7189 -107.366 5.7508 -58.0352
+treebark -106.615 0 -61.451 -106.015 3.1548 -60.851
+jungleleaves -108.484 2.5633 -63.3199 -104.146 4.5351 -58.982
+jungleleaves -107.695 4.5351 -62.5312 -104.934 5.9153 -59.7707
+treebark -106.52 0 -65.7323 -105.921 3.4209 -65.1323
+jungleleaves -108.572 2.7795 -67.7842 -103.869 4.9176 -63.0804
+jungleleaves -107.717 4.9176 -66.9289 -104.724 6.4143 -63.9356
+treebark 59.6713 0 83.7419 60.2713 3.1861 84.3419
+jungleleaves 57.7808 2.5887 81.8515 62.1617 4.58 86.2323
+jungleleaves 58.5774 4.58 82.648 61.3652 5.9739 85.4358
+treebark 60.2237 0 85.7449 60.8237 3.1306 86.3449
+jungleleaves 58.3714 2.5436 83.8927 62.676 4.5002 88.1972
+jungleleaves 59.1541 4.5002 84.6753 61.8933 5.8699 87.4146
+treebark 56.2296 0 81.8088 56.8296 3.2069 82.4088
+jungleleaves 54.3249 2.6056 79.9041 58.7343 4.6099 84.3136
+jungleleaves 55.1266 4.6099 80.7058 57.9326 6.0129 83.5119
+treebark -23.1622 0 23.0869 -22.5622 3.4457 23.6869
+jungleleaves -25.2311 2.7996 21.0179 -20.4932 4.9532 25.7558
+jungleleaves -24.3697 4.9532 21.8794 -21.3547 6.4607 24.8944
+treebark -18.3032 0 22.4252 -17.7032 3.3489 23.0252
+jungleleaves -20.3056 2.721 20.4228 -15.7009 4.8141 25.0276
+jungleleaves -19.4684 4.8141 21.2601 -16.5381 6.2792 24.1904
+hedge 20 0 -12 28 2 -10.8
+hedge 34 0 -12 46 2 -10.8
+hedge 56 0 -12 70 2 -10.8
+hedge -40 0 20 -28 2 21.2
+hedge -22 0 20 -15 2 21.2
+hedge -50 0 -31 -48.8 2 -19
+powdercoatgreen 15.8 0 7 20.2 1 9
+dustyglass 16.8 1 7.1 19 1.6 8.9
+powdercoatgreen 22.3 0 7 26.7 1 9
+dustyglass 23.3 1 7.1 25.5 1.6 8.9
+batteredyellowpaint -28.2 0 -11 -23.8 1 -9
+dustyglass -27.2 1 -10.9 -25 1.6 -9.1
+batteredyellowpaint -35.2 0 -11 -30.8 1 -9
+dustyglass -34.2 1 -10.9 -32 1.6 -9.1
+powdercoatgreen 97.8 0 -9 102.2 1 -7
+dustyglass 98.8 1 -8.9 101 1.6 -7.1
+batteredyellowpaint -102.2 0 7 -97.8 1 9
+dustyglass -101.2 1 7.1 -99 1.6 8.9
+cut 454 4 0.7071 0 0.7071 1.2071 -0.7071 0 0.7071 0.5 -0.7071 0 -0.7071 -0.2071 0.7071 0 -0.7071 0.5 -41.2934 0 0.7066 -38.7066 1.4 3.2934
+cut 454 4 0.7071 0 0.7071 1.2071 -0.7071 0 0.7071 0.5 -0.7071 0 -0.7071 -0.2071 0.7071 0 -0.7071 0.5 -46.2934 0 6.7066 -43.7066 1.4 9.2934
+cut 454 4 0.7071 0 0.7071 1.2071 -0.7071 0 0.7071 0.5 -0.7071 0 -0.7071 -0.2071 0.7071 0 -0.7071 0.5 -21.2934 0 -29.2934 -18.7066 1.4 -26.7066
+galvanizedsteel -100.15 0 6.6 -99.85 7 6.9
+glow -100.4 6.9 6.1 -99.6 7.1 7.1
+galvanizedsteel -70.15 0 6.6 -69.85 7 6.9
+glow -70.4 6.9 6.1 -69.6 7.1 7.1
+galvanizedsteel -40.15 0 6.6 -39.85 7 6.9
+glow -40.4 6.9 6.1 -39.6 7.1 7.1
+galvanizedsteel 29.85 0 6.6 30.15 7 6.9
+glow 29.6 6.9 6.1 30.4 7.1 7.1
+galvanizedsteel 59.85 0 6.6 60.15 7 6.9
+glow 59.6 6.9 6.1 60.4 7.1 7.1
+galvanizedsteel 89.85 0 6.6 90.15 7 6.9
+glow 89.6 6.9 6.1 90.4 7.1 7.1
+glow 90.6 40 7.6 91.4 40.6 8.4
+glow -105.4 45 44.6 -104.6 45.6 45.4
+
+spawn a 75 0 -40 140
+spawn a 77 0 -30 127
+spawn a 73 0 -50 150
+spawn a 86 0 -52 139
+spawn b -70 0 37 -48
+spawn b -69 0 44 -40
+spawn b -80 0 52 -44
+spawn b -56 0 53 -20
+spawn any 40 0 -15 111
+spawn any 98 0 12 83
+spawn any -10 0 -79 -173
+spawn any -110 0 -70 -122
+spawn any -30 0 0 -90
+spawn any -60 0 72 -40
+spawn any 50 0 80 32
+spawn any -114 0 -5 -93
+ladder 61.55 10 -25.8 62.45 16.4 -25.1
+ladder 101.05 0 -42.7 101.95 7.4 -42
+ladder 89.55 0 3.3 90.45 21 4
+ladder 91.55 20 3.3 92.45 33 4
+ladder -106.45 0 49 -105.55 21 49.7
+ladder -104.45 20 49 -103.55 33 49.7
+stairs -105 -36 -102 -32.5 -1.4 0 z 1 1
+stairs -99 -57.5 -96 -54 -1.4 0 z -1 1
+stairs -75 -36 -72 -32.5 -1.4 0 z 1 1
+stairs -69 -57.5 -66 -54 -1.4 0 z -1 1
+stairs -40 -36 -37 -32.5 -1.4 0 z 1 1
+stairs -34 -57.5 -31 -54 -1.4 0 z -1 1
+stairs 25 32.5 28 36 -1.4 0 z -1 1
+stairs 19 54 22 57.5 -1.4 0 z 1 1
+stairs 55 32.5 58 36 -1.4 0 z -1 1
+stairs 49 54 52 57.5 -1.4 0 z 1 1
+stairs 85 32.5 88 36 -1.4 0 z -1 1
+stairs 79 54 82 57.5 -1.4 0 z 1 1
+stairs 110 32.5 113 36 -1.4 0 z -1 1
+stairs 104 54 107 57.5 -1.4 0 z 1 1
+stairs -12.5 -20 -9 -17 -1.4 0 x -1 1
+stairs 9 -26 12.5 -23 -1.4 0 x 1 1
+stairs -12.5 15 -9 18 -1.4 0 x -1 1
+stairs 9 9 12.5 12 -1.4 0 x 1 1
+stairs -59.6 -26 -52.4 -10 0 8 z -1 1
+stairs -59.6 -80 -52.4 -64 0 8 z 1 1
+stairs 33 -44.6 43 -41 0 5 x 1 0
+stairs 57 -44.6 67 -41 0 5 x -1 0
+stairs 33 -44.6 43 -41 5 10 x 1 0
+stairs 57 -44.6 67 -41 5 10 x -1 0
+stairs 46 21.6 50 25.6 0 4.5 x 1 1
+stairs -51.5 32 -48.5 40 0 6 z 1 0
+stairs -48.5 32 -45.5 40 6 12 z -1 0
+stairs -54.1421 30.8 -49 33.2 12 15 x -1 0
+light 50 4 -32.5 18 0.9
+light 38 4 -24 12 0.7
+light 62 4 -24 12 0.7
+light 50 9 -32.5 18 0.9
+light 38 9 -24 12 0.7
+light 62 9 -24 12 0.7
+light 50 14 -32.5 18 0.9
+light 38 14 -24 12 0.7
+light 62 14 -24 12 0.7
+light 92 5 -35 14 0.9
+light 44 8 13 18 0.9
+light -35 4.6 -17.5 14 0.9
+light -85 5 38 14 0.9
+light -50 10 38 14 0.8
+light -100 6.4 6.6 14 0.6
+light -70 6.4 6.6 14 0.6
+light -40 6.4 6.6 14 0.6
+light 30 6.4 6.6 14 0.6
+light 60 6.4 6.6 14 0.6
+light 90 6.4 6.6 14 0.6

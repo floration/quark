@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.18.1: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.18.1</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<p>1.18.1 fixes the game closing when you stop hosting on Windows. Network protocol unchanged (42), same simulation, demos unaffected.</p>
+<h3>Fixes</h3>
+<h4>STOP HOSTING closed the game (Windows)</h4>
+<ul>
+<li><b>What players saw</b>: pressing STOP HOSTING (or anything else that ends a hosted game: BACK TO EDITOR after a test map, ending an edit session, vs bots or a time trial, a dropped connection, hosting again, quitting) closed the whole game with no message, instead of returning to the menu. It happened once the bots had searched for a route, so with bots almost every time.
+</li>
+<li><b>Why</b>: a hosted game&#x27;s server runs on its own thread, which ends when hosting stops. The bots&#x27; route search (<code>NavGraph::findPath</code>) kept four reusable buffers in <code>thread_local</code> vectors. The Windows build uses MinGW, whose thread-locals are emulated (emutls), and emutls frees a thread-local&#x27;s memory <i>before</i> running its destructor. When the server thread ended, the vectors&#x27; data pointers had already been overwritten by the heap&#x27;s free-list links, so their destructors freed garbage pointers. That corrupted the heap, and Windows ends a GUI program on heap corruption without a message. It was not a quit: it was a crash.
+</li>
+<li><b>Why 1.18.0 didn&#x27;t fix it</b>: 1.18.0&#x27;s fix (&quot;a crash when a hosted game&#x27;s server thread ended&quot;) moved the server&#x27;s rules cache out of <code>thread_local</code>, the same bug in another place. The route-search buffers were the second one; they date from the bot rewrite in 1.17.0.
+</li>
+<li><b>How it was found</b>: Linux (glibc&#x27;s native thread-locals) never shows it, and STOP HOSTING worked there before and after the fix. Test programs built with the release&#x27;s own Windows toolchain (<code>x86_64-w64-mingw32-g++-posix</code> 13, static) and run under Wine showed the vectors&#x27; data pointers replaced by the same heap link at thread exit.
+</li>
+<li><b>The fix</b>: the buffers are now a member of the nav graph (<code>NavGraph::scratch_</code>). Only its own server&#x27;s thread searches it, and they&#x27;re freed with the server, so nothing leaks. It&#x27;s also slightly faster on Windows: each route search no longer makes five <code>__emutls_get_address</code> calls to find its buffers.
+</li>
+<li><b>Test</b>: a new <code>botaim</code> test hosts a server with 3 bots on its own thread the way the game does, checks the bots searched routes on that thread, then ends the thread and stops the server, twice. The Windows CI runners run it on the toolchain that crashed.
+</li>
+<li><b>No <code>thread_local</code> with a destructor is left in shipped code.</b> Rule from here on: <code>thread_local</code> only for plain types or a raw pointer.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.18.0/">&larr; 1.18.0</a></span><span><a href="../1.18.2/">1.18.2 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

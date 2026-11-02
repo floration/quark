@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.18.9: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.18.9</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<p>A CI-only update (the &quot;Discuss and improve release tests&quot; work). No game, server, protocol or file format change: 1.18.9 plays with 1.18.7 and 1.18.8 (protocol 43).</p>
+<h3>CI: no gameplay or UI tests (.github/workflows/release.yml)</h3>
+<ul>
+<li><b>Owner</b>: &quot;CI should only test meta, builds, sanitizer type stuff ... the game will have already been heavily playtested via testing branch, and it will have to pass all of the local (claude and human) tests, so CI should not include any gameplay type tests, this is a duplication of effort.&quot;
+</li>
+<li><b>Removed jobs</b>: <code>linux-tests</code> and <code>windows-tests</code> (<code>quark_tests</code>, one runner per test group: 25 Linux plus 25 Windows runners per push) and <code>linux-uitest</code> (<code>quark --uitest</code> under Xvfb, about 10-15 min). Also removed: meta&#x27;s test-group list (parsed from tests.cpp), the linux job&#x27;s group check and the test artifacts. The Windows job still compiles <code>quark_tests.exe</code>, as a build check only.
+</li>
+<li><b>What CI still checks on every push</b>: meta (VERSION, both changelogs for a release, the release doesn&#x27;t already exist, <code>tools/check_secrets.py</code>, the provenance registry), the Windows, Linux and macOS builds and packages, the light bakes and the website&#x27;s data. A release waits only for those builds: <code>release</code> for Windows + Linux + macOS, <code>release-testing</code> for Windows + Linux.
+</li>
+<li><b>Why it&#x27;s safe</b>: <code>build/quark_tests</code> (every group) and the UI test run locally before every push (CLAUDE.md), and the owner tests every testing build by hand with RELEASE_CHECKLIST.md before production. The CI runs also flaked on timing tests that the change under test never touched: in run 40062619452 the bots group&#x27;s &quot;0 grapples in 40 s&quot; and the Windows tick-rate stall check failed.
+</li>
+<li><b>The dead 1.17.0 conditions are gone</b>: the six <code>base == &#x27;1.17.0&#x27;</code> alternatives and their comments. The release gates are now plain <code>== &#x27;success&#x27;</code> checks, and <code>!cancelled()</code> stays only where a needed job can be skipped (pages on a site-only run, release-testing-macos, deploy-worker).
+</li>
+<li><b>Release files</b>: before signing, release / release-testing now keep only the platform artifacts (<code>find ... ! -name windows ! -name linux ...</code>) instead of deleting a list of known non-release artifacts by name. A sanitizer report or a fuzzer crash uploaded in the same run can&#x27;t end up in SHA256SUMS.
+</li></ul>
+<h3>Sanitizers: only for a build a human marks as a final test</h3>
+<ul>
+<li><b>Owner</b>: &quot;the testing branch should only do the sanitizer thing if it is classified as a final test&quot;, then &quot;disable sanitizer running unless human specifies final test&quot;, and production shouldn&#x27;t re-run them (&quot;testing will have already passed ... duplication of effort&quot;).
+</li>
+<li><b>When</b>: a push whose head commit message (for a merged PR, its title) contains <code>[final]</code>, or Actions → build-and-release → Run workflow with the new <b>final</b> box ticked. A final run is meta + the sanitizers on that commit, and nothing is built or published. Any branch counts. Nothing else runs them: work branches and testing pushes didn&#x27;t used to need a mark, and production tags never run them. No release waits for them. Agents never add the mark themselves. The trigger is one block in meta&#x27;s channel step (<code>sanitizers</code> output).
+</li>
+<li><b>What fails it</b>: only a sanitizer error (ASan / UBSan) or a fuzzer crash, never a test&#x27;s own CHECK. <code>quark_tests</code> runs only to drive the code. Reports go to files (<code>log_path</code>; each forked group writes its own), a hang is cut at 55 min and the reports are still read, and the reports upload as the <code>sanitizer-reports</code> artifact. Before, any failing gameplay check failed the job too, which made it a second gameplay test run.
+</li>
+<li>A final run gets its own concurrency group, so a testing push queued after it can&#x27;t replace it.
+</li></ul>
+<h3>Docs and tools</h3>
+<ul>
+<li>RELEASE_CHECKLIST.md section 0: what CI checks now, marking the final test build, and asking for the local test and UI test results on the commit that ships. HANDOVER.md and UI_TEST.md updated to match.
+</li>
+<li><code>tools/fetch_ci_build.ps1</code> only takes push runs (a final run has no build to download).
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.18.7/">&larr; 1.18.7</a></span><span><a href="../1.18.10/">1.18.10 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>
