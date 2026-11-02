@@ -297,11 +297,14 @@ def build():
     for (x, z) in ((28, -16), (40, -16), (34, 0)): lamp(x, -18.4, z)
     B(m, "rubblepile", 28, -30, -2, 38, -29.2, 4)
     # the ore bay: the hill, a pile of crystals and metal bars (cover in the middle, ~2 m), lamps
-    B(m, "rubblepile", HX - 4, -30, HZ - 3, HX + 4, -29.4, HZ + 3)
+    B(m, "rubblepile", HX - 4, -30, HZ - 3, HX + 4, -29.5, HZ + 3)   # (0.5: at 0.6 it was a hop up, not a step)
     for (dx, dz, h, r) in ((-2.2, -1.2, 2.6, 0.8), (1.8, 1.0, 2.2, 0.7), (-0.2, 1.8, 1.6, 0.5), (3.4, 0.2, 1.4, 0.5), (0.2, -0.4, 3.0, 0.9)):
-        crystal(HX + dx, HZ + dz, -29.4, h, r)
+        crystal(HX + dx, HZ + dz, -29.5, h, r)
+    # (cleanup: the pocket between the east bar stack and the crystals south of it was a 0.9 m slot you dropped into
+    # and couldn't walk out of: ore heaped in it, so the stack's top is a short hop from it)
+    B(m, "rubblepile", HX + 1.1, -29.5, HZ - 0.6, HX + 2.9, -28.9, HZ + 0.3)
     for (dx, dz) in ((-1.2, -1.6), (2.2, 1.4), (-3.0, -0.4)):   # loose bars on the heap
-        B(m, "gold", HX + dx, -29.4, HZ + dz, HX + dx + 1.2, -29.1, HZ + dz + 0.35)
+        B(m, "gold", HX + dx, -29.5, HZ + dz, HX + dx + 1.2, -29.2, HZ + dz + 0.35)
     for (x, z) in ((-42, -22), (-34, -15), (-42, -14), (-34, -22)): lamp(x, -20.4, z, r=14, i=1.0)
     # the shaft drift and the adits: timbers, lamps
     timbers(-29, -16, -21, 19, -30, -24); timbers(-46, -57, -38, -27, -30, -25); timbers(-37, -32, -6, -26, -30, -25); timbers(-42, -11, -38, 9, -30, -25)

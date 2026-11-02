@@ -689,10 +689,13 @@ constexpr float kWeightBreakS = 0.3f;
 // teleporter with the same link (Brush::link, in brush order, round to the first) on that one's exit face
 // (Brush::exitFace, kFace*), just outside it, at the same speed, all of it out along that face; or, through a walk
 // teleporter (Brush::tpWalk, map format 12: the one you go in decides), at no more than the run speed.
-constexpr int kMatFeat = kMatBreak + kBreakCount, kFeatCount = 10;
+// 596 (owner, 2026-11-02: "a block that only stops the ball so it cant fall off the maps (no ceiling tho)"): the ball
+// wall. Invisible in play (shown in the editor like clip); players, shots, grapples and sight pass; only the ball bounces
+// off it (Map::ballWalls, ballMove). It is not in the collision grid. A wall, not a lid: build it as tall as the ball can fly.
+constexpr int kMatFeat = kMatBreak + kBreakCount, kFeatCount = 11;
 constexpr int kMatHealTile = kMatFeat, kMatSpikes = kMatFeat + 1, kMatLowGrav = kMatFeat + 2, kMatSlowMo = kMatFeat + 3,
               kMatGravFlip = kMatFeat + 4, kMatGate = kMatFeat + 5, kMatLightBlock = kMatFeat + 6, kMatShield = kMatFeat + 7,
-              kMatCrumble = kMatFeat + 8, kMatTeleport = kMatFeat + 9;
+              kMatCrumble = kMatFeat + 8, kMatTeleport = kMatFeat + 9, kMatBallWall = kMatFeat + 10;
 enum : uint8_t { kFacePX = 0, kFaceNX, kFacePY, kFaceNY, kFacePZ, kFaceNZ, kFaces };
 constexpr float kHealTilePerSec = 0.10f, kSpikePerSec = 0.20f, kLowGravField = 0.5f, kSlowMoRate = 0.5f, kGravFlipHeight = 64.0f;
 constexpr float kCrumbleS = 1.0f, kCrumbleBackS = 5.0f;
@@ -816,8 +819,9 @@ inline bool lavaMaterial(int m) { return m == 7 || (liquidMaterial(m) && kLiquid
 // solid to players, shots and sight (not far scenery, water, lava, trim, acid, the liquids; clip is solid to players only)
 inline bool solidMaterial(int m) {   // in the collision grid (a see-through one: when it stops anything)
     if (semiMaterial(m)) { const SemiDef& d = kSemi[m - kMatSemi]; return d.players || d.shots || d.sight; }
-    return m < 5 || m == kMatNoGrapple || (m >= kMatIce && m < kMapMaterials && !liquidMaterial(m) && !fieldMaterial(m));
+    return m < 5 || m == kMatNoGrapple || (m >= kMatIce && m < kMapMaterials && !liquidMaterial(m) && !fieldMaterial(m) && m != kMatBallWall);
 }
+inline bool hiddenMaterial(int m) { return m == 9 || m == kMatBallWall; }   // never drawn in play: clip and the ball wall
 // what a brush in the grid stops: players (collision), shots (raycast: hitscan, projectiles, the grapple), sight
 inline bool stopsPlayers(int m) { return m != kMatShield && (!semiMaterial(m) || kSemi[m - kMatSemi].players); }
 inline bool stopsShots(int m) { return m != 9 && (!semiMaterial(m) || kSemi[m - kMatSemi].shots); }
@@ -830,8 +834,8 @@ inline bool wallbangBrush(const Brush& b) {
 inline bool stopsSight(int m) { return m != 9 && m != kMatShield && !glassMaterial(m) && (!semiMaterial(m) || kSemi[m - kMatSemi].sight); }
 // lit by the bake (the shader skips the lightmap for glow, far, water, lava, acid; clip and glass aren't baked: glass is
 // drawn see-through each frame, so a broken pane can go)
-inline bool litMaterial(int m) { return m < 4 || m == 8 || m == kMatNoGrapple || (m >= kMatIce && m < kMapMaterials && !glassMaterial(m) && !seeThroughDrawn(m) && !blockDrawn(m)); }
-inline bool bakedMaterial(int m) { return m != 9 && !glassMaterial(m) && !seeThroughDrawn(m) && !blockDrawn(m); }   // in the static world mesh (see-through, breakable: meshes of their own)
+inline bool litMaterial(int m) { return m < 4 || m == 8 || m == kMatNoGrapple || (m >= kMatIce && m < kMapMaterials && !glassMaterial(m) && !seeThroughDrawn(m) && !blockDrawn(m) && m != kMatBallWall); }
+inline bool bakedMaterial(int m) { return !hiddenMaterial(m) && !glassMaterial(m) && !seeThroughDrawn(m) && !blockDrawn(m); }   // in the static world mesh (see-through, breakable: meshes of their own)
 // Editor clean-ups (owner, 2026-10-29), on the editable brushes (generated ones only hide others). box[i] is brush i's
 // box after the fix, del[i] whether it goes. FIX MAP: same-material plain boxes that together make one box become one
 // (and one inside another of its material goes), then a brush wholly inside solid opaque boxes goes (glass, water, clip,
@@ -1406,7 +1410,8 @@ inline constexpr const char* kMapMaterialWords[] = {"box", "accent", "wallbang",
                                                     "lightblock",
                                                     "shieldwall",
                                                     "crumbleplatform",
-                                                    "teleporter"};
+                                                    "teleporter",
+                                                    "ballwall"};
 static_assert(sizeof kMapMaterialWords / sizeof *kMapMaterialWords == kMapMaterials, "a file keyword per material");
 inline int materialKeyword(const std::string& w) {
     for (int m = 0; m < kMapMaterials; m++) if (w == kMapMaterialWords[m]) return m;
@@ -1458,7 +1463,7 @@ struct SpawnPoint {
 // the setting in comments; those are still read). A keyword this build doesn't know is skipped with a warning (in
 // Map::warnings), so an older build still loads a newer map; a known keyword with a bad value is an error.
 // 2: "version", "stairs", "setting", "handmade"; a second hill or an unknown spawn team is an error.
-constexpr int kMapFormatVersion = 13;   // 3: the nograpple material; 4: the acid material; 5: wedges and corners; 6: brick, cobblestone and glass never break (breakable ones are their own materials); 7: materials 139-471; 8: the liquids 472-496 and the large patterns 497-536; 9: the see-through looks 537-561; 10: the breakable blocks 562-585 and the feature blocks 586-595 (a teleporter's "tp <link> <face>"); 11: mode spawn sets ("spawn koth-a ..."); 12: a teleporter's speed ("tp <link> <face> walk": out at no more than the run speed); 13: a race map's default time ("racedefault <s>")
+constexpr int kMapFormatVersion = 14;   // 3: the nograpple material; 4: the acid material; 5: wedges and corners; 6: brick, cobblestone and glass never break (breakable ones are their own materials); 7: materials 139-471; 8: the liquids 472-496 and the large patterns 497-536; 9: the see-through looks 537-561; 10: the breakable blocks 562-585 and the feature blocks 586-595 (a teleporter's "tp <link> <face>"); 11: mode spawn sets ("spawn koth-a ..."); 12: a teleporter's speed ("tp <link> <face> walk": out at no more than the run speed); 13: a race map's default time ("racedefault <s>"); 14: the ball wall (material 596, "ballwall")
 
 struct Map {
     std::string name;
@@ -1677,6 +1682,8 @@ struct Map {
     // Moving solids that aren't part of the static geometry (the payload cart). Collision and
     // raycasts include them; kept tiny so checking them all is free.
     std::vector<AABB> dynSolids;
+    // The ball walls (kMatBallWall: only the ball collides with them; not in the grid), from the brushes at load
+    std::vector<AABB> ballWalls;
     AABB payloadCartBox(float dist) const;
     float payloadLength() const;
     Vec3 payloadPoint(float dist) const;

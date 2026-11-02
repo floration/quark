@@ -90,7 +90,7 @@ def offset(pts, d):
 
 def build():
     m = M("Railyard", "npayload", sun=(0.55, 0.42, -0.45))
-    m.also = ["payload"]
+    m.also = ["payload", "ball"]
     k = Kit(m); S = Sym(k)
 
     # ---- the main line: start in the roundhouse (south, A's home), S-bends, the long straight, the goods shed (north)
@@ -346,6 +346,10 @@ def build():
     m.raw("setting freight rail yard")
     m.raw("cartcheck 0.25"); m.raw("cartcheck 0.5"); m.raw("cartcheck 0.75")   # (one-way payload: checkpoints; neutral payload ignores them)
     shift_x(m, 1.0)
+    # ---- ball (owner, 2026-11-02): the goals are the front of each team's building, inside its three doors (A the
+    # roundhouse, B the goods shed: the point mirror x -> 2 - x, z -> -z); the ball starts on the main line at mid-yard
+    m.raw("site -33 0 -112 15 6 -101")
+    m.raw("site -13 0 101 35 6 112")
     m.save("railyard", dress=False)
 
 

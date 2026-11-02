@@ -1240,7 +1240,12 @@ UserCmd botThinkDirect(Server& s, int id) {
     // Each bot looks at its own fixed phase of the period, from its id (golden-ratio steps: any number of bots spread
     // evenly), kept through deaths: a round's respawn (everyone on one tick) used to start every bot's looks again
     // together, ten or more of them on one tick from then on (worst-tick cost).
-    const double look = sp.lookEvery, lookPhase = look * (id * 0.6180339887498949 - std::floor(id * 0.6180339887498949));
+    // In a team mode the phase comes from the bot's rank on its team, team B's half a period after team A's: by slot id
+    // (teams alternate slots) team A's looks came on average 0.03 of a period before team B's in every meeting, and
+    // power bots won ~60% as team A on every map (2026-11-02: 29-19 over 48 matches; 19-29 with the slots swapped)
+    const bool sides = modeIsTeamBased(s.ms_.mode) && (me.team == TEAM_A || me.team == TEAM_B);
+    const double g = sides ? teamRank(s, id) * 0.6180339887498949 + (me.team == TEAM_B ? 0.5 : 0.0) : id * 0.6180339887498949;
+    const double look = sp.lookEvery, lookPhase = look * (g - std::floor(g));
     auto lookAfter = [&](double t, bool strict) {   // the first look time at or (strict) after t on this bot's phase
         if (look <= 0) return t;
         double k = std::ceil((t - lookPhase) / look), at = lookPhase + k * look;

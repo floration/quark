@@ -34,7 +34,7 @@ LOOK = {   # per side: (-1 west / the station end, +1 east / the mine end)
 
 def build():
     m = M("Express", "npayload", sun=(-0.5, 0.85, 0.45))
-    m.also = ["koth", "power"]
+    m.also = ["koth", "power", "ball"]
     m.raw("setting desert railway town, hot afternoon")
     m.raw("palette base 0.72 0.58 0.42 accent 0.62 0.32 0.18 metal 0.42 0.38 0.34 glow 1.0 0.8 0.5 sky 0.86 0.7 0.5")
     k = Kit(m)
@@ -266,4 +266,8 @@ def build():
     for (x, y, z) in ((-50, 0, 27), (-70, 0, -14), (-84, 8.3, -3.5), (-24, 4.0, 11)):
         for s in (-1, 1):
             k.spawn("any", X(x, s), y + 0.05, z, yaw_to(X(x, s), z, 0, 0))
+    # ---- ball (owner, 2026-11-02: "add ball to the western map"): a goal across each canyon gap (8 m wide, under the
+    # arch's 7 m), each team's own: the gap on its side; the ball starts in the town square between them
+    m.raw("site -90 0 -16 -87 6 -7")
+    m.raw("site 87 0 -16 90 6 -7")
     m.save("express", dress=False)

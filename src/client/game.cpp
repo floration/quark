@@ -598,7 +598,7 @@ static std::vector<uint8_t> makeMapPreview(const Map& m, const int W, const int 
     };
     const float area = sx * sz;
     for (const Brush& br : m.brushes) {
-        if (br.material == 9 || br.material == 5) continue;   // (clip: invisible; far: scenery outside the walls)
+        if (hiddenMaterial(br.material) || br.material == 5) continue;   // (clip, ball wall: invisible; far: scenery outside the walls)
         const AABB& a = br.box;
         if (m.indoor && a.mn.y >= m.ceilingY - 0.5f) continue;
         if ((a.mx.x - a.mn.x) * (a.mx.z - a.mn.z) > area * 0.5f && a.mn.y > b.mn.y + 2.0f) continue;   // (a roof over most of it)
