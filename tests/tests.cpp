@@ -2400,6 +2400,13 @@ static void testMapConverter() {
         CHECK(c.serialize().find("\nracedefault 187.5\n") != std::string::npos && d.parse(c.serialize()) && d.raceDefault == 187.5f);
         CHECK(!e.parse(o + "racedefault 0\n") && !e.parse(o + "racedefault 4000\n") && !e.parse(o + "racedefault x\n"));
     }
+    {   // version 13 (before the ball wall): only the version line changes; it has no ball wall
+        const std::string v13 = "version 13\nwater -2 0 -2 2 1 2\n" + base;
+        std::string o;
+        CHECK(upgradeMapText(v13, &o) && o == "version " + std::to_string(kMapFormatVersion) + "\nwater -2 0 -2 2 1 2\n" + base);
+        Map a, b;
+        CHECK(a.parse(v13) && b.parse(o) && a.formatVersion == 13 && a.warnings.empty() && a.ballWalls.empty() && a.serialize() == b.serialize());
+    }
     for (int k = 1; k < kMapFormatVersion; k++) {   // every older version has a way to today's (a missing step doesn't compile)
         std::string o;
         CHECK(upgradeMapText((k > 1 ? "version " + std::to_string(k) + "\n" : std::string()) + base, &o) && mapTextVersion(o) == kMapFormatVersion);
@@ -4519,6 +4526,22 @@ static void testBallMode(uint16_t port) {
         c = Vec3(19, kBallHalf, 0); v = Vec3(10, 0, 0);
         ballMove(c, v, m, 0.3f);
         CHECK(v.x < -3.0f && c.x < 19.5f);   // off the wall at half its speed
+    }
+    {   // the ball wall (owner, 2026-11-02): the ball bounces off it; players, shots and sight go through; never drawn
+        std::string err;
+        Map m;
+        CHECK(m.parse("box -50 -1 -50 50 0 50\nballwall 10 0 -50 11 6 50\nspawn any 0 0 0\n", &err));
+        CHECK(m.ballWalls.size() == 1 && m.brushes.size() == 2 && m.brushes[1].material == kMatBallWall && hiddenMaterial(kMatBallWall) && !bakedMaterial(kMatBallWall));
+        Vec3 c(9, kBallHalf, 0), v(10, 0, 0);
+        ballMove(c, v, m, 0.3f);
+        printf("  ball wall: the ball off it at %.2f m/s, x %.2f\n", v.x, c.x);
+        CHECK(v.x < -3.0f && c.x < 10.0f);   // off it like any wall
+        c = Vec3(9, 8, 0); v = Vec3(10, 0, 0);   // over its top: no lid
+        ballMove(c, v, m, 0.2f);
+        CHECK(c.x > 10.5f);
+        CHECK(!m.boxSolid(AABB{{10.1f, 0.1f, -0.4f}, {10.9f, 1.9f, 0.4f}}));   // a player stands in it
+        CHECK(!m.raycastAny(Vec3(5, 1, 0), Vec3(1, 0, 0), 20.0f) && !m.raycastAny(Vec3(5, 1, 0), Vec3(1, 0, 0), 20.0f, true));   // shots, the grapple
+        CHECK(m.serialize().find("ballwall 10 0 -50 11 6 50") != std::string::npos);
     }
     Server s;
     ServerConfig cfg;

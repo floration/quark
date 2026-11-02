@@ -1030,13 +1030,32 @@ void dashRefillAll(MoveState& s, const Map* map) {
     s.dashRecharging = 0;
     for (uint16_t& v : s.dashRechargeMs) v = 0;
 }
+// the map's sweep, then the ball walls (kMatBallWall: only the ball stops at them; a wall it hits is plain rubber)
+static float ballSweep(const Map& map, const AABB& box, int axis, float delta, const Brush** hit = nullptr) {
+    delta = map.sweepAxis(box, axis, delta, hit);
+    if (map.ballWalls.empty() || delta == 0.0f) return delta;
+    const int a1 = (axis + 1) % 3, a2 = (axis + 2) % 3;
+    constexpr float eps = 0.001f;
+    for (const AABB& b : map.ballWalls) {
+        if (box.mx[a1] <= b.mn[a1] || box.mn[a1] >= b.mx[a1] || box.mx[a2] <= b.mn[a2] || box.mn[a2] >= b.mx[a2]) continue;
+        if (delta > 0 && box.mx[axis] <= b.mn[axis] + eps) {
+            const float allowed = b.mn[axis] - box.mx[axis] - eps;
+            if (allowed < delta) { delta = std::max(allowed, 0.0f); if (hit) *hit = nullptr; }
+        } else if (delta < 0 && box.mn[axis] >= b.mx[axis] - eps) {
+            const float allowed = b.mx[axis] - box.mn[axis] + eps;
+            if (allowed > delta) { delta = std::min(allowed, 0.0f); if (hit) *hit = nullptr; }
+        }
+    }
+    return delta;
+}
+
 bool ballMove(Vec3& c, Vec3& v, const Map& map, float dt) {
     constexpr float h = 0.001f;   // (owner, 2026-11-01: "ball should also treat every surface as if its rubber floor, bouncy")
     const Vec3 half(kBallHalf, kBallHalf, kBallHalf);
     bool onGround = false;
     for (float left = dt; left > 1e-6f; left -= h) {
         const float step = std::min(left, h);
-        const float below = map.sweepAxis(AABB{c - half, c + half}, 1, -0.01f);
+        const float below = ballSweep(map, AABB{c - half, c + half}, 1, -0.01f);
         onGround = below > -0.01f + 1e-5f && v.y <= 0;
         if (onGround) {   // a player standing on ice, no input: friction x kIceFriction, no push
             const float sp = std::sqrt(v.x * v.x + v.z * v.z);
@@ -1054,7 +1073,7 @@ bool ballMove(Vec3& c, Vec3& v, const Map& map, float dt) {
             if (want == 0) continue;
             const AABB box{c - half, c + half};
             const Brush* hit = nullptr;
-            const float got = map.sweepAxis(box, i, want, &hit);
+            const float got = ballSweep(map, box, i, want, &hit);
             c[i] += got;
             if (std::fabs(got) + 1e-6f >= std::fabs(want)) continue;
             Vec3 n;

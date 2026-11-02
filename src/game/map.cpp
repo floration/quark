@@ -502,8 +502,11 @@ static void upgradeMap10to11(std::vector<std::string>&) {}
 static void upgradeMap11to12(std::vector<std::string>&) {}
 // 12 -> 13: a race map's default time ("racedefault <s>": a new keyword; a format 12 map has none, nothing to change)
 static void upgradeMap12to13(std::vector<std::string>&) {}
+// 13 -> 14: the ball wall (material 596, "ballwall": a new keyword, which an older reader refuses; a format 13 map has
+// none, nothing to change)
+static void upgradeMap13to14(std::vector<std::string>&) {}
 
-static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2, upgradeMap2to3, upgradeMap3to4, upgradeMap4to5, upgradeMap5to6, upgradeMap6to7, upgradeMap7to8, upgradeMap8to9, upgradeMap9to10, upgradeMap10to11, upgradeMap11to12, upgradeMap12to13};
+static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2, upgradeMap2to3, upgradeMap3to4, upgradeMap4to5, upgradeMap5to6, upgradeMap6to7, upgradeMap7to8, upgradeMap8to9, upgradeMap9to10, upgradeMap10to11, upgradeMap11to12, upgradeMap12to13, upgradeMap13to14};
 static_assert(sizeof kMapUpgrades / sizeof kMapUpgrades[0] == kMapFormatVersion - 1,
               "a map format change needs its converter step in kMapUpgrades (owner rule)");
 
@@ -1543,9 +1546,10 @@ void Map::rebuildFluids() {
 bool Map::buildGrid() {
     rebuildFluids();   // (lava: touch it and die; acid: touch it and it hurts; liquids: pmove)
     hasIce = hasRubber = hasGripMats = false;
-    glass.clear(); windows.clear(); blocks.clear(); crumbles.clear(); teleporters.clear();
+    glass.clear(); windows.clear(); blocks.clear(); crumbles.clear(); teleporters.clear(); ballWalls.clear();
     buildRace();
     for (size_t i = 0; i < brushes.size(); i++) {
+        if (brushes[i].material == kMatBallWall && !brushes[i].gone) ballWalls.push_back(brushes[i].box);   // (its box: a wall)
         if (breakMaterial(brushes[i].material)) blocks.push_back((uint32_t)i);
         if (brushes[i].material == kMatCrumble) crumbles.push_back((uint32_t)i);
         if (brushes[i].material == kMatTeleport) teleporters.push_back((uint32_t)i);
