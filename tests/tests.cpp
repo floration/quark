@@ -8822,6 +8822,12 @@ static void testDemoUpgrade() {
     demo::noteVersion(vf.string(), "9.8.1", 200);
     CHECK(demo::versionForProtocol(200) == "9.8.0-9.8.1" && demo::versionForProtocol(201) == "protocol 201");
     CHECK(rd(vf) == "200 9.8.0\n200 9.8.1\n");
+    // a file an older Windows build wrote in text mode (\r\n) reads the same, and a note adds a plain \n line
+    std::ofstream(vf, std::ios::binary | std::ios::trunc) << "200 9.8.0\r\n200 9.8.1\r\n";
+    demo::noteVersion(vf.string(), "9.8.1", 200);
+    demo::noteVersion(vf.string(), "9.8.2", 200);
+    CHECK(demo::versionForProtocol(200) == "9.8.0-9.8.2");
+    CHECK(rd(vf) == "200 9.8.0\r\n200 9.8.1\r\n200 9.8.2\n");
     fs::remove_all(d, ec);
 }
 
