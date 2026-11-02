@@ -281,6 +281,7 @@ private:
     double lastCpu_ = 0;
     double modelSentAt_ = -10;
     int socdLastF_ = 0, socdLastS_ = 0;     // control scripts: SOCD press order, alt-fire toggle state
+    int socdLastV_ = 0; bool socdPrevV_[2] = {false, false};   // (flight's MOVE UP / MOVE DOWN: the same SOCD as the move keys)
     bool socdPrev_[4] = {}, altPrev_ = false, altToggled_ = false;
     int altWeapon_ = -1;   // the weapon alt-fire was pressed with (-1 up; -2 held over a switch: ignored till let go)
     void benchFrame(double dt);

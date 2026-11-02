@@ -1285,6 +1285,7 @@ UserCmd Game::buildCmd() {
     bool block = paused_ || chatting_ || screen_ != Screen::InGame;
     if (block) { // keep key edge tracking current, so keys held through a menu aren't fresh presses after it
         socdPrev_[0] = isDown(A_FORWARD); socdPrev_[1] = isDown(A_BACK); socdPrev_[2] = isDown(A_RIGHT); socdPrev_[3] = isDown(A_LEFT);
+        socdPrevV_[0] = isDown(A_FLYUP); socdPrevV_[1] = isDown(A_FLYDOWN);
         altPrev_ = altKey();
         fireLatched_ = false;   // (a click just before Esc / chat / console fired on the first tick after it)
         moveLatched_ = 0;
@@ -1322,9 +1323,14 @@ UserCmd Game::buildCmd() {
     if (cfg_.useToggle ? useOn_ : isDown(A_USE)) c.buttons |= BTN_USE;   // (MORE 6: USE: TOGGLE)
     if (isDown(A_DASH)) c.buttons |= BTN_DASH;
     {   // flight (3D VAMP): MOVE UP / MOVE DOWN; VERTICAL KEYS: ONE KEY (CONTROLS > MORE 2): up held goes up, let go goes down
-        const bool up = isDown(A_FLYUP);
-        if (up) c.buttons |= BTN_UP;
-        if (cfg_.verticalKeys == 1 ? !up && net_.predicted().fly : isDown(A_FLYDOWN)) c.buttons |= BTN_DOWN;
+        // (two keys: both held follow SOCD like left + right: cancel, LAST WINS = snap tap, or first wins)
+        const int v = axis(A_FLYUP, A_FLYDOWN, socdLastV_, socdPrevV_[0], socdPrevV_[1]);
+        if (cfg_.verticalKeys == 1) {
+            const bool up = isDown(A_FLYUP);
+            if (up) c.buttons |= BTN_UP;
+            else if (net_.predicted().fly) c.buttons |= BTN_DOWN;
+        } else if (v > 0) c.buttons |= BTN_UP;
+        else if (v < 0) c.buttons |= BTN_DOWN;
     }
     if (!net_.selfAlive()) grappleOn_ = false;
     if (cfg_.grappleToggle ? grappleOn_ : isDown(A_GRAPPLE)) c.buttons |= BTN_GRAPPLE;
@@ -9009,7 +9015,7 @@ void Game::drawControls(const SetLayout& L) {
         static const std::vector<std::string> an = {"ALT-FIRE: HOLD", "ALT-FIRE: TOGGLE"};
         if (ui_.cycle(f.x(), f.top(), w, h, "SOCD", cfg_.socd, 3, sn, UiExp::cfg("socd"))) cfg_.save();
         f.next();
-        f.hint("LEFT + RIGHT HELD: LAST WINS = SNAP TAP");
+        f.hint("LEFT + RIGHT HELD: LAST WINS = SNAP TAP (FLYING UP + DOWN TOO)");
         int at = cfg_.altToggle;
         if (ui_.cycle(f.x(), f.top(), w, h, "ALT", at, 2, an, UiExp::cfg("alt_toggle"))) { cfg_.altToggle = at; cfg_.save(); }
         f.next();

@@ -38,3 +38,6 @@ Every change on `testing` since production 1.19.4, with what changed and why. Th
 
 ## Servers: the testing server always comes back
 - `tools/server/install.sh`: `quark-testing-active.path` has no start or trigger limit (`StartLimitIntervalSec=0`, `TriggerLimitIntervalSec=0`), and every install runs `reset-failed` on it and the testing service. A burst of restarts on 2026-10-30 left the path unit failed, so when 1.19.4 went to production (testing stopped, as designed) and the next testing build re-created the switch file, nothing started the testing server: it stayed down for ~10 hours until reset by hand.
+
+## 3D VAMP: snap tap on MOVE UP / MOVE DOWN (owner, 2026-11-02: "the snap tap thing doesnt work with the up and down in 3d movement")
+- With VERTICAL KEYS: TWO KEYS, MOVE UP and MOVE DOWN now go through the same SOCD axis as the move keys (`Game::buildCmd`): OPPOSITE KEYS CANCEL (both held: neither), LAST WINS (snap tap: the last pressed), FIRST WINS. Before, both held sent both buttons, which pmove cancels, whatever the setting. Ranked keeps CANCEL, as for the move keys. Client only: the command's BTN_UP / BTN_DOWN bits are as before.
