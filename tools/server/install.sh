@@ -177,7 +177,7 @@ clone() {   # clone DIR OWNER
     $SUDO chown -R "$2:$2" "$1"
 }
 # build what's checked out now (the server can start right away), then let the updater move it to the latest release
-# (in the production instance; on a testing-only box in the testing one)
+# (each instance's updater runs below, before anything starts)
 TAG=$(git -C "$FROM" describe --exact-match --tags --match 'v[0-9]*.[0-9]*.[0-9]*' HEAD 2>/dev/null || true)
 build() {   # build USER PREFIX
     asuser "$1" sh -c "cd '$2' && cmake -S . -B build-update -DQUARK_BUILD_CLIENT=OFF -DQUARK_BUILD_TESTS=OFF \
@@ -197,27 +197,42 @@ if [ "$PRODUCTION" = 1 ]; then
     $SUDO rm -f "$STATE/update.pending"
 fi
 
-# the testing instance: its own user, clone and state; it starts on this checkout's build (copied from production's,
-# same commit; built here on a testing-only box) and its updater moves it to the newest testing build within a couple
-# of minutes
+# the testing instance: its own user, clone and state. A first install starts it on this checkout's build (copied
+# from production's, same commit; built here on a testing-only box), and its updater, run here before anything
+# starts, moves it to the newest testing build. An existing testing install whose build already contains this
+# checkout's commit (testing ahead of production, the usual case) keeps its own checkout and build: put back on this
+# older commit, the testing server failed to load the newer maps in its data and kept restarting until its updater
+# had built the testing build again (~10 min). One older than this checkout is re-cloned from it, as before (that is
+# how a box's testing updater gets newer updater code: docs/OPERATIONS.md).
 if [ "$TESTING" = 1 ]; then
     mkuser quark-testing "$TSTATE"
     $SUDO mkdir -p "$TSTATE/data"
-    clone "$TPREFIX" quark-testing
+    TKEEP=""
+    if [ -d "$TPREFIX/.git" ] && [ -x "$TPREFIX/bin/quark_server" ] && [ -f "$TSTATE/built-tag" ] \
+        && asuser quark-testing git -C "$TPREFIX" fetch -q "$BUNDLE/quark.bundle" HEAD 2>/dev/null \
+        && asuser quark-testing git -C "$TPREFIX" merge-base --is-ancestor FETCH_HEAD HEAD 2>/dev/null; then   # (as its owner: no root-owned objects)
+        TKEEP=1
+    fi
+    if [ -n "$TKEEP" ]; then
+        echo "testing: keeping its own build ($(cat "$TSTATE/built-tag" 2>/dev/null)) and checkout in $TPREFIX"
+    else
+        clone "$TPREFIX" quark-testing
+    fi
     $SUDO chown -R quark-testing:quark-testing "$TSTATE"
     $SUDO chmod 750 "$TSTATE"
-    if [ "$PRODUCTION" = 1 ]; then
-        $SUDO install -d -o quark-testing -g quark-testing "$TPREFIX/bin"
-        $SUDO install -m 755 -o quark-testing -g quark-testing "$PREFIX/bin/quark_server" "$TPREFIX/bin/quark_server"
-    else
-        build quark-testing "$TPREFIX"
+    if [ -z "$TKEEP" ]; then
+        if [ "$PRODUCTION" = 1 ]; then
+            $SUDO install -d -o quark-testing -g quark-testing "$TPREFIX/bin"
+            $SUDO install -m 755 -o quark-testing -g quark-testing "$PREFIX/bin/quark_server" "$TPREFIX/bin/quark_server"
+        else
+            build quark-testing "$TPREFIX"
+        fi
+        if [ -n "$TAG" ]; then echo "$TAG" | asuser quark-testing tee "$TSTATE/built-tag" >/dev/null; else $SUDO rm -f "$TSTATE/built-tag"; fi
     fi
-    if [ -n "$TAG" ]; then echo "$TAG" | asuser quark-testing tee "$TSTATE/built-tag" >/dev/null; else $SUDO rm -f "$TSTATE/built-tag"; fi
-    if [ "$PRODUCTION" = 0 ]; then
-        asuser quark-testing env QUARK_STATE="$TSTATE" HOME="$TSTATE" QUARK_CHANNEL=testing QUARK_TESTING_ALWAYS=1 \
-            QUARK_RELEASE_CACHE="$GOV" QUARK_BUILD_LOCK="$GOV/build.lock" sh "$TPREFIX/tools/server/autoupdate.sh" \
-            || echo "(the update check failed: see above; the server starts on the build from this checkout)"
-    fi
+    TALWAYS=0; [ "$PRODUCTION" = 0 ] && TALWAYS=1
+    asuser quark-testing env QUARK_STATE="$TSTATE" HOME="$TSTATE" QUARK_CHANNEL=testing QUARK_TESTING_ALWAYS=$TALWAYS \
+        QUARK_RELEASE_CACHE="$GOV" QUARK_BUILD_LOCK="$GOV/build.lock" sh "$TPREFIX/tools/server/autoupdate.sh" \
+        || echo "(the testing update check failed: see above; the testing server starts on the build it has)"
     $SUDO rm -f "$TSTATE/update.pending"
 fi
 rm -rf "$BUNDLE"
@@ -263,6 +278,9 @@ units() {
 Description=quark $ch server
 After=network-online.target
 Wants=network-online.target
+# (no start limit: systemd's default gives up after 5 starts in 10 s and leaves the server down for good; a server
+# whose build can't run yet, e.g. a map it can't load until its updater has built the newer release, keeps retrying)
+StartLimitIntervalSec=0
 [Service]
 User=$user
 Group=$user
