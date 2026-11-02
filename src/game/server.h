@@ -283,6 +283,7 @@ struct Projectile {
     Vec3 cartOffset;
     int onPlayer = -1;   // stuck to an enemy it hit: rides along at playerOffset from their feet (stickyOnPlayerPos)
     Vec3 playerOffset;   // (standing, size 1, on the wire's grid: quantizeAttachOffset)
+    bool dissolved = false;   // went into lava or acid (Map::dissolveAlong): gone without a blast, none revealed either
 };
 
 class Server {
@@ -363,7 +364,6 @@ public:
     ServerPlayer players_[kMaxPlayers];
     Projectile projectiles_[kMaxProjectiles];
     uint16_t nextProjId_ = 1;
-    ModeState ms_;
     // A new projectile's id: the next one that no live projectile holds, never 0 (hookProj's "none"). The u16 wraps
     // after 65,536 shots; a sticky that lived through that would otherwise share its id with a new shot, and the
     // client would take the old one as the new one's delta base (NET-14). A scan of 128 slots, once per shot.
@@ -376,6 +376,7 @@ public:
             if (!used) return id;
         }
     }
+    ModeState ms_;
     double phaseEnd_ = 0;
     double liveSince_ = 0;        // when the round went live (the map's holdfire counts from it)
     double roundStart_ = 0;

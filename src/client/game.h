@@ -731,6 +731,10 @@ private:
     struct PredProj { uint8_t type = 0; bool live = false, lob = false, started = false, atWall = false, boomed = false; Vec3 pos0, vel0, pos, offset; double born = 0; };
     PredProj predProj_[8];
     void spawnPredictedProjectile(int w, bool alt, const UserCmd& c);
+    bool projectileDissolved(const ProjectileSnap& p, Vec3* at) const;
+    bool inAcid_ = false, acidBurns_ = false;   // your hull in acid now (the HUD's tint), and it's hurting you (pulse, sizzle)
+    double acidSince_ = 0, nextSizzle_ = 0;   // gone into lava or acid (no blast: a hiss)
+    void dissolveOwnCopies();
     std::vector<ProjStart> projStarts_, projStartsKeep_;
     // Your projectiles' impacts shown at once, on your screen (rockets / bolts on a wall or an enemy, stickies on your
     // detonate): the server's own explosion of that one (its id; 0xFFFF: a predicted copy's, not handed over yet) is then

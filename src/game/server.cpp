@@ -3245,6 +3245,11 @@ void Server::stepProjectile(Projectile& pr) {
             if (t >= 0 && t <= best) { best = t; hitPlayer = i; hitHead = inHead; hitBb = projTargetBox_[k]; }
         }
         if (hitPlayer >= 0) hitBb = hitHead ? headBox(hitBb) : bodyBox(hitBb);
+        // into lava or acid first: gone, nothing hit (a player past its surface: the liquid took it before them)
+        if (map_.hasDissolvers()) {
+            const float d = map_.dissolveAlong(pr.pos, dir, best);
+            if (d >= 0) { pr.pos += dir * d; pr.active = false; pr.dissolved = true; return; }
+        }
         // ball mode: projectiles hit the ball (owner, 2026-11-01: "projectiles should interact with it"). A blast goes off
         // on it (and pushes it as any blast does), a sticky drops off it; anything else gives it a quarter of its speed
         if (ms_.mode == MODE_BALL && ballSet_ && ballRespawnAt_ <= 0) {
@@ -3856,8 +3861,8 @@ void Server::updatePlayerVisibility(uint32_t need, int viewers, int targets, int
         bool seen = false;
         int rays = 0;
         for (const Vec3& from : {eye, eye + side * 0.7f, eye - side * 0.7f, eye + mine})
-            if (!seen) for (const Vec3& off : {Vec3(0, 1.75f, 0), Vec3(0, 1.0f, 0), Vec3(0, 0.25f, 0), side + Vec3(0, 1.3f, 0), Vec3() - side + Vec3(0, 1.3f, 0),
-                                    lead + Vec3(0, 1.0f, 0), lead + side + Vec3(0, 1.3f, 0), lead - side + Vec3(0, 1.3f, 0)}) {
+            if (!seen) for (const Vec3& off : {Vec3(0, 1.75f * ts, 0), Vec3(0, 1.0f * ts, 0), Vec3(0, 0.25f * ts, 0), tside + Vec3(0, 1.3f * ts, 0), Vec3() - tside + Vec3(0, 1.3f * ts, 0),
+                                    lead + Vec3(0, 1.0f * ts, 0), lead + tside + Vec3(0, 1.3f * ts, 0), lead - tside + Vec3(0, 1.3f * ts, 0)}) {
                 Vec3 to = pt.move.pos + off - from;
                 float len = length(to);
                 rays++;
@@ -3945,7 +3950,7 @@ void Server::sendSnapshots() {
         for (int k = 0; k < kMaxProjectiles; k++) {
             ProjSlotPrev& o = projPrev_[k];
             const Projectile& pr = projectiles_[k];
-            if (o.active && (!pr.active || pr.id != o.id) && projHidden_[k] && projDeathCount_ < kMaxProjectiles &&
+            if (o.active && (!pr.active || pr.id != o.id) && !(pr.id == o.id && pr.dissolved) && projHidden_[k] && projDeathCount_ < kMaxProjectiles &&
                 (weaponDef(o.type).splashRadius > 0 || o.type == WPN_BUBBLE || o.type == WPN_CROSSBOW)) {   // (what the client shows going off)
                 ProjDeath& d = projDeaths_[projDeathCount_++];
                 d.snap = ProjectileSnap{o.id, o.type, o.owner, o.pos, Vec3()};

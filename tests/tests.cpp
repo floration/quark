@@ -1008,6 +1008,51 @@ static void testAcid() {
     }
 }
 
+// Lava and acid destroy projectiles (q, 2026-10-27): a rocket or a sticky into either is gone where it went in, no
+// blast, nobody hurt; the same rocket at the bare floor blows up (the control). Map::dissolveAlong is the test the
+// client's copies use too. And a new projectile's id skips 0 and any id still flying (NET-14: the u16 wraps).
+static void testProjectilesDissolve() {
+    printf("projectiles: gone in lava and acid, no blast; ids skip live ones\n");
+    const char* text = "box -20 -1 -20 20 0 20\nacid -3 0 -3 3 0.25 3\nlava 7 0 -3 13 0.25 3\nspawn any 0 0 -10\n";
+    Map m;
+    CHECK(m.parse(text) && m.acid.size() == 1 && m.lava.size() == 1 && m.hasDissolvers());
+    CHECK(m.dissolves({0, 0.1f, 0}) && m.dissolves({10, 0.1f, 0}) && !m.dissolves({5, 0.1f, 0}));
+    CHECK(std::fabs(m.dissolveAlong({0, 3, 0}, {0, -1, 0}, 10) - 2.75f) < 1e-4f && m.dissolveAlong({5, 3, 0}, {0, -1, 0}, 10) < 0);
+    CHECK(m.dissolveAlong({0, 3, 0}, {0, -1, 0}, 2.0f) < 0);   // (not reached within maxT)
+    for (int c = 0; c < 4; c++) {   // into acid, into lava, a sticky into acid, the control: a rocket at the bare floor
+        Server s;
+        s.setLog([](const std::string&) {});
+        CHECK(s.map_.parse(text));
+        s.cfg_.mode = s.ms_.mode = MODE_FFA;
+        s.ms_.phase = PHASE_LIVE;
+        s.timeMs_ = 10000;
+        const float x = c == 1 ? 10.0f : c == 3 ? -8.0f : 0.0f;
+        for (int i = 0; i < 2; i++) {
+            auto& p = s.players_[i];
+            p.connected = true; p.alive = true; p.health = s.lifeMaxHealth(); p.team = TEAM_A;
+            p.move = MoveState(); p.move.flags = MF_ONGROUND; p.move.pos = i == 0 ? Vec3(0, 0, -15) : Vec3(x + 2.5f, 0, 0);
+        }
+        Projectile& pr = s.projectiles_[0];
+        pr = Projectile();
+        pr.active = true; pr.id = s.newProjId(); pr.type = c == 2 ? WPN_STICKY : WPN_ROCKET; pr.owner = 0;
+        pr.pos = {x, 3, 0}; pr.vel = {0, -30, 0}; pr.dieAt = s.time() + 5;
+        for (int t = 0; t < 2000 && pr.active; t++) { s.timeMs_ += (uint64_t)std::max(1, 1000 / s.tickRate()); s.tickProjectilesForTest(); }
+        const float hp = s.players_[1].health;
+        printf("  %s: active %d, dissolved %d at y %.2f, the one 2.5 m off: %.0f hp\n", c == 0 ? "rocket into acid" : c == 1 ? "rocket into lava" : c == 2 ? "sticky into acid" : "rocket at the floor",
+               pr.active, pr.dissolved, pr.pos.y, hp);
+        if (c < 3) CHECK(!pr.active && pr.dissolved && std::fabs(pr.pos.y - 0.25f) < 0.05f && hp == s.lifeMaxHealth());
+        else CHECK(!pr.active && !pr.dissolved && hp < s.lifeMaxHealth());
+    }
+    {   // ids: never 0, never one still flying, through the wrap
+        Server s;
+        s.projectiles_[3].active = true; s.projectiles_[3].id = 1;
+        s.projectiles_[4].active = true; s.projectiles_[4].id = 2;
+        s.nextProjId_ = 65535;
+        const uint16_t a = s.newProjId(), b = s.newProjId();
+        CHECK(a == 65535 && b == 3);
+    }
+}
+
 // 3D FLYING's zero-g flight (MoveState::fly; owner, 2026-11-01 / 11-02): no gravity and no drift with no keys, MOVE UP /
 // MOVE DOWN straight up and down, the ground's acceleration and friction every way (full speed as fast as a run, a stop
 // as quick as one), the run speed's cap, walls slide you, and no jump, dash or grapple.
@@ -10461,7 +10506,7 @@ int main(int argc, char** argv) {
         {"brains", [] { g_fail += brainTests(TP(29150)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); testWinnerStays(TP(28522)); testWinnerStaysMode(TP(28523)); testRotateEveryRound(TP(28524)); testAccuracyPerWeapon(); }},
-        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testFlyMove(); testGrappleAgainstWall(); testAcid(); testLiquids(); testFeatureBlocks(); testStrafeEase(); testSeeThrough(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testModeSpawnSets(); testMapFix(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testFlyMove(); testGrappleAgainstWall(); testAcid(); testProjectilesDissolve(); testLiquids(); testFeatureBlocks(); testStrafeEase(); testSeeThrough(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testModeSpawnSets(); testMapFix(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"bombsites", [] { testBombSites(TP(29090)); testPlantKnockback(TP(29091)); }},
