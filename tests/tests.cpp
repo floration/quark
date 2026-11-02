@@ -10183,6 +10183,7 @@ static void testReachProbe(uint16_t port) {
     prober.stop();
 }
 
+#include "trainer_tests.h"   // the aim trainer's scenarios (src/game/trainer.h)
 #include "rules_tests.h"   // game rule tests (owner answers 5.x, REVIEW batch 2)
 #include "weapon_tests.h"  // weapon sets (.qweapons: the weapons editor's) + the exportweapons / checkweapons tools
 #include "server_tests.h"  // server / netcode tests (FINAL_REVIEW 2.8-2.11, 6.4, 6.5, clock, PERF-8 / 9, ENG-2)
@@ -10427,6 +10428,7 @@ int main(int argc, char** argv) {
         {"mapbounds2", [] { g_fail += outOfBoundsTests(1, 2); }},
         {"maps", [] { testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders(); }},
         {"slopes", [] { testSlopes(); }},
+        {"trainer", [] { testTrainer(); }},
         {"surf", [] { testSurf(); }},
         {"groupslopes", [] { testGroupSlopes(); }},
         {"materials", [] { testMaterials(); testProjectileMaterials(TP(28931)); testDestruction(TP(28932)); testClientHits(); }},

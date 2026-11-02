@@ -12,3 +12,6 @@ What's on `testing` since production 1.19.4. The release PR renames this file to
 - **New 1v1 ruleset, 3D VAMP** (HOST > MODE > 1V1, or the vote menu's PLAYER BASED > 1V1): fly in zero gravity like creative mode in Minecraft. W/S/A/D move you on the level, MOVE UP (space) and MOVE DOWN (left shift) straight up and down, all at run speed with a quick stop when you let go. No jump, dash or grapple. Lasers only, hits don't push anyone, and vampire healing starts at 100% of your damage each round and falls to 50% over 30 s. Not ranked.
 - **New map, Black Hole**: a lone flat asteroid in space with no cover, a black hole eating the galaxy beside it. Nobody can fire for the first 3 s of a round. Fly too far out and you're lost.
 - **New keys**: MOVE UP and MOVE DOWN (CONTROLS > MORE KEYS), and VERTICAL KEYS (CONTROLS > MORE 2): ONE KEY flies up while MOVE UP is held and down when it isn't.
+
+## Aim trainer
+- **AIM TRAINER** on the main menu: 36 scenarios of 30 s in 3D STATIC (look and shoot) and 2D (the view stays still, your mouse moves the crosshair), in CLICKING (rifle, one shot a click), SWITCHING and TRACKING (laser), each in EASY / MEDIUM / HARD. Your best, last score and plays show on each scenario's card; a leaderboard comes later. ESC pauses a run (RESUME, SETTINGS, RESTART, TRAINER MENU) and F3 / F4 work in the trainer.
