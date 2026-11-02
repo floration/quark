@@ -767,6 +767,12 @@ static std::string worldLooks(const std::vector<bool>* used) {
 
 unsigned Renderer::compileWorld(const std::vector<bool>* used, std::string* err) {
     std::string fs = std::string("#version 330 core\n") + kShadowFn + kWorldFS;
+    if (getenv("QUARK_NODISCARD")) {
+        for (const char* d : {"    if (uHoleCount > 0 && (mat == 20 || mat == 24) && vMat - float(mat) > 0.1 && inHole()) discard;",
+                              "    if (blended && alpha < 0.01) discard;"}) {
+            size_t at = fs.find(d); if (at != std::string::npos) fs.erase(at, strlen(d)); else fprintf(stderr, "NODISCARD: not found\n");
+        }
+    }
     const size_t at = fs.find("// @LOOKS@");
     fs.replace(at, fs.find('\n', at) - at, worldLooks(used));
     // the large patterns: material kMatLarge + i draws kLarge[i].base's look with the face's plane divided by its scale
@@ -1893,6 +1899,15 @@ void Renderer::drawScene(bool shadows) {
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, lightmapNearest ? GL_NEAREST : GL_LINEAR);
         }
         glBindVertexArray(worldVao_);
+        static const bool zpre = getenv("QUARK_ZPREPASS") != nullptr;
+        if (zpre) {   // (test: depth only first, then the shading pass only shades the nearest surface)
+            glUseProgram(shadowProg_);
+            setMat(uShadowViewProj_, viewProj_);
+            glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+            drawWorldChunks();
+            glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+            glUseProgram(worldProg_);
+        }
         drawWorldChunks();
         if (blockVerts_) {   // the breakable blocks: their looks, lit by full sun and sky (uAlphaPass 2: opaque)
             glUniform1f(uWorld_.alphaPass, 2.0f);
@@ -2856,7 +2871,12 @@ bool Renderer::screenshot(const std::string& path) {
 void Renderer::drawWorldChunks() {
     drawFirst_.clear();
     drawCount_.clear();
-    for (const WorldChunk& c : chunks_) {
+    // A/B test (QUARK_SORTCHUNKS): the visible chunks nearest first, so early depth rejects the hidden pixels' shading
+    static const bool sortChunks = getenv("QUARK_SORTCHUNKS") != nullptr;
+    static std::vector<std::pair<float, int>> order;
+    order.clear();
+    for (size_t ci = 0; ci < chunks_.size(); ci++) {
+        const WorldChunk& c = chunks_[ci];
         if (c.far && !farScenery) continue;   // (VIDEO > MORE 2: FAR SCENERY off)
         bool in = true;
         for (int i = 0; i < 6 && in; i++) { // the box corner farthest along the plane normal must be inside
@@ -2865,6 +2885,13 @@ void Renderer::drawWorldChunks() {
             in = p[0] * x + p[1] * y + p[2] * z + p[3] >= 0;
         }
         if (!in) continue;
+        float d2 = 0;
+        if (sortChunks) { Vec3 q = vmax(c.mn, vmin(camPos_, c.mx)), d = q - camPos_; d2 = dot(d, d); }
+        order.push_back({d2, (int)ci});
+    }
+    if (sortChunks) std::sort(order.begin(), order.end());
+    for (const auto& o : order) {
+        const WorldChunk& c = chunks_[o.second];
         if (!drawFirst_.empty() && drawFirst_.back() + drawCount_.back() == c.first) drawCount_.back() += c.count;
         else { drawFirst_.push_back(c.first); drawCount_.push_back(c.count); }
     }
