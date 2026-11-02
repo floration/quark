@@ -31,6 +31,7 @@ struct Settings {
                                 // 0 immediate (vsync off, tearing), 1 vsync, 2 adaptive vsync (tears only when late),
                                 // 3 latent sync (Windows: a frame a refresh, flipped as the blank begins; Game::latentWait)
     int latentOffsetUs = 0;     // latent sync: the flip this much later (+) or sooner (-), moving the tear line
+    bool disableFso = false;    // Windows: "Disable fullscreen optimizations" for quark.exe (per user, gpuprefs.h); from the next start
     bool gpuMaxClocks = false;  // Windows, NVIDIA: "Prefer maximum performance" in quark's driver profile (gpuprefs.h)
     bool prioritize = true;     // Windows: GPU + CPU priority raised while the game has focus (setGamePriority)
     int lowLatency = 1;         // 0 off, 1 on (max 1 frame queued), 2 ultra (0 queued, just-in-time input)

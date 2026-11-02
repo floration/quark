@@ -39,6 +39,10 @@ bool nvDxgiPresent(bool on, std::string* msg);
 // HwSchMode under HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers (2 on, 1 off), read at boot.
 // hwSchedState: 1 on, 0 off, -1 unknown / not Windows / not supported (no value: the driver or GPU doesn't offer it).
 int hwSchedState();
+// "Disable fullscreen optimizations" (Properties > Compatibility) for this executable, for this user: the token
+// DISABLEDXMAXIMIZEDWINDOWEDMODE in HKCU\...\AppCompatFlags\Layers under the exe's path (other flags kept). No admin;
+// Windows reads it when the game starts. msg: for a notice.
+bool fsoDisable(bool on, std::string* msg);
 // Asks Windows (its admin prompt) to set it on, hidden reg.exe; takes effect after a restart. msg: for a notice.
 bool hwSchedEnable(std::string* msg);
 

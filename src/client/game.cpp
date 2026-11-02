@@ -8173,10 +8173,16 @@ void Game::drawMoreSettings(const SetLayout& L) {
 #endif
         {   // Windows' hardware-accelerated GPU scheduling: a system setting (admin prompt, then a restart). Elsewhere N/A.
             static int hags = hwSchedState();
-            const std::string lbl = hags == 1 ? "GPU SCHEDULING: ON" : hags == 0 ? "GPU SCHEDULING: TURN ON" : "GPU SCHEDULING: N/A";
-            if (ui_.button(g.x(), g.top(), w, h, lbl, UiExp::inert().withId("GPU SCHEDULING")) && hags == 0) {
+            const std::string lbl = hags == 1 ? "GPU SCHED: ON" : hags == 0 ? "GPU SCHED: TURN ON" : "GPU SCHED: N/A";
+            if (ui_.button(g.x(), g.top(), hw, h, lbl, UiExp::inert().withId("GPU SCHEDULING")) && hags == 0) {
                 std::string msg = "NOT CHANGED IN THE UI TEST";
                 if (!uiTest_ && hwSchedEnable(&msg)) hags = 1;
+                notify(msg);
+            }
+            // "Disable fullscreen optimizations" for quark.exe (per user, no admin): real exclusive fullscreen
+            if (ui_.toggle(xr, g.top(), hw, h, "NO FULLSCREEN OPT.", cfg_.disableFso, UiExp::cfg("disable_fso"))) {
+                std::string msg = "NOT CHANGED IN THE UI TEST";
+                if (!uiTest_ && !fsoDisable(cfg_.disableFso, &msg)) cfg_.disableFso = !cfg_.disableFso;
                 notify(msg);
             }
             g.next();

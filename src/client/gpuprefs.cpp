@@ -252,7 +252,43 @@ bool hwSchedEnable(std::string* msg) {
     return true;
 }
 
+bool fsoDisable(bool on, std::string* msg) {
+    wchar_t exe[MAX_PATH * 2];
+    const DWORD n = GetModuleFileNameW(nullptr, exe, (DWORD)(sizeof exe / sizeof exe[0]));
+    if (n == 0 || n >= sizeof exe / sizeof exe[0]) { *msg = "FULLSCREEN OPTIMIZATIONS: NOT CHANGED"; return false; }
+    const wchar_t* key = L"Software\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\Layers";
+    const std::wstring token = L"DISABLEDXMAXIMIZEDWINDOWEDMODE";
+    wchar_t buf[1024] = {0};
+    DWORD sz = sizeof buf;
+    std::wstring cur;
+    if (RegGetValueW(HKEY_CURRENT_USER, key, exe, RRF_RT_REG_SZ, nullptr, buf, &sz) == ERROR_SUCCESS) cur = buf;
+    // the value is "~ FLAG FLAG ..." ("~": not inherited by child processes): ours added or removed, the rest kept
+    std::wstring out;
+    size_t i = 0;
+    while (i < cur.size()) {
+        while (i < cur.size() && cur[i] == L' ') i++;
+        size_t j = i;
+        while (j < cur.size() && cur[j] != L' ') j++;
+        const std::wstring t = cur.substr(i, j - i);
+        if (!t.empty() && t != L"~" && t != token) out += L" " + t;
+        i = j;
+    }
+    if (on) out += L" " + token;
+    LONG r;
+    if (out.empty()) {
+        r = RegDeleteKeyValueW(HKEY_CURRENT_USER, key, exe);
+        if (r == ERROR_FILE_NOT_FOUND) r = ERROR_SUCCESS;
+    } else {
+        out = L"~" + out;
+        r = RegSetKeyValueW(HKEY_CURRENT_USER, key, exe, REG_SZ, out.c_str(), (DWORD)((out.size() + 1) * sizeof(wchar_t)));
+    }
+    if (r != ERROR_SUCCESS) { *msg = "FULLSCREEN OPTIMIZATIONS: WINDOWS REFUSED THE CHANGE"; return false; }
+    *msg = on ? "FULLSCREEN OPTIMIZATIONS OFF: FROM THE NEXT START" : "FULLSCREEN OPTIMIZATIONS BACK ON: FROM THE NEXT START";
+    return true;
+}
+
 #else
+bool fsoDisable(bool, std::string* msg) { *msg = "FULLSCREEN OPTIMIZATIONS: WINDOWS ONLY"; return false; }
 int hwSchedState() { return -1; }
 bool hwSchedEnable(std::string* msg) { *msg = "GPU SCHEDULING: WINDOWS ONLY"; return false; }
 bool RasterClock::open(GLFWmonitor*) { return false; }
