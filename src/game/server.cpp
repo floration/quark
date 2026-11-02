@@ -3051,7 +3051,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
             if (pr.active) continue;
             pr = Projectile();
             pr.active = true;
-            pr.id = nextProjId_++;
+            pr.id = newProjId();
             pr.type = WPN_KNIFE;
             pr.owner = id;
             pr.pos = eye + aim * 0.3f;
@@ -3068,7 +3068,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
             if (pr.active) continue;
             pr = Projectile();
             pr.active = true;
-            pr.id = nextProjId_++;
+            pr.id = newProjId();
             pr.type = WPN_SYRINGE;
             pr.owner = id;
             pr.pos = eye + aim * 0.3f;
@@ -3114,7 +3114,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
                 if (pr.active) continue;
                 pr = Projectile();
                 pr.active = true;
-                pr.id = nextProjId_++;
+                pr.id = newProjId();
                 pr.type = WPN_BUBBLE;
                 pr.owner = id;
                 pr.pos = eye + aim * 0.3f;
@@ -3131,7 +3131,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
             if (pr.active) continue;
             pr = Projectile();
             pr.active = true;
-            pr.id = nextProjId_++;
+            pr.id = newProjId();
             pr.type = p.weapon;
             pr.owner = id;
             if (p.weapon != WPN_SYRINGE) p.addShot(p.weapon);   // accuracy: a hit is counted when it lands
@@ -3243,6 +3243,11 @@ void Server::stepProjectile(Projectile& pr) {
             if (t >= 0 && t <= best) { best = t; hitPlayer = i; hitHead = inHead; hitBb = projTargetBox_[k]; }
         }
         if (hitPlayer >= 0) hitBb = hitHead ? headBox(hitBb) : bodyBox(hitBb);
+        // into lava or acid first: gone, nothing hit (a player past its surface: the liquid took it before them)
+        if (map_.hasDissolvers()) {
+            const float d = map_.dissolveAlong(pr.pos, dir, best);
+            if (d >= 0) { pr.pos += dir * d; pr.active = false; pr.dissolved = true; return; }
+        }
         // ball mode: projectiles hit the ball (owner, 2026-11-01: "projectiles should interact with it"). A blast goes off
         // on it (and pushes it as any blast does), a sticky drops off it; anything else gives it a quarter of its speed
         if (ms_.mode == MODE_BALL && ballSet_ && ballRespawnAt_ <= 0) {
@@ -3848,12 +3853,14 @@ void Server::updatePlayerVisibility(uint32_t need, int viewers, int targets, int
         // and both shoulders, where they are and where they'll be in 0.25 s (and where you'll be).
         Vec3 eye = pv.move.pos + Vec3(0, eyeH, 0);
         Vec3 lead = pt.move.vel * 0.25f, mine = pv.move.vel * 0.15f;
-        Vec3 side = normalize(Vec3(-d.z, 0, d.x)) * 0.45f;
+        // (the target's points at its size: a giant's head is twice as high, MOVE_BIG / MOVE_TINY; the eye: eyeH)
+        const float ts = moveScale(pt.move.mods);
+        Vec3 side = normalize(Vec3(-d.z, 0, d.x)) * 0.45f, tside = side * ts;
         bool seen = false;
         int rays = 0;
         for (const Vec3& from : {eye, eye + side * 0.7f, eye - side * 0.7f, eye + mine})
-            if (!seen) for (const Vec3& off : {Vec3(0, 1.75f, 0), Vec3(0, 1.0f, 0), Vec3(0, 0.25f, 0), side + Vec3(0, 1.3f, 0), Vec3() - side + Vec3(0, 1.3f, 0),
-                                    lead + Vec3(0, 1.0f, 0), lead + side + Vec3(0, 1.3f, 0), lead - side + Vec3(0, 1.3f, 0)}) {
+            if (!seen) for (const Vec3& off : {Vec3(0, 1.75f * ts, 0), Vec3(0, 1.0f * ts, 0), Vec3(0, 0.25f * ts, 0), tside + Vec3(0, 1.3f * ts, 0), Vec3() - tside + Vec3(0, 1.3f * ts, 0),
+                                    lead + Vec3(0, 1.0f * ts, 0), lead + tside + Vec3(0, 1.3f * ts, 0), lead - tside + Vec3(0, 1.3f * ts, 0)}) {
                 Vec3 to = pt.move.pos + off - from;
                 float len = length(to);
                 rays++;
@@ -3941,7 +3948,7 @@ void Server::sendSnapshots() {
         for (int k = 0; k < kMaxProjectiles; k++) {
             ProjSlotPrev& o = projPrev_[k];
             const Projectile& pr = projectiles_[k];
-            if (o.active && (!pr.active || pr.id != o.id) && projHidden_[k] && projDeathCount_ < kMaxProjectiles &&
+            if (o.active && (!pr.active || pr.id != o.id) && !(pr.id == o.id && pr.dissolved) && projHidden_[k] && projDeathCount_ < kMaxProjectiles &&
                 (weaponDef(o.type).splashRadius > 0 || o.type == WPN_BUBBLE || o.type == WPN_CROSSBOW)) {   // (what the client shows going off)
                 ProjDeath& d = projDeaths_[projDeathCount_++];
                 d.snap = ProjectileSnap{o.id, o.type, o.owner, o.pos, Vec3()};

@@ -50,5 +50,6 @@ Keep them short and starting instantly (no silence before the sound): they play 
 | SUPER | you did a super: a dash jump (jump during a dash on the floor) | < 0.4 s |
 | HYPER | you did a hyper: a super dash (dash down into the floor and jump) | < 0.5 s |
 | LOCATOR | you used the locator (hide and seek / tag): a sonar-like ping | < 0.9 s |
+| SIZZLE | a shot gone into lava or acid, and you while acid hurts you: a hiss | < 0.6 s |
 
 That's 33 sounds per kit, 165 for all five. (The announcer's voice lines are separate: assets/voice/, tools/import_voice.py.)

@@ -2233,6 +2233,11 @@ void Game::frame(double dt) {
             bool still = false;
             for (auto& p : projs) still |= p.id == old.id;
             if (!still && net_.projectileHidden(old.id)) continue;   // out of sight now, still flying: not an explosion (NET-10)
+            Vec3 sizzleAt;
+            if (!still && projectileDissolved(old, &sizzleAt)) {   // into lava or acid: gone with a hiss, no blast (as the server)
+                audio_.play3D(SND_SIZZLE, sizzleAt, 0.8f, 1.0f, soundPackOf(old.owner));
+                continue;
+            }
             if (!still && old.owner == net_.clientId()) {   // yours: already shown at once (localBoom), if it blew up near there
                 bool shown = false;
                 for (size_t k = 0; k < localBooms_.size() && !shown; k++) {
@@ -2271,6 +2276,7 @@ void Game::frame(double dt) {
         lastProjectiles_.swap(projScratch_);
         for (size_t k = 0; k < localBooms_.size();)   // (one the server never blew up near there: forgotten after 2 s)
             if (time_ - localBooms_[k].t > 2.0) localBooms_.erase(localBooms_.begin() + k); else k++;
+        dissolveOwnCopies();   // (before they're drawn: one gone into lava or acid neither blows up nor reports a hit)
         // your sticky detonate, at once: alt-fire with the launcher out sets off your armed stickies (the server's rule,
         // server.cpp; armed: seen for the arm time, so never one the server would still hold back)
         if (heldWeapon_ == WPN_STICKY && altKey() && !localFireLocked_ && net_.selfAlive() && !paused_ && !chatting_)
@@ -2292,6 +2298,19 @@ void Game::frame(double dt) {
             else if (float v = hurtGate_.frame(time_, hurt ? lastHealth_ - hp : 0); v > 0) audio_.play(SND_HURT, v);
         }
         lastHealth_ = hp;
+        {   // in acid (q, 2026-10-27: "yes screen tint, and pulse and sizzle"): the predicted hull touched it on its last
+            // step (acidOutMs 0, pmove's acidStep); it hurts unless the phase or the mode spares you (as the server)
+            const bool in = net_.selfAlive() && !net_.playback() && !net_.map().acid.empty() && net_.predicted().acidOutMs == 0;
+            const bool burns = in && acidHurts(net_.latest().ms.phase) && net_.latest().ms.mode != MODE_POWER;
+            if (in && !inAcid_) acidSince_ = time_;
+            if (burns && time_ >= nextSizzle_) {   // (a hiss on contact, then one every 0.4 s while it eats you)
+                audio_.play(SND_SIZZLE, inAcid_ ? 0.35f : 0.6f, 0.95f + (qrand() % 10) * 0.01f);
+                nextSizzle_ = time_ + 0.4;
+            }
+            if (!burns) nextSizzle_ = 0;
+            inAcid_ = in;
+            acidBurns_ = burns;
+        }
         if (net_.selfAlive()) deathValid_ = false;   // (the death screen is this death's only)
         if (!net_.selfAlive() && uiIn_.pressed && !paused_) cycleSpec(1);   // (a click: the next player to watch)
         captureMouse(!paused_ && !chatting_ && !bake_ && !(cfg_.rpsClick && rpsPicking()));   // (RPS BY MOUSE: the cursor free to click a card)
@@ -4173,8 +4192,14 @@ Game::HudRect Game::drawHudElement(int el, float W, float H, float s, bool sampl
     const auto& e = cfg_.hud[el];
     const Color fc = rgba(cfg_.colorFriendly);
     switch (el) {
-        case Settings::HUD_HEALTH:
-            return drawHudHealth(e, W, H, s, sample ? 100 : net_.selfHealth(), hudTint(el, kWhite), hudTint(el, fc), draw);
+        case Settings::HUD_HEALTH: {
+            Color bar = hudTint(el, fc);
+            if (!sample && acidBurns_) {   // acid eating you: the bar pulses acid green (steady with REDUCE FLASHING)
+                const float f = cfg_.reduceFlash ? 0.6f : 0.5f + 0.5f * std::sin((float)(time_ - acidSince_) * 10.0f);
+                bar = {bar.r + (0.35f - bar.r) * f, bar.g + (0.9f - bar.g) * f, bar.b + (0.2f - bar.b) * f, bar.a};
+            }
+            return drawHudHealth(e, W, H, s, sample ? 100 : net_.selfHealth(), hudTint(el, kWhite), bar, draw);
+        }
         case Settings::HUD_WEAPON:
             return drawHudWeaponName(e, W, H, s, weaponDef(sample ? kWeaponSlots[0] : heldWeapon_).name, hudTint(el, kWhite), draw);
         case Settings::HUD_BARS: {
@@ -4451,6 +4476,10 @@ void Game::drawHud() {
             }
             i++;
         }
+    }
+    if (inAcid_) {   // in acid: the screen tinted its green (a light breath while it burns; none with REDUCE FLASHING)
+        const float a = 0.12f + (acidBurns_ && !cfg_.reduceFlash ? 0.04f * std::sin((float)(time_ - acidSince_) * 10.0f) : 0.0f);
+        r_.rect(0, 0, W, H, {0.35f, 0.9f, 0.2f, a});
     }
     if (time_ < damageUntil_ && cfg_.damageFlash > 0) {   // (VISUALS > DAMAGE FLASH: its strength, 0 = off)
         float a = (float)(damageUntil_ - time_) / 0.25f * 0.35f * (cfg_.reduceFlash ? std::min(cfg_.damageFlash, 0.3f) : cfg_.damageFlash);
@@ -12032,8 +12061,65 @@ void Game::reportBolt(const Vec3& at, const Vec3& dir, int victim, bool head) {
     sendHits(WPN_CROSSBOW, false, hitScratch_);
 }
 
+// A projectile that left the snapshots: did it go into lava or acid (Map::dissolveAlong, as the server's step)? Its
+// last drawn spot is up to a snapshot (and, yours, the X5 lead) short of where the server's went in: the path on from
+// there for a quarter second, up to the first wall. Only on maps with lava or acid, once per vanished projectile.
+bool Game::projectileDissolved(const ProjectileSnap& p, Vec3* at) const {
+    const Map& m = net_.map();
+    if (!m.hasDissolvers()) return false;
+    if (m.dissolves(p.pos)) { *at = p.pos; return true; }
+    if (p.flags & (PROJ_STUCK | PROJ_ON_PLAYER)) return false;
+    const float sp = length(p.vel);
+    if (sp < 0.01f) return false;
+    const Vec3 dir = p.vel / sp;
+    float span = sp * 0.25f;
+    const float wall = m.raycast(p.pos, dir, span);
+    if (wall >= 0) span = wall + 0.05f;
+    const float d = m.dissolveAlong(p.pos, dir, span);
+    if (d < 0) return false;
+    *at = p.pos + dir * d;
+    return true;
+}
+
+// Your own shots' copies (X5: the predicted one from the click, the server's drawn lead ahead) that have gone into lava
+// or acid since the last frame: stopped there, so the drawing neither shows them on nor blows them up past it (and
+// reports no hit from there). The server's copy does the same; its vanishing then hisses (projectileDissolved).
+void Game::dissolveOwnCopies() {
+    const Map& m = net_.map();
+    if (!m.hasDissolvers()) return;
+    auto flight = [](int type, bool lob) { return projectileFlight(type, lob ? kRocketLobGravity : 1.0f); };
+    auto crosses = [&](const Vec3& a, const Vec3& b) {   // (into one before any wall between)
+        const Vec3 d = b - a;
+        const float len = length(d);
+        if (len < 1e-4f) return m.dissolves(a);
+        const float wall = m.raycast(a, d / len, len);
+        return m.dissolveAlong(a, d / len, wall >= 0 ? wall + 0.05f : len) >= 0;
+    };
+    for (auto& q : predProj_) {
+        if (!q.live || q.atWall) continue;
+        Vec3 p = q.pos0, v = q.vel0;
+        m.flyProjectile(p, v, flight(q.type, q.lob), (float)(time_ - q.born));
+        if (crosses(q.pos, p)) q.atWall = true;   // (hidden, nothing reported: the server's copy takes over and is gone too)
+    }
+    for (auto& st : projStarts_) {
+        if (st.boomed || st.lead <= 0) continue;
+        for (const ProjectileSnap& pr : lastProjectiles_) {
+            if (pr.id != st.id || (pr.flags & (PROJ_STUCK | PROJ_ON_PLAYER))) continue;
+            Vec3 p = pr.pos, v = pr.vel;
+            m.flyProjectile(p, v, flight(pr.type, (pr.flags & PROJ_LOB) != 0), st.lead);
+            if (crosses(pr.pos, p)) st.boomed = true;   // (not drawn on, never blown up on your screen)
+            break;
+        }
+    }
+}
+
 void Game::reportImpact(int type, bool alt, const Vec3& from, const Vec3& to, int victim, bool head) {
     if (!net_.selfAlive()) return;   // (dead: the server's own hit, as it lands there)
+    if (net_.map().hasDissolvers()) {   // (its last stretch went into lava or acid: the server's copy is gone there, no hit)
+        const Vec3 d = to - from;
+        const float len = length(d);
+        if (len > 1e-4f && net_.map().dissolveAlong(from, d / len, len) >= 0) return;
+    }
     if (type == WPN_ROCKET) {   // (off where it met the surface, 5 cm back along its flight, as the server's goes off)
         const Vec3 d = to - from;
         const float len = length(d);
