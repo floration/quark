@@ -1849,5 +1849,16 @@ UserCmd botThinkDirect(Server& s, int id) {
     // jump with our own dash on the floor (a hop's landing, a fight jump) turns it into a dash jump: a 16 m flight
     // at dash speed, past what the dash checked for ground. Only when meant.
     if (!dashJump && ((cmd.buttons & BTN_DASH) || me.move.dashTimer > 0)) cmd.buttons &= ~BTN_JUMP;
+    // 3D FLYING (no gravity, jump, dash or grapple): up and down too. In a fight, the target's height and a weave of
+    // 2 m around it (a bot that only moved flat was an easy shot from above); else where it is. Not into the floor.
+    if (me.move.fly) {
+        cmd.buttons &= (uint16_t)~(BTN_JUMP | BTN_DASH | BTN_UP | BTN_DOWN);
+        float want = me.move.pos.y;
+        if (b.target >= 0 && s.players_[b.target].alive)
+            want = s.players_[b.target].move.pos.y + 2.0f * std::sin((float)now * 1.3f + (float)id);
+        const float dy = want - me.move.pos.y;
+        if (dy > 0.5f) cmd.buttons |= BTN_UP;
+        else if (dy < -0.5f && !s.map_.raycastAny(me.move.pos, {0, -1, 0}, 1.0f, true)) cmd.buttons |= BTN_DOWN;
+    }
     return cmd;
 }

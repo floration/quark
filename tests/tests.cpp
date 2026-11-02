@@ -4466,12 +4466,13 @@ static void testWinnerStaysMode(uint16_t port) {
 // ranked it acts like an ffa but of 1v1's"; winner stays): every round is a match of its own, the loser to the back of
 // the line, the next match straight away (no warmup). Two players alone play whole matches as before; rotate1v1 0 too.
 static void testRotateEveryRound(uint16_t port) {
-    printf("1v1 every round: each round its own match, winner stays, no warmup between\n");
+    printf("1v1 with a line: it moves every death (winner stays), kills carry over, first to N kills wins\n");
     for (int rule : {2, 0}) {
         Server s;
         ServerConfig cfg;
         cfg.autoStart = true;
         cfg.rotate1v1 = rule;
+        cfg.rotateKills = 3;
         cfg.map = "dojo"; cfg.mode = MODE_ARENA; cfg.port = port;
         s.setLog([](const std::string&) {});
         { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
@@ -4483,27 +4484,41 @@ static void testRotateEveryRound(uint16_t port) {
         auto P = [&](NetClient& n) -> ServerPlayer& { return s.players_[n.clientId()]; };
         CHECK(P(c).team == TEAM_SPECTATOR && P(c).queueSeq > 0);
         const int annTeam = P(a).team, other = annTeam == TEAM_A ? TEAM_B : TEAM_A;
-        bool sawWarmup = false;
+        bool sawEnd = false;
         auto live = [&] {
-            for (int i = 0; i < 400 && s.ms_.phase != PHASE_LIVE; i++) { sawWarmup |= s.ms_.phase == PHASE_WARMUP; skipCountdowns(s); pump(s, cls, 0.05, idle); }
+            for (int i = 0; i < 400 && s.ms_.phase != PHASE_LIVE; i++) { sawEnd |= s.ms_.phase == PHASE_MATCH_END || s.ms_.phase == PHASE_WARMUP; skipCountdowns(s); pump(s, cls, 0.05, idle); }
         };
         live();
         CHECK(s.ms_.phase == PHASE_LIVE);
-        sawWarmup = false;
+        sawEnd = false;
         s.killPlayer(b.clientId(), a.clientId(), WPN_RIFLE);   // ann beats bob
         pump(s, cls, 0.1, idle);
         CHECK(s.ms_.phase == PHASE_ROUND_END);
         if (rule == 2) {
-            for (int i = 0; i < 200 && s.ms_.phase == PHASE_ROUND_END; i++) pump(s, cls, 0.05, idle);
-            CHECK(s.ms_.phase == PHASE_MATCH_END && s.matchWinner_ == annTeam);   // (the round was the match)
             live();
-            CHECK(!sawWarmup);
+            CHECK(!sawEnd);   // (the same match: no match end, no warmup)
             CHECK(P(a).team == annTeam && P(c).team == other && P(b).team == TEAM_SPECTATOR && P(b).queueSeq > 0);
-            CHECK(s.ms_.round == 1 && s.ms_.scoreA == 0 && s.ms_.scoreB == 0);   // (a new match)
+            CHECK(s.ms_.round == 2 && P(a).score == 1 && P(b).score == 0);   // (kills carried over)
             s.killPlayer(a.clientId(), c.clientId(), WPN_RIFLE);   // cat beats ann: ann out, bob in
             pump(s, cls, 0.1, idle);
             live();
-            CHECK(P(c).team == other && P(b).team == annTeam && P(a).team == TEAM_SPECTATOR);
+            CHECK(!sawEnd && P(c).team == other && P(b).team == annTeam && P(a).team == TEAM_SPECTATOR && P(a).score == 1 && P(c).score == 1);
+            CHECK((s.ms_.scoreA == 1 && s.ms_.scoreB == 0) == (P(c).team == TEAM_A));   // (the team scores: the two playing, their kills)
+            s.killPlayer(b.clientId(), -1, 255);   // a drawn round (both die at once): the line still moves, ann in
+            s.killPlayer(c.clientId(), -1, 255);
+            pump(s, cls, 0.1, idle);
+            live();
+            CHECK(!sawEnd && P(a).team != TEAM_SPECTATOR && (P(b).team == TEAM_SPECTATOR) != (P(c).team == TEAM_SPECTATOR));
+            for (int k = 0; k < 2 && s.ms_.phase == PHASE_LIVE; k++) {   // ann to 3 kills (whoever is in): the match
+                NetClient& foe = P(b).team == TEAM_SPECTATOR ? c : b;
+                s.killPlayer(foe.clientId(), a.clientId(), WPN_RIFLE);
+                pump(s, cls, 0.1, idle);
+                if (k == 0) { live(); CHECK(!sawEnd); }
+            }
+            for (int i = 0; i < 200 && s.ms_.phase == PHASE_ROUND_END; i++) pump(s, cls, 0.05, idle);
+            CHECK(s.ms_.phase == PHASE_MATCH_END && P(a).score == 3);
+            live();
+            CHECK(P(a).team != TEAM_SPECTATOR && P(a).score == 0 && s.ms_.round == 1);   // (a new match: scores reset, ann stays)
         } else {   // (the old rule: the match goes on to its 5 rounds; bob stays seated)
             live();
             CHECK(s.ms_.round == 2 && P(b).team != TEAM_SPECTATOR && P(c).team == TEAM_SPECTATOR);

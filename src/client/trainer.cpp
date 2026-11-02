@@ -164,6 +164,7 @@ bool Game::trainerKey(int key, int action) {
         return true;
     }
     if (key == GLFW_KEY_R) { trainerStart(trSc_); return true; }
+    if (b.has(A_HIDEHUD, key)) { hudHidden_ = !hudHidden_; return true; }   // (the game's HIDE HUD key: a clean screen here too)
     if (!trResults_ && !trPaused_ && b.has(A_FIRE, key)) trClick_ = true;
     return true;
 }
@@ -313,7 +314,7 @@ void Game::trainerFrame(double dt) {
     const float s = H / 720.0f, ts = std::max(1.0f, std::round(s * 1.5f));
     ui_.begin(&r_, uiIn_, s);
     const Stats& st = trRun_.stats();
-    {
+    if (!hudHidden_ || trPaused_ || trResults_) {   // (HIDE HUD: only the crosshair, the countdown and the results)
         const std::string tl = fmt1(trRun_.timeLeft());
         r_.text(W * 0.5f - r_.textWidth(tl, ts * 2) * 0.5f, 20 * s, ts * 2, tl, kWhite);
         const std::string sc = "SCORE " + std::to_string(trRun_.score());
@@ -321,8 +322,9 @@ void Game::trainerFrame(double dt) {
         r_.text(W * 0.5f - r_.textWidth(sc, ts) * 0.5f, 20 * s + ts * 20, ts, sc, kGold);
         r_.text(W * 0.5f - r_.textWidth(ac, ts) * 0.5f, 20 * s + ts * 34, ts, ac, kGrey);
         const std::string nm = std::string(trSc_->name) + "  -  " + trainer::modeName(trSc_->mode) + " " + catName(trSc_->cat) + " - " + diffName(trRun_.diff());
-        r_.text(16 * s, 16 * s, std::max(1.0f, std::round(s)), nm, kGrey);
-        r_.text(16 * s, 16 * s + 16 * s, std::max(1.0f, std::round(s)), "ESC: PAUSE / SETTINGS   R: RESTART", kGrey);
+        const float y0 = std::max(16 * s, perfBoxBottom() + 8 * s);   // (under the F3 / F4 box, which sits at the top left)
+        r_.text(16 * s, y0, std::max(1.0f, std::round(s)), nm, kGrey);
+        r_.text(16 * s, y0 + 16 * s, std::max(1.0f, std::round(s)), "ESC: PAUSE / SETTINGS   R: RESTART", kGrey);
     }
     if (trRun_.countdown() > 0 && !trResults_) {
         const std::string c = std::to_string((int)std::ceil(trRun_.countdown()));
@@ -330,7 +332,7 @@ void Game::trainerFrame(double dt) {
     }
     if (trPaused_ && !trResults_) {   // the pause menu, or SETTINGS over the run
         if (settingsInGame_) { drawSettings(); hudBuilt_ = false; return; }
-        const float pw = 320 * s, bh = 40 * s, gap = 10 * s, ph = 4 * bh + 3 * gap + 80 * s, px = W * 0.5f - pw * 0.5f, py = H * 0.5f - ph * 0.5f;
+        const float pw = 320 * s, bh = 40 * s, gap = 10 * s, ph = 6 * bh + 5 * gap + 80 * s, px = W * 0.5f - pw * 0.5f, py = H * 0.5f - ph * 0.5f;
         ui_.panel(px, py, pw, ph, 0.92f);
         ui_.labelCentered(W * 0.5f, py + 16 * s, "PAUSED", kWhite, 1.5f, pw - 20 * s);
         float y = py + 60 * s;
@@ -341,6 +343,15 @@ void Game::trainerFrame(double dt) {
         y += bh + gap;
         if (ui_.button(bx, y, bw, bh, "RESTART (R)", UiExp::nav("trainer/run"))) { trainerStart(trSc_); return; }
         y += bh + gap;
+        {   // (owner, 2026-11-02: "you should also be able to hide the ui in aim trainer mode, and weapon"; the game's own
+            // HIDE HUD and HUD > VIEWMODEL hidden, so each is the same in a match)
+            bool show = !hudHidden_;
+            if (ui_.toggle(bx, y, bw, bh, "SHOW HUD (" + keyOf(A_HIDEHUD) + ")", show, UiExp::state("trhud"))) hudHidden_ = !show;
+            y += bh + gap;
+            bool gun = !cfg_.hud[Settings::HUD_VIEWMODEL].hidden;
+            if (ui_.toggle(bx, y, bw, bh, "SHOW WEAPON", gun, UiExp::state("trgun"))) { cfg_.hud[Settings::HUD_VIEWMODEL].hidden = !gun; cfg_.save(); }
+            y += bh + gap;
+        }
         if (ui_.button(bx, y, bw, bh, "TRAINER MENU", UiExp::nav("trainer"))) { trainerExit(); return; }
     } else if (!trResults_) {
         float cx = W * 0.5f, cy = H * 0.5f;

@@ -1583,12 +1583,19 @@ std::string Game::keyOf(int action) const {
     return "UNBOUND";
 }
 
+// who you may watch: anyone as a spectator (1v1 / duel line: both players), only a teammate while dead in a team match
+bool Game::specWatchable(int id) const {
+    if (!modeIsTeamBased(net_.mode().mode) || isFriendly(id)) return true;
+    const PlayerSnap* me = net_.findPlayer(net_.clientId());
+    return me && (me->flags & PS_SPECTATOR);
+}
+
 void Game::cycleSpec(int dir) {
     deathBody_ = false;   // (YOUR BODY: until you pick someone)
     const auto& ps = framePlayers();
     for (int k = 1; k <= kMaxPlayers; k++) {
         int id = (specTarget_ + dir * k + kMaxPlayers * 2) % kMaxPlayers;   // (-1, none yet: from 0)
-        if (ps[id].valid && (ps[id].snap.flags & PS_ALIVE) && id != net_.clientId() && (!modeIsTeamBased(net_.mode().mode) || isFriendly(id))) { specTarget_ = id; break; }
+        if (ps[id].valid && (ps[id].snap.flags & PS_ALIVE) && id != net_.clientId() && specWatchable(id)) { specTarget_ = id; break; }
     }
 }
 
@@ -2490,14 +2497,14 @@ void Game::drawWorld(float alpha) {
     } else {
         stepCam_ = 0; stepGround_ = false;
         // team modes: an enemy (the killer) only for kKillCamTime, then a teammate (F11)
-        const bool enemyCam = specTarget_ >= 0 && modeIsTeamBased(ms.mode) && !isFriendly(specTarget_) && time_ >= killCamUntil_;
+        const bool enemyCam = specTarget_ >= 0 && !specWatchable(specTarget_) && time_ >= killCamUntil_;
         const PlayerSnap* meSnap = net_.findPlayer(me);
         if (deathBody_ && (!meSnap || (meSnap->flags & PS_SPECTATOR))) deathBody_ = false;   // (YOUR BODY: only while dead in the match)
         if (deathBody_) specTarget_ = -1;
         else if (enemyCam || specTarget_ < 0 || !players[specTarget_].valid || !(players[specTarget_].snap.flags & PS_ALIVE)) {
             specTarget_ = -1;
             for (int i = 0; i < kMaxPlayers; i++)
-                if (i != me && players[i].valid && (players[i].snap.flags & PS_ALIVE) && (isFriendly(i) || !modeIsTeamBased(ms.mode))) { specTarget_ = i; break; }
+                if (i != me && players[i].valid && (players[i].snap.flags & PS_ALIVE) && specWatchable(i)) { specTarget_ = i; break; }
         }
         if (specTarget_ >= 0) {
             const PlayerSnap& t = players[specTarget_].snap;
@@ -2581,9 +2588,11 @@ void Game::drawWorld(float alpha) {
         auto at = [&](float h) { return pos + Vec3(0, h * hs * bs, 0); };
         Vec3 fwd = {-std::sin(yaw), 0, -std::cos(yaw)}, rgt = {std::cos(yaw), 0, -std::sin(yaw)};
         // the player model (cosmetic: every model fits the same hitbox); ranked / time trial: the default for everyone
-        // (GAMEPLAY > MORE: ENEMY MODEL draws every enemy as one model)
+        // (GAMEPLAY > MORE: ENEMY MODEL / TEAM MODEL draw every enemy / teammate as one model)
+        const bool friendly = !self && isFriendly(i);
         const int pm = ranked ? 0 : opts_.debugModels && i >= kMaxPlayers - kPlayerModels ? i - (kMaxPlayers - kPlayerModels)
-                     : cfg_.enemyModel >= 0 && !self && !isFriendly(i) ? cfg_.enemyModel : net_.playerModel(i);
+                     : cfg_.enemyModel >= 0 && !self && !friendly ? cfg_.enemyModel
+                     : cfg_.teamModel >= 0 && friendly ? cfg_.teamModel : net_.playerModel(i);
         const ModelMesh* ov = modelOverride(MODEL_PLAYER, pm);
         // sunlight on them: only coloured geometry uses it (the shadow pass doesn't), so not for yourself in first
         // person, nor for a box model out of view (its boxes and what it holds, all within 2.5 m: shadow pass only).
@@ -3696,7 +3705,7 @@ Game::HudRect Game::drawHudBars(const Settings::HudElem& e, float W, float H, fl
     lay::Rect c;
     const lay::Rect r = hudSimple(el, W, H, 0.5f, 0.5f, left + cw * 0.5f, top + ch * 0.5f, k, cw, ch, c);
     if (!draw) return {r.x, r.y, r.w, r.h};
-    if (cfg_.autoHideBars && !paused_ && v.wRem <= 0 && v.hookRem <= 0 && v.dashHave >= v.dashN && v.dashReady) return {r.x, r.y, r.w, r.h};   // (AUTO-HIDE: all ready)
+    if (cfg_.autoHideBars && !paused_ && v.wRem <= 0 && (v.fly || (v.hookRem <= 0 && v.dashHave >= v.dashN && v.dashReady))) return {r.x, r.y, r.w, r.h};   // (AUTO-HIDE: all ready)
     AlphaScope a(r_, hudOpacity(el));
     hudBoxDraw(el, r, k, {0, 0, 0, 0});
     const float bx = c.x + capW, y0 = c.y + 1;
@@ -3708,6 +3717,7 @@ Game::HudRect Game::drawHudBars(const Settings::HudElem& e, float W, float H, fl
     };
     const int caps = cfg_.barCaps;   // (GAMEPLAY > MORE 3: CAPTIONS: bit 0 WEAPON, 1 DASH, 2 HOOK)
     bar(y0, caps & 1 ? "WEAPON" : nullptr, wW, v.wRem, v.wTot);
+    if (v.fly) return {r.x, r.y, r.w, r.h};   // (3D FLYING: no dash, no grapple)
     {   // dash: a pip per charge (the ground refills them, a bhop landing one): a spent charge is empty; a charge
         // that's there but can't be dashed yet (the dash still running, or the 0.6 s cooldown since it ended) is a
         // whole pip in the off color (light grey, no progress fill), and the moment that dash is allowed it turns
@@ -4176,12 +4186,14 @@ Game::HudRect Game::drawHudElement(int el, float W, float H, float s, bool sampl
                                                // blue flash before the cooldown starts)
                 v.hookRem = mv.hookCooldown;
                 v.hookTot = kHookCooldown * moveValue(mv, MV_HOOK_COOLDOWN, &net_.map());
+                v.fly = mv.fly;
             }
             return drawHudBars(e, W, H, s, v, hudTint(el, fc), draw);
         }
         case Settings::HUD_SPEED: {
             const MoveState& mv = net_.predicted();
-            return drawHudSpeed(e, W, H, s, sample ? 12.0f : std::sqrt(mv.vel.x * mv.vel.x + mv.vel.z * mv.vel.z), draw);
+            // (3D FLYING: the whole speed, up and down too)
+            return drawHudSpeed(e, W, H, s, sample ? 12.0f : std::sqrt(mv.vel.x * mv.vel.x + mv.vel.z * mv.vel.z + (mv.fly ? mv.vel.y * mv.vel.y : 0.0f)), draw);
         }
         case Settings::HUD_SLOTS: {
             const ModeState& ms = net_.mode();
@@ -7498,14 +7510,19 @@ void Game::drawMoreSettings(const SetLayout& L) {
         cfg_.chatOpacity = clampf(cfg_.chatOpacity, 0.1f, 1.0f);
         f.next();
         f.hint("WHILE TYPING, CHAT IS ALWAYS FULLY SHOWN");
-        f.section("ENEMIES");
+        f.section("FORCE PLAYER MODELS");
         {
             static std::vector<std::string> en;
             if (en.empty()) { en.push_back("ENEMY MODEL: THEIR OWN"); for (int m = 0; m < kPlayerModels; m++) en.push_back(std::string("ENEMY MODEL: ") + playerModelName(m)); }
             int ei = cfg_.enemyModel + 1;
             if (ui_.cycle(f.x(), f.top(), w, h, "ENEMY MODEL", ei, kPlayerModels + 1, en, UiExp::cfg("enemy_model"))) cfg_.enemyModel = ei - 1;
             f.next();
-            f.hint("EVERY ENEMY AS ONE MODEL (NOT IN RANKED,", "WHERE EVERYONE IS STANDARD)");
+            static std::vector<std::string> tm;
+            if (tm.empty()) { tm.push_back("TEAM MODEL: THEIR OWN"); for (int m = 0; m < kPlayerModels; m++) tm.push_back(std::string("TEAM MODEL: ") + playerModelName(m)); }
+            int ti = cfg_.teamModel + 1;
+            if (ui_.cycle(f.x(), f.top(), w, h, "TEAM MODEL", ti, kPlayerModels + 1, tm, UiExp::cfg("team_model"))) cfg_.teamModel = ti - 1;
+            f.next();
+            f.hint("EVERY ENEMY / TEAMMATE AS ONE MODEL (NOT IN", "RANKED, WHERE EVERYONE IS STANDARD)");
         }
         f.section("ALL SETTINGS");   // every setting as text on the clipboard (your name, Discord and servers stay yours)
         {
@@ -10516,6 +10533,16 @@ void Game::drawInfo(const SetLayout& L) {
         snprintf(lines, sizeof lines, "LINES %d-%d OF %d - WHEEL TO SCROLL", infoScroll_ + 1, last + 1, n);
         ui_.hint(L.X(640) - r_.textWidth(lines, ui_.hintScale()) * 0.5f, L.Y(646), lines, kGrey, L.L(400));
     }
+}
+
+// where the F3 / F4 box at the top left ends (0: neither shown): what's drawn there goes under it
+float Game::perfBoxBottom() const {
+    const float s = r_.height() / 720.0f, ts = std::max(1.0f, std::round(s * 2.0f));
+    if (perfStage_) {
+        const int nl = perfStage_ == 1 ? 1 : perfStage_ == 2 ? 3 : perfPrio_.empty() ? 4 : 5;
+        return 8 * s + (r_.textHeight(ts) + 4 * s) * nl + 4 * s;
+    }
+    return perfMini_ && !perfMiniText_.empty() ? 8 * s + r_.textHeight(ts) + 8 * s : 0.0f;
 }
 
 void Game::drawPerf() {

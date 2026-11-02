@@ -190,6 +190,8 @@ std::string Game::uiObserve(const std::string& w) {
     if (w == "perfstage") return std::to_string(perfStage_);
     if (w == "perfmini") return b(perfMini_);
     if (w == "spec") return std::to_string(specTarget_);
+    if (w == "trhud") return b(!hudHidden_);
+    if (w == "trgun") return b(!cfg_.hud[Settings::HUD_VIEWMODEL].hidden);
     if (w == "consolelog") return std::to_string(consoleLog_.size()) + (consoleLog_.empty() ? "" : consoleLog_.back());
     return "?" + w;
 }

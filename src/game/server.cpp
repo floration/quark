@@ -1371,7 +1371,7 @@ void Server::rotateWinnerStays(int winner) {
 bool Server::someoneInLine() const { return firstInLine(*this) >= 0; }
 
 bool Server::rotateEveryRound() const {
-    return cfg_.rotate1v1 > 0 && oneVsOne() && cfg_.mode != MODE_WINNER && someoneInLine();
+    return cfg_.rotate1v1 > 0 && oneVsOne() && cfg_.mode != MODE_WINNER && (rotationMatch_ || someoneInLine());
 }
 
 void Server::rotateBothOut() {
@@ -1398,7 +1398,7 @@ void Server::rotateBothOut() {
 
 // Winner stays: the team scores show the two playing, each one's round wins (their score)
 void Server::syncWinnerScores() {
-    if (cfg_.mode != MODE_WINNER) return;
+    if (cfg_.mode != MODE_WINNER && !rotationMatch_) return;   // (a rotating 1v1 too: the two playing, their kills)
     ms_.scoreA = ms_.scoreB = 0;
     for (const auto& o : players_)
         if (o.connected && !o.balanceBot && (o.team == TEAM_A || o.team == TEAM_B)) (o.team == TEAM_A ? ms_.scoreA : ms_.scoreB) = (int16_t)std::max(0, o.score);
