@@ -4410,61 +4410,23 @@ static void testWinnerStays(uint16_t port) {
     s.stop();
 }
 
-// Winner stays mode (MODE_WINNER): rounds, the round's loser to the back of the line, round wins are the score, first to 10.
+// Winner stays mode is retired (owner, 2026-11-02: "remove winner stays mode because 1v1 is automatically winner stays
+// now"): a server, a custom mode or a map change asking for it plays 1v1, and no map offers it.
 static void testWinnerStaysMode(uint16_t port) {
-    printf("winner stays mode: each round's loser to the back of the line, first to 10 round wins\n");
+    printf("winner stays mode retired: asking for it starts 1v1\n");
     Server s;
     ServerConfig cfg;
-    cfg.autoStart = true;
     cfg.map = "dojo"; cfg.mode = MODE_WINNER; cfg.port = port;
     s.setLog([](const std::string&) {});
     { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
-    CHECK(s.map_.supportsMode(MODE_WINNER));   // (a 1v1 map offers it: prefabs.py)
-    NetClient a, b, c;
-    std::vector<NetClient*> cls;
-    const char* names[] = {"ann", "bob", "cat"};
-    NetClient* all[] = {&a, &b, &c};
-    for (int i = 0; i < 3; i++) { all[i]->connect("127.0.0.1:" + std::to_string(port), names[i]); cls.push_back(all[i]); pump(s, cls, 0.4, idle); }
-    auto P = [&](NetClient& n) -> ServerPlayer& { return s.players_[n.clientId()]; };
-    CHECK(P(c).team == TEAM_SPECTATOR && P(c).queueSeq > 0);
-    const int annTeam = P(a).team, other = annTeam == TEAM_A ? TEAM_B : TEAM_A;
-    auto live = [&] { for (int i = 0; i < 200 && s.ms_.phase != PHASE_LIVE && s.ms_.phase != PHASE_MATCH_END; i++) { skipCountdowns(s); pump(s, cls, 0.05, idle); } };
-    auto seated = [&](int team) { for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].team == team) return i; return -1; };
-    live();
-    CHECK(s.ms_.phase == PHASE_LIVE);
-    CHECK(s.ms_.roundsToWin == 10);
-    // round 1: ann beats bob; bob to the back, cat in
-    s.killPlayer(b.clientId(), a.clientId(), WPN_RIFLE);
-    pump(s, cls, 0.1, idle);
-    CHECK(s.ms_.phase == PHASE_ROUND_END);
-    live();
-    CHECK(P(a).team == annTeam && P(c).team == other && P(b).team == TEAM_SPECTATOR && P(b).queueSeq > 0);
-    CHECK(P(a).score == 1 && P(b).score == 0);   // (a round win, not the kill: 1)
-    CHECK((annTeam == TEAM_A ? s.ms_.scoreA : s.ms_.scoreB) == 1 && (annTeam == TEAM_A ? s.ms_.scoreB : s.ms_.scoreA) == 0);
-    // round 2: cat beats ann: ann out, bob in; cat's 1 against bob's 0
-    s.killPlayer(a.clientId(), c.clientId(), WPN_RIFLE);
-    pump(s, cls, 0.1, idle);
-    live();
-    CHECK(P(c).team == other && P(b).team == annTeam && P(a).team == TEAM_SPECTATOR);
-    CHECK((annTeam == TEAM_A ? s.ms_.scoreB : s.ms_.scoreA) == 1 && P(a).score == 1);
-    // cat wins every round from here: first to 10 ends the match, after 9 more rounds won
-    int rounds = 0;
-    for (; rounds < 20 && s.ms_.phase == PHASE_LIVE; rounds++) {
-        const int foe = seated(annTeam);
-        CHECK(foe >= 0);
-        if (foe < 0) break;
-        s.killPlayer(foe, c.clientId(), WPN_RIFLE);
-        pump(s, cls, 0.1, idle);
-        live();
-    }
-    CHECK(rounds == 9);
-    CHECK(s.ms_.phase == PHASE_MATCH_END && s.matchWinner_ == other && P(c).score == 10);
+    CHECK(s.cfg_.mode == MODE_ARENA && !s.map_.supportsMode(MODE_WINNER) && modeRetired(MODE_WINNER));
+    s.playMap(MODE_WINNER);
+    CHECK(s.cfg_.mode == MODE_ARENA);
+    CustomRules r;
+    CHECK(r.fromText("custommode=old\nmode=winner\n") && r.baseMode == MODE_ARENA);
     s.stop();
 }
 
-// 1v1 with someone in line (owner, 2026-11-01: "by default 1v1s should cycle people every round even in ranked, so in
-// ranked it acts like an ffa but of 1v1's"; winner stays): every round is a match of its own, the loser to the back of
-// the line, the next match straight away (no warmup). Two players alone play whole matches as before; rotate1v1 0 too.
 static void testRotateEveryRound(uint16_t port) {
     printf("1v1 with a line: it moves every death (winner stays), kills carry over, first to N kills wins\n");
     for (int rule : {2, 0}) {

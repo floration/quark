@@ -31,3 +31,4 @@ What's on `testing` since production 1.19.4. The release PR renames this file to
 - Aim trainer: the scenario name moves under the F3 / F4 box instead of being covered by it.
 - Aim trainer: hide the HUD (your HIDE HUD key, or SHOW HUD in the pause menu: only the crosshair stays) and the weapon (SHOW WEAPON in the pause menu, the same setting as in matches).
 - Aim trainer: F3's frame-time graph (the third F3 page) and F4's mouse-to-photon number now show in a run.
+- WINNER STAYS mode is gone: 1v1 is winner stays now (the line moves every death, first to 11 kills). Servers, votes and custom modes that ask for it start 1v1.

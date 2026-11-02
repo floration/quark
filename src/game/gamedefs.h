@@ -55,6 +55,10 @@ constexpr float kBallHalf = 0.5f;   // the ball: a 1 m box (its centre is ModeSt
 // 1v1 rounds; after each round its loser goes to the back of the spectators' line and the first in line plays the
 // winner. A player's score is their round wins; the first to 10 (the mode's rounds) wins the match.
 inline constexpr bool isOneVsOneMode(int m) { return m == MODE_ARENA || m == MODE_WINNER; }
+// Retired modes keep their id (the protocol, demos, logs) but can't be started: winner stays (owner, 2026-11-02: "remove
+// winner stays mode because 1v1 is automatically winner stays now"). Starting one starts 1v1 instead (retiredTo).
+inline constexpr bool modeRetired(int m) { return m == MODE_WINNER; }
+inline constexpr int retiredTo(int m) { return m == MODE_WINNER ? MODE_ARENA : m; }
 // Surf (owner, 2026-10-28: "a surf gamemode where you cant grapple or dash, only strafe"): a race on steep ramps,
 // everything race does, run-only movement (MOVE_RUN_ONLY: no dash, no grapple).
 inline constexpr bool isRaceMode(int m) { return m == MODE_RACE || m == MODE_SURF; }

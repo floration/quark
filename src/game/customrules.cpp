@@ -153,7 +153,7 @@ bool CustomRules::fromText(const std::string& text) {
         int i = atoi(v.c_str());
         if (readWeaponSetRulesLine(*this, k, v)) {}   // weaponset= / wsline= (weaponset.cpp)
         else if (k == "custommode") { name = safeName(v); any = true; }
-        else if (k == "mode") { int m = modeFromName(v.c_str()); if (m >= 0 && m != MODE_TOURNEY) baseMode = m; }
+        else if (k == "mode") { int m = retiredTo(modeFromName(v.c_str())); if (m >= 0 && m != MODE_TOURNEY) baseMode = m; }
         else if (k == "weapons") weapons = (uint16_t)(i & ((1 << WPN_COUNT) - 1));
         else if (k == "gravity") gravity = clampf_(f, 0.1f, 3, gravity);
         else if (k == "speed") moveSpeed = clampf_(f, 0.25f, 3, moveSpeed);
