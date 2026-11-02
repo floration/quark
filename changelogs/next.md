@@ -14,4 +14,7 @@ What's on `testing` since production 1.19.4. The release PR renames this file to
 - **New keys**: MOVE UP and MOVE DOWN (CONTROLS > MORE KEYS), and VERTICAL KEYS (CONTROLS > MORE 2): ONE KEY flies up while MOVE UP is held and down when it isn't.
 
 ## Aim trainer
-- **AIM TRAINER** on the main menu: 36 scenarios of 30 s in 3D STATIC (look and shoot) and 2D (the view stays still, your mouse moves the crosshair), in CLICKING (rifle, one shot a click), SWITCHING and TRACKING (laser), each in EASY / MEDIUM / HARD. Your best, last score and plays show on each scenario's card; a leaderboard comes later. ESC pauses a run (RESUME, SETTINGS, RESTART, TRAINER MENU) and F3 / F4 work in the trainer.
+- **AIM TRAINER** on the main menu: 36 scenarios of 30 s in 3D STATIC (look and shoot) and 2D (the view stays still, your mouse moves the crosshair), in CLICKING (rifle, one shot a click), SWITCHING and TRACKING (laser), each in EASY / MEDIUM / HARD. Your best, last score and plays show on each scenario's card; a leaderboard comes later. 2D is drawn flat (no 3D at all) with the crosshair moving at an even speed. ESC pauses a run (RESUME, SETTINGS, RESTART, TRAINER MENU) and F3 / F4 work in the trainer.
+
+## Servers
+- The testing server now always starts again when a new testing build comes out (it could stay down after a production release).
