@@ -34,6 +34,14 @@ bool nvMaxClocks(bool on, std::string* msg);
 bool nvThreadedOff(bool on, std::string* msg);
 bool nvDxgiPresent(bool on, std::string* msg);
 
+// VIDEO + AUDIO > MORE (LATENCY): Windows' "Hardware-accelerated GPU scheduling" (HAGS: the GPU schedules its own work
+// queue, so a submitted frame starts sooner; the F3 gap between SWAP and GPU). A system setting: the registry value
+// HwSchMode under HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers (2 on, 1 off), read at boot.
+// hwSchedState: 1 on, 0 off, -1 unknown / not Windows / not supported (no value: the driver or GPU doesn't offer it).
+int hwSchedState();
+// Asks Windows (its admin prompt) to set it on, hidden reg.exe; takes effect after a restart. msg: for a notice.
+bool hwSchedEnable(std::string* msg);
+
 // high: GPU scheduling class HIGH (ABOVE_NORMAL if Windows refuses it) and CPU class ABOVE_NORMAL; else both NORMAL.
 // Cheap and idempotent (only a change calls Windows): called on focus changes. REALTIME (admin only) is never asked for.
 void setGamePriority(int level);   // 0 normal, 1 raised (CPU above normal), 2 CPU high

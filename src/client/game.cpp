@@ -3324,7 +3324,7 @@ void Game::drawWorld(float alpha) {
     // The dynamic geometry's upload and the shadow pass don't depend on the aim either: before the read too (ULTRA:
     // flushed, so the GPU draws the shadow map meanwhile). After the read: only the view's own draws.
     r_.prepareScene(cfg_.shadows && (cfg_.shadowWorld || cfg_.shadowPlayers));   // (MORE 4: on neither: no shadow pass)
-    if (ultraPaced()) glFlush();
+    if (ultraPaced() || cfg_.lowLatency == 1) glFlush();
     // Late latch: the newest mouse motion, read just before the world is drawn (everything above, world, players and
     // effects, was built in world space: only the view turns). The command this frame sent keeps its aim; the next
     // carries this. What was projected onto the screen above (name tags, health bars) is off by this sliver of a turn.
@@ -3342,7 +3342,9 @@ void Game::drawWorld(float alpha) {
         shotPending_.clear();
         notify(r_.screenshot(path) ? "SCREENSHOT SAVED (NO HUD): " + path.substr(path.find_last_of('/') + 1) : "COULDN'T SAVE THE SCREENSHOT", 3);
     }
-    if (ultraPaced()) glFlush();
+    // (ULTRA, and LOW LATENCY ON: the world sent now, so the GPU draws it while the HUD is built and drawn, instead of
+    // waiting for the swap to submit the whole frame: F3's gap between SWAP and GPU, ~45-65 us on Windows; 2026-11-02)
+    if (ultraPaced() || cfg_.lowLatency == 1) glFlush();
     pipeMark(PM_SCENE1);   // (ULTRA: the GPU starts the world while the HUD is built; it sits idle otherwise)
 }
 
@@ -8169,6 +8171,16 @@ void Game::drawMoreSettings(const SetLayout& L) {
 #else
         g.hint("N/A HERE: WINDOWS + NVIDIA ONLY");
 #endif
+        {   // Windows' hardware-accelerated GPU scheduling: a system setting (admin prompt, then a restart). Elsewhere N/A.
+            static int hags = hwSchedState();
+            const std::string lbl = hags == 1 ? "GPU SCHEDULING: ON" : hags == 0 ? "GPU SCHEDULING: TURN ON" : "GPU SCHEDULING: N/A";
+            if (ui_.button(g.x(), g.top(), w, h, lbl, UiExp::inert().withId("GPU SCHEDULING")) && hags == 0) {
+                std::string msg = "NOT CHANGED IN THE UI TEST";
+                if (!uiTest_ && hwSchedEnable(&msg)) hags = 1;
+                notify(msg);
+            }
+            g.next();
+        }
         g.section("SOUND");
         ui_.toggle(g.x(), g.top(), hw, h, "HITSOUND TIERS", cfg_.hitTiers, UiExp::cfg("hit_tiers"));
         {

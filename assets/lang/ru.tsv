@@ -916,6 +916,14 @@ GPU MAX CLOCKS	МАКС. ЧАСТОТЫ GPU
 GPU MAX CLOCKS: NOT CHANGED IN THE UI TEST	МАКС. ЧАСТОТЫ GPU: НЕ МЕНЯЮТСЯ В UI-ТЕСТЕ
 GPU MAX CLOCKS: WINDOWS ONLY	МАКС. ЧАСТОТЫ GPU: ТОЛЬКО WINDOWS
 GPU PRIORITY	ПРИОРИТЕТ GPU
+GPU SCHEDULING	ПЛАНИР. GPU
+GPU SCHEDULING ON: RESTART YOUR PC FOR IT TO TAKE EFFECT	ПЛАНИР. GPU ВКЛ: ПЕРЕЗАГРУЗИТЕ ПК
+GPU SCHEDULING: N/A	ПЛАНИР. GPU: Н/Д
+GPU SCHEDULING: NOT CHANGED (THE ADMIN PROMPT WAS DECLINED)	ПЛАНИР. GPU: НЕ ИЗМЕНЕНО (ЗАПРОС АДМИНА ОТКЛОНЁН)
+GPU SCHEDULING: ON	ПЛАНИР. GPU: ВКЛ
+GPU SCHEDULING: TURN ON	ПЛАНИР. GPU: ВКЛЮЧИТЬ
+GPU SCHEDULING: WINDOWS ONLY	ПЛАНИР. GPU: ТОЛЬКО WINDOWS
+GPU SCHEDULING: WINDOWS REFUSED THE CHANGE	ПЛАНИР. GPU: WINDOWS ОТКАЗАЛА
 GPU WAIT (LOW LATENCY ON)	ОЖИДАНИЕ GPU (НИЗКАЯ ЗАДЕРЖКА ВКЛ)
 GPU WAIT (ULTRA)	ОЖИДАНИЕ GPU (УЛЬТРА)
 GPU dynamic pass	GPU: динамический проход

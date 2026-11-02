@@ -25,3 +25,12 @@ Every change on `testing` since production 1.19.6, with what changed and why. Th
 - **Dropdowns** open upward when the list would leave the window. The German test found the LANGUAGE list off screen.
 - **Tests.** `quark_tests assets` checks every table against the key list: the same keys, and the same number of `#`. The UI test (`quark --uitest`, with `QUARK_UITEST_LANG=<code>`) ran in full in Chinese and Russian, and on the menus in the other seven languages. Its only failures were 6 editor EDIT checks, and English fails the same ones. `QUARK_LANG_MISSES=<file>` writes the drawn strings that had no translation, for the next pass.
 - **Known gaps.** Some text built at run time stays in English. Bot names, map names and the editor's tool tips aren't translated. There is no kerning for atlas glyphs.
+
+## Latency (owner, 2026-11-02, after F3 showed a gap between SWAP and GPU: "can the game enable the setting?")
+
+- **Early flush in LOW LATENCY: ON.** OpenGL holds a frame's commands until something flushes them. Under ON, nothing did until `SwapBuffers`, so the GPU sat idle through DRAW CALLS, HUD DRAW and SWAP, then waited out the driver's submission: about 45-65 µs on q's desktop at 3000+ FPS. `drawWorld` now calls `glFlush()` after the shadow pass (before the late latch) and after the world's draw calls (before the HUD), in ON as in ULTRA. The GPU then starts while the CPU finishes the HUD. A flush costs a few µs of CPU, and the frame queue is unchanged.
+- **GPU SCHEDULING** (VIDEO + AUDIO > MORE, LATENCY, under the NVIDIA rows). Windows' "Hardware-accelerated GPU scheduling" lets the GPU schedule its own queue, which shortens the hand-off from a submitted frame to the GPU starting it.
+  - It's a system setting: `HwSchMode` (2 on, 1 off) under `HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers`, read at boot. A game can't change it silently.
+  - The row reads the value (`hwSchedState`, gpuprefs.cpp). ON means it's set, TURN ON means it's off, and N/A means there's no value (the GPU or driver doesn't offer it, or this isn't Windows).
+  - TURN ON runs `reg.exe add ...` through Windows' "runas" admin prompt, hidden so no console window opens (`hwSchedEnable`), then says to restart.
+- **Scanout, for the record.** F3's estimate at 240 Hz, about 2083 µs, is half a refresh: the crosshair's row is redrawn once a refresh, whatever the FPS. Only a faster refresh shortens it. The game's own part is about 210 µs.

@@ -23,7 +23,7 @@ def keyish(s):
     if re.fullmatch(r"[a-z]+[A-Z][A-Za-z0-9]*", s): return False   # (camelCase names)
     if not re.match(r"[A-Za-z0-9(\"'#%+\-]", s): return False   # (a fragment: ") - ...", ", mode")
     if s.count("(") != s.count(")"): return False
-    if s.startswith(("u_", "v_", "GL_", "uniform", "layout", "vec", "http")): return False
+    if s.startswith(("u_", "v_", "GL_", "uniform", "layout", "vec", "http", "HKLM", "add \"HKLM")): return False
     if re.search(r"\.(png|wav|ogg|qmap|cfg|txt|json|ttf|glb|qpak|exe|dll|so|md|js|html|qdemo)\b", s): return False
     return True
 

@@ -7,3 +7,7 @@ What's on `testing` since production 1.19.6. The release PR renames this file to
 - Accented letters, Cyrillic, Chinese, Japanese and Korean are drawn in the game's own font style, so names and chat in those scripts now show up instead of blank boxes.
 - A dropdown near the bottom of the window now opens upward, so its list stays on screen.
 - No change for English, and no extra cost: English does no lookups at all.
+
+## Latency
+- **LOW LATENCY: ON sends the frame to the GPU sooner.** The shadow map and the world now go to the GPU as soon as they're drawn, as ULTRA already did, so the GPU starts while the HUD is still being drawn instead of waiting for the swap. F3's gap between SWAP and GPU gets shorter.
+- **GPU SCHEDULING** (Settings > VIDEO, the LATENCY section, Windows): shows whether Windows' hardware-accelerated GPU scheduling is on. TURN ON sets it after Windows' admin prompt and takes effect after a restart. It lets frames reach the GPU sooner.

@@ -6,6 +6,7 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <shellapi.h>
 #include <GLFW/glfw3.h>
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
@@ -225,7 +226,35 @@ std::string gamePriorityStatus() {
     return out;
 }
 
+// ---- hardware-accelerated GPU scheduling -----------------------------------------------------------------------------
+
+int hwSchedState() {
+    DWORD v = 0, n = sizeof v;
+    if (RegGetValueW(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers", L"HwSchMode", RRF_RT_REG_DWORD,
+                     nullptr, &v, &n) != ERROR_SUCCESS) return -1;
+    return v == 2 ? 1 : 0;
+}
+
+bool hwSchedEnable(std::string* msg) {
+    // (reg.exe through the "runas" verb: Windows' own admin prompt; hidden, so no console window opens)
+    SHELLEXECUTEINFOW ex{};
+    ex.cbSize = sizeof ex;
+    ex.fMask = SEE_MASK_NOCLOSEPROCESS;
+    ex.lpVerb = L"runas";
+    ex.lpFile = L"reg.exe";
+    ex.lpParameters = L"add \"HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers\" /v HwSchMode /t REG_DWORD /d 2 /f";
+    ex.nShow = SW_HIDE;
+    if (!ShellExecuteExW(&ex)) { *msg = "GPU SCHEDULING: NOT CHANGED (THE ADMIN PROMPT WAS DECLINED)"; return false; }
+    DWORD code = 1;
+    if (ex.hProcess) { WaitForSingleObject(ex.hProcess, 10000); GetExitCodeProcess(ex.hProcess, &code); CloseHandle(ex.hProcess); }
+    if (code != 0) { *msg = "GPU SCHEDULING: WINDOWS REFUSED THE CHANGE"; return false; }
+    *msg = "GPU SCHEDULING ON: RESTART YOUR PC FOR IT TO TAKE EFFECT";
+    return true;
+}
+
 #else
+int hwSchedState() { return -1; }
+bool hwSchedEnable(std::string* msg) { *msg = "GPU SCHEDULING: WINDOWS ONLY"; return false; }
 bool RasterClock::open(GLFWmonitor*) { return false; }
 void RasterClock::close() {}
 bool RasterClock::nextBlank(double, double*) { return false; }
