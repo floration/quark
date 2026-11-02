@@ -14,8 +14,16 @@ inline void qzoneDump() {}
 #include <vector>
 #include <algorithm>
 struct QZoneStat { const char* name; double total = 0, worst = 0; long count = 0; };
-inline thread_local std::vector<QZoneStat*> g_qzones;
-struct QZoneReg { QZoneStat s; explicit QZoneReg(const char* n) { s.name = n; g_qzones.push_back(&s); } };
+// This thread's zones. A function-local thread_local pointer, not an inline thread_local vector: MinGW emitted the
+// inline variable's TLS init function in every object file ("multiple definition", ZONESTATS builds didn't link), and
+// a thread_local with a destructor runs it after MinGW's emutls freed its storage (see customrules.cpp's tuned()).
+// On the heap, never freed: one small list per thread that ran a zone.
+inline std::vector<QZoneStat*>& qzones() {
+    static thread_local std::vector<QZoneStat*>* z = nullptr;
+    if (!z) z = new std::vector<QZoneStat*>();
+    return *z;
+}
+struct QZoneReg { QZoneStat s; explicit QZoneReg(const char* n) { s.name = n; qzones().push_back(&s); } };
 struct QZoneScope {
     QZoneStat& s; std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
     explicit QZoneScope(QZoneStat& st) : s(st) {}
@@ -27,7 +35,7 @@ struct QZoneScope {
 #define QFRAME()
 #define QPLOT(name, v)
 inline void qzoneDump() {
-    std::vector<QZoneStat*> z = g_qzones;
+    std::vector<QZoneStat*> z = qzones();
     std::sort(z.begin(), z.end(), [](auto* a, auto* b) { return a->total > b->total; });
     for (auto* s : z) printf("  zone %-36s %9.3f ms total  %8ld calls  %7.3f us avg  %8.3f ms worst\n", s->name, s->total * 1000, s->count, s->count ? s->total / s->count * 1e6 : 0, s->worst * 1000);
 }
