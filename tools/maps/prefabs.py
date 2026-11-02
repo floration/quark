@@ -897,7 +897,7 @@ class M:
             x += step
     def save(s, name, dress=True):
         MADE.append(name)
-        # (a 1v1 map also offers tourney and winner stays: q, 2026-11-01 "tourney + 1v1 can be played on any 1v1 map")
+        # (a 1v1 map also offers tourney: q, 2026-11-01 "tourney + 1v1 can be played on any 1v1 map")
         # each map plays the mode it's built for (plus any it lists in `also`), and free for all (not a surf course: its
         # stages are ridden, not walked between). Lodestone lists most modes.
         # (any map can still be started in any mode: the menus warn that it may not work)
