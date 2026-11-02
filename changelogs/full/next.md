@@ -41,3 +41,6 @@ Every change on `testing` since production 1.19.4, with what changed and why. Th
 
 ## 3D VAMP: snap tap on MOVE UP / MOVE DOWN (owner, 2026-11-02: "the snap tap thing doesnt work with the up and down in 3d movement")
 - With VERTICAL KEYS: TWO KEYS, MOVE UP and MOVE DOWN now go through the same SOCD axis as the move keys (`Game::buildCmd`): OPPOSITE KEYS CANCEL (both held: neither), LAST WINS (snap tap: the last pressed), FIRST WINS. Before, both held sent both buttons, which pmove cancels, whatever the setting. Ranked keeps CANCEL, as for the move keys. Client only: the command's BTN_UP / BTN_DOWN bits are as before.
+
+## 1v1: joining a full game queues you, no LET IN vote (owner, 2026-11-02: "for some reason it wants to "let people in" in the 3d lg instead of queueing spectators")
+- `team a|b` in a full, even 1v1 (any 1v1: ranked or not, 1v1 duel): straight into the line to play (queueToPlay), as ranked already did. Before, an unranked one called VOTE_LETIN ("LET X IN (TEAMS GO UNEVEN)"), which made a 2v1 out of a 1v1 and skipped the line the every-round rotation plays from. The vote stays for 2v2 duels. Test: testDuel (duel group).

@@ -4235,17 +4235,14 @@ static void testDuel(uint16_t port) {
     pump(s, cls, 0.5, idle);
     CHECK(s.players_[a.clientId()].team != s.players_[b.clientId()].team);
     CHECK(s.players_[c.clientId()].team == TEAM_SPECTATOR);
-    {   // the sides are even and full: joining calls a vote to let them in; passing it makes the teams uneven
+    {   // the sides are even and full: joining a 1v1 puts them in line to play, no vote (owner, 2026-11-02)
         c.sendCommand("team a");
         pump(s, cls, 0.3, idle);
-        CHECK(s.vote_.kind == Server::VOTE_LETIN);
-        a.sendCommand("vote yes");
+        CHECK(s.vote_.kind == Server::VOTE_NONE);
+        CHECK(s.players_[c.clientId()].team == TEAM_SPECTATOR && s.players_[c.clientId()].queueSeq > 0);
+        c.sendCommand("team spec");                  // (out of the line, so the rest is a plain 1v1)
         pump(s, cls, 0.3, idle);
-        CHECK(s.players_[c.clientId()].team == TEAM_A || s.players_[c.clientId()].team == TEAM_B);
-        CHECK(s.players_[c.clientId()].letIn);
-        c.sendCommand("team spec");                  // (back out, so the rest is a plain 1v1)
-        pump(s, cls, 0.3, idle);
-        CHECK(s.players_[c.clientId()].team == TEAM_SPECTATOR && !s.players_[c.clientId()].letIn);
+        CHECK(s.players_[c.clientId()].team == TEAM_SPECTATOR && s.players_[c.clientId()].queueSeq == 0);
     }
     for (int i = 0; i < 100 && s.ms_.phase == PHASE_WARMUP; i++) { skipCountdowns(s); pump(s, cls, 0.05, idle); }   // -> round 1
     CHECK(s.ms_.phase == PHASE_FREEZE || s.ms_.phase == PHASE_LIVE);

@@ -1677,13 +1677,13 @@ void Server::handleStringCmd(int id, const std::string& s) {
             if (mine >= size) {
                 if (other < size) {            // uneven: no vote needed, take the side with room
                     t = t == TEAM_A ? TEAM_B : TEAM_A;
-                } else if (n[0] == n[1] && !cfg_.ranked) {   // even and full: the players decide (and in line meanwhile)
-                    if (p.queueSeq == 0) queueToPlay(id);
-                    callVote(id, VOTE_LETIN, id);
-                    return;
-                } else if (oneVsOne()) {   // ranked 1v1: in line to play the winner
+                } else if (oneVsOne()) {   // 1v1 (ranked or not): in line to play, no vote (owner, 2026-11-02: queue spectators, don't ask to let them in)
                     if (p.queueSeq == 0) queueToPlay(id);
                     else { GameEvent e; e.type = EV_MESSAGE; e.text = "you're already in line to play"; sendEvent(id, e); }
+                    return;
+                } else if (n[0] == n[1] && !cfg_.ranked) {   // a 2v2 duel, even and full: the players decide (and in line meanwhile)
+                    if (p.queueSeq == 0) queueToPlay(id);
+                    callVote(id, VOTE_LETIN, id);
                     return;
                 } else {
                     GameEvent e; e.type = EV_MESSAGE; e.text = cfg_.ranked ? "that side is full (ranked is 1v1)" : "that side is full"; sendEvent(id, e);
