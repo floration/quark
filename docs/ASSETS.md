@@ -183,6 +183,7 @@ switch):
 | RUBIK (default) | `src/client/font_ui.h`: Rubik (`assets/fonts/Rubik.ttf`, a variable font) at wght 700, baked by `tools/make_font_atlas.py` as raw texels | on the GPU at startup, no decoding |
 | WORK SANS, QUARK CLASSIC and the look-alikes | `src/client/font_builtin.h`: each atlas baked by the same tool, stored as a PNG | ~3 ms to decode when picked; 15-65 KB of binary each |
 | your mods/fonts files, the real game fonts below | rasterised from the file (stb_truetype) | ~50 ms when picked |
+| the language glyphs (accents, Cyrillic, Chinese, Japanese, Korean) | `assets/lang/atlas/`: Rubik Bold and Noto Sans CJK Bold (SIL OFL 1.1, `assets/fonts/NotoSansCJK-OFL.txt`), baked by `tools/lang/make_atlas.py` (assets/lang/README.md) | 10-60 ms to decode when the language is picked; a second texture in the same draw call |
 
 Why the built-ins are baked PNGs and not font files rasterised at run time: Pillow can set a variable font's weight
 (Work Sans Bold is wght 700 of `assets/fonts/WorkSans.ttf`; stb_truetype only draws a variable font's default

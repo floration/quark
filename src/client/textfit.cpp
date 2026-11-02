@@ -4,30 +4,34 @@
 
 int textGlyph(char ch) { unsigned char uc = (unsigned char)ch; return (uc < 32 || uc > 126) ? '?' - 32 : uc - 32; }
 
-void measureInk(const uint8_t* tex, const FontAtlasLayout& L, GlyphInk ink[95]) {
+static GlyphInk inkOf(const uint8_t* tex, int texW, int cx, int cy, const FontAtlasLayout& L) {
     // A texel inside the glyph (>= 0.5) at signed distance d (texels, inside positive) from the edge: the edge is no
     // nearer than d in any direction, so (its centre - d) bounds the ink from that side, exactly for the texel whose
     // nearest edge point is the extreme one.
     const float spread2 = 2.0f * L.spread / 255.0f;
-    for (int g = 0; g < 95; g++) {
-        GlyphInk k;
-        float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f;
-        const int cx = (g % 16) * L.cell, cy = (g / 16) * L.cell;
-        if (g != 0)   // (the space has no ink)
-            for (int ty = 0; ty < L.cell; ty++)
-                for (int tx = 0; tx < L.cell; tx++) {
-                    const int v = tex[(size_t)(cy + ty) * L.texW + cx + tx];
-                    if (v < 128) continue;
-                    const float d = (v - 127.5f) * spread2, px = tx + 0.5f, py = ty + 0.5f;
-                    x0 = std::min(x0, px - d); x1 = std::max(x1, px + d);
-                    y0 = std::min(y0, py - d); y1 = std::max(y1, py + d);
-                }
-        if (x0 <= x1) {   // texels -> units: the cell starts pad units left of the glyph box, whose pen origin is `origin` in
-            k.x0 = x0 / L.tpu - L.pad - L.origin; k.x1 = x1 / L.tpu - L.pad - L.origin;
-            k.y0 = y0 / L.tpu - L.pad; k.y1 = y1 / L.tpu - L.pad;
+    GlyphInk k;
+    float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f;
+    for (int ty = 0; ty < L.cell; ty++)
+        for (int tx = 0; tx < L.cell; tx++) {
+            const int v = tex[(size_t)(cy + ty) * texW + cx + tx];
+            if (v < 128) continue;
+            const float d = (v - 127.5f) * spread2, px = tx + 0.5f, py = ty + 0.5f;
+            x0 = std::min(x0, px - d); x1 = std::max(x1, px + d);
+            y0 = std::min(y0, py - d); y1 = std::max(y1, py + d);
         }
-        ink[g] = k;
+    if (x0 <= x1) {   // texels -> units: the cell starts pad units left of the glyph box, whose pen origin is `origin` in
+        k.x0 = x0 / L.tpu - L.pad - L.origin; k.x1 = x1 / L.tpu - L.pad - L.origin;
+        k.y0 = y0 / L.tpu - L.pad; k.y1 = y1 / L.tpu - L.pad;
     }
+    return k;
+}
+
+void measureInk(const uint8_t* tex, const FontAtlasLayout& L, GlyphInk ink[95]) {
+    for (int g = 0; g < 95; g++) ink[g] = g == 0 ? GlyphInk() : inkOf(tex, L.texW, (g % 16) * L.cell, (g / 16) * L.cell, L);   // (the space has no ink)
+}
+
+void measureInkCells(const uint8_t* tex, int texW, int cols, int n, const FontAtlasLayout& L, GlyphInk* ink) {
+    for (int i = 0; i < n; i++) ink[i] = inkOf(tex, texW, (i % cols) * L.cell, (i / cols) * L.cell, L);
 }
 
 LineBox lineBoxOf(const GlyphInk ref[95]) {
@@ -59,12 +63,12 @@ float textUnits(const TextMetrics& m, const std::string& s, float level, float s
     const float o = outlineUnits(scale);
     float w = 0;
     int prev = -1;
-    for (char ch : s) {
-        int g = textGlyph(ch);
+    for (size_t i = 0, n = s.size(); i < n;) {
+        int g = m.next(s.data(), n, i);
         if (prev >= 0) w += m.advance(prev, g) - m.closeUp(prev, g, level, o);
         prev = g;
     }
-    if (prev >= 0) w += m.adv[prev];
+    if (prev >= 0) w += m.A(prev);
     return w;
 }
 
@@ -72,7 +76,7 @@ float maxLevel(const TextMetrics& m, const std::string& s, float scale) {
     const float o = outlineUnits(scale);
     float lv = 0;
     int prev = -1;
-    for (char ch : s) { int g = textGlyph(ch); if (prev >= 0) lv = std::max(lv, m.room(prev, g, o)); prev = g; }
+    for (size_t i = 0, n = s.size(); i < n;) { int g = m.next(s.data(), n, i); if (prev >= 0) lv = std::max(lv, m.room(prev, g, o)); prev = g; }
     return lv;
 }
 
@@ -112,11 +116,11 @@ TextFit fitText(const TextMetrics& m, const std::string& s, float ts, float maxW
     const float room = maxW / (m.minScale * k) - textUnits(m, "...", 0, m.minScale * k);
     float w = 0;
     int prev = -1, keep = 0;
-    for (size_t i = 0; i < s.size(); i++) {
-        const int g = textGlyph(s[i]);
-        const float nw = w + (prev >= 0 ? m.advance(prev, g) - m.adv[prev] : 0) + m.adv[g];
+    for (size_t i = 0, n = s.size(); i < n;) {
+        const int g = m.next(s.data(), n, i);
+        const float nw = w + (prev >= 0 ? m.advance(prev, g) - m.A(prev) : 0) + m.A(g);
         if (nw > room) break;
-        w = nw; prev = g; keep = (int)i + 1;
+        w = nw; prev = g; keep = (int)i;
     }
     f.keep = keep;
     return f;

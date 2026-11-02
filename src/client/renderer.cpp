@@ -23,6 +23,8 @@ inline int glyphIndex(char ch) { unsigned char uc = (unsigned char)ch; return (u
 const float* g_uiAdv = kUiAdv;
 const signed char* g_uiKern = kUiKern;
 std::unique_ptr<FontAtlas> g_uiFont;
+ExtMetrics g_ext;                      // the language's glyphs past ASCII (Renderer::setExtGlyphs)
+Renderer::Translate g_translate = nullptr;
 // ...and what's measured from it (textfit.h: every glyph's ink, the scale that keeps it in the line box), once per font
 const LineBox& defaultLineBox() {   // (Rubik's own ink defines the box)
     static const LineBox box = [] {
@@ -613,6 +615,7 @@ layout(location=3) in vec4 aText; // text scale: x integer part, y 1/256ths (0 =
 uniform vec2 uScreen;
 uniform vec2 uFontSize;
 uniform vec2 uLogoSize;
+uniform vec2 uExtSize;   // (the language glyph atlas: its quads' z is 2, texel coords (texel + 1) * 8)
 out vec2 vUV; out vec4 vColor; flat out float vScale; flat out float vSplit;
 // a rounded rect (aText.w 1, Renderer::roundRect): its pixel position in it, its size (the last corner's: both
 // triangles end on it), corner radius and ring width
@@ -622,7 +625,7 @@ void main() {
     vSplit = aText.z;
     vShape = vec3(aText.w, aText.x, aText.y * 0.25);
     vLocal = aUV * 0.25; vSize = aUV * 0.25;
-    vUV = (aUV / 32.0 - 1.0) / (vScale > 255.5 ? uLogoSize : uFontSize); vColor = aColor;
+    vUV = aText.z > 1.5 ? (aUV / 8.0 - 1.0) / uExtSize : (aUV / 32.0 - 1.0) / (vScale > 255.5 ? uLogoSize : uFontSize); vColor = aColor;
     gl_Position = vec4(aPos.x / uScreen.x * 2.0 - 1.0, 1.0 - aPos.y / uScreen.y * 2.0, 0.0, 1.0);
 })";
 // Text: one distance-field sample per pixel. The glyph edge (0.5) is smoothed over one screen pixel; a band
@@ -631,6 +634,7 @@ const char* kUiFS = R"(#version 330 core
 in vec2 vUV; in vec4 vColor; flat in float vScale; flat in float vSplit;
 in vec2 vLocal; flat in vec2 vSize; flat in vec3 vShape;
 uniform sampler2D uFont;
+uniform sampler2D uExt;
 uniform sampler2D uLogo;
 uniform float uK; // distance-field units per screen pixel at scale 1 (texels per font unit / (2 * spread))
 // the title (Renderer::logo): its two team colours; the split Q's line (a window point, its normal towards the second
@@ -659,7 +663,7 @@ void main() {
         fragColor = vec4(a > 0.0 ? c / a : c, a * vColor.a);
         return;
     }
-    float d = texture(uFont, vUV).r;
+    float d = vSplit > 1.5 ? texture(uExt, vUV).r : texture(uFont, vUV).r;
     if (vScale <= 0.0) { fragColor = vec4(vColor.rgb, vColor.a * d); return; }
     float px = uK / vScale;                       // one screen pixel in distance-field units
     float w = 0.5 * px;
@@ -668,7 +672,7 @@ void main() {
     if (o <= 0.004) discard;
     float fill = smoothstep(0.5 - w, 0.5 + w, d);
     vec3 col = vColor.rgb;
-    if (vSplit > 0.5) {   // the title's Q in another font: the second colour past the slanted line, a black seam on it
+    if (vSplit > 0.5 && vSplit < 1.5) {   // the title's Q in another font: the second colour past the slanted line, a black seam on it
         float s = dot(gl_FragCoord.xy - uSplitP, uSplitN);
         col = mix(col, uLogoB, clamp(s + 0.5, 0.0, 1.0)) * (1.0 - clamp(uSplitSeam + 0.5 - abs(s), 0.0, 1.0));
     }
@@ -929,6 +933,19 @@ bool Renderer::init(int shadowRes, std::string* err) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    if (!extTex_) {   // the language glyphs (setExtGlyphs): an empty texel until a language has some
+        const uint8_t zero = 0;
+        glGenTextures(1, &extTex_);
+        glActiveTexture(GL_TEXTURE0 + 7);
+        glBindTexture(GL_TEXTURE_2D, extTex_);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, 1, 1, 0, GL_RED, GL_UNSIGNED_BYTE, &zero);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, fontTex_);
+    }
     {   // the title logo: baked at its 2160p size, mipmapped so it's crisp smaller (tools/make_logo.py)
         int lw = 0, lh = 0;
         std::vector<uint8_t> px;
@@ -996,6 +1013,9 @@ bool Renderer::init(int shadowRes, std::string* err) {
     glUniform2f(U(uiProg_, "uFontSize"), (float)kUiTexW, (float)kUiTexH);
     glUniform1f(U(uiProg_, "uK"), kUiTpu / (2.0f * kUiSpread));
     glUniform1i(U(uiProg_, "uLogo"), 1);
+    glUniform1i(U(uiProg_, "uExt"), 7);
+    uExtSize_ = U(uiProg_, "uExtSize");
+    glUniform2f(uExtSize_, (float)extW_, (float)extH_);
     glUniform2f(U(uiProg_, "uLogoSize"), (float)kLogoW, (float)kLogoH);
     uLogoA_ = U(uiProg_, "uLogoA"); uLogoB_ = U(uiProg_, "uLogoB");
     uSplitP_ = U(uiProg_, "uSplitP"); uSplitN_ = U(uiProg_, "uSplitN"); uSplitSeam_ = U(uiProg_, "uSplitSeam");
@@ -2100,9 +2120,9 @@ void Renderer::logo(float cx, float y, float ts, const Color& friendly, const Co
     splitDrawn_ = true;
 }
 
-static inline float glyphAdv(int prev, int g) { return g_uiAdv[prev] + g_uiKern[prev * 95 + g] * (1.0f / 16.0f); }
 
-void Renderer::text(float x, float y, float s, const std::string& str, const Color& c, float level) {
+void Renderer::text(float x, float y, float s, const std::string& in, const Color& c, float level) {
+    const std::string& str = translated(in);
     if (alpha_ <= 0) return;   // (fully transparent: nothing to draw)
     if (s <= 0) return;
     if (s < minScale_) s = minScale_;
@@ -2120,15 +2140,22 @@ void Renderer::text(float x, float y, float s, const std::string& str, const Col
     ui_.resize(n0 + 4 * str.size());
     Vertex2D* d = ui_.data() + n0;
     int prev = -1;
-    for (char ch : str) {
-        int g = glyphIndex(ch);
-        if (prev >= 0) cx += (glyphAdv(prev, g) - m.closeUp(prev, g, level, o)) * sk;   // (closed up: Ui's fitting)
+    for (size_t i = 0, n = str.size(); i < n;) {
+        int g = m.next(str.data(), n, i);
+        if (prev >= 0) cx += (m.advance(prev, g) - m.closeUp(prev, g, level, o)) * sk;   // (closed up: Ui's fitting)
         prev = g;
         if (g == 0) continue;
         // the glyph box plus its padding (the outline and anti-aliasing reach into it); snapped to whole pixels
         float qx = uiRound(cx - kUiOrigin * sk) - pad, qy = top - pad;
-        int tx = (g % 16) * kUiCell, ty = (g / 16) * kUiCell;
-        uiQuadAt(d, qx, qy, qx + box + 2 * pad, qy + box + 2 * pad, u16uv(tx), u16uv(ty), u16uv(tx + kUiCell), u16uv(ty + kUiCell), col, si, sf);
+        if (g < 95) {
+            int tx = (g % 16) * kUiCell, ty = (g / 16) * kUiCell;
+            uiQuadAt(d, qx, qy, qx + box + 2 * pad, qy + box + 2 * pad, u16uv(tx), u16uv(ty), u16uv(tx + kUiCell), u16uv(ty + kUiCell), col, si, sf);
+        } else {   // the language's atlas (texture unit 7): z 2, texel coords (texel + 1) * 8
+            const int e = g - 95, tx = (e % extCols_) * kUiCell, ty = (e / extCols_) * kUiCell;
+            auto uv = [](int t) { return (uint16_t)((t + 1) * 8); };
+            uiQuadAt(d, qx, qy, qx + box + 2 * pad, qy + box + 2 * pad, uv(tx), uv(ty), uv(tx + kUiCell), uv(ty + kUiCell), col, si, sf);
+            for (int k = 0; k < 4; k++) d[k].pad[0] = 2;
+        }
         d += 4;
     }
     ui_.resize((size_t)(d - ui_.data()));
@@ -2161,27 +2188,63 @@ float Renderer::textWidthMono(const std::string& str, float scale) const { retur
 
 float Renderer::textWidth(const std::string& str, float scale, float level) const {
     const float sk = std::max(scale, minScale_) * uiMetrics().fitScale;
-    return textUnits(uiMetrics(), str, level, sk) * sk;
+    return textUnits(uiMetrics(), translated(str), level, sk) * sk;
 }
 
-TextFit Renderer::fitText(const std::string& str, float scale, float maxW) const { return ::fitText(uiMetrics(), str, std::max(scale, minScale_), maxW); }
+// (the fit of what's drawn: Ui cuts the translated text at keep, lang::tr)
+TextFit Renderer::fitText(const std::string& str, float scale, float maxW) const { return ::fitText(uiMetrics(), translated(str), std::max(scale, minScale_), maxW); }
 
+// (fits: the string as given, text() translates it; cut: the translation cut, which text() draws as it is)
 std::string Renderer::textClip(const std::string& str, float scale, float maxW) const {
     if (textWidth(str, scale) <= maxW) return str;
-    size_t n = textFit(str, scale, maxW - textWidth("...", scale));
-    return str.substr(0, n) + "...";
+    const std::string& t = translated(str);
+    size_t n = textFit(t, scale, maxW - textWidth("...", scale));
+    return t.substr(0, n) + "...";
 }
 
+// (as given, never translated: callers cut their own string at it; whole characters)
 size_t Renderer::textFit(const std::string& str, float scale, float maxW) const {
+    const TextMetrics& m = uiMetrics();
     float w = 0;
     int prev = -1;
-    for (size_t i = 0; i < str.size(); i++) {
-        int g = glyphIndex(str[i]);
-        float nw = w + (prev >= 0 ? glyphAdv(prev, g) - g_uiAdv[prev] : 0) + g_uiAdv[g];
-        if (nw * std::max(scale, minScale_) * uiMetrics().fitScale > maxW) return i;
+    for (size_t i = 0, n = str.size(); i < n;) {
+        const size_t at = i;
+        int g = m.next(str.data(), n, i);
+        float nw = w + (prev >= 0 ? m.advance(prev, g) - m.A(prev) : 0) + m.A(g);
+        if (nw * std::max(scale, minScale_) * m.fitScale > maxW) return at;
         w = nw; prev = g;
     }
     return str.size();
+}
+
+void Renderer::setTranslate(Translate f) { g_translate = f; }
+const std::string& Renderer::translated(const std::string& s) { return g_translate ? g_translate(s) : s; }
+
+void Renderer::setExtGlyphs(const std::vector<uint32_t>& cp, const std::vector<float>& adv, const uint8_t* tex, int texW, int texH, int cols) {
+    TextMetrics& m = uiMetrics();
+    g_ext = ExtMetrics();
+    if (!tex || cp.empty() || cols <= 0) {
+        m.ext = nullptr; extCols_ = 0;
+        fontGen_++;
+        return;
+    }
+    const size_t n = std::min(cp.size(), adv.size());
+    g_ext.adv.assign(adv.begin(), adv.begin() + n);
+    g_ext.ink.resize(n);
+    measureInkCells(tex, texW, cols, (int)n, {texW, texH, kUiCell, kUiTpu, kUiPad, kUiOrigin, kUiSpread}, g_ext.ink.data());
+    g_ext.bmp.assign(0x10000, 0);
+    for (size_t i = 0; i < n && i < 0xFFFF; i++) if (cp[i] < 0x10000) g_ext.bmp[cp[i]] = (uint16_t)(i + 1);
+    m.ext = &g_ext;
+    extCols_ = cols; extW_ = texW; extH_ = texH;
+    fontGen_++;
+    if (!extTex_) return;   // (before init: no GL yet; init's empty texel is replaced at the next call)
+    glActiveTexture(GL_TEXTURE0 + 7);
+    glBindTexture(GL_TEXTURE_2D, extTex_);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, texW, texH, 0, GL_RED, GL_UNSIGNED_BYTE, tex);
+    glActiveTexture(GL_TEXTURE0);
+    glUseProgram(uiProg_);
+    glUniform2f(uExtSize_, (float)extW_, (float)extH_);
 }
 
 FontAtlasLayout Renderer::uiFontLayout() { return {kUiTexW, kUiTexH, kUiCell, kUiTpu, kUiPad, kUiOrigin, kUiSpread, kUiCapHeight}; }
@@ -2504,6 +2567,7 @@ void Renderer::flush2D() {
         glUniform1f(uSplitSeam_, splitSeam_);
         splitDrawn_ = false;
     }
+    if (extCols_) { glActiveTexture(GL_TEXTURE0 + 7); glBindTexture(GL_TEXTURE_2D, extTex_); }   // (a language's glyphs)
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, fontTex_);
     glBindVertexArray(uiVao_);

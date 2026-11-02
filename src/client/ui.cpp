@@ -88,7 +88,7 @@ void Ui::drawFitted(float x, float y, const std::string& t, const Color& c0, flo
     if (maxW <= 0 || t.empty() || r_->textWidth(t, ts) <= maxW) { r_->text(x, y, ts, t, c); return; }
     TextFit f = fitted(t, ts, maxW);
     float dy = (r_->textHeight(ts) - r_->textHeight(f.scale)) * 0.5f;
-    if (f.keep >= 0) r_->text(x, y + dy, f.scale, t.substr(0, f.keep) + "...", c);
+    if (f.keep >= 0) r_->text(x, y + dy, f.scale, Renderer::translated(t).substr(0, f.keep) + "...", c);   // (keep: of what's drawn)
     else r_->text(x, y + dy, f.scale, t, c, f.level);
 }
 
@@ -115,7 +115,7 @@ void Ui::drawCentered(float cx, float y, const std::string& t, const Color& c, f
     float w = r_->textWidth(t, ts);
     if (maxW <= 0 || t.empty() || w <= maxW) { r_->text(cx - w * 0.5f, y, ts, t, c); return; }
     TextFit f = fitted(t, ts, maxW);
-    std::string shown = f.keep >= 0 ? t.substr(0, f.keep) + "..." : t;
+    std::string shown = f.keep >= 0 ? Renderer::translated(t).substr(0, f.keep) + "..." : t;
     float tk = f.keep >= 0 ? 0 : f.level;
     r_->text(cx - r_->textWidth(shown, f.scale, tk) * 0.5f, y + (r_->textHeight(ts) - r_->textHeight(f.scale)) * 0.5f, f.scale, shown, c, tk);
 }
@@ -136,19 +136,21 @@ TextFit Ui::fitted(const std::string& t, float ts, float maxW) const {
 }
 
 // Greedy word wrap, cached like fitted() (the text is kept too: a hash clash re-wraps instead of showing another text).
-const std::vector<std::string>& Ui::wrap(const std::string& t, float ts, float maxW, int maxChars) const {
+const std::vector<std::string>& Ui::wrap(const std::string& in, float ts, float maxW, int maxChars) const {
     uint64_t h = 1469598103934665603ull;
     auto mix = [&](uint64_t v) { h = (h ^ v) * 1099511628211ull; };
-    for (unsigned char ch : t) mix(ch);
+    for (unsigned char ch : in) mix(ch);
     uint32_t wb, sb;
     std::memcpy(&wb, &maxW, 4); std::memcpy(&sb, &ts, 4);
     mix(wb); mix(sb); mix((uint64_t)(uint32_t)maxChars); mix((uint64_t)(uint32_t)r_->fontGeneration());
     h |= 1;
     WrapEntry& e = wrapCache_[h % kWrapCache];
-    if (e.key == h && e.text == t) return e.lines;
+    if (e.key == h && e.text == in) return e.lines;
     e.key = h;
-    e.text = t;
+    e.text = in;
     e.lines.clear();
+    const std::string& t = Renderer::translated(in);   // (the language's text is what's wrapped: lang.h)
+    auto step = [&](size_t i) { i++; while (i < t.size() && ((unsigned char)t[i] & 0xC0) == 0x80) i++; return i; };   // (whole characters)
     auto fits = [&](size_t a, size_t n) {
         return (maxChars <= 0 || (int)n <= maxChars) && r_->textWidth(t.substr(a, n), ts) <= maxW;
     };
@@ -166,8 +168,8 @@ const std::vector<std::string>& Ui::wrap(const std::string& t, float ts, float m
             sp = t.find(' ', sp + 1);
         }
         if (!fits(a, end - a)) {   // one word wider than the line: cut it where it fits (at least one character)
-            size_t n = 1;
-            while (a + n < end && fits(a, n + 1)) n++;
+            size_t n = step(a) - a;
+            while (a + n < end && fits(a, step(a + n) - a)) n = step(a + n) - a;
             end = a + n;
         }
         e.lines.push_back(t.substr(a, end - a));
@@ -190,7 +192,7 @@ float Ui::fit(std::string& t, float maxW, bool* clipped, float* track) const {
     if (t.empty() || r_->textWidth(t, textScale_) <= maxW) return textScale_;
     TextFit f = fitted(t, textScale_, maxW);
     if (f.keep >= 0) {
-        t = t.substr(0, f.keep) + "...";
+        t = Renderer::translated(t).substr(0, f.keep) + "...";
         if (clipped) *clipped = true;
     } else if (track) *track = f.level;
     return f.scale;
@@ -205,7 +207,7 @@ const std::string& Ui::fitText(const std::string& t, float maxW, std::string& bu
     const TextFit f = fitted(t, textScale_, maxW);
     ts = f.scale;
     if (f.keep < 0) { tk = f.level; tw = r_->textWidth(t, ts, tk); return t; }
-    buf.assign(t, 0, (size_t)f.keep);
+    buf.assign(Renderer::translated(t), 0, (size_t)f.keep);
     buf += "...";
     if (clipped) *clipped = true;
     tw = r_->textWidth(buf, ts);
@@ -620,9 +622,10 @@ bool Ui::dropdown(float x, float y, float w, float h, const std::string& label, 
     bool open = popup_.kind == POP_DROP && popup_.id == label, changed = false;
     unblock_ = open;
     const bool hv = hover(x, y, w, h);
-    // the list: under the field, an entry a row
+    // the list: under the field, an entry a row (over it when it would run off the bottom of the window)
     const float rowH = h, gap = 4 * s, pad = 8 * s;
-    const float lx = x, ly = y + h + 4 * s, lw = w, lh = pad * 2 + n * rowH + (n - 1) * gap;
+    const float lw = w, lh = pad * 2 + n * rowH + (n - 1) * gap, lx = x;
+    const float ly = (y + h + 4 * s + lh > (float)r_->height() && y - 4 * s - lh >= 0) ? y - 4 * s - lh : y + h + 4 * s;
     if (in_.pressed && hv) {
         if (open) { closePopup(); open = false; }
         else { popup_ = Popup(); popup_.kind = POP_DROP; popup_.id = label; open = true; }

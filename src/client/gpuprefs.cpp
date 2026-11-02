@@ -6,6 +6,7 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <shellapi.h>
 #include <GLFW/glfw3.h>
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
@@ -225,7 +226,71 @@ std::string gamePriorityStatus() {
     return out;
 }
 
+// ---- hardware-accelerated GPU scheduling -----------------------------------------------------------------------------
+
+int hwSchedState() {
+    DWORD v = 0, n = sizeof v;
+    if (RegGetValueW(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers", L"HwSchMode", RRF_RT_REG_DWORD,
+                     nullptr, &v, &n) != ERROR_SUCCESS) return -1;
+    return v == 2 ? 1 : 0;
+}
+
+bool hwSchedEnable(std::string* msg) {
+    // (reg.exe through the "runas" verb: Windows' own admin prompt; hidden, so no console window opens)
+    SHELLEXECUTEINFOW ex{};
+    ex.cbSize = sizeof ex;
+    ex.fMask = SEE_MASK_NOCLOSEPROCESS;
+    ex.lpVerb = L"runas";
+    ex.lpFile = L"reg.exe";
+    ex.lpParameters = L"add \"HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers\" /v HwSchMode /t REG_DWORD /d 2 /f";
+    ex.nShow = SW_HIDE;
+    if (!ShellExecuteExW(&ex)) { *msg = "GPU SCHEDULING: NOT CHANGED (THE ADMIN PROMPT WAS DECLINED)"; return false; }
+    DWORD code = 1;
+    if (ex.hProcess) { WaitForSingleObject(ex.hProcess, 10000); GetExitCodeProcess(ex.hProcess, &code); CloseHandle(ex.hProcess); }
+    if (code != 0) { *msg = "GPU SCHEDULING: WINDOWS REFUSED THE CHANGE"; return false; }
+    *msg = "GPU SCHEDULING ON: RESTART YOUR PC FOR IT TO TAKE EFFECT";
+    return true;
+}
+
+bool fsoDisable(bool on, std::string* msg) {
+    wchar_t exe[MAX_PATH * 2];
+    const DWORD n = GetModuleFileNameW(nullptr, exe, (DWORD)(sizeof exe / sizeof exe[0]));
+    if (n == 0 || n >= sizeof exe / sizeof exe[0]) { *msg = "FULLSCREEN OPTIMIZATIONS: NOT CHANGED"; return false; }
+    const wchar_t* key = L"Software\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\Layers";
+    const std::wstring token = L"DISABLEDXMAXIMIZEDWINDOWEDMODE";
+    wchar_t buf[1024] = {0};
+    DWORD sz = sizeof buf;
+    std::wstring cur;
+    if (RegGetValueW(HKEY_CURRENT_USER, key, exe, RRF_RT_REG_SZ, nullptr, buf, &sz) == ERROR_SUCCESS) cur = buf;
+    // the value is "~ FLAG FLAG ..." ("~": not inherited by child processes): ours added or removed, the rest kept
+    std::wstring out;
+    size_t i = 0;
+    while (i < cur.size()) {
+        while (i < cur.size() && cur[i] == L' ') i++;
+        size_t j = i;
+        while (j < cur.size() && cur[j] != L' ') j++;
+        const std::wstring t = cur.substr(i, j - i);
+        if (!t.empty() && t != L"~" && t != token) out += L" " + t;
+        i = j;
+    }
+    if (on) out += L" " + token;
+    LONG r;
+    if (out.empty()) {
+        r = RegDeleteKeyValueW(HKEY_CURRENT_USER, key, exe);
+        if (r == ERROR_FILE_NOT_FOUND) r = ERROR_SUCCESS;
+    } else {
+        out = L"~" + out;
+        r = RegSetKeyValueW(HKEY_CURRENT_USER, key, exe, REG_SZ, out.c_str(), (DWORD)((out.size() + 1) * sizeof(wchar_t)));
+    }
+    if (r != ERROR_SUCCESS) { *msg = "FULLSCREEN OPTIMIZATIONS: WINDOWS REFUSED THE CHANGE"; return false; }
+    *msg = on ? "FULLSCREEN OPTIMIZATIONS OFF: FROM THE NEXT START" : "FULLSCREEN OPTIMIZATIONS BACK ON: FROM THE NEXT START";
+    return true;
+}
+
 #else
+bool fsoDisable(bool, std::string* msg) { *msg = "FULLSCREEN OPTIMIZATIONS: WINDOWS ONLY"; return false; }
+int hwSchedState() { return -1; }
+bool hwSchedEnable(std::string* msg) { *msg = "GPU SCHEDULING: WINDOWS ONLY"; return false; }
 bool RasterClock::open(GLFWmonitor*) { return false; }
 void RasterClock::close() {}
 bool RasterClock::nextBlank(double, double*) { return false; }

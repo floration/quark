@@ -359,6 +359,17 @@ set_source_files_properties(src/client/codec_vorbis.c src/client/codec_flac_mp3.
 target_include_directories(quark_assets PUBLIC third_party ${CMAKE_BINARY_DIR}/generated)
 target_link_libraries(quark_assets PUBLIC quark_core)
 
+# The languages (src/client/lang.h): assets/lang's tables and glyph atlases, embedded at build time (tools/lang/embed.py,
+# python3 only). The game and the tests link it; the launcher doesn't (its text is English).
+file(GLOB QUARK_LANG_FILES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/assets/lang/*.tsv ${CMAKE_SOURCE_DIR}/assets/lang/keys.txt
+  ${CMAKE_SOURCE_DIR}/assets/lang/atlas/*.png ${CMAKE_SOURCE_DIR}/assets/lang/atlas/*.glyphs)
+add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/generated/lang_data.h
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/lang/embed.py ${CMAKE_BINARY_DIR}/generated/lang_data.h ${CMAKE_SOURCE_DIR}/assets/lang
+  DEPENDS ${CMAKE_SOURCE_DIR}/tools/lang/embed.py ${QUARK_LANG_FILES}
+  COMMENT "Embedding the languages (assets/lang/)" VERBATIM)
+add_library(quark_lang STATIC src/client/lang.cpp ${CMAKE_BINARY_DIR}/generated/lang_data.h)
+target_link_libraries(quark_lang PUBLIC quark_assets)
+
 # The recorded announcer lines (20 MB of samples) are generated from assets/voice/ at build time, not committed
 # (tools/import_voice.py, python3 standard library only).
 file(GLOB_RECURSE QUARK_VOICE_WAVS ${CMAKE_SOURCE_DIR}/assets/voice/*.wav)
@@ -413,7 +424,7 @@ if(QUARK_BUILD_CLIENT)
     src/client/binds.cpp
     src/client/uitest.cpp
   )
-  target_link_libraries(quark quark_core quark_launcher_core quark_audio glfw ${CMAKE_DL_LIBS})
+  target_link_libraries(quark quark_core quark_launcher_core quark_audio quark_lang glfw ${CMAKE_DL_LIBS})
   if(WIN32)
     target_link_libraries(quark shell32)
   endif()
@@ -442,7 +453,7 @@ endif()
 if(QUARK_BUILD_TESTS)
   # (src/client/lightmap.cpp: the light bake has no graphics; the shipped-bake check runs it)
   add_executable(quark_tests tests/tests.cpp tests/mapbounds.cpp tests/launcher_tests.cpp tests/assets_tests.cpp tests/brain_tests.cpp tests/mode_tests.cpp tests/groupproc.cpp src/client/lightmap.cpp src/client/layout.cpp src/client/theme.cpp src/client/filewatch.cpp)
-  target_link_libraries(quark_tests quark_core quark_launcher_core quark_audio)
+  target_link_libraries(quark_tests quark_core quark_launcher_core quark_audio quark_lang)
   target_compile_definitions(quark_tests PRIVATE QUARK_SOURCE_DIR="${CMAKE_SOURCE_DIR}")   # cross-language constant checks read tools/
   target_compile_definitions(quark_tests PRIVATE QUARK_TEST_DATA="${CMAKE_SOURCE_DIR}/tests/data")   # regression inputs
   if(WIN32)
