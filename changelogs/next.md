@@ -7,3 +7,8 @@ What's on `testing` since production 1.19.4. The release PR renames this file to
 
 ## 1v1
 - **1v1s rotate every round:** on a 1v1 server with someone waiting, every round is now its own match (rated on its own in ranked, so ranked 1v1 plays like a free-for-all of 1v1s): the loser goes to the back of the line, the next in line plays the winner, and the next round starts straight away with no warmup. With only two players, matches are first to 5 as before. Server owners: `--rotate match` brings back the old rule (a whole match, then winner stays).
+
+## 3D VAMP
+- **New 1v1 ruleset, 3D VAMP** (HOST > MODE > 1V1, or the vote menu's PLAYER BASED > 1V1): fly in zero gravity like creative mode in Minecraft. W/S/A/D move you on the level, MOVE UP (space) and MOVE DOWN (left shift) straight up and down, all at run speed with a quick stop when you let go. No jump, dash or grapple. Lasers only, hits don't push anyone, and vampire healing starts at 100% of your damage each round and falls to 50% over 30 s. Not ranked.
+- **New map, Black Hole**: a lone flat asteroid in space with no cover, a black hole eating the galaxy beside it. Nobody can fire for the first 3 s of a round. Fly too far out and you're lost.
+- **New keys**: MOVE UP and MOVE DOWN (CONTROLS > MORE KEYS), and VERTICAL KEYS (CONTROLS > MORE 2): ONE KEY flies up while MOVE UP is held and down when it isn't.

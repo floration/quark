@@ -31,6 +31,8 @@ void Binds::setDefaults() {
     set(A_PERFMINI, GLFW_KEY_F4);
     set(A_RACERESET, GLFW_KEY_R);
     set(A_QUIP, GLFW_KEY_G);
+    set(A_FLYUP, GLFW_KEY_SPACE);         // (the jump's key: flying has no jump)
+    set(A_FLYDOWN, GLFW_KEY_LEFT_SHIFT);  // (the dash's: flying has no dash)
 }
 
 const char* actionName(int a) {
@@ -38,7 +40,7 @@ const char* actionName(int a) {
         "FORWARD", "BACK", "LEFT", "RIGHT", "JUMP", "CROUCH", "FIRE", "ALT FIRE", "USE", "DASH", "GRAPPLE",
         "ROCKET", "RIFLE", "LASER", "SHOTGUN", "SNIPER", "STICKY", "CROSSBOW", "BUBBLE", // weapon slots 1-8
         "NEXT WEAP", "PREV WEAP", "SCOREBOARD", "CHAT", "VOTE YES", "VOTE NO", "PERF STATS", "SCREENSHOT", "VOTE START", "KNIFE", "SYRINGE", "QUIP", "TOGGLE CHAT", "LATENCY", "RACE RESET", "TEAM CHAT", "LAST WEAPON", "SPEC NEXT", "SPEC PREV", "SAVE POS", "LOAD POS", "HIDE HUD", "FULL RESTART",
-        "VOL UP", "VOL DOWN", "MUTE", "RECORD", "JOIN TEAM", "SPECTATE",
+        "VOL UP", "VOL DOWN", "MUTE", "RECORD", "JOIN TEAM", "SPECTATE", "MOVE UP", "MOVE DOWN",
     };
     return a >= 0 && a < A_COUNT ? n[a] : "?";
 }

@@ -19,7 +19,7 @@ sys.path.insert(0, TOOLS)
 MAPS = ["railyard", "dojo", "castle", "qk1", "qk2", "qk3", "qk4", "datacenter", "mine", "qk5", "qk8", "qk6", "qk7",
         "sewer", "war", "rooftoprun", "solar", "jungle", "monorail", "dam", "express",
         "bridge", "convoy", "greenhouse", "orbit", "cruiseship", "fairground", "rooftops",
-        "lighthouse", "terraces", "glacier", "spire"]
+        "lighthouse", "terraces", "glacier", "spire", "blackhole"]
 # the old map pool (official until 1.19.6): still built, into <out>/legacy/ (shipped there, never official or ranked;
 # the game lists them only with LEGACY MAPS on). Keep in step with kLegacyMapNames (src/game/map.h).
 LEGACY = ["clockwork", "depot", "summit", "canal", "harbor", "bastion", "foundry", "temple", "colosseum", "furnace",
