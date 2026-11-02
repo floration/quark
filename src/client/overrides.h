@@ -38,3 +38,5 @@ void useUserFolder(bool on);      // off: shipped overrides only (the asset expo
 bool decodeSound(const uint8_t* data, size_t size, std::vector<float>& mono, int& rate, std::string* err = nullptr);
 // Image: PNG / JPEG -> 8-bit RGBA, rows top to bottom.
 bool decodeImage(const uint8_t* data, size_t size, int& w, int& h, std::vector<uint8_t>& rgba);
+// ...or one 8-bit channel (a grey PNG as it is; colour: its luma): the language glyph atlases (lang.cpp)
+bool decodeImageGrey(const uint8_t* data, size_t size, int& w, int& h, std::vector<uint8_t>& grey);

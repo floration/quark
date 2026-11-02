@@ -1,0 +1,3716 @@
+" matches more than one player: use the id (status lists them)	" は複数のプレイヤーに一致します: IDを使用してください (statusで一覧表示)
+","color":	","color":
+"IT" IN YOUR ENEMY COLOUR, THE REST YOUR TEAM'S	「鬼」は敵カラー、他は味方カラー
+"path"	"path"
+# # # TO # # #	# # # から # # #
+# BOXES  # SPAWNS  # LIGHTS	# ボックス  # スポーン  # ライト
+# CONTROL PROFILES	# 操作プロファイル
+# CUSTOM MODES	# カスタムモード
+# DB	# DB
+# DEFAULT KEYS (Settings > CONTROLS to change any of them, two keys per action)	# デフォルトキー (設定 > 操作設定 で変更可、1アクションにつき2キー)
+# DEG	# 度
+# DUELS	# デュエル
+# EVERYONE FOR THEMSELVES	# 個人戦
+# HOST A GAME (main menu > HOST GAME)	# ゲームをホスト (メインメニュー > ゲームをホスト)
+# HP	# HP
+# HUD LAYOUT (Settings > HUD LAYOUT)	# HUDレイアウト (設定 > HUDレイアウト)
+# HZ (AVG)	# HZ (平均)
+# IN GAME (ESC as host)	# ゲーム中 (ホストはESC)
+# JOIN A GAME (main menu > JOIN GAME)	# ゲームに参加 (メインメニュー > ゲームに参加)
+# MAPS AND MODES	# マップとモード
+# MB	# MB
+# MOVEMENT	# 移動
+# MS	# MS
+# PLAY VS BOTS	# ボット戦
+# RANKED	# ランク
+# SETTINGS (main menu, or ESC in game)	# 設定 (メインメニュー、またはゲーム中にESC)
+# TEAM MODES	# チームモード
+# THE MAP EDITOR (main menu > MAP EDITOR)	# マップエディター (メインメニュー > マップエディター)
+# THE MAPS AND WHAT THEY'RE BUILT FOR	# マップと対応モード
+# US	# US
+# VOTES (ESC > VOTE, then F1 yes / F2 no)	# 投票 (ESC > 投票、F1 賛成 / F2 反対)
+# WEAPONS	# 武器
+# YOUR OWN MAPS	# 自作マップ
+# date,	# date,
+# demo,	# demo,
+# frames,#	# frames,#
+# label,	# label,
+# map,	# map,
+# maps, # s, # threads	# マップ、# 秒、# スレッド
+# maps, # s, # threads{}	# maps, # s, # threads{}
+# of # players losing snapshots (worst #%)	#/# 人がスナップショットを損失 (最大 #%)
+# quark benchmark	# quark benchmark
+# quark benchmark 1	# quark benchmark 1
+# quark controls profile	# quark controls profile
+# seconds,#	# seconds,#
+# setup:	# setup:
+# setup:{},{}	# setup:{},{}
+# uploaded,#	# アップロード済み,#
+# us (last 1000 ticks)	# us (直近1000ティック)
+# version,	# version,
+#% of ticks over # ms late	#% のティックが # ms 以上遅延
+#-# OF # - WHEEL TO SCROLL	#-# / # - ホイールでスクロール
+#-# OF # - WHEEL TO SCROLL - RIGHT-CLICK: FAVORITE	#-# / # - ホイールでスクロール - 右クリック: お気に入り
+#:# LEFT	残り #:#
+#MS	#MS
+#X# # HZ	#X# # HZ
+#version 330 core	#version 330 core
+% of	% /
+%WINDIR%	%WINDIR%
+' (it may be on an older version)	' (古いバージョンの可能性があります)
+' (names as CONTROLS shows them: R, F5, MOUSE 4, WHEEL UP)	' (操作設定での表示名: R, F5, MOUSE 4, WHEEL UP)
+' - try: list	' - 試す: list
+' has to wait until it's over	' は終了するまで待つ必要があります
+(# MS)	(# MS)
+(# glyphs) in # ms	(# glyphs) in # ms
+(BROWSER VIDEOS, ELECTRON APPS WAIT)	(ブラウザ動画、Electronアプリは待機)
+(BY DEFAULT ONLY THE SCOPES)	(デフォルトはスコープのみ)
+(CLEAR THE SELECTION TO CHANGE)	(変更するには選択を解除)
+(CLICK TO CYCLE)	(クリックで切替)
+(DEAD)	(死亡)
+(FINISH)	(ゴール)
+(HIDDEN: STREAMER MODE)	(非表示: 配信者モード)
+(HS)	(HS)
+(IT AFFECTS GAMEPLAY)	(ゲームプレイに影響)
+(LEAVE)	(退出)
+(MISSING)	(なし)
+(NOT IN RANKED)	(ランク以外)
+(PUBLIC)	(公開)
+(REFRESH - 3)	(更新 - 3)
+(REFUSED 0X#)	(拒否 0X#)
+(TEAM MODES NEED A + B SPAWNS)	(チームモードにはA + Bのスポーンが必要)
+(TEAM)	(チーム)
+(already in use?)	(使用中?)
+(and copied it) - rename it there	(コピーしました) - そちらで名前を変更してください
+(edited)	(編集済み)
+(exclusive: no format the device takes)	(排他: デバイスが対応する形式なし)
+(exclusive: the device is busy)	(排他: デバイスが使用中)
+(first: takes the loss)	(先に: 敗北扱い)
+(its CONTROLS action too, if it has one)	(操作設定のアクションも、あれば)
+(legacy)	(レガシー)
+(lowered)	(低下)
+(own goal)	(オウンゴール)
+(playing the built-in brain)	(内蔵AIでプレイ中)
+(score #-#)	(スコア #-#)
+(team):	(チーム):
+(vote ranked off first)	(先にランクオフを投票)
+(winner stays)	(勝者残留)
++ (BIGGER)	+ (大きく)
++Y (top)	+Y (上)
+-  # AVG  # 1%	-  # 平均  # 1%
+- AUTOSAVED	- 自動保存済み
+- BOTS PLAY THE BUILT-IN BRAIN	- ボットは内蔵AIでプレイ
+- CHOOSE A RULESET	- ルールを選択
+- CONTESTED	- 争奪中
+- COOLDOWNS RESET	- クールダウンリセット
+- FIRST TO	- 先取
+- LOGIC:	- ロジック:
+- OWN RATING	- 自分のレート
+- REVERTS WHEN THE MAP CHANGES	- マップ変更で元に戻る
+- SAVE to keep it	- 保持するには保存
+- STANDARD RULES	- 標準ルール
+- THE HOST SAVES IT	- ホストが保存
+- THE SERVER SENDS IT TO THE LEADERBOARD	- サーバーがリーダーボードに送信
+- UPLOADED	- アップロード済み
+- USING RUBIK	- RUBIK使用中
+- WATCHING	- 観戦中
+- WHEEL TO SCROLL	- ホイールでスクロール
+- beats	- が勝利:
+- best of 3 between the last two	- 残り2人で3本勝負
+- it may not work	- 動作しない可能性あり
+- it moves and stretches as one	- まとめて移動・伸縮
+- level with	- と同点
+- map	- マップ
+- match started	- 試合開始
+- not played: the server plays	- 未プレイ: サーバーがプレイ
+- playing mode logic	- モードロジック実行中
+- plays the next match	- 次の試合に出場
+- rock paper scissors decides it	- じゃんけんで決定
+- short of	- あと
+- their place is kept for	- 枠の保持時間:
+-INF DB	-INF DB
+-Wcast-function-type	-Wcast-function-type
+-Y (under)	-Y (下)
+0.1% LOW	0.1% LOW
+1 HP	1 HP
+1 HP KNIVES	1 HP ナイフ
+1 SETTING	1 設定
+1% LOW	1% LOW
+10-BIT OUTPUT	10ビット出力
+10-BIT: AT THE NEXT START, WHERE SUPPORTED	10ビット: 次回起動時 (対応環境)
+10-BIT: ON (A 10-BIT WINDOW)	10ビット: オン (10ビットウィンドウ)
+12 H CLOCK	12時間表示
+144 FPS	144 FPS
+1V1 - rounds on one ruleset (vanilla, laser vampire, instagib...). First to 5. Ranked 1v1 rates you on its own ladder.	1V1 - 1つのルール (バニラ、レーザーヴァンパイア、インスタギブ...) でラウンド制。5本先取。ランク1v1は専用ラダーでレート計算。
+240 FPS	240 FPS
+2:00  -  1ST OF 6	2:00  -  6人中1位
+2D: THE VIEW STAYS STILL, YOUR MOUSE MOVES THE CROSSHAIR	2D: 視点固定、マウスでクロスヘアを移動
+30 SECONDS LEFT	残り30秒
+32-bit float	32-bit float
+3D FLYING	3D 飛行
+3D STATIC: YOU CAN'T MOVE - LOOK AND SHOOT	3D 固定: 移動不可 - 狙って撃つ
+3D VAMP	3D ヴァンプ
+5 MORE MINUTES	あと5分
+60 FPS	60 FPS
+A DASH PRESSED THIS SOON BEFORE IT'S READY	使用可能になる直前に押したダッシュの受付時間
+A DROPPED CONNECTION TRIES AGAIN (3 TIMES)	切断時に再接続 (3回)
+A NEW CODE FROM /link RELINKS IT - unlink REMOVES IT	/link の新コードで再連携 - unlink で解除
+A PLAYER JOINED VIA	プレイヤーが参加 経由:
+A SERVER	サーバー
+A VARIABLE FONT IS DRAWN AT ITS DEFAULT WEIGHT	可変フォントはデフォルトの太さで描画
+A private game with bots at your chosen level (beginner, intermediate, advanced, expert), on any mode and map.	選んだレベル (初級、中級、上級、エキスパート) のボットとのプライベートゲーム。モードとマップは自由。
+A thrown knife or syringe is gone for 4 s (greyed out in the weapon list, with its timer).	投げたナイフや注射器は4秒間使えません (武器リストでグレー表示、タイマー付き)。
+ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/	ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/
+ABILITIES	アビリティ
+ABOVE NORMAL	通常以上
+ACC	命中率
+ACCELERATOR / JUNGLE / ROOFTOPRUN - race (and the ranked time trials).   SOLAR / SURFY - surf.   COBBLESTONE - q's own.	ACCELERATOR / JUNGLE / ROOFTOPRUN - レース (とランクタイムアタック)。   SOLAR / SURFY - サーフ。   COBBLESTONE - qの自作。
+ACCENT	アクセント
+ACCENT COLOR	アクセントカラー
+ACCESSIBILITY	アクセシビリティ
+ACCURACY	命中率
+ACE	ACE
+ADAPTIVE	アダプティブ
+ADD (AT THE SCREEN CENTER)	追加 (画面中央)
+ADD BOT	ボット追加
+ADD WIDGET	ウィジェット追加
+ADD: boxes (base / accent / wallbang: bullets go through wallbangs for half damage), spawns, lights, payload path points, bomb sites, the hill, race checkpoints, and LADDERS (one object: stretch it and the rungs follow).	追加: ボックス (ベース / アクセント / ウォールバン: 弾が貫通しダメージ半減)、スポーン、ライト、ペイロード経路、爆破サイト、ヒル、レースのチェックポイント、はしご (1つのオブジェクト: 伸ばすと段も追従)。
+ADDRESS	アドレス
+ADDRESS (IP:PORT)	アドレス (IP:ポート)
+ADVANCED	上級
+ADVANCED > BOT BRAIN: what your bots play: the built-in brain, or a .qbrain file from the bots folder in your data folder. A file that doesn't compile shows its error line and the bots play the built-in brain. Never in ranked.	上級 > ボットAI: ボットの戦い方: 内蔵AI、またはデータフォルダ内の bots フォルダにある .qbrain ファイル。コンパイルできないファイルはエラー行を表示し、ボットは内蔵AIで戦います。ランクでは使われません。
+AGAIN (R)	もう一度 (R)
+AHEAD	リード
+AIM TRAINER	エイムトレーナー
+AIR	空中
+AIR ACCELERATION	空中加速
+AIR CONTROL	空中制御
+AIR DRIFT (UNDER RUN SPEED)	空中ドリフト (走行速度以下)
+AIR ROCKET	エアロケット
+AIR STRAFE CAP	空中ストレイフ上限
+ALL	すべて
+ALL MODES	全モード
+ALL OFF	すべてオフ
+ALL SETTINGS	全設定
+ALT	ALT
+ALT FIRE	サブ射撃
+ALT-FIRE TOGGLE IN RANKED	ランクでのサブ射撃トグル
+ALT-FIRE TOGGLES	サブ射撃トグル
+ALT-FIRE TOGGLES: WITH ALT-FIRE: TOGGLE ON	サブ射撃トグル: サブ射撃: トグル 有効時
+ALT-FIRE: HOLD	サブ射撃: 長押し
+ALT-FIRE: TOGGLE	サブ射撃: トグル
+ALT-TABBED OR MINIMIZED: LESS POWER AND HEAT	ALT-TAB中・最小化時: 省電力・低発熱
+ALWAYS LIT	常時点灯
+ALWAYS ON TOP	常に最前面
+ANNA	ANNA
+ANNOUNCER	アナウンサー
+ANNOUNCER CALLS	アナウンサー音声
+ANNOUNCER VOLUME	アナウンサー音量
+ANNOUNCER: ALL CALLS	アナウンサー: すべて
+ANNOUNCER: COUNTDOWN	アナウンサー: カウントダウン
+ANNOUNCER: OFF	アナウンサー: オフ
+ANTI-ALIASING	アンチエイリアス
+ANTI-ALIASING: MSAA 2X	アンチエイリアス: MSAA 2X
+ANTI-ALIASING: MSAA 2X (N/A)	アンチエイリアス: MSAA 2X (N/A)
+ANTI-ALIASING: MSAA 4X	アンチエイリアス: MSAA 4X
+ANTI-ALIASING: MSAA 4X (N/A HERE)	アンチエイリアス: MSAA 4X (この環境ではN/A)
+ANTI-ALIASING: MSAA 8X	アンチエイリアス: MSAA 8X
+ANTI-ALIASING: OFF	アンチエイリアス: オフ
+ANTI-ALIASING: SMOOTH (CHEAP)	アンチエイリアス: スムーズ (軽量)
+APEX LEGENDS	APEX LEGENDS
+APPLY IN:	適用先:
+ARC COLOR	アークの色
+ARC SIZE	アークのサイズ
+ARC TIME	アークの時間
+ARM	腕
+ARROW (NUDGE)	矢印キー (微調整)
+ARROWS / PGUP / PGDN: MOVE BY GRID (ALONG YOUR VIEW)	矢印 / PGUP / PGDN: グリッド単位で移動 (視点方向)
+AS THICK	同じ太さ
+ASIDE: A FRAME LESS LAG IN A WINDOW	補足: ウィンドウで1フレーム遅延減
+ASK "SURE?" FIRST: CLICK AGAIN	先に確認: もう一度クリック
+ASSUMED	推定
+AT # # #	位置 # # #
+AT CAMERA	カメラ位置
+ATTACK + RACE	攻撃 + レース
+ATTACK - PLANT THE BOMB	攻撃 - 爆弾を設置
+ATTACK: CARRY THE BOMB TO A SITE AND PLANT IT	攻撃: 爆弾をサイトに運んで設置
+AUDIO INPUT (MICROPHONE)	音声入力 (マイク)
+AUDIO LATENCY	オーディオ遅延
+AUDIO LATENCY: LOW	オーディオ遅延: 低
+AUDIO LATENCY: NORMAL	オーディオ遅延: 通常
+AUDIO LATENCY: SAFE	オーディオ遅延: 安全
+AUDIO OUTPUT	音声出力
+AUTO	自動
+AUTO PORT FORWARD	自動ポート開放
+AUTO RECONNECT	自動再接続
+AUTO RECORD	自動録画
+AUTO RECORD: EVERY MATCH	自動録画: 全試合
+AUTO RECORD: OFF	自動録画: オフ
+AUTO RECORD: RANKED ONLY	自動録画: ランクのみ
+AUTO START	自動開始
+AUTO-HIDE	自動非表示
+AUTO-HIDE BARS	バーを自動非表示
+AUTO-HIDE HEALTH	体力を自動非表示
+AUTO-HIDE WEAPON LIST	武器リストを自動非表示
+AUTO-HOP	オートホップ
+AUTO-HOP OFF: HELD JUMP JUMPS ONCE	オートホップ オフ: 長押しで1回ジャンプ
+AUTO: YOUR SYSTEM'S LANGUAGE	自動: システムの言語
+AVERAGE	平均
+AVERAGE, LAST	平均、直近
+AVG #  1% LOW #  0.1% LOW #	平均 #  1% LOW #  0.1% LOW #
+AVG FPS	平均 FPS
+AVG FRAME	平均フレーム
+AVX2	AVX2
+Anything in the maps folder shows up in the lists. Servers send their map to players who don't have it.	mapsフォルダ内のものはリストに表示されます。サーバーはマップを持っていないプレイヤーに送信します。
+AvSetMmThreadCharacteristicsW	AvSetMmThreadCharacteristicsW
+BACK	戻る
+BACK TO EDITOR	エディターに戻る
+BACKGROUND	背景
+BACKGROUND COLOR	背景色
+BACKGROUND FPS LIMIT	バックグラウンドFPS制限
+BACKGROUND MAP	背景マップ
+BACKGROUND VOLUME	バックグラウンド音量
+BACKGROUND: A MAP I PICK	背景: 選んだマップ
+BACKGROUND: CASTLE	背景: CASTLE
+BACKGROUND: PLAIN COLOR	背景: 単色
+BACKSPACE	BACKSPACE
+BAKE LIGHT	ライトをベイク
+BAKE THREADS	ベイクスレッド
+BAKES DELETED (BAKED AGAIN WHEN PLAYED)	ベイク削除済み (プレイ時に再ベイク)
+BAKES KEPT	ベイク保持
+BAKES,	ベイク、
+BAKING LIGHT -	ライトをベイク中 -
+BALANCE BOT SKILL	ボットの強さを調整
+BALANCE BOTS	ボットで人数調整
+BALANCE BOTS evens out uneven teams with bots. MODE > RANKED runs rated 1v1 on the ranked maps (no bots). SERVER LOG keeps a log of the match.	ボットで人数調整 は人数の偏ったチームをボットで埋めます。モード > ランク はランクマップでレート戦の1v1を行います (ボットなし)。サーバーログ は試合のログを残します。
+BALL	ボール
+BALL - SHOOT, BLAST OR RUN THE BALL INTO THE ENEMY GOAL - MOST GOALS WINS	ボール - ボールを撃つ・爆風・運ぶで敵ゴールへ - 最多ゴールで勝利
+BANDIT	バンディット
+BAR	バー
+BAR CAPTIONS	バーのキャプション
+BAR COLOR	バーの色
+BAR H	バー 高さ
+BAR W	バー 幅
+BARLOW CONDENSED	BARLOW CONDENSED
+BASIC	基本
+BEBAS NEUE	BEBAS NEUE
+BEGINNER	初級
+BEHIND	ビハインド
+BEHIND (0: AS IN FRONT)	背後 (0: 前方と同じ)
+BEHIND OTHER WINDOWS	他のウィンドウの背後
+BEHIND YOU	背後
+BEHIND YOU: THE DIP AND MUFFLE ON SOUNDS	背後: 音の減衰とこもり
+BELOW NORMAL	通常以下
+BENCH	ベンチ
+BENCHMARK	ベンチマーク
+BENCHMARK DEMO MISSING	ベンチマーク用デモがありません
+BENCHMARK RESULTS	ベンチマーク結果
+BENCHMARK:	ベンチマーク:
+BENCHMARK: COULD NOT SAVE THE RUN IN	ベンチマーク: 結果を保存できませんでした:
+BENCHMARK: could not save the run in	ベンチマーク: 結果を保存できませんでした:
+BENCHMARK: could not save the run in {}	ベンチマーク: 結果を保存できませんでした: {}
+BENCHMARK: no demo ({})	ベンチマーク: デモがありません ({})
+BENCHMARK: {}	ベンチマーク: {}
+BENCHMARKS	ベンチマーク
+BEST	ベスト
+BEST OF 3 - FIRST TO 2 WINS THE MATCH	3本勝負 - 2本先取で勝利
+BEST POSSIBLE (SEGMENTS)	理論ベスト (区間)
+BEST RUN	ベストラン
+BEST SEGMENT	ベスト区間
+BG OPACITY %	背景不透明度 %
+BHOP BOUNCE	BHOP バウンス
+BHOP BOUNCE (MAX)	BHOP バウンス (最大)
+BIG HIT	大ダメージ
+BIG HIT: 40+ DAMAGE; NOT USABLE: THE WEAPON LIST	大ダメージ: 40以上; 使用不可: 武器リスト
+BIG NOODLE	BIG NOODLE
+BIND FLY KEYS	飛行キーを割り当て
+BIND HIDE HUD ON CONTROLS	操作設定でHUD非表示を割り当て
+BLACK	黒
+BLADES	ブレード
+BLAZE	BLAZE
+BLEND	ブレンド
+BLUE / ORANGE	青 / オレンジ
+BLUE-YELLOW (TRITAN)	青-黄 (第三色覚)
+BOMB	爆破
+BOMB (DROPPED)	爆弾 (ドロップ)
+BOMB - attackers carry the bomb to a site and plant it (hold E). Defenders defuse it (hold E) or hold out until time runs out. 7 rounds, then the sides swap.	爆破 - 攻撃側は爆弾をサイトに運んで設置 (E長押し)。防衛側は解除 (E長押し) するか時間切れまで守り切る。7ラウンドで攻守交代。
+BOMB BEEP	爆弾のビープ音
+BOMB DEFUSED	爆弾解除
+BOMB DROPPED	爆弾ドロップ
+BOMB DROPPED - PICK IT UP	爆弾ドロップ - 拾え
+BOMB PLANTED	爆弾設置
+BOMB PLANTED - DEFEND IT	爆弾設置 - 守れ
+BOMB PLANTED - DEFUSE IT	爆弾設置 - 解除せよ
+BOMB SITE	爆破サイト
+BOOM	ブーム
+BOOMERS	ブーマー
+BORDER	枠線
+BORDER COLOR	枠線の色
+BORDERLESS	ボーダーレス
+BORDERLESS FULLSCREEN	ボーダーレスフルスクリーン
+BOT	ボット
+BOT BRAIN	ボットAI
+BOT BRAIN:	ボットAI:
+BOT BRAIN: BUILT-IN	ボットAI: 内蔵
+BOT BRAIN: OFF (RANKED)	ボットAI: オフ (ランク)
+BOT DIFFICULTY:	ボット難易度:
+BOT LOOKS	ボットの見た目
+BOT NAMES FILE	ボット名ファイル
+BOTS	ボット
+BOTS DON'T FIRE	ボットは撃たない
+BOTS OFF	ボット オフ
+BOTS ON	ボット オン
+BOTS/NAMES.TXT: A NAME A LINE, USED WHEN YOU HOST	BOTS/NAMES.TXT: 1行に1名、ホスト時に使用
+BOTS: EASY	ボット: イージー
+BOTS: EXPERT	ボット: エキスパート
+BOTS: HARD	ボット: ハード
+BOTS: MEDIUM	ボット: ノーマル
+BOTS: OFF (RANKED)	ボット: オフ (ランク)
+BOX	ボックス
+BOX OPACITY	ボックス不透明度
+BOXES, STRETCHED AS ONE - UNGROUP TO EDIT THEM	ボックスをまとめて伸縮 - 編集するにはグループ解除
+BREAKABLE	破壊可能
+BRICK	レンガ
+BRIGHTNESS	明るさ
+BRITISH	イギリス英語
+BRUNO	BRUNO
+BUBBLE	バブル
+BUILDINGS	建物
+BUILT FOR	対応モード
+BUILT FOR sets the mode the map is made for; the MODES grid sets what it's offered for. PLAYABLE AS shows what it has the pieces for (team modes need A and B spawns).	対応モードはマップの想定モードを設定; モード表は提供先を設定します。プレイ可能は必要な要素が揃っているモードを表示 (チームモードにはAとBのスポーンが必要)。
+BUILT FOR:	対応モード:
+BUILT FOR: ANY	対応モード: すべて
+BY NAME	名前順
+BY PING	PING順
+BY PLAYERS	人数順
+BYE	不戦勝
+BYPASS COMPOSITOR	コンポジターをバイパス
+BYPASS COMPOSITOR: ALWAYS	コンポジターをバイパス: 常に
+BYPASS COMPOSITOR: FULLSCREEN	コンポジターをバイパス: フルスクリーン
+BYPASS COMPOSITOR: NEVER	コンポジターをバイパス: しない
+CALL	コール
+CALL A VOTE	投票を開始
+CALL VOTE	投票開始
+CALL:	コール:
+CALLOUTS	コールアウト
+CAN'T BE READ	読み込めません
+CAN'T READ '	読み込めません '
+CANCEL	キャンセル
+CAPS LOCK	CAPS LOCK
+CAPTIONS	字幕
+CAPTIONS: THE ANNOUNCER AS TEXT TOO	字幕: アナウンサーをテキストでも表示
+CAPTURE	占拠
+CAPTURE THE HILL	ヒルを占拠
+CART	カート
+CHAMPION	チャンピオン
+CHANGE ANYTHING AFTER (IT STAYS)	後から自由に変更可 (保持されます)
+CHANGE MAP / MODE	マップ / モード変更
+CHANGE MAP / MODE (pick the mode, then the map), FORCE START, RELOAD MAP, EDIT MODE (everyone edits the map together).	マップ / モード変更 (モード、次にマップを選択)、強制開始、マップ再読込、編集モード (全員でマップを編集)。
+CHANNELS	チャンネル
+CHANNELS: MONO	チャンネル: モノラル
+CHANNELS: STEREO	チャンネル: ステレオ
+CHANNELS: SWAPPED	チャンネル: 左右反転
+CHAT	チャット
+CHAT BOX	チャット欄
+CHAT COLOR	チャットの色
+CHAT LINES	チャット行数
+CHAT OFF -	チャット オフ -
+CHAT ON	チャット オン
+CHAT OPACITY	チャット不透明度
+CHAT SECONDS	チャット表示秒数
+CHECK AGAIN	再確認
+CHECKPOINT	チェックポイント
+CHECKPT	CP
+CHOOSE -	選択 -
+CHOOSE A MAP FOR	マップを選択:
+CHOOSE A MODE	モードを選択
+CHOOSING...	選択中...
+CLASSIC	クラシック
+CLEAN SURFACES	クリーンな表面
+CLEAR ALL	すべてクリア
+CLEAR DOWNLOADED MAPS	ダウンロードしたマップを削除
+CLEAR LIGHT BAKES	ライトベイクを削除
+CLEAR THEME	テーマをクリア
+CLEO	CLEO
+CLICK A SLOT TO REBIND IT - RIGHT-CLICK OR DEL UNBINDS	スロットをクリックで再割り当て - 右クリックかDELで解除
+CLICK A WIDGET TO EDIT, DRAG TO MOVE.	ウィジェットをクリックで編集、ドラッグで移動。
+CLICK AGAIN TO RESET EVERY SETTING (NOT YOUR NAME)	もう一度クリックで全設定をリセット (名前は除く)
+CLICK ON SOMETHING TO SELECT IT	クリックで選択
+CLICK TO CONFIRM	クリックで確定
+CLICK anything to select it. New things go where the crosshair (the middle of the view) points.	クリックで何でも選択。新しいものはクロスヘア (画面中央) の位置に置かれます。
+CLICK: SELECT (AGAIN: THE ONE BEHIND, SHIFT: ADD MORE, THEN GROUP)	クリック: 選択 (再度: 背後のもの、SHIFT: 追加してグループ化)
+CLIP BOX COLOR	クリップボックスの色
+CLOCK	時計
+CLOSE	閉じる
+CLOSE QUARTERS	近距離戦
+CLOSED by the load governor: the machine can't carry both servers (production comes first)	負荷制御により停止: マシンが両方のサーバーを維持できません (本番を優先)
+CLOSEST FREE MATCH: APEX LEGENDS	最も近い一致: APEX LEGENDS
+CLOSEST FREE MATCH: HALF-LIFE 2	最も近い一致: HALF-LIFE 2
+CLOSEST FREE MATCH: OVERWATCH	最も近い一致: OVERWATCH
+CLOSEST FREE MATCH: QUAKE	最も近い一致: QUAKE
+CLOSEST FREE MATCH: TF2	最も近い一致: TF2
+CLOSEST FREE MATCH: TF2 SECONDARY	最も近い一致: TF2 セカンダリ
+CM PER 360	CM/360
+CM PER 360: MOUSE TRAVEL FOR ONE FULL TURN	CM/360: 1回転に必要なマウス移動距離
+COLOR	色
+COLOR (FULL)	色 (フル)
+COLOR BLINDNESS	色覚補正
+COLOR SCHEME	配色
+COLOR: BLACK	色: 黒
+COLOR: TEAM	色: チーム
+COLOR: WHITE	色: 白
+COLOR: YELLOW	色: 黄
+COLORBLIND: BLUE-YELLOW	色覚補正: 青-黄
+COLORBLIND: RED-GREEN	色覚補正: 赤-緑
+COLORS	カラー
+COLORS COPIED: PASTE THEM ANYWHERE	カラーをコピー: どこにでも貼り付け可
+COLORS FROM	カラー元:
+COLORS PASTED	カラーを貼り付け
+COLORS SAVED IN	カラーの保存先:
+COLUMN	列
+COLUMN: ACC	列: 命中率
+COLUMN: D	列: D
+COLUMN: DMG	列: DMG
+COLUMN: K	列: K
+COLUMN: OBJ	列: OBJ
+COLUMN: PING	列: PING
+COLUMN: TOTAL K / D	列: 合計 K / D
+COMBINE	結合
+COMET	COMET
+COMPASS	コンパス
+COMPASS + RADAR	コンパス + レーダー
+COMPETITIVE: NO FOG OR SHADOWS, FEWER EFFECTS;	競技: 霧と影なし、エフェクト削減;
+COMPOSITED FRAME SHOWN (EST)	合成フレーム表示 (推定)
+COMPOSITOR ON MOST DRIVERS	多くのドライバーでコンポジター
+COMPOSITOR: NEXT VBLANK (EST)	コンポジター: 次のVBLANK (推定)
+CONCHARS is compressed	CONCHARS が圧縮されています
+CONCHARS isn't a 128 x 128 picture	CONCHARS が 128 x 128 の画像ではありません
+CONCRETE	コンクリート
+CONFIRM QUIT / LEAVE	終了 / 退出を確認
+CONNECT	接続
+CONNECTING TO	接続中:
+CONSOLE	コンソール
+CONSOLE IN MENUS	メニューでコンソール
+CONSOLE KEY	コンソールキー
+CONSOLE KEY: '	コンソールキー: '
+CONSOLE KEY: F1	コンソールキー: F1
+CONSOLE KEY: F10	コンソールキー: F10
+CONSOLE KEY: F11	コンソールキー: F11
+CONSOLE KEY: HOME	コンソールキー: HOME
+CONSOLE KEY: INSERT	コンソールキー: INSERT
+CONTESTED	争奪中
+CONTRAST	コントラスト
+CONTROL SCRIPTS ARE OFF IN RANKED	ランクでは操作スクリプト無効
+CONTROLS	操作設定
+CONTROLS 2	操作設定 2
+CONTROLS 3	操作設定 3
+CONTROLS: MORE KEYS	操作設定: その他のキー
+CONTROLS: MOVE KEYS	操作設定: 移動キー
+CONVERTING...	変換中...
+COOLDOWN BARS	クールダウンバー
+COOLDOWN BARS: ALWAYS	クールダウンバー: 常に
+COOLDOWN BARS: WHEN NOT READY	クールダウンバー: 使用不可時
+COOLDOWN RING	クールダウンリング
+COPIED (COULDN'T WRITE FILE)	コピー済み (ファイル書き込み失敗)
+COPIED + SAVED CONTROLS/	コピー + 保存 CONTROLS/
+COPIED + SAVED HUDS/	コピー + 保存 HUDS/
+COPY CODE	コードをコピー
+COPY COLORS	カラーをコピー
+COPY NAME	名前をコピー
+CORNERS	角
+COULD NOT DELETE	削除できませんでした
+COULD NOT RENAME THE RUN	ランの名前を変更できませんでした
+COULD NOT SAVE	保存できませんでした
+COULD NOT WRITE	書き込めませんでした
+COULDN'T SAVE THE SCREENSHOT	スクリーンショットを保存できませんでした
+COULDN'T START RECORDING	録画を開始できませんでした
+COUNTDOWN: A TICK EACH OF THE LAST 10 S	カウントダウン: 最後の10秒に毎秒音
+CP	CP
+CPU	CPU
+CPU ABOVE NORMAL	CPU 通常以上
+CPU HIGH	CPU 高
+CPU NORMAL	CPU 通常
+CPU OTHER	CPU その他
+CPU PRIORITY	CPU優先度
+CPU PRIORITY: ABOVE NORMAL	CPU優先度: 通常以上
+CPU PRIORITY: HIGH	CPU優先度: 高
+CROSSBOW	クロスボウ
+CROSSBOW, STICKY AND RIFLE	クロスボウ、スティッキー、ライフル
+CROSSBOWS ONLY	クロスボウのみ
+CROSSHAIR	クロスヘア
+CROSSHAIR CODE COPIED	クロスヘアコードをコピー
+CROSSHAIR COLOR	クロスヘアの色
+CROSSHAIR PASTED	クロスヘアを貼り付け
+CROSSHAIR, TOWARD WHERE THEY CAME FROM	クロスヘア、攻撃元の方向
+CROUCH	しゃがみ
+CROUCH SPEED	しゃがみ速度
+CROWN	クラウン
+CTRL+D: DUPLICATE    DEL: DELETE    CTRL+Z: UNDO    CTRL+Y: REDO    CTRL+S: SAVE    ESC: DESELECT / LEAVE	CTRL+D: 複製    DEL: 削除    CTRL+Z: 元に戻す    CTRL+Y: やり直し    CTRL+S: 保存    ESC: 選択解除 / 退出
+CTRL+F (SEARCH)	CTRL+F (検索)
+CTRL+Y (REDO)	CTRL+Y (やり直し)
+CTRL+Z (UNDO)	CTRL+Z (元に戻す)
+CUE	キュー
+CUE SOUNDS	キュー音
+CUE: DASH	キュー: ダッシュ
+CUE: DEATH	キュー: 死亡
+CUE: GRAPPLE FIRE	キュー: グラップル発射
+CUE: GRAPPLE HIT	キュー: グラップル命中
+CUE: HURT	キュー: 被弾
+CUE: HYPER	キュー: ハイパー
+CUE: JUMP	キュー: ジャンプ
+CUE: KILL	キュー: キル
+CUE: LANDING	キュー: 着地
+CUE: STREAK STING	キュー: 連続キル
+CUE: SUPER	キュー: スーパー
+CUE: TYPING	キュー: 入力
+CURSOR COLOR	カーソルの色
+CURSOR SIZE	カーソルサイズ
+CUSTOM	カスタム
+CUSTOM ACCENT COLOR	カスタムアクセントカラー
+CUSTOM COLOR	カスタムカラー
+CUSTOM ENEMY	カスタム敵
+CUSTOM GRID	カスタムグリッド
+CUSTOM GROUPS	カスタムグループ
+CUSTOM GUN	カスタム武器
+CUSTOM MODE	カスタムモード
+CUSTOM MODE:	カスタムモード:
+CUSTOM MODE: OFF (RANKED)	カスタムモード: オフ (ランク)
+CUSTOM MODE: pick one of your saved custom modes (or NEW / EDIT to build one).	カスタムモード: 保存したカスタムモードを選択 (新規 / 編集で作成)。
+CUSTOM NAME COLOR	カスタム名前色
+CUSTOM TAG	カスタムタグ
+CUSTOM TEAM	カスタムチーム
+CUSTOM WIDGETS	カスタムウィジェット
+CUSTOM WIDGETS: build your own HUD pieces (number, bar, icon) from any value, drag them around, and import / export layouts.	カスタムウィジェット: 任意の値から独自のHUD要素 (数値、バー、アイコン) を作成し、ドラッグで配置、レイアウトのインポート / エクスポートも可能。
+CUSTOM: PICK OUTLINE "CUSTOM" ON PLAYER; SAME: ITS	カスタム: プレイヤーで輪郭「カスタム」を選択; 同じ: その
+CYAN	シアン
+CYAN / RED	シアン / 赤
+D3DKMTCloseAdapter	D3DKMTCloseAdapter
+D3DKMTGetProcessSchedulingPriorityClass	D3DKMTGetProcessSchedulingPriorityClass
+D3DKMTGetScanLine	D3DKMTGetScanLine
+D3DKMTOpenAdapterFromHdc	D3DKMTOpenAdapterFromHdc
+D3DKMTSetProcessSchedulingPriorityClass	D3DKMTSetProcessSchedulingPriorityClass
+DAMAGE	ダメージ
+DAMAGE ARCS	ダメージアーク
+DAMAGE FLASH	ダメージフラッシュ
+DAMAGE NUMBER COLOR	ダメージ数値の色
+DAMAGE NUMBER SIZE	ダメージ数値のサイズ
+DAMAGE NUMBERS	ダメージ数値
+DASH	ダッシュ
+DASH + GRAPPLE	ダッシュ + グラップル
+DASH BUFFER	ダッシュ先行入力
+DASH BUFFER: 0.05 S	ダッシュ先行入力: 0.05秒
+DASH BUFFER: 0.1 S	ダッシュ先行入力: 0.1秒
+DASH BUFFER: 0.15 S	ダッシュ先行入力: 0.15秒
+DASH BUFFER: OFF	ダッシュ先行入力: オフ
+DASH CAPTION	ダッシュのキャプション
+DASH CHARGES	ダッシュチャージ
+DASH COOLDOWN	ダッシュクールダウン
+DASH EXIT SPEED (MAX)	ダッシュ終了速度 (最大)
+DASH EXIT SPEED (MIN)	ダッシュ終了速度 (最小)
+DASH JUMP WINDOW	ダッシュジャンプ猶予
+DASH LENGTH	ダッシュ距離
+DASH SPEED	ダッシュ速度
+DASH SPEED KEPT	ダッシュ速度維持
+DASH VERTICAL	ダッシュ垂直
+DASH WALL BOUNCE ANGLE	ダッシュ壁反射角度
+DASHING BLADES	ダッシュブレード
+DATA FOLDER	データフォルダ
+DATE FORMAT	日付形式
+DATES: DD-MM	日付: DD-MM
+DATES: MM-DD	日付: MM-DD
+DATES: YYYY-MM-DD	日付: YYYY-MM-DD
+DEAD	死亡
+DEATH	死亡
+DEATH + SPECTATING	死亡 + 観戦
+DEATH CAMERA	デスカメラ
+DEATH CAMERA: A TEAMMATE	デスカメラ: 味方
+DEATH CAMERA: MY BODY	デスカメラ: 自分の体
+DEATH CAMERA: THE KILLER	デスカメラ: キルした相手
+DEBAND	デバンド
+DEBAND: A FAINT DITHER, NO BANDS IN SKY / FOG;	デバンド: 薄いディザで空 / 霧の縞を除去;
+DECALOTYPE	DECALOTYPE
+DEFAULT	デフォルト
+DEFEND	防衛
+DEFEND THE SITES	サイトを防衛
+DEFEND: KEEP THEM OFF THE SITES, DEFUSE A PLANTED BOMB	防衛: サイトを守り、設置された爆弾を解除
+DEJAVU SANS	DEJAVU SANS
+DELETE	削除
+DELETE (HIDE / SHOW)	削除 (非表示 / 表示)
+DELETE WIDGET	ウィジェット削除
+DELETED	削除済み
+DEMO	デモ
+DEMO - ESC TO STOP	デモ - ESCで停止
+DEMO RATE	デモレート
+DEMO RATE: 62.5 HZ	デモレート: 62.5 HZ
+DEMO RATE: FULL	デモレート: フル
+DEMO SAVED - MAIN MENU > DEMOS	デモを保存しました - メインメニュー > デモ
+DEMOS	デモ
+DEPTH	奥行き
+DESC	降順
+DEVICES	デバイス
+DIFFICULTY	難易度
+DIFFICULTY: ADVANCED	難易度: 上級
+DIFFICULTY: BEGINNER	難易度: 初級
+DIFFICULTY: EXPERT	難易度: エキスパート
+DIFFICULTY: INTERMEDIATE	難易度: 中級
+DISABLE CHAT	チャット無効
+DISCONNECT	切断
+DISCORD	DISCORD
+DISCORD CODE	DISCORDコード
+DISCORD LINK NEEDS A RANKED KEY (quark.key)	DISCORD連携にはランクキーが必要です (quark.key)
+DISCORD LINK: COULDN'T REACH THE SERVER	DISCORD連携: サーバーに接続できません
+DISCORD LINKED - YOUR DISCORD NAME IS NOW PUBLIC WITH YOUR GAME NAME AND RANKED ID (CROWNS, QUEUE FILLS). TYPE UNLINK TO REMOVE IT	DISCORD連携済み - DISCORD名がゲーム名とランクIDと共に公開されます (クラウン、キュー通知)。解除するにはUNLINKと入力
+DISCORD:	DISCORD:
+DISCORD:  (PUBLIC)	DISCORD:  (公開)
+DISCORD: TYPE THE 6-DIGIT CODE FROM /link IN DISCORD	DISCORD: DISCORDの /link で得た6桁コードを入力
+DISPLAY	ディスプレイ
+DISPLAY: BORDERLESS FULLSCREEN	ディスプレイ: ボーダーレスフルスクリーン
+DISPLAY: EXCLUSIVE FULLSCREEN	ディスプレイ: 排他フルスクリーン
+DISPLAY: WINDOWED	ディスプレイ: ウィンドウ
+DISTANCE	距離
+DMG	DMG
+DMITRI	DMITRI
+DON'T SAVE	保存しない
+DONE	完了
+DOT	ドット
+DOUBLE DAMAGE	ダブルダメージ
+DOUBLE SIZE	2倍サイズ
+DOWN	下
+DOWNLOADED MAPS DELETED	ダウンロードしたマップを削除しました
+DOWNLOADED,	ダウンロード済み、
+DOWNLOADING MAP	マップをダウンロード中
+DPI	DPI
+DRAG TO MOVE, CORNER / WHEEL / + - TO SIZE, ARROWS NUDGE (SHIFT 10), TAB NEXT, ALT: NO SNAP, CTRL+Z UNDO	ドラッグで移動、角 / ホイール / + - でサイズ、矢印で微調整 (SHIFT 10)、TABで次へ、ALT: スナップなし、CTRL+Zで元に戻す
+DRAG TO TURN	ドラッグで回転
+DRAG, ADD, IMPORT / EXPORT WIDGETS	ウィジェットのドラッグ、追加、インポート / エクスポート
+DRAG, SIZE AND STYLE EVERY ELEMENT IN PLACE	全要素をその場でドラッグ・サイズ・スタイル調整
+DRAIN IN	減少開始まで
+DRAW CALLS	ドローコール
+DRAW DISTANCE	描画距離
+DRAW IN BACKGROUND	バックグラウンドで描画
+DRAW: 150 M	描画: 150 M
+DRAW: 250 M	描画: 250 M
+DRAW: 400 M	描画: 400 M
+DRIVER	ドライバー
+DROP MY EDITS	編集を破棄
+DUCKING	ダッキング
+DUEL	デュエル
+DUEL - 1v1 (or 2v2): every life has a random modifier (low gravity, giants, rockets only...). First to 11.	デュエル - 1v1 (または2v2): ライフごとにランダムな修正 (低重力、巨人、ロケットのみ...)。11本先取。
+DUPLICATE	複製
+DUSK	DUSK
+DXGI PRESENT	DXGI PRESENT
+DXGI PRESENT: WINDOWS ONLY	DXGI PRESENT: WINDOWSのみ
+DYNAMIC RANGE	ダイナミックレンジ
+DYNAMIC RANGE: CLEAN	ダイナミックレンジ: クリーン
+DYNAMIC RANGE: NIGHT	ダイナミックレンジ: ナイト
+DYNAMIC RANGE: NORMAL	ダイナミックレンジ: 通常
+Dash into a wall head-on (under 45 degrees) and you bounce off it at 16 m/s (it leaves you 1 dash).	壁に正面から (45度未満で) ダッシュすると 16 m/s で跳ね返ります (ダッシュが1回残ります)。
+Dash jump: jump while dashing along the floor to keep the dash's full speed through the jump (it leaves you both dashes).	ダッシュジャンプ: 床をダッシュ中にジャンプするとダッシュの速度を維持したまま跳べます (ダッシュは両方残ります)。
+Decl: no padding (its words are hashed)	Decl: パディングなし (ワードはハッシュ化)
+Display: window mode, vsync, low latency mode, frame cap, player shadows, brightness, anti-aliasing and interpolation. Lower latency settings cost smoothness: the notes under them say how.	ディスプレイ: ウィンドウモード、垂直同期、低遅延モード、フレーム上限、プレイヤーの影、明るさ、アンチエイリアス、補間。低遅延設定は滑らかさを犠牲にします: 詳細は各項目の説明を参照。
+Drag the squares on a selected box's faces to resize it; drag the arrows to move it. The keyboard works too: ARROWS / PGUP / PGDN move it by the grid, SHIFT + ARROWS grow a side, CTRL + ARROWS shrink it.	選択したボックスの面の四角をドラッグでサイズ変更、矢印をドラッグで移動。キーボードも使えます: 矢印 / PGUP / PGDN でグリッド移動、SHIFT + 矢印で面を拡大、CTRL + 矢印で縮小。
+E - use (plant / defuse the bomb).   1-9, 0 - weapons.   MOUSE WHEEL - next / previous weapon.	E - 使用 (爆弾の設置 / 解除)。   1-9, 0 - 武器。   マウスホイール - 次 / 前の武器。
+E-GIRL	E-GIRL
+EACH INPUT SENT IN THIS MANY PACKETS	各入力をこの数のパケットで送信
+EACH OF THE ANNOUNCER'S LINES ON OR OFF	アナウンサーの各セリフのオン / オフ
+EACH SLIDER SHOWS THE VALUE IN THIS MODE (STANDARD x MULTIPLIER)	各スライダーはこのモードでの値を表示 (標準 x 倍率)
+EASY BOTS	イージーボット
+EDGE ARROWS	端の矢印
+EDIT	編集
+EDIT ON SCREEN	画面上で編集
+EDIT THE MAP TOGETHER	全員でマップ編集
+EDIT THE MAP TOGETHER (CHANGES LAST UNTIL THE MAP CHANGES)	全員でマップ編集 (変更はマップ変更まで有効)
+EDITOR	エディター
+EDITOR TEST PLAY	エディターテストプレイ
+EFFECT COLOR	エフェクトの色
+EFFECTS	エフェクト
+EFFECTS + F3	エフェクト + F3
+EFFECTS OPACITY	エフェクト不透明度
+EFFECTS QUIETER WHILE THE ANNOUNCER SPEAKS	アナウンサー発声中は効果音を小さく
+EFFECTS VOLUME	効果音量
+EFFECTS: CUSTOM	エフェクト: カスタム
+EFFECTS: OWN	エフェクト: 自分
+EFFECTS: TEAM	エフェクト: チーム
+ELEMENT	要素
+ELEMENT COLOR	要素の色
+ELEMENT: CHAT	要素: チャット
+ELEMENT: COOLDOWN BARS	要素: クールダウンバー
+ELEMENT: HEALTH	要素: 体力
+ELEMENT: KEY OVERLAY	要素: キーオーバーレイ
+ELEMENT: KILL FEED	要素: キルフィード
+ELEMENT: SCORE BOX	要素: スコアボックス
+ELEMENT: SPEED METER	要素: スピードメーター
+ELEMENT: WEAPON LIST	要素: 武器リスト
+ELEMENT: WEAPON NAME	要素: 武器名
+END	END
+END SESSION	セッション終了
+ENEMIES ALIVE	敵の生存数
+ENEMY BOTS	敵ボット
+ENEMY COLOR	敵の色
+ENEMY GOAL	敵ゴール
+ENEMY HOLDS THE HILL	敵がヒルを確保中
+ENEMY IS PUSHING	敵が押し進めている
+ENEMY MODEL	敵モデル
+ENEMY MODEL:	敵モデル:
+ENEMY MODEL: THEIR OWN	敵モデル: 本人の設定
+ENEMY OUTLINE	敵の輪郭
+ENEMY OUTLINE:	敵の輪郭:
+ENEMY WIDTH	敵の幅
+ENTER	ENTER
+ERROR ON LINE	エラー 行:
+ESC	ESC
+ESC (CLEAR SEARCH)	ESC (検索をクリア)
+ESC TO CANCEL	ESCでキャンセル
+ESC: PAUSE / SETTINGS   R: RESTART	ESC: 一時停止 / 設定   R: リスタート
+EVERY SETTING IS BACK TO ITS DEFAULT	全設定をデフォルトに戻しました
+EVERY WEAPON, ALL MOVEMENT - NO GIMMICKS	全武器・全移動 - ギミックなし
+EVERYONE THROWS - THE LOSING SHAPE IS OUT	全員が出す - 負けた手は脱落
+EXCLUSIVE / BORDERLESS SKIP THE DESKTOP	排他 / ボーダーレスはデスクトップを経由しない
+EXCLUSIVE AUDIO	排他オーディオ
+EXCLUSIVE AUDIO (BUSY)	排他オーディオ (使用中)
+EXCLUSIVE AUDIO (N/A)	排他オーディオ (N/A)
+EXCLUSIVE FULLSCREEN	排他フルスクリーン
+EXCLUSIVE FULLSCREEN ONLY	排他フルスクリーンのみ
+EXCLUSIVE FULLSCREEN ONLY; A 4:3 SIZE IS	排他フルスクリーンのみ; 4:3サイズは
+EXIT	終了
+EXIT FACE	出口面
+EXIT FACE: +X	出口面: +X
+EXIT FACE: +Z	出口面: +Z
+EXIT FACE: -X	出口面: -X
+EXIT FACE: -Z	出口面: -Z
+EXIT FACE: BOTTOM (-Y)	出口面: 下 (-Y)
+EXIT FACE: TOP (+Y)	出口面: 上 (+Y)
+EXPECTED NAME: VALUE	NAME: VALUE の形式が必要です
+EXPERT	エキスパート
+EXPERT BOTS	エキスパートボット
+EXPLOSION	爆発
+EXPLOSIONS, SPARKS AND BURSTS	爆発、火花、バースト
+EXPLOSIVES	爆発物
+EXPORT	エクスポート
+EXPORT / IMPORT USE THE CLIPBOARD	エクスポート / インポートはクリップボードを使用
+EXPORT CSV	CSVエクスポート
+EXPORT GROUP	グループをエクスポート
+EXPORT PNG	PNGエクスポート
+EZRA	EZRA
+Each dash leaves you 1 m/s faster than you went in (at least 11, at most 32 m/s).	ダッシュごとに入る前より 1 m/s 速く抜けます (最低 11、最大 32 m/s)。
+Each map is built for one mode, plus free for all and any others it lists. You can still start any map in any mode: the menus warn when it isn't built for it (it may be missing spawns or objectives).	各マップは1つのモード用に作られ、個人戦と記載された他モードにも対応します。どのマップもどのモードで開始できますが、非対応の場合はメニューで警告されます (スポーンや目標がない場合があります)。
+F3 - performance overlay (average, 1% and 0.1% low FPS, input latency).   F12 - screenshot.   ESC - menu, votes, settings.	F3 - パフォーマンス表示 (平均、1% / 0.1% LOW FPS、入力遅延)。   F12 - スクリーンショット。   ESC - メニュー、投票、設定。
+F3 COLORBLIND COLORS	F3 色覚補正カラー
+FACING (Q E)	向き (Q E)
+FADE DISTANCE	フェード距離
+FADE LENGTH	フェード長
+FAIRNESS: DEFAULT MODEL, HUD, CONTROLS, 10 MS INTERP	公平性: デフォルトのモデル、HUD、操作、10 MS補間
+FAR SCENERY	遠景
+FAST FLY	高速飛行
+FASTER MOVES TURN FURTHER (AT MOST X4)	速く動かすほど大きく回転 (最大X4)
+FAYE	FAYE
+FEATURES	機能
+FEED HS MARK	フィードのHSマーク
+FEEDBACK	フィードバック
+FEMALE	女性
+FFA COLORS	個人戦カラー
+FFA: EACH OPPONENT THEIR OWN COLOUR; OWN: YOUR	個人戦: 相手ごとに別の色; 自分: あなたの
+FIELD	フィールド
+FIGHTER	ファイター
+FILE	ファイル
+FILE NAME	ファイル名
+FILE: NAME / TITLE	ファイル: 名前 / タイトル
+FILL THE UNEVEN TEAMS WITH BOTS?	人数差をボットで埋めますか?
+FINAL	決勝
+FIND CLIP BOXES	クリップボックスを検索
+FIND INVISIBLE WALLS:	見えない壁を検索:
+FINISH	ゴール
+FINISHED	完了
+FIRE	射撃
+FIRE RATE	連射速度
+FIRES THE MOMENT IT IS	準備でき次第即発射
+FIRST TO #	# 本先取
+FIX GAPS	隙間を修正
+FIX MAP	マップを修正
+FIXED LOGO COLORS	ロゴの色を固定
+FIXED TEAMS	チーム色固定
+FIXED TEAMS: SPECTATING AND DEMOS SHOW	チーム色固定: 観戦とデモでの表示
+FLAT LIGHTING	フラットライティング
+FLAT MAP	フラットマップ
+FLAT MAP, NO LIGHTING	フラットマップ、ライティングなし
+FLYING, ONE KEY: MOVE UP HELD UP, LET GO DOWN	飛行 1キー: 押している間上昇、離すと下降
+FOG	霧
+FOLDER	フォルダ
+FOLDER: DATA	フォルダ: データ
+FOLDER: PICTURES	フォルダ: ピクチャ
+FONT	フォント
+FONT:	フォント:
+FONTS GO IN MODS/FONTS; ASSETS IN OVERRIDES/	フォントは MODS/FONTS へ; アセットは OVERRIDES/ へ
+FOR	対象
+FOR A VARIABLE REFRESH MONITOR	可変リフレッシュレートモニター用
+FOR THE NEXT LAUNCH	次回起動時
+FORCE MY PACK	自分のパックを強制
+FORCE MY PACK: EVERYONE IN YOUR SOUND PACK	自分のパックを強制: 全員を自分のサウンドパックで
+FORCE PLAYER MODELS	プレイヤーモデルを強制
+FORCE START	強制開始
+FORMAT: PNG	形式: PNG
+FORMAT: TGA	形式: TGA
+FORWARD	前進
+FOUND - WATCH THE REST OF THE ROUND	発見された - 残りのラウンドを観戦
+FOV	FOV
+FOV #: # DEGREES ACROSS THIS SCREEN	FOV #: この画面で # 度
+FOV MODE	FOVモード
+FOV: HORIZONTAL	FOV: 水平
+FOV: HORIZONTAL AT 4:3	FOV: 4:3で水平
+FOV: VERTICAL	FOV: 垂直
+FPS	FPS
+FPS LIMIT	FPS制限
+FPS MIN (1S)	FPS 最小 (1秒)
+FRAME CAP WAIT	フレーム上限待機
+FRAME TIME (MS) OVER THE RUN	ラン中のフレームタイム (MS)
+FRAMES	フレーム
+FREE FOR ALL	個人戦
+FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next kill wins).	個人戦 - 時間切れ時に最多キルで勝利 (同点は延長戦: 次のキルで勝利)。
+FRIENDS JOIN WITH YOUR PUBLIC IP (STREAMER MODE)	フレンドはグローバルIPで参加 (配信者モード)
+FRIENDS JOIN WITH YOUR PUBLIC IP:	フレンドはグローバルIPで参加:
+FROM	から
+FROM: APEX LEGENDS	元: APEX LEGENDS
+FROM: CALL OF DUTY	元: CALL OF DUTY
+FROM: CS2 / CS:GO	元: CS2 / CS:GO
+FROM: OVERWATCH 2	元: OVERWATCH 2
+FROM: QUAKE	元: QUAKE
+FROM: TEAM FORTRESS 2	元: TEAM FORTRESS 2
+FROM: VALORANT	元: VALORANT
+FULL RATE: EVERY SNAPSHOT (UP TO 1000 HZ) - SMOOTHER, MUCH BIGGER FILES	フルレート: 全スナップショット (最大1000 HZ) - 滑らか、ファイルが大幅に大きい
+FULL RESTART	完全再起動
+FULL: EVERY SNAPSHOT (BIGGER FILES); ALSO ON DEMOS	フル: 全スナップショット (ファイル大); デモにも
+FULLBRIGHT	フルブライト
+FULLSCREEN	フルスクリーン
+FULLSCREEN AND BORDERLESS OPEN ON IT	フルスクリーンとボーダーレスはここで開く
+FULLSCREEN OPTIMIZATIONS BACK ON: FROM THE NEXT START	フルスクリーン最適化 オン: 次回起動から
+FULLSCREEN OPTIMIZATIONS OFF: FROM THE NEXT START	フルスクリーン最適化 オフ: 次回起動から
+FULLSCREEN OPTIMIZATIONS: NOT CHANGED	フルスクリーン最適化: 変更なし
+FULLSCREEN OPTIMIZATIONS: WINDOWS ONLY	フルスクリーン最適化: WINDOWS のみ
+FULLSCREEN OPTIMIZATIONS: WINDOWS REFUSED THE CHANGE	フルスクリーン最適化: WINDOWS が変更を拒否
+FULLSCREEN SIZE	フルスクリーンサイズ
+FULLSCREEN SIZE:	フルスクリーンサイズ:
+FULLSCREEN SIZE: DESKTOP	フルスクリーンサイズ: デスクトップ
+FULLSCREEN: OFF KEEPS IT ON SCREEN	フルスクリーン: オフで画面上に保持
+G-SYNC / FREESYNC	G-SYNC / FREESYNC
+GAME	ゲーム
+GAME FONTS: YOUR OWN COPY OF THE REAL FONT IF FOUND	ゲームフォント: 本物のフォントがあればそれを使用
+GAME {} NS + MOUSE POLLING {} NS (# HZ) + DISPLAY {} NS (# HZ)	ゲーム {} NS + マウス {} NS (# HZ) + ディスプレイ {} NS (# HZ)
+GAMEMODE	ゲームモード
+GAMEPLAY	ゲームプレイ
+GAMEPLAY 2	ゲームプレイ 2
+GAMEPLAY 3	ゲームプレイ 3
+GAMEPLAY 4	ゲームプレイ 4
+GAMEPLAY 5	ゲームプレイ 5
+GAMMA	ガンマ
+GAP	間隔
+GATE	ゲート
+GENERAL	一般
+GENERAL + INTERFACE	一般 + インターフェース
+GET IT WITH /link - THE CODE IS PUBLIC	/link で取得 - コードは公開されます
+GIANT SNIPERS	巨人スナイパー
+GIBS	肉片
+GL	GL
+GLASS CANNONS	グラスキャノン
+GLOW	グロー
+GLOW STRENGTH	グローの強さ
+GO	GO
+GO!	GO!
+GODLIKE	ゴッドライク
+GPU	GPU
+GPU + CPU GO TO THE GAME FIRST WHILE FOCUSED	フォーカス中はGPU + CPUをゲーム優先
+GPU HUD	GPU HUD
+GPU MAX CLOCKS	GPU最大クロック
+GPU MAX CLOCKS: NOT CHANGED IN THE UI TEST	GPU最大クロック: UIテストでは変更しない
+GPU MAX CLOCKS: WINDOWS ONLY	GPU最大クロック: WINDOWSのみ
+GPU PRIORITY	GPU優先度
+GPU SCHED: N/A	GPU スケジューリング: 利用不可
+GPU SCHED: ON	GPU スケジューリング: オン
+GPU SCHED: TURN ON	GPU スケジューリング: オンにする
+GPU SCHEDULING	GPU スケジューリング
+GPU SCHEDULING ON: RESTART YOUR PC FOR IT TO TAKE EFFECT	GPU スケジューリング オン: PC を再起動すると有効
+GPU SCHEDULING: NOT CHANGED (THE ADMIN PROMPT WAS DECLINED)	GPU スケジューリング: 変更なし (確認が拒否されました)
+GPU SCHEDULING: WINDOWS ONLY	GPU スケジューリング: WINDOWS のみ
+GPU SCHEDULING: WINDOWS REFUSED THE CHANGE	GPU スケジューリング: WINDOWS が変更を拒否
+GPU WAIT (LOW LATENCY ON)	GPU待機 (低遅延オン)
+GPU WAIT (ULTRA)	GPU待機 (ウルトラ)
+GPU dynamic pass	GPU dynamic pass
+GPU resolve / scale	GPU resolve / scale
+GPU shadow pass	GPU shadow pass
+GPU world pass	GPU world pass
+GRADE FROM LOW COLOR	低い値の色からグラデーション
+GRAPPLE	グラップル
+GRAPPLE + HAND	グラップル + 手
+GRAPPLE COOLDOWN	グラップルクールダウン
+GRAPPLE GRAVITY	グラップル重力
+GRAPPLE MODEL	グラップルモデル
+GRAPPLE MOVEMENT ONLY	グラップル移動のみ
+GRAPPLE PULL	グラップル牽引力
+GRAPPLE RANGE	グラップル射程
+GRAPPLE RELEASE DISTANCE	グラップル解除距離
+GRAPPLE TOP SPEED	グラップル最高速度
+GRAPPLE: HOLD	グラップル: 長押し
+GRAPPLE: TOGGLE	グラップル: トグル
+GRAVITY	重力
+GREEN	緑
+GREEN / MAGENTA	緑 / マゼンタ
+GREENHOUSE - ranked vanilla 1v1.   DOJO - ranked laser vampire 1v1.   SPIRE - ranked instagib free for all (5 minutes).   ORBIT - 1v1, duel.	GREENHOUSE - ランク バニラ1v1。   DOJO - ランク レーザーヴァンパイア1v1。   SPIRE - ランク インスタギブ個人戦 (5分)。   ORBIT - 1v1、デュエル。
+GRID: # M (CUSTOM)	グリッド: # M (カスタム)
+GRID: 1 M	グリッド: 1 M
+GRID: 1/2 M	グリッド: 1/2 M
+GRID: 1/4 M	グリッド: 1/4 M
+GRID: 1/8 M	グリッド: 1/8 M
+GRID: 2 M	グリッド: 2 M
+GRID: 4 M	グリッド: 4 M
+GROUND	地面
+GROUND ACCELERATION	地上加速
+GROUND FRICTION	地面摩擦
+GROUP	グループ
+GROUP FILE	グループファイル
+GROUPS	グループ
+GUN COLOR	武器の色
+GUN RECOIL KICK	武器のリコイル
+GUN: CUSTOM	武器: カスタム
+GUN: MAP	武器: マップ
+GUN: TEAM	武器: チーム
+GUNFIRE	銃声
+GUS	GUS
+Game::frame	Game::frame
+Game::testHeld_ holds a bit per action	Game::testHeld_ holds a bit per action
+HALFTIME - SIDES SWITCHED	ハーフタイム - 攻守交代
+HALFTIME - SIDES SWITCHED: YOU ATTACK NOW	ハーフタイム - 攻守交代: 攻撃側へ
+HALFTIME - SIDES SWITCHED: YOU DEFEND NOW	ハーフタイム - 攻守交代: 防衛側へ
+HANA	HANA
+HAND	手
+HAND: LEFT	手: 左
+HAND: RIGHT	手: 右
+HARD BOTS	ハードボット
+HARD TO TELL APART WITH	見分けにくい色覚:
+HAS NO BINDS	割り当てなし
+HAS NO WIDGETS	ウィジェットなし
+HEADSHOT	ヘッドショット
+HEADSHOT HIT	ヘッドショットヒット
+HEADSHOTS STAY RED, BIG HITS GOLD	ヘッドショットは赤、大ダメージは金
+HEAL NUMBERS	回復数値
+HEALED BY	回復元:
+HEALING	回復
+HEALTH	体力
+HEALTH BAR POSITION	体力バーの位置
+HEALTH BAR: AT THE FEET	体力バー: 足元
+HEALTH BAR: MODE'S MAX	体力バー: モードの最大値
+HEALTH BAR: OVER THE HEAD	体力バー: 頭上
+HEALTH BARS	体力バー
+HEALTH BARS OVER PLAYERS	プレイヤーの頭上に体力バー
+HEALTH: AFTER A CHANGE + LOW	体力: 変化時 + 低下時
+HEALTH: ALWAYS	体力: 常に
+HEALTH: ONLY WHEN LOW	体力: 低下時のみ
+HEARING RANGE	聴こえる範囲
+HEAVY	ヘビー
+HIDE AND SEEK	かくれんぼ
+HIDE AND SEEK - one seeker with a knife, everyone else hides first. Everyone seeks once: 1 point for each hider you find, 1 for staying hidden to the end of a round. A tie for first is settled by rock paper scissors (keys 1 / 2 / 3).	かくれんぼ - ナイフを持った鬼が1人、他の全員が先に隠れる。全員が1回ずつ鬼になる: 見つけた人数ごとに1点、ラウンド終了まで隠れ切れば1点。1位タイはじゃんけんで決着 (キー 1 / 2 / 3)。
+HIDE EMPTY	空きを隠す
+HIDE FULL	満員を隠す
+HIDE HUD	HUD非表示
+HIDE HUD KEEPS CROSSHAIR	HUD非表示でもクロスヘアは表示
+HIDE RATINGS	レートを隠す
+HIDE REC	REC非表示
+HIDE REC: NO BLINKING REC WHILE RECORDING	REC非表示: 録画中のREC点滅なし
+HIDE! THE SEEKER IS COUNTING	隠れろ! 鬼がカウント中
+HIDES ALL PLAYERS' CHAT MESSAGES	全プレイヤーのチャットを非表示
+HIGH	高
+HIGH CAN SLOW OTHER PROGRAMS	高は他のプログラムを遅くする場合あり
+HIGH CONTRAST	ハイコントラスト
+HIGH CONTRAST: LIGHTER WALLS, DARKER TRIM	ハイコントラスト: 明るい壁、暗い縁
+HIGH SCORE	ハイスコア
+HILL	ヒル
+HILL CONTESTED	ヒル争奪中
+HILL LOST	ヒルを失った
+HILL TAKEN	ヒル確保
+HIT	ヒット
+HIT COLOR	ヒットの色
+HIT FLASH	ヒットフラッシュ
+HIT FLASH TIME	ヒットフラッシュ時間
+HITSCAN	ヒットスキャン
+HITSCAN ONLY	ヒットスキャンのみ
+HITSOUND	ヒット音
+HITSOUND TIERS	ヒット音の段階
+HITSOUND VOLUME	ヒット音量
+HITSOUND: DEFAULT	ヒット音: デフォルト
+HITSOUND: HEAVY METAL	ヒット音: ヘヴィメタル
+HITSOUND: MAGICAL	ヒット音: マジカル
+HITSOUND: MOUTH	ヒット音: 口
+HITSOUND: MY SOUND PACK	ヒット音: 自分のサウンドパック
+HITSOUND: RETRO	ヒット音: レトロ
+HITSOUNDS	ヒット音
+HOLD FIRE	射撃禁止
+HOLDING THE HILL	ヒル確保中
+HOME	HOME
+HOOK	フック
+HOOK CAPTION	フックのキャプション
+HOOKED	フック中
+HOST	ホスト
+HOST EDIT SESSION	編集セッションをホスト
+HOST EDIT SESSION: friends join and build with you; everyone's camera shows in the view.	編集セッションをホスト: フレンドが参加して一緒に制作; 全員のカメラが画面に表示されます。
+HOST GAME	ゲームをホスト
+HOSTING	ホスト中
+HOSTING ON UDP PORT	ホスト中 UDPポート:
+HOW OTHER PLAYERS' MOVES ARE SMOOTHED	他プレイヤーの動きの補間方法
+HP	HP
+HUD	HUD
+HUD & SETTINGS	HUD & 設定
+HUD 2	HUD 2
+HUD > VERBOSE INFO TURNS THE BLOCK ON	HUD > 詳細情報 でこのブロックを表示
+HUD COLORS	HUDカラー
+HUD DRAW	HUD描画
+HUD EDIT ELEMENT	HUD要素を編集
+HUD ELEMENT	HUD要素
+HUD SIZE	HUDサイズ
+HUD.CFG LINE	HUD.CFG 行
+HURT	被弾
+HYPER	ハイパー
+HZ	HZ
+HZ  LOSS	HZ  ロス
+HZ (NOT ON THIS MONITOR)	HZ (このモニターでは不可)
+Hold the RIGHT MOUSE button to look around; W A S D to fly, SPACE / C up and down, SHIFT faster, the wheel sets the speed.	右クリック長押しで視点移動; W A S D で飛行、SPACE / C で上下、SHIFTで高速、ホイールで速度設定。
+Host Game > CUSTOM MODE > NEW: any base mode with your own health, gravity, speed, jump, knockback, weapons (fire rate, damage, projectile speed) and map pool. Players who join get the rules automatically.	ゲームをホスト > カスタムモード > 新規: 任意のベースモードに、体力、重力、速度、ジャンプ、ノックバック、武器 (連射速度、ダメージ、弾速) とマッププールを自由に設定。参加したプレイヤーには自動でルールが届きます。
+Hz	Hz
+Hz cap applies at the next break	Hz上限は次の休憩時に適用
+ICON	アイコン
+ICON: BOLT	アイコン: 稲妻
+ICON: CLOCK	アイコン: 時計
+ICON: EYE	アイコン: 目
+ICON: HEART	アイコン: ハート
+ICON: HOOK	アイコン: フック
+ICON: SHIELD	アイコン: 盾
+ICON: SKULL	アイコン: ドクロ
+ICON: STAR	アイコン: 星
+IDAT	IDAT
+IDENTITY	アイデンティティ
+IDLE	アイドル
+IEND	IEND
+IF THAT ADDRESS REACHES YOU, HOST A DEDICATED SERVER WITH --own-addr	そのアドレスで接続できるなら --own-addr で専用サーバーをホスト
+IHDR	IHDR
+IMAGE	画像
+IMPACT SPARKS	着弾の火花
+IMPORT	インポート
+IMPORT / EXPORT USE THE CLIPBOARD.	インポート / エクスポートはクリップボードを使用。
+IMPORT GROUP	グループをインポート
+IMPORTANT: VOTES, KICKS, RANKED, ERRORS	重要: 投票、キック、ランク、エラー
+IMPORTED	インポート済み
+IMPORTED CONTROLS FROM CLIPBOARD	クリップボードから操作設定をインポート
+IN # S	# 秒後
+IN #/S  OUT #/S X#	受信 #/S  送信 #/S X#
+IN (TEAMS GO UNEVEN)	参加 (チーム人数が不均等に)
+IN A TIME TRIAL OR A RACE	タイムアタックやレース中
+IN GAME, ESC SHOWS IF THE PORT CAN BE REACHED	ゲーム中、ESCでポート到達可否を表示
+IN MY PALETTE	自分のパレットで
+IN THIS MAP	このマップ内
+INDIA	インド英語
+INDUSTRIAL	インダストリアル
+INFO	情報
+INFO LINES	情報行
+INPUT	入力
+INPUT->FRAME AVG #MS  MIN #MS  99% #MS	INPUT->FRAME 平均 #MS  最小 #MS  99% #MS
+INPUT->FRAME: MOVE THE MOUSE	INPUT->FRAME: マウスを動かしてください
+INSERT	INSERT
+INSTAGIB	インスタギブ
+INSTAGIB CROSSBOWS	インスタギブ クロスボウ
+INSTAGIB SNIPERS	インスタギブ スナイパー
+INTEL	INTEL
+INTERFACE	インターフェース
+INTERMEDIATE	中級
+INTERP	補間
+INTERP # MS	補間 # MS
+INVERT Y	Y軸反転
+IOID	IOID
+IRIS	IRIS
+IS A BUILT-IN MAP: IT STAYS AS IT IS. SAVE YOUR EDITS AS YOUR OWN MAP (IN YOUR MAPS FOLDER, UNDER THIS NAME) OR DROP THEM.	は内蔵マップのため変更されません。編集内容を自分のマップとして保存するか (mapsフォルダにこの名前で) 破棄してください。
+IS GODLIKE	ゴッドライク!
+IS ON A KILLING SPREE	キリングスプリー!
+IS ON A RAMPAGE	ランペイジ!
+IS UNSTOPPABLE	アンストッパブル!
+IT IN MY PALETTE	鬼を自分のパレットで
+ITS COLOURS ARE ON THE CROSSHAIR TAB	色はクロスヘアタブで設定
+ITS STYLE	スタイル
+ITS STYLE: CIRCLE	スタイル: 円
+ITS STYLE: CROSS	スタイル: 十字
+ITS STYLE: CROSS + DOT	スタイル: 十字 + ドット
+ITS STYLE: DOT	スタイル: ドット
+ITS STYLE: SAME AS ABOVE	スタイル: 上と同じ
+ITS STYLE: T	スタイル: T
+IVO	IVO
+Input	入力
+JOIN A TEAM FROM THE MENU (ESC)	メニュー (ESC) からチームに参加
+JOIN GAME	ゲームに参加
+JOIN TEAM	チームに参加
+JOIN TEAM A	チームAに参加
+JOIN TEAM B	チームBに参加
+JOIN THE GAME FROM THE MENU (ESC)	メニュー (ESC) からゲームに参加
+JOINING + PRIVACY	参加 + プライバシー
+JOST	JOST
+JUMP	ジャンプ
+JUNE	JUNE
+KAI	KAI
+KB; OFF: A SERVER'S	KB; オフ: サーバーの
+KEEP	保持
+KEEP THESE DISPLAY SETTINGS? REVERTING IN	このディスプレイ設定を保持しますか? 元に戻るまで
+KEEP YOUR EDITS AS A NEW MAP?	編集を新しいマップとして保存しますか?
+KEEP: ALL	保持: すべて
+KEEP: NEWEST 100	保持: 最新100件
+KEEP: NEWEST 20	保持: 最新20件
+KEEP: NEWEST 50	保持: 最新50件
+KEEPS GPU CLOCKS HIGH: LESS LAG, MORE POWER	GPUクロックを高く維持: 遅延減、消費電力増
+KEY	キー
+KEY 1	キー 1
+KEY 2	キー 2
+KEY 3	キー 3
+KEY OVERLAY	キーオーバーレイ
+KEY OVERLAY (VERBOSE)	キーオーバーレイ (詳細)
+KEYS	キー
+KICK	キック
+KICK A PLAYER	プレイヤーをキック
+KICK BOTS	ボットをキック
+KILL	キル
+KILL BURSTS	キルバースト
+KILL CAM TIME	キルカム時間
+KILL FEED	キルフィード
+KILL FEED LINES	キルフィード行数
+KILL FEED SECONDS	キルフィード表示秒数
+KILL MARK	キルマーク
+KILL SOUND	キル音
+KILL TEXT	キルテキスト
+KILL TEXT: "KILLED <NAME>" OVER THE CROSSHAIR	キルテキスト: クロスヘアの上に "<名前> をキル"
+KILLED	キル
+KILLED BY	キルされた相手:
+KILLING SPREE	キリングスプリー
+KILLS	キル
+KING OF THE HILL	キングオブザヒル
+KING OF THE HILL - stand on the hill with no enemy on it to score a point a second. First to 100.	キングオブザヒル - 敵のいないヒルに立つと毎秒1点。100点先取。
+KNIFE	ナイフ
+KNIGHT	ナイト
+KNIVES ONLY	ナイフのみ
+KNIVES ONLY - QUICK DASH, 0.2 S APART	ナイフのみ - 高速ダッシュ、0.2秒間隔
+KNIVES, SYRINGES AND ORBS	ナイフ、注射器、オーブ
+KNOCKBACK	ノックバック
+KP ENTER	KP ENTER
+L ALT	L ALT
+L CTRL	L CTRL
+L SHIFT	L SHIFT
+LABEL	ラベル
+LADDER	はしご
+LADDER CLIMB SPEED	はしご登り速度
+LADDER SIDE SPEED	はしご横移動速度
+LADDERS (1V1, INSTAGIB FFA) - DEFAULT MODEL, HUD, CONTROLS >	ラダー (1V1、インスタギブFFA) - デフォルトモデル、HUD、操作設定 >
+LAND	着地
+LANGUAGE	言語
+LARGE	大
+LASER	レーザー
+LASER VAMPIRE	レーザーヴァンパイア
+LASER. SCORE: DAMAGE X 10 X ACCURACY	レーザー。スコア: ダメージ X 10 X 命中率
+LASER. SCORE: KILLS X 100 X ACCURACY	レーザー。スコア: キル X 100 X 命中率
+LASERS ONLY	レーザーのみ
+LASERS ONLY - DAMAGE YOU DEAL HEALS YOU	レーザーのみ - 与えたダメージで回復
+LAST	直近
+LAST RUN	前回のラン
+LAST TEAM STANDING WINS	最後まで残ったチームの勝利
+LAST WEAPON	前の武器
+LATE FRAME	遅延フレーム
+LATE: TEAR	遅延時: ティアリング
+LATE: WAIT	遅延時: 待機
+LATENCY	遅延
+LATENT SAFETY	レイテント安全マージン
+LATENT SYNC	レイテントシンク
+LATENT SYNC: HOLD FOR THE BLANK	レイテントシンク: ブランクを待つ
+LATENT SYNC: WAIT FOR THE RASTER	レイテントシンク: ラスターを待つ
+LAUNCHER ON THE RIGHT	ランチャーを右に
+LEADERBOARD	リーダーボード
+LEADERBOARD: SOON	リーダーボード: 近日公開
+LEAVE	退出
+LEAVE ALL	すべて退出
+LEFT	左
+LEFT ARROW (PREVIOUS PAGE)	左矢印 (前のページ)
+LEFT MOUSE - fire.   RIGHT MOUSE - alt-fire (scope, knife throw, rocket lob, bubble stream, syringe throw...).	左クリック - 射撃。   右クリック - サブ射撃 (スコープ、ナイフ投げ、ロケット曲射、バブル放射、注射器投げ...)。
+LEFT: THE GUN ON THE LEFT, THE GRAPPLE	左: 武器を左に、グラップルを
+LEGACY MAPS	レガシーマップ
+LEGACY MAPS (settings > GAMEPLAY) lists the old maps from before 1.19.6 too. They are never ranked.	レガシーマップ (設定 > ゲームプレイ) で 1.19.6 以前の旧マップも表示します。ランクには使われません。
+LENA	LENA
+LENGTH	長さ
+LET	LET
+LG	LG
+LIBREQUAKE 8X8	LIBREQUAKE 8X8
+LIGHT	ライト
+LIGHT CACHE	ライトキャッシュ
+LIGHTHOUSE / TERRACES - team vs.   REACTORS / BRIDGE - power.   DATACENTER / MINE - bomb.   CASTLE / GLACIER / AMPHITHEATRE - king of the hill.	LIGHTHOUSE / TERRACES - チーム戦。   REACTORS / BRIDGE - パワー。   DATACENTER / MINE - 爆破。   CASTLE / GLACIER / AMPHITHEATRE - キングオブザヒル。
+LIGHTMAP FILTER	ライトマップフィルター
+LIGHTMAP: NEAREST	ライトマップ: ニアレスト
+LIGHTMAP: SMOOTH	ライトマップ: スムーズ
+LILITA ONE	LILITA ONE
+LINE	ライン
+LINE: ENEMIES	ライン: 敵
+LINE: FPS	ライン: FPS
+LINE: FPS MIN	ライン: FPS 最小
+LINE: K / D	ライン: K / D
+LINE: LOSS	ライン: ロス
+LINE: MAP	ライン: マップ
+LINE: MODE	ライン: モード
+LINE: PING	ライン: PING
+LINE: SPEED	ライン: 速度
+LINE: TEAMMATES	ライン: 味方
+LINE: TICK / SNAP	ライン: ティック / スナップ
+LINE: TIME	ライン: 時刻
+LINE: TIME LEFT	ライン: 残り時間
+LINE: VERSION	ライン: バージョン
+LINES #-# OF # - WHEEL TO SCROLL	行 #-# / # - ホイールでスクロール
+LINK	連携
+LINUX (X11): THE DESKTOP'S COMPOSITOR STEPS	LINUX (X11): デスクトップのコンポジターが
+LIQUIDS	液体
+LIQUIDS FLOW	液体の流れ
+LMB	左クリック
+LOAD	読込
+LOAD POS	位置読込
+LOAD POSITION	位置を読込
+LOADING...	読み込み中...
+LOCATOR	ロケーター
+LOCATOR (hide and seek and tag: the seeker's / tagger's second weapon, key 0) - fire it to see one random hider / runner through walls for a second; it recharges in 5 s. Everyone else hears its ping from where you stand.	ロケーター (かくれんぼと鬼ごっこ: 鬼のサブ武器、キー 0) - 撃つとランダムな1人の隠れ役 / 逃げ役が1秒間壁越しに見える; 5秒で再チャージ。他の全員にはあなたの位置からピン音が聞こえます。
+LOCATOR READY	ロケーター準備完了
+LOGIC:	ロジック:
+LOGO + YOUR BOTS	ロゴ + 自分のボット
+LOOK	視点
+LOOKS INTEGRATED: IF THERE'S A DEDICATED GPU,	内蔵GPUのようです: 専用GPUがある場合、
+LOSS	ロス
+LOSS #%	ロス #%
+LOW AT	低下判定
+LOW COLOR	低下時の色
+LOW COLOR (EMPTY)	低下時の色 (空)
+LOW HEALTH	低体力
+LOW HEALTH BELOW	低体力の閾値
+LOW HEALTH COLOR	低体力の色
+LOW LATENCY	低遅延
+LOW LATENCY: OFF	低遅延: オフ
+LOW LATENCY: ON	低遅延: オン
+LOW LATENCY: ULTRA	低遅延: ウルトラ
+LOW LATENCY: ULTRA STARTS EACH FRAME THIS EARLY;	低遅延: ウルトラは各フレームをこれだけ早く開始;
+LOWER RATES: LESS CPU AND UPLOAD	低レート: CPUとアップロードを削減
+LOWER: SLOWER WHILE SCOPED	低くするとスコープ中に遅く
+MAGENTA	マゼンタ
+MAKE	作成
+MALE	男性
+MAP	マップ
+MAP / MODE / MODIFIERS	マップ / モード / 修正
+MAP COLOR	マップの色
+MAP COLORS	マップカラー
+MAP DOWNLOADS	マップのダウンロード
+MAP EDITOR	マップエディター
+MAP EDITOR *	マップエディター *
+MAP YOU DON'T HAVE ENDS THE CONNECTION	持っていないマップは接続を終了
+MAP:	マップ:
+MAP: NONE	マップ: なし
+MAPS	マップ
+MAPS FOLDER	mapsフォルダ
+MAPS KEPT	マップを保持
+MAPS MARKED "NOT FOR THIS MODE" MAY NOT WORK IN IT	「このモード非対応」のマップは動作しない場合があります
+MARK COLOR	マークの色
+MARK TIME	マーク表示時間
+MARKER OPACITY	マーカー不透明度
+MARKER SIZE	マーカーサイズ
+MAT4	MAT4
+MATCH	試合
+MATCH OVER	試合終了
+MATCH START	試合開始
+MATCH STARTS IN #	試合開始まで #
+MATCH SUMMARY	試合サマリー
+MATERIAL	素材
+MATERIAL (M)	素材 (M)
+MATERIAL: ACCENT	素材: アクセント
+MATERIAL: ACID (HURTS)	素材: 酸 (ダメージ)
+MATERIAL: ACID-ETCHED METAL	素材: 酸エッチング金属
+MATERIAL: AIRCRAFT SKIN	素材: 機体外板
+MATERIAL: AIRCRAFT WRECKAGE	素材: 航空機の残骸
+MATERIAL: ALIEN BIOMASS	素材: エイリアンバイオマス
+MATERIAL: ALUMINIUM TREAD PLATE	素材: アルミ縞鋼板
+MATERIAL: AMBER	素材: 琥珀
+MATERIAL: AMBER GLASS	素材: 琥珀色ガラス
+MATERIAL: ANODIZED BLACK	素材: 黒アルマイト
+MATERIAL: ASH DUNES	素材: 灰の砂丘
+MATERIAL: ASPHALT (FAST)	素材: アスファルト (高速)
+MATERIAL: ASTROTURF	素材: 人工芝
+MATERIAL: AUTUMN LEAVES	素材: 落ち葉
+MATERIAL: BADLANDS	素材: 荒地
+MATERIAL: BALL WALL (STOPS ONLY THE BALL)	素材: ボール壁 (ボールのみ止める)
+MATERIAL: BAMBOO	素材: 竹
+MATERIAL: BAMBOO FENCE	素材: 竹垣
+MATERIAL: BANDED IRON	素材: 縞状鉄鉱
+MATERIAL: BAR GRATING	素材: グレーチング
+MATERIAL: BARNACLES	素材: フジツボ
+MATERIAL: BARRICADE	素材: バリケード
+MATERIAL: BASALT COLUMNS	素材: 柱状玄武岩
+MATERIAL: BASE	素材: ベース
+MATERIAL: BASKET-WEAVE BRICK	素材: バスケット織りレンガ
+MATERIAL: BASKET-WEAVE PARQUET	素材: バスケット織り寄木
+MATERIAL: BATHROOM MINT	素材: ミント色バスルーム
+MATERIAL: BATTERED YELLOW PAINT	素材: 傷んだ黄色塗装
+MATERIAL: BEETLE-CARVED WOOD	素材: 虫食い木材
+MATERIAL: BENT REBAR BUNDLE	素材: 曲がった鉄筋の束
+MATERIAL: BIO-SLUDGE DRAIN	素材: 生物汚泥の排水
+MATERIAL: BIRCH BARK	素材: 白樺の樹皮
+MATERIAL: BIRD-SPOTTED ROOF	素材: 鳥のフンの屋根
+MATERIAL: BLACK BASALT BLOCKS	素材: 黒玄武岩ブロック
+MATERIAL: BLACK BRICK	素材: 黒レンガ
+MATERIAL: BLACK SAND	素材: 黒砂
+MATERIAL: BLACK SQUARE TILE	素材: 黒角タイル
+MATERIAL: BLEACHED BONES	素材: 白骨
+MATERIAL: BLISTERED PAINT	素材: 膨れた塗装
+MATERIAL: BLOOD POOL	素材: 血だまり
+MATERIAL: BLUE ENGINEERING BRICK	素材: 青エンジニアリングレンガ
+MATERIAL: BLUE POOL TILE	素材: 青プールタイル
+MATERIAL: BLUE TINTED GLASS	素材: 青色ガラス
+MATERIAL: BLUED STEEL	素材: ブルースチール
+MATERIAL: BOARD-FORMED CONCRETE	素材: 杉板型枠コンクリート
+MATERIAL: BOILER PLATE	素材: ボイラー板
+MATERIAL: BOLTED ACCESS PANELS	素材: ボルト留め点検パネル
+MATERIAL: BONE	素材: 骨
+MATERIAL: BONE-DRY WOOD	素材: 乾ききった木材
+MATERIAL: BOTTLE GREEN GLASS	素材: 深緑ガラス
+MATERIAL: BOULDER FIELD	素材: 岩塊原
+MATERIAL: BRASS	素材: 真鍮
+MATERIAL: BREAKABLE BRICK (THIN: BLOWS OPEN)	素材: 破壊可能レンガ (薄い: 爆破で開く)
+MATERIAL: BREAKABLE COBBLESTONE (THIN: BLOWS OPEN)	素材: 破壊可能な石畳 (薄い: 爆破で開く)
+MATERIAL: BREAKABLE GLASS	素材: 破壊可能ガラス
+MATERIAL: BREEZE-BLOCK SCREEN	素材: 透かしブロック塀
+MATERIAL: BRICK	素材: レンガ
+MATERIAL: BRIDGE GIRDER	素材: 橋桁
+MATERIAL: BRONZE	素材: ブロンズ
+MATERIAL: BROOM-FINISHED	素材: ほうき目仕上げ
+MATERIAL: BROWN RUSTIC BRICK	素材: 茶色の素朴なレンガ
+MATERIAL: BUBBLING TAR	素材: 泡立つタール
+MATERIAL: BULLET-POCKED WALL	素材: 弾痕だらけの壁
+MATERIAL: BURNT BRICK	素材: 焼けたレンガ
+MATERIAL: BURNT-OUT RUIN WALL	素材: 焼け落ちた廃墟の壁
+MATERIAL: BUSH-HAMMERED	素材: ビシャン仕上げ
+MATERIAL: CACTUS	素材: サボテン
+MATERIAL: CALICHE	素材: カリーチ
+MATERIAL: CAMOUFLAGE	素材: 迷彩
+MATERIAL: CARBON FIBRE	素材: カーボンファイバー
+MATERIAL: CARDBOARD	素材: 段ボール
+MATERIAL: CARDBOARD BOXES	素材: 段ボール箱
+MATERIAL: CARGO NET	素材: カーゴネット
+MATERIAL: CAST IRON	素材: 鋳鉄
+MATERIAL: CAST-IN-PLACE WALLS	素材: 打ち放し壁
+MATERIAL: CASTLE STONE	素材: 城の石
+MATERIAL: CERAMIC TILE WALL	素材: 陶器タイル壁
+MATERIAL: CHAIN HEAP	素材: 鎖の山
+MATERIAL: CHAIN-LINK FENCE	素材: 金網フェンス
+MATERIAL: CHAIN-LINK MESH	素材: 金網
+MATERIAL: CHALK	素材: チョーク
+MATERIAL: CHARCOAL FLOOR	素材: チャコールの床
+MATERIAL: CHARRED TIMBER	素材: 焦げた木材
+MATERIAL: CHECKERBOARD TILE	素材: 市松タイル
+MATERIAL: CHECKPOINT GATE	素材: チェックポイントゲート
+MATERIAL: CHIPBOARD	素材: パーティクルボード
+MATERIAL: CHIPPED PAINT	素材: 剥げた塗装
+MATERIAL: CHROME	素材: クローム
+MATERIAL: CINDER BLOCK	素材: コンクリートブロック
+MATERIAL: CINDER BLOCK WALL	素材: ブロック塀
+MATERIAL: CIRCUIT	素材: 回路
+MATERIAL: CLEAR LAGOON	素材: 澄んだラグーン
+MATERIAL: CLINKER BRICK	素材: クリンカーレンガ
+MATERIAL: CLIP (INVISIBLE WALL)	素材: クリップ (見えない壁)
+MATERIAL: CLOUD	素材: 雲
+MATERIAL: CLOVER	素材: クローバー
+MATERIAL: COBBLED SETTS	素材: 敷石
+MATERIAL: COBBLESTONE	素材: 石畳
+MATERIAL: COBWEBS	素材: クモの巣
+MATERIAL: COIN RUBBER FLOOR	素材: コイン柄ゴム床
+MATERIAL: COLLAPSED BRICK	素材: 崩れたレンガ
+MATERIAL: CONCRETE	素材: コンクリート
+MATERIAL: CONCRETE PAVERS	素材: コンクリート舗装
+MATERIAL: CONCRETE ROOF TILES	素材: コンクリート瓦
+MATERIAL: CONGLOMERATE	素材: 礫岩
+MATERIAL: CONTAMINATED SOIL	素材: 汚染土壌
+MATERIAL: CONTROL PANEL	素材: 制御パネル
+MATERIAL: COOLANT	素材: 冷却液
+MATERIAL: COOLED MAGMA	素材: 冷えたマグマ
+MATERIAL: COPPER AND PATINA	素材: 銅と緑青
+MATERIAL: CORAL	素材: サンゴ
+MATERIAL: CORK	素材: コルク
+MATERIAL: CORRODED COPPER ROOF	素材: 腐食した銅屋根
+MATERIAL: CORRUGATED METAL	素材: 波板
+MATERIAL: CRACKED EARTH	素材: ひび割れた大地
+MATERIAL: CRACKED SLAB	素材: ひび割れたスラブ
+MATERIAL: CRACKLE GLAZE TILE	素材: 貫入タイル
+MATERIAL: CRATE WOOD	素材: 木箱
+MATERIAL: CREAM BRICK	素材: クリーム色レンガ
+MATERIAL: CROSS-BEDDED SANDSTONE	素材: 斜交層理砂岩
+MATERIAL: CRUMBLE PLATFORM	素材: 崩れる足場
+MATERIAL: CRUMBLING PLASTER	素材: 崩れかけの漆喰
+MATERIAL: CRYSTAL	素材: クリスタル
+MATERIAL: CRYSTAL CLUSTER	素材: クリスタルの群晶
+MATERIAL: DAMASCUS STEEL	素材: ダマスカス鋼
+MATERIAL: DARK CONCRETE	素材: ダークコンクリート
+MATERIAL: DATA RAIN	素材: データレイン
+MATERIAL: DEAD FOREST FLOOR	素材: 枯れた林床
+MATERIAL: DEEP OCEAN	素材: 深海
+MATERIAL: DENTED STEEL	素材: へこんだ鋼板
+MATERIAL: DESERT CRUST	素材: 砂漠の地殻
+MATERIAL: DESERT PAVEMENT	素材: 砂漠舗石
+MATERIAL: DESERT VARNISH	素材: 砂漠ワニス
+MATERIAL: DEWY GRASS	素材: 露に濡れた草
+MATERIAL: DIAGONAL SETTS	素材: 斜め敷石
+MATERIAL: DIAGONAL TILE	素材: 斜めタイル
+MATERIAL: DIAMOND PLATE	素材: 縞鋼板
+MATERIAL: DIAPER BRICK	素材: 菱形模様レンガ
+MATERIAL: DIRT	素材: 土
+MATERIAL: DRIED BLOOD EARTH	素材: 血の乾いた土
+MATERIAL: DRIED RIVERBED	素材: 干上がった川床
+MATERIAL: DRY-STONE WALL	素材: 空積み石垣
+MATERIAL: DRYWALL	素材: 石膏ボード
+MATERIAL: DUST STORM HAZE	素材: 砂嵐の靄
+MATERIAL: DUSTY GLASS	素材: 埃っぽいガラス
+MATERIAL: DUSTY LINOLEUM	素材: 埃っぽいリノリウム
+MATERIAL: EFFLORESCENT BRICK	素材: 白華したレンガ
+MATERIAL: ELECTRICAL CABINET	素材: 配電盤
+MATERIAL: ELECTROPLATED NICKEL	素材: ニッケルめっき
+MATERIAL: EMBER BED	素材: 燃えさし
+MATERIAL: ENCAUSTIC TILE	素材: エンコースティックタイル
+MATERIAL: ENGINE BLOCK	素材: エンジンブロック
+MATERIAL: ENGINE-TURNED STEEL	素材: ギョーシェ鋼
+MATERIAL: ENGLISH BOND	素材: イギリス積み
+MATERIAL: EPOXY FLOOR	素材: エポキシ床
+MATERIAL: EXPANDED METAL	素材: エキスパンドメタル
+MATERIAL: EXPOSED AGGREGATE	素材: 洗い出し仕上げ
+MATERIAL: EXPOSED REBAR	素材: むき出しの鉄筋
+MATERIAL: FAR	素材: 遠景
+MATERIAL: FEATHERS	素材: 羽根
+MATERIAL: FERNS	素材: シダ
+MATERIAL: FIBRE CEMENT BOARD	素材: 繊維セメント板
+MATERIAL: FIBREGLASS GRATING	素材: FRPグレーチング
+MATERIAL: FIRE BRICK	素材: 耐火レンガ
+MATERIAL: FIRE-CRACKED EARTH	素材: 火でひび割れた大地
+MATERIAL: FISH-SCALE TILE	素材: うろこタイル
+MATERIAL: FIZZING SODA	素材: 炭酸ソーダ
+MATERIAL: FLAGSTONE PAVING	素材: 板石舗装
+MATERIAL: FLEMISH BOND	素材: フランドル積み
+MATERIAL: FLINT	素材: 火打石
+MATERIAL: FLINT AND BRICK	素材: 火打石とレンガ
+MATERIAL: FLOWER MEADOW	素材: 花畑
+MATERIAL: FLOWSTONE	素材: 流れ石
+MATERIAL: FLUSH POINTED BRICK	素材: 平目地レンガ
+MATERIAL: FORCE FIELD	素材: フォースフィールド
+MATERIAL: FOREST FLOOR	素材: 林床
+MATERIAL: FRESH GREY CONCRETE	素材: 新しいグレーコンクリート
+MATERIAL: FRIDGE GRAVEYARD	素材: 冷蔵庫の墓場
+MATERIAL: FROST	素材: 霜
+MATERIAL: FROSTED GLASS	素材: すりガラス
+MATERIAL: FROSTED PLANKS	素材: 霜の降りた板
+MATERIAL: FROZEN MUD	素材: 凍った泥
+MATERIAL: FROZEN WATERFALL	素材: 凍った滝
+MATERIAL: FUMAROLE CRUST	素材: 噴気孔の地殻
+MATERIAL: FUR	素材: 毛皮
+MATERIAL: FURNACE GLOW	素材: 炉の輝き
+MATERIAL: GABBRO BLOCKS	素材: 斑れい岩ブロック
+MATERIAL: GABION WALL	素材: ガビオン壁
+MATERIAL: GALVANIZED GRATING	素材: 亜鉛めっきグレーチング
+MATERIAL: GALVANIZED STEEL	素材: 亜鉛めっき鋼
+MATERIAL: GAUGE CLUSTER	素材: 計器盤
+MATERIAL: GEODE	素材: 晶洞
+MATERIAL: GHOST GLASS	素材: ゴーストガラス
+MATERIAL: GLACIER ICE	素材: 氷河の氷
+MATERIAL: GLACIER-POLISHED GRANITE	素材: 氷河で磨かれた花崗岩
+MATERIAL: GLASS	素材: ガラス
+MATERIAL: GLASS BLOCK	素材: ガラスブロック
+MATERIAL: GLASS BOTTLES	素材: ガラス瓶
+MATERIAL: GLAZED BRICK	素材: 釉薬レンガ
+MATERIAL: GLOW	素材: 発光
+MATERIAL: GLOWING ALGAE	素材: 光る藻
+MATERIAL: GLOWING FISSURES	素材: 光る亀裂
+MATERIAL: GLOWING TIDE	素材: 光る潮
+MATERIAL: GLOWWORM CAVE	素材: ツチボタルの洞窟
+MATERIAL: GNEISS	素材: 片麻岩
+MATERIAL: GOLD	素材: 金
+MATERIAL: GRAFFITI-BUFFED WALL	素材: 落書きを消した壁
+MATERIAL: GRANITE BLOCKS	素材: 花崗岩ブロック
+MATERIAL: GRANITE ROCK	素材: 花崗岩
+MATERIAL: GRASS	素材: 草
+MATERIAL: GRAVEL	素材: 砂利
+MATERIAL: GRAVITY FLIP	素材: 重力反転
+MATERIAL: GREASE-STAINED METAL	素材: 油汚れの金属
+MATERIAL: GREEN GEL	素材: 緑のジェル
+MATERIAL: GREEN SUBWAY TILE	素材: 緑のサブウェイタイル
+MATERIAL: GRID-SCORED SLAB	素材: 格子目地スラブ
+MATERIAL: GROUND-FACE BLOCK	素材: 研磨ブロック
+MATERIAL: GUNMETAL	素材: ガンメタル
+MATERIAL: GUTTED MACHINERY	素材: 抜け殻の機械
+MATERIAL: GYM RUBBER TILE	素材: ジム用ゴムタイル
+MATERIAL: HAIL	素材: 雹
+MATERIAL: HAMMERED COPPER	素材: 鎚目銅
+MATERIAL: HARDPAN	素材: 硬盤
+MATERIAL: HAY	素材: 干し草
+MATERIAL: HAY BALES	素材: 干し草ロール
+MATERIAL: HAZARD STRIPES	素材: 警告ストライプ
+MATERIAL: HAZMAT TARP	素材: 危険物用シート
+MATERIAL: HEALING TILE	素材: 回復タイル
+MATERIAL: HEAT VENTS	素材: 排熱口
+MATERIAL: HEAT-TINTED TITANIUM	素材: 焼け色チタン
+MATERIAL: HEAVY SCALE RUST	素材: 厚い錆
+MATERIAL: HEDGE	素材: 生け垣
+MATERIAL: HERRINGBONE BRICK	素材: ヘリンボーンレンガ
+MATERIAL: HERRINGBONE TILE	素材: ヘリンボーンタイル
+MATERIAL: HEX BOLT GRID	素材: 六角ボルトグリッド
+MATERIAL: HEX FLOOR TILES	素材: 六角床タイル
+MATERIAL: HEX FORCE FIELD	素材: 六角フォースフィールド
+MATERIAL: HEX TILE TERRACOTTA	素材: 六角タイル テラコッタ
+MATERIAL: HEX TILE WHITE	素材: 六角タイル 白
+MATERIAL: HOLOGRAM PANEL	素材: ホログラムパネル
+MATERIAL: HONEY	素材: はちみつ
+MATERIAL: HONEYCOMB	素材: ハニカム
+MATERIAL: HOSPITAL TILE	素材: 病院のタイル
+MATERIAL: HOT SPRING	素材: 温泉
+MATERIAL: HUGE BRICK	素材: 巨大レンガ
+MATERIAL: HUGE COBBLES	素材: 巨大な丸石
+MATERIAL: HUGE PLANKS	素材: 巨大な板
+MATERIAL: HUGE STONE	素材: 巨石
+MATERIAL: HUGE TILE	素材: 巨大タイル
+MATERIAL: ICE (SLIPPERY)	素材: 氷 (滑る)
+MATERIAL: ICE CAVE	素材: 氷の洞窟
+MATERIAL: ICE SLUSH	素材: シャーベット状の氷
+MATERIAL: ICE WALL	素材: 氷の壁
+MATERIAL: ICICLES	素材: つらら
+MATERIAL: INDUSTRIAL TILES	素材: 工業用タイル
+MATERIAL: INK	素材: インク
+MATERIAL: INSULATED PANEL	素材: 断熱パネル
+MATERIAL: INTERLOCKING RUBBER TILES	素材: ジョイント式ゴムタイル
+MATERIAL: IRRADIATED GLASS	素材: 被曝ガラス
+MATERIAL: IVY ON BRICK	素材: ツタの這うレンガ
+MATERIAL: JADE	素材: 翡翠
+MATERIAL: JASPER	素材: 碧玉
+MATERIAL: JELLY CUBE	素材: ゼリーキューブ
+MATERIAL: JUNGLE LEAVES	素材: ジャングルの葉
+MATERIAL: KELP	素材: 昆布
+MATERIAL: KERB STONES	素材: 縁石
+MATERIAL: LAKE ICE	素材: 湖の氷
+MATERIAL: LARGE BASKET-WEAVE BRICK	素材: 大判バスケット織りレンガ
+MATERIAL: LARGE BASKET-WEAVE PARQUET	素材: 大判バスケット織り寄木
+MATERIAL: LARGE BRICK	素材: 大判レンガ
+MATERIAL: LARGE CASTLE STONE	素材: 大きな城の石
+MATERIAL: LARGE CHECKERBOARD TILE	素材: 大判市松タイル
+MATERIAL: LARGE COBBLED SETTS	素材: 大判敷石
+MATERIAL: LARGE COBBLES	素材: 大きな丸石
+MATERIAL: LARGE CRATE WOOD	素材: 大きな木箱
+MATERIAL: LARGE DIAGONAL SETTS	素材: 大判斜め敷石
+MATERIAL: LARGE DRY-STONE WALL	素材: 大きな空積み石垣
+MATERIAL: LARGE FLAGSTONE PAVING	素材: 大判板石舗装
+MATERIAL: LARGE FORMAT PORCELAIN	素材: 大判磁器タイル
+MATERIAL: LARGE FROSTED PLANKS	素材: 霜の降りた大きな板
+MATERIAL: LARGE GRANITE BLOCKS	素材: 大きな花崗岩ブロック
+MATERIAL: LARGE HERRINGBONE BRICK	素材: 大判ヘリンボーンレンガ
+MATERIAL: LARGE HERRINGBONE TILE	素材: 大判ヘリンボーンタイル
+MATERIAL: LARGE HEX TILE, TERRACOTTA	素材: 大判六角タイル、テラコッタ
+MATERIAL: LARGE KERB STONES	素材: 大きな縁石
+MATERIAL: LARGE LIMESTONE ASHLAR	素材: 大きな石灰岩切石
+MATERIAL: LARGE LOG CABIN	素材: 大きなログハウス
+MATERIAL: LARGE LONDON STOCK	素材: 大判ロンドンストック
+MATERIAL: LARGE MOSSY STONE BLOCKS	素材: 苔むした大きな石ブロック
+MATERIAL: LARGE POLYGONAL STONE	素材: 大きな多角形石
+MATERIAL: LARGE RANDOM ASHLAR	素材: 大きな乱積み切石
+MATERIAL: LARGE RED ENGINEERING BRICK	素材: 大判赤エンジニアリングレンガ
+MATERIAL: LARGE RIVER STONE WALL	素材: 大きな川石の壁
+MATERIAL: LARGE SANDSTONE ASHLAR	素材: 大きな砂岩切石
+MATERIAL: LARGE SCAFFOLD BOARDS	素材: 大きな足場板
+MATERIAL: LARGE SLATE TILE	素材: 大判スレートタイル
+MATERIAL: LARGE STONE	素材: 大きな石
+MATERIAL: LARGE SUBWAY TILE	素材: 大判サブウェイタイル
+MATERIAL: LARGE TEMPLE STONE	素材: 大きな神殿の石
+MATERIAL: LARGE TILE	素材: 大判タイル
+MATERIAL: LARGE TRAVERTINE TILE	素材: 大判トラバーチンタイル
+MATERIAL: LARGE WHITE SQUARE TILE	素材: 大判白角タイル
+MATERIAL: LATH AND PLASTER	素材: 木摺り漆喰
+MATERIAL: LAVA (KILLS)	素材: 溶岩 (即死)
+MATERIAL: LEAD SHEET	素材: 鉛板
+MATERIAL: LEAN-TO CANVAS	素材: 差し掛けキャンバス
+MATERIAL: LICHEN ROCK	素材: 地衣類の岩
+MATERIAL: LICHEN-CRUSTED STONE	素材: 地衣類に覆われた石
+MATERIAL: LIGHT BLOCK	素材: ライトブロック
+MATERIAL: LIGHTWEIGHT FOAM BLOCK	素材: 軽量発泡ブロック
+MATERIAL: LILY PADS	素材: 睡蓮の葉
+MATERIAL: LIMESTONE	素材: 石灰岩
+MATERIAL: LIMESTONE ASHLAR	素材: 石灰岩切石
+MATERIAL: LINOLEUM	素材: リノリウム
+MATERIAL: LIQUID VOID	素材: 液状の虚空
+MATERIAL: LOADING DOCK FLOOR	素材: 荷積み場の床
+MATERIAL: LOCKER DOORS	素材: ロッカーの扉
+MATERIAL: LOG CABIN	素材: ログハウス
+MATERIAL: LOG END GRAIN	素材: 丸太の木口
+MATERIAL: LONDON STOCK	素材: ロンドンストック
+MATERIAL: LOW GRAVITY FIELD	素材: 低重力フィールド
+MATERIAL: MAGMA RIVER	素材: マグマの川
+MATERIAL: MALACHITE	素材: マラカイト
+MATERIAL: MANHOLE COVERS	素材: マンホール蓋
+MATERIAL: MARBLE	素材: 大理石
+MATERIAL: MARBLE BLOCKS	素材: 大理石ブロック
+MATERIAL: MELTED PLASTIC	素材: 溶けたプラスチック
+MATERIAL: MERCURY	素材: 水銀
+MATERIAL: MESH CATWALK	素材: メッシュ通路
+MATERIAL: METAL	素材: 金属
+MATERIAL: MICA SCHIST	素材: 雲母片岩
+MATERIAL: MILL SCALE	素材: 黒皮
+MATERIAL: MIRROR	素材: 鏡
+MATERIAL: MIRROR TILE	素材: ミラータイル
+MATERIAL: MOLTEN GOLD	素材: 溶けた金
+MATERIAL: MOLTEN SLAG	素材: 溶融スラグ
+MATERIAL: MOROCCAN ZELLIGE	素材: モロッコのゼリージュ
+MATERIAL: MOSAIC SPECKLE	素材: モザイク斑点
+MATERIAL: MOSS CARPET	素材: 苔の絨毯
+MATERIAL: MOSSY BRICK	素材: 苔むしたレンガ
+MATERIAL: MOSSY STONE	素材: 苔むした石
+MATERIAL: MOSSY STONE BLOCKS	素材: 苔むした石ブロック
+MATERIAL: MOTHER OF PEARL	素材: 真珠層
+MATERIAL: MOULD BLOOM	素材: カビ
+MATERIAL: MUD (STICKY)	素材: 泥 (粘着)
+MATERIAL: MUD AND STRAW DAUB	素材: 土壁
+MATERIAL: MUD BATH	素材: 泥風呂
+MATERIAL: MUSHROOM GILLS	素材: キノコのひだ
+MATERIAL: MUSSEL BED	素材: ムール貝の群生
+MATERIAL: MUTANT GROWTH	素材: 変異した増殖体
+MATERIAL: MYCELIUM	素材: 菌糸
+MATERIAL: NEON MAZE	素材: ネオン迷路
+MATERIAL: NEWSPAPER	素材: 新聞紙
+MATERIAL: NOGRAPPLE (NO GRAPPLE)	素材: NOGRAPPLE (グラップル不可)
+MATERIAL: OBSIDIAN	素材: 黒曜石
+MATERIAL: OCHRE EARTH	素材: 黄土
+MATERIAL: OFFICE CARPET TILES	素材: オフィスのタイルカーペット
+MATERIAL: OIL SLICK	素材: 油膜
+MATERIAL: OIL-STAINED CONCRETE	素材: 油染みのコンクリート
+MATERIAL: OILY WATER	素材: 油の浮いた水
+MATERIAL: OPAL	素材: オパール
+MATERIAL: ORANGE WIRE-CUT	素材: オレンジのワイヤーカットレンガ
+MATERIAL: OXIDIZED STEEL	素材: 酸化した鋼
+MATERIAL: PAINTED BRICK	素材: 塗装レンガ
+MATERIAL: PAINTED CONCRETE STRIPES	素材: 塗装コンクリートのストライプ
+MATERIAL: PAINTED DRYWALL	素材: 塗装石膏ボード
+MATERIAL: PAINTED RED BRICK	素材: 赤く塗ったレンガ
+MATERIAL: PALLET STACK	素材: パレットの山
+MATERIAL: PALM TRUNK	素材: ヤシの幹
+MATERIAL: PAPER SCREEN	素材: 紙の衝立
+MATERIAL: PARKING BAY LINES	素材: 駐車場の区画線
+MATERIAL: PEAT	素材: 泥炭
+MATERIAL: PEELING GREEN PAINT	素材: 剥がれた緑の塗装
+MATERIAL: PEELING WALLPAPER	素材: 剥がれた壁紙
+MATERIAL: PENNY ROUND TILE	素材: 丸モザイクタイル
+MATERIAL: PERFORATED METAL	素材: パンチングメタル
+MATERIAL: PETRIFIED WOOD	素材: 珪化木
+MATERIAL: PEWTER	素材: ピューター
+MATERIAL: PICKET FENCE	素材: 杭柵
+MATERIAL: PINE BARK	素材: 松の樹皮
+MATERIAL: PINE BOUGHS	素材: 松の枝
+MATERIAL: PINK BRICK	素材: ピンクのレンガ
+MATERIAL: PINK GRANITE	素材: ピンク花崗岩
+MATERIAL: PINK SLIME	素材: ピンクのスライム
+MATERIAL: PLASMA POOL	素材: プラズマプール
+MATERIAL: PLASTIC	素材: プラスチック
+MATERIAL: PLYWOOD BOARD-UP	素材: 合板の板張り
+MATERIAL: POLISHED CONCRETE	素材: 研磨コンクリート
+MATERIAL: POLISHED GRANITE	素材: 磨いた花崗岩
+MATERIAL: POLYCHROME BRICK	素材: 多色レンガ
+MATERIAL: POLYGONAL STONE	素材: 多角形石
+MATERIAL: POOL TABLE FELT	素材: ビリヤード台のフェルト
+MATERIAL: POWDER-COAT GREEN	素材: 粉体塗装 緑
+MATERIAL: POWDER-COAT YELLOW	素材: 粉体塗装 黄
+MATERIAL: PRECAST CONCRETE	素材: プレキャストコンクリート
+MATERIAL: PRESSED TIN CEILING	素材: ブリキのプレス天井
+MATERIAL: PRISM GLASS	素材: プリズムガラス
+MATERIAL: PUDDLED GROUND	素材: 水たまりの地面
+MATERIAL: PUMICE	素材: 軽石
+MATERIAL: QUARRY TILE	素材: クオリータイル
+MATERIAL: QUARTZ CRYSTAL	素材: 水晶
+MATERIAL: QUARTZ CRYSTALS	素材: 水晶群
+MATERIAL: QUARTZITE	素材: 珪岩
+MATERIAL: QUICKSAND	素材: 流砂
+MATERIAL: QUICKSAND (LIQUIDS)	素材: 流砂 (液体)
+MATERIAL: QUILTED LEATHER	素材: キルティングレザー
+MATERIAL: QUILTED STAINLESS	素材: キルティングステンレス
+MATERIAL: RADIATION WARNING	素材: 放射線警告
+MATERIAL: RADIATOR FINS	素材: ラジエーターフィン
+MATERIAL: RADIOACTIVE PUDDLES	素材: 放射性の水たまり
+MATERIAL: RAIL TRACK	素材: 線路
+MATERIAL: RAILWAY SLEEPERS	素材: 枕木
+MATERIAL: RAIN WINDOW	素材: 雨の窓
+MATERIAL: RAIN-WET PAVING	素材: 雨に濡れた舗装
+MATERIAL: RAISED ACCESS FLOOR	素材: フリーアクセスフロア
+MATERIAL: RANDOM ASHLAR	素材: 乱積み切石
+MATERIAL: RECESSED JOINTS	素材: 沈み目地
+MATERIAL: RECLAIMED BRICK	素材: 再生レンガ
+MATERIAL: RED CANYON ROCK	素材: 赤い峡谷の岩
+MATERIAL: RED CLAY	素材: 赤粘土
+MATERIAL: RED DESERT SOIL	素材: 赤い砂漠の土
+MATERIAL: RED DUNES	素材: 赤い砂丘
+MATERIAL: RED ENGINEERING BRICK	素材: 赤エンジニアリングレンガ
+MATERIAL: RED LASER BARRIER	素材: 赤レーザーバリア
+MATERIAL: RED SANDSTONE	素材: 赤砂岩
+MATERIAL: REEDED GLASS	素材: モールガラス
+MATERIAL: REEDS	素材: 葦
+MATERIAL: RETAINING WALL BLOCKS	素材: 擁壁ブロック
+MATERIAL: RIBBED CONCRETE	素材: リブ付きコンクリート
+MATERIAL: RIPPLE SAND	素材: 風紋の砂
+MATERIAL: RIVER PEBBLES	素材: 川の小石
+MATERIAL: RIVER STONE WALL	素材: 川石の壁
+MATERIAL: RIVERBANK CLAY	素材: 川岸の粘土
+MATERIAL: RIVETED PLATES	素材: リベット留め鋼板
+MATERIAL: ROAD MARKINGS	素材: 路面標示
+MATERIAL: ROCK SALT	素材: 岩塩
+MATERIAL: ROLLER SHUTTER	素材: シャッター
+MATERIAL: ROMAN BRICK	素材: ローマンレンガ
+MATERIAL: ROOF SHINGLES	素材: 屋根板
+MATERIAL: ROOTY LOAM	素材: 根の張った壌土
+MATERIAL: ROPY LAVA ROCK	素材: 縄状溶岩
+MATERIAL: ROTTEN PLANKS	素材: 腐った板
+MATERIAL: ROTTING WOOD	素材: 朽ちた木材
+MATERIAL: RUBBER (BOUNCY)	素材: ゴム (跳ねる)
+MATERIAL: RUBBLE PILE	素材: 瓦礫の山
+MATERIAL: RUBBLE WALL	素材: 瓦礫の壁
+MATERIAL: RUINED PARQUET	素材: 傷んだ寄木
+MATERIAL: RUST	素材: 錆
+MATERIAL: RUST DUNES	素材: 錆の砂丘
+MATERIAL: RUST STREAKS	素材: 錆の筋
+MATERIAL: RUSTED SHEET	素材: 錆びた鉄板
+MATERIAL: RUSTED SHEET FENCE	素材: 錆びた鉄板の塀
+MATERIAL: RUSTIC RANDOM ASHLAR	素材: 素朴な乱積み切石
+MATERIAL: RUSTICATED BLOCKS	素材: ルスティカ仕上げブロック
+MATERIAL: RUTTED DIRT ROAD	素材: 轍のある土道
+MATERIAL: SALT FLAT	素材: 塩原
+MATERIAL: SALT FLAT (WASTELAND)	素材: 塩原 (荒野)
+MATERIAL: SALT-CRUSTED STEEL	素材: 塩の付着した鋼
+MATERIAL: SAND	素材: 砂
+MATERIAL: SAND-BURIED ROAD	素材: 砂に埋もれた道
+MATERIAL: SANDBAG WALL	素材: 土嚢の壁
+MATERIAL: SANDBLASTED SIGN	素材: 風化した看板
+MATERIAL: SANDBLASTED STEEL	素材: サンドブラスト鋼
+MATERIAL: SANDSTONE ASHLAR	素材: 砂岩切石
+MATERIAL: SANDSTONE SLAB	素材: 砂岩の板石
+MATERIAL: SANDSTONE STRATA	素材: 砂岩の地層
+MATERIAL: SCAFFOLD BOARDS	素材: 足場板
+MATERIAL: SCANNER BEAM	素材: スキャナービーム
+MATERIAL: SCI-FI PANELS	素材: SFパネル
+MATERIAL: SCORCHED TILES	素材: 焦げたタイル
+MATERIAL: SCORIA	素材: スコリア
+MATERIAL: SCRAP HEAP	素材: スクラップの山
+MATERIAL: SCRAP METAL PLATING	素材: 廃材の鉄板張り
+MATERIAL: SCRATCHED PLEXIGLASS	素材: 傷だらけのアクリル板
+MATERIAL: SCREE	素材: ガレ場
+MATERIAL: SEA FOAM	素材: 海の泡
+MATERIAL: SEA GLASS	素材: シーグラス
+MATERIAL: SEABIRD CLIFF	素材: 海鳥の崖
+MATERIAL: SERVER RACK	素材: サーバーラック
+MATERIAL: SEWAGE	素材: 下水
+MATERIAL: SHALE	素材: 頁岩
+MATERIAL: SHATTERED TILES	素材: 割れたタイル
+MATERIAL: SHEET PILING	素材: 鋼矢板
+MATERIAL: SHELL BEACH	素材: 貝殻の浜
+MATERIAL: SHIELD WALL	素材: シールドウォール
+MATERIAL: SHIP HULL PLATING	素材: 船体外板
+MATERIAL: SHIPPING CONTAINER	素材: 輸送コンテナ
+MATERIAL: SHOJI SCREEN	素材: 障子
+MATERIAL: SIDEWALK SLABS	素材: 歩道の敷石
+MATERIAL: SLATE	素材: スレート
+MATERIAL: SLATE CLADDING	素材: スレート外装
+MATERIAL: SLATE TILE	素材: スレートタイル
+MATERIAL: SLOW-MO FIELD	素材: スローモーションフィールド
+MATERIAL: SMOKE WALL	素材: スモークウォール
+MATERIAL: SMOKED GLASS	素材: スモークガラス
+MATERIAL: SMOULDERING ASH	素材: くすぶる灰
+MATERIAL: SNAKE SKIN	素材: 蛇革
+MATERIAL: SNOW	素材: 雪
+MATERIAL: SNOWFLAKE FROST	素材: 雪の結晶の霜
+MATERIAL: SOAP FILM	素材: 石鹸膜
+MATERIAL: SOLDIER COURSE	素材: 竪積み
+MATERIAL: SOOTY STEEL	素材: 煤けた鋼
+MATERIAL: SPALLED CONCRETE	素材: 剥離したコンクリート
+MATERIAL: SPIKE FLOOR	素材: トゲの床
+MATERIAL: SPLIT-FACE BLOCK	素材: 割肌ブロック
+MATERIAL: SPORTS COURT	素材: スポーツコート
+MATERIAL: STACK BOND	素材: 芋目地
+MATERIAL: STAINED GLASS	素材: ステンドグラス
+MATERIAL: STAINED GLASS WINDOW	素材: ステンドグラスの窓
+MATERIAL: STAMPED STONE PATTERN	素材: 石模様の型押し
+MATERIAL: STANDING SEAM ROOF	素材: 立平葺き屋根
+MATERIAL: STARFIELD	素材: 星空
+MATERIAL: STEEL	素材: 鋼
+MATERIAL: STEEL CHECKER FLOOR	素材: 鋼の縞板床
+MATERIAL: STEEL DECK PLATE	素材: 鋼製デッキプレート
+MATERIAL: STEEL DOOR SKIN	素材: 鋼製扉の表面
+MATERIAL: STEEL GRID WALL	素材: 鋼製グリッド壁
+MATERIAL: STONE BLOCKS	素材: 石ブロック
+MATERIAL: STORM DRAIN GRATE	素材: 雨水溝の格子蓋
+MATERIAL: STRIPED WALLPAPER	素材: ストライプの壁紙
+MATERIAL: STUCCO	素材: スタッコ
+MATERIAL: SUBWAY TILE	素材: サブウェイタイル
+MATERIAL: SUGAR GLASS	素材: 飴ガラス
+MATERIAL: SULFUR CRUST	素材: 硫黄の地殻
+MATERIAL: SULFUR PIT CRUST	素材: 硫黄穴の地殻
+MATERIAL: SUN-BAKED HARDPAN	素材: 日に焼けた硬盤
+MATERIAL: SWAMP SLIME	素材: 沼のぬめり
+MATERIAL: SWAMP WATER	素材: 沼の水
+MATERIAL: TACTILE PAVING	素材: 点字ブロック
+MATERIAL: TANK ARMOUR	素材: 戦車装甲
+MATERIAL: TANK TRAP FIELD	素材: 対戦車障害物
+MATERIAL: TAR PIT	素材: タールの穴
+MATERIAL: TATAMI	素材: 畳
+MATERIAL: TELEPORTER	素材: テレポーター
+MATERIAL: TEMPLE STONE	素材: 神殿の石
+MATERIAL: TERMITE MOUND	素材: アリ塚
+MATERIAL: TERMITE-EATEN BEAM	素材: シロアリに食われた梁
+MATERIAL: TERRACOTTA	素材: テラコッタ
+MATERIAL: TERRAZZO	素材: テラゾー
+MATERIAL: THATCH	素材: 茅葺き
+MATERIAL: THIN CONCRETE PANEL	素材: 薄いコンクリートパネル
+MATERIAL: TIDAL MUD FLATS	素材: 干潟
+MATERIAL: TILE	素材: タイル
+MATERIAL: TILLED FIELD	素材: 耕した畑
+MATERIAL: TIN	素材: スズ
+MATERIAL: TINTED RED CONCRETE	素材: 赤色コンクリート
+MATERIAL: TOADSTOOL	素材: 毒キノコ
+MATERIAL: TOPPLED COLUMN	素材: 倒れた柱
+MATERIAL: TOXIC SLUDGE	素材: 有毒ヘドロ
+MATERIAL: TRAPEZOID CLADDING	素材: 台形外装
+MATERIAL: TRAVERTINE	素材: トラバーチン
+MATERIAL: TRAVERTINE TILE	素材: トラバーチンタイル
+MATERIAL: TREE BARK	素材: 樹皮
+MATERIAL: TRIM (NOT SOLID)	素材: トリム (すり抜け)
+MATERIAL: TUDOR BRICK	素材: チューダーレンガ
+MATERIAL: TUFA BLOCKS	素材: 石灰華ブロック
+MATERIAL: TUFF	素材: 凝灰岩
+MATERIAL: TUMBLEWEED BRUSH	素材: タンブルウィードの茂み
+MATERIAL: TUNDRA	素材: ツンドラ
+MATERIAL: TUNNEL LINING	素材: トンネル覆工
+MATERIAL: TURTLE SHELL	素材: 亀の甲羅
+MATERIAL: TYRE STACK	素材: タイヤの山
+MATERIAL: VAULT DOOR	素材: 金庫扉
+MATERIAL: VENTILATION DUCT	素材: 換気ダクト
+MATERIAL: VERMICULATED STONE	素材: 虫食い模様の石
+MATERIAL: VICTORIAN BORDER	素材: ヴィクトリア調の縁取り
+MATERIAL: VINES ON STONE	素材: 石に這うツル
+MATERIAL: VOLCANIC ASH	素材: 火山灰
+MATERIAL: WAINSCOT PANELLING	素材: 腰板張り
+MATERIAL: WALLBANG	素材: ウォールバン
+MATERIAL: WARNING LIGHTS	素材: 警告灯
+MATERIAL: WARNING TAPE MESH	素材: 警告テープのメッシュ
+MATERIAL: WASP NEST PAPER	素材: スズメバチの巣
+MATERIAL: WATER (WADE IN IT)	素材: 水 (入れる)
+MATERIAL: WATER CURTAIN	素材: 水のカーテン
+MATERIAL: WATER-STAINED CONCRETE	素材: 水染みのコンクリート
+MATERIAL: WATERFALL	素材: 滝
+MATERIAL: WEATHERED CONCRETE	素材: 風化したコンクリート
+MATERIAL: WEEDS THROUGH CONCRETE	素材: コンクリートを突き破る雑草
+MATERIAL: WELDED PATCHWORK	素材: 溶接の継ぎはぎ
+MATERIAL: WET CAVE ROCK	素材: 湿った洞窟の岩
+MATERIAL: WET CEMENT	素材: 生乾きのセメント
+MATERIAL: WHEAT	素材: 小麦
+MATERIAL: WHITE CONCRETE	素材: 白コンクリート
+MATERIAL: WHITE GLAZED BRICK	素材: 白釉薬レンガ
+MATERIAL: WHITE RAPIDS	素材: 白い急流
+MATERIAL: WHITE SQUARE TILE	素材: 白角タイル
+MATERIAL: WHITEWASHED BRICK	素材: 白塗りレンガ
+MATERIAL: WIDE PLANKS	素材: 幅広の板
+MATERIAL: WIND-PACKED SNOW	素材: 風で締まった雪
+MATERIAL: WIND-SCOURED ROCK	素材: 風食した岩
+MATERIAL: WITHERED VINES	素材: 枯れたツル
+MATERIAL: WOOD	素材: 木材
+MATERIAL: WOODEN CRATE	素材: 木箱
+MATERIAL: WROUGHT IRON	素材: 錬鉄
+MATERIAL: ZEBRA CROSSING	素材: 横断歩道
+MATERIAL: ZINC	素材: 亜鉛
+MAX PING	最大PING
+MAX PLAYERS	最大人数
+MB (OFFICIAL MAPS SHIP BAKED)	MB (公式マップはベイク済み)
+MEDIUM BOTS	ノーマルボット
+MENU (ESC)	メニュー (ESC)
+MENU BACKGROUND	メニュー背景
+MENU CURSOR	メニューカーソル
+MENU THEME	メニューテーマ
+MENU THEME: DARK	メニューテーマ: ダーク
+MENU THEME: HIGH CONTRAST	メニューテーマ: ハイコントラスト
+MENUS	メニュー
+METER SCALE	メーターの目盛り
+METER TICKS	メーターの刻み
+MILO	MILO
+MIN FPS (WORST FRAME)	最小FPS (最悪フレーム)
+MINE	自分
+MINIMIZE ON ALT-TAB	ALT-TABで最小化
+MIRROR	反転
+MIRROR X	X反転
+MIRROR Y	Y反転
+MIRROR Z	Z反転
+MODE	モード
+MODE SET	モード設定済み
+MODE:	モード:
+MODEL	モデル
+MODEL OF	モデル:
+MODES	モード
+MODES (CLICK: ALLOW / BLOCK)	モード (クリック: 許可 / 禁止)
+MODES:	モード:
+MODIFIERS	修正
+MODIFIERS:	修正:
+MODS	MOD
+MODS FOLDER	MODフォルダ
+MODS/FONTS	MODS/FONTS
+MONITOR	モニター
+MOON GRAVITY	月面重力
+MOON ROCKETS	月面ロケット
+MOON SHOTGUN	月面ショットガン
+MOON SHOTGUNS	月面ショットガン
+MORE	詳細
+MORE KEYS	その他のキー
+MORE: FEWER GPU BUBBLES, A LITTLE MORE LAG	多い: GPUの空き減、遅延少し増
+MOUSE	マウス
+MOUSE 1	MOUSE 1
+MOUSE 2	MOUSE 2
+MOUSE 3	MOUSE 3
+MOUSE ACCELERATION	マウス加速
+MOUSE TO PHOTON: IN GAME ONLY	マウスから表示まで: ゲーム中のみ
+MOUSE {} # HZ (AVG)	マウス {} # HZ (平均)
+MOVE	移動
+MOVE + WEAPON KEYS	移動 + 武器キー
+MOVE DOWN	下降
+MOVE TO SPECTATOR	観戦に移動
+MOVE UP	上昇
+MOVEMENT	移動
+MS	MS
+MULTI POINT	マルチポイント
+MULTI POINT - attackers take the points in order (A, B, C...). Only they capture; a defender on the point holds it. Each point taken adds 90 s and moves both teams' spawns forward. Each team attacks once.	マルチポイント - 攻撃側は順番にポイント (A, B, C...) を占拠。占拠できるのは攻撃側のみ; 防衛側がポイント上にいると阻止。1つ占拠ごとに90秒追加、両チームのスポーンが前進。各チーム1回ずつ攻撃。
+MUTE	ミュート
+MUTE IN BACKGROUND	バックグラウンドでミュート
+MUTED	ミュート中
+MUZZLE FLASH	マズルフラッシュ
+MY	自分の
+MY EFFECTS	自分のエフェクト
+MY FOOTSTEPS	自分の足音
+MY GLOW	自分のグロー
+MY NAME: GOLD	自分の名前: 金
+MY NAME: PING	自分の名前: PING
+MY QUIP	自分の一言
+MY QUIP:	自分の一言:
+MY QUIP: A RANDOM ONE	自分の一言: ランダム
+MY RACE STATS	自分のレース記録
+MY SKY	自分の空
+MY SKY / GLOW: THESE IN PLACE OF EVERY MAP'S;	自分の空 / グロー: 全マップのものの代わりに使用;
+MY TRACER	自分の弾道
+Model	モデル
+ModelOverrides holds kMaxModelsPerKind models of a kind	ModelOverrides holds kMaxModelsPerKind models of a kind
+N/A HERE: LATENT SYNC IS WINDOWS ONLY	ここでは使用不可: LATENT SYNC は WINDOWS のみ
+N/A HERE: WINDOWS + NVIDIA ONLY	ここでは使用不可: WINDOWS + NVIDIA のみ
+NAME	名前
+NAME COLOR	名前の色
+NAME COLORS	名前の色
+NAME TAGS	ネームタグ
+NATURE	自然
+ND	ND
+NE	NE
+NET GRAPH	ネットグラフ
+NETWORK	ネットワーク
+NETWORK READ	ネットワーク受信
+NETWORK WARNINGS	ネットワーク警告
+NEUTRAL PAYLOAD	ニュートラルペイロード
+NEUTRAL PAYLOAD - either team pushes the cart toward the other team's end. The team whose side it's on when time runs out wins.	ニュートラルペイロード - どちらのチームもカートを相手陣地へ押す。時間切れ時にカートが相手側にあるチームの勝利。
+NEW	新規
+NEW BEST	新記録
+NEW LEADER	新しいリーダー
+NEW NAME	新しい名前
+NEW ONES:	新着:
+NEW PERSONAL BEST	自己ベスト更新
+NEXT	次へ
+NEXT PAGE	次のページ
+NEXT WEAP	次の武器
+NEXT WEAPON	次の武器
+NIGHT: QUIET UP, LOUD DOWN; LOW: AS NORMAL	ナイト: 小さい音を上げ大きい音を下げる; 低: 通常と同じ
+NIGHT: QUIET UP, LOUD DOWN; SAFE: MORE	ナイト: 小さい音を上げ大きい音を下げる; 安全: より多く
+NINJA	ニンジャ
+NO	いいえ
+NO COLOR CODE ON THE CLIPBOARD	クリップボードにカラーコードがありません
+NO CROSSHAIR CODE ON THE CLIPBOARD	クリップボードにクロスヘアコードがありません
+NO FILES IN	ファイルがありません:
+NO FILES IN CONTROLS/ - USE FOLDER	CONTROLS/ にファイルがありません - フォルダを使用
+NO FRAMES MEASURED	計測フレームなし
+NO FULLSCREEN OPT.	フルスクリーン最適化 オフ
+NO GAMES FOUND	ゲームが見つかりません
+NO GAMES MATCH THE FILTERS	フィルターに一致するゲームがありません
+NO MAP IS BUILT FOR THIS MODE YET	このモード用のマップはまだありません
+NO MATERIAL NAMED THAT	その名前の素材はありません
+NO RACE MAPS	レースマップなし
+NO RESPONSE - CLICK TO TRY	応答なし - クリックで再試行
+NO RUNS SAVED YET	保存されたランはまだありません
+NO RUNS YET - FINISH	ランなし - ゴールしてください
+NO SETTINGS ON THE CLIPBOARD (EXPORT MAKES THEM)	クリップボードに設定がありません (エクスポートで作成)
+NO TIMES YET	記録なし
+NO VSYNC	垂直同期なし
+NOBODY RANKED YET (3 GAMES)	ランク入りはまだいません (3試合)
+NONE	なし
+NONE YET	まだなし
+NONE YET - EXPORT ONE, OR COPY A GROUP AND IMPORT	まだなし - エクスポートするか、グループをコピーしてインポート
+NONE YET - IN A GAME, ESC > RECORD DEMO	まだありません - ゲーム中に ESC > デモを録画
+NOOR	NOOR
+NORMAL	通常
+NOT A GROUP - MAKE IT A GROUP FIRST?	グループではありません - 先にグループ化しますか?
+NOT BUILT FOR THIS MODE - IT MAY NOT WORK	このモード非対応 - 動作しない場合があります
+NOT CHANGED IN THE UI TEST	UIテストでは変更しない
+NOT FOR THIS MODE	このモード非対応
+NOT FOUND: USING THE PRIMARY	見つかりません: プライマリを使用
+NOT PLAYED YET	未プレイ
+NOT REPORTED - NOT A RANKED MAP FOR THIS LADDER	未送信 - このラダーのランクマップではありません
+NOT USABLE	使用不可
+NOTHING IN THE GAME RECORDS YET: THIS IS	ゲーム記録はまだありません: これは
+NOTHING MATCHES "	一致なし "
+NOTHING SELECTED	未選択
+NOTHING YET (NEEDS SPAWNS)	まだなし (スポーンが必要)
+NOTICE LINES	通知行数
+NOTICE TIME	通知表示時間
+NOTICES	通知
+NS	NS
+NS  (MOUSE REPORT IN TO GPU DONE; F3: NEXT VIEW)	NS  (マウスから GPU 完了まで; F3: 次の表示)
+NS (# HZ)	NS (# HZ)
+NS (# HZ) + DISPLAY	NS (# HZ) + ディスプレイ
+NS + MOUSE POLLING	NS + マウス
+NUM	NUM
+NUMBER TIME	数値表示時間
+NV DXGI PRESENT	NV DXGI PRESENT
+NV THREADED OFF	NV スレッド最適化オフ
+NVIDIA DRIVER PROFILE, FROM THE NEXT START:	NVIDIAドライバープロファイル、次回起動から:
+NW	NW
+Name, mouse sensitivity (or cm/360 with your DPI), field of view, team and enemy colours, volume, hit sounds, the announcer (off / countdown / all calls; male or female voice), player model and sound pack.	名前、マウス感度 (またはDPIからcm/360)、視野角、味方と敵の色、音量、ヒット音、アナウンサー (オフ / カウントダウン / すべて; 男性または女性の声)、プレイヤーモデルとサウンドパック。
+New map	新しいマップ
+OBJ	OBJ
+OBJECTIVE	目標
+OBJECTIVE BASED	目標ベース
+OBJECTIVE MARKERS	目標マーカー
+OBJECTIVES	目標
+OF	/
+OF #	/ #
+OFF	オフ
+OFF: FROM THE NEXT START	オフ: 次回起動から
+OFF: THE BAR IS FULL AT 100 IN EVERY MODE	オフ: 全モードで100で満タン
+OFF: THE VIEW STEPS UP STAIRS AT ONCE	オフ: 階段で視点が一気に上がる
+OFFICIAL	公式
+OLD MAN	老人
+ON	オン
+ON HIT	ヒット時
+ON JOIN	参加時
+ON JOIN: ASK	参加時: 確認
+ON JOIN: PLAY	参加時: プレイ
+ON JOIN: SPECTATE	参加時: 観戦
+ON PLAYERS	プレイヤー上
+ON THE MAP	マップ上
+ON THE RACE TOTAL (BEST TIME TRIAL)	レース合計で (タイムアタックのベスト)
+ON THE RACE TOTAL (DEFAULT: NO TIME TRIAL)	レース合計で (デフォルト: タイムアタックなし)
+ON THE RACE TOTAL IT COUNTS AT ITS DEFAULT,	レース合計ではデフォルトタイムで計算、
+ON WINDOWS (ALREADY ITS SHORTEST); SAFE: X2	WINDOWSでは (既に最短); 安全: X2
+ON: AT MOST 1 FRAME QUEUED	オン: キューは最大1フレーム
+ON: FROM THE NEXT START	オン: 次回起動から
+ON: USES YOUR TEAM COLOR, NOT THE ONE BELOW	オン: 下の色ではなくチームカラーを使用
+ONE	1つ
+ONE CHAT COLOR	チャット単色
+ONE MINUTE	1分
+ONE MINUTE LEFT	残り1分
+ONLY KILLS I'M IN	自分が関わるキルのみ
+OPACITY	不透明度
+OPACITY %	不透明度 %
+OPEN	開く
+OPEN DATA FOLDER	データフォルダを開く
+OPEN FOLDER	フォルダを開く
+OPEN SCREENSHOTS	スクリーンショットを開く
+OPENS THE UDP PORT ON YOUR ROUTER (UPNP)	ルーターのUDPポートを開放 (UPNP)
+OPPOSITE KEYS: CANCEL	逆方向キー: 相殺
+OPPOSITE KEYS: FIRST WINS	逆方向キー: 先押し優先
+OPPOSITE KEYS: LAST WINS	逆方向キー: 後押し優先
+OR RESTART: IT'S ASKED FOR AT START	または再起動: 起動時に要求されます
+ORB	オーブ
+OTHER PLAYERS	他のプレイヤー
+OTHER PLAYERS' TRACERS / BEAMS	他プレイヤーの弾道 / ビーム
+OTHERS' FOOTSTEPS	他人の足音
+OTTO	OTTO
+OUT	脱落
+OUTLINE	輪郭
+OUTLINE A	輪郭 A
+OUTLINE OPACITY	輪郭の不透明度
+OUTLINE PX	輪郭 PX
+OUTLINES	輪郭
+OUTPUT	出力
+OVER 1: LOUDER, TO HEAR THEM COMING	1以上: 大きく、接近が分かる
+OVERRIDES FOLDER	overridesフォルダ
+OVERRIDES OF YOURS - ON / OFF AT THE NEXT START	あなたのオーバーライド - 次回起動時にオン / オフ
+OVERSTRAFE BRAKE	オーバーストレイフ減速
+OVERTIME	延長戦
+OVERTIME - NEXT KILL WINS	延長戦 - 次のキルで勝利
+OWN ACCENT	独自アクセント
+OWN ACCENT: NOT THE TEAM COLOR	独自アクセント: チームカラー以外
+OWN COLOR	独自の色
+OWN EFFECTS	独自エフェクト
+OWN SHADOW	自分の影
+OggS	OggS
+OpenGL function missing:	OpenGL関数がありません:
+OpenGL function missing: {}	OpenGL function missing: {}
+Output	出力
+PACING WAIT (ULTRA)	ペーシング待機 (ウルトラ)
+PACK	パック
+PACKET LOSS PROTECTION	パケットロス対策
+PACKET LOSS PROTECTION: 2	パケットロス対策: 2
+PACKET LOSS PROTECTION: 4	パケットロス対策: 4
+PACKET LOSS PROTECTION: 8	パケットロス対策: 8
+PAD ACROSS	横の余白
+PAD DOWN	縦の余白
+PAGE 1	ページ 1
+PAGE 2	ページ 2
+PAGE 3	ページ 3
+PAGE 4	ページ 4
+PAGE 5	ページ 5
+PAGE 6	ページ 6
+PAGE 7	ページ 7
+PAGE 8	ページ 8
+PAGE 9	ページ 9
+PAGE DOWN	PAGE DOWN
+PAGE UP	PAGE UP
+PALETTE: THE BOMB'S BLINK AND CHECKPOINTS NOT	パレット: 爆弾の点滅とチェックポイントは除く
+PANEL DARKNESS	パネルの暗さ
+PANEL SEAMS; FLAT: NO BAKED LIGHT OR SHADOW	パネルの継ぎ目; フラット: ベイクした光と影なし
+PAPER	パー
+PASTE CODE	コードを貼り付け
+PASTE COLORS	カラーを貼り付け
+PATH PT	経路点
+PATTERN FADE	パターンのフェード
+PAUSED	一時停止中
+PAYLOAD	ペイロード
+PAYLOAD - attackers push the cart along its track by standing next to it; defenders stop it. Checkpoints along the track add time and stop it rolling back. Each team attacks once.	ペイロード - 攻撃側はカートの横に立って線路に沿って押す; 防衛側は阻止する。線路上のチェックポイントで時間が加算され、後退も止まる。各チーム1回ずつ攻撃。
+PAYLOAD CONTESTED	ペイロード争奪中
+PAYLOAD PATH POINT	ペイロード経路点
+PER MODE	モード別
+PER WEAPON	武器別
+PERCEPTUAL	知覚
+PERF STATS	パフォーマンス統計
+PERFORMANCE	パフォーマンス
+PHYSICS	物理
+PIA	PIA
+PICK A FILE TO IMPORT	インポートするファイルを選択
+PICK A KEY NO ACTION IS BOUND TO	未割り当てのキーを選択
+PICK IT IN WINDOWS' GRAPHICS SETTINGS	WINDOWSのグラフィック設定で選択
+PICK VSYNC: LATENT SYNC (VIDEO + AUDIO) FIRST;	垂直同期を選択: まずレイテントシンク (ビデオ + オーディオ);
+PICTURE	画像
+PICTURES: PICTURES/QUARK IN YOUR HOME FOLDER	ピクチャ: ホームフォルダの PICTURES/QUARK
+PING	PING
+PING #	PING #
+PING # MS  LOSS #%	PING # MS  ロス #%
+PING / LOSS GRAPH AND RATES (APART FROM F3)	PING / ロスのグラフとレート (F3とは別)
+PING: ANY	PING: 指定なし
+PIRATE	海賊
+PITCH	ピッチ
+PLAY	プレイ
+PLAY IT	プレイする
+PLAY MODE	プレイモード
+PLAY TIME TRIAL	タイムアタックをプレイ
+PLAY VS BOTS	ボット戦
+PLAYABLE AS:	プレイ可能:
+PLAYER	プレイヤー
+PLAYER 2	プレイヤー 2
+PLAYER > MORE SETS THE MENU ACCENT	プレイヤー > 詳細 でメニューのアクセントを設定
+PLAYER BASED	プレイヤーベース
+PLAYER BRIGHTNESS	プレイヤーの明るさ
+PLAYER JOINS	プレイヤー参加
+PLAYER MODEL:	プレイヤーモデル:
+PLAYER OUTLINE WIDTH	プレイヤー輪郭の幅
+PLAYER SHADOWS	プレイヤーの影
+PLAYER SHADOWS (VIDEO + AUDIO); ALWAYS LIT:	プレイヤーの影 (ビデオ + オーディオ); 常時点灯:
+PLAYERS	プレイヤー
+PLAYERS NEVER DARKENED BY THE MAP'S SHADE	プレイヤーはマップの影で暗くならない
+PLAYERS ON YOUR SERVER	サーバーのプレイヤー
+PLAYS	プレイ数
+PLAYS AS	プレイ可能
+PLAYS AS:	プレイ可能:
+PLAYS THE BENCHMARK DEMO (HAMLET, FREE FOR ALL, FULL OF BOTS) AND MEASURES EVERY FRAME	ベンチマークデモ (HAMLET、個人戦、ボット満員) を再生し全フレームを計測
+POINT	ポイント
+POINT LOST	ポイントを失った
+POINT TAKEN	ポイント占拠
+POLLS AT	ポーリング:
+POSITION	位置
+POSITION must be VEC3	POSITION は VEC3 である必要があります
+POWER	パワー
+POWER - NOBODY DIES: HITS DRAIN THE TEAM POOL	パワー - 死亡なし: 被弾でチームプールが減少
+POWER - each team shares one health pool, 2500 for every player on it. Nobody dies: an enemy's hits come off your team's pool. A team whose pool runs out loses; when the 10 minutes are up, the fuller pool wins.	パワー - 各チームは1人あたり2500の共有体力プールを持つ。死亡なし: 敵の攻撃はチームのプールから減る。プールが尽きたチームの負け; 10分経過時はプールが多い方の勝利。
+PRACTICE	練習
+PRACTICE (ALONE WITH BOTS)	練習 (ボットと1人で)
+PRACTICE (UNTIMED) -	練習 (時間無制限) -
+PRACTICE (UNTIMED) - {} TO START THE RACE	練習 (時間無制限) - {} でレース開始
+PRESENT	PRESENT
+PRESET	プリセット
+PRESET: COMPETITIVE	プリセット: 競技
+PRESET: CUSTOM	プリセット: カスタム
+PRESET: HIGH	プリセット: 高
+PRESET: LOW	プリセット: 低
+PRESET: MEDIUM	プリセット: 中
+PRESETS SET BOTH COLORS BELOW	プリセットは下の両方の色を設定
+PRESS A KEY, MOUSE BUTTON OR SCROLL - ESC CANCELS, DEL CLEARS	キー、マウスボタン、ホイールを入力 - ESCでキャンセル、DELで解除
+PRESS...	入力...
+PREV WEAP	前の武器
+PREV WEAPON	前の武器
+PREVIOUS	前へ
+PREVIOUS PAGE	前のページ
+PREVIOUS:	前回:
+PRIMARY MONITOR	プライマリモニター
+PRIORITIZE GAME	ゲームを優先
+PROFILE	プロファイル
+PROFILE:	プロファイル:
+PROFILE: MY CONTROLS	プロファイル: 自分の操作設定
+PROFILE: MY HUD	プロファイル: 自分のHUD
+PROFILES	プロファイル
+PUBLIC	公開
+PUBLIC lists the server on the internet server list (off: friends join with your IP, shown on the host screen). Games on your network show up for everyone on it.	公開にするとインターネットのサーバーリストに掲載 (オフ: フレンドはホスト画面に表示されるIPで参加)。ネットワーク内のゲームは同じネットワークの全員に表示されます。
+PULSE	パルス
+PUSH THE PAYLOAD	ペイロードを押せ
+PUSH THE PAYLOAD TO THE ENEMY END	ペイロードを敵陣まで押せ
+PUT .QBRAIN FILES IN THE BOTS FOLDER TO PICK ONE	.QBRAIN ファイルをbotsフォルダに置くと選択可能
+Pick a server from the list (internet and LAN), or type its address as IP:PORT.	リスト (インターネットとLAN) からサーバーを選ぶか、アドレスを IP:PORT で入力。
+Pick an element in the dropdown (health, weapon name, cooldown bars, speed meter, weapon list) and move it, resize it, recolour it or hide it.	ドロップダウンで要素 (体力、武器名、クールダウンバー、スピードメーター、武器リスト) を選び、移動・サイズ変更・色変更・非表示ができます。
+Pick the mode and map, a server name and the max players. The game picks the map built for the mode; any other map works with a warning.	モードとマップ、サーバー名、最大人数を選択。モード用のマップが自動で選ばれます; 他のマップも警告付きで使用可能。
+Player	プレイヤー
+Q - grapple: hold to hook what you're aiming at and pull toward it; release to let go.	Q - グラップル: 長押しで狙った場所に引っ掛けて引き寄せる; 離すと解除。
+QK1 - QK8 - ranked arenas for all three ladders (vanilla and laser vampire 1v1, instagib free for all), also duel and tourney.	QK1 - QK8 - 3つのラダー全て (バニラとレーザーヴァンパイア1v1、インスタギブ個人戦) のランクアリーナ、デュエルとトーナメントにも対応。
+QUAKE	QUAKE
+QUARK	QUARK
+QUARK 1.17 - 1.18	QUARK 1.17 - 1.18
+QUARK CLASSIC	QUARK クラシック
+QUARK V	QUARK V
+QUARTERFINALS	準々決勝
+QUEUE	キュー
+QUEUE FILLED: FLASH TASKBAR	キュー成立: タスクバーを点滅
+QUEUE FOR ALL	すべてにキュー
+QUEUE:	キュー:
+QUEUE: COULDN'T REACH THE SERVER	キュー: サーバーに接続できません
+QUEUED FOR	キュー中:
+QUEUED, NO CRACKLE ON A BUSY PC	キュー済み、高負荷PCでもノイズなし
+QUEUES - SHARED WITH DISCORD	キュー - DISCORDと共有
+QUEUES NEED A RANKED KEY (quark.key) - COULDN'T MAKE ONE	キューにはランクキーが必要 (quark.key) - 作成できませんでした
+QUICK DASH	クイックダッシュ
+QUIP	一言
+QUIP CAPTIONS	一言の字幕
+QUIPS	一言
+QUIPS FOR YOUR ANNOUNCER VOICE	アナウンサー音声の一言
+QUIPS OFF	一言 オフ
+QUIPS ON	一言 オン
+QUIPS VOLUME	一言の音量
+QUIRKY	クセ強
+QUIT	終了
+QUIT, DISCONNECT AND STOP HOSTING	終了、切断、ホスト停止
+R ALT	R ALT
+R CTRL	R CTRL
+R SHIFT	R SHIFT
+R: ROTATE 90 (SHIFT: ABOUT X, CTRL: ABOUT Z)    F: MIRROR LEFT / RIGHT (SHIFT: FRONT / BACK, CTRL: UPSIDE DOWN)	R: 90度回転 (SHIFT: X軸、CTRL: Z軸)    F: 左右反転 (SHIFT: 前後、CTRL: 上下)
+RACE	レース
+RACE + FLYING	レース + 飛行
+RACE - the course's checkpoints in order. It starts as untimed practice; vote start (F4) to race. TIME TRIAL (main menu, or PLAY TIME TRIAL on the leaderboard) is the ranked race on each race map; the leaderboard's RACE TOTAL adds your best on every one, a map you haven't run counting at its default time.	レース - コースのチェックポイントを順に通過。最初は時間無制限の練習; 開始投票 (F4) でレース開始。タイムアタック (メインメニュー、またはリーダーボードの「タイムアタックをプレイ」) は各レースマップのランクレース; リーダーボードのレース合計は全マップのベストを合算し、未走行のマップはデフォルトタイムで計算。
+RACE GHOST	レースゴースト
+RACE MAP	レースマップ
+RACE RESET	レースリセット
+RACE TOTAL	レース合計
+RADAR	レーダー
+RADAR RANGE	レーダー範囲
+RADAR: TEAMMATES AND OBJECTIVES, NEVER ENEMIES	レーダー: 味方と目標のみ、敵は表示しない
+RADIUS	半径
+RAILYARD / DAM / EXPRESS / MONORAIL - neutral payload (Railyard: payload too).   WAR / CONVOY - multi point.	RAILYARD / DAM / EXPRESS / MONORAIL - ニュートラルペイロード (Railyard: ペイロードも)。   WAR / CONVOY - マルチポイント。
+RAMPAGE	ランペイジ
+RANKED	ランク
+RANKED - CHOOSE A LADDER	ランク - ラダーを選択
+RANKED - NOT RATED	ランク - レート対象外
+RANKED 1V1	ランク 1V1
+RANKED ALWAYS USES THE DEFAULT CONTROLS	ランクは常にデフォルトの操作設定を使用
+RANKED ALWAYS USES THE DEFAULT HUD	ランクは常にデフォルトのHUDを使用
+RANKED BEHIND A FORWARDED PORT OR IN A CONTAINER: ranked ids are signed for the address players dial. If they reach the server at an address it can't see itself (the router forwards another port to it, or it runs in a container), the host screen says so; start a dedicated server with --own-addr host:port (that address) so their ranked ids work.	ポート転送やコンテナ内でのランク: ランクIDはプレイヤーが接続するアドレスに対して署名されます。サーバー自身が認識できないアドレスで接続される場合 (ルーターが別ポートを転送している、またはコンテナ内で動作)、ホスト画面に表示されます; ランクIDが機能するよう --own-addr host:port (そのアドレス) で専用サーバーを起動してください。
+RANKED FFA	ランク 個人戦
+RANKED GAMES HAVE NO BOTS	ランクにボットはいません
+RANKED INSTAGIB	ランク インスタギブ
+RANKED LASER VAMPIRE	ランク レーザーヴァンパイア
+RANKED LEADERBOARD	ランクリーダーボード
+RANKED MAPS ONLY - EACH LADDER HAS ITS OWN RATING	ランクマップのみ - ラダーごとに個別のレート
+RANKED MATCH OVER - REPORTING THE RESULT	ランク試合終了 - 結果を送信中
+RANKED OFF	ランク オフ
+RANKED ON -	ランク オン -
+RANKED QUEUES	ランクキュー
+RANKED VANILLA	ランク バニラ
+RANKED: DEFAULT MODEL, HUD, CONTROLS AND 10 MS INTERP FOR FAIRNESS	ランク: 公平のためデフォルトのモデル、HUD、操作、10 MS補間
+RANKED: NO HEALTH BARS	ランク: 体力バーなし
+RATE	レート
+RATING	レート
+RAW INPUT	RAW入力
+RD	RD
+READ INPUT	入力読取
+READY	準備完了
+REALTIME	リアルタイム
+REC	REC
+RECENT	最近
+RECENT RUNS	最近のラン
+RECHARGING	チャージ中
+RECONNECT	再接続
+RECORD	録画
+RECORD DEMO	デモを録画
+RECORDED WITH	録画:
+RECORDING DEMO (62.5 HZ) - ESC > STOP RECORDING	デモを録画中 (62.5 HZ) - ESC > 録画を停止
+RECORDING DEMO (FULL RATE) - ESC > STOP RECORDING	デモを録画中 (フルレート) - ESC > 録画を停止
+RECORDING RATE: 62.5 HZ	録画レート: 62.5 HZ
+RECORDING RATE: FULL	録画レート: フル
+RED	赤
+RED-GREEN (DEUTAN)	赤-緑 (第二色覚)
+RED-GREEN (PROTAN)	赤-緑 (第一色覚)
+REDO	やり直し
+REDUCE FLASHING	点滅を軽減
+REFRESH	更新
+REFRESH LIST	リストを更新
+REFRESH RATE	リフレッシュレート
+REFRESH RATE:	リフレッシュレート:
+REGEN	リジェネ
+REGENERATION	リジェネ
+RELOAD MAP	マップを再読込
+REMEMBER LAST TAB	最後のタブを記憶
+REMEMBER MY QUEUES	キューを記憶
+RENAME	名前を変更
+RENDER SCALE	レンダースケール
+RESET ALL	すべてリセット
+RESET ALL KEYS	全キーをリセット
+RESET CROSSHAIR	クロスヘアをリセット
+RESET ELEMENT	要素をリセット
+RESET MAP COLOR	マップの色をリセット
+RESET MAPS	マップをリセット
+RESET MOVEMENT TO STANDARD	移動を標準にリセット
+RESET STYLE	スタイルをリセット
+RESET WHOLE HUD	HUD全体をリセット
+RESOLUTION	解像度
+RESPAWN IN #	リスポーンまで #
+RESTART (R)	リスタート (R)
+RESTART MAP	マップをリスタート
+RESTART MATCH	試合をリスタート
+RESTART THE MATCH	試合をリスタート
+RESTORE AUTOSAVE	自動保存を復元
+RESUME	再開
+RESUME (ESC)	再開 (ESC)
+RETICLE COLOR	レティクルの色
+RETICLE WIDTH	レティクルの幅
+REVERT	元に戻す
+RIFF	RIFF
+RIFLE	ライフル
+RIFLE ZOOM FOV	ライフルズームFOV
+RIFLE, ONE SHOT A CLICK. SCORE: KILLS X 100 X ACCURACY	ライフル、1クリック1発。スコア: キル X 100 X 命中率
+RIFLE, SNIPER, LASER, SHOTGUN AND KNIFE	ライフル、スナイパー、レーザー、ショットガン、ナイフ
+RIFLES ONLY	ライフルのみ
+RIGHT	右
+RIGHT ARROW (NEXT PAGE)	右矢印 (次のページ)
+RIGHT MOUSE + MOVE: LOOK    WASD: FLY    SPACE / C: UP / DOWN    SHIFT: FAST    WHEEL: SPEED	右クリック + 移動: 視点    WASD: 飛行    SPACE / C: 上 / 下    SHIFT: 高速    ホイール: 速度
+RIGHT-CLICK A SERVER: FAVORITE (LISTED FIRST)	サーバーを右クリック: お気に入り (先頭に表示)
+RIGHT-CLICK: RESET	右クリック: リセット
+RISING TOWARD	上昇方向
+RISING TOWARD: +X	上昇方向: +X
+RISING TOWARD: +Z	上昇方向: +Z
+RISING TOWARD: -X	上昇方向: -X
+RISING TOWARD: -Z	上昇方向: -Z
+RMB	右クリック
+ROBOT	ロボット
+ROCK	グー
+ROCKET	ロケット
+ROCKET (splash; rocket jump off the floor for 10#amage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 10 hp, once a second; alt throws it: +30 hp and reset cooldowns for a teammate).	ロケット (範囲攻撃; 床でロケットジャンプすると10#ダメージ)、ライフル (フルオート; サブでスコープ)、レーザー (ビーム; サブで引き寄せ)、ショットガン (サブ: 跳弾)、スナイパー (サブでスコープ)、スティッキー (サブで起爆)、クロスボウ (ヘッドショット)、バブル (サブ: バブルを連射)、ナイフ (サブ: 投擲)、注射器 (射撃で毎秒1回10 HP回復; サブで投擲: 味方に +30 HP とクールダウンリセット)。
+ROCKET JUMPERS	ロケットジャンパー
+ROCKET RIDE	ロケットライド
+ROCKET, LASER AND KNIFE	ロケット、レーザー、ナイフ
+ROCKETS AND STICKIES - NO SELF DAMAGE	ロケットとスティッキー - 自爆ダメージなし
+ROCKETS ONLY	ロケットのみ
+ROLL	ロール
+ROOM	部屋
+ROPE COLOR	ロープの色
+ROTATE	回転
+ROTATE X	X回転
+ROTATE Y	Y回転
+ROTATE Z	Z回転
+ROTATION STEP	回転ステップ
+ROTATION STEP: Q / E ON A SPAWN; THE FLY	回転ステップ: スポーン上で Q / E; 飛行
+ROUND	ラウンド
+ROUND # - STARTS IN #	ラウンド # - 開始まで #
+ROUND CLOCK	ラウンド時計
+ROUND CLOCK: TIME LEFT	ラウンド時計: 残り時間
+ROUND CLOCK: TIME PLAYED	ラウンド時計: 経過時間
+ROUND LOST	ラウンド敗北
+ROUND MODES	ラウンド制モード
+ROUND OF 16	ベスト16
+ROUND OF 32	ベスト32
+ROUND OVER	ラウンド終了
+ROUND START	ラウンド開始
+ROUND WINS -	ラウンド勝利数 -
+ROUND WON	ラウンド勝利
+ROUNDS	ラウンド
+ROWS #-# OF # (WHEEL)	行 #-# / # (ホイール)
+ROWS #-# OF # - WHEEL TO SCROLL	行 #-# / # - ホイールでスクロール
+RPS BY MOUSE	マウスでじゃんけん
+RPS BY MOUSE: CLICK A TIEBREAK CARD TO THROW IT	マウスでじゃんけん: タイブレークのカードをクリックで出す
+RUBIK	RUBIK
+RULES	ルール
+RUN	逃げろ
+RUN - DON'T BE THE TAGGER WHEN TIME RUNS OUT	逃げろ - 時間切れ時に鬼にならないように
+RUN AGAIN	もう一度実行
+RUN BENCHMARK	ベンチマーク実行
+RUN NAME	ラン名
+RUN SPEED	走行速度
+RUNS	ラン
+Ranked games use the default model, HUD and controls and 10 ms interpolation, so everyone plays the same game.	ランクではデフォルトのモデル、HUD、操作と10 msの補間を使用し、全員が同条件でプレイします。
+SAFE OK / ERROR	安全な OK / エラー色
+SAFE: OK BLUE, ERRORS ORANGE; IT: TAG / HIDE'S	安全: OKは青、エラーはオレンジ; 鬼: 鬼ごっこ / かくれんぼの
+SAME	同じ
+SAME AS FPS LIMIT	FPS制限と同じ
+SAME DPI: THE SAME TURN PER INCH OF MOUSE	同じDPI: マウス1インチあたり同じ回転量
+SATURATION	彩度
+SATURATION 0: BLACK AND WHITE	彩度 0: 白黒
+SAVE	保存
+SAVE + DONE	保存 + 完了
+SAVE A COPY	コピーを保存
+SAVE A COPY AS	名前を付けてコピーを保存
+SAVE AS	名前を付けて保存
+SAVE AS NEW MAP	新しいマップとして保存
+SAVE POS	位置保存
+SAVE POSITION	位置を保存
+SAVE YOUR COPY OF	コピーを保存:
+SAVED	保存済み
+SAVED FOR VOICE CHAT LATER	今後のボイスチャット用に保存
+SAVES TO MAPS/<NAME>.QMAP - YOUR OWN COPY, THE HOST KEEPS THEIRS.	MAPS/<NAME>.QMAP に保存 - 自分のコピー、ホストは自分のものを保持。
+SAY (TEAM):	発言 (チーム):
+SAY IT	発言する
+SAY:	発言:
+SCALAR	スカラー
+SCALE: X2 TAKES TWICE THE SPEED TO FILL	スケール: X2で満タンに2倍の速度が必要
+SCANOUT TO THE CROSSHAIR (EST)	クロスヘアまでのスキャンアウト (推定)
+SCI-FI / DECOR	SF / 装飾
+SCISSORS	チョキ
+SCOPE OVERLAY	スコープオーバーレイ
+SCOPE SIZE	スコープサイズ
+SCORE	スコア
+SCORE BOX	スコアボックス
+SCORE LIMIT	スコア上限
+SCOREBOARD	スコアボード
+SCOREBOARD: HOLD	スコアボード: 長押し
+SCOREBOARD: TOGGLE	スコアボード: トグル
+SCORES	スコア
+SCREEN	画面
+SCREENSHOT	スクリーンショット
+SCREENSHOT FOLDER	スクリーンショットフォルダ
+SCREENSHOT FORMAT	スクリーンショット形式
+SCREENSHOT SAVED (NO HUD):	スクリーンショット保存 (HUDなし):
+SCREENSHOT SAVED:	スクリーンショット保存:
+SCREENSHOTS	スクリーンショット
+SCROLLBAR	スクロールバー
+SE	SE
+SEARCH	検索
+SEARCH MATERIALS	素材を検索
+SEE SOUNDS	音を可視化
+SEE-THROUGH	半透明
+SEEKER	鬼
+SEEKING -	捜索中 -
+SELECTED:	選択中:
+SELF DAMAGE	自傷ダメージ
+SEMIFINALS	準決勝
+SENSITIVITY	感度
+SENSITIVITY FROM ANOTHER GAME	他のゲームから感度を変換
+SERVER	サーバー
+SERVER LOG	サーバーログ
+SERVER LOG: EXTREME (EVERY TICK)	サーバーログ: 最大 (毎ティック)
+SERVER LOG: OFF	サーバーログ: オフ
+SERVER LOG: SIMPLE	サーバーログ: 簡易
+SERVER LOG: VERBOSE (125 HZ)	サーバーログ: 詳細 (125 HZ)
+SERVER NAME	サーバー名
+SERVERS (LAN + INTERNET)	サーバー (LAN + インターネット)
+SETTINGS	設定
+SETTINGS COPIED: PASTE THEM ANYWHERE	設定をコピー: どこにでも貼り付け可
+SETTINGS IMPORTED	設定をインポートしました
+SETTINGS, MAPS, DEMOS, SCREENSHOTS, HUDS	設定、マップ、デモ、スクリーンショット、HUD
+SEWER - free for all.   RIVERSIDE / FAIRGROUND / ROOFTOPS - tag.   MUSEUM / CRUISESHIP - hide and seek.	SEWER - 個人戦。   RIVERSIDE / FAIRGROUND / ROOFTOPS - 鬼ごっこ。   MUSEUM / CRUISESHIP - かくれんぼ。
+SHADOW DISTANCE	影の距離
+SHADOW DISTANCE: 16 M	影の距離: 16 M
+SHADOW DISTANCE: 32 M	影の距離: 32 M
+SHADOW DISTANCE: 64 M	影の距離: 64 M
+SHADOW EDGE	影の輪郭
+SHADOW EDGE: HARD	影の輪郭: ハード
+SHADOW EDGE: SOFT	影の輪郭: ソフト
+SHADOW EDGE: SOFTER	影の輪郭: よりソフト
+SHADOW QUALITY	影の品質
+SHADOW QUALITY: HIGH	影の品質: 高
+SHADOW QUALITY: LOW	影の品質: 低
+SHADOW QUALITY: MEDIUM	影の品質: 中
+SHADOWS	影
+SHAPE	形状
+SHARPEN	シャープ化
+SHIFT + ARROWS: GROW THAT SIDE    CTRL + ARROWS: SHRINK IT    M: MATERIAL / TEAM    N: SHAPE    K: COAT THE SIDE YOU LOOK AT	SHIFT + 矢印: その面を拡大    CTRL + 矢印: 縮小    M: 素材 / チーム    N: 形状    K: 見ている面を塗る
+SHIFT - dash: a burst of speed in the direction you're moving, tilted by where you look. You hold 2 dashes, usable 0.6 s apart (from the end of the last one). A spent dash recharges for 1.2 s from the end of the dash that spent it; after that, landing gives it back (a bunny hop gives one).	SHIFT - ダッシュ: 移動方向へ一気に加速、視点の向きで傾く。ダッシュは2回分あり、0.6秒間隔 (前回の終了から) で使用可能。使ったダッシュはそのダッシュの終了から1.2秒でチャージされ、その後着地で回復 (バニーホップでも1回分回復)。
+SHIFT+ARROW (NUDGE 10)	SHIFT+矢印 (10微調整)
+SHOT	射撃
+SHOTGUN	ショットガン
+SHOTGUNS IN LOW GRAVITY	低重力ショットガン
+SHOTGUNS ONLY	ショットガンのみ
+SHOTS	射撃数
+SHOTS, LASER AND ROPE IN OWN COLOR	弾、レーザー、ロープを独自の色で
+SHOW	表示
+SHOW COLUMN	列を表示
+SHOW DB	DBを表示
+SHOW FPS	FPS表示
+SHOW I'M TYPING	入力中を表示
+SHOW LINE	ラインを表示
+SHOW PING	PING表示
+SHOW WEAPON	武器を表示
+SHOWN	表示中
+SHOWN WITH VERBOSE INFO ON. DRAG TO MOVE, CORNER / WHEEL TO SIZE, ARROWS NUDGE, ALT: NO SNAP	詳細情報オン時に表示。ドラッグで移動、角 / ホイールでサイズ、矢印で微調整、ALT: スナップなし
+SHOWS INPUT->FRAME LATENCY	INPUT->FRAME の遅延を表示
+SHUFFLE TEAMS	チームをシャッフル
+SHUFFLE THE TEAMS (THE MATCH RESTARTS)	チームをシャッフル (試合はリスタート)
+SIMPLE	シンプル
+SIMPLE SKY	シンプルな空
+SITE	サイト
+SIZE	サイズ
+SIZE (CORNER)	サイズ (角)
+SIZE: SYSTEM	サイズ: システム
+SIZE: X1	サイズ: X1
+SIZE: X1.5	サイズ: X1.5
+SIZE: X2	サイズ: X2
+SIZING	サイズ調整
+SIZING: EXACT PIXELS	サイズ調整: ピクセル指定
+SIZING: SCALE WITH RESOLUTION	サイズ調整: 解像度に合わせる
+SKIP IT	スキップ
+SKIP WARMUP	ウォームアップをスキップ
+SKY	空
+SLOT	スロット
+SLOT 1	スロット 1
+SLOT 2	スロット 2
+SLOT 3	スロット 3
+SMOOTH EDGES	エッジを滑らかに
+SMOOTH STRENGTH	スムーズの強さ
+SMOOTHING (INTERP): ADAPTIVE	スムージング (補間): アダプティブ
+SMOOTHING (INTERP): CUSTOM	スムージング (補間): カスタム
+SMOOTHING (INTERP): OFF	スムージング (補間): オフ
+SMOOTHING DELAY (MS)	スムージング遅延 (MS)
+SNAPS: 125	スナップ: 125
+SNAPS: 250	スナップ: 250
+SNAPS: 500	スナップ: 500
+SNAPS: 62.5	スナップ: 62.5
+SNAPSHOT RATE	スナップショットレート
+SNIPER	スナイパー
+SNIPER SCOPE	スナイパースコープ
+SNIPER ZOOM FOV	スナイパーズームFOV
+SNIPERS - ANY HIT KILLS	スナイパー - 1発で即死
+SNIPERS ONLY	スナイパーのみ
+SOCD	SOCD
+SORT	並べ替え
+SORT BY	並べ替え
+SORT BY: DEATHS	並べ替え: デス
+SORT BY: KILLS	並べ替え: キル
+SORT BY: NAME	並べ替え: 名前
+SORT BY: PING	並べ替え: PING
+SORT BY: SCORE	並べ替え: スコア
+SORT: BIGGEST FIRST	並べ替え: 大きい順
+SORT: NAME	並べ替え: 名前
+SORT: NEWEST FIRST	並べ替え: 新しい順
+SORT: OLDEST FIRST	並べ替え: 古い順
+SOUND	サウンド
+SOUND GROUPS	サウンドグループ
+SOUND OCCLUSION	音の遮蔽
+SOUND ON	サウンド オン
+SOUND PACK: DEFAULT	サウンドパック: デフォルト
+SOUND PACK: HEAVY METAL	サウンドパック: ヘヴィメタル
+SOUND PACK: MAGICAL	サウンドパック: マジカル
+SOUND PACK: MOUTH	サウンドパック: 口
+SOUND PACK: RETRO	サウンドパック: レトロ
+SOUND SWITCHES TO IT AT ONCE	音声はすぐに切り替わります
+SOUNDS	サウンド
+SOUNDS BEHIND WALLS MUFFLED: YOU HEAR LESS	壁の向こうの音がこもる: 聞こえにくくなる
+SPACE	SPACE
+SPARE TIME BEFORE THE BLANK; A LATE FRAME	ブランク前の余裕時間; 遅れたフレームは
+SPAWN	スポーン
+SPEC NEXT	次を観戦
+SPEC PREV	前を観戦
+SPECTATE	観戦
+SPECTATING	観戦中
+SPECTATOR	観戦者
+SPECTATOR FOV	観戦FOV
+SPECTATOR HUD	観戦HUD
+SPECTATOR HUD: FULL	観戦HUD: フル
+SPECTATOR HUD: MINIMAL	観戦HUD: 最小
+SPEED	速度
+SPEED CAPTION	速度のキャプション
+SPEED METER	スピードメーター
+SPEED UNITS	速度単位
+SPEED UNITS: KM/H	速度単位: KM/H
+SPEED UNITS: M/S	速度単位: M/S
+SPEED UNITS: UPS (QUAKE)	速度単位: UPS (QUAKE)
+SPEED, GRID AND LAST LIGHT ARE KEPT	速度、グリッド、最後のライトは保持
+SPEED: CARRY	速度: 運搬
+SPEED: FAST	速度: 高速
+SPEED: HITSCAN	速度: ヒットスキャン
+SPEED: SLOW	速度: 低速
+SPEED: WALK	速度: 歩き
+SPLIT	スプリット
+SPLIT TIME	スプリットタイム
+SPLITS VS	スプリット比較:
+SPLITS: AHEAD / BEHIND	スプリット: リード / ビハインド
+SPLITS: PALETTE	スプリット: パレット
+SPREAD CIRCLE	拡散円
+SPREE	連続キル
+SPY	スパイ
+SSE4.2	SSE4.2
+ST	ST
+STACKING	スタック
+STACKING: A NUMBER A HIT	スタック: 1ヒットごとに数値
+STACKING: QUICK HITS ADD UP	スタック: 連続ヒットを合算
+STACKING: RUNNING TOTAL	スタック: 累計
+STAIR SMOOTHING	階段スムージング
+STAIRS	階段
+STALEMATE - HEALTH DRAINING	膠着 - 体力減少中
+STALEMATE - HEALTH DRAINS IN	膠着 - 体力減少まで
+STALEMATE WARNING	膠着警告
+STALLED #S	停滞 #秒
+STANDARD	標準
+STANDARD RULES	標準ルール
+STANDARD: SNIPER	標準: スナイパー
+START	開始
+START THE MATCH	試合を開始
+STARTING IN #	開始まで #
+STAY HIDDEN -	隠れ続けろ -
+STDEV	標準偏差
+STEP	ステップ
+STEP HEIGHT	段差の高さ
+STEPS	足音
+STEPS, SHOTS, BOOMS... AS WORDS ROUND THE	足音、射撃、爆発... を文字で周囲に
+STEREO WIDTH	ステレオ幅
+STICKIES	スティッキー
+STICKIES AT MAX	スティッキー最大数
+STICKIES ON YOU	あなたに付いたスティッキー
+STICKIES ONLY	スティッキーのみ
+STICKY	スティッキー
+STICKY COUNTER	スティッキーカウンター
+STICKY ON YOU	スティッキーが付着
+STILL HIDDEN	まだ隠れている
+STONE	石
+STOP DEMO	デモを停止
+STOP EDITING AND PLAY THE MAP	編集を終了してマップをプレイ
+STOP HOSTING	ホストを停止
+STOP RECORDING	録画を停止
+STOP THE PAYLOAD	ペイロードを止めろ
+STOPPING SPEED	停止速度
+STRAFE BOOST (AT SPEED)	ストレイフブースト (高速時)
+STREAK	連続キル
+STREAK CALLOUTS	連続キルのコール
+STREAK CALLOUTS: ALL	連続キルのコール: すべて
+STREAK CALLOUTS: MINE	連続キルのコール: 自分
+STREAK CALLOUTS: OFF	連続キルのコール: オフ
+STREAMER MODE	配信者モード
+STREAMER: ADDRESSES, CODES, OTHERS' NAMES HIDDEN	配信者: アドレス、コード、他人の名前を非表示
+STRETCHED (OR BARRED BY YOUR GPU'S SCALING)	引き伸ばし (またはGPUのスケーリングで黒帯)
+STYLE	スタイル
+STYLE (THEME.CFG)	スタイル (THEME.CFG)
+STYLE: BAR	スタイル: バー
+STYLE: CIRCLE	スタイル: 円
+STYLE: COLOR-GRADED BAR	スタイル: グラデーションバー
+STYLE: CROSS	スタイル: 十字
+STYLE: CROSS + DOT	スタイル: 十字 + ドット
+STYLE: DOT	スタイル: ドット
+STYLE: ICON (OPACITY)	スタイル: アイコン (不透明度)
+STYLE: ICON + BAR	スタイル: アイコン + バー
+STYLE: NUMBER	スタイル: 数値
+STYLE: T	スタイル: T
+SUBTRACT	減算
+SUPER	スーパー
+SUPER DASH	スーパーダッシュ
+SUPER DASH BOOST	スーパーダッシュブースト
+SUPER DASH JUMP	スーパーダッシュジャンプ
+SUPER DASH SPEED (MAX)	スーパーダッシュ速度 (最大)
+SURE?	本当に?
+SURE? QUIT	本当に終了?
+SURF	サーフ
+SURFACES	表面
+SW	SW
+SWAP	入れ替え
+SWAP FIRE	射撃ボタン入れ替え
+SYRINGE	注射器
+SYSTEM DEFAULT	システムデフォルト
+SYSTEM LINE COLOR	システム行の色
+SYSTEM MESSAGES	システムメッセージ
+SYSTEM MESSAGES: ALL	システムメッセージ: すべて
+SYSTEM MESSAGES: IMPORTANT	システムメッセージ: 重要のみ
+SYSTEM MESSAGES: OFF	システムメッセージ: オフ
+SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)	システム: OSの矢印 (色: 独自のみ)
+Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).	設定 > 操作設定 でキー割り当てをエクスポートしたり、他人のものをインポートできます (テキストをコピー / 貼り付け)。
+Start the match, change map / mode, ranked on / off, edit the map together, bots on. A majority of the human players decides.	試合開始、マップ / モード変更、ランクのオン / オフ、マップの共同編集、ボットのオン。人間プレイヤーの過半数で決定します。
+Style, length, thickness, gap, colour and outline, with a live preview.	スタイル、長さ、太さ、間隔、色、輪郭をライブプレビューで調整。
+Super dash: look down and dash into the floor while holding jump: you leave 5 m/s faster than you went into the dash (at least 11, at most 36 m/s), with a hop that gets higher the further down you look (it leaves you 1 dash).	スーパーダッシュ: ジャンプを押しながら下を向いて床へダッシュ: ダッシュに入る前より 5 m/s 速く抜け (最低 11、最大 36 m/s)、下を向くほど高く跳ねます (ダッシュが1回残ります)。
+Switching weapons with fire held doesn't fire the new one: let go and press again.	射撃を押したまま武器を切り替えても新しい武器は撃ちません: 一度離して押し直してください。
+TAB	TAB
+TAB (NEXT ELEMENT)	TAB (次の要素)
+TAB - scoreboard.   ENTER - chat.   F1 / F2 - vote yes / no.   F5 - vote to start the match.	TAB - スコアボード。   ENTER - チャット。   F1 / F2 - 投票 賛成 / 反対。   F5 - 試合開始に投票。
+TAB completes   UP/DOWN history   CTRL+V pastes   CTRL+C copies the line (empty line or CTRL+SHIFT+C: the log)	TAB 補完   UP/DOWN 履歴   CTRL+V 貼り付け   CTRL+C 行をコピー (空行か CTRL+SHIFT+C: ログ)
+TAG	鬼ごっこ
+TAG - whoever is the TAGGER when the timer runs out is eliminated. Last one standing wins.	鬼ごっこ - タイマー終了時に鬼だったプレイヤーは脱落。最後の1人が勝利。
+TAG COLOR	タグの色
+TAG OPACITY	タグの不透明度
+TAG SIZE	タグのサイズ
+TAGGER	鬼
+TAGS: CUSTOM	タグ: カスタム
+TAGS: TEAM	タグ: チーム
+TAGS: WHITE	タグ: 白
+TAKE NO DAMAGE	ダメージを受けない
+TAKES ONE; HIDE HUD: THE 3D VIEW ONLY;	1枚撮影; HUD非表示: 3D画面のみ;
+TAKES THE SOUND DEVICE FOR LOWER AUDIO LAG	サウンドデバイスを占有して音声遅延を低減
+TANKS	タンク
+TEAM	チーム
+TEAM (M)	チーム (M)
+TEAM A	チームA
+TEAM A AND B IN THESE, NOT YOURS / THE ENEMY'S	味方 / 敵ではなくチームA / Bをこの色で
+TEAM A ATTACKS - TEAM B DEFENDS	チームA攻撃 - チームB防衛
+TEAM A delivered the payload	チームAがペイロードを運び切りました
+TEAM B	チームB
+TEAM B ATTACKS - TEAM A DEFENDS	チームB攻撃 - チームA防衛
+TEAM B delivered the payload	チームBがペイロードを運び切りました
+TEAM CHAT	チームチャット
+TEAM CHAT ONLY	チームチャットのみ
+TEAM COLOR	チームカラー
+TEAM COLOR IS ALSO THE MENU ACCENT	チームカラーをメニューのアクセントにも使用
+TEAM COLORS	チームカラー
+TEAM COLORS:	チームカラー:
+TEAM COLORS: CUSTOM	チームカラー: カスタム
+TEAM MODEL	味方モデル
+TEAM MODEL:	味方モデル:
+TEAM MODEL: THEIR OWN	味方モデル: 本人の設定
+TEAM OUTLINE	味方の輪郭
+TEAM OUTLINE:	味方の輪郭:
+TEAM PANEL	チームパネル
+TEAM POOL # / #  -  ENEMY # / #	チームプール # / #  -  敵 # / #
+TEAM WIDTH	味方の幅
+TEAM, OUTLINE, CROSSHAIR, TRACER AND ROPE COLORS	チーム、輪郭、クロスヘア、弾道、ロープの色
+TEAM: ANY TEAM	チーム: どちらでも
+TEAM: RACE	チーム: レース
+TEAM: TEAM A	チーム: チームA
+TEAM: TEAM B	チーム: チームB
+TEAMMATE BOTS	味方ボット
+TEAMMATES ALIVE	味方の生存数
+TEAMMATES' NAMES OVER THEIR HEADS	味方の名前を頭上に表示
+TEAMS	チーム
+TEAMS, A BALL, TWO GOALS - MOST GOALS IN 10 MINUTES	2チーム、ボール1つ、ゴール2つ - 10分で最多ゴール
+TEAMS: 1V1	チーム: 1V1
+TEAMS: 2V2	チーム: 2V2
+TEAR LINE OFFSET (US)	ティアリング位置オフセット (US)
+TEARS NOW OR WAITS A REFRESH	即ティアリングか次のリフレッシュを待つ
+TENTHS	0.1秒表示
+TENTHS: THE LAST 10 S AS 0:09.4	0.1秒表示: 最後の10秒を 0:09.4 形式で
+TEST	テスト
+TEST BOTS	テストボット
+TEST MODE	テストモード
+TEST MODE:	テストモード:
+TEST MODE: THE MAP'S	テストモード: マップの設定
+TEST plays the map right away; BAKE LIGHT previews the real lighting.	テストですぐにマップをプレイ; ライトをベイクで実際のライティングをプレビュー。
+TESTING BUILD - RANKED NOT RATED (PLAYED, NEVER COUNTED)	テストビルド - ランクはレート対象外 (プレイ可、記録なし)
+TEXT	テキスト
+TEXT AFTER THE LAST RULE	最後のルールの後のテキスト
+TEXT ALIGN	テキスト配置
+TEXT BRIGHTNESS	テキストの明るさ
+TEXT OUTLINE	テキストの縁取り
+TEXT SIZE %	テキストサイズ %
+TEXT: CENTRE	テキスト: 中央
+TEXT: LEFT	テキスト: 左
+TEXT: RIGHT	テキスト: 右
+TF2 BUILD	TF2 ビルド
+TF2 SECONDARY	TF2 セカンダリ
+TH	TH
+THE 3D SCENE (THE HUD STAYS AS IT IS);	3Dシーン (HUDはそのまま);
+THE BOMB IS CARRIED AGAIN	爆弾が再び運ばれています
+THE BOMB IS DOWN	爆弾が落ちた
+THE CHOSEN AUDIO OUTPUT IS GONE: USING THE SYSTEM DEFAULT	選択した音声出力がありません: システムデフォルトを使用
+THE DARK EDGE ROUND ALL TEXT, MENUS TOO	全テキストの暗い縁取り、メニューにも
+THE DEFAULT	デフォルト
+THE FONT COCAINE DIESEL USES	COCAINE DIESEL が使うフォント
+THE FONT OF THE MENUS AND THE HUD	メニューとHUDのフォント
+THE GAME'S PART ONLY: NO MOUSE POLLING, NO DISPLAY; ONE TIME LINE	ゲームのみ: マウスとディスプレイを除く; 一本の時間軸
+THE GUN'S KICK ON A SHOT (0: NONE)	射撃時の武器の反動 (0: なし)
+THE HAZE OVER DISTANT WALLS (0: NONE)	遠くの壁にかかる霞 (0: なし)
+THE LANGUAGE OF THE MENUS AND THE HUD	メニューと HUD の言語
+THE MAP ISN'T BUILT FOR THIS MODE: IT MAY NOT WORK	このマップはこのモード非対応: 動作しない場合があります
+THE MESSAGES UNDER THE SCORE BOX	スコアボックス下のメッセージ
+THE OLD MAPS (BEFORE 1.19.6) IN THE MAP LISTS. NEVER RANKED	旧マップ (1.19.6以前) をマップリストに表示。ランク対象外
+THE ORIGINAL PIXEL FONT	オリジナルのピクセルフォント
+THE OTHER CONTROL SCRIPTS STAY OFF IN RANKED	他の操作スクリプトはランクでは無効のまま
+THE QUEUES YOU'RE IN, JOINED AGAIN NEXT START	参加中のキューに次回起動時も再参加
+THE SAVED DEVICE IS GONE: THE DEFAULT PLAYS	保存したデバイスがありません: デフォルトで再生
+THE SAVED MICROPHONE IS GONE: THE DEFAULT	保存したマイクがありません: デフォルトを使用
+THE SAVED MONITOR IS GONE: THE PRIMARY	保存したモニターがありません: プライマリを使用
+THE SCROLL WHEEL PASSES OVER SKIPPED	ホイールはスキップした武器を飛ばす
+THE SHARE OF THE MODE'S MAX HEALTH	モードの最大体力に対する割合
+THE TASKBAR BUTTON FLASHES	タスクバーのボタンが点滅
+THE WINDOW'S SIZE AND PLACE ARE KEPT	ウィンドウのサイズと位置を保持
+THEIRS	相手
+THEME.CFG LINE	THEME.CFG 行
+THEN REFRESH	その後更新
+THESE ONLY APPLY TO IT	これらはそれにのみ適用
+THEY DROPPED THE BOMB	敵が爆弾を落とした
+THEY HAVE THE BOMB AGAIN	敵が再び爆弾を所持
+THEY'RE CHOOSING -	相手が選択中 -
+THICKNESS	太さ
+THIRD PERSON	三人称
+THIRTY SECONDS	30秒
+THIS LIFE:	このライフ:
+THIS RUN	今回のラン
+THREADED OPTIMIZATION OFF	スレッド最適化オフ
+THREADED OPTIMIZATION OFF; PRESENT VIA DXGI	スレッド最適化オフ; DXGI経由でPRESENT
+THREADED OPTIMIZATION: WINDOWS ONLY	スレッド最適化: WINDOWSのみ
+THREE	3つ
+THROW	投擲
+TICK / SNAP	ティック / スナップ
+TICK RATE	ティックレート
+TICK: 1000 HZ	ティック: 1000 HZ
+TICK: 125 HZ	ティック: 125 HZ
+TICK: 250 HZ	ティック: 250 HZ
+TICK: 500 HZ	ティック: 500 HZ
+TICKS + PREDICTION	ティック + 予測
+TIEBREAK - ROCK PAPER SCISSORS	タイブレーク - じゃんけん
+TIERS OFF: ONE HITSOUND FOR EVERY HIT; DUCKING:	段階オフ: 全ヒットで同じヒット音; ダッキング:
+TILE	タイル
+TIME	時間
+TIME / SCORE / ROUNDS: 0 = THE MODE'S DEFAULT	時間 / スコア / ラウンド: 0 = モードのデフォルト
+TIME LEFT	残り時間
+TIME LIMIT (S)	制限時間 (秒)
+TIME TRIAL	タイムアタック
+TIME TRIAL -	タイムアタック -
+TIME TRIAL RUNS	タイムアタックのラン
+TIME WARNINGS	時間警告
+TIME WARNINGS ON SCREEN	画面に時間警告
+TIME WARNINGS: + COUNTDOWN	時間警告: + カウントダウン
+TIME WARNINGS: 60 + 30 S	時間警告: 60 + 30秒
+TIME WARNINGS: OFF	時間警告: オフ
+TIMESTAMPS	タイムスタンプ
+TINY PLAYERS	ちびプレイヤー
+TITLE	タイトル
+TO SHOW IT AGAIN	で再表示
+TO SPECTATOR (UNTIL THE NEXT MAP)	観戦へ (次のマップまで)
+TO START THE RACE	でレース開始
+TO VOTE START	で開始に投票
+TOGGLE CHAT	チャット切替
+TOGGLE: PRESS THE SCOREBOARD KEY TO SHOW / HIDE	トグル: スコアボードキーで表示 / 非表示
+TOGGLE: PRESS TO HOOK, PRESS AGAIN TO LET GO	トグル: 押してフック、もう一度押して解除
+TOGGLE: PRESS USE TO PLANT / DEFUSE, AGAIN TO STOP	トグル: 使用キーで設置 / 解除、もう一度で中止
+TONE CURVE	トーンカーブ
+TONE CURVE OFF: FLAT, LINEAR COLOUR; CLEAN: NO	トーンカーブ オフ: フラットなリニアカラー; クリーン: なし
+TOP RIGHT, WITHOUT A WIDGET (F3 HAS MORE)	右上、ウィジェットなし (F3でさらに詳細)
+TOTAL K / D	合計 K / D
+TOURNEY	トーナメント
+TOURNEY - a single-elimination bracket of 1v1s; everyone else spectates the match in progress.	トーナメント - 1v1のシングルエリミネーション; 他の全員は進行中の試合を観戦。
+TOURNEY BRACKET	トーナメント表
+TOURNEY MAPS	トーナメントマップ
+TOURNEY MAPS (PICK ANY, THEY ROTATE)	トーナメントマップ (自由に選択、ローテーション)
+TOURNEY MAPS:	トーナメントマップ:
+TOURNEY RULES	トーナメントルール
+TOURNEY RULESETS (PICK ANY, THEY ROTATE)	トーナメントのルール (自由に選択、ローテーション)
+TOURNEY RULESETS:	トーナメントのルール:
+TOURNEY TAB	トーナメントのTAB
+TOURNEY TAB: THE BRACKET	トーナメントのTAB: トーナメント表
+TOURNEY TAB: THE SCOREBOARD	トーナメントのTAB: スコアボード
+TRACER COLOR	弾道の色
+TRACERS	弾道
+TRACERS + LASER START WHERE THE GUN IS	弾道 + レーザーを武器の位置から
+TRACERS + TRAILS	弾道 + 軌跡
+TRACERS: CLASSIC	弾道: クラシック
+TRACERS: CUSTOM	弾道: カスタム
+TRACERS: TEAM	弾道: チーム
+TRAIL OPACITY	軌跡の不透明度
+TRAILS	軌跡
+TRAILS: FULL	軌跡: フル
+TRAILS: OFF	軌跡: オフ
+TRAILS: SHORT	軌跡: 短い
+TRAILS: THE STREAKS BEHIND ROCKETS, BOLTS,	軌跡: ロケット、ボルトなどの後ろの筋、
+TRAINER MENU	トレーナーメニュー
+TRIAL MAP	タイムアタックマップ
+TT	TT
+TWO	2つ
+TYPE TO SEARCH: A NAME OR WHAT IT DOES (CTRL+F)	入力して検索: 名前または機能 (CTRL+F)
+TYPING	入力中
+TYPING SOUNDS	入力音
+The server listens on UDP port 27500 (change it under UDP PORT). Quark asks your router to forward it automatically (UPnP); if friends can't connect, forward that UDP port on your router by hand.	サーバーはUDPポート27500で待ち受けます (UDPポートで変更可)。Quarkはルーターに自動でポート開放を要求します (UPnP); フレンドが接続できない場合は、ルーターでそのUDPポートを手動で開放してください。
+UARK	UARK
+UDP	UDP
+UDP PORT	UDPポート
+UHD	UHD
+UI FONT	UIフォント
+ULTRA	ウルトラ
+ULTRA SAFETY	ウルトラ安全マージン
+ULTRA: 0 QUEUED + LATE INPUT SAMPLING	ウルトラ: キュー0 + 遅延入力サンプリング
+UNBAKE	ベイク解除
+UNBOUND	未割り当て
+UNCHANGED	変更なし
+UNDO	元に戻す
+UNGROUP	グループ解除
+UNKNOWN	不明
+UNKNOWN SELECTOR '	不明なセレクター '
+UNLIMITED	無制限
+UNPLAYED MAPS COUNT AT THEIR DEFAULT TIME	未プレイのマップはデフォルトタイムで計算
+UNSTOPPABLE	アンストッパブル
+UP	上
+UP / DOWN AS A MULTIPLE OF SENSITIVITY	上 / 下 を感度の倍率で
+UPLOAD CAP (MBIT/S)	アップロード上限 (MBIT/S)
+USE	使用
+USE #	使用 #
+USE IT	使用する
+USE MY OVERRIDES	自分のオーバーライドを使用
+USE: HOLD	使用: 長押し
+USE: TOGGLE	使用: トグル
+USED BY: EVERY MODE	使用: 全モード
+USED BY: ONLY	使用: のみ
+USED WHEN SMOOTHING IS CUSTOM	スムージングがカスタムの時に使用
+USERPROFILE	USERPROFILE
+USING YOUR	使用中:
+VALUE	値
+VALUE:	値:
+VAMPIRE	ヴァンパイア
+VAMPIRE LASER	ヴァンパイアレーザー
+VANILLA	バニラ
+VEC2	VEC2
+VEC3	VEC3
+VEC4	VEC4
+VERBOSE INFO	詳細情報
+VERBOSE INFO LINES	詳細情報の行
+VERDANA BOLD	VERDANA BOLD
+VERSION	バージョン
+VERTICAL KEYS	上下キー
+VERTICAL SENSITIVITY	垂直感度
+VERTICAL: ONE KEY	上下: 1キー
+VERTICAL: TWO KEYS	上下: 2キー
+VIDEO	ビデオ
+VIDEO + AUDIO	ビデオ + オーディオ
+VIDEO 2	ビデオ 2
+VIDEO 3	ビデオ 3
+VIDEO 4	ビデオ 4
+VIDEO 5	ビデオ 5
+VIDEO 6	ビデオ 6
+VIDEO 7	ビデオ 7
+VIDEO 8	ビデオ 8
+VIDEO 9	ビデオ 9
+VIDEO: DEVICES	ビデオ: デバイス
+VIEW	視点
+VISUALIZE SOUNDS	音を可視化
+VOICE	音声
+VOICE:	音声:
+VOL DOWN	音量 下
+VOL UP	音量 上
+VOLUME	音量
+VOTE	投票
+VOTE CALLED	投票開始
+VOTE NO	反対に投票
+VOTE START	開始に投票
+VOTE YES	賛成に投票
+VOTE:	投票:
+VOTE: GAMEMODE	投票: ゲームモード
+VOTE: KICK A PLAYER	投票: プレイヤーをキック
+VOTE: MODIFIERS	投票: 修正
+VOTE: MOVE TO SPECTATOR (UNTIL THE NEXT MAP)	投票: 観戦に移動 (次のマップまで)
+VOTE: PLAY IT	投票: プレイする
+VOTE: {}   YES #  NO #  OF #   F1 YES / F2 NO   #s	投票: {}   はい #  いいえ #  / #   F1 はい / F2 いいえ   #秒
+VOTED MODIFIERS ON	投票で修正をオン
+VOTES	投票
+VS	チーム戦
+VS - one life each per round; last team standing wins the round. If nobody makes progress for 30 s, health drains. First to 5 rounds.	チーム戦 - 1ラウンドにつき各自1ライフ; 最後まで残ったチームがラウンド勝利。30秒間動きがないと体力が減少。5ラウンド先取。
+VS: BEST RUN	比較: ベストラン
+VS: BEST SEGMENTS	比較: ベスト区間
+VS: LAST RUN	比較: 前回のラン
+VSYNC	垂直同期
+VSYNC / LOW LATENCY	垂直同期 / 低遅延
+VSYNC ON, FPS CAPPED 3 UNDER THE REFRESH	垂直同期オン、FPSをリフレッシュレート-3に制限
+VSYNC ON, FPS CAPPED AT	垂直同期オン、FPS上限:
+VSYNC: ADAPTIVE	垂直同期: アダプティブ
+VSYNC: HELD FOR ITS BLANK	垂直同期: ブランクまで保持
+VSYNC: LATENT SYNC	垂直同期: レイテントシンク
+VSYNC: NEXT VBLANK (EST)	垂直同期: 次のVBLANK (推定)
+VSYNC: OFF	垂直同期: オフ
+VSYNC: ON	垂直同期: オン
+W A S D - move.   SPACE - jump (hold it as you land to bounce: bunny hop).	W A S D - 移動。   SPACE - ジャンプ (着地時に押し続けると跳ねる: バニーホップ)。
+WAD2	WAD2
+WAITING FOR THE LATE READ (AVG)	遅延読取待ち (平均)
+WAITING FOR THE LATE READ (AVG)  00,000,000 NS	遅延読取待ち (平均)  00,000,000 NS
+WAITING FOR THE NEXT READ (AVG)	次の読取待ち (平均)
+WALLBANG	ウォールバン
+WALLBANG TINT	ウォールバンの色調
+WARMING UP	ウォームアップ中
+WARMUP -	ウォームアップ -
+WARMUP - {} TO VOTE START	ウォームアップ - {} で開始に投票
+WARNING BEEP	警告ビープ
+WARNING: DON'T TOUCH THIS UNLESS YOU KNOW WHAT YOU'RE DOING	警告: 理解していない場合は変更しないでください
+WARNINGS	警告
+WAS ON	だった
+WASTELAND	荒野
+WAVE	ウェーブ
+WEAPON	武器
+WEAPON CAPTION	武器のキャプション
+WEAPON KICK	武器の反動
+WEAPON LIST	武器リスト
+WEAPON LIST: AFTER A SWITCH	武器リスト: 切替後
+WEAPON LIST: ALWAYS	武器リスト: 常に
+WEAPON MODEL	武器モデル
+WEAPON MODEL OPACITY	武器モデルの不透明度
+WEAPON MODEL and GRAPPLE MODEL (the first two entries): move the gun / the grapple launcher left / right / up / down, change its size and depth, tilt it (pitch / yaw / roll), give it its own accent colour, or hide it. Your shots come out of the gun and your rope out of the launcher wherever you put them.	武器モデルとグラップルモデル (最初の2項目): 武器 / グラップルランチャーを左右上下に移動、サイズと奥行きを変更、傾け (ピッチ / ヨー / ロール)、独自のアクセントカラーを設定、または非表示にできます。弾は武器から、ロープはランチャーから、配置した場所に関係なく出ます。
+WEAPON NAME	武器名
+WEAPON SCROLL	武器スクロール
+WEAPON SENSITIVITY	武器別感度
+WEAPON:	武器:
+WEAPONS	武器
+WEAPONS (THEIR NUMBER KEYS STILL WORK)	武器 (数字キーは引き続き有効)
+WHAT THE BOTS PLAY: .QBRAIN FILES IN THE BOTS FOLDER	ボットのAI: botsフォルダの .QBRAIN ファイル
+WHAT THE VOTE CHANGES	投票で変わる内容
+WHEEL DN	WHEEL DN
+WHEEL UP	WHEEL UP
+WHEN ONE FILLS, EVERYONE IN IT IS TOLD (HERE AND ON DISCORD)	成立すると参加者全員に通知 (こことDISCORDで)
+WHEN UNFOCUSED	非フォーカス時
+WHEN UNFOCUSED, FLASH ON	非フォーカス時に点滅:
+WHERE THE HITS YOU TAKE COME FROM	被弾した方向
+WHILE TYPING, CHAT IS ALWAYS FULLY SHOWN	入力中はチャットを常に完全表示
+WHITE	白
+WHITE / YELLOW	白 / 黄
+WHOLE HUD	HUD全体
+WIDGET EDITOR	ウィジェットエディター
+WIDGETS	ウィジェット
+WIDGETS FROM CLIPBOARD	クリップボードからウィジェット
+WIDTH; CUSTOM (GLTF) PLAYER MODELS HAVE NO OUTLINE	幅; カスタム (GLTF) プレイヤーモデルには輪郭なし
+WINDIR	WINDIR
+WINDOW	ウィンドウ
+WINDOW + INPUT	ウィンドウ + 入力
+WINDOW SIZE	ウィンドウサイズ
+WINDOW SIZE:	ウィンドウサイズ:
+WINDOWED	ウィンドウ
+WINDOWS, WITH PRIORITIZE GAME ON;	WINDOWS、ゲーム優先オン時;
+WINNER STAYS	勝ち残り
+WINNER STAYS - 1v1 rounds on one ruleset while everyone else waits in line. Each round's winner stays; the loser goes to the back of the line and the next in line plays the winner. Every round you win counts: first to 10 wins.	勝ち残り - 1つのルールで1v1ラウンド、他の全員は順番待ち。各ラウンドの勝者は残り、敗者は列の最後尾へ、次の人が勝者と対戦。勝ったラウンドはすべてカウント: 10勝先取で勝利。
+WINNER STAYS - FIRST TO	勝ち残り - 先取
+WINNERS CROWN	勝者の冠
+WINS	勝利
+WINS THE MATCH	が試合に勝利
+WIZARD	ウィザード
+WORD FILTER	ワードフィルター
+WORK SANS	WORK SANS
+WORLD	ワールド
+WORLD + HUD + SHADOW MAP BUILD	ワールド + HUD + シャドウマップ構築
+WORLD OUTLINE	ワールドの輪郭
+WORLD OUTLINE WIDTH	ワールド輪郭の幅
+WORST #MS  PING #  3D #X#	最悪 #MS  PING #  3D #X#
+WRAP AROUND	ループ
+X MSAA	X MSAA
+X OFFSET	X オフセット
+X SENSITIVITY WHILE THIS WEAPON IS HELD	この武器所持時の感度倍率
+X1.00: THE SAME FEEL AS UNZOOMED	X1.00: 非ズーム時と同じ感覚
+XYZ	XYZ
+Y OFFSET	Y オフセット
+YAW	ヨー
+YELLOW	黄
+YES	はい
+YES #  NO #  OF #   F1 YES / F2 NO   #s	賛成 #  反対 #  / #   F1 賛成 / F2 反対   #秒
+YET REACHED IN YOUR ENEMY COLOUR	未到達を敵カラーで
+YOU DIED	死亡した
+YOU HAVE THE BOMB - PLANT AT A SITE	爆弾を所持中 - サイトに設置せよ
+YOU HEALED	回復した
+YOU LOSE	敗北
+YOU LOST THE LEAD	リードを失った
+YOU TOOK THE LEAD	リードを奪った
+YOU WIN	勝利
+YOU'RE	あなたは
+YOU'RE SEEKING - FACE THE WALL AND COUNT	あなたは鬼 - 壁を向いてカウント
+YOU'RE THE TAGGER - TAG SOMEONE BEFORE TIME RUNS OUT	あなたが鬼 - 時間切れまでに誰かをタッチせよ
+YOU:	あなた:
+YOU: NO TIME TRIALS YET	あなた: タイムアタック記録なし
+YOUR BOTS: ALL STANDARD	自分のボット: 全員標準
+YOUR BOTS: MIXED MODELS	自分のボット: モデル混合
+YOUR GOAL	自陣ゴール
+YOUR KILLS	自分のキル
+YOUR MATCH:  # SHOTS  # HITS  #% ACCURACY  # DAMAGE  BEST STREAK #	あなたの試合:  # 発  # ヒット  命中率 #%  # ダメージ  最高連続キル #
+YOUR NAME (CHAT AND SCOREBOARD)	名前 (チャットとスコアボード)
+YOUR OWN MODEL FILE: NO PREVIEW HERE	自分のモデルファイル: ここではプレビュー不可
+YOUR OWN: PUT .TTF / .OTF FILES IN MODS/FONTS,	独自: .TTF / .OTF ファイルを MODS/FONTS に置き、
+YOUR QUEUE FOR	キュー:
+YOUR SHOTS	自分の弾
+YOUR SHOTS: ALWAYS	自分の弾: 常に
+YOUR SHOTS: NEVER	自分の弾: 表示しない
+YOUR SHOTS: WITH WEAPON MODEL	自分の弾: 武器モデル表示時
+YOUR TEAM IS PUSHING	味方が押し進めている
+You run at 9.5 m/s. In the air, holding a direction drifts you up to run speed (a standing jump moves too).	走る速さは 9.5 m/s。空中では方向キーを押し続けると走る速さまで流れます (その場ジャンプでも動きます)。
+You step up anything 0.55 m high, including stairs mid-jump. Ladders: walk into them, look up or down to climb (6.75 m/s).	高さ 0.55 m までなら何でも段差として上れます (ジャンプ中の階段も)。はしご: 向かって歩き、上か下を見て登ります (6.75 m/s)。
+ZERO-G FLIGHT, LASERS - HEAL 100% TO 50% OVER 30 S, NO KNOCKBACK	無重力飛行、レーザー - 30秒で100%から50%に回復、ノックバックなし
+ZOMBIE	ゾンビ
+ZONE OPACITY	ゾーンの不透明度
+ZONE PULSE	ゾーンの脈動
+ZOOM	ズーム
+ZOOM SENSITIVITY	ズーム感度
+a caption for every announcer line	a caption for every announcer line
+a colour per material from ice on (a large one: its base's), then the see-through, breakable and feature ones	a colour per material from ice on (a large one: its base's), then the see-through, breakable and feature ones
+a damaged PAK	破損したPAK
+a damaged WAD	破損したWAD
+a damaged built-in atlas	破損した内蔵アトラス
+a label per material (the cycles below index it by material)	a label per material (the cycles below index it by material)
+a look per material from kMatBlocks on (the large ones: their base's), then the see-through, breakable and feature ones	a look per material from kMatBlocks on (the large ones: their base's), then the see-through, breakable and feature ones
+a map keeps at least one box outside groups - add another box first	マップにはグループ外のボックスが1つ以上必要です - 先に別のボックスを追加してください
+a map needs at least one box	マップにはボックスが1つ以上必要です
+a map needs at least one mode	マップにはモードが1つ以上必要です
+a map needs at least one spawn	マップにはスポーンが1つ以上必要です
+a picker tab for every material (kMatTabs)	a picker tab for every material (kMatTabs)
+a ranked match is being played - no votes until it's over	ランク試合中 - 終了するまで投票できません
+a ranked match is being played - teams stay as they are until it's over	ランク試合中 - 終了するまでチームは変更されません
+a ranked match is being played: '	ランク試合中: '
+a reference palette per prop	a reference palette per prop
+a spectate vote needs at least	観戦投票に必要な最小人数:
+a tag match is being played - you can join the next one	鬼ごっこの試合中 - 次の試合に参加できます
+a theme style per HUD element	a theme style per HUD element
+a tourney is running - you can join the next one	トーナメント進行中 - 次の大会に参加できます
+a vote is already in progress	既に投票が進行中です
+accessor out of range	accessor out of range
+add must be 3 numbers from 0 to 16	add は0から16の数値3つである必要があります
+advances (walkover)	が勝ち上がり (不戦勝)
+after a session	セッション後
+after swap (low latency wait)	スワップ後 (低遅延待機)
+ahead of you (winner stays)	あなたより前 (勝ち残り)
+alpha must be over 0 and at most 1	alpha は0より大きく1以下である必要があります
+an update is ready - the server restarts after this match	アップデートの準備完了 - この試合の後にサーバーが再起動します
+announce:	告知:
+announce: {}	announce: {}
+another program holds the engine at its period	別のプログラムがエンジンをその周期で保持しています
+apex*	apex*
+apex-*	apex-*
+as #	# として
+attackers eliminated	攻撃側全滅
+audio mix	オーディオミックス
+audio: WASAPI	audio: WASAPI
+audio: no WASAPI output, using WinMM	オーディオ: WASAPI出力なし、WinMMを使用
+audio: no output device - running without sound	オーディオ: 出力デバイスなし - サウンドなしで実行中
+autosave failed:	自動保存に失敗:
+autosave skipped, the edited map wouldn't load:	自動保存をスキップ、編集したマップが読み込めません:
+away # "	離席 # "
+away # "{}": {}	away # "{}": {}
+away:	離席:
+b del	b del
+b ins # # # # # # # #	b ins # # # # # # # #
+bad accessor	bad accessor
+bad buffer	bad buffer
+bad bufferView	bad bufferView
+bad data: URI	bad data: URI
+bad indices	bad indices
+bad mesh	bad mesh
+bad modifier '	不正な修正 '
+bad node	bad node
+bad request	不正なリクエスト
+bench:	bench:
+big noodle*	big noodle*
+bignoodletitling*	bignoodletitling*
+bignoodletoo*	bignoodletoo*
+bind <key> <commands>   a key runs console lines (';' between)   unbind <key>   binds	bind <キー> <コマンド>   キーでコンソール行を実行 (';' で区切る)   unbind <キー>   binds
+bomb defused	爆弾解除
+bomb exploded	爆弾爆発
+bomb planted	爆弾設置
+bot brain	ボットAI
+bot brain {}: {}	bot brain {}: {}
+bot cmd	bot cmd
+bot removed	ボット削除
+bot think	bot think
+bot: nice shot	ボット: ナイスショット
+bots played	ボットがプレイ
+box model:	ボックスモデル:
+boxes into	ボックスを
+boxes into one	ボックスを1つに
+buffer without data	buffer without data
+built in # ms	# ms で構築
+built-in maps reset to the original version	内蔵マップを元のバージョンにリセットしました
+busy #%, late #%	使用中 #%、遅延 #%
+c must be 3 numbers within 64 m	c は64 m以内の数値3つである必要があります
+called a vote	が投票を開始
+callvote bots off	callvote bots off
+callvote bots on	callvote bots on
+callvote botskill	callvote botskill
+callvote edit off	callvote edit off
+callvote edit on	callvote edit on
+callvote extend	callvote extend
+callvote kick	callvote kick
+callvote map	callvote map
+callvote ranked off	callvote ranked off
+callvote ranked on	callvote ranked on
+callvote restart	callvote restart
+callvote shuffle	callvote shuffle
+callvote spec	callvote spec
+callvote spec <name or id> (status lists them)	callvote spec <名前または id> (status で一覧)
+callvote start	callvote start
+callvote tmaps	callvote tmaps
+callvote tmodes	callvote tmodes
+can't	できません
+can't do that	それはできません
+can't go ranked: no ranked map for that ladder installed	ランクにできません: そのラダーのランクマップがインストールされていません
+can't read	読み込めません
+can't save:	保存できません:
+can't turn that	それは回転できません
+can't vote for that list	そのリストには投票できません
+can't vote:	投票できません:
+capture of every point in	全ポイント占拠:
+chat # "	チャット # "
+chat # "{}": {}	chat # "{}": {}
+chat: slow down	チャット: 送信が速すぎます
+checking if UDP	UDPを確認中
+clean surfaces	クリーンな表面
+closed by the load governor	負荷制御により停止
+color must be 3 numbers from 0 to 16	color は0から16の数値3つである必要があります
+connect from	接続元:
+connected from	接続元:
+connection to server lost	サーバーとの接続が切れました
+could not bind UDP port	UDPポートをバインドできません
+could not create an OpenGL 3.3 window - update your graphics driver	OpenGL 3.3ウィンドウを作成できません - グラフィックドライバーを更新してください
+could not host:	ホストできません:
+could not open	開けません
+could not open log file	ログファイルを開けません
+could not save maps/	保存できませんでした: maps/
+could not save the map	マップを保存できません
+could not write maps/	書き込めませんでした: maps/
+could not write to the groups folder	groupsフォルダに書き込めません
+couldn't check reachability:	到達性を確認できません:
+custom mode rules too big to send with the weapon set: sent without it	カスタムモードのルールが大きすぎて武器セットと送信できません: 武器セットなしで送信
+daily limit	1日の上限
+data:	data:
+defenders eliminated	防衛側全滅
+delivered the payload in	がペイロードを運び切った 時間:
+delivery in	到着まで
+demo finished	デモ終了
+demo:	デモ:
+draw - the payload is in the middle	引き分け - ペイロードは中央
+dropped:	ドロップ:
+duelUsed_ is a 32-bit mask	duelUsed_ is a 32-bit mask
+dyn verts	dyn verts
+dynamic pass	dynamic pass
+e.g.  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5	例:  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5
+edcam # # #	edcam # # #
+edit #	編集 #
+edit mode on	編集モード オン
+edit mode on {}	edit mode on {}
+edit refused	編集が拒否されました
+edit refused:	編集が拒否されました:
+editmode off	editmode off
+editmode on	editmode on
+editmode saveas	editmode saveas
+edits dropped	編集を破棄しました
+else if	else if
+ember: gg	ember: gg
+enough players again - the match goes on	人数が戻りました - 試合続行
+every HUD element in the dropdown	every HUD element in the dropdown
+every point taken	全ポイント占拠
+everyone left - back to warmup	全員退出 - ウォームアップに戻ります
+exec: a file name in your data folder (no folders)	exec: データフォルダ内のファイル名 (フォルダ不可)
+exec: no	exec: なし:
+extras.quark is not an object	extras.quark is not an object
+fell behind during the round:	ラウンド中に遅延:
+files:controls	files:controls
+files:huds	files:huds
+finding a server to test with	テスト用サーバーを検索中
+finished the course (practice) - vote start to race	コース完走 (練習) - 開始に投票してレース
+flush2D	flush2D
+font {}: {}	font {}: {}
+font:	フォント:
+font: {} built in # ms	font: {} built in # ms
+found everyone	全員発見
+g del	g del
+g part # # # # # # # #	g part # # # # # # # #
+glass shards	ガラス片
+glfwInit failed	glfwInit failed
+go to the back of the line	列の最後尾へ
+goal:	ゴール:
+goal: {} (#-#)	goal: {} (#-#)
+goes to the back of the line;	は列の最後尾へ;
+h must be 3 numbers, each over 0 and at most 32 m	h は0より大きく32 m以下の数値3つである必要があります
+has no ranked id	にはランクIDがありません
+hdmi:	hdmi:
+high at	最高:
+human cmds	human cmds
+if players reach it there, start the server with --own-addr	プレイヤーがそこで接続する場合、--own-addr でサーバーを起動してください
+in your data folder	データフォルダ内
+index out of range	index out of range
+init failed:	初期化に失敗:
+init failed: {}	init failed: {}
+input + prediction ticks	入力 + 予測ティック
+into others, removed	他に統合、削除
+is a built-in map - nothing changed to save	は内蔵マップです - 保存する変更はありません
+is a built-in map - pick a new name for yours	は内蔵マップです - 自分用に新しい名前を付けてください
+is a built-in map: changes last until the map changes (save a copy to keep them)	は内蔵マップです: 変更はマップ変更まで有効 (保持するにはコピーを保存)
+is a built-in map: pick a new name	は内蔵マップです: 新しい名前を付けてください
+is a legacy map (never ranked): ranked plays	はレガシーマップです (ランク対象外): ランクのプレイ先
+is a legacy map (this server doesn't list the old maps)	はレガシーマップです (このサーバーは旧マップを掲載していません)
+is already spectating	は既に観戦中です
+is it	が鬼
+is it - run!	が鬼 - 逃げろ!
+is not reachable from the internet - forward UDP	はインターネットから到達できません - UDPを転送:
+is now	は現在
+is reachable from the internet - friends can join	はインターネットから到達可能 - フレンドが参加できます
+is spectating	が観戦中
+isn't a ranked ruleset	はランクのルールではありません
+isn't built for	は非対応:
+isn't in this custom mode's map pool	はこのカスタムモードのマッププールにありません
+joined team A	がチームAに参加
+joined team B	がチームBに参加
+joined the game	がゲームに参加
+kElemNames follows Settings::HUD_*	kElemNames follows Settings::HUD_*
+kbps (# packets/s), download # kbps (#/s)	kbps (# パケット/s)、ダウンロード # kbps (#/s)
+kick whom? a name or an id (status lists them)	誰をキック? 名前かID (statusで一覧表示)
+kicked by a vote	投票でキックされました
+language:	language:
+language: {} (# glyphs) in # ms	language: {} (# glyphs) in # ms
+last rate change:	最後のレート変更:
+late ticks in the last window: waiting for a second before stepping down	直近のウィンドウで遅延ティック: 引き下げ前に1秒待機
+leaderboard:	リーダーボード:
+left the match	が試合を退出
+left the ranked match - it counts as a loss	がランク試合を退出 - 敗北扱い
+link:	連携:
+linux:	linux:
+listening on UDP	UDPで待ち受け中
+live (testing server: not rated)	ライブ (テストサーバー: レート対象外)
+load governor:	負荷制御:
+look at a side of the selected box	選択したボックスの面を見てください
+lost connection	接続が切れました
+low latency: wait for the GPU	低遅延: GPUを待機
+mac:	mac:
+main*	main*
+map editing	マップ編集
+map editing -	マップ編集 -
+map editing - everyone can build; changes last until the map changes	マップ編集 - 全員が制作可能; 変更はマップ変更まで有効
+map editing - everyone can build; the host saves	マップ編集 - 全員が制作可能; ホストが保存
+map name: letters, digits, - and _ only (not a device name like con)	マップ名: 英字、数字、- と _ のみ (con などのデバイス名は不可)
+map not found	マップが見つかりません
+map saved as	マップを保存:
+map test	マップテスト
+map {} mode {}	map {} mode {}
+maps:	マップ:
+maps: {}	maps: {}
+match draw	試合引き分け
+match end:	試合終了:
+match end: {}	match end: {}
+match over	試合終了
+match over - the other players left	試合終了 - 他のプレイヤーが退出
+match restarted	試合をリスタート
+match start: mode logic	試合開始: モードロジック
+match start: mode logic {}, interpreted: {}	match start: mode logic {}, interpreted: {}
+match starting	試合開始
+mirrored upside down	上下反転しました
+missing buffer file	missing buffer file
+mode logic	モードロジック
+mode logic:	モードロジック:
+model name	モデル名
+mul must be 3 numbers from 0 to 16	mul は0から16の数値3つである必要があります
+must beat it	これを超える必要あり
+my mode	マイモード
+name: letters, digits, - and _ only (not a device name like con)	名前: 英字、数字、- と _ のみ (con などのデバイス名は不可)
+net poll	net poll
+no IAudioClient3, before Windows 10	IAudioClient3なし、Windows 10以前
+no aliases - alias <name> <commands>	エイリアスなし - alias <名前> <コマンド>
+no bots on a ranked server	ランクサーバーにボットは不可
+no boxes	ボックスなし
+no command binds - bind <key> <commands>	コマンドのバインドなし - bind <キー> <コマンド>
+no hiders left	隠れ役が残っていません
+no key called '	その名前のキーはありません '
+no map editing on a ranked server (vote ranked off first)	ランクサーバーではマップ編集不可 (先にランクオフを投票)
+no maps found in maps/	maps/ にマップがありません
+no mix format	ミックス形式なし
+no mode can run on this map yet	このマップで動作するモードはまだありません
+no modifiers on a ranked or time trial server	ランクやタイムアタックのサーバーでは修正不可
+no player "	プレイヤーなし "
+no points	ポイントなし
+no response	応答なし
+no small gaps to close	埋める小さな隙間はありません
+no triangles	no triangles
+nobody finished	誰も完走しませんでした
+nobody is out - throw again	脱落者なし - もう一度
+nobody left	誰も残っていません
+not a 16 x 16 character sheet	16 x 16 の文字シートではありません
+not a TrueType / OpenType font	TrueType / OpenType フォントではありません
+not a WAV, OGG, FLAC or MP3 file	WAV、OGG、FLAC、MP3ファイルではありません
+not a file name	ファイル名ではありません
+not a font file	フォントファイルではありません
+not a quark group file	quarkのグループファイルではありません
+not a queue	キューではありません
+not a readable picture	読み込める画像ではありません
+not a team mode	チームモードではありません
+not allowed	許可されていません
+not an object	not an object
+not enough players	人数不足
+not enough players - back to warmup	人数不足 - ウォームアップに戻ります
+not enough players - the match ends in	人数不足 - 試合終了まで
+not enough players for a tourney	トーナメントの人数が足りません
+not in this build	このビルドにはありません
+not rated:	レート対象外:
+not the ladder's mode	ラダーのモードではありません
+not valid JSON	有効なJSONではありません
+not valid glTF JSON	有効なglTF JSONではありません
+not version 2	バージョン2ではありません
+not while editing the map	マップ編集中は不可
+nothing to fix	修正するものはありません
+nothing to redo	やり直す操作はありません
+nothing to split there	そこに分割するものはありません
+nothing to undo	元に戻す操作はありません
+now playing	プレイ中
+odd sample rate	不正なサンプルレート
+of #	/ #
+off for this match	この試合ではオフ
+on your router to this PC	をルーターでこのPCへ
+one folder per sound kit	one folder per sound kit
+one name per sound, in SoundId order	one name per sound, in SoundId order
+only a timed round can be extended	延長できるのは時間制ラウンドのみ
+over 64 MB	64 MB超
+override {} ({}): # triangles (at most #)	override {} ({}): # triangles (at most #)
+override {} ({}): {}	override {} ({}): {}
+override {}: {}	override {}: {}
+override:	オーバーライド:
+override: {} ({})	override: {} ({})
+override: {} ({}, a box model: # boxes)	override: {} ({}, a box model: # boxes)
+overtime!	延長戦!
+p# pos # # # vel # # # yaw # pitch # hp # wpn #	p# pos # # # vel # # # yaw # pitch # hp # wpn #
+p# pos # # # vel # # # yaw # pitch # hp # wpn # btn # flags # dash # cd # hook #	p# pos # # # vel # # # yaw # pitch # hp # wpn # btn # flags # dash # cd # hook #
+p0's ROCK beats SCISSORS - 1-0	p0 のグーがチョキに勝利 - 1-0
+p1, p3 out (SCISSORS) - best of 3 between the last two	p1, p3 脱落 (チョキ) - 残り2人で3本勝負
+packet from	パケット送信元:
+paused: no humans (bots wait)	一時停止: プレイヤーなし (ボットは待機)
+payload delivered	ペイロード到着
+pick a new name for your copy	コピーに新しい名前を付けてください
+ping up on # of # players	#/# 人のPINGが上昇
+placed the group from the clipboard	クリップボードからグループを配置しました
+point # taken by team #	ポイント # をチーム # が占拠
+poll events	poll events
+pool empty	プールが空
+practice god	practice god
+practice loadpos	practice loadpos
+practice passive	practice passive
+practice reset	practice reset
+practice savepos	practice savepos
+practice setpos # # # # #	practice setpos # # # # #
+practice: all off	練習: すべてオフ
+practice: bots fire again	練習: ボットが再び射撃
+practice: bots won't fire	練習: ボットは射撃しません
+practice: no position saved yet	練習: 保存された位置はまだありません
+practice: only when you host and no one else has joined	練習: 自分がホストで他に誰もいない時のみ
+practice: position saved	練習: 位置を保存しました
+practice: you take damage again	練習: 再びダメージを受けます
+practice: you take no damage	練習: ダメージを受けません
+press ESC again to leave the session	もう一度ESCでセッションを退出
+prioritize: Windows refused the GPU scheduling class (NTSTATUS 0x#)	優先: WindowsがGPUスケジューリングクラスを拒否しました (NTSTATUS 0x#)
+proj # type # owner # pos # # # vel # # #	proj # type # owner # pos # # # vel # # #
+proj # type # owner # pos # # # vel # # #{}	proj # type # owner # pos # # # vel # # #{}
+properties background, color, opacity, border, radius, padding, margin, gap, font-size,	properties background, color, opacity, border, radius, padding, margin, gap, font-size,
+puts every built-in map back to its original version and removes retired ones (your own maps are kept) - click again	全内蔵マップを元のバージョンに戻し、廃止されたものを削除 (自作マップは保持) - もう一度クリック
+quark --bake-maps <dir>	quark --bake-maps <dir>
+quark server	quark server
+quark server log, level	quark server log, level
+quark server log, level {}, version {}	quark server log, level {}, version {}
+quark-colors:	quark-colors:
+quark-crosshair:	quark-crosshair:
+quark-group 1	quark-group 1
+quark-settings:	quark-settings:
+race run rejected (implausible splits)	レースのランを拒否 (不自然なスプリット)
+racereset full	racereset full
+racerun:	racerun:
+ranked (not rated: testing server)	ランク (レート対象外: テストサーバー)
+ranked (not rated: testing server) {}	ranked (not rated: testing server) {}
+ranked counts 16 players at most	ランクは最大16人まで
+ranked ladders: vanilla, vampire, instagib	ランクラダー: バニラ、ヴァンパイア、インスタギブ
+ranked leaver # "	ランク途中退出 # "
+ranked leaver # "{}"{}	ranked leaver # "{}"{}
+ranked match	ランク試合
+ranked match {} live (testing server: not rated)	ranked match {} live (testing server: not rated)
+ranked off	ランク オフ
+ranked off - matches aren't rated	ランク オフ - 試合はレート対象外
+ranked on	ランク オン
+ranked on -	ランク オン -
+ranked only runs on the ranked maps for its ladder	ランクはそのラダーのランクマップでのみ実行
+ranked server: a ranked map for the ladder (vanilla / vampire 1v1, instagib free for all), or vote ranked off	ランクサーバー: ラダー用のランクマップ (バニラ / ヴァンパイア 1v1、インスタギブFFA)、またはランクオフに投票
+ranked server: no	ランクサーバー: 不可:
+ranked ticket	ランクチケット
+ranked ticket {} players {}	ranked ticket {} players {}
+ranked: a LAN-only server can't open match tickets - this match won't be rated	ランク: LAN専用サーバーは試合チケットを発行できません - この試合はレート対象外
+ranked: not every player signed the match ticket - this match won't be rated	ランク: 全員が試合チケットに署名していません - この試合はレート対象外
+ranked: only vanilla, laser vampire or instagib	ランク: バニラ、レーザーヴァンパイア、インスタギブのみ
+ranked: vanilla or laser vampire 1v1, or instagib free for all, on that ladder's ranked maps	ランク: バニラかレーザーヴァンパイアの1v1、またはインスタギブ個人戦、そのラダーのランクマップで
+ranking server reply dropped:	ランキングサーバーの応答が失われました:
+rate limited	レート制限中
+reachability:	到達性:
+reached checkpoint	チェックポイント到達
+reconnected from	再接続元:
+renderer warmup	レンダラーのウォームアップ
+reopened by the load governor	負荷制御により再開
+reopened by the load governor at	負荷制御により再開:
+restarting for an update	アップデートのため再起動中
+restarting for an update - rejoin in a few seconds	アップデートのため再起動中 - 数秒後に再参加してください
+restored the autosave of	自動保存を復元:
+rock paper scissors:	じゃんけん:
+rotated about X	X軸で回転しました
+rotated about Y	Y軸で回転しました
+rotated about Z	Z軸で回転しました
+round # end:	ラウンド # 終了:
+round # end: {}	round # end: {}
+round # end: {} (score #-#)	round # end: {} (score #-#)
+round # modifier	ラウンド # の修正
+round # modifier {}	round # modifier {}
+round draw	ラウンド引き分け
+rps tiebreak:	じゃんけんタイブレーク:
+rps tiebreak: {}	rps tiebreak: {}
+run not sent to the leaderboard: a checkpoint was reached faster than the course allows	ランはリーダーボードに送信されません: コース上ありえない速さでチェックポイントに到達
+run not sent to the leaderboard: your game didn't sign the time trial ticket	ランはリーダーボードに送信されません: ゲームがタイムアタックチケットに署名していません
+runs nothing	何も実行しない
+runs:	ラン:
+s unless someone joins	秒 (誰かが参加しない限り)
+s, on to point	秒、次のポイントへ:
+screenshot written to	スクリーンショットの保存先:
+screenshot written to {}	screenshot written to {}
+see-through pass	see-through pass
+select a box, look at one of its sides and press K	ボックスを選択し、その面を見てKを押してください
+select a group to export	エクスポートするグループを選択
+select boxes / groups (shift+click to add more)	ボックス / グループを選択 (shift+クリックで追加)
+select boxes first	先にボックスを選択してください
+select the cutter first, then shift+click the boxes to cut	先にカッターを選択し、次に切るボックスをshift+クリック
+select two or more boxes (shift+click) to combine	結合するボックスを2つ以上選択 (shift+クリック)
+send failures #	送信失敗 #
+server is full	サーバーが満員です
+server shutting down	サーバーをシャットダウン中
+server simulate	server simulate
+server snapshot rate lowered to	サーバーのスナップショットレートを引き下げ:
+server snapshot rate raised to	サーバーのスナップショットレートを引き上げ:
+server snapshots	サーバースナップショット
+server stopped	サーバー停止
+server tick	サーバーティック
+server tick rate	サーバーティックレート
+server tick rate lowered to	サーバーティックレートを引き下げ:
+server tick rate raised to	サーバーティックレートを引き上げ:
+server version	サーバーバージョン
+server, sharing	サーバー、共有
+setup:	setup:
+shader:	シェーダー:
+shadow / visOnly / crouch must be true or false	shadow / visOnly / crouch は true か false にしてください
+shadow pass	shadow pass
+shipped:	同梱:
+short-handed: # playing	人数不足: # 人でプレイ中
+size # # #	size # # #
+slopes can't be coated: pick a box	斜面は塗れません: ボックスを選んでください
+slopes can't be cut: pick plain boxes	斜面は切れません: 通常のボックスを選んでください
+slopes can't be split: pick plain boxes	斜面は分割できません: 通常のボックスを選んでください
+slot bracket	枠のトーナメント表
+snapshots #/s{}, stalls #% (over # ms late)	スナップショット #/s{}、ストール #% (# ms 超の遅延)
+stalemate - health draining	膠着 - 体力減少中
+static boxes	static boxes
+static boxes pass	static boxes pass
+stayed hidden	隠れ切った
+steps in	が入場
+steps in (first in line)	が入場 (列の先頭)
+swatch shader:	swatch shader:
+swatch shader: {}	swatch shader: {}
+sysdefault:	sysdefault:
+team A	チームA
+team B	チームB
+team a	team a
+team b	team b
+team spec	team spec
+teamMul must be 3 numbers from 0 to 16	teamMul は0から16の数値3つである必要があります
+text-align, stripe. Settings > HUD > EDIT HUD writes this file; the game reloads it within a second. */	text-align, stripe. Settings > HUD > EDIT HUD writes this file; the game reloads it within a second. */
+tf2build*	tf2build*
+tf2secondary*	tf2secondary*
+that side is full	そのチームは満員です
+that side is full (ranked is 1v1)	そのチームは満員です (ランクは1v1)
+that's a bot - vote bots off instead	それはボットです - 代わりにボットオフを投票してください
+that's already a group	既にグループです
+the PAK has no gfx.wad	PAKに gfx.wad がありません
+the WAD has no CONCHARS	WADに CONCHARS がありません
+the autosave can't be read	自動保存を読み込めません
+the bomb went back to	爆弾が戻りました:
+the cursor wraps with uint32	the cursor wraps with uint32
+the cutter (the first box selected) doesn't touch the others	カッター (最初に選択したボックス) が他に接していません
+the cutter (the first box selected) has to be a plain box	カッター (最初に選択したボックス) は通常のボックスである必要があります
+the driver has no shorter period	ドライバーにこれより短い周期はありません
+the font has no Latin letters	フォントにラテン文字がありません
+the game	ゲーム
+the hiders win -	隠れ役の勝利 -
+the match has already started	試合は既に開始しています
+the mix format isn't float stereo	ミックス形式がfloatステレオではありません
+the mode logic doesn't compile	モードロジックがコンパイルできません
+the production server	本番サーバー
+the seeker left	鬼が退出しました
+the sheet has no letter H at character 72	シートの文字72にHがありません
+the shorter period failed to open	短い周期を開けませんでした
+the testing server	テストサーバー
+this map	このマップ
+this map can't be played in any mode yet (add spawns)	このマップはまだどのモードでもプレイできません (スポーンを追加)
+this map has no points - multi point can't be played here	このマップにはポイントがありません - マルチポイントはプレイ不可
+this map has no points - multi point can't be played here (vote another map or mode)	このマップにはポイントがありません - マルチポイントはプレイ不可 (別のマップかモードに投票)
+this server doesn't have the map '	このサーバーにはマップがありません '
+this server plays the custom mode	このサーバーのカスタムモード:
+tick # Hz, spin # us ({}), late p99 {}	tick # Hz, spin # us ({}), late p99 {}
+tick # phase # round # score #-#	tick # phase # round # score #-#
+tick rate: late ticks in one window (#% of ticks over # ms late), waiting for a second	ティックレート: 1ウィンドウ内で遅延ティック (#% のティックが # ms 以上遅延)、1秒待機
+tick rate: late ticks in one window (busy #%, late #%), waiting for a second	ティックレート: 1ウィンドウ内で遅延ティック (使用中 #%、遅延 #%)、1秒待機
+tick rate: the governor's	ティックレート: 制御の
+tick rate: the next window was clean: no step down (a one-off host pause)	ティックレート: 次のウィンドウは正常: 引き下げなし (ホストの一時的な停止)
+tie - overtime! next kill wins	同点 - 延長戦! 次のキルで勝利
+tied for first -	1位タイ -
+tied for first:	1位タイ:
+time trial	タイムアタック
+time trial bots play the built-in brain	タイムアタックのボットは内蔵AIでプレイ
+timed out	タイムアウト
+to watch, join the spectators yourself (team spec)	観戦するには自分で観戦者に参加 (team spec)
+too big for one group	1つのグループには大きすぎます
+too deep (an alias or exec that runs itself?)	深すぎます (自身を実行するaliasかexec?)
+too many unacknowledged reliable messages (connection too lossy)	未確認の信頼性メッセージが多すぎます (接続のロスが多すぎます)
+too short	短すぎます
+took every point in	全ポイント占拠 時間:
+took point	ポイント占拠
+tourney match:	トーナメント試合:
+tourney match: {}	tourney match: {}
+tourney over	トーナメント終了
+tourney plays its rulesets only	トーナメントは指定ルールのみ
+tourney seed #:	トーナメントシード #:
+tourney seed #: {} (#)	tourney seed #: {} (#)
+tourney started -	トーナメント開始 -
+trying the next rate up: busy #%, upload # kbps	次の上位レートを試行: 使用中 #%、アップロード # kbps
+ui verts	ui verts
+ungrouped into	グループ解除:
+unknown mode	不明なモード
+unknown mode '	不明なモード '
+unknown ruleset	不明なルール
+unknown setting '	不明な設定 '
+unknown slot "	不明なスロット "
+unreadable FLAC	読み込めないFLAC
+unreadable OGG (Vorbis only)	読み込めないOGG (Vorbisのみ)
+unsaved changes - click EXIT again to leave	未保存の変更 - もう一度終了をクリックで退出
+unsaved changes - press ESC again to leave	未保存の変更 - もう一度ESCで退出
+unsupported WAV (PCM 8 / 16 / 24 / 32-bit or float)	非対応のWAV (PCM 8 / 16 / 24 / 32-bit または float)
+unsupported accessor	unsupported accessor
+update ready: waiting for the match to end	アップデート準備完了: 試合終了を待機中
+upload # of # kbps	アップロード # / # kbps
+upload bytes	アップロードバイト
+user:	ユーザー:
+vote cancelled: the ranked match is live	投票キャンセル: ランク試合が進行中
+vote failed:	投票否決:
+vote no	vote no
+vote passed:	投票可決:
+vote passed: starting the match	投票可決: 試合を開始
+vote yes	vote yes
+voted rules:	投票されたルール:
+voted rules: {}	voted rules: {}
+vs bots	ボット戦
+warning:	警告:
+was it -	が鬼だった -
+was moved to spectator until the next map	は次のマップまで観戦に移動されました
+wedge rising toward	ウェッジの上昇方向
+will fill the uneven teams	が人数差を埋めます
+win:	勝利:
+winner stays:	勝ち残り:
+winner stays: {}	winner stays: {}
+wins - payload on their side	の勝利 - ペイロードは相手側
+wins - the other side left	の勝利 - 相手が退出
+wins tag	が鬼ごっこに勝利
+wins the match	が試合に勝利
+wins the match (rock paper scissors tiebreak)	が試合に勝利 (じゃんけんタイブレーク)
+wins the race	がレースに勝利
+wins the round	がラウンドに勝利
+wins the tourney!	がトーナメント優勝!
+world chunks	world chunks
+world pass	world pass
+world shader	world shader
+world shader:	world shader:
+world shader: {}	world shader: {}
+world upload	world upload
+wraith: nice shot	wraith: ナイスショット
+you already called a vote on	既に投票を開始済み:
+you left the line - join a team to get back in it	列から外れました - 戻るにはチームに参加
+you were voted to spectate - you can play again on the next map	投票で観戦になりました - 次のマップで再びプレイできます
+you're already in line to play	既にプレイ待ちの列にいます
+you're in line to play:	プレイ待ちの列:
+you're next in line: you play the winner of this	次はあなた: この試合の勝者と対戦
+your last vote failed: wait a few seconds	前回の投票は否決: 数秒待ってください
+your map is autosaved	マップは自動保存されました
+{} # us (last 1000 ticks)	{} # us (last 1000 ticks)

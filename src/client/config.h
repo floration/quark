@@ -31,6 +31,7 @@ struct Settings {
                                 // 0 immediate (vsync off, tearing), 1 vsync, 2 adaptive vsync (tears only when late),
                                 // 3 latent sync (Windows: a frame a refresh, flipped as the blank begins; Game::latentWait)
     int latentOffsetUs = 0;     // latent sync: the flip this much later (+) or sooner (-), moving the tear line
+    bool disableFso = false;    // Windows: "Disable fullscreen optimizations" for quark.exe (per user, gpuprefs.h); from the next start
     bool gpuMaxClocks = false;  // Windows, NVIDIA: "Prefer maximum performance" in quark's driver profile (gpuprefs.h)
     bool prioritize = true;     // Windows: GPU + CPU priority raised while the game has focus (setGamePriority)
     int lowLatency = 1;         // 0 off, 1 on (max 1 frame queued), 2 ultra (0 queued, just-in-time input)
@@ -234,6 +235,7 @@ struct Settings {
     float scopeOpacity = 1.0f;  // the sniper scope's black surround and reticle (0 = off: just the zoom, with the normal crosshair)
     bool stickyCounter = true;  // "STICKIES 3/6" while you hold the sticky launcher or have any out
     bool demoFullRate = false;  // demos: every snapshot (up to 1000 Hz) instead of 62.5 Hz
+    std::string language = "auto";   // Settings > INTERFACE > LANGUAGE (lang.h): "auto" (the system's) or a language code
     std::string uiFont = "rubik";   // Settings > FONT (uifonts.h): a built-in's id (rubik, worksans, classic, ...) or a mods/fonts file name
     std::string discordName;    // linked on the master for the Discord bot (roles, queue pings)
     bool crowns = true;         // gold / silver crowns on ranked leaders

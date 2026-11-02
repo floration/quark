@@ -1,0 +1,3716 @@
+" matches more than one player: use the id (status lists them)	" 와(과) 일치하는 플레이어가 여럿입니다: ID를 사용하세요 (status에 표시됨)
+","color":	","color":
+"IT" IN YOUR ENEMY COLOUR, THE REST YOUR TEAM'S	"술래"는 적 색상, 나머지는 우리 팀 색상
+"path"	"path"
+# # # TO # # #	# # # → # # #
+# BOXES  # SPAWNS  # LIGHTS	박스 #  스폰 #  조명 #
+# CONTROL PROFILES	# 조작 프로필
+# CUSTOM MODES	# 커스텀 모드
+# DB	# DB
+# DEFAULT KEYS (Settings > CONTROLS to change any of them, two keys per action)	# 기본 키 (설정 > 조작에서 변경, 동작마다 키 2개)
+# DEG	# 도
+# DUELS	# 1대1 대결
+# EVERYONE FOR THEMSELVES	# 개인전
+# HOST A GAME (main menu > HOST GAME)	# 게임 호스트 (메인 메뉴 > 게임 호스트)
+# HP	# HP
+# HUD LAYOUT (Settings > HUD LAYOUT)	# HUD 레이아웃 (설정 > HUD 레이아웃)
+# HZ (AVG)	# HZ (평균)
+# IN GAME (ESC as host)	# 게임 중 (호스트는 ESC)
+# JOIN A GAME (main menu > JOIN GAME)	# 게임 참가 (메인 메뉴 > 게임 참가)
+# MAPS AND MODES	# 맵과 모드
+# MB	# MB
+# MOVEMENT	# 이동
+# MS	# MS
+# PLAY VS BOTS	# 봇과 대전
+# RANKED	# 랭크
+# SETTINGS (main menu, or ESC in game)	# 설정 (메인 메뉴 또는 게임 중 ESC)
+# TEAM MODES	# 팀 모드
+# THE MAP EDITOR (main menu > MAP EDITOR)	# 맵 에디터 (메인 메뉴 > 맵 에디터)
+# THE MAPS AND WHAT THEY'RE BUILT FOR	# 맵과 각 맵의 용도
+# US	# US
+# VOTES (ESC > VOTE, then F1 yes / F2 no)	# 투표 (ESC > 투표, F1 찬성 / F2 반대)
+# WEAPONS	# 무기
+# YOUR OWN MAPS	# 내 맵
+# date,	# date,
+# demo,	# demo,
+# frames,#	# frames,#
+# label,	# label,
+# map,	# map,
+# maps, # s, # threads	맵 #개, #초, 스레드 #개
+# maps, # s, # threads{}	# maps, # s, # threads{}
+# of # players losing snapshots (worst #%)	플레이어 #/#명 스냅샷 손실 (최대 #%)
+# quark benchmark	# quark benchmark
+# quark benchmark 1	# quark benchmark 1
+# quark controls profile	# quark controls profile
+# seconds,#	# seconds,#
+# setup:	# setup:
+# setup:{},{}	# setup:{},{}
+# uploaded,#	# 업로드됨,#
+# us (last 1000 ticks)	# us (최근 1000틱)
+# version,	# version,
+#% of ticks over # ms late	틱의 #%가 # ms 이상 지연
+#-# OF # - WHEEL TO SCROLL	#-# / # - 휠로 스크롤
+#-# OF # - WHEEL TO SCROLL - RIGHT-CLICK: FAVORITE	#-# / # - 휠로 스크롤 - 우클릭: 즐겨찾기
+#:# LEFT	#:# 남음
+#MS	#MS
+#X# # HZ	#X# # HZ
+#version 330 core	#version 330 core
+% of	% /
+%WINDIR%	%WINDIR%
+' (it may be on an older version)	' (이전 버전일 수 있음)
+' (names as CONTROLS shows them: R, F5, MOUSE 4, WHEEL UP)	' (조작 설정에 표시된 이름: R, F5, MOUSE 4, WHEEL UP)
+' - try: list	' - 시도: list
+' has to wait until it's over	'은(는) 끝날 때까지 기다려야 함
+(# MS)	(# MS)
+(# glyphs) in # ms	(# glyphs) in # ms
+(BROWSER VIDEOS, ELECTRON APPS WAIT)	(브라우저 영상, ELECTRON 앱은 대기)
+(BY DEFAULT ONLY THE SCOPES)	(기본값: 스코프만)
+(CLEAR THE SELECTION TO CHANGE)	(변경하려면 선택 해제)
+(CLICK TO CYCLE)	(클릭하여 전환)
+(DEAD)	(사망)
+(FINISH)	(완주)
+(HIDDEN: STREAMER MODE)	(숨김: 스트리머 모드)
+(HS)	(HS)
+(IT AFFECTS GAMEPLAY)	(게임플레이에 영향)
+(LEAVE)	(나가기)
+(MISSING)	(없음)
+(NOT IN RANKED)	(랭크 제외)
+(PUBLIC)	(공개)
+(REFRESH - 3)	(새로고침 - 3)
+(REFUSED 0X#)	(거부됨 0X#)
+(TEAM MODES NEED A + B SPAWNS)	(팀 모드는 A + B 스폰 필요)
+(TEAM)	(팀)
+(already in use?)	(이미 사용 중?)
+(and copied it) - rename it there	(복사됨) - 그곳에서 이름 변경
+(edited)	(수정됨)
+(exclusive: no format the device takes)	(독점: 장치가 지원하는 포맷 없음)
+(exclusive: the device is busy)	(독점: 장치 사용 중)
+(first: takes the loss)	(먼저: 패배 처리)
+(its CONTROLS action too, if it has one)	(조작 설정 동작이 있으면 그것도)
+(legacy)	(레거시)
+(lowered)	(낮춤)
+(own goal)	(자책골)
+(playing the built-in brain)	(기본 AI 사용 중)
+(score #-#)	(점수 #-#)
+(team):	(팀):
+(vote ranked off first)	(먼저 랭크 끄기 투표)
+(winner stays)	(승자 잔류)
++ (BIGGER)	+ (크게)
++Y (top)	+Y (위)
+-  # AVG  # 1%	-  평균 #  1% #
+- AUTOSAVED	- 자동 저장됨
+- BOTS PLAY THE BUILT-IN BRAIN	- 봇은 기본 AI 사용
+- CHOOSE A RULESET	- 규칙 선택
+- CONTESTED	- 경합 중
+- COOLDOWNS RESET	- 쿨다운 초기화
+- FIRST TO	- 선취
+- LOGIC:	- 로직:
+- OWN RATING	- 개별 레이팅
+- REVERTS WHEN THE MAP CHANGES	- 맵이 바뀌면 원래대로
+- SAVE to keep it	- 유지하려면 저장
+- STANDARD RULES	- 표준 규칙
+- THE HOST SAVES IT	- 호스트가 저장
+- THE SERVER SENDS IT TO THE LEADERBOARD	- 서버가 리더보드로 전송
+- UPLOADED	- 업로드됨
+- USING RUBIK	- RUBIK 사용 중
+- WATCHING	- 관전 중
+- WHEEL TO SCROLL	- 휠로 스크롤
+- beats	- 이김
+- best of 3 between the last two	- 마지막 두 명이 3판 2선승
+- it may not work	- 작동하지 않을 수 있음
+- it moves and stretches as one	- 하나로 이동·늘어남
+- level with	- 동점
+- map	- 맵
+- match started	- 경기 시작
+- not played: the server plays	- 미플레이: 서버가 진행
+- playing mode logic	- 모드 로직 실행 중
+- plays the next match	- 다음 경기 출전
+- rock paper scissors decides it	- 가위바위보로 결정
+- short of	- 부족
+- their place is kept for	- 자리 유지 시간
+-INF DB	-INF DB
+-Wcast-function-type	-Wcast-function-type
+-Y (under)	-Y (아래)
+0.1% LOW	0.1% LOW
+1 HP	1 HP
+1 HP KNIVES	1 HP 나이프
+1 SETTING	설정 1개
+1% LOW	1% LOW
+10-BIT OUTPUT	10비트 출력
+10-BIT: AT THE NEXT START, WHERE SUPPORTED	10비트: 다음 실행 시 (지원되는 경우)
+10-BIT: ON (A 10-BIT WINDOW)	10비트: 켜짐 (10비트 창)
+12 H CLOCK	12시간제
+144 FPS	144 FPS
+1V1 - rounds on one ruleset (vanilla, laser vampire, instagib...). First to 5. Ranked 1v1 rates you on its own ladder.	1V1 - 한 가지 규칙(바닐라, 레이저 뱀파이어, 인스타깁...)으로 라운드 진행. 5선승. 랭크 1v1은 별도 래더로 레이팅됩니다.
+240 FPS	240 FPS
+2:00  -  1ST OF 6	2:00  -  6명 중 1위
+2D: THE VIEW STAYS STILL, YOUR MOUSE MOVES THE CROSSHAIR	2D: 시점 고정, 마우스로 조준점 이동
+30 SECONDS LEFT	30초 남음
+32-bit float	32비트 float
+3D FLYING	3D 비행
+3D STATIC: YOU CAN'T MOVE - LOOK AND SHOOT	3D 고정: 이동 불가 - 조준하고 사격
+3D VAMP	3D 뱀프
+5 MORE MINUTES	5분 더
+60 FPS	60 FPS
+A DASH PRESSED THIS SOON BEFORE IT'S READY	준비되기 이만큼 전에 누른 대시 입력 인정
+A DROPPED CONNECTION TRIES AGAIN (3 TIMES)	연결 끊김 시 재시도 (3회)
+A NEW CODE FROM /link RELINKS IT - unlink REMOVES IT	/link의 새 코드로 재연결 - unlink로 해제
+A PLAYER JOINED VIA	플레이어 참가 경로:
+A SERVER	서버
+A VARIABLE FONT IS DRAWN AT ITS DEFAULT WEIGHT	가변 폰트는 기본 굵기로 표시
+A private game with bots at your chosen level (beginner, intermediate, advanced, expert), on any mode and map.	원하는 난이도(초급, 중급, 상급, 전문가)의 봇과 함께하는 비공개 게임. 모든 모드와 맵 가능.
+A thrown knife or syringe is gone for 4 s (greyed out in the weapon list, with its timer).	던진 나이프나 주사기는 4초간 사라집니다 (무기 목록에 회색으로 타이머와 함께 표시).
+ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/	ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/
+ABILITIES	능력
+ABOVE NORMAL	보통 이상
+ACC	정확도
+ACCELERATOR / JUNGLE / ROOFTOPRUN - race (and the ranked time trials).   SOLAR / SURFY - surf.   COBBLESTONE - q's own.	ACCELERATOR / JUNGLE / ROOFTOPRUN - 레이스 (랭크 타임 트라이얼 포함).   SOLAR / SURFY - 서핑.   COBBLESTONE - q의 맵.
+ACCENT	강조
+ACCENT COLOR	강조 색상
+ACCESSIBILITY	접근성
+ACCURACY	정확도
+ACE	ACE
+ADAPTIVE	적응형
+ADD (AT THE SCREEN CENTER)	추가 (화면 중앙에)
+ADD BOT	봇 추가
+ADD WIDGET	위젯 추가
+ADD: boxes (base / accent / wallbang: bullets go through wallbangs for half damage), spawns, lights, payload path points, bomb sites, the hill, race checkpoints, and LADDERS (one object: stretch it and the rungs follow).	추가: 박스 (기본 / 강조 / 월뱅: 총알이 월뱅을 관통하며 피해 절반), 스폰, 조명, 화물 경로 지점, 폭탄 설치 지점, 점령 지역, 레이스 체크포인트, 사다리 (하나의 오브젝트: 늘리면 발판이 따라옴).
+ADDRESS	주소
+ADDRESS (IP:PORT)	주소 (IP:PORT)
+ADVANCED	상급
+ADVANCED > BOT BRAIN: what your bots play: the built-in brain, or a .qbrain file from the bots folder in your data folder. A file that doesn't compile shows its error line and the bots play the built-in brain. Never in ranked.	상급 > 봇 AI: 봇의 플레이 방식: 내장 AI 또는 데이터 폴더의 bots 폴더에 있는 .qbrain 파일. 컴파일되지 않는 파일은 오류 줄을 표시하고 봇은 내장 AI로 플레이합니다. 랭크에서는 사용하지 않습니다.
+AGAIN (R)	다시 (R)
+AHEAD	앞섬
+AIM TRAINER	에임 트레이너
+AIR	공중
+AIR ACCELERATION	공중 가속
+AIR CONTROL	공중 제어
+AIR DRIFT (UNDER RUN SPEED)	공중 드리프트 (달리기 속도 이하)
+AIR ROCKET	에어 로켓
+AIR STRAFE CAP	공중 스트레이프 한도
+ALL	전체
+ALL MODES	모든 모드
+ALL OFF	모두 끄기
+ALL SETTINGS	전체 설정
+ALT	ALT
+ALT FIRE	보조 사격
+ALT-FIRE TOGGLE IN RANKED	랭크에서 보조 사격 토글
+ALT-FIRE TOGGLES	보조 사격 토글
+ALT-FIRE TOGGLES: WITH ALT-FIRE: TOGGLE ON	보조 사격 토글: 보조 사격 토글 켜짐 시
+ALT-FIRE: HOLD	보조 사격: 누르고 있기
+ALT-FIRE: TOGGLE	보조 사격: 토글
+ALT-TABBED OR MINIMIZED: LESS POWER AND HEAT	ALT-TAB 또는 최소화: 전력·발열 감소
+ALWAYS LIT	항상 밝게
+ALWAYS ON TOP	항상 위
+ANNA	ANNA
+ANNOUNCER	아나운서
+ANNOUNCER CALLS	아나운서 안내
+ANNOUNCER VOLUME	아나운서 볼륨
+ANNOUNCER: ALL CALLS	아나운서: 모든 안내
+ANNOUNCER: COUNTDOWN	아나운서: 카운트다운
+ANNOUNCER: OFF	아나운서: 끄기
+ANTI-ALIASING	안티앨리어싱
+ANTI-ALIASING: MSAA 2X	안티앨리어싱: MSAA 2X
+ANTI-ALIASING: MSAA 2X (N/A)	안티앨리어싱: MSAA 2X (N/A)
+ANTI-ALIASING: MSAA 4X	안티앨리어싱: MSAA 4X
+ANTI-ALIASING: MSAA 4X (N/A HERE)	안티앨리어싱: MSAA 4X (여기선 N/A)
+ANTI-ALIASING: MSAA 8X	안티앨리어싱: MSAA 8X
+ANTI-ALIASING: OFF	안티앨리어싱: 끄기
+ANTI-ALIASING: SMOOTH (CHEAP)	안티앨리어싱: 부드럽게 (저부하)
+APEX LEGENDS	APEX LEGENDS
+APPLY IN:	적용 대상:
+ARC COLOR	호 색상
+ARC SIZE	호 크기
+ARC TIME	호 시간
+ARM	설치
+ARROW (NUDGE)	화살표 (미세 이동)
+ARROWS / PGUP / PGDN: MOVE BY GRID (ALONG YOUR VIEW)	화살표 / PGUP / PGDN: 그리드 단위 이동 (시점 방향)
+AS THICK	같은 두께
+ASIDE: A FRAME LESS LAG IN A WINDOW	참고: 창 모드에서 1프레임 지연 감소
+ASK "SURE?" FIRST: CLICK AGAIN	"확실합니까?" 먼저 묻기: 다시 클릭
+ASSUMED	가정
+AT # # #	위치 # # #
+AT CAMERA	카메라 위치
+ATTACK + RACE	공격 + 레이스
+ATTACK - PLANT THE BOMB	공격 - 폭탄 설치
+ATTACK: CARRY THE BOMB TO A SITE AND PLANT IT	공격: 폭탄을 지점으로 옮겨 설치
+AUDIO INPUT (MICROPHONE)	오디오 입력 (마이크)
+AUDIO LATENCY	오디오 지연
+AUDIO LATENCY: LOW	오디오 지연: 낮음
+AUDIO LATENCY: NORMAL	오디오 지연: 보통
+AUDIO LATENCY: SAFE	오디오 지연: 안전
+AUDIO OUTPUT	오디오 출력
+AUTO	자동
+AUTO PORT FORWARD	자동 포트 포워딩
+AUTO RECONNECT	자동 재연결
+AUTO RECORD	자동 녹화
+AUTO RECORD: EVERY MATCH	자동 녹화: 모든 경기
+AUTO RECORD: OFF	자동 녹화: 끄기
+AUTO RECORD: RANKED ONLY	자동 녹화: 랭크만
+AUTO START	자동 시작
+AUTO-HIDE	자동 숨김
+AUTO-HIDE BARS	바 자동 숨김
+AUTO-HIDE HEALTH	체력 자동 숨김
+AUTO-HIDE WEAPON LIST	무기 목록 자동 숨김
+AUTO-HOP	자동 점프
+AUTO-HOP OFF: HELD JUMP JUMPS ONCE	자동 점프 끄기: 점프를 누르고 있으면 한 번만 점프
+AUTO: YOUR SYSTEM'S LANGUAGE	자동: 시스템 언어
+AVERAGE	평균
+AVERAGE, LAST	평균, 최근
+AVG #  1% LOW #  0.1% LOW #	평균 #  1% LOW #  0.1% LOW #
+AVG FPS	평균 FPS
+AVG FRAME	평균 프레임
+AVX2	AVX2
+Anything in the maps folder shows up in the lists. Servers send their map to players who don't have it.	맵 폴더에 있는 모든 맵이 목록에 표시됩니다. 서버는 맵이 없는 플레이어에게 맵을 전송합니다.
+AvSetMmThreadCharacteristicsW	AvSetMmThreadCharacteristicsW
+BACK	뒤로
+BACK TO EDITOR	에디터로 돌아가기
+BACKGROUND	배경
+BACKGROUND COLOR	배경 색상
+BACKGROUND FPS LIMIT	백그라운드 FPS 제한
+BACKGROUND MAP	배경 맵
+BACKGROUND VOLUME	백그라운드 볼륨
+BACKGROUND: A MAP I PICK	배경: 내가 고른 맵
+BACKGROUND: CASTLE	배경: 성
+BACKGROUND: PLAIN COLOR	배경: 단색
+BACKSPACE	BACKSPACE
+BAKE LIGHT	조명 굽기
+BAKE THREADS	굽기 스레드
+BAKES DELETED (BAKED AGAIN WHEN PLAYED)	굽기 삭제됨 (플레이 시 다시 굽기)
+BAKES KEPT	굽기 유지됨
+BAKES,	굽기,
+BAKING LIGHT -	조명 굽는 중 -
+BALANCE BOT SKILL	봇 실력 균형
+BALANCE BOTS	봇 균형
+BALANCE BOTS evens out uneven teams with bots. MODE > RANKED runs rated 1v1 on the ranked maps (no bots). SERVER LOG keeps a log of the match.	봇 균형은 인원이 고르지 않은 팀을 봇으로 맞춥니다. 모드 > 랭크는 랭크 맵에서 레이팅 1v1을 진행합니다 (봇 없음). 서버 로그는 경기 로그를 남깁니다.
+BALL	볼
+BALL - SHOOT, BLAST OR RUN THE BALL INTO THE ENEMY GOAL - MOST GOALS WINS	볼 - 공을 쏘거나 폭발로 밀거나 몰고 가서 적 골대에 넣기 - 최다 득점 승리
+BANDIT	BANDIT
+BAR	바
+BAR CAPTIONS	바 설명
+BAR COLOR	바 색상
+BAR H	바 H
+BAR W	바 W
+BARLOW CONDENSED	BARLOW CONDENSED
+BASIC	기본
+BEBAS NEUE	BEBAS NEUE
+BEGINNER	초급
+BEHIND	뒤처짐
+BEHIND (0: AS IN FRONT)	뒤 (0: 앞과 동일)
+BEHIND OTHER WINDOWS	다른 창 뒤
+BEHIND YOU	뒤쪽
+BEHIND YOU: THE DIP AND MUFFLE ON SOUNDS	뒤쪽: 소리 감쇠 및 먹먹함
+BELOW NORMAL	보통 이하
+BENCH	벤치
+BENCHMARK	벤치마크
+BENCHMARK DEMO MISSING	벤치마크 데모 없음
+BENCHMARK RESULTS	벤치마크 결과
+BENCHMARK:	벤치마크:
+BENCHMARK: COULD NOT SAVE THE RUN IN	벤치마크: 실행 결과 저장 실패 위치
+BENCHMARK: could not save the run in	벤치마크: 실행 결과 저장 실패 위치
+BENCHMARK: could not save the run in {}	벤치마크: 실행 결과 저장 실패 위치 {}
+BENCHMARK: no demo ({})	벤치마크: 데모 없음 ({})
+BENCHMARK: {}	벤치마크: {}
+BENCHMARKS	벤치마크
+BEST	최고
+BEST OF 3 - FIRST TO 2 WINS THE MATCH	3판 2선승 - 먼저 2승하면 경기 승리
+BEST POSSIBLE (SEGMENTS)	이론상 최고 (구간)
+BEST RUN	최고 기록
+BEST SEGMENT	최고 구간
+BG OPACITY %	배경 불투명도 %
+BHOP BOUNCE	BHOP 반동
+BHOP BOUNCE (MAX)	BHOP 반동 (최대)
+BIG HIT	큰 피해
+BIG HIT: 40+ DAMAGE; NOT USABLE: THE WEAPON LIST	큰 피해: 40+ 피해; 사용 불가: 무기 목록
+BIG NOODLE	BIG NOODLE
+BIND FLY KEYS	비행 키 지정
+BIND HIDE HUD ON CONTROLS	조작 설정에서 HUD 숨기기 키 지정
+BLACK	검정
+BLADES	칼날
+BLAZE	BLAZE
+BLEND	블렌드
+BLUE / ORANGE	파랑 / 주황
+BLUE-YELLOW (TRITAN)	파랑-노랑 (청황색맹)
+BOMB	폭탄
+BOMB (DROPPED)	폭탄 (떨어짐)
+BOMB - attackers carry the bomb to a site and plant it (hold E). Defenders defuse it (hold E) or hold out until time runs out. 7 rounds, then the sides swap.	폭탄 - 공격팀은 폭탄을 지점으로 옮겨 설치(E 누르고 있기)합니다. 수비팀은 해체(E 누르고 있기)하거나 시간이 끝날 때까지 버팁니다. 7라운드 후 진영 교체.
+BOMB BEEP	폭탄 경고음
+BOMB DEFUSED	폭탄 해체됨
+BOMB DROPPED	폭탄 떨어짐
+BOMB DROPPED - PICK IT UP	폭탄 떨어짐 - 주우세요
+BOMB PLANTED	폭탄 설치됨
+BOMB PLANTED - DEFEND IT	폭탄 설치됨 - 지키세요
+BOMB PLANTED - DEFUSE IT	폭탄 설치됨 - 해체하세요
+BOMB SITE	폭탄 설치 지점
+BOOM	BOOM
+BOOMERS	BOOMERS
+BORDER	테두리
+BORDER COLOR	테두리 색상
+BORDERLESS	테두리 없음
+BORDERLESS FULLSCREEN	테두리 없는 전체 화면
+BOT	봇
+BOT BRAIN	봇 AI
+BOT BRAIN:	봇 AI:
+BOT BRAIN: BUILT-IN	봇 AI: 기본
+BOT BRAIN: OFF (RANKED)	봇 AI: 끄기 (랭크)
+BOT DIFFICULTY:	봇 난이도:
+BOT LOOKS	봇 외형
+BOT NAMES FILE	봇 이름 파일
+BOTS	봇
+BOTS DON'T FIRE	봇 사격 안 함
+BOTS OFF	봇 끄기
+BOTS ON	봇 켜기
+BOTS/NAMES.TXT: A NAME A LINE, USED WHEN YOU HOST	BOTS/NAMES.TXT: 한 줄에 이름 하나, 호스트할 때 사용
+BOTS: EASY	봇: 쉬움
+BOTS: EXPERT	봇: 전문가
+BOTS: HARD	봇: 어려움
+BOTS: MEDIUM	봇: 보통
+BOTS: OFF (RANKED)	봇: 끄기 (랭크)
+BOX	박스
+BOX OPACITY	박스 불투명도
+BOXES, STRETCHED AS ONE - UNGROUP TO EDIT THEM	하나로 늘어나는 박스 - 편집하려면 그룹 해제
+BREAKABLE	파괴 가능
+BRICK	벽돌
+BRIGHTNESS	밝기
+BRITISH	영국식
+BRUNO	BRUNO
+BUBBLE	버블
+BUILDINGS	건물
+BUILT FOR	제작 모드
+BUILT FOR sets the mode the map is made for; the MODES grid sets what it's offered for. PLAYABLE AS shows what it has the pieces for (team modes need A and B spawns).	제작 모드는 맵이 만들어진 모드를 정하고, 모드 그리드는 어떤 모드에 제공될지 정합니다. 플레이 가능 모드는 맵에 필요한 요소가 있는 모드를 보여줍니다 (팀 모드는 A, B 스폰 필요).
+BUILT FOR:	제작 모드:
+BUILT FOR: ANY	제작 모드: 모두
+BY NAME	이름순
+BY PING	핑순
+BY PLAYERS	인원순
+BYE	부전승
+BYPASS COMPOSITOR	컴포지터 우회
+BYPASS COMPOSITOR: ALWAYS	컴포지터 우회: 항상
+BYPASS COMPOSITOR: FULLSCREEN	컴포지터 우회: 전체 화면
+BYPASS COMPOSITOR: NEVER	컴포지터 우회: 안 함
+CALL	호출
+CALL A VOTE	투표 시작
+CALL VOTE	투표 시작
+CALL:	호출:
+CALLOUTS	콜아웃
+CAN'T BE READ	읽을 수 없음
+CAN'T READ '	읽을 수 없음 '
+CANCEL	취소
+CAPS LOCK	CAPS LOCK
+CAPTIONS	자막
+CAPTIONS: THE ANNOUNCER AS TEXT TOO	자막: 아나운서 음성도 텍스트로
+CAPTURE	점령
+CAPTURE THE HILL	언덕 점령
+CART	화물
+CHAMPION	챔피언
+CHANGE ANYTHING AFTER (IT STAYS)	이후 무엇이든 변경 (유지됨)
+CHANGE MAP / MODE	맵 / 모드 변경
+CHANGE MAP / MODE (pick the mode, then the map), FORCE START, RELOAD MAP, EDIT MODE (everyone edits the map together).	맵 / 모드 변경 (모드 선택 후 맵 선택), 강제 시작, 맵 다시 불러오기, 편집 모드 (모두 함께 맵 편집).
+CHANNELS	채널
+CHANNELS: MONO	채널: 모노
+CHANNELS: STEREO	채널: 스테레오
+CHANNELS: SWAPPED	채널: 좌우 반전
+CHAT	채팅
+CHAT BOX	채팅창
+CHAT COLOR	채팅 색상
+CHAT LINES	채팅 줄 수
+CHAT OFF -	채팅 끄기 -
+CHAT ON	채팅 켜기
+CHAT OPACITY	채팅 불투명도
+CHAT SECONDS	채팅 표시 시간(초)
+CHECK AGAIN	다시 확인
+CHECKPOINT	체크포인트
+CHECKPT	체크포인트
+CHOOSE -	선택 -
+CHOOSE A MAP FOR	맵 선택:
+CHOOSE A MODE	모드 선택
+CHOOSING...	선택 중...
+CLASSIC	클래식
+CLEAN SURFACES	깔끔한 표면
+CLEAR ALL	모두 지우기
+CLEAR DOWNLOADED MAPS	다운로드한 맵 삭제
+CLEAR LIGHT BAKES	조명 굽기 삭제
+CLEAR THEME	테마 초기화
+CLEO	CLEO
+CLICK A SLOT TO REBIND IT - RIGHT-CLICK OR DEL UNBINDS	슬롯을 클릭해 키 변경 - 우클릭 또는 DEL로 해제
+CLICK A WIDGET TO EDIT, DRAG TO MOVE.	위젯을 클릭해 편집, 드래그해 이동.
+CLICK AGAIN TO RESET EVERY SETTING (NOT YOUR NAME)	다시 클릭하면 모든 설정 초기화 (이름 제외)
+CLICK ON SOMETHING TO SELECT IT	클릭하여 선택
+CLICK TO CONFIRM	클릭하여 확인
+CLICK anything to select it. New things go where the crosshair (the middle of the view) points.	아무거나 클릭해 선택하세요. 새 오브젝트는 조준점(화면 중앙)이 가리키는 곳에 놓입니다.
+CLICK: SELECT (AGAIN: THE ONE BEHIND, SHIFT: ADD MORE, THEN GROUP)	클릭: 선택 (다시: 뒤에 있는 것, SHIFT: 추가 선택 후 그룹)
+CLIP BOX COLOR	클립 박스 색상
+CLOCK	시계
+CLOSE	닫기
+CLOSE QUARTERS	근접전
+CLOSED by the load governor: the machine can't carry both servers (production comes first)	부하 관리로 닫힘: 이 머신은 두 서버를 동시에 감당할 수 없음 (정식 서버 우선)
+CLOSEST FREE MATCH: APEX LEGENDS	가장 비슷한 무료 게임: APEX LEGENDS
+CLOSEST FREE MATCH: HALF-LIFE 2	가장 비슷한 무료 게임: HALF-LIFE 2
+CLOSEST FREE MATCH: OVERWATCH	가장 비슷한 무료 게임: OVERWATCH
+CLOSEST FREE MATCH: QUAKE	가장 비슷한 무료 게임: QUAKE
+CLOSEST FREE MATCH: TF2	가장 비슷한 무료 게임: TF2
+CLOSEST FREE MATCH: TF2 SECONDARY	가장 비슷한 무료 게임: TF2 보조 무기
+CM PER 360	CM PER 360
+CM PER 360: MOUSE TRAVEL FOR ONE FULL TURN	CM PER 360: 한 바퀴 도는 데 필요한 마우스 이동 거리
+COLOR	색상
+COLOR (FULL)	색상 (전체)
+COLOR BLINDNESS	색맹 모드
+COLOR SCHEME	색 구성
+COLOR: BLACK	색상: 검정
+COLOR: TEAM	색상: 팀
+COLOR: WHITE	색상: 흰색
+COLOR: YELLOW	색상: 노랑
+COLORBLIND: BLUE-YELLOW	색맹: 청황
+COLORBLIND: RED-GREEN	색맹: 적록
+COLORS	색상
+COLORS COPIED: PASTE THEM ANYWHERE	색상 복사됨: 어디든 붙여넣기
+COLORS FROM	색상 출처
+COLORS PASTED	색상 붙여넣음
+COLORS SAVED IN	색상 저장 위치
+COLUMN	열
+COLUMN: ACC	열: 정확도
+COLUMN: D	열: D
+COLUMN: DMG	열: 피해량
+COLUMN: K	열: K
+COLUMN: OBJ	열: 목표
+COLUMN: PING	열: PING
+COLUMN: TOTAL K / D	열: 총 K / D
+COMBINE	합치기
+COMET	COMET
+COMPASS	나침반
+COMPASS + RADAR	나침반 + 레이더
+COMPETITIVE: NO FOG OR SHADOWS, FEWER EFFECTS;	경쟁: 안개·그림자 없음, 효과 감소;
+COMPOSITED FRAME SHOWN (EST)	합성 프레임 표시 (추정)
+COMPOSITOR ON MOST DRIVERS	대부분의 드라이버에서 컴포지터
+COMPOSITOR: NEXT VBLANK (EST)	컴포지터: 다음 VBLANK (추정)
+CONCHARS is compressed	CONCHARS가 압축되어 있음
+CONCHARS isn't a 128 x 128 picture	CONCHARS가 128 x 128 이미지가 아님
+CONCRETE	콘크리트
+CONFIRM QUIT / LEAVE	종료 / 나가기 확인
+CONNECT	접속
+CONNECTING TO	접속 중:
+CONSOLE	콘솔
+CONSOLE IN MENUS	메뉴에서 콘솔
+CONSOLE KEY	콘솔 키
+CONSOLE KEY: '	콘솔 키: '
+CONSOLE KEY: F1	콘솔 키: F1
+CONSOLE KEY: F10	콘솔 키: F10
+CONSOLE KEY: F11	콘솔 키: F11
+CONSOLE KEY: HOME	콘솔 키: HOME
+CONSOLE KEY: INSERT	콘솔 키: INSERT
+CONTESTED	경합 중
+CONTRAST	대비
+CONTROL SCRIPTS ARE OFF IN RANKED	랭크에서는 조작 스크립트 사용 불가
+CONTROLS	조작
+CONTROLS 2	조작 2
+CONTROLS 3	조작 3
+CONTROLS: MORE KEYS	조작: 추가 키
+CONTROLS: MOVE KEYS	조작: 이동 키
+CONVERTING...	변환 중...
+COOLDOWN BARS	쿨다운 바
+COOLDOWN BARS: ALWAYS	쿨다운 바: 항상
+COOLDOWN BARS: WHEN NOT READY	쿨다운 바: 준비 안 됐을 때
+COOLDOWN RING	쿨다운 링
+COPIED (COULDN'T WRITE FILE)	복사됨 (파일 쓰기 실패)
+COPIED + SAVED CONTROLS/	복사 + CONTROLS/에 저장됨
+COPIED + SAVED HUDS/	복사 + HUDS/에 저장됨
+COPY CODE	코드 복사
+COPY COLORS	색상 복사
+COPY NAME	이름 복사
+CORNERS	모서리
+COULD NOT DELETE	삭제 실패
+COULD NOT RENAME THE RUN	기록 이름 변경 실패
+COULD NOT SAVE	저장 실패
+COULD NOT WRITE	쓰기 실패
+COULDN'T SAVE THE SCREENSHOT	스크린샷 저장 실패
+COULDN'T START RECORDING	녹화 시작 실패
+COUNTDOWN: A TICK EACH OF THE LAST 10 S	카운트다운: 마지막 10초 동안 매초 틱 소리
+CP	CP
+CPU	CPU
+CPU ABOVE NORMAL	CPU 보통 이상
+CPU HIGH	CPU 높음
+CPU NORMAL	CPU 보통
+CPU OTHER	CPU 기타
+CPU PRIORITY	CPU 우선순위
+CPU PRIORITY: ABOVE NORMAL	CPU 우선순위: 보통 이상
+CPU PRIORITY: HIGH	CPU 우선순위: 높음
+CROSSBOW	석궁
+CROSSBOW, STICKY AND RIFLE	석궁, 점착탄, 소총
+CROSSBOWS ONLY	석궁만
+CROSSHAIR	조준점
+CROSSHAIR CODE COPIED	조준점 코드 복사됨
+CROSSHAIR COLOR	조준점 색상
+CROSSHAIR PASTED	조준점 붙여넣음
+CROSSHAIR, TOWARD WHERE THEY CAME FROM	조준점, 공격받은 방향으로
+CROUCH	앉기
+CROUCH SPEED	앉기 속도
+CROWN	왕관
+CTRL+D: DUPLICATE    DEL: DELETE    CTRL+Z: UNDO    CTRL+Y: REDO    CTRL+S: SAVE    ESC: DESELECT / LEAVE	CTRL+D: 복제    DEL: 삭제    CTRL+Z: 실행 취소    CTRL+Y: 다시 실행    CTRL+S: 저장    ESC: 선택 해제 / 나가기
+CTRL+F (SEARCH)	CTRL+F (검색)
+CTRL+Y (REDO)	CTRL+Y (다시 실행)
+CTRL+Z (UNDO)	CTRL+Z (실행 취소)
+CUE	신호음
+CUE SOUNDS	신호음
+CUE: DASH	신호음: 대시
+CUE: DEATH	신호음: 사망
+CUE: GRAPPLE FIRE	신호음: 그래플 발사
+CUE: GRAPPLE HIT	신호음: 그래플 적중
+CUE: HURT	신호음: 피격
+CUE: HYPER	신호음: 하이퍼
+CUE: JUMP	신호음: 점프
+CUE: KILL	신호음: 킬
+CUE: LANDING	신호음: 착지
+CUE: STREAK STING	신호음: 연속 킬
+CUE: SUPER	신호음: 슈퍼
+CUE: TYPING	신호음: 타이핑
+CURSOR COLOR	커서 색상
+CURSOR SIZE	커서 크기
+CUSTOM	사용자 지정
+CUSTOM ACCENT COLOR	사용자 지정 강조 색상
+CUSTOM COLOR	사용자 지정 색상
+CUSTOM ENEMY	사용자 지정 적
+CUSTOM GRID	사용자 지정 그리드
+CUSTOM GROUPS	사용자 지정 그룹
+CUSTOM GUN	사용자 지정 총기
+CUSTOM MODE	커스텀 모드
+CUSTOM MODE:	커스텀 모드:
+CUSTOM MODE: OFF (RANKED)	커스텀 모드: 끄기 (랭크)
+CUSTOM MODE: pick one of your saved custom modes (or NEW / EDIT to build one).	커스텀 모드: 저장한 커스텀 모드 중 하나를 선택하세요 (새로 만들기 / 편집으로 제작).
+CUSTOM NAME COLOR	사용자 지정 이름 색상
+CUSTOM TAG	사용자 지정 태그
+CUSTOM TEAM	사용자 지정 팀
+CUSTOM WIDGETS	커스텀 위젯
+CUSTOM WIDGETS: build your own HUD pieces (number, bar, icon) from any value, drag them around, and import / export layouts.	커스텀 위젯: 원하는 값으로 나만의 HUD 요소(숫자, 바, 아이콘)를 만들어 배치하고, 레이아웃을 가져오기 / 내보내기하세요.
+CUSTOM: PICK OUTLINE "CUSTOM" ON PLAYER; SAME: ITS	사용자 지정: 플레이어 탭에서 외곽선 "사용자 지정" 선택; 동일: 그
+CYAN	청록
+CYAN / RED	청록 / 빨강
+D3DKMTCloseAdapter	D3DKMTCloseAdapter
+D3DKMTGetProcessSchedulingPriorityClass	D3DKMTGetProcessSchedulingPriorityClass
+D3DKMTGetScanLine	D3DKMTGetScanLine
+D3DKMTOpenAdapterFromHdc	D3DKMTOpenAdapterFromHdc
+D3DKMTSetProcessSchedulingPriorityClass	D3DKMTSetProcessSchedulingPriorityClass
+DAMAGE	피해량
+DAMAGE ARCS	피해 방향 표시
+DAMAGE FLASH	피격 섬광
+DAMAGE NUMBER COLOR	피해량 숫자 색상
+DAMAGE NUMBER SIZE	피해량 숫자 크기
+DAMAGE NUMBERS	피해량 숫자
+DASH	대시
+DASH + GRAPPLE	대시 + 그래플
+DASH BUFFER	대시 버퍼
+DASH BUFFER: 0.05 S	대시 버퍼: 0.05초
+DASH BUFFER: 0.1 S	대시 버퍼: 0.1초
+DASH BUFFER: 0.15 S	대시 버퍼: 0.15초
+DASH BUFFER: OFF	대시 버퍼: 끄기
+DASH CAPTION	대시 설명
+DASH CHARGES	대시 충전
+DASH COOLDOWN	대시 쿨다운
+DASH EXIT SPEED (MAX)	대시 종료 속도 (최대)
+DASH EXIT SPEED (MIN)	대시 종료 속도 (최소)
+DASH JUMP WINDOW	대시 점프 허용 시간
+DASH LENGTH	대시 길이
+DASH SPEED	대시 속도
+DASH SPEED KEPT	대시 속도 유지
+DASH VERTICAL	대시 수직
+DASH WALL BOUNCE ANGLE	대시 벽 반사 각도
+DASHING BLADES	대시 칼날
+DATA FOLDER	데이터 폴더
+DATE FORMAT	날짜 형식
+DATES: DD-MM	날짜: DD-MM
+DATES: MM-DD	날짜: MM-DD
+DATES: YYYY-MM-DD	날짜: YYYY-MM-DD
+DEAD	사망
+DEATH	사망
+DEATH + SPECTATING	사망 + 관전
+DEATH CAMERA	사망 카메라
+DEATH CAMERA: A TEAMMATE	사망 카메라: 팀원
+DEATH CAMERA: MY BODY	사망 카메라: 내 시체
+DEATH CAMERA: THE KILLER	사망 카메라: 처치자
+DEBAND	디밴딩
+DEBAND: A FAINT DITHER, NO BANDS IN SKY / FOG;	디밴딩: 약한 디더링으로 하늘 / 안개의 띠 현상 제거;
+DECALOTYPE	DECALOTYPE
+DEFAULT	기본값
+DEFEND	수비
+DEFEND THE SITES	지점 수비
+DEFEND: KEEP THEM OFF THE SITES, DEFUSE A PLANTED BOMB	수비: 적이 지점에 못 오게 막고, 설치된 폭탄 해체
+DEJAVU SANS	DEJAVU SANS
+DELETE	삭제
+DELETE (HIDE / SHOW)	삭제 (숨기기 / 표시)
+DELETE WIDGET	위젯 삭제
+DELETED	삭제됨
+DEMO	데모
+DEMO - ESC TO STOP	데모 - ESC로 중지
+DEMO RATE	데모 빈도
+DEMO RATE: 62.5 HZ	데모 빈도: 62.5 HZ
+DEMO RATE: FULL	데모 빈도: 전체
+DEMO SAVED - MAIN MENU > DEMOS	데모 저장됨 - 메인 메뉴 > 데모
+DEMOS	데모
+DEPTH	깊이
+DESC	내림차순
+DEVICES	장치
+DIFFICULTY	난이도
+DIFFICULTY: ADVANCED	난이도: 상급
+DIFFICULTY: BEGINNER	난이도: 초급
+DIFFICULTY: EXPERT	난이도: 전문가
+DIFFICULTY: INTERMEDIATE	난이도: 중급
+DISABLE CHAT	채팅 비활성화
+DISCONNECT	연결 끊기
+DISCORD	DISCORD
+DISCORD CODE	DISCORD 코드
+DISCORD LINK NEEDS A RANKED KEY (quark.key)	DISCORD 연동에는 랭크 키가 필요합니다 (quark.key)
+DISCORD LINK: COULDN'T REACH THE SERVER	DISCORD 연동: 서버에 연결할 수 없음
+DISCORD LINKED - YOUR DISCORD NAME IS NOW PUBLIC WITH YOUR GAME NAME AND RANKED ID (CROWNS, QUEUE FILLS). TYPE UNLINK TO REMOVE IT	DISCORD 연동됨 - 이제 DISCORD 이름이 게임 이름 및 랭크 ID와 함께 공개됩니다 (왕관, 대기열 완료). 해제하려면 UNLINK 입력
+DISCORD:	DISCORD:
+DISCORD:  (PUBLIC)	DISCORD:  (공개)
+DISCORD: TYPE THE 6-DIGIT CODE FROM /link IN DISCORD	DISCORD: DISCORD의 /link에서 받은 6자리 코드를 입력하세요
+DISPLAY	화면
+DISPLAY: BORDERLESS FULLSCREEN	화면: 테두리 없는 전체 화면
+DISPLAY: EXCLUSIVE FULLSCREEN	화면: 전용 전체 화면
+DISPLAY: WINDOWED	화면: 창 모드
+DISTANCE	거리
+DMG	피해량
+DMITRI	DMITRI
+DON'T SAVE	저장 안 함
+DONE	완료
+DOT	점
+DOUBLE DAMAGE	두 배 피해
+DOUBLE SIZE	두 배 크기
+DOWN	아래
+DOWNLOADED MAPS DELETED	다운로드한 맵 삭제됨
+DOWNLOADED,	다운로드됨,
+DOWNLOADING MAP	맵 다운로드 중
+DPI	DPI
+DRAG TO MOVE, CORNER / WHEEL / + - TO SIZE, ARROWS NUDGE (SHIFT 10), TAB NEXT, ALT: NO SNAP, CTRL+Z UNDO	드래그로 이동, 모서리 / 휠 / + - 로 크기, 화살표로 미세 이동 (SHIFT 10), TAB 다음, ALT: 스냅 없음, CTRL+Z 실행 취소
+DRAG TO TURN	드래그하여 회전
+DRAG, ADD, IMPORT / EXPORT WIDGETS	위젯 드래그, 추가, 가져오기 / 내보내기
+DRAG, SIZE AND STYLE EVERY ELEMENT IN PLACE	모든 요소의 위치, 크기, 스타일을 직접 조절
+DRAIN IN	소모 시간
+DRAW CALLS	드로우 콜
+DRAW DISTANCE	시야 거리
+DRAW IN BACKGROUND	백그라운드에서 렌더링
+DRAW: 150 M	시야: 150 M
+DRAW: 250 M	시야: 250 M
+DRAW: 400 M	시야: 400 M
+DRIVER	드라이버
+DROP MY EDITS	내 편집 취소
+DUCKING	더킹
+DUEL	결투
+DUEL - 1v1 (or 2v2): every life has a random modifier (low gravity, giants, rockets only...). First to 11.	결투 - 1v1 (또는 2v2): 목숨마다 무작위 변형(저중력, 거인, 로켓만...)이 적용됩니다. 11선승.
+DUPLICATE	복제
+DUSK	DUSK
+DXGI PRESENT	DXGI PRESENT
+DXGI PRESENT: WINDOWS ONLY	DXGI PRESENT: WINDOWS 전용
+DYNAMIC RANGE	다이나믹 레인지
+DYNAMIC RANGE: CLEAN	다이나믹 레인지: 클린
+DYNAMIC RANGE: NIGHT	다이나믹 레인지: 야간
+DYNAMIC RANGE: NORMAL	다이나믹 레인지: 보통
+Dash into a wall head-on (under 45 degrees) and you bounce off it at 16 m/s (it leaves you 1 dash).	벽에 정면으로 (45도 미만) 대시하면 16 m/s로 튕겨 나옵니다 (대시 1회 남음).
+Dash jump: jump while dashing along the floor to keep the dash's full speed through the jump (it leaves you both dashes).	대시 점프: 바닥에서 대시 중 점프하면 대시 속도를 그대로 유지합니다 (대시 두 번 모두 남음).
+Decl: no padding (its words are hashed)	Decl: 패딩 없음 (단어가 해시됨)
+Display: window mode, vsync, low latency mode, frame cap, player shadows, brightness, anti-aliasing and interpolation. Lower latency settings cost smoothness: the notes under them say how.	화면: 창 모드, 수직 동기화, 저지연 모드, 프레임 제한, 플레이어 그림자, 밝기, 안티앨리어싱, 보간. 지연을 낮추는 설정은 부드러움을 희생합니다: 아래 설명에 자세히 나와 있습니다.
+Drag the squares on a selected box's faces to resize it; drag the arrows to move it. The keyboard works too: ARROWS / PGUP / PGDN move it by the grid, SHIFT + ARROWS grow a side, CTRL + ARROWS shrink it.	선택한 박스 면의 사각형을 드래그해 크기를 조절하고, 화살표를 드래그해 이동합니다. 키보드도 가능: 화살표 / PGUP / PGDN은 그리드 단위로 이동, SHIFT + 화살표는 면 늘리기, CTRL + 화살표는 줄이기.
+E - use (plant / defuse the bomb).   1-9, 0 - weapons.   MOUSE WHEEL - next / previous weapon.	E - 사용 (폭탄 설치 / 해체).   1-9, 0 - 무기.   마우스 휠 - 다음 / 이전 무기.
+E-GIRL	E-GIRL
+EACH INPUT SENT IN THIS MANY PACKETS	각 입력을 이 개수의 패킷으로 전송
+EACH OF THE ANNOUNCER'S LINES ON OR OFF	아나운서 대사별 켜기 / 끄기
+EACH SLIDER SHOWS THE VALUE IN THIS MODE (STANDARD x MULTIPLIER)	각 슬라이더는 이 모드의 값을 표시 (표준 x 배율)
+EASY BOTS	쉬움 봇
+EDGE ARROWS	가장자리 화살표
+EDIT	편집
+EDIT ON SCREEN	화면에서 편집
+EDIT THE MAP TOGETHER	함께 맵 편집
+EDIT THE MAP TOGETHER (CHANGES LAST UNTIL THE MAP CHANGES)	함께 맵 편집 (맵이 바뀔 때까지 변경 유지)
+EDITOR	에디터
+EDITOR TEST PLAY	에디터 테스트 플레이
+EFFECT COLOR	효과 색상
+EFFECTS	효과
+EFFECTS + F3	효과 + F3
+EFFECTS OPACITY	효과 불투명도
+EFFECTS QUIETER WHILE THE ANNOUNCER SPEAKS	아나운서가 말할 때 효과음 줄이기
+EFFECTS VOLUME	효과음 볼륨
+EFFECTS: CUSTOM	효과: 사용자 지정
+EFFECTS: OWN	효과: 개인
+EFFECTS: TEAM	효과: 팀
+ELEMENT	요소
+ELEMENT COLOR	요소 색상
+ELEMENT: CHAT	요소: 채팅
+ELEMENT: COOLDOWN BARS	요소: 쿨다운 바
+ELEMENT: HEALTH	요소: 체력
+ELEMENT: KEY OVERLAY	요소: 키 오버레이
+ELEMENT: KILL FEED	요소: 킬 피드
+ELEMENT: SCORE BOX	요소: 점수판
+ELEMENT: SPEED METER	요소: 속도계
+ELEMENT: WEAPON LIST	요소: 무기 목록
+ELEMENT: WEAPON NAME	요소: 무기 이름
+END	종료
+END SESSION	세션 종료
+ENEMIES ALIVE	생존한 적
+ENEMY BOTS	적 봇
+ENEMY COLOR	적 색상
+ENEMY GOAL	적 골대
+ENEMY HOLDS THE HILL	적이 언덕 점령 중
+ENEMY IS PUSHING	적이 화물 미는 중
+ENEMY MODEL	적 모델
+ENEMY MODEL:	적 모델:
+ENEMY MODEL: THEIR OWN	적 모델: 본인 설정
+ENEMY OUTLINE	적 외곽선
+ENEMY OUTLINE:	적 외곽선:
+ENEMY WIDTH	적 너비
+ENTER	ENTER
+ERROR ON LINE	오류 발생 줄
+ESC	ESC
+ESC (CLEAR SEARCH)	ESC (검색 지우기)
+ESC TO CANCEL	ESC로 취소
+ESC: PAUSE / SETTINGS   R: RESTART	ESC: 일시정지 / 설정   R: 재시작
+EVERY SETTING IS BACK TO ITS DEFAULT	모든 설정이 기본값으로 돌아갔습니다
+EVERY WEAPON, ALL MOVEMENT - NO GIMMICKS	모든 무기, 모든 이동기 - 변형 없음
+EVERYONE THROWS - THE LOSING SHAPE IS OUT	모두 동시에 냄 - 진 모양은 탈락
+EXCLUSIVE / BORDERLESS SKIP THE DESKTOP	전용 / 테두리 없음은 데스크톱을 거치지 않음
+EXCLUSIVE AUDIO	전용 오디오
+EXCLUSIVE AUDIO (BUSY)	전용 오디오 (사용 중)
+EXCLUSIVE AUDIO (N/A)	전용 오디오 (N/A)
+EXCLUSIVE FULLSCREEN	전용 전체 화면
+EXCLUSIVE FULLSCREEN ONLY	전용 전체 화면 전용
+EXCLUSIVE FULLSCREEN ONLY; A 4:3 SIZE IS	전용 전체 화면 전용; 4:3 크기는
+EXIT	나가기
+EXIT FACE	출구 면
+EXIT FACE: +X	출구 면: +X
+EXIT FACE: +Z	출구 면: +Z
+EXIT FACE: -X	출구 면: -X
+EXIT FACE: -Z	출구 면: -Z
+EXIT FACE: BOTTOM (-Y)	출구 면: 아래 (-Y)
+EXIT FACE: TOP (+Y)	출구 면: 위 (+Y)
+EXPECTED NAME: VALUE	예상 형식 이름: 값
+EXPERT	전문가
+EXPERT BOTS	전문가 봇
+EXPLOSION	폭발
+EXPLOSIONS, SPARKS AND BURSTS	폭발, 불꽃, 파편
+EXPLOSIVES	폭발물
+EXPORT	내보내기
+EXPORT / IMPORT USE THE CLIPBOARD	내보내기 / 가져오기는 클립보드 사용
+EXPORT CSV	CSV 내보내기
+EXPORT GROUP	그룹 내보내기
+EXPORT PNG	PNG 내보내기
+EZRA	EZRA
+Each dash leaves you 1 m/s faster than you went in (at least 11, at most 32 m/s).	대시할 때마다 들어갈 때보다 1 m/s 빠르게 나옵니다 (최소 11, 최대 32 m/s).
+Each map is built for one mode, plus free for all and any others it lists. You can still start any map in any mode: the menus warn when it isn't built for it (it may be missing spawns or objectives).	각 맵은 하나의 모드용으로 제작되며, 개인전 및 목록에 있는 다른 모드도 지원합니다. 어떤 맵이든 어떤 모드로도 시작할 수 있지만, 해당 모드용이 아니면 메뉴에서 경고합니다 (스폰이나 목표가 없을 수 있음).
+F3 - performance overlay (average, 1% and 0.1% low FPS, input latency).   F12 - screenshot.   ESC - menu, votes, settings.	F3 - 성능 오버레이 (평균, 1% 및 0.1% LOW FPS, 입력 지연).   F12 - 스크린샷.   ESC - 메뉴, 투표, 설정.
+F3 COLORBLIND COLORS	F3 색맹 색상
+FACING (Q E)	방향 (Q E)
+FADE DISTANCE	페이드 거리
+FADE LENGTH	페이드 길이
+FAIRNESS: DEFAULT MODEL, HUD, CONTROLS, 10 MS INTERP	공정성: 기본 모델, HUD, 조작, 10 MS 보간
+FAR SCENERY	원경
+FAST FLY	빠른 비행
+FASTER MOVES TURN FURTHER (AT MOST X4)	빠르게 움직일수록 더 많이 회전 (최대 X4)
+FAYE	FAYE
+FEATURES	기능
+FEED HS MARK	킬 피드 HS 표시
+FEEDBACK	피드백
+FEMALE	여성
+FFA COLORS	개인전 색상
+FFA: EACH OPPONENT THEIR OWN COLOUR; OWN: YOUR	개인전: 상대마다 고유 색상; 개인: 내
+FIELD	필드
+FIGHTER	전투원
+FILE	파일
+FILE NAME	파일 이름
+FILE: NAME / TITLE	파일: 이름 / 제목
+FILL THE UNEVEN TEAMS WITH BOTS?	인원이 맞지 않는 팀을 봇으로 채울까요?
+FINAL	결승
+FIND CLIP BOXES	클립 박스 찾기
+FIND INVISIBLE WALLS:	보이지 않는 벽 찾기:
+FINISH	완주
+FINISHED	완료
+FIRE	사격
+FIRE RATE	연사 속도
+FIRES THE MOMENT IT IS	준비되는 즉시 발사
+FIRST TO #	#선승
+FIX GAPS	틈 메우기
+FIX MAP	맵 수정
+FIXED LOGO COLORS	로고 색상 고정
+FIXED TEAMS	팀 고정
+FIXED TEAMS: SPECTATING AND DEMOS SHOW	팀 고정: 관전과 데모에서 표시
+FLAT LIGHTING	평면 조명
+FLAT MAP	평면 맵
+FLAT MAP, NO LIGHTING	평면 맵, 조명 없음
+FLYING, ONE KEY: MOVE UP HELD UP, LET GO DOWN	비행, 키 하나: 누르고 있으면 상승, 떼면 하강
+FOG	안개
+FOLDER	폴더
+FOLDER: DATA	폴더: 데이터
+FOLDER: PICTURES	폴더: 사진
+FONT	폰트
+FONT:	폰트:
+FONTS GO IN MODS/FONTS; ASSETS IN OVERRIDES/	폰트는 MODS/FONTS에; 에셋은 OVERRIDES/에
+FOR	대상
+FOR A VARIABLE REFRESH MONITOR	가변 주사율 모니터용
+FOR THE NEXT LAUNCH	다음 실행 시
+FORCE MY PACK	내 팩 강제 적용
+FORCE MY PACK: EVERYONE IN YOUR SOUND PACK	내 팩 강제 적용: 모든 플레이어에 내 사운드 팩 사용
+FORCE PLAYER MODELS	플레이어 모델 강제 적용
+FORCE START	강제 시작
+FORMAT: PNG	형식: PNG
+FORMAT: TGA	형식: TGA
+FORWARD	앞으로
+FOUND - WATCH THE REST OF THE ROUND	발견됨 - 남은 라운드 관전
+FOV	FOV
+FOV #: # DEGREES ACROSS THIS SCREEN	FOV #: 이 화면 기준 가로 #도
+FOV MODE	FOV 모드
+FOV: HORIZONTAL	FOV: 수평
+FOV: HORIZONTAL AT 4:3	FOV: 4:3 기준 수평
+FOV: VERTICAL	FOV: 수직
+FPS	FPS
+FPS LIMIT	FPS 제한
+FPS MIN (1S)	FPS 최저 (1초)
+FRAME CAP WAIT	프레임 제한 대기
+FRAME TIME (MS) OVER THE RUN	실행 중 프레임 시간 (MS)
+FRAMES	프레임
+FREE FOR ALL	개인전
+FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next kill wins).	개인전 - 시간이 끝났을 때 킬이 가장 많은 플레이어 승리 (동점이면 연장전: 다음 킬 승리).
+FRIENDS JOIN WITH YOUR PUBLIC IP (STREAMER MODE)	친구는 공인 IP로 참가 (스트리머 모드)
+FRIENDS JOIN WITH YOUR PUBLIC IP:	친구는 공인 IP로 참가:
+FROM	출처
+FROM: APEX LEGENDS	출처: APEX LEGENDS
+FROM: CALL OF DUTY	출처: CALL OF DUTY
+FROM: CS2 / CS:GO	출처: CS2 / CS:GO
+FROM: OVERWATCH 2	출처: OVERWATCH 2
+FROM: QUAKE	출처: QUAKE
+FROM: TEAM FORTRESS 2	출처: TEAM FORTRESS 2
+FROM: VALORANT	출처: VALORANT
+FULL RATE: EVERY SNAPSHOT (UP TO 1000 HZ) - SMOOTHER, MUCH BIGGER FILES	전체 빈도: 모든 스냅샷 (최대 1000 HZ) - 더 부드럽지만 파일이 훨씬 큼
+FULL RESTART	완전 재시작
+FULL: EVERY SNAPSHOT (BIGGER FILES); ALSO ON DEMOS	전체: 모든 스냅샷 (파일 큼); 데모에도 적용
+FULLBRIGHT	풀브라이트
+FULLSCREEN	전체 화면
+FULLSCREEN AND BORDERLESS OPEN ON IT	전체 화면 및 테두리 없음이 이 모니터에서 열림
+FULLSCREEN OPTIMIZATIONS BACK ON: FROM THE NEXT START	전체 화면 최적화 다시 켜짐: 다음 시작부터
+FULLSCREEN OPTIMIZATIONS OFF: FROM THE NEXT START	전체 화면 최적화 꺼짐: 다음 시작부터
+FULLSCREEN OPTIMIZATIONS: NOT CHANGED	전체 화면 최적화: 변경 안 됨
+FULLSCREEN OPTIMIZATIONS: WINDOWS ONLY	전체 화면 최적화: WINDOWS 전용
+FULLSCREEN OPTIMIZATIONS: WINDOWS REFUSED THE CHANGE	전체 화면 최적화: WINDOWS가 거부함
+FULLSCREEN SIZE	전체 화면 해상도
+FULLSCREEN SIZE:	전체 화면 해상도:
+FULLSCREEN SIZE: DESKTOP	전체 화면 해상도: 데스크톱
+FULLSCREEN: OFF KEEPS IT ON SCREEN	전체 화면: 끄면 화면에 유지
+G-SYNC / FREESYNC	G-SYNC / FREESYNC
+GAME	게임
+GAME FONTS: YOUR OWN COPY OF THE REAL FONT IF FOUND	게임 폰트: 실제 폰트가 있으면 해당 폰트 사용
+GAME {} NS + MOUSE POLLING {} NS (# HZ) + DISPLAY {} NS (# HZ)	게임 {} NS + 마우스 폴링 {} NS (# HZ) + 디스플레이 {} NS (# HZ)
+GAMEMODE	게임 모드
+GAMEPLAY	게임플레이
+GAMEPLAY 2	게임플레이 2
+GAMEPLAY 3	게임플레이 3
+GAMEPLAY 4	게임플레이 4
+GAMEPLAY 5	게임플레이 5
+GAMMA	감마
+GAP	간격
+GATE	게이트
+GENERAL	일반
+GENERAL + INTERFACE	일반 + 인터페이스
+GET IT WITH /link - THE CODE IS PUBLIC	/link로 받기 - 코드는 공개됨
+GIANT SNIPERS	거대 저격수
+GIBS	고어
+GL	GL
+GLASS CANNONS	유리 대포
+GLOW	광원
+GLOW STRENGTH	광원 세기
+GO	시작
+GO!	시작!
+GODLIKE	신급
+GPU	GPU
+GPU + CPU GO TO THE GAME FIRST WHILE FOCUSED	창 활성 시 GPU + CPU를 게임에 우선 할당
+GPU HUD	GPU HUD
+GPU MAX CLOCKS	GPU 최대 클럭
+GPU MAX CLOCKS: NOT CHANGED IN THE UI TEST	GPU 최대 클럭: UI 테스트에서는 변경 안 함
+GPU MAX CLOCKS: WINDOWS ONLY	GPU 최대 클럭: WINDOWS 전용
+GPU PRIORITY	GPU 우선순위
+GPU SCHED: N/A	GPU 스케줄링: 해당 없음
+GPU SCHED: ON	GPU 스케줄링: 켜짐
+GPU SCHED: TURN ON	GPU 스케줄링: 켜기
+GPU SCHEDULING	GPU 스케줄링
+GPU SCHEDULING ON: RESTART YOUR PC FOR IT TO TAKE EFFECT	GPU 스케줄링 켜짐: PC를 다시 시작하면 적용
+GPU SCHEDULING: NOT CHANGED (THE ADMIN PROMPT WAS DECLINED)	GPU 스케줄링: 변경 안 됨 (관리자 확인 거부)
+GPU SCHEDULING: WINDOWS ONLY	GPU 스케줄링: WINDOWS 전용
+GPU SCHEDULING: WINDOWS REFUSED THE CHANGE	GPU 스케줄링: WINDOWS가 거부함
+GPU WAIT (LOW LATENCY ON)	GPU 대기 (저지연 켜짐)
+GPU WAIT (ULTRA)	GPU 대기 (울트라)
+GPU dynamic pass	GPU dynamic pass
+GPU resolve / scale	GPU resolve / scale
+GPU shadow pass	GPU shadow pass
+GPU world pass	GPU world pass
+GRADE FROM LOW COLOR	낮은 색상부터 그라데이션
+GRAPPLE	그래플
+GRAPPLE + HAND	그래플 + 손
+GRAPPLE COOLDOWN	그래플 쿨다운
+GRAPPLE GRAVITY	그래플 중력
+GRAPPLE MODEL	그래플 모델
+GRAPPLE MOVEMENT ONLY	그래플 이동 전용
+GRAPPLE PULL	그래플 당기는 힘
+GRAPPLE RANGE	그래플 사거리
+GRAPPLE RELEASE DISTANCE	그래플 해제 거리
+GRAPPLE TOP SPEED	그래플 최고 속도
+GRAPPLE: HOLD	그래플: 누르고 있기
+GRAPPLE: TOGGLE	그래플: 토글
+GRAVITY	중력
+GREEN	초록
+GREEN / MAGENTA	초록 / 자홍
+GREENHOUSE - ranked vanilla 1v1.   DOJO - ranked laser vampire 1v1.   SPIRE - ranked instagib free for all (5 minutes).   ORBIT - 1v1, duel.	GREENHOUSE - 랭크 바닐라 1v1.   DOJO - 랭크 레이저 뱀파이어 1v1.   SPIRE - 랭크 인스타깁 개인전 (5분).   ORBIT - 1v1, 결투.
+GRID: # M (CUSTOM)	그리드: # M (사용자 지정)
+GRID: 1 M	그리드: 1 M
+GRID: 1/2 M	그리드: 1/2 M
+GRID: 1/4 M	그리드: 1/4 M
+GRID: 1/8 M	그리드: 1/8 M
+GRID: 2 M	그리드: 2 M
+GRID: 4 M	그리드: 4 M
+GROUND	지상
+GROUND ACCELERATION	지상 가속
+GROUND FRICTION	지상 마찰
+GROUP	그룹
+GROUP FILE	그룹 파일
+GROUPS	그룹
+GUN COLOR	총기 색상
+GUN RECOIL KICK	총기 반동
+GUN: CUSTOM	총기: 사용자 지정
+GUN: MAP	총기: 맵
+GUN: TEAM	총기: 팀
+GUNFIRE	총성
+GUS	GUS
+Game::frame	Game::frame
+Game::testHeld_ holds a bit per action	Game::testHeld_ holds a bit per action
+HALFTIME - SIDES SWITCHED	하프타임 - 진영 교체
+HALFTIME - SIDES SWITCHED: YOU ATTACK NOW	하프타임 - 진영 교체: 이제 공격
+HALFTIME - SIDES SWITCHED: YOU DEFEND NOW	하프타임 - 진영 교체: 이제 수비
+HANA	HANA
+HAND	손
+HAND: LEFT	손: 왼쪽
+HAND: RIGHT	손: 오른쪽
+HARD BOTS	어려움 봇
+HARD TO TELL APART WITH	구분하기 어려운 색:
+HAS NO BINDS	키 지정 없음
+HAS NO WIDGETS	위젯 없음
+HEADSHOT	헤드샷
+HEADSHOT HIT	헤드샷 적중
+HEADSHOTS STAY RED, BIG HITS GOLD	헤드샷은 빨강, 큰 피해는 금색 유지
+HEAL NUMBERS	회복량 숫자
+HEALED BY	회복시킨 플레이어:
+HEALING	회복
+HEALTH	체력
+HEALTH BAR POSITION	체력 바 위치
+HEALTH BAR: AT THE FEET	체력 바: 발 아래
+HEALTH BAR: MODE'S MAX	체력 바: 모드 최대치
+HEALTH BAR: OVER THE HEAD	체력 바: 머리 위
+HEALTH BARS	체력 바
+HEALTH BARS OVER PLAYERS	플레이어 위 체력 바
+HEALTH: AFTER A CHANGE + LOW	체력: 변화 시 + 낮을 때
+HEALTH: ALWAYS	체력: 항상
+HEALTH: ONLY WHEN LOW	체력: 낮을 때만
+HEARING RANGE	청취 범위
+HEAVY	헤비
+HIDE AND SEEK	숨바꼭질
+HIDE AND SEEK - one seeker with a knife, everyone else hides first. Everyone seeks once: 1 point for each hider you find, 1 for staying hidden to the end of a round. A tie for first is settled by rock paper scissors (keys 1 / 2 / 3).	숨바꼭질 - 나이프를 든 술래 한 명, 나머지는 먼저 숨습니다. 모두 한 번씩 술래가 됩니다: 찾은 사람 한 명당 1점, 라운드 끝까지 숨으면 1점. 1위 동점은 가위바위보로 결정 (키 1 / 2 / 3).
+HIDE EMPTY	빈 서버 숨기기
+HIDE FULL	꽉 찬 서버 숨기기
+HIDE HUD	HUD 숨기기
+HIDE HUD KEEPS CROSSHAIR	HUD 숨겨도 조준점 유지
+HIDE RATINGS	레이팅 숨기기
+HIDE REC	REC 숨기기
+HIDE REC: NO BLINKING REC WHILE RECORDING	REC 숨기기: 녹화 중 깜빡이는 REC 표시 없음
+HIDE! THE SEEKER IS COUNTING	숨으세요! 술래가 세는 중
+HIDES ALL PLAYERS' CHAT MESSAGES	모든 플레이어의 채팅 메시지 숨김
+HIGH	높음
+HIGH CAN SLOW OTHER PROGRAMS	높음은 다른 프로그램을 느리게 할 수 있음
+HIGH CONTRAST	고대비
+HIGH CONTRAST: LIGHTER WALLS, DARKER TRIM	고대비: 밝은 벽, 어두운 테두리
+HIGH SCORE	최고 점수
+HILL	언덕
+HILL CONTESTED	언덕 경합 중
+HILL LOST	언덕 빼앗김
+HILL TAKEN	언덕 점령
+HIT	적중
+HIT COLOR	적중 색상
+HIT FLASH	적중 섬광
+HIT FLASH TIME	적중 섬광 시간
+HITSCAN	히트스캔
+HITSCAN ONLY	히트스캔만
+HITSOUND	타격음
+HITSOUND TIERS	타격음 단계
+HITSOUND VOLUME	타격음 볼륨
+HITSOUND: DEFAULT	타격음: 기본
+HITSOUND: HEAVY METAL	타격음: 헤비 메탈
+HITSOUND: MAGICAL	타격음: 마법
+HITSOUND: MOUTH	타격음: 입소리
+HITSOUND: MY SOUND PACK	타격음: 내 사운드 팩
+HITSOUND: RETRO	타격음: 레트로
+HITSOUNDS	타격음
+HOLD FIRE	사격 금지
+HOLDING THE HILL	언덕 점령 중
+HOME	HOME
+HOOK	훅
+HOOK CAPTION	훅 설명
+HOOKED	걸림
+HOST	호스트
+HOST EDIT SESSION	편집 세션 호스트
+HOST EDIT SESSION: friends join and build with you; everyone's camera shows in the view.	편집 세션 호스트: 친구가 참가해 함께 제작합니다; 모두의 카메라가 화면에 표시됩니다.
+HOST GAME	게임 호스트
+HOSTING	호스트 중
+HOSTING ON UDP PORT	UDP 포트에서 호스트 중
+HOW OTHER PLAYERS' MOVES ARE SMOOTHED	다른 플레이어 움직임 보정 방식
+HP	HP
+HUD	HUD
+HUD & SETTINGS	HUD 및 설정
+HUD 2	HUD 2
+HUD > VERBOSE INFO TURNS THE BLOCK ON	HUD > 상세 정보로 이 블록을 켭니다
+HUD COLORS	HUD 색상
+HUD DRAW	HUD 렌더링
+HUD EDIT ELEMENT	HUD 요소 편집
+HUD ELEMENT	HUD 요소
+HUD SIZE	HUD 크기
+HUD.CFG LINE	HUD.CFG 줄
+HURT	피격
+HYPER	하이퍼
+HZ	HZ
+HZ  LOSS	HZ  손실
+HZ (NOT ON THIS MONITOR)	HZ (이 모니터에선 불가)
+Hold the RIGHT MOUSE button to look around; W A S D to fly, SPACE / C up and down, SHIFT faster, the wheel sets the speed.	마우스 오른쪽 버튼을 누른 채 둘러보세요; W A S D로 비행, SPACE / C로 상승·하강, SHIFT로 가속, 휠로 속도 조절.
+Host Game > CUSTOM MODE > NEW: any base mode with your own health, gravity, speed, jump, knockback, weapons (fire rate, damage, projectile speed) and map pool. Players who join get the rules automatically.	게임 호스트 > 커스텀 모드 > 새로 만들기: 아무 기본 모드에 체력, 중력, 속도, 점프, 넉백, 무기 (연사 속도, 피해, 투사체 속도)와 맵 풀을 직접 설정. 참가한 플레이어는 규칙을 자동으로 받습니다.
+Hz	Hz
+Hz cap applies at the next break	Hz 제한은 다음 휴식 시 적용
+ICON	아이콘
+ICON: BOLT	아이콘: 번개
+ICON: CLOCK	아이콘: 시계
+ICON: EYE	아이콘: 눈
+ICON: HEART	아이콘: 하트
+ICON: HOOK	아이콘: 훅
+ICON: SHIELD	아이콘: 방패
+ICON: SKULL	아이콘: 해골
+ICON: STAR	아이콘: 별
+IDAT	IDAT
+IDENTITY	정체성
+IDLE	대기
+IEND	IEND
+IF THAT ADDRESS REACHES YOU, HOST A DEDICATED SERVER WITH --own-addr	그 주소로 접속된다면 --own-addr로 전용 서버를 호스트하세요
+IHDR	IHDR
+IMAGE	이미지
+IMPACT SPARKS	충돌 불꽃
+IMPORT	가져오기
+IMPORT / EXPORT USE THE CLIPBOARD.	가져오기 / 내보내기는 클립보드 사용.
+IMPORT GROUP	그룹 가져오기
+IMPORTANT: VOTES, KICKS, RANKED, ERRORS	중요: 투표, 강퇴, 랭크, 오류
+IMPORTED	가져옴
+IMPORTED CONTROLS FROM CLIPBOARD	클립보드에서 조작 설정 가져옴
+IN # S	#초 후
+IN #/S  OUT #/S X#	수신 #/S  송신 #/S X#
+IN (TEAMS GO UNEVEN)	참가 (팀 인원 불균형)
+IN A TIME TRIAL OR A RACE	타임 트라이얼 또는 레이스 중
+IN GAME, ESC SHOWS IF THE PORT CAN BE REACHED	게임 중 ESC에서 포트 접속 가능 여부 표시
+IN MY PALETTE	내 팔레트에서
+IN THIS MAP	이 맵에서
+INDIA	INDIA
+INDUSTRIAL	산업
+INFO	정보
+INFO LINES	정보 줄
+INPUT	입력
+INPUT->FRAME AVG #MS  MIN #MS  99% #MS	INPUT->FRAME 평균 #MS  최소 #MS  99% #MS
+INPUT->FRAME: MOVE THE MOUSE	INPUT->FRAME: 마우스를 움직이세요
+INSERT	INSERT
+INSTAGIB	인스타깁
+INSTAGIB CROSSBOWS	인스타깁 석궁
+INSTAGIB SNIPERS	인스타깁 저격수
+INTEL	INTEL
+INTERFACE	인터페이스
+INTERMEDIATE	중급
+INTERP	보간
+INTERP # MS	보간 # MS
+INVERT Y	Y축 반전
+IOID	IOID
+IRIS	IRIS
+IS A BUILT-IN MAP: IT STAYS AS IT IS. SAVE YOUR EDITS AS YOUR OWN MAP (IN YOUR MAPS FOLDER, UNDER THIS NAME) OR DROP THEM.	은(는) 기본 제공 맵이라 변경되지 않습니다. 편집 내용을 내 맵으로 저장하거나 (내 맵 폴더에 이 이름으로) 버리세요.
+IS GODLIKE	신급입니다
+IS ON A KILLING SPREE	연속 처치 중
+IS ON A RAMPAGE	광란 중
+IS UNSTOPPABLE	아무도 못 막습니다
+IT IN MY PALETTE	내 팔레트에서
+ITS COLOURS ARE ON THE CROSSHAIR TAB	색상은 조준점 탭에 있음
+ITS STYLE	스타일
+ITS STYLE: CIRCLE	스타일: 원
+ITS STYLE: CROSS	스타일: 십자
+ITS STYLE: CROSS + DOT	스타일: 십자 + 점
+ITS STYLE: DOT	스타일: 점
+ITS STYLE: SAME AS ABOVE	스타일: 위와 동일
+ITS STYLE: T	스타일: T
+IVO	IVO
+Input	입력
+JOIN A TEAM FROM THE MENU (ESC)	메뉴(ESC)에서 팀에 참가하세요
+JOIN GAME	게임 참가
+JOIN TEAM	팀 참가
+JOIN TEAM A	A팀 참가
+JOIN TEAM B	B팀 참가
+JOIN THE GAME FROM THE MENU (ESC)	메뉴(ESC)에서 게임에 참가하세요
+JOINING + PRIVACY	참가 + 개인정보
+JOST	JOST
+JUMP	점프
+JUNE	JUNE
+KAI	KAI
+KB; OFF: A SERVER'S	KB; 끄기: 서버의
+KEEP	유지
+KEEP THESE DISPLAY SETTINGS? REVERTING IN	이 화면 설정을 유지할까요? 되돌리기까지
+KEEP YOUR EDITS AS A NEW MAP?	편집 내용을 새 맵으로 저장할까요?
+KEEP: ALL	보관: 전체
+KEEP: NEWEST 100	보관: 최근 100개
+KEEP: NEWEST 20	보관: 최근 20개
+KEEP: NEWEST 50	보관: 최근 50개
+KEEPS GPU CLOCKS HIGH: LESS LAG, MORE POWER	GPU 클럭을 높게 유지: 지연 감소, 전력 증가
+KEY	키
+KEY 1	키 1
+KEY 2	키 2
+KEY 3	키 3
+KEY OVERLAY	키 오버레이
+KEY OVERLAY (VERBOSE)	키 오버레이 (상세)
+KEYS	키
+KICK	강퇴
+KICK A PLAYER	플레이어 강퇴
+KICK BOTS	봇 강퇴
+KILL	킬
+KILL BURSTS	킬 폭발 효과
+KILL CAM TIME	킬캠 시간
+KILL FEED	킬 피드
+KILL FEED LINES	킬 피드 줄 수
+KILL FEED SECONDS	킬 피드 표시 시간(초)
+KILL MARK	킬 표시
+KILL SOUND	킬 사운드
+KILL TEXT	킬 텍스트
+KILL TEXT: "KILLED <NAME>" OVER THE CROSSHAIR	킬 텍스트: 조준점 위에 "<이름> 처치"
+KILLED	처치됨
+KILLED BY	처치자:
+KILLING SPREE	연속 처치
+KILLS	킬
+KING OF THE HILL	언덕의 왕
+KING OF THE HILL - stand on the hill with no enemy on it to score a point a second. First to 100.	언덕의 왕 - 적이 없는 언덕 위에 서 있으면 초당 1점. 100점 선취.
+KNIFE	나이프
+KNIGHT	기사
+KNIVES ONLY	나이프만
+KNIVES ONLY - QUICK DASH, 0.2 S APART	나이프만 - 빠른 대시, 0.2초 간격
+KNIVES, SYRINGES AND ORBS	나이프, 주사기, 오브
+KNOCKBACK	넉백
+KP ENTER	KP ENTER
+L ALT	L ALT
+L CTRL	L CTRL
+L SHIFT	L SHIFT
+LABEL	라벨
+LADDER	사다리
+LADDER CLIMB SPEED	사다리 오르기 속도
+LADDER SIDE SPEED	사다리 옆 이동 속도
+LADDERS (1V1, INSTAGIB FFA) - DEFAULT MODEL, HUD, CONTROLS >	래더 (1V1, 인스타기브 FFA) - 기본 모델, HUD, 조작 >
+LAND	착지
+LANGUAGE	언어
+LARGE	크게
+LASER	레이저
+LASER VAMPIRE	레이저 뱀파이어
+LASER. SCORE: DAMAGE X 10 X ACCURACY	레이저. 점수: 피해량 X 10 X 정확도
+LASER. SCORE: KILLS X 100 X ACCURACY	레이저. 점수: 킬 X 100 X 정확도
+LASERS ONLY	레이저만
+LASERS ONLY - DAMAGE YOU DEAL HEALS YOU	레이저만 - 입힌 피해만큼 회복
+LAST	최근
+LAST RUN	최근 기록
+LAST TEAM STANDING WINS	마지막까지 살아남은 팀 승리
+LAST WEAPON	이전 무기
+LATE FRAME	지연 프레임
+LATE: TEAR	지연 시: 티어링
+LATE: WAIT	지연 시: 대기
+LATENCY	지연 시간
+LATENT SAFETY	LATENT 안전 여유
+LATENT SYNC	LATENT SYNC
+LATENT SYNC: HOLD FOR THE BLANK	LATENT SYNC: 블랭크까지 대기
+LATENT SYNC: WAIT FOR THE RASTER	LATENT SYNC: 래스터 대기
+LAUNCHER ON THE RIGHT	런처를 오른쪽에
+LEADERBOARD	리더보드
+LEADERBOARD: SOON	리더보드: 곧 공개
+LEAVE	나가기
+LEAVE ALL	모두 나가기
+LEFT	왼쪽
+LEFT ARROW (PREVIOUS PAGE)	왼쪽 화살표 (이전 페이지)
+LEFT MOUSE - fire.   RIGHT MOUSE - alt-fire (scope, knife throw, rocket lob, bubble stream, syringe throw...).	마우스 왼쪽 - 사격.   마우스 오른쪽 - 보조 사격 (스코프, 나이프 투척, 로켓 곡사, 버블 분사, 주사기 투척...).
+LEFT: THE GUN ON THE LEFT, THE GRAPPLE	왼쪽: 총은 왼쪽, 그래플은
+LEGACY MAPS	레거시 맵
+LEGACY MAPS (settings > GAMEPLAY) lists the old maps from before 1.19.6 too. They are never ranked.	레거시 맵 (설정 > 게임플레이)은 1.19.6 이전의 옛 맵도 보여 줍니다. 랭크에는 쓰이지 않습니다.
+LENA	LENA
+LENGTH	길이
+LET	허용
+LG	LG
+LIBREQUAKE 8X8	LIBREQUAKE 8X8
+LIGHT	조명
+LIGHT CACHE	조명 캐시
+LIGHTHOUSE / TERRACES - team vs.   REACTORS / BRIDGE - power.   DATACENTER / MINE - bomb.   CASTLE / GLACIER / AMPHITHEATRE - king of the hill.	LIGHTHOUSE / TERRACES - 팀 대전.   REACTORS / BRIDGE - 파워.   DATACENTER / MINE - 폭탄.   CASTLE / GLACIER / AMPHITHEATRE - 언덕의 왕.
+LIGHTMAP FILTER	라이트맵 필터
+LIGHTMAP: NEAREST	라이트맵: 최근접
+LIGHTMAP: SMOOTH	라이트맵: 부드럽게
+LILITA ONE	LILITA ONE
+LINE	선
+LINE: ENEMIES	선: 적
+LINE: FPS	줄: FPS
+LINE: FPS MIN	줄: FPS 최저
+LINE: K / D	줄: K / D
+LINE: LOSS	줄: 손실
+LINE: MAP	줄: 맵
+LINE: MODE	줄: 모드
+LINE: PING	줄: PING
+LINE: SPEED	줄: 속도
+LINE: TEAMMATES	줄: 팀원
+LINE: TICK / SNAP	줄: 틱 / 스냅
+LINE: TIME	줄: 시간
+LINE: TIME LEFT	줄: 남은 시간
+LINE: VERSION	줄: 버전
+LINES #-# OF # - WHEEL TO SCROLL	#-#줄 / # - 휠로 스크롤
+LINK	연동
+LINUX (X11): THE DESKTOP'S COMPOSITOR STEPS	LINUX (X11): 데스크톱 컴포지터가 개입
+LIQUIDS	액체
+LIQUIDS FLOW	액체 흐름
+LMB	LMB
+LOAD	불러오기
+LOAD POS	위치 불러오기
+LOAD POSITION	위치 불러오기
+LOADING...	불러오는 중...
+LOCATOR	탐지기
+LOCATOR (hide and seek and tag: the seeker's / tagger's second weapon, key 0) - fire it to see one random hider / runner through walls for a second; it recharges in 5 s. Everyone else hears its ping from where you stand.	탐지기 (숨바꼭질 및 태그: 술래의 보조 무기, 키 0) - 발사하면 무작위 숨은 플레이어 / 도망자 한 명이 1초간 벽 너머로 보입니다; 5초 후 재충전. 다른 모든 플레이어는 당신의 위치에서 나는 핑 소리를 듣습니다.
+LOCATOR READY	탐지기 준비됨
+LOGIC:	로직:
+LOGO + YOUR BOTS	로고 + 내 봇
+LOOK	외형
+LOOKS INTEGRATED: IF THERE'S A DEDICATED GPU,	내장 그래픽으로 보임: 외장 GPU가 있다면,
+LOSS	손실
+LOSS #%	손실 #%
+LOW AT	낮음 기준
+LOW COLOR	낮음 색상
+LOW COLOR (EMPTY)	낮음 색상 (빈 칸)
+LOW HEALTH	체력 낮음
+LOW HEALTH BELOW	체력 낮음 기준
+LOW HEALTH COLOR	체력 낮음 색상
+LOW LATENCY	저지연
+LOW LATENCY: OFF	저지연: 끄기
+LOW LATENCY: ON	저지연: 켜기
+LOW LATENCY: ULTRA	저지연: 울트라
+LOW LATENCY: ULTRA STARTS EACH FRAME THIS EARLY;	저지연: 울트라는 각 프레임을 이만큼 일찍 시작;
+LOWER RATES: LESS CPU AND UPLOAD	낮은 빈도: CPU 및 업로드 감소
+LOWER: SLOWER WHILE SCOPED	낮을수록: 스코프 중 더 느림
+MAGENTA	자홍
+MAKE	만들기
+MALE	남성
+MAP	맵
+MAP / MODE / MODIFIERS	맵 / 모드 / 변형
+MAP COLOR	맵 색상
+MAP COLORS	맵 색상
+MAP DOWNLOADS	맵 다운로드
+MAP EDITOR	맵 에디터
+MAP EDITOR *	맵 에디터 *
+MAP YOU DON'T HAVE ENDS THE CONNECTION	없는 맵이면 연결 종료
+MAP:	맵:
+MAP: NONE	맵: 없음
+MAPS	맵
+MAPS FOLDER	맵 폴더
+MAPS KEPT	맵 유지됨
+MAPS MARKED "NOT FOR THIS MODE" MAY NOT WORK IN IT	"이 모드용 아님" 표시된 맵은 해당 모드에서 작동하지 않을 수 있음
+MARK COLOR	표시 색상
+MARK TIME	표시 시간
+MARKER OPACITY	마커 불투명도
+MARKER SIZE	마커 크기
+MAT4	MAT4
+MATCH	경기
+MATCH OVER	경기 종료
+MATCH START	경기 시작
+MATCH STARTS IN #	#초 후 경기 시작
+MATCH SUMMARY	경기 요약
+MATERIAL	재질
+MATERIAL (M)	재질 (M)
+MATERIAL: ACCENT	재질: 강조
+MATERIAL: ACID (HURTS)	재질: 산성 (피해)
+MATERIAL: ACID-ETCHED METAL	재질: 산 부식 금속
+MATERIAL: AIRCRAFT SKIN	재질: 항공기 외판
+MATERIAL: AIRCRAFT WRECKAGE	재질: 항공기 잔해
+MATERIAL: ALIEN BIOMASS	재질: 외계 생체 조직
+MATERIAL: ALUMINIUM TREAD PLATE	재질: 알루미늄 줄무늬 철판
+MATERIAL: AMBER	재질: 호박
+MATERIAL: AMBER GLASS	재질: 호박색 유리
+MATERIAL: ANODIZED BLACK	재질: 검정 아노다이징
+MATERIAL: ASH DUNES	재질: 화산재 사구
+MATERIAL: ASPHALT (FAST)	재질: 아스팔트 (빠름)
+MATERIAL: ASTROTURF	재질: 인조 잔디
+MATERIAL: AUTUMN LEAVES	재질: 가을 낙엽
+MATERIAL: BADLANDS	재질: 황무지
+MATERIAL: BALL WALL (STOPS ONLY THE BALL)	재질: 볼 벽 (공만 막음)
+MATERIAL: BAMBOO	재질: 대나무
+MATERIAL: BAMBOO FENCE	재질: 대나무 울타리
+MATERIAL: BANDED IRON	재질: 띠 철판
+MATERIAL: BAR GRATING	재질: 철망 격자
+MATERIAL: BARNACLES	재질: 따개비
+MATERIAL: BARRICADE	재질: 바리케이드
+MATERIAL: BASALT COLUMNS	재질: 주상절리
+MATERIAL: BASE	재질: 기본
+MATERIAL: BASKET-WEAVE BRICK	재질: 바구니 짜임 벽돌
+MATERIAL: BASKET-WEAVE PARQUET	재질: 바구니 짜임 마루
+MATERIAL: BATHROOM MINT	재질: 욕실 민트
+MATERIAL: BATTERED YELLOW PAINT	재질: 낡은 노란 페인트
+MATERIAL: BEETLE-CARVED WOOD	재질: 딱정벌레 조각 목재
+MATERIAL: BENT REBAR BUNDLE	재질: 휜 철근 다발
+MATERIAL: BIO-SLUDGE DRAIN	재질: 생물 오물 배수구
+MATERIAL: BIRCH BARK	재질: 자작나무 껍질
+MATERIAL: BIRD-SPOTTED ROOF	재질: 새똥 지붕
+MATERIAL: BLACK BASALT BLOCKS	재질: 검은 현무암 블록
+MATERIAL: BLACK BRICK	재질: 검은 벽돌
+MATERIAL: BLACK SAND	재질: 검은 모래
+MATERIAL: BLACK SQUARE TILE	재질: 검은 정사각 타일
+MATERIAL: BLEACHED BONES	재질: 표백된 뼈
+MATERIAL: BLISTERED PAINT	재질: 들뜬 페인트
+MATERIAL: BLOOD POOL	재질: 피 웅덩이
+MATERIAL: BLUE ENGINEERING BRICK	재질: 파란 엔지니어링 벽돌
+MATERIAL: BLUE POOL TILE	재질: 파란 수영장 타일
+MATERIAL: BLUE TINTED GLASS	재질: 파란 착색 유리
+MATERIAL: BLUED STEEL	재질: 청강
+MATERIAL: BOARD-FORMED CONCRETE	재질: 송판 노출 콘크리트
+MATERIAL: BOILER PLATE	재질: 보일러 판
+MATERIAL: BOLTED ACCESS PANELS	재질: 볼트 점검 패널
+MATERIAL: BONE	재질: 뼈
+MATERIAL: BONE-DRY WOOD	재질: 바싹 마른 목재
+MATERIAL: BOTTLE GREEN GLASS	재질: 병 초록 유리
+MATERIAL: BOULDER FIELD	재질: 바위 지대
+MATERIAL: BRASS	재질: 황동
+MATERIAL: BREAKABLE BRICK (THIN: BLOWS OPEN)	재질: 파괴 가능 벽돌 (얇음: 폭발로 뚫림)
+MATERIAL: BREAKABLE COBBLESTONE (THIN: BLOWS OPEN)	재질: 파괴 가능 자갈돌 (얇음: 폭발로 뚫림)
+MATERIAL: BREAKABLE GLASS	재질: 파괴 가능 유리
+MATERIAL: BREEZE-BLOCK SCREEN	재질: 시멘트 블록 가림막
+MATERIAL: BRICK	재질: 벽돌
+MATERIAL: BRIDGE GIRDER	재질: 교량 거더
+MATERIAL: BRONZE	재질: 청동
+MATERIAL: BROOM-FINISHED	재질: 빗자루 마감
+MATERIAL: BROWN RUSTIC BRICK	재질: 갈색 시골풍 벽돌
+MATERIAL: BUBBLING TAR	재질: 끓는 타르
+MATERIAL: BULLET-POCKED WALL	재질: 총탄 자국 벽
+MATERIAL: BURNT BRICK	재질: 그을린 벽돌
+MATERIAL: BURNT-OUT RUIN WALL	재질: 불탄 폐허 벽
+MATERIAL: BUSH-HAMMERED	재질: 부시 해머 마감
+MATERIAL: CACTUS	재질: 선인장
+MATERIAL: CALICHE	재질: 칼리치
+MATERIAL: CAMOUFLAGE	재질: 위장 무늬
+MATERIAL: CARBON FIBRE	재질: 탄소 섬유
+MATERIAL: CARDBOARD	재질: 골판지
+MATERIAL: CARDBOARD BOXES	재질: 종이 상자
+MATERIAL: CARGO NET	재질: 화물망
+MATERIAL: CAST IRON	재질: 주철
+MATERIAL: CAST-IN-PLACE WALLS	재질: 현장 타설 벽
+MATERIAL: CASTLE STONE	재질: 성벽 돌
+MATERIAL: CERAMIC TILE WALL	재질: 세라믹 타일 벽
+MATERIAL: CHAIN HEAP	재질: 사슬 더미
+MATERIAL: CHAIN-LINK FENCE	재질: 철망 울타리
+MATERIAL: CHAIN-LINK MESH	재질: 철망
+MATERIAL: CHALK	재질: 분필
+MATERIAL: CHARCOAL FLOOR	재질: 숯 바닥
+MATERIAL: CHARRED TIMBER	재질: 숯이 된 목재
+MATERIAL: CHECKERBOARD TILE	재질: 체크무늬 타일
+MATERIAL: CHECKPOINT GATE	재질: 체크포인트 게이트
+MATERIAL: CHIPBOARD	재질: 파티클보드
+MATERIAL: CHIPPED PAINT	재질: 벗겨진 페인트
+MATERIAL: CHROME	재질: 크롬
+MATERIAL: CINDER BLOCK	재질: 시멘트 블록
+MATERIAL: CINDER BLOCK WALL	재질: 시멘트 블록 벽
+MATERIAL: CIRCUIT	재질: 회로
+MATERIAL: CLEAR LAGOON	재질: 맑은 석호
+MATERIAL: CLINKER BRICK	재질: 클링커 벽돌
+MATERIAL: CLIP (INVISIBLE WALL)	재질: 클립 (보이지 않는 벽)
+MATERIAL: CLOUD	재질: 구름
+MATERIAL: CLOVER	재질: 클로버
+MATERIAL: COBBLED SETTS	재질: 사각 포석
+MATERIAL: COBBLESTONE	재질: 자갈돌
+MATERIAL: COBWEBS	재질: 거미줄
+MATERIAL: COIN RUBBER FLOOR	재질: 동전무늬 고무 바닥
+MATERIAL: COLLAPSED BRICK	재질: 무너진 벽돌
+MATERIAL: CONCRETE	재질: 콘크리트
+MATERIAL: CONCRETE PAVERS	재질: 콘크리트 보도블록
+MATERIAL: CONCRETE ROOF TILES	재질: 콘크리트 기와
+MATERIAL: CONGLOMERATE	재질: 역암
+MATERIAL: CONTAMINATED SOIL	재질: 오염된 토양
+MATERIAL: CONTROL PANEL	재질: 제어판
+MATERIAL: COOLANT	재질: 냉각수
+MATERIAL: COOLED MAGMA	재질: 식은 마그마
+MATERIAL: COPPER AND PATINA	재질: 구리와 녹청
+MATERIAL: CORAL	재질: 산호
+MATERIAL: CORK	재질: 코르크
+MATERIAL: CORRODED COPPER ROOF	재질: 부식된 구리 지붕
+MATERIAL: CORRUGATED METAL	재질: 골함석
+MATERIAL: CRACKED EARTH	재질: 갈라진 땅
+MATERIAL: CRACKED SLAB	재질: 금 간 슬래브
+MATERIAL: CRACKLE GLAZE TILE	재질: 빙렬 유약 타일
+MATERIAL: CRATE WOOD	재질: 상자 목재
+MATERIAL: CREAM BRICK	재질: 크림색 벽돌
+MATERIAL: CROSS-BEDDED SANDSTONE	재질: 사층리 사암
+MATERIAL: CRUMBLE PLATFORM	재질: 무너지는 발판
+MATERIAL: CRUMBLING PLASTER	재질: 부서지는 회반죽
+MATERIAL: CRYSTAL	재질: 수정
+MATERIAL: CRYSTAL CLUSTER	재질: 수정 군집
+MATERIAL: DAMASCUS STEEL	재질: 다마스커스 강
+MATERIAL: DARK CONCRETE	재질: 어두운 콘크리트
+MATERIAL: DATA RAIN	재질: 데이터 비
+MATERIAL: DEAD FOREST FLOOR	재질: 죽은 숲 바닥
+MATERIAL: DEEP OCEAN	재질: 심해
+MATERIAL: DENTED STEEL	재질: 찌그러진 강철
+MATERIAL: DESERT CRUST	재질: 사막 지각
+MATERIAL: DESERT PAVEMENT	재질: 사막 포도
+MATERIAL: DESERT VARNISH	재질: 사막 칠
+MATERIAL: DEWY GRASS	재질: 이슬 맺힌 풀
+MATERIAL: DIAGONAL SETTS	재질: 대각선 포석
+MATERIAL: DIAGONAL TILE	재질: 대각선 타일
+MATERIAL: DIAMOND PLATE	재질: 체크 플레이트
+MATERIAL: DIAPER BRICK	재질: 마름모 무늬 벽돌
+MATERIAL: DIRT	재질: 흙
+MATERIAL: DRIED BLOOD EARTH	재질: 피 마른 흙
+MATERIAL: DRIED RIVERBED	재질: 마른 강바닥
+MATERIAL: DRY-STONE WALL	재질: 돌담
+MATERIAL: DRYWALL	재질: 석고보드
+MATERIAL: DUST STORM HAZE	재질: 모래폭풍 안개
+MATERIAL: DUSTY GLASS	재질: 먼지 낀 유리
+MATERIAL: DUSTY LINOLEUM	재질: 먼지 낀 리놀륨
+MATERIAL: EFFLORESCENT BRICK	재질: 백화 벽돌
+MATERIAL: ELECTRICAL CABINET	재질: 전기 캐비닛
+MATERIAL: ELECTROPLATED NICKEL	재질: 니켈 도금
+MATERIAL: EMBER BED	재질: 불씨 바닥
+MATERIAL: ENCAUSTIC TILE	재질: 엔코스틱 타일
+MATERIAL: ENGINE BLOCK	재질: 엔진 블록
+MATERIAL: ENGINE-TURNED STEEL	재질: 기요셰 강철
+MATERIAL: ENGLISH BOND	재질: 영국식 쌓기
+MATERIAL: EPOXY FLOOR	재질: 에폭시 바닥
+MATERIAL: EXPANDED METAL	재질: 익스팬디드 메탈
+MATERIAL: EXPOSED AGGREGATE	재질: 노출 골재
+MATERIAL: EXPOSED REBAR	재질: 노출 철근
+MATERIAL: FAR	재질: 원거리
+MATERIAL: FEATHERS	재질: 깃털
+MATERIAL: FERNS	재질: 고사리
+MATERIAL: FIBRE CEMENT BOARD	재질: 섬유 시멘트 보드
+MATERIAL: FIBREGLASS GRATING	재질: 유리섬유 격자
+MATERIAL: FIRE BRICK	재질: 내화 벽돌
+MATERIAL: FIRE-CRACKED EARTH	재질: 불에 갈라진 땅
+MATERIAL: FISH-SCALE TILE	재질: 비늘 타일
+MATERIAL: FIZZING SODA	재질: 탄산수
+MATERIAL: FLAGSTONE PAVING	재질: 판석 포장
+MATERIAL: FLEMISH BOND	재질: 플랑드르식 쌓기
+MATERIAL: FLINT	재질: 부싯돌
+MATERIAL: FLINT AND BRICK	재질: 부싯돌과 벽돌
+MATERIAL: FLOWER MEADOW	재질: 꽃밭
+MATERIAL: FLOWSTONE	재질: 유석
+MATERIAL: FLUSH POINTED BRICK	재질: 평줄눈 벽돌
+MATERIAL: FORCE FIELD	재질: 역장
+MATERIAL: FOREST FLOOR	재질: 숲 바닥
+MATERIAL: FRESH GREY CONCRETE	재질: 새 회색 콘크리트
+MATERIAL: FRIDGE GRAVEYARD	재질: 냉장고 무덤
+MATERIAL: FROST	재질: 서리
+MATERIAL: FROSTED GLASS	재질: 불투명 유리
+MATERIAL: FROSTED PLANKS	재질: 서리 낀 판자
+MATERIAL: FROZEN MUD	재질: 언 진흙
+MATERIAL: FROZEN WATERFALL	재질: 언 폭포
+MATERIAL: FUMAROLE CRUST	재질: 분기공 지각
+MATERIAL: FUR	재질: 털
+MATERIAL: FURNACE GLOW	재질: 용광로 불빛
+MATERIAL: GABBRO BLOCKS	재질: 반려암 블록
+MATERIAL: GABION WALL	재질: 개비온 벽
+MATERIAL: GALVANIZED GRATING	재질: 아연도금 격자
+MATERIAL: GALVANIZED STEEL	재질: 아연도금 강철
+MATERIAL: GAUGE CLUSTER	재질: 계기판
+MATERIAL: GEODE	재질: 정동석
+MATERIAL: GHOST GLASS	재질: 유령 유리
+MATERIAL: GLACIER ICE	재질: 빙하 얼음
+MATERIAL: GLACIER-POLISHED GRANITE	재질: 빙하에 깎인 화강암
+MATERIAL: GLASS	재질: 유리
+MATERIAL: GLASS BLOCK	재질: 유리 블록
+MATERIAL: GLASS BOTTLES	재질: 유리병
+MATERIAL: GLAZED BRICK	재질: 유약 벽돌
+MATERIAL: GLOW	재질: 발광
+MATERIAL: GLOWING ALGAE	재질: 빛나는 조류
+MATERIAL: GLOWING FISSURES	재질: 빛나는 균열
+MATERIAL: GLOWING TIDE	재질: 빛나는 파도
+MATERIAL: GLOWWORM CAVE	재질: 반딧불이 동굴
+MATERIAL: GNEISS	재질: 편마암
+MATERIAL: GOLD	재질: 금
+MATERIAL: GRAFFITI-BUFFED WALL	재질: 낙서 지운 벽
+MATERIAL: GRANITE BLOCKS	재질: 화강암 블록
+MATERIAL: GRANITE ROCK	재질: 화강암
+MATERIAL: GRASS	재질: 풀
+MATERIAL: GRAVEL	재질: 자갈
+MATERIAL: GRAVITY FLIP	재질: 중력 반전
+MATERIAL: GREASE-STAINED METAL	재질: 기름때 금속
+MATERIAL: GREEN GEL	재질: 초록 젤
+MATERIAL: GREEN SUBWAY TILE	재질: 초록 지하철 타일
+MATERIAL: GRID-SCORED SLAB	재질: 격자 홈 슬래브
+MATERIAL: GROUND-FACE BLOCK	재질: 연마 블록
+MATERIAL: GUNMETAL	재질: 건메탈
+MATERIAL: GUTTED MACHINERY	재질: 뜯겨진 기계
+MATERIAL: GYM RUBBER TILE	재질: 체육관 고무 타일
+MATERIAL: HAIL	재질: 우박
+MATERIAL: HAMMERED COPPER	재질: 망치 두드림 구리
+MATERIAL: HARDPAN	재질: 경반층
+MATERIAL: HAY	재질: 건초
+MATERIAL: HAY BALES	재질: 건초 더미
+MATERIAL: HAZARD STRIPES	재질: 위험 줄무늬
+MATERIAL: HAZMAT TARP	재질: 방호 방수포
+MATERIAL: HEALING TILE	재질: 회복 타일
+MATERIAL: HEAT VENTS	재질: 열 배출구
+MATERIAL: HEAT-TINTED TITANIUM	재질: 열 변색 티타늄
+MATERIAL: HEAVY SCALE RUST	재질: 두꺼운 녹
+MATERIAL: HEDGE	재질: 산울타리
+MATERIAL: HERRINGBONE BRICK	재질: 헤링본 벽돌
+MATERIAL: HERRINGBONE TILE	재질: 헤링본 타일
+MATERIAL: HEX BOLT GRID	재질: 육각 볼트 격자
+MATERIAL: HEX FLOOR TILES	재질: 육각 바닥 타일
+MATERIAL: HEX FORCE FIELD	재질: 육각 역장
+MATERIAL: HEX TILE TERRACOTTA	재질: 육각 테라코타 타일
+MATERIAL: HEX TILE WHITE	재질: 흰색 육각 타일
+MATERIAL: HOLOGRAM PANEL	재질: 홀로그램 패널
+MATERIAL: HONEY	재질: 꿀
+MATERIAL: HONEYCOMB	재질: 벌집
+MATERIAL: HOSPITAL TILE	재질: 병원 타일
+MATERIAL: HOT SPRING	재질: 온천
+MATERIAL: HUGE BRICK	재질: 거대 벽돌
+MATERIAL: HUGE COBBLES	재질: 거대 자갈
+MATERIAL: HUGE PLANKS	재질: 거대 판자
+MATERIAL: HUGE STONE	재질: 거대 석재
+MATERIAL: HUGE TILE	재질: 거대 타일
+MATERIAL: ICE (SLIPPERY)	재질: 얼음 (미끄러움)
+MATERIAL: ICE CAVE	재질: 얼음 동굴
+MATERIAL: ICE SLUSH	재질: 진창 얼음
+MATERIAL: ICE WALL	재질: 얼음 벽
+MATERIAL: ICICLES	재질: 고드름
+MATERIAL: INDUSTRIAL TILES	재질: 산업용 타일
+MATERIAL: INK	재질: 잉크
+MATERIAL: INSULATED PANEL	재질: 단열 패널
+MATERIAL: INTERLOCKING RUBBER TILES	재질: 조립식 고무 타일
+MATERIAL: IRRADIATED GLASS	재질: 방사능 유리
+MATERIAL: IVY ON BRICK	재질: 담쟁이 벽돌
+MATERIAL: JADE	재질: 옥
+MATERIAL: JASPER	재질: 벽옥
+MATERIAL: JELLY CUBE	재질: 젤리 큐브
+MATERIAL: JUNGLE LEAVES	재질: 정글 잎
+MATERIAL: KELP	재질: 다시마
+MATERIAL: KERB STONES	재질: 연석
+MATERIAL: LAKE ICE	재질: 호수 얼음
+MATERIAL: LARGE BASKET-WEAVE BRICK	재질: 큰 바구니 짜임 벽돌
+MATERIAL: LARGE BASKET-WEAVE PARQUET	재질: 큰 바구니 짜임 마루
+MATERIAL: LARGE BRICK	재질: 큰 벽돌
+MATERIAL: LARGE CASTLE STONE	재질: 큰 성벽 돌
+MATERIAL: LARGE CHECKERBOARD TILE	재질: 큰 체크무늬 타일
+MATERIAL: LARGE COBBLED SETTS	재질: 큰 사각 포석
+MATERIAL: LARGE COBBLES	재질: 큰 자갈
+MATERIAL: LARGE CRATE WOOD	재질: 큰 상자 목재
+MATERIAL: LARGE DIAGONAL SETTS	재질: 큰 대각선 포석
+MATERIAL: LARGE DRY-STONE WALL	재질: 큰 돌담
+MATERIAL: LARGE FLAGSTONE PAVING	재질: 큰 판석 포장
+MATERIAL: LARGE FORMAT PORCELAIN	재질: 대형 포세린
+MATERIAL: LARGE FROSTED PLANKS	재질: 큰 서리 낀 판자
+MATERIAL: LARGE GRANITE BLOCKS	재질: 큰 화강암 블록
+MATERIAL: LARGE HERRINGBONE BRICK	재질: 큰 헤링본 벽돌
+MATERIAL: LARGE HERRINGBONE TILE	재질: 큰 헤링본 타일
+MATERIAL: LARGE HEX TILE, TERRACOTTA	재질: 큰 육각 타일, 테라코타
+MATERIAL: LARGE KERB STONES	재질: 큰 연석
+MATERIAL: LARGE LIMESTONE ASHLAR	재질: 큰 석회암 마름돌
+MATERIAL: LARGE LOG CABIN	재질: 큰 통나무집
+MATERIAL: LARGE LONDON STOCK	재질: 큰 런던 스톡 벽돌
+MATERIAL: LARGE MOSSY STONE BLOCKS	재질: 큰 이끼 낀 석재 블록
+MATERIAL: LARGE POLYGONAL STONE	재질: 큰 다각형 석재
+MATERIAL: LARGE RANDOM ASHLAR	재질: 큰 막쌓기 마름돌
+MATERIAL: LARGE RED ENGINEERING BRICK	재질: 큰 빨간 엔지니어링 벽돌
+MATERIAL: LARGE RIVER STONE WALL	재질: 큰 강돌 벽
+MATERIAL: LARGE SANDSTONE ASHLAR	재질: 큰 사암 마름돌
+MATERIAL: LARGE SCAFFOLD BOARDS	재질: 큰 비계 발판
+MATERIAL: LARGE SLATE TILE	재질: 큰 슬레이트 타일
+MATERIAL: LARGE STONE	재질: 큰 석재
+MATERIAL: LARGE SUBWAY TILE	재질: 큰 지하철 타일
+MATERIAL: LARGE TEMPLE STONE	재질: 큰 신전 석재
+MATERIAL: LARGE TILE	재질: 큰 타일
+MATERIAL: LARGE TRAVERTINE TILE	재질: 큰 트래버틴 타일
+MATERIAL: LARGE WHITE SQUARE TILE	재질: 큰 흰색 정사각 타일
+MATERIAL: LATH AND PLASTER	재질: 졸대와 회반죽
+MATERIAL: LAVA (KILLS)	재질: 용암 (즉사)
+MATERIAL: LEAD SHEET	재질: 납판
+MATERIAL: LEAN-TO CANVAS	재질: 천막 캔버스
+MATERIAL: LICHEN ROCK	재질: 이끼 바위
+MATERIAL: LICHEN-CRUSTED STONE	재질: 지의류 덮인 돌
+MATERIAL: LIGHT BLOCK	재질: 조명 블록
+MATERIAL: LIGHTWEIGHT FOAM BLOCK	재질: 경량 폼 블록
+MATERIAL: LILY PADS	재질: 연잎
+MATERIAL: LIMESTONE	재질: 석회암
+MATERIAL: LIMESTONE ASHLAR	재질: 석회암 마름돌
+MATERIAL: LINOLEUM	재질: 리놀륨
+MATERIAL: LIQUID VOID	재질: 액체 공허
+MATERIAL: LOADING DOCK FLOOR	재질: 하역장 바닥
+MATERIAL: LOCKER DOORS	재질: 사물함 문
+MATERIAL: LOG CABIN	재질: 통나무집
+MATERIAL: LOG END GRAIN	재질: 통나무 단면
+MATERIAL: LONDON STOCK	재질: 런던 스톡 벽돌
+MATERIAL: LOW GRAVITY FIELD	재질: 저중력 지대
+MATERIAL: MAGMA RIVER	재질: 마그마 강
+MATERIAL: MALACHITE	재질: 공작석
+MATERIAL: MANHOLE COVERS	재질: 맨홀 뚜껑
+MATERIAL: MARBLE	재질: 대리석
+MATERIAL: MARBLE BLOCKS	재질: 대리석 블록
+MATERIAL: MELTED PLASTIC	재질: 녹은 플라스틱
+MATERIAL: MERCURY	재질: 수은
+MATERIAL: MESH CATWALK	재질: 철망 통로
+MATERIAL: METAL	재질: 금속
+MATERIAL: MICA SCHIST	재질: 운모 편암
+MATERIAL: MILL SCALE	재질: 밀 스케일
+MATERIAL: MIRROR	재질: 거울
+MATERIAL: MIRROR TILE	재질: 거울 타일
+MATERIAL: MOLTEN GOLD	재질: 녹은 금
+MATERIAL: MOLTEN SLAG	재질: 녹은 슬래그
+MATERIAL: MOROCCAN ZELLIGE	재질: 모로코 젤리주
+MATERIAL: MOSAIC SPECKLE	재질: 모자이크 반점
+MATERIAL: MOSS CARPET	재질: 이끼 카펫
+MATERIAL: MOSSY BRICK	재질: 이끼 낀 벽돌
+MATERIAL: MOSSY STONE	재질: 이끼 낀 돌
+MATERIAL: MOSSY STONE BLOCKS	재질: 이끼 낀 석재 블록
+MATERIAL: MOTHER OF PEARL	재질: 자개
+MATERIAL: MOULD BLOOM	재질: 곰팡이 꽃
+MATERIAL: MUD (STICKY)	재질: 진흙 (끈적임)
+MATERIAL: MUD AND STRAW DAUB	재질: 진흙 짚 회벽
+MATERIAL: MUD BATH	재질: 진흙탕
+MATERIAL: MUSHROOM GILLS	재질: 버섯 주름
+MATERIAL: MUSSEL BED	재질: 홍합 밭
+MATERIAL: MUTANT GROWTH	재질: 변이 생장물
+MATERIAL: MYCELIUM	재질: 균사체
+MATERIAL: NEON MAZE	재질: 네온 미로
+MATERIAL: NEWSPAPER	재질: 신문지
+MATERIAL: NOGRAPPLE (NO GRAPPLE)	재질: NOGRAPPLE (그래플 불가)
+MATERIAL: OBSIDIAN	재질: 흑요석
+MATERIAL: OCHRE EARTH	재질: 황토
+MATERIAL: OFFICE CARPET TILES	재질: 사무실 카펫 타일
+MATERIAL: OIL SLICK	재질: 기름 막
+MATERIAL: OIL-STAINED CONCRETE	재질: 기름 얼룩 콘크리트
+MATERIAL: OILY WATER	재질: 기름 섞인 물
+MATERIAL: OPAL	재질: 오팔
+MATERIAL: ORANGE WIRE-CUT	재질: 주황 와이어컷 벽돌
+MATERIAL: OXIDIZED STEEL	재질: 산화 강철
+MATERIAL: PAINTED BRICK	재질: 칠한 벽돌
+MATERIAL: PAINTED CONCRETE STRIPES	재질: 콘크리트 페인트 줄무늬
+MATERIAL: PAINTED DRYWALL	재질: 칠한 석고보드
+MATERIAL: PAINTED RED BRICK	재질: 칠한 빨간 벽돌
+MATERIAL: PALLET STACK	재질: 팔레트 더미
+MATERIAL: PALM TRUNK	재질: 야자나무 줄기
+MATERIAL: PAPER SCREEN	재질: 종이 가림막
+MATERIAL: PARKING BAY LINES	재질: 주차 구획선
+MATERIAL: PEAT	재질: 이탄
+MATERIAL: PEELING GREEN PAINT	재질: 벗겨지는 초록 페인트
+MATERIAL: PEELING WALLPAPER	재질: 벗겨지는 벽지
+MATERIAL: PENNY ROUND TILE	재질: 원형 페니 타일
+MATERIAL: PERFORATED METAL	재질: 타공 금속
+MATERIAL: PETRIFIED WOOD	재질: 규화목
+MATERIAL: PEWTER	재질: 백랍
+MATERIAL: PICKET FENCE	재질: 말뚝 울타리
+MATERIAL: PINE BARK	재질: 소나무 껍질
+MATERIAL: PINE BOUGHS	재질: 소나무 가지
+MATERIAL: PINK BRICK	재질: 분홍 벽돌
+MATERIAL: PINK GRANITE	재질: 분홍 화강암
+MATERIAL: PINK SLIME	재질: 분홍 슬라임
+MATERIAL: PLASMA POOL	재질: 플라스마 웅덩이
+MATERIAL: PLASTIC	재질: 플라스틱
+MATERIAL: PLYWOOD BOARD-UP	재질: 합판 가림막
+MATERIAL: POLISHED CONCRETE	재질: 광택 콘크리트
+MATERIAL: POLISHED GRANITE	재질: 광택 화강암
+MATERIAL: POLYCHROME BRICK	재질: 다색 벽돌
+MATERIAL: POLYGONAL STONE	재질: 다각형 석재
+MATERIAL: POOL TABLE FELT	재질: 당구대 펠트
+MATERIAL: POWDER-COAT GREEN	재질: 초록 분체 도장
+MATERIAL: POWDER-COAT YELLOW	재질: 노랑 분체 도장
+MATERIAL: PRECAST CONCRETE	재질: 프리캐스트 콘크리트
+MATERIAL: PRESSED TIN CEILING	재질: 양철 프레스 천장
+MATERIAL: PRISM GLASS	재질: 프리즘 유리
+MATERIAL: PUDDLED GROUND	재질: 물웅덩이 땅
+MATERIAL: PUMICE	재질: 부석
+MATERIAL: QUARRY TILE	재질: 쿼리 타일
+MATERIAL: QUARTZ CRYSTAL	재질: 석영 결정
+MATERIAL: QUARTZ CRYSTALS	재질: 석영 결정들
+MATERIAL: QUARTZITE	재질: 규암
+MATERIAL: QUICKSAND	재질: 유사
+MATERIAL: QUICKSAND (LIQUIDS)	재질: 유사 (액체)
+MATERIAL: QUILTED LEATHER	재질: 퀼팅 가죽
+MATERIAL: QUILTED STAINLESS	재질: 퀼팅 스테인리스
+MATERIAL: RADIATION WARNING	재질: 방사능 경고
+MATERIAL: RADIATOR FINS	재질: 라디에이터 핀
+MATERIAL: RADIOACTIVE PUDDLES	재질: 방사능 웅덩이
+MATERIAL: RAIL TRACK	재질: 철로
+MATERIAL: RAILWAY SLEEPERS	재질: 철도 침목
+MATERIAL: RAIN WINDOW	재질: 빗물 창
+MATERIAL: RAIN-WET PAVING	재질: 비에 젖은 포장
+MATERIAL: RAISED ACCESS FLOOR	재질: 이중 바닥
+MATERIAL: RANDOM ASHLAR	재질: 막쌓기 마름돌
+MATERIAL: RECESSED JOINTS	재질: 오목 줄눈
+MATERIAL: RECLAIMED BRICK	재질: 재활용 벽돌
+MATERIAL: RED CANYON ROCK	재질: 붉은 협곡 바위
+MATERIAL: RED CLAY	재질: 붉은 점토
+MATERIAL: RED DESERT SOIL	재질: 붉은 사막 토양
+MATERIAL: RED DUNES	재질: 붉은 사구
+MATERIAL: RED ENGINEERING BRICK	재질: 빨간 엔지니어링 벽돌
+MATERIAL: RED LASER BARRIER	재질: 빨간 레이저 장벽
+MATERIAL: RED SANDSTONE	재질: 붉은 사암
+MATERIAL: REEDED GLASS	재질: 골무늬 유리
+MATERIAL: REEDS	재질: 갈대
+MATERIAL: RETAINING WALL BLOCKS	재질: 옹벽 블록
+MATERIAL: RIBBED CONCRETE	재질: 리브 콘크리트
+MATERIAL: RIPPLE SAND	재질: 물결무늬 모래
+MATERIAL: RIVER PEBBLES	재질: 강 자갈
+MATERIAL: RIVER STONE WALL	재질: 강돌 벽
+MATERIAL: RIVERBANK CLAY	재질: 강둑 점토
+MATERIAL: RIVETED PLATES	재질: 리벳 철판
+MATERIAL: ROAD MARKINGS	재질: 도로 표시
+MATERIAL: ROCK SALT	재질: 암염
+MATERIAL: ROLLER SHUTTER	재질: 롤러 셔터
+MATERIAL: ROMAN BRICK	재질: 로마 벽돌
+MATERIAL: ROOF SHINGLES	재질: 지붕널
+MATERIAL: ROOTY LOAM	재질: 뿌리 많은 양토
+MATERIAL: ROPY LAVA ROCK	재질: 새끼줄 용암
+MATERIAL: ROTTEN PLANKS	재질: 썩은 판자
+MATERIAL: ROTTING WOOD	재질: 썩어가는 목재
+MATERIAL: RUBBER (BOUNCY)	재질: 고무 (튕김)
+MATERIAL: RUBBLE PILE	재질: 잔해 더미
+MATERIAL: RUBBLE WALL	재질: 잡석 벽
+MATERIAL: RUINED PARQUET	재질: 망가진 마루
+MATERIAL: RUST	재질: 녹
+MATERIAL: RUST DUNES	재질: 녹 사구
+MATERIAL: RUST STREAKS	재질: 녹 줄무늬
+MATERIAL: RUSTED SHEET	재질: 녹슨 철판
+MATERIAL: RUSTED SHEET FENCE	재질: 녹슨 철판 울타리
+MATERIAL: RUSTIC RANDOM ASHLAR	재질: 시골풍 막쌓기 마름돌
+MATERIAL: RUSTICATED BLOCKS	재질: 러스티케이션 블록
+MATERIAL: RUTTED DIRT ROAD	재질: 바퀴 자국 흙길
+MATERIAL: SALT FLAT	재질: 소금 평원
+MATERIAL: SALT FLAT (WASTELAND)	재질: 소금 평원 (황무지)
+MATERIAL: SALT-CRUSTED STEEL	재질: 소금 낀 강철
+MATERIAL: SAND	재질: 모래
+MATERIAL: SAND-BURIED ROAD	재질: 모래에 묻힌 도로
+MATERIAL: SANDBAG WALL	재질: 모래주머니 벽
+MATERIAL: SANDBLASTED SIGN	재질: 샌드블라스트 표지판
+MATERIAL: SANDBLASTED STEEL	재질: 샌드블라스트 강철
+MATERIAL: SANDSTONE ASHLAR	재질: 사암 마름돌
+MATERIAL: SANDSTONE SLAB	재질: 사암 슬래브
+MATERIAL: SANDSTONE STRATA	재질: 사암 지층
+MATERIAL: SCAFFOLD BOARDS	재질: 비계 발판
+MATERIAL: SCANNER BEAM	재질: 스캐너 광선
+MATERIAL: SCI-FI PANELS	재질: SF 패널
+MATERIAL: SCORCHED TILES	재질: 그을린 타일
+MATERIAL: SCORIA	재질: 스코리아
+MATERIAL: SCRAP HEAP	재질: 고철 더미
+MATERIAL: SCRAP METAL PLATING	재질: 고철 도금
+MATERIAL: SCRATCHED PLEXIGLASS	재질: 긁힌 아크릴
+MATERIAL: SCREE	재질: 너덜겅
+MATERIAL: SEA FOAM	재질: 바다 거품
+MATERIAL: SEA GLASS	재질: 바다 유리
+MATERIAL: SEABIRD CLIFF	재질: 바닷새 절벽
+MATERIAL: SERVER RACK	재질: 서버 랙
+MATERIAL: SEWAGE	재질: 하수
+MATERIAL: SHALE	재질: 셰일
+MATERIAL: SHATTERED TILES	재질: 깨진 타일
+MATERIAL: SHEET PILING	재질: 강널말뚝
+MATERIAL: SHELL BEACH	재질: 조개 해변
+MATERIAL: SHIELD WALL	재질: 방패 벽
+MATERIAL: SHIP HULL PLATING	재질: 선체 철판
+MATERIAL: SHIPPING CONTAINER	재질: 컨테이너
+MATERIAL: SHOJI SCREEN	재질: 쇼지 가림막
+MATERIAL: SIDEWALK SLABS	재질: 보도 판석
+MATERIAL: SLATE	재질: 슬레이트
+MATERIAL: SLATE CLADDING	재질: 슬레이트 외장
+MATERIAL: SLATE TILE	재질: 슬레이트 타일
+MATERIAL: SLOW-MO FIELD	재질: 슬로모션 지대
+MATERIAL: SMOKE WALL	재질: 연막 벽
+MATERIAL: SMOKED GLASS	재질: 스모크 유리
+MATERIAL: SMOULDERING ASH	재질: 연기 나는 재
+MATERIAL: SNAKE SKIN	재질: 뱀 가죽
+MATERIAL: SNOW	재질: 눈
+MATERIAL: SNOWFLAKE FROST	재질: 눈송이 서리
+MATERIAL: SOAP FILM	재질: 비누 막
+MATERIAL: SOLDIER COURSE	재질: 세워 쌓기
+MATERIAL: SOOTY STEEL	재질: 그을음 강철
+MATERIAL: SPALLED CONCRETE	재질: 박락 콘크리트
+MATERIAL: SPIKE FLOOR	재질: 가시 바닥
+MATERIAL: SPLIT-FACE BLOCK	재질: 할석 블록
+MATERIAL: SPORTS COURT	재질: 스포츠 코트
+MATERIAL: STACK BOND	재질: 통줄눈 쌓기
+MATERIAL: STAINED GLASS	재질: 스테인드글라스
+MATERIAL: STAINED GLASS WINDOW	재질: 스테인드글라스 창
+MATERIAL: STAMPED STONE PATTERN	재질: 돌무늬 스탬프
+MATERIAL: STANDING SEAM ROOF	재질: 금속 지붕
+MATERIAL: STARFIELD	재질: 별밭
+MATERIAL: STEEL	재질: 강철
+MATERIAL: STEEL CHECKER FLOOR	재질: 강철 체크 바닥
+MATERIAL: STEEL DECK PLATE	재질: 강철 데크 판
+MATERIAL: STEEL DOOR SKIN	재질: 강철 문 외피
+MATERIAL: STEEL GRID WALL	재질: 강철 격자 벽
+MATERIAL: STONE BLOCKS	재질: 석재 블록
+MATERIAL: STORM DRAIN GRATE	재질: 빗물받이 격자
+MATERIAL: STRIPED WALLPAPER	재질: 줄무늬 벽지
+MATERIAL: STUCCO	재질: 스투코
+MATERIAL: SUBWAY TILE	재질: 지하철 타일
+MATERIAL: SUGAR GLASS	재질: 설탕 유리
+MATERIAL: SULFUR CRUST	재질: 유황 지각
+MATERIAL: SULFUR PIT CRUST	재질: 유황 구덩이 지각
+MATERIAL: SUN-BAKED HARDPAN	재질: 햇볕에 굳은 경반층
+MATERIAL: SWAMP SLIME	재질: 늪 점액
+MATERIAL: SWAMP WATER	재질: 늪 물
+MATERIAL: TACTILE PAVING	재질: 점자 블록
+MATERIAL: TANK ARMOUR	재질: 전차 장갑
+MATERIAL: TANK TRAP FIELD	재질: 대전차 장애물 지대
+MATERIAL: TAR PIT	재질: 타르 구덩이
+MATERIAL: TATAMI	재질: 다다미
+MATERIAL: TELEPORTER	재질: 텔레포터
+MATERIAL: TEMPLE STONE	재질: 신전 석재
+MATERIAL: TERMITE MOUND	재질: 흰개미 둔덕
+MATERIAL: TERMITE-EATEN BEAM	재질: 흰개미 먹은 들보
+MATERIAL: TERRACOTTA	재질: 테라코타
+MATERIAL: TERRAZZO	재질: 테라조
+MATERIAL: THATCH	재질: 초가
+MATERIAL: THIN CONCRETE PANEL	재질: 얇은 콘크리트 패널
+MATERIAL: TIDAL MUD FLATS	재질: 갯벌
+MATERIAL: TILE	재질: 타일
+MATERIAL: TILLED FIELD	재질: 갈아놓은 밭
+MATERIAL: TIN	재질: 주석
+MATERIAL: TINTED RED CONCRETE	재질: 붉은 착색 콘크리트
+MATERIAL: TOADSTOOL	재질: 독버섯
+MATERIAL: TOPPLED COLUMN	재질: 쓰러진 기둥
+MATERIAL: TOXIC SLUDGE	재질: 독성 오물
+MATERIAL: TRAPEZOID CLADDING	재질: 사다리꼴 외장
+MATERIAL: TRAVERTINE	재질: 트래버틴
+MATERIAL: TRAVERTINE TILE	재질: 트래버틴 타일
+MATERIAL: TREE BARK	재질: 나무껍질
+MATERIAL: TRIM (NOT SOLID)	재질: 장식 (통과 가능)
+MATERIAL: TUDOR BRICK	재질: 튜더 벽돌
+MATERIAL: TUFA BLOCKS	재질: 석회화 블록
+MATERIAL: TUFF	재질: 응회암
+MATERIAL: TUMBLEWEED BRUSH	재질: 회전초 덤불
+MATERIAL: TUNDRA	재질: 툰드라
+MATERIAL: TUNNEL LINING	재질: 터널 라이닝
+MATERIAL: TURTLE SHELL	재질: 거북 등껍질
+MATERIAL: TYRE STACK	재질: 타이어 더미
+MATERIAL: VAULT DOOR	재질: 금고 문
+MATERIAL: VENTILATION DUCT	재질: 환기 덕트
+MATERIAL: VERMICULATED STONE	재질: 벌레무늬 석재
+MATERIAL: VICTORIAN BORDER	재질: 빅토리아풍 테두리
+MATERIAL: VINES ON STONE	재질: 돌 위 덩굴
+MATERIAL: VOLCANIC ASH	재질: 화산재
+MATERIAL: WAINSCOT PANELLING	재질: 징두리 판벽
+MATERIAL: WALLBANG	재질: 월뱅
+MATERIAL: WARNING LIGHTS	재질: 경고등
+MATERIAL: WARNING TAPE MESH	재질: 경고 테이프 망
+MATERIAL: WASP NEST PAPER	재질: 말벌집 종이
+MATERIAL: WATER (WADE IN IT)	재질: 물 (걸어서 건넘)
+MATERIAL: WATER CURTAIN	재질: 물 커튼
+MATERIAL: WATER-STAINED CONCRETE	재질: 물 얼룩 콘크리트
+MATERIAL: WATERFALL	재질: 폭포
+MATERIAL: WEATHERED CONCRETE	재질: 풍화된 콘크리트
+MATERIAL: WEEDS THROUGH CONCRETE	재질: 콘크리트 틈 잡초
+MATERIAL: WELDED PATCHWORK	재질: 용접 패치워크
+MATERIAL: WET CAVE ROCK	재질: 젖은 동굴 바위
+MATERIAL: WET CEMENT	재질: 젖은 시멘트
+MATERIAL: WHEAT	재질: 밀
+MATERIAL: WHITE CONCRETE	재질: 흰 콘크리트
+MATERIAL: WHITE GLAZED BRICK	재질: 흰 유약 벽돌
+MATERIAL: WHITE RAPIDS	재질: 하얀 급류
+MATERIAL: WHITE SQUARE TILE	재질: 흰색 정사각 타일
+MATERIAL: WHITEWASHED BRICK	재질: 회칠 벽돌
+MATERIAL: WIDE PLANKS	재질: 넓은 판자
+MATERIAL: WIND-PACKED SNOW	재질: 바람에 다져진 눈
+MATERIAL: WIND-SCOURED ROCK	재질: 풍식 바위
+MATERIAL: WITHERED VINES	재질: 시든 덩굴
+MATERIAL: WOOD	재질: 나무
+MATERIAL: WOODEN CRATE	재질: 나무 상자
+MATERIAL: WROUGHT IRON	재질: 연철
+MATERIAL: ZEBRA CROSSING	재질: 횡단보도
+MATERIAL: ZINC	재질: 아연
+MAX PING	최대 핑
+MAX PLAYERS	최대 인원
+MB (OFFICIAL MAPS SHIP BAKED)	MB (공식 맵은 굽기 포함)
+MEDIUM BOTS	보통 봇
+MENU (ESC)	메뉴 (ESC)
+MENU BACKGROUND	메뉴 배경
+MENU CURSOR	메뉴 커서
+MENU THEME	메뉴 테마
+MENU THEME: DARK	메뉴 테마: 어둡게
+MENU THEME: HIGH CONTRAST	메뉴 테마: 고대비
+MENUS	메뉴
+METER SCALE	계기 배율
+METER TICKS	계기 눈금
+MILO	MILO
+MIN FPS (WORST FRAME)	최저 FPS (최악 프레임)
+MINE	내 것
+MINIMIZE ON ALT-TAB	ALT-TAB 시 최소화
+MIRROR	대칭
+MIRROR X	X축 대칭
+MIRROR Y	Y축 대칭
+MIRROR Z	Z축 대칭
+MODE	모드
+MODE SET	모드 설정됨
+MODE:	모드:
+MODEL	모델
+MODEL OF	모델:
+MODES	모드
+MODES (CLICK: ALLOW / BLOCK)	모드 (클릭: 허용 / 차단)
+MODES:	모드:
+MODIFIERS	변형
+MODIFIERS:	변형:
+MODS	모드
+MODS FOLDER	모드 폴더
+MODS/FONTS	MODS/FONTS
+MONITOR	모니터
+MOON GRAVITY	달 중력
+MOON ROCKETS	달 로켓
+MOON SHOTGUN	달 샷건
+MOON SHOTGUNS	달 샷건
+MORE	더 보기
+MORE KEYS	추가 키
+MORE: FEWER GPU BUBBLES, A LITTLE MORE LAG	높을수록: GPU 공백 감소, 지연 약간 증가
+MOUSE	마우스
+MOUSE 1	MOUSE 1
+MOUSE 2	MOUSE 2
+MOUSE 3	MOUSE 3
+MOUSE ACCELERATION	마우스 가속
+MOUSE TO PHOTON: IN GAME ONLY	마우스-화면 지연: 게임 중에만
+MOUSE {} # HZ (AVG)	마우스 {} # HZ (평균)
+MOVE	이동
+MOVE + WEAPON KEYS	이동 + 무기 키
+MOVE DOWN	아래로 이동
+MOVE TO SPECTATOR	관전자로 이동
+MOVE UP	위로 이동
+MOVEMENT	이동
+MS	MS
+MULTI POINT	멀티 포인트
+MULTI POINT - attackers take the points in order (A, B, C...). Only they capture; a defender on the point holds it. Each point taken adds 90 s and moves both teams' spawns forward. Each team attacks once.	멀티 포인트 - 공격팀은 순서대로(A, B, C...) 지점을 점령합니다. 공격팀만 점령할 수 있고, 수비가 지점 위에 있으면 점령이 멈춥니다. 지점 하나를 점령할 때마다 90초가 추가되고 양 팀의 스폰이 앞으로 이동합니다. 각 팀이 한 번씩 공격합니다.
+MUTE	음소거
+MUTE IN BACKGROUND	백그라운드에서 음소거
+MUTED	음소거됨
+MUZZLE FLASH	총구 화염
+MY	내
+MY EFFECTS	내 효과
+MY FOOTSTEPS	내 발소리
+MY GLOW	내 광원
+MY NAME: GOLD	내 이름: 금색
+MY NAME: PING	내 이름: PING
+MY QUIP	내 한마디
+MY QUIP:	내 한마디:
+MY QUIP: A RANDOM ONE	내 한마디: 무작위
+MY RACE STATS	내 레이스 기록
+MY SKY	내 하늘
+MY SKY / GLOW: THESE IN PLACE OF EVERY MAP'S;	내 하늘 / 광원: 모든 맵 대신 이것 사용;
+MY TRACER	내 궤적
+Model	모델
+ModelOverrides holds kMaxModelsPerKind models of a kind	ModelOverrides holds kMaxModelsPerKind models of a kind
+N/A HERE: LATENT SYNC IS WINDOWS ONLY	여기선 사용 불가: LATENT SYNC는 WINDOWS 전용
+N/A HERE: WINDOWS + NVIDIA ONLY	여기선 사용 불가: WINDOWS + NVIDIA 전용
+NAME	이름
+NAME COLOR	이름 색상
+NAME COLORS	이름 색상
+NAME TAGS	이름표
+NATURE	자연
+ND	ND
+NE	NE
+NET GRAPH	넷 그래프
+NETWORK	네트워크
+NETWORK READ	네트워크 읽기
+NETWORK WARNINGS	네트워크 경고
+NEUTRAL PAYLOAD	중립 화물
+NEUTRAL PAYLOAD - either team pushes the cart toward the other team's end. The team whose side it's on when time runs out wins.	중립 화물 - 양 팀 모두 화물을 상대 팀 끝 쪽으로 밉니다. 시간이 끝났을 때 화물이 상대 진영에 있는 팀이 승리합니다.
+NEW	새로 만들기
+NEW BEST	신기록
+NEW LEADER	새 선두
+NEW NAME	새 이름
+NEW ONES:	새 항목:
+NEW PERSONAL BEST	개인 신기록
+NEXT	다음
+NEXT PAGE	다음 페이지
+NEXT WEAP	다음 무기
+NEXT WEAPON	다음 무기
+NIGHT: QUIET UP, LOUD DOWN; LOW: AS NORMAL	야간: 작은 소리 키우고 큰 소리 줄임; 낮음: 보통과 같음
+NIGHT: QUIET UP, LOUD DOWN; SAFE: MORE	야간: 작은 소리 키우고 큰 소리 줄임; 안전: 더
+NINJA	닌자
+NO	아니요
+NO COLOR CODE ON THE CLIPBOARD	클립보드에 색상 코드 없음
+NO CROSSHAIR CODE ON THE CLIPBOARD	클립보드에 조준점 코드 없음
+NO FILES IN	파일 없음:
+NO FILES IN CONTROLS/ - USE FOLDER	CONTROLS/에 파일 없음 - 폴더 사용
+NO FRAMES MEASURED	측정된 프레임 없음
+NO FULLSCREEN OPT.	전체 화면 최적화 끄기
+NO GAMES FOUND	게임 없음
+NO GAMES MATCH THE FILTERS	필터에 맞는 게임 없음
+NO MAP IS BUILT FOR THIS MODE YET	아직 이 모드용 맵 없음
+NO MATERIAL NAMED THAT	해당 이름의 재질 없음
+NO RACE MAPS	레이스 맵 없음
+NO RESPONSE - CLICK TO TRY	응답 없음 - 클릭하여 재시도
+NO RUNS SAVED YET	저장된 기록 없음
+NO RUNS YET - FINISH	아직 기록 없음 - 완주하세요
+NO SETTINGS ON THE CLIPBOARD (EXPORT MAKES THEM)	클립보드에 설정 없음 (내보내기로 생성)
+NO TIMES YET	아직 기록 없음
+NO VSYNC	수직 동기화 없음
+NOBODY RANKED YET (3 GAMES)	아직 랭크된 사람 없음 (3게임)
+NONE	없음
+NONE YET	아직 없음
+NONE YET - EXPORT ONE, OR COPY A GROUP AND IMPORT	아직 없음 - 하나를 내보내거나 그룹을 복사해 가져오기
+NONE YET - IN A GAME, ESC > RECORD DEMO	아직 없음 - 게임 중 ESC > 데모 녹화
+NOOR	NOOR
+NORMAL	보통
+NOT A GROUP - MAKE IT A GROUP FIRST?	그룹이 아님 - 먼저 그룹으로 만들까요?
+NOT BUILT FOR THIS MODE - IT MAY NOT WORK	이 모드용 아님 - 작동하지 않을 수 있음
+NOT CHANGED IN THE UI TEST	UI 테스트에서는 변경 안 함
+NOT FOR THIS MODE	이 모드용 아님
+NOT FOUND: USING THE PRIMARY	찾을 수 없음: 기본 모니터 사용
+NOT PLAYED YET	아직 플레이 안 함
+NOT REPORTED - NOT A RANKED MAP FOR THIS LADDER	보고 안 됨 - 이 래더의 랭크 맵이 아님
+NOT USABLE	사용 불가
+NOTHING IN THE GAME RECORDS YET: THIS IS	아직 게임 기록 없음: 이것이
+NOTHING MATCHES "	일치하는 항목 없음: "
+NOTHING SELECTED	선택 안 됨
+NOTHING YET (NEEDS SPAWNS)	아직 없음 (스폰 필요)
+NOTICE LINES	알림 줄 수
+NOTICE TIME	알림 시간
+NOTICES	알림
+NS	NS
+NS  (MOUSE REPORT IN TO GPU DONE; F3: NEXT VIEW)	NS  (마우스에서 GPU 완료까지; F3: 다음 보기)
+NS (# HZ)	NS (# HZ)
+NS (# HZ) + DISPLAY	NS (# HZ) + 디스플레이
+NS + MOUSE POLLING	NS + 마우스 폴링
+NUM	NUM
+NUMBER TIME	숫자 표시 시간
+NV DXGI PRESENT	NV DXGI PRESENT
+NV THREADED OFF	NV 스레드 최적화 끄기
+NVIDIA DRIVER PROFILE, FROM THE NEXT START:	NVIDIA 드라이버 프로필, 다음 실행부터:
+NW	NW
+Name, mouse sensitivity (or cm/360 with your DPI), field of view, team and enemy colours, volume, hit sounds, the announcer (off / countdown / all calls; male or female voice), player model and sound pack.	이름, 마우스 감도 (또는 DPI 기준 cm/360), 시야각, 팀 및 적 색상, 볼륨, 타격음, 아나운서 (끄기 / 카운트다운 / 모든 안내; 남성 또는 여성 음성), 플레이어 모델 및 사운드 팩.
+New map	새 맵
+OBJ	목표
+OBJECTIVE	목표
+OBJECTIVE BASED	목표 기반
+OBJECTIVE MARKERS	목표 마커
+OBJECTIVES	목표
+OF	/
+OF #	/ #
+OFF	끄기
+OFF: FROM THE NEXT START	끄기: 다음 실행부터
+OFF: THE BAR IS FULL AT 100 IN EVERY MODE	끄기: 모든 모드에서 100일 때 바가 가득 참
+OFF: THE VIEW STEPS UP STAIRS AT ONCE	끄기: 계단에서 시점이 한 번에 올라감
+OFFICIAL	공식
+OLD MAN	노인
+ON	켜기
+ON HIT	적중 시
+ON JOIN	참가 시
+ON JOIN: ASK	참가 시: 묻기
+ON JOIN: PLAY	참가 시: 플레이
+ON JOIN: SPECTATE	참가 시: 관전
+ON PLAYERS	플레이어에게
+ON THE MAP	맵 위에
+ON THE RACE TOTAL (BEST TIME TRIAL)	레이스 합계 기준 (최고 타임 트라이얼)
+ON THE RACE TOTAL (DEFAULT: NO TIME TRIAL)	레이스 합계 기준 (기본값: 타임 트라이얼 없음)
+ON THE RACE TOTAL IT COUNTS AT ITS DEFAULT,	레이스 합계에서는 기본값으로 계산,
+ON WINDOWS (ALREADY ITS SHORTEST); SAFE: X2	WINDOWS에서 (이미 최단); 안전: X2
+ON: AT MOST 1 FRAME QUEUED	켜기: 최대 1프레임 대기
+ON: FROM THE NEXT START	켜기: 다음 실행부터
+ON: USES YOUR TEAM COLOR, NOT THE ONE BELOW	켜기: 아래 색상 대신 팀 색상 사용
+ONE	하나
+ONE CHAT COLOR	채팅 단일 색상
+ONE MINUTE	1분
+ONE MINUTE LEFT	1분 남음
+ONLY KILLS I'M IN	내가 관련된 킬만
+OPACITY	불투명도
+OPACITY %	불투명도 %
+OPEN	열기
+OPEN DATA FOLDER	데이터 폴더 열기
+OPEN FOLDER	폴더 열기
+OPEN SCREENSHOTS	스크린샷 열기
+OPENS THE UDP PORT ON YOUR ROUTER (UPNP)	라우터의 UDP 포트 개방 (UPNP)
+OPPOSITE KEYS: CANCEL	반대 키 동시 입력: 취소
+OPPOSITE KEYS: FIRST WINS	반대 키 동시 입력: 먼저 누른 키
+OPPOSITE KEYS: LAST WINS	반대 키 동시 입력: 나중에 누른 키
+OR RESTART: IT'S ASKED FOR AT START	또는 재시작: 시작 시 요청됨
+ORB	오브
+OTHER PLAYERS	다른 플레이어
+OTHER PLAYERS' TRACERS / BEAMS	다른 플레이어의 궤적 / 광선
+OTHERS' FOOTSTEPS	다른 플레이어 발소리
+OTTO	OTTO
+OUT	탈락
+OUTLINE	외곽선
+OUTLINE A	외곽선 A
+OUTLINE OPACITY	외곽선 불투명도
+OUTLINE PX	외곽선 PX
+OUTLINES	외곽선
+OUTPUT	출력
+OVER 1: LOUDER, TO HEAR THEM COMING	1 초과: 더 크게, 다가오는 소리 듣기용
+OVERRIDES FOLDER	오버라이드 폴더
+OVERRIDES OF YOURS - ON / OFF AT THE NEXT START	내 오버라이드 - 다음 실행 시 켜기 / 끄기
+OVERSTRAFE BRAKE	오버스트레이프 감속
+OVERTIME	연장전
+OVERTIME - NEXT KILL WINS	연장전 - 다음 킬 승리
+OWN ACCENT	개인 강조색
+OWN ACCENT: NOT THE TEAM COLOR	개인 강조색: 팀 색상 아님
+OWN COLOR	개인 색상
+OWN EFFECTS	개인 효과
+OWN SHADOW	내 그림자
+OggS	OggS
+OpenGL function missing:	OpenGL 함수 없음:
+OpenGL function missing: {}	OpenGL function missing: {}
+Output	출력
+PACING WAIT (ULTRA)	페이싱 대기 (울트라)
+PACK	팩
+PACKET LOSS PROTECTION	패킷 손실 보호
+PACKET LOSS PROTECTION: 2	패킷 손실 보호: 2
+PACKET LOSS PROTECTION: 4	패킷 손실 보호: 4
+PACKET LOSS PROTECTION: 8	패킷 손실 보호: 8
+PAD ACROSS	가로 여백
+PAD DOWN	세로 여백
+PAGE 1	1페이지
+PAGE 2	2페이지
+PAGE 3	3페이지
+PAGE 4	4페이지
+PAGE 5	5페이지
+PAGE 6	6페이지
+PAGE 7	7페이지
+PAGE 8	8페이지
+PAGE 9	9페이지
+PAGE DOWN	PAGE DOWN
+PAGE UP	PAGE UP
+PALETTE: THE BOMB'S BLINK AND CHECKPOINTS NOT	팔레트: 폭탄 깜빡임과 체크포인트는 제외
+PANEL DARKNESS	패널 어둡기
+PANEL SEAMS; FLAT: NO BAKED LIGHT OR SHADOW	패널 이음매; 평면: 구운 조명이나 그림자 없음
+PAPER	보
+PASTE CODE	코드 붙여넣기
+PASTE COLORS	색상 붙여넣기
+PATH PT	경로 지점
+PATTERN FADE	패턴 페이드
+PAUSED	일시정지됨
+PAYLOAD	화물
+PAYLOAD - attackers push the cart along its track by standing next to it; defenders stop it. Checkpoints along the track add time and stop it rolling back. Each team attacks once.	화물 - 공격팀은 화물 옆에 서서 선로를 따라 밉니다; 수비팀은 막습니다. 선로의 체크포인트는 시간을 추가하고 화물이 뒤로 밀리지 않게 합니다. 각 팀이 한 번씩 공격합니다.
+PAYLOAD CONTESTED	화물 경합 중
+PAYLOAD PATH POINT	화물 경로 지점
+PER MODE	모드별
+PER WEAPON	무기별
+PERCEPTUAL	지각적
+PERF STATS	성능 통계
+PERFORMANCE	성능
+PHYSICS	물리
+PIA	PIA
+PICK A FILE TO IMPORT	가져올 파일 선택
+PICK A KEY NO ACTION IS BOUND TO	동작이 지정되지 않은 키를 선택하세요
+PICK IT IN WINDOWS' GRAPHICS SETTINGS	WINDOWS 그래픽 설정에서 선택
+PICK VSYNC: LATENT SYNC (VIDEO + AUDIO) FIRST;	수직 동기화 선택: LATENT SYNC (비디오 + 오디오) 우선;
+PICTURE	사진
+PICTURES: PICTURES/QUARK IN YOUR HOME FOLDER	사진: 홈 폴더의 PICTURES/QUARK
+PING	PING
+PING #	PING #
+PING # MS  LOSS #%	PING # MS  손실 #%
+PING / LOSS GRAPH AND RATES (APART FROM F3)	PING / 손실 그래프 및 빈도 (F3과 별도)
+PING: ANY	PING: 전체
+PIRATE	해적
+PITCH	피치
+PLAY	플레이
+PLAY IT	플레이하기
+PLAY MODE	플레이 모드
+PLAY TIME TRIAL	타임 트라이얼 플레이
+PLAY VS BOTS	봇과 대전
+PLAYABLE AS:	플레이 가능 모드:
+PLAYER	플레이어
+PLAYER 2	플레이어 2
+PLAYER > MORE SETS THE MENU ACCENT	플레이어 > 더 보기에서 메뉴 강조색 설정
+PLAYER BASED	플레이어 기반
+PLAYER BRIGHTNESS	플레이어 밝기
+PLAYER JOINS	플레이어 참가
+PLAYER MODEL:	플레이어 모델:
+PLAYER OUTLINE WIDTH	플레이어 외곽선 두께
+PLAYER SHADOWS	플레이어 그림자
+PLAYER SHADOWS (VIDEO + AUDIO); ALWAYS LIT:	플레이어 그림자 (비디오 + 오디오); 항상 밝게:
+PLAYERS	플레이어
+PLAYERS NEVER DARKENED BY THE MAP'S SHADE	맵 그늘에 플레이어가 어두워지지 않음
+PLAYERS ON YOUR SERVER	내 서버의 플레이어
+PLAYS	플레이 횟수
+PLAYS AS	플레이 모드
+PLAYS AS:	플레이 모드:
+PLAYS THE BENCHMARK DEMO (HAMLET, FREE FOR ALL, FULL OF BOTS) AND MEASURES EVERY FRAME	벤치마크 데모 (HAMLET, 개인전, 봇 가득) 재생 후 모든 프레임 측정
+POINT	지점
+POINT LOST	지점 빼앗김
+POINT TAKEN	지점 점령
+POLLS AT	폴링 빈도
+POSITION	위치
+POSITION must be VEC3	POSITION은 VEC3이어야 함
+POWER	파워
+POWER - NOBODY DIES: HITS DRAIN THE TEAM POOL	파워 - 아무도 죽지 않음: 피격 시 팀 체력 풀 감소
+POWER - each team shares one health pool, 2500 for every player on it. Nobody dies: an enemy's hits come off your team's pool. A team whose pool runs out loses; when the 10 minutes are up, the fuller pool wins.	파워 - 각 팀은 체력 풀 하나를 공유하며, 팀원 한 명당 2500입니다. 아무도 죽지 않습니다: 적의 공격은 우리 팀 풀을 깎습니다. 풀이 바닥난 팀이 패배하며, 10분이 지나면 풀이 더 많이 남은 팀이 승리합니다.
+PRACTICE	연습
+PRACTICE (ALONE WITH BOTS)	연습 (봇과 혼자)
+PRACTICE (UNTIMED) -	연습 (시간 제한 없음) -
+PRACTICE (UNTIMED) - {} TO START THE RACE	연습 (시간 제한 없음) - {} 레이스를 시작하려면
+PRESENT	표시
+PRESET	프리셋
+PRESET: COMPETITIVE	프리셋: 경쟁
+PRESET: CUSTOM	프리셋: 사용자 지정
+PRESET: HIGH	프리셋: 높음
+PRESET: LOW	프리셋: 낮음
+PRESET: MEDIUM	프리셋: 중간
+PRESETS SET BOTH COLORS BELOW	프리셋은 아래 두 색상을 모두 설정
+PRESS A KEY, MOUSE BUTTON OR SCROLL - ESC CANCELS, DEL CLEARS	키, 마우스 버튼 또는 스크롤 입력 - ESC 취소, DEL 해제
+PRESS...	입력...
+PREV WEAP	이전 무기
+PREV WEAPON	이전 무기
+PREVIOUS	이전
+PREVIOUS PAGE	이전 페이지
+PREVIOUS:	이전:
+PRIMARY MONITOR	기본 모니터
+PRIORITIZE GAME	게임 우선
+PROFILE	프로필
+PROFILE:	프로필:
+PROFILE: MY CONTROLS	프로필: 내 조작
+PROFILE: MY HUD	프로필: 내 HUD
+PROFILES	프로필
+PUBLIC	공개
+PUBLIC lists the server on the internet server list (off: friends join with your IP, shown on the host screen). Games on your network show up for everyone on it.	공개는 서버를 인터넷 서버 목록에 올립니다 (끄면: 친구가 호스트 화면에 표시된 IP로 참가). 같은 네트워크의 게임은 해당 네트워크의 모든 사람에게 표시됩니다.
+PULSE	펄스
+PUSH THE PAYLOAD	화물 밀기
+PUSH THE PAYLOAD TO THE ENEMY END	화물을 적 진영 끝까지 밀기
+PUT .QBRAIN FILES IN THE BOTS FOLDER TO PICK ONE	.QBRAIN 파일을 BOTS 폴더에 넣으면 선택 가능
+Pick a server from the list (internet and LAN), or type its address as IP:PORT.	목록(인터넷 및 LAN)에서 서버를 고르거나 주소를 IP:PORT 형식으로 입력하세요.
+Pick an element in the dropdown (health, weapon name, cooldown bars, speed meter, weapon list) and move it, resize it, recolour it or hide it.	드롭다운에서 요소(체력, 무기 이름, 쿨다운 바, 속도계, 무기 목록)를 골라 이동, 크기 조절, 색상 변경, 숨기기를 하세요.
+Pick the mode and map, a server name and the max players. The game picks the map built for the mode; any other map works with a warning.	모드와 맵, 서버 이름, 최대 인원을 정하세요. 게임은 모드에 맞게 제작된 맵을 고릅니다; 다른 맵도 경고와 함께 사용 가능합니다.
+Player	플레이어
+Q - grapple: hold to hook what you're aiming at and pull toward it; release to let go.	Q - 그래플: 누르고 있으면 조준한 곳에 훅을 걸어 그쪽으로 당겨집니다; 떼면 놓습니다.
+QK1 - QK8 - ranked arenas for all three ladders (vanilla and laser vampire 1v1, instagib free for all), also duel and tourney.	QK1 - QK8 - 세 래더 모두의 랭크 아레나 (바닐라 및 레이저 뱀파이어 1v1, 인스타깁 개인전), 결투와 토너먼트도 지원.
+QUAKE	QUAKE
+QUARK	QUARK
+QUARK 1.17 - 1.18	QUARK 1.17 - 1.18
+QUARK CLASSIC	QUARK 클래식
+QUARK V	QUARK V
+QUARTERFINALS	8강
+QUEUE	대기열
+QUEUE FILLED: FLASH TASKBAR	대기열 완료: 작업 표시줄 깜빡임
+QUEUE FOR ALL	전체 대기열 참가
+QUEUE:	대기열:
+QUEUE: COULDN'T REACH THE SERVER	대기열: 서버에 연결할 수 없음
+QUEUED FOR	대기 중:
+QUEUED, NO CRACKLE ON A BUSY PC	대기열 사용, 바쁜 PC에서도 끊김 없음
+QUEUES - SHARED WITH DISCORD	대기열 - DISCORD와 공유
+QUEUES NEED A RANKED KEY (quark.key) - COULDN'T MAKE ONE	대기열에는 랭크 키가 필요합니다 (quark.key) - 생성 실패
+QUICK DASH	빠른 대시
+QUIP	한마디
+QUIP CAPTIONS	한마디 자막
+QUIPS	한마디
+QUIPS FOR YOUR ANNOUNCER VOICE	아나운서 음성용 한마디
+QUIPS OFF	한마디 끄기
+QUIPS ON	한마디 켜기
+QUIPS VOLUME	한마디 볼륨
+QUIRKY	별난
+QUIT	종료
+QUIT, DISCONNECT AND STOP HOSTING	종료, 연결 끊기 및 호스트 중지
+R ALT	R ALT
+R CTRL	R CTRL
+R SHIFT	R SHIFT
+R: ROTATE 90 (SHIFT: ABOUT X, CTRL: ABOUT Z)    F: MIRROR LEFT / RIGHT (SHIFT: FRONT / BACK, CTRL: UPSIDE DOWN)	R: 90도 회전 (SHIFT: X축 기준, CTRL: Z축 기준)    F: 좌우 대칭 (SHIFT: 앞뒤, CTRL: 상하 반전)
+RACE	레이스
+RACE + FLYING	레이스 + 비행
+RACE - the course's checkpoints in order. It starts as untimed practice; vote start (F4) to race. TIME TRIAL (main menu, or PLAY TIME TRIAL on the leaderboard) is the ranked race on each race map; the leaderboard's RACE TOTAL adds your best on every one, a map you haven't run counting at its default time.	레이스 - 코스의 체크포인트를 순서대로 통과. 시간 제한 없는 연습으로 시작하며, 시작 투표(F4)로 레이스를 시작합니다. 타임 트라이얼(메인 메뉴 또는 리더보드의 타임 트라이얼 플레이)은 각 레이스 맵의 랭크 레이스입니다; 리더보드의 레이스 합계는 모든 맵의 최고 기록을 더하며, 달리지 않은 맵은 기본 시간으로 계산됩니다.
+RACE GHOST	레이스 고스트
+RACE MAP	레이스 맵
+RACE RESET	레이스 리셋
+RACE TOTAL	레이스 합계
+RADAR	레이더
+RADAR RANGE	레이더 범위
+RADAR: TEAMMATES AND OBJECTIVES, NEVER ENEMIES	레이더: 팀원과 목표만, 적은 표시 안 함
+RADIUS	반경
+RAILYARD / DAM / EXPRESS / MONORAIL - neutral payload (Railyard: payload too).   WAR / CONVOY - multi point.	RAILYARD / DAM / EXPRESS / MONORAIL - 중립 화물 (Railyard: 화물도 가능).   WAR / CONVOY - 멀티 포인트.
+RAMPAGE	광란
+RANKED	랭크
+RANKED - CHOOSE A LADDER	랭크 - 래더 선택
+RANKED - NOT RATED	랭크 - 레이팅 미반영
+RANKED 1V1	랭크 1V1
+RANKED ALWAYS USES THE DEFAULT CONTROLS	랭크는 항상 기본 조작 사용
+RANKED ALWAYS USES THE DEFAULT HUD	랭크는 항상 기본 HUD 사용
+RANKED BEHIND A FORWARDED PORT OR IN A CONTAINER: ranked ids are signed for the address players dial. If they reach the server at an address it can't see itself (the router forwards another port to it, or it runs in a container), the host screen says so; start a dedicated server with --own-addr host:port (that address) so their ranked ids work.	포트 포워딩 뒤나 컨테이너에서의 랭크: 랭크 ID는 플레이어가 접속하는 주소로 서명됩니다. 서버가 스스로 볼 수 없는 주소로 접속되는 경우 (라우터가 다른 포트를 포워딩하거나 컨테이너에서 실행 중), 호스트 화면에 표시됩니다; 랭크 ID가 작동하도록 --own-addr host:port (그 주소)로 전용 서버를 시작하세요.
+RANKED FFA	랭크 개인전
+RANKED GAMES HAVE NO BOTS	랭크 게임에는 봇 없음
+RANKED INSTAGIB	랭크 인스타깁
+RANKED LASER VAMPIRE	랭크 레이저 뱀파이어
+RANKED LEADERBOARD	랭크 리더보드
+RANKED MAPS ONLY - EACH LADDER HAS ITS OWN RATING	랭크 맵만 - 래더마다 별도 레이팅
+RANKED MATCH OVER - REPORTING THE RESULT	랭크 경기 종료 - 결과 보고 중
+RANKED OFF	랭크 끄기
+RANKED ON -	랭크 켜기 -
+RANKED QUEUES	랭크 대기열
+RANKED VANILLA	랭크 바닐라
+RANKED: DEFAULT MODEL, HUD, CONTROLS AND 10 MS INTERP FOR FAIRNESS	랭크: 공정성을 위해 기본 모델, HUD, 조작, 10 MS 보간 사용
+RANKED: NO HEALTH BARS	랭크: 체력 바 없음
+RATE	빈도
+RATING	레이팅
+RAW INPUT	RAW INPUT
+RD	RD
+READ INPUT	입력 읽기
+READY	준비
+REALTIME	실시간
+REC	REC
+RECENT	최근
+RECENT RUNS	최근 기록
+RECHARGING	재충전 중
+RECONNECT	재접속
+RECORD	녹화
+RECORD DEMO	데모 녹화
+RECORDED WITH	녹화 버전
+RECORDING DEMO (62.5 HZ) - ESC > STOP RECORDING	데모 녹화 중 (62.5 HZ) - ESC > 녹화 중지
+RECORDING DEMO (FULL RATE) - ESC > STOP RECORDING	데모 녹화 중 (전체 속도) - ESC > 녹화 중지
+RECORDING RATE: 62.5 HZ	녹화 빈도: 62.5 HZ
+RECORDING RATE: FULL	녹화 빈도: 전체
+RED	빨강
+RED-GREEN (DEUTAN)	적록 (녹색약)
+RED-GREEN (PROTAN)	적록 (적색약)
+REDO	다시 실행
+REDUCE FLASHING	섬광 줄이기
+REFRESH	새로고침
+REFRESH LIST	목록 새로고침
+REFRESH RATE	주사율
+REFRESH RATE:	주사율:
+REGEN	재생
+REGENERATION	체력 재생
+RELOAD MAP	맵 다시 불러오기
+REMEMBER LAST TAB	마지막 탭 기억
+REMEMBER MY QUEUES	내 대기열 기억
+RENAME	이름 변경
+RENDER SCALE	렌더 배율
+RESET ALL	모두 초기화
+RESET ALL KEYS	모든 키 초기화
+RESET CROSSHAIR	조준점 초기화
+RESET ELEMENT	요소 초기화
+RESET MAP COLOR	맵 색상 초기화
+RESET MAPS	맵 초기화
+RESET MOVEMENT TO STANDARD	이동을 표준으로 초기화
+RESET STYLE	스타일 초기화
+RESET WHOLE HUD	HUD 전체 초기화
+RESOLUTION	해상도
+RESPAWN IN #	#초 후 부활
+RESTART (R)	재시작 (R)
+RESTART MAP	맵 재시작
+RESTART MATCH	경기 재시작
+RESTART THE MATCH	경기 재시작
+RESTORE AUTOSAVE	자동 저장 복원
+RESUME	계속
+RESUME (ESC)	계속 (ESC)
+RETICLE COLOR	레티클 색상
+RETICLE WIDTH	레티클 두께
+REVERT	되돌리기
+RIFF	RIFF
+RIFLE	소총
+RIFLE ZOOM FOV	소총 줌 FOV
+RIFLE, ONE SHOT A CLICK. SCORE: KILLS X 100 X ACCURACY	소총, 클릭당 한 발. 점수: 킬 X 100 X 정확도
+RIFLE, SNIPER, LASER, SHOTGUN AND KNIFE	소총, 저격총, 레이저, 샷건, 나이프
+RIFLES ONLY	소총만
+RIGHT	오른쪽
+RIGHT ARROW (NEXT PAGE)	오른쪽 화살표 (다음 페이지)
+RIGHT MOUSE + MOVE: LOOK    WASD: FLY    SPACE / C: UP / DOWN    SHIFT: FAST    WHEEL: SPEED	마우스 오른쪽 + 이동: 둘러보기    WASD: 비행    SPACE / C: 상승 / 하강    SHIFT: 빠르게    휠: 속도
+RIGHT-CLICK A SERVER: FAVORITE (LISTED FIRST)	서버 우클릭: 즐겨찾기 (맨 위에 표시)
+RIGHT-CLICK: RESET	우클릭: 초기화
+RISING TOWARD	오르막 방향
+RISING TOWARD: +X	오르막 방향: +X
+RISING TOWARD: +Z	오르막 방향: +Z
+RISING TOWARD: -X	오르막 방향: -X
+RISING TOWARD: -Z	오르막 방향: -Z
+RMB	RMB
+ROBOT	로봇
+ROCK	바위
+ROCKET	로켓
+ROCKET (splash; rocket jump off the floor for 10#amage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 10 hp, once a second; alt throws it: +30 hp and reset cooldowns for a teammate).	로켓 (범위 피해; 바닥에서 로켓 점프 시 10#피해), 소총 (자동; 보조 사격 시 스코프), 레이저 (광선; 보조 사격 시 끌어당김), 샷건 (보조: 도탄), 저격총 (보조 사격 시 스코프), 점착탄 (보조: 기폭), 석궁 (헤드샷), 버블 (보조: 버블 연속 분사), 나이프 (보조: 투척), 주사기 (사격 시 초당 한 번 10 hp 회복; 보조 사격으로 투척: 팀원 +30 hp 및 쿨다운 초기화).
+ROCKET JUMPERS	로켓 점퍼
+ROCKET RIDE	로켓 라이드
+ROCKET, LASER AND KNIFE	로켓, 레이저, 나이프
+ROCKETS AND STICKIES - NO SELF DAMAGE	로켓과 점착탄 - 자해 피해 없음
+ROCKETS ONLY	로켓만
+ROLL	롤
+ROOM	방
+ROPE COLOR	로프 색상
+ROTATE	회전
+ROTATE X	X축 회전
+ROTATE Y	Y축 회전
+ROTATE Z	Z축 회전
+ROTATION STEP	회전 단위
+ROTATION STEP: Q / E ON A SPAWN; THE FLY	회전 단위: 스폰에서 Q / E; 비행
+ROUND	라운드
+ROUND # - STARTS IN #	라운드 # - #초 후 시작
+ROUND CLOCK	라운드 시계
+ROUND CLOCK: TIME LEFT	라운드 시계: 남은 시간
+ROUND CLOCK: TIME PLAYED	라운드 시계: 경과 시간
+ROUND LOST	라운드 패배
+ROUND MODES	라운드 모드
+ROUND OF 16	16강
+ROUND OF 32	32강
+ROUND OVER	라운드 종료
+ROUND START	라운드 시작
+ROUND WINS -	라운드 승리 -
+ROUND WON	라운드 승리
+ROUNDS	라운드
+ROWS #-# OF # (WHEEL)	#-#행 / # (휠)
+ROWS #-# OF # - WHEEL TO SCROLL	#-#행 / # - 휠로 스크롤
+RPS BY MOUSE	마우스로 가위바위보
+RPS BY MOUSE: CLICK A TIEBREAK CARD TO THROW IT	마우스로 가위바위보: 결승 카드를 클릭해 내기
+RUBIK	RUBIK
+RULES	규칙
+RUN	도망
+RUN - DON'T BE THE TAGGER WHEN TIME RUNS OUT	도망 - 시간이 끝날 때 술래가 되지 마세요
+RUN AGAIN	다시 실행
+RUN BENCHMARK	벤치마크 실행
+RUN NAME	기록 이름
+RUN SPEED	달리기 속도
+RUNS	기록
+Ranked games use the default model, HUD and controls and 10 ms interpolation, so everyone plays the same game.	랭크 게임은 기본 모델, HUD, 조작과 10 ms 보간을 사용해 모두가 같은 조건으로 플레이합니다.
+SAFE OK / ERROR	안전 정상 / 오류
+SAFE: OK BLUE, ERRORS ORANGE; IT: TAG / HIDE'S	안전: 정상 파랑, 오류 주황; 술래: 태그 / 숨바꼭질의
+SAME	동일
+SAME AS FPS LIMIT	FPS 제한과 동일
+SAME DPI: THE SAME TURN PER INCH OF MOUSE	같은 DPI: 마우스 1인치당 같은 회전
+SATURATION	채도
+SATURATION 0: BLACK AND WHITE	채도 0: 흑백
+SAVE	저장
+SAVE + DONE	저장 + 완료
+SAVE A COPY	사본 저장
+SAVE A COPY AS	다른 이름으로 사본 저장
+SAVE AS	다른 이름으로 저장
+SAVE AS NEW MAP	새 맵으로 저장
+SAVE POS	위치 저장
+SAVE POSITION	위치 저장
+SAVE YOUR COPY OF	내 사본 저장:
+SAVED	저장됨
+SAVED FOR VOICE CHAT LATER	나중에 음성 채팅용으로 저장됨
+SAVES TO MAPS/<NAME>.QMAP - YOUR OWN COPY, THE HOST KEEPS THEIRS.	MAPS/<NAME>.QMAP에 저장 - 내 사본이며, 호스트는 자신의 것을 유지합니다.
+SAY (TEAM):	말하기 (팀):
+SAY IT	말하기
+SAY:	말하기:
+SCALAR	스칼라
+SCALE: X2 TAKES TWICE THE SPEED TO FILL	배율: X2는 채우는 데 두 배 속도 필요
+SCANOUT TO THE CROSSHAIR (EST)	조준점까지 스캔아웃 (추정)
+SCI-FI / DECOR	SF / 장식
+SCISSORS	가위
+SCOPE OVERLAY	스코프 오버레이
+SCOPE SIZE	스코프 크기
+SCORE	점수
+SCORE BOX	점수판
+SCORE LIMIT	점수 제한
+SCOREBOARD	스코어보드
+SCOREBOARD: HOLD	스코어보드: 누르고 있기
+SCOREBOARD: TOGGLE	스코어보드: 토글
+SCORES	점수
+SCREEN	화면
+SCREENSHOT	스크린샷
+SCREENSHOT FOLDER	스크린샷 폴더
+SCREENSHOT FORMAT	스크린샷 형식
+SCREENSHOT SAVED (NO HUD):	스크린샷 저장됨 (HUD 없음):
+SCREENSHOT SAVED:	스크린샷 저장됨:
+SCREENSHOTS	스크린샷
+SCROLLBAR	스크롤바
+SE	SE
+SEARCH	검색
+SEARCH MATERIALS	재질 검색
+SEE SOUNDS	소리 시각화
+SEE-THROUGH	투시
+SEEKER	술래
+SEEKING -	찾는 중 -
+SELECTED:	선택됨:
+SELF DAMAGE	자해 피해
+SEMIFINALS	4강
+SENSITIVITY	감도
+SENSITIVITY FROM ANOTHER GAME	다른 게임의 감도
+SERVER	서버
+SERVER LOG	서버 로그
+SERVER LOG: EXTREME (EVERY TICK)	서버 로그: 극단적 (매 틱)
+SERVER LOG: OFF	서버 로그: 끄기
+SERVER LOG: SIMPLE	서버 로그: 간단
+SERVER LOG: VERBOSE (125 HZ)	서버 로그: 상세 (125 HZ)
+SERVER NAME	서버 이름
+SERVERS (LAN + INTERNET)	서버 (LAN + 인터넷)
+SETTINGS	설정
+SETTINGS COPIED: PASTE THEM ANYWHERE	설정 복사됨: 어디든 붙여넣기
+SETTINGS IMPORTED	설정 가져옴
+SETTINGS, MAPS, DEMOS, SCREENSHOTS, HUDS	설정, 맵, 데모, 스크린샷, HUD
+SEWER - free for all.   RIVERSIDE / FAIRGROUND / ROOFTOPS - tag.   MUSEUM / CRUISESHIP - hide and seek.	SEWER - 개인전.   RIVERSIDE / FAIRGROUND / ROOFTOPS - 태그.   MUSEUM / CRUISESHIP - 숨바꼭질.
+SHADOW DISTANCE	그림자 거리
+SHADOW DISTANCE: 16 M	그림자 거리: 16 M
+SHADOW DISTANCE: 32 M	그림자 거리: 32 M
+SHADOW DISTANCE: 64 M	그림자 거리: 64 M
+SHADOW EDGE	그림자 가장자리
+SHADOW EDGE: HARD	그림자 가장자리: 선명
+SHADOW EDGE: SOFT	그림자 가장자리: 부드럽게
+SHADOW EDGE: SOFTER	그림자 가장자리: 더 부드럽게
+SHADOW QUALITY	그림자 품질
+SHADOW QUALITY: HIGH	그림자 품질: 높음
+SHADOW QUALITY: LOW	그림자 품질: 낮음
+SHADOW QUALITY: MEDIUM	그림자 품질: 중간
+SHADOWS	그림자
+SHAPE	모양
+SHARPEN	선명화
+SHIFT + ARROWS: GROW THAT SIDE    CTRL + ARROWS: SHRINK IT    M: MATERIAL / TEAM    N: SHAPE    K: COAT THE SIDE YOU LOOK AT	SHIFT + 화살표: 해당 면 늘리기    CTRL + 화살표: 줄이기    M: 재질 / 팀    N: 모양    K: 보고 있는 면 칠하기
+SHIFT - dash: a burst of speed in the direction you're moving, tilted by where you look. You hold 2 dashes, usable 0.6 s apart (from the end of the last one). A spent dash recharges for 1.2 s from the end of the dash that spent it; after that, landing gives it back (a bunny hop gives one).	SHIFT - 대시: 이동 방향으로 순간 가속하며, 보는 방향에 따라 기울어집니다. 대시는 2회 보유하며 0.6초 간격으로 사용 가능 (직전 대시 종료 기준). 사용한 대시는 해당 대시 종료 후 1.2초 동안 재충전되며, 그 후 착지하면 돌아옵니다 (버니합 시 1회 회복).
+SHIFT+ARROW (NUDGE 10)	SHIFT+화살표 (10 미세 이동)
+SHOT	발사
+SHOTGUN	샷건
+SHOTGUNS IN LOW GRAVITY	저중력 샷건
+SHOTGUNS ONLY	샷건만
+SHOTS	발사 수
+SHOTS, LASER AND ROPE IN OWN COLOR	총탄, 레이저, 로프를 개인 색상으로
+SHOW	표시
+SHOW COLUMN	열 표시
+SHOW DB	DB 표시
+SHOW FPS	FPS 표시
+SHOW I'M TYPING	입력 중 표시
+SHOW LINE	줄 표시
+SHOW PING	PING 표시
+SHOW WEAPON	무기 표시
+SHOWN	표시됨
+SHOWN WITH VERBOSE INFO ON. DRAG TO MOVE, CORNER / WHEEL TO SIZE, ARROWS NUDGE, ALT: NO SNAP	상세 정보 켜기 시 표시. 드래그로 이동, 모서리 / 휠로 크기, 화살표로 미세 이동, ALT: 스냅 없음
+SHOWS INPUT->FRAME LATENCY	INPUT->FRAME 지연 시간 표시
+SHUFFLE TEAMS	팀 섞기
+SHUFFLE THE TEAMS (THE MATCH RESTARTS)	팀 섞기 (경기 재시작)
+SIMPLE	간단
+SIMPLE SKY	단순한 하늘
+SITE	지점
+SIZE	크기
+SIZE (CORNER)	크기 (모서리)
+SIZE: SYSTEM	크기: 시스템
+SIZE: X1	크기: X1
+SIZE: X1.5	크기: X1.5
+SIZE: X2	크기: X2
+SIZING	크기 조정
+SIZING: EXACT PIXELS	크기 조정: 픽셀 고정
+SIZING: SCALE WITH RESOLUTION	크기 조정: 해상도에 맞춤
+SKIP IT	건너뛰기
+SKIP WARMUP	워밍업 건너뛰기
+SKY	하늘
+SLOT	슬롯
+SLOT 1	슬롯 1
+SLOT 2	슬롯 2
+SLOT 3	슬롯 3
+SMOOTH EDGES	가장자리 부드럽게
+SMOOTH STRENGTH	부드럽게 강도
+SMOOTHING (INTERP): ADAPTIVE	보정 (보간): 적응형
+SMOOTHING (INTERP): CUSTOM	보정 (보간): 사용자 지정
+SMOOTHING (INTERP): OFF	보정 (보간): 끄기
+SMOOTHING DELAY (MS)	보정 지연 (MS)
+SNAPS: 125	스냅: 125
+SNAPS: 250	스냅: 250
+SNAPS: 500	스냅: 500
+SNAPS: 62.5	스냅: 62.5
+SNAPSHOT RATE	스냅샷 빈도
+SNIPER	저격총
+SNIPER SCOPE	저격 스코프
+SNIPER ZOOM FOV	저격 줌 FOV
+SNIPERS - ANY HIT KILLS	저격수 - 한 방이면 처치
+SNIPERS ONLY	저격총만
+SOCD	SOCD
+SORT	정렬
+SORT BY	정렬 기준
+SORT BY: DEATHS	정렬 기준: 데스
+SORT BY: KILLS	정렬 기준: 킬
+SORT BY: NAME	정렬 기준: 이름
+SORT BY: PING	정렬 기준: PING
+SORT BY: SCORE	정렬 기준: 점수
+SORT: BIGGEST FIRST	정렬: 큰 것부터
+SORT: NAME	정렬: 이름
+SORT: NEWEST FIRST	정렬: 최신순
+SORT: OLDEST FIRST	정렬: 오래된순
+SOUND	사운드
+SOUND GROUPS	사운드 그룹
+SOUND OCCLUSION	소리 차폐
+SOUND ON	소리 켜기
+SOUND PACK: DEFAULT	사운드 팩: 기본
+SOUND PACK: HEAVY METAL	사운드 팩: 헤비 메탈
+SOUND PACK: MAGICAL	사운드 팩: 마법
+SOUND PACK: MOUTH	사운드 팩: 입소리
+SOUND PACK: RETRO	사운드 팩: 레트로
+SOUND SWITCHES TO IT AT ONCE	소리가 즉시 전환됨
+SOUNDS	사운드
+SOUNDS BEHIND WALLS MUFFLED: YOU HEAR LESS	벽 너머 소리 먹먹하게: 덜 들림
+SPACE	SPACE
+SPARE TIME BEFORE THE BLANK; A LATE FRAME	블랭크 전 여유 시간; 지연된 프레임은
+SPAWN	스폰
+SPEC NEXT	다음 관전
+SPEC PREV	이전 관전
+SPECTATE	관전
+SPECTATING	관전 중
+SPECTATOR	관전자
+SPECTATOR FOV	관전자 FOV
+SPECTATOR HUD	관전자 HUD
+SPECTATOR HUD: FULL	관전자 HUD: 전체
+SPECTATOR HUD: MINIMAL	관전자 HUD: 최소
+SPEED	속도
+SPEED CAPTION	속도 설명
+SPEED METER	속도계
+SPEED UNITS	속도 단위
+SPEED UNITS: KM/H	속도 단위: KM/H
+SPEED UNITS: M/S	속도 단위: M/S
+SPEED UNITS: UPS (QUAKE)	속도 단위: UPS (QUAKE)
+SPEED, GRID AND LAST LIGHT ARE KEPT	속도, 그리드, 마지막 조명은 유지됨
+SPEED: CARRY	속도: 운반
+SPEED: FAST	속도: 빠름
+SPEED: HITSCAN	속도: 히트스캔
+SPEED: SLOW	속도: 느림
+SPEED: WALK	속도: 걷기
+SPLIT	구간
+SPLIT TIME	구간 기록
+SPLITS VS	구간 비교 대상
+SPLITS: AHEAD / BEHIND	구간: 앞섬 / 뒤처짐
+SPLITS: PALETTE	구간: 팔레트
+SPREAD CIRCLE	탄 퍼짐 원
+SPREE	연속 처치
+SPY	스파이
+SSE4.2	SSE4.2
+ST	ST
+STACKING	누적
+STACKING: A NUMBER A HIT	누적: 적중마다 숫자
+STACKING: QUICK HITS ADD UP	누적: 빠른 연속 적중 합산
+STACKING: RUNNING TOTAL	누적: 누계
+STAIR SMOOTHING	계단 보정
+STAIRS	계단
+STALEMATE - HEALTH DRAINING	교착 상태 - 체력 감소 중
+STALEMATE - HEALTH DRAINS IN	교착 상태 - 체력 감소까지
+STALEMATE WARNING	교착 상태 경고
+STALLED #S	#초 정지
+STANDARD	표준
+STANDARD RULES	표준 규칙
+STANDARD: SNIPER	표준: 저격총
+START	시작
+START THE MATCH	경기 시작
+STARTING IN #	#초 후 시작
+STAY HIDDEN -	계속 숨으세요 -
+STDEV	표준편차
+STEP	단계
+STEP HEIGHT	오를 수 있는 높이
+STEPS	단계
+STEPS, SHOTS, BOOMS... AS WORDS ROUND THE	발소리, 총성, 폭발음... 을 글자로 주변에
+STEREO WIDTH	스테레오 폭
+STICKIES	점착탄
+STICKIES AT MAX	점착탄 최대
+STICKIES ON YOU	내게 붙은 점착탄
+STICKIES ONLY	점착탄만
+STICKY	점착탄
+STICKY COUNTER	점착탄 카운터
+STICKY ON YOU	내게 붙은 점착탄
+STILL HIDDEN	아직 숨어 있음
+STONE	돌
+STOP DEMO	데모 중지
+STOP EDITING AND PLAY THE MAP	편집을 멈추고 맵 플레이
+STOP HOSTING	호스트 중지
+STOP RECORDING	녹화 중지
+STOP THE PAYLOAD	화물 저지
+STOPPING SPEED	정지 속도
+STRAFE BOOST (AT SPEED)	스트레이프 부스트 (고속 시)
+STREAK	연속 처치
+STREAK CALLOUTS	연속 처치 안내
+STREAK CALLOUTS: ALL	연속 처치 안내: 전체
+STREAK CALLOUTS: MINE	연속 처치 안내: 나만
+STREAK CALLOUTS: OFF	연속 처치 안내: 끄기
+STREAMER MODE	스트리머 모드
+STREAMER: ADDRESSES, CODES, OTHERS' NAMES HIDDEN	스트리머: 주소, 코드, 다른 플레이어 이름 숨김
+STRETCHED (OR BARRED BY YOUR GPU'S SCALING)	늘림 (또는 GPU 스케일링으로 레터박스)
+STYLE	스타일
+STYLE (THEME.CFG)	스타일 (THEME.CFG)
+STYLE: BAR	스타일: 바
+STYLE: CIRCLE	스타일: 원
+STYLE: COLOR-GRADED BAR	스타일: 색상 그라데이션 바
+STYLE: CROSS	스타일: 십자
+STYLE: CROSS + DOT	스타일: 십자 + 점
+STYLE: DOT	스타일: 점
+STYLE: ICON (OPACITY)	스타일: 아이콘 (불투명도)
+STYLE: ICON + BAR	스타일: 아이콘 + 바
+STYLE: NUMBER	스타일: 숫자
+STYLE: T	스타일: T
+SUBTRACT	빼기
+SUPER	슈퍼
+SUPER DASH	슈퍼 대시
+SUPER DASH BOOST	슈퍼 대시 부스트
+SUPER DASH JUMP	슈퍼 대시 점프
+SUPER DASH SPEED (MAX)	슈퍼 대시 속도 (최대)
+SURE?	확실합니까?
+SURE? QUIT	확실합니까? 종료
+SURF	서핑
+SURFACES	표면
+SW	SW
+SWAP	교체
+SWAP FIRE	사격 버튼 교체
+SYRINGE	주사기
+SYSTEM DEFAULT	시스템 기본값
+SYSTEM LINE COLOR	시스템 줄 색상
+SYSTEM MESSAGES	시스템 메시지
+SYSTEM MESSAGES: ALL	시스템 메시지: 전체
+SYSTEM MESSAGES: IMPORTANT	시스템 메시지: 중요
+SYSTEM MESSAGES: OFF	시스템 메시지: 끄기
+SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)	시스템: OS 기본 화살표 (색상: 게임 커서만)
+Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).	설정 > 조작에서 키 설정을 내보내거나 다른 사람의 설정을 가져올 수 있습니다 (텍스트 복사 / 붙여넣기).
+Start the match, change map / mode, ranked on / off, edit the map together, bots on. A majority of the human players decides.	경기 시작, 맵 / 모드 변경, 랭크 켜기 / 끄기, 맵 함께 편집, 봇 켜기. 사람 플레이어 과반수가 결정합니다.
+Style, length, thickness, gap, colour and outline, with a live preview.	스타일, 길이, 두께, 간격, 색상, 외곽선을 실시간 미리보기로 조절.
+Super dash: look down and dash into the floor while holding jump: you leave 5 m/s faster than you went into the dash (at least 11, at most 36 m/s), with a hop that gets higher the further down you look (it leaves you 1 dash).	슈퍼 대시: 점프를 누른 채 아래를 보고 바닥으로 대시: 대시에 들어갈 때보다 5 m/s 빠르게 나오며 (최소 11, 최대 36 m/s), 아래를 볼수록 더 높이 튀어 오릅니다 (대시 1회 남음).
+Switching weapons with fire held doesn't fire the new one: let go and press again.	사격 버튼을 누른 채 무기를 바꾸면 새 무기는 발사되지 않습니다: 뗐다가 다시 누르세요.
+TAB	TAB
+TAB (NEXT ELEMENT)	TAB (다음 요소)
+TAB - scoreboard.   ENTER - chat.   F1 / F2 - vote yes / no.   F5 - vote to start the match.	TAB - 스코어보드.   ENTER - 채팅.   F1 / F2 - 찬성 / 반대 투표.   F5 - 경기 시작 투표.
+TAB completes   UP/DOWN history   CTRL+V pastes   CTRL+C copies the line (empty line or CTRL+SHIFT+C: the log)	TAB 자동 완성   UP/DOWN 기록   CTRL+V 붙여넣기   CTRL+C 줄 복사 (빈 줄 또는 CTRL+SHIFT+C: 로그)
+TAG	태그
+TAG - whoever is the TAGGER when the timer runs out is eliminated. Last one standing wins.	태그 - 타이머가 끝날 때 술래인 플레이어가 탈락합니다. 마지막까지 남은 플레이어 승리.
+TAG COLOR	태그 색상
+TAG OPACITY	태그 불투명도
+TAG SIZE	태그 크기
+TAGGER	술래
+TAGS: CUSTOM	태그: 사용자 지정
+TAGS: TEAM	태그: 팀
+TAGS: WHITE	태그: 흰색
+TAKE NO DAMAGE	피해 없음
+TAKES ONE; HIDE HUD: THE 3D VIEW ONLY;	한 장 촬영; HUD 숨기기: 3D 화면만;
+TAKES THE SOUND DEVICE FOR LOWER AUDIO LAG	오디오 지연을 줄이기 위해 사운드 장치 독점
+TANKS	탱커
+TEAM	팀
+TEAM (M)	팀 (M)
+TEAM A	A팀
+TEAM A AND B IN THESE, NOT YOURS / THE ENEMY'S	여기서는 A팀과 B팀 기준, 우리 팀 / 적 팀 아님
+TEAM A ATTACKS - TEAM B DEFENDS	A팀 공격 - B팀 수비
+TEAM A delivered the payload	A팀이 화물을 운반했습니다
+TEAM B	B팀
+TEAM B ATTACKS - TEAM A DEFENDS	B팀 공격 - A팀 수비
+TEAM B delivered the payload	B팀이 화물을 운반했습니다
+TEAM CHAT	팀 채팅
+TEAM CHAT ONLY	팀 채팅만
+TEAM COLOR	팀 색상
+TEAM COLOR IS ALSO THE MENU ACCENT	팀 색상이 메뉴 강조색으로도 사용됨
+TEAM COLORS	팀 색상
+TEAM COLORS:	팀 색상:
+TEAM COLORS: CUSTOM	팀 색상: 사용자 지정
+TEAM MODEL	팀 모델
+TEAM MODEL:	팀 모델:
+TEAM MODEL: THEIR OWN	팀 모델: 본인 설정
+TEAM OUTLINE	팀 외곽선
+TEAM OUTLINE:	팀 외곽선:
+TEAM PANEL	팀 패널
+TEAM POOL # / #  -  ENEMY # / #	팀 풀 # / #  -  적 # / #
+TEAM WIDTH	팀 너비
+TEAM, OUTLINE, CROSSHAIR, TRACER AND ROPE COLORS	팀, 외곽선, 조준점, 궤적, 로프 색상
+TEAM: ANY TEAM	팀: 모든 팀
+TEAM: RACE	팀: 레이스
+TEAM: TEAM A	팀: A팀
+TEAM: TEAM B	팀: B팀
+TEAMMATE BOTS	아군 봇
+TEAMMATES ALIVE	생존한 팀원
+TEAMMATES' NAMES OVER THEIR HEADS	팀원 머리 위 이름
+TEAMS	팀
+TEAMS, A BALL, TWO GOALS - MOST GOALS IN 10 MINUTES	두 팀, 공 하나, 골대 둘 - 10분간 최다 득점
+TEAMS: 1V1	팀: 1V1
+TEAMS: 2V2	팀: 2V2
+TEAR LINE OFFSET (US)	티어링 선 오프셋 (US)
+TEARS NOW OR WAITS A REFRESH	즉시 티어링 또는 한 주기 대기
+TENTHS	소수점
+TENTHS: THE LAST 10 S AS 0:09.4	소수점: 마지막 10초를 0:09.4처럼 표시
+TEST	테스트
+TEST BOTS	테스트 봇
+TEST MODE	테스트 모드
+TEST MODE:	테스트 모드:
+TEST MODE: THE MAP'S	테스트 모드: 맵 기본
+TEST plays the map right away; BAKE LIGHT previews the real lighting.	테스트는 맵을 바로 플레이합니다; 조명 굽기는 실제 조명을 미리 보여줍니다.
+TESTING BUILD - RANKED NOT RATED (PLAYED, NEVER COUNTED)	테스트 빌드 - 랭크 레이팅 미반영 (플레이되지만 집계 안 됨)
+TEXT	텍스트
+TEXT AFTER THE LAST RULE	마지막 규칙 뒤 텍스트
+TEXT ALIGN	텍스트 정렬
+TEXT BRIGHTNESS	텍스트 밝기
+TEXT OUTLINE	텍스트 외곽선
+TEXT SIZE %	텍스트 크기 %
+TEXT: CENTRE	텍스트: 가운데
+TEXT: LEFT	텍스트: 왼쪽
+TEXT: RIGHT	텍스트: 오른쪽
+TF2 BUILD	TF2 빌드
+TF2 SECONDARY	TF2 보조 무기
+TH	TH
+THE 3D SCENE (THE HUD STAYS AS IT IS);	3D 장면 (HUD는 그대로);
+THE BOMB IS CARRIED AGAIN	폭탄을 다시 들었습니다
+THE BOMB IS DOWN	폭탄이 떨어졌습니다
+THE CHOSEN AUDIO OUTPUT IS GONE: USING THE SYSTEM DEFAULT	선택한 오디오 출력이 없음: 시스템 기본값 사용
+THE DARK EDGE ROUND ALL TEXT, MENUS TOO	모든 텍스트와 메뉴의 어두운 테두리
+THE DEFAULT	기본값
+THE FONT COCAINE DIESEL USES	COCAINE DIESEL이 사용하는 폰트
+THE FONT OF THE MENUS AND THE HUD	메뉴와 HUD의 폰트
+THE GAME'S PART ONLY: NO MOUSE POLLING, NO DISPLAY; ONE TIME LINE	게임만: 마우스 폴링과 디스플레이 제외; 하나의 시간선
+THE GUN'S KICK ON A SHOT (0: NONE)	사격 시 총기 반동 (0: 없음)
+THE HAZE OVER DISTANT WALLS (0: NONE)	먼 벽 위의 연무 (0: 없음)
+THE LANGUAGE OF THE MENUS AND THE HUD	메뉴와 HUD의 언어
+THE MAP ISN'T BUILT FOR THIS MODE: IT MAY NOT WORK	이 맵은 이 모드용이 아님: 작동하지 않을 수 있음
+THE MESSAGES UNDER THE SCORE BOX	점수판 아래 메시지
+THE OLD MAPS (BEFORE 1.19.6) IN THE MAP LISTS. NEVER RANKED	맵 목록의 구 맵 (1.19.6 이전). 랭크 불가
+THE ORIGINAL PIXEL FONT	원래 픽셀 폰트
+THE OTHER CONTROL SCRIPTS STAY OFF IN RANKED	다른 조작 스크립트는 랭크에서 꺼진 상태 유지
+THE QUEUES YOU'RE IN, JOINED AGAIN NEXT START	참가 중인 대기열, 다음 실행 시 재참가
+THE SAVED DEVICE IS GONE: THE DEFAULT PLAYS	저장된 장치 없음: 기본 장치로 재생
+THE SAVED MICROPHONE IS GONE: THE DEFAULT	저장된 마이크 없음: 기본값 사용
+THE SAVED MONITOR IS GONE: THE PRIMARY	저장된 모니터 없음: 기본 모니터 사용
+THE SCROLL WHEEL PASSES OVER SKIPPED	스크롤 휠은 건너뛴 항목을 넘어감
+THE SHARE OF THE MODE'S MAX HEALTH	모드 최대 체력 대비 비율
+THE TASKBAR BUTTON FLASHES	작업 표시줄 버튼 깜빡임
+THE WINDOW'S SIZE AND PLACE ARE KEPT	창 크기와 위치 유지
+THEIRS	상대 것
+THEME.CFG LINE	THEME.CFG 줄
+THEN REFRESH	그 후 새로고침
+THESE ONLY APPLY TO IT	이것에만 적용
+THEY DROPPED THE BOMB	적이 폭탄을 떨어뜨림
+THEY HAVE THE BOMB AGAIN	적이 폭탄을 다시 들었음
+THEY'RE CHOOSING -	상대가 고르는 중 -
+THICKNESS	두께
+THIRD PERSON	3인칭
+THIRTY SECONDS	30초
+THIS LIFE:	이번 목숨:
+THIS RUN	이번 기록
+THREADED OPTIMIZATION OFF	스레드 최적화 끄기
+THREADED OPTIMIZATION OFF; PRESENT VIA DXGI	스레드 최적화 끄기; DXGI로 표시
+THREADED OPTIMIZATION: WINDOWS ONLY	스레드 최적화: WINDOWS 전용
+THREE	셋
+THROW	투척
+TICK / SNAP	틱 / 스냅
+TICK RATE	틱레이트
+TICK: 1000 HZ	틱: 1000 HZ
+TICK: 125 HZ	틱: 125 HZ
+TICK: 250 HZ	틱: 250 HZ
+TICK: 500 HZ	틱: 500 HZ
+TICKS + PREDICTION	틱 + 예측
+TIEBREAK - ROCK PAPER SCISSORS	타이브레이크 - 가위바위보
+TIERS OFF: ONE HITSOUND FOR EVERY HIT; DUCKING:	단계 끄기: 모든 적중에 같은 타격음; 더킹:
+TILE	타일
+TIME	시간
+TIME / SCORE / ROUNDS: 0 = THE MODE'S DEFAULT	시간 / 점수 / 라운드: 0 = 모드 기본값
+TIME LEFT	남은 시간
+TIME LIMIT (S)	시간 제한 (초)
+TIME TRIAL	타임 트라이얼
+TIME TRIAL -	타임 트라이얼 -
+TIME TRIAL RUNS	타임 트라이얼 기록
+TIME WARNINGS	시간 경고
+TIME WARNINGS ON SCREEN	화면에 시간 경고
+TIME WARNINGS: + COUNTDOWN	시간 경고: + 카운트다운
+TIME WARNINGS: 60 + 30 S	시간 경고: 60 + 30초
+TIME WARNINGS: OFF	시간 경고: 끄기
+TIMESTAMPS	타임스탬프
+TINY PLAYERS	작은 플레이어
+TITLE	제목
+TO SHOW IT AGAIN	다시 표시하려면
+TO SPECTATOR (UNTIL THE NEXT MAP)	관전자로 (다음 맵까지)
+TO START THE RACE	레이스를 시작하려면
+TO VOTE START	시작 투표하려면
+TOGGLE CHAT	채팅 토글
+TOGGLE: PRESS THE SCOREBOARD KEY TO SHOW / HIDE	토글: 스코어보드 키를 눌러 표시 / 숨기기
+TOGGLE: PRESS TO HOOK, PRESS AGAIN TO LET GO	토글: 눌러서 훅 걸기, 다시 눌러 놓기
+TOGGLE: PRESS USE TO PLANT / DEFUSE, AGAIN TO STOP	토글: 사용 키를 눌러 설치 / 해체, 다시 눌러 중지
+TONE CURVE	톤 커브
+TONE CURVE OFF: FLAT, LINEAR COLOUR; CLEAN: NO	톤 커브 끄기: 평면, 선형 색상; 클린: 없음
+TOP RIGHT, WITHOUT A WIDGET (F3 HAS MORE)	오른쪽 위, 위젯 없이 (F3에 더 많음)
+TOTAL K / D	총 K / D
+TOURNEY	토너먼트
+TOURNEY - a single-elimination bracket of 1v1s; everyone else spectates the match in progress.	토너먼트 - 1v1 싱글 엘리미네이션 대진표; 나머지 플레이어는 진행 중인 경기를 관전합니다.
+TOURNEY BRACKET	토너먼트 대진표
+TOURNEY MAPS	토너먼트 맵
+TOURNEY MAPS (PICK ANY, THEY ROTATE)	토너먼트 맵 (자유 선택, 순환됨)
+TOURNEY MAPS:	토너먼트 맵:
+TOURNEY RULES	토너먼트 규칙
+TOURNEY RULESETS (PICK ANY, THEY ROTATE)	토너먼트 규칙 (자유 선택, 순환됨)
+TOURNEY RULESETS:	토너먼트 규칙:
+TOURNEY TAB	토너먼트 탭
+TOURNEY TAB: THE BRACKET	토너먼트 탭: 대진표
+TOURNEY TAB: THE SCOREBOARD	토너먼트 탭: 스코어보드
+TRACER COLOR	궤적 색상
+TRACERS	궤적
+TRACERS + LASER START WHERE THE GUN IS	궤적 + 레이저가 총 위치에서 시작
+TRACERS + TRAILS	궤적 + 꼬리
+TRACERS: CLASSIC	궤적: 클래식
+TRACERS: CUSTOM	궤적: 사용자 지정
+TRACERS: TEAM	궤적: 팀
+TRAIL OPACITY	꼬리 불투명도
+TRAILS	꼬리
+TRAILS: FULL	꼬리: 전체
+TRAILS: OFF	꼬리: 끄기
+TRAILS: SHORT	꼬리: 짧게
+TRAILS: THE STREAKS BEHIND ROCKETS, BOLTS,	꼬리: 로켓, 화살 등의 뒤에 남는 줄기,
+TRAINER MENU	트레이너 메뉴
+TRIAL MAP	트라이얼 맵
+TT	TT
+TWO	둘
+TYPE TO SEARCH: A NAME OR WHAT IT DOES (CTRL+F)	검색어 입력: 이름 또는 기능 (CTRL+F)
+TYPING	입력 중
+TYPING SOUNDS	타이핑 소리
+The server listens on UDP port 27500 (change it under UDP PORT). Quark asks your router to forward it automatically (UPnP); if friends can't connect, forward that UDP port on your router by hand.	서버는 UDP 포트 27500을 사용합니다 (UDP 포트에서 변경). Quark는 라우터에 자동 포워딩을 요청합니다 (UPnP); 친구가 접속하지 못하면 라우터에서 해당 UDP 포트를 직접 포워딩하세요.
+UARK	UARK
+UDP	UDP
+UDP PORT	UDP 포트
+UHD	UHD
+UI FONT	UI 폰트
+ULTRA	울트라
+ULTRA SAFETY	울트라 안전 여유
+ULTRA: 0 QUEUED + LATE INPUT SAMPLING	울트라: 대기 0 + 늦은 입력 샘플링
+UNBAKE	굽기 해제
+UNBOUND	미지정
+UNCHANGED	변경 없음
+UNDO	실행 취소
+UNGROUP	그룹 해제
+UNKNOWN	알 수 없음
+UNKNOWN SELECTOR '	알 수 없는 선택자 '
+UNLIMITED	무제한
+UNPLAYED MAPS COUNT AT THEIR DEFAULT TIME	플레이하지 않은 맵은 기본 시간으로 계산
+UNSTOPPABLE	아무도 못 막음
+UP	위
+UP / DOWN AS A MULTIPLE OF SENSITIVITY	위 / 아래를 감도의 배수로
+UPLOAD CAP (MBIT/S)	업로드 한도 (MBIT/S)
+USE	사용
+USE #	사용 #
+USE IT	사용하기
+USE MY OVERRIDES	내 오버라이드 사용
+USE: HOLD	사용: 누르고 있기
+USE: TOGGLE	사용: 토글
+USED BY: EVERY MODE	사용 모드: 모든 모드
+USED BY: ONLY	사용 모드: 다음만
+USED WHEN SMOOTHING IS CUSTOM	보정이 사용자 지정일 때 사용
+USERPROFILE	USERPROFILE
+USING YOUR	사용 중:
+VALUE	값
+VALUE:	값:
+VAMPIRE	뱀파이어
+VAMPIRE LASER	뱀파이어 레이저
+VANILLA	바닐라
+VEC2	VEC2
+VEC3	VEC3
+VEC4	VEC4
+VERBOSE INFO	상세 정보
+VERBOSE INFO LINES	상세 정보 줄
+VERDANA BOLD	VERDANA BOLD
+VERSION	버전
+VERTICAL KEYS	수직 이동 키
+VERTICAL SENSITIVITY	수직 감도
+VERTICAL: ONE KEY	수직: 키 하나
+VERTICAL: TWO KEYS	수직: 키 두 개
+VIDEO	비디오
+VIDEO + AUDIO	비디오 + 오디오
+VIDEO 2	비디오 2
+VIDEO 3	비디오 3
+VIDEO 4	비디오 4
+VIDEO 5	비디오 5
+VIDEO 6	비디오 6
+VIDEO 7	비디오 7
+VIDEO 8	비디오 8
+VIDEO 9	비디오 9
+VIDEO: DEVICES	비디오: 장치
+VIEW	시점
+VISUALIZE SOUNDS	소리 시각화
+VOICE	음성
+VOICE:	음성:
+VOL DOWN	볼륨 낮추기
+VOL UP	볼륨 높이기
+VOLUME	볼륨
+VOTE	투표
+VOTE CALLED	투표 시작됨
+VOTE NO	반대
+VOTE START	시작 투표
+VOTE YES	찬성
+VOTE:	투표:
+VOTE: GAMEMODE	투표: 게임 모드
+VOTE: KICK A PLAYER	투표: 플레이어 강퇴
+VOTE: MODIFIERS	투표: 변형
+VOTE: MOVE TO SPECTATOR (UNTIL THE NEXT MAP)	투표: 관전자로 이동 (다음 맵까지)
+VOTE: PLAY IT	투표: 플레이하기
+VOTE: {}   YES #  NO #  OF #   F1 YES / F2 NO   #s	투표: {}   예 #  아니요 #  / #   F1 예 / F2 아니요   #초
+VOTED MODIFIERS ON	투표로 변형 켜짐
+VOTES	투표
+VS	VS
+VS - one life each per round; last team standing wins the round. If nobody makes progress for 30 s, health drains. First to 5 rounds.	VS - 라운드당 목숨 하나; 마지막까지 살아남은 팀이 라운드 승리. 30초간 진전이 없으면 체력이 감소합니다. 5라운드 선승.
+VS: BEST RUN	VS: 최고 기록
+VS: BEST SEGMENTS	VS: 최고 구간
+VS: LAST RUN	VS: 최근 기록
+VSYNC	수직 동기화
+VSYNC / LOW LATENCY	수직 동기화 / 저지연
+VSYNC ON, FPS CAPPED 3 UNDER THE REFRESH	수직 동기화 켜기, FPS를 주사율보다 3 낮게 제한
+VSYNC ON, FPS CAPPED AT	수직 동기화 켜기, FPS 제한:
+VSYNC: ADAPTIVE	수직 동기화: 적응형
+VSYNC: HELD FOR ITS BLANK	수직 동기화: 블랭크까지 대기
+VSYNC: LATENT SYNC	수직 동기화: LATENT SYNC
+VSYNC: NEXT VBLANK (EST)	수직 동기화: 다음 VBLANK (추정)
+VSYNC: OFF	수직 동기화: 끄기
+VSYNC: ON	수직 동기화: 켜기
+W A S D - move.   SPACE - jump (hold it as you land to bounce: bunny hop).	W A S D - 이동.   SPACE - 점프 (착지할 때 누르고 있으면 튕김: 버니합).
+WAD2	WAD2
+WAITING FOR THE LATE READ (AVG)	늦은 읽기 대기 (평균)
+WAITING FOR THE LATE READ (AVG)  00,000,000 NS	늦은 읽기 대기 (평균)  00,000,000 NS
+WAITING FOR THE NEXT READ (AVG)	다음 읽기 대기 (평균)
+WALLBANG	월뱅
+WALLBANG TINT	월뱅 색조
+WARMING UP	워밍업 중
+WARMUP -	워밍업 -
+WARMUP - {} TO VOTE START	워밍업 - {} 시작 투표하려면
+WARNING BEEP	경고음
+WARNING: DON'T TOUCH THIS UNLESS YOU KNOW WHAT YOU'RE DOING	경고: 잘 모르면 건드리지 마세요
+WARNINGS	경고
+WAS ON	이전 상태
+WASTELAND	황무지
+WAVE	웨이브
+WEAPON	무기
+WEAPON CAPTION	무기 설명
+WEAPON KICK	무기 반동
+WEAPON LIST	무기 목록
+WEAPON LIST: AFTER A SWITCH	무기 목록: 교체 후
+WEAPON LIST: ALWAYS	무기 목록: 항상
+WEAPON MODEL	무기 모델
+WEAPON MODEL OPACITY	무기 모델 불투명도
+WEAPON MODEL and GRAPPLE MODEL (the first two entries): move the gun / the grapple launcher left / right / up / down, change its size and depth, tilt it (pitch / yaw / roll), give it its own accent colour, or hide it. Your shots come out of the gun and your rope out of the launcher wherever you put them.	무기 모델과 그래플 모델 (처음 두 항목): 총 / 그래플 발사기를 좌우 / 상하로 옮기고, 크기와 깊이를 바꾸고, 기울이고 (피치 / 요 / 롤), 고유 강조색을 주거나 숨길 수 있습니다. 어디에 두든 총알은 총에서, 로프는 발사기에서 나갑니다.
+WEAPON NAME	무기 이름
+WEAPON SCROLL	무기 스크롤
+WEAPON SENSITIVITY	무기별 감도
+WEAPON:	무기:
+WEAPONS	무기
+WEAPONS (THEIR NUMBER KEYS STILL WORK)	무기 (숫자 키는 계속 작동)
+WHAT THE BOTS PLAY: .QBRAIN FILES IN THE BOTS FOLDER	봇이 사용하는 AI: BOTS 폴더의 .QBRAIN 파일
+WHAT THE VOTE CHANGES	투표로 바뀌는 것
+WHEEL DN	WHEEL DN
+WHEEL UP	WHEEL UP
+WHEN ONE FILLS, EVERYONE IN IT IS TOLD (HERE AND ON DISCORD)	대기열이 차면 참가한 모두에게 알림 (여기와 DISCORD에서)
+WHEN UNFOCUSED	창 비활성 시
+WHEN UNFOCUSED, FLASH ON	창 비활성 시 깜빡임
+WHERE THE HITS YOU TAKE COME FROM	받는 공격의 방향
+WHILE TYPING, CHAT IS ALWAYS FULLY SHOWN	입력 중에는 채팅이 항상 완전히 표시됨
+WHITE	흰색
+WHITE / YELLOW	흰색 / 노랑
+WHOLE HUD	HUD 전체
+WIDGET EDITOR	위젯 에디터
+WIDGETS	위젯
+WIDGETS FROM CLIPBOARD	클립보드의 위젯
+WIDTH; CUSTOM (GLTF) PLAYER MODELS HAVE NO OUTLINE	두께; 사용자 지정 (GLTF) 플레이어 모델은 외곽선 없음
+WINDIR	WINDIR
+WINDOW	창
+WINDOW + INPUT	창 + 입력
+WINDOW SIZE	창 크기
+WINDOW SIZE:	창 크기:
+WINDOWED	창 모드
+WINDOWS, WITH PRIORITIZE GAME ON;	WINDOWS, 게임 우선 켜짐 시;
+WINNER STAYS	승자 잔류
+WINNER STAYS - 1v1 rounds on one ruleset while everyone else waits in line. Each round's winner stays; the loser goes to the back of the line and the next in line plays the winner. Every round you win counts: first to 10 wins.	승자 잔류 - 나머지가 줄을 서서 기다리는 동안 한 가지 규칙으로 1v1 라운드를 진행합니다. 라운드 승자는 남고, 패자는 줄 맨 뒤로 가며 다음 사람이 승자와 대결합니다. 이긴 라운드는 모두 집계됩니다: 10승 선취.
+WINNER STAYS - FIRST TO	승자 잔류 - 선취
+WINNERS CROWN	승자의 왕관
+WINS	승리
+WINS THE MATCH	경기 승리
+WIZARD	마법사
+WORD FILTER	단어 필터
+WORK SANS	WORK SANS
+WORLD	월드
+WORLD + HUD + SHADOW MAP BUILD	월드 + HUD + 그림자 맵 생성
+WORLD OUTLINE	월드 외곽선
+WORLD OUTLINE WIDTH	월드 외곽선 두께
+WORST #MS  PING #  3D #X#	최악 #MS  PING #  3D #X#
+WRAP AROUND	순환
+X MSAA	X MSAA
+X OFFSET	X 오프셋
+X SENSITIVITY WHILE THIS WEAPON IS HELD	이 무기를 들고 있을 때 감도 배율
+X1.00: THE SAME FEEL AS UNZOOMED	X1.00: 줌 안 했을 때와 같은 느낌
+XYZ	XYZ
+Y OFFSET	Y 오프셋
+YAW	요
+YELLOW	노랑
+YES	예
+YES #  NO #  OF #   F1 YES / F2 NO   #s	찬성 #  반대 #  / #   F1 찬성 / F2 반대   #초
+YET REACHED IN YOUR ENEMY COLOUR	아직 도달 못 한 곳은 적 색상으로
+YOU DIED	사망했습니다
+YOU HAVE THE BOMB - PLANT AT A SITE	폭탄 보유 중 - 지점에 설치하세요
+YOU HEALED	회복함
+YOU LOSE	패배
+YOU LOST THE LEAD	선두를 빼앗겼습니다
+YOU TOOK THE LEAD	선두를 차지했습니다
+YOU WIN	승리
+YOU'RE	당신은
+YOU'RE SEEKING - FACE THE WALL AND COUNT	술래입니다 - 벽을 보고 숫자를 세세요
+YOU'RE THE TAGGER - TAG SOMEONE BEFORE TIME RUNS OUT	술래입니다 - 시간이 끝나기 전에 누군가를 태그하세요
+YOU:	나:
+YOU: NO TIME TRIALS YET	나: 아직 타임 트라이얼 없음
+YOUR BOTS: ALL STANDARD	내 봇: 모두 표준
+YOUR BOTS: MIXED MODELS	내 봇: 다양한 모델
+YOUR GOAL	우리 골대
+YOUR KILLS	내 킬
+YOUR MATCH:  # SHOTS  # HITS  #% ACCURACY  # DAMAGE  BEST STREAK #	내 경기:  발사 #  적중 #  정확도 #%  피해량 #  최고 연속 처치 #
+YOUR NAME (CHAT AND SCOREBOARD)	내 이름 (채팅 및 스코어보드)
+YOUR OWN MODEL FILE: NO PREVIEW HERE	내 모델 파일: 여기서는 미리보기 없음
+YOUR OWN: PUT .TTF / .OTF FILES IN MODS/FONTS,	직접 추가: .TTF / .OTF 파일을 MODS/FONTS에 넣고,
+YOUR QUEUE FOR	내 대기열:
+YOUR SHOTS	내 총탄
+YOUR SHOTS: ALWAYS	내 총탄: 항상
+YOUR SHOTS: NEVER	내 총탄: 안 함
+YOUR SHOTS: WITH WEAPON MODEL	내 총탄: 무기 모델과 함께
+YOUR TEAM IS PUSHING	우리 팀이 화물 미는 중
+You run at 9.5 m/s. In the air, holding a direction drifts you up to run speed (a standing jump moves too).	달리기 속도는 9.5 m/s입니다. 공중에서 방향을 누르고 있으면 달리기 속도까지 밀려갑니다 (제자리 점프도 움직입니다).
+You step up anything 0.55 m high, including stairs mid-jump. Ladders: walk into them, look up or down to climb (6.75 m/s).	높이 0.55 m까지는 무엇이든 올라서며, 점프 중 계단도 포함됩니다. 사다리: 다가가서 위나 아래를 보면 오릅니다 (6.75 m/s).
+ZERO-G FLIGHT, LASERS - HEAL 100% TO 50% OVER 30 S, NO KNOCKBACK	무중력 비행, 레이저 - 30초에 걸쳐 회복량 100%에서 50%로, 넉백 없음
+ZOMBIE	좀비
+ZONE OPACITY	구역 불투명도
+ZONE PULSE	구역 펄스
+ZOOM	줌
+ZOOM SENSITIVITY	줌 감도
+a caption for every announcer line	모든 아나운서 대사에 자막
+a colour per material from ice on (a large one: its base's), then the see-through, breakable and feature ones	a colour per material from ice on (a large one: its base's), then the see-through, breakable and feature ones
+a damaged PAK	손상된 PAK
+a damaged WAD	손상된 WAD
+a damaged built-in atlas	손상된 기본 아틀라스
+a label per material (the cycles below index it by material)	a label per material (the cycles below index it by material)
+a look per material from kMatBlocks on (the large ones: their base's), then the see-through, breakable and feature ones	a look per material from kMatBlocks on (the large ones: their base's), then the see-through, breakable and feature ones
+a map keeps at least one box outside groups - add another box first	맵에는 그룹 밖 박스가 하나 이상 있어야 함 - 먼저 박스를 추가하세요
+a map needs at least one box	맵에는 박스가 하나 이상 필요
+a map needs at least one mode	맵에는 모드가 하나 이상 필요
+a map needs at least one spawn	맵에는 스폰이 하나 이상 필요
+a picker tab for every material (kMatTabs)	a picker tab for every material (kMatTabs)
+a ranked match is being played - no votes until it's over	랭크 경기 진행 중 - 끝날 때까지 투표 불가
+a ranked match is being played - teams stay as they are until it's over	랭크 경기 진행 중 - 끝날 때까지 팀 유지
+a ranked match is being played: '	랭크 경기 진행 중: '
+a reference palette per prop	a reference palette per prop
+a spectate vote needs at least	관전 투표에 필요한 최소 인원:
+a tag match is being played - you can join the next one	태그 경기 진행 중 - 다음 경기에 참가할 수 있음
+a theme style per HUD element	a theme style per HUD element
+a tourney is running - you can join the next one	토너먼트 진행 중 - 다음 대회에 참가할 수 있음
+a vote is already in progress	이미 투표 진행 중
+accessor out of range	accessor 범위 초과
+add must be 3 numbers from 0 to 16	add는 0에서 16 사이의 숫자 3개여야 함
+advances (walkover)	부전승 진출
+after a session	세션 후
+after swap (low latency wait)	스왑 후 (저지연 대기)
+ahead of you (winner stays)	앞 순서 (승자 잔류)
+alpha must be over 0 and at most 1	alpha는 0 초과 1 이하여야 함
+an update is ready - the server restarts after this match	업데이트 준비됨 - 이 경기 후 서버 재시작
+announce:	알림:
+announce: {}	announce: {}
+another program holds the engine at its period	다른 프로그램이 엔진의 타이머 주기를 점유 중
+apex*	apex*
+apex-*	apex-*
+as #	# 로
+attackers eliminated	공격팀 전멸
+audio mix	audio mix
+audio: WASAPI	오디오: WASAPI
+audio: no WASAPI output, using WinMM	오디오: WASAPI 출력 없음, WinMM 사용
+audio: no output device - running without sound	오디오: 출력 장치 없음 - 소리 없이 실행
+autosave failed:	자동 저장 실패:
+autosave skipped, the edited map wouldn't load:	자동 저장 건너뜀, 편집한 맵을 불러올 수 없음:
+away # "	away # "
+away # "{}": {}	away # "{}": {}
+away:	자리 비움:
+b del	b del
+b ins # # # # # # # #	b ins # # # # # # # #
+bad accessor	잘못된 accessor
+bad buffer	잘못된 buffer
+bad bufferView	잘못된 bufferView
+bad data: URI	잘못된 data: URI
+bad indices	잘못된 indices
+bad mesh	잘못된 mesh
+bad modifier '	잘못된 변형 '
+bad node	잘못된 node
+bad request	잘못된 요청
+bench:	bench:
+big noodle*	big noodle*
+bignoodletitling*	bignoodletitling*
+bignoodletoo*	bignoodletoo*
+bind <key> <commands>   a key runs console lines (';' between)   unbind <key>   binds	bind <키> <명령>   키로 콘솔 줄 실행 (';'로 구분)   unbind <키>   binds
+bomb defused	폭탄 해체됨
+bomb exploded	폭탄 폭발
+bomb planted	폭탄 설치됨
+bot brain	bot brain
+bot brain {}: {}	bot brain {}: {}
+bot cmd	bot cmd
+bot removed	봇 제거됨
+bot think	bot think
+bot: nice shot	봇: 나이스 샷
+bots played	봇 플레이
+box model:	박스 모델:
+boxes into	박스 합치기:
+boxes into one	박스를 하나로
+buffer without data	데이터 없는 buffer
+built in # ms	# ms 만에 생성
+built-in maps reset to the original version	기본 맵이 원래 버전으로 초기화됨
+busy #%, late #%	사용 #%, 지연 #%
+c must be 3 numbers within 64 m	c는 64 m 이내의 숫자 3개여야 함
+called a vote	님이 투표 시작
+callvote bots off	callvote bots off
+callvote bots on	callvote bots on
+callvote botskill	callvote botskill
+callvote edit off	callvote edit off
+callvote edit on	callvote edit on
+callvote extend	callvote extend
+callvote kick	callvote kick
+callvote map	callvote map
+callvote ranked off	callvote ranked off
+callvote ranked on	callvote ranked on
+callvote restart	callvote restart
+callvote shuffle	callvote shuffle
+callvote spec	callvote spec
+callvote spec <name or id> (status lists them)	callvote spec <이름 또는 id> (status로 목록 확인)
+callvote start	callvote start
+callvote tmaps	callvote tmaps
+callvote tmodes	callvote tmodes
+can't	불가
+can't do that	할 수 없습니다
+can't go ranked: no ranked map for that ladder installed	랭크 불가: 해당 래더의 랭크 맵이 설치되지 않음
+can't read	읽을 수 없음
+can't save:	저장 불가:
+can't turn that	변경 불가
+can't vote for that list	해당 목록에는 투표 불가
+can't vote:	투표 불가:
+capture of every point in	모든 지점 점령:
+chat # "	chat # "
+chat # "{}": {}	chat # "{}": {}
+chat: slow down	채팅: 천천히 입력하세요
+checking if UDP	UDP 확인 중
+clean surfaces	깔끔한 표면
+closed by the load governor	부하 관리로 닫힘
+color must be 3 numbers from 0 to 16	color는 0에서 16 사이의 숫자 3개여야 함
+connect from	접속 위치
+connected from	접속 위치
+connection to server lost	서버 연결 끊김
+could not bind UDP port	UDP 포트를 바인드할 수 없음
+could not create an OpenGL 3.3 window - update your graphics driver	OpenGL 3.3 창을 만들 수 없음 - 그래픽 드라이버를 업데이트하세요
+could not host:	호스트 불가:
+could not open	열 수 없음
+could not open log file	로그 파일을 열 수 없음
+could not save maps/	저장할 수 없음: maps/
+could not save the map	맵을 저장할 수 없음
+could not write maps/	쓸 수 없음: maps/
+could not write to the groups folder	그룹 폴더에 쓸 수 없음
+couldn't check reachability:	접속 가능 여부 확인 불가:
+custom mode rules too big to send with the weapon set: sent without it	커스텀 모드 규칙이 무기 세트와 함께 보내기엔 너무 큼: 무기 세트 없이 전송
+daily limit	일일 한도
+data:	데이터:
+defenders eliminated	수비팀 전멸
+delivered the payload in	화물 운반 완료:
+delivery in	운반까지
+demo finished	데모 종료
+demo:	데모:
+draw - the payload is in the middle	무승부 - 화물이 중앙에 있음
+dropped:	탈락:
+duelUsed_ is a 32-bit mask	duelUsed_ is a 32-bit mask
+dyn verts	dyn verts
+dynamic pass	dynamic pass
+e.g.  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5	예:  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5
+edcam # # #	edcam # # #
+edit #	edit #
+edit mode on	편집 모드 켜짐
+edit mode on {}	edit mode on {}
+edit refused	편집 거부됨
+edit refused:	편집 거부됨:
+editmode off	editmode off
+editmode on	editmode on
+editmode saveas	editmode saveas
+edits dropped	편집 내용 취소됨
+else if	else if
+ember: gg	ember: gg
+enough players again - the match goes on	인원이 다시 충분함 - 경기 계속
+every HUD element in the dropdown	드롭다운의 모든 HUD 요소
+every point taken	모든 지점 점령
+everyone left - back to warmup	모두 나감 - 워밍업으로 복귀
+exec: a file name in your data folder (no folders)	exec: 데이터 폴더의 파일 이름 (폴더 불가)
+exec: no	exec: 없음
+extras.quark is not an object	extras.quark가 객체가 아님
+fell behind during the round:	라운드 중 뒤처짐:
+files:controls	files:controls
+files:huds	files:huds
+finding a server to test with	테스트할 서버 찾는 중
+finished the course (practice) - vote start to race	코스 완주 (연습) - 시작 투표로 레이스 시작
+flush2D	flush2D
+font {}: {}	font {}: {}
+font:	폰트:
+font: {} built in # ms	font: {} built in # ms
+found everyone	모두 찾음
+g del	g del
+g part # # # # # # # #	g part # # # # # # # #
+glass shards	유리 파편
+glfwInit failed	glfwInit 실패
+go to the back of the line	줄 맨 뒤로 이동
+goal:	골:
+goal: {} (#-#)	goal: {} (#-#)
+goes to the back of the line;	줄 맨 뒤로 이동;
+h must be 3 numbers, each over 0 and at most 32 m	h는 각각 0 초과 32 m 이하인 숫자 3개여야 함
+has no ranked id	랭크 ID 없음
+hdmi:	hdmi:
+high at	높음 기준
+human cmds	human cmds
+if players reach it there, start the server with --own-addr	플레이어가 그 주소로 접속하면 --own-addr로 서버를 시작하세요
+in your data folder	데이터 폴더에
+index out of range	인덱스 범위 초과
+init failed:	초기화 실패:
+init failed: {}	init failed: {}
+input + prediction ticks	입력 + 예측 틱
+into others, removed	다른 것에 합쳐져 제거됨
+is a built-in map - nothing changed to save	은(는) 기본 제공 맵 - 저장할 변경 사항 없음
+is a built-in map - pick a new name for yours	은(는) 기본 제공 맵 - 새 이름을 정하세요
+is a built-in map: changes last until the map changes (save a copy to keep them)	은(는) 기본 제공 맵: 맵이 바뀔 때까지만 변경 유지 (유지하려면 사본 저장)
+is a built-in map: pick a new name	은(는) 기본 제공 맵: 새 이름을 정하세요
+is a legacy map (never ranked): ranked plays	은(는) 레거시 맵 (랭크 불가): 랭크 진행 맵
+is a legacy map (this server doesn't list the old maps)	은(는) 레거시 맵 (이 서버는 구 맵을 표시하지 않음)
+is already spectating	님은 이미 관전 중
+is it	님이 술래
+is it - run!	님이 술래 - 도망치세요!
+is not reachable from the internet - forward UDP	인터넷에서 접속 불가 - UDP 포워딩 필요
+is now	님이 이제
+is reachable from the internet - friends can join	인터넷에서 접속 가능 - 친구가 참가할 수 있음
+is spectating	님이 관전 중
+isn't a ranked ruleset	은(는) 랭크 규칙이 아님
+isn't built for	용으로 제작되지 않음:
+isn't in this custom mode's map pool	은(는) 이 커스텀 모드의 맵 풀에 없음
+joined team A	님이 A팀에 참가
+joined team B	님이 B팀에 참가
+joined the game	님이 게임에 참가
+kElemNames follows Settings::HUD_*	kElemNames follows Settings::HUD_*
+kbps (# packets/s), download # kbps (#/s)	kbps (# 패킷/s), 다운로드 # kbps (#/s)
+kick whom? a name or an id (status lists them)	누구를 강퇴할까요? 이름 또는 ID (status에 표시됨)
+kicked by a vote	투표로 강퇴됨
+language:	language:
+language: {} (# glyphs) in # ms	language: {} (# glyphs) in # ms
+last rate change:	마지막 빈도 변경:
+late ticks in the last window: waiting for a second before stepping down	최근 구간에 지연된 틱: 낮추기 전에 1초 대기
+leaderboard:	리더보드:
+left the match	님이 경기를 나감
+left the ranked match - it counts as a loss	랭크 경기를 나감 - 패배로 처리됨
+link:	연동:
+linux:	linux:
+listening on UDP	UDP 수신 대기 중
+live (testing server: not rated)	라이브 (테스트 서버: 레이팅 미반영)
+load governor:	부하 관리:
+look at a side of the selected box	선택한 박스의 면을 바라보세요
+lost connection	연결 끊김
+low latency: wait for the GPU	저지연: GPU 대기
+mac:	mac:
+main*	main*
+map editing	맵 편집
+map editing -	맵 편집 -
+map editing - everyone can build; changes last until the map changes	맵 편집 - 누구나 제작 가능; 맵이 바뀔 때까지 변경 유지
+map editing - everyone can build; the host saves	맵 편집 - 누구나 제작 가능; 호스트가 저장
+map name: letters, digits, - and _ only (not a device name like con)	맵 이름: 영문자, 숫자, -와 _만 (con 같은 장치 이름 불가)
+map not found	맵을 찾을 수 없음
+map saved as	맵 저장됨:
+map test	맵 테스트
+map {} mode {}	map {} mode {}
+maps:	맵:
+maps: {}	maps: {}
+match draw	경기 무승부
+match end:	경기 종료:
+match end: {}	match end: {}
+match over	경기 종료
+match over - the other players left	경기 종료 - 다른 플레이어가 나감
+match restarted	경기 재시작됨
+match start: mode logic	경기 시작: 모드 로직
+match start: mode logic {}, interpreted: {}	match start: mode logic {}, interpreted: {}
+match starting	경기 시작 중
+mirrored upside down	상하 반전됨
+missing buffer file	buffer 파일 없음
+mode logic	모드 로직
+mode logic:	모드 로직:
+model name	모델 이름
+mul must be 3 numbers from 0 to 16	mul은 0에서 16 사이의 숫자 3개여야 함
+must beat it	이 기록을 넘어야 함
+my mode	내 모드
+name: letters, digits, - and _ only (not a device name like con)	이름: 영문자, 숫자, -와 _만 (con 같은 장치 이름 불가)
+net poll	net poll
+no IAudioClient3, before Windows 10	IAudioClient3 없음, Windows 10 이전
+no aliases - alias <name> <commands>	별칭 없음 - alias <이름> <명령>
+no bots on a ranked server	랭크 서버에서는 봇 불가
+no boxes	박스 없음
+no command binds - bind <key> <commands>	명령 바인드 없음 - bind <키> <명령>
+no hiders left	남은 숨은 플레이어 없음
+no key called '	해당 이름의 키 없음: '
+no map editing on a ranked server (vote ranked off first)	랭크 서버에서는 맵 편집 불가 (먼저 랭크 끄기 투표)
+no maps found in maps/	maps/에서 맵을 찾을 수 없음
+no mix format	믹스 포맷 없음
+no mode can run on this map yet	아직 이 맵에서 실행 가능한 모드 없음
+no modifiers on a ranked or time trial server	랭크 또는 타임 트라이얼 서버에서는 변형 불가
+no player "	플레이어 없음: "
+no points	지점 없음
+no response	응답 없음
+no small gaps to close	메울 작은 틈 없음
+no triangles	삼각형 없음
+nobody finished	아무도 완주 못 함
+nobody is out - throw again	탈락자 없음 - 다시 내세요
+nobody left	남은 사람 없음
+not a 16 x 16 character sheet	16 x 16 문자 시트가 아님
+not a TrueType / OpenType font	TrueType / OpenType 폰트가 아닙니다
+not a WAV, OGG, FLAC or MP3 file	WAV, OGG, FLAC, MP3 파일이 아님
+not a file name	파일 이름이 아님
+not a font file	폰트 파일이 아님
+not a quark group file	quark 그룹 파일이 아님
+not a queue	대기열이 아님
+not a readable picture	읽을 수 있는 이미지가 아님
+not a team mode	팀 모드가 아님
+not allowed	허용되지 않음
+not an object	객체가 아님
+not enough players	인원 부족
+not enough players - back to warmup	인원 부족 - 워밍업으로 복귀
+not enough players - the match ends in	인원 부족 - 경기 종료까지
+not enough players for a tourney	토너먼트 인원 부족
+not in this build	이 빌드에 없음
+not rated:	레이팅 미반영:
+not the ladder's mode	래더 모드가 아님
+not valid JSON	유효한 JSON이 아님
+not valid glTF JSON	유효한 glTF JSON이 아님
+not version 2	버전 2가 아님
+not while editing the map	맵 편집 중에는 불가
+nothing to fix	수정할 것 없음
+nothing to redo	다시 실행할 것 없음
+nothing to split there	분할할 것 없음
+nothing to undo	실행 취소할 것 없음
+now playing	현재 플레이 중
+odd sample rate	지원하지 않는 샘플레이트
+of #	/ #
+off for this match	이번 경기에서 꺼짐
+on your router to this PC	라우터에서 이 PC로
+one folder per sound kit	사운드 킷당 폴더 하나
+one name per sound, in SoundId order	one name per sound, in SoundId order
+only a timed round can be extended	시간제 라운드만 연장 가능
+over 64 MB	64 MB 초과
+override {} ({}): # triangles (at most #)	override {} ({}): # triangles (at most #)
+override {} ({}): {}	override {} ({}): {}
+override {}: {}	override {}: {}
+override:	오버라이드:
+override: {} ({})	override: {} ({})
+override: {} ({}, a box model: # boxes)	override: {} ({}, a box model: # boxes)
+overtime!	연장전!
+p# pos # # # vel # # # yaw # pitch # hp # wpn #	p# pos # # # vel # # # yaw # pitch # hp # wpn #
+p# pos # # # vel # # # yaw # pitch # hp # wpn # btn # flags # dash # cd # hook #	p# pos # # # vel # # # yaw # pitch # hp # wpn # btn # flags # dash # cd # hook #
+p0's ROCK beats SCISSORS - 1-0	p0의 바위가 가위를 이김 - 1-0
+p1, p3 out (SCISSORS) - best of 3 between the last two	p1, p3 탈락 (가위) - 마지막 두 명이 3판 2선승
+packet from	패킷 출처
+paused: no humans (bots wait)	일시정지: 사람 없음 (봇 대기)
+payload delivered	화물 운반 완료
+pick a new name for your copy	사본의 새 이름을 정하세요
+ping up on # of # players	플레이어 #/#명 핑 상승
+placed the group from the clipboard	클립보드의 그룹 배치됨
+point # taken by team #	#팀이 지점 # 점령
+poll events	poll events
+pool empty	풀 소진
+practice god	practice god
+practice loadpos	practice loadpos
+practice passive	practice passive
+practice reset	practice reset
+practice savepos	practice savepos
+practice setpos # # # # #	practice setpos # # # # #
+practice: all off	연습: 모두 끄기
+practice: bots fire again	연습: 봇 다시 사격
+practice: bots won't fire	연습: 봇 사격 안 함
+practice: no position saved yet	연습: 저장된 위치 없음
+practice: only when you host and no one else has joined	연습: 직접 호스트하고 다른 참가자가 없을 때만
+practice: position saved	연습: 위치 저장됨
+practice: you take damage again	연습: 다시 피해 받음
+practice: you take no damage	연습: 피해 받지 않음
+press ESC again to leave the session	ESC를 다시 누르면 세션 종료
+prioritize: Windows refused the GPU scheduling class (NTSTATUS 0x#)	우선순위: Windows가 GPU 스케줄링 클래스를 거부함 (NTSTATUS 0x#)
+proj # type # owner # pos # # # vel # # #	proj # type # owner # pos # # # vel # # #
+proj # type # owner # pos # # # vel # # #{}	proj # type # owner # pos # # # vel # # #{}
+properties background, color, opacity, border, radius, padding, margin, gap, font-size,	properties background, color, opacity, border, radius, padding, margin, gap, font-size,
+puts every built-in map back to its original version and removes retired ones (your own maps are kept) - click again	모든 기본 맵을 원래 버전으로 되돌리고 폐기된 맵을 제거합니다 (내 맵은 유지) - 다시 클릭
+quark --bake-maps <dir>	quark --bake-maps <dir>
+quark server	quark server
+quark server log, level	quark server log, level
+quark server log, level {}, version {}	quark server log, level {}, version {}
+quark-colors:	quark-colors:
+quark-crosshair:	quark-crosshair:
+quark-group 1	quark-group 1
+quark-settings:	quark-settings:
+race run rejected (implausible splits)	레이스 기록 거부됨 (비정상 구간 기록)
+racereset full	racereset full
+racerun:	racerun:
+ranked (not rated: testing server)	랭크 (레이팅 미반영: 테스트 서버)
+ranked (not rated: testing server) {}	ranked (not rated: testing server) {}
+ranked counts 16 players at most	랭크는 최대 16명까지 집계
+ranked ladders: vanilla, vampire, instagib	랭크 래더: 바닐라, 뱀파이어, 인스타깁
+ranked leaver # "	ranked leaver # "
+ranked leaver # "{}"{}	ranked leaver # "{}"{}
+ranked match	랭크 경기
+ranked match {} live (testing server: not rated)	ranked match {} live (testing server: not rated)
+ranked off	랭크 꺼짐
+ranked off - matches aren't rated	랭크 꺼짐 - 경기가 레이팅에 반영되지 않음
+ranked on	랭크 켜짐
+ranked on -	랭크 켜짐 -
+ranked only runs on the ranked maps for its ladder	랭크는 해당 래더의 랭크 맵에서만 진행
+ranked server: a ranked map for the ladder (vanilla / vampire 1v1, instagib free for all), or vote ranked off	랭크 서버: 래더용 랭크 맵 (바닐라 / 뱀파이어 1v1, 인스타기브 개인전), 또는 랭크 끄기 투표
+ranked server: no	랭크 서버: 없음
+ranked ticket	랭크 티켓
+ranked ticket {} players {}	ranked ticket {} players {}
+ranked: a LAN-only server can't open match tickets - this match won't be rated	랭크: LAN 전용 서버는 경기 티켓을 열 수 없음 - 이 경기는 레이팅에 반영되지 않음
+ranked: not every player signed the match ticket - this match won't be rated	랭크: 모든 플레이어가 경기 티켓에 서명하지 않음 - 이 경기는 레이팅에 반영되지 않음
+ranked: only vanilla, laser vampire or instagib	랭크: 바닐라, 레이저 뱀파이어, 인스타깁만 가능
+ranked: vanilla or laser vampire 1v1, or instagib free for all, on that ladder's ranked maps	랭크: 바닐라 또는 레이저 뱀파이어 1v1, 또는 인스타깁 개인전, 해당 래더의 랭크 맵에서
+ranking server reply dropped:	랭킹 서버 응답 누락:
+rate limited	요청 제한됨
+reachability:	접속 가능 여부:
+reached checkpoint	체크포인트 도달
+reconnected from	재접속 위치
+renderer warmup	렌더러 워밍업
+reopened by the load governor	부하 관리로 다시 열림
+reopened by the load governor at	부하 관리로 다시 열림:
+restarting for an update	업데이트를 위해 재시작 중
+restarting for an update - rejoin in a few seconds	업데이트를 위해 재시작 중 - 몇 초 후 다시 참가하세요
+restored the autosave of	자동 저장 복원됨:
+rock paper scissors:	가위바위보:
+rotated about X	X축 기준 회전됨
+rotated about Y	Y축 기준 회전됨
+rotated about Z	Z축 기준 회전됨
+round # end:	라운드 # 종료:
+round # end: {}	round # end: {}
+round # end: {} (score #-#)	round # end: {} (score #-#)
+round # modifier	라운드 # 변형
+round # modifier {}	round # modifier {}
+round draw	라운드 무승부
+rps tiebreak:	가위바위보 타이브레이크:
+rps tiebreak: {}	rps tiebreak: {}
+run not sent to the leaderboard: a checkpoint was reached faster than the course allows	기록이 리더보드에 전송되지 않음: 코스상 불가능할 만큼 빠르게 체크포인트에 도달함
+run not sent to the leaderboard: your game didn't sign the time trial ticket	기록이 리더보드에 전송되지 않음: 게임이 타임 트라이얼 티켓에 서명하지 않음
+runs nothing	아무것도 실행 안 함
+runs:	기록:
+s unless someone joins	초 후, 누가 참가하지 않으면
+s, on to point	초, 다음 지점으로
+screenshot written to	스크린샷 저장 위치:
+screenshot written to {}	screenshot written to {}
+see-through pass	see-through pass
+select a box, look at one of its sides and press K	박스를 선택하고 한 면을 바라본 뒤 K를 누르세요
+select a group to export	내보낼 그룹을 선택하세요
+select boxes / groups (shift+click to add more)	박스 / 그룹 선택 (shift+클릭으로 추가)
+select boxes first	먼저 박스를 선택하세요
+select the cutter first, then shift+click the boxes to cut	먼저 자를 박스를 선택한 뒤, shift+클릭으로 잘라낼 박스를 선택하세요
+select two or more boxes (shift+click) to combine	합칠 박스를 두 개 이상 선택하세요 (shift+클릭)
+send failures #	전송 실패 #
+server is full	서버가 가득 참
+server shutting down	서버 종료 중
+server simulate	server simulate
+server snapshot rate lowered to	서버 스냅샷 빈도 하향:
+server snapshot rate raised to	서버 스냅샷 빈도 상향:
+server snapshots	서버 스냅샷
+server stopped	서버 중지됨
+server tick	서버 틱
+server tick rate	서버 틱레이트
+server tick rate lowered to	서버 틱레이트 하향:
+server tick rate raised to	서버 틱레이트 상향:
+server version	서버 버전
+server, sharing	서버, 공유
+setup:	setup:
+shader:	셰이더:
+shadow / visOnly / crouch must be true or false	shadow / visOnly / crouch는 true 또는 false여야 합니다
+shadow pass	shadow pass
+shipped:	기본 제공:
+short-handed: # playing	인원 부족: #명 플레이 중
+size # # #	size # # #
+slopes can't be coated: pick a box	경사면은 칠할 수 없음: 박스를 선택하세요
+slopes can't be cut: pick plain boxes	경사면은 자를 수 없음: 일반 박스를 선택하세요
+slopes can't be split: pick plain boxes	경사면은 분할할 수 없음: 일반 박스를 선택하세요
+slot bracket	슬롯 대진
+snapshots #/s{}, stalls #% (over # ms late)	스냅샷 #/s{}, 끊김 #% (# ms 넘게 지연)
+stalemate - health draining	교착 상태 - 체력 감소 중
+static boxes	정적 박스
+static boxes pass	static boxes pass
+stayed hidden	끝까지 숨음
+steps in	님이 출전
+steps in (first in line)	님이 출전 (대기 1순위)
+swatch shader:	견본 셰이더:
+swatch shader: {}	swatch shader: {}
+sysdefault:	sysdefault:
+team A	A팀
+team B	B팀
+team a	team a
+team b	team b
+team spec	team spec
+teamMul must be 3 numbers from 0 to 16	teamMul은 0에서 16 사이의 숫자 3개여야 함
+text-align, stripe. Settings > HUD > EDIT HUD writes this file; the game reloads it within a second. */	text-align, stripe. Settings > HUD > EDIT HUD writes this file; the game reloads it within a second. */
+tf2build*	tf2build*
+tf2secondary*	tf2secondary*
+that side is full	해당 진영이 가득 참
+that side is full (ranked is 1v1)	해당 진영이 가득 참 (랭크는 1v1)
+that's a bot - vote bots off instead	봇입니다 - 대신 봇 끄기 투표를 하세요
+that's already a group	이미 그룹입니다
+the PAK has no gfx.wad	PAK에 gfx.wad가 없음
+the WAD has no CONCHARS	WAD에 CONCHARS가 없음
+the autosave can't be read	자동 저장을 읽을 수 없음
+the bomb went back to	폭탄이 돌아감:
+the cursor wraps with uint32	the cursor wraps with uint32
+the cutter (the first box selected) doesn't touch the others	자르는 박스(처음 선택한 박스)가 다른 박스에 닿지 않음
+the cutter (the first box selected) has to be a plain box	자르는 박스(처음 선택한 박스)는 일반 박스여야 함
+the driver has no shorter period	드라이버에 더 짧은 주기 없음
+the font has no Latin letters	폰트에 라틴 문자가 없음
+the game	게임
+the hiders win -	숨은 팀 승리 -
+the match has already started	경기가 이미 시작됨
+the mix format isn't float stereo	믹스 포맷이 float 스테레오가 아님
+the mode logic doesn't compile	모드 로직 컴파일 실패
+the production server	정식 서버
+the seeker left	술래가 나감
+the sheet has no letter H at character 72	시트의 72번 문자에 H가 없음
+the shorter period failed to open	더 짧은 주기를 열지 못함
+the testing server	테스트 서버
+this map	이 맵
+this map can't be played in any mode yet (add spawns)	이 맵은 아직 어떤 모드로도 플레이할 수 없음 (스폰 추가)
+this map has no points - multi point can't be played here	이 맵에는 지점이 없음 - 멀티 포인트 불가
+this map has no points - multi point can't be played here (vote another map or mode)	이 맵에는 지점이 없음 - 멀티 포인트 불가 (다른 맵이나 모드에 투표하세요)
+this server doesn't have the map '	이 서버에 해당 맵 없음: '
+this server plays the custom mode	이 서버의 커스텀 모드:
+tick # Hz, spin # us ({}), late p99 {}	tick # Hz, spin # us ({}), late p99 {}
+tick # phase # round # score #-#	tick # phase # round # score #-#
+tick rate: late ticks in one window (#% of ticks over # ms late), waiting for a second	틱레이트: 한 구간에서 지연 틱 발생 (틱의 #%가 # ms 이상 지연), 1초 대기
+tick rate: late ticks in one window (busy #%, late #%), waiting for a second	틱레이트: 한 구간에서 지연 틱 발생 (사용 #%, 지연 #%), 1초 대기
+tick rate: the governor's	틱레이트: 관리자의
+tick rate: the next window was clean: no step down (a one-off host pause)	틱레이트: 다음 구간 정상: 하향 안 함 (일시적인 호스트 멈춤)
+tie - overtime! next kill wins	동점 - 연장전! 다음 킬 승리
+tied for first -	공동 1위 -
+tied for first:	공동 1위:
+time trial	타임 트라이얼
+time trial bots play the built-in brain	타임 트라이얼 봇은 기본 AI 사용
+timed out	시간 초과
+to watch, join the spectators yourself (team spec)	관전하려면 직접 관전자로 참가하세요 (team spec)
+too big for one group	한 그룹으로 하기엔 너무 큼
+too deep (an alias or exec that runs itself?)	너무 깊음 (자기 자신을 실행하는 alias 또는 exec?)
+too many unacknowledged reliable messages (connection too lossy)	확인되지 않은 신뢰 메시지가 너무 많음 (연결 손실이 큼)
+too short	너무 짧음
+took every point in	모든 지점 점령:
+took point	지점 점령
+tourney match:	토너먼트 경기:
+tourney match: {}	tourney match: {}
+tourney over	토너먼트 종료
+tourney plays its rulesets only	토너먼트는 지정된 규칙만 사용
+tourney seed #:	토너먼트 시드 #:
+tourney seed #: {} (#)	tourney seed #: {} (#)
+tourney started -	토너먼트 시작 -
+trying the next rate up: busy #%, upload # kbps	다음 빈도로 상향 시도: 사용 #%, 업로드 # kbps
+ui verts	ui verts
+ungrouped into	그룹 해제됨:
+unknown mode	알 수 없는 모드
+unknown mode '	알 수 없는 모드 '
+unknown ruleset	알 수 없는 규칙
+unknown setting '	알 수 없는 설정 '
+unknown slot "	알 수 없는 슬롯 "
+unreadable FLAC	읽을 수 없는 FLAC
+unreadable OGG (Vorbis only)	읽을 수 없는 OGG (Vorbis만 지원)
+unsaved changes - click EXIT again to leave	저장하지 않은 변경 사항 - 나가려면 나가기를 다시 클릭
+unsaved changes - press ESC again to leave	저장하지 않은 변경 사항 - 나가려면 ESC를 다시 누르세요
+unsupported WAV (PCM 8 / 16 / 24 / 32-bit or float)	지원하지 않는 WAV (PCM 8 / 16 / 24 / 32비트 또는 float)
+unsupported accessor	지원하지 않는 accessor
+update ready: waiting for the match to end	업데이트 준비됨: 경기 종료 대기 중
+upload # of # kbps	업로드 # / # kbps
+upload bytes	업로드 바이트
+user:	사용자:
+vote cancelled: the ranked match is live	투표 취소됨: 랭크 경기 진행 중
+vote failed:	투표 실패:
+vote no	반대
+vote passed:	투표 통과:
+vote passed: starting the match	투표 통과: 경기 시작
+vote yes	찬성
+voted rules:	투표된 규칙:
+voted rules: {}	voted rules: {}
+vs bots	봇 대전
+warning:	경고:
+was it -	님이 술래였음 -
+was moved to spectator until the next map	님이 다음 맵까지 관전자로 이동됨
+wedge rising toward	쐐기 오르막 방향
+will fill the uneven teams	님이 불균형 팀을 채웁니다
+win:	승리:
+winner stays:	승자 잔류:
+winner stays: {}	winner stays: {}
+wins - payload on their side	승리 - 화물이 상대 진영에 있음
+wins - the other side left	승리 - 상대가 나감
+wins tag	태그 승리
+wins the match	경기 승리
+wins the match (rock paper scissors tiebreak)	경기 승리 (가위바위보 타이브레이크)
+wins the race	레이스 승리
+wins the round	라운드 승리
+wins the tourney!	토너먼트 우승!
+world chunks	world chunks
+world pass	world pass
+world shader	world shader
+world shader:	월드 셰이더:
+world shader: {}	world shader: {}
+world upload	world upload
+wraith: nice shot	wraith: 나이스 샷
+you already called a vote on	이미 투표를 시작했습니다:
+you left the line - join a team to get back in it	줄에서 나갔습니다 - 다시 들어가려면 팀에 참가하세요
+you were voted to spectate - you can play again on the next map	투표로 관전자가 되었습니다 - 다음 맵에서 다시 플레이할 수 있습니다
+you're already in line to play	이미 플레이 대기 중입니다
+you're in line to play:	플레이 대기 중:
+you're next in line: you play the winner of this	다음 차례입니다: 이 경기의 승자와 대결
+your last vote failed: wait a few seconds	지난 투표 실패: 몇 초 기다리세요
+your map is autosaved	맵이 자동 저장됨
+{} # us (last 1000 ticks)	{} # us (last 1000 ticks)

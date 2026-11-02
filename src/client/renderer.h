@@ -153,6 +153,13 @@ public:
     // The UI font (Settings > FONT, uifonts.h): its atlas replaces the texture's texels in place (same layout) and its
     // metrics become the ones every text call uses. null: the baked default (font_ui.h). Once per pick, never per frame.
     void setUiFont(std::unique_ptr<FontAtlas> font);
+    // The language's glyphs past ASCII (lang.h): a second distance-field atlas in the UI font's cell layout, drawn by the
+    // same shader in the same batch (texture unit 7). cp / adv: each cell's codepoint and advance; tex null: none.
+    void setExtGlyphs(const std::vector<uint32_t>& cp, const std::vector<float>& adv, const uint8_t* tex, int texW, int texH, int cols);
+    // What text(), textWidth(), fitText() and textClip() draw for a string (the language: lang::tr); null: as it is.
+    using Translate = const std::string& (*)(const std::string&);
+    static void setTranslate(Translate f);
+    static const std::string& translated(const std::string& s);
     static FontAtlasLayout uiFontLayout();   // font_ui.h's layout, sized to Rubik's capitals
     void flush2D();
     // A material's swatch (the map editor's picker): a 2 m square of it drawn by the world shader in the current
@@ -323,6 +330,9 @@ private:
     std::string gpuName_;
     bool shadowsOn_ = true;
     unsigned fontTex_ = 0;
+    unsigned extTex_ = 0;   // (setExtGlyphs; unit 7)
+    int extCols_ = 0, extW_ = 1, extH_ = 1;
+    GLint uExtSize_ = -1;
     unsigned logoTex_ = 0;     // (logo_data.h, RGBA, mipmapped; bound to unit 1 by a flush that draws it)
     bool logoDrawn_ = false;   // (this frame's 2D batch has the logo in it)
     bool splitDrawn_ = false;  // (...or the title in another font, its Q split: splitP_ / N_ / Seam_)

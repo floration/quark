@@ -12,6 +12,7 @@
 #include "gpuprofile.h"
 #include <array>
 #include "game.h"
+#include "lang.h"
 #include "complete.h"
 #include "openurl.h"
 #include "../game/benchmark.h"
@@ -855,7 +856,7 @@ bool Game::pressInput(int code) {
         cycleSpec(b.has(A_SPECNEXT, code) ? 1 : -1);
         return true;
     }
-    if (b.has(A_PERF, code)) { const bool was = perfOn(); perfStage_ = (perfStage_ + 1) % 4; if (!was && perfOn()) pipeReset(); return true; }
+    if (b.has(A_PERF, code)) { const bool was = perfOn(); perfStage_ = (perfStage_ + 1) % 5; if (!was && perfOn()) pipeReset(); return true; }
     const bool racing = screen_ == Screen::InGame && !paused_ && !chatting_ && isRaceMode(net_.mode().mode) && net_.state() == ConnState::Connected;
     if (b.has(A_RACERESET, code) && racing) {   // (a tap: the last checkpoint when it's let go; held 250 ms: the start, in raceResetHold)
         raceResetAt_ = time_;
@@ -1932,6 +1933,8 @@ void Game::frame(double dt) {
     struct CpuTime { double t0 = timeNow(); double* out; ~CpuTime() { *out = timeNow() - t0; } } cpuTime{timeNow(), &lastCpu_}; // --bench: CPU part of the frame
     time_ += dt;
     if (cfg_.uiFont != fontTried_) applyUiFontSetting();   // (a string compare; the font is built only when it changed)
+    if (cfg_.language != langTried_) applyLanguageSetting();   // (likewise: the table and atlas load only when it changed)
+    lang::frame();
     if (g_monitorEvent) { g_monitorEvent = false; monitorsChanged(); }   // (a bool; set by a monitor plugged in or out)
     if (audio_.takeOutputMissing()) notify("THE CHOSEN AUDIO OUTPUT IS GONE: USING THE SYSTEM DEFAULT", 5);   // (an atomic, set by the audio thread)
     swallowChar_ = false;   // (a key that opened the chat and typed no character: don't eat a later one)
@@ -3321,7 +3324,7 @@ void Game::drawWorld(float alpha) {
     // The dynamic geometry's upload and the shadow pass don't depend on the aim either: before the read too (ULTRA:
     // flushed, so the GPU draws the shadow map meanwhile). After the read: only the view's own draws.
     r_.prepareScene(cfg_.shadows && (cfg_.shadowWorld || cfg_.shadowPlayers));   // (MORE 4: on neither: no shadow pass)
-    if (ultraPaced()) glFlush();
+    if (ultraPaced() || cfg_.lowLatency == 1) glFlush();
     // Late latch: the newest mouse motion, read just before the world is drawn (everything above, world, players and
     // effects, was built in world space: only the view turns). The command this frame sent keeps its aim; the next
     // carries this. What was projected onto the screen above (name tags, health bars) is off by this sliver of a turn.
@@ -3339,7 +3342,9 @@ void Game::drawWorld(float alpha) {
         shotPending_.clear();
         notify(r_.screenshot(path) ? "SCREENSHOT SAVED (NO HUD): " + path.substr(path.find_last_of('/') + 1) : "COULDN'T SAVE THE SCREENSHOT", 3);
     }
-    if (ultraPaced()) glFlush();
+    // (ULTRA, and LOW LATENCY ON: the world sent now, so the GPU draws it while the HUD is built and drawn, instead of
+    // waiting for the swap to submit the whole frame: F3's gap between SWAP and GPU, ~45-65 us on Windows; 2026-11-02)
+    if (ultraPaced() || cfg_.lowLatency == 1) glFlush();
     pipeMark(PM_SCENE1);   // (ULTRA: the GPU starts the world while the HUD is built; it sits idle otherwise)
 }
 
@@ -6731,6 +6736,19 @@ void Game::drawPlayerSettings(const SetLayout& L) {
                    UiExp::nav("~settings/fonts").withId("FONT"))) { fontsOpen_ = true; fontListed_ = false; fontScroll_ = 0; ui_.closePopup(); }
     g.next();
     g.hint("THE FONT OF THE MENUS AND THE HUD");
+    {   // LANGUAGE (lang.h): AUTO (the system's), then each language in its own name
+        static std::vector<std::string> names;
+        const auto& L = lang::languages();
+        if (names.empty()) { names.push_back("AUTO"); for (const auto& l : L) names.push_back(l.name); }
+        int li = cfg_.language == "auto" ? 0 : lang::indexOf(cfg_.language) + 1;
+        if (li < 0) li = 0;
+        if (ui_.dropdown(g.x(), g.top(), w, h, "LANGUAGE", li, names, UiExp::nav("~settings/language").withId("LANGUAGE"), UiExp::nav("~settings"), UiExp::cfg("language"))) {
+            cfg_.language = li <= 0 ? "auto" : L[li - 1].code;
+            cfg_.save();
+        }
+        g.next();
+        g.hint(cfg_.language == "auto" ? "AUTO: YOUR SYSTEM'S LANGUAGE" : "THE LANGUAGE OF THE MENUS AND THE HUD");
+    }
 }
 
 // HUD > MORE: a COMPASS strip at the bottom centre (N / E / S / W and the degrees between, turning with your view) and
@@ -8153,6 +8171,22 @@ void Game::drawMoreSettings(const SetLayout& L) {
 #else
         g.hint("N/A HERE: WINDOWS + NVIDIA ONLY");
 #endif
+        {   // Windows' hardware-accelerated GPU scheduling: a system setting (admin prompt, then a restart). Elsewhere N/A.
+            static int hags = hwSchedState();
+            const std::string lbl = hags == 1 ? "GPU SCHED: ON" : hags == 0 ? "GPU SCHED: TURN ON" : "GPU SCHED: N/A";
+            if (ui_.button(g.x(), g.top(), hw, h, lbl, UiExp::inert().withId("GPU SCHEDULING")) && hags == 0) {
+                std::string msg = "NOT CHANGED IN THE UI TEST";
+                if (!uiTest_ && hwSchedEnable(&msg)) hags = 1;
+                notify(msg);
+            }
+            // "Disable fullscreen optimizations" for quark.exe (per user, no admin): real exclusive fullscreen
+            if (ui_.toggle(xr, g.top(), hw, h, "NO FULLSCREEN OPT.", cfg_.disableFso, UiExp::cfg("disable_fso"))) {
+                std::string msg = "NOT CHANGED IN THE UI TEST";
+                if (!uiTest_ && !fsoDisable(cfg_.disableFso, &msg)) cfg_.disableFso = !cfg_.disableFso;
+                notify(msg);
+            }
+            g.next();
+        }
         g.section("SOUND");
         ui_.toggle(g.x(), g.top(), hw, h, "HITSOUND TIERS", cfg_.hitTiers, UiExp::cfg("hit_tiers"));
         {
@@ -10600,7 +10634,7 @@ void Game::drawPerf() {
         if (lw[i] <= maxW) r_.text(x + 8 * s, y + 4 * s + lh * i, ts, *lines[i], yc);
         else ui_.label(x + 8 * s, y + 4 * s + lh * i, *lines[i], yc, ts / ui_.textScale(), maxW);
     }
-    if (perfStage_ == 3 && (screen_ == Screen::InGame || screen_ == Screen::TrainerRun)) drawPipeline(x, y + lh * nl + 16 * s, std::max(1.0f, ts * 0.85f));
+    if (perfStage_ >= 3 && (screen_ == Screen::InGame || screen_ == Screen::TrainerRun)) drawPipeline(x, y + lh * nl + 16 * s, std::max(1.0f, ts * 0.85f));
 }
 
 // F4: only the pipeline graph's mouse to photon number, worked out twice a second. The same measuring as F3 runs
@@ -10611,7 +10645,9 @@ void Game::drawPerfMini() {
         pipeAverages();
         double total = 0;
         if (screen_ == Screen::InGame || screen_ == Screen::TrainerRun) drawPipeline(0, 0, 1, &total);
-        perfMiniText_ = total > 0 ? "MOUSE TO PHOTON ~" + std::to_string((long long)std::llround(total * 1e6)) + " US" : "MOUSE TO PHOTON: IN GAME ONLY";
+        std::string d = std::to_string((long long)std::llround(total * 1e9)), g;   // (nanoseconds, grouped like F3's)
+        for (size_t i = 0; i < d.size(); i++) { if (i && (d.size() - i) % 3 == 0) g += ','; g += d[i]; }
+        perfMiniText_ = total > 0 ? "MOUSE TO PHOTON ~" + g + " NS" : "MOUSE TO PHOTON: IN GAME ONLY";
     }
     if (perfMiniText_.empty()) return;
     const float s = r_.height() / 720.0f, ts = std::max(1.0f, std::round(s * 2.0f));   // (where F3's box is: left of the score bar)
@@ -10738,7 +10774,12 @@ void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
     const Color cIn = cb ? Color{0.34f, 0.71f, 0.91f, 1} : Color{0.55f, 0.75f, 1.0f, 1}, cWait = {0.6f, 0.6f, 0.68f, 1};
     const Color cCpu = cb ? Color{0.9f, 0.62f, 0.0f, 1} : Color{1.0f, 0.85f, 0.35f, 1}, cGpu = cb ? Color{0.0f, 0.62f, 0.45f, 1} : Color{0.45f, 0.95f, 0.5f, 1};
     const Color cEst = cb ? Color{0.8f, 0.47f, 0.65f, 1} : Color{0.85f, 0.6f, 1.0f, 1};
-    auto us = [](double sec) { return std::to_string((long long)std::llround(sec * 1e6)); };
+    // (nanoseconds, grouped by thousands: much of the game's part is under a microsecond now; owner, 2026-11-02)
+    auto ns = [](double sec) {
+        std::string d = std::to_string((long long)std::llround(std::max(0.0, sec) * 1e9)), o;
+        for (size_t i = 0; i < d.size(); i++) { if (i && (d.size() - i) % 3 == 0) o += ','; o += d[i]; }
+        return o;
+    };
     // before the game reads it: the mouse's report (half its interval on average), then the wait for the next poll
     const double queue = frame * 0.5, mouse = 0.5 / mouseRate;
     const double latch = a[PM_LATCH] > 0 ? a[PM_LATCH] : 0.0;   // (the aim is fixed at the late latch, when there's one)
@@ -10761,6 +10802,7 @@ void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
     span("SWAP", PM_SWAP0, PM_SWAP1, cCpu);
     if (ultraPaced()) span("GPU WAIT (ULTRA)", PM_SWAP1, PM_AFTER, cWait);
     rows.push_back({"GPU", a[PM_COUNT], a[PM_COUNT + 1], cGpu});
+    const size_t hwFrom = rows.size();   // (from here on: the display's part; row 0, the mouse's report, is hardware too)
     // after the GPU: how the frame reaches the screen (EST): the compositor in a window, vsync's vblank, then the
     // scanout down to the crosshair (the middle of the screen: half a refresh on average)
     double t = std::max(a[PM_COUNT + 1], a[PM_SWAP1]);
@@ -10779,29 +10821,42 @@ void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
     t += refresh * 0.5;
     const double total = t - rows.front().t0;   // (from the mouse to the photon)
     if (totalOnly) { *totalOnly = total; return; }
+    // Split (owner, 2026-11-02): the game's own part (from the mouse report's arrival to the GPU done) and the hardware's
+    // (the mouse's polling, the display's sync and scanout). F3's fifth stage (GAME ONLY) leaves the hardware rows out.
+    double hwMouse = rows.front().t1 - rows.front().t0, hwDisplay = 0;
+    for (size_t i = hwFrom; i < rows.size(); i++) hwDisplay += rows[i].t1 - rows[i].t0;
+    const double game = std::max(0.0, total - hwMouse - hwDisplay);
+    const bool gameOnly = perfStage_ == 4;
+    if (gameOnly) { rows.erase(rows.begin() + (long)hwFrom, rows.end()); rows.erase(rows.begin()); t = 0; for (const Row& r : rows) t = std::max(t, r.t1); }
     double t0 = rows.front().t0;                  // (the graph's left edge: work before the mouse bar too, e.g. pacing)
     for (const Row& r : rows) t0 = std::min(t0, r.t0);
     // the graph: a label and the time on the left, the bar on its own line on the right (a waterfall)
-    const float lh = r_.textHeight(ts) + 4, labelW = r_.textWidth("SCANOUT TO THE CROSSHAIR (EST)  000000 US", ts) + 12;
+    const float lh = r_.textHeight(ts) + 4, labelW = r_.textWidth("WAITING FOR THE LATE READ (AVG)  00,000,000 NS", ts) + 12;
     const float barW = std::max(200.0f, std::min(700.0f * ts, (float)r_.width() - x - labelW - 24));
-    const float h = (rows.size() + 2) * lh + 8;
+    const float h = (rows.size() + 3) * lh + 8;
     r_.rect(x, y, labelW + barW + 16, h, {0, 0, 0, 0.6f});
     float yy = y + 4;
     char head[160];
-    snprintf(head, sizeof head, "MOUSE TO PHOTON ~%s US  (%.0f HZ DISPLAY, %s, %s)", us(total).c_str(), hz,
-             cfg_.displayMode == 2 ? "FULLSCREEN" : cfg_.displayMode == 1 ? "BORDERLESS" : "WINDOWED", cfg_.presentMode == 3 ? "LATENT SYNC" : vsync ? "VSYNC" : "NO VSYNC");
+    if (gameOnly) snprintf(head, sizeof head, "GAME LATENCY ~%s NS  (MOUSE REPORT IN TO GPU DONE; F3: NEXT VIEW)", ns(game).c_str());
+    else snprintf(head, sizeof head, "MOUSE TO PHOTON ~%s NS  (%.0f HZ DISPLAY, %s, %s)", ns(total).c_str(), hz,
+                  cfg_.displayMode == 2 ? "FULLSCREEN" : cfg_.displayMode == 1 ? "BORDERLESS" : "WINDOWED", cfg_.presentMode == 3 ? "LATENT SYNC" : vsync ? "VSYNC" : "NO VSYNC");
     r_.text(x + 6, yy, ts, head, {1, 1, 0.4f, 1});
+    yy += lh;
+    char split[160];
+    snprintf(split, sizeof split, "GAME %s NS + MOUSE POLLING %s NS (%.0f HZ) + DISPLAY %s NS (%.0f HZ)", ns(game).c_str(), ns(hwMouse).c_str(),
+             mouseRate, ns(hwDisplay).c_str(), hz);
+    r_.text(x + 6, yy, ts, split, {0.85f, 0.85f, 0.9f, 1});
     yy += lh;
     const double scale = t - t0 > 0 ? barW / (t - t0) : 0;
     for (const Row& r : rows) {
         r_.text(x + 6, yy, ts, r.name, r.c);
-        std::string v = us(r.t1 - r.t0) + " US";
+        std::string v = ns(r.t1 - r.t0) + " NS";
         r_.text(x + labelW - 6 - r_.textWidth(v, ts), yy, ts, v, r.c);
         float bx = x + labelW + (float)((r.t0 - t0) * scale), bw = std::max(2.0f, (float)((r.t1 - r.t0) * scale));
         r_.rect(bx, yy + lh * 0.3f, bw, std::max(2.0f, lh * 0.35f), r.c);
         yy += lh;
     }
-    r_.text(x + 6, yy, ts, "ONE TIME LINE; EST = WORKED OUT, NOT MEASURED; MONITOR PROCESSING NOT INCLUDED", {0.7f, 0.7f, 0.75f, 1});
+    r_.text(x + 6, yy, ts, gameOnly ? "THE GAME'S PART ONLY: NO MOUSE POLLING, NO DISPLAY; ONE TIME LINE" : "ONE TIME LINE; EST = WORKED OUT, NOT MEASURED; MONITOR PROCESSING NOT INCLUDED", {0.7f, 0.7f, 0.75f, 1});
 }
 
 
@@ -11136,7 +11191,7 @@ void Game::afterSwap() {
         gpuCalibAt_ = now;
     }
     pipeCollect();
-    if (perfStage_ != 3) return;   // (F4 / F3's shorter stages: the graph's marks only (and the clocks above); F3's input to frame latency below)
+    if (perfStage_ < 3) return;   // (F4 / F3's shorter stages: the graph's marks only (and the clocks above); F3's input to frame latency below)
     // Input-to-frame latency: GPU timestamp written after this frame's commands, converted to
     // the CPU clock, minus when the game received the input event from the OS. Read back a few
     // frames later without stalling.
@@ -12288,6 +12343,19 @@ bool Game::loadUiFont(const std::string& id, std::string* err, std::string* name
     if (fa) printf("font: %s built in %.0f ms\n", name ? name->c_str() : id.c_str(), (timeNow() - t0) * 1000);
     r_.setUiFont(std::move(fa));   // (null: the baked default)
     return true;
+}
+
+// LANGUAGE (lang.h): the table and glyph atlas of the setting's language (auto: the system's), once when it changes
+void Game::applyLanguageSetting() {
+    langTried_ = cfg_.language;
+    const std::string code = lang::resolve(cfg_.language);
+    const double t0 = timeNow();
+    lang::ExtGlyphs g;
+    if (!lang::setLanguage(code)) { lang::setLanguage("en"); }
+    if (lang::loadGlyphs(lang::current(), g)) r_.setExtGlyphs(g.cp, g.adv, g.tex.data(), g.texW, g.texH, g.cols);
+    else r_.setExtGlyphs({}, {}, nullptr, 0, 0, 0);
+    Renderer::setTranslate(lang::active() ? &lang::tr : nullptr);
+    printf("language: %s (%zu glyphs) in %.0f ms\n", lang::current().c_str(), g.cp.size(), (timeNow() - t0) * 1000);
 }
 
 void Game::applyUiFontSetting() {

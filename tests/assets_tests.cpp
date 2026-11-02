@@ -15,6 +15,7 @@
 #include "../src/client/fontatlas.h"
 #include "../src/client/font_ui.h"
 #include "../src/client/textfit.h"
+#include "../src/client/lang.h"
 #include "../src/client/gltf.h"
 #include "../src/client/models.h"
 #include "../src/client/overrides.h"
@@ -1145,6 +1146,59 @@ static void testTextFit() {
     fits(pixel, "classic");
 }
 
+// Languages (lang.h): every table has every key with its '#'s, every character it draws is in its glyph atlas, the
+// lookup's rules (numbers, decorations, "LABEL: VALUE"), and UTF-8 measured as whole characters.
+static void testLanguages() {
+    std::vector<std::string> problems;
+    const bool ok = lang::checkTables(problems);
+    for (const std::string& p : problems) printf("  lang: %s\n", p.c_str());
+    ACHECK(ok);
+    ACHECK(lang::keyCount() > 3000);
+    ACHECK(lang::current() == "en" && !lang::active());
+    const std::string kills = "KILLS";
+    ACHECK(&lang::tr(kills) == &kills);   // (English: no lookup, the same string)
+    ACHECK(lang::setLanguage("de") && lang::active());
+    const std::string play = lang::tr(std::string("PLAY"));
+    ACHECK(play != "PLAY" && !play.empty());
+    ACHECK(lang::tr("> PLAY <") == "> " + play + " <");   // (the picked row's decorations kept)
+    ACHECK(lang::tr("SOME PLAYER NAME xyz") == "SOME PLAYER NAME xyz");   // (not a key: as it is)
+    // numbers: a key with '#' takes the drawn string's numbers back in order
+    bool numbered = false;
+    for (const char* k : {"# HP", "# MS", "# DUELS"}) {
+        std::string key = k, drawn = key;
+        drawn.replace(drawn.find('#'), 1, "125");
+        const std::string& t = lang::tr(drawn);
+        if (lang::tr(key) != key) { numbered = true; ACHECK(t.find("125") != std::string::npos && t.find('#') == std::string::npos); }
+    }
+    ACHECK(numbered);
+    ACHECK(lang::setLanguage("zh-CN"));
+    ACHECK(lang::tr("PLAY") != "PLAY");
+    ACHECK(lang::setLanguage("nope") == false && lang::current() == "zh-CN");
+    ACHECK(lang::setLanguage("en") && !lang::active() && lang::tr("PLAY") == "PLAY");
+    ACHECK(lang::resolve("ja") == "ja" && lang::indexOf(lang::resolve("auto")) >= 0 && lang::indexOf(lang::resolve("xx")) >= 0);
+    // UTF-8 through the metrics: one glyph a character, ext glyphs by codepoint, '?' for anything else
+    {
+        lang::ExtGlyphs g;
+        ACHECK(lang::loadGlyphs("ko", g) && g.cols > 0 && !g.cp.empty() && g.texW == g.cols * g.cell);
+        ExtMetrics ext;
+        ext.adv = g.adv; ext.ink.resize(g.cp.size());
+        ext.bmp.assign(0x10000, 0);
+        for (size_t i = 0; i < g.cp.size(); i++) ext.bmp[g.cp[i]] = (uint16_t)(i + 1);
+        static float adv[95]; static signed char kern[95 * 95];
+        for (float& a : adv) a = 4;
+        TextMetrics m; m.adv = adv; m.kern = kern; m.ext = &ext;
+        const std::string s = "A\xED\x95\x9C\xFF";   // A, 한, a broken byte
+        size_t i = 0;
+        ACHECK(m.next(s.data(), s.size(), i) == 'A' - 32 && i == 1);
+        const int h = m.next(s.data(), s.size(), i);
+        ACHECK(h >= 95 && i == 4 && g.cp[h - 95] == 0xD55C);
+        ACHECK(m.next(s.data(), s.size(), i) == '?' - 32 && i == 5);
+        ACHECK(std::fabs(textUnits(m, s) - (4 + g.adv[h - 95] + 4)) < 1e-3f);
+        TextFit f = fitText(m, "\xED\x95\x9C\xED\x95\x9C\xED\x95\x9C\xED\x95\x9C\xED\x95\x9C\xED\x95\x9C", 2, 20);
+        ACHECK(f.keep < 0 || f.keep % 3 == 0);   // (cut between characters)
+    }
+}
+
 int assetTests() {
     g_afail = 0;
     testModelExport();
@@ -1154,6 +1208,7 @@ int assetTests() {
     testFontAtlas();
     testUiFonts();
     testTextFit();
+    testLanguages();
     testHitTiers();
     testVoiceSteal();
     testCategoryVolumes();
