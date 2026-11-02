@@ -636,7 +636,7 @@ SERVER_TEST void testAutosaveOffTick(uint16_t port) {
     ServerConfig cfg;
     cfg.map = name; cfg.mode = MODE_FFA; cfg.port = port; cfg.editMode = true;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; std::remove(path.c_str()); return; }
+    if (!START_SERVER(s, cfg)) { std::remove(path.c_str()); return; }
     auto fileText = [&] { std::ifstream f(path, std::ios::binary); std::stringstream ss; ss << f.rdbuf(); return ss.str(); };
     // the old way, for the record: serialize + check + write on the calling thread
     CHECK(s.applyEdit(-1, "t Edited 1"));

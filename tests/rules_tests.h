@@ -1400,7 +1400,7 @@ static void testSpawnTypes(uint16_t port) {
     ServerConfig cfg;
     cfg.map = "colosseum"; cfg.mode = MODE_TOURNEY; cfg.port = port;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    if (!START_SERVER(s, cfg)) { return; }
     CHECK(!s.map_.supportsMode(MODE_VS) && s.map_.canSupportMode(MODE_VS));   // (the case: a/b spawns, no "vs")
     s.tourney_.running = true;
     s.players_[0].connected = s.players_[1].connected = true;
@@ -2137,7 +2137,7 @@ static void testVsBotsDuo(uint16_t port) {
         cfg.map = mode == MODE_ARENA ? "temple" : "clockwork"; cfg.mode = mode; cfg.port = port++;
         cfg.vsBots = true; cfg.botsEnemy = 3; cfg.botsAlly = 2; cfg.duelTeamSize = 2;
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { CHECK(false); continue; }
+        if (!START_SERVER(s, cfg)) { continue; }
         int a = 0, b = 0;
         for (auto& p : s.players_) if (p.connected && p.isBot) (p.team == TEAM_A ? a : b)++;
         printf("  %s: %d allies, %d enemies\n", modeName(mode), a, b);

@@ -90,6 +90,16 @@ static double testTimeScale() {
 }
 static const double kTestTimeScale = testTimeScale();
 #define CHECK(c) do { if (!(c)) { printf("  FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); g_fail++; } } while (0)
+// Starts a test's server; when it can't (its port taken by another program, a map that won't load), prints a FAIL
+// line with the reason and counts the failure, so a run never fails without saying where.
+static bool startServerAt(Server& s, const ServerConfig& cfg, const char* file, int line) {
+    std::string e;
+    if (s.start(cfg, &e)) return true;
+    printf("  FAIL %s:%d: server start on port %u: %s\n", file, line, (unsigned)cfg.port, e.c_str());
+    g_fail++;
+    return false;
+}
+#define START_SERVER(s, cfg) startServerAt((s), (cfg), __FILE__, __LINE__)
 
 // Human-made maps (the owner's rule, docs/JUDGMENT_CALLS.md): the owner will hand-make the maps; those don't have to
 // pass the automated map checks, but they're still checked and their numbers reported, for balancing. A map is
@@ -2814,8 +2824,7 @@ static void testSession(int mode, const char* mapName, uint16_t port) {
     cfg.timeLimit = 3;
     cfg.scoreLimit = 3;
     s.setLog([](const std::string&) {});
-    std::string err;
-    if (!s.start(cfg, &err)) { printf("  server start failed: %s\n", err.c_str()); g_fail++; return; }
+    if (!START_SERVER(s, cfg)) return;
     NetClient a, b;
     a.connect("127.0.0.1:" + std::to_string(port), "alpha");
     b.connect("127.0.0.1:" + std::to_string(port), "bravo");
@@ -3268,7 +3277,7 @@ static void testWeapons(uint16_t port) {
         cfg.autoStart = true;
         cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port++;
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { g_fail++; continue; }
+        if (!START_SERVER(s, cfg)) { continue; }
         if (uptime) s.timeMs_ += 5u * 86400u * 1000u;
         NetClient a, b;
         a.connect("127.0.0.1:" + std::to_string(cfg.port), "shooter");
@@ -4811,7 +4820,7 @@ static void testBotNavBlockers(uint16_t port) {
         ServerConfig cfg;
         cfg.autoStart = false; cfg.map = c.map; cfg.mode = c.mode; cfg.port = port++;
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { printf("  %s: server didn't start\n", c.what); g_fail++; continue; }
+        if (!START_SERVER(s, cfg)) { printf("  (%s)\n", c.what); continue; }
         int bot = s.addBot(TEAM_A, BOT_ADVANCED);
         std::vector<NetClient*> none;
         for (int k = 0; k < 100 && (!s.nav_.ready(s.map_) || !s.players_[bot].alive); k++) pump(s, none, 0.05, idle);
@@ -5107,7 +5116,7 @@ static void testRejoin(uint16_t port) {
         ServerConfig cfg;
         cfg.autoStart = true; cfg.map = mode == MODE_DUEL ? "clockwork" : "bastion"; cfg.mode = mode; cfg.port = port++;
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { g_fail++; continue; }
+        if (!START_SERVER(s, cfg)) { continue; }
         NetClient a, b, c;
         a.connect("127.0.0.1:" + std::to_string(cfg.port), "ann");
         b.connect("127.0.0.1:" + std::to_string(cfg.port), "bob");
@@ -5271,7 +5280,7 @@ static void testCrossLanguageConstants(uint16_t port) {
     // the info reply layout quarkdata.parse_info_reply reads: u32 magic, u8 type, str name, str map, u8 mode, u8 players, u8 max, u16 port
     Server s; ServerConfig cfg; cfg.map = "bastion"; cfg.mode = MODE_KOTH; cfg.port = port; cfg.maxPlayers = 7;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { printf("  FAIL: server start\n"); g_fail++; return; }
+    if (!START_SERVER(s, cfg)) return;
     UdpSocket q; CHECK(q.open(0));
     uint8_t req[kInfoRequestBytes] = {};
     uint32_t mg = kProtocolMagic; memcpy(req, &mg, 4); req[4] = (uint8_t)pyInt("PKT_INFO_REQUEST");   // little endian, as struct.pack("<IB")
@@ -6152,7 +6161,7 @@ static void testBotGoalsAfterMapChange(uint16_t port) {
     ServerConfig cfg;
     cfg.autoStart = false; cfg.map = "hamlet"; cfg.mode = MODE_HIDE; cfg.port = port;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    if (!START_SERVER(s, cfg)) { return; }
     int bot = s.addBot(TEAM_A, BOT_ADVANCED);
     std::vector<NetClient*> none;
     for (int k = 0; k < 50 && !s.nav_.ready(s.map_); k++) pump(s, none, 0.1, idle);
@@ -6187,7 +6196,7 @@ static void testTagLateJoin(uint16_t port) {
     ServerConfig cfg;
     cfg.autoStart = false; cfg.map = "hamlet"; cfg.mode = MODE_TAG; cfg.port = port;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    if (!START_SERVER(s, cfg)) { return; }
     NetClient c[4];
     std::vector<NetClient*> cls;
     for (int i = 0; i < 3; i++) { c[i].connect("127.0.0.1:" + std::to_string(port), "p" + std::to_string(i)); cls.push_back(&c[i]); }
@@ -6234,7 +6243,7 @@ static void testItModes(uint16_t port) {
         ServerConfig cfg;
         cfg.autoStart = false; cfg.map = "hamlet"; cfg.mode = mode; cfg.port = port++;
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { g_fail++; continue; }
+        if (!START_SERVER(s, cfg)) { continue; }
         NetClient c[3];
         std::vector<NetClient*> cls;
         for (int i = 0; i < 3; i++) { c[i].connect("127.0.0.1:" + std::to_string(cfg.port), "p" + std::to_string(i)); cls.push_back(&c[i]); }
@@ -6899,7 +6908,7 @@ static void testAltFires(uint16_t port) {
         cfg.autoStart = false; // stay in warmup: a match start would move everyone back to spawns
         cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = (uint16_t)(port + kase);
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { g_fail++; continue; }
+        if (!START_SERVER(s, cfg)) { continue; }
         NetClient a, b;
         a.connect("127.0.0.1:" + std::to_string(cfg.port), "shooter");
         b.connect("127.0.0.1:" + std::to_string(cfg.port), "target");
@@ -7412,7 +7421,7 @@ static void testRanked(uint16_t port) {
         ServerConfig cfg;
         cfg.map = "qk1"; cfg.mode = MODE_FFA; cfg.port = (uint16_t)(port + variant); cfg.ranked = true; cfg.arenaVariant = variant;
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { g_fail++; continue; }
+        if (!START_SERVER(s, cfg)) { continue; }
         std::vector<std::unique_ptr<NetClient>> owned;
         std::vector<NetClient*> cls;
         std::vector<RankKey> keys;
@@ -8231,7 +8240,7 @@ static void testEditSession(uint16_t port) {
     ServerConfig cfg;
     cfg.map = name; cfg.mode = MODE_FFA; cfg.port = port; cfg.editMode = true;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; std::remove(path.c_str()); return; }
+    if (!START_SERVER(s, cfg)) { std::remove(path.c_str()); return; }
     NetClient a, b;
     a.connect("127.0.0.1:" + std::to_string(port), "a");
     b.connect("127.0.0.1:" + std::to_string(port), "b");
@@ -8875,7 +8884,7 @@ static void testBuiltInMapEditSession(uint16_t port) {
     ServerConfig cfg;
     cfg.map = "castle"; cfg.mode = MODE_FFA; cfg.port = port; cfg.editMode = true;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    if (!START_SERVER(s, cfg)) { return; }
     NetClient a;
     a.connect("127.0.0.1:" + std::to_string(port), "a");
     std::vector<NetClient*> cls = {&a};
@@ -9512,7 +9521,7 @@ static void testBots(uint16_t& port) {
         cfg.map = maps[mode]; cfg.mode = mode; cfg.port = port++;
         cfg.vsBots = true; cfg.botsEnemy = 3; cfg.botsAlly = 2; cfg.botSkill = BOT_ADVANCED;
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { g_fail++; continue; }
+        if (!START_SERVER(s, cfg)) { continue; }
         if (isOneVsOneMode(mode) || mode == MODE_DUEL) {
             // 1v1 and duel are the player and their team size of bots (F7: no ally in 1v1): the player joins, a NetClient,
             // so these two run on the real clock (pump) as before; the other modes are bots only
@@ -9558,7 +9567,7 @@ static void serverBench(uint16_t port, int bots, int humans, double seconds, con
     cfg.map = map; cfg.mode = mode; cfg.port = port; cfg.autoStart = true; cfg.maxPlayers = kMaxPlayers;
     if (rate) cfg.maxTickRate = rate;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { printf("  start failed\n"); return; }
+    if (!START_SERVER(s, cfg)) return;
     std::vector<std::unique_ptr<NetClient>> owned;
     std::vector<NetClient*> cls;
     for (int i = 0; i < humans; i++) {
