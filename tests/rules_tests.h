@@ -1447,7 +1447,7 @@ static void rateFreshWindow(Server& s, std::vector<NetClient*>& cls, double wind
 template <class F>
 static void ratePump(Server& s, std::vector<NetClient*>& cls, double seconds, F input, double* worst) {
     double end = timeNow() + seconds;
-    double nextTick = timeNow();
+    double nextTick = timeNow(), off = offCpu();
     while (timeNow() < end) {
         *worst = std::max(*worst, timeNow() - s.nextTickForTest());
         s.frame();
@@ -1456,7 +1456,8 @@ static void ratePump(Server& s, std::vector<NetClient*>& cls, double seconds, F 
             for (size_t i = 0; i < cls.size(); i++) cls[i]->tick(input((int)i));
             nextTick += cls.empty() ? 0.001 : cls[0]->tickPeriod();
         }
-        sleepMs(1);
+        hostSleepMs(1);   // (the host's pauses, here and in the loop's work, are kept for timingTest: as pump does)
+        hostOffCpu(off, 0.001);
     }
 }
 static constexpr int kRateTries = 3;
@@ -2959,7 +2960,7 @@ static void testGameRules(const std::string& only, int half = 0) {
         {"throws", 1, [] { testThrowCooldown(TP(29240)); }},
         {"hull", 1, [] { testSizeHull(TP(29242)); }},
         {"grapple", 2, [] { testGrappleNoBrake(); testGrapplePmove(); }},
-        {"grapplep", 2, [] { testGrapplePlayers(TP(29270)); testGrappleTeammate(TP(29271)); testGrappleLagComp(TP(29272)); testGrappleBots(TP(29273)); }},
+        {"grapplep", 2, [] { timingTest("grapple latch", [] { testGrapplePlayers(TP(29270)); }); testGrappleTeammate(TP(29271)); testGrappleLagComp(TP(29272)); testGrappleBots(TP(29273)); }},
         {"head", 1, [] { testHeadBox(TP(29246)); }},
         {"rocketride", 1, [] { testRocketRide(TP(29278)); }},
         {"hide", 2, [] { testHideScoring(TP(29247)); testSeekerRespawn(TP(29287)); }},

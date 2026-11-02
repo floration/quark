@@ -121,20 +121,24 @@ struct HumanMadeGrace {
 // times a minute and up to 21 ms late (a spin: 51 ms; steal time rising), and one 20 ms pause is 16 ticks over 4 ms,
 // 1.6% of a 1 s window. That isn't the code under test. So the harness measures its own waits (the time asleep, or spinning, past what it asked for: nothing
 // the server's code does can lengthen it), and an attempt of a timing test that failed while the host paused past the
-// stall threshold is set aside and run again (timingTest). Every check is the same; the third attempt always counts.
+// stall threshold is set aside and run again (timingTest). Every check is the same; the last attempt always counts.
 static double g_hostPause = 0;   // the longest host pause in this attempt (real seconds)
 static double wallNow() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 static void hostWaited(double t0, double asked) { g_hostPause = std::max(g_hostPause, wallNow() - t0 - std::max(asked, 0.0)); }
 static void hostSleepMs(int ms) { double t0 = wallNow(); sleepMs(ms); hostWaited(t0, ms * 1e-3); }
 constexpr double kHostPauseVoid = 0.004;   // (the server's stall threshold at 1000 Hz, 500/s: kStallSnaps x 2 ms)
+// Attempts of a timing test. Only an attempt that failed while the host paused past kHostPauseVoid is run again, so a
+// real regression (which fails on a host that runs the test when asked) fails the first unpaused attempt; 5, not 3,
+// because on a host shared with other builds (4 cores, 3 other jobs) the first 3 attempts were all paused now and then.
+constexpr int kTimingTries = 5;
 static void timingTest(const char* name, const std::function<void()>& run) {
     for (int attempt = 1;; attempt++) {
         int before = g_fail;
         g_hostPause = 0;
         run();
-        if (g_fail == before || attempt == 3 || g_hostPause <= kHostPauseVoid) return;
+        if (g_fail == before || attempt == kTimingTries || g_hostPause <= kHostPauseVoid) return;
         printf("  %s: the host paused this thread %.1f ms (over the %.0f ms stall threshold) in this attempt: its %d failure(s) "
-               "are set aside, attempt %d of 3\n", name, g_hostPause * 1e3, kHostPauseVoid * 1e3, g_fail - before, attempt + 1);
+               "are set aside, attempt %d of %d\n", name, g_hostPause * 1e3, kHostPauseVoid * 1e3, g_fail - before, attempt + 1, kTimingTries);
         g_fail = before;
     }
 }
@@ -154,6 +158,19 @@ static double offCpu() {
 #endif
 }
 
+// The host pause in a test loop's own work (frames, polls, ticks) since `off` (an offCpu() reading), less `asked`
+// seconds of sleep: kept in g_hostPause, as hostSleepMs keeps a sleep's. A thread the host doesn't run mid-frame
+// delays ticks the same as one that oversleeps. (Windows: offCpu() is wall time, so only the sleeps count there.)
+static void hostOffCpu(double& off, double asked) {
+#ifdef _WIN32
+    (void)asked;
+#else
+    double o = offCpu();
+    g_hostPause = std::max(g_hostPause, o - off - asked);
+    off = o;
+#endif
+}
+
 // Pump a server and some clients for `seconds` of real time, feeding each client an input. With `stalled`, it keeps the
 // longest the machine left the loop unrun in real seconds (beyond its 1 ms sleep; see offCpu): where a check's premise
 // is a machine that runs the test when it asks, a run that this breaks is the machine's, not the game's.
@@ -161,7 +178,7 @@ template <class F>
 static void pump(Server& s, std::vector<NetClient*>& cls, double seconds, F input, double* stalled = nullptr) {
     double end = timeNow() + seconds;
     double nextTick = timeNow();
-    double off = stalled ? offCpu() : 0;
+    double off = offCpu();
     while (timeNow() < end) {
         s.frame();
         for (auto* c : cls) c->poll();
@@ -170,7 +187,8 @@ static void pump(Server& s, std::vector<NetClient*>& cls, double seconds, F inpu
             nextTick += cls.empty() ? 0.001 : cls[0]->tickPeriod();
         }
         hostSleepMs(1);
-        if (stalled) { double o = offCpu(); *stalled = std::max(*stalled, o - off - 0.001); off = o; }
+        if (stalled) *stalled = std::max(*stalled, offCpu() - off - 0.001);
+        hostOffCpu(off, 0.001);
     }
 }
 
