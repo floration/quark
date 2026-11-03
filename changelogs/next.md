@@ -8,6 +8,7 @@
 - Fixed a rare wrong trail or missing explosion after very long matches, players drawn up to a second in the past after a server clock reset, and giants hidden behind cover their head stuck out over.
 - Dedicated servers: re-running install.sh no longer puts the testing server back on the production build, and a server that can't start yet keeps retrying instead of staying down.
 - macOS builds come out with each testing build again. When GitHub has no Apple Silicon Mac free, the macOS build now runs on an Intel Mac (it still makes the same universal app) instead of being dropped.
+- Ball: running or dashing into the ball no longer hurts you. The ball only does damage when it's moving over 20 m/s itself and over 25 m/s relative to you.
 
 ## Maps
 - **Payload has its own default map:** payload now picks Railyard (it still plays neutral payload and ball). The ranked ladders are unchanged.

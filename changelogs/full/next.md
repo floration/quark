@@ -95,6 +95,9 @@ Every change since 1.19.7, with what changed and why.
 - **The OPTIONS page drew its title over the changelog's**, so it was unreadable in every language. The changelog title is now skipped while OPTIONS is open.
 - **AUTO used the region format on Windows** (`GetUserDefaultLocaleName`), so English Windows with a German date format chose German. It now reads `GetUserPreferredUILanguages` (the display language, then the other preferred ones in order) and takes the first one the game has, falling back to `GetUserDefaultUILanguage`, then English. On macOS a Finder-started app has no `LANG`, so it now reads `CFLocaleCopyPreferredLanguages`. On Linux the GNU `LANGUAGE` priority list ("fr:en") is honoured, as gettext does, before `LC_ALL` / `LC_MESSAGES` / `LANG`. A locale like "nl" now falls through to the next preferred language instead of straight to English.
 
+## Ball
+- **Dashing into the ball doesn't hurt** (owner, 2026-11-03: "make ball not do damage if you are dashing into it, like the ball should have velocity relative to you and the ground like 25m/s to you and 20m/s to the ground"). The hit used only the speed relative to the player (over 20 m/s), so a 30 m/s dash into a still ball counted as a 30 m/s hit. Now it needs both: over 25 m/s relative to you and over 20 m/s ground speed (`ballStep`, gamemodes.cpp). The damage stays 1 per m/s of relative speed. A dash into a slow ball now just pushes it. The ball is server-simulated, so there's no protocol change.
+
 ## Voting (owner, 2026-11-01: "just one VOTE button, then you toggle on options")
 
 - **The builder's GAMEMODE / MODIFIERS / MAP toggles moved onto the VOTE page itself**, with CHOOSE naming the first step: one click and one page fewer. The page keeps its height by pairing START/RESTART, RESTART/5 MORE MINUTES and RANKED/SHUFFLE TEAMS. BACK walks one step back (summary > map > modifiers > gamemode > VOTE).

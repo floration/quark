@@ -1070,11 +1070,14 @@ void ballStep(Server& s) {
         if (len < 1e-3f) continue;
         n = n / len;
         // a fast ball hurts (owner, 2026-11-01: "if the ball hits somebody moving more than 20m/s relative to them it should
-        // damage them and knock them back"): 1 damage per m/s of its speed relative to them (21 m/s: 21), a knock along its path, and it bounces
+        // damage them and knock them back"; 25 / 20 m/s since 2026-11-03, below): 1 damage per m/s of its speed relative to them (26 m/s: 26), a knock along its path, and it bounces
         // off them at half its speed; the kill is whoever touched it last. Once per player per 0.3 s
         const Vec3 relV = s.ballVel_ - p.move.vel;
         const float relSp = length(relV);
-        if (relSp > 20.0f && s.time() - s.ballHurtAt_[i] > 0.3) {
+        // (owner, 2026-11-03: "make ball not do damage if you are dashing into it ... 25m/s to you and 20m/s to the ground"):
+        // it hurts only when it's over 25 m/s relative to you AND over 20 m/s itself, so running or dashing into a slow
+        // ball never does: the ball has to be moving fast on its own
+        if (relSp > 25.0f && length(s.ballVel_) > 20.0f && s.time() - s.ballHurtAt_[i] > 0.3) {
             s.ballHurtAt_[i] = s.time();
             Vec3 kb = relV * 0.5f;
             kb.y = std::max(kb.y, 4.0f);
