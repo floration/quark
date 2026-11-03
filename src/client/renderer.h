@@ -267,7 +267,9 @@ private:
     // Uniform locations, looked up once after linking (init): no lookups in the frame loop. Values that never change are
     // set there too, the per-frame ones that don't depend on the aim in prepareScene, the rest in drawScene (GL keeps
     // each program's values).
-    struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, baseL, accentL, wallbangL, metalL, floorL, metal, glow, full, fullColor, outlineW, time, sunDir, alphaPass, latchUse, worldEdge; } uWorld_ = {};
+    struct WorldLocs { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, baseL, accentL, wallbangL, metalL, floorL, metal, glow, full, fullColor, outlineW, time, sunDir, alphaPass, latchUse, worldEdge; };
+    WorldLocs uWorld_ = {}, uWorldFast_ = {};   // (uWorldFast_: worldFastProg_'s)
+    static WorldLocs worldLocs(unsigned prog);
     struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, receive, sunDir, latchUse; } uDyn_ = {};
     struct { GLint fwd, right, up, tan, sky, sunDir, bright; } uSky_ = {};
     GLint uDynFade_ = -1, uFlatFade_ = -1;   // (the view pass's see-through amount: WEAPON MODEL OPACITY)
@@ -290,9 +292,12 @@ private:
     unsigned compileWorld(const std::vector<bool>* used, std::string* err, bool noDiscard = false);
     // The world's opaque pass without discard (its hole and see-through discards cost the GPU its early depth test:
     // -27% GPU world pass on a 3090 Ti, 2026-11-03): built beside worldProg_, used while no holes are blown, its uniforms
-    // copied from worldProg_ each frame so every setter keeps writing worldProg_ alone.
+    // set alongside worldProg_'s each frame (prepareScene, drawScene); the rest, which change only with a setting, are
+    // copied from worldProg_ when worldFastDirty_ says one did (reading uniforms back every frame stalled the driver:
+    // +30 us CPU a frame on the desktop).
     struct UniformCopy { GLint from, to; GLenum type; };
     unsigned worldFastProg_ = 0, worldFastFor_ = 0;
+    bool worldFastDirty_ = true;
     std::vector<UniformCopy> worldFastCopy_;
     void buildWorldFast();
     void syncWorldFast();

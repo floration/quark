@@ -841,11 +841,15 @@ void Renderer::buildWorldFast() {
     latchBlock(f);
     worldFastProg_ = f;
     worldFastFor_ = worldProg_;
+    uWorldFast_ = worldLocs(f);
+    worldFastDirty_ = true;
 }
 
-// worldProg_'s uniform values into the no-discard program; leaves it bound
+// worldProg_'s uniform values into the no-discard program after a setting changed them (not every frame); leaves it bound
 void Renderer::syncWorldFast() {
     glUseProgram(worldFastProg_);
+    if (!worldFastDirty_) return;
+    worldFastDirty_ = false;
     for (const UniformCopy& u : worldFastCopy_) {
         float f[16]; GLint i[4];
         switch (u.type) {
@@ -898,14 +902,19 @@ unsigned Renderer::compile(const char* vs, const char* fs, std::string* err) {
 
 // The world program's uniform locations, and the values that never change (init; again after setWorldLooks builds a new
 // one: the per-frame ones are set again by the next frame, the holes' here)
+Renderer::WorldLocs Renderer::worldLocs(unsigned prog) {
+    return {U(prog, "uViewProj"), U(prog, "uShadowMat"), U(prog, "uShadowOn"), U(prog, "uCasterRect"),
+               U(prog, "uCamPos"), U(prog, "uFogColor"), U(prog, "uBright"), U(prog, "uBaseL"),
+               U(prog, "uAccentL"), U(prog, "uWallbangL"), U(prog, "uMetalL"), U(prog, "uFloorL"),
+               U(prog, "uMetal"), U(prog, "uGlow"), U(prog, "uFull"), U(prog, "uFullColor"), U(prog, "uOutlineW"),
+               U(prog, "uTime"), U(prog, "uSunDir"), U(prog, "uAlphaPass"), U(prog, "uLatchUse"),
+               U(prog, "uWorldEdge")};
+}
+
 void Renderer::initWorldUniforms() {
+    worldFastDirty_ = true;
     glUseProgram(worldProg_);
-    uWorld_ = {U(worldProg_, "uViewProj"), U(worldProg_, "uShadowMat"), U(worldProg_, "uShadowOn"), U(worldProg_, "uCasterRect"),
-               U(worldProg_, "uCamPos"), U(worldProg_, "uFogColor"), U(worldProg_, "uBright"), U(worldProg_, "uBaseL"),
-               U(worldProg_, "uAccentL"), U(worldProg_, "uWallbangL"), U(worldProg_, "uMetalL"), U(worldProg_, "uFloorL"),
-               U(worldProg_, "uMetal"), U(worldProg_, "uGlow"), U(worldProg_, "uFull"), U(worldProg_, "uFullColor"), U(worldProg_, "uOutlineW"),
-               U(worldProg_, "uTime"), U(worldProg_, "uSunDir"), U(worldProg_, "uAlphaPass"), U(worldProg_, "uLatchUse"),
-               U(worldProg_, "uWorldEdge")};
+    uWorld_ = worldLocs(worldProg_);
     glUniform1f(uWorld_.alphaPass, 0.0f);
     latchBlock(worldProg_);
     uHoleCount_ = U(worldProg_, "uHoleCount");
@@ -934,6 +943,7 @@ void Renderer::initWorldUniforms() {
 }
 
 int Renderer::setShadowRes(int res) {
+    worldFastDirty_ = true;   // (worldProg_'s uniforms change: the no-discard program copies them)
     GLint64 maxTex = 0;
     glGetInteger64v(GL_MAX_TEXTURE_SIZE, &maxTex);
     if (maxTex > 0 && res > maxTex) res = (int)maxTex;
@@ -1173,6 +1183,7 @@ void Renderer::prepareWorld(const Map& map, PreparedWorld& w, const std::functio
 // The holes blown in thin brick / cobblestone (Map::holes): two RGBA32F texels each on texture unit 2, which nothing
 // else uses. Sent when they change (Map::destructSerial), not every frame.
 void Renderer::setHoles(const std::vector<Map::Hole>& holes) {
+    worldFastDirty_ = true;   // (worldProg_'s uniforms change: the no-discard program copies them)
     const int n = (int)std::min<size_t>(holes.size(), kMaxHoles);
     glUseProgram(worldProg_);
     glUniform1i(uHoleCount_, n);
@@ -1874,27 +1885,31 @@ void Renderer::prepareScene(bool shadows) {
     const Vec3 glowColor = (glowOverride.x >= 0 ? glowOverride : this->glowColor) * glowMul;
     const float hiBase = highContrast ? 1.45f : 1.5f, hiAccent = highContrast ? 0.75f : 1.5f;
     clear_[0] = std::pow(skyColor.x, 1 / 2.2f); clear_[1] = std::pow(skyColor.y, 1 / 2.2f); clear_[2] = std::pow(skyColor.z, 1 / 2.2f);
-    glUseProgram(worldProg_);
-    setMat(uWorld_.shadowMat, shadowMat);
-    glUniform1i(uWorld_.shadowOn, useShadows && shadowWorld ? 1 : 0);
-    glUniform4fv(uWorld_.casterRect, 1, casterRect_);
     auto lin = [](const Vec3& c, float k) { return Vec3(std::pow(c.x, 2.2f), std::pow(c.y, 2.2f), std::pow(c.z, 2.2f)) * k; };
-    setVec3(uWorld_.baseL, highContrast ? lin(vmin(baseColor * 1.3f + Vec3(0.12f, 0.12f, 0.12f), Vec3(1, 1, 1)), hiBase) : lin(baseColor, 1.5f));
-    setVec3(uWorld_.accentL, lin(accentColor, hiAccent));
-    setVec3(uWorld_.wallbangL, wallbangTint.x >= 0 ? lin(wallbangTint, 1.5f) : lin(baseColor * 0.42f, 1.5f));   // (MORE 4: WALLBANG TINT)
-    setVec3(uWorld_.worldEdge, lin(worldEdge, 1.0f));   // (location cached: no string lookup a frame)
-    setVec3(uWorld_.metalL, lin(metalColor, 1.5f));
-    setVec3(uWorld_.floorL, lin(metalColor, 2.0f));
-    setVec3(uWorld_.metal, metalColor);
-    setVec3(uWorld_.glow, glowColor);
-    setVec3(uWorld_.fogColor, skyColor);
-    setVec3(uWorld_.camPos, camPos_);   // (a late latch turns the view, it doesn't move it)
-    glUniform1f(uWorld_.bright, brightness);
-    glUniform1f(uWorld_.full, fullbright ? 1.0f : 0.0f);
-    setVec3(uWorld_.fullColor, fullbrightColor);
-    glUniform1f(uWorld_.outlineW, worldOutline);
-    glUniform1f(uWorld_.time, liquidFlow ? (float)std::fmod(timeNow(), 3600.0) : 0.0f);   // (MORE 2: LIQUIDS STILL: time stands)
-    setVec3(uWorld_.sunDir, sunDir_);
+    auto frameUniforms = [&](unsigned prog, const WorldLocs& L) {   // (both world programs get the frame's own values)
+        glUseProgram(prog);
+        setMat(L.shadowMat, shadowMat);
+        glUniform1i(L.shadowOn, useShadows && shadowWorld ? 1 : 0);
+        glUniform4fv(L.casterRect, 1, casterRect_);
+        setVec3(L.baseL, highContrast ? lin(vmin(baseColor * 1.3f + Vec3(0.12f, 0.12f, 0.12f), Vec3(1, 1, 1)), hiBase) : lin(baseColor, 1.5f));
+        setVec3(L.accentL, lin(accentColor, hiAccent));
+        setVec3(L.wallbangL, wallbangTint.x >= 0 ? lin(wallbangTint, 1.5f) : lin(baseColor * 0.42f, 1.5f));   // (MORE 4: WALLBANG TINT)
+        setVec3(L.worldEdge, lin(worldEdge, 1.0f));   // (location cached: no string lookup a frame)
+        setVec3(L.metalL, lin(metalColor, 1.5f));
+        setVec3(L.floorL, lin(metalColor, 2.0f));
+        setVec3(L.metal, metalColor);
+        setVec3(L.glow, glowColor);
+        setVec3(L.fogColor, skyColor);
+        setVec3(L.camPos, camPos_);   // (a late latch turns the view, it doesn't move it)
+        glUniform1f(L.bright, brightness);
+        glUniform1f(L.full, fullbright ? 1.0f : 0.0f);
+        setVec3(L.fullColor, fullbrightColor);
+        glUniform1f(L.outlineW, worldOutline);
+        glUniform1f(L.time, liquidFlow ? (float)std::fmod(timeNow(), 3600.0) : 0.0f);   // (MORE 2: LIQUIDS STILL: time stands)
+        setVec3(L.sunDir, sunDir_);
+    };
+    if (worldFastProg_ && worldFastFor_ == worldProg_) frameUniforms(worldFastProg_, uWorldFast_);
+    frameUniforms(worldProg_, uWorld_);
     if (look_.clean || look_.fadeAt > 0.0f) buildCleanMeans(std::array<float, 14>{(float)worldProg_, baseColor.x, baseColor.y, baseColor.z, accentColor.x, accentColor.y, accentColor.z,
                                       metalColor.x, metalColor.y, metalColor.z, glowColor.x, glowColor.y, glowColor.z, highContrast ? 1.0f : 0.0f});
     glUseProgram(skyProg_);
@@ -1922,7 +1937,7 @@ void Renderer::drawScene(bool shadows) {
     const float px = (float)sceneW_ / (float)std::max(1, width_);
     if (px != pxScale_) {   // (only when the render scale or the size changes: the outlines' width in window pixels)
         pxScale_ = px;
-        glUseProgram(worldProg_); glUniform1f(uWorldPx_, px);
+        glUseProgram(worldProg_); glUniform1f(uWorldPx_, px); worldFastDirty_ = true;
         glUseProgram(dynProg_); glUniform1f(uDynPx_, px);
     }
     glClearColor(clear_[0], clear_[1], clear_[2], 1);
@@ -1952,7 +1967,11 @@ void Renderer::drawScene(bool shadows) {
         }
         glBindVertexArray(worldVao_);
         const bool fast = worldFastProg_ && worldFastFor_ == worldProg_ && holeCount_ == 0;
-        if (fast) syncWorldFast();   // (no holes: the program without discard, same uniforms)
+        if (fast) {   // (no holes: the program without discard, same uniforms)
+            syncWorldFast();
+            setMat(uWorldFast_.viewProj, viewProj_);
+            glUniform1i(uWorldFast_.latchUse, latchUse_ ? 1 : 0);
+        }
         drawWorldChunks();
         if (fast) glUseProgram(worldProg_);
         if (blockVerts_) {   // the breakable blocks: their looks, lit by full sun and sky (uAlphaPass 2: opaque)
@@ -2617,6 +2636,7 @@ void Renderer::buildSwatches() {
 // and its pixels averaged into uCleanTex (unit 5). With it on the world draws those averages flat: no look runs at all.
 // Again only when the program, the palette or high contrast change (key); called from prepareScene, worldProg_ bound.
 void Renderer::buildCleanMeans(const std::array<float, 14>& key) {   // (an array: no heap allocation a frame)
+    worldFastDirty_ = true;   // (worldProg_'s uniforms change: the no-discard program copies them)
     if (key == cleanKey_ || !worldProg_) return;
     cleanKey_ = key;
     QZONE("clean surfaces");
@@ -2827,6 +2847,7 @@ void Renderer::flush2D() {
 }
 
 void Renderer::setGrade(float gamma, float contrast, float saturation) {
+    worldFastDirty_ = true;   // (worldProg_'s uniforms change: the no-discard program copies them)
     grade_ = {std::max(0.2f, gamma), std::max(0.0f, contrast), std::max(0.0f, saturation)};
     for (unsigned prog : {worldProg_, dynProg_, skyProg_}) {
         if (!prog) continue;
@@ -2837,6 +2858,7 @@ void Renderer::setGrade(float gamma, float contrast, float saturation) {
 }
 
 void Renderer::setFog(float mul) {
+    worldFastDirty_ = true;   // (worldProg_'s uniforms change: the no-discard program copies them)
     fogMul_ = std::max(0.0f, mul);
     for (unsigned prog : {worldProg_, dynProg_}) {   // (each pass binds its program before it draws)
         if (!prog) continue;
@@ -2849,6 +2871,7 @@ void Renderer::setFog(float mul) {
 // VIDEO + AUDIO > MORE 2 / 4: the look's switches as uniforms, each 0 at its default (so a program that never got them,
 // the swatches', draws as before). Set when they change and on a new world program: nothing per frame.
 void Renderer::lookUniforms(unsigned prog) {
+    worldFastDirty_ = true;   // (worldProg_'s uniforms change: the no-discard program copies them)
     if (!prog) return;
     glUseProgram(prog);
     glUniform1f(U(prog, "uNoTone"), look_.tone ? 0.0f : 1.0f);
