@@ -765,8 +765,15 @@ static std::string worldLooks(const std::vector<bool>* used) {
     return s + "}\n";
 }
 
-unsigned Renderer::compileWorld(const std::vector<bool>* used, std::string* err) {
+unsigned Renderer::compileWorld(const std::vector<bool>* used, std::string* err, bool noDiscard) {
     std::string fs = std::string("#version 330 core\n") + kShadowFn + kWorldFS;
+    if (noDiscard)   // (the opaque pass with no holes: neither discard can happen there, and without them the GPU tests depth first)
+        for (const char* d : {"if (uHoleCount > 0 && (mat == 20 || mat == 24) && vMat - float(mat) > 0.1 && inHole()) discard;",
+                              "if (blended && alpha < 0.01) discard;"}) {
+            const size_t at = fs.find(d);
+            if (at == std::string::npos) { if (err) *err += std::string("no-discard world shader: missing ") + d; return 0; }
+            fs.erase(at, strlen(d));
+        }
     const size_t at = fs.find("// @LOOKS@");
     fs.replace(at, fs.find('\n', at) - at, worldLooks(used));
     // the large patterns: material kMatLarge + i draws kLarge[i].base's look with the face's plane divided by its scale
@@ -804,7 +811,56 @@ void Renderer::setWorldLooks(const BakedWorld& bw) {
     worldProg_ = p;
     worldUsed_ = used;
     initWorldUniforms();
+    buildWorldFast();
     glUseProgram(0);
+}
+
+void Renderer::buildWorldFast() {
+    if (worldFastProg_) glDeleteProgram(worldFastProg_);
+    worldFastProg_ = 0; worldFastFor_ = 0; worldFastCopy_.clear();
+    if (getenv("QUARK_WORLD_DISCARD")) return;   // (A/B: the old single program)
+    std::string err;
+    const unsigned f = compileWorld(&worldUsed_, &err, true);
+    if (!f) { fprintf(stderr, "world shader (no discard): %s\n", err.c_str()); return; }
+    // every active uniform outside a block, each array element on its own: where it is in each program
+    GLint n = 0;
+    glGetProgramiv(f, GL_ACTIVE_UNIFORMS, &n);
+    for (GLint i = 0; i < n; i++) {
+        char name[256]; GLsizei len = 0; GLint size = 0; GLenum type = 0;
+        glGetActiveUniform(f, (GLuint)i, sizeof name, &len, &size, &type, name);
+        std::string base(name, (size_t)len);
+        if (size > 1 && base.size() > 3 && base.compare(base.size() - 3, 3, "[0]") == 0) base.resize(base.size() - 3);
+        for (GLint e = 0; e < size; e++) {
+            const std::string nm = size > 1 ? base + "[" + std::to_string(e) + "]" : base;
+            const GLint to = glGetUniformLocation(f, nm.c_str()), from = glGetUniformLocation(worldProg_, nm.c_str());
+            if (to < 0) continue;   // (in a block: the latch's, bound below)
+            if (from < 0) { fprintf(stderr, "world shader (no discard): %s not in the main program\n", nm.c_str()); glDeleteProgram(f); worldFastCopy_.clear(); return; }
+            worldFastCopy_.push_back({from, to, type});
+        }
+    }
+    latchBlock(f);
+    worldFastProg_ = f;
+    worldFastFor_ = worldProg_;
+}
+
+// worldProg_'s uniform values into the no-discard program; leaves it bound
+void Renderer::syncWorldFast() {
+    glUseProgram(worldFastProg_);
+    for (const UniformCopy& u : worldFastCopy_) {
+        float f[16]; GLint i[4];
+        switch (u.type) {
+            case GL_FLOAT: glGetUniformfv(worldProg_, u.from, f); glUniform1fv(u.to, 1, f); break;
+            case GL_FLOAT_VEC2: glGetUniformfv(worldProg_, u.from, f); glUniform2fv(u.to, 1, f); break;
+            case GL_FLOAT_VEC3: glGetUniformfv(worldProg_, u.from, f); glUniform3fv(u.to, 1, f); break;
+            case GL_FLOAT_VEC4: glGetUniformfv(worldProg_, u.from, f); glUniform4fv(u.to, 1, f); break;
+            case GL_FLOAT_MAT3: glGetUniformfv(worldProg_, u.from, f); glUniformMatrix3fv(u.to, 1, GL_FALSE, f); break;
+            case GL_FLOAT_MAT4: glGetUniformfv(worldProg_, u.from, f); glUniformMatrix4fv(u.to, 1, GL_FALSE, f); break;
+            case GL_INT_VEC2: glGetUniformiv(worldProg_, u.from, i); glUniform2iv(u.to, 1, i); break;
+            case GL_INT_VEC3: glGetUniformiv(worldProg_, u.from, i); glUniform3iv(u.to, 1, i); break;
+            case GL_INT_VEC4: glGetUniformiv(worldProg_, u.from, i); glUniform4iv(u.to, 1, i); break;
+            default: glGetUniformiv(worldProg_, u.from, i); glUniform1i(u.to, i[0]); break;   // (int, bool, samplers)
+        }
+    }
 }
 unsigned Renderer::compile(const char* vs, const char* fs, std::string* err) {
     auto sh = [&](GLenum type, const char* src) -> unsigned {
@@ -1010,6 +1066,7 @@ bool Renderer::init(int shadowRes, std::string* err) {
     const Vec3 skyLight = {0.42f, 0.45f, 0.52f};
     const float fog = kFogDensity * fogMul_;
     initWorldUniforms();
+    buildWorldFast();
     glUseProgram(dynProg_);
     uDyn_ = {U(dynProg_, "uViewProj"), U(dynProg_, "uShadowMat"), U(dynProg_, "uShadowOn"), U(dynProg_, "uCasterRect"),
              U(dynProg_, "uCamPos"), U(dynProg_, "uFogColor"), U(dynProg_, "uBright"), U(dynProg_, "uReceiveShadow"), U(dynProg_, "uSunDir"),
@@ -1894,7 +1951,10 @@ void Renderer::drawScene(bool shadows) {
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, lightmapNearest ? GL_NEAREST : GL_LINEAR);
         }
         glBindVertexArray(worldVao_);
+        const bool fast = worldFastProg_ && worldFastFor_ == worldProg_ && holeCount_ == 0;
+        if (fast) syncWorldFast();   // (no holes: the program without discard, same uniforms)
         drawWorldChunks();
+        if (fast) glUseProgram(worldProg_);
         if (blockVerts_) {   // the breakable blocks: their looks, lit by full sun and sky (uAlphaPass 2: opaque)
             glUniform1f(uWorld_.alphaPass, 2.0f);
             glDisable(GL_CULL_FACE);

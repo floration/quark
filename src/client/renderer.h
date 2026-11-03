@@ -287,7 +287,15 @@ private:
     float holeGrid_[4] = {};   // (the hole grid's uniforms as last set: a new world program gets them too)
     int holeGridH_ = 0;
     std::vector<bool> worldUsed_ = std::vector<bool>((size_t)kMapMaterials, false);   // the looks in worldProg_ (setWorldLooks)
-    unsigned compileWorld(const std::vector<bool>* used, std::string* err);
+    unsigned compileWorld(const std::vector<bool>* used, std::string* err, bool noDiscard = false);
+    // The world's opaque pass without discard (its hole and see-through discards cost the GPU its early depth test:
+    // -27% GPU world pass on a 3090 Ti, 2026-11-03): built beside worldProg_, used while no holes are blown, its uniforms
+    // copied from worldProg_ each frame so every setter keeps writing worldProg_ alone.
+    struct UniformCopy { GLint from, to; GLenum type; };
+    unsigned worldFastProg_ = 0, worldFastFor_ = 0;
+    std::vector<UniformCopy> worldFastCopy_;
+    void buildWorldFast();
+    void syncWorldFast();
     void setWorldLooks(const BakedWorld& bw);
     void uploadSeeThrough(const Map& map);
 public:
