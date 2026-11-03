@@ -467,9 +467,13 @@ CHECK AGAIN	ERNEUT PRÜFEN
 CHECKING...	PRÜFE...
 CHECKPOINT	CHECKPOINT
 CHECKPT	CHECKPT
+CHOOSE	WÄHLEN
 CHOOSE -	WÄHLEN -
 CHOOSE A MAP FOR	WÄHLE EINE MAP FÜR
 CHOOSE A MODE	WÄHLE EINEN MODUS
+CHOOSE THE GAMEMODE	WÄHLE DEN SPIELMODUS
+CHOOSE THE MAP	WÄHLE DIE MAP
+CHOOSE THE MODIFIERS	WÄHLE DIE MODIFIKATOREN
 CHOOSING...	WÄHLT...
 CLASSIC	KLASSISCH
 CLEAN SURFACES	SAUBERE OBERFLÄCHEN
@@ -1380,7 +1384,6 @@ MAGENTA	MAGENTA
 MAKE	BAUEN
 MALE	MANN
 MAP	MAP
-MAP / MODE / MODIFIERS	MAP / MODUS / MODIFIKATOREN
 MAP COLOR	MAP-FARBE
 MAP COLORS	MAP-FARBEN
 MAP DOWNLOADS	MAP-DOWNLOADS
@@ -2371,6 +2374,7 @@ PROFILE:	PROFIL:
 PROFILE: MY CONTROLS	PROFIL: MEINE STEUERUNG
 PROFILE: MY HUD	PROFIL: MEIN HUD
 PROFILES	PROFILE
+PROJECTILE SPEED	PROJEKTILTEMPO
 PUBLIC	ÖFFENTL.
 PUBLIC lists the server on the internet server list (off: friends join with your IP, shown on the host screen). Games on your network show up for everyone on it.	ÖFFENTLICH listet den Server in der Internet-Serverliste (aus: Freunde joinen mit deiner IP, angezeigt im Host-Screen). Spiele in deinem Netzwerk sieht jeder darin.
 PULSE	PULS
@@ -2694,6 +2698,7 @@ SIZE: X2	GRÖSSE: X2
 SIZING	SKALIER.
 SIZING: EXACT PIXELS	SKALIERUNG: EXAKTE PIXEL
 SIZING: SCALE WITH RESOLUTION	SKALIERUNG: MIT AUFLÖSUNG
+SIZZLE	ZISCHEN
 SKIP IT	SKIPPEN
 SKIP WARMUP	WARMUP SKIP
 SKY	SKY
@@ -3199,7 +3204,6 @@ WEAPON:	WAFFE:
 WEAPONS	WAFFEN
 WEAPONS (THEIR NUMBER KEYS STILL WORK)	WAFFEN (IHRE ZAHLENTASTEN GEHEN WEITER)
 WHAT THE BOTS PLAY: .QBRAIN FILES IN THE BOTS FOLDER	WAS DIE BOTS SPIELEN: .QBRAIN-DATEIEN IM BOTS-ORDNER
-WHAT THE VOTE CHANGES	WAS DER VOTE ÄNDERT
 WHEEL DN	WHEEL DN
 WHEEL UP	WHEEL UP
 WHEN ONE FILLS, EVERYONE IN IT IS TOLD (HERE AND ON DISCORD)	WENN EINE VOLL IST, WERDEN ALLE DARIN INFORMIERT (HIER UND AUF DISCORD)
@@ -3500,6 +3504,7 @@ joined team A	ist Team A beigetreten
 joined team B	ist Team B beigetreten
 joined the game	ist dem Spiel beigetreten
 kElemNames follows Settings::HUD_*	kElemNames follows Settings::HUD_*
+kFrameTimes must be a power of two	kFrameTimes must be a power of two
 kbps (# packets/s), download # kbps (#/s)	kbps (# Pakete/s), Download # kbps (#/s)
 kick whom? a name or an id (status lists them)	wen kicken? ein Name oder eine ID (status listet sie)
 kicked by a vote	per Vote gekickt
@@ -3832,6 +3837,7 @@ update ready: waiting for the match to end	Update bereit: warte auf das Match-En
 upload # of # kbps	Upload # von # kbps
 upload bytes	upload bytes
 user:	user:
+vote builder	vote builder
 vote cancelled: the ranked match is live	Vote abgebrochen: das Ranked-Match läuft
 vote failed:	Vote gescheitert:
 vote no	vote no

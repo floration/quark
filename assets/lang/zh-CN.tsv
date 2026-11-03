@@ -467,9 +467,13 @@ CHECK AGAIN	再次检查
 CHECKING...	检查中...
 CHECKPOINT	检查点
 CHECKPT	检查点
+CHOOSE	选择
 CHOOSE -	选择 -
 CHOOSE A MAP FOR	选择地图用于
 CHOOSE A MODE	选择模式
+CHOOSE THE GAMEMODE	选择游戏模式
+CHOOSE THE MAP	选择地图
+CHOOSE THE MODIFIERS	选择修改器
 CHOOSING...	选择中...
 CLASSIC	经典
 CLEAN SURFACES	干净表面
@@ -1380,7 +1384,6 @@ MAGENTA	品红
 MAKE	制作
 MALE	男性
 MAP	地图
-MAP / MODE / MODIFIERS	地图 / 模式 / 修改器
 MAP COLOR	地图颜色
 MAP COLORS	地图颜色
 MAP DOWNLOADS	地图下载
@@ -2371,6 +2374,7 @@ PROFILE:	配置:
 PROFILE: MY CONTROLS	配置: 我的操作
 PROFILE: MY HUD	配置: 我的 HUD
 PROFILES	配置
+PROJECTILE SPEED	弹速
 PUBLIC	公开
 PUBLIC lists the server on the internet server list (off: friends join with your IP, shown on the host screen). Games on your network show up for everyone on it.	公开会将服务器列入互联网服务器列表 (关闭: 好友通过你的 IP 加入, 显示在主机界面)。局域网内的游戏对网络内所有人可见。
 PULSE	脉冲
@@ -2694,6 +2698,7 @@ SIZE: X2	大小: X2
 SIZING	尺寸
 SIZING: EXACT PIXELS	尺寸: 精确像素
 SIZING: SCALE WITH RESOLUTION	尺寸: 随分辨率缩放
+SIZZLE	腐蚀声
 SKIP IT	跳过
 SKIP WARMUP	跳过热身
 SKY	天空
@@ -3199,7 +3204,6 @@ WEAPON:	武器:
 WEAPONS	武器
 WEAPONS (THEIR NUMBER KEYS STILL WORK)	武器 (数字键仍可用)
 WHAT THE BOTS PLAY: .QBRAIN FILES IN THE BOTS FOLDER	机器人使用的 AI: bots 文件夹中的 .QBRAIN 文件
-WHAT THE VOTE CHANGES	投票更改的内容
 WHEEL DN	WHEEL DN
 WHEEL UP	WHEEL UP
 WHEN ONE FILLS, EVERYONE IN IT IS TOLD (HERE AND ON DISCORD)	队列满员时会通知其中所有人 (此处及 DISCORD)
@@ -3500,6 +3504,7 @@ joined team A	加入了 A 队
 joined team B	加入了 B 队
 joined the game	加入了游戏
 kElemNames follows Settings::HUD_*	kElemNames follows Settings::HUD_*
+kFrameTimes must be a power of two	kFrameTimes must be a power of two
 kbps (# packets/s), download # kbps (#/s)	kbps (# 包/秒), 下载 # kbps (#/秒)
 kick whom? a name or an id (status lists them)	踢谁? 名字或 ID (status 会列出)
 kicked by a vote	被投票踢出
@@ -3832,6 +3837,7 @@ update ready: waiting for the match to end	更新已就绪: 等待比赛结束
 upload # of # kbps	上传 # / # kbps
 upload bytes	upload bytes
 user:	用户:
+vote builder	vote builder
 vote cancelled: the ranked match is live	投票取消: 排位比赛进行中
 vote failed:	投票失败:
 vote no	投反对

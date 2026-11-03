@@ -1400,7 +1400,7 @@ static void testSpawnTypes(uint16_t port) {
     ServerConfig cfg;
     cfg.map = "colosseum"; cfg.mode = MODE_TOURNEY; cfg.port = port;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    if (!START_SERVER(s, cfg)) { return; }
     CHECK(!s.map_.supportsMode(MODE_VS) && s.map_.canSupportMode(MODE_VS));   // (the case: a/b spawns, no "vs")
     s.tourney_.running = true;
     s.players_[0].connected = s.players_[1].connected = true;
@@ -1447,7 +1447,7 @@ static void rateFreshWindow(Server& s, std::vector<NetClient*>& cls, double wind
 template <class F>
 static void ratePump(Server& s, std::vector<NetClient*>& cls, double seconds, F input, double* worst) {
     double end = timeNow() + seconds;
-    double nextTick = timeNow();
+    double nextTick = timeNow(), off = offCpu();
     while (timeNow() < end) {
         *worst = std::max(*worst, timeNow() - s.nextTickForTest());
         s.frame();
@@ -1456,7 +1456,8 @@ static void ratePump(Server& s, std::vector<NetClient*>& cls, double seconds, F 
             for (size_t i = 0; i < cls.size(); i++) cls[i]->tick(input((int)i));
             nextTick += cls.empty() ? 0.001 : cls[0]->tickPeriod();
         }
-        sleepMs(1);
+        hostSleepMs(1);   // (the host's pauses, here and in the loop's work, are kept for timingTest: as pump does)
+        hostOffCpu(off, 0.001);
     }
 }
 static constexpr int kRateTries = 3;
@@ -2136,7 +2137,7 @@ static void testVsBotsDuo(uint16_t port) {
         cfg.map = mode == MODE_ARENA ? "temple" : "clockwork"; cfg.mode = mode; cfg.port = port++;
         cfg.vsBots = true; cfg.botsEnemy = 3; cfg.botsAlly = 2; cfg.duelTeamSize = 2;
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { CHECK(false); continue; }
+        if (!START_SERVER(s, cfg)) { continue; }
         int a = 0, b = 0;
         for (auto& p : s.players_) if (p.connected && p.isBot) (p.team == TEAM_A ? a : b)++;
         printf("  %s: %d allies, %d enemies\n", modeName(mode), a, b);
@@ -2963,7 +2964,7 @@ static void testGameRules(const std::string& only, int half = 0) {
         {"throws", 1, [] { testThrowCooldown(TP(29240)); }},
         {"hull", 1, [] { testSizeHull(TP(29242)); }},
         {"grapple", 2, [] { testGrappleNoBrake(); testGrapplePmove(); }},
-        {"grapplep", 2, [] { testGrapplePlayers(TP(29270)); testGrappleTeammate(TP(29271)); testGrappleLagComp(TP(29272)); testGrappleBots(TP(29273)); }},
+        {"grapplep", 2, [] { timingTest("grapple latch", [] { testGrapplePlayers(TP(29270)); }); testGrappleTeammate(TP(29271)); testGrappleLagComp(TP(29272)); testGrappleBots(TP(29273)); }},
         {"head", 1, [] { testHeadBox(TP(29246)); }},
         {"rocketride", 1, [] { testRocketRide(TP(29278)); }},
         {"hide", 2, [] { testHideScoring(TP(29247)); testSeekerRespawn(TP(29287)); }},

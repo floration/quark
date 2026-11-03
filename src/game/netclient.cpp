@@ -758,17 +758,20 @@ static float lerpAngle(float a, float b, float t) {
 // those used to walk the whole 512 snapshot history on every call.
 static float renderBracket(const std::deque<Snapshot>& snaps, double renderTime, const Snapshot*& a, const Snapshot*& b) {
     b = &snaps.back();
-    if (renderTime >= b->timeMs * 0.001) { a = b; return 1.0f; }
-    a = &snaps.front();
-    if (renderTime >= a->timeMs * 0.001)   // (before the oldest: front to back at 0, as the full search ended)
-        for (size_t i = snaps.size() - 1; i > 0; i--) {
-            if (snaps[i - 1].timeMs * 0.001 <= renderTime && snaps[i].timeMs * 0.001 >= renderTime) {
-                a = &snaps[i - 1];
-                b = &snaps[i];
-                break;
-            }
-        }
+    const double newest = b->timeMs * 0.001;
+    if (renderTime >= newest) { a = b; return 1.0f; }
+    // COR-8: never further back than the longest interpolation delay (+0.1 s) behind the newest. After a clock reset
+    // the render time could sit up to about a second back, drawing everyone where they were then; and the search
+    // stops where the server's clock went backwards (a restart): the poses before that are from another timeline.
+    renderTime = std::max(renderTime, newest - (kMaxInterpMs * 0.001 + 0.1));
+    a = b;
+    for (size_t i = snaps.size() - 1; i > 0; i--) {
+        if (snaps[i - 1].timeMs > snaps[i].timeMs) break;   // (a has the oldest pose of this timeline)
+        a = &snaps[i - 1];
+        if (snaps[i - 1].timeMs * 0.001 <= renderTime) { b = &snaps[i]; break; }
+    }
     double ta = a->timeMs * 0.001, tb = b->timeMs * 0.001;   // (doubles: server uptime in seconds)
+    if (a != b && ta > renderTime) { b = a; return 1.0f; }   // (before the oldest: its pose, as the old search ended)
     return tb > ta ? clampf((float)((renderTime - ta) / (tb - ta)), 0, 1) : 1.0f;
 }
 

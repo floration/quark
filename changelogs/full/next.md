@@ -41,3 +41,30 @@ Every change since 1.19.7, with what changed and why.
 - **Squeezed labels lost their word spaces** ("BOTSAUSGLEICHEN"): closing up a label tightened a space from both sides, about 30% of its width. A space now closes by 10% at most, and the letters take the rest.
 - **Wrong words:** Russian VOTES was "voices" (now ГОЛОСОВАНИЕ), Turkish ADVANCED was "forward" (now GELİŞMİŞ), and the spectator FOV's MINE ("my own") was translated as the explosive in Portuguese, Russian, Turkish, Chinese and German (now possessive; French too).
 - The CJK atlases were rebaked for the new characters: zh-CN 1632, ja 1323, ko 1094 glyphs.
+
+## Voting (owner, 2026-11-01: "just one VOTE button, then you toggle on options")
+
+- **The builder's GAMEMODE / MODIFIERS / MAP toggles moved onto the VOTE page itself**, with CHOOSE naming the first step: one click and one page fewer. The page keeps its height by pairing START/RESTART, RESTART/5 MORE MINUTES and RANKED/SHUFFLE TEAMS. BACK walks one step back (summary > map > modifiers > gamemode > VOTE).
+- **New modifiers FIRE RATE (x0.25-4) and PROJECTILE SPEED (x0.25-3)** apply to every weapon through the custom rules' existing `weapon=` multipliers, so there is no protocol change; the server's `mods` whitelist gained `firerate` / `projspeed` (an older server answers "bad modifier"). Player size and ammo limits, also on q's list, don't exist as gameplay yet and were not invented.
+- The UI test now reaches the builder's modifiers and summary pages (scoped builder pickers, one context per toggle combination); before, they were never tested.
+
+## Acid and lava (owner, 2026-10-27: "it should destroy, so should lava, yes screen tint, and pulse and sizzle")
+
+- **Projectiles that enter lava, a deadly liquid or acid are removed there**: no blast, hit or prop, and no explosion revealed to players who couldn't see it. The server's 1 ms step and the client's own copies use the same `Map::dissolveAlong` test, so nothing blows up or reports a hit past the surface; a vanished projectile at the surface plays a hiss.
+- **In acid:** a green screen tint (0.12 alpha, pulsing +-0.04 while it hurts; steady with REDUCE FLASHING), the health bar pulses acid green, and the new SND_SIZZLE plays on contact and every 0.4 s. SIZZLE is generated in code like the other default sounds and added after LOCATOR, so recorded kits' ids are unchanged; override name SIZZLE.
+
+## Netcode and server
+
+- **NET-14: projectile ids never repeat while one is in flight.** `newProjId` skips 0 and any id a live projectile holds, so a long-lived sticky never shares its id after the u16 wrap (a wrong trail or missed explosion). Server only, no protocol change; one scan of 128 slots per shot.
+- **COR-8: interpolation is clamped to kMaxInterpMs + 0.1 s behind the newest snapshot**, and the bracket search stops at a server clock reset; it could draw poses up to ~1 s old.
+- **Visibility rays scale with the target's size** (a MOVE_BIG giant's head is twice as high), so a giant whose head sticks out over cover is sent. Same ray budget.
+- **breakGlass's shard scratch list is a heap buffer that is never freed** instead of a thread_local object: a thread_local with a destructor crashed at thread exit under MinGW on hosted servers. Still no allocation per break.
+- **install.sh keeps a testing install that is ahead of the checkout**, runs the testing updater during the install, and sets `StartLimitIntervalSec=0` on the server units. Re-cloning had put quark-testing on the older production build, which couldn't load the newer maps; systemd then gave up before the updater rebuilt (~10 min).
+
+## Tests and tools
+
+- Timing tests notice every host pause (ratePump's sleeps and the loop's own off-CPU time), allow up to 5 attempts and only re-run attempts the host paused, so a real regression still fails; the grapple latch prediction check is a timing test now.
+- A test server that fails to start always prints a FAIL line (`START_SERVER`).
+- release_check.sh reads its alone groups from `quark_tests groups alone` instead of a copy.
+- A CRLF demo versions.txt reads correctly (test added); the material table check allows the ball wall.
+- ZONESTATS builds link on MinGW (no thread_local init function); pmove's internal CmdCtx no longer clashes with the map tool's; unused constants removed; SIGNING.md no longer points at a deleted key file.

@@ -467,9 +467,13 @@ CHECK AGAIN	再確認
 CHECKING...	確認中...
 CHECKPOINT	チェックポイント
 CHECKPT	CP
+CHOOSE	選択
 CHOOSE -	選択 -
 CHOOSE A MAP FOR	マップを選択:
 CHOOSE A MODE	モードを選択
+CHOOSE THE GAMEMODE	ゲームモードを選択
+CHOOSE THE MAP	マップを選択
+CHOOSE THE MODIFIERS	修正を選択
 CHOOSING...	選択中...
 CLASSIC	クラシック
 CLEAN SURFACES	クリーンな表面
@@ -1380,7 +1384,6 @@ MAGENTA	マゼンタ
 MAKE	作成
 MALE	男性
 MAP	マップ
-MAP / MODE / MODIFIERS	マップ / モード / 修正
 MAP COLOR	マップの色
 MAP COLORS	マップカラー
 MAP DOWNLOADS	マップのダウンロード
@@ -2371,6 +2374,7 @@ PROFILE:	プロファイル:
 PROFILE: MY CONTROLS	プロファイル: 自分の操作設定
 PROFILE: MY HUD	プロファイル: 自分のHUD
 PROFILES	プロファイル
+PROJECTILE SPEED	弾速
 PUBLIC	公開
 PUBLIC lists the server on the internet server list (off: friends join with your IP, shown on the host screen). Games on your network show up for everyone on it.	公開にするとインターネットのサーバーリストに掲載 (オフ: フレンドはホスト画面に表示されるIPで参加)。ネットワーク内のゲームは同じネットワークの全員に表示されます。
 PULSE	パルス
@@ -2694,6 +2698,7 @@ SIZE: X2	サイズ: X2
 SIZING	サイズ調整
 SIZING: EXACT PIXELS	サイズ調整: ピクセル指定
 SIZING: SCALE WITH RESOLUTION	サイズ調整: 解像度に合わせる
+SIZZLE	ジュージュー
 SKIP IT	スキップ
 SKIP WARMUP	ウォームアップをスキップ
 SKY	空
@@ -3199,7 +3204,6 @@ WEAPON:	武器:
 WEAPONS	武器
 WEAPONS (THEIR NUMBER KEYS STILL WORK)	武器 (数字キーは引き続き有効)
 WHAT THE BOTS PLAY: .QBRAIN FILES IN THE BOTS FOLDER	ボットのAI: botsフォルダの .QBRAIN ファイル
-WHAT THE VOTE CHANGES	投票で変わる内容
 WHEEL DN	WHEEL DN
 WHEEL UP	WHEEL UP
 WHEN ONE FILLS, EVERYONE IN IT IS TOLD (HERE AND ON DISCORD)	成立すると参加者全員に通知 (こことDISCORDで)
@@ -3500,6 +3504,7 @@ joined team A	がチームAに参加
 joined team B	がチームBに参加
 joined the game	がゲームに参加
 kElemNames follows Settings::HUD_*	kElemNames follows Settings::HUD_*
+kFrameTimes must be a power of two	kFrameTimes must be a power of two
 kbps (# packets/s), download # kbps (#/s)	kbps (# パケット/s)、ダウンロード # kbps (#/s)
 kick whom? a name or an id (status lists them)	誰をキック? 名前かID (statusで一覧表示)
 kicked by a vote	投票でキックされました
@@ -3832,6 +3837,7 @@ update ready: waiting for the match to end	アップデート準備完了: 試�
 upload # of # kbps	アップロード # / # kbps
 upload bytes	アップロードバイト
 user:	ユーザー:
+vote builder	vote builder
 vote cancelled: the ranked match is live	投票キャンセル: ランク試合が進行中
 vote failed:	投票否決:
 vote no	vote no

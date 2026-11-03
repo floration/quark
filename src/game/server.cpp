@@ -75,7 +75,6 @@ constexpr double kUploadShort = 0.9, kUploadRoom = 0.8;
 constexpr float kPingRiseMs = 25, kPingBaseCreepMs = 1;   // (the uncongested ping follows a lasting change: +1 ms a window)
 constexpr int kSnapSteps[] = {500, 333, 250, 125};       // snapshots per second (125: the floor)
 constexpr int kUdpHeaderBytes = 28;                      // IPv4 + UDP, counted with each datagram
-constexpr float kRocketLife = 5.0f;
 // Visibility (PERF-9): each viewer's line to each player is re-checked every kVisInterval, spread over the ticks in
 // between (round robin over the pairs that are due) instead of all at once 20 times a second, which on Midtown with
 // 32 players was a ~10 ms tick. A tick casts at most kVisRaysPerSecond / tick rate rays; past that the rest wait for
@@ -104,7 +103,6 @@ bool isLoopback(const NetAddr& a) { return (a.ip >> 24) == 127; }
 constexpr double kProbeTimeout = 3.0;     // no PKT_PROBE_REPLY on the game port by then: not reachable
 constexpr double kProbeRecheck = 300.0;   // re-check every 5 minutes (and on the menu button)
 constexpr double kCookieBucket = 10.0;     // connect cookies are good for 10-20 s
-constexpr size_t kMaxVoteListItems = 8;    // callvote tmaps / tmodes
 constexpr size_t kMaxMapInfo = 1024;       // map facts cached (only maps whose file exists; past this it starts over)
 constexpr size_t kMaxUnackedEvents = 256;
 }
@@ -1282,17 +1280,24 @@ void Server::sendRules(int id) {
     }
 }
 
-// The voted modifiers as a custom mode (kVotedRules), sent to everyone; "" goes back to the standard rules. `damage`
-// is every weapon's damage multiplier.
+// The voted modifiers as a custom mode (kVotedRules), sent to everyone; "" goes back to the standard rules. `damage`,
+// `firerate` and `projspeed` are every weapon's multipliers.
 void Server::applyVotedRules(const std::string& mods, int mode) {
     CustomRules r;
     if (!mods.empty()) {
         std::string t = std::string("custommode=") + kVotedRules + "\nmode=" + modeName(mode) + "\n";
+        // damage / firerate / projspeed: every weapon's multipliers, one weapon= line each (fire rate, damage, speed)
+        std::string wpn[3] = {"1", "1", "1"};
+        bool anyWpn = false;
         std::istringstream ls(mods);
         for (std::string line; std::getline(ls, line);) {
-            if (line.rfind("damage=", 0) == 0) { for (int w = 0; w < WPN_COUNT; w++) t += "weapon=" + std::to_string(w) + ",1," + line.substr(7) + ",1\n"; }
+            if (line.rfind("firerate=", 0) == 0) { wpn[0] = line.substr(9); anyWpn = true; }
+            else if (line.rfind("damage=", 0) == 0) { wpn[1] = line.substr(7); anyWpn = true; }
+            else if (line.rfind("projspeed=", 0) == 0) { wpn[2] = line.substr(10); anyWpn = true; }
             else t += line + "\n";
         }
+        if (anyWpn)
+            for (int w = 0; w < WPN_COUNT; w++) t += "weapon=" + std::to_string(w) + "," + wpn[0] + "," + wpn[1] + "," + wpn[2] + "\n";
         r.fromText(t);
     }
     cfg_.custom = r;
@@ -1813,7 +1818,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
                 if (w == "mods") { setMods = true; continue; }
                 const size_t eq = w.find('=');
                 const std::string k = eq == std::string::npos ? w : w.substr(0, eq), v = eq == std::string::npos ? "" : w.substr(eq + 1);
-                static const char* const kNum[] = {"gravity", "speed", "jump", "knockback", "damage", "health"};
+                static const char* const kNum[] = {"gravity", "speed", "jump", "knockback", "damage", "firerate", "projspeed", "health"};
                 static const char* const kBool[] = {"vampire", "regen", "selfdamage", "dash", "grapple", "instagib", "fly"};
                 bool known = false, num = false;
                 for (const char* n : kNum) if (k == n) known = num = true;
@@ -3053,7 +3058,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
             if (pr.active) continue;
             pr = Projectile();
             pr.active = true;
-            pr.id = nextProjId_++;
+            pr.id = newProjId();
             pr.type = WPN_KNIFE;
             pr.owner = id;
             pr.pos = eye + aim * 0.3f;
@@ -3070,7 +3075,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
             if (pr.active) continue;
             pr = Projectile();
             pr.active = true;
-            pr.id = nextProjId_++;
+            pr.id = newProjId();
             pr.type = WPN_SYRINGE;
             pr.owner = id;
             pr.pos = eye + aim * 0.3f;
@@ -3116,7 +3121,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
                 if (pr.active) continue;
                 pr = Projectile();
                 pr.active = true;
-                pr.id = nextProjId_++;
+                pr.id = newProjId();
                 pr.type = WPN_BUBBLE;
                 pr.owner = id;
                 pr.pos = eye + aim * 0.3f;
@@ -3133,7 +3138,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
             if (pr.active) continue;
             pr = Projectile();
             pr.active = true;
-            pr.id = nextProjId_++;
+            pr.id = newProjId();
             pr.type = p.weapon;
             pr.owner = id;
             if (p.weapon != WPN_SYRINGE) p.addShot(p.weapon);   // accuracy: a hit is counted when it lands
@@ -3245,6 +3250,11 @@ void Server::stepProjectile(Projectile& pr) {
             if (t >= 0 && t <= best) { best = t; hitPlayer = i; hitHead = inHead; hitBb = projTargetBox_[k]; }
         }
         if (hitPlayer >= 0) hitBb = hitHead ? headBox(hitBb) : bodyBox(hitBb);
+        // into lava or acid first: gone, nothing hit (a player past its surface: the liquid took it before them)
+        if (map_.hasDissolvers()) {
+            const float d = map_.dissolveAlong(pr.pos, dir, best);
+            if (d >= 0) { pr.pos += dir * d; pr.active = false; pr.dissolved = true; return; }
+        }
         // ball mode: projectiles hit the ball (owner, 2026-11-01: "projectiles should interact with it"). A blast goes off
         // on it (and pushes it as any blast does), a sticky drops off it; anything else gives it a quarter of its speed
         if (ms_.mode == MODE_BALL && ballSet_ && ballRespawnAt_ <= 0) {
@@ -3448,7 +3458,11 @@ bool Server::breakGlass(int brush, int how, const Vec3& at, const Vec3& dir, int
     d.kind = DESTRUCT_GLASS; d.how = (uint8_t)how; d.by = by; d.brush = (uint32_t)brush; d.at = at; d.dir = dir;
     d.seed = glassRand(glassSeed_);
     broadcastEvent(destructEvent(d));
-    static thread_local std::vector<GlassShard> sh;
+    // (the shards' scratch, reused between breaks: on the heap, never freed. A thread_local object with a destructor
+    // crashed at thread exit under MinGW, its emutls block freed before the destructor ran; see customrules.cpp)
+    static thread_local std::vector<GlassShard>* shp = nullptr;
+    if (__builtin_expect(shp == nullptr, 0)) shp = new std::vector<GlassShard>();
+    std::vector<GlassShard>& sh = *shp;
     glassShards(pane, how, at, dir, d.seed, sh, &map_.brushes[(size_t)brush]);
     const int8_t spare = glassSparesBreaker(how) ? (int8_t)by : (int8_t)-1;
     for (const GlassShard& g : sh)
@@ -3850,12 +3864,14 @@ void Server::updatePlayerVisibility(uint32_t need, int viewers, int targets, int
         // and both shoulders, where they are and where they'll be in 0.25 s (and where you'll be).
         Vec3 eye = pv.move.pos + Vec3(0, eyeH, 0);
         Vec3 lead = pt.move.vel * 0.25f, mine = pv.move.vel * 0.15f;
-        Vec3 side = normalize(Vec3(-d.z, 0, d.x)) * 0.45f;
+        // (the target's points at its size: a giant's head is twice as high, MOVE_BIG / MOVE_TINY; the eye: eyeH)
+        const float ts = moveScale(pt.move.mods);
+        Vec3 side = normalize(Vec3(-d.z, 0, d.x)) * 0.45f, tside = side * ts;
         bool seen = false;
         int rays = 0;
         for (const Vec3& from : {eye, eye + side * 0.7f, eye - side * 0.7f, eye + mine})
-            if (!seen) for (const Vec3& off : {Vec3(0, 1.75f, 0), Vec3(0, 1.0f, 0), Vec3(0, 0.25f, 0), side + Vec3(0, 1.3f, 0), Vec3() - side + Vec3(0, 1.3f, 0),
-                                    lead + Vec3(0, 1.0f, 0), lead + side + Vec3(0, 1.3f, 0), lead - side + Vec3(0, 1.3f, 0)}) {
+            if (!seen) for (const Vec3& off : {Vec3(0, 1.75f * ts, 0), Vec3(0, 1.0f * ts, 0), Vec3(0, 0.25f * ts, 0), tside + Vec3(0, 1.3f * ts, 0), Vec3() - tside + Vec3(0, 1.3f * ts, 0),
+                                    lead + Vec3(0, 1.0f * ts, 0), lead + tside + Vec3(0, 1.3f * ts, 0), lead - tside + Vec3(0, 1.3f * ts, 0)}) {
                 Vec3 to = pt.move.pos + off - from;
                 float len = length(to);
                 rays++;
@@ -3943,7 +3959,7 @@ void Server::sendSnapshots() {
         for (int k = 0; k < kMaxProjectiles; k++) {
             ProjSlotPrev& o = projPrev_[k];
             const Projectile& pr = projectiles_[k];
-            if (o.active && (!pr.active || pr.id != o.id) && projHidden_[k] && projDeathCount_ < kMaxProjectiles &&
+            if (o.active && (!pr.active || pr.id != o.id) && !(pr.id == o.id && pr.dissolved) && projHidden_[k] && projDeathCount_ < kMaxProjectiles &&
                 (weaponDef(o.type).splashRadius > 0 || o.type == WPN_BUBBLE || o.type == WPN_CROSSBOW)) {   // (what the client shows going off)
                 ProjDeath& d = projDeaths_[projDeathCount_++];
                 d.snap = ProjectileSnap{o.id, o.type, o.owner, o.pos, Vec3()};

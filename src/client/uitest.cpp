@@ -112,7 +112,12 @@ std::string Game::uiScreenPath() const {
 
 std::string Game::uiContext() const {
     if (screen_ == Screen::Editor && edPrompt_) return std::string("keep:") + std::to_string(edPromptThen_);
-    if (screen_ == Screen::InGame && voteSetup_ && voteStage_ == VS_TOGGLES)   // (the vote builder: where NEXT leads)
+    // the vote builder's mode / ruleset / map pickers: a choice leads on to the builder's next part, not where the
+    // same picker leads from the host's CHANGE MAP / MODE (so they're screens of their own)
+    if (screen_ == Screen::InGame && paused_ && voteSetup_ && picker_ != PICK_NONE && !settingsInGame_) return "builder";
+    // the VOTE page's builder toggles (where CHOOSE leads): each combination a screen of its own
+    if (screen_ == Screen::InGame && paused_ && voteMenu_ && !voteSetup_ && !specPick_ && picker_ == PICK_NONE && !settingsInGame_ &&
+        !(net_.mode().flags & MS_RANKED))
         return std::string("vote:") + (vsMode_ ? "g" : "") + (vsMods_ ? "m" : "") + (vsMap_ ? "p" : "");
     if (screen_ != Screen::Editor || !edSelValid()) return "";
     static const char* kinds[] = {"box", "spawn", "light", "site", "hill", "checkpoint", "path", "ladder", "group"};

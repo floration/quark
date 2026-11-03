@@ -467,9 +467,13 @@ CHECK AGAIN
 CHECKING...
 CHECKPOINT
 CHECKPT
+CHOOSE
 CHOOSE -
 CHOOSE A MAP FOR
 CHOOSE A MODE
+CHOOSE THE GAMEMODE
+CHOOSE THE MAP
+CHOOSE THE MODIFIERS
 CHOOSING...
 CLASSIC
 CLEAN SURFACES
@@ -1380,7 +1384,6 @@ MAGENTA
 MAKE
 MALE
 MAP
-MAP / MODE / MODIFIERS
 MAP COLOR
 MAP COLORS
 MAP DOWNLOADS
@@ -2371,6 +2374,7 @@ PROFILE:
 PROFILE: MY CONTROLS
 PROFILE: MY HUD
 PROFILES
+PROJECTILE SPEED
 PUBLIC
 PUBLIC lists the server on the internet server list (off: friends join with your IP, shown on the host screen). Games on your network show up for everyone on it.
 PULSE
@@ -2694,6 +2698,7 @@ SIZE: X2
 SIZING
 SIZING: EXACT PIXELS
 SIZING: SCALE WITH RESOLUTION
+SIZZLE
 SKIP IT
 SKIP WARMUP
 SKY
@@ -3199,7 +3204,6 @@ WEAPON:
 WEAPONS
 WEAPONS (THEIR NUMBER KEYS STILL WORK)
 WHAT THE BOTS PLAY: .QBRAIN FILES IN THE BOTS FOLDER
-WHAT THE VOTE CHANGES
 WHEEL DN
 WHEEL UP
 WHEN ONE FILLS, EVERYONE IN IT IS TOLD (HERE AND ON DISCORD)
@@ -3500,6 +3504,7 @@ joined team A
 joined team B
 joined the game
 kElemNames follows Settings::HUD_*
+kFrameTimes must be a power of two
 kbps (# packets/s), download # kbps (#/s)
 kick whom? a name or an id (status lists them)
 kicked by a vote
@@ -3832,6 +3837,7 @@ update ready: waiting for the match to end
 upload # of # kbps
 upload bytes
 user:
+vote builder
 vote cancelled: the ranked match is live
 vote failed:
 vote no

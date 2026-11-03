@@ -467,9 +467,13 @@ CHECK AGAIN	REVÉRIFIER
 CHECKING...	VÉRIFICATION...
 CHECKPOINT	CHECKPOINT
 CHECKPT	CHECKPT
+CHOOSE	CHOISIR
 CHOOSE -	CHOISIR -
 CHOOSE A MAP FOR	CHOISIR UNE CARTE POUR
 CHOOSE A MODE	CHOISIR UN MODE
+CHOOSE THE GAMEMODE	CHOISIR LE MODE DE JEU
+CHOOSE THE MAP	CHOISIR LA CARTE
+CHOOSE THE MODIFIERS	CHOISIR LES MODIFICATEURS
 CHOOSING...	CHOIX...
 CLASSIC	CLASSIQUE
 CLEAN SURFACES	SURFACES PROPRES
@@ -1380,7 +1384,6 @@ MAGENTA	MAGENTA
 MAKE	CRÉER
 MALE	HOMME
 MAP	CARTE
-MAP / MODE / MODIFIERS	CARTE / MODE / MODIFICATEURS
 MAP COLOR	COUL. CARTE
 MAP COLORS	COUL. CARTE
 MAP DOWNLOADS	TÉLÉCHARG. CARTES
@@ -2371,6 +2374,7 @@ PROFILE:	PROFIL :
 PROFILE: MY CONTROLS	PROFIL : MES CONTRÔLES
 PROFILE: MY HUD	PROFIL : MON HUD
 PROFILES	PROFILS
+PROJECTILE SPEED	VITESSE DES PROJECTILES
 PUBLIC	PUBLIC
 PUBLIC lists the server on the internet server list (off: friends join with your IP, shown on the host screen). Games on your network show up for everyone on it.	PUBLIC liste le serveur dans la liste internet (désactivé : les amis rejoignent avec votre IP, affichée sur l'écran d'hébergement). Les parties sur votre réseau apparaissent pour tous ceux qui y sont.
 PULSE	PULSAT.
@@ -2694,6 +2698,7 @@ SIZE: X2	TAILLE : X2
 SIZING	TAILLE
 SIZING: EXACT PIXELS	DIMENSIONS : PIXELS EXACTS
 SIZING: SCALE WITH RESOLUTION	DIMENSIONS : SELON LA RÉSOLUTION
+SIZZLE	GRÉSILLEMENT
 SKIP IT	PASSER
 SKIP WARMUP	PASSER ÉCHAUFF.
 SKY	CIEL
@@ -3199,7 +3204,6 @@ WEAPON:	ARME :
 WEAPONS	ARMES
 WEAPONS (THEIR NUMBER KEYS STILL WORK)	ARMES (LEURS TOUCHES NUMÉRIQUES MARCHENT TOUJOURS)
 WHAT THE BOTS PLAY: .QBRAIN FILES IN THE BOTS FOLDER	CE QUE JOUENT LES BOTS : FICHIERS .QBRAIN DANS LE DOSSIER BOTS
-WHAT THE VOTE CHANGES	CE QUE LE VOTE CHANGE
 WHEEL DN	WHEEL DN
 WHEEL UP	WHEEL UP
 WHEN ONE FILLS, EVERYONE IN IT IS TOLD (HERE AND ON DISCORD)	QUAND UNE FILE SE REMPLIT, TOUS SES MEMBRES SONT PRÉVENUS (ICI ET SUR DISCORD)
@@ -3500,6 +3504,7 @@ joined team A	a rejoint l'équipe A
 joined team B	a rejoint l'équipe B
 joined the game	a rejoint la partie
 kElemNames follows Settings::HUD_*	kElemNames follows Settings::HUD_*
+kFrameTimes must be a power of two	kFrameTimes must be a power of two
 kbps (# packets/s), download # kbps (#/s)	kbps (# paquets/s), téléchargement # kbps (#/s)
 kick whom? a name or an id (status lists them)	kicker qui ? un nom ou un id (status les liste)
 kicked by a vote	kické par un vote
@@ -3832,6 +3837,7 @@ update ready: waiting for the match to end	mise à jour prête : attente de la f
 upload # of # kbps	upload # sur # kbps
 upload bytes	octets envoyés
 user:	utilisateur :
+vote builder	vote builder
 vote cancelled: the ranked match is live	vote annulé : le match classé est en cours
 vote failed:	vote échoué :
 vote no	vote non

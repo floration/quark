@@ -467,9 +467,13 @@ CHECK AGAIN	TEKRAR KONTROL ET
 CHECKING...	KONTROL EDİLİYOR...
 CHECKPOINT	KONTROL NOKTASI
 CHECKPT	KN
+CHOOSE	SEÇ
 CHOOSE -	SEÇ -
 CHOOSE A MAP FOR	ŞU MOD İÇİN HARİTA SEÇ:
 CHOOSE A MODE	BİR MOD SEÇ
+CHOOSE THE GAMEMODE	OYUN MODUNU SEÇ
+CHOOSE THE MAP	HARİTAYI SEÇ
+CHOOSE THE MODIFIERS	DEĞİŞTİRİCİLERİ SEÇ
 CHOOSING...	SEÇİLİYOR...
 CLASSIC	KLASİK
 CLEAN SURFACES	TEMİZ YÜZEYLER
@@ -1380,7 +1384,6 @@ MAGENTA	MACENTA
 MAKE	YAP
 MALE	ERKEK
 MAP	HRT.
-MAP / MODE / MODIFIERS	HARİTA / MOD / DEĞİŞTİRİCİLER
 MAP COLOR	HARİTA RENGİ
 MAP COLORS	HARİTA RENKLERİ
 MAP DOWNLOADS	HARİTA İNDİRMELERİ
@@ -2371,6 +2374,7 @@ PROFILE:	PROFİL:
 PROFILE: MY CONTROLS	PROFİL: KONTROLLERİM
 PROFILE: MY HUD	PROFİL: HUD'UM
 PROFILES	PROFİLLER
+PROJECTILE SPEED	MERMİ HIZI
 PUBLIC	AÇIK
 PUBLIC lists the server on the internet server list (off: friends join with your IP, shown on the host screen). Games on your network show up for everyone on it.	HERKESE AÇIK sunucuyu internet sunucu listesinde gösterir (kapalı: arkadaşlar IP'nle katılır, host ekranında gösterilir). Ağındaki oyunlar o ağdaki herkese görünür.
 PULSE	NABIZ
@@ -2694,6 +2698,7 @@ SIZE: X2	BOYUT: X2
 SIZING	BOYUT
 SIZING: EXACT PIXELS	BOYUTLANDIRMA: TAM PİKSEL
 SIZING: SCALE WITH RESOLUTION	BOYUTLANDIRMA: ÇÖZÜNÜRLÜKLE ÖLÇEKLE
+SIZZLE	CIZIRTI
 SKIP IT	ATLA
 SKIP WARMUP	ISINMAYI ATLA
 SKY	GÖK
@@ -3199,7 +3204,6 @@ WEAPON:	SİLAH:
 WEAPONS	SİLAHLAR
 WEAPONS (THEIR NUMBER KEYS STILL WORK)	SİLAHLAR (NUMARA TUŞLARI YİNE ÇALIŞIR)
 WHAT THE BOTS PLAY: .QBRAIN FILES IN THE BOTS FOLDER	BOTLARIN OYNADIĞI: BOTS KLASÖRÜNDEKİ .QBRAİN DOSYALARI
-WHAT THE VOTE CHANGES	OYLAMANIN DEĞİŞTİRDİĞİ
 WHEEL DN	TEKERLEK AŞ.
 WHEEL UP	TEKERLEK YUK.
 WHEN ONE FILLS, EVERYONE IN IT IS TOLD (HERE AND ON DISCORD)	BİRİ DOLUNCA İÇİNDEKİ HERKESE BİLDİRİLİR (BURADA VE DİSCORD'DA)
@@ -3500,6 +3504,7 @@ joined team A	A takımına katıldı
 joined team B	B takımına katıldı
 joined the game	oyuna katıldı
 kElemNames follows Settings::HUD_*	kElemNames follows Settings::HUD_*
+kFrameTimes must be a power of two	kFrameTimes must be a power of two
 kbps (# packets/s), download # kbps (#/s)	kbps (# paket/s), indirme # kbps (#/s)
 kick whom? a name or an id (status lists them)	kimi atalım? bir ad veya kimlik (status listeler)
 kicked by a vote	oylamayla atıldı
@@ -3832,6 +3837,7 @@ update ready: waiting for the match to end	güncelleme hazır: maçın bitmesi b
 upload # of # kbps	upload # / # kbps
 upload bytes	upload bayt
 user:	kullanıcı:
+vote builder	vote builder
 vote cancelled: the ranked match is live	oylama iptal: dereceli maç canlı
 vote failed:	oylama başarısız:
 vote no	hayır oyu

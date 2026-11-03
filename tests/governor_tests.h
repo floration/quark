@@ -320,7 +320,7 @@ static void testRankedNotRated(uint16_t port) {
         ServerConfig cfg;
         cfg.map = "qk1"; cfg.port = (uint16_t)(port + ch); cfg.ranked = true; cfg.arenaVariant = 0; cfg.channel = ch;
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { g_fail++; continue; }
+        if (!START_SERVER(s, cfg)) { continue; }
         CHECK(s.rated() == (ch == GOV_PROD));
         CHECK((s.listName().find("NOT RATED") != std::string::npos) == (ch == GOV_TESTING));
         NetClient c[2];
