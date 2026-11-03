@@ -421,9 +421,13 @@ CHAT SECONDS	채팅 표시 시간(초)
 CHECK AGAIN	다시 확인
 CHECKPOINT	체크포인트
 CHECKPT	체크포인트
+CHOOSE	선택
 CHOOSE -	선택 -
 CHOOSE A MAP FOR	맵 선택:
 CHOOSE A MODE	모드 선택
+CHOOSE THE GAMEMODE	게임 모드 선택
+CHOOSE THE MAP	맵 선택
+CHOOSE THE MODIFIERS	변형 선택
 CHOOSING...	선택 중...
 CLASSIC	클래식
 CLEAN SURFACES	깔끔한 표면
@@ -1295,7 +1299,6 @@ MAGENTA	자홍
 MAKE	만들기
 MALE	남성
 MAP	맵
-MAP / MODE / MODIFIERS	맵 / 모드 / 변형
 MAP COLOR	맵 색상
 MAP COLORS	맵 색상
 MAP DOWNLOADS	맵 다운로드
@@ -2256,6 +2259,7 @@ PROFILE:	프로필:
 PROFILE: MY CONTROLS	프로필: 내 조작
 PROFILE: MY HUD	프로필: 내 HUD
 PROFILES	프로필
+PROJECTILE SPEED	투사체 속도
 PUBLIC	공개
 PUBLIC lists the server on the internet server list (off: friends join with your IP, shown on the host screen). Games on your network show up for everyone on it.	공개는 서버를 인터넷 서버 목록에 올립니다 (끄면: 친구가 호스트 화면에 표시된 IP로 참가). 같은 네트워크의 게임은 해당 네트워크의 모든 사람에게 표시됩니다.
 PULSE	펄스
@@ -3050,7 +3054,6 @@ WEAPON:	무기:
 WEAPONS	무기
 WEAPONS (THEIR NUMBER KEYS STILL WORK)	무기 (숫자 키는 계속 작동)
 WHAT THE BOTS PLAY: .QBRAIN FILES IN THE BOTS FOLDER	봇이 사용하는 AI: BOTS 폴더의 .QBRAIN 파일
-WHAT THE VOTE CHANGES	투표로 바뀌는 것
 WHEEL DN	WHEEL DN
 WHEEL UP	WHEEL UP
 WHEN ONE FILLS, EVERYONE IN IT IS TOLD (HERE AND ON DISCORD)	대기열이 차면 참가한 모두에게 알림 (여기와 DISCORD에서)

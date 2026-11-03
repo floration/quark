@@ -1280,17 +1280,24 @@ void Server::sendRules(int id) {
     }
 }
 
-// The voted modifiers as a custom mode (kVotedRules), sent to everyone; "" goes back to the standard rules. `damage`
-// is every weapon's damage multiplier.
+// The voted modifiers as a custom mode (kVotedRules), sent to everyone; "" goes back to the standard rules. `damage`,
+// `firerate` and `projspeed` are every weapon's multipliers.
 void Server::applyVotedRules(const std::string& mods, int mode) {
     CustomRules r;
     if (!mods.empty()) {
         std::string t = std::string("custommode=") + kVotedRules + "\nmode=" + modeName(mode) + "\n";
+        // damage / firerate / projspeed: every weapon's multipliers, one weapon= line each (fire rate, damage, speed)
+        std::string wpn[3] = {"1", "1", "1"};
+        bool anyWpn = false;
         std::istringstream ls(mods);
         for (std::string line; std::getline(ls, line);) {
-            if (line.rfind("damage=", 0) == 0) { for (int w = 0; w < WPN_COUNT; w++) t += "weapon=" + std::to_string(w) + ",1," + line.substr(7) + ",1\n"; }
+            if (line.rfind("firerate=", 0) == 0) { wpn[0] = line.substr(9); anyWpn = true; }
+            else if (line.rfind("damage=", 0) == 0) { wpn[1] = line.substr(7); anyWpn = true; }
+            else if (line.rfind("projspeed=", 0) == 0) { wpn[2] = line.substr(10); anyWpn = true; }
             else t += line + "\n";
         }
+        if (anyWpn)
+            for (int w = 0; w < WPN_COUNT; w++) t += "weapon=" + std::to_string(w) + "," + wpn[0] + "," + wpn[1] + "," + wpn[2] + "\n";
         r.fromText(t);
     }
     cfg_.custom = r;
@@ -1811,7 +1818,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
                 if (w == "mods") { setMods = true; continue; }
                 const size_t eq = w.find('=');
                 const std::string k = eq == std::string::npos ? w : w.substr(0, eq), v = eq == std::string::npos ? "" : w.substr(eq + 1);
-                static const char* const kNum[] = {"gravity", "speed", "jump", "knockback", "damage", "health"};
+                static const char* const kNum[] = {"gravity", "speed", "jump", "knockback", "damage", "firerate", "projspeed", "health"};
                 static const char* const kBool[] = {"vampire", "regen", "selfdamage", "dash", "grapple", "instagib", "fly"};
                 bool known = false, num = false;
                 for (const char* n : kNum) if (k == n) known = num = true;
