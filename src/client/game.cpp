@@ -7643,7 +7643,7 @@ void Game::drawMoreSettings(const SetLayout& L) {
                     std::istringstream in(text.substr(text.find("quark-settings:") + 15));
                     std::string l;
                     int n = 0;
-                    cfg_.ultraMarginMigrated = false;   // (as load(): an export from before ULTRA SAFETY AUTO, on 0, moves to 1 us)
+                    cfg_.ultraMarginMigrated = false;   // (as load(): an export from before ULTRA SAFETY AUTO, on 150, moves to it)
                     while (std::getline(in, l)) {
                         while (!l.empty() && (l.back() == '\r' || l.back() == ' ')) l.pop_back();
                         const size_t eq = l.find('=');
