@@ -5752,7 +5752,7 @@ static void testMaterials() {
         std::string t = "version " + std::to_string(kMapFormatVersion) + "\nbox -20 -1 -20 20 0 20\nspawn any 0 0 0\n";
         for (int k = 12; k < kMapMaterials; k++) { char b[96]; snprintf(b, sizeof b, "%s %d 0 30 %d 1 31\n", kMapMaterialWords[k], k * 2, k * 2 + 1); t += b; }
         CHECK(m.parse(t) && m.brushes.size() == 1 + (size_t)(kMapMaterials - 12));
-        for (int k = 12; k < kMapMaterials; k++) CHECK(m.brushes[k - 11].material == k && (semiMaterial(k) || solidMaterial(k) == !(liquidMaterial(k) || fieldMaterial(k))));   // (a see-through one: when it stops anything, testSeeThrough)   // (the liquids: you wade in)
+        for (int k = 12; k < kMapMaterials; k++) CHECK(m.brushes[k - 11].material == k && (semiMaterial(k) || k == kMatBallWall || solidMaterial(k) == !(liquidMaterial(k) || fieldMaterial(k))));   // (the ball wall: only the ball bounces off it)   // (a see-through one: when it stops anything, testSeeThrough)   // (the liquids: you wade in)
         const std::string out = m.serialize();
         CHECK(out.find("brick 40 0 30 41 1 31") != std::string::npos && out.find("diamondplate 38 0 30 39 1 31") != std::string::npos && out.find("ice 24 0 30 25 1 31") != std::string::npos);
     }
