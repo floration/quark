@@ -41,10 +41,15 @@ const Seg kSuper[] = {
 const Seg kHyper[] = {
     {600, F, 0, 0, 0, 0}, {80, F, 0, J | D, 0, -45}, {1400, F, 0, 0, 0, 0}, {80, F, 0, J | D, 0, -45}, {1700, 0, 0, 0, 0, 0},
 };
-// Super chaining: W and jump held (bunny hops), looking 30 degrees down, dash held: each dash fires the moment it may,
-// meets the floor and is a hyper, +5 m/s each
+// The pop (key tech): a super, then (its dash cooldown runs out about as you come down) a dash straight down with jump
+// held: a hyper off the floor with the super's 24 m/s, 90% of it up
+const Seg kPop[] = {
+    {300, 0, 0, 0, 0, 0}, {30, F, 0, D, 0, 0}, {80, F, 0, D | J, 0, 0}, {220, F, 0, 0, 0, 0}, {370, F, 0, D | J, 0, -89}, {2700, 0, 0, 0, 0, 0},
+};
+// Super chaining: W and jump held (bunny hops), looking 15 degrees down, dash held: each dash fires the moment it may,
+// meets the floor and is a hyper, +5 m/s each (at 15 degrees, not 20, more of each hyper stays level: 35 m/s, not 34)
 const Seg kChain[] = {
-    {400, F, 0, J, 0, -20}, {5400, F, 0, J | D, 0, -20}, {1400, 0, 0, 0, 0, 0},
+    {400, F, 0, J, 0, -15}, {5400, F, 0, J | D, 0, -15}, {1400, 0, 0, 0, 0, 0},
 };
 // The dash slide: a super for speed, then just before landing look 20 degrees down and dash (no jump): it slides on
 // at ice's grip until you're down to run speed; a jump out keeps what's left
@@ -69,14 +74,35 @@ const Seg kHookWalk[] = {
 const Seg kRocketJump[] = {
     {600, 0, 0, 0, 0, -89}, {60, F, 0, J | FI, 0, -89}, {1500, F, 0, 0, 0, -20}, {1400, 0, 0, 0, 0, 0},
 };
+// The rocket super (key tech): a super, then a rocket straight down 0.3 s into it: the blast adds to the 24 m/s, past the
+// dash's 32 m/s cap; hold jump to hop on (an air dash now would cap you back to 32)
+const Seg kRocketSuper[] = {
+    {300, 0, 0, 0, 0, 0}, {30, F, 0, D, 0, 0}, {80, F, 0, D | J, 0, 0}, {300, F, 0, 0, 0, 0}, {40, F, 0, FI, 0, -89}, {1500, F, 0, J, 0, -10}, {1000, 0, 0, 0, 0, 0},
+};
+// The rocket pop (key tech): the pop, with the rocket fired in the very input the hyper's dash starts in (the super's
+// dash cooldown ends 930 ms in: that's when the held dash goes): the hyper lifts you, the blast under you adds its 22 m/s
+const Seg kRocketPop[] = {
+    {300, 0, 0, 0, 0, 0}, {30, F, 0, D, 0, 0}, {80, F, 0, D | J, 0, 0}, {220, F, 0, 0, 0, 0}, {300, F, 0, D | J, 0, -89}, {70, F, 0, D | J | FI, 0, -89}, {4000, 0, 0, 0, 0, 0},
+};
 // THE LAUNCH (key tech): grapple the floor far ahead to 24 m/s, then look straight down: jump, dash and fire at once (the
 // hyper takes the 24 m/s carried in, + 5, 90% of it up; the rocket at your feet adds its blast)
 const Seg kLaunch[] = {
     {300, 0, 0, 0, 0, -5}, {900, F, 0, G, 0, -5}, {40, F, 0, J | D | FI, 0, -89}, {3800, F, 0, 0, 0, 0},
 };
+// The hook boost (key tech): grapple walk to 24 m/s, then, still hooked, look straight down and fire: the blast throws
+// you along at about 40 m/s; let go 40 ms later (held on, the hook pulls you back toward it)
+const Seg kHookBoost[] = {
+    {300, 0, 0, 0, 0, -5}, {900, F, 0, G, 0, -5}, {40, F, 0, G | FI, 0, -89}, {41, F, 0, G, 0, -5}, {1500, F, 0, 0, 0, 0}, {1200, 0, 0, 0, 0, 0},
+};
 // Sticky jump: a sticky at your feet, wait for it to arm, then jump and detonate (alt-fire) together
 const Seg kStickyJump[] = {
     {500, 0, 0, 0, 0, -89}, {60, 0, 0, FI, 0, -89}, {500, 0, 0, 0, 0, -89}, {80, F, 0, J | AL, 0, -89}, {1500, F, 0, 0, 0, -20}, {1400, 0, 0, 0, 0, 0},
+};
+// The sticky stack (key tech): three stickies at your feet (each armed 0.35 s after it lands), then jump and set them all
+// off together: 22, 36, 50 m/s up for one, two, three
+const Seg kStickyStack[] = {
+    {300, 0, 0, 0, 0, -89}, {60, 0, 0, FI, 0, -89}, {700, 0, 0, 0, 0, -89}, {60, 0, 0, FI, 0, -89}, {700, 0, 0, 0, 0, -89},
+    {60, 0, 0, FI, 0, -89}, {700, 0, 0, 0, 0, -89}, {80, 0, 0, J | AL, 0, -89}, {4400, 0, 0, 0, 0, 0},
 };
 // Grapple a player (key tech): the PARTNER runs across the bay; aimed at it, a press of grapple latches on and pulls
 // the two together (it lets go as they meet)
@@ -109,6 +135,7 @@ const LessonDef kLessons[L_COUNT] = {
     {"sidedash",      30,    12,  kNoWeaponChange,  SCRIPT(kSideDash),       G_SIDEDASH,   2,     0,     false},
     {"super",         60,    12,  kNoWeaponChange,  SCRIPT(kSuper),          G_EVENTS,     2,     ME_SUPER, false},
     {"hyper",         60,    12,  kNoWeaponChange,  SCRIPT(kHyper),          G_EVENTS,     2,     ME_HYPER, false},
+    {"pop",           70,    20,  kNoWeaponChange,  SCRIPT(kPop),            G_POP,        12,    20,    true},
     {"chain",         180,   16,  kNoWeaponChange,  SCRIPT(kChain),          G_SPEED,      27,    1,     false},
     {"slide",         60,    12,  kNoWeaponChange,  SCRIPT(kSlide),          G_SLIDE,      0.8f,  0,     false},
     {"bounce",        12,    12,  kNoWeaponChange,  SCRIPT(kBounce),         G_BOUNCES,    2,     0,     false},
@@ -117,8 +144,12 @@ const LessonDef kLessons[L_COUNT] = {
     {"hookplayer",    50,    14,  kNoWeaponChange,  SCRIPT(kHookPlayer),     G_HOOKPLAYER, 1,     0,     true,  SCRIPT(kHookPlayerPartner), 30},
     {"breakfree",     50,    12,  kNoWeaponChange,  SCRIPT(kBreakFree),      G_BREAKFREE,  1,     0,     true,  SCRIPT(kBreakFreePartner), 34},
     {"rocketjump",    40,    24,  WPN_ROCKET,       SCRIPT(kRocketJump),     G_KNOCKUP,    7,     0,     false},
+    {"rocketsuper",   110,    16,  WPN_ROCKET,       SCRIPT(kRocketSuper),    G_KNOCKSPEED, 32.5f, 0,     true},
+    {"rocketpop",     100,   60,  WPN_ROCKET,       SCRIPT(kRocketPop),      G_LAUNCH,     30,    20,    true},
     {"launch",        160,   72,  WPN_ROCKET,       SCRIPT(kLaunch),         G_LAUNCH,     16,    20,    true},
+    {"hookboost",     120,   16,  WPN_ROCKET,       SCRIPT(kHookBoost),      G_SPEED,      37,    1,     true},
     {"stickyjump",    40,    24,  WPN_STICKY,       SCRIPT(kStickyJump),     G_KNOCKUP,    7,     0,     false},
+    {"stickystack",   30,    64,  WPN_STICKY,       SCRIPT(kStickyStack),    G_KNOCKUP,    40,    0,     true},
     {"rocketgrapple", 110,   16,  WPN_ROCKET,       SCRIPT(kRocketRide),     G_RIDE,       0.4f,  0,     true},
 };
 #undef SCRIPT
@@ -320,6 +351,22 @@ void Check::frame(const MoveState& m, uint8_t ev, int fwd, int side, int weapon,
             best = std::max(best, knocked ? value : 0.0f);
             progress = best / d.target;
             done = armed && knocked && y >= d.target;
+            break;
+        case G_POP:
+            if ((ev & ME_HYPER) && m.dashFromSpeed >= d.aux) armed = true;
+            if (ground && !(ev & ME_HYPER) && m.vel.y <= 0) armed = false;   // (back on the floor: a new try)
+            value = armed ? std::max(0.0f, y) : 0.0f;
+            best = std::max(best, value);
+            progress = best / d.target;
+            done = armed && y >= d.target;
+            break;
+        case G_KNOCKSPEED:
+            if (knock && weapon == d.weapon) knocked = true;
+            if (ground && !knock && !(ev & ME_JUMP)) knocked = false;   // (stopped on the floor: a new try; a hop keeps it)
+            value = knocked ? h : 0.0f;
+            best = std::max(best, value);
+            progress = best / d.target;
+            done = knocked && h >= d.target;
             break;
         case G_HOOKPLAYER: {   // (the moment it latches on: a player's id + 1, not the map, a rocket or the ball)
             const bool on = hookedNow && m.hookTarget >= 1 && m.hookTarget <= kMaxPlayers;

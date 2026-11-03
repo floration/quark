@@ -140,7 +140,7 @@ inline void testTutorialGhosts(uint16_t port) {
     if (g < 0) { s.stop(); return; }
     simRun(s, 1.0);
     CHECK(s.ms_.phase == PHASE_WARMUP && s.players_[g].alive);
-    struct Run { bool done = false; float best = 0, peak = 0, top = 0, dist = 0, launchUp = 0, launchH = 0; int doneMs = -1; };
+    struct Run { bool done = false; float best = 0, peak = 0, top = 0, dist = 0, launchUp = 0, launchH = 0, up = 0; int doneMs = -1; };
     auto play = [&](int l, bool noFire) {
         Run r;
         s.tutLesson_ = l;
@@ -168,6 +168,7 @@ inline void testTutorialGhosts(uint16_t port) {
             r.best = std::max(r.best, c.best);
             r.peak = std::max(r.peak, std::sqrt(p.move.vel.x * p.move.vel.x + p.move.vel.z * p.move.vel.z));
             r.top = std::max(r.top, p.move.pos.y);
+            r.up = std::max(r.up, p.move.vel.y);
             r.dist = std::max(r.dist, p.move.pos.x - start.x);
             if ((p.move.events & ME_HYPER) && !launched) { launched = true; launchAt = p.move.pos; }
             if (launched && p.move.vel.y > r.launchUp) { r.launchUp = p.move.vel.y; r.launchH = std::sqrt(p.move.vel.x * p.move.vel.x + p.move.vel.z * p.move.vel.z); }
@@ -182,6 +183,16 @@ inline void testTutorialGhosts(uint16_t port) {
         const Run r = play(l, false);
         CHECK(r.done);
         CHECK(s.players_[g].alive);   // (no lava, no fall out)
+        // the combos' numbers (a research run measured them through the same server; the lessons' texts quote them)
+        auto near = [&](const char* what, float got, float want, float tol) {
+            printf("  %-11s %s %.2f (measured %.1f +- %.1f)\n", tut::lesson(l).id, what, got, want, tol);
+            CHECK(std::fabs(got - want) <= tol);
+        };
+        if (l == tut::L_POP) { near("up m/s", r.up, 26.1f, 1.0f); near("high m", r.top, 14.2f, 1.0f); }
+        if (l == tut::L_ROCKETPOP) { near("up m/s", r.up, 47.4f, 3.0f); near("high m", r.top, 48.0f, 4.0f); }
+        if (l == tut::L_STICKYSTACK) { near("up m/s", r.up, 50.5f, 1.5f); near("high m", r.top, 53.2f, 2.0f); }
+        if (l == tut::L_ROCKETSUPER) { near("level m/s", r.peak, 33.3f, 0.6f); CHECK(r.peak > 32.0f); }   // (past the dash's 32 cap)
+        if (l == tut::L_HOOKBOOST) { near("level m/s", r.peak, 40.4f, 1.0f); }
         if (l == tut::L_LAUNCH) {
             const Run bare = play(l, true);   // the same, the rocket held back: the hyper alone
             printf("  launch: up %.1f m/s and %.1f m/s level off the floor, %.1f m high, %.1f m on (the hyper alone: up %.1f, %.1f m high)\n",
@@ -301,5 +312,92 @@ inline void testTutorialPartner(uint16_t port) {
         if (run == 0) CHECK(!c.done && freed > caught + 500 && travelled > 10.0f);   // (held till it lets go)
         else CHECK(c.done && freed >= caught + 300 && freed <= caught + 320);
     }
+    s.stop();
+}
+
+// The rules and variants the combo lessons' texts state, through the same server (the ghost given other inputs): one,
+// two and three stickies; the rocket pop's timing (fired with the dash vs 10 / 20 ms late); a dash right after your own
+// blast erases its push; an air dash above 32 m/s caps you to 32 (the rocket super's warning).
+inline void testTutorialCombos(uint16_t port) {
+    printf("tutorial: the combos' rules and variants\n");
+    SimClock clock;
+    Server s;
+    ServerConfig cfg;
+    cfg.map = tut::kMapName; cfg.mode = MODE_FFA; cfg.port = port; cfg.tutorial = true; cfg.maxPlayers = 3;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    const int g = s.tutGhost_;
+    if (g < 0) { s.stop(); return; }
+    simRun(s, 1.0);
+    std::vector<tut::Seg> sc;
+    uint8_t weapon = kNoWeaponChange;
+    uint64_t t0 = 0;
+    int fireOnHyper = -1, hyperAt = -1;   // (>= 0: fire this many ms after the hyper, as a player reacting to it)
+    s.bots_[g].script = [&](Server& sv, int) {
+        UserCmd c; c.yaw = tut::kStartYaw; c.weapon = weapon;
+        const int t = (int)((int64_t)sv.timeMs_ - (int64_t)t0);
+        int a = 0;
+        for (size_t i = 0; i < sc.size(); i++) {
+            if (t < a + sc[i].ms || i + 1 == sc.size()) {
+                c.forward = sc[i].fwd; c.side = sc[i].side; c.buttons = sc[i].btn; c.pitch = sc[i].pitch * (PI / 180.0f);
+                break;
+            }
+            a += sc[i].ms;
+        }
+        if (fireOnHyper >= 0 && hyperAt >= 0 && t >= hyperAt + fireOnHyper && t < hyperAt + fireOnHyper + 40) c.buttons |= BTN_FIRE;
+        return c;
+    };
+    struct Out { float up = 0, top = 0, level = 0, lastLevel = 0; };
+    auto play = [&](int lesson, uint8_t wpn, std::vector<tut::Seg> script) {
+        s.tutLesson_ = lesson; s.tutEpoch_ = s.timeMs_; s.tutLoop_ = -2;
+        weapon = wpn; sc = std::move(script); hyperAt = -1;
+        s.tutorialLoop();      // (the reset: back at the lesson's start, its weapon)
+        s.tutLesson_ = -1;     // (no more resets: the run is ours)
+        t0 = s.timeMs_;
+        int total = 0;
+        for (const tut::Seg& x : sc) total += x.ms;
+        Out o;
+        const ServerPlayer& p = s.players_[g];
+        simRun(s, total * 0.001, [&] {
+            if ((p.move.events & ME_HYPER) && hyperAt < 0) hyperAt = (int)((int64_t)s.timeMs_ - (int64_t)t0);
+            const float h = std::sqrt(p.move.vel.x * p.move.vel.x + p.move.vel.z * p.move.vel.z);
+            o.up = std::max(o.up, p.move.vel.y); o.top = std::max(o.top, p.move.pos.y); o.level = std::max(o.level, h); o.lastLevel = h;
+        });
+        return o;
+    };
+    constexpr int8_t F = 127;
+    constexpr uint16_t J = BTN_JUMP, D = BTN_DASH, FI = BTN_FIRE, AL = BTN_ALTFIRE;
+    // stickies: 1, 2, 3 at your feet, then jump + set off
+    const float stickyUp[3] = {21.9f, 36.2f, 50.5f};
+    for (int n = 1; n <= 3; n++) {
+        std::vector<tut::Seg> v = {{300, 0, 0, 0, 0, -89}};
+        for (int k = 0; k < n; k++) { v.push_back({60, 0, 0, FI, 0, -89}); v.push_back({700, 0, 0, 0, 0, -89}); }
+        v.push_back({80, 0, 0, J | AL, 0, -89});
+        v.push_back({3000, 0, 0, 0, 0, 0});
+        const Out o = play(tut::L_STICKYSTACK, WPN_STICKY, v);
+        printf("  sticky stack x%d: up %.1f m/s, %.1f m high (measured %.1f)\n", n, o.up, o.top, stickyUp[n - 1]);
+        CHECK(std::fabs(o.up - stickyUp[n - 1]) <= 1.5f);
+    }
+    // the rocket pop's timing: a super, the down-dash held, the rocket fired 0 / 10 / 20 ms after the hyper
+    float popUp[3] = {};
+    for (int k = 0; k < 3; k++) {
+        fireOnHyper = k * 10;
+        const Out o = play(tut::L_ROCKETPOP, WPN_ROCKET, {{300, 0, 0, 0, 0, 0}, {30, F, 0, D, 0, 0}, {80, F, 0, D | J, 0, 0}, {220, F, 0, 0, 0, -89},
+                                                          {600, F, 0, D | J, 0, -89}, {3000, 0, 0, 0, 0, -89}});
+        popUp[k] = o.up;
+        printf("  rocket pop, fired %d ms after the hyper: up %.1f m/s, %.1f m high\n", k * 10, o.up, o.top);
+    }
+    fireOnHyper = -1;
+    CHECK(popUp[0] > 44.0f && popUp[0] - popUp[1] > 2.0f && popUp[1] - popUp[2] > 2.0f);   // (strict: ~3 m/s a 10 ms)
+    // a dash right after your own blast erases its push: a rocket at your feet, then a dash 35 ms on
+    const Out rj = play(tut::L_ROCKETJUMP, WPN_ROCKET, {{600, 0, 0, 0, 0, -89}, {60, 0, 0, FI, 0, -89}, {2500, 0, 0, 0, 0, 0}});
+    const Out eaten = play(tut::L_ROCKETJUMP, WPN_ROCKET, {{600, 0, 0, 0, 0, -89}, {20, 0, 0, FI, 0, -89}, {15, 0, 0, 0, 0, -89}, {150, F, 0, D, 0, 0}, {2000, 0, 0, 0, 0, 0}});
+    printf("  rocket at your feet: %.1f m high; with a dash 35 ms after the shot: %.1f m high\n", rj.top, eaten.top);
+    CHECK(rj.top > 12.0f && eaten.top < 2.0f);
+    // the rocket super, then an air dash: the 33 m/s is capped back to 32
+    const Out capped = play(tut::L_ROCKETSUPER, WPN_ROCKET, {{300, 0, 0, 0, 0, 0}, {30, F, 0, D, 0, 0}, {80, F, 0, D | J, 0, 0}, {50, F, 0, 0, 0, -89},
+                                                            {40, F, 0, FI, 0, -89}, {600, F, 0, D, 0, 0}, {30, 0, 0, 0, 0, 0}});
+    printf("  rocket super %.1f m/s, then an air dash: %.1f m/s\n", capped.level, capped.lastLevel);
+    CHECK(capped.level > 32.5f && std::fabs(capped.lastLevel - 32.0f) < 0.3f);
     s.stop();
 }

@@ -25,6 +25,7 @@ enum Lesson : int {
     L_SIDEDASH,     // sideways dashes: a dash goes the way you move, not the way you look
     L_SUPER,        // super (the dash jump): jump during a floor dash, 24 m/s
     L_HYPER,        // hyper (the super dash): dash down into the floor holding jump, your speed + 5
+    L_POP,          // KEY TECH: the pop: a super, then a hyper straight down as you land: the super's 24 m/s goes up
     L_CHAIN,        // super chaining: hypers chained off bhop landings
     L_SLIDE,        // the dash slide: dash down into the floor without jumping, ice's grip
     L_BOUNCE,       // the dash wall bounce: dash head on into a wall
@@ -33,8 +34,12 @@ enum Lesson : int {
     L_HOOKPLAYER,   // KEY TECH (q): grappling another player: the hook latches onto the PARTNER running across the bay
     L_BREAKFREE,    // KEY TECH (q): the PARTNER's grapple catches you (the ghost in the demo): a dash breaks free
     L_ROCKETJUMP,   // rocket jumping
+    L_ROCKETSUPER,  // KEY TECH: a super, then a rocket straight down: past the dash's 32 m/s cap, along
+    L_ROCKETPOP,    // KEY TECH: the pop with a rocket fired in the very input of the hyper: the launch with no grapple
     L_LAUNCH,       // KEY TECH (q): grapple to 24 m/s, then a rocket straight down and a hyper straight down
+    L_HOOKBOOST,    // KEY TECH: the hook boost: grapple walking at 24 m/s, a rocket straight down while still hooked
     L_STICKYJUMP,   // sticky jumping
+    L_STICKYSTACK,  // KEY TECH: the sticky stack: three stickies at your feet set off at once as you jump
     L_ROCKETGRAPPLE,   // KEY TECH (q): the rocket grapple (rocket riding): the grapple catches your own rocket
     L_COUNT
 };
@@ -69,6 +74,8 @@ enum Goal : uint8_t {
     G_KNOCKUP,      // thrown up by your own blast (holding this lesson's weapon), then `target` m up or higher
     G_RIDE,         // riding a rocket on the grapple for `target` seconds
     G_LAUNCH,       // a hyper out of `aux` m/s or more, then thrown up by your own rocket, then `target` m up or higher
+    G_POP,          // a hyper out of `aux` m/s or more, then `target` m up or higher (no blast needed)
+    G_KNOCKSPEED,   // thrown by your own blast (holding this lesson's weapon) since you left the floor, at `target` m/s level
     G_HOOKPLAYER,   // your grapple latched onto a player `target` times (MoveState::hookTarget 1 + their id)
     G_BREAKFREE,    // held by another player's grapple (MF_PULLED), then a dash that breaks free: `target` times
 };

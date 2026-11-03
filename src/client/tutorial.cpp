@@ -68,6 +68,9 @@ const Text kTexts[tut::L_COUNT] = {
     {"HYPER", "DASH DOWN INTO THE FLOOR WHILE YOU JUMP: YOUR SPEED + 5 M/S, UP AND AHEAD.",
      {{"%s", {K_F, K_N, K_N}, "RUN"}, {nullptr, {K_N, K_N, K_N}, "AIM AT THE FLOOR A FEW METRES AHEAD (15 DEGREES DOWN IS ENOUGH)"},
       {"%s + %s", {K_D, K_J, K_N}, "DASH AND JUMP TOGETHER"}}, 3, "2 HYPERS"},
+    {"POP", "A SUPER, THEN A HYPER STRAIGHT DOWN AS YOU LAND: THE SUPER'S SPEED GOES UP, ABOUT 14 M.",
+     {{"%s THEN %s", {K_D, K_J, K_N}, "A SUPER"}, {nullptr, {K_N, K_N, K_N}, "AIM STRAIGHT DOWN WHILE YOU FLY"},
+      {"%s + %s", {K_D, K_J, K_N}, "HOLD BOTH AS YOU COME DOWN: THE DASH GOES AS SOON AS IT IS BACK"}}, 3, "12 M UP, OUT OF A HYPER FROM 20 M/S"},
     {"SUPER CHAINING", "HYPER AGAIN EVERY TIME YOU LAND: EACH ONE ADDS 5 M/S, UP TO 36.",
      {{"%s + %s + %s", {K_F, K_J, K_D}, "HOLD ALL THREE"}, {nullptr, {K_N, K_N, K_N}, "AIM A LITTLE DOWN THE WHOLE WAY"},
       {nullptr, {K_N, K_N, K_N}, "EVERY LANDING HYPERS AGAIN AS SOON AS A DASH CHARGE IS BACK"}}, 3, "REACH 27 M/S"},
@@ -94,21 +97,36 @@ const Text kTexts[tut::L_COUNT] = {
     {"ROCKET JUMP", "YOUR OWN ROCKET THROWS YOU. HERE IT DOES NO DAMAGE.",
      {{nullptr, {K_N, K_N, K_N}, "AIM STRAIGHT DOWN"}, {"%s + %s", {K_J, K_FI, K_N}, "JUMP AND FIRE TOGETHER"},
       {"%s", {K_F, K_N, K_N}, "STEER ONTO THE LEDGE"}}, 3, "GET 7 M UP"},
+    {"ROCKET SUPER", "A SUPER, THEN A ROCKET STRAIGHT DOWN: ABOUT 33 M/S, PAST THE DASH'S 32 M/S CAP.",
+     {{"%s THEN %s", {K_D, K_J, K_N}, "A SUPER"}, {"%s", {K_FI, K_N, K_N}, "A MOMENT LATER, AIM STRAIGHT DOWN AND FIRE"},
+      {"%s", {K_J, K_N, K_N}, "HOLD IT TO HOP ON AND KEEP THE SPEED"},
+      {nullptr, {K_N, K_N, K_N}, "DON'T DASH NOW: A DASH ABOVE 32 M/S CAPS YOU DOWN (A HYPER ABOVE 36)"}}, 4, "PAST 32 M/S, THROWN BY YOUR ROCKET"},
+    {"ROCKET POP", "THE POP WITH A ROCKET FIRED WITH THE HYPER'S DASH: ABOUT 47 M UP, NO GRAPPLE NEEDED.",
+     {{"%s THEN %s", {K_D, K_J, K_N}, "A SUPER, THEN AIM STRAIGHT DOWN"}, {"%s + %s", {K_D, K_J, K_N}, "HOLD BOTH AS YOU COME DOWN"},
+      {"%s", {K_FI, K_N, K_N}, "FIRE THE MOMENT THE DASH GOES, NEVER BEFORE: A DASH ERASES A BLAST'S PUSH"},
+      {nullptr, {K_N, K_N, K_N}, "WITHIN 1.3 M OF THE FLOOR. 10 MS LATE LOSES 3 M/S"}}, 4, "30 M UP, OUT OF A HYPER FROM 20 M/S"},
     {"THE LAUNCH", "GRAPPLE TO 24 M/S, THEN A ROCKET AND A HYPER STRAIGHT DOWN: YOU FLY, CHEAP AND FAST.",
      {{"%s + %s", {K_G, K_F, K_N}, "GRAPPLE WALK UP TO 24 M/S"},
       {nullptr, {K_N, K_N, K_N}, "THEN ALL AT ONCE: LET GO, AIM STRAIGHT DOWN AND..."},
       {"%s + %s + %s", {K_J, K_D, K_FI}, "JUMP, DASH AND FIRE TOGETHER"},
       {nullptr, {K_N, K_N, K_N}, "THE HYPER LIFTS YOU, THE ROCKET ADDS 20 M/S MORE"}}, 4, "16 M UP, OUT OF A HYPER FROM 20 M/S"},
+    {"HOOK BOOST", "GRAPPLE WALKING AT 24 M/S, FIRE A ROCKET STRAIGHT DOWN WHILE STILL HOOKED: ABOUT 40 M/S ALONG.",
+     {{"%s + %s", {K_G, K_F, K_N}, "GRAPPLE WALK UP TO 24 M/S"}, {"%s", {K_FI, K_N, K_N}, "STILL HOOKED, AIM STRAIGHT DOWN AND FIRE"},
+      {"%s", {K_G, K_N, K_N}, "LET GO 40 TO 80 MS LATER: HELD ON, THE HOOK PULLS YOU BACK"},
+      {nullptr, {K_N, K_N, K_N}, "FIRE AFTER A DASH, NEVER JUST BEFORE ONE: A DASH ERASES A BLAST'S PUSH"}}, 4, "REACH 37 M/S"},
     {"STICKY JUMP", "LAY A STICKY BOMB, STAND ON IT, SET IT OFF AS YOU JUMP.",
      {{"%s", {K_FI, K_N, K_N}, "AIM STRAIGHT DOWN AND FIRE A STICKY"}, {"%s + %s", {K_J, K_AL, K_N}, "JUMP AND SET IT OFF TOGETHER"},
       {"%s", {K_F, K_N, K_N}, "STEER ONTO THE LEDGE"}}, 3, "GET 7 M UP"},
+    {"STICKY STACK", "THREE STICKIES AT YOUR FEET, SET OFF AT ONCE AS YOU JUMP: 50 M/S UP (ONE: 22, TWO: 36).",
+     {{"%s", {K_FI, K_N, K_N}, "AIM STRAIGHT DOWN AND FIRE THREE STICKIES"}, {nullptr, {K_N, K_N, K_N}, "WAIT FOR THEM TO ARM (0.35 S EACH)"},
+      {"%s + %s", {K_J, K_AL, K_N}, "JUMP AND SET THEM ALL OFF TOGETHER"}}, 3, "GET 40 M UP"},
     {"ROCKET GRAPPLE", "FIRE A ROCKET AND HOOK IT AS IT LEAVES: IT CARRIES YOU ALONG.",
      {{nullptr, {K_N, K_N, K_N}, "AIM STRAIGHT AHEAD"}, {"%s + %s", {K_FI, K_G, K_N}, "FIRE AND GRAPPLE TOGETHER"},
       {"%s", {K_G, K_N, K_N}, "KEEP HOLDING IT TO RIDE"}}, 3, "RIDE FOR 0.4 S"},
 };
 }  // namespace
 
-static_assert(tut::L_COUNT <= 17);   // (Settings::tutorialDone: a bit a lesson, tutorial_done at most 0x1FFFF)
+static_assert(tut::L_COUNT <= 30);   // (Settings::tutorialDone: a bit a lesson, tutorial_done below 2^30)
 
 const char* tutorialTitle(int l) { return kTexts[std::clamp(l, 0, tut::L_COUNT - 1)].title; }
 
@@ -269,7 +287,7 @@ void Game::tutorialFrame() {
     char b[64];
     switch (d.goal) {
         case tut::G_REACH: case tut::G_GAP: snprintf(b, sizeof b, "%.0f / %.0f M", c.value, d.target - tut::kStartIn); break;
-        case tut::G_SPEED: case tut::G_HOOKSPEED: snprintf(b, sizeof b, "%.1f / %.0f M/S", c.value, d.target); break;
+        case tut::G_SPEED: case tut::G_HOOKSPEED: case tut::G_KNOCKSPEED: snprintf(b, sizeof b, "%.1f / %.0f M/S", c.value, d.target); break;
         case tut::G_SIDEDASH: case tut::G_EVENTS: case tut::G_BOUNCES: case tut::G_HOOKPLAYER: case tut::G_BREAKFREE: snprintf(b, sizeof b, "%d / %.0f", c.count, d.target); break;
         case tut::G_SLIDE: case tut::G_RIDE: snprintf(b, sizeof b, "%.1f / %.1f S", std::max(c.value, c.best), d.target); break;
         default: snprintf(b, sizeof b, "%.1f / %.0f M", std::max(c.value, c.best), d.target); break;

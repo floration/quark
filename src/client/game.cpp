@@ -6041,46 +6041,33 @@ const char* tutorialTitle(int l);   // (tutorial.cpp)
 void Game::drawTutorialPause(float cx, float y) {
     (void)cx; (void)y;
     const SetLayout L = ingameLayout(kPW + 32);
-    const Color kDone = {0.45f, 0.95f, 0.5f, 1};
-    auto mark = [&](float x, float yy, bool done) {   // (a lesson done: a green square at the button's right end)
-        if (done) r_.rect(L.X(x) - L.L(14), L.Y(yy) + L.L(kPRow * 0.5f - 4), L.L(8), L.L(8), kDone);
-    };
-    if (tut_.menu) {
+    const Color kDone = {0.45f, 0.95f, 0.5f, 1};   // (a lesson done: a green square at its button's right end)
+    if (tut_.menu) {   // (three columns, 240 wide: every lesson on one page, the KEY TECH ones first under their heading)
+        constexpr float kCW = 240, kCG = 12, kLW = 3 * kCW + 2 * kCG, kLX = 640 - kLW * 0.5f;
+        const SetLayout M = ingameLayout(kLW + 32);
         int nKey = 0;
         for (int l = 0; l < tut::L_COUNT; l++) nKey += tut::lesson(l).key;
-        const int keyRows = (nKey + 1) / 2, restRows = (tut::L_COUNT - nKey + 1) / 2;
-        const float kH = 40 + 24 + pauseH(keyRows + restRows, 0, true);
-        PauseCol c{ui_, L, ingameTop(L, kH)};
-        ui_.panel(L.X(kPX - 16), L.Y(c.y - 16), L.L(kPW + 32), L.L(kH + 32), 0.95f);
-        ui_.labelCentered(L.X(640), L.Y(c.y), "LESSONS", kWhite, 1.0f, L.L(kPW));
-        c.y += 40;
-        auto go = [&](int l) { tut_.menu = false; paused_ = false; tutorialBegin(l); };
-        // the KEY TECH lessons first, together, each with a gold bar (q: "big techs that are important")
-        ui_.label(L.X(kPX), L.Y(c.y), "KEY TECH", {1.0f, 0.8f, 0.3f, 1}, 1.0f, L.L(kPW));
-        c.y += 24;
-        int kk = 0;
-        for (int l = 0; l < tut::L_COUNT; l++) {
-            if (!tut::lesson(l).key) continue;
-            const int side = 1 + kk % 2;
-            if (c.half(side, tutorialTitle(l), UiExp::cmd("tutorial"))) go(l);
-            r_.rect(L.X(side == 1 ? kPX : kPX + kPW - kPHalf), L.Y(c.y), L.L(4), L.L(kPRow), {1.0f, 0.8f, 0.3f, 1});
-            mark(side == 1 ? kPX + kPHalf : kPX + kPW, c.y, cfg_.tutorialDone >> l & 1);
-            if (kk % 2) c.next();
-            kk++;
-        }
-        if (kk % 2) c.next();
+        const int keyRows = (nKey + 2) / 3, restRows = (tut::L_COUNT - nKey + 2) / 3;
+        const float kH = 40 + 24 + pauseH(keyRows + restRows, 0, true) + 16;
+        float y = ingameTop(M, kH);
+        ui_.panel(M.X(kLX - 16), M.Y(y - 16), M.L(kLW + 32), M.L(kH + 32), 0.95f);
+        ui_.labelCentered(M.X(640), M.Y(y), "LESSONS", kWhite, 1.0f, M.L(kLW));
+        y += 40;
+        ui_.label(M.X(kLX), M.Y(y), "KEY TECH", {1.0f, 0.8f, 0.3f, 1}, 1.0f, M.L(kLW));
+        y += 24;
+        auto cell = [&](int l, int k, bool key) {   // (lesson l in cell k of its block: a button, the gold bar, the done mark)
+            const float x = kLX + (k % 3) * (kCW + kCG), yy = y + (k / 3) * (kPRow + kPGap);
+            if (ui_.button(M.X(x), M.Y(yy), M.L(kCW), M.L(kPRow), tutorialTitle(l), UiExp::cmd("tutorial"))) { tut_.menu = false; paused_ = false; tutorialBegin(l); }
+            if (key) r_.rect(M.X(x), M.Y(yy), M.L(4), M.L(kPRow), {1.0f, 0.8f, 0.3f, 1});
+            if (cfg_.tutorialDone >> l & 1) r_.rect(M.X(x + kCW) - M.L(14), M.Y(yy) + M.L(kPRow * 0.5f - 4), M.L(8), M.L(8), kDone);
+        };
         int k = 0;
-        for (int l = 0; l < tut::L_COUNT; l++) {
-            if (tut::lesson(l).key) continue;
-            const int side = 1 + k % 2;
-            if (c.half(side, tutorialTitle(l), UiExp::cmd("tutorial"))) go(l);
-            mark(side == 1 ? kPX + kPHalf : kPX + kPW, c.y, cfg_.tutorialDone >> l & 1);
-            if (k % 2) c.next();
-            k++;
-        }
-        if (k % 2) c.next();
-        c.last();
-        if (c.full("BACK", UiExp::nav("ingame/pause"))) tut_.menu = false;
+        for (int l = 0; l < tut::L_COUNT; l++) if (tut::lesson(l).key) cell(l, k++, true);
+        y += keyRows * (kPRow + kPGap) + 16;
+        k = 0;
+        for (int l = 0; l < tut::L_COUNT; l++) if (!tut::lesson(l).key) cell(l, k++, false);
+        y += restRows * (kPRow + kPGap) - kPGap + 20;
+        if (ui_.button(M.X(kLX), M.Y(y), M.L(kLW), M.L(kPRow), "BACK", UiExp::nav("ingame/pause"))) tut_.menu = false;
         return;
     }
     const bool finished = tut_.phase == TutState::FINISH;

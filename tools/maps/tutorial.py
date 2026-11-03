@@ -14,9 +14,10 @@ from .prefabs import *
 
 # (id, inside length, ceiling): kLessons in src/game/tutorial.h, in order
 BAYS = [("move", 50, 12), ("strafe", 150, 12), ("dash", 50, 12), ("sidedash", 30, 12), ("super", 60, 12),
-        ("hyper", 60, 12), ("chain", 180, 16), ("slide", 60, 12), ("bounce", 12, 12), ("grapple", 40, 18),
-        ("hookwalk", 80, 12), ("hookplayer", 50, 14), ("breakfree", 50, 12), ("rocketjump", 40, 24), ("launch", 160, 72),
-        ("stickyjump", 40, 24), ("rocketgrapple", 110, 16)]
+        ("hyper", 60, 12), ("pop", 70, 20), ("chain", 180, 16), ("slide", 60, 12), ("bounce", 12, 12), ("grapple", 40, 18),
+        ("hookwalk", 80, 12), ("hookplayer", 50, 14), ("breakfree", 50, 12), ("rocketjump", 40, 24), ("rocketsuper", 110, 16),
+        ("rocketpop", 100, 60), ("launch", 160, 72), ("hookboost", 120, 16), ("stickyjump", 40, 24), ("stickystack", 30, 64),
+        ("rocketgrapple", 110, 16)]
 WALL = 1.0      # between bays (kWall)
 HZ = 12.0       # half the width (kBayHalfZ)
 X0 = -90.0      # every bay's start wall, inside face (kBayX0)
