@@ -229,6 +229,7 @@ struct Settings {
     Vec3 wallbangColor = {0.55f, 0.25f, 0.6f};
     int ultraMarginUs = 0;         // MORE 8: LOW LATENCY ULTRA's safety: the frame starts this many us early; 0 AUTO (learnt: ultramargin.h)
     bool newConfig = false;             // (load() found no config file: the defaults were used)
+    bool displayMigrated = true;        // (display_default; false while load() reads a file from before BORDERLESS was the default: WINDOWED moves to it once)
     bool ultraMarginMigrated = true;    // (ultra_margin_auto; false while load() reads a file from before AUTO came: its 150 moves to AUTO)
     bool nvThreaded = false;       // ...Windows NVIDIA: threaded optimization off (driver profile)
     bool nvDxgi = false;           // ...Windows NVIDIA: present through DXGI (driver profile)

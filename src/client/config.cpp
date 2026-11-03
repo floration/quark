@@ -28,6 +28,7 @@ static std::string colorHex(const Vec3& c) {
 void Settings::load() {
     std::ifstream f(utf8Path(cfgPath()));
     newConfig = !f.is_open();
+    displayMigrated = newConfig;   // (an existing file without display_default: see finishLoad)
     std::string line;
     bindVersion = 0;   // (a file from before bind_version: its binds get the migrations)
     ultraMarginMigrated = false;   // (likewise ultra_margin_us: see set())
@@ -156,6 +157,7 @@ void Settings::set(const std::string& k, const std::string& v) {
             if (!ultraMarginMigrated) ultraMarginUs = ultraMarginUs == 150 ? 0 : ultraMarginUs == 0 ? 1 : ultraMarginUs;
         }
         else if (k == "ultra_margin_auto") ultraMarginMigrated = iv != 0;
+        else if (k == "display_default") displayMigrated = iv != 0;
         else if (k == "nv_threaded") nvThreaded = iv != 0;
         else if (k == "nv_dxgi") nvDxgi = iv != 0;
         else if (k == "quip_captions") quipCaptions = iv != 0;
@@ -384,6 +386,10 @@ void Settings::set(const std::string& k, const std::string& v) {
 }
 
 void Settings::finishLoad() {
+    // BORDERLESS became the default after 1.19.7 (owner, 2026-11-03: it gets far more performance than a window, which
+    // the desktop compositor composes). A config from before it on WINDOWED, the old default, moves to it once; set back
+    // to WINDOWED afterwards, it stays (display_default is written from then on).
+    if (!displayMigrated) { if (displayMode == 0) displayMode = 1; displayMigrated = true; }
     if (bindVersion < 2) {   // binds from an older config (see bindVersion); from now on they're this version's
         // slots 9 and 10 (knife, syringe) came later: unbound in an older config, they get keys 9 and 0
         if (!binds.code[A_WEAPON9][0] && !binds.code[A_WEAPON9][1]) binds.code[A_WEAPON9][0] = 57;    // (GLFW 9)
@@ -449,7 +455,7 @@ std::string Settings::toText() const {
     for (auto& b : cmdBinds) f << "\ncbind_" << b.first << "=" << b.second;
     for (auto& a : aliases) f << "\nalias_" << a.first << "=" << a.second;
     f << "\nfs_width=" << fsWidth << "\nfs_height=" << fsHeight << "\nauto_record=" << autoRecord << "\ndemo_keep=" << demoKeep << "\ndemo_sort=" << demoSort << "\nvideo_preset=" << videoPreset << "\nfx_opacity=" << fxOpacity << "\nkill_bursts=" << killBursts << "\ntracers=" << tracers << "\nview_recoil=" << viewRecoil
-       << "\nfov=" << fov << "\nbrightness=" << brightness << "\ndisplay_mode=" << displayMode
+       << "\nfov=" << fov << "\nbrightness=" << brightness << "\ndisplay_default=1" << "\ndisplay_mode=" << displayMode
       << "\npresent_mode=" << presentMode << "\nlatent_offset_us=" << latentOffsetUs << "\ngpu_max_clocks=" << gpuMaxClocks << "\ndisable_fso=" << disableFso << "\nearly_flush=" << earlyFlush << "\ncpu_latch=" << cpuLatch << "\ngpu_latch=" << gpuLatch << "\nhud_first=" << hudFirst << "\nfast_world=" << fastWorld << "\nprioritize=" << prioritize << "\nlow_latency=" << lowLatency << "\ninterp_ms=" << interpMs
       << "\nmaxfps=" << maxFps << "\nwidth=" << width << "\nheight=" << height << "\nwin_x=" << winX << "\nwin_y=" << winY << "\nbg_fps=" << bgFps << "\nbg_mute=" << bgMute << "\nbg_draw=" << bgDraw
       << "\nshadows=" << shadows << "\nmsaa=" << msaa << "\nrender_scale=" << renderScale << "\nrender_sharpen=" << renderSharpen << "\nmodel=" << model << "\nsoundpack=" << soundPack << "\nname_color=" << nameColorText() << "\nhealth_bars_117=1" << "\nsocd=" << socd << "\nalt_toggle=" << altToggle

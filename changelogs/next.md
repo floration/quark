@@ -17,7 +17,7 @@
 - **Dedicated servers:** with game logging on, writing the log to disk no longer stalls a tick.
 - **Maps load faster:** the world shader compiles while the light bakes, and is saved so the next load of a map skips it.
 - **No stutter when changing colours with PATTERN FADE or CLEAN SURFACES on:** dragging GLOW STRENGTH, HIGH CONTRAST or the sky and glow colours no longer makes the CPU wait for the graphics card.
-- **New installs start in BORDERLESS** instead of a window: a window goes through the desktop compositor, which costs frames and latency. If you play windowed, try DISPLAY: BORDERLESS in VIDEO.
+- **BORDERLESS is now the default display** instead of a window: a window goes through the desktop compositor, which costs frames and latency. If you were on WINDOWED (the old default), this update moves you to BORDERLESS once; set it back in VIDEO and it stays.
 - **Slightly faster HUD, menus and server ticks:** rounding and square roots no longer call the C maths library.
 
 ## Latency
