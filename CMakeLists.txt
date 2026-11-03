@@ -106,9 +106,20 @@ if(QUARK_LTO AND NOT QUARK_SANITIZE AND NOT QUARK_FUZZ)
 endif()
 
 # precise FP everywhere: client prediction (pmove / map / collision) must match a server built by another
-# toolchain bit for bit, so no fast-math and no FMA contraction
-add_compile_options(-Wall -Wextra -Wno-unused-parameter -fno-fast-math -ffp-contract=off "$<$<CONFIG:Release>:-O3>")
-add_link_options(-fno-fast-math -ffp-contract=off)   # (with LTO the code is generated at link time: the same rules there)
+# toolchain bit for bit, so no fast-math and no FMA contraction.
+# -fno-math-errno and -fno-trapping-math are on: the two parts of fast-math that don't change a computed value (at
+# most the sign of a NaN the compiler folds from constants, e.g. 0.0 / 0.0). The first only stops math functions
+# setting errno (nothing here reads errno after one: the errno checks follow strtod / strtol and system calls), the
+# second only lets the compiler assume an FP operation raises no trap (nothing here unmasks FP exceptions or reads the
+# FP status flags). With them GCC inlines round / lround / lrint / sqrt to SSE4.1 instructions instead of calling
+# libm: the client had 238 roundf and 113 lround call sites (most in the HUD, the menus and snapshot encoding), and
+# every sqrt had a branch to a libm call for errno. Checked: each inlined form against libm on all 2^32 floats (bit
+# for bit, NaN included; SSE4.1 and AVX2), quark_tests simhash and tools/isa_check.sh unchanged. Never
+# -ffinite-math-only, -fno-signed-zeros, -fassociative-math or -freciprocal-math: those do change results.
+# (clang, the macOS build, already has both of these by default.)
+add_compile_options(-Wall -Wextra -Wno-unused-parameter -fno-fast-math -ffp-contract=off -fno-math-errno -fno-trapping-math
+                    "$<$<CONFIG:Release>:-O3>")
+add_link_options(-fno-fast-math -ffp-contract=off -fno-math-errno -fno-trapping-math)   # (with LTO the code is generated at link time: the same rules there)
 
 # Instruction set (x86-64 only; arm64 and macOS's universal build keep the compiler's default). The packages ship two
 # game clients: quark (QUARK_ISA v2: SSE4.2 + POPCNT, every x86-64 CPU since about 2009) and quark_avx2 (v3: AVX2,
