@@ -1323,21 +1323,42 @@ void Renderer::uploadBlocks(const Map& map) {
 }
 
 // Drivers compile shader variants and pipeline states lazily, on the first draw that uses them, which
-// is a 30-60 ms hitch on the first frame of a match (and on the first explosion, beam, ...). Draw one
-// throwaway frame that touches every program and state while the loading screen is up, and wait for it.
+// is a 30-60 ms hitch on the first frame of a match (and on the first explosion, beam, ...). Draw throwaway
+// frames that touch every program and state while the loading screen is up, and wait for them.
+// Two frames, as a match draws them (drawScene: the MSAA / RENDER SCALE target and its resolve, the world and its
+// breakable blocks, the sky, the see-through pass, shadows), and between them what a match can turn on later: the
+// GPU late latch's buffer and its read (latchInit used to run on the first frame in play), the view model's fade
+// (WEAPON MODEL OPACITY below 100%: a depth-only draw, then a blended one) and its translucent parts. The second also
+// re-sends the stream buffers while the first frame may still use them (the driver's orphan path), and faces the
+// other way, so more of the world is drawn. Never shown: the bake screen draws over it, glClear after.
 void Renderer::warmup(const Map& map) {
     QZONE("renderer warmup");
-    Vec3 c = map.bounds.center();
-    setCamera(c + Vec3(0, 2, 0), 0, 0, 90);
-    box(c, {0.3f, 0.3f, 0.3f}, 0, {0.5f, 0.5f, 0.5f}, 1.0f, true, true);   // dynamic + shadow caster
-    box(c, {0.3f, 0.3f, 0.3f}, 0, {0.5f, 0.5f, 0.5f}, 1.0f, true, false);  // shadow-only caster
-    translucentBox({c, c + Vec3(0.5f, 0.5f, 0.5f)}, {1, 1, 1, 0.3f});       // blended pass
-    line(c, c + Vec3(0, 1, 0), 0.05f, {1, 1, 1, 0.5f});
-    viewBox({0.2f, -0.2f, -0.5f}, {0.02f, 0.02f, 0.1f}, {0.5f, 0.5f, 0.5f}); // first-person pass
-    drawScene(true);
-    rect(0, 0, 4, 4, {1, 1, 1, 0.5f});
-    text(0, 0, 2, "A", {1, 1, 1, 1});
-    flush2D();
+    if (!latchUbo_) latchInit();
+    const Vec3 c = map.bounds.center();
+    for (int pass = 0; pass < 2; pass++) {
+        setCamera(c + Vec3(0, 2, 0), pass ? PI : 0.0f, pass ? -0.3f : 0.0f, 90);
+        box(c, {0.3f, 0.3f, 0.3f}, 0, {0.5f, 0.5f, 0.5f}, 1.0f, true, true);   // dynamic + shadow caster
+        box(c, {0.3f, 0.3f, 0.3f}, 0, {0.5f, 0.5f, 0.5f}, 1.0f, true, false);  // shadow-only caster
+        translucentBox({c, c + Vec3(0.5f, 0.5f, 0.5f)}, {1, 1, 1, 0.3f});       // blended pass
+        line(c, c + Vec3(0, 1, 0), 0.05f, {1, 1, 1, 0.5f});
+        viewBox({0.2f, -0.2f, -0.5f}, {0.02f, 0.02f, 0.1f}, {0.5f, 0.5f, 0.5f}); // first-person pass
+        if (pass) {   // the view model's translucent parts (an override model's glass), and its fade
+            const Vec3 v = viewPoint({0.2f, -0.2f, -0.5f});
+            for (const Vec3& q : {v, v + Vec3(0.02f, 0, 0), v + Vec3(0, 0.02f, 0)}) {
+                FlatVertex fv;
+                memcpy(fv.pos, &q.x, 12);
+                fv.color[0] = fv.color[1] = fv.color[2] = 1; fv.color[3] = 0.5f;
+                viewFlat_.push_back(fv);
+            }
+            viewOpacity = 0.5f;   // (drawScene puts it back to 1)
+        }
+        latchArm(pass == 0, 0, 0);   // (the first with the late latch's read, where the driver has it; the second without)
+        drawScene(true);
+        rect(0, 0, 4, 4, {1, 1, 1, 0.5f});
+        text(0, 0, 2, "A", {1, 1, 1, 1});
+        flush2D();
+    }
+    latchArm(false, 0, 0);
     glFinish();
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
@@ -2806,9 +2827,6 @@ void Renderer::hudLayerComposite() {
 void Renderer::flush2D() {
     if (ui_.empty()) { uiUploaded_ = 0; return; }
     QPLOT("ui verts", ui_.size());
-#ifdef QUARK_TRACY
-    static size_t uiTotal = 0; uiTotal += ui_.size();
-#endif
     glViewport(0, 0, width_, height_);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
@@ -2873,16 +2891,11 @@ void Renderer::flush2D() {
         previewQuads_.clear();
     }
 #ifdef QUARK_TRACY
-    // profiling builds: per-frame averages to stderr every 5 s (and to Tracy plots)
-    static double t0 = timeNow(); static int frames = 0; static size_t bytes = 0, ups = 0, dyn = 0, shadow = 0;
-    QPLOT("upload bytes", g_uploadBytes);
-    frames++; bytes += g_uploadBytes; ups += g_uploads; dyn += g_dynVerts; shadow += g_shadowVerts;
+    // profiling builds: the frame's totals as Tracy plots (the profiler shows their averages). There was also a
+    // 5-second average line to stderr, from here: its fprintf made a 450-520 us frame every 5 s in every capture.
+    QPLOT("upload bytes", g_uploadBytes); QPLOT("uploads", g_uploads);
+    QPLOT("dyn + view + flat verts", g_dynVerts); QPLOT("shadow verts", g_shadowVerts);
     g_uploadBytes = g_uploads = g_dynVerts = g_shadowVerts = 0;
-    if (timeNow() - t0 > 5) {
-        fprintf(stderr, "[stats] %d frames, per frame: %.1f KB uploaded in %.1f uploads, %zu ui verts, %zu dynamic verts, %zu shadow verts\n",
-                frames, bytes / 1024.0 / frames, (double)ups / frames, uiTotal / frames, dyn / frames, shadow / frames);
-        t0 = timeNow(); frames = 0; bytes = ups = dyn = shadow = uiTotal = 0;
-    }
 #endif
 }
 

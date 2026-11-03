@@ -481,5 +481,7 @@ bool readPropEvent(const GameEvent& e, StuckProp* p) {
     }
     const float yaw = angD(r.i16()), pitch = angD(r.i16());
     p->dir = {std::sin(yaw) * std::cos(pitch), std::sin(pitch), std::cos(yaw) * std::cos(pitch)};
+    // (Game::drawStuckProps's turn of the model: the expressions it used per prop per frame, so the same floats)
+    p->yaw = std::atan2(-p->dir.x, -p->dir.z); p->pitch = std::asin(clampf(p->dir.y, -1, 1));
     return !r.bad();
 }

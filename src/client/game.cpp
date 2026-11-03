@@ -1917,7 +1917,7 @@ void Game::drawStuckProps(const Vec3& eye, float alpha) {
         if (d2 > kFar2 || !r_.inView(pos, 0.6f)) continue;
         const bool far = d2 > kNear2;
         const int mt = modelExists(MODEL_PROJECTILE, sp.type) ? sp.type : MODEL_PROJ_ORB;
-        const float yaw = std::atan2(-sp.dir.x, -sp.dir.z), pitch = std::asin(clampf(sp.dir.y, -1, 1));
+        const float yaw = sp.yaw, pitch = sp.pitch;   // (readPropEvent's: the direction never changes once stuck)
         ModelPalette ppal;
         if (sp.owner < kMaxPlayers) {
             if (!(haveCol >> sp.owner & 1)) { ownerCol[sp.owner] = teamColor(sp.owner); haveCol |= 1u << sp.owner; }
@@ -2346,9 +2346,17 @@ void Game::frame(double dt) {
         editorFrame(dt);
     } else if (screen_ == Screen::InGame && bake_) {
         drawBakeScreen(bake_->map.name, bake_->progress.load());
-        // (a loading bar needs ~30 fps: the cores go to the bake; under software GL every frame costs them. In 1 ms
-        // steps, ending as the bake does: a finished one waited up to 30 ms for the next frame, ~15 ms every load)
-        for (int k = 0; k < 30 && bake_ && !bake_->done.load(); k++) sleepMs(1);
+        // (a loading bar needs ~30 fps: the cores go to the bake; under software GL every frame costs them. To a
+        // deadline 1/30 s after the last frame's, in 1 ms steps that end as the bake does: a finished one waited up to
+        // 30 ms for the next frame, ~15 ms every load. It was 30 x sleepMs(1), and Windows' Sleep(1) takes up to 2 ms:
+        // ~60 ms frames, a ~16 fps bar. Fell behind (or the first frame): due from now, no catching up.)
+        if (bake_ && !manualClock()) {
+            BakeJob& bj = *bake_;
+            const double period = timeScale() / 30.0, now = timeNow();   // (timeNow's seconds: timeScale() per real one)
+            if (bj.due < now - period) bj.due = now;
+            bj.due += period;
+            for (double left; !bj.done.load() && (left = (bj.due - timeNow()) / timeScale()) > 0;) sleepPrecise(std::min(left, 0.001));
+        }
     } else if (screen_ == Screen::InGame && net_.hasSnapshot() && r_.worldLoaded()) {
         drawWorld((float)clampf((float)(tickAcc_ / net_.tickPeriod()), 0, 1));   // (and the HUD, before its late read)
     } else {
