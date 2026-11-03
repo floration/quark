@@ -30,6 +30,7 @@
 #include "../src/client/modecalls.h"
 #include "../src/client/weaponpredict.h"
 #include "../src/client/clientfeel.h"
+#include "../src/client/ultramargin.h"
 #include <filesystem>
 #include <sstream>
 #include <fstream>
@@ -10302,6 +10303,126 @@ static void testReachProbe(uint16_t port) {
 #include "moveexpr_tests.h" // movement equations (custom modes' expr.<key>= lines): parser, resolver, determinism, pmove, network
 
 
+// ---- LOW LATENCY ULTRA's learnt safety margin (src/client/ultramargin.h) against a simulated CPU and GPU: Game::
+// beforeInput's pacing (target = swap + learnt GPU - learnt CPU - margin, the fence polled every 10 us) and afterSwap's
+// wait, with their EMAs, frame by frame. The GPU gets a frame's work only at its swap (the worst case: no draw calls
+// flushed early), so every GPU idle is counted; the driver wakes a blocked wait 10 us late. Deterministic (own RNG).
+struct UltraSimFrame { double gpu, cpu; };
+struct UltraSimResult { double wait = 0, idle = 0, period = 0, readToDone = 0, mMean = 0, mMin = 1, mMax = 0, winSpread = 0; int bubbles = 0, n = 0; };
+static UltraSimResult ultraSim(int fixedUs, const std::function<UltraSimFrame(int, uint64_t&)>& gen, int frames, int from, UltraMargin* keep = nullptr) {
+    uint64_t rng = 0x9E3779B97F4A7C15ull;
+    UltraMargin um;
+    double S = 0, gpu = 500e-6, cpu = 300e-6, F = 0, t0 = 0, sumM = 0, winSum = 0, winMin = 1, winMax = 0;
+    bool pending = false;
+    UltraSimResult o;
+    for (int n = 0; n < frames; n++) {
+        const UltraSimFrame fr = gen(n, rng);
+        double t = S + 3e-6;   // (afterSwap's end to beforeInput)
+        bool held = false;
+        const double m = fixedUs > 0 ? fixedUs * 1e-6 : um.margin;
+        if (pending) {
+            const double target = S + gpu - cpu - m;
+            if (F <= t) pending = false;   // done at the first poll: CPU-bound, nothing to learn
+            else if (t < target) {
+                for (;;) {
+                    t = std::min(target, t + 10e-6) + 0.3e-6;   // (a spin step, then the poll's cost)
+                    held = true;
+                    if (F <= t) { gpu += (t - S - gpu) * 0.1; pending = false; if (fixedUs <= 0) um.bubble(); break; }
+                    if (t >= target) break;
+                }
+            }
+        }
+        const double R = t, swap = R + fr.cpu;
+        const double idle = std::max(0.0, swap - F);
+        const double done = std::max(F, swap) + fr.gpu;
+        double now = swap + 2e-6, W = 0;
+        if (pending) {
+            if (F <= now) { gpu += (now - S - gpu) * 0.1; if (held && fixedUs <= 0) um.bubble(); }
+            else { W = F + 10e-6 - now; now = F + 10e-6; gpu += (now - S - gpu) * 0.1; if (fixedUs <= 0) um.waited(W); }
+        }
+        cpu += (swap - R - cpu) * 0.1;
+        if (n == from) t0 = done;
+        if (n >= from) {
+            o.n++; o.wait += W; o.idle += idle; o.bubbles += idle > 1e-6; o.readToDone += done - R;
+            const double mm = fixedUs > 0 ? m : um.margin;
+            sumM += mm; o.mMin = std::min(o.mMin, mm); o.mMax = std::max(o.mMax, mm);
+            winSum += mm;
+            if ((n - from) % 2000 == 1999) { winMin = std::min(winMin, winSum / 2000); winMax = std::max(winMax, winSum / 2000); winSum = 0; }
+        }
+        if (n == frames - 1) o.period = (done - t0) / (o.n - 1);
+        F = done; pending = true; S = now + 1e-6;
+    }
+    o.wait /= o.n; o.idle /= o.n; o.readToDone /= o.n; o.mMean = sumM / o.n; o.winSpread = winMax - winMin;
+    if (keep) *keep = um;
+    return o;
+}
+static double ultraGauss(uint64_t& s) {   // (Box-Muller on an LCG: the same numbers on every platform)
+    auto u = [&] { s = s * 6364136223846793005ull + 1442695040888963407ull; return ((s >> 11) + 0.5) / 9007199254740992.0; };
+    const double a = u(), b = u();
+    return std::sqrt(-2 * std::log(a)) * std::cos(6.283185307179586 * b);
+}
+static void testUltraMargin() {
+    printf("ultra: the learnt safety margin (AUTO) against a simulated GPU: steady, jittery, a step up and down, CPU-bound\n");
+    {   // the clamps
+        UltraMargin u;
+        for (int k = 0; k < 2000; k++) u.waited(1e-3);
+        CHECK(u.margin == UltraMargin::kFloor);
+        for (int k = 0; k < 100; k++) u.bubble();
+        CHECK(u.margin == UltraMargin::kMax);
+        u.waited(0);   // (a wait under kAim nudges it up, still clamped)
+        CHECK(u.margin == UltraMargin::kMax);
+    }
+    auto show = [](const char* name, const char* how, const UltraSimResult& r) {
+        printf("  %-8s %-5s after-swap wait %6.1f us  bubbles %5.2f %%  GPU idle %5.2f us/frame  frame %6.1f us  read->GPU done %6.1f us  margin %5.1f [%5.1f..%5.1f]\n",
+               name, how, r.wait * 1e6, 100.0 * r.bubbles / r.n, r.idle * 1e6, r.period * 1e6, r.readToDone * 1e6, r.mMean * 1e6, r.mMin * 1e6, r.mMax * 1e6);
+    };
+    auto both = [&](const char* name, const std::function<UltraSimFrame(int, uint64_t&)>& g, int frames, int from) {
+        std::pair<UltraSimResult, UltraSimResult> r{ultraSim(0, g, frames, from), ultraSim(150, g, frames, from)};
+        show(name, "AUTO", r.first); show(name, "150", r.second);
+        return r;
+    };
+    {   // steady: down to the floor, no bubbles, and the ~90 us of early read the fixed 150 had is gone
+        auto r = both("steady", [](int, uint64_t& s) { return UltraSimFrame{250e-6 + 2e-6 * ultraGauss(s), 130e-6 + 2e-6 * ultraGauss(s)}; }, 30000, 10000);
+        CHECK(r.first.mMax < 45e-6 && r.first.mMin >= UltraMargin::kFloor);
+        CHECK(r.first.bubbles * 100 < r.first.n);           // under 1 %
+        CHECK(r.first.wait < r.second.wait - 60e-6);        // (150: ~114 us)
+        CHECK(r.first.period < r.second.period * 1.001);   // no frame rate lost
+        CHECK(r.first.winSpread < 5e-6);                    // settled: no slow swing
+    }
+    {   // jittery: GPU +-20 us, CPU +-10 us, a 100 us GPU spike in 1 % of frames
+        auto r = both("jitter", [](int, uint64_t& s) {
+            UltraSimFrame f{250e-6 + 20e-6 * ultraGauss(s), 130e-6 + 10e-6 * ultraGauss(s)};
+            if (ultraGauss(s) > 2.326) f.gpu += 100e-6;
+            return f; }, 60000, 20000);
+        CHECK(r.first.bubbles * 100 < r.first.n * 2);       // under 2 %, each small
+        CHECK(r.first.period < r.second.period * 1.003);
+        CHECK(r.first.wait < r.second.wait - 30e-6);
+        CHECK(r.first.winSpread < 0.25 * r.first.mMean);    // the 2000-frame means hold still: no oscillation
+    }
+    {   // jittery x2: GPU +-40 us, CPU +-20 us: a bigger margin, bubbles still rare
+        auto r = both("jitter40", [](int, uint64_t& s) { return UltraSimFrame{250e-6 + 40e-6 * ultraGauss(s), 130e-6 + 20e-6 * ultraGauss(s)}; }, 60000, 20000);
+        CHECK(r.first.bubbles * 100 < r.first.n * 3);
+        CHECK(r.first.period < r.second.period * 1.003);
+        CHECK(r.first.wait < r.second.wait);
+        CHECK(r.first.mMean > 60e-6);                       // (grew to cover the jitter)
+        CHECK(r.first.winSpread < 0.25 * r.first.mMean);
+    }
+    for (int dir = 0; dir < 2; dir++) {   // a step in the GPU's time (a heavier / lighter view): settled again in 2000 frames
+        const double before = dir ? 400e-6 : 250e-6, after = dir ? 180e-6 : 400e-6;
+        auto g = [=](int n, uint64_t& s) { return UltraSimFrame{(n < 20000 ? before : after) + 10e-6 * ultraGauss(s), 130e-6 + 5e-6 * ultraGauss(s)}; };
+        auto step = both(dir ? "stepdown" : "stepup", g, 22000, 20000);           // (the 2000 frames from the step)
+        auto later = ultraSim(0, g, 40000, 22000);                                // (and once settled)
+        CHECK(step.first.bubbles * 100 < step.first.n * 3);
+        CHECK(later.mMean < 70e-6 && later.bubbles * 100 < later.n * 2);
+        CHECK(later.winSpread < 15e-6);
+    }
+    {   // CPU-bound (the GPU idles every frame whatever the margin): the margin doesn't move
+        auto g = [](int, uint64_t& s) { return UltraSimFrame{250e-6 + 10e-6 * ultraGauss(s), 400e-6 + 10e-6 * ultraGauss(s)}; };
+        UltraSimResult r = ultraSim(0, g, 20000, 2000);
+        CHECK(r.mMax - r.mMin < 1e-9);
+    }
+}
+
 // ---- BENCHMARK (src/game/benchmark.h): the frame-time statistics on arrays whose answers are known, and a demo like
 // the shipped one (Hamlet, free for all, 31 bots, recorded by a spectator) made and played back to its end.
 static bool near(double a, double b, double tol) { return std::fabs(a - b) <= tol; }
@@ -10569,7 +10690,7 @@ int main(int argc, char** argv) {
         {"resetmaps", [] { testResetMaps(); testLegacyMaps(); }},   // (each forked group has its own user data dir: these write only there)
         {"userdata", [] { testUserData(); }},
         {"layout", [] { testLayoutCases(); testLayoutCache(); testHudTheme(); }},
-        {"benchmark", [] { testBenchStats(); testBenchDemo(TP(29160)); }},
+        {"benchmark", [] { testUltraMargin(); testBenchStats(); testBenchDemo(TP(29160)); }},
     };
     std::vector<T> alone = {   // timing-sensitive: after the others, on an otherwise idle machine
         {"tickrate", [] {   // (real-time: timingTest re-runs an attempt the host paused in)

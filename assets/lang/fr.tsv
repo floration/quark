@@ -274,6 +274,7 @@ AUDIO LATENCY: NORMAL	LATENCE AUDIO : NORMALE
 AUDIO LATENCY: SAFE	LATENCE AUDIO : SÛRE
 AUDIO OUTPUT	SORTIE AUDIO
 AUTO	AUTO
+AUTO LEARNS IT; MORE: FEWER GPU BUBBLES, MORE LAG	AUTO L'APPREND ; PLUS : MOINS DE BULLES GPU, PLUS DE LAG
 AUTO PORT FORWARD	REDIRECTION DE PORT AUTO
 AUTO RECONNECT	RECONNEXION AUTO
 AUTO RECORD	ENREG. AUTO
@@ -2050,7 +2051,6 @@ MOON SHOTGUN	FUSIL À POMPE LUNAIRE
 MOON SHOTGUNS	FUSILS À POMPE LUNAIRES
 MORE	PLUS
 MORE KEYS	AUTRES TOUCHES
-MORE: FEWER GPU BUBBLES, A LITTLE MORE LAG	PLUS : MOINS DE BULLES GPU, UN PEU PLUS DE LAG
 MOUSE	SOURIS
 MOUSE 1	MOUSE 1
 MOUSE 2	MOUSE 2
@@ -3078,6 +3078,8 @@ UDP PORT	PORT UDP
 UHD	UHD
 UI FONT	POLICE UI
 ULTRA	ULTRA
+ULTRA (AUTO SAFETY # US)	ULTRA (SAFETY AUTO # US)
+ULTRA (SAFETY # US)	ULTRA (SAFETY # US)
 ULTRA ONLY: THE HUD DRAWN BEFORE THE LATE READ,	ULTRA SEUL. : LE HUD DESSINÉ AVANT LA LECTURE TARDIVE
 ULTRA SAFETY	ULTRA SAFETY
 ULTRA: 0 QUEUED + EACH FRAME STARTED LATE	ULTRA : 0 EN FILE + CHAQUE IMAGE COMMENCE TARD
@@ -3425,6 +3427,7 @@ demo finished	démo terminée
 demo:	démo :
 draw - the payload is in the middle	égalité - le convoi est au milieu
 dropped:	déconnecté :
+dyn + view + flat verts	dyn + view + flat verts
 dyn verts	dyn verts
 dynamic pass	dynamic pass
 e.g.  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5	ex.  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5
@@ -3729,6 +3732,7 @@ setup:	config :
 shader:	shader :
 shadow / visOnly / crouch must be true or false	shadow / visOnly / crouch doit valoir true ou false
 shadow pass	shadow pass
+shadow verts	shadow verts
 shipped:	livré :
 short-handed: # playing	en sous-effectif : # en jeu
 size # # #	size # # #
@@ -3811,6 +3815,8 @@ tourney seed #: {} (#)	tourney seed #: {} (#)
 tourney started -	tournoi lancé -
 trying the next rate up: busy #%, upload # kbps	essai du taux supérieur : occupé #%, upload # kbps
 ui verts	ui verts
+ultra: after swap wait (us)	ultra: after swap wait (us)
+ultra: margin (us)	ultra: margin (us)
 ultra: pace the input read	ultra: pace the input read
 ungrouped into	dégroupé en
 unknown mode	mode inconnu

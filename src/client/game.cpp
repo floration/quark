@@ -7640,6 +7640,7 @@ void Game::drawMoreSettings(const SetLayout& L) {
                     std::istringstream in(text.substr(text.find("quark-settings:") + 15));
                     std::string l;
                     int n = 0;
+                    cfg_.ultraMarginMigrated = false;   // (as load(): an export from before ULTRA SAFETY AUTO, on 150, moves to it)
                     while (std::getline(in, l)) {
                         while (!l.empty() && (l.back() == '\r' || l.back() == ' ')) l.pop_back();
                         const size_t eq = l.find('=');
@@ -8227,11 +8228,11 @@ void Game::drawMoreSettings(const SetLayout& L) {
         }
         g.header("LATENCY");
         {
-            float v = (float)cfg_.ultraMarginUs;
-            ui_.slider(g.x(), g.top(), w, h, "ULTRA SAFETY", v, 0, 1000, "%.0f US", UiExp::cfg("ultra_margin_us"), (float)d.ultraMarginUs);
+            float v = (float)cfg_.ultraMarginUs;   // (0, the far left: AUTO, learnt as it runs; ultramargin.h)
+            ui_.slider(g.x(), g.top(), w, h, "ULTRA SAFETY", v, 0, 1000, cfg_.ultraMarginUs <= 0 ? "AUTO" : "%.0f US", UiExp::cfg("ultra_margin_us"), (float)d.ultraMarginUs);
             cfg_.ultraMarginUs = std::min(std::max(0, (int)std::lround(v)), 2000);
             g.next();
-            g.hint("LOW LATENCY: ULTRA STARTS EACH FRAME THIS EARLY;", "MORE: FEWER GPU BUBBLES, A LITTLE MORE LAG");
+            g.hint("LOW LATENCY: ULTRA STARTS EACH FRAME THIS EARLY;", "AUTO LEARNS IT; MORE: FEWER GPU BUBBLES, MORE LAG");
         }
         if (ui_.toggle(g.x(), g.top(), hw, h, "NV THREADED OFF", cfg_.nvThreaded, UiExp::cfg("nv_threaded"))) {
             std::string msg = "NOT CHANGED IN THE UI TEST";
@@ -11001,7 +11002,10 @@ void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
         add(hudLayerOn_, "HUD FIRST");
         add(cfg_.fastWorld, "EARLY DEPTH");
         char tw[160];
-        snprintf(tw, sizeof tw, "LOW LATENCY %s, TWEAKS: %s", cfg_.lowLatency == 2 ? "ULTRA" : cfg_.lowLatency == 1 ? "ON" : "OFF",
+        char ultra[48];   // (ULTRA with its safety margin: AUTO's as learnt now)
+        if (cfg_.ultraMarginUs <= 0) snprintf(ultra, sizeof ultra, "ULTRA (AUTO SAFETY %.0f US)", ultraMargin_.margin * 1e6);
+        else snprintf(ultra, sizeof ultra, "ULTRA (SAFETY %d US)", cfg_.ultraMarginUs);
+        snprintf(tw, sizeof tw, "LOW LATENCY %s, TWEAKS: %s", cfg_.lowLatency == 2 ? ultra : cfg_.lowLatency == 1 ? "ON" : "OFF",
                  on.empty() ? "NONE" : on.c_str());
         r_.text(x + 6, yy, ts, tw, {0.6f, 0.85f, 1.0f, 1});
         yy += lh;
@@ -11286,16 +11290,24 @@ void Game::beforeInput() {
     // through every CPU frame (ultra used to wait for the GPU after each swap: CPU and GPU took turns, costing fps).
     // The GPU's time per frame (swap to its fence) and the CPU's (input read to swap) are learnt as it runs.
     if (cfg_.presentMode == 3) latentWait();
+    ultraHeld_ = false;
     if (ultraPaced() && ultraFence_) {
-        const double kMargin = cfg_.ultraMarginUs * 1e-6;   // (MORE 6: ULTRA SAFETY, 150 us by default)   // (start a little early: a late start is a GPU bubble, an early one 150 us)
-        const double target = ultraSwapAt_ + ultraGpu_ - ultraCpu_ - kMargin;
+        // (start a little early: a late start is a GPU bubble (lost fps), an early one that much latency. ULTRA SAFETY:
+        // AUTO (0, the default) learns it from both (ultramargin.h), else the microseconds picked)
+        const bool autoMargin = cfg_.ultraMarginUs <= 0;
+        const double margin = autoMargin ? ultraMargin_.margin : cfg_.ultraMarginUs * 1e-6;
+        const double target = ultraSwapAt_ + ultraGpu_ - ultraCpu_ - margin;
         bool waited = false;
         QZONE("ultra: pace the input read");
+        QPLOT("ultra: margin (us)", margin * 1e6);
         for (;;) {
             const GLenum st = glClientWaitSync((GLsync)ultraFence_, waited ? 0 : GL_SYNC_FLUSH_COMMANDS_BIT, 0);
             const double now = timeNow();
             if (st == GL_ALREADY_SIGNALED || st == GL_CONDITION_SATISFIED || st == GL_WAIT_FAILED) {
-                if (waited) ultraGpu_ += (now - ultraSwapAt_ - ultraGpu_) * 0.1;   // (seen finishing: a measurement)
+                if (waited) {   // (seen finishing: a measurement; and the GPU idles while this frame is made: held too long)
+                    ultraGpu_ += (now - ultraSwapAt_ - ultraGpu_) * 0.1;
+                    if (autoMargin && st != GL_WAIT_FAILED) ultraMargin_.bubble();
+                }
                 glDeleteSync((GLsync)ultraFence_);
                 ultraFence_ = nullptr;
                 break;
@@ -11305,6 +11317,7 @@ void Game::beforeInput() {
             waitUntil(std::min(target, now + 0.00001));   // (a spin either way: polled every 10 us, not 100, so a GPU that finishes
                                                           // mid-step is seen at once and ultraGpu_ learns its real time)
         }
+        ultraHeld_ = waited && ultraFence_ != nullptr;   // (the read was held and the GPU still busy: afterSwap judges the margin)
     }
     ultraReadAt_ = timeNow();
 }
@@ -11317,10 +11330,18 @@ void Game::afterSwap() {
         // the blank: counting the wait made the learnt CPU time grow every frame when GPU-bound, until pacing stopped)
         const double swapped = timeNow();
         if (ultraFence_) {   // the last one isn't done yet (started too early): wait for it, and learn its real time
-            glClientWaitSync((GLsync)ultraFence_, GL_SYNC_FLUSH_COMMANDS_BIT, 100000000ull);
+            const GLenum st = glClientWaitSync((GLsync)ultraFence_, GL_SYNC_FLUSH_COMMANDS_BIT, 100000000ull);
             glDeleteSync((GLsync)ultraFence_);
             ultraFence_ = nullptr;
-            ultraGpu_ += (timeNow() - ultraSwapAt_ - ultraGpu_) * 0.1;
+            const double done = timeNow();
+            ultraGpu_ += (done - ultraSwapAt_ - ultraGpu_) * 0.1;
+            // ULTRA SAFETY AUTO: a wait here is input read that much too early (the margin comes down slowly); done
+            // already, after the pacing held the read, the GPU idled before this frame reached it (up quickly)
+            if (cfg_.ultraMarginUs <= 0) {
+                if (st == GL_CONDITION_SATISFIED) ultraMargin_.waited(done - swapped);
+                else if (st == GL_ALREADY_SIGNALED && ultraHeld_) ultraMargin_.bubble();
+            }
+            QPLOT("ultra: after swap wait (us)", st == GL_CONDITION_SATISFIED ? (done - swapped) * 1e6 : 0.0);
         }
         const double now = timeNow();
         ultraCpu_ += (swapped - latentHeld_ - ultraReadAt_ - ultraCpu_) * 0.1;

@@ -29,6 +29,7 @@ void Settings::load() {
     std::ifstream f(utf8Path(cfgPath()));
     std::string line;
     bindVersion = 0;   // (a file from before bind_version: its binds get the migrations)
+    ultraMarginMigrated = false;   // (likewise ultra_margin_us: see set())
     while (std::getline(f, line)) {
         size_t eq = line.find('=');
         if (eq == std::string::npos) continue;
@@ -146,7 +147,14 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "lightmap_nearest") lightmapNearest = iv != 0;
         else if (k == "wallbang_tint") wallbangTint = iv != 0;
         else if (k == "wallbang_color") wallbangColor = parseColor(v, wallbangColor);
-        else if (k == "ultra_margin_us") ultraMarginUs = std::min(std::max(iv, 0), 2000);
+        else if (k == "ultra_margin_us") {
+            ultraMarginUs = std::min(std::max(iv, 0), 2000);
+            // ULTRA SAFETY AUTO (0) became the default after 1.19.7. A file from before it (no ultra_margin_auto, which
+            // save() writes BEFORE this key) on the old default, 150, was never moved (a dragged slider lands elsewhere):
+            // AUTO. Any other value was picked and stays; 0, the lowest it had, is 1 us now (0 is AUTO; the same in practice).
+            if (!ultraMarginMigrated) ultraMarginUs = ultraMarginUs == 150 ? 0 : ultraMarginUs == 0 ? 1 : ultraMarginUs;
+        }
+        else if (k == "ultra_margin_auto") ultraMarginMigrated = iv != 0;
         else if (k == "nv_threaded") nvThreaded = iv != 0;
         else if (k == "nv_dxgi") nvDxgi = iv != 0;
         else if (k == "quip_captions") quipCaptions = iv != 0;
@@ -403,6 +411,7 @@ void Settings::finishLoad() {
         for (int k = 0; k < kBindSlots; k++) { binds.code[A_FLYUP][k] = binds.code[A_JUMP][k]; binds.code[A_FLYDOWN][k] = binds.code[A_DASH][k]; }
         bindVersion = 5;
     }
+    ultraMarginMigrated = true;   // (from here on a value set is as meant: the console's "ultra_margin_us 0" is AUTO)
     if (!hbMigrated) { healthBars = true; hbMigrated = true; }   // 1.17 turned health bars on by default: on once for everyone (owner), off again stays off
     if (width < 320) width = 1280;
     if (height < 240) height = 720;
@@ -433,7 +442,7 @@ std::string Settings::toText() const {
       << "\nfx_color_mode=" << fxColorMode << "\nfx_color=" << colorHex(fxColor) << "\nobj_palette=" << objPalette << "\nsky_override=" << skyOverride << "\nglow_override=" << glowOverride
       << "\nsky_color=" << colorHex(skyColor) << "\nglow_color=" << colorHex(glowColor) << "\nhigh_contrast=" << highContrast << "\nf3_safe=" << f3Safe << "\non_top=" << onTop << "\ngun_color=" << gunColor
       << "\ngun_custom=" << colorHex(gunCustom) << "\nobj_opacity=" << objOpacity << "\nobj_pulse=" << objPulse << "\ndash_buffer=" << dashBuffer << "\nsmooth_amt=" << smoothAmt << "\nlightmap_nearest=" << lightmapNearest
-      << "\nwallbang_tint=" << wallbangTint << "\nwallbang_color=" << colorHex(wallbangColor) << "\nultra_margin_us=" << ultraMarginUs << "\nnv_threaded=" << nvThreaded << "\nnv_dxgi=" << nvDxgi
+      << "\nwallbang_tint=" << wallbangTint << "\nwallbang_color=" << colorHex(wallbangColor) << "\nultra_margin_auto=1" << "\nultra_margin_us=" << ultraMarginUs << "\nnv_threaded=" << nvThreaded << "\nnv_dxgi=" << nvDxgi
       << "\nquip_captions=" << quipCaptions << "\nann_duck=" << annDuck;
     for (int i = 0; i < 3; i++) if (!colorPreset[i].empty()) f << "\ncolor_preset_" << i + 1 << "=" << colorPreset[i];
     for (auto& b : cmdBinds) f << "\ncbind_" << b.first << "=" << b.second;

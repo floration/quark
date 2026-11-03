@@ -274,6 +274,7 @@ AUDIO LATENCY: NORMAL	SES GECİKMESİ: NORMAL
 AUDIO LATENCY: SAFE	SES GECİKMESİ: GÜVENLİ
 AUDIO OUTPUT	SES ÇIKIŞI
 AUTO	OTO
+AUTO LEARNS IT; MORE: FEWER GPU BUBBLES, MORE LAG	OTO KENDİ ÖĞRENİR; DAHA FAZLA: DAHA AZ GPU BOŞLUĞU, DAHA FAZLA GECİKME
 AUTO PORT FORWARD	OTOMATİK PORT YÖNLENDİRME
 AUTO RECONNECT	OTOMATİK YENİDEN BAĞLAN
 AUTO RECORD	OTOMATİK KAYIT
@@ -2050,7 +2051,6 @@ MOON SHOTGUN	AY POMPALISI
 MOON SHOTGUNS	AY POMPALILARI
 MORE	FAZLA
 MORE KEYS	DİĞER TUŞLAR
-MORE: FEWER GPU BUBBLES, A LITTLE MORE LAG	DAHA FAZLA: DAHA AZ GPU BOŞLUĞU, BİRAZ DAHA GECİKME
 MOUSE	FARE
 MOUSE 1	MOUSE 1
 MOUSE 2	MOUSE 2
@@ -3078,6 +3078,8 @@ UDP PORT	UDP PORT
 UHD	UHD
 UI FONT	UI FONTU
 ULTRA	ULTRA
+ULTRA (AUTO SAFETY # US)	ULTRA (OTO GÜVENLİK # µS)
+ULTRA (SAFETY # US)	ULTRA (GÜVENLİK # µS)
 ULTRA ONLY: THE HUD DRAWN BEFORE THE LATE READ,	SADECE ULTRA: HUD GEÇ OKUMADAN ÖNCE ÇİZİLİR,
 ULTRA SAFETY	ULTRA GÜVENLİK
 ULTRA: 0 QUEUED + EACH FRAME STARTED LATE	ULTRA: 0 SIRADA + HER KARE GEÇ BAŞLAR
@@ -3425,6 +3427,7 @@ demo finished	demo bitti
 demo:	demo:
 draw - the payload is in the middle	berabere - payload ortada
 dropped:	düştü:
+dyn + view + flat verts	dyn + view + flat verts
 dyn verts	dyn verts
 dynamic pass	dinamik geçiş
 e.g.  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5	ör.  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5
@@ -3729,6 +3732,7 @@ setup:	kurulum:
 shader:	shader:
 shadow / visOnly / crouch must be true or false	shadow / visOnly / crouch true ya da false olmalı
 shadow pass	gölge geçişi
+shadow verts	shadow verts
 shipped:	gelen:
 short-handed: # playing	eksik kadro: # oynuyor
 size # # #	size # # #
@@ -3811,6 +3815,8 @@ tourney seed #: {} (#)	tourney seed #: {} (#)
 tourney started -	turnuva başladı -
 trying the next rate up: busy #%, upload # kbps	bir üst hız deneniyor: meşgul %#, upload # kbps
 ui verts	ui verts
+ultra: after swap wait (us)	ultra: after swap wait (us)
+ultra: margin (us)	ultra: margin (us)
 ultra: pace the input read	ultra: pace the input read
 ungrouped into	şuna ayrıldı:
 unknown mode	bilinmeyen mod
