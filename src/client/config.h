@@ -145,6 +145,7 @@ struct Settings {
     bool shadowWorld = true, shadowPlayers = true;   // ...cast onto the map, onto players
     bool ownShadow = true;         // ...your own body's shadow (first person)
     float playerEmit = 0.3f;       // ...models' own light (their colour's share that shadow and shade don't touch)
+    float playerSat = 1.0f;        // ...PLAYER SATURATION: players' colour, 0 grey to 2 (1: as drawn; the map untouched)
     bool playersLit = false;       // ...players never darkened by the map's shade (full sun on them)
     Vec3 outlineFriendlyColor = {0, 0, 0}, outlineEnemyColor = {0, 0, 0};   // ...the CUSTOM outline colours
     float outlineAlpha = 1.0f;     // ...the player outline's opacity

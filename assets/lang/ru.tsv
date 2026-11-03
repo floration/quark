@@ -472,6 +472,7 @@ BREAK FREE WITH A DASH	ВЫРВИСЬ РЫВКОМ
 BREAKABLE	РАЗРУШАЕМЫЙ
 BRICK	КИРПИЧ
 BRIGHTNESS	ЯРКОСТЬ
+BRIGHTNESS: THEIR OWN LIGHT, 1 = FULL COLOUR IN ANY SHADE;	ЯРКОСТЬ: СОБСТВЕННЫЙ СВЕТ, 1 = ПОЛНЫЙ ЦВЕТ В ЛЮБОЙ ТЕНИ;
 BRITISH	БРИТАН.
 BRUNO	BRUNO
 BUBBLE	ПУЗЫРЬ
@@ -2499,7 +2500,6 @@ PLAYER	ИГРОК
 PLAYER 2	ИГРОК 2
 PLAYER > MORE SETS THE MENU ACCENT	ИГРОК > ЕЩЁ ЗАДАЁТ АКЦЕНТ МЕНЮ
 PLAYER BASED	НА ИГРОКАХ
-PLAYER BRIGHTNESS	ЯРКОСТЬ ИГРОКОВ
 PLAYER JOINS	ИГРОК ЗАШЁЛ
 PLAYER MODEL:	МОДЕЛЬ ИГРОКА:
 PLAYER OUTLINE WIDTH	ТОЛЩИНА КОНТУРА ИГРОКА
@@ -2786,6 +2786,7 @@ SAME AS FPS LIMIT	КАК ЛИМИТ FPS
 SAME DPI: THE SAME TURN PER INCH OF MOUSE	ТОТ ЖЕ DPI: ТОТ ЖЕ ПОВОРОТ НА ДЮЙМ МЫШИ
 SATURATION	НАСЫЩЕННОСТЬ
 SATURATION 0: BLACK AND WHITE	НАСЫЩЕННОСТЬ 0: ЧЁРНО-БЕЛОЕ
+SATURATION: THEIR COLOUR ONLY, 0 GREY TO 2 VIVID	НАСЫЩЕННОСТЬ: ТОЛЬКО ИХ ЦВЕТ, 0 СЕРЫЙ – 2 ЯРКИЙ
 SAVE	СОХР.
 SAVE + DONE	СОХР. + ГОТОВО
 SAVE A COPY	СОХРАНИТЬ КОПИЮ
@@ -3205,7 +3206,6 @@ THE SHARE OF THE MODE'S MAX HEALTH	ДОЛЯ МАКС. ЗДОРОВЬЯ РЕЖИ�
 THE TASKBAR BUTTON FLASHES	КНОПКА НА ПАНЕЛИ ЗАДАЧ МИГАЕТ
 THE WHOLE STREAM POPS UNDER YOU. HOLD IT: ANOTHER EVERY 1.8 S	ВЕСЬ ПОТОК ЛОПАЕТСЯ ПОД ТОБОЙ. ДЕРЖИ: ЕЩЁ ОДИН КАЖДЫЕ 1.8 С
 THE WINDOW'S SIZE AND PLACE ARE KEPT	РАЗМЕР И ПОЛОЖЕНИЕ ОКНА СОХРАНЯЮТСЯ
-THEIR OWN LIGHT: 1 = THEIR FULL COLOUR IN ANY SHADE	СОБСТВЕННЫЙ СВЕТ: 1 = ПОЛНЫЙ ЦВЕТ В ЛЮБОЙ ТЕНИ
 THEIRS	ИХ
 THEME.CFG LINE	СТРОКА THEME.CFG
 THEN	ПОТОМ

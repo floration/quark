@@ -180,6 +180,7 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "shadow_players") shadowPlayers = iv != 0;
         else if (k == "own_shadow") ownShadow = iv != 0;
         else if (k == "player_emit") { if (std::isfinite(fv)) playerEmit = clampf(fv, 0, 1); }
+        else if (k == "player_saturation") { if (std::isfinite(fv)) playerSat = clampf(fv, 0, 2.0f); }
         else if (k == "players_lit") playersLit = iv != 0;
         else if (k == "outline_friendly_color") outlineFriendlyColor = parseColor(v, outlineFriendlyColor);
         else if (k == "outline_enemy_color") outlineEnemyColor = parseColor(v, outlineEnemyColor);
@@ -435,7 +436,7 @@ std::string Settings::toText() const {
       << "\nshow_fps=" << showFps << "\nshow_ping=" << showPing << "\nhide_hud_crosshair=" << hideHudCrosshair << "\nfog=" << fog << "\ngamma=" << gamma << "\ncontrast=" << contrast << "\nsaturation=" << saturation << "\ncpu_priority=" << cpuPriority << "\nscroll_wrap=" << scrollWrap << "\nscroll_skip=" << scrollSkip
       << "\nauto_iconify=" << autoIconify << "\nremember_tab=" << rememberTab << "\nlast_tab=" << lastTab << "\nconfirm_leave=" << confirmLeave << "\nvrr=" << vrr << "\ncaptions=" << captions << "\nhp_scaled=" << hpScaled << "\nvol_steps=" << volSteps << "\nvol_others_steps=" << volOthersSteps << "\nvol_weapons=" << volWeapons << "\nvol_objective=" << volObjective << "\nenemy_model=" << enemyModel << "\nteam_model=" << teamModel << "\ngrapple_toggle=" << grappleToggle << "\nleft_handed=" << leftHanded << "\nauto_reconnect=" << autoReconnect << "\nqueue_flash=" << queueFlash << "\nghost=" << ghost << "\nteam_panel=" << teamPanel << "\nmatch_summary=" << matchSummary;
     f << "\ntone_curve=" << toneCurve << "\ndither=" << dither << "\nout10=" << out10 << "\nclean_surfaces=" << cleanSurfaces << "\npattern_fade=" << patternFade << "\nfade_dist=" << fadeDist << "\nfade_len=" << fadeLen << "\nflat_light=" << flatLight << "\nsimple_sky=" << simpleSky << "\nfar_scenery=" << farScenery << "\ndraw_dist=" << drawDist
-      << "\nshadow_filter=" << shadowFilter << "\nshadow_dist=" << shadowDist << "\nshadow_world=" << shadowWorld << "\nshadow_players=" << shadowPlayers << "\nown_shadow=" << ownShadow << "\nplayer_emit=" << playerEmit << "\nplayers_lit=" << playersLit
+      << "\nshadow_filter=" << shadowFilter << "\nshadow_dist=" << shadowDist << "\nshadow_world=" << shadowWorld << "\nshadow_players=" << shadowPlayers << "\nown_shadow=" << ownShadow << "\nplayer_emit=" << playerEmit << "\nplayer_saturation=" << playerSat << "\nplayers_lit=" << playersLit
       << "\noutline_friendly_color=" << colorHex(outlineFriendlyColor) << "\noutline_enemy_color=" << colorHex(outlineEnemyColor) << "\noutline_alpha=" << outlineAlpha << "\noutline_team_width=" << outlineTeamW << "\noutline_enemy_width=" << outlineEnemyW
       << "\nfixed_teams=" << fixedTeams << "\nteam_a_color=" << colorHex(teamAColor) << "\nteam_b_color=" << colorHex(teamBColor) << "\ntracer_mode=" << tracerMode << "\ntracer_color=" << colorHex(tracerColor) << "\nrope_color=" << colorHex(ropeColor)
       << "\ntrails=" << trails << "\ntrail_opacity=" << trailOpacity << "\nreduce_flash=" << reduceFlash << "\nsafe_colors=" << safeColors << "\nit_palette=" << itPalette << "\nsplit_palette=" << splitPalette << "\nsplit_words=" << splitWords

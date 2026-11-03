@@ -9,6 +9,7 @@
 #include "fontatlas.h"
 #include "textfit.h"
 #include <string>
+#include <algorithm>
 #include <vector>
 #include "../common/qmath.h"
 #include "../game/map.h"
@@ -267,6 +268,9 @@ private:
 public:
     Vec3 outlineColor;   // the edge colour for the boxes drawn while it's set (players' outline setting); black by default
     float outlineWidth = 1.0f;   // ...and the edge width in pixels (players' / the editor's boxes: settings); 0 = none
+    float modelSat = 1.0f;       // VIDEO > MORE 4: PLAYER SATURATION for the boxes / models drawn while it's set (1: as drawn)
+    // (the normal's spare 16 bits: 0 = as drawn, else 1 + sat x 16383, sat 0..2; one OR a vertex, no new attribute)
+    uint64_t satW() const { return modelSat == 1.0f ? 0 : (uint64_t)(1 + (int)(std::clamp(modelSat, 0.0f, 2.0f) * 16383.0f + 0.5f)) << 48; }
 private:
 
     int width_ = 1280, height_ = 720;

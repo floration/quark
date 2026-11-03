@@ -2659,6 +2659,7 @@ void Game::drawWorld(float alpha) {
         if (self && alive && !cfg_.ownShadow) continue;   // (MORE 4: OWN SHADOW off: your unseen body isn't drawn at all)
         Vec3 col = teamColor(i);
         r_.outlineColor = outlineColor(i);
+        r_.modelSat = cfg_.playerSat;   // (MORE 4: PLAYER SATURATION, the bodies drawn from here to the reset below)
         {   // MORE 4: OUTLINE WIDTH for your team / enemies (unset: PLAYER OUTLINE WIDTH)
             const float ow = isFriendly(i) ? cfg_.outlineTeamW : cfg_.outlineEnemyW;
             r_.outlineWidth = ow >= 0 ? ow : cfg_.outlinePlayer;
@@ -2837,6 +2838,7 @@ void Game::drawWorld(float alpha) {
 
     r_.outlineColor = {0, 0, 0};
     r_.outlineWidth = 1.0f;
+    r_.modelSat = 1.0f;
     // grapple ropes
     // (a hook latched onto a player ends on their body as drawn here: their interpolated position, or our own)
     auto ropeEnd = [&](int target, const Vec3& anchor, uint16_t rocket = 0) {
@@ -7951,10 +7953,13 @@ void Game::drawMoreSettings(const SetLayout& L) {
             f.hint("PLAYER SHADOWS (VIDEO + AUDIO); ALWAYS LIT:", "PLAYERS NEVER DARKENED BY THE MAP'S SHADE");
         }
         f.section("PLAYERS");
-        ui_.slider(f.x(), f.top(), w, h, "PLAYER BRIGHTNESS", cfg_.playerEmit, 0, 1, "%.2f", UiExp::cfg("player_emit"), d.playerEmit);
+        // (one row, two halves: a full row more and the column ran into BACK)
+        ui_.slider(f.x(), f.top(), hw, h, "BRIGHTNESS", cfg_.playerEmit, 0, 1, "%.2f", UiExp::cfg("player_emit"), d.playerEmit);
+        ui_.slider(xl, f.top(), hw, h, "SATURATION", cfg_.playerSat, 0, 2.0f, "%.2f", UiExp::cfg("player_saturation"), d.playerSat);
         cfg_.playerEmit = clampf(cfg_.playerEmit, 0, 1);
+        cfg_.playerSat = clampf(cfg_.playerSat, 0, 2.0f);
         f.next();
-        f.hint("THEIR OWN LIGHT: 1 = THEIR FULL COLOUR IN ANY SHADE");
+        f.hint("BRIGHTNESS: THEIR OWN LIGHT, 1 = FULL COLOUR IN ANY SHADE;", "SATURATION: THEIR COLOUR ONLY, 0 GREY TO 2 VIVID");
         f.section("OUTLINES");
         ui_.colorPicker(f.x(), f.top(), hw, h, "CUSTOM TEAM", cfg_.outlineFriendlyColor, UiExp::cfg("outline_friendly_color"), d.outlineFriendlyColor);
         ui_.colorPicker(xl, f.top(), hw, h, "CUSTOM ENEMY", cfg_.outlineEnemyColor, UiExp::cfg("outline_enemy_color"), d.outlineEnemyColor);

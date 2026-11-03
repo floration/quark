@@ -3,6 +3,7 @@
 ## New
 - Voting: Pause > VOTE now has the GAMEMODE / MODIFIERS / MAP toggles right on it, one click to start, and BACK steps back through the vote. New vote modifiers: FIRE RATE and PROJECTILE SPEED.
 - Acid: standing in it tints your screen green, pulses your health bar and sizzles. Shots and stickies that go into lava or acid are destroyed with a hiss.
+- **Player saturation** (VIDEO > MORE 4 > PLAYERS > SATURATION, next to BRIGHTNESS): makes players' colours more vivid (up to 2x) or greyer, without touching the map, so enemies stand out like with digital vibrance but only on them.
 
 ## Fixes
 - Fixed a rare wrong trail or missing explosion after very long matches, players drawn up to a second in the past after a server clock reset, and giants hidden behind cover their head stuck out over.
