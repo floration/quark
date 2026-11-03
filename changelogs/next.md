@@ -28,6 +28,7 @@
 - **Slightly faster HUD, menus and server ticks:** rounding and square roots no longer call the C maths library.
 
 ## Latency
+- FPS LIMIT holds its rate much more evenly: the limiter used to wake up late now and then (a 1000 cap's 0.1% low was 589). It now learns how late your PC's timer wakes and spins the rest, so capped frames come out on time.
 - F3's graph: the gap between SWAP and the GPU no longer creeps up for 10 seconds and then snaps back. That was the measurement, not your frames. The graph also updates 10 times a second now, not twice.
 - **New LATENCY settings tab**, with every latency tweak on its own switch so you can try each combination and compare them in F3 (which now names the tweaks it was taken with):
   - LOW LATENCY (OFF / ON / ULTRA), EARLY FLUSH, CPU LATE LATCH, **GPU LATE LATCH** (new: on Windows the graphics card reads your newest mouse movement as it starts drawing the world, after the frame was sent; off by default) and **HUD BEFORE WORLD** (new, ULTRA only: the HUD is drawn before the last mouse read and laid over the world after it; off by default).

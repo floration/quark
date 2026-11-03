@@ -371,6 +371,25 @@ void waitUntil(double t) {
     while (timeNow() < t) cpuRelax();
 }
 
+void CapWait::wait(double t) {
+    const double wake = t - spin_;
+    double now = timeNow();
+    if (wake - now > 50e-6) {
+        sleepPrecise(wake - now);
+        now = timeNow();
+        hist_.add(now - wake);   // (how late the timer woke: 0 when on time)
+        if (hist_.count() >= kWindow) {
+            bool past = false;
+            double p = hist_.upper(999, &past);
+            if (past) p = kMax;   // (later than the histogram's 1.28 ms: the most it spins)
+            const double target = std::clamp(p + kMargin, kMin, kMax);
+            spin_ = target > spin_ ? target : spin_ + (target - spin_) * 0.25;
+            hist_.clear();
+        }
+    }
+    while (timeNow() < t) cpuRelax();
+}
+
 void raiseThreadPriority() {
 #ifdef _WIN32
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);

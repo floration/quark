@@ -79,6 +79,8 @@ Every change since 1.19.7, with what changed and why.
   - The check runs on its own thread (loading three drivers' libraries can take a moment), so the menu keeps its frame rate; the tab shows CHECKING... meanwhile.
   - Not Windows: WINDOWS ONLY.
 
+- **The frame cap learns the timer's lateness** (owner, 2026-11-03: "even though i can hit several thousand minimum fps, when limiting to 1000 my lows are even as low as 600"). The owner's 1000 FPS benchmark (Hamlet, 26,917 frames) had avg 1000, a 1% low of 832 and a 0.1% low of 589. 347 frames were over 1.2 ms, in two fixed sizes, ~1.20 and ~1.70 ms, and 258 of them made a 2.00 ms pair with the short frame after. So the cap's sleep woke 0.2 / 0.7 ms late on Windows' timer grid, and the cadence pulled the next frame in. `waitUntil` slept until 0.3 ms before the deadline and trusted the timer for the rest. `CapWait` (net.h) records each sleep's lateness (20 µs bins, windows of 256) and sleeps only until the 99.9th percentile + 50 µs before the deadline, then spins. It rises at once and falls a quarter of the way per window, between 50 µs and 2.5 ms, starting at 1 ms. Trade-off: up to a core spinning instead of sleeping while capped (at 1000 FPS the spin can cover the whole wait). Other waits (latent sync, the server) keep `waitUntil`.
+
 ## Languages (fixes from a screenshot sweep of every language on the desktop PC after 1.19.7: 69 screenshots and the untranslated-lines list per language)
 
 - **The aim trainer was in English.** `extract.py` didn't read `trainer.cpp` / `trainer.h`. Its scenario descriptions, kinds and difficulties are now keys; scenario names stay English, like map names.

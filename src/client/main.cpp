@@ -219,13 +219,14 @@ int main(int argc, char** argv) {
     }
     double last = timeNow();
     double frameStart = timeNow();
+    CapWait capWait;   // (the frame cap's sleep-then-spin, learnt from this PC's timer)
     while (!glfwWindowShouldClose(win) && !game.quitRequested()) {
         game.pipeMark(Game::PM_FRAME);   // (F3's pipeline graph: the frame's parts)
         // Frame cap: wait *before* reading input, so the frame shows the freshest input possible.
         if (game.maxFps() > 0) {
             double period = 1.0 / game.maxFps();
             double target = frameStart + period;
-            waitUntil(target);
+            capWait.wait(target);
             frameStart = std::max(target, timeNow() - period); // keep the cadence (no slow drift below the cap), but don't try to catch up after a hitch
         } else {
             frameStart = timeNow();
