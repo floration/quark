@@ -944,12 +944,12 @@ void Renderer::initWorldUniforms() {
 }
 
 int Renderer::setShadowRes(int res) {
-    worldFastDirty_ = true;   // (worldProg_'s uniforms change: the no-discard program copies them)
     GLint64 maxTex = 0;
     glGetInteger64v(GL_MAX_TEXTURE_SIZE, &maxTex);
     if (maxTex > 0 && res > maxTex) res = (int)maxTex;
     res = res < 256 ? 256 : res;
     if (res == shadowRes_ || !shadowTex_) return shadowRes_;
+    worldFastDirty_ = true;   // (worldProg_'s uniforms change: the no-discard program copies them)
     shadowRes_ = res;
     glBindTexture(GL_TEXTURE_2D, shadowTex_);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, shadowRes_, shadowRes_, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
@@ -2638,8 +2638,8 @@ void Renderer::buildSwatches() {
 // and its pixels averaged into uCleanTex (unit 5). With it on the world draws those averages flat: no look runs at all.
 // Again only when the program, the palette or high contrast change (key); called from prepareScene, worldProg_ bound.
 void Renderer::buildCleanMeans(const std::array<float, 14>& key) {   // (an array: no heap allocation a frame)
+    if (key == cleanKey_ || !worldProg_) return;   // (called every frame with PATTERN FADE / CLEAN SURFACES on)
     worldFastDirty_ = true;   // (worldProg_'s uniforms change: the no-discard program copies them)
-    if (key == cleanKey_ || !worldProg_) return;
     cleanKey_ = key;
     QZONE("clean surfaces");
     std::vector<int> mats;
