@@ -494,7 +494,8 @@ if(QUARK_BUILD_TESTS)
   # weapons editors' (tools/maptool/<part>/). The editors themselves live in floration/quarkology; the helper stays
   # here because it links the game's code and has to change with it.
   file(GLOB QUARK_MAPTOOL_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/maptool/*/*.cpp)
-  add_executable(quark_maptool ${QUARK_MAPTOOL_SOURCES})
+  # (tests/mapbounds.cpp: the out-of-bounds check, the one quark_tests runs)
+  add_executable(quark_maptool ${QUARK_MAPTOOL_SOURCES} tests/mapbounds.cpp)
   target_include_directories(quark_maptool PRIVATE tests tools/maptool/map tools/maptool/mode)
   target_link_libraries(quark_maptool quark_core)
   if(WIN32)

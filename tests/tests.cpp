@@ -53,6 +53,7 @@
 #include "game/bots.h"
 #include "game/benchmark.h"
 #include "walkgrid.h"
+#include "mapbounds.h"
 #include "common/proc.h"
 #include "groupproc.h"
 #ifndef _WIN32
@@ -1956,42 +1957,11 @@ static void testMaps() {
         CHECK(isRankedMap(m, 0) || isRankedMap(m, 1) || isRankedMap(m, 5));
         for (int v : {0, 1, 5}) if (m.rankedLadders >> v & 1) CHECK(m.supportsMode(rankedMode(v)));   // (instagib: free for all)
         for (int v : {0, 1, 5}) if (m.rankedLadders >> v & 1) perLadder[v == 0 ? 0 : v == 1 ? 1 : 2]++;
-        int a = 0, b = 0;
-        for (auto& sp : m.spawns) { a += sp.team == SPAWN_A; b += sp.team == SPAWN_B; }
-        bool duel = (m.rankedLadders & 3) != 0;   // a ladder played 1v1 (vanilla, vampire): a spawn for each side
-        CHECK(a == b && (a >= 1 || !duel));
-        if (!duel || !a) continue;
-        WalkGrid w;
-        w.build(m);
-        std::vector<int> sa, sb;
-        Vec3 mid{0, 0, 0};
-        for (auto& sp : m.spawns) if (sp.team == SPAWN_A || sp.team == SPAWN_B) {
-            int n = w.nodeAt(sp.pos);
-            (sp.team == SPAWN_A ? sa : sb).push_back(n);
-            mid = mid + sp.pos * (1.0f / (2 * a));
-        }
-        // each spawn's runs, once; the middle: every spot within r of the spawns' centre (across), r growing from
-        // 4 m until every spawn reaches one (a void or a pillar in the very middle: the nearest floor round it)
-        std::vector<std::vector<float>> ta, tb;
-        for (int n : sa) ta.push_back(walkSeconds(w, n));
-        for (int n : sb) tb.push_back(walkSeconds(w, n));
-        auto meanTo = [](const std::vector<std::vector<float>>& own, const std::vector<int>& goals) {
-            float sum = 0;
-            for (auto& t : own) { float f = INFINITY; for (int g : goals) if (g >= 0) f = std::min(f, t[g]); sum += f; }
-            return sum / own.size();
-        };
-        float aFoe = meanTo(ta, sb), bFoe = meanTo(tb, sa), aMid = INFINITY, bMid = INFINITY;
-        for (float r = 4; r <= 32 && !(std::isfinite(aMid) && std::isfinite(bMid)); r += 4) {
-            std::vector<int> mids;
-            for (size_t n = 0; n + w.ladderHubs < w.nodes.size(); n++) {
-                const Vec3& p = w.nodes[n].p;
-                if ((p.x - mid.x) * (p.x - mid.x) + (p.z - mid.z) * (p.z - mid.z) <= r * r) mids.push_back((int)n);
-            }
-            aMid = meanTo(ta, mids); bMid = meanTo(tb, mids);
-        }
-        bool fair = std::isfinite(aFoe + aMid + bFoe + bMid) && std::fabs(aFoe - bFoe) <= 1.0f && std::fabs(aMid - bMid) <= 1.0f;
-        if (!fair) printf("  %s: not fair: to the enemy A %.1f s / B %.1f s, to the middle A %.1f s / B %.1f s\n", name.c_str(), aFoe, bFoe, aMid, bMid);
-        CHECK(fair);
+        const RankedFairness f = rankedFairness(m);   // (tests/walkgrid.h: quark_maptool's ranked check judges the same way)
+        CHECK(f.spawnsOk);
+        if (!f.timed) continue;
+        if (!f.fair) printf("  %s: not fair: to the enemy A %.1f s / B %.1f s, to the middle A %.1f s / B %.1f s\n", name.c_str(), f.aFoe, f.bFoe, f.aMid, f.bMid);
+        CHECK(f.fair);
     }
     CHECK(perLadder[0] >= 2 && perLadder[1] >= 2 && perLadder[2] >= 2);
     for (int v : {0, 1, 5}) {
@@ -5115,7 +5085,33 @@ static void testBotAim(uint16_t& port) {
 // scoped rifle fires at half rate.
 // Every ladder on every map gets you to the top: stand at its foot, hold forward (into the wall) and you
 // end up standing on whatever it leads to.
-int outOfBoundsTests(int part = 0, int parts = 1);   // tests/mapbounds.cpp (returns the failures)
+// Every map (but the zz_ ones other tests write): with every move a good player has, from the first spawn, no floor
+// outside the playable floor's footprint (the floor you can walk to from a spawn) is reachable (measureOutOfBounds,
+// tests/mapbounds.cpp: quark_maptool's out_of_bounds check runs the same code). Returns the failures; a human-made
+// map's are printed and reported, not counted. part / parts: every parts-th map from the part-th (the suite runs it as
+// two groups, ~12 s of CPU each: one was the longest of all the groups). OOB_TRACE=<map> lists the spots.
+static int outOfBoundsTests(int part = 0, int parts = 1) {
+    printf("out of bounds: nothing outside the playable floor reachable with every move\n");
+    int fails = 0, index = -1;
+    for (const std::string& name : listMaps()) {
+        if (name.rfind("zz_", 0) == 0) continue;
+        if (++index % parts != part) continue;
+        auto t0 = std::chrono::steady_clock::now();
+        Map m;
+        if (!m.load(name)) continue;   // (testAllMaps fails a map that doesn't load)
+        const bool human = isHumanMadeMap(name, m);
+        const OutOfBoundsMeasure o = measureOutOfBounds(m);
+        if (!o.measured) continue;   // (no spawn, no floor to walk to: testAllMaps fails those)
+        if (std::getenv("OOB_TRACE") && name == std::getenv("OOB_TRACE"))
+            for (const Vec3& q : o.spots) printf("    out of bounds: %.1f %.1f %.1f (floor spans x %.1f..%.1f z %.1f..%.1f)\n", q.x, q.y, q.z, o.x0, o.x1, o.z0, o.z1);
+        printf("  %-10s %6.0f m2 only movement tech reaches, %.0f m2 of it out of bounds (%.0f ms)\n", name.c_str(), o.techExtra, o.outside,
+               std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+        if (o.spots.empty()) continue;
+        if (human) printf("  %s is HUMAN-MADE: %.0f m2 out of bounds - reported, not failing the run\n", name.c_str(), o.outside);
+        else { printf("  FAIL %s: %.0f m2 outside the playable floor is reachable (OOB_TRACE=%s lists it)\n", name.c_str(), o.outside, name.c_str()); fails++; }
+    }
+    return fails;
+}
 int brainTests(uint16_t port);     // tests/brain_tests.cpp (returns the failure count)
 int brainTool(const std::string& cmd, const char* arg); // tests/brain_tests.cpp: exportbrain / checkbrain / brainast / printbrain
 int brainBench(uint16_t port);   // tests/brain_tests.cpp: native vs interpreted bot think cost
