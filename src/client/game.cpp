@@ -11277,6 +11277,7 @@ void Game::beforeInput() {
         const double kMargin = cfg_.ultraMarginUs * 1e-6;   // (MORE 6: ULTRA SAFETY, 150 us by default)   // (start a little early: a late start is a GPU bubble, an early one 150 us)
         const double target = ultraSwapAt_ + ultraGpu_ - ultraCpu_ - kMargin;
         bool waited = false;
+        QZONE("ultra: pace the input read");
         for (;;) {
             const GLenum st = glClientWaitSync((GLsync)ultraFence_, waited ? 0 : GL_SYNC_FLUSH_COMMANDS_BIT, 0);
             const double now = timeNow();
@@ -11288,7 +11289,8 @@ void Game::beforeInput() {
             }
             if (now >= target) break;   // still on the GPU: start now, it'll be done about when this frame is handed over
             waited = true;
-            waitUntil(std::min(target, now + 0.0001));
+            waitUntil(std::min(target, now + 0.00001));   // (a spin either way: polled every 10 us, not 100, so a GPU that finishes
+                                                          // mid-step is seen at once and ultraGpu_ learns its real time)
         }
     }
     ultraReadAt_ = timeNow();
