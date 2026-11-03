@@ -21,7 +21,8 @@ lane oil, the stakes, the crane deck's top, the one train table and the road FFA
 - Gravel ballast over the yard between the roads (concrete outside them); a clip ceiling at 60 m; cart checkpoints at
   0.25 / 0.5 / 0.75; the last road FFA spawn moved into a lane.
 - Measured (quark_maptool metrics, neutral payload): A 129 m / B 136 m to the cart (-0.74 s, from the halls'
-  different insides; unchanged by this round). 1566 brushes, 26 lights; check passes, out of bounds included."""
+  different insides; unchanged by this round). 1566 brushes, 26 lights (1558 and 24 since a
+  doubled floodlight mast pair went, 2026-11-03); check passes, out of bounds included."""
 import math
 from .prefabs import M, minus, tiles
 from .bigkit import Kit, num, MAT
@@ -418,7 +419,7 @@ def decorate(k, S, bend):
             f = (j + 0.5) / n; cx, cz = ax + (bx - ax) * f, az + (bz - az) * f
             S.bar("railwaysleepers", (cx - tz * 1.25, cz + tx * 1.25), (cx + tz * 1.25, cz - tx * 1.25), 0.26, -0.05, -0.02)
     # floodlight masts (sodium lamps over the yard; their heads are grapple anchors): at the roads' outer edges
-    for (mx, mz) in ((31.5, -70), (31.5, 20), (-31.5, -20)):
+    for (mx, mz) in ((31.5, -70), (31.5, 20)):   # (and their twins: (-31.5, -20) was listed too, drawing that pair twice)
         S.box("galvanizedsteel", mx - 0.35, 0, mz - 0.35, mx + 0.35, 22, mz + 0.35)
         S.box("galvanizedsteel", mx - 0.5, 0, mz - 0.5, mx + 0.5, 0.6, mz + 0.5)
         S.box("sootysteel", mx - 2.4, 22, mz - 0.5, mx + 2.4, 23.2, mz + 0.5)                       # the lamp bar

@@ -277,14 +277,17 @@ def build():
         # the suites round the atrium (x -24..12, hull side): three rooms 12 m wide, a door each, a bed
         for (x0, x1) in ((-24, -12), (-12, 0), (0, 12)):
             wall_x(k, "wainscotpanelling", x0, x1, s * 9.0, y, 3.0, [(x0 + 3, 1.4, 2.4)], t=0.12)
-            k.box("wainscotpanelling", x1 - 0.06, y, min(s * 9, s * HZ), x1 + 0.06, 3.0, max(s * 9, s * HZ))
+            if x1 != xs_fore[0]:   # (the last suite's end wall is the fore cabins' first partition)
+                k.box("wainscotpanelling", x1 - 0.06, y, min(s * 9, s * HZ), x1 + 0.06, 3.0, max(s * 9, s * HZ))
             k.box("quiltedleather", x0 + 5, y, min(s * 10.5, s * 12.9), x0 + 8, y + 0.6, max(s * 10.5, s * 12.9))
         # the inner side (z +-0.2..6.6): rooms off the corridor between the towers and the atrium
         inner = [(-66, -52), (-42, -31), (-31, -20), (-10, -6), (6, 16), (16, 26), (36, 43), (43, XB)]
-        for (x0, x1) in inner:
+        for i, (x0, x1) in enumerate(inner):
             a, b = sorted((s * 0.2, s * 6.6))
             wall_x(k, "painteddrywall", x0, x1, s * 6.6, y, 3.0, [((x0 + x1) / 2, 1.4, 2.4)], t=0.2)
-            k.box("painteddrywall", x0 - 0.1, y, a, x0 + 0.1, 3.0, b); k.box("painteddrywall", x1 - 0.1, y, a, x1 + 0.1, 3.0, b)
+            if not i or inner[i - 1][1] != x0:   # (two rooms side by side share their partition: drawn once)
+                k.box("painteddrywall", x0 - 0.1, y, a, x0 + 0.1, 3.0, b)
+            k.box("painteddrywall", x1 - 0.1, y, a, x1 + 0.1, 3.0, b)
         for (x0, x1) in ((T1 + 2, T1 + 8), (T2 + 2, T2 + 8), (T3 + 2, T3 + 8)):     # rooms beside the tubes
             wall_x(k, "painteddrywall", x0, x1, s * 6.6, y, 3.0, [((x0 + x1) / 2, 1.2, 2.4)], t=0.2)
             for x in (x0, x1):

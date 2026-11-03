@@ -307,6 +307,12 @@ class Rooms:
                 if along_x: B(s.m, mat, p, ya, z0, q, yb, z1)
                 else: B(s.m, mat, x0, ya, p, x1, yb, q)
     def build(s, tile=16):
+        start = len(s.m.lines)
+        s.emit(tile)
+        # (rooms 1 m apart share that wall, and its box was written once per room: each box once)
+        seen = set()
+        s.m.lines[start:] = [l for l in s.m.lines[start:] if not (l in seen or seen.add(l))]
+    def emit(s, tile):
         from .prefabs import minus, tiles
         for R in s.rooms:
             x0, z0, x1, z1 = R["r"]; yf, yc = R["yf"], R["yc"]

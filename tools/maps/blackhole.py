@@ -66,6 +66,7 @@ def black_hole(m):
         y0 = cy - R + 2 * R * i / rows; y1 = cy - R + 2 * R * (i + 1) / rows
         h = max(abs(y0 - cy), abs(y1 - cy)) if (y0 - cy) * (y1 - cy) > 0 else 0.0
         w = math.sqrt(max(0.0, R * R - h * h))
+        if w < 0.01: continue   # (the top and bottom rows touch the circle only at a point: nothing to draw)
         m.box(round(cx - w, 2), round(y0, 2), cz - 6, round(cx + w, 2), round(y1, 2), cz + 6, mat="far")
     # the lensed ring: a thin band of light just round the disc's edge, behind it
     n = 24
