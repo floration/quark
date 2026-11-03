@@ -520,6 +520,8 @@ void Game::loadMapIfNeeded() {
     const uint32_t gen = net_.mapGeneration();
     if (bake_) {
         if (!bake_->done.load()) { if (bake_->gen != gen) bake_->cancel = true; return; }
+        // (the world program still compiling in the driver's threads: the loading screen goes on, the upload would wait)
+        if (bake_->gen == gen && !bake_->out.bw.cancelled && r_.worldLooksPending()) return;
         bake_->th.join();
         std::unique_ptr<BakeJob> job = std::move(bake_);
         if (job->gen == gen && !job->out.bw.cancelled) {
@@ -537,6 +539,7 @@ void Game::loadMapIfNeeded() {
     bake_->map = net_.map();
     bake_->map.dynSolids.clear();   // (the payload cart's box where it was at join time: no shadow of it in the cached light)
     bake_->gen = gen;
+    r_.beginWorldLooks(bake_->map);   // (its world program compiles while the light bakes)
     BakeJob* j = bake_.get();
     j->th = std::thread([j] {
         Renderer::prepareWorld(j->map, j->out, [j](float p) { j->progress = p; }, &j->cancel);
@@ -2347,8 +2350,9 @@ void Game::frame(double dt) {
     } else if (screen_ == Screen::InGame && bake_) {
         drawBakeScreen(bake_->map.name, bake_->progress.load());
         // (a loading bar needs ~30 fps: the cores go to the bake; under software GL every frame costs them. In 1 ms
-        // steps, ending as the bake does: a finished one waited up to 30 ms for the next frame, ~15 ms every load)
-        for (int k = 0; k < 30 && bake_ && !bake_->done.load(); k++) sleepMs(1);
+        // steps, ending as the bake (and the world program's compile in the driver's threads) does: a finished one
+        // waited up to 30 ms for the next frame, ~15 ms every load)
+        for (int k = 0; k < 30 && bake_ && (!bake_->done.load() || r_.worldLooksPending()); k++) sleepMs(1);
     } else if (screen_ == Screen::InGame && net_.hasSnapshot() && r_.worldLoaded()) {
         drawWorld((float)clampf((float)(tickAcc_ / net_.tickPeriod()), 0, 1));   // (and the HUD, before its late read)
     } else {
