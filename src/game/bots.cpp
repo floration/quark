@@ -499,6 +499,17 @@ void NavGraph::build(const Map& m, NavKind k) {
         }
     hScaleNodes = std::max(0.0f, hScaleNodes * 0.999f);
     buildLandmarks();
+    // The searches' scratch, sized for this graph here (a map load builds it in the background: buildAsync), not by
+    // the first search: that was in a bot's first think on the map (here its first think went from ~75 us to ~41 us,
+    // medians). The state astar / findPath set up on first use (stamps and marks 0): every search goes as before.
+    auto presize = [](PathScratch& ps, size_t count) {
+        ps.g.assign(count, 0.0f); ps.h.assign(count, 0.0f); ps.prev.assign(count, 0); ps.stamp.assign(count, 0); ps.cur = 0;
+        ps.heap.clear(); ps.heap.reserve(count);
+    };
+    presize(scratch_, (size_t)n);
+    presize(regionScratch_, (size_t)R);
+    regionPath_.clear(); regionPath_.reserve((size_t)R);
+    corridor_.assign((size_t)R, 0); corridorMark_ = 0;
 }
 
 // A* landmarks (ALT) over the regions: a few far apart, with every region's route distance from and to each. The
@@ -684,7 +695,11 @@ void NavGraph::buildAsync(Map m) {
     j->id = m.id();   // (hashed here, once: the thread and ready() only read it)
     j->map = std::move(m);
     job = j;
-    std::thread([j] { j->result.build(j->map); j->done.store(true, std::memory_order_release); }).detach();
+    std::thread([j] {
+        j->result.build(j->map);
+        j->map = Map();   // (the copy freed here, not by the tick that adopts the graph when it holds the last reference: up to ~60 us there)
+        j->done.store(true, std::memory_order_release);
+    }).detach();
 }
 
 bool NavGraph::ready(const Map& m) {
