@@ -373,7 +373,7 @@ target_include_directories(quark_assets PUBLIC third_party ${CMAKE_BINARY_DIR}/g
 target_link_libraries(quark_assets PUBLIC quark_core)
 
 # The languages (src/client/lang.h): assets/lang's tables and glyph atlases, embedded at build time (tools/lang/embed.py,
-# python3 only). The game and the tests link it; the launcher doesn't (its text is English).
+# python3 only). The game, the launcher (its LANGUAGE is the game's setting) and the tests link it.
 file(GLOB QUARK_LANG_FILES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/assets/lang/*.tsv ${CMAKE_SOURCE_DIR}/assets/lang/keys.txt
   ${CMAKE_SOURCE_DIR}/assets/lang/atlas/*.png ${CMAKE_SOURCE_DIR}/assets/lang/atlas/*.glyphs)
 add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/generated/lang_data.h
@@ -382,6 +382,9 @@ add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/generated/lang_data.h
   COMMENT "Embedding the languages (assets/lang/)" VERBATIM)
 add_library(quark_lang STATIC src/client/lang.cpp ${CMAKE_BINARY_DIR}/generated/lang_data.h)
 target_link_libraries(quark_lang PUBLIC quark_assets)
+if(APPLE)
+  target_link_libraries(quark_lang PUBLIC "-framework CoreFoundation")   # (the system's preferred languages)
+endif()
 
 # The recorded announcer lines (20 MB of samples) are generated from assets/voice/ at build time, not committed
 # (tools/import_voice.py, python3 standard library only).
@@ -449,7 +452,7 @@ if(QUARK_BUILD_CLIENT)
     src/client/lightmap.cpp
     src/client/ui.cpp
   )
-  target_link_libraries(quark_launcher quark_core quark_launcher_core quark_assets glfw)
+  target_link_libraries(quark_launcher quark_core quark_launcher_core quark_assets quark_lang glfw)
   foreach(t quark quark_launcher)
     if(APPLE)
       target_link_libraries(${t} "-framework OpenGL" "-framework AudioToolbox" "-framework CoreFoundation")

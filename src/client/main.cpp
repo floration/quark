@@ -64,6 +64,7 @@ int main(int argc, char** argv) {
         if (a == "--data-dir") setUserDataDir(next()); // settings, key, demos, your maps (default: per-user folder)
         else if (a == "--bake-maps") return bakeOfficialMaps(next());   // the official maps' light into DIR (packages: maps/lightcache); no window
         else if (a == "--connect") opts.connect = next();
+        else if (a == "--language") opts.language = next();   // LANGUAGE: "auto" or a code (lang.h); the launcher's pick
         else if (a == "--host") opts.hostMode = modeFromName(next().c_str());
         else if (a == "--vsbots") opts.vsBotsMode = modeFromName(next().c_str());
         else if (a == "--map") opts.hostMap = next();

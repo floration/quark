@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Lists every player-facing text in the game's code: the keys the language files translate (assets/lang/README.md).
   python3 tools/lang/extract.py            writes assets/lang/keys.txt (one key a line, sorted)
-A key is a string literal in src/client (and the server's announcements in src/game/gamemodes.cpp, server.cpp) that
+A key is a string literal in src/client (and the server's announcements in src/game/gamemodes.cpp, server.cpp, and the
+launcher's window: src/launcher/main.cpp, gamefiles.cpp) that
 reads like text: a letter in it, no path / code look. printf numbers (%d %i %u %g %.1f ...) become '#', as the game
 looks a drawn string up with its digit runs as '#' (lang.cpp). A literal with %s gives its pieces and the whole line
 with each %s as "{}", which the game matches as a pattern ("WARMUP - {} TO VOTE START")."""
@@ -9,7 +10,8 @@ import os, re, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SRC = [os.path.join(ROOT, "src", "client")] 
-EXTRA = [os.path.join(ROOT, "src", "game", f) for f in ("gamemodes.cpp", "server.cpp", "gamedefs.h", "settings.h", "trainer.cpp", "trainer.h")]
+EXTRA = [os.path.join(ROOT, "src", "game", f) for f in ("gamemodes.cpp", "server.cpp", "gamedefs.h", "settings.h", "trainer.cpp", "trainer.h")] + \
+    [os.path.join(ROOT, "src", "launcher", f) for f in ("main.cpp", "gamefiles.cpp")]   # (the launcher: its LANGUAGE is the game's)
 SKIPFILES = {"surface_looks.h", "font_ui.h", "font_builtin.h", "logo_data.h", "voice_data.h", "sfx_recorded.h", "uitest.cpp", "lang.cpp"}
 LIT = re.compile(r'(?<![A-Za-z0-9_])(?:u8)?"((?:[^"\\\n]|\\.)*)"')
 NUM = re.compile(r'%[-+0#]*\d*(?:\.\d+)?(?:l|ll|z|h)?[diufgeExX]')   # (no ' ' flag: "10% damage" is text)

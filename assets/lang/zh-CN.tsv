@@ -72,6 +72,7 @@
 (FINISH)	(终点)
 (HIDDEN: STREAMER MODE)	(已隐藏: 主播模式)
 (HS)	(爆头)
+(INSTALLED)	(INSTALLED)
 (IT AFFECTS GAMEPLAY)	(影响游戏玩法)
 (LEAVE)	(离开)
 (MISSING)	(缺失)
@@ -88,13 +89,16 @@
 (exclusive: no format the device takes)	(独占: 设备不支持任何格式)
 (exclusive: the device is busy)	(独占: 设备忙)
 (first: takes the loss)	(先离开者: 判负)
+(is the game running?)	(游戏正在运行吗？)
 (its CONTROLS action too, if it has one)	(以及其操作设置动作, 如有)
 (legacy)	(旧版)
 (lowered)	(已降低)
 (own goal)	(乌龙球)
+(pinned)	(pinned)
 (playing the built-in brain)	(使用内置 AI)
 (score #-#)	(比分 #-#)
 (team):	(队伍):
+(unknown)	(未知)
 (vote ranked off first)	(请先投票关闭排位)
 (winner stays)	(胜者留场)
 + (BIGGER)	+ (更大)
@@ -119,20 +123,26 @@
 - WHEEL TO SCROLL	- 滚轮滚动
 - beats	- 胜过
 - best of 3 between the last two	- 最后两人三局两胜
+- installed:	- installed:
 - it may not work	- 可能无法正常运行
 - it moves and stretches as one	- 整体移动和拉伸
 - level with	- 持平
 - map	- 地图
 - match started	- 比赛开始
 - not played: the server plays	- 不参与: 由服务器进行
+- pick a version and press INSTALL	- pick a version and press INSTALL
+- pick a version to change	- pick a version to change
 - playing mode logic	- 运行模式逻辑
 - plays the next match	- 参加下一场比赛
 - rock paper scissors decides it	- 由石头剪刀布决定
+- see below	- see below
 - short of	- 差
+- the download may have been tampered with	- the download may have been tampered with
 - their place is kept for	- 其位置保留
 -INF DB	-INF DB
 -Wcast-function-type	-Wcast-function-type
 -Y (under)	-Y (下方)
+-fsSL	-fsSL
 0.1% LOW	0.1% 低帧
 00,000,000 NS	00,000,000 NS
 1 HP	1 HP
@@ -175,6 +185,7 @@ A MOMENT LATER, AIM STRAIGHT DOWN AND FIRE	片刻后瞄准正下方开火
 A NEW CODE FROM /link RELINKS IT - unlink REMOVES IT	用 /link 获取新代码可重新绑定 - unlink 可解除
 A NEW DIAGONAL EVERY 0.3 S	每 0.3 秒一条新对角线
 A NEW DIAGONAL EVERY 0.3 S, 10 HP	每 0.3 秒一条新对角线, 10 HP
+A NEW VERSION INSTALLS WHEN THE LAUNCHER NEXT STARTS.	新版本会在启动器下次启动时安装。
 A PLAYER JOINED VIA	一名玩家加入, 通过
 A ROCKET JUMP STRAIGHT UP	笔直向上的火箭跳
 A SERVER	一台服务器
@@ -330,6 +341,8 @@ AUTO-HIDE HEALTH	自动隐藏生命值
 AUTO-HIDE WEAPON LIST	自动隐藏武器列表
 AUTO-HOP	自动连跳
 AUTO-HOP OFF: HELD JUMP JUMPS ONCE	自动连跳关: 按住跳跃只跳一次
+AUTO-START GAME	自动启动游戏
+AUTO-START: PLAYS ONCE UP TO DATE. AT NEXT LAUNCH:	自动启动：更新完成后开始游戏。下次启动时：
 AUTO: YOUR SYSTEM'S LANGUAGE	自动: 系统语言
 AVERAGE	平均
 AVERAGE, LAST	平均, 最近
@@ -499,6 +512,9 @@ CHAMPION	冠军
 CHANGE ANYTHING AFTER (IT STAYS)	之后可随意修改 (会保留)
 CHANGE MAP / MODE	更换地图 / 模式
 CHANGE MAP / MODE (pick the mode, then the map), FORCE START, RELOAD MAP, EDIT MODE (everyone edits the map together).	更换地图 / 模式 (先选模式, 再选地图)、强制开始、重新加载地图、编辑模式 (所有人一起编辑地图)。
+CHANGELOG	更新日志
+CHANNEL: PRODUCTION	频道：正式版
+CHANNEL: TESTING	频道：测试版
 CHANNELS	声道
 CHANNELS: MONO	声道: 单声道
 CHANNELS: STEREO	声道: 立体声
@@ -512,6 +528,7 @@ CHAT ON	聊天开
 CHAT OPACITY	聊天不透明度
 CHAT SECONDS	聊天显示秒数
 CHECK AGAIN	再次检查
+CHECK FILES	检查文件
 CHECKING...	检查中...
 CHECKPOINT	检查点
 CHECKPT	检查点
@@ -1032,6 +1049,7 @@ FULLSCREEN SIZE: DESKTOP	全屏分辨率: 桌面
 FULLSCREEN: OFF KEEPS IT ON SCREEN	全屏: 关闭时保持在屏幕上
 G-SYNC / FREESYNC	G-SYNC / FREESYNC
 GAME	游戏
+GAME FILE(S) MISSING OR CHANGED	GAME FILE(S) MISSING OR CHANGED
 GAME FONTS: YOUR OWN COPY OF THE REAL FONT IF FOUND	游戏字体: 若找到则使用你本机的原版字体
 GAME LATENCY ~	游戏延迟 ~
 GAME LATENCY ~{} NS  (MOUSE REPORT IN TO GPU DONE; F3: NEXT VIEW)	游戏延迟 ~{} NS  (从鼠标报告到 GPU 完成; F3: 下一视图)
@@ -1234,6 +1252,7 @@ HOSTING ON UDP PORT	主持于 UDP 端口
 HOW	做法
 HOW OTHER PLAYERS' MOVES ARE SMOOTHED	其他玩家动作的平滑方式
 HP	HP
+HTTP	HTTP
 HUD	HUD
 HUD & SETTINGS	HUD 与设置
 HUD 2	HUD 2
@@ -1298,6 +1317,8 @@ INSERT	INSERT
 INSTAGIB	一击必杀
 INSTAGIB CROSSBOWS	一击必杀弩
 INSTAGIB SNIPERS	一击必杀狙击
+INSTALL	INSTALL
+INSTALL {}	安装 {}
 INTEL	INTEL
 INTEL DRIVER SETTINGS COULDN'T BE READ	无法读取 INTEL 驱动设置
 INTEL ENDURANCE GAMING SAVES POWER OVER FRAMES	INTEL ENDURANCE GAMING 以帧率换节能
@@ -1317,7 +1338,9 @@ INVERT Y	反转 Y 轴
 IOID	IOID
 IRIS	IRIS
 IS A BUILT-IN MAP: IT STAYS AS IT IS. SAVE YOUR EDITS AS YOUR OWN MAP (IN YOUR MAPS FOLDER, UNDER THIS NAME) OR DROP THEM.	是内置地图: 保持原样。把你的修改另存为你自己的地图 (在你的 maps 文件夹中, 使用此名称) 或放弃修改。
+IS BLOCKED	IS BLOCKED
 IS GODLIKE	已经超神
+IS MISSING	IS MISSING
 IS ON A KILLING SPREE	正在大杀特杀
 IS ON A RAMPAGE	正在暴走
 IS UNSTOPPABLE	已经无人能挡
@@ -1355,6 +1378,7 @@ KB; OFF: A SERVER'S	KB; 关: 服务器的
 KEEP	保留
 KEEP HOLDING IT ALL THE WAY DOWN	下落全程按住
 KEEP HOLDING IT TO RIDE	一直按住来乘坐
+KEEP LAUNCHER OPEN	保持启动器开启
 KEEP THESE DISPLAY SETTINGS? REVERTING IN	保留这些显示设置? 还原倒计时
 KEEP YOUR EDITS AS A NEW MAP?	将你的修改保存为新地图?
 KEEP: ALL	保留: 全部
@@ -1408,6 +1432,8 @@ LAID OVER THE WORLD AFTER IT	之后叠加在世界之上
 LAND	着陆
 LAND ON THE FAR SIDE OF THE LAVA	落在熔岩对面
 LANGUAGE	语言
+LANGUAGE:	LANGUAGE:
+LANGUAGE: AUTO	语言：自动
 LARGE	大
 LASER	激光
 LASER VAMPIRE	激光吸血
@@ -1428,6 +1454,8 @@ LATENT SAFETY	LATENT 安全余量
 LATENT SYNC	LATENT SYNC
 LATENT SYNC: HOLD FOR THE BLANK	LATENT SYNC: 等待消隐
 LATENT SYNC: WAIT FOR THE RASTER	LATENT SYNC: 等待扫描线
+LATEST ({})	最新（{}）
+LAUNCH OPTIONS (PASSED TO THE GAME)	启动参数（传给游戏）
 LAUNCHER ON THE RIGHT	启动器在右侧
 LAY A STICKY BOMB, STAND ON IT, SET IT OFF AS YOU JUMP.	放一颗粘弹，站在上面，跳起时引爆。
 LEADERBOARD	排行榜
@@ -2367,6 +2395,7 @@ OPENS THE UDP PORT ON YOUR ROUTER (UPNP)	在路由器上开放 UDP 端口 (UPNP)
 OPPOSITE KEYS: CANCEL	相反按键: 抵消
 OPPOSITE KEYS: FIRST WINS	相反按键: 先按优先
 OPPOSITE KEYS: LAST WINS	相反按键: 后按优先
+OPTIONS	选项
 OR RESTART: IT'S ASKED FOR AT START	或重启: 启动时会询问
 ORB	光球
 OTHER PLAYERS	其他玩家
@@ -2394,6 +2423,9 @@ OWN SHADOW	自己的阴影
 OggS	OggS
 OpenGL function missing:	缺少 OpenGL 函数:
 OpenGL function missing: {}	OpenGL function missing: {}
+Or press REPAIR to download the game again, check it and put it back (your settings and files stay).	或者按「修复」重新下载游戏，检查后放回（你的设置和文件会保留）。
+Or press REPAIR to download version	Or press REPAIR to download version
+Or press REPAIR to download version {} again, check it and put it back (your settings and files stay).	或者按「修复」重新下载 {} 版本，检查后放回（你的设置和文件会保留）。
 Output	输出
 PACING WAIT (ULTRA)	节奏等待 (超低)
 PACK	包
@@ -2528,6 +2560,8 @@ Pick the mode and map, a server name and the max players. The game picks the map
 Player	玩家
 PowerGetActiveScheme	PowerGetActiveScheme
 PowerGetEffectiveOverlayScheme	PowerGetEffectiveOverlayScheme
+Press REPAIR to download version	Press REPAIR to download version
+Press REPAIR to download version {} again and put them back (your settings and files stay).	按「修复」重新下载 {} 版本并放回这些文件（你的设置和文件会保留）。
 Q - grapple: hold to hook what you're aiming at and pull toward it; release to let go.	Q - 钩索: 按住钩住你瞄准的位置并拉向它; 松开即脱离。
 QK1 - QK8 - ranked arenas for all three ladders (vanilla and laser vampire 1v1, instagib free for all), also duel and tourney.	QK1 - QK8 - 三个天梯的排位竞技场 (原版和激光吸血 1v1, 一击必杀自由混战), 也可用于决斗和锦标赛。
 QUAKE	QUAKE
@@ -2638,6 +2672,9 @@ REMEMBER LAST TAB	记住上次标签页
 REMEMBER MY QUEUES	记住我的队列
 RENAME	重命名
 RENDER SCALE	渲染比例
+REPAIR	修复
+REPAIR needs the internet:	REPAIR needs the internet:
+REPAIR needs the internet: {}	修复需要联网：{}
 RESET ALL	全部重置
 RESET ALL KEYS	重置所有按键
 RESET CROSSHAIR	重置准星
@@ -2658,6 +2695,7 @@ RESUME	继续
 RESUME (ESC)	继续 (ESC)
 RETICLE COLOR	准心颜色
 RETICLE WIDTH	准心宽度
+RETRY	重试
 REVERT	还原
 RIDE FOR 0.4 S	乘坐 0.4 S
 RIFF	RIFF
@@ -2735,6 +2773,8 @@ RUN SPEED	跑速
 RUN, JUMP THE HURDLES, REACH THE GLOWING LINE.	奔跑、跳过栏杆、到达发光线。
 RUNS	成绩
 Ranked games use the default model, HUD and controls and 10 ms interpolation, so everyone plays the same game.	排位游戏使用默认模型、HUD 和操作以及 10 ms 插值, 让所有人玩同样的游戏。
+Restore	Restore
+Restore {} from that tool's quarantine, and add an exclusion for the quark folder:	从该工具的隔离区恢复 {}，并为 quark 文件夹添加排除项：
 SAFE OK / ERROR	安全 OK / 错误
 SAFE: OK BLUE, ERRORS ORANGE; IT: TAG / HIDE'S	安全: OK 蓝色, 错误橙色; 鬼: 抓人 / 躲猫猫的
 SAME	相同
@@ -3037,6 +3077,7 @@ SYSTEM MESSAGES: ALL	系统消息: 全部
 SYSTEM MESSAGES: IMPORTANT	系统消息: 重要
 SYSTEM MESSAGES: OFF	系统消息: 关
 SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)	系统: 系统箭头光标 (颜色: 仅限我们的)
+SetDefaultDllDirectories	SetDefaultDllDirectories
 Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).	设置 > 操作 可以导出你的绑定并导入他人的 (复制 / 粘贴文本)。
 Start the match, change map / mode, ranked on / off, edit the map together, bots on. A majority of the human players decides.	开始比赛, 更换地图 / 模式, 开关排位, 一起编辑地图, 开启机器人. 由多数真人玩家决定.
 Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping. Above ~13 m/s A / D turns you faster than W alone.	侧跳 (strafe-jumping) 可以加速: 按住侧移键, 同向转动鼠标, 并持续跳跃. 超过 ~13 m/s 时 A / D 比只按 W 转得更快.
@@ -3107,6 +3148,7 @@ TEST MODE:	测试模式:
 TEST MODE: THE MAP'S	测试模式: 地图的
 TEST plays the map right away; BAKE LIGHT previews the real lighting.	测试 会立即游玩地图; 烘焙光照 可预览真实光照。
 TESTING BUILD - RANKED NOT RATED (PLAYED, NEVER COUNTED)	测试版 - 排位不计分 (可玩, 不计入)
+TESTING VERSIONS	测试版本
 TEXT	文本
 TEXT AFTER THE LAST RULE	最后一条规则后的文本
 TEXT ALIGN	文本对齐
@@ -3262,7 +3304,21 @@ TWO TINY DRIFTING BALLS, 10 HP	两个漂浮的小球, 10 HP
 TYPE TO SEARCH: A NAME OR WHAT IT DOES (CTRL+F)	输入搜索: 名称或功能 (CTRL+F)
 TYPING	输入中
 TYPING SOUNDS	打字音效
+The game can still start, but may miss maps or sounds. If you didn't change them yourself, an antivirus may have removed them.	游戏仍可启动，但可能缺少地图或声音。如果不是你自己改动的，可能是杀毒软件删除了它们。
+The game can't start:	The game can't start:
+The game can't start: {} can't be opened (Windows refuses to run a file its antivirus flagged).	游戏无法启动：{} 无法打开（Windows 拒绝运行被杀毒软件标记的文件）。
+The game can't start: {} is gone from the game folder.	游戏无法启动：{} 已从游戏文件夹中消失。
+The game can't start: {} isn't the file that was installed (something changed or replaced it).	游戏无法启动：{} 不是当初安装的文件（被改动或替换了）。
 The server listens on UDP port 27500 (change it under UDP PORT). Quark asks your router to forward it automatically (UPnP); if friends can't connect, forward that UDP port on your router by hand.	服务器监听 UDP 端口 27500 (可在 UDP 端口 中更改)。QUARK 会请求路由器自动转发 (UPnP); 如果好友无法连接, 请在路由器上手动转发该 UDP 端口。
+The update stopped:	The update stopped:
+The update stopped: {}. Nothing was changed: version {} is still installed and playable.	更新已停止：{}。没有任何改动：{} 版本仍已安装且可以游玩。
+The update stopped: {}. Nothing was installed.	更新已停止：{}。没有安装任何内容。
+Then press RETRY.	然后按「重试」。
+This is almost always an antivirus false positive: quark isn't code-signed, so Windows Defender (or another antivirus) sometimes quarantines a new build. The launcher never deletes game files.	这几乎总是杀毒软件误报：quark 没有代码签名，所以 Windows Defender（或其他杀毒软件）有时会隔离新版本。启动器从不删除游戏文件。
+This is most likely an antivirus or cleanup tool removing it as a false positive (quark isn't code-signed). The launcher never deletes game files.	这很可能是杀毒或清理工具误报并删除了它（quark 没有代码签名）。启动器从不删除游戏文件。
+To get it back: Windows Security > Virus & threat protection > Protection history, open the entry for	To get it back: Windows Security > Virus & threat protection > Protection history, open the entry for
+To get it back: Windows Security > Virus & threat protection > Protection history, open the entry for {}, then Actions > Restore (or Allow on device).	恢复方法：Windows 安全中心 > 病毒和威胁防护 > 保护历史记录，打开 {} 的条目，然后选择 操作 > 还原（或在设备上允许）。
+To stop it happening again: Windows Security > Virus & threat protection > Manage settings > Exclusions > Add an exclusion > Folder:	防止再次发生：Windows 安全中心 > 病毒和威胁防护 > 管理设置 > 排除项 > 添加排除项 > 文件夹：
 UARK	UARK
 UDP	UDP
 UDP PORT	UDP 端口
@@ -3280,6 +3336,7 @@ UNBOUND	未绑定
 UNCHANGED	未更改
 UNDO	撤销
 UNGROUP	取消编组
+UNINSTALL	卸载
 UNKNOWN	未知
 UNKNOWN SELECTOR '	未知选择器 '
 UNLIMITED	无限制
@@ -3287,6 +3344,10 @@ UNPLAYED MAPS COUNT AT THEIR DEFAULT TIME	未跑过的地图按默认时间计�
 UNSTOPPABLE	无人能挡
 UP	上
 UP / DOWN AS A MULTIPLE OF SENSITIVITY	上 / 下 按灵敏度的倍数
+UPDATES	更新
+UPDATES: ASK FIRST	更新：先询问
+UPDATES: AT NEXT LAUNCH	更新：下次启动时
+UPDATES: AUTOMATIC	更新：自动
 UPLOAD CAP (MBIT/S)	上传上限 (MBIT/S)
 USE	使用
 USE #	使用 #
@@ -3312,6 +3373,10 @@ VERBOSE INFO	详细信息
 VERBOSE INFO LINES	详细信息行
 VERDANA BOLD	VERDANA BOLD
 VERSION	版本
+VERSION {}	版本 {}
+VERSION {} (INSTALLED)	版本 {}（已安装）
+VERSION {} WAS NOT INSTALLED	版本 {} 未安装
+VERSIONS	版本
 VERTICAL KEYS	垂直按键
 VERTICAL SENSITIVITY	垂直灵敏度
 VERTICAL: ONE KEY	垂直: 单键
@@ -3384,6 +3449,8 @@ WARMUP - {} TO VOTE START	热身 - {} 以投票开始
 WARNING BEEP	警告提示音
 WARNING: DON'T TOUCH THIS UNLESS YOU KNOW WHAT YOU'RE DOING	警告: 除非你清楚自己在做什么, 否则不要修改
 WARNINGS	警告
+WAS CHANGED	WAS CHANGED
+WAS NOT INSTALLED	WAS NOT INSTALLED
 WAS ON	曾开启
 WASTELAND	荒原
 WATCH AGAIN	再看一遍
@@ -3449,12 +3516,16 @@ WITHIN 1.3 M OF THE FLOOR. 10 MS LATE LOSES 3 M/S	离地 1.3 M 以内。晚 10 M
 WIZARD	巫师
 WORD FILTER	屏蔽词过滤
 WORK SANS	WORK SANS
+WORKING...	处理中...
 WORLD	世界
 WORLD + HUD + SHADOW MAP BUILD	世界 + HUD + 阴影贴图构建
 WORLD OUTLINE	世界描边
 WORLD OUTLINE WIDTH	世界描边宽度
 WORST #MS  PING #  3D #X#	最差 #MS  PING #  3D #X#
 WRAP AROUND	循环
+WinHttpOpen failed	WinHttpOpen failed
+Windows refused to start	Windows refused to start
+Windows refused to start {} (error {})	Windows 拒绝启动 {}（错误 {}）
 X MSAA	X MSAA
 X OFFSET	X 偏移
 X SENSITIVITY WHILE THIS WEAPON IS HELD	持有此武器时的灵敏度倍数
@@ -3523,6 +3594,8 @@ add must be 3 numbers from 0 to 16	add 必须是 3 个 0 到 16 之间的数字
 advances (walkover)	晋级 (对手弃权)
 after a session	会话结束后
 after swap (low latency wait)	交换后 (低延迟等待)
+again and put them back (your settings and files stay).	again and put them back (your settings and files stay).
+again, check it and put it back (your settings and files stay).	again, check it and put it back (your settings and files stay).
 ahead of you (winner stays)	在你前面 (胜者留场)
 alpha must be over 0 and at most 1	alpha 必须大于 0 且不超过 1
 an update is ready - the server restarts after this match	更新已就绪 - 服务器将在本场比赛后重启
@@ -3553,6 +3626,7 @@ bad mesh	无效 mesh
 bad modifier '	无效修改器 '
 bad node	无效 node
 bad request	无效请求
+bad url	bad url
 bench:	bench:
 big noodle*	big noodle*
 bignoodletitling*	bignoodletitling*
@@ -3572,6 +3646,10 @@ box model:	方块模型:
 boxes into	个方块合并为
 boxes into one	个方块合并为一个
 buffer without data	buffer 没有数据
+builds from 1.17 on in the	builds from 1.17 on in the
+builds from 1.17 on yet - pick a version to install it	builds from 1.17 on yet - pick a version to install it
+builds in the	builds in the
+builds published yet	builds published yet
 built in # ms	构建耗时 # ms
 built-in maps reset to the original version	内置地图已重置为原始版本
 busy #%, late #%	繁忙 #%, 迟到 #%
@@ -3595,6 +3673,7 @@ callvote start	callvote start
 callvote tmaps	callvote tmaps
 callvote tmodes	callvote tmodes
 can't	无法
+can't be opened (Windows refuses to run a file its antivirus flagged).	can't be opened (Windows refuses to run a file its antivirus flagged).
 can't do that	无法执行
 can't go ranked: no ranked map for that ladder installed	无法进入排位: 未安装该天梯的排位地图
 can't read	无法读取
@@ -3602,24 +3681,46 @@ can't save:	无法保存:
 can't turn that	无法开启/关闭
 can't vote for that list	无法为该列表投票
 can't vote:	无法投票:
+cannot copy	无法复制
+cannot read	无法读取
+cannot repair: version	cannot repair: version
+cannot repair: version {} isn't published for {} - pick a version and press INSTALL	无法修复：版本 {} 没有为 {} 发布 - 选择一个版本并按「安装」
+cannot replace	无法替换
+cannot write	无法写入
 capture of every point in	占领所有据点用时
+channel - latest	channel - latest
+channel - offline	channel - offline
+channel yet	channel yet
+channel yet - pick a version to install it	channel yet - pick a version to install it
 chat # "	聊天 # "
 chat # "{}": {}	chat # "{}": {}
 chat: slow down	聊天: 请慢一点
+checked {} game files of version {}: all fine	已检查 {} 个游戏文件（版本 {}）：全部正常
+checked {} game files: {}	已检查 {} 个游戏文件：{}
+checking for updates...	正在检查更新...
+checking game files...	正在检查游戏文件...
 checking if UDP	正在检查 UDP
 clean surfaces	干净表面
 closed by the load governor	已被负载调控器关闭
 color must be 3 numbers from 0 to 16	color 必须是 3 个 0 到 16 之间的数字
 connect from	连接自
 connected from	已连接, 来自
+connection failed (error {})	连接失败（错误 {}）
 connection to server lost	与服务器的连接已断开
+could not be written (a full disk, or blocked as it was written)	无法写入（磁盘已满，或写入时被拦截）
 could not bind UDP port	无法绑定 UDP 端口
 could not create an OpenGL 3.3 window - update your graphics driver	无法创建 OpenGL 3.3 窗口 - 请更新显卡驱动
+could not download its release manifest ({})	无法下载其发布清单（{}）
+could not download its signature ({})	无法下载其签名（{}）
 could not host:	无法主持:
 could not open	无法打开
 could not open log file	无法打开日志文件
+could not read the download	无法读取下载的文件
+could not run curl	无法运行 curl
 could not save maps/	无法保存 maps/
 could not save the map	无法保存地图
+could not start the game in	could not start the game in
+could not start the game in {} (error {})	无法在 {} 中启动游戏（错误 {}）
 could not write maps/	无法写入 maps/
 could not write to the groups folder	无法写入分组文件夹
 couldn't check reachability:	无法检查可达性:
@@ -3631,6 +3732,11 @@ delivered the payload in	送达运载车用时
 delivery in	送达用时
 demo finished	录像播放完毕
 demo:	录像:
+download failed:	download failed:
+download failed: {}	下载失败：{}
+download interrupted	下载中断
+downloading version	downloading version
+downloading version {}...	正在下载版本 {}...
 draw - the payload is in the middle	平局 - 运载车在中间
 dropped:	已掉线:
 dyn + view + flat verts	dyn + view + flat verts
@@ -3664,9 +3770,13 @@ flush2D	flush2D
 font {}: {}	font {}: {}
 font:	字体:
 font: {} built in # ms	font: {} built in # ms
+found - it installs at the next launch (or press INSTALL)	found - it installs at the next launch (or press INSTALL)
 found everyone	找到了所有人
+from that tool's quarantine, and add an exclusion for the quark folder:	from that tool's quarantine, and add an exclusion for the quark folder:
 g del	g del
 g part # # # # # # # #	g part # # # # # # # #
+game files of version	game files of version
+game files:	game files:
 glass shards	玻璃碎片
 glfwInit failed	glfwInit failed
 go to the back of the line	排到队尾
@@ -3685,6 +3795,13 @@ index out of range	索引越界
 init failed:	初始化失败:
 init failed: {}	init failed: {}
 input + prediction ticks	输入 + 预测 tick
+install failed:	install failed:
+install failed: {}	安装失败：{}
+installed version	installed version
+installed version {}	已安装版本 {}
+installed {} is newer than the latest {} release {} - pick a version to change	已安装的 {} 比最新的{}发布版 {} 更新 - 选择一个版本来更换
+installing version	installing version
+installing version {}...	正在安装版本 {}...
 into others, removed	并入其他方块, 已移除
 is a built-in map - nothing changed to save	是内置地图 - 没有可保存的修改
 is a built-in map - pick a new name for yours	是内置地图 - 请为你的地图取个新名字
@@ -3693,15 +3810,25 @@ is a built-in map: pick a new name	是内置地图: 请取个新名字
 is a legacy map (never ranked): ranked plays	是旧版地图 (永不排位): 排位游玩
 is a legacy map (this server doesn't list the old maps)	是旧版地图 (此服务器不列出旧地图)
 is already spectating	已在观战
+is blocked (it can't be read)	is blocked (it can't be read)
+is gone from the game folder.	is gone from the game folder.
 is it	是鬼
 is it - run!	是鬼 - 快跑!
+is missing	is missing
+is newer than the latest	is newer than the latest
 is not reachable from the internet - forward UDP	无法从互联网访问 - 请转发 UDP
 is now	现在是
 is reachable from the internet - friends can join	可从互联网访问 - 好友可以加入
 is spectating	正在观战
+is still installed and playable.	is still installed and playable.
 isn't a ranked ruleset	不是排位规则
 isn't built for	不适用于
 isn't in this custom mode's map pool	不在此自定义模式的地图池中
+isn't published for	isn't published for
+isn't the file that was installed (something changed or replaced it).	isn't the file that was installed (something changed or replaced it).
+it has no signed release manifest	它没有已签名的发布清单
+it is not signed	它没有签名
+its signature does not verify	其签名验证失败
 joined team A	加入了 A 队
 joined team B	加入了 B 队
 joined the game	加入了游戏
@@ -3721,6 +3848,8 @@ listening on UDP	正在监听 UDP
 live (testing server: not rated)	在线 (测试服务器: 不计分)
 load governor:	负载调控器:
 look at a side of the selected box	看向所选方块的一个面
+looking up version	looking up version
+looking up version {}...	正在查找版本 {}...
 lost connection	连接丢失
 low latency: wait for the GPU	低延迟: 等待 GPU
 mac:	mac:
@@ -3772,6 +3901,10 @@ no points	没有据点
 no response	无响应
 no small gaps to close	没有需要闭合的小缝隙
 no triangles	没有三角形
+no {} builds from 1.17 on in the {} channel yet - pick a version to install it	{} 平台在{}频道还没有 1.17 及以后的版本 - 选择一个版本来安装
+no {} builds from 1.17 on yet - pick a version to install it	{} 还没有 1.17 及以后的版本 - 选择一个版本来安装
+no {} builds in the {} channel yet	{} 平台在{}频道还没有版本
+no {} builds published yet	{} 还没有发布版本
 no-discard world shader: missing	no-discard world shader: missing
 nobody finished	无人完成
 nobody is out - throw again	无人出局 - 再出一次
@@ -3791,6 +3924,7 @@ not enough players	玩家不足
 not enough players - back to warmup	玩家不足 - 回到热身
 not enough players - the match ends in	玩家不足 - 比赛将结束于
 not enough players for a tourney	玩家不足, 无法举行锦标赛
+not found (release list incomplete) - installed:	not found (release list incomplete) - installed:
 not in the main program	not in the main program
 not in the tutorial	教程中不可用
 not in this build	此版本中没有
@@ -3807,7 +3941,12 @@ nothing to undo	没有可撤销的
 now playing	正在游玩
 odd sample rate	异常的采样率
 of #	/ #
+of version	of version
 off for this match	本场比赛关闭
+offline -	offline -
+offline - playing installed version	offline - playing installed version
+offline - playing installed version {}	离线 - 玩已安装的版本 {}
+offline - {}	离线 - {}
 on your router to this PC	在你的路由器上转发到这台电脑
 only a timed round can be extended	只有计时回合才能延长
 over 64 MB	超过 64 MB
@@ -3827,6 +3966,9 @@ paused: no humans (bots wait)	已暂停: 没有真人玩家 (机器人等待)
 payload delivered	运载车已送达
 pick a new name for your copy	为你的副本取个新名字
 ping up on # of # players	# / # 名玩家 ping 升高
+pinned version	pinned version
+pinned version {} (installed: {}) - press INSTALL to switch to it	固定版本 {}（已安装：{}）- 按「安装」切换过去
+pinned version {} not found (release list incomplete) - installed: {}	未找到固定版本 {}（发布列表不完整）- 已安装：{}
 placed the group from the clipboard	已从剪贴板放置分组
 point # taken by team #	据点 # 被 # 队占领
 poll events	poll events
@@ -3852,6 +3994,9 @@ proj # type # owner # pos # # # vel # # #{}	proj # type # owner # pos # # # vel 
 properties background, color, opacity, border, radius, padding, margin, gap, font-size,	属性 background, color, opacity, border, radius, padding, margin, gap, font-size,
 puts every built-in map back to its original version and removes retired ones (your own maps are kept) - click again	将所有内置地图恢复为原始版本并移除已退役地图 (你自己的地图保留) - 再次点击
 quark --bake-maps <dir>	quark --bake-maps <dir>
+quark installed files 1	quark installed files 1
+quark installed files 2	quark installed files 2
+quark launcher	quark launcher
 quark server	quark server
 quark server log, level	quark server log, level
 quark server log, level {}, version {}	quark server log, level {}, version {}
@@ -3888,12 +4033,15 @@ rate limited	请求过于频繁
 reachability:	可达性:
 reached checkpoint	到达检查点
 reconnected from	重新连接, 来自
+refused version	refused version
+refused version {}: {} - the download may have been tampered with	拒绝了版本 {}：{} - 下载的文件可能被篡改
 renderer warmup	渲染器预热
 reopened by the load governor	已被负载调控器重新开启
 reopened by the load governor at	已被负载调控器重新开启, 于
 restarting for an update	正在重启以更新
 restarting for an update - rejoin in a few seconds	正在重启以更新 - 几秒后重新加入
 restored the autosave of	已恢复自动保存:
+right after it was written	刚写入后
 rock paper scissors:	石头剪刀布:
 rotated about X	绕 X 旋转
 rotated about Y	绕 Y 旋转
@@ -4039,10 +4187,20 @@ unsaved changes - click EXIT again to leave	有未保存的修改 - 再次点击
 unsaved changes - press ESC again to leave	有未保存的修改 - 再按一次 ESC 离开
 unsupported WAV (PCM 8 / 16 / 24 / 32-bit or float)	不支持的 WAV (PCM 8 / 16 / 24 / 32 位或浮点)
 unsupported accessor	不支持的 accessor
+up to date -	up to date -
+up to date - {} {}	已是最新 - {} {}
 update ready: waiting for the match to end	更新已就绪: 等待比赛结束
+update {} available - press INSTALL (installed: {})	有更新 {} - 按「安装」（已安装：{}）
+update {} found - it installs at the next launch (or press INSTALL)	发现更新 {} - 下次启动时安装（或按「安装」）
+update: removed retired game file	update: removed retired game file
+update: removed retired game file {}	update: removed retired game file {}
 upload # of # kbps	上传 # / # kbps
 upload bytes	upload bytes
 user:	用户:
+verifying version	verifying version
+verifying version {}...	正在验证版本 {}...
+version {} (pinned)	版本 {}（已固定）
+version {} was not installed: {}	版本 {} 未安装：{}
 vote builder	vote builder
 vote cancelled: the ranked match is live	投票取消: 排位比赛进行中
 vote failed:	投票失败:
@@ -4054,8 +4212,12 @@ voted rules:	已投票规则:
 voted rules: {}	voted rules: {}
 vs bots	人机对战
 warning:	警告:
+was blocked	被拦截了
+was changed	was changed
 was it -	曾是鬼 -
 was moved to spectator until the next map	已被移至观众直到下一张地图
+was not installed:	was not installed:
+was removed	被删除了
 wedge rising toward	楔形朝向上升
 will fill the uneven teams	将补齐人数不均的队伍
 win:	胜利:
@@ -4093,4 +4255,20 @@ you're next in line: you play the winner of this	你是下一位: 你将挑战�
 your last vote failed: wait a few seconds	你上次的投票失败了: 请等几秒
 your map is autosaved	你的地图已自动保存
 {} # us (last 1000 ticks)	{} # us (last 1000 ticks)
+{} (launcher update failed: {})	{}（启动器更新失败：{}）
+{} (launcher update skipped: {})	{}（已跳过启动器更新：{}）
+{} - installed: {}	{} - 已安装：{}
+{} - see below	{} - 见下方
+{} - {} game file(s) missing or changed ({}): CHECK FILES	{} - {} 个游戏文件缺失或被改动（{}）：检查文件
+{} GAME FILE(S) MISSING OR CHANGED	{} 个游戏文件缺失或被改动
+{} IS BLOCKED	{} 被拦截
+{} IS MISSING	{} 缺失
 {} THEN {}	{} 然后 {}
+{} WAS CHANGED	{} 被改动
+{} channel - latest {}	{}频道 - 最新 {}
+{} channel - latest {}, installed {}	{}频道 - 最新 {}，已安装 {}
+{} channel - offline	{}频道 - 离线
+{} is blocked (it can't be read)	{} 被拦截（无法读取）
+{} is missing	{} 缺失
+{} of version {}	{}（版本 {}）
+{} was changed	{} 被改动

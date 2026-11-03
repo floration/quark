@@ -72,6 +72,7 @@
 (FINISH)	(ゴール)
 (HIDDEN: STREAMER MODE)	(非表示: 配信者モード)
 (HS)	(HS)
+(INSTALLED)	(INSTALLED)
 (IT AFFECTS GAMEPLAY)	(ゲームプレイに影響)
 (LEAVE)	(退出)
 (MISSING)	(なし)
@@ -88,13 +89,16 @@
 (exclusive: no format the device takes)	(排他: デバイスが対応する形式なし)
 (exclusive: the device is busy)	(排他: デバイスが使用中)
 (first: takes the loss)	(先に: 敗北扱い)
+(is the game running?)	(ゲームが起動中ですか？)
 (its CONTROLS action too, if it has one)	(操作設定のアクションも、あれば)
 (legacy)	(レガシー)
 (lowered)	(低下)
 (own goal)	(オウンゴール)
+(pinned)	(pinned)
 (playing the built-in brain)	(内蔵AIでプレイ中)
 (score #-#)	(スコア #-#)
 (team):	(チーム):
+(unknown)	(不明)
 (vote ranked off first)	(先にランクオフを投票)
 (winner stays)	(勝者残留)
 + (BIGGER)	+ (大きく)
@@ -119,20 +123,26 @@
 - WHEEL TO SCROLL	- ホイールでスクロール
 - beats	- が勝利:
 - best of 3 between the last two	- 残り2人で3本勝負
+- installed:	- installed:
 - it may not work	- 動作しない可能性あり
 - it moves and stretches as one	- まとめて移動・伸縮
 - level with	- と同点
 - map	- マップ
 - match started	- 試合開始
 - not played: the server plays	- 未プレイ: サーバーがプレイ
+- pick a version and press INSTALL	- pick a version and press INSTALL
+- pick a version to change	- pick a version to change
 - playing mode logic	- モードロジック実行中
 - plays the next match	- 次の試合に出場
 - rock paper scissors decides it	- じゃんけんで決定
+- see below	- see below
 - short of	- あと
+- the download may have been tampered with	- the download may have been tampered with
 - their place is kept for	- 枠の保持時間:
 -INF DB	-INF DB
 -Wcast-function-type	-Wcast-function-type
 -Y (under)	-Y (下)
+-fsSL	-fsSL
 0.1% LOW	0.1% LOW
 00,000,000 NS	00,000,000 NS
 1 HP	1 HP
@@ -175,6 +185,7 @@ A MOMENT LATER, AIM STRAIGHT DOWN AND FIRE	少し後に真下を狙って撃つ
 A NEW CODE FROM /link RELINKS IT - unlink REMOVES IT	/link の新コードで再連携 - unlink で解除
 A NEW DIAGONAL EVERY 0.3 S	0.3 秒ごとに新しい斜め
 A NEW DIAGONAL EVERY 0.3 S, 10 HP	0.3 秒ごとに新しい斜め, 10 HP
+A NEW VERSION INSTALLS WHEN THE LAUNCHER NEXT STARTS.	新しいバージョンは次回ランチャー起動時にインストールされます。
 A PLAYER JOINED VIA	プレイヤーが参加 経由:
 A ROCKET JUMP STRAIGHT UP	真上へロケットジャンプ
 A SERVER	サーバー
@@ -330,6 +341,8 @@ AUTO-HIDE HEALTH	体力を自動非表示
 AUTO-HIDE WEAPON LIST	武器リストを自動非表示
 AUTO-HOP	オートホップ
 AUTO-HOP OFF: HELD JUMP JUMPS ONCE	オートホップ オフ: 長押しで1回ジャンプ
+AUTO-START GAME	ゲームを自動起動
+AUTO-START: PLAYS ONCE UP TO DATE. AT NEXT LAUNCH:	自動起動：最新になったらプレイ。次回起動時：
 AUTO: YOUR SYSTEM'S LANGUAGE	自動: システムの言語
 AVERAGE	平均
 AVERAGE, LAST	平均、直近
@@ -499,6 +512,9 @@ CHAMPION	チャンピオン
 CHANGE ANYTHING AFTER (IT STAYS)	後から自由に変更可 (保持されます)
 CHANGE MAP / MODE	マップ / モード変更
 CHANGE MAP / MODE (pick the mode, then the map), FORCE START, RELOAD MAP, EDIT MODE (everyone edits the map together).	マップ / モード変更 (モード、次にマップを選択)、強制開始、マップ再読込、編集モード (全員でマップを編集)。
+CHANGELOG	更新履歴
+CHANNEL: PRODUCTION	チャンネル：製品版
+CHANNEL: TESTING	チャンネル：テスト版
 CHANNELS	チャンネル
 CHANNELS: MONO	チャンネル: モノラル
 CHANNELS: STEREO	チャンネル: ステレオ
@@ -512,6 +528,7 @@ CHAT ON	チャット オン
 CHAT OPACITY	チャット不透明度
 CHAT SECONDS	チャット表示秒数
 CHECK AGAIN	再確認
+CHECK FILES	ファイルを確認
 CHECKING...	確認中...
 CHECKPOINT	チェックポイント
 CHECKPT	CP
@@ -1032,6 +1049,7 @@ FULLSCREEN SIZE: DESKTOP	フルスクリーンサイズ: デスクトップ
 FULLSCREEN: OFF KEEPS IT ON SCREEN	フルスクリーン: オフで画面上に保持
 G-SYNC / FREESYNC	G-SYNC / FREESYNC
 GAME	ゲーム
+GAME FILE(S) MISSING OR CHANGED	GAME FILE(S) MISSING OR CHANGED
 GAME FONTS: YOUR OWN COPY OF THE REAL FONT IF FOUND	ゲームフォント: 本物のフォントがあればそれを使用
 GAME LATENCY ~	ゲームの遅延 ~
 GAME LATENCY ~{} NS  (MOUSE REPORT IN TO GPU DONE; F3: NEXT VIEW)	ゲームの遅延 ~{} NS  (マウス入力から GPU 完了まで; F3: 次の表示)
@@ -1234,6 +1252,7 @@ HOSTING ON UDP PORT	ホスト中 UDPポート:
 HOW	やり方
 HOW OTHER PLAYERS' MOVES ARE SMOOTHED	他プレイヤーの動きの補間方法
 HP	HP
+HTTP	HTTP
 HUD	HUD
 HUD & SETTINGS	HUD & 設定
 HUD 2	HUD 2
@@ -1298,6 +1317,8 @@ INSERT	INSERT
 INSTAGIB	インスタギブ
 INSTAGIB CROSSBOWS	インスタギブ クロスボウ
 INSTAGIB SNIPERS	インスタギブ スナイパー
+INSTALL	INSTALL
+INSTALL {}	{} をインストール
 INTEL	INTEL
 INTEL DRIVER SETTINGS COULDN'T BE READ	INTEL ドライバーの設定を読めなかった
 INTEL ENDURANCE GAMING SAVES POWER OVER FRAMES	INTEL ENDURANCE GAMING が FPS より省電力を優先
@@ -1317,7 +1338,9 @@ INVERT Y	Y軸反転
 IOID	IOID
 IRIS	IRIS
 IS A BUILT-IN MAP: IT STAYS AS IT IS. SAVE YOUR EDITS AS YOUR OWN MAP (IN YOUR MAPS FOLDER, UNDER THIS NAME) OR DROP THEM.	は内蔵マップのため変更されません。編集内容を自分のマップとして保存するか (mapsフォルダにこの名前で) 破棄してください。
+IS BLOCKED	IS BLOCKED
 IS GODLIKE	ゴッドライク!
+IS MISSING	IS MISSING
 IS ON A KILLING SPREE	キリングスプリー!
 IS ON A RAMPAGE	ランペイジ!
 IS UNSTOPPABLE	アンストッパブル!
@@ -1355,6 +1378,7 @@ KB; OFF: A SERVER'S	KB; オフ: サーバーの
 KEEP	保持
 KEEP HOLDING IT ALL THE WAY DOWN	落ちる間ずっと押し続ける
 KEEP HOLDING IT TO RIDE	押し続けて乗り続ける
+KEEP LAUNCHER OPEN	ランチャーを開いたまま
 KEEP THESE DISPLAY SETTINGS? REVERTING IN	このディスプレイ設定を保持しますか? 元に戻るまで
 KEEP YOUR EDITS AS A NEW MAP?	編集を新しいマップとして保存しますか?
 KEEP: ALL	保持: すべて
@@ -1408,6 +1432,8 @@ LAID OVER THE WORLD AFTER IT	その後ワールドの上に重ねる
 LAND	着地
 LAND ON THE FAR SIDE OF THE LAVA	溶岩の向こう側に着地
 LANGUAGE	言語
+LANGUAGE:	LANGUAGE:
+LANGUAGE: AUTO	言語：自動
 LARGE	大
 LASER	レーザー
 LASER VAMPIRE	レーザーヴァンパイア
@@ -1428,6 +1454,8 @@ LATENT SAFETY	レイテント安全マージン
 LATENT SYNC	レイテントシンク
 LATENT SYNC: HOLD FOR THE BLANK	レイテントシンク: ブランクを待つ
 LATENT SYNC: WAIT FOR THE RASTER	レイテントシンク: ラスターを待つ
+LATEST ({})	最新（{}）
+LAUNCH OPTIONS (PASSED TO THE GAME)	起動オプション（ゲームに渡す）
 LAUNCHER ON THE RIGHT	ランチャーを右に
 LAY A STICKY BOMB, STAND ON IT, SET IT OFF AS YOU JUMP.	スティッキーボムを置き、その上に立ち、ジャンプと同時に起爆。
 LEADERBOARD	リーダーボード
@@ -2367,6 +2395,7 @@ OPENS THE UDP PORT ON YOUR ROUTER (UPNP)	ルーターのUDPポートを開放 (U
 OPPOSITE KEYS: CANCEL	逆方向キー: 相殺
 OPPOSITE KEYS: FIRST WINS	逆方向キー: 先押し優先
 OPPOSITE KEYS: LAST WINS	逆方向キー: 後押し優先
+OPTIONS	オプション
 OR RESTART: IT'S ASKED FOR AT START	または再起動: 起動時に要求されます
 ORB	オーブ
 OTHER PLAYERS	他のプレイヤー
@@ -2394,6 +2423,9 @@ OWN SHADOW	自分の影
 OggS	OggS
 OpenGL function missing:	OpenGL関数がありません:
 OpenGL function missing: {}	OpenGL function missing: {}
+Or press REPAIR to download the game again, check it and put it back (your settings and files stay).	または「修復」を押してゲームを再ダウンロードし、確認して元に戻します（設定とファイルはそのまま）。
+Or press REPAIR to download version	Or press REPAIR to download version
+Or press REPAIR to download version {} again, check it and put it back (your settings and files stay).	または「修復」を押してバージョン {} を再ダウンロードし、確認して元に戻します（設定とファイルはそのまま）。
 Output	出力
 PACING WAIT (ULTRA)	ペーシング待機 (ウルトラ)
 PACK	パック
@@ -2528,6 +2560,8 @@ Pick the mode and map, a server name and the max players. The game picks the map
 Player	プレイヤー
 PowerGetActiveScheme	PowerGetActiveScheme
 PowerGetEffectiveOverlayScheme	PowerGetEffectiveOverlayScheme
+Press REPAIR to download version	Press REPAIR to download version
+Press REPAIR to download version {} again and put them back (your settings and files stay).	「修復」を押すとバージョン {} を再ダウンロードして元に戻します（設定とファイルはそのまま）。
 Q - grapple: hold to hook what you're aiming at and pull toward it; release to let go.	Q - グラップル: 長押しで狙った場所に引っ掛けて引き寄せる; 離すと解除。
 QK1 - QK8 - ranked arenas for all three ladders (vanilla and laser vampire 1v1, instagib free for all), also duel and tourney.	QK1 - QK8 - 3つのラダー全て (バニラとレーザーヴァンパイア1v1、インスタギブ個人戦) のランクアリーナ、デュエルとトーナメントにも対応。
 QUAKE	QUAKE
@@ -2638,6 +2672,9 @@ REMEMBER LAST TAB	最後のタブを記憶
 REMEMBER MY QUEUES	キューを記憶
 RENAME	名前を変更
 RENDER SCALE	レンダースケール
+REPAIR	修復
+REPAIR needs the internet:	REPAIR needs the internet:
+REPAIR needs the internet: {}	修復にはインターネットが必要です：{}
 RESET ALL	すべてリセット
 RESET ALL KEYS	全キーをリセット
 RESET CROSSHAIR	クロスヘアをリセット
@@ -2658,6 +2695,7 @@ RESUME	再開
 RESUME (ESC)	再開 (ESC)
 RETICLE COLOR	レティクルの色
 RETICLE WIDTH	レティクルの幅
+RETRY	再試行
 REVERT	元に戻す
 RIDE FOR 0.4 S	0.4 S 乗る
 RIFF	RIFF
@@ -2735,6 +2773,8 @@ RUN SPEED	走行速度
 RUN, JUMP THE HURDLES, REACH THE GLOWING LINE.	走って、ハードルを跳び、光るラインへ。
 RUNS	ラン
 Ranked games use the default model, HUD and controls and 10 ms interpolation, so everyone plays the same game.	ランクではデフォルトのモデル、HUD、操作と10 msの補間を使用し、全員が同条件でプレイします。
+Restore	Restore
+Restore {} from that tool's quarantine, and add an exclusion for the quark folder:	そのツールの隔離から {} を復元し、quark フォルダーを除外に追加してください：
 SAFE OK / ERROR	安全な OK / エラー色
 SAFE: OK BLUE, ERRORS ORANGE; IT: TAG / HIDE'S	安全: OKは青、エラーはオレンジ; 鬼: 鬼ごっこ / かくれんぼの
 SAME	同じ
@@ -3037,6 +3077,7 @@ SYSTEM MESSAGES: ALL	システムメッセージ: すべて
 SYSTEM MESSAGES: IMPORTANT	システムメッセージ: 重要のみ
 SYSTEM MESSAGES: OFF	システムメッセージ: オフ
 SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)	システム: OSの矢印 (色: 独自のみ)
+SetDefaultDllDirectories	SetDefaultDllDirectories
 Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).	設定 > 操作設定 でキー割り当てをエクスポートしたり、他人のものをインポートできます (テキストをコピー / 貼り付け)。
 Start the match, change map / mode, ranked on / off, edit the map together, bots on. A majority of the human players decides.	試合開始、マップ / モード変更、ランクのオン / オフ、マップの共同編集、ボットのオン。人間プレイヤーの過半数で決定します。
 Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping. Above ~13 m/s A / D turns you faster than W alone.	ストレイフジャンプで加速: 横移動キーを押したまま同じ向きにマウスを回し, ジャンプを続ける. ~13 m/s を超えると A / D の方が W だけより速く曲がれる.
@@ -3107,6 +3148,7 @@ TEST MODE:	テストモード:
 TEST MODE: THE MAP'S	テストモード: マップの設定
 TEST plays the map right away; BAKE LIGHT previews the real lighting.	テストですぐにマップをプレイ; ライトをベイクで実際のライティングをプレビュー。
 TESTING BUILD - RANKED NOT RATED (PLAYED, NEVER COUNTED)	テストビルド - ランクはレート対象外 (プレイ可、記録なし)
+TESTING VERSIONS	テスト版
 TEXT	テキスト
 TEXT AFTER THE LAST RULE	最後のルールの後のテキスト
 TEXT ALIGN	テキスト配置
@@ -3262,7 +3304,21 @@ TWO TINY DRIFTING BALLS, 10 HP	漂う小さなボール 2 つ, 10 HP
 TYPE TO SEARCH: A NAME OR WHAT IT DOES (CTRL+F)	入力して検索: 名前または機能 (CTRL+F)
 TYPING	入力中
 TYPING SOUNDS	入力音
+The game can still start, but may miss maps or sounds. If you didn't change them yourself, an antivirus may have removed them.	ゲームは起動できますが、マップやサウンドが欠けている可能性があります。自分で変更していなければ、ウイルス対策ソフトが削除したのかもしれません。
+The game can't start:	The game can't start:
+The game can't start: {} can't be opened (Windows refuses to run a file its antivirus flagged).	ゲームを起動できません：{} を開けません（Windows はウイルス対策が検出したファイルを実行しません）。
+The game can't start: {} is gone from the game folder.	ゲームを起動できません：{} がゲームフォルダーにありません。
+The game can't start: {} isn't the file that was installed (something changed or replaced it).	ゲームを起動できません：{} はインストールしたファイルではありません（変更または置き換えられました）。
 The server listens on UDP port 27500 (change it under UDP PORT). Quark asks your router to forward it automatically (UPnP); if friends can't connect, forward that UDP port on your router by hand.	サーバーはUDPポート27500で待ち受けます (UDPポートで変更可)。Quarkはルーターに自動でポート開放を要求します (UPnP); フレンドが接続できない場合は、ルーターでそのUDPポートを手動で開放してください。
+The update stopped:	The update stopped:
+The update stopped: {}. Nothing was changed: version {} is still installed and playable.	アップデートが止まりました：{}。何も変更されていません：バージョン {} はインストール済みでプレイできます。
+The update stopped: {}. Nothing was installed.	アップデートが止まりました：{}。何もインストールされていません。
+Then press RETRY.	その後「再試行」を押してください。
+This is almost always an antivirus false positive: quark isn't code-signed, so Windows Defender (or another antivirus) sometimes quarantines a new build. The launcher never deletes game files.	これはほぼ必ずウイルス対策ソフトの誤検知です。quark はコード署名されていないため、Windows Defender（または他のウイルス対策ソフト）が新しいビルドを隔離することがあります。ランチャーがゲームファイルを削除することはありません。
+This is most likely an antivirus or cleanup tool removing it as a false positive (quark isn't code-signed). The launcher never deletes game files.	ウイルス対策ソフトかクリーンアップツールが誤検知で削除した可能性が高いです（quark はコード署名されていません）。ランチャーがゲームファイルを削除することはありません。
+To get it back: Windows Security > Virus & threat protection > Protection history, open the entry for	To get it back: Windows Security > Virus & threat protection > Protection history, open the entry for
+To get it back: Windows Security > Virus & threat protection > Protection history, open the entry for {}, then Actions > Restore (or Allow on device).	元に戻すには：Windows セキュリティ > ウイルスと脅威の防止 > 保護の履歴で {} の項目を開き、操作 > 復元（またはデバイスで許可）を選びます。
+To stop it happening again: Windows Security > Virus & threat protection > Manage settings > Exclusions > Add an exclusion > Folder:	再発を防ぐには：Windows セキュリティ > ウイルスと脅威の防止 > 設定の管理 > 除外 > 除外の追加 > フォルダー：
 UARK	UARK
 UDP	UDP
 UDP PORT	UDPポート
@@ -3280,6 +3336,7 @@ UNBOUND	未割り当て
 UNCHANGED	変更なし
 UNDO	元に戻す
 UNGROUP	グループ解除
+UNINSTALL	アンインストール
 UNKNOWN	不明
 UNKNOWN SELECTOR '	不明なセレクター '
 UNLIMITED	無制限
@@ -3287,6 +3344,10 @@ UNPLAYED MAPS COUNT AT THEIR DEFAULT TIME	未プレイのマップはデフォ�
 UNSTOPPABLE	アンストッパブル
 UP	上
 UP / DOWN AS A MULTIPLE OF SENSITIVITY	上 / 下 を感度の倍率で
+UPDATES	アップデート
+UPDATES: ASK FIRST	アップデート：確認する
+UPDATES: AT NEXT LAUNCH	アップデート：次回起動時
+UPDATES: AUTOMATIC	アップデート：自動
 UPLOAD CAP (MBIT/S)	アップロード上限 (MBIT/S)
 USE	使用
 USE #	使用 #
@@ -3312,6 +3373,10 @@ VERBOSE INFO	詳細情報
 VERBOSE INFO LINES	詳細情報の行
 VERDANA BOLD	VERDANA BOLD
 VERSION	バージョン
+VERSION {}	バージョン {}
+VERSION {} (INSTALLED)	バージョン {}（インストール済み）
+VERSION {} WAS NOT INSTALLED	バージョン {} はインストールされませんでした
+VERSIONS	バージョン
 VERTICAL KEYS	上下キー
 VERTICAL SENSITIVITY	垂直感度
 VERTICAL: ONE KEY	上下: 1キー
@@ -3384,6 +3449,8 @@ WARMUP - {} TO VOTE START	ウォームアップ - {} で開始に投票
 WARNING BEEP	警告ビープ
 WARNING: DON'T TOUCH THIS UNLESS YOU KNOW WHAT YOU'RE DOING	警告: 理解していない場合は変更しないでください
 WARNINGS	警告
+WAS CHANGED	WAS CHANGED
+WAS NOT INSTALLED	WAS NOT INSTALLED
 WAS ON	だった
 WASTELAND	荒野
 WATCH AGAIN	もう一度見る
@@ -3449,12 +3516,16 @@ WITHIN 1.3 M OF THE FLOOR. 10 MS LATE LOSES 3 M/S	床から 1.3 M 以内で。10
 WIZARD	ウィザード
 WORD FILTER	ワードフィルター
 WORK SANS	WORK SANS
+WORKING...	処理中...
 WORLD	ワールド
 WORLD + HUD + SHADOW MAP BUILD	ワールド + HUD + シャドウマップ構築
 WORLD OUTLINE	ワールドの輪郭
 WORLD OUTLINE WIDTH	ワールド輪郭の幅
 WORST #MS  PING #  3D #X#	最悪 #MS  PING #  3D #X#
 WRAP AROUND	ループ
+WinHttpOpen failed	WinHttpOpen failed
+Windows refused to start	Windows refused to start
+Windows refused to start {} (error {})	Windows が {} の起動を拒否しました（エラー {}）
 X MSAA	X MSAA
 X OFFSET	X オフセット
 X SENSITIVITY WHILE THIS WEAPON IS HELD	この武器所持時の感度倍率
@@ -3523,6 +3594,8 @@ add must be 3 numbers from 0 to 16	add は0から16の数値3つである必要�
 advances (walkover)	が勝ち上がり (不戦勝)
 after a session	セッション後
 after swap (low latency wait)	スワップ後 (低遅延待機)
+again and put them back (your settings and files stay).	again and put them back (your settings and files stay).
+again, check it and put it back (your settings and files stay).	again, check it and put it back (your settings and files stay).
 ahead of you (winner stays)	あなたより前 (勝ち残り)
 alpha must be over 0 and at most 1	alpha は0より大きく1以下である必要があります
 an update is ready - the server restarts after this match	アップデートの準備完了 - この試合の後にサーバーが再起動します
@@ -3553,6 +3626,7 @@ bad mesh	bad mesh
 bad modifier '	不正な修正 '
 bad node	bad node
 bad request	不正なリクエスト
+bad url	bad url
 bench:	bench:
 big noodle*	big noodle*
 bignoodletitling*	bignoodletitling*
@@ -3572,6 +3646,10 @@ box model:	ボックスモデル:
 boxes into	ボックスを
 boxes into one	ボックスを1つに
 buffer without data	buffer without data
+builds from 1.17 on in the	builds from 1.17 on in the
+builds from 1.17 on yet - pick a version to install it	builds from 1.17 on yet - pick a version to install it
+builds in the	builds in the
+builds published yet	builds published yet
 built in # ms	# ms で構築
 built-in maps reset to the original version	内蔵マップを元のバージョンにリセットしました
 busy #%, late #%	使用中 #%、遅延 #%
@@ -3595,6 +3673,7 @@ callvote start	callvote start
 callvote tmaps	callvote tmaps
 callvote tmodes	callvote tmodes
 can't	できません
+can't be opened (Windows refuses to run a file its antivirus flagged).	can't be opened (Windows refuses to run a file its antivirus flagged).
 can't do that	それはできません
 can't go ranked: no ranked map for that ladder installed	ランクにできません: そのラダーのランクマップがインストールされていません
 can't read	読み込めません
@@ -3602,24 +3681,46 @@ can't save:	保存できません:
 can't turn that	それは回転できません
 can't vote for that list	そのリストには投票できません
 can't vote:	投票できません:
+cannot copy	コピーできません
+cannot read	読み込めません
+cannot repair: version	cannot repair: version
+cannot repair: version {} isn't published for {} - pick a version and press INSTALL	修復できません：バージョン {} は {} 向けに公開されていません - バージョンを選んで「インストール」を押してください
+cannot replace	置き換えできません
+cannot write	書き込めません
 capture of every point in	全ポイント占拠:
+channel - latest	channel - latest
+channel - offline	channel - offline
+channel yet	channel yet
+channel yet - pick a version to install it	channel yet - pick a version to install it
 chat # "	チャット # "
 chat # "{}": {}	chat # "{}": {}
 chat: slow down	チャット: 送信が速すぎます
+checked {} game files of version {}: all fine	{} 個のゲームファイルを確認（バージョン {}）：すべて正常
+checked {} game files: {}	{} 個のゲームファイルを確認：{}
+checking for updates...	アップデートを確認中...
+checking game files...	ゲームファイルを確認中...
 checking if UDP	UDPを確認中
 clean surfaces	クリーンな表面
 closed by the load governor	負荷制御により停止
 color must be 3 numbers from 0 to 16	color は0から16の数値3つである必要があります
 connect from	接続元:
 connected from	接続元:
+connection failed (error {})	接続に失敗しました（エラー {}）
 connection to server lost	サーバーとの接続が切れました
+could not be written (a full disk, or blocked as it was written)	書き込めませんでした（ディスクがいっぱいか、書き込み中にブロックされました）
 could not bind UDP port	UDPポートをバインドできません
 could not create an OpenGL 3.3 window - update your graphics driver	OpenGL 3.3ウィンドウを作成できません - グラフィックドライバーを更新してください
+could not download its release manifest ({})	リリースマニフェストをダウンロードできませんでした（{}）
+could not download its signature ({})	署名をダウンロードできませんでした（{}）
 could not host:	ホストできません:
 could not open	開けません
 could not open log file	ログファイルを開けません
+could not read the download	ダウンロードを読み込めませんでした
+could not run curl	curl を実行できませんでした
 could not save maps/	保存できませんでした: maps/
 could not save the map	マップを保存できません
+could not start the game in	could not start the game in
+could not start the game in {} (error {})	{} でゲームを起動できませんでした（エラー {}）
 could not write maps/	書き込めませんでした: maps/
 could not write to the groups folder	groupsフォルダに書き込めません
 couldn't check reachability:	到達性を確認できません:
@@ -3631,6 +3732,11 @@ delivered the payload in	がペイロードを運び切った 時間:
 delivery in	到着まで
 demo finished	デモ終了
 demo:	デモ:
+download failed:	download failed:
+download failed: {}	ダウンロードに失敗しました：{}
+download interrupted	ダウンロードが中断されました
+downloading version	downloading version
+downloading version {}...	バージョン {} をダウンロード中...
 draw - the payload is in the middle	引き分け - ペイロードは中央
 dropped:	ドロップ:
 dyn + view + flat verts	dyn + view + flat verts
@@ -3664,9 +3770,13 @@ flush2D	flush2D
 font {}: {}	font {}: {}
 font:	フォント:
 font: {} built in # ms	font: {} built in # ms
+found - it installs at the next launch (or press INSTALL)	found - it installs at the next launch (or press INSTALL)
 found everyone	全員発見
+from that tool's quarantine, and add an exclusion for the quark folder:	from that tool's quarantine, and add an exclusion for the quark folder:
 g del	g del
 g part # # # # # # # #	g part # # # # # # # #
+game files of version	game files of version
+game files:	game files:
 glass shards	ガラス片
 glfwInit failed	glfwInit failed
 go to the back of the line	列の最後尾へ
@@ -3685,6 +3795,13 @@ index out of range	index out of range
 init failed:	初期化に失敗:
 init failed: {}	init failed: {}
 input + prediction ticks	入力 + 予測ティック
+install failed:	install failed:
+install failed: {}	インストールに失敗しました：{}
+installed version	installed version
+installed version {}	バージョン {} をインストールしました
+installed {} is newer than the latest {} release {} - pick a version to change	インストール済みの {} は最新の{}リリース {} より新しいです - 変更するにはバージョンを選んでください
+installing version	installing version
+installing version {}...	バージョン {} をインストール中...
 into others, removed	他に統合、削除
 is a built-in map - nothing changed to save	は内蔵マップです - 保存する変更はありません
 is a built-in map - pick a new name for yours	は内蔵マップです - 自分用に新しい名前を付けてください
@@ -3693,15 +3810,25 @@ is a built-in map: pick a new name	は内蔵マップです: 新しい名前を�
 is a legacy map (never ranked): ranked plays	はレガシーマップです (ランク対象外): ランクのプレイ先
 is a legacy map (this server doesn't list the old maps)	はレガシーマップです (このサーバーは旧マップを掲載していません)
 is already spectating	は既に観戦中です
+is blocked (it can't be read)	is blocked (it can't be read)
+is gone from the game folder.	is gone from the game folder.
 is it	が鬼
 is it - run!	が鬼 - 逃げろ!
+is missing	is missing
+is newer than the latest	is newer than the latest
 is not reachable from the internet - forward UDP	はインターネットから到達できません - UDPを転送:
 is now	は現在
 is reachable from the internet - friends can join	はインターネットから到達可能 - フレンドが参加できます
 is spectating	が観戦中
+is still installed and playable.	is still installed and playable.
 isn't a ranked ruleset	はランクのルールではありません
 isn't built for	は非対応:
 isn't in this custom mode's map pool	はこのカスタムモードのマッププールにありません
+isn't published for	isn't published for
+isn't the file that was installed (something changed or replaced it).	isn't the file that was installed (something changed or replaced it).
+it has no signed release manifest	署名付きのリリースマニフェストがありません
+it is not signed	署名されていません
+its signature does not verify	署名を検証できません
 joined team A	がチームAに参加
 joined team B	がチームBに参加
 joined the game	がゲームに参加
@@ -3721,6 +3848,8 @@ listening on UDP	UDPで待ち受け中
 live (testing server: not rated)	ライブ (テストサーバー: レート対象外)
 load governor:	負荷制御:
 look at a side of the selected box	選択したボックスの面を見てください
+looking up version	looking up version
+looking up version {}...	バージョン {} を検索中...
 lost connection	接続が切れました
 low latency: wait for the GPU	低遅延: GPUを待機
 mac:	mac:
@@ -3772,6 +3901,10 @@ no points	ポイントなし
 no response	応答なし
 no small gaps to close	埋める小さな隙間はありません
 no triangles	no triangles
+no {} builds from 1.17 on in the {} channel yet - pick a version to install it	{} 向けの 1.17 以降のビルドは{}チャンネルにまだありません - インストールするバージョンを選んでください
+no {} builds from 1.17 on yet - pick a version to install it	{} の 1.17 以降のビルドはまだありません - インストールするバージョンを選んでください
+no {} builds in the {} channel yet	{} 向けのビルドは{}チャンネルにまだありません
+no {} builds published yet	{} のビルドはまだ公開されていません
 no-discard world shader: missing	no-discard world shader: missing
 nobody finished	誰も完走しませんでした
 nobody is out - throw again	脱落者なし - もう一度
@@ -3791,6 +3924,7 @@ not enough players	人数不足
 not enough players - back to warmup	人数不足 - ウォームアップに戻ります
 not enough players - the match ends in	人数不足 - 試合終了まで
 not enough players for a tourney	トーナメントの人数が足りません
+not found (release list incomplete) - installed:	not found (release list incomplete) - installed:
 not in the main program	not in the main program
 not in the tutorial	チュートリアルでは使えません
 not in this build	このビルドにはありません
@@ -3807,7 +3941,12 @@ nothing to undo	元に戻す操作はありません
 now playing	プレイ中
 odd sample rate	不正なサンプルレート
 of #	/ #
+of version	of version
 off for this match	この試合ではオフ
+offline -	offline -
+offline - playing installed version	offline - playing installed version
+offline - playing installed version {}	オフライン - インストール済みのバージョン {} でプレイ
+offline - {}	オフライン - {}
 on your router to this PC	をルーターでこのPCへ
 only a timed round can be extended	延長できるのは時間制ラウンドのみ
 over 64 MB	64 MB超
@@ -3827,6 +3966,9 @@ paused: no humans (bots wait)	一時停止: プレイヤーなし (ボットは�
 payload delivered	ペイロード到着
 pick a new name for your copy	コピーに新しい名前を付けてください
 ping up on # of # players	#/# 人のPINGが上昇
+pinned version	pinned version
+pinned version {} (installed: {}) - press INSTALL to switch to it	固定バージョン {}（インストール済み：{}）- 切り替えるには「インストール」を押してください
+pinned version {} not found (release list incomplete) - installed: {}	固定バージョン {} が見つかりません（リリース一覧が不完全）- インストール済み：{}
 placed the group from the clipboard	クリップボードからグループを配置しました
 point # taken by team #	ポイント # をチーム # が占拠
 poll events	poll events
@@ -3852,6 +3994,9 @@ proj # type # owner # pos # # # vel # # #{}	proj # type # owner # pos # # # vel 
 properties background, color, opacity, border, radius, padding, margin, gap, font-size,	properties background, color, opacity, border, radius, padding, margin, gap, font-size,
 puts every built-in map back to its original version and removes retired ones (your own maps are kept) - click again	全内蔵マップを元のバージョンに戻し、廃止されたものを削除 (自作マップは保持) - もう一度クリック
 quark --bake-maps <dir>	quark --bake-maps <dir>
+quark installed files 1	quark installed files 1
+quark installed files 2	quark installed files 2
+quark launcher	quark launcher
 quark server	quark server
 quark server log, level	quark server log, level
 quark server log, level {}, version {}	quark server log, level {}, version {}
@@ -3888,12 +4033,15 @@ rate limited	レート制限中
 reachability:	到達性:
 reached checkpoint	チェックポイント到達
 reconnected from	再接続元:
+refused version	refused version
+refused version {}: {} - the download may have been tampered with	バージョン {} を拒否しました：{} - ダウンロードが改ざんされた可能性があります
 renderer warmup	レンダラーのウォームアップ
 reopened by the load governor	負荷制御により再開
 reopened by the load governor at	負荷制御により再開:
 restarting for an update	アップデートのため再起動中
 restarting for an update - rejoin in a few seconds	アップデートのため再起動中 - 数秒後に再参加してください
 restored the autosave of	自動保存を復元:
+right after it was written	書き込んだ直後に
 rock paper scissors:	じゃんけん:
 rotated about X	X軸で回転しました
 rotated about Y	Y軸で回転しました
@@ -4039,10 +4187,20 @@ unsaved changes - click EXIT again to leave	未保存の変更 - もう一度終
 unsaved changes - press ESC again to leave	未保存の変更 - もう一度ESCで退出
 unsupported WAV (PCM 8 / 16 / 24 / 32-bit or float)	非対応のWAV (PCM 8 / 16 / 24 / 32-bit または float)
 unsupported accessor	unsupported accessor
+up to date -	up to date -
+up to date - {} {}	最新です - {} {}
 update ready: waiting for the match to end	アップデート準備完了: 試合終了を待機中
+update {} available - press INSTALL (installed: {})	アップデート {} があります - 「インストール」を押してください（インストール済み：{}）
+update {} found - it installs at the next launch (or press INSTALL)	アップデート {} が見つかりました - 次回起動時にインストールされます（または「インストール」を押す）
+update: removed retired game file	update: removed retired game file
+update: removed retired game file {}	update: removed retired game file {}
 upload # of # kbps	アップロード # / # kbps
 upload bytes	アップロードバイト
 user:	ユーザー:
+verifying version	verifying version
+verifying version {}...	バージョン {} を検証中...
+version {} (pinned)	バージョン {}（固定）
+version {} was not installed: {}	バージョン {} はインストールされませんでした：{}
 vote builder	vote builder
 vote cancelled: the ranked match is live	投票キャンセル: ランク試合が進行中
 vote failed:	投票否決:
@@ -4054,8 +4212,12 @@ voted rules:	投票されたルール:
 voted rules: {}	voted rules: {}
 vs bots	ボット戦
 warning:	警告:
+was blocked	ブロックされました
+was changed	was changed
 was it -	が鬼だった -
 was moved to spectator until the next map	は次のマップまで観戦に移動されました
+was not installed:	was not installed:
+was removed	削除されました
 wedge rising toward	ウェッジの上昇方向
 will fill the uneven teams	が人数差を埋めます
 win:	勝利:
@@ -4093,4 +4255,20 @@ you're next in line: you play the winner of this	次はあなた: この試合�
 your last vote failed: wait a few seconds	前回の投票は否決: 数秒待ってください
 your map is autosaved	マップは自動保存されました
 {} # us (last 1000 ticks)	{} # us (last 1000 ticks)
+{} (launcher update failed: {})	{}（ランチャーの更新に失敗：{}）
+{} (launcher update skipped: {})	{}（ランチャーの更新をスキップ：{}）
+{} - installed: {}	{} - インストール済み：{}
+{} - see below	{} - 下を参照
+{} - {} game file(s) missing or changed ({}): CHECK FILES	{} - {} 個のゲームファイルが欠落または変更（{}）：ファイルを確認
+{} GAME FILE(S) MISSING OR CHANGED	{} 個のゲームファイルが欠落または変更
+{} IS BLOCKED	{} がブロックされています
+{} IS MISSING	{} がありません
 {} THEN {}	{} 次に {}
+{} WAS CHANGED	{} が変更されました
+{} channel - latest {}	{}チャンネル - 最新 {}
+{} channel - latest {}, installed {}	{}チャンネル - 最新 {}、インストール済み {}
+{} channel - offline	{}チャンネル - オフライン
+{} is blocked (it can't be read)	{} がブロックされています（読み込めません）
+{} is missing	{} がありません
+{} of version {}	{}（バージョン {}）
+{} was changed	{} が変更されました

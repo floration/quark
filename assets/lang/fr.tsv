@@ -72,6 +72,7 @@
 (FINISH)	(ARRIVÉE)
 (HIDDEN: STREAMER MODE)	(MASQUÉ : MODE STREAMER)
 (HS)	(HS)
+(INSTALLED)	(INSTALLED)
 (IT AFFECTS GAMEPLAY)	(AFFECTE LE GAMEPLAY)
 (LEAVE)	(QUITTER)
 (MISSING)	(MANQUANT)
@@ -88,13 +89,16 @@
 (exclusive: no format the device takes)	(exclusif : aucun format accepté par le périphérique)
 (exclusive: the device is busy)	(exclusif : le périphérique est occupé)
 (first: takes the loss)	(premier : prend la défaite)
+(is the game running?)	(le jeu est-il lancé ?)
 (its CONTROLS action too, if it has one)	(son action CONTRÔLES aussi, s'il en a une)
 (legacy)	(ancien)
 (lowered)	(abaissé)
 (own goal)	(contre son camp)
+(pinned)	(pinned)
 (playing the built-in brain)	(joue le cerveau intégré)
 (score #-#)	(score #-#)
 (team):	(équipe) :
+(unknown)	(inconnue)
 (vote ranked off first)	(désactivez d'abord le classé par vote)
 (winner stays)	(le gagnant reste)
 + (BIGGER)	+ (PLUS GRAND)
@@ -119,20 +123,26 @@
 - WHEEL TO SCROLL	- MOLETTE POUR DÉFILER
 - beats	- bat
 - best of 3 between the last two	- en 3 manches entre les deux derniers
+- installed:	- installed:
 - it may not work	- risque de ne pas marcher
 - it moves and stretches as one	- se déplace et s'étire d'un bloc
 - level with	- à égalité avec
 - map	- carte
 - match started	- match lancé
 - not played: the server plays	- non joué : le serveur joue
+- pick a version and press INSTALL	- pick a version and press INSTALL
+- pick a version to change	- pick a version to change
 - playing mode logic	- logique du mode en cours
 - plays the next match	- joue le match suivant
 - rock paper scissors decides it	- pierre-feuille-ciseaux tranche
+- see below	- see below
 - short of	- à court de
+- the download may have been tampered with	- the download may have been tampered with
 - their place is kept for	- leur place est gardée pendant
 -INF DB	-INF DB
 -Wcast-function-type	-Wcast-function-type
 -Y (under)	-Y (dessous)
+-fsSL	-fsSL
 0.1% LOW	0.1% BAS
 00,000,000 NS	00,000,000 NS
 1 HP	1 PV
@@ -175,6 +185,7 @@ A MOMENT LATER, AIM STRAIGHT DOWN AND FIRE	UN INSTANT APRÈS, VISE DROIT EN BAS 
 A NEW CODE FROM /link RELINKS IT - unlink REMOVES IT	UN NOUVEAU CODE DE /link LE RELIE - unlink LE RETIRE
 A NEW DIAGONAL EVERY 0.3 S	UNE NOUVELLE DIAGONALE TOUTES LES 0.3 S
 A NEW DIAGONAL EVERY 0.3 S, 10 HP	UNE NOUVELLE DIAGONALE TOUTES LES 0.3 S, 10 HP
+A NEW VERSION INSTALLS WHEN THE LAUNCHER NEXT STARTS.	UNE NOUVELLE VERSION S'INSTALLE AU PROCHAIN LANCEMENT DU LAUNCHER.
 A PLAYER JOINED VIA	UN JOUEUR A REJOINT VIA
 A ROCKET JUMP STRAIGHT UP	UN SAUT À LA ROQUETTE TOUT DROIT VERS LE HAUT
 A SERVER	UN SERVEUR
@@ -330,6 +341,8 @@ AUTO-HIDE HEALTH	MASQUER LA SANTÉ AUTO
 AUTO-HIDE WEAPON LIST	MASQUER LA LISTE D'ARMES AUTO
 AUTO-HOP	AUTO-HOP
 AUTO-HOP OFF: HELD JUMP JUMPS ONCE	AUTO-HOP DÉSACTIVÉ : SAUT MAINTENU = UN SEUL SAUT
+AUTO-START GAME	LANCER LE JEU AUTO.
+AUTO-START: PLAYS ONCE UP TO DATE. AT NEXT LAUNCH:	LANCEMENT AUTO : JOUE UNE FOIS À JOUR. AU PROCHAIN LANCEMENT :
 AUTO: YOUR SYSTEM'S LANGUAGE	AUTO : LANGUE DU SYSTÈME
 AVERAGE	MOYENNE
 AVERAGE, LAST	MOYENNE, DERNIER
@@ -499,6 +512,9 @@ CHAMPION	CHAMPION
 CHANGE ANYTHING AFTER (IT STAYS)	MODIFIEZ CE QUE VOUS VOULEZ APRÈS (ÇA RESTE)
 CHANGE MAP / MODE	CHANGER CARTE / MODE
 CHANGE MAP / MODE (pick the mode, then the map), FORCE START, RELOAD MAP, EDIT MODE (everyone edits the map together).	CHANGER CARTE / MODE (choisissez le mode, puis la carte), FORCER LE DÉPART, RECHARGER LA CARTE, MODE ÉDITION (tout le monde édite la carte ensemble).
+CHANGELOG	NOUVEAUTÉS
+CHANNEL: PRODUCTION	CANAL : STABLE
+CHANNEL: TESTING	CANAL : TEST
 CHANNELS	CANAUX
 CHANNELS: MONO	CANAUX : MONO
 CHANNELS: STEREO	CANAUX : STÉRÉO
@@ -512,6 +528,7 @@ CHAT ON	CHAT ACTIVÉ
 CHAT OPACITY	OPACITÉ DU CHAT
 CHAT SECONDS	SECONDES DU CHAT
 CHECK AGAIN	REVÉRIFIER
+CHECK FILES	VÉRIFIER
 CHECKING...	VÉRIFICATION...
 CHECKPOINT	CHECKPOINT
 CHECKPT	CHECKPT
@@ -1032,6 +1049,7 @@ FULLSCREEN SIZE: DESKTOP	TAILLE PLEIN ÉCRAN : BUREAU
 FULLSCREEN: OFF KEEPS IT ON SCREEN	PLEIN ÉCRAN : DÉSACTIVÉ LE GARDE À L'ÉCRAN
 G-SYNC / FREESYNC	G-SYNC / FREESYNC
 GAME	JEU
+GAME FILE(S) MISSING OR CHANGED	GAME FILE(S) MISSING OR CHANGED
 GAME FONTS: YOUR OWN COPY OF THE REAL FONT IF FOUND	POLICES DU JEU : VOTRE COPIE DE LA VRAIE POLICE SI TROUVÉE
 GAME LATENCY ~	LATENCE DU JEU ~
 GAME LATENCY ~{} NS  (MOUSE REPORT IN TO GPU DONE; F3: NEXT VIEW)	LATENCE DU JEU ~{} NS  (DU RAPPORT SOURIS AU GPU FINI ; F3 : VUE SUIVANTE)
@@ -1234,6 +1252,7 @@ HOSTING ON UDP PORT	HÉBERGÉ SUR LE PORT UDP
 HOW	COMMENT
 HOW OTHER PLAYERS' MOVES ARE SMOOTHED	COMMENT LES MOUVEMENTS DES AUTRES JOUEURS SONT LISSÉS
 HP	PV
+HTTP	HTTP
 HUD	HUD
 HUD & SETTINGS	HUD & PARAMÈTRES
 HUD 2	HUD 2
@@ -1298,6 +1317,8 @@ INSERT	INSERT
 INSTAGIB	INSTAGIB
 INSTAGIB CROSSBOWS	ARBALÈTES INSTAGIB
 INSTAGIB SNIPERS	SNIPERS INSTAGIB
+INSTALL	INSTALL
+INSTALL {}	INSTALLER {}
 INTEL	INTEL
 INTEL DRIVER SETTINGS COULDN'T BE READ	IMPOSSIBLE DE LIRE LES RÉGLAGES DU PILOTE INTEL
 INTEL ENDURANCE GAMING SAVES POWER OVER FRAMES	L'ENDURANCE GAMING INTEL ÉCONOMISE L'ÉNERGIE AU DÉTRIMENT DES FPS
@@ -1317,7 +1338,9 @@ INVERT Y	INVERSER Y
 IOID	IOID
 IRIS	IRIS
 IS A BUILT-IN MAP: IT STAYS AS IT IS. SAVE YOUR EDITS AS YOUR OWN MAP (IN YOUR MAPS FOLDER, UNDER THIS NAME) OR DROP THEM.	EST UNE CARTE INTÉGRÉE : ELLE RESTE TELLE QUELLE. SAUVEGARDEZ VOS MODIFS COMME VOTRE CARTE (DANS VOTRE DOSSIER MAPS, SOUS CE NOM) OU ABANDONNEZ-LES.
+IS BLOCKED	IS BLOCKED
 IS GODLIKE	EST DIVIN
+IS MISSING	IS MISSING
 IS ON A KILLING SPREE	ENCHAÎNE LES KILLS
 IS ON A RAMPAGE	EST DÉCHAÎNÉ
 IS UNSTOPPABLE	EST INARRÊTABLE
@@ -1355,6 +1378,7 @@ KB; OFF: A SERVER'S	KO ; DÉS. : CELLE DU SERVEUR
 KEEP	GARDER
 KEEP HOLDING IT ALL THE WAY DOWN	GARDE-LE ENFONCÉ PENDANT TOUTE LA DESCENTE
 KEEP HOLDING IT TO RIDE	GARDE-LE ENFONCÉ POUR LA CHEVAUCHER
+KEEP LAUNCHER OPEN	GARDER OUVERT
 KEEP THESE DISPLAY SETTINGS? REVERTING IN	GARDER CES PARAMÈTRES D'AFFICHAGE ? RETOUR DANS
 KEEP YOUR EDITS AS A NEW MAP?	GARDER VOS MODIFS COMME NOUVELLE CARTE ?
 KEEP: ALL	GARDER : TOUT
@@ -1408,6 +1432,8 @@ LAID OVER THE WORLD AFTER IT	ET POSÉ SUR LE MONDE APRÈS
 LAND	ATTERR.
 LAND ON THE FAR SIDE OF THE LAVA	ATTERRIS DE L'AUTRE CÔTÉ DE LA LAVE
 LANGUAGE	LANGUE
+LANGUAGE:	LANGUAGE:
+LANGUAGE: AUTO	LANGUE : AUTO
 LARGE	GRAND
 LASER	LASER
 LASER VAMPIRE	LASER VAMPIRE
@@ -1428,6 +1454,8 @@ LATENT SAFETY	LATENT SAFETY
 LATENT SYNC	LATENT SYNC
 LATENT SYNC: HOLD FOR THE BLANK	LATENT SYNC : ATTENDRE LE BLANK
 LATENT SYNC: WAIT FOR THE RASTER	LATENT SYNC : ATTENDRE LE BALAYAGE
+LATEST ({})	DERNIÈRE ({})
+LAUNCH OPTIONS (PASSED TO THE GAME)	OPTIONS DE LANCEMENT (POUR LE JEU)
 LAUNCHER ON THE RIGHT	LANCEUR À DROITE
 LAY A STICKY BOMB, STAND ON IT, SET IT OFF AS YOU JUMP.	POSE UNE BOMBE COLLANTE, MONTE DESSUS, FAIS-LA EXPLOSER EN SAUTANT.
 LEADERBOARD	CLASSEMENT
@@ -2367,6 +2395,7 @@ OPENS THE UDP PORT ON YOUR ROUTER (UPNP)	OUVRE LE PORT UDP SUR VOTRE BOX (UPNP)
 OPPOSITE KEYS: CANCEL	TOUCHES OPPOSÉES : ANNULENT
 OPPOSITE KEYS: FIRST WINS	TOUCHES OPPOSÉES : LA PREMIÈRE GAGNE
 OPPOSITE KEYS: LAST WINS	TOUCHES OPPOSÉES : LA DERNIÈRE GAGNE
+OPTIONS	OPTIONS
 OR RESTART: IT'S ASKED FOR AT START	OU REDÉMARRER : C'EST DEMANDÉ AU LANCEMENT
 ORB	ORBE
 OTHER PLAYERS	AUTRES JOUEURS
@@ -2394,6 +2423,9 @@ OWN SHADOW	OMBRE PROPRE
 OggS	OggS
 OpenGL function missing:	Fonction OpenGL manquante :
 OpenGL function missing: {}	OpenGL function missing: {}
+Or press REPAIR to download the game again, check it and put it back (your settings and files stay).	Ou appuie sur RÉPARER pour retélécharger le jeu, le vérifier et le remettre en place (tes réglages et fichiers restent).
+Or press REPAIR to download version	Or press REPAIR to download version
+Or press REPAIR to download version {} again, check it and put it back (your settings and files stay).	Ou appuie sur RÉPARER pour retélécharger la version {}, la vérifier et la remettre en place (tes réglages et fichiers restent).
 Output	Sortie
 PACING WAIT (ULTRA)	ATTENTE DE CADENCE (ULTRA)
 PACK	PACK
@@ -2528,6 +2560,8 @@ Pick the mode and map, a server name and the max players. The game picks the map
 Player	Joueur
 PowerGetActiveScheme	PowerGetActiveScheme
 PowerGetEffectiveOverlayScheme	PowerGetEffectiveOverlayScheme
+Press REPAIR to download version	Press REPAIR to download version
+Press REPAIR to download version {} again and put them back (your settings and files stay).	Appuie sur RÉPARER pour retélécharger la version {} et les remettre en place (tes réglages et fichiers restent).
 Q - grapple: hold to hook what you're aiming at and pull toward it; release to let go.	Q - grappin : maintenez pour accrocher ce que vous visez et vous y tirer ; relâchez pour lâcher.
 QK1 - QK8 - ranked arenas for all three ladders (vanilla and laser vampire 1v1, instagib free for all), also duel and tourney.	QK1 - QK8 - arènes classées pour les trois ladders (1v1 vanilla et laser vampire, chacun pour soi instagib), aussi duel et tournoi.
 QUAKE	QUAKE
@@ -2638,6 +2672,9 @@ REMEMBER LAST TAB	RETENIR LE DERNIER ONGLET
 REMEMBER MY QUEUES	RETENIR MES FILES
 RENAME	RENOMMER
 RENDER SCALE	ÉCHELLE DE RENDU
+REPAIR	RÉPARER
+REPAIR needs the internet:	REPAIR needs the internet:
+REPAIR needs the internet: {}	RÉPARER a besoin d'Internet : {}
 RESET ALL	TOUT RÉINIT.
 RESET ALL KEYS	RÉINIT. TOUCHES
 RESET CROSSHAIR	RÉINITIALISER LE VISEUR
@@ -2658,6 +2695,7 @@ RESUME	REPRENDRE
 RESUME (ESC)	REPRENDRE (ÉCHAP)
 RETICLE COLOR	COULEUR DU RÉTICULE
 RETICLE WIDTH	LARGEUR DU RÉTICULE
+RETRY	RÉESSAYER
 REVERT	ANNULER
 RIDE FOR 0.4 S	CHEVAUCHE 0.4 S
 RIFF	RIFF
@@ -2735,6 +2773,8 @@ RUN SPEED	VIT. COURSE
 RUN, JUMP THE HURDLES, REACH THE GLOWING LINE.	COURS, SAUTE LES HAIES, ATTEINS LA LIGNE LUMINEUSE.
 RUNS	RUNS
 Ranked games use the default model, HUD and controls and 10 ms interpolation, so everyone plays the same game.	Les parties classées utilisent le modèle, le HUD et les contrôles par défaut et une interpolation de 10 ms, pour que tout le monde joue au même jeu.
+Restore	Restore
+Restore {} from that tool's quarantine, and add an exclusion for the quark folder:	Restaure {} depuis la quarantaine de cet outil et ajoute une exclusion pour le dossier quark :
 SAFE OK / ERROR	SÛR OK / ERREUR
 SAFE: OK BLUE, ERRORS ORANGE; IT: TAG / HIDE'S	SÛR : OK EN BLEU, ERREURS EN ORANGE ; IT : CEUX DE LOUP / CACHE-CACHE
 SAME	PAREIL
@@ -3037,6 +3077,7 @@ SYSTEM MESSAGES: ALL	MESSAGES SYSTÈME : TOUS
 SYSTEM MESSAGES: IMPORTANT	MESSAGES SYSTÈME : IMPORTANTS
 SYSTEM MESSAGES: OFF	MESSAGES SYSTÈME : DÉSACTIVÉS
 SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)	SYSTÈME : LA FLÈCHE DE VOTRE OS (COULEUR : LA NÔTRE UNIQUEMENT)
+SetDefaultDllDirectories	SetDefaultDllDirectories
 Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).	Paramètres > CONTRÔLES peut exporter vos assignations et importer celles d'un autre (copier / coller le texte).
 Start the match, change map / mode, ranked on / off, edit the map together, bots on. A majority of the human players decides.	Lancer le match, changer de carte / mode, classé oui / non, éditer la carte ensemble, bots activés. La majorité des joueurs humains décide.
 Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping. Above ~13 m/s A / D turns you faster than W alone.	Le strafe-jumping donne de la vitesse : maintenez une touche latérale, tournez la souris avec et continuez à sauter. Au-delà de ~13 m/s, A / D vous tourne plus vite que W seul.
@@ -3107,6 +3148,7 @@ TEST MODE:	MODE DE TEST :
 TEST MODE: THE MAP'S	MODE DE TEST : CELUI DE LA CARTE
 TEST plays the map right away; BAKE LIGHT previews the real lighting.	TEST lance la carte tout de suite ; CALCULER L'ÉCLAIRAGE prévisualise le vrai éclairage.
 TESTING BUILD - RANKED NOT RATED (PLAYED, NEVER COUNTED)	VERSION DE TEST - CLASSÉ NON NOTÉ (JOUÉ, JAMAIS COMPTÉ)
+TESTING VERSIONS	VERSIONS DE TEST
 TEXT	TEXTE
 TEXT AFTER THE LAST RULE	TEXTE APRÈS LA DERNIÈRE RÈGLE
 TEXT ALIGN	ALIGN. TEXTE
@@ -3262,7 +3304,21 @@ TWO TINY DRIFTING BALLS, 10 HP	DEUX BOULES MINUSCULES QUI DÉRIVENT, 10 HP
 TYPE TO SEARCH: A NAME OR WHAT IT DOES (CTRL+F)	TAPEZ POUR CHERCHER : UN NOM OU CE QU'IL FAIT (CTRL+F)
 TYPING	FRAPPE
 TYPING SOUNDS	SONS DE FRAPPE
+The game can still start, but may miss maps or sounds. If you didn't change them yourself, an antivirus may have removed them.	Le jeu peut encore démarrer, mais des cartes ou des sons peuvent manquer. Si tu ne les as pas modifiés, un antivirus les a peut-être supprimés.
+The game can't start:	The game can't start:
+The game can't start: {} can't be opened (Windows refuses to run a file its antivirus flagged).	Le jeu ne peut pas démarrer : {} ne s'ouvre pas (Windows refuse d'exécuter un fichier signalé par son antivirus).
+The game can't start: {} is gone from the game folder.	Le jeu ne peut pas démarrer : {} a disparu du dossier du jeu.
+The game can't start: {} isn't the file that was installed (something changed or replaced it).	Le jeu ne peut pas démarrer : {} n'est pas le fichier installé (quelque chose l'a modifié ou remplacé).
 The server listens on UDP port 27500 (change it under UDP PORT). Quark asks your router to forward it automatically (UPnP); if friends can't connect, forward that UDP port on your router by hand.	Le serveur écoute sur le port UDP 27500 (modifiable sous PORT UDP). Quark demande à votre box de le rediriger automatiquement (UPnP) ; si vos amis ne peuvent pas se connecter, redirigez ce port UDP sur votre box à la main.
+The update stopped:	The update stopped:
+The update stopped: {}. Nothing was changed: version {} is still installed and playable.	La mise à jour s'est arrêtée : {}. Rien n'a changé : la version {} est toujours installée et jouable.
+The update stopped: {}. Nothing was installed.	La mise à jour s'est arrêtée : {}. Rien n'a été installé.
+Then press RETRY.	Puis appuie sur RÉESSAYER.
+This is almost always an antivirus false positive: quark isn't code-signed, so Windows Defender (or another antivirus) sometimes quarantines a new build. The launcher never deletes game files.	C'est presque toujours un faux positif de l'antivirus : quark n'est pas signé, donc Windows Defender (ou un autre antivirus) met parfois une nouvelle version en quarantaine. Le launcher ne supprime jamais de fichiers du jeu.
+This is most likely an antivirus or cleanup tool removing it as a false positive (quark isn't code-signed). The launcher never deletes game files.	Le plus probable : un antivirus ou un outil de nettoyage l'a supprimé par faux positif (quark n'est pas signé). Le launcher ne supprime jamais de fichiers du jeu.
+To get it back: Windows Security > Virus & threat protection > Protection history, open the entry for	To get it back: Windows Security > Virus & threat protection > Protection history, open the entry for
+To get it back: Windows Security > Virus & threat protection > Protection history, open the entry for {}, then Actions > Restore (or Allow on device).	Pour le récupérer : Sécurité Windows > Protection contre les virus et menaces > Historique de protection, ouvre l'entrée de {}, puis Actions > Restaurer (ou Autoriser sur l'appareil).
+To stop it happening again: Windows Security > Virus & threat protection > Manage settings > Exclusions > Add an exclusion > Folder:	Pour éviter que ça se reproduise : Sécurité Windows > Protection contre les virus et menaces > Gérer les paramètres > Exclusions > Ajouter une exclusion > Dossier :
 UARK	UARK
 UDP	UDP
 UDP PORT	PORT UDP
@@ -3280,6 +3336,7 @@ UNBOUND	NON ASSIGNÉ
 UNCHANGED	INCHANGÉ
 UNDO	ANNUL.
 UNGROUP	DÉGROUPER
+UNINSTALL	DÉSINSTALLER
 UNKNOWN	INCONNU
 UNKNOWN SELECTOR '	SÉLECTEUR INCONNU '
 UNLIMITED	ILLIMITÉ
@@ -3287,6 +3344,10 @@ UNPLAYED MAPS COUNT AT THEIR DEFAULT TIME	LES CARTES NON JOUÉES COMPTENT À LEU
 UNSTOPPABLE	INARRÊTABLE
 UP	HAUT
 UP / DOWN AS A MULTIPLE OF SENSITIVITY	HAUT / BAS EN MULTIPLE DE LA SENSIBILITÉ
+UPDATES	MISES À JOUR
+UPDATES: ASK FIRST	MISES À JOUR : DEMANDER
+UPDATES: AT NEXT LAUNCH	MISES À JOUR : AU PROCHAIN LANCEMENT
+UPDATES: AUTOMATIC	MISES À JOUR : AUTOMATIQUES
 UPLOAD CAP (MBIT/S)	LIMITE D'UPLOAD (MBIT/S)
 USE	UTIL.
 USE #	UTIL. #
@@ -3312,6 +3373,10 @@ VERBOSE INFO	INFOS DÉTAILLÉES
 VERBOSE INFO LINES	LIGNES D'INFOS DÉTAILLÉES
 VERDANA BOLD	VERDANA BOLD
 VERSION	VERSION
+VERSION {}	VERSION {}
+VERSION {} (INSTALLED)	VERSION {} (INSTALLÉE)
+VERSION {} WAS NOT INSTALLED	LA VERSION {} N'A PAS ÉTÉ INSTALLÉE
+VERSIONS	VERSIONS
 VERTICAL KEYS	TOUCHES VERTICALES
 VERTICAL SENSITIVITY	SENSIBILITÉ VERTICALE
 VERTICAL: ONE KEY	VERT. : 1 TOUCHE
@@ -3384,6 +3449,8 @@ WARMUP - {} TO VOTE START	ÉCHAUFFEMENT - {} POUR VOTER LE DÉPART
 WARNING BEEP	BIP D'ALERTE
 WARNING: DON'T TOUCH THIS UNLESS YOU KNOW WHAT YOU'RE DOING	ATTENTION : N'Y TOUCHEZ PAS SI VOUS NE SAVEZ PAS CE QUE VOUS FAITES
 WARNINGS	ALERTES
+WAS CHANGED	WAS CHANGED
+WAS NOT INSTALLED	WAS NOT INSTALLED
 WAS ON	ÉTAIT SUR
 WASTELAND	TERRES DÉSOLÉES
 WATCH AGAIN	REVOIR
@@ -3449,12 +3516,16 @@ WITHIN 1.3 M OF THE FLOOR. 10 MS LATE LOSES 3 M/S	À MOINS DE 1.3 M DU SOL. 10 M
 WIZARD	SORCIER
 WORD FILTER	FILTRE DE MOTS
 WORK SANS	WORK SANS
+WORKING...	EN COURS...
 WORLD	MONDE
 WORLD + HUD + SHADOW MAP BUILD	MONDE + HUD + CONSTRUCTION SHADOW MAP
 WORLD OUTLINE	CONTOUR DU MONDE
 WORLD OUTLINE WIDTH	LARGEUR DU CONTOUR DU MONDE
 WORST #MS  PING #  3D #X#	PIRE #MS  PING #  3D #X#
 WRAP AROUND	BOUCLER
+WinHttpOpen failed	WinHttpOpen failed
+Windows refused to start	Windows refused to start
+Windows refused to start {} (error {})	Windows a refusé de lancer {} (erreur {})
 X MSAA	X MSAA
 X OFFSET	DÉCALAGE X
 X SENSITIVITY WHILE THIS WEAPON IS HELD	X LA SENSIBILITÉ QUAND CETTE ARME EST EN MAIN
@@ -3523,6 +3594,8 @@ add must be 3 numbers from 0 to 16	add doit être 3 nombres de 0 à 16
 advances (walkover)	qualifié (forfait)
 after a session	après une session
 after swap (low latency wait)	après swap (attente faible latence)
+again and put them back (your settings and files stay).	again and put them back (your settings and files stay).
+again, check it and put it back (your settings and files stay).	again, check it and put it back (your settings and files stay).
 ahead of you (winner stays)	devant vous (le gagnant reste)
 alpha must be over 0 and at most 1	alpha doit être supérieur à 0 et au plus 1
 an update is ready - the server restarts after this match	une mise à jour est prête - le serveur redémarre après ce match
@@ -3553,6 +3626,7 @@ bad mesh	bad mesh
 bad modifier '	modificateur invalide '
 bad node	bad node
 bad request	requête invalide
+bad url	bad url
 bench:	bench :
 big noodle*	big noodle*
 bignoodletitling*	bignoodletitling*
@@ -3572,6 +3646,10 @@ box model:	modèle de bloc :
 boxes into	blocs dans
 boxes into one	blocs en un seul
 buffer without data	buffer without data
+builds from 1.17 on in the	builds from 1.17 on in the
+builds from 1.17 on yet - pick a version to install it	builds from 1.17 on yet - pick a version to install it
+builds in the	builds in the
+builds published yet	builds published yet
 built in # ms	construit en # ms
 built-in maps reset to the original version	cartes intégrées remises à leur version d'origine
 busy #%, late #%	occupé #%, en retard #%
@@ -3595,6 +3673,7 @@ callvote start	callvote start
 callvote tmaps	callvote tmaps
 callvote tmodes	callvote tmodes
 can't	impossible de
+can't be opened (Windows refuses to run a file its antivirus flagged).	can't be opened (Windows refuses to run a file its antivirus flagged).
 can't do that	impossible de faire ça
 can't go ranked: no ranked map for that ladder installed	classé impossible : aucune carte classée installée pour ce ladder
 can't read	impossible de lire
@@ -3602,24 +3681,46 @@ can't save:	sauvegarde impossible :
 can't turn that	impossible de tourner ça
 can't vote for that list	impossible de voter pour cette liste
 can't vote:	vote impossible :
+cannot copy	copie impossible
+cannot read	lecture impossible
+cannot repair: version	cannot repair: version
+cannot repair: version {} isn't published for {} - pick a version and press INSTALL	réparation impossible : la version {} n'est pas publiée pour {} - choisis une version et appuie sur INSTALLER
+cannot replace	remplacement impossible
+cannot write	écriture impossible
 capture of every point in	capture de chaque point en
+channel - latest	channel - latest
+channel - offline	channel - offline
+channel yet	channel yet
+channel yet - pick a version to install it	channel yet - pick a version to install it
 chat # "	chat # "
 chat # "{}": {}	chat # "{}": {}
 chat: slow down	chat : ralentissez
+checked {} game files of version {}: all fine	{} fichiers du jeu de la version {} vérifiés : tout va bien
+checked {} game files: {}	{} fichiers du jeu vérifiés : {}
+checking for updates...	recherche de mises à jour...
+checking game files...	vérification des fichiers du jeu...
 checking if UDP	vérification si UDP
 clean surfaces	surfaces propres
 closed by the load governor	fermé par le régulateur de charge
 color must be 3 numbers from 0 to 16	color doit être 3 nombres de 0 à 16
 connect from	connexion depuis
 connected from	connecté depuis
+connection failed (error {})	échec de la connexion (erreur {})
 connection to server lost	connexion au serveur perdue
+could not be written (a full disk, or blocked as it was written)	n'a pas pu être écrit (disque plein, ou bloqué pendant l'écriture)
 could not bind UDP port	impossible de lier le port UDP
 could not create an OpenGL 3.3 window - update your graphics driver	impossible de créer une fenêtre OpenGL 3.3 - mettez à jour votre pilote graphique
+could not download its release manifest ({})	impossible de télécharger son manifeste de version ({})
+could not download its signature ({})	impossible de télécharger sa signature ({})
 could not host:	impossible d'héberger :
 could not open	impossible d'ouvrir
 could not open log file	impossible d'ouvrir le fichier de log
+could not read the download	impossible de lire le téléchargement
+could not run curl	impossible de lancer curl
 could not save maps/	impossible d'enregistrer maps/
 could not save the map	impossible de sauvegarder la carte
+could not start the game in	could not start the game in
+could not start the game in {} (error {})	impossible de lancer le jeu dans {} (erreur {})
 could not write maps/	impossible d'écrire maps/
 could not write to the groups folder	impossible d'écrire dans le dossier groups
 couldn't check reachability:	vérification de l'accessibilité impossible :
@@ -3631,6 +3732,11 @@ delivered the payload in	a livré le convoi en
 delivery in	livraison dans
 demo finished	démo terminée
 demo:	démo :
+download failed:	download failed:
+download failed: {}	échec du téléchargement : {}
+download interrupted	téléchargement interrompu
+downloading version	downloading version
+downloading version {}...	téléchargement de la version {}...
 draw - the payload is in the middle	égalité - le convoi est au milieu
 dropped:	déconnecté :
 dyn + view + flat verts	dyn + view + flat verts
@@ -3664,9 +3770,13 @@ flush2D	flush2D
 font {}: {}	font {}: {}
 font:	police :
 font: {} built in # ms	font: {} built in # ms
+found - it installs at the next launch (or press INSTALL)	found - it installs at the next launch (or press INSTALL)
 found everyone	tout le monde a été trouvé
+from that tool's quarantine, and add an exclusion for the quark folder:	from that tool's quarantine, and add an exclusion for the quark folder:
 g del	g del
 g part # # # # # # # #	g part # # # # # # # #
+game files of version	game files of version
+game files:	game files:
 glass shards	éclats de verre
 glfwInit failed	glfwInit failed
 go to the back of the line	retournez en fin de file
@@ -3685,6 +3795,13 @@ index out of range	index out of range
 init failed:	échec de l'init :
 init failed: {}	init failed: {}
 input + prediction ticks	ticks d'entrée + prédiction
+install failed:	install failed:
+install failed: {}	échec de l'installation : {}
+installed version	installed version
+installed version {}	version {} installée
+installed {} is newer than the latest {} release {} - pick a version to change	la version installée {} est plus récente que la dernière version {} {} - choisis une version pour changer
+installing version	installing version
+installing version {}...	installation de la version {}...
 into others, removed	dans les autres, retiré
 is a built-in map - nothing changed to save	est une carte intégrée - rien à sauvegarder
 is a built-in map - pick a new name for yours	est une carte intégrée - choisissez un nouveau nom pour la vôtre
@@ -3693,15 +3810,25 @@ is a built-in map: pick a new name	est une carte intégrée : choisissez un nouv
 is a legacy map (never ranked): ranked plays	est une ancienne carte (jamais classée) : le classé joue
 is a legacy map (this server doesn't list the old maps)	est une ancienne carte (ce serveur ne liste pas les anciennes cartes)
 is already spectating	est déjà spectateur
+is blocked (it can't be read)	is blocked (it can't be read)
+is gone from the game folder.	is gone from the game folder.
 is it	est le loup
 is it - run!	est le loup - fuyez !
+is missing	is missing
+is newer than the latest	is newer than the latest
 is not reachable from the internet - forward UDP	n'est pas joignable depuis internet - redirigez l'UDP
 is now	est maintenant
 is reachable from the internet - friends can join	est joignable depuis internet - les amis peuvent rejoindre
 is spectating	est spectateur
+is still installed and playable.	is still installed and playable.
 isn't a ranked ruleset	n'est pas une règle classée
 isn't built for	n'est pas conçue pour
 isn't in this custom mode's map pool	n'est pas dans le pool de cartes de ce mode perso
+isn't published for	isn't published for
+isn't the file that was installed (something changed or replaced it).	isn't the file that was installed (something changed or replaced it).
+it has no signed release manifest	il n'a pas de manifeste de version signé
+it is not signed	il n'est pas signé
+its signature does not verify	sa signature n'est pas valide
 joined team A	a rejoint l'équipe A
 joined team B	a rejoint l'équipe B
 joined the game	a rejoint la partie
@@ -3721,6 +3848,8 @@ listening on UDP	écoute sur UDP
 live (testing server: not rated)	en ligne (serveur de test : non noté)
 load governor:	régulateur de charge :
 look at a side of the selected box	regardez un côté du bloc sélectionné
+looking up version	looking up version
+looking up version {}...	recherche de la version {}...
 lost connection	connexion perdue
 low latency: wait for the GPU	faible latence : attendre le GPU
 mac:	mac:
@@ -3772,6 +3901,10 @@ no points	aucun point
 no response	pas de réponse
 no small gaps to close	aucun petit trou à combler
 no triangles	aucun triangle
+no {} builds from 1.17 on in the {} channel yet - pick a version to install it	pas encore de version {} depuis la 1.17 dans le canal {} - choisis une version à installer
+no {} builds from 1.17 on yet - pick a version to install it	pas encore de version {} depuis la 1.17 - choisis une version à installer
+no {} builds in the {} channel yet	pas encore de version {} dans le canal {}
+no {} builds published yet	aucune version {} publiée pour l'instant
 no-discard world shader: missing	no-discard world shader: missing
 nobody finished	personne n'a fini
 nobody is out - throw again	personne n'est éliminé - rejouez
@@ -3791,6 +3924,7 @@ not enough players	pas assez de joueurs
 not enough players - back to warmup	pas assez de joueurs - retour à l'échauffement
 not enough players - the match ends in	pas assez de joueurs - le match se termine dans
 not enough players for a tourney	pas assez de joueurs pour un tournoi
+not found (release list incomplete) - installed:	not found (release list incomplete) - installed:
 not in the main program	not in the main program
 not in the tutorial	pas dans le tutoriel
 not in this build	pas dans cette version
@@ -3807,7 +3941,12 @@ nothing to undo	rien à annuler
 now playing	en cours
 odd sample rate	fréquence d'échantillonnage inhabituelle
 of #	sur #
+of version	of version
 off for this match	désactivé pour ce match
+offline -	offline -
+offline - playing installed version	offline - playing installed version
+offline - playing installed version {}	hors ligne - version installée {}
+offline - {}	hors ligne - {}
 on your router to this PC	sur votre box vers ce PC
 only a timed round can be extended	seule une manche chronométrée peut être prolongée
 over 64 MB	plus de 64 Mo
@@ -3827,6 +3966,9 @@ paused: no humans (bots wait)	en pause : aucun humain (les bots attendent)
 payload delivered	convoi livré
 pick a new name for your copy	choisissez un nouveau nom pour votre copie
 ping up on # of # players	ping en hausse pour # joueurs sur #
+pinned version	pinned version
+pinned version {} (installed: {}) - press INSTALL to switch to it	version épinglée {} (installée : {}) - appuie sur INSTALLER pour y passer
+pinned version {} not found (release list incomplete) - installed: {}	version épinglée {} introuvable (liste incomplète) - installée : {}
 placed the group from the clipboard	groupe placé depuis le presse-papiers
 point # taken by team #	point # pris par l'équipe #
 poll events	poll events
@@ -3852,6 +3994,9 @@ proj # type # owner # pos # # # vel # # #{}	proj # type # owner # pos # # # vel 
 properties background, color, opacity, border, radius, padding, margin, gap, font-size,	propriétés background, color, opacity, border, radius, padding, margin, gap, font-size,
 puts every built-in map back to its original version and removes retired ones (your own maps are kept) - click again	remet chaque carte intégrée à sa version d'origine et retire les cartes retirées (vos cartes sont gardées) - recliquez
 quark --bake-maps <dir>	quark --bake-maps <dir>
+quark installed files 1	quark installed files 1
+quark installed files 2	quark installed files 2
+quark launcher	quark launcher
 quark server	serveur quark
 quark server log, level	log du serveur quark, niveau
 quark server log, level {}, version {}	quark server log, level {}, version {}
@@ -3888,12 +4033,15 @@ rate limited	limite de débit atteinte
 reachability:	accessibilité :
 reached checkpoint	checkpoint atteint
 reconnected from	reconnecté depuis
+refused version	refused version
+refused version {}: {} - the download may have been tampered with	version {} refusée : {} - le téléchargement a peut-être été modifié
 renderer warmup	renderer warmup
 reopened by the load governor	rouvert par le régulateur de charge
 reopened by the load governor at	rouvert par le régulateur de charge à
 restarting for an update	redémarrage pour une mise à jour
 restarting for an update - rejoin in a few seconds	redémarrage pour une mise à jour - revenez dans quelques secondes
 restored the autosave of	sauvegarde auto restaurée de
+right after it was written	juste après son écriture
 rock paper scissors:	pierre-feuille-ciseaux :
 rotated about X	pivoté autour de X
 rotated about Y	pivoté autour de Y
@@ -4039,10 +4187,20 @@ unsaved changes - click EXIT again to leave	modifications non sauvegardées - re
 unsaved changes - press ESC again to leave	modifications non sauvegardées - appuyez de nouveau sur ÉCHAP pour partir
 unsupported WAV (PCM 8 / 16 / 24 / 32-bit or float)	WAV non supporté (PCM 8 / 16 / 24 / 32 bits ou float)
 unsupported accessor	unsupported accessor
+up to date -	up to date -
+up to date - {} {}	à jour - {} {}
 update ready: waiting for the match to end	mise à jour prête : attente de la fin du match
+update {} available - press INSTALL (installed: {})	mise à jour {} disponible - appuie sur INSTALLER (installée : {})
+update {} found - it installs at the next launch (or press INSTALL)	mise à jour {} trouvée - elle s'installe au prochain lancement (ou appuie sur INSTALLER)
+update: removed retired game file	update: removed retired game file
+update: removed retired game file {}	update: removed retired game file {}
 upload # of # kbps	upload # sur # kbps
 upload bytes	octets envoyés
 user:	utilisateur :
+verifying version	verifying version
+verifying version {}...	vérification de la version {}...
+version {} (pinned)	version {} (épinglée)
+version {} was not installed: {}	la version {} n'a pas été installée : {}
 vote builder	vote builder
 vote cancelled: the ranked match is live	vote annulé : le match classé est en cours
 vote failed:	vote échoué :
@@ -4054,8 +4212,12 @@ voted rules:	règles votées :
 voted rules: {}	voted rules: {}
 vs bots	contre des bots
 warning:	attention :
+was blocked	a été bloqué
+was changed	was changed
 was it -	était le loup -
 was moved to spectator until the next map	a été passé spectateur jusqu'à la prochaine carte
+was not installed:	was not installed:
+was removed	a été supprimé
 wedge rising toward	coin montant vers
 will fill the uneven teams	va compléter les équipes inégales
 win:	victoire :
@@ -4093,4 +4255,20 @@ you're next in line: you play the winner of this	vous êtes le prochain : vous a
 your last vote failed: wait a few seconds	votre dernier vote a échoué : attendez quelques secondes
 your map is autosaved	votre carte est sauvegardée automatiquement
 {} # us (last 1000 ticks)	{} # us (last 1000 ticks)
+{} (launcher update failed: {})	{} (échec de la mise à jour du launcher : {})
+{} (launcher update skipped: {})	{} (mise à jour du launcher ignorée : {})
+{} - installed: {}	{} - installée : {}
+{} - see below	{} - voir ci-dessous
+{} - {} game file(s) missing or changed ({}): CHECK FILES	{} - {} fichier(s) du jeu manquant(s) ou modifié(s) ({}) : VÉRIFIER
+{} GAME FILE(S) MISSING OR CHANGED	{} FICHIER(S) DU JEU MANQUANT(S) OU MODIFIÉ(S)
+{} IS BLOCKED	{} EST BLOQUÉ
+{} IS MISSING	{} EST MANQUANT
 {} THEN {}	{} PUIS {}
+{} WAS CHANGED	{} A ÉTÉ MODIFIÉ
+{} channel - latest {}	canal {} - dernière {}
+{} channel - latest {}, installed {}	canal {} - dernière {}, installée {}
+{} channel - offline	canal {} - hors ligne
+{} is blocked (it can't be read)	{} est bloqué (illisible)
+{} is missing	{} est manquant
+{} of version {}	{} de la version {}
+{} was changed	{} a été modifié

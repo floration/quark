@@ -121,6 +121,8 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     win_ = win;
     opts_ = opts;
     cfg_.load();
+    // --language CODE (the launcher's LANGUAGE picked before this folder had a quark.cfg): this start's setting, kept
+    if (!opts_.language.empty() && (opts_.language == "auto" || lang::indexOf(opts_.language) >= 0)) cfg_.language = opts_.language;
     // (screenshot and UI test runs on a fresh data folder stay in a window of the config's size, as before borderless
     // became the default: their pictures and layouts don't depend on the monitor)
     if (cfg_.newConfig && (!opts_.screenshot.empty() || opts_.uiTest)) cfg_.displayMode = 0;

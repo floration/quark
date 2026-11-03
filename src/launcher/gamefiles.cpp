@@ -240,12 +240,22 @@ std::vector<Issue> verify(const fs::path& root, const List& list, const Sizes* s
     return out;
 }
 
+std::string say(const char* f, std::initializer_list<std::string> a) {
+    std::string out;
+    auto it = a.begin();
+    for (const char* p = f; *p; p++) {
+        if (p[0] == '%' && p[1] == 's') { if (it != a.end()) out += *it++; p++; }
+        else out += *p;
+    }
+    return out;
+}
+
 std::string describe(const Issue& issue) {
     std::string name = fs::u8path(issue.path).filename().u8string();
     switch (issue.problem) {
-    case Problem::Missing: return name + " is missing";
-    case Problem::Changed: return name + " was changed";
-    default: return name + " is blocked (it can't be read)";
+    case Problem::Missing: return say("%s is missing", {name});
+    case Problem::Changed: return say("%s was changed", {name});
+    default: return say("%s is blocked (it can't be read)", {name});
     }
 }
 
@@ -279,16 +289,13 @@ Health checkInstall(const fs::path& dir, const std::string& exe, bool full) {
 
 std::string antivirusHelp(const std::string& file, const fs::path& installRoot) {
 #ifdef _WIN32
-    return "This is almost always an antivirus false positive: quark isn't code-signed, so Windows Defender (or another "
-           "antivirus) sometimes quarantines a new build. The launcher never deletes game files.\n"
-           "To get it back: Windows Security > Virus & threat protection > Protection history, open the entry for " + file +
-           ", then Actions > Restore (or Allow on device).\n"
-           "To stop it happening again: Windows Security > Virus & threat protection > Manage settings > Exclusions > "
-           "Add an exclusion > Folder:\n" + installRoot.u8string();
+    // (each line one literal: one key for its translation, tools/lang/extract.py)
+    return std::string("This is almost always an antivirus false positive: quark isn't code-signed, so Windows Defender (or another antivirus) sometimes quarantines a new build. The launcher never deletes game files.") + "\n" +
+           say("To get it back: Windows Security > Virus & threat protection > Protection history, open the entry for %s, then Actions > Restore (or Allow on device).", {file}) + "\n" +
+           "To stop it happening again: Windows Security > Virus & threat protection > Manage settings > Exclusions > Add an exclusion > Folder:" + "\n" + installRoot.u8string();
 #else
-    return "This is most likely an antivirus or cleanup tool removing it as a false positive (quark isn't code-signed). "
-           "The launcher never deletes game files.\n"
-           "Restore " + file + " from that tool's quarantine, and add an exclusion for the quark folder:\n" + installRoot.u8string();
+    return std::string("This is most likely an antivirus or cleanup tool removing it as a false positive (quark isn't code-signed). The launcher never deletes game files.") + "\n" +
+           say("Restore %s from that tool's quarantine, and add an exclusion for the quark folder:", {file}) + "\n" + installRoot.u8string();
 #endif
 }
 

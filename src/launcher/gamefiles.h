@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <functional>
 #include <map>
+#include <initializer_list>
 #include <string>
 #include <vector>
 
@@ -83,6 +84,9 @@ struct Issue {
 std::vector<Issue> verify(const std::filesystem::path& root, const List& list, const Sizes* sizes, bool full,
                           bool skipPlayerFiles);
 // "quark.exe is missing" / "quark.exe was changed" / "quark.exe is blocked" (the file's name, not its path).
+// f with each %s the next of a, in order: the launcher's text, one whole line for its translation (the game's
+// LANGUAGE, lang.h: a line with %s pieces is looked up as a pattern, "{}" each piece, and the pieces put back)
+std::string say(const char* f, std::initializer_list<std::string> a);
 std::string describe(const Issue& issue);
 
 struct Health {

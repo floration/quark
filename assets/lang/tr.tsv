@@ -72,6 +72,7 @@
 (FINISH)	(BİTİŞ)
 (HIDDEN: STREAMER MODE)	(GİZLİ: YAYINCI MODU)
 (HS)	(HS)
+(INSTALLED)	(INSTALLED)
 (IT AFFECTS GAMEPLAY)	(OYNANIŞI ETKİLER)
 (LEAVE)	(AYRIL)
 (MISSING)	(EKSİK)
@@ -88,13 +89,16 @@
 (exclusive: no format the device takes)	(özel mod: cihazın aldığı format yok)
 (exclusive: the device is busy)	(özel mod: cihaz meşgul)
 (first: takes the loss)	(ilk: yenilgiyi alır)
+(is the game running?)	(oyun açık mı?)
 (its CONTROLS action too, if it has one)	(varsa KONTROLLER eylemi de)
 (legacy)	(eski)
 (lowered)	(düşürüldü)
 (own goal)	(kendi kalesine)
+(pinned)	(pinned)
 (playing the built-in brain)	(yerleşik beyni oynuyor)
 (score #-#)	(skor #-#)
 (team):	(takım):
+(unknown)	(bilinmiyor)
 (vote ranked off first)	(önce dereceliyi oyla kapat)
 (winner stays)	(kazanan kalır)
 + (BIGGER)	+ (BÜYÜK)
@@ -119,20 +123,26 @@
 - WHEEL TO SCROLL	- KAYDIRMAK İÇİN TEKERLEK
 - beats	- yener
 - best of 3 between the last two	- son ikisi arasında 3 maçta 2
+- installed:	- installed:
 - it may not work	- çalışmayabilir
 - it moves and stretches as one	- tek parça halinde taşınır ve uzar
 - level with	- eşit
 - map	- harita
 - match started	- maç başladı
 - not played: the server plays	- oynanmadı: sunucu oynar
+- pick a version and press INSTALL	- pick a version and press INSTALL
+- pick a version to change	- pick a version to change
 - playing mode logic	- mod mantığı oynanıyor
 - plays the next match	- sonraki maçı oynar
 - rock paper scissors decides it	- taş kağıt makas karar verir
+- see below	- see below
 - short of	- eksik
+- the download may have been tampered with	- the download may have been tampered with
 - their place is kept for	- yerleri şu süre korunur
 -INF DB	-SONS. DB
 -Wcast-function-type	-Wcast-function-type
 -Y (under)	-Y (alt)
+-fsSL	-fsSL
 0.1% LOW	%0.1 LOW
 00,000,000 NS	00,000,000 NS
 1 HP	1 HP
@@ -175,6 +185,7 @@ A MOMENT LATER, AIM STRAIGHT DOWN AND FIRE	BİR AN SONRA DÜMDÜZ AŞAĞI NİŞA
 A NEW CODE FROM /link RELINKS IT - unlink REMOVES IT	/link İLE ALINAN YENİ KOD YENİDEN BAĞLAR - unlink KALDIRIR
 A NEW DIAGONAL EVERY 0.3 S	HER 0.3 SN'DE YENİ BİR ÇAPRAZ
 A NEW DIAGONAL EVERY 0.3 S, 10 HP	HER 0.3 SN'DE YENİ BİR ÇAPRAZ, 10 HP
+A NEW VERSION INSTALLS WHEN THE LAUNCHER NEXT STARTS.	YENİ SÜRÜM, LAUNCHER BİR SONRAKİ AÇILIŞTA KURULUR.
 A PLAYER JOINED VIA	BİR OYUNCU ŞUNUNLA KATILDI:
 A ROCKET JUMP STRAIGHT UP	DÜMDÜZ YUKARI ROKET ZIPLAMASI
 A SERVER	BİR SUNUCU
@@ -330,6 +341,8 @@ AUTO-HIDE HEALTH	CANI OTOMATİK GİZLE
 AUTO-HIDE WEAPON LIST	SİLAH LİSTESİNİ OTOMATİK GİZLE
 AUTO-HOP	OTOMATİK HOP
 AUTO-HOP OFF: HELD JUMP JUMPS ONCE	OTOMATİK HOP KAPALI: BASILI ZIPLAMA BİR KEZ ZIPLAR
+AUTO-START GAME	OYUNU OTOMATİK BAŞLAT
+AUTO-START: PLAYS ONCE UP TO DATE. AT NEXT LAUNCH:	OTOMATİK BAŞLAT: GÜNCELLENİNCE OYNAR. SONRAKİ AÇILIŞTA:
 AUTO: YOUR SYSTEM'S LANGUAGE	OTOMATİK: SİSTEM DİLİ
 AVERAGE	ORTALAMA
 AVERAGE, LAST	ORTALAMA, SON
@@ -499,6 +512,9 @@ CHAMPION	ŞAMPİYON
 CHANGE ANYTHING AFTER (IT STAYS)	SONRA HER ŞEYİ DEĞİŞTİR (KALIR)
 CHANGE MAP / MODE	HARİTA / MOD DEĞİŞTİR
 CHANGE MAP / MODE (pick the mode, then the map), FORCE START, RELOAD MAP, EDIT MODE (everyone edits the map together).	HARİTA / MOD DEĞİŞTİR (önce mod, sonra harita), ZORLA BAŞLAT, HARİTAYI YENİDEN YÜKLE, DÜZENLEME MODU (herkes haritayı birlikte düzenler).
+CHANGELOG	DEĞİŞİKLİKLER
+CHANNEL: PRODUCTION	KANAL: KARARLI
+CHANNEL: TESTING	KANAL: TEST
 CHANNELS	KANALLAR
 CHANNELS: MONO	KANALLAR: MONO
 CHANNELS: STEREO	KANALLAR: STEREO
@@ -512,6 +528,7 @@ CHAT ON	SOHBET AÇIK
 CHAT OPACITY	SOHBET OPAKLIĞI
 CHAT SECONDS	SOHBET SÜRESİ
 CHECK AGAIN	TEKRAR KONTROL ET
+CHECK FILES	DOSYALARI DENETLE
 CHECKING...	KONTROL EDİLİYOR...
 CHECKPOINT	KONTROL NOKTASI
 CHECKPT	KN
@@ -1032,6 +1049,7 @@ FULLSCREEN SIZE: DESKTOP	TAM EKRAN BOYUTU: MASAÜSTÜ
 FULLSCREEN: OFF KEEPS IT ON SCREEN	TAM EKRAN: KAPALI EKRANDA TUTAR
 G-SYNC / FREESYNC	G-SYNC / FREESYNC
 GAME	OYUN
+GAME FILE(S) MISSING OR CHANGED	GAME FILE(S) MISSING OR CHANGED
 GAME FONTS: YOUR OWN COPY OF THE REAL FONT IF FOUND	OYUN FONTLARI: BULUNURSA GERÇEK FONTUN KENDİ KOPYAN
 GAME LATENCY ~	OYUN GECİKMESİ ~
 GAME LATENCY ~{} NS  (MOUSE REPORT IN TO GPU DONE; F3: NEXT VIEW)	OYUN GECİKMESİ ~{} NS  (FARE RAPORUNDAN GPU BİTİŞİNE; F3: SONRAKİ GÖRÜNÜM)
@@ -1234,6 +1252,7 @@ HOSTING ON UDP PORT	UDP PORTUNDA HOST EDİLİYOR
 HOW	NASIL
 HOW OTHER PLAYERS' MOVES ARE SMOOTHED	DİĞER OYUNCULARIN HAREKETLERİ NASIL YUMUŞATILIR
 HP	HP
+HTTP	HTTP
 HUD	HUD
 HUD & SETTINGS	HUD & AYARLAR
 HUD 2	HUD 2
@@ -1298,6 +1317,8 @@ INSERT	INSERT
 INSTAGIB	INSTAGIB
 INSTAGIB CROSSBOWS	INSTAGIB ARBALETLER
 INSTAGIB SNIPERS	INSTAGIB SNIPER'LAR
+INSTALL	INSTALL
+INSTALL {}	{} KUR
 INTEL	INTEL
 INTEL DRIVER SETTINGS COULDN'T BE READ	INTEL SÜRÜCÜ AYARLARI OKUNAMADI
 INTEL ENDURANCE GAMING SAVES POWER OVER FRAMES	INTEL ENDURANCE GAMING FPS YERİNE GÜÇ TASARRUFU YAPIYOR
@@ -1317,7 +1338,9 @@ INVERT Y	Y TERS
 IOID	IOID
 IRIS	IRIS
 IS A BUILT-IN MAP: IT STAYS AS IT IS. SAVE YOUR EDITS AS YOUR OWN MAP (IN YOUR MAPS FOLDER, UNDER THIS NAME) OR DROP THEM.	YERLEŞİK BİR HARİTA: OLDUĞU GİBİ KALIR. DÜZENLEMELERİNİ KENDİ HARİTAN OLARAK KAYDET (HARİTALAR KLASÖRÜNDE, BU ADLA) VEYA AT.
+IS BLOCKED	IS BLOCKED
 IS GODLIKE	TANRISAL
+IS MISSING	IS MISSING
 IS ON A KILLING SPREE	ÖLDÜRME SERİSİNDE
 IS ON A RAMPAGE	KUDURDU
 IS UNSTOPPABLE	DURDURULAMIYOR
@@ -1355,6 +1378,7 @@ KB; OFF: A SERVER'S	KB; KAPALI: SUNUCUNUN
 KEEP	KORU
 KEEP HOLDING IT ALL THE WAY DOWN	AŞAĞI İNERKEN HEP BASILI TUT
 KEEP HOLDING IT TO RIDE	ÜSTÜNDE KALMAK İÇİN BASILI TUT
+KEEP LAUNCHER OPEN	LAUNCHER AÇIK KALSIN
 KEEP THESE DISPLAY SETTINGS? REVERTING IN	BU EKRAN AYARLARI KALSIN MI? GERİ DÖNÜLÜYOR:
 KEEP YOUR EDITS AS A NEW MAP?	DÜZENLEMELER YENİ HARİTA OLARAK KALSIN MI?
 KEEP: ALL	SAKLA: HEPSİ
@@ -1408,6 +1432,8 @@ LAID OVER THE WORLD AFTER IT	SONRA DÜNYANIN ÜSTÜNE KONUR
 LAND	İNİŞ
 LAND ON THE FAR SIDE OF THE LAVA	LAVANIN ÖTE TARAFINA İN
 LANGUAGE	DİL
+LANGUAGE:	LANGUAGE:
+LANGUAGE: AUTO	DİL: OTOMATİK
 LARGE	BÜYÜK
 LASER	LAZER
 LASER VAMPIRE	LASER VAMPIRE
@@ -1428,6 +1454,8 @@ LATENT SAFETY	LATENT GÜVENLİK
 LATENT SYNC	LATENT SYNC
 LATENT SYNC: HOLD FOR THE BLANK	LATENT SYNC: BOŞLUĞU BEKLE
 LATENT SYNC: WAIT FOR THE RASTER	LATENT SYNC: RASTER'I BEKLE
+LATEST ({})	EN YENİ ({})
+LAUNCH OPTIONS (PASSED TO THE GAME)	BAŞLATMA SEÇENEKLERİ (OYUNA)
 LAUNCHER ON THE RIGHT	BAŞLATICI SAĞDA
 LAY A STICKY BOMB, STAND ON IT, SET IT OFF AS YOU JUMP.	YAPIŞKAN BOMBA KOY, ÜSTÜNE BAS, ZIPLARKEN PATLAT.
 LEADERBOARD	SKOR TABLOSU
@@ -2367,6 +2395,7 @@ OPENS THE UDP PORT ON YOUR ROUTER (UPNP)	MODEMDE UDP PORTUNU AÇAR (UPNP)
 OPPOSITE KEYS: CANCEL	ZIT TUŞLAR: İPTAL
 OPPOSITE KEYS: FIRST WINS	ZIT TUŞLAR: İLK KAZANIR
 OPPOSITE KEYS: LAST WINS	ZIT TUŞLAR: SON KAZANIR
+OPTIONS	SEÇENEKLER
 OR RESTART: IT'S ASKED FOR AT START	VEYA YENİDEN BAŞLAT: BAŞLANGIÇTA SORULUR
 ORB	KÜRE
 OTHER PLAYERS	DİĞER OYUNCULAR
@@ -2394,6 +2423,9 @@ OWN SHADOW	KENDİ GÖLGEM
 OggS	OggS
 OpenGL function missing:	OpenGL fonksiyonu eksik:
 OpenGL function missing: {}	OpenGL function missing: {}
+Or press REPAIR to download the game again, check it and put it back (your settings and files stay).	Ya da oyunu yeniden indirip denetleyip yerine koymak için ONAR'a bas (ayarların ve dosyaların kalır).
+Or press REPAIR to download version	Or press REPAIR to download version
+Or press REPAIR to download version {} again, check it and put it back (your settings and files stay).	Ya da {} sürümünü yeniden indirip denetleyip yerine koymak için ONAR'a bas (ayarların ve dosyaların kalır).
 Output	Çıkış
 PACING WAIT (ULTRA)	TEMPO BEKLEMESİ (ULTRA)
 PACK	PAKET
@@ -2528,6 +2560,8 @@ Pick the mode and map, a server name and the max players. The game picks the map
 Player	Oyuncu
 PowerGetActiveScheme	PowerGetActiveScheme
 PowerGetEffectiveOverlayScheme	PowerGetEffectiveOverlayScheme
+Press REPAIR to download version	Press REPAIR to download version
+Press REPAIR to download version {} again and put them back (your settings and files stay).	{} sürümünü yeniden indirip onları yerine koymak için ONAR'a bas (ayarların ve dosyaların kalır).
 Q - grapple: hold to hook what you're aiming at and pull toward it; release to let go.	Q - kanca: nişan aldığın yere takmak ve oraya çekilmek için basılı tut; bırakmak için bırak.
 QK1 - QK8 - ranked arenas for all three ladders (vanilla and laser vampire 1v1, instagib free for all), also duel and tourney.	QK1 - QK8 - üç sıralama için de dereceli arenalar (vanilla ve laser vampire 1v1, instagib herkes kendi için), ayrıca düello ve turnuva.
 QUAKE	QUAKE
@@ -2638,6 +2672,9 @@ REMEMBER LAST TAB	SON SEKMEYİ HATIRLA
 REMEMBER MY QUEUES	SIRALARIMI HATIRLA
 RENAME	AD DEĞİŞ.
 RENDER SCALE	RENDER ÖLÇEĞİ
+REPAIR	ONAR
+REPAIR needs the internet:	REPAIR needs the internet:
+REPAIR needs the internet: {}	ONARMAK için internet gerekli: {}
 RESET ALL	HEPSİNİ SIFIRLA
 RESET ALL KEYS	TÜM TUŞLARI SIFIRLA
 RESET CROSSHAIR	NİŞANGAHI SIFIRLA
@@ -2658,6 +2695,7 @@ RESUME	DEVAM ET
 RESUME (ESC)	DEVAM ET (ESC)
 RETICLE COLOR	NİŞANGAH RENGİ
 RETICLE WIDTH	NİŞANGAH GENİŞLİĞİ
+RETRY	TEKRAR DENE
 REVERT	GERİ AL
 RIDE FOR 0.4 S	0.4 S ÜSTÜNDE KAL
 RIFF	RİFF
@@ -2735,6 +2773,8 @@ RUN SPEED	KOŞU HIZI
 RUN, JUMP THE HURDLES, REACH THE GLOWING LINE.	KOŞ, ENGELLERİ AŞ, PARLAYAN ÇİZGİYE ULAŞ.
 RUNS	KOŞU
 Ranked games use the default model, HUD and controls and 10 ms interpolation, so everyone plays the same game.	Dereceli oyunlar varsayılan model, HUD ve kontrolleri ve 10 ms interpolasyonu kullanır, böylece herkes aynı oyunu oynar.
+Restore	Restore
+Restore {} from that tool's quarantine, and add an exclusion for the quark folder:	{} dosyasını o aracın karantinasından geri yükle ve quark klasörü için bir dışlama ekle:
 SAFE OK / ERROR	GÜVENLİ TAMAM / HATA
 SAFE: OK BLUE, ERRORS ORANGE; IT: TAG / HIDE'S	GÜVENLİ: TAMAM MAVİ, HATALAR TURUNCU; EBE: EBELEMECE / SAKLAMBAÇ RENGİ
 SAME	AYNI
@@ -3037,6 +3077,7 @@ SYSTEM MESSAGES: ALL	SİSTEM MESAJLARI: HEPSİ
 SYSTEM MESSAGES: IMPORTANT	SİSTEM MESAJLARI: ÖNEMLİ
 SYSTEM MESSAGES: OFF	SİSTEM MESAJLARI: KAPALI
 SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)	SİSTEM: İŞLETİM SİSTEMİNİN OKU (RENK: SADECE BİZİMKİ)
+SetDefaultDllDirectories	SetDefaultDllDirectories
 Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).	Ayarlar > KONTROLLER tuş atamalarını dışa aktarabilir ve başkasınınkini içe aktarabilir (metni kopyala / yapıştır).
 Start the match, change map / mode, ranked on / off, edit the map together, bots on. A majority of the human players decides.	Maçı başlat, harita / mod değiştir, dereceli açık / kapalı, haritayı birlikte düzenle, botlar açık. İnsan oyuncuların çoğunluğu karar verir.
 Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping. Above ~13 m/s A / D turns you faster than W alone.	Strafe-jumping hız kazandırır: bir yan tuşu basılı tut, fareyi onunla birlikte çevir ve zıplamaya devam et. ~13 m/s üstünde A / D seni tek başına W'den daha hızlı döndürür.
@@ -3107,6 +3148,7 @@ TEST MODE:	TEST MODU:
 TEST MODE: THE MAP'S	TEST MODU: HARİTANINKİ
 TEST plays the map right away; BAKE LIGHT previews the real lighting.	TEST haritayı hemen oynatır; IŞIĞI PİŞİR gerçek aydınlatmayı önizler.
 TESTING BUILD - RANKED NOT RATED (PLAYED, NEVER COUNTED)	TEST SÜRÜMÜ - DERECELİ PUANLANMAZ (OYNANIR, ASLA SAYILMAZ)
+TESTING VERSIONS	TEST SÜRÜMLERİ
 TEXT	METİN
 TEXT AFTER THE LAST RULE	SON KURALDAN SONRAKİ METİN
 TEXT ALIGN	METİN HİZASI
@@ -3262,7 +3304,21 @@ TWO TINY DRIFTING BALLS, 10 HP	SÜZÜLEN İKİ MİNİK TOP, 10 HP
 TYPE TO SEARCH: A NAME OR WHAT IT DOES (CTRL+F)	ARAMAK İÇİN YAZ: BİR AD VEYA NE YAPTIĞI (CTRL+F)
 TYPING	YAZIYOR
 TYPING SOUNDS	YAZMA SESLERİ
+The game can still start, but may miss maps or sounds. If you didn't change them yourself, an antivirus may have removed them.	Oyun yine başlar ama bazı haritalar ya da sesler eksik olabilir. Onları sen değiştirmediysen bir antivirüs silmiş olabilir.
+The game can't start:	The game can't start:
+The game can't start: {} can't be opened (Windows refuses to run a file its antivirus flagged).	Oyun başlayamıyor: {} açılamıyor (Windows, antivirüsünün işaretlediği bir dosyayı çalıştırmaz).
+The game can't start: {} is gone from the game folder.	Oyun başlayamıyor: {} oyun klasöründe yok.
+The game can't start: {} isn't the file that was installed (something changed or replaced it).	Oyun başlayamıyor: {} kurulan dosya değil (bir şey onu değiştirmiş ya da yerine başkasını koymuş).
 The server listens on UDP port 27500 (change it under UDP PORT). Quark asks your router to forward it automatically (UPnP); if friends can't connect, forward that UDP port on your router by hand.	Sunucu UDP 27500 portunu dinler (UDP PORT altından değiştir). Quark modeminden bunu otomatik yönlendirmesini ister (UPnP); arkadaşların bağlanamıyorsa o UDP portunu modeminde elle yönlendir.
+The update stopped:	The update stopped:
+The update stopped: {}. Nothing was changed: version {} is still installed and playable.	Güncelleme durdu: {}. Hiçbir şey değişmedi: {} sürümü hâlâ kurulu ve oynanabilir.
+The update stopped: {}. Nothing was installed.	Güncelleme durdu: {}. Hiçbir şey kurulmadı.
+Then press RETRY.	Sonra TEKRAR DENE'ye bas.
+This is almost always an antivirus false positive: quark isn't code-signed, so Windows Defender (or another antivirus) sometimes quarantines a new build. The launcher never deletes game files.	Bu neredeyse her zaman bir antivirüs yanlış alarmıdır: quark kod imzalı değil, bu yüzden Windows Defender (ya da başka bir antivirüs) bazen yeni bir sürümü karantinaya alır. Launcher oyun dosyalarını asla silmez.
+This is most likely an antivirus or cleanup tool removing it as a false positive (quark isn't code-signed). The launcher never deletes game files.	Büyük olasılıkla bir antivirüs ya da temizlik aracı onu yanlış alarmla sildi (quark kod imzalı değil). Launcher oyun dosyalarını asla silmez.
+To get it back: Windows Security > Virus & threat protection > Protection history, open the entry for	To get it back: Windows Security > Virus & threat protection > Protection history, open the entry for
+To get it back: Windows Security > Virus & threat protection > Protection history, open the entry for {}, then Actions > Restore (or Allow on device).	Geri almak için: Windows Güvenliği > Virüs ve tehdit koruması > Koruma geçmişi, {} kaydını aç, sonra Eylemler > Geri yükle (ya da Cihazda izin ver).
+To stop it happening again: Windows Security > Virus & threat protection > Manage settings > Exclusions > Add an exclusion > Folder:	Bir daha olmaması için: Windows Güvenliği > Virüs ve tehdit koruması > Ayarları yönet > Dışlamalar > Dışlama ekle > Klasör:
 UARK	UARK
 UDP	UDP
 UDP PORT	UDP PORT
@@ -3280,6 +3336,7 @@ UNBOUND	ATANMAMIŞ
 UNCHANGED	DEĞİŞMEDİ
 UNDO	GERİ AL
 UNGROUP	GRUBU ÇÖZ
+UNINSTALL	KALDIR
 UNKNOWN	BİLİNMİYOR
 UNKNOWN SELECTOR '	BİLİNMEYEN SEÇİCİ '
 UNLIMITED	SINIRSIZ
@@ -3287,6 +3344,10 @@ UNPLAYED MAPS COUNT AT THEIR DEFAULT TIME	OYNANMAMIŞ HARİTALAR VARSAYILAN SÜR
 UNSTOPPABLE	DURDURULAMAZ
 UP	YUK
 UP / DOWN AS A MULTIPLE OF SENSITIVITY	YUKARI / AŞAĞI, HASSASİYETİN KATI OLARAK
+UPDATES	GÜNCELLEMELER
+UPDATES: ASK FIRST	GÜNCELLEME: ÖNCE SOR
+UPDATES: AT NEXT LAUNCH	GÜNCELLEME: SONRAKİ AÇILIŞTA
+UPDATES: AUTOMATIC	GÜNCELLEME: OTOMATİK
 UPLOAD CAP (MBIT/S)	UPLOAD SINIRI (MBİT/SN)
 USE	KULL.
 USE #	KULL. #
@@ -3312,6 +3373,10 @@ VERBOSE INFO	AYRINTILI BİLGİ
 VERBOSE INFO LINES	AYRINTILI BİLGİ SATIRLARI
 VERDANA BOLD	VERDANA BOLD
 VERSION	SÜRÜM
+VERSION {}	SÜRÜM {}
+VERSION {} (INSTALLED)	SÜRÜM {} (KURULU)
+VERSION {} WAS NOT INSTALLED	SÜRÜM {} KURULMADI
+VERSIONS	SÜRÜMLER
 VERTICAL KEYS	DİKEY TUŞLAR
 VERTICAL SENSITIVITY	DİKEY HASSASİYET
 VERTICAL: ONE KEY	DİKEY: TEK TUŞ
@@ -3384,6 +3449,8 @@ WARMUP - {} TO VOTE START	ISINMA - {} BAŞLAT OYLAMAK İÇİN
 WARNING BEEP	UYARI BİPİ
 WARNING: DON'T TOUCH THIS UNLESS YOU KNOW WHAT YOU'RE DOING	UYARI: NE YAPTIĞINI BİLMİYORSAN BUNA DOKUNMA
 WARNINGS	UYARILAR
+WAS CHANGED	WAS CHANGED
+WAS NOT INSTALLED	WAS NOT INSTALLED
 WAS ON	AÇIKTI:
 WASTELAND	ÇORAK
 WATCH AGAIN	TEKRAR İZLE
@@ -3449,12 +3516,16 @@ WITHIN 1.3 M OF THE FLOOR. 10 MS LATE LOSES 3 M/S	ZEMİNE 1.3 M'DEN YAKINKEN. 10
 WIZARD	BÜYÜCÜ
 WORD FILTER	KELİME FİLTRESİ
 WORK SANS	WORK SANS
+WORKING...	ÇALIŞIYOR...
 WORLD	DÜNYA
 WORLD + HUD + SHADOW MAP BUILD	DÜNYA + HUD + GÖLGE HARİTASI OLUŞTURMA
 WORLD OUTLINE	DÜNYA KONTURU
 WORLD OUTLINE WIDTH	DÜNYA KONTUR GENİŞLİĞİ
 WORST #MS  PING #  3D #X#	EN KÖTÜ #MS  PİNG #  3D #X#
 WRAP AROUND	BAŞA SAR
+WinHttpOpen failed	WinHttpOpen failed
+Windows refused to start	Windows refused to start
+Windows refused to start {} (error {})	Windows {} dosyasını başlatmayı reddetti (hata {})
 X MSAA	X MSAA
 X OFFSET	X KAYMASI
 X SENSITIVITY WHILE THIS WEAPON IS HELD	BU SİLAH ELİNDEYKEN X HASSASİYETİ
@@ -3523,6 +3594,8 @@ add must be 3 numbers from 0 to 16	add 0 ile 16 arasında 3 sayı olmalı
 advances (walkover)	ilerliyor (hükmen)
 after a session	oturumdan sonra
 after swap (low latency wait)	swap sonrası (düşük gecikme beklemesi)
+again and put them back (your settings and files stay).	again and put them back (your settings and files stay).
+again, check it and put it back (your settings and files stay).	again, check it and put it back (your settings and files stay).
 ahead of you (winner stays)	önündekiler (kazanan kalır)
 alpha must be over 0 and at most 1	alpha 0'dan büyük ve en fazla 1 olmalı
 an update is ready - the server restarts after this match	güncelleme hazır - sunucu bu maçtan sonra yeniden başlar
@@ -3553,6 +3626,7 @@ bad mesh	hatalı mesh
 bad modifier '	hatalı değiştirici '
 bad node	hatalı node
 bad request	hatalı istek
+bad url	bad url
 bench:	bench:
 big noodle*	big noodle*
 bignoodletitling*	bignoodletitling*
@@ -3572,6 +3646,10 @@ box model:	kutu modeli:
 boxes into	kutu şuna:
 boxes into one	kutu tek parçaya
 buffer without data	verisiz buffer
+builds from 1.17 on in the	builds from 1.17 on in the
+builds from 1.17 on yet - pick a version to install it	builds from 1.17 on yet - pick a version to install it
+builds in the	builds in the
+builds published yet	builds published yet
 built in # ms	# ms'de oluşturuldu
 built-in maps reset to the original version	yerleşik haritalar orijinal sürüme sıfırlandı
 busy #%, late #%	meşgul %#, geç %#
@@ -3595,6 +3673,7 @@ callvote start	callvote start
 callvote tmaps	callvote tmaps
 callvote tmodes	callvote tmodes
 can't	yapılamıyor:
+can't be opened (Windows refuses to run a file its antivirus flagged).	can't be opened (Windows refuses to run a file its antivirus flagged).
 can't do that	bunu yapamazsın
 can't go ranked: no ranked map for that ladder installed	dereceliye geçilemiyor: o sıralama için yüklü dereceli harita yok
 can't read	okunamıyor
@@ -3602,24 +3681,46 @@ can't save:	kaydedilemiyor:
 can't turn that	bu çevrilemiyor
 can't vote for that list	o liste için oylama yapılamaz
 can't vote:	oylanamıyor:
+cannot copy	kopyalanamıyor
+cannot read	okunamıyor
+cannot repair: version	cannot repair: version
+cannot repair: version {} isn't published for {} - pick a version and press INSTALL	onarılamıyor: {} sürümü {} için yayımlanmadı - bir sürüm seçip KUR'a bas
+cannot replace	değiştirilemiyor
+cannot write	yazılamıyor
 capture of every point in	her noktanın ele geçirilmesi:
+channel - latest	channel - latest
+channel - offline	channel - offline
+channel yet	channel yet
+channel yet - pick a version to install it	channel yet - pick a version to install it
 chat # "	sohbet # "
 chat # "{}": {}	chat # "{}": {}
 chat: slow down	sohbet: yavaşla
+checked {} game files of version {}: all fine	{} oyun dosyası denetlendi (sürüm {}): hepsi sorunsuz
+checked {} game files: {}	{} oyun dosyası denetlendi: {}
+checking for updates...	güncellemeler denetleniyor...
+checking game files...	oyun dosyaları denetleniyor...
 checking if UDP	UDP kontrol ediliyor
 clean surfaces	temiz yüzeyler
 closed by the load governor	yük denetleyicisi tarafından kapatıldı
 color must be 3 numbers from 0 to 16	color 0 ile 16 arasında 3 sayı olmalı
 connect from	şuradan bağlan:
 connected from	şuradan bağlandı:
+connection failed (error {})	bağlantı başarısız (hata {})
 connection to server lost	sunucu bağlantısı koptu
+could not be written (a full disk, or blocked as it was written)	yazılamadı (disk dolu ya da yazılırken engellendi)
 could not bind UDP port	UDP portu bağlanamadı
 could not create an OpenGL 3.3 window - update your graphics driver	OpenGL 3.3 penceresi oluşturulamadı - grafik sürücünü güncelle
+could not download its release manifest ({})	sürüm manifestosu indirilemedi ({})
+could not download its signature ({})	imza indirilemedi ({})
 could not host:	host edilemedi:
 could not open	açılamadı
 could not open log file	günlük dosyası açılamadı
+could not read the download	indirilen dosya okunamadı
+could not run curl	curl çalıştırılamadı
 could not save maps/	kaydedilemedi: maps/
 could not save the map	harita kaydedilemedi
+could not start the game in	could not start the game in
+could not start the game in {} (error {})	oyun {} içinde başlatılamadı (hata {})
 could not write maps/	yazılamadı: maps/
 could not write to the groups folder	groups klasörüne yazılamadı
 couldn't check reachability:	erişilebilirlik kontrol edilemedi:
@@ -3631,6 +3732,11 @@ delivered the payload in	payload'ı teslim etti:
 delivery in	teslimata:
 demo finished	demo bitti
 demo:	demo:
+download failed:	download failed:
+download failed: {}	indirme başarısız: {}
+download interrupted	indirme kesildi
+downloading version	downloading version
+downloading version {}...	{} sürümü indiriliyor...
 draw - the payload is in the middle	berabere - payload ortada
 dropped:	düştü:
 dyn + view + flat verts	dyn + view + flat verts
@@ -3664,9 +3770,13 @@ flush2D	flush2D
 font {}: {}	font {}: {}
 font:	font:
 font: {} built in # ms	font: {} built in # ms
+found - it installs at the next launch (or press INSTALL)	found - it installs at the next launch (or press INSTALL)
 found everyone	herkesi buldu
+from that tool's quarantine, and add an exclusion for the quark folder:	from that tool's quarantine, and add an exclusion for the quark folder:
 g del	g del
 g part # # # # # # # #	g part # # # # # # # #
+game files of version	game files of version
+game files:	game files:
 glass shards	cam kırıkları
 glfwInit failed	glfwInit başarısız
 go to the back of the line	sıranın sonuna geç
@@ -3685,6 +3795,13 @@ index out of range	indeks aralık dışında
 init failed:	başlatma başarısız:
 init failed: {}	init failed: {}
 input + prediction ticks	girdi + tahmin tick'leri
+install failed:	install failed:
+install failed: {}	kurulum başarısız: {}
+installed version	installed version
+installed version {}	{} sürümü kuruldu
+installed {} is newer than the latest {} release {} - pick a version to change	kurulu {} en yeni {} sürümü {} sürümünden daha yeni - değiştirmek için bir sürüm seç
+installing version	installing version
+installing version {}...	{} sürümü kuruluyor...
 into others, removed	diğerlerine, kaldırıldı
 is a built-in map - nothing changed to save	yerleşik bir harita - kaydedilecek değişiklik yok
 is a built-in map - pick a new name for yours	yerleşik bir harita - seninki için yeni bir ad seç
@@ -3693,15 +3810,25 @@ is a built-in map: pick a new name	yerleşik bir harita: yeni bir ad seç
 is a legacy map (never ranked): ranked plays	eski bir harita (asla dereceli değil): dereceli şunu oynar:
 is a legacy map (this server doesn't list the old maps)	eski bir harita (bu sunucu eski haritaları listelemiyor)
 is already spectating	zaten izliyor
+is blocked (it can't be read)	is blocked (it can't be read)
+is gone from the game folder.	is gone from the game folder.
 is it	ebe
 is it - run!	ebe - kaç!
+is missing	is missing
+is newer than the latest	is newer than the latest
 is not reachable from the internet - forward UDP	internetten erişilemiyor - UDP yönlendir
 is now	artık
 is reachable from the internet - friends can join	internetten erişilebilir - arkadaşlar katılabilir
 is spectating	izliyor
+is still installed and playable.	is still installed and playable.
 isn't a ranked ruleset	dereceli kural seti değil
 isn't built for	şunun için yapılmadı:
 isn't in this custom mode's map pool	bu özel modun harita havuzunda değil
+isn't published for	isn't published for
+isn't the file that was installed (something changed or replaced it).	isn't the file that was installed (something changed or replaced it).
+it has no signed release manifest	imzalı bir sürüm manifestosu yok
+it is not signed	imzalı değil
+its signature does not verify	imzası doğrulanmıyor
 joined team A	A takımına katıldı
 joined team B	B takımına katıldı
 joined the game	oyuna katıldı
@@ -3721,6 +3848,8 @@ listening on UDP	UDP dinleniyor
 live (testing server: not rated)	canlı (test sunucusu: puanlanmaz)
 load governor:	yük denetleyicisi:
 look at a side of the selected box	seçili kutunun bir yüzüne bak
+looking up version	looking up version
+looking up version {}...	{} sürümü aranıyor...
 lost connection	bağlantı koptu
 low latency: wait for the GPU	düşük gecikme: GPU'yu bekle
 mac:	mac:
@@ -3772,6 +3901,10 @@ no points	nokta yok
 no response	yanıt yok
 no small gaps to close	kapatılacak küçük boşluk yok
 no triangles	üçgen yok
+no {} builds from 1.17 on in the {} channel yet - pick a version to install it	{} için 1.17 ve sonrası derleme {} kanalında henüz yok - kurmak için bir sürüm seç
+no {} builds from 1.17 on yet - pick a version to install it	henüz 1.17 ve sonrası {} derlemesi yok - kurmak için bir sürüm seç
+no {} builds in the {} channel yet	{} için {} kanalında henüz derleme yok
+no {} builds published yet	henüz yayımlanmış {} derlemesi yok
 no-discard world shader: missing	no-discard world shader: missing
 nobody finished	kimse bitirmedi
 nobody is out - throw again	kimse elenmedi - tekrar at
@@ -3791,6 +3924,7 @@ not enough players	yeterli oyuncu yok
 not enough players - back to warmup	yeterli oyuncu yok - ısınmaya dönülüyor
 not enough players - the match ends in	yeterli oyuncu yok - maç şu sürede biter:
 not enough players for a tourney	turnuva için yeterli oyuncu yok
+not found (release list incomplete) - installed:	not found (release list incomplete) - installed:
 not in the main program	not in the main program
 not in the tutorial	eğitimde olmaz
 not in this build	bu sürümde yok
@@ -3807,7 +3941,12 @@ nothing to undo	geri alınacak bir şey yok
 now playing	şimdi oynuyor
 odd sample rate	garip örnekleme hızı
 of #	/ #
+of version	of version
 off for this match	bu maç için kapalı
+offline -	offline -
+offline - playing installed version	offline - playing installed version
+offline - playing installed version {}	çevrimdışı - kurulu {} sürümü oynanıyor
+offline - {}	çevrimdışı - {}
 on your router to this PC	modeminde bu PC'ye
 only a timed round can be extended	sadece süreli raund uzatılabilir
 over 64 MB	64 MB'tan büyük
@@ -3827,6 +3966,9 @@ paused: no humans (bots wait)	duraklatıldı: insan yok (botlar bekler)
 payload delivered	payload teslim edildi
 pick a new name for your copy	kopyan için yeni bir ad seç
 ping up on # of # players	# / # oyuncuda ping yükseldi
+pinned version	pinned version
+pinned version {} (installed: {}) - press INSTALL to switch to it	sabit sürüm {} (kurulu: {}) - ona geçmek için KUR'a bas
+pinned version {} not found (release list incomplete) - installed: {}	sabit sürüm {} bulunamadı (sürüm listesi eksik) - kurulu: {}
 placed the group from the clipboard	grup panodan yerleştirildi
 point # taken by team #	nokta #, takım # tarafından alındı
 poll events	poll events
@@ -3852,6 +3994,9 @@ proj # type # owner # pos # # # vel # # #{}	proj # type # owner # pos # # # vel 
 properties background, color, opacity, border, radius, padding, margin, gap, font-size,	özellikler background, color, opacity, border, radius, padding, margin, gap, font-size,
 puts every built-in map back to its original version and removes retired ones (your own maps are kept) - click again	tüm yerleşik haritaları orijinal sürümüne döndürür ve kaldırılanları siler (kendi haritaların korunur) - tekrar tıkla
 quark --bake-maps <dir>	quark --bake-maps <dir>
+quark installed files 1	quark installed files 1
+quark installed files 2	quark installed files 2
+quark launcher	quark launcher
 quark server	quark sunucusu
 quark server log, level	quark sunucu günlüğü, seviye
 quark server log, level {}, version {}	quark server log, level {}, version {}
@@ -3888,12 +4033,15 @@ rate limited	hız sınırına takıldı
 reachability:	erişilebilirlik:
 reached checkpoint	kontrol noktasına ulaştı
 reconnected from	şuradan yeniden bağlandı:
+refused version	refused version
+refused version {}: {} - the download may have been tampered with	{} sürümü reddedildi: {} - indirilen dosya kurcalanmış olabilir
 renderer warmup	renderer ısınması
 reopened by the load governor	yük denetleyicisi tarafından yeniden açıldı
 reopened by the load governor at	yük denetleyicisi tarafından yeniden açıldı:
 restarting for an update	güncelleme için yeniden başlatılıyor
 restarting for an update - rejoin in a few seconds	güncelleme için yeniden başlatılıyor - birkaç saniye sonra tekrar katıl
 restored the autosave of	otomatik kayıt geri yüklendi:
+right after it was written	yazıldıktan hemen sonra
 rock paper scissors:	taş kağıt makas:
 rotated about X	X etrafında döndürüldü
 rotated about Y	Y etrafında döndürüldü
@@ -4039,10 +4187,20 @@ unsaved changes - click EXIT again to leave	kaydedilmemiş değişiklikler - ayr
 unsaved changes - press ESC again to leave	kaydedilmemiş değişiklikler - ayrılmak için tekrar ESC'ye bas
 unsupported WAV (PCM 8 / 16 / 24 / 32-bit or float)	desteklenmeyen WAV (PCM 8 / 16 / 24 / 32-bit veya float)
 unsupported accessor	desteklenmeyen accessor
+up to date -	up to date -
+up to date - {} {}	güncel - {} {}
 update ready: waiting for the match to end	güncelleme hazır: maçın bitmesi bekleniyor
+update {} available - press INSTALL (installed: {})	{} güncellemesi var - KUR'a bas (kurulu: {})
+update {} found - it installs at the next launch (or press INSTALL)	{} güncellemesi bulundu - sonraki açılışta kurulur (ya da KUR'a bas)
+update: removed retired game file	update: removed retired game file
+update: removed retired game file {}	update: removed retired game file {}
 upload # of # kbps	upload # / # kbps
 upload bytes	upload bayt
 user:	kullanıcı:
+verifying version	verifying version
+verifying version {}...	{} sürümü doğrulanıyor...
+version {} (pinned)	sürüm {} (sabit)
+version {} was not installed: {}	{} sürümü kurulmadı: {}
 vote builder	vote builder
 vote cancelled: the ranked match is live	oylama iptal: dereceli maç canlı
 vote failed:	oylama başarısız:
@@ -4054,8 +4212,12 @@ voted rules:	oylanan kurallar:
 voted rules: {}	voted rules: {}
 vs bots	botlara karşı
 warning:	uyarı:
+was blocked	engellendi
+was changed	was changed
 was it -	ebeydi -
 was moved to spectator until the next map	sonraki haritaya kadar izleyiciye alındı
+was not installed:	was not installed:
+was removed	silindi
 wedge rising toward	kama yükseliş yönü:
 will fill the uneven teams	eşit olmayan takımları dolduracak
 win:	galibiyet:
@@ -4093,4 +4255,20 @@ you're next in line: you play the winner of this	sırada sonraki sensin: bunun g
 your last vote failed: wait a few seconds	son oylaman başarısız oldu: birkaç saniye bekle
 your map is autosaved	haritan otomatik kaydedildi
 {} # us (last 1000 ticks)	{} # us (last 1000 ticks)
+{} (launcher update failed: {})	{} (launcher güncellemesi başarısız: {})
+{} (launcher update skipped: {})	{} (launcher güncellemesi atlandı: {})
+{} - installed: {}	{} - kurulu: {}
+{} - see below	{} - aşağıya bak
+{} - {} game file(s) missing or changed ({}): CHECK FILES	{} - {} oyun dosyası eksik ya da değişmiş ({}): DOSYALARI DENETLE
+{} GAME FILE(S) MISSING OR CHANGED	{} OYUN DOSYASI EKSİK YA DA DEĞİŞMİŞ
+{} IS BLOCKED	{} ENGELLENDİ
+{} IS MISSING	{} EKSİK
 {} THEN {}	{} SONRA {}
+{} WAS CHANGED	{} DEĞİŞTİRİLDİ
+{} channel - latest {}	{} kanalı - en yeni {}
+{} channel - latest {}, installed {}	{} kanalı - en yeni {}, kurulu {}
+{} channel - offline	{} kanalı - çevrimdışı
+{} is blocked (it can't be read)	{} engellendi (okunamıyor)
+{} is missing	{} eksik
+{} of version {}	{} (sürüm {})
+{} was changed	{} değiştirildi
