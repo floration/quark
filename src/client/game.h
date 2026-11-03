@@ -118,6 +118,11 @@ public:
     void shutdown();
     void frame(double dt);
     bool quitRequested() const { return quit_; }
+    // the frame cap's head start (s) for a cap of `period` s: LATENCY > FRAME CAP OFFSET (AUTO: 5% of the period)
+    double capOffset(double period) const {
+        const double o = cfg_.capOffsetUs < 0 ? period * 0.05 : cfg_.capOffsetUs * 1e-6;
+        return std::min(o, period * 0.5);   // (never more than half the frame: the rest is the frame's own)
+    }
     int maxFps() const {   // (VIDEO > MORE: WHEN UNFOCUSED caps it while the window is in the background or minimized)
         int cap = cfg_.maxFps;
         if (cfg_.vrr && vrrHz_ > 3) cap = cap > 0 ? std::min(cap, vrrHz_ - 3) : vrrHz_ - 3;   // (VRR: under the refresh, never at it)
@@ -380,8 +385,8 @@ private:
     struct BenchResult {             // the run the result page shows, and the one saved before it (to compare)
         BenchFile run, prev;
         bool havePrev = false, nameDirty = false;
-        float topMs = 20;
-        std::vector<float> colMax, colMean;   // the graph (bench::graphColumns)
+        float loMs = 0, hiMs = 1, avgMs = 0;   // the graph's bounds: the run's fastest and slowest frame, and its mean
+        std::vector<float> colMax, colMean, colMin;   // the graph (bench::graphColumns)
     } benchRes_;
     std::vector<BenchFile> benchList_;   // the BENCHMARKS page's runs, newest first (headers only)
     double benchListAt_ = 0;             // (rescanned every 2 s while it's open, as the demos list)

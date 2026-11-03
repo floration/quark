@@ -62,7 +62,7 @@
 ' (names as CONTROLS shows them: R, F5, MOUSE 4, WHEEL UP)	' (noms tels qu'affichés dans CONTRÔLES : R, F5, MOUSE 4, WHEEL UP)
 ' - try: list	' - essayez : list
 ' has to wait until it's over	' doit attendre la fin
-(# MS)	(# MS)
+(# US)	(# US)
 (# glyphs) in # ms	(# glyphs) in # ms
 (BROWSER VIDEOS, ELECTRON APPS WAIT)	(VIDÉOS NAVIGATEUR, APPS ELECTRON ATTENDENT)
 (BY DEFAULT ONLY THE SCOPES)	(PAR DÉFAUT SEULEMENT LES LUNETTES)
@@ -154,7 +154,6 @@
 10-BIT: ON (A 10-BIT WINDOW)	10 BITS : ACTIVÉ (FENÊTRE 10 BITS)
 12 H CLOCK	HORLOGE 12 H
 12 M UP, OUT OF A HYPER FROM 20 M/S	12 M DE HAUT, AVEC UN HYPER DEPUIS 20 M/S
-144 FPS	144 FPS
 16 M UP, OUT OF A HYPER FROM 20 M/S	16 M DE HAUT, APRÈS UN HYPER À 20 M/S
 16 M/S ALONG THE FLOOR	16 M/S LE LONG DU SOL
 1V1 - rounds on one ruleset (vanilla, laser vampire, instagib...). First to 5. Ranked 1v1 rates you on its own ladder.	1V1 - manches sur une seule règle (vanilla, laser vampire, instagib...). Premier à 5. Le 1v1 classé vous classe sur son propre ladder.
@@ -162,7 +161,6 @@
 2 BOUNCES	2 REBONDS
 2 HYPERS	2 HYPERS
 2 SUPERS	2 SUPERS
-240 FPS	240 FPS
 2:00  -  1ST OF 6	2:00  -  1ER SUR 6
 2D: THE VIEW STAYS STILL, YOUR MOUSE MOVES THE CROSSHAIR	2D : LA VUE RESTE FIXE, LA SOURIS DÉPLACE LE VISEUR
 3 TIMES: THE GRAPH; 4 TIMES: THE GAME'S PART ONLY	3 FOIS : LE GRAPHE ; 4 FOIS : LA PART DU JEU SEULE
@@ -175,7 +173,6 @@
 3D VAMP	3D VAMP
 5 M UP THE RAMP	5 M EN HAUT DE LA RAMPE
 5 MORE MINUTES	5 MINUTES DE PLUS
-60 FPS	60 FPS
 A BURST OF 24 M/S THE WAY YOU MOVE. TWO CHARGES, EACH BACK IN 1.2 S.	UNE POUSSÉE DE 24 M/S DANS LE SENS DE TA COURSE. DEUX CHARGES, CHACUNE REVIENT EN 1.2 S.
 A DASH GOES THE WAY YOU MOVE, NOT THE WAY YOU LOOK.	UN DASH VA DANS LE SENS DE TA COURSE, PAS DE TON REGARD.
 A DASH PRESSED THIS SOON BEFORE IT'S READY	UN DASH APPUYÉ SI TÔT AVANT QU'IL SOIT PRÊT
@@ -327,6 +324,7 @@ AUDIO LATENCY: NORMAL	LATENCE AUDIO : NORMALE
 AUDIO LATENCY: SAFE	LATENCE AUDIO : SÛRE
 AUDIO OUTPUT	SORTIE AUDIO
 AUTO	AUTO
+AUTO (# US)	AUTO (# US)
 AUTO LEARNS IT; MORE: FEWER GPU BUBBLES, MORE LAG	AUTO L'APPREND ; PLUS : MOINS DE BULLES GPU, PLUS DE LAG
 AUTO PORT FORWARD	REDIRECTION DE PORT AUTO
 AUTO RECONNECT	RECONNEXION AUTO
@@ -347,6 +345,7 @@ AUTO: YOUR SYSTEM'S LANGUAGE	AUTO : LANGUE DU SYSTÈME
 AVERAGE	MOYENNE
 AVERAGE, LAST	MOYENNE, DERNIER
 AVG #  1% LOW #  0.1% LOW #	MOY #  1% BAS #  0.1% BAS #
+AVG # US	MOY # US
 AVG FPS	FPS MOY
 AVG FRAME	IMAGE MOY
 AVX2	AVX2
@@ -1013,9 +1012,12 @@ FOV: HORIZONTAL AT 4:3	FOV : HORIZONTAL EN 4:3
 FOV: VERTICAL	FOV : VERTICAL
 FPS	FPS
 FPS LIMIT	LIMITE FPS
+FPS LIMIT: WAKES THIS EARLY, THEN WAITS EXACTLY TO THE	LIMITE FPS : SE RÉVEILLE AUSSI TÔT, PUIS ATTEND PILE LE
 FPS MIN (1S)	FPS MIN (1S)
+FRAME CAP OFFSET	AVANCE DE LA LIMITE
 FRAME CAP WAIT	ATTENTE LIMITE D'IMAGES
-FRAME TIME (MS) OVER THE RUN	TEMPS D'IMAGE (MS) SUR LE RUN
+FRAME TIME OVER THE RUN	TEMPS D'IMAGE SUR LE RUN
+FRAME'S START: EVEN FRAMES; AUTO 5% OF THE FRAME	DÉBUT DE L'IMAGE : IMAGES RÉGULIÈRES ; AUTO 5 % DE L'IMAGE
 FRAMES	IMAGES
 FREE FOR ALL	CHACUN POUR SOI
 FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next kill wins).	CHACUN POUR SOI - le plus de kills à la fin du temps gagne (une égalité part en prolongation : le kill suivant gagne).
@@ -2165,6 +2167,7 @@ MATERIAL: WOODEN CRATE	MATÉRIAU : CAISSE EN BOIS
 MATERIAL: WROUGHT IRON	MATÉRIAU : FER FORGÉ
 MATERIAL: ZEBRA CROSSING	MATÉRIAU : PASSAGE PIÉTON
 MATERIAL: ZINC	MATÉRIAU : ZINC
+MAX # US	MAX # US
 MAX (0=AUTO)	MAX (0=AUTO)
 MAX PING	PING MAX
 MAX PLAYERS	JOUEURS MAX
@@ -2181,6 +2184,7 @@ MENUS	MENUS
 METER SCALE	ÉCHELLE COMPT.
 METER TICKS	GRAD. COMPT.
 MILO	MILO
+MIN # US	MIN # US
 MIN FPS (WORST FRAME)	FPS MIN (PIRE IMAGE)
 MINE	LE MIEN
 MINIMIZE ON ALT-TAB	RÉDUIRE SUR ALT-TAB
@@ -3078,6 +3082,8 @@ SYSTEM MESSAGES: IMPORTANT	MESSAGES SYSTÈME : IMPORTANTS
 SYSTEM MESSAGES: OFF	MESSAGES SYSTÈME : DÉSACTIVÉS
 SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)	SYSTÈME : LA FLÈCHE DE VOTRE OS (COULEUR : LA NÔTRE UNIQUEMENT)
 SetDefaultDllDirectories	SetDefaultDllDirectories
+SetProcessInformation	SetProcessInformation
+SetThreadInformation	SetThreadInformation
 Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).	Paramètres > CONTRÔLES peut exporter vos assignations et importer celles d'un autre (copier / coller le texte).
 Start the match, change map / mode, ranked on / off, edit the map together, bots on. A majority of the human players decides.	Lancer le match, changer de carte / mode, classé oui / non, éditer la carte ensemble, bots activés. La majorité des joueurs humains décide.
 Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping. Above ~13 m/s A / D turns you faster than W alone.	Le strafe-jumping donne de la vitesse : maintenez une touche latérale, tournez la souris avec et continuez à sauter. Au-delà de ~13 m/s, A / D vous tourne plus vite que W seul.

@@ -8,6 +8,7 @@
 - Fixed a rare wrong trail or missing explosion after very long matches, players drawn up to a second in the past after a server clock reset, and giants hidden behind cover their head stuck out over.
 - Dedicated servers: re-running install.sh no longer puts the testing server back on the production build, and a server that can't start yet keeps retrying instead of staying down.
 - macOS builds come out with each testing build again. When GitHub has no Apple Silicon Mac free, the macOS build now runs on an Intel Mac (it still makes the same universal app) instead of being dropped.
+- Ball: running or dashing into the ball no longer hurts you. The ball only does damage when it's moving over 20 m/s itself and over 25 m/s relative to you.
 
 ## Maps
 - **Payload has its own default map:** payload now picks Railyard (it still plays neutral payload and ball). The ranked ladders are unchanged.
@@ -27,6 +28,10 @@
 - **Slightly faster HUD, menus and server ticks:** rounding and square roots no longer call the C maths library.
 
 ## Latency
+- BENCHMARK results: the frame-time graph is now a line, zoomed so the run's fastest and slowest frames are its edges, with MIN, MAX and AVG shown in µs. Each frame's spread shows faintly behind the line. STDEV, AVG FRAME and the worst frame are in µs too.
+- FPS LIMIT holds its rate much more evenly: the limiter used to wake up late now and then (a 1000 cap's 0.1% low was 589). It now learns how late your PC's timer wakes and spins the rest, so capped frames come out on time. While the game has focus, its main thread also runs at the highest priority, and Windows 11 can no longer throttle it onto an efficiency core.
+- New LATENCY setting, FRAME CAP OFFSET: with an FPS limit on, the game wakes this much early, does its network and GPU check, and then reads your mouse exactly on the beat, so small hold-ups no longer make a frame late. AUTO is 5% of a frame (50 µs at 1000). You can set it in µs or turn it OFF.
+- Fixed a tiny hitch twice a second while the mouse is captured: the game re-centred the cursor every half second even when it was already there.
 - F3's graph: the gap between SWAP and the GPU no longer creeps up for 10 seconds and then snaps back. That was the measurement, not your frames. The graph also updates 10 times a second now, not twice.
 - **New LATENCY settings tab**, with every latency tweak on its own switch so you can try each combination and compare them in F3 (which now names the tweaks it was taken with):
   - LOW LATENCY (OFF / ON / ULTRA), EARLY FLUSH, CPU LATE LATCH, **GPU LATE LATCH** (new: on Windows the graphics card reads your newest mouse movement as it starts drawing the world, after the frame was sent; off by default) and **HUD BEFORE WORLD** (new, ULTRA only: the HUD is drawn before the last mouse read and laid over the world after it; off by default).

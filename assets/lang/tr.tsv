@@ -62,7 +62,7 @@
 ' (names as CONTROLS shows them: R, F5, MOUSE 4, WHEEL UP)	' (adlar KONTROLLER'deki gibi: R, F5, MOUSE 4, WHEEL UP)
 ' - try: list	' - dene: list
 ' has to wait until it's over	' bitene kadar beklemeli
-(# MS)	(# MS)
+(# US)	(# US)
 (# glyphs) in # ms	(# glyphs) in # ms
 (BROWSER VIDEOS, ELECTRON APPS WAIT)	(TARAYICI VİDEOLARI, ELECTRON UYGULAMALARI BEKLER)
 (BY DEFAULT ONLY THE SCOPES)	(VARSAYILAN: SADECE DÜRBÜNLER)
@@ -154,7 +154,6 @@
 10-BIT: ON (A 10-BIT WINDOW)	10-BİT: AÇIK (10-BİT PENCERE)
 12 H CLOCK	12 SAAT FORMATI
 12 M UP, OUT OF A HYPER FROM 20 M/S	20 M/S'DEN HYPER İLE 12 M YUKARI
-144 FPS	144 FPS
 16 M UP, OUT OF A HYPER FROM 20 M/S	20 M/S HYPER İLE 16 M YUKARI
 16 M/S ALONG THE FLOOR	ZEMİN BOYUNCA 16 M/S
 1V1 - rounds on one ruleset (vanilla, laser vampire, instagib...). First to 5. Ranked 1v1 rates you on its own ladder.	1V1 - tek kural setinde raundlar (vanilla, laser vampire, instagib...). 5 alan kazanır. Dereceli 1v1 seni ayrı bir sıralamada puanlar.
@@ -162,7 +161,6 @@
 2 BOUNCES	2 SEKME
 2 HYPERS	2 HYPER
 2 SUPERS	2 SUPER
-240 FPS	240 FPS
 2:00  -  1ST OF 6	2:00  -  6'NIN 1.'Sİ
 2D: THE VIEW STAYS STILL, YOUR MOUSE MOVES THE CROSSHAIR	2D: GÖRÜŞ SABİT, FARE NİŞANGAHI OYNATIR
 3 TIMES: THE GRAPH; 4 TIMES: THE GAME'S PART ONLY	3 KEZ: GRAFİK; 4 KEZ: SADECE OYUNUN PAYI
@@ -175,7 +173,6 @@
 3D VAMP	3D VAMP
 5 M UP THE RAMP	RAMPADA 5 M YUKARI
 5 MORE MINUTES	5 DAKİKA DAHA
-60 FPS	60 FPS
 A BURST OF 24 M/S THE WAY YOU MOVE. TWO CHARGES, EACH BACK IN 1.2 S.	GİTTİĞİN YÖNE 24 M/S'LİK ATILIM. İKİ ŞARJ, HER BİRİ 1.2 S'DE GERİ GELİR.
 A DASH GOES THE WAY YOU MOVE, NOT THE WAY YOU LOOK.	DASH BAKTIĞIN YÖNE DEĞİL, GİTTİĞİN YÖNE GİDER.
 A DASH PRESSED THIS SOON BEFORE IT'S READY	HAZIR OLMADAN BU KADAR ÖNCE BASILAN DASH
@@ -327,6 +324,7 @@ AUDIO LATENCY: NORMAL	SES GECİKMESİ: NORMAL
 AUDIO LATENCY: SAFE	SES GECİKMESİ: GÜVENLİ
 AUDIO OUTPUT	SES ÇIKIŞI
 AUTO	OTO
+AUTO (# US)	OTO (# US)
 AUTO LEARNS IT; MORE: FEWER GPU BUBBLES, MORE LAG	OTO KENDİ ÖĞRENİR; DAHA FAZLA: DAHA AZ GPU BOŞLUĞU, DAHA FAZLA GECİKME
 AUTO PORT FORWARD	OTOMATİK PORT YÖNLENDİRME
 AUTO RECONNECT	OTOMATİK YENİDEN BAĞLAN
@@ -347,6 +345,7 @@ AUTO: YOUR SYSTEM'S LANGUAGE	OTOMATİK: SİSTEM DİLİ
 AVERAGE	ORTALAMA
 AVERAGE, LAST	ORTALAMA, SON
 AVG #  1% LOW #  0.1% LOW #	ORT #  %1 LOW #  %0.1 LOW #
+AVG # US	ORT # US
 AVG FPS	ORT FPS
 AVG FRAME	ORT KARE
 AVX2	AVX2
@@ -1013,9 +1012,12 @@ FOV: HORIZONTAL AT 4:3	FOV: 4:3'TE YATAY
 FOV: VERTICAL	FOV: DİKEY
 FPS	FPS
 FPS LIMIT	FPS SINIRI
+FPS LIMIT: WAKES THIS EARLY, THEN WAITS EXACTLY TO THE	FPS SINIRI: BU KADAR ERKEN UYANIR, SONRA TAM OLARAK
 FPS MIN (1S)	FPS MİN (1SN)
+FRAME CAP OFFSET	FPS SINIRI ÖNCELİĞİ
 FRAME CAP WAIT	KARE SINIRI BEKLEMESİ
-FRAME TIME (MS) OVER THE RUN	KOŞU BOYUNCA KARE SÜRESİ (MS)
+FRAME TIME OVER THE RUN	KOŞU BOYUNCA KARE SÜRESİ
+FRAME'S START: EVEN FRAMES; AUTO 5% OF THE FRAME	KARE BAŞLANGICINA KADAR BEKLER: DÜZGÜN KARELER; OTO KARENİN %5İ
 FRAMES	KARELER
 FREE FOR ALL	HERKES KENDİ İÇİN
 FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next kill wins).	HERKES KENDİ İÇİN - süre bittiğinde en çok kill alan kazanır (beraberlikte uzatma: sonraki kill kazanır).
@@ -2165,6 +2167,7 @@ MATERIAL: WOODEN CRATE	MALZEME: AHŞAP SANDIK
 MATERIAL: WROUGHT IRON	MALZEME: FERFORJE
 MATERIAL: ZEBRA CROSSING	MALZEME: YAYA GEÇİDİ
 MATERIAL: ZINC	MALZEME: ÇİNKO
+MAX # US	MAKS # US
 MAX (0=AUTO)	MAKS. (0=OTO)
 MAX PING	MAKS PING
 MAX PLAYERS	MAKS OYUNCU
@@ -2181,6 +2184,7 @@ MENUS	MENÜLER
 METER SCALE	GÖSTERGE ÖLÇEĞİ
 METER TICKS	GÖSTERGE ÇENTİK
 MILO	MILO
+MIN # US	MİN # US
 MIN FPS (WORST FRAME)	MİN FPS (EN KÖTÜ KARE)
 MINE	BENİMKİ
 MINIMIZE ON ALT-TAB	ALT-TAB'DA KÜÇÜLT
@@ -3078,6 +3082,8 @@ SYSTEM MESSAGES: IMPORTANT	SİSTEM MESAJLARI: ÖNEMLİ
 SYSTEM MESSAGES: OFF	SİSTEM MESAJLARI: KAPALI
 SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)	SİSTEM: İŞLETİM SİSTEMİNİN OKU (RENK: SADECE BİZİMKİ)
 SetDefaultDllDirectories	SetDefaultDllDirectories
+SetProcessInformation	SetProcessInformation
+SetThreadInformation	SetThreadInformation
 Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).	Ayarlar > KONTROLLER tuş atamalarını dışa aktarabilir ve başkasınınkini içe aktarabilir (metni kopyala / yapıştır).
 Start the match, change map / mode, ranked on / off, edit the map together, bots on. A majority of the human players decides.	Maçı başlat, harita / mod değiştir, dereceli açık / kapalı, haritayı birlikte düzenle, botlar açık. İnsan oyuncuların çoğunluğu karar verir.
 Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping. Above ~13 m/s A / D turns you faster than W alone.	Strafe-jumping hız kazandırır: bir yan tuşu basılı tut, fareyi onunla birlikte çevir ve zıplamaya devam et. ~13 m/s üstünde A / D seni tek başına W'den daha hızlı döndürür.

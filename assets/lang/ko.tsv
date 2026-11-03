@@ -62,7 +62,7 @@
 ' (names as CONTROLS shows them: R, F5, MOUSE 4, WHEEL UP)	' (조작 설정에 표시된 이름: R, F5, MOUSE 4, WHEEL UP)
 ' - try: list	' - 시도: list
 ' has to wait until it's over	'은(는) 끝날 때까지 기다려야 함
-(# MS)	(# MS)
+(# US)	(# US)
 (# glyphs) in # ms	(# glyphs) in # ms
 (BROWSER VIDEOS, ELECTRON APPS WAIT)	(브라우저 영상, ELECTRON 앱은 대기)
 (BY DEFAULT ONLY THE SCOPES)	(기본값: 스코프만)
@@ -154,7 +154,6 @@
 10-BIT: ON (A 10-BIT WINDOW)	10비트: 켜짐 (10비트 창)
 12 H CLOCK	12시간제
 12 M UP, OUT OF A HYPER FROM 20 M/S	20 M/S 하이퍼로 12 M 상승
-144 FPS	144 FPS
 16 M UP, OUT OF A HYPER FROM 20 M/S	20 M/S 하이퍼로 16 M 위로
 16 M/S ALONG THE FLOOR	바닥을 따라 16 M/S
 1V1 - rounds on one ruleset (vanilla, laser vampire, instagib...). First to 5. Ranked 1v1 rates you on its own ladder.	1V1 - 한 가지 규칙(바닐라, 레이저 뱀파이어, 인스타깁...)으로 라운드 진행. 5선승. 랭크 1v1은 별도 래더로 레이팅됩니다.
@@ -162,7 +161,6 @@
 2 BOUNCES	튕기기 2회
 2 HYPERS	하이퍼 2회
 2 SUPERS	슈퍼 2회
-240 FPS	240 FPS
 2:00  -  1ST OF 6	2:00  -  6명 중 1위
 2D: THE VIEW STAYS STILL, YOUR MOUSE MOVES THE CROSSHAIR	2D: 시점 고정, 마우스로 조준점 이동
 3 TIMES: THE GRAPH; 4 TIMES: THE GAME'S PART ONLY	3번: 그래프; 4번: 게임 부분만
@@ -175,7 +173,6 @@
 3D VAMP	3D 뱀프
 5 M UP THE RAMP	경사로 5 M 오르기
 5 MORE MINUTES	5분 더
-60 FPS	60 FPS
 A BURST OF 24 M/S THE WAY YOU MOVE. TWO CHARGES, EACH BACK IN 1.2 S.	이동 방향으로 24 M/S 돌진. 충전 2회, 각각 1.2 S 후 회복.
 A DASH GOES THE WAY YOU MOVE, NOT THE WAY YOU LOOK.	대시는 보는 방향이 아니라 움직이는 방향으로 나간다.
 A DASH PRESSED THIS SOON BEFORE IT'S READY	준비되기 이만큼 전에 누른 대시 입력 인정
@@ -327,6 +324,7 @@ AUDIO LATENCY: NORMAL	오디오 지연: 보통
 AUDIO LATENCY: SAFE	오디오 지연: 안전
 AUDIO OUTPUT	오디오 출력
 AUTO	자동
+AUTO (# US)	자동 (# US)
 AUTO LEARNS IT; MORE: FEWER GPU BUBBLES, MORE LAG	자동 조정; 높을수록: GPU 공백 감소, 지연 증가
 AUTO PORT FORWARD	자동 포트 포워딩
 AUTO RECONNECT	자동 재연결
@@ -347,6 +345,7 @@ AUTO: YOUR SYSTEM'S LANGUAGE	자동: 시스템 언어
 AVERAGE	평균
 AVERAGE, LAST	평균, 최근
 AVG #  1% LOW #  0.1% LOW #	평균 #  1% LOW #  0.1% LOW #
+AVG # US	평균 # US
 AVG FPS	평균 FPS
 AVG FRAME	평균 프레임
 AVX2	AVX2
@@ -1013,9 +1012,12 @@ FOV: HORIZONTAL AT 4:3	FOV: 4:3 기준 수평
 FOV: VERTICAL	FOV: 수직
 FPS	FPS
 FPS LIMIT	FPS 제한
+FPS LIMIT: WAKES THIS EARLY, THEN WAITS EXACTLY TO THE	FPS 제한: 이만큼 일찍 깨어나 프레임 시작까지
 FPS MIN (1S)	FPS 최저 (1초)
+FRAME CAP OFFSET	FPS 제한 선행
 FRAME CAP WAIT	프레임 제한 대기
-FRAME TIME (MS) OVER THE RUN	실행 중 프레임 시간 (MS)
+FRAME TIME OVER THE RUN	실행 중 프레임 시간
+FRAME'S START: EVEN FRAMES; AUTO 5% OF THE FRAME	정확히 대기: 고른 프레임; 자동은 프레임의 5%
 FRAMES	프레임
 FREE FOR ALL	개인전
 FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next kill wins).	개인전 - 시간이 끝났을 때 킬이 가장 많은 플레이어 승리 (동점이면 연장전: 다음 킬 승리).
@@ -2165,6 +2167,7 @@ MATERIAL: WOODEN CRATE	재질: 나무 상자
 MATERIAL: WROUGHT IRON	재질: 연철
 MATERIAL: ZEBRA CROSSING	재질: 횡단보도
 MATERIAL: ZINC	재질: 아연
+MAX # US	최대 # US
 MAX (0=AUTO)	최대 (0=자동)
 MAX PING	최대 핑
 MAX PLAYERS	최대 인원
@@ -2181,6 +2184,7 @@ MENUS	메뉴
 METER SCALE	계기 배율
 METER TICKS	계기 눈금
 MILO	MILO
+MIN # US	최소 # US
 MIN FPS (WORST FRAME)	최저 FPS (최악 프레임)
 MINE	내 것
 MINIMIZE ON ALT-TAB	ALT-TAB 시 최소화
@@ -3078,6 +3082,8 @@ SYSTEM MESSAGES: IMPORTANT	시스템 메시지: 중요
 SYSTEM MESSAGES: OFF	시스템 메시지: 끄기
 SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)	시스템: OS 기본 화살표 (색상: 게임 커서만)
 SetDefaultDllDirectories	SetDefaultDllDirectories
+SetProcessInformation	SetProcessInformation
+SetThreadInformation	SetThreadInformation
 Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).	설정 > 조작에서 키 설정을 내보내거나 다른 사람의 설정을 가져올 수 있습니다 (텍스트 복사 / 붙여넣기).
 Start the match, change map / mode, ranked on / off, edit the map together, bots on. A majority of the human players decides.	경기 시작, 맵 / 모드 변경, 랭크 켜기 / 끄기, 맵 함께 편집, 봇 켜기. 사람 플레이어 과반수가 결정합니다.
 Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping. Above ~13 m/s A / D turns you faster than W alone.	스트레이프 점프로 속도를 얻는다: 옆 이동 키를 누른 채 같은 방향으로 마우스를 돌리며 계속 점프한다. ~13 m/s 이상에선 A / D가 W만 쓸 때보다 빨리 돈다.

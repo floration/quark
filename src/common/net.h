@@ -110,6 +110,24 @@ private:
     int count_ = 0;
 };
 
+// The frame cap's wait (owner, 2026-11-03: "even though i can hit several thousand minimum fps, when limiting to 1000
+// my lows are even as low as 600"): waitUntil's fixed 0.3 ms spin trusted the timer to wake within 0.3 ms, but on
+// Windows it fires on its own grid (up to ~1 ms late), and every late wake was a long frame (1.6 ms: 600 FPS) in the
+// lows. This learns how late the timer wakes this thread (20 us bins, windows of 256 waits) and sleeps only until the
+// 99.9th percentile of that + 50 us before the deadline, then spins: it rises at once on a late window and falls a
+// quarter of the way per window, between 50 us and 2.5 ms, starting at 1 ms. When the spin covers the whole wait there's
+// no sleep to learn from, and it stays where it is. Costs CPU (the spin) for exact frames.
+class CapWait {
+public:
+    void wait(double t);
+    double spin() const { return spin_; }
+private:
+    static constexpr double kMargin = 50e-6, kMin = 50e-6, kMax = 2.5e-3;
+    static constexpr int kWindow = 256;
+    TailHist hist_{20e-6};
+    double spin_ = 1e-3;
+};
+
 // How long before a deadline to stop sleeping and spin. Adaptive, from how late the OS wakes this thread (observe() after
 // each timer sleep: 5 us bins, windows of 1000, 1 s at 1000 Hz): the 99th percentile + 20 us when that is within 300 us
 // (Linux with a 1 ns slack on bare metal: ~30 us); else the host is noisy (a capped VM, Windows' timer grid) and spinning

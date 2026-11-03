@@ -219,14 +219,21 @@ int main(int argc, char** argv) {
     }
     double last = timeNow();
     double frameStart = timeNow();
+    CapWait capWait;   // (the frame cap's sleep-then-spin, learnt from this PC's timer)
     while (!glfwWindowShouldClose(win) && !game.quitRequested()) {
         game.pipeMark(Game::PM_FRAME);   // (F3's pipeline graph: the frame's parts)
         // Frame cap: wait *before* reading input, so the frame shows the freshest input possible.
+        // FRAME CAP OFFSET (owner, 2026-11-03): it wakes that much before the deadline, does the parts that take a varying
+        // time (the low-latency GPU wait, the network), then spins to the deadline and reads the mouse there: one of them
+        // running 20-50 us long no longer makes that frame late and the next short (the 0.1% low at a 1000 cap).
+        bool capped = false;
         if (game.maxFps() > 0) {
             double period = 1.0 / game.maxFps();
             double target = frameStart + period;
-            waitUntil(target);
-            frameStart = std::max(target, timeNow() - period); // keep the cadence (no slow drift below the cap), but don't try to catch up after a hitch
+            const double off = game.capOffset(period);
+            capWait.wait(target - off);
+            frameStart = std::max(target, timeNow() + off - period); // keep the cadence (no slow drift below the cap), but don't try to catch up after a hitch
+            capped = off > 0;
         } else {
             frameStart = timeNow();
         }
@@ -234,6 +241,7 @@ int main(int argc, char** argv) {
         game.beforeInput();
         game.pipeMark(Game::PM_FENCE);
         game.preInput();   // (the network: before the mouse is read)
+        if (capped) while (timeNow() < frameStart) cpuRelax();   // (the head start's rest: the mouse is read on the deadline)
         game.pipeMark(Game::PM_NET);
         game.readMouse();   // (raw mouse reports in one read; GLFW's poll gets the rest)
         { QZONE("poll events"); glfwPollEvents(); }

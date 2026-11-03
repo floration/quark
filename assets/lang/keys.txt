@@ -62,7 +62,7 @@
 ' (names as CONTROLS shows them: R, F5, MOUSE 4, WHEEL UP)
 ' - try: list
 ' has to wait until it's over
-(# MS)
+(# US)
 (# glyphs) in # ms
 (BROWSER VIDEOS, ELECTRON APPS WAIT)
 (BY DEFAULT ONLY THE SCOPES)
@@ -154,7 +154,6 @@
 10-BIT: ON (A 10-BIT WINDOW)
 12 H CLOCK
 12 M UP, OUT OF A HYPER FROM 20 M/S
-144 FPS
 16 M UP, OUT OF A HYPER FROM 20 M/S
 16 M/S ALONG THE FLOOR
 1V1 - rounds on one ruleset (vanilla, laser vampire, instagib...). First to 5. Ranked 1v1 rates you on its own ladder.
@@ -162,7 +161,6 @@
 2 BOUNCES
 2 HYPERS
 2 SUPERS
-240 FPS
 2:00  -  1ST OF 6
 2D: THE VIEW STAYS STILL, YOUR MOUSE MOVES THE CROSSHAIR
 3 TIMES: THE GRAPH; 4 TIMES: THE GAME'S PART ONLY
@@ -175,7 +173,6 @@
 3D VAMP
 5 M UP THE RAMP
 5 MORE MINUTES
-60 FPS
 A BURST OF 24 M/S THE WAY YOU MOVE. TWO CHARGES, EACH BACK IN 1.2 S.
 A DASH GOES THE WAY YOU MOVE, NOT THE WAY YOU LOOK.
 A DASH PRESSED THIS SOON BEFORE IT'S READY
@@ -327,6 +324,7 @@ AUDIO LATENCY: NORMAL
 AUDIO LATENCY: SAFE
 AUDIO OUTPUT
 AUTO
+AUTO (# US)
 AUTO LEARNS IT; MORE: FEWER GPU BUBBLES, MORE LAG
 AUTO PORT FORWARD
 AUTO RECONNECT
@@ -347,6 +345,7 @@ AUTO: YOUR SYSTEM'S LANGUAGE
 AVERAGE
 AVERAGE, LAST
 AVG #  1% LOW #  0.1% LOW #
+AVG # US
 AVG FPS
 AVG FRAME
 AVX2
@@ -1013,9 +1012,12 @@ FOV: HORIZONTAL AT 4:3
 FOV: VERTICAL
 FPS
 FPS LIMIT
+FPS LIMIT: WAKES THIS EARLY, THEN WAITS EXACTLY TO THE
 FPS MIN (1S)
+FRAME CAP OFFSET
 FRAME CAP WAIT
-FRAME TIME (MS) OVER THE RUN
+FRAME TIME OVER THE RUN
+FRAME'S START: EVEN FRAMES; AUTO 5% OF THE FRAME
 FRAMES
 FREE FOR ALL
 FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next kill wins).
@@ -2165,6 +2167,7 @@ MATERIAL: WOODEN CRATE
 MATERIAL: WROUGHT IRON
 MATERIAL: ZEBRA CROSSING
 MATERIAL: ZINC
+MAX # US
 MAX (0=AUTO)
 MAX PING
 MAX PLAYERS
@@ -2181,6 +2184,7 @@ MENUS
 METER SCALE
 METER TICKS
 MILO
+MIN # US
 MIN FPS (WORST FRAME)
 MINE
 MINIMIZE ON ALT-TAB
@@ -3078,6 +3082,8 @@ SYSTEM MESSAGES: IMPORTANT
 SYSTEM MESSAGES: OFF
 SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)
 SetDefaultDllDirectories
+SetProcessInformation
+SetThreadInformation
 Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).
 Start the match, change map / mode, ranked on / off, edit the map together, bots on. A majority of the human players decides.
 Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping. Above ~13 m/s A / D turns you faster than W alone.

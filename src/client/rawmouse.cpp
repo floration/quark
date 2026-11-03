@@ -92,6 +92,12 @@ void RawMouse::hold(GLFWwindow* w, bool on) {
     POINT c = {(r.left + r.right) / 2, (r.top + r.bottom) / 2};
     ClientToScreen(h, &c);
     RECT one = {c.x, c.y, c.x + 1, c.y + 1};
+    // (called again every 0.5 s in case the window moved or Windows let the cursor go: when it's still held where it
+    // should be, nothing is set. SetCursorPos posts a mouse-move the next poll handles, and the two calls cost the
+    // frame ~8 us and the one after it ~20 us: a pair of late frames twice a second, owner's 1000 FPS cap runs 2026-11-03)
+    RECT cur;
+    POINT at;
+    if (GetClipCursor(&cur) && GetCursorPos(&at) && EqualRect(&cur, &one) && at.x == c.x && at.y == c.y) return;
     SetCursorPos(c.x, c.y);
     ClipCursor(&one);
 }
