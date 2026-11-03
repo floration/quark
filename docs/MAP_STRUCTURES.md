@@ -30,21 +30,21 @@ Owner, 2026-10-30: "make sure all future updates get cobblestone map and surfy m
 
 ## The 1.19.6 pool
 
-Every map before 1.19.6 was replaced (q: "every current map goes except q's two hand-made ones, surfy and cobblestone"). The new maps' plans, and why each structure is there, are in the 1.19.6 maps plan and its reviews; each module's docstring (`tools/maps/<name>.py`) describes its layout. In short:
+Every map before 1.19.6 was replaced (q: "every current map goes except q's two hand-made ones, surfy and cobblestone"). Each generated map's layout, and why each structure is there, is in its module's docstring (`tools/maps/<name>.py`); the hand-made ones (Particle Accelerator, Amphitheatre Ruin, Museum, Twin Reactors, Riverside) are q's, edited in the map editor. "Also offered" is the map's `modes` line. In short:
 
 | Map | Built for | Also offered | Ranked | Setting |
 |---|---|---|---|---|
 | Particle Accelerator | race | bomb | - | particle physics lab |
-| Amphitheatre Ruin | king of the hill | team vs, power, free for all | - | a ruined Greek theatre on a hillside above the sea, late in the afternoon |
-| Suspension Bridge | power | team vs, free for all | - | suspension bridge in fog |
-| Black Hole | 1v1 (3D VAMP) | tourney, winner stays, free for all | - | a lone asteroid drifting toward a black hole |
+| Amphitheatre Ruin | king of the hill | team vs, free for all, power | - | a ruined Greek theatre on a hillside above the sea, late in the afternoon |
+| Suspension Bridge | power | team vs, ball, neutral payload, free for all | - | suspension bridge in fog |
+| Black Hole | 1v1 (3D VAMP) | duel, team vs, tourney, free for all | - | a lone asteroid drifting toward a black hole |
 | Castle | king of the hill | power, free for all | - | a medieval concentric castle |
 | Desert Convoy | multi point | free for all | - | desert highway convoy |
 | Cruise Ship | hide and seek | tag, free for all | - | a cruise liner at sea at dusk |
 | Dam | neutral payload | king of the hill, power, free for all | - | hydroelectric dam in a pine valley, morning |
 | Datacenter | bomb | free for all | - | hyperscale data centre at night |
-| Dojo | 1v1 | duel, team vs, free for all | ranked vampire | a martial arts dojo in a walled garden |
-| Express | neutral payload | king of the hill, power, free for all | - | desert railway town, hot afternoon |
+| Dojo | 1v1 | duel, team vs, tourney, free for all | ranked vampire | a martial arts dojo in a walled garden |
+| Express | neutral payload | king of the hill, power, ball, free for all | - | desert railway town, hot afternoon |
 | Fairground | tag | hide and seek, free for all | - | a funfair at night |
 | Glacier Summit | king of the hill | team vs, power, free for all | - | an observatory on a snowy peak, a cable car station and a climbers' hut |
 | Greenhouse | 1v1 | duel, team vs, tourney, free for all | ranked vanilla | victorian glasshouse |
@@ -52,8 +52,8 @@ Every map before 1.19.6 was replaced (q: "every current map goes except q's two 
 | Lighthouse | team vs | power, free for all | - | a rocky headland with a lighthouse, at night in a storm |
 | Mine | bomb | king of the hill, free for all | - | a deep mine |
 | Monorail | neutral payload | king of the hill, power, free for all | - | futuristic city monorail at dusk |
-| Museum | hide and seek | tag, free for all | - | a natural history museum at night |
-| Orbit | 1v1 | duel, team vs, tourney | - | space station centrifuge |
+| Museum | hide and seek | free for all, tag, bomb | - | a natural history museum at night |
+| Orbit | duel | 1v1, team vs, tourney | - | space station centrifuge |
 | QK1 Ring | 1v1 | duel, team vs, tourney, free for all | ranked vanilla vampire instagib | a ring of corridors round a pit, box and accent |
 | QK2 Stack | 1v1 | duel, team vs, tourney, free for all | ranked vanilla vampire instagib | a stacked tower of open floors, box and accent |
 | QK3 Pinwheel | 1v1 | duel, team vs, tourney, free for all | ranked vanilla vampire instagib | four decks wound round a sunken bowl like a pinwheel, box and accent |
@@ -61,19 +61,24 @@ Every map before 1.19.6 was replaced (q: "every current map goes except q's two 
 | QK5 Islands | 1v1 | duel, team vs, tourney, free for all | ranked vanilla vampire instagib | floating islands over the void |
 | QK6 Crossroads | 1v1 | duel, team vs, tourney, free for all | ranked vanilla vampire instagib | crossroads of halls |
 | QK7 Spiral | 1v1 | duel, team vs, tourney, free for all | ranked vanilla vampire instagib | a spiral tower court |
-| QK8 Canyon | 1v1 | duel, team vs, tourney, free for all | ranked vanilla vampire instagib | a desert canyon |
-| Railyard | neutral payload | payload, free for all | - | freight rail yard |
+| QK8 Canyon | 1v1 | duel, team vs, tourney, ball, free for all | ranked vanilla vampire instagib | a desert canyon |
+| Railyard | payload | neutral payload, ball, free for all | - | freight rail yard |
 | Twin Reactors | power | team vs, free for all | - | nuclear power plant |
-| Riverside | tag | hide and seek, power, 1v1, duel, team vs, free for all | - | riverside technology facility |
+| Riverside | tag | team vs, free for all, duel, 1v1, hide and seek, power | - | riverside technology facility |
 | Rooftop Run | race | - | - | night city rooftops |
 | Rooftops | tag | hide and seek, free for all | - | city rooftops at night, in the rain |
-| Sewer | free for all | power, 1v1, duel, team vs | - | giant sewer pipes |
+| Sewer | free for all | power, 1v1, duel, team vs, tourney | - | giant sewer pipes |
 | Solar System | surf | - | - | the solar system |
 | Spire | free for all | 1v1, duel, team vs, tourney | ranked instagib | the open top floors of a skyscraper going up above the clouds at sunset |
+| Stadium | ball | free for all | - | a football stadium under floodlights |
 | Rice Terraces | team vs | power, king of the hill, free for all | - | a sunny hillside of flooded rice terraces, a farm, a mill and a temple |
 | War | multi point | bomb, free for all | - | active warzone |
 
 **Black Hole** is built for the 3D VAMP ruleset (zero-g flight, lasers): a flat 40 x 20 m asteroid top with no cover at all (the fight is in the air round it, so cover would only be something to orbit), the rock tapering away under it in layers so its underside has no ledges to stand on. Everything else is scenery: the black hole (far boxes), its lensed ring and accretion disc (lava: bright and not solid, so the map's bounds, and with them the flyers' 40 m kill box, stay round the rock). `void -50`; `holdfire 3`: the spawns face each other across the bare floor, so nobody fires for the first 3 s.
+
+**Stadium** (owner, 2026-11-02: "ball needs a soccer field map") is built for ball: a 120 x 76 m astroturf pitch with a 14 m goal in the middle of each goal line (the ball's centre inside the frame scores; A defends the west goal), ringed 4 m outside its lines by 40 m ball walls open to the sky (an invisible block only the ball bounces off, so it stays in play while players walk through to the stands). Four tiers of walkable seating round it, a dugout either side of the halfway line (cover) and floodlight masts in the corners. Mirrored west to east; `holdfire 3`: the teams line up facing each other at kickoff.
+
+Map cleanup (2026-11-03): Orbit is built for duel (it had no map of its own; the QK maps stay built for 1v1: q, they're the competitive 1v1 maps), Railyard for one-way payload (neutral payload keeps Dam, Express and Monorail); Black Hole offers duel and team vs like every map that offers 1v1. Ball's second built-for map waits on q.
 
 Each ranked ladder has the map it's designed for (q, 2026-10-31), which going ranked and the ranked pickers choose first: vanilla 1v1 **Greenhouse**, laser vampire 1v1 **Dojo** (`holdfire 5`), instagib free for all **Spire**. qk1-qk8 are ranked on all three.
 

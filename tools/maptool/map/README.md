@@ -54,7 +54,7 @@ answer carries:
 
 The map JSON (or `{map: ...}`) returns `{text, valid, parseError? | warnings}`. `text` is `Map::serialize` of the
 map. `valid` says whether the game's parser reads `text` back. Parsing a map and serializing it again gives the
-same text as `Map::serialize`, byte for byte, on all 21 maps.
+same text as `Map::serialize`, byte for byte, on every shipped map (42 official files in 1.19.6+, checked 2026-11-03).
 
 `-0` is read and written as `-0` (the JSON reader takes `-0` as the number; floats are written with their sign).
 JS's `JSON.stringify` and Python's `json` turn `-0` into `0`, so the page sends its requests through `toJson`
@@ -63,7 +63,9 @@ JS's `JSON.stringify` and Python's `json` turn `-0` into `0`, so the page sends 
 ### check
 
 `{map, only?: [ids], outOfBounds?: bool}` runs the map checks `quark_tests` runs. A check that failed in
-`quark_tests` fails here too: all 21 shipped maps pass both.
+`quark_tests` fails here too, and the ranked and out-of-bounds checks run the tests' own code (`rankedFairness` in
+tests/walkgrid.h, `measureOutOfBounds` in tests/mapbounds.cpp), so the two agree: every generated shipped map passes
+both (q's hand-made Cobblestone and Surfy have misses, reported as HUMAN-MADE by the tests).
 
 The answer is `{map, humanMade, checks:[...], pass, failed:[ids], ms}`. Each check is
 `{id, name, pass, skipped?, detail, where:[[x,y,z]...], items:[...], ms}`. `detail` is a summary plus the first
@@ -74,13 +76,16 @@ The ids, in the order they run:
 - `preferred_mode`
 - `spawns_in_walls`
 - `walk_routes`: walk grid, every spawn to every objective
-- `nav_routes`: the bots' nav graph
+- `nav_routes`: the bots' nav graph (a surf map's checkpoints are ridden, not walked: skipped, as the tests do)
 - `ladders`: pmove climbs each one
 - `stairs_walkable`, `stairs_jump`, `stairs_cut`
 - `spawn_pools`, `spawn_facing`, `spawn_apart`, `spawn_sight`
 - `cart_sweep`
-- `ranked_mirror`
-- `out_of_bounds`: the map report's tech-reach measure; it is slow, so `outOfBounds: false` skips it
+- `ranked_mirror`: a ranked map is fair (as many spawns a side; on a 1v1 ladder both sides within 1 s of each other
+  to the enemy spawns and to the middle). It no longer asks for point symmetry (the tests dropped it, q 2026-10-30);
+  the id is kept for the editors
+- `out_of_bounds`: the tests' out-of-bounds measure (tests/mapbounds.cpp, compiled in); it is slow, so `outOfBounds: false`
+  skips it
 
 ### metrics
 
@@ -336,13 +341,14 @@ each match on a fresh thread (the game keeps `qrand` and its custom rules per th
 
 Game code and the tests were read and linked, never edited. Where the logic was static, inside a test, or tangled
 with the test framework, it was copied here (tests/mapreport.cpp has since been removed with the map grading: the
-copies below are the only measurement left; the tests keep the out-of-bounds check alone, in tests/mapbounds.cpp):
+copies below are the only measurement left). Not copied any more: the out-of-bounds check (`out_of_bounds` compiles
+tests/mapbounds.cpp in: `measureOutOfBounds`) and the ranked fairness check (`rankedFairness`, tests/walkgrid.h):
 
 | copy | from | changes |
 |---|---|---|
 | `measure_impl.h` | tests/mapreport.cpp lines 1-1410: `namespace mr` (metrics, MoveEnvelope, TechGraph, walkLoops, ...), without the cams block | laps for timings; envelope cache; threaded speed build-up, take-offs, pulls, TechGraph samples, walkLoops placements and sight rays (merged in order) |
-| `measure.cpp`: score formulas, `outOfBounds` | tests/mapreport.cpp `mapReport()` | only the per-map scores; the out-of-bounds measure as a function |
+| `measure.cpp`: score formulas | tests/mapreport.cpp `mapReport()` | only the per-map scores |
 | `walkfast.cpp`: `buildWalkGrid` | tests/walkgrid.h `WalkGrid::build` | threaded per row and per spot; fills the same struct; `walkverify` proves the result identical. tests/walkgrid.h could take this as is. |
-| `checks.cpp` | tests/tests.cpp `testAllMaps` (spawns, modes, routes), `testLadders`, `testStairs`, `testSpawnPools`, `testSpawnSanity`, `testCartSweep`, `testMaps` (ranked mirror) | returns items with positions instead of failing; ladders and stairs threaded |
+| `checks.cpp` | tests/tests.cpp `testAllMaps` (spawns, modes, routes), `testLadders`, `testStairs`, `testSpawnPools`, `testSpawnSanity`, `testCartSweep` | returns items with positions instead of failing; ladders and stairs threaded |
 | `metrics.cpp`: objective placement | tests/mapreport.cpp (pointDist's staged spawns, the cart's halfway point, ...) | as JSON, per objective |
 | `botsim.cpp`: `Server::simulate` access | `Server::frame()`'s tick body | `simulate()` and `sendSnapshots()` are private. They are reached with the explicit-instantiation member-pointer trick (`SimTag`/`SnapTag`). A public `Server::stepTick()` in src/game would remove it. |
