@@ -16,6 +16,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include "../common/asyncwriter.h"
 #include "../common/net.h"
 #include "../common/upnp.h"
 #include "map.h"
@@ -908,5 +909,10 @@ private:
     LogFn log_;
     std::unique_ptr<PortMapper> upnp_;
     std::unique_ptr<MasterAnnouncer> master_;
-    FILE* glog_ = nullptr;
+    // The game log (--log): lines are formatted on the tick thread into memory and written to disk by the writer's
+    // own thread (glogPump hands them over), so a slow disk never stalls a tick (a 1 MB stdio buffer used to be
+    // written out inside whichever tick filled it).
+    AsyncFileWriter glog_;
+    uint64_t glogHandAt_ = 0;   // timeMs_ of the next hand-over at the latest
+    void glogPump();
 };

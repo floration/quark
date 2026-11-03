@@ -1689,13 +1689,39 @@ struct Map {
     struct GridCell { uint32_t start = 0, end = 0; };
     std::vector<GridCell> cells;       // gridW*gridH
     std::vector<uint16_t> cellBrushes;
+    // PERF: what the collision and ray loops test of brushes[cellBrushes[k]], copied into cellRefs[k] (parallel to
+    // cellBrushes, kept in step by buildGrid and changeBrush, the only writers of the grid): its box, shape and what it
+    // stops, 28 bytes in a row instead of a load from a 148-byte Brush elsewhere for every reference a sweep or a ray
+    // passes. The loops read the Brush only for a slope's planes or a hit's material. Same boxes, same tests, same
+    // order: every answer is bit for bit what it was. Spare slots (an edit's room) hold stale refs, never read.
+    enum : uint8_t {
+        kRefPlayers = 1,     // stopsPlayers(material)
+        kRefShots = 2,       // stopsShots(material)
+        kRefSight = 4,       // stops sight and light: not clip, and stopsSight(material)
+        kRefClip = 8,        // clip (material 9): players only, and what asks for it (hitClip)
+        kRefWallbang = 16,   // wallbangBrush: hitscan goes through it
+        kRefGlassBreak = 32, // breakable glass (sweepAxis notes the pane a move passes)
+    };
+    struct GridRef { AABB box; uint8_t stops = 0, shape = 0; uint16_t brush = 0; };
+    static GridRef gridRef(const Brush& b, size_t i) {
+        GridRef r;
+        r.box = b.box;
+        r.shape = b.shape;
+        r.brush = (uint16_t)i;
+        r.stops = (uint8_t)((stopsPlayers(b.material) ? kRefPlayers : 0) | (stopsShots(b.material) ? kRefShots : 0) |
+                            (b.material != 9 && stopsSight(b.material) ? kRefSight : 0) | (b.material == 9 ? kRefClip : 0) |
+                            (wallbangBrush(b) ? kRefWallbang : 0) | (b.material == kMatGlassBreak ? kRefGlassBreak : 0));
+        return r;
+    }
+    std::vector<GridRef> cellRefs;
+    bool gridRefsInStep() const;       // (tests) every used slot's ref is what its brush gives now
     size_t gridRefs = 0;               // brush references in use (spare room not counted)
     // Lowest bottom / highest top of the brushes in the grid (empty: lo > hi). Rays stop walking cells once they have
     // left this slab (walkCells): a sun or sky ray otherwise walks every column to the grid's edge. Edits only widen it.
     float gridYLo = 1e30f, gridYHi = -1e30f;
     bool buildGrid();                  // false: more grid references than kMaxMapGridRefs
     static bool gridSolid(const Brush& b) { return !b.gone && (solidMaterial(b.material) || b.material == 9); } // in the grid: far scenery, water, lava aren't
-    template <class F> void forBox(const AABB& b, F f) const; // calls f(brush) for brushes in overlapped cells (may repeat)
+    template <class F> void forBox(const AABB& b, F f) const; // calls f(ref) for the refs that stop players in overlapped cells (may repeat)
 
     // Moving solids that aren't part of the static geometry (the payload cart). Collision and
     // raycasts include them; kept tiny so checking them all is free.

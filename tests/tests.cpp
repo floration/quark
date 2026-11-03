@@ -4252,7 +4252,7 @@ static void testIncrementalEdits() {
     auto same = [&](const Map& a, const Map& b) {
         if (a.brushes.size() != b.brushes.size() || a.gridW != b.gridW || a.gridH != b.gridH || a.gridX0 != b.gridX0 || a.gridZ0 != b.gridZ0 ||
             a.gridRefs != b.gridRefs || a.hasWallbang != b.hasWallbang || a.lava.size() != b.lava.size() || a.acid.size() != b.acid.size() || a.cells.size() != b.cells.size() ||
-            memcmp(&a.bounds, &b.bounds, sizeof a.bounds) != 0)
+            memcmp(&a.bounds, &b.bounds, sizeof a.bounds) != 0 || !a.gridRefsInStep() || !b.gridRefsInStep())   // (the refs the loops test: as the brushes say)
             return false;
         for (size_t k = 0; k < a.brushes.size(); k++)
             if (memcmp(&a.brushes[k].box, &b.brushes[k].box, sizeof(AABB)) || a.brushes[k].material != b.brushes[k].material || a.brushes[k].generated != b.brushes[k].generated) return false;
@@ -5882,6 +5882,7 @@ static void testDestruction(uint16_t port) {
         CHECK(std::fabs(m.raycast({0, 2.97f, 0}, fwd, 50) - 10.0f) < 0.01f || std::fabs(m.raycast({0, 0.03f, 0}, fwd, 50) - 10.0f) > -1);
         CHECK(m.punchHole({0, 1.5f, 15.0f - 0.05f}) == 0);                                // too thick: nothing
         CHECK(m.punchHole({0, 1.5f, 20.0f - 1.6f}) == 1 && m.holes.size() == 2 && m.holes[1].r < 0.7f);   // 1.5 m off: a smaller one
+        CHECK(m.gridRefsInStep());   // (the grid's refs follow the broken glass and the holes)
         {   // blown away past 80%: the rest of the wall comes down too (owner, 2026-10-29)
             Map c;
             CHECK(c.parse("box -20 -1 -20 20 0 20\nbrick -3 0 10 3 3 10.1\nspawn any 0 0 0\n"));
@@ -5893,11 +5894,12 @@ static void testDestruction(uint16_t port) {
             CHECK(fell.size() == 1 && blasts >= 2 && c.brushes[1].gone && c.holes.back().r < 0);
             for (const Brush& q : c.brushes) CHECK(q.origin != 1 || q.gone);
             CHECK(c.raycast({2.8f, 1.5f, 0}, {0, 0, 1}, 50) < 0);   // (its end too: gone)
+            CHECK(c.gridRefsInStep());
             c.resetDestruction();
-            CHECK(!c.brushes[1].gone && c.holes.empty());
+            CHECK(!c.brushes[1].gone && c.holes.empty() && c.gridRefsInStep());
         }
         m.resetDestruction();
-        CHECK(m.holes.empty() && m.brushes.size() == before && !m.brushes[1].gone && !m.brushes[2].gone);
+        CHECK(m.holes.empty() && m.brushes.size() == before && !m.brushes[1].gone && !m.brushes[2].gone && m.gridRefsInStep());
         CHECK(std::fabs(m.raycast(eye, fwd, 50) - 5.0f) < 0.01f);
         // dashing through a pane: the move isn't stopped, and the pane is named for the server to break
         MoveState st; st.pos = {0, 0, 3.2f}; st.flags = MF_ONGROUND;
@@ -5961,7 +5963,7 @@ static void testDestruction(uint16_t port) {
     s.explodeForTest({0, 1.0f, -5.5f}, -1, WPN_ROCKET);
     CHECK(s.map_.brushes[2].gone);
     s.explodeForTest({0, 1.5f, 9.95f}, -1, WPN_ROCKET);
-    CHECK(s.map_.brushes[3].gone && s.map_.holes.size() == 1);
+    CHECK(s.map_.brushes[3].gone && s.map_.holes.size() == 1 && s.map_.gridRefsInStep());
     s.resetDestruction();
     CHECK(!s.map_.brushes[1].gone && !s.map_.brushes[2].gone && !s.map_.brushes[3].gone && s.map_.holes.empty() && s.shardsFlyingForTest() == 0);
     {   // breakable blocks (562-585, owner 2026-10-29): hp from shots (x bullet) and blasts (x blast), or on contact
@@ -6012,7 +6014,7 @@ static void testDestruction(uint16_t port) {
         p.move.pos = {0, 0, 0};
         s.timeMs_ += 2100;
         s.tickCrumbles();
-        CHECK(!s.map_.brushes[1].gone && s.map_.boxSolid({{-9, 0.1f, 11}, {-7, 0.4f, 13}}));
+        CHECK(!s.map_.brushes[1].gone && s.map_.boxSolid({{-9, 0.1f, 11}, {-7, 0.4f, 13}}) && s.map_.gridRefsInStep());   // (back: its refs too)
         s.resetDestruction();
     }
     s.stop();
@@ -9425,6 +9427,7 @@ static FfaRun ffaVsExperts(uint16_t port, uint32_t seed, uint64_t* hash = nullpt
     cfg.autoStart = true;
     cfg.map = "clockwork"; cfg.mode = MODE_FFA; cfg.port = port;   // (a compact map: bastion is a big team map now)
     cfg.vsBots = true; cfg.botsEnemy = 3; cfg.botSkill = BOT_EXPERT; cfg.timeLimit = 60;
+    if (const char* lp = getenv("QUARK_SIMHASH_LOG")) { cfg.logLevel = LOG_EXTREME; cfg.logFile = lp + std::to_string(seed); }   // (the game log of a seeded match: two builds write the same bytes)
     s.setLog([](const std::string&) {});
     { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return r; } }
     CHECK(s.playerCount() == 3);
@@ -9625,6 +9628,7 @@ static void serverBench(uint16_t port, int bots, int humans, double seconds, con
     ServerConfig cfg;
     cfg.map = map; cfg.mode = mode; cfg.port = port; cfg.autoStart = true; cfg.maxPlayers = kMaxPlayers;
     if (rate) cfg.maxTickRate = rate;
+    if (const char* lp = getenv("QUARK_BENCH_LOG")) { cfg.logLevel = LOG_EXTREME; cfg.logFile = lp; }   // (the game log's cost in the tick: extreme, every tick)
     s.setLog([](const std::string&) {});
     if (!START_SERVER(s, cfg)) return;
     std::vector<std::unique_ptr<NetClient>> owned;
