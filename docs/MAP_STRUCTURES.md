@@ -77,6 +77,23 @@ Every map before 1.19.6 was replaced (q: "every current map goes except q's two 
 
 Each ranked ladder has the map it's designed for (q, 2026-10-31), which going ranked and the ranked pickers choose first: vanilla 1v1 **Greenhouse**, laser vampire 1v1 **Dojo** (`holdfire 5`), instagib free for all **Spire**. qk1-qk8 are ranked on all three.
 
+## Tutorial (1.19.9): the movement tutorial's own map
+
+**Tutorial** (`tools/maps/tutorial.py`, `for ffa`) is never in a map list, vote or picker (hidden by name: `mapHiddenFromLists`, map.h); only MAIN MENU > TUTORIAL hosts it (src/client/tutorial.cpp, src/game/tutorial.h). It's a **training hall**, not an arena: a sealed 24 m-wide bay per lesson, side by side along z in the lessons' order. Every bay starts at x -90 and runs along +x, so the whole map stays inside the snapshots' +-512 m. A row along x ran to 1137 m, and the ghost was drawn stuck at x 512. Each bay has two lanes: the ghost's 6 m left of the middle and yours 6 m right, both starting 3 m in on a trim pad and facing +x, with a trim strip between the lanes and a line across every 10 m to read distance by. Nothing joins the bays: the tutorial moves you, so a lesson can't be skipped by walking, and nobody wanders into another tech's room.
+
+Why each bay is the shape it is (the bay lengths and heights are `kLessons` in src/game/tutorial.h; `quark_tests tutorial` runs every lesson's ghost on this map and fails if the map stops working for it):
+- **Walking** (50 x 12): two metal hurdles (0.8 m: a jump, not a step) and a glowing finish line at 44 m.
+- **AD strafing** (150 m) and **super chaining** (180 m, 16 m tall: hypers rise 2-3 m): long and empty. Strafing needs room to build speed by turning, and the chain gets to 34 m/s.
+- **Dash** (50): a 9 m lava pit (16-25 m in, hazard-striped edges, its bottom 6 m down). A running jump falls short and a jump with an air dash clears it. Touching the lava puts you back at the start.
+- **Sideways dashes** (30), **super** and **hyper** (60), **dash slide** (60), **grapple walking** (80): flat and long enough for the tech and its landing.
+- **Wall bounce** (12): short, its end wall hazard-striped. That's the wall to dash into, 9 m from the start.
+- **Grapple** (40 x 18): a 10 m ledge 18 m in with a flat face (a 5 cm overhang caught the rope) and a striped edge. The hook takes the ceiling over it.
+- **Rocket jump** and **sticky jump** (40 x 24): an 8 m ledge 14 m in. A jump plus a blast reaches it and a plain jump doesn't.
+- **The launch** (160 x 72, KEY TECH): the tall hall. The launch goes 50 m up and 65 m along, so it needs the height and the run-up for the grapple walk. Rows of lights and glow bands every 16 m up its walls keep it lit to the top.
+- **Rocket riding** (110 x 16): long, for the ride along the lane.
+
+It has 8 "any" spawns at the first bay's start (a match on it, from the console, still works). `quark_tests` checks it like every map: spawns, walk routes, nothing out of bounds.
+
 ## Legacy maps (the pool before 1.19.6)
 
 Clockwork, Depot, Summit, Canal, Harbor, Bastion, Foundry, Temple, Colosseum, Furnace, Gantry, Anvil, Viaduct, Hamlet, Downtown, Orbital, Lodestone, Midtown, Hightown and Cascade are still built (`tools/maps/<name>.py`, the LEGACY list in `tools/make_maps.py`) into `maps/legacy/` and shipped there. They aren't official (never ranked, not embedded) and the menus list them only with Settings > GAMEPLAY > LEGACY MAPS on; asked for by name they always load. Their design notes are in this file's history (1.19.5 and earlier).
