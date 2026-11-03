@@ -141,7 +141,11 @@
 10-BIT: ON (A 10-BIT WINDOW)	10비트: 켜짐 (10비트 창)
 12 H CLOCK	12시간제
 144 FPS	144 FPS
+16 M UP, OUT OF A HYPER FROM 20 M/S	20 M/S 하이퍼로 16 M 위로
 1V1 - rounds on one ruleset (vanilla, laser vampire, instagib...). First to 5. Ranked 1v1 rates you on its own ladder.	1V1 - 한 가지 규칙(바닐라, 레이저 뱀파이어, 인스타깁...)으로 라운드 진행. 5선승. 랭크 1v1은 별도 래더로 레이팅됩니다.
+2 BOUNCES	튕기기 2회
+2 HYPERS	하이퍼 2회
+2 SUPERS	슈퍼 2회
 240 FPS	240 FPS
 2:00  -  1ST OF 6	2:00  -  6명 중 1위
 2D: THE VIEW STAYS STILL, YOUR MOUSE MOVES THE CROSSHAIR	2D: 시점 고정, 마우스로 조준점 이동
@@ -152,11 +156,14 @@
 3D VAMP	3D 뱀프
 5 MORE MINUTES	5분 더
 60 FPS	60 FPS
+A BURST OF 24 M/S THE WAY YOU MOVE. TWO CHARGES, EACH BACK IN 1.2 S.	이동 방향으로 24 M/S 돌진. 충전 2회, 각각 1.2 S 후 회복.
+A DASH GOES THE WAY YOU MOVE, NOT THE WAY YOU LOOK.	대시는 보는 방향이 아니라 움직이는 방향으로 나간다.
 A DASH PRESSED THIS SOON BEFORE IT'S READY	준비되기 이만큼 전에 누른 대시 입력 인정
 A DROPPED CONNECTION TRIES AGAIN (3 TIMES)	연결 끊김 시 재시도 (3회)
 A NEW CODE FROM /link RELINKS IT - unlink REMOVES IT	/link의 새 코드로 재연결 - unlink로 해제
 A PLAYER JOINED VIA	플레이어 참가 경로:
 A SERVER	서버
+A SUPER FOR SPEED	슈퍼로 속도 내기
 A VARIABLE FONT IS DRAWN AT ITS DEFAULT WEIGHT	가변 폰트는 기본 굵기로 표시
 A private game with bots at your chosen level (beginner, intermediate, advanced, expert), on any mode and map.	원하는 난이도(초급, 중급, 상급, 전문가)의 봇과 함께하는 비공개 게임. 모든 모드와 맵 가능.
 A thrown knife or syringe is gone for 4 s (greyed out in the weapon list, with its timer).	던진 나이프나 주사기는 4초간 사라집니다 (무기 목록에 회색으로 타이머와 함께 표시).
@@ -170,6 +177,7 @@ ACCENT COLOR	강조 색상
 ACCESSIBILITY	접근성
 ACCURACY	정확도
 ACE	ACE
+AD STRAFING	AD 스트레이프
 ADAPTIVE	적응형
 ADD (AT THE SCREEN CENTER)	추가 (화면 중앙에)
 ADD BOT	봇 추가
@@ -181,7 +189,19 @@ ADVANCED	상급
 ADVANCED > BOT BRAIN: what your bots play: the built-in brain, or a .qbrain file from the bots folder in your data folder. A file that doesn't compile shows its error line and the bots play the built-in brain. Never in ranked.	상급 > 봇 AI: 봇의 플레이 방식: 내장 AI 또는 데이터 폴더의 bots 폴더에 있는 .qbrain 파일. 컴파일되지 않는 파일은 오류 줄을 표시하고 봇은 내장 AI로 플레이합니다. 랭크에서는 사용하지 않습니다.
 AGAIN (R)	다시 (R)
 AHEAD	앞섬
+AIM A LITTLE DOWN	약간 아래를 조준
+AIM A LITTLE DOWN THE WHOLE WAY	계속 약간 아래를 조준
+AIM AT THE FLOOR A FEW METRES AHEAD (15 DEGREES DOWN IS ENOUGH)	몇 미터 앞 바닥을 조준 (아래로 15도면 충분)
+AIM JUST UNDER LEVEL, AT THE FLOOR FAR AHEAD	수평보다 살짝 아래, 멀리 앞 바닥을 조준
+AIM STRAIGHT AHEAD	정면을 조준
+AIM STRAIGHT DOWN	바로 아래를 조준
+AIM STRAIGHT DOWN AND FIRE A STICKY	바로 아래를 조준하고 점착탄 발사
 AIM TRAINER	에임 트레이너
+AIM UP, OVER THE EDGE OF THE LEDGE	위로, 턱 가장자리 너머를 조준
+AIM: A LITTLE DOWN	조준: 약간 아래
+AIM: LEVEL	조준: 수평
+AIM: STRAIGHT DOWN	조준: 바로 아래
+AIM: UP	조준: 위
 AIR	공중
 AIR ACCELERATION	공중 가속
 AIR CONTROL	공중 제어
@@ -380,6 +400,7 @@ BUILT FOR	제작 모드
 BUILT FOR sets the mode the map is made for; the MODES grid sets what it's offered for. PLAYABLE AS shows what it has the pieces for (team modes need A and B spawns).	제작 모드는 맵이 만들어진 모드를 정하고, 모드 그리드는 어떤 모드에 제공될지 정합니다. 플레이 가능 모드는 맵에 필요한 요소가 있는 모드를 보여줍니다 (팀 모드는 A, B 스폰 필요).
 BUILT FOR:	제작 모드:
 BUILT FOR: ANY	제작 모드: 모두
+BUNNY HOP WITH ONE STRAFE KEY AT A TIME, TURNING WITH IT: SPEED WITH NO DASH.	옆 이동 키를 하나씩 누르며 버니합, 그쪽으로 회전: 대시 없이 속도.
 BY NAME	이름순
 BY PING	핑순
 BY PLAYERS	인원순
@@ -597,6 +618,7 @@ DAMAGE NUMBER SIZE	피해량 숫자 크기
 DAMAGE NUMBERS	피해량 숫자
 DASH	대시
 DASH + GRAPPLE	대시 + 그래플
+DASH AND JUMP TOGETHER	대시와 점프를 동시에
 DASH BUFFER	대시 버퍼
 DASH BUFFER: 0.05 S	대시 버퍼: 0.05초
 DASH BUFFER: 0.1 S	대시 버퍼: 0.1초
@@ -605,14 +627,25 @@ DASH BUFFER: OFF	대시 버퍼: 끄기
 DASH CAPTION	대시 설명
 DASH CHARGES	대시 충전
 DASH COOLDOWN	대시 쿨다운
+DASH DOWN INTO THE FLOOR WHILE YOU JUMP: YOUR SPEED + 5 M/S, UP AND AHEAD.	점프하면서 바닥으로 아래 대시: 속도 + 5 M/S, 위와 앞으로.
+DASH DOWN INTO THE FLOOR WITHOUT A JUMP: YOU SLIDE AS ON ICE AND KEEP YOUR SPEED.	점프 없이 바닥으로 아래 대시: 얼음처럼 미끄러지며 속도 유지.
 DASH EXIT SPEED (MAX)	대시 종료 속도 (최대)
 DASH EXIT SPEED (MIN)	대시 종료 속도 (최소)
+DASH HEAD ON INTO A WALL: YOU BOUNCE BACK OFF IT AT 16 M/S.	벽에 정면으로 대시: 16 M/S로 튕겨 나온다.
+DASH IN THE AIR TO CROSS THE LAVA	공중에서 대시해 용암을 건넌다
+DASH INTO IT	그쪽으로 대시
 DASH JUMP WINDOW	대시 점프 허용 시간
+DASH JUST BEFORE YOU LAND, AND DON'T JUMP	착지 직전에 대시, 점프는 하지 않기
+DASH LEFT	왼쪽으로 대시
+DASH LEFT AND DASH RIGHT	왼쪽과 오른쪽으로 대시
 DASH LENGTH	대시 길이
+DASH RIGHT	오른쪽으로 대시
+DASH SLIDE	대시 슬라이드
 DASH SPEED	대시 속도
 DASH SPEED KEPT	대시 속도 유지
 DASH VERTICAL	대시 수직
 DASH WALL BOUNCE ANGLE	대시 벽 반사 각도
+DASH, AND JUMP A MOMENT LATER	대시하고, 잠시 뒤 점프
 DASHING BLADES	대시 칼날
 DATA FOLDER	데이터 폴더
 DATE FORMAT	날짜 형식
@@ -670,6 +703,8 @@ DISPLAY: WINDOWED	화면: 창 모드
 DISTANCE	거리
 DMG	피해량
 DMITRI	DMITRI
+DON'T HOLD IT WHILE YOU STRAFE	스트레이프 중엔 누르지 않기
+DON'T HOLD IT, OR THE DASH GOES FORWARD TOO	누르지 않기. 누르면 대시가 앞으로도 나간다
 DON'T SAVE	저장 안 함
 DONE	완료
 DOT	점
@@ -761,7 +796,9 @@ ERROR ON LINE	오류 발생 줄
 ESC	ESC
 ESC (CLEAR SEARCH)	ESC (검색 지우기)
 ESC TO CANCEL	ESC로 취소
+ESC: LESSONS	ESC: 레슨
 ESC: PAUSE / SETTINGS   R: RESTART	ESC: 일시정지 / 설정   R: 재시작
+EVERY LANDING HYPERS AGAIN AS SOON AS A DASH CHARGE IS BACK	대시 충전이 돌아오는 즉시 착지할 때마다 다시 하이퍼
 EVERY SETTING IS BACK TO ITS DEFAULT	모든 설정이 기본값으로 돌아갔습니다
 EVERY WEAPON, ALL MOVEMENT - NO GIMMICKS	모든 무기, 모든 이동기 - 변형 없음
 EVERYONE THROWS - THE LOSING SHAPE IS OUT	모두 동시에 냄 - 진 모양은 탈락
@@ -796,6 +833,7 @@ Each dash leaves you 1 m/s faster than you went in (at least 11, at most 32 m/s)
 Each map is built for one mode, plus free for all and any others it lists. You can still start any map in any mode: the menus warn when it isn't built for it (it may be missing spawns or objectives).	각 맵은 하나의 모드용으로 제작되며, 개인전 및 목록에 있는 다른 모드도 지원합니다. 어떤 맵이든 어떤 모드로도 시작할 수 있지만, 해당 모드용이 아니면 메뉴에서 경고합니다 (스폰이나 목표가 없을 수 있음).
 F3 - performance overlay (average, 1% and 0.1% low FPS, input latency).   F12 - screenshot.   ESC - menu, votes, settings.	F3 - 성능 오버레이 (평균, 1% 및 0.1% LOW FPS, 입력 지연).   F12 - 스크린샷.   ESC - 메뉴, 투표, 설정.
 F3 COLORBLIND COLORS	F3 색맹 색상
+FACE IT (WITHIN 45 DEGREES)	벽을 마주 보기 (45도 이내)
 FACING (Q E)	방향 (Q E)
 FADE DISTANCE	페이드 거리
 FADE LENGTH	페이드 길이
@@ -822,6 +860,8 @@ FIND INVISIBLE WALLS:	보이지 않는 벽 찾기:
 FINISH	완주
 FINISHED	완료
 FIRE	사격
+FIRE A ROCKET AND HOOK IT AS IT LEAVES: IT CARRIES YOU ALONG.	로켓을 쏘고 발사 순간 갈고리로 잡기: 로켓이 너를 끌고 간다.
+FIRE AND GRAPPLE TOGETHER	발사와 그래플을 동시에
 FIRE RATE	연사 속도
 FIRES THE MOMENT IT IS	준비되는 즉시 발사
 FIRST TO #	#선승
@@ -906,7 +946,10 @@ GAP	간격
 GATE	게이트
 GENERAL	일반
 GENERAL + INTERFACE	일반 + 인터페이스
+GET 7 M UP	7 M 위로 올라가기
 GET IT WITH /link - THE CODE IS PUBLIC	/link로 받기 - 코드는 공개됨
+GHOST	GHOST
+GHOST'S KEYS	고스트의 키
 GIANT SNIPERS	거대 저격수
 GIBS	고어
 GL	GL
@@ -915,6 +958,7 @@ GLOW	광원
 GLOW STRENGTH	광원 세기
 GO	시작
 GO!	시작!
+GOAL	목표
 GODLIKE	신급
 GPU	GPU
 GPU + CPU GO TO THE GAME FIRST WHILE FOCUSED	창 활성 시 GPU + CPU를 게임에 우선 할당
@@ -947,7 +991,10 @@ GRAPPLE MOVEMENT ONLY	그래플 이동 전용
 GRAPPLE PULL	그래플 당기는 힘
 GRAPPLE RANGE	그래플 사거리
 GRAPPLE RELEASE DISTANCE	그래플 해제 거리
+GRAPPLE TO 24 M/S, THEN A ROCKET AND A HYPER STRAIGHT DOWN: YOU FLY, CHEAP AND FAST.	그래플로 24 M/S, 그다음 바로 아래로 로켓과 하이퍼: 싸고 빠르게 날아간다.
 GRAPPLE TOP SPEED	그래플 최고 속도
+GRAPPLE WALK UP TO 24 M/S	그래플 워킹으로 24 M/S까지
+GRAPPLE WALKING	그래플 워킹
 GRAPPLE: HOLD	그래플: 누르고 있기
 GRAPPLE: TOGGLE	그래플: 토글
 GRAVITY	중력
@@ -1041,11 +1088,17 @@ HITSOUND: MOUTH	타격음: 입소리
 HITSOUND: MY SOUND PACK	타격음: 내 사운드 팩
 HITSOUND: RETRO	타격음: 레트로
 HITSOUNDS	타격음
+HOLD ALL THREE	세 개 모두 누르기
+HOLD BOTH	둘 다 누르기
 HOLD FIRE	사격 금지
+HOLD IT	누르고 있기
+HOLD IT. IT PULLS YOU TO THE WALL AND UP	누르고 있기. 벽으로, 그리고 위로 끌려간다
+HOLD IT. YOU HOP AGAIN EVERY TIME YOU LAND	누르고 있기. 착지할 때마다 다시 뛴다
 HOLDING THE HILL	언덕 점령 중
 HOME	HOME
 HOOK	훅
 HOOK CAPTION	훅 설명
+HOOK THE FLOOR FAR AHEAD: IT DRAGS YOU ALONG WITH NO FRICTION, UP TO 24 M/S.	멀리 앞 바닥에 갈고리를 건다: 마찰 없이 끌려가며 최대 24 M/S.
 HOOKED	걸림
 HOST	호스트
 HOST EDIT SESSION	편집 세션 호스트
@@ -1053,6 +1106,7 @@ HOST EDIT SESSION: friends join and build with you; everyone's camera shows in t
 HOST GAME	게임 호스트
 HOSTING	호스트 중
 HOSTING ON UDP PORT	UDP 포트에서 호스트 중
+HOW	방법
 HOW OTHER PLAYERS' MOVES ARE SMOOTHED	다른 플레이어 움직임 보정 방식
 HP	HP
 HUD	HUD
@@ -1067,6 +1121,7 @@ HUD SIZE	HUD 크기
 HUD.CFG LINE	HUD.CFG 줄
 HURT	피격
 HYPER	하이퍼
+HYPER AGAIN EVERY TIME YOU LAND: EACH ONE ADDS 5 M/S, UP TO 36.	착지할 때마다 다시 하이퍼: 한 번에 5 M/S씩, 최대 36.
 HZ	HZ
 HZ  LOSS	HZ  손실
 HZ (NOT ON THIS MONITOR)	HZ (이 모니터에선 불가)
@@ -1103,6 +1158,7 @@ IN (TEAMS GO UNEVEN)	참가 (팀 인원 불균형)
 IN A TIME TRIAL OR A RACE	타임 트라이얼 또는 레이스 중
 IN GAME, ESC SHOWS IF THE PORT CAN BE REACHED	게임 중 ESC에서 포트 접속 가능 여부 표시
 IN MY PALETTE	내 팔레트에서
+IN THE AIR, HOLD ONLY THIS AND TURN THE MOUSE RIGHT, SMOOTHLY	공중에서 이것만 누르고 마우스를 부드럽게 오른쪽으로
 IN THIS MAP	이 맵에서
 INDIA	INDIA
 INDUSTRIAL	산업
@@ -1129,6 +1185,7 @@ IS ON A KILLING SPREE	연속 처치 중
 IS ON A RAMPAGE	광란 중
 IS UNSTOPPABLE	아무도 못 막습니다
 IT IN MY PALETTE	내 팔레트에서
+IT IS ALWAYS IN THE MAIN MENU: TUTORIAL	언제든 메인 메뉴: 튜토리얼
 ITS COLOURS ARE ON THE CROSSHAIR TAB	색상은 조준점 탭에 있음
 ITS STYLE	스타일
 ITS STYLE: CIRCLE	스타일: 원
@@ -1148,10 +1205,17 @@ JOIN THE GAME FROM THE MENU (ESC)	메뉴(ESC)에서 게임에 참가하세요
 JOINING + PRIVACY	참가 + 개인정보
 JOST	JOST
 JUMP	점프
+JUMP AND FIRE TOGETHER	점프와 발사를 동시에
+JUMP AND SET IT OFF TOGETHER	점프와 기폭을 동시에
+JUMP AT THE EDGE	가장자리에서 점프
+JUMP THE HURDLES. YOU KEEP YOUR SPEED IN THE AIR	허들을 뛰어넘기. 공중에서도 속도가 유지된다
+JUMP WHILE YOU DASH ALONG THE FLOOR: 24 M/S, UP AND AHEAD.	바닥에서 대시 중에 점프: 24 M/S, 위와 앞으로.
+JUMP, DASH AND FIRE TOGETHER	점프, 대시, 발사를 동시에
 JUNE	JUNE
 KAI	KAI
 KB; OFF: A SERVER'S	KB; 끄기: 서버의
 KEEP	유지
+KEEP HOLDING IT TO RIDE	계속 누르고 있으면 타고 간다
 KEEP THESE DISPLAY SETTINGS? REVERTING IN	이 화면 설정을 유지할까요? 되돌리기까지
 KEEP YOUR EDITS AS A NEW MAP?	편집 내용을 새 맵으로 저장할까요?
 KEEP: ALL	보관: 전체
@@ -1165,6 +1229,9 @@ KEY 2	키 2
 KEY 3	키 3
 KEY OVERLAY	키 오버레이
 KEY OVERLAY (VERBOSE)	키 오버레이 (상세)
+KEY TECH	핵심 테크
+KEY TECH:	핵심 테크:
+KEY TECH: {}	핵심 테크: {}
 KEYS	키
 KICK	강퇴
 KICK A PLAYER	플레이어 강퇴
@@ -1201,6 +1268,7 @@ LADDER CLIMB SPEED	사다리 오르기 속도
 LADDER SIDE SPEED	사다리 옆 이동 속도
 LADDERS (1V1, INSTAGIB FFA) - DEFAULT MODEL, HUD, CONTROLS >	래더 (1V1, 인스타기브 FFA) - 기본 모델, HUD, 조작 >
 LAND	착지
+LAND ON THE FAR SIDE OF THE LAVA	용암 건너편에 착지
 LANGUAGE	언어
 LARGE	크게
 LASER	레이저
@@ -1222,10 +1290,12 @@ LATENT SYNC	LATENT SYNC
 LATENT SYNC: HOLD FOR THE BLANK	LATENT SYNC: 블랭크까지 대기
 LATENT SYNC: WAIT FOR THE RASTER	LATENT SYNC: 래스터 대기
 LAUNCHER ON THE RIGHT	런처를 오른쪽에
+LAY A STICKY BOMB, STAND ON IT, SET IT OFF AS YOU JUMP.	점착 폭탄을 깔고 그 위에 서서 점프하며 터뜨리기.
 LEADERBOARD	리더보드
 LEADERBOARD: SOON	리더보드: 곧 공개
 LEAVE	나가기
 LEAVE ALL	모두 나가기
+LEAVE TUTORIAL	튜토리얼 나가기
 LEFT	왼쪽
 LEFT ARROW (PREVIOUS PAGE)	왼쪽 화살표 (이전 페이지)
 LEFT MOUSE - fire.   RIGHT MOUSE - alt-fire (scope, knife throw, rocket lob, bubble stream, syringe throw...).	마우스 왼쪽 - 사격.   마우스 오른쪽 - 보조 사격 (스코프, 나이프 투척, 로켓 곡사, 버블 분사, 주사기 투척...).
@@ -1234,7 +1304,11 @@ LEGACY MAPS	레거시 맵
 LEGACY MAPS (settings > GAMEPLAY) lists the old maps from before 1.19.6 too. They are never ranked.	레거시 맵 (설정 > 게임플레이)은 1.19.6 이전의 옛 맵도 보여 줍니다. 랭크에는 쓰이지 않습니다.
 LENA	LENA
 LENGTH	길이
+LESSON # OF #	레슨 # / #
+LESSON DONE	레슨 완료
+LESSONS	레슨
 LET	허용
+LET GO BEFORE YOU REACH THE HOOK	갈고리에 닿기 전에 놓기
 LG	LG
 LIBREQUAKE 8X8	LIBREQUAKE 8X8
 LIGHT	조명
@@ -1945,6 +2019,7 @@ MODEL	모델
 MODEL OF	모델:
 MODES	모드
 MODES (CLICK: ALLOW / BLOCK)	모드 (클릭: 허용 / 차단)
+MODES GUIDE	모드 안내
 MODES:	모드:
 MODIFIERS	변형
 MODIFIERS:	변형:
@@ -2011,14 +2086,18 @@ NEUTRAL PAYLOAD	중립 화물
 NEUTRAL PAYLOAD - either team pushes the cart toward the other team's end. The team whose side it's on when time runs out wins.	중립 화물 - 양 팀 모두 화물을 상대 팀 끝 쪽으로 밉니다. 시간이 끝났을 때 화물이 상대 진영에 있는 팀이 승리합니다.
 NEW	새로 만들기
 NEW BEST	신기록
+NEW HERE? THE TUTORIAL SHOWS EVERY MOVEMENT TECH: A GHOST DOES IT, THEN YOU DO.	처음이신가요? 튜토리얼이 모든 이동 테크를 보여 줍니다: 고스트가 시범을 보이고, 다음은 당신 차례.
 NEW LEADER	새 선두
 NEW NAME	새 이름
 NEW ONES:	새 항목:
 NEW PERSONAL BEST	개인 신기록
 NEXT	다음
+NEXT HOP, HOLD ONLY THIS AND TURN LEFT	다음 점프에선 이것만 누르고 왼쪽으로
 NEXT PAGE	다음 페이지
 NEXT WEAP	다음 무기
 NEXT WEAPON	다음 무기
+NEXT:	다음:
+NEXT: {}	다음: {}
 NIGHT: QUIET UP, LOUD DOWN; LOW: AS NORMAL	야간: 작은 소리 키우고 큰 소리 줄임; 낮음: 보통과 같음
 NIGHT: QUIET UP, LOUD DOWN; SAFE: MORE	야간: 작은 소리 키우고 큰 소리 줄임; 안전: 더
 NINJA	닌자
@@ -2052,6 +2131,7 @@ NOT BUILT FOR THIS MODE - IT MAY NOT WORK	이 모드용 아님 - 작동하지 �
 NOT CHANGED IN THE UI TEST	UI 테스트에서는 변경 안 함
 NOT FOR THIS MODE	이 모드용 아님
 NOT FOUND: USING THE PRIMARY	찾을 수 없음: 기본 모니터 사용
+NOT NOW	나중에
 NOT PLAYED YET	아직 플레이 안 함
 NOT REPORTED - NOT A RANKED MAP FOR THIS LADDER	보고 안 됨 - 이 래더의 랭크 맵이 아님
 NOT USABLE	사용 불가
@@ -2103,6 +2183,7 @@ ON WINDOWS (ALREADY ITS SHORTEST); SAFE: X2	WINDOWS에서 (이미 최단); 안�
 ON: AT MOST 1 FRAME QUEUED	켜기: 최대 1프레임 대기
 ON: FROM THE NEXT START	켜기: 다음 실행부터
 ON: USES YOUR TEAM COLOR, NOT THE ONE BELOW	켜기: 아래 색상 대신 팀 색상 사용
+ONCE ABOVE THE EDGE, LET GO OF THE GRAPPLE AND MOVE ONTO THE LEDGE	가장자리 위로 오면 그래플을 놓고 턱 위로 이동
 ONE	하나
 ONE CHAT COLOR	채팅 단일 색상
 ONE MINUTE	1분
@@ -2335,6 +2416,9 @@ RATE	빈도
 RATING	레이팅
 RAW INPUT	RAW INPUT
 RD	RD
+REACH 12 M/S WITH NO DASH OR GRAPPLE	대시나 그래플 없이 12 M/S 달성
+REACH 27 M/S	27 M/S 달성
+REACH THE GLOWING LINE	빛나는 선에 도달
 READ INPUT	입력 읽기
 READY	준비
 REALTIME	실시간
@@ -2387,6 +2471,7 @@ RESUME (ESC)	계속 (ESC)
 RETICLE COLOR	레티클 색상
 RETICLE WIDTH	레티클 두께
 REVERT	되돌리기
+RIDE FOR 0.4 S	0.4 S 타기
 RIFF	RIFF
 RIFLE	소총
 RIFLE ZOOM FOV	소총 줌 FOV
@@ -2408,8 +2493,10 @@ ROBOT	로봇
 ROCK	바위
 ROCKET	로켓
 ROCKET (splash; rocket jump off the floor for 10#amage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 10 hp, once a second; alt throws it: +30 hp and reset cooldowns for a teammate).	로켓 (범위 피해; 바닥에서 로켓 점프 시 10#피해), 소총 (자동; 보조 사격 시 스코프), 레이저 (광선; 보조 사격 시 끌어당김), 샷건 (보조: 도탄), 저격총 (보조 사격 시 스코프), 점착탄 (보조: 기폭), 석궁 (헤드샷), 버블 (보조: 버블 연속 분사), 나이프 (보조: 투척), 주사기 (사격 시 초당 한 번 10 hp 회복; 보조 사격으로 투척: 팀원 +30 hp 및 쿨다운 초기화).
+ROCKET JUMP	로켓 점프
 ROCKET JUMPERS	로켓 점퍼
 ROCKET RIDE	로켓 라이드
+ROCKET RIDING	로켓 라이딩
 ROCKET, LASER AND KNIFE	로켓, 레이저, 나이프
 ROCKETS AND STICKIES - NO SELF DAMAGE	로켓과 점착탄 - 자해 피해 없음
 ROCKETS ONLY	로켓만
@@ -2445,9 +2532,12 @@ RULES	규칙
 RUN	도망
 RUN - DON'T BE THE TAGGER WHEN TIME RUNS OUT	도망 - 시간이 끝날 때 술래가 되지 마세요
 RUN AGAIN	다시 실행
+RUN AT THE GAP	틈을 향해 달리기
 RUN BENCHMARK	벤치마크 실행
+RUN FORWARD	앞으로 달리기
 RUN NAME	기록 이름
 RUN SPEED	달리기 속도
+RUN, JUMP THE HURDLES, REACH THE GLOWING LINE.	달리고, 허들을 넘고, 빛나는 선까지.
 RUNS	기록
 Ranked games use the default model, HUD and controls and 10 ms interpolation, so everyone plays the same game.	랭크 게임은 기본 모델, HUD, 조작과 10 ms 보간을 사용해 모두가 같은 조건으로 플레이합니다.
 SAFE OK / ERROR	안전 정상 / 오류
@@ -2556,6 +2646,7 @@ SHOWN WITH VERBOSE INFO ON. DRAG TO MOVE, CORNER / WHEEL TO SIZE, ARROWS NUDGE, 
 SHOWS INPUT->FRAME LATENCY	INPUT->FRAME 지연 시간 표시
 SHUFFLE TEAMS	팀 섞기
 SHUFFLE THE TEAMS (THE MATCH RESTARTS)	팀 섞기 (경기 재시작)
+SIDEWAYS DASHES	옆 대시
 SIMPLE	간단
 SIMPLE SKY	단순한 하늘
 SITE	지점
@@ -2568,9 +2659,12 @@ SIZE: X2	크기: X2
 SIZING	크기 조정
 SIZING: EXACT PIXELS	크기 조정: 픽셀 고정
 SIZING: SCALE WITH RESOLUTION	크기 조정: 해상도에 맞춤
+SKIP	건너뛰기
 SKIP IT	건너뛰기
+SKIP LESSON	레슨 건너뛰기
 SKIP WARMUP	워밍업 건너뛰기
 SKY	하늘
+SLIDE FOR 0.8 S	0.8 S 미끄러지기
 SLOT	슬롯
 SLOT 1	슬롯 1
 SLOT 2	슬롯 2
@@ -2660,16 +2754,21 @@ STALEMATE - HEALTH DRAINING	교착 상태 - 체력 감소 중
 STALEMATE - HEALTH DRAINS IN	교착 상태 - 체력 감소까지
 STALEMATE WARNING	교착 상태 경고
 STALLED #S	#초 정지
+STAND ON THE 10 M LEDGE	10 M 높이의 턱 위에 서기
 STANDARD	표준
 STANDARD RULES	표준 규칙
 STANDARD: SNIPER	표준: 저격총
 START	시작
+START OVER	다시 시작
 START THE MATCH	경기 시작
+START TUTORIAL	튜토리얼 시작
 STARTING IN #	#초 후 시작
 STAY HIDDEN -	계속 숨으세요 -
 STDEV	표준편차
+STEER ONTO THE LEDGE	턱 위로 방향 잡기
 STEP	단계
 STEP HEIGHT	오를 수 있는 높이
+STEP LEFT, BACK AND RIGHT	왼쪽, 뒤, 오른쪽으로 이동
 STEPS	단계
 STEPS, SHOTS, BOOMS... AS WORDS ROUND THE	발소리, 총성, 폭발음... 을 글자로 주변에
 STEREO WIDTH	스테레오 폭
@@ -2679,6 +2778,7 @@ STICKIES ON YOU	내게 붙은 점착탄
 STICKIES ONLY	점착탄만
 STICKY	점착탄
 STICKY COUNTER	점착탄 카운터
+STICKY JUMP	점착탄 점프
 STICKY ON YOU	내게 붙은 점착탄
 STILL HIDDEN	아직 숨어 있음
 STONE	돌
@@ -2711,6 +2811,7 @@ STYLE: NUMBER	스타일: 숫자
 STYLE: T	스타일: T
 SUBTRACT	빼기
 SUPER	슈퍼
+SUPER CHAINING	슈퍼 체인
 SUPER DASH	슈퍼 대시
 SUPER DASH BOOST	슈퍼 대시 부스트
 SUPER DASH JUMP	슈퍼 대시 점프
@@ -2811,6 +2912,7 @@ TEXT: RIGHT	텍스트: 오른쪽
 TF2 BUILD	TF2 빌드
 TF2 SECONDARY	TF2 보조 무기
 TH	TH
+THAT IS EVERY MOVEMENT TECH. THE MODES GUIDE SAYS WHAT EACH GAME MODE IS ABOUT.	이것으로 모든 이동 테크입니다. 모드 안내에서 각 게임 모드를 설명합니다.
 THE 3D SCENE (THE HUD STAYS AS IT IS);	3D 장면 (HUD는 그대로);
 THE BOMB IS CARRIED AGAIN	폭탄을 다시 들었습니다
 THE BOMB IS DOWN	폭탄이 떨어졌습니다
@@ -2822,7 +2924,11 @@ THE FONT OF THE MENUS AND THE HUD	메뉴와 HUD의 폰트
 THE GAME'S PART ONLY: NO MOUSE POLLING, NO DISPLAY; ONE TIME LINE	게임만: 마우스 폴링과 디스플레이 제외; 하나의 시간선
 THE GUN'S KICK ON A SHOT (0: NONE)	사격 시 총기 반동 (0: 없음)
 THE HAZE OVER DISTANT WALLS (0: NONE)	먼 벽 위의 연무 (0: 없음)
+THE HOOK PULLS YOU TO WHERE IT CATCHES. LET GO AND YOU KEEP THE SPEED.	갈고리는 걸린 곳으로 끌어당긴다. 놓아도 속도는 유지된다.
+THE HYPER LIFTS YOU, THE ROCKET ADDS 20 M/S MORE	하이퍼가 띄우고, 로켓이 20 M/S를 더한다
+THE JUMP MUST COME WHILE THE DASH STILL RUNS (0.12 S)	점프는 대시가 끝나기 전에 (0.12 S)
 THE LANGUAGE OF THE MENUS AND THE HUD	메뉴와 HUD의 언어
+THE LAUNCH	런치
 THE MAP ISN'T BUILT FOR THIS MODE: IT MAY NOT WORK	이 맵은 이 모드용이 아님: 작동하지 않을 수 있음
 THE MESSAGES UNDER THE SCORE BOX	점수판 아래 메시지
 THE OLD MAPS (BEFORE 1.19.6) IN THE MAP LISTS. NEVER RANKED	맵 목록의 구 맵 (1.19.6 이전). 랭크 불가
@@ -2838,6 +2944,8 @@ THE TASKBAR BUTTON FLASHES	작업 표시줄 버튼 깜빡임
 THE WINDOW'S SIZE AND PLACE ARE KEPT	창 크기와 위치 유지
 THEIRS	상대 것
 THEME.CFG LINE	THEME.CFG 줄
+THEN	그다음
+THEN ALL AT ONCE: LET GO, AIM STRAIGHT DOWN AND...	그리고 한 번에: 놓고, 바로 아래를 조준하고...
 THEN REFRESH	그 후 새로고침
 THESE ONLY APPLY TO IT	이것에만 적용
 THEY DROPPED THE BOMB	적이 폭탄을 떨어뜨림
@@ -2917,7 +3025,14 @@ TRAILS: SHORT	꼬리: 짧게
 TRAILS: THE STREAKS BEHIND ROCKETS, BOLTS,	꼬리: 로켓, 화살 등의 뒤에 남는 줄기,
 TRAINER MENU	트레이너 메뉴
 TRIAL MAP	트라이얼 맵
+TRY IT NOW	지금 해 보기
 TT	TT
+TURNING LEFT	왼쪽으로 회전 중
+TURNING RIGHT	오른쪽으로 회전 중
+TUTORIAL	튜토리얼
+TUTORIAL -	튜토리얼 -
+TUTORIAL - {}	튜토리얼 - {}
+TUTORIAL COMPLETE	튜토리얼 완료
 TWO	둘
 TYPE TO SEARCH: A NAME OR WHAT IT DOES (CTRL+F)	검색어 입력: 이름 또는 기능 (CTRL+F)
 TYPING	입력 중
@@ -3023,6 +3138,9 @@ WAD2	WAD2
 WAITING FOR THE LATE READ (AVG)	늦은 읽기 대기 (평균)
 WAITING FOR THE LATE READ (AVG)  00,000,000 NS	늦은 읽기 대기 (평균)  00,000,000 NS
 WAITING FOR THE NEXT READ (AVG)	다음 읽기 대기 (평균)
+WALK TO THE STRIPED WALL	줄무늬 벽까지 걷기
+WALKING	걷기
+WALL BOUNCE	벽 튕기기
 WALLBANG	월뱅
 WALLBANG TINT	월뱅 색조
 WARMING UP	워밍업 중
@@ -3033,6 +3151,8 @@ WARNING: DON'T TOUCH THIS UNLESS YOU KNOW WHAT YOU'RE DOING	경고: 잘 모르�
 WARNINGS	경고
 WAS ON	이전 상태
 WASTELAND	황무지
+WATCH AGAIN	다시 보기
+WATCH THE GHOST	고스트를 보세요
 WAVE	웨이브
 WEAPON	무기
 WEAPON CAPTION	무기 설명
@@ -3049,6 +3169,7 @@ WEAPON SENSITIVITY	무기별 감도
 WEAPON:	무기:
 WEAPONS	무기
 WEAPONS (THEIR NUMBER KEYS STILL WORK)	무기 (숫자 키는 계속 작동)
+WELCOME TO QUARK	QUARK에 오신 것을 환영합니다
 WHAT THE BOTS PLAY: .QBRAIN FILES IN THE BOTS FOLDER	봇이 사용하는 AI: BOTS 폴더의 .QBRAIN 파일
 WHAT THE VOTE CHANGES	투표로 바뀌는 것
 WHEEL DN	WHEEL DN
@@ -3117,6 +3238,7 @@ YOUR KILLS	내 킬
 YOUR MATCH:  # SHOTS  # HITS  #% ACCURACY  # DAMAGE  BEST STREAK #	내 경기:  발사 #  적중 #  정확도 #%  피해량 #  최고 연속 처치 #
 YOUR NAME (CHAT AND SCOREBOARD)	내 이름 (채팅 및 스코어보드)
 YOUR OWN MODEL FILE: NO PREVIEW HERE	내 모델 파일: 여기서는 미리보기 없음
+YOUR OWN ROCKET THROWS YOU. HERE IT DOES NO DAMAGE.	자신의 로켓이 너를 날린다. 여기선 피해 없음.
 YOUR OWN: PUT .TTF / .OTF FILES IN MODS/FONTS,	직접 추가: .TTF / .OTF 파일을 MODS/FONTS에 넣고,
 YOUR QUEUE FOR	내 대기열:
 YOUR SHOTS	내 총탄
@@ -3124,6 +3246,7 @@ YOUR SHOTS: ALWAYS	내 총탄: 항상
 YOUR SHOTS: NEVER	내 총탄: 안 함
 YOUR SHOTS: WITH WEAPON MODEL	내 총탄: 무기 모델과 함께
 YOUR TEAM IS PUSHING	우리 팀이 화물 미는 중
+YOUR TURN	당신 차례
 You run at 9.5 m/s. In the air, holding a direction drifts you up to run speed (a standing jump moves too).	달리기 속도는 9.5 m/s입니다. 공중에서 방향을 누르고 있으면 달리기 속도까지 밀려갑니다 (제자리 점프도 움직입니다).
 You step up anything 0.55 m high, including stairs mid-jump. Ladders: walk into them, look up or down to climb (6.75 m/s).	높이 0.55 m까지는 무엇이든 올라서며, 점프 중 계단도 포함됩니다. 사다리: 다가가서 위나 아래를 보면 오릅니다 (6.75 m/s).
 ZERO-G FLIGHT, LASERS - HEAL 100% TO 50% OVER 30 S, NO KNOCKBACK	무중력 비행, 레이저 - 30초에 걸쳐 회복량 100%에서 50%로, 넉백 없음
@@ -3426,6 +3549,7 @@ not enough players	인원 부족
 not enough players - back to warmup	인원 부족 - 워밍업으로 복귀
 not enough players - the match ends in	인원 부족 - 경기 종료까지
 not enough players for a tourney	토너먼트 인원 부족
+not in the tutorial	튜토리얼에서는 안 됩니다
 not in this build	이 빌드에 없음
 not rated:	레이팅 미반영:
 not the ladder's mode	래더 모드가 아님
@@ -3656,6 +3780,7 @@ tourney seed #:	토너먼트 시드 #:
 tourney seed #: {} (#)	tourney seed #: {} (#)
 tourney started -	토너먼트 시작 -
 trying the next rate up: busy #%, upload # kbps	다음 빈도로 상향 시도: 사용 #%, 업로드 # kbps
+tutorial reset	tutorial reset
 ui verts	ui verts
 ungrouped into	그룹 해제됨:
 unknown mode	알 수 없는 모드
@@ -3714,3 +3839,4 @@ you're next in line: you play the winner of this	다음 차례입니다: 이 경
 your last vote failed: wait a few seconds	지난 투표 실패: 몇 초 기다리세요
 your map is autosaved	맵이 자동 저장됨
 {} # us (last 1000 ticks)	{} # us (last 1000 ticks)
+{} THEN {}	{} 그다음 {}

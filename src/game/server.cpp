@@ -265,6 +265,7 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
         for (int i = 0; i < 16; i += 4) { uint32_t v = rd(); memcpy(cookieKey_ + i, &v, 4); }
     }
     mapList_ = listMaps();
+    mapList_.erase(std::remove_if(mapList_.begin(), mapList_.end(), [](const std::string& n) { return mapHiddenFromLists(n); }), mapList_.end());
     std::string e;
     if (!map_.load(cfg_.map, &e)) { if (err) *err = e; return false; }
     for (auto& w : map_.warnings) log(cfg_.map + ": " + w);   // (parts of a newer map format it skipped)
@@ -334,6 +335,7 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
         for (int k = 0; k < cfg_.botsEnemy; k++) addBot(teams ? TEAM_B : TEAM_A, cfg_.botSkill);
         for (int k = 0; k < cfg_.botsAlly && teams; k++) addBot(TEAM_A, cfg_.botSkill);
     }
+    if (cfg_.tutorial) tutorialStart();   // (the ghost; warmup forever: tutorial_server.cpp)
     log("listening on UDP " + std::to_string(port()) + " - map " + cfg_.map + ", mode " + modeName(cfg_.mode));
     openGameLog();
     ownAddrs_.clear();
@@ -1719,6 +1721,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
         GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = looksByte(p); e.c = (int16_t)p.nameColor; e.text = p.name;
         broadcastEvent(e);
     } else if (cmd == "callvote") {
+        if (cfg_.tutorial) { GameEvent e; e.type = EV_MESSAGE; e.text = "not in the tutorial"; sendEvent(id, e); return; }
         if (rankedLive()) { GameEvent e; e.type = EV_MESSAGE; e.text = "a ranked match is being played - no votes until it's over"; sendEvent(id, e); return; }
         if (time() < p.voteAt) { GameEvent e; e.type = EV_MESSAGE; e.text = "your last vote failed: wait a few seconds"; sendEvent(id, e); return; }
         std::istringstream vs(rest);
@@ -1888,6 +1891,13 @@ void Server::command(const std::string& line, int fromPlayer) {
         if (blocked) { reply("a ranked match is being played: '" + cmd + "' has to wait until it's over"); return; }
     }
     if (cmd == "editmode" && cfg_.ranked) { reply("no map editing on a ranked server (vote ranked off first)"); return; }
+    if (cfg_.tutorial && (cmd == "map" || cmd == "mode" || cmd == "reload" || cmd == "ranked" || cmd == "restart" || cmd == "editmode" ||
+                          cmd == "forcestart" || cmd == "addbot")) { reply("not in the tutorial"); return; }   // (its map, its ghost, warmup for good)
+    if (cmd == "tutorial") {   // tutorial <lesson> [epoch ms] | reset: the TUTORIAL's game only (tutorial_server.cpp)
+        const std::string r = tutorialCommand(fromPlayer, arg, ss);
+        if (!r.empty()) reply(r);
+        return;
+    }
     if (cmd == "practice") {   // practice savepos|loadpos|god|passive|reset: the host alone with bots (no other human: no unfair edge)
         int humans = 0;
         for (auto& o : players_) humans += o.connected && !o.isBot;
@@ -2104,7 +2114,8 @@ void Server::spawnPlayer(int id) {
     float yaw = 0;
     const float scale = bodyScale();
     bool crouch = false, fits = true;
-    if (isRaceMode(ms_.mode) && p.checkpoint > 0 && p.checkpoint <= (int)map_.raceCheckpoints.size() && (ms_.phase == PHASE_LIVE || ms_.phase == PHASE_WARMUP)) { // (practice too)
+    if (cfg_.tutorial && tutorialSpawnAt(id, pos, yaw)) {   // (the tutorial: your lesson's start; the ghost's)
+    } else if (isRaceMode(ms_.mode) && p.checkpoint > 0 && p.checkpoint <= (int)map_.raceCheckpoints.size() && (ms_.phase == PHASE_LIVE || ms_.phase == PHASE_WARMUP)) { // (practice too)
         const AABB& c = map_.raceCheckpoints[p.checkpoint - 1];
         pos = {(c.mn.x + c.mx.x) * 0.5f, c.mn.y + 0.05f, (c.mn.z + c.mx.z) * 0.5f};
         yaw = p.yaw;
@@ -2286,7 +2297,8 @@ void Server::killPlayer(int victim, int killer, int weapon) {
 void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const Vec3& knock) {
     ServerPlayer& v = players_[victim];
     if (!v.alive) return;
-    bool canHurt = rulesCanDamage(*this, attacker, victim, weapon) && !v.practiceGod;   // (practice: TAKE NO DAMAGE)
+    if (cfg_.tutorial && attacker >= 0 && attacker != victim) return;   // (the tutorial: nobody touches the ghost or you)
+    bool canHurt = rulesCanDamage(*this, attacker, victim, weapon) && !v.practiceGod && !cfg_.tutorial;   // (practice: TAKE NO DAMAGE; the tutorial: none)
     bool friendly = attacker >= 0 && attacker != victim && modeIsTeamBased(cfg_.mode) && players_[attacker].team == v.team;
     // Race: you can only affect yourself (rocket jumps etc.); hide and seek / tag: only "it" touches anyone (the rules)
     if (!rulesCanHit(*this, attacker, victim, weapon)) return;
@@ -2873,7 +2885,7 @@ void Server::grappleTargets(int id, const UserCmd& cmd, HookProbe& probe) {
     // Rocket riding: the rockets in reach, anyone's. Your own are tested where they are now (the client draws them that
     // far ahead: X5), anyone else's rewound along their path to where you saw them (the view time plus the
     // interpolation delay the client draws projectiles ahead by: rocketSeenMs). Bots don't ride rockets.
-    if (!moveTuning().rocketRide || p.isBot) return;
+    if (!moveTuning().rocketRide || (p.isBot && id != tutGhost_)) return;   // (the tutorial's ghost rides its own)
     const Vec3 eye = p.move.pos + Vec3(0, kEyeHeight * moveScale(p.move.mods), 0);
     const float reach = kGrappleRange * moveValue(p.move, MV_HOOK_RANGE, &map_) + 2 * kRocketCatchHalf;
     uint64_t seen = 0;   // (the time anyone else's rocket is tested at: worked out at the first)
@@ -3199,7 +3211,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
 void Server::tickProjectiles() {
     const int steps = std::max(1, 1000 / tickRate());
     projTargets_ = 0;   // the players a projectile can hit, boxed once a tick rather than once a step
-    for (int i = 0; i < kMaxPlayers; i++) {
+    for (int i = 0; i < kMaxPlayers && !cfg_.tutorial; i++) {   // (the tutorial: shots fly through the ghost and you)
         const auto& p = players_[i];
         if (!p.connected || !p.alive) continue;
         projTargetId_[projTargets_] = (uint8_t)i;

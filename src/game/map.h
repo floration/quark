@@ -1720,6 +1720,9 @@ int migrateUserData(const std::string& oldRoot, const std::string& newRoot); // 
 void setExecutableDir(const char* argv0);
 const std::string& executableDir();       // empty if unknown
 std::vector<std::string> listMaps();
+// A map only its own feature loads (the TUTORIAL's, src/game/tutorial.h): listMaps() still has it (the map checks run on
+// it), but the pickers, votes, the editor's list and a server's map rotation leave it out
+inline bool mapHiddenFromLists(const std::string& name) { return name == "tutorial"; }
 // The file Map::load reads for a map name (old names mapped to the new ones): your maps folder first, then the
 // shipped one. Empty for a name that isn't valid.
 std::string mapFilePath(const std::string& name);

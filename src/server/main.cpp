@@ -155,7 +155,7 @@ int main(int argc, char** argv) {
         std::string pick;
         Map d;
         for (const std::string& n : listMaps()) {
-            if (isLegacyMap(n) || !d.load(n) || !d.supportsMode(cfg.mode)) continue;
+            if (isLegacyMap(n) || mapHiddenFromLists(n) || !d.load(n) || !d.supportsMode(cfg.mode)) continue;
             if (pick.empty()) pick = n;
             if (d.preferredMode == cfg.mode) { pick = n; break; }
         }

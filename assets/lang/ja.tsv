@@ -141,7 +141,11 @@
 10-BIT: ON (A 10-BIT WINDOW)	10ビット: オン (10ビットウィンドウ)
 12 H CLOCK	12時間表示
 144 FPS	144 FPS
+16 M UP, OUT OF A HYPER FROM 20 M/S	20 M/S からのハイパーで 16 M 上昇
 1V1 - rounds on one ruleset (vanilla, laser vampire, instagib...). First to 5. Ranked 1v1 rates you on its own ladder.	1V1 - 1つのルール (バニラ、レーザーヴァンパイア、インスタギブ...) でラウンド制。5本先取。ランク1v1は専用ラダーでレート計算。
+2 BOUNCES	バウンド 2 回
+2 HYPERS	ハイパー 2 回
+2 SUPERS	スーパー 2 回
 240 FPS	240 FPS
 2:00  -  1ST OF 6	2:00  -  6人中1位
 2D: THE VIEW STAYS STILL, YOUR MOUSE MOVES THE CROSSHAIR	2D: 視点固定、マウスでクロスヘアを移動
@@ -152,11 +156,14 @@
 3D VAMP	3D ヴァンプ
 5 MORE MINUTES	あと5分
 60 FPS	60 FPS
+A BURST OF 24 M/S THE WAY YOU MOVE. TWO CHARGES, EACH BACK IN 1.2 S.	移動方向へ 24 M/S の加速。チャージは 2 つ、それぞれ 1.2 S で回復。
+A DASH GOES THE WAY YOU MOVE, NOT THE WAY YOU LOOK.	ダッシュは視線ではなく移動方向へ進む。
 A DASH PRESSED THIS SOON BEFORE IT'S READY	使用可能になる直前に押したダッシュの受付時間
 A DROPPED CONNECTION TRIES AGAIN (3 TIMES)	切断時に再接続 (3回)
 A NEW CODE FROM /link RELINKS IT - unlink REMOVES IT	/link の新コードで再連携 - unlink で解除
 A PLAYER JOINED VIA	プレイヤーが参加 経由:
 A SERVER	サーバー
+A SUPER FOR SPEED	スーパーで加速
 A VARIABLE FONT IS DRAWN AT ITS DEFAULT WEIGHT	可変フォントはデフォルトの太さで描画
 A private game with bots at your chosen level (beginner, intermediate, advanced, expert), on any mode and map.	選んだレベル (初級、中級、上級、エキスパート) のボットとのプライベートゲーム。モードとマップは自由。
 A thrown knife or syringe is gone for 4 s (greyed out in the weapon list, with its timer).	投げたナイフや注射器は4秒間使えません (武器リストでグレー表示、タイマー付き)。
@@ -170,6 +177,7 @@ ACCENT COLOR	アクセントカラー
 ACCESSIBILITY	アクセシビリティ
 ACCURACY	命中率
 ACE	ACE
+AD STRAFING	AD ストレイフ
 ADAPTIVE	アダプティブ
 ADD (AT THE SCREEN CENTER)	追加 (画面中央)
 ADD BOT	ボット追加
@@ -181,7 +189,19 @@ ADVANCED	上級
 ADVANCED > BOT BRAIN: what your bots play: the built-in brain, or a .qbrain file from the bots folder in your data folder. A file that doesn't compile shows its error line and the bots play the built-in brain. Never in ranked.	上級 > ボットAI: ボットの戦い方: 内蔵AI、またはデータフォルダ内の bots フォルダにある .qbrain ファイル。コンパイルできないファイルはエラー行を表示し、ボットは内蔵AIで戦います。ランクでは使われません。
 AGAIN (R)	もう一度 (R)
 AHEAD	リード
+AIM A LITTLE DOWN	少し下を狙う
+AIM A LITTLE DOWN THE WHOLE WAY	ずっと少し下を狙う
+AIM AT THE FLOOR A FEW METRES AHEAD (15 DEGREES DOWN IS ENOUGH)	数メートル先の床を狙う (下に 15 度で十分)
+AIM JUST UNDER LEVEL, AT THE FLOOR FAR AHEAD	水平より少し下、遠くの床を狙う
+AIM STRAIGHT AHEAD	まっすぐ前を狙う
+AIM STRAIGHT DOWN	真下を狙う
+AIM STRAIGHT DOWN AND FIRE A STICKY	真下を狙ってスティッキーを撃つ
 AIM TRAINER	エイムトレーナー
+AIM UP, OVER THE EDGE OF THE LEDGE	上、足場の縁の上を狙う
+AIM: A LITTLE DOWN	照準: 少し下
+AIM: LEVEL	照準: 水平
+AIM: STRAIGHT DOWN	照準: 真下
+AIM: UP	照準: 上
 AIR	空中
 AIR ACCELERATION	空中加速
 AIR CONTROL	空中制御
@@ -380,6 +400,7 @@ BUILT FOR	対応モード
 BUILT FOR sets the mode the map is made for; the MODES grid sets what it's offered for. PLAYABLE AS shows what it has the pieces for (team modes need A and B spawns).	対応モードはマップの想定モードを設定; モード表は提供先を設定します。プレイ可能は必要な要素が揃っているモードを表示 (チームモードにはAとBのスポーンが必要)。
 BUILT FOR:	対応モード:
 BUILT FOR: ANY	対応モード: すべて
+BUNNY HOP WITH ONE STRAFE KEY AT A TIME, TURNING WITH IT: SPEED WITH NO DASH.	横移動キーを 1 つずつ押してバニーホップし、その方向へ回る: ダッシュなしで加速。
 BY NAME	名前順
 BY PING	PING順
 BY PLAYERS	人数順
@@ -597,6 +618,7 @@ DAMAGE NUMBER SIZE	ダメージ数値のサイズ
 DAMAGE NUMBERS	ダメージ数値
 DASH	ダッシュ
 DASH + GRAPPLE	ダッシュ + グラップル
+DASH AND JUMP TOGETHER	ダッシュとジャンプを同時に
 DASH BUFFER	ダッシュ先行入力
 DASH BUFFER: 0.05 S	ダッシュ先行入力: 0.05秒
 DASH BUFFER: 0.1 S	ダッシュ先行入力: 0.1秒
@@ -605,14 +627,25 @@ DASH BUFFER: OFF	ダッシュ先行入力: オフ
 DASH CAPTION	ダッシュのキャプション
 DASH CHARGES	ダッシュチャージ
 DASH COOLDOWN	ダッシュクールダウン
+DASH DOWN INTO THE FLOOR WHILE YOU JUMP: YOUR SPEED + 5 M/S, UP AND AHEAD.	ジャンプしながら床へ下向きにダッシュ: 速度 + 5 M/S で上と前へ。
+DASH DOWN INTO THE FLOOR WITHOUT A JUMP: YOU SLIDE AS ON ICE AND KEEP YOUR SPEED.	ジャンプせずに床へ下向きにダッシュ: 氷のように滑り、速度を保つ。
 DASH EXIT SPEED (MAX)	ダッシュ終了速度 (最大)
 DASH EXIT SPEED (MIN)	ダッシュ終了速度 (最小)
+DASH HEAD ON INTO A WALL: YOU BOUNCE BACK OFF IT AT 16 M/S.	壁に正面からダッシュ: 16 M/S で跳ね返る。
+DASH IN THE AIR TO CROSS THE LAVA	空中でダッシュして溶岩を越える
+DASH INTO IT	そこへダッシュ
 DASH JUMP WINDOW	ダッシュジャンプ猶予
+DASH JUST BEFORE YOU LAND, AND DON'T JUMP	着地の直前にダッシュ、ジャンプはしない
+DASH LEFT	左へダッシュ
+DASH LEFT AND DASH RIGHT	左と右へダッシュ
 DASH LENGTH	ダッシュ距離
+DASH RIGHT	右へダッシュ
+DASH SLIDE	ダッシュスライド
 DASH SPEED	ダッシュ速度
 DASH SPEED KEPT	ダッシュ速度維持
 DASH VERTICAL	ダッシュ垂直
 DASH WALL BOUNCE ANGLE	ダッシュ壁反射角度
+DASH, AND JUMP A MOMENT LATER	ダッシュして、一瞬後にジャンプ
 DASHING BLADES	ダッシュブレード
 DATA FOLDER	データフォルダ
 DATE FORMAT	日付形式
@@ -670,6 +703,8 @@ DISPLAY: WINDOWED	ディスプレイ: ウィンドウ
 DISTANCE	距離
 DMG	DMG
 DMITRI	DMITRI
+DON'T HOLD IT WHILE YOU STRAFE	ストレイフ中は押さない
+DON'T HOLD IT, OR THE DASH GOES FORWARD TOO	押さないこと。押すとダッシュが前にも進む
 DON'T SAVE	保存しない
 DONE	完了
 DOT	ドット
@@ -761,7 +796,9 @@ ERROR ON LINE	エラー 行:
 ESC	ESC
 ESC (CLEAR SEARCH)	ESC (検索をクリア)
 ESC TO CANCEL	ESCでキャンセル
+ESC: LESSONS	ESC: レッスン
 ESC: PAUSE / SETTINGS   R: RESTART	ESC: 一時停止 / 設定   R: リスタート
+EVERY LANDING HYPERS AGAIN AS SOON AS A DASH CHARGE IS BACK	ダッシュのチャージが戻ればすぐ、着地ごとに再びハイパー
 EVERY SETTING IS BACK TO ITS DEFAULT	全設定をデフォルトに戻しました
 EVERY WEAPON, ALL MOVEMENT - NO GIMMICKS	全武器・全移動 - ギミックなし
 EVERYONE THROWS - THE LOSING SHAPE IS OUT	全員が出す - 負けた手は脱落
@@ -796,6 +833,7 @@ Each dash leaves you 1 m/s faster than you went in (at least 11, at most 32 m/s)
 Each map is built for one mode, plus free for all and any others it lists. You can still start any map in any mode: the menus warn when it isn't built for it (it may be missing spawns or objectives).	各マップは1つのモード用に作られ、個人戦と記載された他モードにも対応します。どのマップもどのモードで開始できますが、非対応の場合はメニューで警告されます (スポーンや目標がない場合があります)。
 F3 - performance overlay (average, 1% and 0.1% low FPS, input latency).   F12 - screenshot.   ESC - menu, votes, settings.	F3 - パフォーマンス表示 (平均、1% / 0.1% LOW FPS、入力遅延)。   F12 - スクリーンショット。   ESC - メニュー、投票、設定。
 F3 COLORBLIND COLORS	F3 色覚補正カラー
+FACE IT (WITHIN 45 DEGREES)	壁に向く (45 度以内)
 FACING (Q E)	向き (Q E)
 FADE DISTANCE	フェード距離
 FADE LENGTH	フェード長
@@ -822,6 +860,8 @@ FIND INVISIBLE WALLS:	見えない壁を検索:
 FINISH	ゴール
 FINISHED	完了
 FIRE	射撃
+FIRE A ROCKET AND HOOK IT AS IT LEAVES: IT CARRIES YOU ALONG.	ロケットを撃ち、発射直後にフックで掴む: ロケットに運ばれる。
+FIRE AND GRAPPLE TOGETHER	射撃とグラップルを同時に
 FIRE RATE	連射速度
 FIRES THE MOMENT IT IS	準備でき次第即発射
 FIRST TO #	# 本先取
@@ -906,7 +946,10 @@ GAP	間隔
 GATE	ゲート
 GENERAL	一般
 GENERAL + INTERFACE	一般 + インターフェース
+GET 7 M UP	7 M 上がる
 GET IT WITH /link - THE CODE IS PUBLIC	/link で取得 - コードは公開されます
+GHOST	GHOST
+GHOST'S KEYS	ゴーストのキー
 GIANT SNIPERS	巨人スナイパー
 GIBS	肉片
 GL	GL
@@ -915,6 +958,7 @@ GLOW	グロー
 GLOW STRENGTH	グローの強さ
 GO	GO
 GO!	GO!
+GOAL	目標
 GODLIKE	ゴッドライク
 GPU	GPU
 GPU + CPU GO TO THE GAME FIRST WHILE FOCUSED	フォーカス中はGPU + CPUをゲーム優先
@@ -947,7 +991,10 @@ GRAPPLE MOVEMENT ONLY	グラップル移動のみ
 GRAPPLE PULL	グラップル牽引力
 GRAPPLE RANGE	グラップル射程
 GRAPPLE RELEASE DISTANCE	グラップル解除距離
+GRAPPLE TO 24 M/S, THEN A ROCKET AND A HYPER STRAIGHT DOWN: YOU FLY, CHEAP AND FAST.	グラップルで 24 M/S、そして真下へロケットとハイパー: 安く速く飛べる。
 GRAPPLE TOP SPEED	グラップル最高速度
+GRAPPLE WALK UP TO 24 M/S	グラップル歩きで 24 M/S まで
+GRAPPLE WALKING	グラップル歩き
 GRAPPLE: HOLD	グラップル: 長押し
 GRAPPLE: TOGGLE	グラップル: トグル
 GRAVITY	重力
@@ -1041,11 +1088,17 @@ HITSOUND: MOUTH	ヒット音: 口
 HITSOUND: MY SOUND PACK	ヒット音: 自分のサウンドパック
 HITSOUND: RETRO	ヒット音: レトロ
 HITSOUNDS	ヒット音
+HOLD ALL THREE	3 つとも押し続ける
+HOLD BOTH	両方押し続ける
 HOLD FIRE	射撃禁止
+HOLD IT	押し続ける
+HOLD IT. IT PULLS YOU TO THE WALL AND UP	押し続ける。壁へ、そして上へ引っ張られる
+HOLD IT. YOU HOP AGAIN EVERY TIME YOU LAND	押し続ける。着地のたびにまた跳ぶ
 HOLDING THE HILL	ヒル確保中
 HOME	HOME
 HOOK	フック
 HOOK CAPTION	フックのキャプション
+HOOK THE FLOOR FAR AHEAD: IT DRAGS YOU ALONG WITH NO FRICTION, UP TO 24 M/S.	遠くの床にフックを掛ける: 摩擦なしで引きずられ、最大 24 M/S。
 HOOKED	フック中
 HOST	ホスト
 HOST EDIT SESSION	編集セッションをホスト
@@ -1053,6 +1106,7 @@ HOST EDIT SESSION: friends join and build with you; everyone's camera shows in t
 HOST GAME	ゲームをホスト
 HOSTING	ホスト中
 HOSTING ON UDP PORT	ホスト中 UDPポート:
+HOW	やり方
 HOW OTHER PLAYERS' MOVES ARE SMOOTHED	他プレイヤーの動きの補間方法
 HP	HP
 HUD	HUD
@@ -1067,6 +1121,7 @@ HUD SIZE	HUDサイズ
 HUD.CFG LINE	HUD.CFG 行
 HURT	被弾
 HYPER	ハイパー
+HYPER AGAIN EVERY TIME YOU LAND: EACH ONE ADDS 5 M/S, UP TO 36.	着地のたびにまたハイパー: 1 回ごとに 5 M/S 加算、最大 36。
 HZ	HZ
 HZ  LOSS	HZ  ロス
 HZ (NOT ON THIS MONITOR)	HZ (このモニターでは不可)
@@ -1103,6 +1158,7 @@ IN (TEAMS GO UNEVEN)	参加 (チーム人数が不均等に)
 IN A TIME TRIAL OR A RACE	タイムアタックやレース中
 IN GAME, ESC SHOWS IF THE PORT CAN BE REACHED	ゲーム中、ESCでポート到達可否を表示
 IN MY PALETTE	自分のパレットで
+IN THE AIR, HOLD ONLY THIS AND TURN THE MOUSE RIGHT, SMOOTHLY	空中ではこれだけ押し、マウスをなめらかに右へ回す
 IN THIS MAP	このマップ内
 INDIA	インド英語
 INDUSTRIAL	インダストリアル
@@ -1129,6 +1185,7 @@ IS ON A KILLING SPREE	キリングスプリー!
 IS ON A RAMPAGE	ランペイジ!
 IS UNSTOPPABLE	アンストッパブル!
 IT IN MY PALETTE	鬼を自分のパレットで
+IT IS ALWAYS IN THE MAIN MENU: TUTORIAL	いつでもメインメニュー: チュートリアル
 ITS COLOURS ARE ON THE CROSSHAIR TAB	色はクロスヘアタブで設定
 ITS STYLE	スタイル
 ITS STYLE: CIRCLE	スタイル: 円
@@ -1148,10 +1205,17 @@ JOIN THE GAME FROM THE MENU (ESC)	メニュー (ESC) からゲームに参加
 JOINING + PRIVACY	参加 + プライバシー
 JOST	JOST
 JUMP	ジャンプ
+JUMP AND FIRE TOGETHER	ジャンプと射撃を同時に
+JUMP AND SET IT OFF TOGETHER	ジャンプと起爆を同時に
+JUMP AT THE EDGE	縁でジャンプ
+JUMP THE HURDLES. YOU KEEP YOUR SPEED IN THE AIR	ハードルを跳び越える。空中でも速度は保たれる
+JUMP WHILE YOU DASH ALONG THE FLOOR: 24 M/S, UP AND AHEAD.	床でダッシュ中にジャンプ: 24 M/S で上と前へ。
+JUMP, DASH AND FIRE TOGETHER	ジャンプ、ダッシュ、射撃を同時に
 JUNE	JUNE
 KAI	KAI
 KB; OFF: A SERVER'S	KB; オフ: サーバーの
 KEEP	保持
+KEEP HOLDING IT TO RIDE	押し続けて乗り続ける
 KEEP THESE DISPLAY SETTINGS? REVERTING IN	このディスプレイ設定を保持しますか? 元に戻るまで
 KEEP YOUR EDITS AS A NEW MAP?	編集を新しいマップとして保存しますか?
 KEEP: ALL	保持: すべて
@@ -1165,6 +1229,9 @@ KEY 2	キー 2
 KEY 3	キー 3
 KEY OVERLAY	キーオーバーレイ
 KEY OVERLAY (VERBOSE)	キーオーバーレイ (詳細)
+KEY TECH	重要テク
+KEY TECH:	重要テク:
+KEY TECH: {}	重要テク: {}
 KEYS	キー
 KICK	キック
 KICK A PLAYER	プレイヤーをキック
@@ -1201,6 +1268,7 @@ LADDER CLIMB SPEED	はしご登り速度
 LADDER SIDE SPEED	はしご横移動速度
 LADDERS (1V1, INSTAGIB FFA) - DEFAULT MODEL, HUD, CONTROLS >	ラダー (1V1、インスタギブFFA) - デフォルトモデル、HUD、操作設定 >
 LAND	着地
+LAND ON THE FAR SIDE OF THE LAVA	溶岩の向こう側に着地
 LANGUAGE	言語
 LARGE	大
 LASER	レーザー
@@ -1222,10 +1290,12 @@ LATENT SYNC	レイテントシンク
 LATENT SYNC: HOLD FOR THE BLANK	レイテントシンク: ブランクを待つ
 LATENT SYNC: WAIT FOR THE RASTER	レイテントシンク: ラスターを待つ
 LAUNCHER ON THE RIGHT	ランチャーを右に
+LAY A STICKY BOMB, STAND ON IT, SET IT OFF AS YOU JUMP.	スティッキーボムを置き、その上に立ち、ジャンプと同時に起爆。
 LEADERBOARD	リーダーボード
 LEADERBOARD: SOON	リーダーボード: 近日公開
 LEAVE	退出
 LEAVE ALL	すべて退出
+LEAVE TUTORIAL	チュートリアルを終了
 LEFT	左
 LEFT ARROW (PREVIOUS PAGE)	左矢印 (前のページ)
 LEFT MOUSE - fire.   RIGHT MOUSE - alt-fire (scope, knife throw, rocket lob, bubble stream, syringe throw...).	左クリック - 射撃。   右クリック - サブ射撃 (スコープ、ナイフ投げ、ロケット曲射、バブル放射、注射器投げ...)。
@@ -1234,7 +1304,11 @@ LEGACY MAPS	レガシーマップ
 LEGACY MAPS (settings > GAMEPLAY) lists the old maps from before 1.19.6 too. They are never ranked.	レガシーマップ (設定 > ゲームプレイ) で 1.19.6 以前の旧マップも表示します。ランクには使われません。
 LENA	LENA
 LENGTH	長さ
+LESSON # OF #	レッスン # / #
+LESSON DONE	レッスン完了
+LESSONS	レッスン
 LET	LET
+LET GO BEFORE YOU REACH THE HOOK	フックに着く前に離す
 LG	LG
 LIBREQUAKE 8X8	LIBREQUAKE 8X8
 LIGHT	ライト
@@ -1945,6 +2019,7 @@ MODEL	モデル
 MODEL OF	モデル:
 MODES	モード
 MODES (CLICK: ALLOW / BLOCK)	モード (クリック: 許可 / 禁止)
+MODES GUIDE	モードガイド
 MODES:	モード:
 MODIFIERS	修正
 MODIFIERS:	修正:
@@ -2011,14 +2086,18 @@ NEUTRAL PAYLOAD	ニュートラルペイロード
 NEUTRAL PAYLOAD - either team pushes the cart toward the other team's end. The team whose side it's on when time runs out wins.	ニュートラルペイロード - どちらのチームもカートを相手陣地へ押す。時間切れ時にカートが相手側にあるチームの勝利。
 NEW	新規
 NEW BEST	新記録
+NEW HERE? THE TUTORIAL SHOWS EVERY MOVEMENT TECH: A GHOST DOES IT, THEN YOU DO.	はじめて? チュートリアルで全移動テクを紹介: ゴーストが手本を見せ、次にあなたが挑戦。
 NEW LEADER	新しいリーダー
 NEW NAME	新しい名前
 NEW ONES:	新着:
 NEW PERSONAL BEST	自己ベスト更新
 NEXT	次へ
+NEXT HOP, HOLD ONLY THIS AND TURN LEFT	次のホップではこれだけ押して左へ回す
 NEXT PAGE	次のページ
 NEXT WEAP	次の武器
 NEXT WEAPON	次の武器
+NEXT:	次:
+NEXT: {}	次: {}
 NIGHT: QUIET UP, LOUD DOWN; LOW: AS NORMAL	ナイト: 小さい音を上げ大きい音を下げる; 低: 通常と同じ
 NIGHT: QUIET UP, LOUD DOWN; SAFE: MORE	ナイト: 小さい音を上げ大きい音を下げる; 安全: より多く
 NINJA	ニンジャ
@@ -2052,6 +2131,7 @@ NOT BUILT FOR THIS MODE - IT MAY NOT WORK	このモード非対応 - 動作し�
 NOT CHANGED IN THE UI TEST	UIテストでは変更しない
 NOT FOR THIS MODE	このモード非対応
 NOT FOUND: USING THE PRIMARY	見つかりません: プライマリを使用
+NOT NOW	今はしない
 NOT PLAYED YET	未プレイ
 NOT REPORTED - NOT A RANKED MAP FOR THIS LADDER	未送信 - このラダーのランクマップではありません
 NOT USABLE	使用不可
@@ -2103,6 +2183,7 @@ ON WINDOWS (ALREADY ITS SHORTEST); SAFE: X2	WINDOWSでは (既に最短); 安全
 ON: AT MOST 1 FRAME QUEUED	オン: キューは最大1フレーム
 ON: FROM THE NEXT START	オン: 次回起動から
 ON: USES YOUR TEAM COLOR, NOT THE ONE BELOW	オン: 下の色ではなくチームカラーを使用
+ONCE ABOVE THE EDGE, LET GO OF THE GRAPPLE AND MOVE ONTO THE LEDGE	縁より上に来たらグラップルを離し、足場へ進む
 ONE	1つ
 ONE CHAT COLOR	チャット単色
 ONE MINUTE	1分
@@ -2335,6 +2416,9 @@ RATE	レート
 RATING	レート
 RAW INPUT	RAW入力
 RD	RD
+REACH 12 M/S WITH NO DASH OR GRAPPLE	ダッシュもグラップルも使わず 12 M/S に到達
+REACH 27 M/S	27 M/S に到達
+REACH THE GLOWING LINE	光るラインに到達
 READ INPUT	入力読取
 READY	準備完了
 REALTIME	リアルタイム
@@ -2387,6 +2471,7 @@ RESUME (ESC)	再開 (ESC)
 RETICLE COLOR	レティクルの色
 RETICLE WIDTH	レティクルの幅
 REVERT	元に戻す
+RIDE FOR 0.4 S	0.4 S 乗る
 RIFF	RIFF
 RIFLE	ライフル
 RIFLE ZOOM FOV	ライフルズームFOV
@@ -2408,8 +2493,10 @@ ROBOT	ロボット
 ROCK	グー
 ROCKET	ロケット
 ROCKET (splash; rocket jump off the floor for 10#amage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 10 hp, once a second; alt throws it: +30 hp and reset cooldowns for a teammate).	ロケット (範囲攻撃; 床でロケットジャンプすると10#ダメージ)、ライフル (フルオート; サブでスコープ)、レーザー (ビーム; サブで引き寄せ)、ショットガン (サブ: 跳弾)、スナイパー (サブでスコープ)、スティッキー (サブで起爆)、クロスボウ (ヘッドショット)、バブル (サブ: バブルを連射)、ナイフ (サブ: 投擲)、注射器 (射撃で毎秒1回10 HP回復; サブで投擲: 味方に +30 HP とクールダウンリセット)。
+ROCKET JUMP	ロケットジャンプ
 ROCKET JUMPERS	ロケットジャンパー
 ROCKET RIDE	ロケットライド
+ROCKET RIDING	ロケットライド
 ROCKET, LASER AND KNIFE	ロケット、レーザー、ナイフ
 ROCKETS AND STICKIES - NO SELF DAMAGE	ロケットとスティッキー - 自爆ダメージなし
 ROCKETS ONLY	ロケットのみ
@@ -2445,9 +2532,12 @@ RULES	ルール
 RUN	逃げろ
 RUN - DON'T BE THE TAGGER WHEN TIME RUNS OUT	逃げろ - 時間切れ時に鬼にならないように
 RUN AGAIN	もう一度実行
+RUN AT THE GAP	穴に向かって走る
 RUN BENCHMARK	ベンチマーク実行
+RUN FORWARD	前へ走る
 RUN NAME	ラン名
 RUN SPEED	走行速度
+RUN, JUMP THE HURDLES, REACH THE GLOWING LINE.	走って、ハードルを跳び、光るラインへ。
 RUNS	ラン
 Ranked games use the default model, HUD and controls and 10 ms interpolation, so everyone plays the same game.	ランクではデフォルトのモデル、HUD、操作と10 msの補間を使用し、全員が同条件でプレイします。
 SAFE OK / ERROR	安全な OK / エラー色
@@ -2556,6 +2646,7 @@ SHOWN WITH VERBOSE INFO ON. DRAG TO MOVE, CORNER / WHEEL TO SIZE, ARROWS NUDGE, 
 SHOWS INPUT->FRAME LATENCY	INPUT->FRAME の遅延を表示
 SHUFFLE TEAMS	チームをシャッフル
 SHUFFLE THE TEAMS (THE MATCH RESTARTS)	チームをシャッフル (試合はリスタート)
+SIDEWAYS DASHES	横ダッシュ
 SIMPLE	シンプル
 SIMPLE SKY	シンプルな空
 SITE	サイト
@@ -2568,9 +2659,12 @@ SIZE: X2	サイズ: X2
 SIZING	サイズ調整
 SIZING: EXACT PIXELS	サイズ調整: ピクセル指定
 SIZING: SCALE WITH RESOLUTION	サイズ調整: 解像度に合わせる
+SKIP	スキップ
 SKIP IT	スキップ
+SKIP LESSON	レッスンをスキップ
 SKIP WARMUP	ウォームアップをスキップ
 SKY	空
+SLIDE FOR 0.8 S	0.8 S 滑る
 SLOT	スロット
 SLOT 1	スロット 1
 SLOT 2	スロット 2
@@ -2660,16 +2754,21 @@ STALEMATE - HEALTH DRAINING	膠着 - 体力減少中
 STALEMATE - HEALTH DRAINS IN	膠着 - 体力減少まで
 STALEMATE WARNING	膠着警告
 STALLED #S	停滞 #秒
+STAND ON THE 10 M LEDGE	10 M の足場に立つ
 STANDARD	標準
 STANDARD RULES	標準ルール
 STANDARD: SNIPER	標準: スナイパー
 START	開始
+START OVER	やり直す
 START THE MATCH	試合を開始
+START TUTORIAL	チュートリアル開始
 STARTING IN #	開始まで #
 STAY HIDDEN -	隠れ続けろ -
 STDEV	標準偏差
+STEER ONTO THE LEDGE	足場の上へ移動
 STEP	ステップ
 STEP HEIGHT	段差の高さ
+STEP LEFT, BACK AND RIGHT	左、後ろ、右へ移動
 STEPS	足音
 STEPS, SHOTS, BOOMS... AS WORDS ROUND THE	足音、射撃、爆発... を文字で周囲に
 STEREO WIDTH	ステレオ幅
@@ -2679,6 +2778,7 @@ STICKIES ON YOU	あなたに付いたスティッキー
 STICKIES ONLY	スティッキーのみ
 STICKY	スティッキー
 STICKY COUNTER	スティッキーカウンター
+STICKY JUMP	スティッキージャンプ
 STICKY ON YOU	スティッキーが付着
 STILL HIDDEN	まだ隠れている
 STONE	石
@@ -2711,6 +2811,7 @@ STYLE: NUMBER	スタイル: 数値
 STYLE: T	スタイル: T
 SUBTRACT	減算
 SUPER	スーパー
+SUPER CHAINING	スーパーチェイン
 SUPER DASH	スーパーダッシュ
 SUPER DASH BOOST	スーパーダッシュブースト
 SUPER DASH JUMP	スーパーダッシュジャンプ
@@ -2811,6 +2912,7 @@ TEXT: RIGHT	テキスト: 右
 TF2 BUILD	TF2 ビルド
 TF2 SECONDARY	TF2 セカンダリ
 TH	TH
+THAT IS EVERY MOVEMENT TECH. THE MODES GUIDE SAYS WHAT EACH GAME MODE IS ABOUT.	これで全移動テクです。モードガイドで各ゲームモードを確認できます。
 THE 3D SCENE (THE HUD STAYS AS IT IS);	3Dシーン (HUDはそのまま);
 THE BOMB IS CARRIED AGAIN	爆弾が再び運ばれています
 THE BOMB IS DOWN	爆弾が落ちた
@@ -2822,7 +2924,11 @@ THE FONT OF THE MENUS AND THE HUD	メニューとHUDのフォント
 THE GAME'S PART ONLY: NO MOUSE POLLING, NO DISPLAY; ONE TIME LINE	ゲームのみ: マウスとディスプレイを除く; 一本の時間軸
 THE GUN'S KICK ON A SHOT (0: NONE)	射撃時の武器の反動 (0: なし)
 THE HAZE OVER DISTANT WALLS (0: NONE)	遠くの壁にかかる霞 (0: なし)
+THE HOOK PULLS YOU TO WHERE IT CATCHES. LET GO AND YOU KEEP THE SPEED.	フックは掛かった場所へ引っ張る。離しても速度は保たれる。
+THE HYPER LIFTS YOU, THE ROCKET ADDS 20 M/S MORE	ハイパーで浮き、ロケットがさらに 20 M/S 加える
+THE JUMP MUST COME WHILE THE DASH STILL RUNS (0.12 S)	ジャンプはダッシュ中 (0.12 S) に
 THE LANGUAGE OF THE MENUS AND THE HUD	メニューと HUD の言語
+THE LAUNCH	ローンチ
 THE MAP ISN'T BUILT FOR THIS MODE: IT MAY NOT WORK	このマップはこのモード非対応: 動作しない場合があります
 THE MESSAGES UNDER THE SCORE BOX	スコアボックス下のメッセージ
 THE OLD MAPS (BEFORE 1.19.6) IN THE MAP LISTS. NEVER RANKED	旧マップ (1.19.6以前) をマップリストに表示。ランク対象外
@@ -2838,6 +2944,8 @@ THE TASKBAR BUTTON FLASHES	タスクバーのボタンが点滅
 THE WINDOW'S SIZE AND PLACE ARE KEPT	ウィンドウのサイズと位置を保持
 THEIRS	相手
 THEME.CFG LINE	THEME.CFG 行
+THEN	次に
+THEN ALL AT ONCE: LET GO, AIM STRAIGHT DOWN AND...	そして一気に: 離して、真下を狙い...
 THEN REFRESH	その後更新
 THESE ONLY APPLY TO IT	これらはそれにのみ適用
 THEY DROPPED THE BOMB	敵が爆弾を落とした
@@ -2917,7 +3025,14 @@ TRAILS: SHORT	軌跡: 短い
 TRAILS: THE STREAKS BEHIND ROCKETS, BOLTS,	軌跡: ロケット、ボルトなどの後ろの筋、
 TRAINER MENU	トレーナーメニュー
 TRIAL MAP	タイムアタックマップ
+TRY IT NOW	今すぐ挑戦
 TT	TT
+TURNING LEFT	左へ回転中
+TURNING RIGHT	右へ回転中
+TUTORIAL	チュートリアル
+TUTORIAL -	チュートリアル -
+TUTORIAL - {}	チュートリアル - {}
+TUTORIAL COMPLETE	チュートリアル完了
 TWO	2つ
 TYPE TO SEARCH: A NAME OR WHAT IT DOES (CTRL+F)	入力して検索: 名前または機能 (CTRL+F)
 TYPING	入力中
@@ -3023,6 +3138,9 @@ WAD2	WAD2
 WAITING FOR THE LATE READ (AVG)	遅延読取待ち (平均)
 WAITING FOR THE LATE READ (AVG)  00,000,000 NS	遅延読取待ち (平均)  00,000,000 NS
 WAITING FOR THE NEXT READ (AVG)	次の読取待ち (平均)
+WALK TO THE STRIPED WALL	縞模様の壁まで歩く
+WALKING	移動
+WALL BOUNCE	ウォールバウンス
 WALLBANG	ウォールバン
 WALLBANG TINT	ウォールバンの色調
 WARMING UP	ウォームアップ中
@@ -3033,6 +3151,8 @@ WARNING: DON'T TOUCH THIS UNLESS YOU KNOW WHAT YOU'RE DOING	警告: 理解して
 WARNINGS	警告
 WAS ON	だった
 WASTELAND	荒野
+WATCH AGAIN	もう一度見る
+WATCH THE GHOST	ゴーストを見よう
 WAVE	ウェーブ
 WEAPON	武器
 WEAPON CAPTION	武器のキャプション
@@ -3049,6 +3169,7 @@ WEAPON SENSITIVITY	武器別感度
 WEAPON:	武器:
 WEAPONS	武器
 WEAPONS (THEIR NUMBER KEYS STILL WORK)	武器 (数字キーは引き続き有効)
+WELCOME TO QUARK	QUARK へようこそ
 WHAT THE BOTS PLAY: .QBRAIN FILES IN THE BOTS FOLDER	ボットのAI: botsフォルダの .QBRAIN ファイル
 WHAT THE VOTE CHANGES	投票で変わる内容
 WHEEL DN	WHEEL DN
@@ -3117,6 +3238,7 @@ YOUR KILLS	自分のキル
 YOUR MATCH:  # SHOTS  # HITS  #% ACCURACY  # DAMAGE  BEST STREAK #	あなたの試合:  # 発  # ヒット  命中率 #%  # ダメージ  最高連続キル #
 YOUR NAME (CHAT AND SCOREBOARD)	名前 (チャットとスコアボード)
 YOUR OWN MODEL FILE: NO PREVIEW HERE	自分のモデルファイル: ここではプレビュー不可
+YOUR OWN ROCKET THROWS YOU. HERE IT DOES NO DAMAGE.	自分のロケットで吹き飛ぶ。ここではダメージなし。
 YOUR OWN: PUT .TTF / .OTF FILES IN MODS/FONTS,	独自: .TTF / .OTF ファイルを MODS/FONTS に置き、
 YOUR QUEUE FOR	キュー:
 YOUR SHOTS	自分の弾
@@ -3124,6 +3246,7 @@ YOUR SHOTS: ALWAYS	自分の弾: 常に
 YOUR SHOTS: NEVER	自分の弾: 表示しない
 YOUR SHOTS: WITH WEAPON MODEL	自分の弾: 武器モデル表示時
 YOUR TEAM IS PUSHING	味方が押し進めている
+YOUR TURN	あなたの番
 You run at 9.5 m/s. In the air, holding a direction drifts you up to run speed (a standing jump moves too).	走る速さは 9.5 m/s。空中では方向キーを押し続けると走る速さまで流れます (その場ジャンプでも動きます)。
 You step up anything 0.55 m high, including stairs mid-jump. Ladders: walk into them, look up or down to climb (6.75 m/s).	高さ 0.55 m までなら何でも段差として上れます (ジャンプ中の階段も)。はしご: 向かって歩き、上か下を見て登ります (6.75 m/s)。
 ZERO-G FLIGHT, LASERS - HEAL 100% TO 50% OVER 30 S, NO KNOCKBACK	無重力飛行、レーザー - 30秒で100%から50%に回復、ノックバックなし
@@ -3426,6 +3549,7 @@ not enough players	人数不足
 not enough players - back to warmup	人数不足 - ウォームアップに戻ります
 not enough players - the match ends in	人数不足 - 試合終了まで
 not enough players for a tourney	トーナメントの人数が足りません
+not in the tutorial	チュートリアルでは使えません
 not in this build	このビルドにはありません
 not rated:	レート対象外:
 not the ladder's mode	ラダーのモードではありません
@@ -3656,6 +3780,7 @@ tourney seed #:	トーナメントシード #:
 tourney seed #: {} (#)	tourney seed #: {} (#)
 tourney started -	トーナメント開始 -
 trying the next rate up: busy #%, upload # kbps	次の上位レートを試行: 使用中 #%、アップロード # kbps
+tutorial reset	tutorial reset
 ui verts	ui verts
 ungrouped into	グループ解除:
 unknown mode	不明なモード
@@ -3714,3 +3839,4 @@ you're next in line: you play the winner of this	次はあなた: この試合�
 your last vote failed: wait a few seconds	前回の投票は否決: 数秒待ってください
 your map is autosaved	マップは自動保存されました
 {} # us (last 1000 ticks)	{} # us (last 1000 ticks)
+{} THEN {}	{} 次に {}

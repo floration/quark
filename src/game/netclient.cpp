@@ -511,7 +511,7 @@ bool NetClient::hookProbe(const UserCmd& cmd, HookProbe& probe) {
     for (int i = 0; i < kMaxPlayers && probe.n < HookProbe::kMax; i++) {
         const InterpPlayer& ip = probePlayers_[i];
         const PlayerSnap& q = ip.snap;
-        if (!ip.valid || i == clientId_ || !(q.flags & PS_ALIVE) || (q.flags & PS_SPECTATOR) || (held >> i & 1)) continue;
+        if (!ip.valid || i == clientId_ || !(q.flags & PS_ALIVE) || (q.flags & PS_SPECTATOR) || (held >> i & 1) || noPlayerHooks) continue;
         if (modeIsTeamBased(ms.mode) && q.team() == me->team()) continue;
         if (isItMode(ms.mode) && ((q.flags & PS_HASBOMB) != 0) == ((me->flags & PS_HASBOMB) != 0)) continue;
         probe.box[probe.n] = playerBox(q.pos, (q.flags & PS_CROUCHED) != 0, scale);
