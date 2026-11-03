@@ -151,10 +151,11 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "wallbang_color") wallbangColor = parseColor(v, wallbangColor);
         else if (k == "ultra_margin_us") {
             ultraMarginUs = std::min(std::max(iv, 0), 2000);
-            // ULTRA SAFETY AUTO (0) became the default after 1.19.7. A file from before it (no ultra_margin_auto, which
-            // save() writes BEFORE this key) on the old default, 150, was never moved (a dragged slider lands elsewhere):
-            // AUTO. Any other value was picked and stays; 0, the lowest it had, is 1 us now (0 is AUTO; the same in practice).
-            if (!ultraMarginMigrated) ultraMarginUs = ultraMarginUs == 150 ? 0 : ultraMarginUs == 0 ? 1 : ultraMarginUs;
+            // ULTRA SAFETY AUTO (0) came after 1.19.7. A file from before it (no ultra_margin_auto, which save() writes
+            // BEFORE this key) on 0, the lowest it had, is 1 us now (0 is AUTO; the same in practice); any other value
+            // stays. The default stays 150 for now (desktop A/B 2026-11-03: AUTO cut ~90 us of input latency but its lows
+            // were lower in the one comparable pair; settled by a longer test before it becomes the default).
+            if (!ultraMarginMigrated && ultraMarginUs == 0) ultraMarginUs = 1;
         }
         else if (k == "ultra_margin_auto") ultraMarginMigrated = iv != 0;
         else if (k == "display_default") displayMigrated = iv != 0;

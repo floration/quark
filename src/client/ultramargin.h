@@ -1,4 +1,4 @@
-// LOW LATENCY ULTRA's safety margin, learnt as it runs (VIDEO + AUDIO > MORE 8 > ULTRA SAFETY: AUTO, the default).
+// LOW LATENCY ULTRA's safety margin, learnt as it runs (VIDEO + AUDIO > MORE 8 > ULTRA SAFETY: AUTO, the slider's far left).
 // Header-only so quark_tests can run it against a simulated GPU (testUltraMargin).
 //
 // ULTRA reads the input at  last swap + learnt GPU time - learnt CPU time - margin,  so the frame is handed to the GPU
