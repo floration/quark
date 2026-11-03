@@ -2686,9 +2686,6 @@ void Renderer::hudLayerComposite() {
 void Renderer::flush2D() {
     if (ui_.empty()) { uiUploaded_ = 0; return; }
     QPLOT("ui verts", ui_.size());
-#ifdef QUARK_TRACY
-    static size_t uiTotal = 0; uiTotal += ui_.size();
-#endif
     glViewport(0, 0, width_, height_);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
@@ -2753,16 +2750,11 @@ void Renderer::flush2D() {
         previewQuads_.clear();
     }
 #ifdef QUARK_TRACY
-    // profiling builds: per-frame averages to stderr every 5 s (and to Tracy plots)
-    static double t0 = timeNow(); static int frames = 0; static size_t bytes = 0, ups = 0, dyn = 0, shadow = 0;
-    QPLOT("upload bytes", g_uploadBytes);
-    frames++; bytes += g_uploadBytes; ups += g_uploads; dyn += g_dynVerts; shadow += g_shadowVerts;
+    // profiling builds: the frame's totals as Tracy plots (the profiler shows their averages). There was also a
+    // 5-second average line to stderr, from here: its fprintf made a 450-520 us frame every 5 s in every capture.
+    QPLOT("upload bytes", g_uploadBytes); QPLOT("uploads", g_uploads);
+    QPLOT("dyn + view + flat verts", g_dynVerts); QPLOT("shadow verts", g_shadowVerts);
     g_uploadBytes = g_uploads = g_dynVerts = g_shadowVerts = 0;
-    if (timeNow() - t0 > 5) {
-        fprintf(stderr, "[stats] %d frames, per frame: %.1f KB uploaded in %.1f uploads, %zu ui verts, %zu dynamic verts, %zu shadow verts\n",
-                frames, bytes / 1024.0 / frames, (double)ups / frames, uiTotal / frames, dyn / frames, shadow / frames);
-        t0 = timeNow(); frames = 0; bytes = ups = dyn = shadow = uiTotal = 0;
-    }
 #endif
 }
 
