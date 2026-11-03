@@ -316,6 +316,7 @@ AUDIO LATENCY: NORMAL	音频延迟: 正常
 AUDIO LATENCY: SAFE	音频延迟: 安全
 AUDIO OUTPUT	音频输出
 AUTO	自动
+AUTO LEARNS IT; MORE: FEWER GPU BUBBLES, MORE LAG	自动: 运行中调整; 更多: GPU 空泡更少, 延迟更高
 AUTO PORT FORWARD	自动端口转发
 AUTO RECONNECT	自动重连
 AUTO RECORD	自动录制
@@ -2180,7 +2181,6 @@ MOON SHOTGUN	月球霰弹枪
 MOON SHOTGUNS	月球霰弹枪
 MORE	更多
 MORE KEYS	更多按键
-MORE: FEWER GPU BUBBLES, A LITTLE MORE LAG	更多: GPU 空泡更少, 延迟稍高
 MOUSE	鼠标
 MOUSE 1	MOUSE 1
 MOUSE 2	MOUSE 2
@@ -3269,6 +3269,8 @@ UDP PORT	UDP 端口
 UHD	UHD
 UI FONT	界面字体
 ULTRA	超低
+ULTRA (AUTO SAFETY # US)	超低 (自动安全余量 # US)
+ULTRA (SAFETY # US)	超低 (安全余量 # US)
 ULTRA ONLY: THE HUD DRAWN BEFORE THE LATE READ,	仅 ULTRA: 在延迟读取前绘制 HUD,
 ULTRA SAFETY	超低安全余量
 ULTRA: 0 QUEUED + EACH FRAME STARTED LATE	ULTRA: 队列 0 + 每帧延后开始
@@ -4022,6 +4024,8 @@ trying the next rate up: busy #%, upload # kbps	尝试提高速率: 繁忙 #%, �
 tutorial reset	tutorial reset
 tutorial try	tutorial try
 ui verts	ui verts
+ultra: after swap wait (us)	ultra: after swap wait (us)
+ultra: margin (us)	ultra: margin (us)
 ultra: pace the input read	ultra: pace the input read
 ungrouped into	已取消编组为
 unknown mode	未知模式

@@ -39,6 +39,9 @@ typedef struct __GLsync* GLsync;
 #define GL_LINES 0x0001
 #define GL_DEPTH_BUFFER_BIT 0x00000100
 #define GL_COLOR_BUFFER_BIT 0x00004000
+#define GL_COLOR 0x1800
+#define GL_TEXTURE_BASE_LEVEL 0x813C
+#define GL_TEXTURE_MAX_LEVEL 0x813D
 #define GL_DEPTH_TEST 0x0B71
 #define GL_CULL_FACE 0x0B44
 #define GL_BLEND 0x0BE2
@@ -142,6 +145,7 @@ typedef struct __GLsync* GLsync;
     X(void, glUniformBlockBinding, (GLuint, GLuint, GLuint)) \
     X(void, glClear, (GLbitfield)) \
     X(void, glClearColor, (GLfloat, GLfloat, GLfloat, GLfloat)) \
+    X(void, glClearBufferfv, (GLenum, GLint, const GLfloat*)) \
     X(void, glEnable, (GLenum)) \
     X(void, glDisable, (GLenum)) \
     X(void, glViewport, (GLint, GLint, GLsizei, GLsizei)) \

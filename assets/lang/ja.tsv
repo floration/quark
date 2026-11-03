@@ -316,6 +316,7 @@ AUDIO LATENCY: NORMAL	オーディオ遅延: 通常
 AUDIO LATENCY: SAFE	オーディオ遅延: 安全
 AUDIO OUTPUT	音声出力
 AUTO	自動
+AUTO LEARNS IT; MORE: FEWER GPU BUBBLES, MORE LAG	自動で調整; 多い: GPUの空き減、遅延増
 AUTO PORT FORWARD	自動ポート開放
 AUTO RECONNECT	自動再接続
 AUTO RECORD	自動録画
@@ -2180,7 +2181,6 @@ MOON SHOTGUN	月面ショットガン
 MOON SHOTGUNS	月面ショットガン
 MORE	詳細
 MORE KEYS	その他のキー
-MORE: FEWER GPU BUBBLES, A LITTLE MORE LAG	多い: GPUの空き減、遅延少し増
 MOUSE	マウス
 MOUSE 1	MOUSE 1
 MOUSE 2	MOUSE 2
@@ -3269,6 +3269,8 @@ UDP PORT	UDPポート
 UHD	UHD
 UI FONT	UIフォント
 ULTRA	ウルトラ
+ULTRA (AUTO SAFETY # US)	ウルトラ (自動安全マージン # US)
+ULTRA (SAFETY # US)	ウルトラ (安全マージン # US)
 ULTRA ONLY: THE HUD DRAWN BEFORE THE LATE READ,	ULTRA のみ: HUD を遅延読み取りの前に描き,
 ULTRA SAFETY	ウルトラ安全マージン
 ULTRA: 0 QUEUED + EACH FRAME STARTED LATE	ULTRA: キュー 0 + 各フレームを遅く開始
@@ -4022,6 +4024,8 @@ trying the next rate up: busy #%, upload # kbps	次の上位レートを試行: 
 tutorial reset	tutorial reset
 tutorial try	tutorial try
 ui verts	ui verts
+ultra: after swap wait (us)	ultra: after swap wait (us)
+ultra: margin (us)	ultra: margin (us)
 ultra: pace the input read	ultra: pace the input read
 ungrouped into	グループ解除:
 unknown mode	不明なモード

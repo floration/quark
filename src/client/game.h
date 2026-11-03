@@ -23,6 +23,7 @@
 #include "../game/tutorial.h"
 #include "audio.h"
 #include "clientfeel.h"
+#include "ultramargin.h"
 #include "modecalls.h"
 #include "rawmouse.h"
 #include "gpuprefs.h"
@@ -1008,6 +1009,8 @@ private:
     void* ultraFence_ = nullptr;               // ULTRA: the last frame's fence (beforeInput paces the next frame by it)
     double ultraSwapAt_ = 0, ultraReadAt_ = 0;
     double ultraGpu_ = 0.0005, ultraCpu_ = 0.0003;   // learnt: swap to GPU done, input read to swap (seconds)
+    UltraMargin ultraMargin_;                  // ULTRA SAFETY: AUTO's learnt margin (ultramargin.h)
+    bool ultraHeld_ = false;                   // this frame's input read was held back by the pacing (so a bubble is the margin's)
     struct LatQuery { unsigned q; double input; bool used; };
     LatQuery latQ_[16] = {};
     int latNext_ = 0;

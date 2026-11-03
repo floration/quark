@@ -2355,7 +2355,7 @@ void Renderer::uiTransform(size_t from, float px, float py, float k, float dx, f
         } else if (v.scaleInt || v.scaleFrac) {   // a glyph: its text scale (the outline's width follows it)
             const float sc = clampf((v.scaleInt + v.scaleFrac / 256.0f) * k, 1.0f / 256, 255);
             v.scaleInt = (uint8_t)sc;
-            v.scaleFrac = (uint8_t)std::min(255L, std::lround((sc - (float)v.scaleInt) * 256));
+            v.scaleFrac = (uint8_t)std::min(255.0f, uiRound((sc - (float)v.scaleInt) * 256));
         }
     }
 }
@@ -2457,7 +2457,7 @@ void Renderer::text(float x, float y, float s, const std::string& in, const Colo
     const float k = uiMetrics().fitScale, sk = s * k;
     float cx = x, cy = uiRound(y);
     float sc = clampf(sk, 1.0f / 256, 255);
-    uint8_t si = (uint8_t)sc, sf = (uint8_t)std::lround((sc - si) * 256 > 255 ? 255 : (sc - si) * 256);
+    uint8_t si = (uint8_t)sc, sf = (uint8_t)std::min(255.0f, uiRound((sc - si) * 256));   // (= lround, without the libm call)
     const float pad = kUiPad * sk, box = 8.0f * sk, top = cy + uiMetrics().fitShift * s, o = outlineUnits(sk);
     const TextMetrics& m = uiMetrics();
     const Rgba8 col = rgba8(c, alpha_);
@@ -2497,7 +2497,7 @@ void Renderer::textMono(float x, float y, float s, const std::string& str, const
     if (s < minScale_) s = minScale_;
     const float k = uiMetrics().fitScale;   // (the line-box fit, as text())
     float sc = clampf(s * k, 1.0f / 256, 255);
-    uint8_t si = (uint8_t)sc, sf = (uint8_t)std::lround((sc - si) * 256 > 255 ? 255 : (sc - si) * 256);
+    uint8_t si = (uint8_t)sc, sf = (uint8_t)std::min(255.0f, uiRound((sc - si) * 256));   // (= lround, without the libm call)
     const float pad = kUiPad * s * k, cy = uiRound(y) + uiMetrics().fitShift * s;
     const Rgba8 col = rgba8(c, alpha_);
     for (size_t i = 0; i < str.size(); i++) {
@@ -2778,88 +2778,114 @@ void Renderer::buildSwatches() {
 // 4 m square on a top and on a side (64 px: 6 cm a pixel, the fine patterns fading to their average as they do far off),
 // and its pixels averaged into uCleanTex (unit 5). With it on the world draws those averages flat: no look runs at all.
 // Again only when the program, the palette or high contrast change (key); called from prepareScene, worldProg_ bound.
+// All on the GPU: the patches sit on a 64 px grid of one RGBA32F texture, so its mip level 6 (glGenerateMipmap: exact
+// halvings, 2x2 box each) is one texel per patch, its mean, and blits put those texels into uCleanTex. It used to read
+// the patches back and average them on the CPU: glReadPixels waited for the GPU, 4.5-6 ms at every map load and again
+// on every frame the key changed (a GLOW STRENGTH drag, HIGH CONTRAST, the sky / glow overrides).
 void Renderer::buildCleanMeans(const std::array<float, 14>& key) {   // (an array: no heap allocation a frame)
     if (key == cleanKey_ || !worldProg_) return;   // (called every frame with PATTERN FADE / CLEAN SURFACES on)
+    // a palette that changes every frame (a slider being dragged) is followed 10 times a second, the last one too (the
+    // key stays different until it's built); a new program (a map) at once
+    const double now = timeNow();
+    if (key[0] == cleanKey_[0] && now - cleanAt_ < 0.1) return;
     worldFastDirty_ = true;   // (worldProg_'s uniforms change: the no-discard program copies them)
     cleanKey_ = key;
+    cleanAt_ = now;
     QZONE("clean surfaces");
     std::vector<int> mats;
     for (int m = 12; m < kMapMaterials && m < (int)cleanUsed_.size(); m++) if (cleanUsed_[(size_t)m]) mats.push_back(m);
-    std::vector<float> texels((size_t)kMapMaterials * 3 * 4, 0.0f);
-    constexpr int P = 64;
-    if (!mats.empty()) {
-        if (!cleanVao_) { glGenVertexArrays(1, &cleanVao_); glGenBuffers(1, &cleanVbo_); }
-        std::vector<WorldVertex> vs;   // (per material: the top square, x z 0-4 facing +y, then the side, x y 0-4 facing +z)
-        for (int m : mats) {
-            const float c[6][2] = {{0, 0}, {4, 0}, {4, 4}, {0, 0}, {4, 4}, {0, 4}};
-            for (int side = 0; side < 2; side++)
-                for (auto& p : c) {
-                    WorldVertex v = {};
-                    if (side) { v.pos[0] = p[0]; v.pos[1] = p[1]; v.normal[2] = 1; }
-                    else { v.pos[0] = p[0]; v.pos[2] = p[1]; v.normal[1] = 1; }
-                    v.uv[0] = v.uv[1] = 0.5f;
-                    v.material = (float)m;
-                    v.edge[0] = p[0]; v.edge[1] = p[1]; v.edge[2] = v.edge[3] = 4;
-                    vs.push_back(v);
-                }
-        }
-        glBindVertexArray(cleanVao_);
-        glBindBuffer(GL_ARRAY_BUFFER, cleanVbo_);
-        glBufferData(GL_ARRAY_BUFFER, vs.size() * sizeof(WorldVertex), vs.data(), GL_STREAM_DRAW);
-        glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)0);
-        glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)12);
-        glEnableVertexAttribArray(2); glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)24);
-        glEnableVertexAttribArray(3); glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)32);
-        glEnableVertexAttribArray(4); glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)36);
-        // the target: 3 patches across (top albedo, side albedo, side glow), a row per material
-        const int W = 3 * P, H = P * (int)mats.size();
-        unsigned tex = 0, fbo = 0;
-        glGenTextures(1, &tex);
-        glBindTexture(GL_TEXTURE_2D, tex);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, W, H, 0, GL_RGBA, GL_FLOAT, nullptr);
-        glGenFramebuffers(1, &fbo);
-        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
-        glDisable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glDisable(GL_BLEND);
-        Mat4 top;   // (x z 0-4 onto the patch: clip x = x / 2 - 1, clip y = z / 2 - 1)
-        top.m[0] = 0.5f; top.m[5] = 0.0f; top.m[9] = 0.5f; top.m[10] = 0.0f; top.m[12] = -1.0f; top.m[13] = -1.0f;
-        const Mat4 side = Mat4::ortho(0, 4, 0, 4, -1, 1);
-        const GLint pass = U(worldProg_, "uMeanPass");
-        for (size_t i = 0; i < mats.size(); i++)
-            for (int k = 0; k < 3; k++) {
-                glViewport(k * P, (int)i * P, P, P);
-                setMat(uWorld_.viewProj, k == 0 ? top : side);
-                glUniform1i(uWorld_.latchUse, 0);
-                glUniform1i(pass, k == 2 ? 2 : 1);
-                glDrawArrays(GL_TRIANGLES, (GLint)(i * 12 + (k == 0 ? 0 : 6)), 6);
-            }
-        glUniform1i(pass, 0);
-        std::vector<float> px((size_t)W * H * 4);
-        glReadPixels(0, 0, W, H, GL_RGBA, GL_FLOAT, px.data());
-        for (size_t i = 0; i < mats.size(); i++)
-            for (int k = 0; k < 3; k++) {
-                double sum[4] = {};
-                for (int y = 0; y < P; y++)
-                    for (int x = 0; x < P; x++) {
-                        const float* t = &px[(((size_t)i * P + y) * W + (size_t)k * P + x) * 4];
-                        for (int c = 0; c < 4; c++) sum[c] += t[c];
-                    }
-                float* o = &texels[(((size_t)k * kMapMaterials) + (size_t)mats[i]) * 4];
-                for (int c = 0; c < 4; c++) o[c] = (float)(sum[c] / (P * P));
-            }
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glDeleteFramebuffers(1, &fbo);
-        glDeleteTextures(1, &tex);
-        glEnable(GL_DEPTH_TEST); glEnable(GL_CULL_FACE);
-    }
-    glActiveTexture(GL_TEXTURE0 + 5);
-    if (!cleanTex_) {
+    constexpr int P = 64, kLevel = 6;   // (P = 1 << kLevel)
+    // (blocks of at most 32 columns, as square as that allows: 40 looks are 2 rows of 20, 1280 x 384 px)
+    const int n = (int)mats.size(), rows = (n + 31) / 32, cols = rows ? (n + rows - 1) / rows : 0;
+    if (!cleanTex_) {   // the averages: x the material, y 0 top albedo + alpha, 1 side albedo + alpha, 2 side glow
+        glActiveTexture(GL_TEXTURE0 + 5);
         glGenTextures(1, &cleanTex_);
         glBindTexture(GL_TEXTURE_2D, cleanTex_);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    } else glBindTexture(GL_TEXTURE_2D, cleanTex_);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, kMapMaterials, 3, 0, GL_RGBA, GL_FLOAT, texels.data());
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, kMapMaterials, 3, 0, GL_RGBA, GL_FLOAT, nullptr);
+        glGenFramebuffers(1, &cleanOutFbo_);
+        glBindFramebuffer(GL_FRAMEBUFFER, cleanOutFbo_);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, cleanTex_, 0);
+    }
+    glDisable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glDisable(GL_BLEND);
+    glBindFramebuffer(GL_FRAMEBUFFER, cleanOutFbo_);   // (a material not in the map: 0, as it always was)
+    const float zero[4] = {0, 0, 0, 0};
+    glClearBufferfv(GL_COLOR, 0, zero);   // (not glClear: the clear colour stays the frame's)
+    if (n) {
+        if (!cleanVao_) { glGenVertexArrays(1, &cleanVao_); glGenBuffers(1, &cleanVbo_); }
+        glBindVertexArray(cleanVao_);
+        if (mats != cleanMats_) {   // (the squares only change with the map's looks)
+            cleanMats_ = mats;
+            std::vector<WorldVertex> vs;   // (per material: the top square, x z 0-4 facing +y, then the side, x y 0-4 facing +z)
+            for (int m : mats) {
+                const float c[6][2] = {{0, 0}, {4, 0}, {4, 4}, {0, 0}, {4, 4}, {0, 4}};
+                for (int side = 0; side < 2; side++)
+                    for (auto& p : c) {
+                        WorldVertex v = {};
+                        if (side) { v.pos[0] = p[0]; v.pos[1] = p[1]; v.normal[2] = 1; }
+                        else { v.pos[0] = p[0]; v.pos[2] = p[1]; v.normal[1] = 1; }
+                        v.uv[0] = v.uv[1] = 0.5f;
+                        v.material = (float)m;
+                        v.edge[0] = p[0]; v.edge[1] = p[1]; v.edge[2] = v.edge[3] = 4;
+                        vs.push_back(v);
+                    }
+            }
+            glBindBuffer(GL_ARRAY_BUFFER, cleanVbo_);
+            glBufferData(GL_ARRAY_BUFFER, vs.size() * sizeof(WorldVertex), vs.data(), GL_STATIC_DRAW);
+            glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)0);
+            glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)12);
+            glEnableVertexAttribArray(2); glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)24);
+            glEnableVertexAttribArray(3); glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)32);
+            glEnableVertexAttribArray(4); glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)36);
+        }
+        // the patches: material i in column i % cols, its block of rows i / cols holding its 3 patches (top albedo,
+        // side albedo, side glow) one above the other; every size a multiple of 64, so each mip halves it exactly
+        const int W = P * cols, H = 3 * P * rows;
+        if (!cleanPatchTex_ || cleanPatchW_ != W || cleanPatchH_ != H) {
+            if (!cleanPatchTex_) { glGenTextures(1, &cleanPatchTex_); glGenFramebuffers(1, &cleanPatchFbo_); }
+            glActiveTexture(GL_TEXTURE0 + 5);
+            glBindTexture(GL_TEXTURE_2D, cleanPatchTex_);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, W, H, 0, GL_RGBA, GL_FLOAT, nullptr);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, kLevel);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glBindTexture(GL_TEXTURE_2D, cleanTex_);   // (unit 5 is uCleanTex's)
+            cleanPatchW_ = W; cleanPatchH_ = H;
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, cleanPatchFbo_);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, cleanPatchTex_, 0);
+        Mat4 top;   // (x z 0-4 onto the patch: clip x = x / 2 - 1, clip y = z / 2 - 1)
+        top.m[0] = 0.5f; top.m[5] = 0.0f; top.m[9] = 0.5f; top.m[10] = 0.0f; top.m[12] = -1.0f; top.m[13] = -1.0f;
+        const Mat4 side = Mat4::ortho(0, 4, 0, 4, -1, 1);
+        const GLint pass = U(worldProg_, "uMeanPass");
+        glUniform1i(uWorld_.latchUse, 0);
+        for (int i = 0; i < n; i++)
+            for (int k = 0; k < 3; k++) {
+                glViewport((i % cols) * P, ((i / cols) * 3 + k) * P, P, P);
+                setMat(uWorld_.viewProj, k == 0 ? top : side);
+                glUniform1i(pass, k == 2 ? 2 : 1);
+                glDrawArrays(GL_TRIANGLES, (GLint)(i * 12 + (k == 0 ? 0 : 6)), 6);
+            }
+        glUniform1i(pass, 0);
+        // each patch's mean: mip level 6 (bound only now: never sampled while drawn into)
+        glActiveTexture(GL_TEXTURE0 + 5);
+        glBindTexture(GL_TEXTURE_2D, cleanPatchTex_);
+        glGenerateMipmap(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, cleanTex_);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, cleanPatchTex_, kLevel);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, cleanPatchFbo_);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, cleanOutFbo_);
+        for (int i = 0; i < n; i++) {   // (its 3 texels, one above the other, to its column of uCleanTex)
+            const int x = i % cols, y = (i / cols) * 3;
+            glBlitFramebuffer(x, y, x + 1, y + 3, mats[(size_t)i], 0, mats[(size_t)i] + 1, 3, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        }
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glEnable(GL_DEPTH_TEST); glEnable(GL_CULL_FACE);
+    glActiveTexture(GL_TEXTURE0 + 5);
+    glBindTexture(GL_TEXTURE_2D, cleanTex_);
     glActiveTexture(GL_TEXTURE0);
 }
 
