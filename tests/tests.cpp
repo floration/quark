@@ -1327,7 +1327,8 @@ static void testMovementTuning() {
             CHECK(std::fabs(q.vel.x - n.x) < 1e-4f && std::fabs(q.vel.z - n.z) < 1e-4f && std::fabs(hs(q) - v) < 1e-3f);
         }
     }
-    { // drift: a standing jump holding W drifts to ~7 m/s by landing (2.3 of strafe push plus 8 m/s2), never past 9.5
+    { // drift is 0 (owner, 2026-11-01: "change air drift to 0"; it was 8 m/s2): a standing jump holding W reaches only
+      // the strafe push (2.3 m/s) by landing, never past it
         MoveState q = standing();
         UserCmd j; j.forward = 127; j.buttons = BTN_JUMP;
         step(q, j, open);
@@ -1336,19 +1337,20 @@ static void testMovementTuning() {
         int air = 1;
         for (; air < 2000 && !(q.flags & MF_ONGROUND); air++) { step(q, j, open); top = std::max(top, hs(q)); }
         printf("  standing jump + W: %.2f m/s by landing (%d ms in the air)\n", top, air);
-        CHECK(top > 6.8f && top < 7.5f && air > 610 && air < 660);
-        // a long fall holding W: up to run speed and no further
+        CHECK(top > 2.25f && top <= 2.3f + 1e-3f && air > 610 && air < 660);
+        // a long fall holding W: the strafe push's 2.3 and no further (no drift on to run speed)
         MoveState f; f.pos = {0, 30, 0};
         UserCmd w; w.forward = 127;
         float most = 0;
         for (int i = 0; i < 2000 && !(f.flags & MF_ONGROUND); i++) { step(f, w, open); most = std::max(most, hs(f)); }
         printf("  falling 30 m holding W: %.4f m/s at most\n", most);
-        CHECK(most <= 9.5f + 1e-4f && most > 9.49f);
-        // sideways to your momentum under run speed: it pushes along the wish, the total held to 9.5
+        CHECK(most <= 2.3f + 1e-3f && most > 2.29f);
+        // sideways to your momentum under run speed: only the A/D strafe push (2.53 across), the total under 9.5
         MoveState g; g.pos = {0, 30, 0}; g.vel = {0, 0, -9.0f};
         UserCmd sd; sd.side = 127;   // (right: +x)
         for (int i = 0; i < 400; i++) { step(g, sd, open); CHECK(hs(g) <= 9.5f + 1e-4f); }
-        CHECK(g.vel.x > 3.0f);
+        printf("  9 m/s + D for 400 ms: %.3f m/s across\n", g.vel.x);
+        CHECK(g.vel.x > 2.4f && g.vel.x <= 2.53f + 5e-3f);   // (2.3 x 1.1, float rounding)
         // over run speed: no drift at all (only the strafe push)
         MoveState o; o.pos = {0, 30, 0}; o.vel = {0, 0, -9.6f};
         UserCmd b; b.forward = -127;   // S: straight against momentum

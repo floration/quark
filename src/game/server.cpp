@@ -3451,7 +3451,11 @@ bool Server::breakGlass(int brush, int how, const Vec3& at, const Vec3& dir, int
     d.kind = DESTRUCT_GLASS; d.how = (uint8_t)how; d.by = by; d.brush = (uint32_t)brush; d.at = at; d.dir = dir;
     d.seed = glassRand(glassSeed_);
     broadcastEvent(destructEvent(d));
-    static thread_local std::vector<GlassShard> sh;
+    // (the shards' scratch, reused between breaks: on the heap, never freed. A thread_local object with a destructor
+    // crashed at thread exit under MinGW, its emutls block freed before the destructor ran; see customrules.cpp)
+    static thread_local std::vector<GlassShard>* shp = nullptr;
+    if (__builtin_expect(shp == nullptr, 0)) shp = new std::vector<GlassShard>();
+    std::vector<GlassShard>& sh = *shp;
     glassShards(pane, how, at, dir, d.seed, sh, &map_.brushes[(size_t)brush]);
     const int8_t spare = glassSparesBreaker(how) ? (int8_t)by : (int8_t)-1;
     for (const GlassShard& g : sh)
