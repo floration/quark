@@ -6651,6 +6651,10 @@ static void testStuckProps(uint16_t port) {
         StuckProp g;
         CHECK(readPropEvent(propEvent(w), &g) && g.type == WPN_KNIFE && g.owner == 3 && g.player == PROP_WORLD &&
               length(g.pos - w.pos) < 1e-6f && length(g.dir - w.dir) < 1e-3f);
+        {   // the model's turn, worked out once: the same floats drawStuckProps worked out every frame
+            const float yaw = std::atan2(-g.dir.x, -g.dir.z), pitch = std::asin(clampf(g.dir.y, -1, 1));
+            CHECK(std::memcmp(&g.yaw, &yaw, 4) == 0 && std::memcmp(&g.pitch, &pitch, 4) == 0);
+        }
         StuckProp b = w; b.type = WPN_CROSSBOW; b.player = 7; b.pos = {0.21f, 1.33f, -0.1f};
         const GameEvent be = propEvent(b);
         CHECK(be.text.size() == 7 && readPropEvent(be, &g) && g.player == 7 && length(g.pos - quantizeAttachOffset(b.pos)) < 1e-5f);

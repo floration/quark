@@ -1917,7 +1917,7 @@ void Game::drawStuckProps(const Vec3& eye, float alpha) {
         if (d2 > kFar2 || !r_.inView(pos, 0.6f)) continue;
         const bool far = d2 > kNear2;
         const int mt = modelExists(MODEL_PROJECTILE, sp.type) ? sp.type : MODEL_PROJ_ORB;
-        const float yaw = std::atan2(-sp.dir.x, -sp.dir.z), pitch = std::asin(clampf(sp.dir.y, -1, 1));
+        const float yaw = sp.yaw, pitch = sp.pitch;   // (readPropEvent's: the direction never changes once stuck)
         ModelPalette ppal;
         if (sp.owner < kMaxPlayers) {
             if (!(haveCol >> sp.owner & 1)) { ownerCol[sp.owner] = teamColor(sp.owner); haveCol |= 1u << sp.owner; }
