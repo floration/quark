@@ -1844,8 +1844,10 @@ void Renderer::prepareScene(bool shadows) {
 #ifdef QUARK_TRACY
         g_uploadBytes += total; g_uploads++;
 #endif
-        if (total > dynCap_) dynCap_ = total * 2;
-        glBufferData(GL_ARRAY_BUFFER, dynCap_, nullptr, GL_STREAM_DRAW);   // (orphan: no stall on last frame's draws)
+        // Orphaned (no stall on last frame's draws) at the bytes written, rounded up to 64 KB: it was the whole buffer,
+        // grown to twice the busiest frame so far, so every later frame allocated that much again. (Sized at init for a
+        // full match and orphaned whole, it was slower still on llvmpipe: the allocation is what costs.)
+        glBufferData(GL_ARRAY_BUFFER, std::max<size_t>((total + 0xffff) & ~(size_t)0xffff, 0x10000), nullptr, GL_STREAM_DRAW);
         size_t at = 0;
         auto put = [&](const std::vector<DynVertex>& v, size_t n) {
             if (n) glBufferSubData(GL_ARRAY_BUFFER, at, n * sizeof(DynVertex), v.data());

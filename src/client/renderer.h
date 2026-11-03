@@ -363,7 +363,7 @@ private:
     float splitP_[2] = {}, splitN_[2] = {1, 0}, splitSeam_ = 0;
     float minScale_ = kMinTextScale;   // (the UI font's smallest scale: setUiFont)
     int fontGen_ = 0;
-    size_t dynCap_ = 0, flatCap_ = 0, uiCap_ = 0;
+    size_t flatCap_ = 0, uiCap_ = 0;
     float alpha_ = 1;         // (setAlpha)
     void uiIndices(size_t quads);   // (the 2D batch's index buffer covers at least this many quads)
     unsigned uiEbo_ = 0;      // the 2D batch's indices: 4 vertices a quad, drawn as 0 1 2 / 0 3 2 (fixed; grown when needed)
