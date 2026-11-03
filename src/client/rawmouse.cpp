@@ -29,9 +29,11 @@ struct RawMouseProc {
                     if (dx || dy) {
                         double zero = 0;
                         self->firstAt_.compare_exchange_strong(zero, timeNow());
-                        self->dx_.fetch_add(dx, std::memory_order_relaxed);
-                        self->dy_.fetch_add(dy, std::memory_order_relaxed);
+                        const long long tx = self->dx_.fetch_add(dx, std::memory_order_relaxed) + dx;
+                        const long long ty = self->dy_.fetch_add(dy, std::memory_order_relaxed) + dy;
                         self->reports_.fetch_add(1, std::memory_order_release);
+                        // (GPU LATE LATCH: the counts since the game's last read, straight to the GPU's view)
+                        if (auto f = self->onMotion.load(std::memory_order_acquire)) f(self->onMotionCtx, tx, ty);
                     }
                 }
             }

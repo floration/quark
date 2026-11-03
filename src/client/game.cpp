@@ -166,6 +166,12 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     audio_.setExclusive(cfg_.exclusiveAudio);
     if (!opts_.uiTest) setGamePriority(prioLevel(glfwGetWindowAttrib(win_, GLFW_FOCUSED) != 0));
     audio_.setOutputDevice(cfg_.audioOutput);   // (Settings > DEVICES; "" the default)
+    // GPU LATE LATCH: the raw mouse thread hands each report's counts to the renderer's latch (armed only while the
+    // setting is on, in your own view); the driver needs ARB_buffer_storage (GL 4.4) for the persistent buffer
+    r_.latchSupported = glfwExtensionSupported("GL_ARB_buffer_storage") == GLFW_TRUE;
+    r_.latchClock = &timeNow;
+    rawMouse_.onMotionCtx = &r_;
+    rawMouse_.onMotion.store([](void* r, long long dx, long long dy) { static_cast<Renderer*>(r)->latchMouse((double)dx, (double)dy); });
     if (!opts_.uiTest && cfg_.rawInput) rawMouse_.start();   // (the UI test drives the mouse through GLFW; RAW INPUT off: the OS's motion)
     if (!audio_.start()) printf("audio: no output device - running without sound\n");
     audio_.setMasterVolume(cfg_.volume);
@@ -1187,6 +1193,15 @@ void Game::onMouseButton(int button, int action) {
 }
 
 // Mouse motion (counts) into the view.
+// The yaw / pitch (radians) one mouse count turns now, as turn() does it without MOUSE ACCEL (the GPU late latch)
+void Game::turnGain(float* kYaw, float* kPitch) const {
+    float k = deg2rad(modeSens_ > 0 ? modeSens_ : cfg_.sensitivity) * 0.01f * 2.2f;
+    if (heldWeapon_ >= 0 && heldWeapon_ < WPN_COUNT) k *= cfg_.wpnSens[heldWeapon_];
+    if (scoped_) k *= std::tan(deg2rad(viewFov()) * 0.5f) / std::tan(deg2rad(hfov()) * 0.5f) * cfg_.zoomSens;
+    *kYaw = k;
+    *kPitch = k * cfg_.sensY * (cfg_.invertY ? -1.0f : 1.0f);
+}
+
 void Game::turn(double dx, double dy) {
     float k = deg2rad(modeSens_ > 0 ? modeSens_ : cfg_.sensitivity) * 0.01f * 2.2f;   // (a mode's controls profile may set its own)
     // (CONTROLS > MORE 2: the held weapon's own multiple; MOUSE ACCEL: x (1 + accel x counts per ms this frame), at most x4)
@@ -1238,6 +1253,7 @@ void Game::readMouse(bool late) {
         if (mouseCaptured_ && mouseFocused_ && (!mouseHeld_ || time_ - mouseHeldAt_ > 0.5)) { rawMouse_.hold(win_, true); mouseHeld_ = true; mouseHeldAt_ = time_; }
         else if (mouseHeld_ && (!mouseCaptured_ || !mouseFocused_)) { rawMouse_.hold(win_, false); mouseHeld_ = false; }
     }
+    r_.latchDisarm();   // (GPU LATE LATCH: the counts are the game's from here; the next arm starts from its aim)
     if (!rawMouse_.take(&dx, &dy, &n, &firstAt) || !mouseCaptured_ || !mouseFocused_) return;   // (motion meanwhile: dropped)
     // (F3: when it arrived; 0: a report raced the take and lost its stamp, motion kept)
     if (firstAt > 0 && (pendingInput_ < 0 || firstAt < pendingInput_)) pendingInput_ = firstAt;
@@ -2023,7 +2039,7 @@ void Game::frame(double dt) {
     if (opts_.bench > 0 && screen_ == Screen::InGame && !bake_) benchFrame(dt);
     if (bench_.phase != BenchRun::OFF) benchFrameTime(dt);   // (BENCHMARK: one store a frame while it measures)
     frameTimes_[frameIdx_] = (float)dt;
-    frameIdx_ = (frameIdx_ + 1) % frameTimes_.size();
+    frameIdx_ = (frameIdx_ + 1) & (kFrameTimes - 1);   // (a mask, not a 64-bit divide)
     frameCount_ = std::min(frameCount_ + 1, frameTimes_.size());
     if (!polledEarly_) {   // (normally done by preInput, before this frame's input was read)
         if (bake_ && net_.playback()) net_.holdPlaybackClock();   // a demo waits for its map's bake
@@ -2258,6 +2274,11 @@ void Game::frame(double dt) {
             bool still = false;
             for (auto& p : projs) still |= p.id == old.id;
             if (!still && net_.projectileHidden(old.id)) continue;   // out of sight now, still flying: not an explosion (NET-10)
+            Vec3 sizzleAt;
+            if (!still && projectileDissolved(old, &sizzleAt)) {   // into lava or acid: gone with a hiss, no blast (as the server)
+                audio_.play3D(SND_SIZZLE, sizzleAt, 0.8f, 1.0f, soundPackOf(old.owner));
+                continue;
+            }
             if (!still && old.owner == net_.clientId()) {   // yours: already shown at once (localBoom), if it blew up near there
                 bool shown = false;
                 for (size_t k = 0; k < localBooms_.size() && !shown; k++) {
@@ -2296,6 +2317,7 @@ void Game::frame(double dt) {
         lastProjectiles_.swap(projScratch_);
         for (size_t k = 0; k < localBooms_.size();)   // (one the server never blew up near there: forgotten after 2 s)
             if (time_ - localBooms_[k].t > 2.0) localBooms_.erase(localBooms_.begin() + k); else k++;
+        dissolveOwnCopies();   // (before they're drawn: one gone into lava or acid neither blows up nor reports a hit)
         // your sticky detonate, at once: alt-fire with the launcher out sets off your armed stickies (the server's rule,
         // server.cpp; armed: seen for the arm time, so never one the server would still hold back)
         if (heldWeapon_ == WPN_STICKY && altKey() && !localFireLocked_ && net_.selfAlive() && !paused_ && !chatting_)
@@ -2317,6 +2339,19 @@ void Game::frame(double dt) {
             else if (float v = hurtGate_.frame(time_, hurt ? lastHealth_ - hp : 0); v > 0) audio_.play(SND_HURT, v);
         }
         lastHealth_ = hp;
+        {   // in acid (q, 2026-10-27: "yes screen tint, and pulse and sizzle"): the predicted hull touched it on its last
+            // step (acidOutMs 0, pmove's acidStep); it hurts unless the phase or the mode spares you (as the server)
+            const bool in = net_.selfAlive() && !net_.playback() && !net_.map().acid.empty() && net_.predicted().acidOutMs == 0;
+            const bool burns = in && acidHurts(net_.latest().ms.phase) && net_.latest().ms.mode != MODE_POWER;
+            if (in && !inAcid_) acidSince_ = time_;
+            if (burns && time_ >= nextSizzle_) {   // (a hiss on contact, then one every 0.4 s while it eats you)
+                audio_.play(SND_SIZZLE, inAcid_ ? 0.35f : 0.6f, 0.95f + (qrand() % 10) * 0.01f);
+                nextSizzle_ = time_ + 0.4;
+            }
+            if (!burns) nextSizzle_ = 0;
+            inAcid_ = in;
+            acidBurns_ = burns;
+        }
         if (net_.selfAlive()) deathValid_ = false;   // (the death screen is this death's only)
         if (!net_.selfAlive() && uiIn_.pressed && !paused_) cycleSpec(1);   // (a click: the next player to watch)
         captureMouse(!paused_ && !chatting_ && !bake_ && !(cfg_.rpsClick && rpsPicking()));   // (RPS BY MOUSE: the cursor free to click a card)
@@ -3350,19 +3385,31 @@ void Game::drawWorld(float alpha) {
     else if (perfMini_) drawPerfMini();
     r_.prepare2D();
     hudBuilt_ = true;
+    // LATENCY > HUD BEFORE WORLD (ULTRA only): the HUD drawn now, into its own layer, and laid over the world after it:
+    // its draw calls leave the stretch between the late read and the GPU starting the world (one triangle stays there)
+    const bool hudLayer = cfg_.hudFirst && cfg_.lowLatency == 2 && r_.hudLayerDraw();
     // The dynamic geometry's upload and the shadow pass don't depend on the aim either: before the read too (ULTRA:
     // flushed, so the GPU draws the shadow map meanwhile). After the read: only the view's own draws.
     r_.prepareScene(cfg_.shadows && (cfg_.shadowWorld || cfg_.shadowPlayers));   // (MORE 4: on neither: no shadow pass)
-    if (ultraPaced() || cfg_.lowLatency == 1) glFlush();
+    if (cfg_.earlyFlush) glFlush();   // (LATENCY > EARLY FLUSH: the shadow pass to the GPU before the read)
     // Late latch: the newest mouse motion, read just before the world is drawn (everything above, world, players and
     // effects, was built in world space: only the view turns). The command this frame sent keeps its aim; the next
     // carries this. What was projected onto the screen above (name tags, health bars) is off by this sliver of a turn.
-    if (lateLatch) {
+    // (LATENCY > CPU LATE LATCH: this read; off: the aim stays the frame's first read)
+    if (lateLatch && cfg_.cpuLatch) {
         readMouse(true);
         r_.relatch(yaw_, pitch_);
         if (pendingInput_ >= 0) { if (frameInput_ < 0) frameInput_ = pendingInput_; pendingInput_ = -1; }   // (F3: shown this frame, not the next)
         pipeMark(PM_LATCH);
     } else pipeNow_[PM_LATCH] = pipeNow_[PM_POLL];   // (no late read: the mouse is fixed at the frame's read)
+    // LATENCY > GPU LATE LATCH: from here the mouse's thread writes each newer aim straight into the buffer the GPU reads
+    // the view from when it starts the world (Windows' raw mouse thread; no MOUSE ACCEL: its gain depends on the frame)
+    float kYaw = 0, kPitch = 0;
+    const bool gpuLatch = cfg_.gpuLatch && lateLatch && rawMouse_.active() && cfg_.mouseAccel <= 0 && mouseFocused_;
+    if (gpuLatch) turnGain(&kYaw, &kPitch);
+    r_.latchArm(gpuLatch, kYaw, kPitch);
+    gpuLatchOn_ = gpuLatch && r_.latchActive();
+    hudLayerOn_ = hudLayer;   // (F3 names both: drawn before this point, it shows the last frame's)
     pipeMark(PM_SCENE0);
     pipeGpuBegin();
     r_.drawScene(cfg_.shadows && (cfg_.shadowWorld || cfg_.shadowPlayers));
@@ -3373,7 +3420,8 @@ void Game::drawWorld(float alpha) {
     }
     // (ULTRA, and LOW LATENCY ON: the world sent now, so the GPU draws it while the HUD is built and drawn, instead of
     // waiting for the swap to submit the whole frame: F3's gap between SWAP and GPU, ~45-65 us on Windows; 2026-11-02)
-    if (ultraPaced() || cfg_.lowLatency == 1) glFlush();
+    if (cfg_.earlyFlush) glFlush();   // (LATENCY > EARLY FLUSH)
+    if (hudLayer) r_.hudLayerComposite();
     pipeMark(PM_SCENE1);   // (ULTRA: the GPU starts the world while the HUD is built; it sits idle otherwise)
 }
 
@@ -4206,8 +4254,14 @@ Game::HudRect Game::drawHudElement(int el, float W, float H, float s, bool sampl
     const auto& e = cfg_.hud[el];
     const Color fc = rgba(cfg_.colorFriendly);
     switch (el) {
-        case Settings::HUD_HEALTH:
-            return drawHudHealth(e, W, H, s, sample ? 100 : net_.selfHealth(), hudTint(el, kWhite), hudTint(el, fc), draw);
+        case Settings::HUD_HEALTH: {
+            Color bar = hudTint(el, fc);
+            if (!sample && acidBurns_) {   // acid eating you: the bar pulses acid green (steady with REDUCE FLASHING)
+                const float f = cfg_.reduceFlash ? 0.6f : 0.5f + 0.5f * std::sin((float)(time_ - acidSince_) * 10.0f);
+                bar = {bar.r + (0.35f - bar.r) * f, bar.g + (0.9f - bar.g) * f, bar.b + (0.2f - bar.b) * f, bar.a};
+            }
+            return drawHudHealth(e, W, H, s, sample ? 100 : net_.selfHealth(), hudTint(el, kWhite), bar, draw);
+        }
         case Settings::HUD_WEAPON:
             return drawHudWeaponName(e, W, H, s, weaponDef(sample ? kWeaponSlots[0] : heldWeapon_).name, hudTint(el, kWhite), draw);
         case Settings::HUD_BARS: {
@@ -4484,6 +4538,10 @@ void Game::drawHud() {
             }
             i++;
         }
+    }
+    if (inAcid_) {   // in acid: the screen tinted its green (a light breath while it burns; none with REDUCE FLASHING)
+        const float a = 0.12f + (acidBurns_ && !cfg_.reduceFlash ? 0.04f * std::sin((float)(time_ - acidSince_) * 10.0f) : 0.0f);
+        r_.rect(0, 0, W, H, {0.35f, 0.9f, 0.2f, a});
     }
     if (time_ < damageUntil_ && cfg_.damageFlash > 0) {   // (VISUALS > DAMAGE FLASH: its strength, 0 = off)
         float a = (float)(damageUntil_ - time_) / 0.25f * 0.35f * (cfg_.reduceFlash ? std::min(cfg_.damageFlash, 0.3f) : cfg_.damageFlash);
@@ -6185,8 +6243,9 @@ bool Game::quipBlocked(const std::string& name) const {   // (PLAYERS: QUIPS OFF
 }
 
 // Everything players can call a vote on (majority of human players decides): CALL A VOTE at text 3; START THE MATCH
-// (warmup), the tourney lists, CHANGE MAP / MODE beside RANKED (ranked: the map on its own, LADDER | RANKED OFF),
-// EDIT THE MAP TOGETHER, MOVE A PLAYER TO SPECTATOR; a BOTS section; BACK on the last row.
+// (warmup) or 5 MORE MINUTES beside RESTART, the tourney lists; the vote builder's GAMEMODE | MODIFIERS | MAP toggles
+// and CHOOSE (ranked: CHANGE MAP / MODE, LADDER | RANKED OFF), RANKED | SHUFFLE TEAMS, EDIT THE MAP TOGETHER, MOVE A
+// PLAYER TO SPECTATOR | KICK; a BOTS section; BACK on the last row.
 void Game::drawVoteMenu(float cx, float y) {
     (void)cx; (void)y;
     const ModeState& ms = net_.mode();
@@ -6220,7 +6279,10 @@ void Game::drawVoteMenu(float cx, float y) {
         return;
     }
     specPick_ = false;
-    const int rows = (warmup ? 1 : 0) + (warmup && tourney ? 1 : 0) + (ranked ? 2 : 1) + (ranked ? 0 : 1 + (canSpec ? 1 : 0) + 3 + 2);
+    // rows: START / RESTART (or RESTART / 5 MORE MINUTES), the tourney lists, then ranked: CHANGE MAP / MODE and
+    // LADDER | RANKED OFF; else the builder's GAMEMODE | MODIFIERS | MAP and its CHOOSE button, RANKED | SHUFFLE TEAMS,
+    // EDIT THE MAP TOGETHER, the player votes, the BOTS section
+    const int rows = (ranked ? (warmup ? 1 : 0) : 1) + (warmup && tourney ? 1 : 0) + (ranked ? 2 : 4 + (canSpec ? 1 : 0) + 3);
     const float kH = 40 + pauseH(rows, ranked ? 0 : 1, true);
     const SetLayout L = ingameLayout(kPW + 32);
     PauseCol c{ui_, L, ingameTop(L, kH)};
@@ -6228,7 +6290,16 @@ void Game::drawVoteMenu(float cx, float y) {
     ui_.labelCentered(L.X(640), L.Y(c.y), "CALL A VOTE", kWhite, 1.5f, L.L(kPW));
     c.y += 40;
     auto voted = [&](const char* cmd) { net_.sendCommand(cmd); voteMenu_ = false; paused_ = false; };   // cmd: "callvote ..."
-    if (warmup) { if (c.full("START THE MATCH", UiExp::cmd("callvote start"))) voted("callvote start"); c.next(); }
+    // warmup: START THE MATCH beside RESTART; live: RESTART beside 5 MORE MINUTES (a timed round only); ranked: START only
+    if (ranked) {
+        if (warmup) { if (c.full("START THE MATCH", UiExp::cmd("callvote start"))) voted("callvote start"); c.next(); }
+    } else {
+        if (warmup && c.half(1, "START THE MATCH", UiExp::cmd("callvote start"))) voted("callvote start");
+        if (c.half(warmup ? 2 : 1, "RESTART MATCH", UiExp::cmd("callvote restart"))) voted("callvote restart");
+        const bool timed = ms.phase == PHASE_LIVE && ms.timeLeft > 0;
+        if (!warmup && c.half(2, "5 MORE MINUTES", timed ? UiExp::cmd("callvote extend") : UiExp::inert(), timed)) voted("callvote extend");
+        c.next();
+    }
     if (warmup && tourney) {
         if (c.half(1, "TOURNEY MAPS", UiExp::nav("ingame/pause/picker:tmaps"))) { multiSel_.clear(); picker_ = PICK_TMAPS; }
         if (c.half(2, "TOURNEY RULES", UiExp::nav("ingame/pause/picker:tmodes"))) { multiSel_.clear(); picker_ = PICK_TMODES; }
@@ -6244,8 +6315,23 @@ void Game::drawVoteMenu(float cx, float y) {
         if (c.half(2, "RANKED OFF", UiExp::cmd("callvote ranked off"))) voted("callvote ranked off");
         c.next();
     } else {
-        if (c.half(1, "MAP / MODE / MODIFIERS", UiExp::nav("ingame/pause/vote/setup*")) && !maps_.empty()) openVoteSetup();
-        if (c.half(2, "RANKED", ladder)) openLadders();
+        // the vote builder starts here (owner, 2026-11-01: "just one VOTE button, then you toggle on options: gamemode,
+        // modifiers, map"): what the vote changes, lit when on (all three when the page opens); CHOOSE goes
+        // through them in that order (the mode, its modifiers, the map), then one vote for all of it (drawVoteSetup)
+        static const char* const kPart[3] = {"GAMEMODE", "MODIFIERS", "MAP"};
+        bool* const part[3] = {&vsMode_, &vsMods_, &vsMap_};
+        const float tw = (kPW - 2 * kPGap) / 3;
+        for (int k = 0; k < 3; k++)
+            if (ui_.tab(L.X(kPX + k * (tw + kPGap)), L.Y(c.y), L.L(tw), L.L(kPRow), kPart[k], *part[k], UiExp::state("votesetup").withId(kPart[k])))
+                *part[k] = !*part[k];
+        c.next();
+        const bool any = vsMode_ || vsMods_ || vsMap_;
+        const char* choose = vsMode_ ? "CHOOSE THE GAMEMODE" : vsMods_ ? "CHOOSE THE MODIFIERS" : "CHOOSE THE MAP";
+        if (c.full(choose, any ? UiExp::nav("ingame/pause*").withId("CHOOSE") : UiExp::inert().withId("CHOOSE"), any) && !maps_.empty()) { openVoteSetup(); voteAdvance(); }
+        c.next();
+        if (c.half(1, "RANKED", ladder)) openLadders();
+        const bool teams = modeIsTeamBased(ms.mode);
+        if (c.half(2, "SHUFFLE TEAMS", teams ? UiExp::cmd("callvote shuffle") : UiExp::inert(), teams)) voted("callvote shuffle");
         c.next();
         // edit the map together; on a normal server the changes last until the map changes
         if (c.full("EDIT THE MAP TOGETHER", UiExp::cmd("callvote edit on"))) voted("callvote edit on");
@@ -6255,14 +6341,6 @@ void Game::drawVoteMenu(float cx, float y) {
             if (c.half(2, "KICK A PLAYER", UiExp::nav("ingame/pause/vote/spec"))) { specPick_ = true; kickPick_ = true; }
             c.next();
         }
-        // (1.19.4: restart, 5 more minutes on a timed round, shuffle the teams)
-        if (c.half(1, "RESTART MATCH", UiExp::cmd("callvote restart"))) voted("callvote restart");
-        const bool timed = ms.phase == PHASE_LIVE && ms.timeLeft > 0;
-        if (c.half(2, "5 MORE MINUTES", timed ? UiExp::cmd("callvote extend") : UiExp::inert(), timed)) voted("callvote extend");
-        c.next();
-        const bool teams = modeIsTeamBased(ms.mode);
-        if (c.full("SHUFFLE TEAMS", teams ? UiExp::cmd("callvote shuffle") : UiExp::inert(), teams)) voted("callvote shuffle");
-        c.next();
         c.section("BOTS");
         if (c.half(1, "BOTS ON", UiExp::cmd("callvote bots on"))) voted("callvote bots on");
         if (c.half(2, "BOTS OFF", UiExp::cmd("callvote bots off"))) voted("callvote bots off");
@@ -6282,14 +6360,14 @@ void Game::drawVoteMenu(float cx, float y) {
 
 // The vote builder (owner, 2026-11-01: "just a vote button / then you can toggle on options gamemode modifiers map /
 // under gamemode you pick objective based or player based / pick gamemode first, then you get to see modifiers, then
-// maps"): what the vote changes is toggled first, then each part in that order, then one vote for all of it. The mode
-// and map steps are the live pickers (the mode list filtered to the group); the rest are pages here.
+// maps"): what the vote changes is toggled on the VOTE page (drawVoteMenu), then each part in that order, then one
+// vote for all of it. The mode and map steps are the live pickers (the mode list filtered to the group); the rest are
+// pages here. BACK on any of them: the part before, or the VOTE page.
 void Game::openVoteSetup() {
     openLivePicker(PICK_NONE, true);
     liveVariant_ = net_.mode().arenaVariant;
     voteSetup_ = true;
-    voteStage_ = VS_TOGGLES;
-    vsMode_ = vsMods_ = vsMap_ = true;   // (all three by default: gamemode, then the modifiers, then the map)
+    voteStage_ = VS_TOGGLES;   // (the start: voteAdvance goes to the first part toggled on)
     modeGroup_ = 0;
     voteMods_ = VoteMods();
 }
@@ -6300,6 +6378,14 @@ void Game::voteAdvance() {
     if (voteStage_ < VS_MODS && vsMods_) { voteStage_ = VS_MODS; return; }
     if (voteStage_ < VS_MAP && vsMap_) { voteStage_ = VS_MAP; picker_ = PICK_LIVE_MAP; return; }
     voteStage_ = VS_SUMMARY;
+}
+
+void Game::voteBack() {
+    picker_ = PICK_NONE;
+    if (voteStage_ > VS_MAP && vsMap_) { voteStage_ = VS_MAP; picker_ = PICK_LIVE_MAP; return; }
+    if (voteStage_ > VS_MODS && vsMods_) { voteStage_ = VS_MODS; return; }
+    if (voteStage_ > VS_GROUP && vsMode_) { voteStage_ = VS_GROUP; return; }
+    voteSetup_ = false;   // (the VOTE page, its toggles as they were)
 }
 
 std::string Game::voteModsText() const {
@@ -6317,6 +6403,8 @@ std::string Game::voteModsText() const {
     num("jump", m.jump, d.jump);
     num("knockback", m.knockback, d.knockback);
     num("damage", m.damage, d.damage);
+    num("firerate", m.fireRate, d.fireRate);
+    num("projspeed", m.projSpeed, d.projSpeed);
     num("health", m.health, d.health);
     if (m.vampire) t += "vampire=1\n";
     if (m.regen) t += "regen=1\n";
@@ -6337,32 +6425,10 @@ std::string Game::voteModsWords() const {
 
 void Game::drawVoteSetup() {
     if (net_.state() != ConnState::Connected || !net_.hasSnapshot()) { voteSetup_ = false; return; }
-    // a picker step closed with its BACK: the page before it
+    // a picker step closed with its BACK: the part before it (the mode's and ruleset's: the group page)
     if (voteStage_ == VS_MODE || voteStage_ == VS_RULESET) voteStage_ = VS_GROUP;
-    if (voteStage_ == VS_MAP) voteStage_ = VS_TOGGLES;
+    if (voteStage_ == VS_MAP || voteStage_ == VS_TOGGLES) { voteBack(); if (!voteSetup_) return; }
     const SetLayout L = ingameLayout(kPW + 32);
-    auto onOff = [](const char* t, bool on) { return std::string(t) + (on ? ": ON" : ": OFF"); };
-    if (voteStage_ == VS_TOGGLES) {
-        const float kH = 40 + 24 + pauseH(4, 0, true);
-        PauseCol c{ui_, L, ingameTop(L, kH)};
-        ui_.panel(L.X(kPX - 16), L.Y(c.y - 16), L.L(kPW + 32), L.L(kH + 32), 0.95f);
-        ui_.labelCentered(L.X(640), L.Y(c.y), "VOTE", kWhite, 1.5f, L.L(kPW));
-        c.y += 40;
-        ui_.hintCentered(L.X(640), L.Y(c.y), "WHAT THE VOTE CHANGES", kGrey, L.L(kPW));
-        c.y += 24;
-        if (c.full(onOff("GAMEMODE", vsMode_), UiExp::state("votesetup").withId("GAMEMODE"))) vsMode_ = !vsMode_;
-        c.next();
-        if (c.full(onOff("MODIFIERS", vsMods_), UiExp::state("votesetup").withId("MODIFIERS"))) vsMods_ = !vsMods_;
-        c.next();
-        if (c.full(onOff("MAP", vsMap_), UiExp::state("votesetup").withId("MAP"))) vsMap_ = !vsMap_;
-        c.next();
-        const bool any = vsMode_ || vsMods_ || vsMap_;
-        if (c.full("NEXT", any ? UiExp::nav("ingame/pause*") : UiExp::inert(), any)) voteAdvance();
-        c.next();
-        c.last();
-        if (c.half(1, "BACK", UiExp::nav("ingame/pause/vote"))) voteSetup_ = false;
-        return;
-    }
     if (voteStage_ == VS_GROUP) {
         const float kH = 40 + pauseH(2, 0, true);
         PauseCol c{ui_, L, ingameTop(L, kH)};
@@ -6375,7 +6441,7 @@ void Game::drawVoteSetup() {
         if (c.full("PLAYER BASED", UiExp::nav("ingame/pause/picker:livemode"))) pick(2);
         c.next();
         c.last();
-        if (c.half(1, "BACK", UiExp::nav("ingame/pause/vote/setup*"))) voteStage_ = VS_TOGGLES;
+        if (c.half(1, "BACK", UiExp::nav("ingame/pause/vote*"))) voteBack();
         return;
     }
     if (voteStage_ == VS_MODS) {
@@ -6383,26 +6449,23 @@ void Game::drawVoteSetup() {
         // right; BACK, STANDARD and NEXT on the last row
         VoteMods& m = voteMods_;
         struct Num { const char* name; float* v; float step, lo, hi; bool points; };
-        const Num nums[] = {{"DAMAGE", &m.damage, 0.25f, 0.25f, 4, false}, {"SPEED", &m.speed, 0.25f, 0.25f, 3, false},
+        const Num nums[] = {{"DAMAGE", &m.damage, 0.25f, 0.25f, 4, false}, {"FIRE RATE", &m.fireRate, 0.25f, 0.25f, 4, false},
+                            {"PROJECTILE SPEED", &m.projSpeed, 0.25f, 0.25f, 3, false}, {"SPEED", &m.speed, 0.25f, 0.25f, 3, false},
                             {"GRAVITY", &m.gravity, 0.25f, 0.25f, 3, false}, {"JUMP", &m.jump, 0.25f, 0.25f, 3, false},
                             {"KNOCKBACK", &m.knockback, 0.25f, 0, 5, false}, {"HEALTH", &m.health, 25, 25, 500, true}};
         struct Flag { const char* on; bool* v; };
         const Flag flags[] = {{"VAMPIRE", &m.vampire}, {"REGEN", &m.regen}, {"INSTAGIB", &m.instagib},
                               {"SELF DAMAGE", &m.selfDamage}, {"DASH", &m.dash}, {"GRAPPLE", &m.grapple}, {"3D FLYING", &m.fly}};
+        constexpr int kNums = (int)(sizeof nums / sizeof nums[0]), kFlags = (int)(sizeof flags / sizeof flags[0]);
         const float tw = 2 * kPW + 24, x0 = 640 - tw * 0.5f, x1 = x0 + kPW + 24;
         const SetLayout L2 = ingameLayout(tw + 32);
-        const float kH = 40 + 7 * (kPRow + kPGap) - kPGap + 20 + kPRow;
+        const float kH = 40 + kNums * (kPRow + kPGap) - kPGap + 20 + kPRow;
         float y = ingameTop(L2, kH);
         ui_.panel(L2.X(x0 - 16), L2.Y(y - 16), L2.L(tw + 32), L2.L(kH + 32), 0.95f);
         ui_.labelCentered(L2.X(640), L2.Y(y), "VOTE: MODIFIERS", kWhite, 1.5f, L2.L(tw));
         y += 40;
         const float bw = 44;
-        for (int k = 0; k < 7; k++, y += kPRow + kPGap) {
-            const Flag& f = flags[k];
-            if (k == 6) {   // (the last flag, 3D FLYING: a row of its own, under the numbers)
-                if (ui_.button(L2.X(x1), L2.Y(y), L2.L(kPW), L2.L(kPRow), onOff(f.on, *f.v), UiExp::state("votesetup").withId(f.on))) *f.v = !*f.v;
-                continue;
-            }
+        for (int k = 0; k < kNums; k++, y += kPRow + kPGap) {
             const Num& n = nums[k];
             char b[64];
             if (n.points) snprintf(b, sizeof b, "%s %d", n.name, (int)std::lround(*n.v));
@@ -6413,10 +6476,13 @@ void Game::drawVoteSetup() {
                 *n.v = std::max(n.lo, *n.v - n.step);
             if (ui_.button(L2.X(x0 + kPW - bw), L2.Y(y), L2.L(bw), L2.L(kPRow), "+", (up ? UiExp::state("votesetup") : UiExp::inert()).withId(n.name), up))
                 *n.v = std::min(n.hi, *n.v + n.step);
-            if (ui_.button(L2.X(x1), L2.Y(y), L2.L(kPW), L2.L(kPRow), onOff(f.on, *f.v), UiExp::state("votesetup").withId(f.on))) *f.v = !*f.v;
+            if (k < kFlags) {   // the rules on the right
+                const Flag& f = flags[k];
+                if (ui_.button(L2.X(x1), L2.Y(y), L2.L(kPW), L2.L(kPRow), std::string(f.on) + (*f.v ? ": ON" : ": OFF"), UiExp::state("votesetup").withId(f.on))) *f.v = !*f.v;
+            }
         }
         y += 20 - kPGap;
-        if (ui_.button(L2.X(x0), L2.Y(y), L2.L(kPHalf), L2.L(kPRow), "BACK", UiExp::nav("ingame/pause/vote/setup*"))) voteStage_ = VS_TOGGLES;
+        if (ui_.button(L2.X(x0), L2.Y(y), L2.L(kPHalf), L2.L(kPRow), "BACK", UiExp::nav("ingame/pause/vote*"))) voteBack();
         const bool std0 = voteModsText().empty();
         if (ui_.button(L2.X(x1), L2.Y(y), L2.L(kPHalf), L2.L(kPRow), "STANDARD", std0 ? UiExp::inert() : UiExp::state("votesetup"), !std0)) m = VoteMods();
         if (ui_.button(L2.X(x1 + kPW - kPHalf), L2.Y(y), L2.L(kPHalf), L2.L(kPRow), "NEXT", UiExp::nav("ingame/pause*"))) voteAdvance();
@@ -6448,7 +6514,7 @@ void Game::drawVoteSetup() {
     }
     c.next();
     c.last();
-    if (c.half(1, "BACK", UiExp::nav("ingame/pause/vote/setup*"))) voteStage_ = VS_TOGGLES;
+    if (c.half(1, "BACK", UiExp::nav(vsMap_ ? "ingame/pause/picker:livemap" : "ingame/pause/vote*"))) voteBack();   // (the map picker again)
 }
 
 // The pause menu: RESUME; then two to a row JOIN TEAM A / B (or PLAY), SPECTATE, VOTE, QUEUE, RECORD DEMO (one left
@@ -6504,7 +6570,7 @@ void Game::drawPauseMenu(float cx, float y) {
         if (pair("JOIN TEAM B", UiExp::cmd("team b"))) { net_.sendCommand("team b"); paused_ = false; }
     } else if (pair("JOIN GAME", UiExp::cmd("team a"))) { net_.sendCommand("team a"); paused_ = false; }
     if (pair("SPECTATE", UiExp::cmd("team spec"))) { net_.sendCommand("team spec"); paused_ = false; }
-    if (pair("VOTE", UiExp::nav("ingame/pause/vote"))) voteMenu_ = true;
+    if (pair("VOTE", UiExp::nav("ingame/pause/vote"))) { voteMenu_ = true; vsMode_ = vsMods_ = vsMap_ = true; }   // (the builder's toggles: all on)
     if (pair(queued_.empty() ? "QUEUE" : "QUEUE (" + std::to_string(queued_.size()) + ")", UiExp::nav("ingame/pause/queue").withId("QUEUE"))) queueMenu_ = true;
     if (net_.recording()) {
         if (pair("STOP RECORDING (" + fmtTime((float)net_.recordingTime()) + ")", UiExp::state("recording", "0").withId("STOP RECORDING"))) { net_.stopRecording(); notify("DEMO SAVED - MAIN MENU > DEMOS", 4); }
@@ -6585,6 +6651,7 @@ int packOf(const Vec3& c) {
 void Game::openSettingsTab(int tab) {
     hudEditClose();
     setTab_ = tab;
+    if (tab == TAB_LATENCY && !perfFuture_.valid()) perfChecked_ = false;   // (the performance check read again on each visit)
     controlsSub_ = 0;
     fontsOpen_ = devicesOpen_ = widgetEdit_ = false;
     moreOpen_ = 0;
@@ -6631,8 +6698,8 @@ void Game::debugSettingsTab() {
     if (t.empty()) return;
     size_t plus = t.find('+');
     if (plus != std::string::npos) { pick = t.substr(plus + 1); t = t.substr(0, plus); }
-    static const char* tabs[] = {"player", "gameplay", "controls", "video", "crosshair", "hud", "search"};
-    for (int i = 0; i < 7; i++) if (t.rfind(tabs[i], 0) == 0) setTab_ = i;
+    static const char* tabs[] = {"player", "gameplay", "controls", "video", "crosshair", "hud", "latency", "search"};
+    for (int i = 0; i < 8; i++) if (t.rfind(tabs[i], 0) == 0) setTab_ = i;
     if (t.rfind("search/", 0) == 0) setSearch_ = upper(t.substr(7));   // (search/QUERY: that typed)
     if (t == "fonts") fontsOpen_ = true;
     if (t == "video/devices") { devicesOpen_ = true; devListed_ = false; }
@@ -6670,13 +6737,13 @@ void Game::drawSettings() {
     const float footY = setTab_ == TAB_HUD && !moreOpen_ ? kHudFootY : 640;
     ui_.panel(L.X(252), L.Y(32), L.L(776), L.L(footY + 48 - 32), hudPreview ? 0.6f : 1.0f);
     {   // the tab row, an accent line under it
-        static const char* names[] = {"PLAYER", "GAMEPLAY", "CONTROLS", "VIDEO + AUDIO", "CROSSHAIR", "HUD", "SEARCH"};
+        static const char* names[] = {"PLAYER", "GAMEPLAY", "CONTROLS", "VIDEO + AUDIO", "CROSSHAIR", "HUD", "LATENCY", "SEARCH"};
         static const char* navs[] = {"~settings", "~settings/gameplay", "~settings/controls", "~settings/video", "~settings/crosshair", "~settings/hud",
-                                     "~settings/search"};
-        // (SEARCH last: the tabs before it are where settings live, it looks through all of them)
-        static const float tx[] = {268, 364, 480, 596, 742, 862, 924}, tw[] = {92, 112, 112, 142, 116, 58, 88};
+                                     "~settings/latency", "~settings/search"};
+        // (SEARCH last: the tabs before it are where settings live, it looks through all of them. LATENCY: 2026-11-02)
+        static const float tx[] = {268, 348, 450, 552, 682, 788, 842, 932}, tw[] = {76, 98, 98, 126, 102, 50, 86, 80};
         int pick = -1;
-        for (int t = 0; t < 7; t++)
+        for (int t = 0; t < 8; t++)
             if (ui_.tab(L.X(tx[t]), L.Y(40), L.L(tw[t]), L.L(kRowH), names[t], t == setTab_, UiExp::nav(navs[t]))) pick = t;
         r_.rect(L.X(268), L.Y(72), L.L(744), L.L(2), ui_.accent);
         if (pick >= 0) { openSettingsTab(pick); return; }   // (next frame: the new tab)
@@ -6693,6 +6760,7 @@ void Game::drawSettings() {
         case TAB_VIDEO: drawVideoSettings(L); break;
         case TAB_CROSSHAIR: drawCrosshairSettings(L); break;
         case TAB_HUD: drawHudSettings(L); break;
+        case TAB_LATENCY: drawLatencySettings(L); break;
     }
     if (setTab_ == TAB_HUD && (widgetEdit_ || hudEdit_)) return;   // (WIDGET EDITOR / EDIT ON SCREEN was just clicked)
     // (the UI test: the content's lowest pixel, leaving out what the page drew in its footer row: RESET, DEVICES)
@@ -7402,7 +7470,8 @@ void Game::drawSearchTab(const SetLayout& L) {
             {TAB_VIDEO, 0, 0, false, "VIDEO"}, {TAB_VIDEO, 1, 0, false, "VIDEO 2"}, {TAB_VIDEO, 2, 0, false, "VIDEO 3"}, {TAB_VIDEO, 3, 0, false, "VIDEO 4"},
             {TAB_VIDEO, 4, 0, false, "VIDEO 5"}, {TAB_VIDEO, 5, 0, false, "VIDEO 6"}, {TAB_VIDEO, 6, 0, false, "VIDEO 7"}, {TAB_VIDEO, 7, 0, false, "VIDEO 8"},
             {TAB_VIDEO, 8, 0, false, "VIDEO 9"}, {TAB_VIDEO, 0, 0, true, "VIDEO: DEVICES"},
-            {TAB_CROSSHAIR, 0, 0, false, "CROSSHAIR"}, {TAB_HUD, 0, 0, false, "HUD"}, {TAB_HUD, 1, 0, false, "HUD 2"}};
+            {TAB_CROSSHAIR, 0, 0, false, "CROSSHAIR"}, {TAB_HUD, 0, 0, false, "HUD"}, {TAB_HUD, 1, 0, false, "HUD 2"},
+            {TAB_LATENCY, 0, 0, false, "LATENCY"}};
         const int tab0 = setTab_, more0 = moreOpen_, sub0 = controlsSub_;
         const Pg* jump = nullptr;
         const bool dev0 = devicesOpen_;
@@ -7435,6 +7504,7 @@ void Game::drawSearchTab(const SetLayout& L) {
                 case TAB_VIDEO: drawVideoSettings(L); break;
                 case TAB_CROSSHAIR: drawCrosshairSettings(L); break;
                 case TAB_HUD: drawHudSettings(L); break;
+                case TAB_LATENCY: drawLatencySettings(L); break;
             }
             counts[pi] = sl.n - start;
             // (a row that opens something of its page's own - CONTROLS' IMPORT and its file list, an editor - takes you
@@ -8284,22 +8354,6 @@ void Game::drawMoreSettings(const SetLayout& L) {
 #else
         g.hint("N/A HERE: WINDOWS + NVIDIA ONLY");
 #endif
-        {   // Windows' hardware-accelerated GPU scheduling: a system setting (admin prompt, then a restart). Elsewhere N/A.
-            static int hags = hwSchedState();
-            const std::string lbl = hags == 1 ? "GPU SCHED: ON" : hags == 0 ? "GPU SCHED: TURN ON" : "GPU SCHED: N/A";
-            if (ui_.button(g.x(), g.top(), hw, h, lbl, UiExp::inert().withId("GPU SCHEDULING")) && hags == 0) {
-                std::string msg = "NOT CHANGED IN THE UI TEST";
-                if (!uiTest_ && hwSchedEnable(&msg)) hags = 1;
-                notify(msg);
-            }
-            // "Disable fullscreen optimizations" for quark.exe (per user, no admin): real exclusive fullscreen
-            if (ui_.toggle(xr, g.top(), hw, h, "NO FULLSCREEN OPT.", cfg_.disableFso, UiExp::cfg("disable_fso"))) {
-                std::string msg = "NOT CHANGED IN THE UI TEST";
-                if (!uiTest_ && !fsoDisable(cfg_.disableFso, &msg)) cfg_.disableFso = !cfg_.disableFso;
-                notify(msg);
-            }
-            g.next();
-        }
         g.section("SOUND");
         ui_.toggle(g.x(), g.top(), hw, h, "HITSOUND TIERS", cfg_.hitTiers, UiExp::cfg("hit_tiers"));
         {
@@ -9245,6 +9299,78 @@ void Game::drawImportDialog(const SetLayout& L) {
             return;
         }
     if (ui_.button(bx, L.Y(y), bw, bh, "CANCEL", UiExp::nav("~settings/controls"))) filePick_ = 0;
+}
+
+// LATENCY (owner, 2026-11-02: "make a latency settings tab and each tweak gets its own toggle, so i can test every
+// combination myself"): every tweak between the mouse and the photon on its own, F3's graph to compare them with, and a
+// check of the driver's and Windows' settings that cost frames
+void Game::drawLatencySettings(const SetLayout& L) {
+    const float w = L.L(kColW), h = L.L(kRowH), hw = L.L(kHalfW), xr = L.X(kColR + kColW - kHalfW);
+    SetFlow f{ui_, L, kColL, 90};
+    f.header("THE FRAME");
+    static const std::vector<std::string> llNames = {"LOW LATENCY: OFF", "LOW LATENCY: ON", "LOW LATENCY: ULTRA"};
+    ui_.cycle(f.x(), f.top(), w, h, "LOW LATENCY", cfg_.lowLatency, 3, llNames, UiExp::cfg("low_latency"));
+    f.next();
+    f.hint("ON: AT MOST 1 FRAME QUEUED", "ULTRA: 0 QUEUED + EACH FRAME STARTED LATE");
+    ui_.toggle(f.x(), f.top(), w, h, "EARLY FLUSH", cfg_.earlyFlush, UiExp::cfg("early_flush"));
+    f.next();
+    f.hint("THE SHADOWS AND THE WORLD GO TO THE GPU AS SOON", "AS THEY'RE DRAWN, NOT AT THE SWAP");
+    ui_.toggle(f.x(), f.top(), w, h, "CPU LATE LATCH", cfg_.cpuLatch, UiExp::cfg("cpu_latch"));
+    f.next();
+    f.hint("THE MOUSE READ AGAIN JUST BEFORE THE WORLD IS DRAWN");
+    ui_.toggle(f.x(), f.top(), w, h, "GPU LATE LATCH", cfg_.gpuLatch, UiExp::cfg("gpu_latch"));
+    f.next();
+    f.hint(r_.latchSupported ? "THE GPU READS YOUR AIM AS IT STARTS DRAWING;" : "N/A: THE DRIVER LACKS GL 4.4 BUFFER STORAGE",
+           "WINDOWS RAW INPUT, NO MOUSE ACCEL");
+    ui_.toggle(f.x(), f.top(), w, h, "HUD BEFORE WORLD", cfg_.hudFirst, UiExp::cfg("hud_first"));
+    f.next();
+    f.hint("ULTRA ONLY: THE HUD DRAWN BEFORE THE LATE READ,", "LAID OVER THE WORLD AFTER IT");
+    f.hint(keyOf(A_PERF) + " 3 TIMES: THE GRAPH; 4 TIMES: THE GAME'S PART ONLY");
+
+    SetFlow g{ui_, L, kColR, 90};
+    g.header("WINDOWS");
+    {   // Windows' hardware-accelerated GPU scheduling: a system setting (admin prompt, then a restart). Elsewhere N/A.
+        static int hags = hwSchedState();
+        const std::string lbl = hags == 1 ? "GPU SCHED: ON" : hags == 0 ? "GPU SCHED: TURN ON" : "GPU SCHED: N/A";
+        if (ui_.button(g.x(), g.top(), hw, h, lbl, UiExp::inert().withId("GPU SCHEDULING")) && hags == 0) {
+            std::string msg = "NOT CHANGED IN THE UI TEST";
+            if (!uiTest_ && hwSchedEnable(&msg)) { hags = 1; perfChecked_ = false; }
+            notify(msg);
+        }
+        // "Disable fullscreen optimizations" for quark.exe (per user, no admin): real exclusive fullscreen
+        if (ui_.toggle(xr, g.top(), hw, h, "NO FULLSCREEN OPT.", cfg_.disableFso, UiExp::cfg("disable_fso"))) {
+            std::string msg = "NOT CHANGED IN THE UI TEST";
+            if (!uiTest_ && !fsoDisable(cfg_.disableFso, &msg)) cfg_.disableFso = !cfg_.disableFso;
+            notify(msg);
+        }
+        g.next();
+        g.hint("GPU SCHED: WINDOWS' HARDWARE GPU SCHEDULING;", "NO FULLSCREEN OPT.: TRUE EXCLUSIVE FULLSCREEN (NEXT START)");
+    }
+    g.section("PERFORMANCE CHECK");
+    // (on its own thread: loading the drivers' libraries can take a moment, and the menu keeps its frame rate meanwhile)
+    if (!perfChecked_ && !perfFuture_.valid()) {
+        const std::string gpu = r_.gpuName();
+        perfFuture_ = std::async(std::launch::async, [gpu] { return perfCheck(gpu); });
+    }
+    if (perfFuture_.valid() && perfFuture_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        perfFindings_ = perfFuture_.get();
+        perfChecked_ = true;
+    }
+    if (!perfChecked_) g.label("CHECKING...");
+    else if (perfFindings_.empty()) g.label(
+#ifdef _WIN32
+        "NOTHING FOUND: YOUR DRIVER AND WINDOWS SETTINGS LOOK RIGHT"
+#else
+        "WINDOWS ONLY"
+#endif
+    );
+    for (size_t i = 0; i < perfFindings_.size() && i < 9; i++) {
+        ui_.label(g.x(), g.top(), perfFindings_[i].what, Color{1.0f, 0.75f, 0.35f, 1}, 1.0f, w);
+        g.y += 18;
+        ui_.hint(g.x(), g.top(), perfFindings_[i].fix, kGrey, w);
+        g.y += 18;
+    }
+    if (ui_.button(g.x(), g.top() + L.L(4), hw, h, "CHECK AGAIN", UiExp::inert()) && !perfFuture_.valid()) perfChecked_ = false;
 }
 
 void Game::drawCrosshairSettings(const SetLayout& L) {
@@ -10656,7 +10782,10 @@ void Game::drawInfo(const SetLayout& L) {
         for (const char* line : kInfoPages[infoTab_]) {
             if (!line) break;
             const bool head = line[0] == '#';
-            const std::string text = head ? std::string(line + 2) : std::string(line);
+            // (a heading's key keeps its "# ": translated whole, then the "# " dropped; the lookup can't see it as a
+            // number placeholder that way. A paragraph: ui_.wrap translates it)
+            std::string text = head ? Renderer::translated(line) : std::string(line);
+            if (head) text = text.rfind("# ", 0) == 0 ? text.substr(2) : text.rfind("#", 0) == 0 ? text.substr(1) : text;
             bool first = true;
             for (const std::string& part : ui_.wrap(text, ts, colW, 80)) {
                 if (!rows.empty()) y += !first ? 20 : head ? 32 : lastHead ? 24 : 26;
@@ -10946,9 +11075,13 @@ void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
     double t0 = rows.front().t0;                  // (the graph's left edge: work before the mouse bar too, e.g. pacing)
     for (const Row& r : rows) t0 = std::min(t0, r.t0);
     // the graph: a label and the time on the left, the bar on its own line on the right (a waterfall)
-    const float lh = r_.textHeight(ts) + 4, labelW = r_.textWidth("WAITING FOR THE LATE READ (AVG)  00,000,000 NS", ts) + 12;
+    // (the label column fits the longest row name in the language drawn, and the widest time: a translated label,
+    // CJK above all, is wider than the English one this was sized by and ran into its value)
+    float nameW = r_.textWidth(Renderer::translated("WAITING FOR THE LATE READ (AVG)"), ts);
+    for (const Row& r : rows) nameW = std::max(nameW, r_.textWidth(Renderer::translated(r.name), ts));
+    const float lh = r_.textHeight(ts) + 4, labelW = nameW + r_.textWidth("  00,000,000 NS", ts) + 12;
     const float barW = std::max(200.0f, std::min(700.0f * ts, (float)r_.width() - x - labelW - 24));
-    const float h = (rows.size() + 3) * lh + 8;
+    const float h = (rows.size() + 4) * lh + 8;
     r_.rect(x, y, labelW + barW + 16, h, {0, 0, 0, 0.6f});
     float yy = y + 4;
     char head[160];
@@ -10962,6 +11095,19 @@ void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
              mouseRate, ns(hwDisplay).c_str(), hz);
     r_.text(x + 6, yy, ts, split, {0.85f, 0.85f, 0.9f, 1});
     yy += lh;
+    {   // which of the LATENCY tab's tweaks this graph was taken with (owner: "test every combination myself")
+        std::string on;
+        auto add = [&](bool b, const char* n) { if (b) on += on.empty() ? n : std::string(" + ") + n; };
+        add(cfg_.earlyFlush, "FLUSH");
+        add(cfg_.cpuLatch && cfg_.lowLatency > 0, "CPU LATCH");
+        add(gpuLatchOn_, "GPU LATCH");
+        add(hudLayerOn_, "HUD FIRST");
+        char tw[160];
+        snprintf(tw, sizeof tw, "LOW LATENCY %s, TWEAKS: %s", cfg_.lowLatency == 2 ? "ULTRA" : cfg_.lowLatency == 1 ? "ON" : "OFF",
+                 on.empty() ? "NONE" : on.c_str());
+        r_.text(x + 6, yy, ts, tw, {0.6f, 0.85f, 1.0f, 1});
+        yy += lh;
+    }
     const double scale = t - t0 > 0 ? barW / (t - t0) : 0;
     for (const Row& r : rows) {
         r_.text(x + 6, yy, ts, r.name, r.c);
@@ -11246,6 +11392,7 @@ void Game::beforeInput() {
         const double kMargin = cfg_.ultraMarginUs * 1e-6;   // (MORE 6: ULTRA SAFETY, 150 us by default)   // (start a little early: a late start is a GPU bubble, an early one 150 us)
         const double target = ultraSwapAt_ + ultraGpu_ - ultraCpu_ - kMargin;
         bool waited = false;
+        QZONE("ultra: pace the input read");
         for (;;) {
             const GLenum st = glClientWaitSync((GLsync)ultraFence_, waited ? 0 : GL_SYNC_FLUSH_COMMANDS_BIT, 0);
             const double now = timeNow();
@@ -11257,7 +11404,8 @@ void Game::beforeInput() {
             }
             if (now >= target) break;   // still on the GPU: start now, it'll be done about when this frame is handed over
             waited = true;
-            waitUntil(std::min(target, now + 0.0001));
+            waitUntil(std::min(target, now + 0.00001));   // (a spin either way: polled every 10 us, not 100, so a GPU that finishes
+                                                          // mid-step is seen at once and ultraGpu_ learns its real time)
         }
     }
     ultraReadAt_ = timeNow();
@@ -11359,6 +11507,7 @@ void Game::drawPicker(float cx, float y) {
     bool rankedNow = live ? serverRanked : host && cfg_.hostRanked; // vs bots is never ranked
     const bool builder = live && voteSetup_;   // the vote builder's mode / ruleset / map step (drawVoteSetup)
     if (builder) rankedTile = false;
+    if (builder && ui_.probing()) ui_.scope = "vote builder";   // (the UI test: here a choice leads on to the builder's next part)
     // the builder's mode list: objective based or player based (owner, 2026-11-01)
     static std::vector<int> modeVis;
     modeVis.clear();
@@ -11389,7 +11538,7 @@ void Game::drawPicker(float cx, float y) {
     }
     // where a choice / BACK leaves you (the UI test checks it): the host / vs bots menu, or the pause menu (or its votes)
     const char* done = host ? "host" : "vsbots";
-    const char* back = screen_ == Screen::InGame ? (builder ? "ingame/pause/vote/setup*" : voteMenu_ ? "ingame/pause/vote" : "ingame/pause") : done;
+    const char* back = screen_ == Screen::InGame ? (builder ? "ingame/pause/vote*" : voteMenu_ ? "ingame/pause/vote" : "ingame/pause") : done;
     if ((int)multiSel_.size() != n) multiSel_.assign(n, false);
     std::string title = picker_ == PICK_TMAPS ? "TOURNEY MAPS (PICK ANY, THEY ROTATE)" : picker_ == PICK_TMODES ? "TOURNEY RULESETS (PICK ANY, THEY ROTATE)"
                       : ladders ? "RANKED - CHOOSE A LADDER"
@@ -12148,8 +12297,65 @@ void Game::reportBolt(const Vec3& at, const Vec3& dir, int victim, bool head) {
     sendHits(WPN_CROSSBOW, false, hitScratch_);
 }
 
+// A projectile that left the snapshots: did it go into lava or acid (Map::dissolveAlong, as the server's step)? Its
+// last drawn spot is up to a snapshot (and, yours, the X5 lead) short of where the server's went in: the path on from
+// there for a quarter second, up to the first wall. Only on maps with lava or acid, once per vanished projectile.
+bool Game::projectileDissolved(const ProjectileSnap& p, Vec3* at) const {
+    const Map& m = net_.map();
+    if (!m.hasDissolvers()) return false;
+    if (m.dissolves(p.pos)) { *at = p.pos; return true; }
+    if (p.flags & (PROJ_STUCK | PROJ_ON_PLAYER)) return false;
+    const float sp = length(p.vel);
+    if (sp < 0.01f) return false;
+    const Vec3 dir = p.vel / sp;
+    float span = sp * 0.25f;
+    const float wall = m.raycast(p.pos, dir, span);
+    if (wall >= 0) span = wall + 0.05f;
+    const float d = m.dissolveAlong(p.pos, dir, span);
+    if (d < 0) return false;
+    *at = p.pos + dir * d;
+    return true;
+}
+
+// Your own shots' copies (X5: the predicted one from the click, the server's drawn lead ahead) that have gone into lava
+// or acid since the last frame: stopped there, so the drawing neither shows them on nor blows them up past it (and
+// reports no hit from there). The server's copy does the same; its vanishing then hisses (projectileDissolved).
+void Game::dissolveOwnCopies() {
+    const Map& m = net_.map();
+    if (!m.hasDissolvers()) return;
+    auto flight = [](int type, bool lob) { return projectileFlight(type, lob ? kRocketLobGravity : 1.0f); };
+    auto crosses = [&](const Vec3& a, const Vec3& b) {   // (into one before any wall between)
+        const Vec3 d = b - a;
+        const float len = length(d);
+        if (len < 1e-4f) return m.dissolves(a);
+        const float wall = m.raycast(a, d / len, len);
+        return m.dissolveAlong(a, d / len, wall >= 0 ? wall + 0.05f : len) >= 0;
+    };
+    for (auto& q : predProj_) {
+        if (!q.live || q.atWall) continue;
+        Vec3 p = q.pos0, v = q.vel0;
+        m.flyProjectile(p, v, flight(q.type, q.lob), (float)(time_ - q.born));
+        if (crosses(q.pos, p)) q.atWall = true;   // (hidden, nothing reported: the server's copy takes over and is gone too)
+    }
+    for (auto& st : projStarts_) {
+        if (st.boomed || st.lead <= 0) continue;
+        for (const ProjectileSnap& pr : lastProjectiles_) {
+            if (pr.id != st.id || (pr.flags & (PROJ_STUCK | PROJ_ON_PLAYER))) continue;
+            Vec3 p = pr.pos, v = pr.vel;
+            m.flyProjectile(p, v, flight(pr.type, (pr.flags & PROJ_LOB) != 0), st.lead);
+            if (crosses(pr.pos, p)) st.boomed = true;   // (not drawn on, never blown up on your screen)
+            break;
+        }
+    }
+}
+
 void Game::reportImpact(int type, bool alt, const Vec3& from, const Vec3& to, int victim, bool head) {
     if (!net_.selfAlive()) return;   // (dead: the server's own hit, as it lands there)
+    if (net_.map().hasDissolvers()) {   // (its last stretch went into lava or acid: the server's copy is gone there, no hit)
+        const Vec3 d = to - from;
+        const float len = length(d);
+        if (len > 1e-4f && net_.map().dissolveAlong(from, d / len, len) >= 0) return;
+    }
     if (type == WPN_ROCKET) {   // (off where it met the surface, 5 cm back along its flight, as the server's goes off)
         const Vec3 d = to - from;
         const float len = length(d);

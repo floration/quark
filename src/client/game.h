@@ -9,6 +9,7 @@
 #include <string>
 #include <chrono>
 #include <thread>
+#include <future>
 #include <vector>
 #include "hudwidgets.h"
 #include "layout.h"
@@ -229,7 +230,7 @@ private:
     void checkHostBrain();                  // compile the chosen brain (loadBrain: cached while the file is unchanged)
     void drawPauseMenu(float cx, float y);
     // Settings: one shell, six tabs (drawSettings: the menus and the pause menu; game.cpp "Settings")
-    enum { TAB_PLAYER, TAB_GAMEPLAY, TAB_CONTROLS, TAB_VIDEO, TAB_CROSSHAIR, TAB_HUD, TAB_SEARCH };   // (SEARCH: every setting in one list)
+    enum { TAB_PLAYER, TAB_GAMEPLAY, TAB_CONTROLS, TAB_VIDEO, TAB_CROSSHAIR, TAB_HUD, TAB_LATENCY, TAB_SEARCH };   // (SEARCH: every setting in one list)
     int setTab_ = TAB_PLAYER;
     int controlsSub_ = 0;    // CONTROLS: 0 general + interface keys, 1 move + weapon keys
     void drawSettings();
@@ -456,7 +457,7 @@ private:
     bool voteMenu_ = false;
     bool specPick_ = false;     // the vote menu's player list: who to move to spectator (callvote spec)
     void drawVoteMenu(float cx, float y);
-    // The vote builder (owner, 2026-11-01): one VOTE screen; toggles for what the vote changes (GAMEMODE, MODIFIERS,
+    // The vote builder (owner, 2026-11-01): the VOTE page's toggles for what the vote changes (GAMEMODE, MODIFIERS,
     // MAP), then each part in order: the mode (OBJECTIVE or PLAYER first), its modifiers (the ruleset, then the numbers
     // and rules), the map; one vote for all of it ("callvote map <map> <mode> <ruleset> [mods k=v ...]").
     enum VoteStage { VS_TOGGLES = 0, VS_GROUP, VS_MODE, VS_RULESET, VS_MODS, VS_MAP, VS_SUMMARY };
@@ -464,10 +465,11 @@ private:
     int voteStage_ = VS_TOGGLES;
     bool vsMode_ = true, vsMods_ = true, vsMap_ = true;
     int modeGroup_ = 0;                 // 0 all, 1 objective, 2 player (the mode picker's filter in the builder)
-    struct VoteMods { float gravity = 1, speed = 1, jump = 1, knockback = 1, damage = 1; float health = 100;
+    struct VoteMods { float gravity = 1, speed = 1, jump = 1, knockback = 1, damage = 1, fireRate = 1, projSpeed = 1; float health = 100;
                       bool vampire = false, regen = false, selfDamage = true, dash = true, grapple = true, instagib = false, fly = false; } voteMods_;
     void openVoteSetup();
     void voteAdvance();                 // on to the next part the toggles ask for (a picker, or the builder's own page)
+    void voteBack();                    // back to the part before (the last one toggled on before this one), or the VOTE page
     std::string voteModsWords() const;  // " mods k=v ..." (the non-standard ones)
     std::string voteModsText() const;   // the same as k=v lines (votedModsTitle)
     void drawVoteSetup();
@@ -778,6 +780,10 @@ private:
     struct PredProj { uint8_t type = 0; bool live = false, lob = false, started = false, atWall = false, boomed = false; Vec3 pos0, vel0, pos, offset; double born = 0; };
     PredProj predProj_[8];
     void spawnPredictedProjectile(int w, bool alt, const UserCmd& c);
+    bool projectileDissolved(const ProjectileSnap& p, Vec3* at) const;
+    bool inAcid_ = false, acidBurns_ = false;   // your hull in acid now (the HUD's tint), and it's hurting you (pulse, sizzle)
+    double acidSince_ = 0, nextSizzle_ = 0;   // gone into lava or acid (no blast: a hiss)
+    void dissolveOwnCopies();
     std::vector<ProjStart> projStarts_, projStartsKeep_;
     // Your projectiles' impacts shown at once, on your screen (rockets / bolts on a wall or an enemy, stickies on your
     // detonate): the server's own explosion of that one (its id; 0xFFFF: a predicted copy's, not handed over yet) is then
@@ -826,12 +832,20 @@ private:
     // F3 performance overlay: frame-time percentiles (lows matter, averages hide stutter)
     // F3 cycles (owner 2026-10-29): 1 the FPS line, 2 + ping / 3D size / server, 3 everything with the pipeline graph, 0 off.
     // Only 3 runs the graph's and input-to-frame measuring (GPU timestamps): 1 and 2 cost just their text.
+    void turnGain(float* kYaw, float* kPitch) const;
+    void drawLatencySettings(const struct SetLayout& L);
+    std::vector<struct PerfFinding> perfFindings_;
+    std::future<std::vector<struct PerfFinding>> perfFuture_;   // (the check runs on its own thread)
+    bool perfChecked_ = false;
+    bool gpuLatchOn_ = false, hudLayerOn_ = false;   // (this frame's LATENCY tweaks that took: F3 lists them)
     int perfStage_ = 0;
     bool hudBuilt_ = false;            // drawWorld built the HUD (and F3 / F4) before its late read this frame
     bool perfMini_ = false;            // F4: only the mouse to photon number (drawPerfMini)
     bool perfOn() const { return perfStage_ >= 3 || perfMini_; }   // (the pipeline graph's measuring runs)
     std::string perfMiniText_;
-    std::vector<float> frameTimes_ = std::vector<float>(2048, 0.0f);
+    static constexpr size_t kFrameTimes = 2048;   // (a power of two: the ring index wraps with a mask)
+    static_assert((kFrameTimes & (kFrameTimes - 1)) == 0, "kFrameTimes must be a power of two");
+    std::vector<float> frameTimes_ = std::vector<float>(kFrameTimes, 0.0f);
     size_t frameIdx_ = 0, frameCount_ = 0;
     double perfNextUpdate_ = 0;
     std::string perfText_, perfText2_;   // F3's first two lines: the frame rates, then the worst frame and the ping

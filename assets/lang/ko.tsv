@@ -3,6 +3,7 @@
 "IT" IN YOUR ENEMY COLOUR, THE REST YOUR TEAM'S	"술래"는 적 색상, 나머지는 우리 팀 색상
 "path"	"path"
 # # # TO # # #	# # # → # # #
+# / # DEG	# / # 도
 # BOXES  # SPAWNS  # LIGHTS	박스 #  스폰 #  조명 #
 # CONTROL PROFILES	# 조작 프로필
 # CUSTOM MODES	# 커스텀 모드
@@ -132,6 +133,7 @@
 -Wcast-function-type	-Wcast-function-type
 -Y (under)	-Y (아래)
 0.1% LOW	0.1% LOW
+00,000,000 NS	00,000,000 NS
 1 HP	1 HP
 1 HP KNIVES	1 HP 나이프
 1 SETTING	설정 1개
@@ -143,17 +145,21 @@
 12 M UP, OUT OF A HYPER FROM 20 M/S	20 M/S 하이퍼로 12 M 상승
 144 FPS	144 FPS
 16 M UP, OUT OF A HYPER FROM 20 M/S	20 M/S 하이퍼로 16 M 위로
+16 M/S ALONG THE FLOOR	바닥을 따라 16 M/S
 1V1 - rounds on one ruleset (vanilla, laser vampire, instagib...). First to 5. Ranked 1v1 rates you on its own ladder.	1V1 - 한 가지 규칙(바닐라, 레이저 뱀파이어, 인스타깁...)으로 라운드 진행. 5선승. 랭크 1v1은 별도 래더로 레이팅됩니다.
+2 BALL	2 BALL
 2 BOUNCES	튕기기 2회
 2 HYPERS	하이퍼 2회
 2 SUPERS	슈퍼 2회
 240 FPS	240 FPS
 2:00  -  1ST OF 6	2:00  -  6명 중 1위
 2D: THE VIEW STAYS STILL, YOUR MOUSE MOVES THE CROSSHAIR	2D: 시점 고정, 마우스로 조준점 이동
+3 TIMES: THE GRAPH; 4 TIMES: THE GAME'S PART ONLY	3번: 그래프; 4번: 게임 부분만
 30 M UP, OUT OF A HYPER FROM 20 M/S	20 M/S 하이퍼로 30 M 상승
 30 SECONDS LEFT	30초 남음
 32-bit float	32비트 float
 3D FLYING	3D 비행
+3D STATIC	3D 정지
 3D STATIC: YOU CAN'T MOVE - LOOK AND SHOOT	3D 고정: 이동 불가 - 조준하고 사격
 3D VAMP	3D 뱀프
 5 M UP THE RAMP	경사로 5 M 오르기
@@ -166,6 +172,8 @@ A DROPPED CONNECTION TRIES AGAIN (3 TIMES)	연결 끊김 시 재시도 (3회)
 A HYPER ABOVE 36 M/S CAPS YOU DOWN: 35 IS THE TOP	36 M/S 이상에서 하이퍼는 속도를 깎는다: 35가 최고
 A MOMENT LATER, AIM STRAIGHT DOWN AND FIRE	잠시 뒤 바로 아래를 조준하고 발사
 A NEW CODE FROM /link RELINKS IT - unlink REMOVES IT	/link의 새 코드로 재연결 - unlink로 해제
+A NEW DIAGONAL EVERY 0.3 S	0.3초마다 새 대각선
+A NEW DIAGONAL EVERY 0.3 S, 10 HP	0.3초마다 새 대각선, 10 HP
 A PLAYER JOINED VIA	플레이어 참가 경로:
 A ROCKET JUMP STRAIGHT UP	바로 위로 로켓 점프
 A SERVER	서버
@@ -178,6 +186,7 @@ A SUPER, THEN AIM STRAIGHT DOWN	슈퍼 후 바로 아래를 조준
 A VARIABLE FONT IS DRAWN AT ITS DEFAULT WEIGHT	가변 폰트는 기본 굵기로 표시
 A private game with bots at your chosen level (beginner, intermediate, advanced, expert), on any mode and map.	원하는 난이도(초급, 중급, 상급, 전문가)의 봇과 함께하는 비공개 게임. 모든 모드와 맵 가능.
 A thrown knife or syringe is gone for 4 s (greyed out in the weapon list, with its timer).	던진 나이프나 주사기는 4초간 사라집니다 (무기 목록에 회색으로 타이머와 함께 표시).
+AA / SHADOWS	AA / 그림자
 ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/	ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/
 ABILITIES	능력
 ABOVE NORMAL	보통 이상
@@ -188,6 +197,8 @@ ACCENT COLOR	강조 색상
 ACCESSIBILITY	접근성
 ACCURACY	정확도
 ACE	ACE
+ACROSS THE WALL, 10 HP	벽 전체에, 10 HP
+ACROSS THE WALL, SIDE TO SIDE	벽 전체에, 좌우로
 AD STRAFING	AD 스트레이프
 ADAPTIVE	적응형
 ADD (AT THE SCREEN CENTER)	추가 (화면 중앙에)
@@ -196,7 +207,18 @@ ADD WIDGET	위젯 추가
 ADD: boxes (base / accent / wallbang: bullets go through wallbangs for half damage), spawns, lights, payload path points, bomb sites, the hill, race checkpoints, and LADDERS (one object: stretch it and the rungs follow).	추가: 박스 (기본 / 강조 / 월뱅: 총알이 월뱅을 관통하며 피해 절반), 스폰, 조명, 화물 경로 지점, 폭탄 설치 지점, 점령 지역, 레이스 체크포인트, 사다리 (하나의 오브젝트: 늘리면 발판이 따라옴).
 ADDRESS	주소
 ADDRESS (IP:PORT)	주소 (IP:PORT)
+ADLXInitialize	ADLXInitialize
+ADLXInitializeWithIncompatibleDriver	ADLXInitializeWithIncompatibleDriver
+ADLXTerminate	ADLXTerminate
+ADRENALIN > GAMING > GRAPHICS: ENHANCED SYNC OFF	ADRENALIN > 게임 > 그래픽: ENHANCED SYNC 끔
+ADRENALIN > GAMING > GRAPHICS: FRAME RATE TARGET CONTROL OFF	ADRENALIN > 게임 > 그래픽: FRAME RATE TARGET CONTROL 끔
+ADRENALIN > GAMING > GRAPHICS: RADEON ANTI-LAG ON	ADRENALIN > 게임 > 그래픽: RADEON ANTI-LAG 켜짐
+ADRENALIN > GAMING > GRAPHICS: RADEON BOOST OFF	ADRENALIN > 게임 > 그래픽: RADEON BOOST 끔
+ADRENALIN > GAMING > GRAPHICS: RADEON CHILL OFF	ADRENALIN > 게임 > 그래픽: RADEON CHILL 끔
+ADRENALIN > GAMING > GRAPHICS: WAIT FOR VERTICAL REFRESH: OFF, UNLESS APPLICATION SPECIFIES	ADRENALIN > 게임 > 그래픽: 수직 새로 고침 대기: 끔 (응용 프로그램이 지정하지 않는 한)
+ADRENALIN: ANTI-LAG ON; CHILL, BOOST, ENHANCED SYNC, WAIT FOR VERTICAL REFRESH OFF	ADRENALIN: ANTI-LAG 켜짐; CHILL, BOOST, ENHANCED SYNC, 수직 새로 고침 대기 끔
 ADVANCED	상급
+ADVANCED  >	상급  >
 ADVANCED > BOT BRAIN: what your bots play: the built-in brain, or a .qbrain file from the bots folder in your data folder. A file that doesn't compile shows its error line and the bots play the built-in brain. Never in ranked.	상급 > 봇 AI: 봇의 플레이 방식: 내장 AI 또는 데이터 폴더의 bots 폴더에 있는 .qbrain 파일. 컴파일되지 않는 파일은 오류 줄을 표시하고 봇은 내장 AI로 플레이합니다. 랭크에서는 사용하지 않습니다.
 AGAIN (R)	다시 (R)
 AHEAD	앞섬
@@ -221,6 +243,7 @@ AIM: STRAIGHT DOWN	조준: 바로 아래
 AIM: UP	조준: 위
 AIR	공중
 AIR ACCELERATION	공중 가속
+AIR BALL	AIR BALL
 AIR CONTROL	공중 제어
 AIR DRIFT (UNDER RUN SPEED)	공중 드리프트 (달리기 속도 이하)
 AIR ROCKET	에어 로켓
@@ -229,6 +252,7 @@ ALL	전체
 ALL MODES	모든 모드
 ALL OFF	모두 끄기
 ALL SETTINGS	전체 설정
+ALONG A 3 X 3 GRID'S LINES	3 X 3 격자 선을 따라
 ALT	ALT
 ALT FIRE	보조 사격
 ALT-FIRE TOGGLE IN RANKED	랭크에서 보조 사격 토글
@@ -239,6 +263,14 @@ ALT-FIRE: TOGGLE	보조 사격: 토글
 ALT-TABBED OR MINIMIZED: LESS POWER AND HEAT	ALT-TAB 또는 최소화: 전력·발열 감소
 ALWAYS LIT	항상 밝게
 ALWAYS ON TOP	항상 위
+AMD	AMD
+AMD DRIVER SETTINGS COULDN'T BE READ	AMD 드라이버 설정을 읽지 못함
+AMD ENHANCED SYNC IS ON	AMD ENHANCED SYNC가 켜져 있음
+AMD FRAME RATE TARGET CONTROL CAPS YOUR FRAME RATE	AMD FRAME RATE TARGET CONTROL가 FPS를 제한함
+AMD RADEON ANTI-LAG IS OFF	AMD RADEON ANTI-LAG가 꺼져 있음
+AMD RADEON BOOST LOWERS THE RESOLUTION IN MOTION	AMD RADEON BOOST가 움직일 때 해상도를 낮춤
+AMD RADEON CHILL CAPS YOUR FRAME RATE	AMD RADEON CHILL가 FPS를 제한함
+AMD WAIT FOR VERTICAL REFRESH IS ALWAYS ON	AMD 수직 새로 고침 대기가 항상 켜져 있음
 ANNA	ANNA
 ANNOUNCER	아나운서
 ANNOUNCER CALLS	아나운서 안내
@@ -254,6 +286,7 @@ ANTI-ALIASING: MSAA 4X (N/A HERE)	안티앨리어싱: MSAA 4X (여기선 N/A)
 ANTI-ALIASING: MSAA 8X	안티앨리어싱: MSAA 8X
 ANTI-ALIASING: OFF	안티앨리어싱: 끄기
 ANTI-ALIASING: SMOOTH (CHEAP)	안티앨리어싱: 부드럽게 (저부하)
+ANYWHERE AROUND YOU, 12-24 M AWAY	주위 어디든, 12-24 M 거리
 APEX LEGENDS	APEX LEGENDS
 APPLY IN:	적용 대상:
 ARC COLOR	호 색상
@@ -264,6 +297,7 @@ ARROW (NUDGE)	화살표 (미세 이동)
 ARROWS / PGUP / PGDN: MOVE BY GRID (ALONG YOUR VIEW)	화살표 / PGUP / PGDN: 그리드 단위 이동 (시점 방향)
 AS THE PILLAR COMES UP BESIDE YOU, HOOK IT	기둥이 옆에 오면 갈고리를 건다
 AS THEY ARRIVE, SHOTGUN OR KNIFE THEM. YOUR DASH DOESN'T BREAK IT: THE PULL FOLLOWS YOU	도착하면 샷건이나 칼. 내 대시로는 안 풀린다: 끌어당김이 따라온다
+AS THEY'RE DRAWN, NOT AT THE SWAP	그리자마자 보냄 (SWAP 때가 아님)
 AS THICK	같은 두께
 ASIDE: A FRAME LESS LAG IN A WINDOW	참고: 창 모드에서 1프레임 지연 감소
 ASK "SURE?" FIRST: CLICK AGAIN	"확실합니까?" 먼저 묻기: 다시 클릭
@@ -325,6 +359,11 @@ BALANCE BOTS	봇 균형
 BALANCE BOTS evens out uneven teams with bots. MODE > RANKED runs rated 1v1 on the ranked maps (no bots). SERVER LOG keeps a log of the match.	봇 균형은 인원이 고르지 않은 팀을 봇으로 맞춥니다. 모드 > 랭크는 랭크 맵에서 레이팅 1v1을 진행합니다 (봇 없음). 서버 로그는 경기 로그를 남깁니다.
 BALL	볼
 BALL - SHOOT, BLAST OR RUN THE BALL INTO THE ENEMY GOAL - MOST GOALS WINS	볼 - 공을 쏘거나 폭발로 밀거나 몰고 가서 적 골대에 넣기 - 최다 득점 승리
+BALLS ANYWHERE IN A 24 M ROOM	24 M 방 어디에나 공
+BALLS ANYWHERE ON A WIDE WALL	넓은 벽 어디에나 공
+BALLS DRIFTING IN THE ROOM, 10 HP	방 안을 떠다니는 공, 10 HP
+BALLS DRIFTING SIDE TO SIDE, 10 HP	좌우로 떠다니는 공, 10 HP
+BALLS ON THE WALL, BACK AT ONCE	벽의 공, 바로 다시 나옴
 BANDIT	BANDIT
 BAR	바
 BAR CAPTIONS	바 설명
@@ -406,9 +445,15 @@ BOTS: EXPERT	봇: 전문가
 BOTS: HARD	봇: 어려움
 BOTS: MEDIUM	봇: 보통
 BOTS: OFF (RANKED)	봇: 끄기 (랭크)
+BOUNCING ROUND A 24 M CIRCLE	24 M 원을 따라 튀어 다님
+BOUNCING ROUND A 24 M CIRCLE, 20 HP	24 M 원을 따라 튀어 다님, 20 HP
+BOUNCING ROUND THE WALL	벽을 따라 튀어 다님
+BOUNCY BALL	BOUNCY BALL
+BOUNCY BALLS	BOUNCY BALLS
 BOX	박스
 BOX OPACITY	박스 불투명도
 BOXES, STRETCHED AS ONE - UNGROUP TO EDIT THEM	하나로 늘어나는 박스 - 편집하려면 그룹 해제
+BRACKET OF 1V1S - RULESETS >	1V1 대진표 - 규칙 >
 BREAK FREE WITH A DASH	대시로 풀려나기
 BREAKABLE	파괴 가능
 BRICK	벽돌
@@ -423,6 +468,8 @@ BUILT FOR sets the mode the map is made for; the MODES grid sets what it's offer
 BUILT FOR:	제작 모드:
 BUILT FOR: ANY	제작 모드: 모두
 BUNNY HOP WITH ONE STRAFE KEY AT A TIME, TURNING WITH IT: SPEED WITH NO DASH.	옆 이동 키를 하나씩 누르며 버니합, 그쪽으로 회전: 대시 없이 속도.
+BURSTS UP TO 24 M/S ON A 180 WALL	180 벽에서 최대 24 M/S 돌진
+BURSTS UP TO 24 M/S ON THE WALL	벽에서 최대 24 M/S 돌진
 BY NAME	이름순
 BY PING	핑순
 BY PLAYERS	인원순
@@ -463,11 +510,16 @@ CHAT ON	채팅 켜기
 CHAT OPACITY	채팅 불투명도
 CHAT SECONDS	채팅 표시 시간(초)
 CHECK AGAIN	다시 확인
+CHECKING...	확인 중...
 CHECKPOINT	체크포인트
 CHECKPT	체크포인트
+CHOOSE	선택
 CHOOSE -	선택 -
 CHOOSE A MAP FOR	맵 선택:
 CHOOSE A MODE	모드 선택
+CHOOSE THE GAMEMODE	게임 모드 선택
+CHOOSE THE MAP	맵 선택
+CHOOSE THE MODIFIERS	변형 선택
 CHOOSING...	선택 중...
 CLASSIC	클래식
 CLEAN SURFACES	깔끔한 표면
@@ -483,6 +535,7 @@ CLICK ON SOMETHING TO SELECT IT	클릭하여 선택
 CLICK TO CONFIRM	클릭하여 확인
 CLICK anything to select it. New things go where the crosshair (the middle of the view) points.	아무거나 클릭해 선택하세요. 새 오브젝트는 조준점(화면 중앙)이 가리키는 곳에 놓입니다.
 CLICK: SELECT (AGAIN: THE ONE BEHIND, SHIFT: ADD MORE, THEN GROUP)	클릭: 선택 (다시: 뒤에 있는 것, SHIFT: 추가 선택 후 그룹)
+CLICKING	클릭
 CLIP BOX COLOR	클립 박스 색상
 CLOCK	시계
 CLOSE	닫기
@@ -544,6 +597,7 @@ CONSOLE KEY: HOME	콘솔 키: HOME
 CONSOLE KEY: INSERT	콘솔 키: INSERT
 CONTESTED	경합 중
 CONTRAST	대비
+CONTROL PANEL > POWER OPTIONS: HIGH PERFORMANCE	제어판 > 전원 옵션: 고성능
 CONTROL SCRIPTS ARE OFF IN RANKED	랭크에서는 조작 스크립트 사용 불가
 CONTROLS	조작
 CONTROLS 2	조작 2
@@ -573,11 +627,14 @@ CP	CP
 CPU	CPU
 CPU ABOVE NORMAL	CPU 보통 이상
 CPU HIGH	CPU 높음
+CPU LATCH	CPU LATCH
+CPU LATE LATCH	CPU 늦은 읽기
 CPU NORMAL	CPU 보통
 CPU OTHER	CPU 기타
 CPU PRIORITY	CPU 우선순위
 CPU PRIORITY: ABOVE NORMAL	CPU 우선순위: 보통 이상
 CPU PRIORITY: HIGH	CPU 우선순위: 높음
+CRAZY BALL	CRAZY BALL
 CROSSBOW	석궁
 CROSSBOW, STICKY AND RIFLE	석궁, 점착탄, 소총
 CROSSBOWS ONLY	석궁만
@@ -586,6 +643,7 @@ CROSSHAIR CODE COPIED	조준점 코드 복사됨
 CROSSHAIR COLOR	조준점 색상
 CROSSHAIR PASTED	조준점 붙여넣음
 CROSSHAIR, TOWARD WHERE THEY CAME FROM	조준점, 공격받은 방향으로
+CROSSING GUARD	CROSSING GUARD
 CROUCH	앉기
 CROUCH SPEED	앉기 속도
 CROWN	왕관
@@ -708,6 +766,7 @@ DEMOS	데모
 DEPTH	깊이
 DESC	내림차순
 DEVICES	장치
+DEVICES  >	장치  >
 DIFFICULTY	난이도
 DIFFICULTY: ADVANCED	난이도: 상급
 DIFFICULTY: BEGINNER	난이도: 초급
@@ -777,6 +836,8 @@ E-GIRL	E-GIRL
 EACH INPUT SENT IN THIS MANY PACKETS	각 입력을 이 개수의 패킷으로 전송
 EACH OF THE ANNOUNCER'S LINES ON OR OFF	아나운서 대사별 켜기 / 끄기
 EACH SLIDER SHOWS THE VALUE IN THIS MODE (STANDARD x MULTIPLIER)	각 슬라이더는 이 모드의 값을 표시 (표준 x 배율)
+EARLY FLUSH	조기 전송
+EASY	쉬움
 EASY BOTS	쉬움 봇
 EDGE ARROWS	가장자리 화살표
 EDIT	편집
@@ -904,6 +965,7 @@ FIXED TEAMS: SPECTATING AND DEMOS SHOW	팀 고정: 관전과 데모에서 표시
 FLAT LIGHTING	평면 조명
 FLAT MAP	평면 맵
 FLAT MAP, NO LIGHTING	평면 맵, 조명 없음
+FLUSH	FLUSH
 FLYING, ONE KEY: MOVE UP HELD UP, LET GO DOWN	비행, 키 하나: 누르고 있으면 상승, 떼면 하강
 FOG	안개
 FOLDER	폴더
@@ -937,6 +999,7 @@ FRAME TIME (MS) OVER THE RUN	실행 중 프레임 시간 (MS)
 FRAMES	프레임
 FREE FOR ALL	개인전
 FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next kill wins).	개인전 - 시간이 끝났을 때 킬이 가장 많은 플레이어 승리 (동점이면 연장전: 다음 킬 승리).
+FRENZY	FRENZY
 FRIENDS JOIN WITH YOUR PUBLIC IP (STREAMER MODE)	친구는 공인 IP로 참가 (스트리머 모드)
 FRIENDS JOIN WITH YOUR PUBLIC IP:	친구는 공인 IP로 참가:
 FROM	출처
@@ -967,6 +1030,8 @@ FULLSCREEN: OFF KEEPS IT ON SCREEN	전체 화면: 끄면 화면에 유지
 G-SYNC / FREESYNC	G-SYNC / FREESYNC
 GAME	게임
 GAME FONTS: YOUR OWN COPY OF THE REAL FONT IF FOUND	게임 폰트: 실제 폰트가 있으면 해당 폰트 사용
+GAME LATENCY ~	게임 지연 ~
+GAME LATENCY ~{} NS  (MOUSE REPORT IN TO GPU DONE; F3: NEXT VIEW)	게임 지연 ~{} NS  (마우스 보고부터 GPU 완료까지; F3: 다음 보기)
 GAME {} NS + MOUSE POLLING {} NS (# HZ) + DISPLAY {} NS (# HZ)	게임 {} NS + 마우스 폴링 {} NS (# HZ) + 디스플레이 {} NS (# HZ)
 GAMEMODE	게임 모드
 GAMEPLAY	게임플레이
@@ -977,6 +1042,7 @@ GAMEPLAY 5	게임플레이 5
 GAMMA	감마
 GAP	간격
 GATE	게이트
+GEFORCE	GEFORCE
 GENERAL	일반
 GENERAL + INTERFACE	일반 + 인터페이스
 GET 40 M UP	40 M 올라가기
@@ -988,6 +1054,7 @@ GHOST'S KEYS	고스트의 키
 GIANT SNIPERS	거대 저격수
 GIBS	고어
 GL	GL
+GL {} / {}	GL {} / {}
 GLASS CANNONS	유리 대포
 GLOW	광원
 GLOW STRENGTH	광원 세기
@@ -998,6 +1065,8 @@ GODLIKE	신급
 GPU	GPU
 GPU + CPU GO TO THE GAME FIRST WHILE FOCUSED	창 활성 시 GPU + CPU를 게임에 우선 할당
 GPU HUD	GPU HUD
+GPU LATCH	GPU LATCH
+GPU LATE LATCH	GPU 늦은 읽기
 GPU MAX CLOCKS	GPU 최대 클럭
 GPU MAX CLOCKS: NOT CHANGED IN THE UI TEST	GPU 최대 클럭: UI 테스트에서는 변경 안 함
 GPU MAX CLOCKS: WINDOWS ONLY	GPU 최대 클럭: WINDOWS 전용
@@ -1005,6 +1074,7 @@ GPU PRIORITY	GPU 우선순위
 GPU SCHED: N/A	GPU 스케줄링: 해당 없음
 GPU SCHED: ON	GPU 스케줄링: 켜짐
 GPU SCHED: TURN ON	GPU 스케줄링: 켜기
+GPU SCHED: WINDOWS' HARDWARE GPU SCHEDULING;	GPU 스케줄링: WINDOWS 하드웨어 GPU 스케줄링;
 GPU SCHEDULING	GPU 스케줄링
 GPU SCHEDULING ON: RESTART YOUR PC FOR IT TO TAKE EFFECT	GPU 스케줄링 켜짐: PC를 다시 시작하면 적용
 GPU SCHEDULING: NOT CHANGED (THE ADMIN PROMPT WAS DECLINED)	GPU 스케줄링: 변경 안 됨 (관리자 확인 거부)
@@ -1039,6 +1109,7 @@ GRAVITY	중력
 GREEN	초록
 GREEN / MAGENTA	초록 / 자홍
 GREENHOUSE - ranked vanilla 1v1.   DOJO - ranked laser vampire 1v1.   SPIRE - ranked instagib free for all (5 minutes).   ORBIT - 1v1, duel.	GREENHOUSE - 랭크 바닐라 1v1.   DOJO - 랭크 레이저 뱀파이어 1v1.   SPIRE - 랭크 인스타깁 개인전 (5분).   ORBIT - 1v1, 결투.
+GRID	GRID
 GRID: # M (CUSTOM)	그리드: # M (사용자 지정)
 GRID: 1 M	그리드: 1 M
 GRID: 1/2 M	그리드: 1/2 M
@@ -1069,8 +1140,10 @@ HAND	손
 HAND: LEFT	손: 왼쪽
 HAND: RIGHT	손: 오른쪽
 HANG FOR 1.5 S	1.5 S 매달리기
+HARD	어려움
 HARD BOTS	어려움 봇
 HARD TO TELL APART WITH	구분하기 어려운 색:
+HARDWARE GPU SCHEDULING IS OFF	하드웨어 GPU 스케줄링이 꺼져 있음
 HAS NO BINDS	키 지정 없음
 HAS NO WIDGETS	위젯 없음
 HEAD ON: THE DASH RUNS ON UP THE FACE AT ITS FULL 24 M/S	정면으로: 대시가 24 M/S 그대로 면을 오른다
@@ -1163,10 +1236,12 @@ HUD	HUD
 HUD & SETTINGS	HUD 및 설정
 HUD 2	HUD 2
 HUD > VERBOSE INFO TURNS THE BLOCK ON	HUD > 상세 정보로 이 블록을 켭니다
+HUD BEFORE WORLD	HUD 먼저 그리기
 HUD COLORS	HUD 색상
 HUD DRAW	HUD 렌더링
 HUD EDIT ELEMENT	HUD 요소 편집
 HUD ELEMENT	HUD 요소
+HUD FIRST	HUD FIRST
 HUD SIZE	HUD 크기
 HUD.CFG LINE	HUD.CFG 줄
 HURT	피격
@@ -1222,6 +1297,16 @@ INSTAGIB	인스타깁
 INSTAGIB CROSSBOWS	인스타깁 석궁
 INSTAGIB SNIPERS	인스타깁 저격수
 INTEL	INTEL
+INTEL DRIVER SETTINGS COULDN'T BE READ	INTEL 드라이버 설정을 읽지 못함
+INTEL ENDURANCE GAMING SAVES POWER OVER FRAMES	INTEL ENDURANCE GAMING가 FPS보다 전력 절약을 우선함
+INTEL FORCES ITS OWN VSYNC MODE	INTEL이 자체 VSYNC 모드를 강제함
+INTEL FRAME RATE LIMITER CAPS YOUR FRAME RATE	INTEL 프레임 속도 제한이 FPS를 제한함
+INTEL GRAPHICS SOFTWARE > GRAPHICS: ENDURANCE GAMING OFF	INTEL GRAPHICS SOFTWARE > 그래픽: ENDURANCE GAMING 끔
+INTEL GRAPHICS SOFTWARE > GRAPHICS: FRAME RATE LIMITER OFF	INTEL GRAPHICS SOFTWARE > 그래픽: 프레임 속도 제한 끔
+INTEL GRAPHICS SOFTWARE > GRAPHICS: LOW LATENCY ON	INTEL GRAPHICS SOFTWARE > 그래픽: 저지연 켜짐
+INTEL GRAPHICS SOFTWARE > GRAPHICS: VERTICAL SYNC: APPLICATION CHOICE	INTEL GRAPHICS SOFTWARE > 그래픽: 수직 동기: 응용 프로그램 선택
+INTEL GRAPHICS SOFTWARE: ENDURANCE GAMING OFF, LOW LATENCY ON, VSYNC: APPLICATION CHOICE	INTEL GRAPHICS SOFTWARE: ENDURANCE GAMING 끔, 저지연 켜짐, VSYNC: 응용 프로그램
+INTEL LOW LATENCY IS OFF	INTEL 저지연이 꺼져 있음
 INTERFACE	인터페이스
 INTERMEDIATE	중급
 INTERP	보간
@@ -1317,6 +1402,7 @@ LADDER	사다리
 LADDER CLIMB SPEED	사다리 오르기 속도
 LADDER SIDE SPEED	사다리 옆 이동 속도
 LADDERS (1V1, INSTAGIB FFA) - DEFAULT MODEL, HUD, CONTROLS >	래더 (1V1, 인스타기브 FFA) - 기본 모델, HUD, 조작 >
+LAID OVER THE WORLD AFTER IT	그 뒤 월드 위에 위에 그림
 LAND	착지
 LAND ON THE FAR SIDE OF THE LAVA	용암 건너편에 착지
 LANGUAGE	언어
@@ -1335,6 +1421,7 @@ LATE FRAME	지연 프레임
 LATE: TEAR	지연 시: 티어링
 LATE: WAIT	지연 시: 대기
 LATENCY	지연 시간
+LATENCY: GPU SCHED: TURN ON (THEN RESTART)	지연 시간: GPU 스케줄링: 켜기 (그 후 재시작)
 LATENT SAFETY	LATENT 안전 여유
 LATENT SYNC	LATENT SYNC
 LATENT SYNC: HOLD FOR THE BLANK	LATENT SYNC: 블랭크까지 대기
@@ -1347,6 +1434,8 @@ LEAVE	나가기
 LEAVE ALL	모두 나가기
 LEAVE TUTORIAL	튜토리얼 나가기
 LEFT	왼쪽
+LEFT + RIGHT HELD: LAST WINS = SNAP TAP (FLYING UP + DOWN TOO)	왼쪽 + 오른쪽 누름: 마지막이 이김 = SNAP TAP (비행 중 위 + 아래도)
+LEFT AND RIGHT, CHANGING SPEED	좌우로, 속도가 바뀜
 LEFT ARROW (PREVIOUS PAGE)	왼쪽 화살표 (이전 페이지)
 LEFT MOUSE - fire.   RIGHT MOUSE - alt-fire (scope, knife throw, rocket lob, bubble stream, syringe throw...).	마우스 왼쪽 - 사격.   마우스 오른쪽 - 보조 사격 (스코프, 나이프 투척, 로켓 곡사, 버블 분사, 주사기 투척...).
 LEFT: THE GUN ON THE LEFT, THE GRAPPLE	왼쪽: 총은 왼쪽, 그래플은
@@ -1412,22 +1501,24 @@ LOW HEALTH	체력 낮음
 LOW HEALTH BELOW	체력 낮음 기준
 LOW HEALTH COLOR	체력 낮음 색상
 LOW LATENCY	저지연
+LOW LATENCY {}, TWEAKS: {}	저지연 {}, 조정: {}
 LOW LATENCY: OFF	저지연: 끄기
 LOW LATENCY: ON	저지연: 켜기
 LOW LATENCY: ULTRA	저지연: 울트라
 LOW LATENCY: ULTRA STARTS EACH FRAME THIS EARLY;	저지연: 울트라는 각 프레임을 이만큼 일찍 시작;
 LOWER RATES: LESS CPU AND UPLOAD	낮은 빈도: CPU 및 업로드 감소
 LOWER: SLOWER WHILE SCOPED	낮을수록: 스코프 중 더 느림
+Latch	Latch
 MAGENTA	자홍
 MAKE	만들기
 MALE	남성
 MAP	맵
-MAP / MODE / MODIFIERS	맵 / 모드 / 변형
 MAP COLOR	맵 색상
 MAP COLORS	맵 색상
 MAP DOWNLOADS	맵 다운로드
 MAP EDITOR	맵 에디터
 MAP EDITOR *	맵 에디터 *
+MAP POOL (ROTATES EACH MATCH; NONE = THE HOST'S MAP)	맵 풀 (매치마다 순환; 없음 = 호스트의 맵)
 MAP YOU DON'T HAVE ENDS THE CONNECTION	없는 맵이면 연결 종료
 MAP:	맵:
 MAP: NONE	맵: 없음
@@ -2044,9 +2135,11 @@ MATERIAL: WOODEN CRATE	재질: 나무 상자
 MATERIAL: WROUGHT IRON	재질: 연철
 MATERIAL: ZEBRA CROSSING	재질: 횡단보도
 MATERIAL: ZINC	재질: 아연
+MAX (0=AUTO)	최대 (0=자동)
 MAX PING	최대 핑
 MAX PLAYERS	최대 인원
 MB (OFFICIAL MAPS SHIP BAKED)	MB (공식 맵은 굽기 포함)
+MEDIUM	보통
 MEDIUM BOTS	보통 봇
 MENU (ESC)	메뉴 (ESC)
 MENU BACKGROUND	메뉴 배경
@@ -2092,6 +2185,8 @@ MOUSE 1	MOUSE 1
 MOUSE 2	MOUSE 2
 MOUSE 3	MOUSE 3
 MOUSE ACCELERATION	마우스 가속
+MOUSE TO PHOTON ~	마우스에서 광자까지 ~
+MOUSE TO PHOTON ~{} NS  (# HZ DISPLAY, {}, {})	마우스에서 광자까지 ~{} NS  (# HZ 디스플레이, {}, {})
 MOUSE TO PHOTON: IN GAME ONLY	마우스-화면 지연: 게임 중에만
 MOUSE {} # HZ (AVG)	마우스 {} # HZ (평균)
 MOVE	이동
@@ -2120,10 +2215,13 @@ MY RACE STATS	내 레이스 기록
 MY SKY	내 하늘
 MY SKY / GLOW: THESE IN PLACE OF EVERY MAP'S;	내 하늘 / 광원: 모든 맵 대신 이것 사용;
 MY TRACER	내 궤적
+Maps are saved to the maps folder (MAPS FOLDER opens it) as .qmap text files. RESET MAPS puts the built-in maps back.	맵은 maps 폴더 (MAPS FOLDER로 열기) 에 .qmap 텍스트 파일로 저장된다. RESET MAPS는 기본 맵을 되돌린다.
 Model	모델
 ModelOverrides holds kMaxModelsPerKind models of a kind	ModelOverrides holds kMaxModelsPerKind models of a kind
 N/A HERE: LATENT SYNC IS WINDOWS ONLY	여기선 사용 불가: LATENT SYNC는 WINDOWS 전용
+N/A HERE: LINUX (X11) ONLY	여기선 N/A: LINUX (X11) 전용
 N/A HERE: WINDOWS + NVIDIA ONLY	여기선 사용 불가: WINDOWS + NVIDIA 전용
+N/A: THE DRIVER LACKS GL 4.4 BUFFER STORAGE	N/A: 드라이버에 GL 4.4 BUFFER STORAGE 없음
 NAME	이름
 NAME COLOR	이름 색상
 NAME COLORS	이름 색상
@@ -2161,6 +2259,7 @@ NO FILES IN	파일 없음:
 NO FILES IN CONTROLS/ - USE FOLDER	CONTROLS/에 파일 없음 - 폴더 사용
 NO FRAMES MEASURED	측정된 프레임 없음
 NO FULLSCREEN OPT.	전체 화면 최적화 끄기
+NO FULLSCREEN OPT.: TRUE EXCLUSIVE FULLSCREEN (NEXT START)	전체 화면 최적화 끄기: 진짜 독점 전체 화면 (다음 실행)
 NO GAMES FOUND	게임 없음
 NO GAMES MATCH THE FILTERS	필터에 맞는 게임 없음
 NO MAP IS BUILT FOR THIS MODE YET	아직 이 모드용 맵 없음
@@ -2188,6 +2287,7 @@ NOT NOW	나중에
 NOT PLAYED YET	아직 플레이 안 함
 NOT REPORTED - NOT A RANKED MAP FOR THIS LADDER	보고 안 됨 - 이 래더의 랭크 맵이 아님
 NOT USABLE	사용 불가
+NOTHING FOUND: YOUR DRIVER AND WINDOWS SETTINGS LOOK RIGHT	문제 없음: 드라이버와 WINDOWS 설정이 맞음
 NOTHING IN THE GAME RECORDS YET: THIS IS	아직 게임 기록 없음: 이것이
 NOTHING MATCHES "	일치하는 항목 없음: "
 NOTHING SELECTED	선택 안 됨
@@ -2204,7 +2304,19 @@ NUM	NUM
 NUMBER TIME	숫자 표시 시간
 NV DXGI PRESENT	NV DXGI PRESENT
 NV THREADED OFF	NV 스레드 최적화 끄기
+NVIDIA	NVIDIA
+NVIDIA CAPS YOUR FRAME RATE (MAX FRAME RATE)	NVIDIA가 FPS를 제한함 (MAX FRAME RATE)
+NVIDIA CONTROL PANEL > MANAGE 3D SETTINGS > LOW LATENCY MODE: ON	NVIDIA 제어판 > 3D 설정 > 저지연 모드: 켜짐
+NVIDIA CONTROL PANEL > MANAGE 3D SETTINGS > MAX FRAME RATE: OFF	NVIDIA 제어판 > 3D 설정 > 최대 프레임 속도: 끔
+NVIDIA CONTROL PANEL > MANAGE 3D SETTINGS > POWER MANAGEMENT MODE (OR GPU MAX CLOCKS)	NVIDIA 제어판 > 3D 설정 > 전원 관리 모드 (또는 GPU MAX CLOCKS)
+NVIDIA CONTROL PANEL > MANAGE 3D SETTINGS > TRIPLE BUFFERING: OFF	NVIDIA 제어판 > 3D 설정 > 트리플 버퍼링: 끔
+NVIDIA CONTROL PANEL > MANAGE 3D SETTINGS > VERTICAL SYNC: USE THE 3D APPLICATION SETTING	NVIDIA 제어판 > 3D 설정 > 수직 동기: 3D 응용 프로그램 설정 사용
 NVIDIA DRIVER PROFILE, FROM THE NEXT START:	NVIDIA 드라이버 프로필, 다음 실행부터:
+NVIDIA LETS FRAMES QUEUE UP (MAX PRE-RENDERED FRAMES)	NVIDIA가 프레임을 쌓음 (MAX PRE-RENDERED FRAMES)
+NVIDIA POWER MANAGEMENT ISN'T MAXIMUM PERFORMANCE	NVIDIA 전원 관리가 최대 성능이 아님
+NVIDIA THREADED OPTIMIZATION IS ON	NVIDIA 스레드 최적화가 켜져 있음
+NVIDIA TRIPLE BUFFERING IS ON	NVIDIA 트리플 버퍼링이 켜져 있음
+NVIDIA VERTICAL SYNC IS FORCED ON	NVIDIA가 수직 동기를 강제로 켜짐
 NW	NW
 Name, mouse sensitivity (or cm/360 with your DPI), field of view, team and enemy colours, volume, hit sounds, the announcer (off / countdown / all calls; male or female voice), player model and sound pack.	이름, 마우스 감도 (또는 DPI 기준 cm/360), 시야각, 팀 및 적 색상, 볼륨, 타격음, 아나운서 (끄기 / 카운트다운 / 모든 안내; 남성 또는 여성 음성), 플레이어 모델 및 사운드 팩.
 New map	새 맵
@@ -2216,6 +2328,7 @@ OBJECTIVES	목표
 OF	/
 OF #	/ #
 OFF	끄기
+OFF = LOWEST LATENCY, MAY TEAR	끔 = 최저 지연, 티어링 가능
 OFF: FROM THE NEXT START	끄기: 다음 실행부터
 OFF: THE BAR IS FULL AT 100 IN EVERY MODE	끄기: 모든 모드에서 100일 때 바가 가득 참
 OFF: THE VIEW STEPS UP STAIRS AT ONCE	끄기: 계단에서 시점이 한 번에 올라감
@@ -2238,9 +2351,11 @@ ON: FROM THE NEXT START	켜기: 다음 실행부터
 ON: USES YOUR TEAM COLOR, NOT THE ONE BELOW	켜기: 아래 색상 대신 팀 색상 사용
 ONCE ABOVE THE EDGE, LET GO OF THE GRAPPLE AND MOVE ONTO THE LEDGE	가장자리 위로 오면 그래플을 놓고 턱 위로 이동
 ONE	하나
+ONE BIG BALL, BACK AFTER 1 S	큰 공 하나, 1초 뒤 다시 나옴
 ONE CHAT COLOR	채팅 단일 색상
 ONE MINUTE	1분
 ONE MINUTE LEFT	1분 남음
+ONE TIME LINE; EST = WORKED OUT, NOT MEASURED; MONITOR PROCESSING NOT INCLUDED	하나의 시간선; EST = 계산값, 측정 아님; 모니터 처리 미포함
 ONLY KILLS I'M IN	내가 관련된 킬만
 OPACITY	불투명도
 OPACITY %	불투명도 %
@@ -2319,6 +2434,7 @@ PER WEAPON	무기별
 PERCEPTUAL	지각적
 PERF STATS	성능 통계
 PERFORMANCE	성능
+PERFORMANCE CHECK	성능 점검
 PHYSICS	물리
 PIA	PIA
 PICK A FILE TO IMPORT	가져올 파일 선택
@@ -2331,6 +2447,9 @@ PING	PING
 PING #	PING #
 PING # MS  LOSS #%	PING # MS  손실 #%
 PING / LOSS GRAPH AND RATES (APART FROM F3)	PING / 손실 그래프 및 빈도 (F3과 별도)
+PING: < 100	PING: < 100
+PING: < 150	PING: < 150
+PING: < 50	PING: < 50
 PING: ANY	PING: 전체
 PIRATE	해적
 PITCH	피치
@@ -2357,6 +2476,7 @@ PLAYS	플레이 횟수
 PLAYS AS	플레이 모드
 PLAYS AS:	플레이 모드:
 PLAYS THE BENCHMARK DEMO (HAMLET, FREE FOR ALL, FULL OF BOTS) AND MEASURES EVERY FRAME	벤치마크 데모 (HAMLET, 개인전, 봇 가득) 재생 후 모든 프레임 측정
+PLUG IT IN: ON BATTERY THE GPU AND CPU CLOCK DOWN	전원을 연결: 배터리로는 GPU와 CPU가 느려짐
 POINT	지점
 POINT LOST	지점 빼앗김
 POINT TAKEN	지점 점령
@@ -2394,6 +2514,7 @@ PROFILE:	프로필:
 PROFILE: MY CONTROLS	프로필: 내 조작
 PROFILE: MY HUD	프로필: 내 HUD
 PROFILES	프로필
+PROJECTILE SPEED	투사체 속도
 PUBLIC	공개
 PUBLIC lists the server on the internet server list (off: friends join with your IP, shown on the host screen). Games on your network show up for everyone on it.	공개는 서버를 인터넷 서버 목록에 올립니다 (끄면: 친구가 호스트 화면에 표시된 IP로 참가). 같은 네트워크의 게임은 해당 네트워크의 모든 사람에게 표시됩니다.
 PULSE	펄스
@@ -2405,6 +2526,8 @@ Pick a server from the list (internet and LAN), or type its address as IP:PORT.	
 Pick an element in the dropdown (health, weapon name, cooldown bars, speed meter, weapon list) and move it, resize it, recolour it or hide it.	드롭다운에서 요소(체력, 무기 이름, 쿨다운 바, 속도계, 무기 목록)를 골라 이동, 크기 조절, 색상 변경, 숨기기를 하세요.
 Pick the mode and map, a server name and the max players. The game picks the map built for the mode; any other map works with a warning.	모드와 맵, 서버 이름, 최대 인원을 정하세요. 게임은 모드에 맞게 제작된 맵을 고릅니다; 다른 맵도 경고와 함께 사용 가능합니다.
 Player	플레이어
+PowerGetActiveScheme	PowerGetActiveScheme
+PowerGetEffectiveOverlayScheme	PowerGetEffectiveOverlayScheme
 Q - grapple: hold to hook what you're aiming at and pull toward it; release to let go.	Q - 그래플: 누르고 있으면 조준한 곳에 훅을 걸어 그쪽으로 당겨집니다; 떼면 놓습니다.
 QK1 - QK8 - ranked arenas for all three ladders (vanilla and laser vampire 1v1, instagib free for all), also duel and tourney.	QK1 - QK8 - 세 래더 모두의 랭크 아레나 (바닐라 및 레이저 뱀파이어 1v1, 인스타깁 개인전), 결투와 토너먼트도 지원.
 QUAKE	QUAKE
@@ -2447,10 +2570,13 @@ RACE TOTAL	레이스 합계
 RADAR	레이더
 RADAR RANGE	레이더 범위
 RADAR: TEAMMATES AND OBJECTIVES, NEVER ENEMIES	레이더: 팀원과 목표만, 적은 표시 안 함
+RADEON	RADEON
+RADEON(TM) GRAPHICS	RADEON(TM) GRAPHICS
 RADIUS	반경
 RAILYARD / DAM / EXPRESS / MONORAIL - neutral payload (Railyard: payload too).   WAR / CONVOY - multi point.	RAILYARD / DAM / EXPRESS / MONORAIL - 중립 화물 (Railyard: 화물도 가능).   WAR / CONVOY - 멀티 포인트.
 RAMP DASH	경사로 대시
 RAMPAGE	광란
+RANDOM TURNS ON THE WALL	벽에서 무작위로 방향 전환
 RANKED	랭크
 RANKED - CHOOSE A LADDER	랭크 - 래더 선택
 RANKED - NOT RATED	랭크 - 레이팅 미반영
@@ -2480,6 +2606,7 @@ REACH 27 M/S	27 M/S 달성
 REACH 34 M/S	34 M/S 도달
 REACH 37 M/S	37 M/S 도달
 REACH THE GLOWING LINE	빛나는 선에 도달
+REACTOR	REACTOR
 READ INPUT	입력 읽기
 READY	준비
 REALTIME	실시간
@@ -2544,6 +2671,7 @@ RIGHT ARROW (NEXT PAGE)	오른쪽 화살표 (다음 페이지)
 RIGHT MOUSE + MOVE: LOOK    WASD: FLY    SPACE / C: UP / DOWN    SHIFT: FAST    WHEEL: SPEED	마우스 오른쪽 + 이동: 둘러보기    WASD: 비행    SPACE / C: 상승 / 하강    SHIFT: 빠르게    휠: 속도
 RIGHT-CLICK A SERVER: FAVORITE (LISTED FIRST)	서버 우클릭: 즐겨찾기 (맨 위에 표시)
 RIGHT-CLICK: RESET	우클릭: 초기화
+RING	RING
 RISING TOWARD	오르막 방향
 RISING TOWARD: +X	오르막 방향: +X
 RISING TOWARD: +Z	오르막 방향: +Z
@@ -2553,7 +2681,7 @@ RMB	RMB
 ROBOT	로봇
 ROCK	바위
 ROCKET	로켓
-ROCKET (splash; rocket jump off the floor for 10#amage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 5 hp, once a second; alt throws it: +15 hp and reset cooldowns for a teammate).	로켓 (범위 피해; 바닥에서 로켓 점프 시 10#피해), 소총 (자동; 보조 사격 시 스코프), 레이저 (광선; 보조 사격 시 끌어당김), 샷건 (보조: 도탄), 저격총 (보조 사격 시 스코프), 점착탄 (보조: 기폭), 석궁 (헤드샷), 버블 (보조: 버블 연속 분사), 나이프 (보조: 투척), 주사기 (사격 시 초당 한 번 5 hp 회복; 보조 사격으로 투척: 팀원 +15 hp 및 쿨다운 초기화).
+ROCKET (splash; rocket jump off the floor for 10% damage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 5 hp, once a second; alt throws it: +15 hp and reset cooldowns for a teammate).	로켓 (범위 피해; 바닥에서 로켓 점프 시 10#피해), 소총 (자동; 보조 사격 시 스코프), 레이저 (광선; 보조 사격 시 끌어당김), 샷건 (보조: 도탄), 저격총 (보조 사격 시 스코프), 점착탄 (보조: 기폭), 석궁 (헤드샷), 버블 (보조: 버블 연속 분사), 나이프 (보조: 투척), 주사기 (사격 시 초당 한 번 5 hp 회복; 보조 사격으로 투척: 팀원 +15 hp 및 쿨다운 초기화).
 ROCKET GRAPPLE	로켓 그래플
 ROCKET JUMP	로켓 점프
 ROCKET JUMPERS	로켓 점퍼
@@ -2585,13 +2713,16 @@ ROUND OVER	라운드 종료
 ROUND START	라운드 시작
 ROUND WINS -	라운드 승리 -
 ROUND WON	라운드 승리
+ROUND YOU AT ONE HEIGHT, CHANGING SPEED	같은 높이에서 주위를, 속도가 바뀜
 ROUNDS	라운드
 ROWS #-# OF # (WHEEL)	#-#행 / # (휠)
 ROWS #-# OF # - WHEEL TO SCROLL	#-#행 / # - 휠로 스크롤
 RPS BY MOUSE	마우스로 가위바위보
 RPS BY MOUSE: CLICK A TIEBREAK CARD TO THROW IT	마우스로 가위바위보: 결승 카드를 클릭해 내기
+RTX	RTX
 RUBIK	RUBIK
 RULES	규칙
+RULESETS >	규칙 >
 RUN	도망
 RUN - DON'T BE THE TAGGER WHEN TIME RUNS OUT	도망 - 시간이 끝날 때 술래가 되지 마세요
 RUN AGAIN	다시 실행
@@ -2641,6 +2772,7 @@ SCOREBOARD: HOLD	스코어보드: 누르고 있기
 SCOREBOARD: TOGGLE	스코어보드: 토글
 SCORES	점수
 SCREEN	화면
+SCREEN EDGES FLASH WHEN HIT. 0 = OFF	맞으면 화면 가장자리가 번쩍임. 0 = 끔
 SCREENSHOT	스크린샷
 SCREENSHOT FOLDER	스크린샷 폴더
 SCREENSHOT FORMAT	스크린샷 형식
@@ -2723,6 +2855,7 @@ SIZE: X2	크기: X2
 SIZING	크기 조정
 SIZING: EXACT PIXELS	크기 조정: 픽셀 고정
 SIZING: SCALE WITH RESOLUTION	크기 조정: 해상도에 맞춤
+SIZZLE	SIZZLE
 SKIP	건너뛰기
 SKIP IT	건너뛰기
 SKIP LESSON	레슨 건너뛰기
@@ -2743,6 +2876,7 @@ SNAPS: 125	스냅: 125
 SNAPS: 250	스냅: 250
 SNAPS: 500	스냅: 500
 SNAPS: 62.5	스냅: 62.5
+SNAPS: = TICK	스냅: = 틱
 SNAPSHOT RATE	스냅샷 빈도
 SNIPER	저격총
 SNIPER SCOPE	저격 스코프
@@ -2856,6 +2990,7 @@ STOP HOSTING	호스트 중지
 STOP RECORDING	녹화 중지
 STOP THE PAYLOAD	화물 저지
 STOPPING SPEED	정지 속도
+STRAFE	STRAFE
 STRAFE BOOST (AT SPEED)	스트레이프 부스트 (고속 시)
 STRAIGHT ABOVE YOU IT PULLS YOU IN AND LETS GO: HOOK MORE THAN 1 M TO THE SIDE	바로 위면 끌어당긴 뒤 풀린다: 옆으로 1 M 넘게 떨어진 곳에
 STREAK	연속 처치
@@ -2893,6 +3028,7 @@ SW	SW
 SWAP	교체
 SWAP FIRE	사격 버튼 교체
 SWING TURN	스윙 턴
+SWITCHING	전환
 SYRINGE	주사기
 SYSTEM DEFAULT	시스템 기본값
 SYSTEM LINE COLOR	시스템 줄 색상
@@ -2903,6 +3039,7 @@ SYSTEM MESSAGES: OFF	시스템 메시지: 끄기
 SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)	시스템: OS 기본 화살표 (색상: 게임 커서만)
 Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).	설정 > 조작에서 키 설정을 내보내거나 다른 사람의 설정을 가져올 수 있습니다 (텍스트 복사 / 붙여넣기).
 Start the match, change map / mode, ranked on / off, edit the map together, bots on. A majority of the human players decides.	경기 시작, 맵 / 모드 변경, 랭크 켜기 / 끄기, 맵 함께 편집, 봇 켜기. 사람 플레이어 과반수가 결정합니다.
+Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping. Above ~13 m/s A / D turns you faster than W alone.	스트레이프 점프로 속도를 얻는다: 옆 이동 키를 누른 채 같은 방향으로 마우스를 돌리며 계속 점프한다. ~13 m/s 이상에선 A / D가 W만 쓸 때보다 빨리 돈다.
 Style, length, thickness, gap, colour and outline, with a live preview.	스타일, 길이, 두께, 간격, 색상, 외곽선을 실시간 미리보기로 조절.
 Super dash: look down and dash into the floor while holding jump: you leave 5 m/s faster than you went into the dash (at least 11, at most 36 m/s), with a hop that gets higher the further down you look (it leaves you 1 dash).	슈퍼 대시: 점프를 누른 채 아래를 보고 바닥으로 대시: 대시에 들어갈 때보다 5 m/s 빠르게 나오며 (최소 11, 최대 36 m/s), 아래를 볼수록 더 높이 튀어 오릅니다 (대시 1회 남음).
 Switching weapons with fire held doesn't fire the new one: let go and press again.	사격 버튼을 누른 채 무기를 바꾸면 새 무기는 발사되지 않습니다: 뗐다가 다시 누르세요.
@@ -2991,7 +3128,10 @@ THE DARK EDGE ROUND ALL TEXT, MENUS TOO	모든 텍스트와 메뉴의 어두운 
 THE DEFAULT	기본값
 THE FONT COCAINE DIESEL USES	COCAINE DIESEL이 사용하는 폰트
 THE FONT OF THE MENUS AND THE HUD	메뉴와 HUD의 폰트
+THE FRAME	프레임
+THE GAME RUNS ON YOUR INTEGRATED GPU	게임이 내장 GPU에서 실행 중
 THE GAME'S PART ONLY: NO MOUSE POLLING, NO DISPLAY; ONE TIME LINE	게임만: 마우스 폴링과 디스플레이 제외; 하나의 시간선
+THE GPU READS YOUR AIM AS IT STARTS DRAWING;	GPU가 그리기 시작할 때 조준을 읽음;
 THE GUN'S KICK ON A SHOT (0: NONE)	사격 시 총기 반동 (0: 없음)
 THE HAZE OVER DISTANT WALLS (0: NONE)	먼 벽 위의 연무 (0: 없음)
 THE HOOK PULLS YOU TO WHERE IT CATCHES. LET GO AND YOU KEEP THE SPEED.	갈고리는 걸린 곳으로 끌어당긴다. 놓아도 속도는 유지된다.
@@ -3001,6 +3141,7 @@ THE LANGUAGE OF THE MENUS AND THE HUD	메뉴와 HUD의 언어
 THE LAUNCH	런치
 THE MAP ISN'T BUILT FOR THIS MODE: IT MAY NOT WORK	이 맵은 이 모드용이 아님: 작동하지 않을 수 있음
 THE MESSAGES UNDER THE SCORE BOX	점수판 아래 메시지
+THE MOUSE READ AGAIN JUST BEFORE THE WORLD IS DRAWN	월드를 그리기 직전에 마우스를 다시 읽음
 THE OLD MAPS (BEFORE 1.19.6) IN THE MAP LISTS. NEVER RANKED	맵 목록의 구 맵 (1.19.6 이전). 랭크 불가
 THE ORIGINAL PIXEL FONT	원래 픽셀 폰트
 THE OTHER CONTROL SCRIPTS STAY OFF IN RANKED	다른 조작 스크립트는 랭크에서 꺼진 상태 유지
@@ -3010,10 +3151,12 @@ THE SAVED DEVICE IS GONE: THE DEFAULT PLAYS	저장된 장치 없음: 기본 장�
 THE SAVED MICROPHONE IS GONE: THE DEFAULT	저장된 마이크 없음: 기본값 사용
 THE SAVED MONITOR IS GONE: THE PRIMARY	저장된 모니터 없음: 기본 모니터 사용
 THE SCROLL WHEEL PASSES OVER SKIPPED	스크롤 휠은 건너뛴 항목을 넘어감
+THE SHADOWS AND THE WORLD GO TO THE GPU AS SOON	그림자와 월드를 GPU로
 THE SHARE OF THE MODE'S MAX HEALTH	모드 최대 체력 대비 비율
 THE TASKBAR BUTTON FLASHES	작업 표시줄 버튼 깜빡임
 THE WHOLE STREAM POPS UNDER YOU. HOLD IT: ANOTHER EVERY 1.8 S	거품 줄기가 전부 발밑에서 터진다. 누르고 있으면 1.8 S마다 한 번 더
 THE WINDOW'S SIZE AND PLACE ARE KEPT	창 크기와 위치 유지
+THEIR OWN LIGHT: 1 = THEIR FULL COLOUR IN ANY SHADE	자체 조명: 1 = 어떤 그늘에서도 원래 색
 THEIRS	상대 것
 THEME.CFG LINE	THEME.CFG 줄
 THEN	그다음
@@ -3027,11 +3170,14 @@ THICKNESS	두께
 THIRD PERSON	3인칭
 THIRTY SECONDS	30초
 THIS LIFE:	이번 목숨:
+THIS PC IS RUNNING ON BATTERY	이 PC는 배터리로 작동 중
 THIS RUN	이번 기록
 THREADED OPTIMIZATION OFF	스레드 최적화 끄기
 THREADED OPTIMIZATION OFF; PRESENT VIA DXGI	스레드 최적화 끄기; DXGI로 표시
 THREADED OPTIMIZATION: WINDOWS ONLY	스레드 최적화: WINDOWS 전용
 THREE	셋
+THREE HUGE BALLS, AS FAST AS YOU CAN	거대한 공 세 개, 최대한 빠르게
+THREE HUGE BALLS, JUST HOLD FIRE, 10 HP	거대한 공 세 개, 사격만 누르고 있기, 10 HP
 THREE STICKIES AT YOUR FEET, SET OFF AT ONCE AS YOU JUMP: 50 M/S UP (ONE: 22, TWO: 36).	발밑에 스티키 3개, 점프하며 한꺼번에 기폭: 위로 50 M/S (1개: 22, 2개: 36).
 THROW	투척
 TICK / SNAP	틱 / 스냅
@@ -3090,6 +3236,7 @@ TRACERS + TRAILS	궤적 + 꼬리
 TRACERS: CLASSIC	궤적: 클래식
 TRACERS: CUSTOM	궤적: 사용자 지정
 TRACERS: TEAM	궤적: 팀
+TRACKING	트래킹
 TRAIL OPACITY	꼬리 불투명도
 TRAILS	꼬리
 TRAILS: FULL	꼬리: 전체
@@ -3108,6 +3255,9 @@ TUTORIAL -	튜토리얼 -
 TUTORIAL - {}	튜토리얼 - {}
 TUTORIAL COMPLETE	튜토리얼 완료
 TWO	둘
+TWO BALLS ON 9 SPOTS, 20 HP	9개 지점에 공 두 개, 20 HP
+TWO TINY BALLS	아주 작은 공 두 개
+TWO TINY DRIFTING BALLS, 10 HP	떠다니는 아주 작은 공 두 개, 10 HP
 TYPE TO SEARCH: A NAME OR WHAT IT DOES (CTRL+F)	검색어 입력: 이름 또는 기능 (CTRL+F)
 TYPING	입력 중
 TYPING SOUNDS	타이핑 소리
@@ -3118,7 +3268,9 @@ UDP PORT	UDP 포트
 UHD	UHD
 UI FONT	UI 폰트
 ULTRA	울트라
+ULTRA ONLY: THE HUD DRAWN BEFORE THE LATE READ,	ULTRA 전용: HUD를 늦은 읽기 전에 그리고,
 ULTRA SAFETY	울트라 안전 여유
+ULTRA: 0 QUEUED + EACH FRAME STARTED LATE	ULTRA: 대기 0 + 각 프레임을 늦게 시작
 ULTRA: 0 QUEUED + LATE INPUT SAMPLING	울트라: 대기 0 + 늦은 입력 샘플링
 UNBAKE	굽기 해제
 UNBOUND	미지정
@@ -3152,6 +3304,7 @@ VANILLA	바닐라
 VEC2	VEC2
 VEC3	VEC3
 VEC4	VEC4
+VEGA	VEGA
 VERBOSE INFO	상세 정보
 VERBOSE INFO LINES	상세 정보 줄
 VERDANA BOLD	VERDANA BOLD
@@ -3162,6 +3315,7 @@ VERTICAL: ONE KEY	수직: 키 하나
 VERTICAL: TWO KEYS	수직: 키 두 개
 VIDEO	비디오
 VIDEO + AUDIO	비디오 + 오디오
+VIDEO + AUDIO > MORE: NV THREADED OFF (OR THE NVIDIA CONTROL PANEL)	비디오 + 오디오 > 더 보기: NV THREADED 끔 (또는 NVIDIA 제어판)
 VIDEO 2	비디오 2
 VIDEO 3	비디오 3
 VIDEO 4	비디오 4
@@ -3212,13 +3366,15 @@ WAD2	WAD2
 WAIT FOR THE PARTNER'S HOOK TO CATCH YOU	PARTNER의 갈고리에 걸릴 때까지 기다린다
 WAIT FOR THEM TO ARM (0.35 S EACH)	무장될 때까지 기다린다 (각 0.35 S)
 WAITING FOR THE LATE READ (AVG)	늦은 읽기 대기 (평균)
-WAITING FOR THE LATE READ (AVG)  00,000,000 NS	늦은 읽기 대기 (평균)  00,000,000 NS
 WAITING FOR THE NEXT READ (AVG)	다음 읽기 대기 (평균)
 WALK TO THE STRIPED WALL	줄무늬 벽까지 걷기
 WALKING	걷기
+WALL BALL	WALL BALL
 WALL BOUNCE	벽 튕기기
+WALL WANDER	WALL WANDER
 WALLBANG	월뱅
 WALLBANG TINT	월뱅 색조
+WANDERING, SWELLING AND SHRINKING	돌아다니며 커졌다 작아짐
 WARMING UP	워밍업 중
 WARMUP -	워밍업 -
 WARMUP - {} TO VOTE START	워밍업 - {} 시작 투표하려면
@@ -3247,7 +3403,6 @@ WEAPONS	무기
 WEAPONS (THEIR NUMBER KEYS STILL WORK)	무기 (숫자 키는 계속 작동)
 WELCOME TO QUARK	QUARK에 오신 것을 환영합니다
 WHAT THE BOTS PLAY: .QBRAIN FILES IN THE BOTS FOLDER	봇이 사용하는 AI: BOTS 폴더의 .QBRAIN 파일
-WHAT THE VOTE CHANGES	투표로 바뀌는 것
 WHEEL DN	WHEEL DN
 WHEEL UP	WHEEL UP
 WHEN ONE FILLS, EVERYONE IN IT IS TOLD (HERE AND ON DISCORD)	대기열이 차면 참가한 모두에게 알림 (여기와 DISCORD에서)
@@ -3262,6 +3417,7 @@ WHOLE HUD	HUD 전체
 WIDGET EDITOR	위젯 에디터
 WIDGETS	위젯
 WIDGETS FROM CLIPBOARD	클립보드의 위젯
+WIDTH 0 = NO OUTLINE	너비 0 = 윤곽선 없음
 WIDTH; CUSTOM (GLTF) PLAYER MODELS HAVE NO OUTLINE	두께; 사용자 지정 (GLTF) 플레이어 모델은 외곽선 없음
 WINDIR	WINDIR
 WINDOW	창
@@ -3269,6 +3425,15 @@ WINDOW + INPUT	창 + 입력
 WINDOW SIZE	창 크기
 WINDOW SIZE:	창 크기:
 WINDOWED	창 모드
+WINDOWS	WINDOWS
+WINDOWS GAME MODE IS OFF	WINDOWS 게임 모드가 꺼져 있음
+WINDOWS IS ON THE POWER SAVER PLAN	WINDOWS가 절전 모드 전원 관리 옵션임
+WINDOWS ONLY	WINDOWS 전용
+WINDOWS POWER MODE IS BEST POWER EFFICIENCY	WINDOWS 전원 모드가 최고의 전원 효율
+WINDOWS RAW INPUT, NO MOUSE ACCEL	WINDOWS RAW INPUT, 마우스 가속 없음
+WINDOWS SETTINGS > GAMING > GAME MODE: ON	WINDOWS 설정 > 게임 > 게임 모드: 켜짐
+WINDOWS SETTINGS > SYSTEM > DISPLAY > GRAPHICS > QUARK: HIGH PERFORMANCE	WINDOWS 설정 > 시스템 > 디스플레이 > 그래픽 > QUARK: 고성능
+WINDOWS SETTINGS > SYSTEM > POWER: POWER MODE BEST PERFORMANCE	WINDOWS 설정 > 시스템 > 전원: 최고 성능
 WINDOWS, WITH PRIORITIZE GAME ON;	WINDOWS, 게임 우선 켜짐 시;
 WINNER STAYS	승자 잔류
 WINNER STAYS - 1v1 rounds on one ruleset while everyone else waits in line. Each round's winner stays; the loser goes to the back of the line and the next in line plays the winner. Every round you win counts: first to 10 wins.	승자 잔류 - 나머지가 줄을 서서 기다리는 동안 한 가지 규칙으로 1v1 라운드를 진행합니다. 라운드 승자는 남고, 패자는 줄 맨 뒤로 가며 다음 사람이 승자와 대결합니다. 이긴 라운드는 모두 집계됩니다: 10승 선취.
@@ -3545,6 +3710,7 @@ joined team A	님이 A팀에 참가
 joined team B	님이 B팀에 참가
 joined the game	님이 게임에 참가
 kElemNames follows Settings::HUD_*	kElemNames follows Settings::HUD_*
+kFrameTimes must be a power of two	kFrameTimes must be a power of two
 kbps (# packets/s), download # kbps (#/s)	kbps (# 패킷/s), 다운로드 # kbps (#/s)
 kick whom? a name or an id (status lists them)	누구를 강퇴할까요? 이름 또는 ID (status에 표시됨)
 kicked by a vote	투표로 강퇴됨
@@ -3864,6 +4030,7 @@ trying the next rate up: busy #%, upload # kbps	다음 빈도로 상향 시도: 
 tutorial reset	tutorial reset
 tutorial try	tutorial try
 ui verts	ui verts
+ultra: pace the input read	ultra: pace the input read
 ungrouped into	그룹 해제됨:
 unknown mode	알 수 없는 모드
 unknown mode '	알 수 없는 모드 '
@@ -3880,6 +4047,7 @@ update ready: waiting for the match to end	업데이트 준비됨: 경기 종료
 upload # of # kbps	업로드 # / # kbps
 upload bytes	업로드 바이트
 user:	사용자:
+vote builder	vote builder
 vote cancelled: the ranked match is live	투표 취소됨: 랭크 경기 진행 중
 vote failed:	투표 실패:
 vote no	반대

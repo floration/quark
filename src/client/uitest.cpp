@@ -49,6 +49,7 @@ std::string Game::uiScreenPath() const {
             case TAB_VIDEO: return devicesOpen_ ? "/video/devices" : moreOpen_ == 8 ? "/video/more8" : moreOpen_ == 7 ? "/video/more7" : moreOpen_ == 6 ? "/video/more6" : moreOpen_ == 5 ? "/video/more5" : moreOpen_ == 4 ? "/video/more4" : moreOpen_ == 3 ? "/video/more3" : moreOpen_ == 2 ? "/video/more2" : moreOpen_ ? "/video/more" : "/video";
             case TAB_CROSSHAIR: return "/crosshair";
             case TAB_SEARCH: return "/search";
+            case TAB_LATENCY: return "/latency";
             case TAB_HUD:
                 if (hudEdit_) return "/hud/edit";
                 if (widgetEdit_) return filePick_ == 1 ? "/hud/widgets/files" : valueDrop_ && widgetSel_ >= 0 ? "/hud/widgets/values" : "/hud/widgets";
@@ -111,7 +112,12 @@ std::string Game::uiScreenPath() const {
 
 std::string Game::uiContext() const {
     if (screen_ == Screen::Editor && edPrompt_) return std::string("keep:") + std::to_string(edPromptThen_);
-    if (screen_ == Screen::InGame && voteSetup_ && voteStage_ == VS_TOGGLES)   // (the vote builder: where NEXT leads)
+    // the vote builder's mode / ruleset / map pickers: a choice leads on to the builder's next part, not where the
+    // same picker leads from the host's CHANGE MAP / MODE (so they're screens of their own)
+    if (screen_ == Screen::InGame && paused_ && voteSetup_ && picker_ != PICK_NONE && !settingsInGame_) return "builder";
+    // the VOTE page's builder toggles (where CHOOSE leads): each combination a screen of its own
+    if (screen_ == Screen::InGame && paused_ && voteMenu_ && !voteSetup_ && !specPick_ && picker_ == PICK_NONE && !settingsInGame_ &&
+        !(net_.mode().flags & MS_RANKED))
         return std::string("vote:") + (vsMode_ ? "g" : "") + (vsMods_ ? "m" : "") + (vsMap_ ? "p" : "");
     if (screen_ != Screen::Editor || !edSelValid()) return "";
     static const char* kinds[] = {"box", "spawn", "light", "site", "hill", "checkpoint", "path", "ladder", "group"};

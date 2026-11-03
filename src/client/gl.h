@@ -118,7 +118,19 @@ typedef struct __GLsync* GLsync;
 #define GL_QUERY_RESULT 0x8866
 #define GL_QUERY_RESULT_AVAILABLE 0x8867
 
+#define GL_UNIFORM_BUFFER 0x8A11
+#define GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT 0x8A34
+#define GL_MAP_WRITE_BIT 0x0002
+#define GL_MAP_PERSISTENT_BIT 0x0040
+#define GL_MAP_COHERENT_BIT 0x0080
+#define GL_INVALID_INDEX 0xFFFFFFFFu
+
 #define QGL_FUNCS(X) \
+    X(void, glBlendFuncSeparate, (GLenum, GLenum, GLenum, GLenum)) \
+    X(void, glBindBufferRange, (GLenum, GLuint, GLuint, GLintptr, GLsizeiptr)) \
+    X(void*, glMapBufferRange, (GLenum, GLintptr, GLsizeiptr, GLbitfield)) \
+    X(GLuint, glGetUniformBlockIndex, (GLuint, const GLchar*)) \
+    X(void, glUniformBlockBinding, (GLuint, GLuint, GLuint)) \
     X(void, glClear, (GLbitfield)) \
     X(void, glClearColor, (GLfloat, GLfloat, GLfloat, GLfloat)) \
     X(void, glEnable, (GLenum)) \
@@ -208,6 +220,10 @@ typedef struct __GLsync* GLsync;
 #define QGL_DECLARE(ret, name, args) typedef ret(QGLAPI* PFN_##name) args; extern PFN_##name name;
 QGL_FUNCS(QGL_DECLARE)
 #undef QGL_DECLARE
+
+// (GL 4.4 / ARB_buffer_storage, not in 3.3: null when the driver lacks it; the GPU late latch needs it)
+typedef void(QGLAPI* PFN_glBufferStorage)(GLenum, GLsizeiptr, const void*, GLbitfield);
+extern PFN_glBufferStorage glBufferStorageOpt;
 
 typedef void* (*QGLGetProc)(const char*);
 // Returns the name of the first missing function, or nullptr on success.

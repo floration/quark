@@ -60,8 +60,10 @@ public:
     int clientId() const { return clientId_; }
     uint32_t sessionNonce() const { return nonce_; } // (the in-process host makes this session admin)
     bool hasSnapshot() const { return !snaps_.empty(); }
-    const Snapshot& latest() const { return snaps_.back(); }
-    const ModeState& mode() const { return snaps_.back().ms; }
+    // (before the first snapshot: a blank one, never back() of an empty deque: that read freed heap and crashed
+    // Windows LTO builds between PKT_ACCEPT and the first PKT_SNAPSHOT, 2026-11-02)
+    const Snapshot& latest() const { static const Snapshot kNone{}; return snaps_.empty() ? kNone : snaps_.back(); }
+    const ModeState& mode() const { return latest().ms; }
 
     // Prediction
     const MoveState& predicted() const { return pred_; }
@@ -239,7 +241,6 @@ private:
     double lastJitterUpdate_ = 0;
     void resetJitter();   // a new server or demo: the old one's arrival pattern doesn't apply
     uint32_t baseMisses_ = 0;
-    double snapRecvTime_ = 0;
     double clockOffset_ = 0;      // estimated serverTime - localTime
     bool clockInit_ = false;
     // server time (s) used for interpolating others. Double: a float of server uptime is 8 ms off after 18 h and 31 ms

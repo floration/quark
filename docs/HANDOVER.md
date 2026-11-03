@@ -135,7 +135,7 @@ release checks are `CHECKLIST.md` there (section 16 of [RELEASE_CHECKLIST.md](RE
 - **The clang-only unused warnings** are listed in REMAINING.md section 2.
 
 **Assets**
-- **SUPER, HYPER and LOCATOR are synthesized in `audio.cpp`**, like every default sound. The owner may replace them with the sound editor (in floration/quarkology since 1.20; Quarkology installs it), which lists all 33 sounds of each kit.
+- **SUPER, HYPER, LOCATOR and SIZZLE are synthesized in `audio.cpp`**, like every default sound. The owner may replace them with the sound editor (in floration/quarkology since 1.20; Quarkology installs it), which lists all 34 sounds of each kit.
 
 
 ## 1. What quark is

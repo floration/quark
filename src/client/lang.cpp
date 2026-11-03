@@ -252,6 +252,10 @@ static std::string translate(const std::string& s, int depth) {
         if (p == std::string::npos || p == 0) continue;
         const size_t q = p + strlen(sep);
         std::string l = translate(s.substr(0, p), depth + 1), r = q < s.size() ? translate(s.substr(q), depth + 1) : std::string();
+        if (l.empty() && sep[0] == ':') {   // ("PLAYER MODEL: STANDARD": the key is the label with its colon, "PLAYER MODEL:")
+            const std::string lc = translate(s.substr(0, p + 1), depth + 1);
+            if (!lc.empty()) return lc + " " + (r.empty() ? s.substr(q) : r);   // (the language's own colon: fr "MODELE :")
+        }
         if (l.empty() && r.empty()) continue;
         return (l.empty() ? s.substr(0, p) : l) + sep + (r.empty() ? s.substr(q) : r);
     }

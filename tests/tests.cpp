@@ -90,6 +90,16 @@ static double testTimeScale() {
 }
 static const double kTestTimeScale = testTimeScale();
 #define CHECK(c) do { if (!(c)) { printf("  FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); g_fail++; } } while (0)
+// Starts a test's server; when it can't (its port taken by another program, a map that won't load), prints a FAIL
+// line with the reason and counts the failure, so a run never fails without saying where.
+static bool startServerAt(Server& s, const ServerConfig& cfg, const char* file, int line) {
+    std::string e;
+    if (s.start(cfg, &e)) return true;
+    printf("  FAIL %s:%d: server start on port %u: %s\n", file, line, (unsigned)cfg.port, e.c_str());
+    g_fail++;
+    return false;
+}
+#define START_SERVER(s, cfg) startServerAt((s), (cfg), __FILE__, __LINE__)
 
 // Human-made maps (the owner's rule, docs/JUDGMENT_CALLS.md): the owner will hand-make the maps; those don't have to
 // pass the automated map checks, but they're still checked and their numbers reported, for balancing. A map is
@@ -121,20 +131,24 @@ struct HumanMadeGrace {
 // times a minute and up to 21 ms late (a spin: 51 ms; steal time rising), and one 20 ms pause is 16 ticks over 4 ms,
 // 1.6% of a 1 s window. That isn't the code under test. So the harness measures its own waits (the time asleep, or spinning, past what it asked for: nothing
 // the server's code does can lengthen it), and an attempt of a timing test that failed while the host paused past the
-// stall threshold is set aside and run again (timingTest). Every check is the same; the third attempt always counts.
+// stall threshold is set aside and run again (timingTest). Every check is the same; the last attempt always counts.
 static double g_hostPause = 0;   // the longest host pause in this attempt (real seconds)
 static double wallNow() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 static void hostWaited(double t0, double asked) { g_hostPause = std::max(g_hostPause, wallNow() - t0 - std::max(asked, 0.0)); }
 static void hostSleepMs(int ms) { double t0 = wallNow(); sleepMs(ms); hostWaited(t0, ms * 1e-3); }
 constexpr double kHostPauseVoid = 0.004;   // (the server's stall threshold at 1000 Hz, 500/s: kStallSnaps x 2 ms)
+// Attempts of a timing test. Only an attempt that failed while the host paused past kHostPauseVoid is run again, so a
+// real regression (which fails on a host that runs the test when asked) fails the first unpaused attempt; 5, not 3,
+// because on a host shared with other builds (4 cores, 3 other jobs) the first 3 attempts were all paused now and then.
+constexpr int kTimingTries = 5;
 static void timingTest(const char* name, const std::function<void()>& run) {
     for (int attempt = 1;; attempt++) {
         int before = g_fail;
         g_hostPause = 0;
         run();
-        if (g_fail == before || attempt == 3 || g_hostPause <= kHostPauseVoid) return;
+        if (g_fail == before || attempt == kTimingTries || g_hostPause <= kHostPauseVoid) return;
         printf("  %s: the host paused this thread %.1f ms (over the %.0f ms stall threshold) in this attempt: its %d failure(s) "
-               "are set aside, attempt %d of 3\n", name, g_hostPause * 1e3, kHostPauseVoid * 1e3, g_fail - before, attempt + 1);
+               "are set aside, attempt %d of %d\n", name, g_hostPause * 1e3, kHostPauseVoid * 1e3, g_fail - before, attempt + 1, kTimingTries);
         g_fail = before;
     }
 }
@@ -154,6 +168,19 @@ static double offCpu() {
 #endif
 }
 
+// The host pause in a test loop's own work (frames, polls, ticks) since `off` (an offCpu() reading), less `asked`
+// seconds of sleep: kept in g_hostPause, as hostSleepMs keeps a sleep's. A thread the host doesn't run mid-frame
+// delays ticks the same as one that oversleeps. (Windows: offCpu() is wall time, so only the sleeps count there.)
+static void hostOffCpu(double& off, double asked) {
+#ifdef _WIN32
+    (void)asked;
+#else
+    double o = offCpu();
+    g_hostPause = std::max(g_hostPause, o - off - asked);
+    off = o;
+#endif
+}
+
 // Pump a server and some clients for `seconds` of real time, feeding each client an input. With `stalled`, it keeps the
 // longest the machine left the loop unrun in real seconds (beyond its 1 ms sleep; see offCpu): where a check's premise
 // is a machine that runs the test when it asks, a run that this breaks is the machine's, not the game's.
@@ -161,7 +188,7 @@ template <class F>
 static void pump(Server& s, std::vector<NetClient*>& cls, double seconds, F input, double* stalled = nullptr) {
     double end = timeNow() + seconds;
     double nextTick = timeNow();
-    double off = stalled ? offCpu() : 0;
+    double off = offCpu();
     while (timeNow() < end) {
         s.frame();
         for (auto* c : cls) c->poll();
@@ -170,7 +197,8 @@ static void pump(Server& s, std::vector<NetClient*>& cls, double seconds, F inpu
             nextTick += cls.empty() ? 0.001 : cls[0]->tickPeriod();
         }
         hostSleepMs(1);
-        if (stalled) { double o = offCpu(); *stalled = std::max(*stalled, o - off - 0.001); off = o; }
+        if (stalled) *stalled = std::max(*stalled, offCpu() - off - 0.001);
+        hostOffCpu(off, 0.001);
     }
 }
 
@@ -1008,6 +1036,51 @@ static void testAcid() {
     }
 }
 
+// Lava and acid destroy projectiles (q, 2026-10-27): a rocket or a sticky into either is gone where it went in, no
+// blast, nobody hurt; the same rocket at the bare floor blows up (the control). Map::dissolveAlong is the test the
+// client's copies use too. And a new projectile's id skips 0 and any id still flying (NET-14: the u16 wraps).
+static void testProjectilesDissolve() {
+    printf("projectiles: gone in lava and acid, no blast; ids skip live ones\n");
+    const char* text = "box -20 -1 -20 20 0 20\nacid -3 0 -3 3 0.25 3\nlava 7 0 -3 13 0.25 3\nspawn any 0 0 -10\n";
+    Map m;
+    CHECK(m.parse(text) && m.acid.size() == 1 && m.lava.size() == 1 && m.hasDissolvers());
+    CHECK(m.dissolves({0, 0.1f, 0}) && m.dissolves({10, 0.1f, 0}) && !m.dissolves({5, 0.1f, 0}));
+    CHECK(std::fabs(m.dissolveAlong({0, 3, 0}, {0, -1, 0}, 10) - 2.75f) < 1e-4f && m.dissolveAlong({5, 3, 0}, {0, -1, 0}, 10) < 0);
+    CHECK(m.dissolveAlong({0, 3, 0}, {0, -1, 0}, 2.0f) < 0);   // (not reached within maxT)
+    for (int c = 0; c < 4; c++) {   // into acid, into lava, a sticky into acid, the control: a rocket at the bare floor
+        Server s;
+        s.setLog([](const std::string&) {});
+        CHECK(s.map_.parse(text));
+        s.cfg_.mode = s.ms_.mode = MODE_FFA;
+        s.ms_.phase = PHASE_LIVE;
+        s.timeMs_ = 10000;
+        const float x = c == 1 ? 10.0f : c == 3 ? -8.0f : 0.0f;
+        for (int i = 0; i < 2; i++) {
+            auto& p = s.players_[i];
+            p.connected = true; p.alive = true; p.health = s.lifeMaxHealth(); p.team = TEAM_A;
+            p.move = MoveState(); p.move.flags = MF_ONGROUND; p.move.pos = i == 0 ? Vec3(0, 0, -15) : Vec3(x + 2.5f, 0, 0);
+        }
+        Projectile& pr = s.projectiles_[0];
+        pr = Projectile();
+        pr.active = true; pr.id = s.newProjId(); pr.type = c == 2 ? WPN_STICKY : WPN_ROCKET; pr.owner = 0;
+        pr.pos = {x, 3, 0}; pr.vel = {0, -30, 0}; pr.dieAt = s.time() + 5;
+        for (int t = 0; t < 2000 && pr.active; t++) { s.timeMs_ += (uint64_t)std::max(1, 1000 / s.tickRate()); s.tickProjectilesForTest(); }
+        const float hp = s.players_[1].health;
+        printf("  %s: active %d, dissolved %d at y %.2f, the one 2.5 m off: %.0f hp\n", c == 0 ? "rocket into acid" : c == 1 ? "rocket into lava" : c == 2 ? "sticky into acid" : "rocket at the floor",
+               pr.active, pr.dissolved, pr.pos.y, hp);
+        if (c < 3) CHECK(!pr.active && pr.dissolved && std::fabs(pr.pos.y - 0.25f) < 0.05f && hp == s.lifeMaxHealth());
+        else CHECK(!pr.active && !pr.dissolved && hp < s.lifeMaxHealth());
+    }
+    {   // ids: never 0, never one still flying, through the wrap
+        Server s;
+        s.projectiles_[3].active = true; s.projectiles_[3].id = 1;
+        s.projectiles_[4].active = true; s.projectiles_[4].id = 2;
+        s.nextProjId_ = 65535;
+        const uint16_t a = s.newProjId(), b = s.newProjId();
+        CHECK(a == 65535 && b == 3);
+    }
+}
+
 // 3D FLYING's zero-g flight (MoveState::fly; owner, 2026-11-01 / 11-02): no gravity and no drift with no keys, MOVE UP /
 // MOVE DOWN straight up and down, the ground's acceleration and friction every way (full speed as fast as a run, a stop
 // as quick as one), the run speed's cap, walls slide you, and no jump, dash or grapple.
@@ -1254,7 +1327,9 @@ static void testMovementTuning() {
             CHECK(std::fabs(q.vel.x - n.x) < 1e-4f && std::fabs(q.vel.z - n.z) < 1e-4f && std::fabs(hs(q) - v) < 1e-3f);
         }
     }
-    { // drift: a standing jump holding W drifts to ~7 m/s by landing (2.3 of strafe push plus 8 m/s2), never past 9.5
+    { // drift: a standing jump holding W drifts to ~7 m/s by landing (2.3 of strafe push plus 8 m/s2), never past 9.5.
+      // Air drift is 0 since protocol 63 (owner, 2026-11-01: "change air drift to 0"): then only the 2.3 m/s strafe push.
+        const bool drift = moveParamBase(MV_AIR_DRIFT) > 0;
         MoveState q = standing();
         UserCmd j; j.forward = 127; j.buttons = BTN_JUMP;
         step(q, j, open);
@@ -1263,19 +1338,20 @@ static void testMovementTuning() {
         int air = 1;
         for (; air < 2000 && !(q.flags & MF_ONGROUND); air++) { step(q, j, open); top = std::max(top, hs(q)); }
         printf("  standing jump + W: %.2f m/s by landing (%d ms in the air)\n", top, air);
-        CHECK(top > 6.8f && top < 7.5f && air > 610 && air < 660);
+        CHECK((drift ? top > 6.8f && top < 7.5f : std::fabs(top - 2.3f) < 0.02f) && air > 610 && air < 660);
         // a long fall holding W: up to run speed and no further
         MoveState f; f.pos = {0, 30, 0};
         UserCmd w; w.forward = 127;
         float most = 0;
         for (int i = 0; i < 2000 && !(f.flags & MF_ONGROUND); i++) { step(f, w, open); most = std::max(most, hs(f)); }
         printf("  falling 30 m holding W: %.4f m/s at most\n", most);
-        CHECK(most <= 9.5f + 1e-4f && most > 9.49f);
+        CHECK(most <= 9.5f + 1e-4f && (drift ? most > 9.49f : std::fabs(most - 2.3f) < 0.02f));
         // sideways to your momentum under run speed: it pushes along the wish, the total held to 9.5
         MoveState g; g.pos = {0, 30, 0}; g.vel = {0, 0, -9.0f};
         UserCmd sd; sd.side = 127;   // (right: +x)
         for (int i = 0; i < 400; i++) { step(g, sd, open); CHECK(hs(g) <= 9.5f + 1e-4f); }
-        CHECK(g.vel.x > 3.0f);
+        printf("  sideways at 9 m/s, 0.4 s of D: %.3f m/s across\n", g.vel.x);
+        CHECK(drift ? g.vel.x > 3.0f : std::fabs(g.vel.x - 2.53f) < 0.02f);   // (no drift: the A/D strafe push alone, its 2.53 cap)
         // over run speed: no drift at all (only the strafe push)
         MoveState o; o.pos = {0, 30, 0}; o.vel = {0, 0, -9.6f};
         UserCmd b; b.forward = -127;   // S: straight against momentum
@@ -2796,8 +2872,7 @@ static void testSession(int mode, const char* mapName, uint16_t port) {
     cfg.timeLimit = 3;
     cfg.scoreLimit = 3;
     s.setLog([](const std::string&) {});
-    std::string err;
-    if (!s.start(cfg, &err)) { printf("  server start failed: %s\n", err.c_str()); g_fail++; return; }
+    if (!START_SERVER(s, cfg)) return;
     NetClient a, b;
     a.connect("127.0.0.1:" + std::to_string(port), "alpha");
     b.connect("127.0.0.1:" + std::to_string(port), "bravo");
@@ -3250,7 +3325,7 @@ static void testWeapons(uint16_t port) {
         cfg.autoStart = true;
         cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port++;
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { g_fail++; continue; }
+        if (!START_SERVER(s, cfg)) { continue; }
         if (uptime) s.timeMs_ += 5u * 86400u * 1000u;
         NetClient a, b;
         a.connect("127.0.0.1:" + std::to_string(cfg.port), "shooter");
@@ -4793,7 +4868,7 @@ static void testBotNavBlockers(uint16_t port) {
         ServerConfig cfg;
         cfg.autoStart = false; cfg.map = c.map; cfg.mode = c.mode; cfg.port = port++;
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { printf("  %s: server didn't start\n", c.what); g_fail++; continue; }
+        if (!START_SERVER(s, cfg)) { printf("  (%s)\n", c.what); continue; }
         int bot = s.addBot(TEAM_A, BOT_ADVANCED);
         std::vector<NetClient*> none;
         for (int k = 0; k < 100 && (!s.nav_.ready(s.map_) || !s.players_[bot].alive); k++) pump(s, none, 0.05, idle);
@@ -5089,7 +5164,7 @@ static void testRejoin(uint16_t port) {
         ServerConfig cfg;
         cfg.autoStart = true; cfg.map = mode == MODE_DUEL ? "clockwork" : "bastion"; cfg.mode = mode; cfg.port = port++;
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { g_fail++; continue; }
+        if (!START_SERVER(s, cfg)) { continue; }
         NetClient a, b, c;
         a.connect("127.0.0.1:" + std::to_string(cfg.port), "ann");
         b.connect("127.0.0.1:" + std::to_string(cfg.port), "bob");
@@ -5253,7 +5328,7 @@ static void testCrossLanguageConstants(uint16_t port) {
     // the info reply layout quarkdata.parse_info_reply reads: u32 magic, u8 type, str name, str map, u8 mode, u8 players, u8 max, u16 port
     Server s; ServerConfig cfg; cfg.map = "bastion"; cfg.mode = MODE_KOTH; cfg.port = port; cfg.maxPlayers = 7;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { printf("  FAIL: server start\n"); g_fail++; return; }
+    if (!START_SERVER(s, cfg)) return;
     UdpSocket q; CHECK(q.open(0));
     uint8_t req[kInfoRequestBytes] = {};
     uint32_t mg = kProtocolMagic; memcpy(req, &mg, 4); req[4] = (uint8_t)pyInt("PKT_INFO_REQUEST");   // little endian, as struct.pack("<IB")
@@ -5678,7 +5753,7 @@ static void testMaterials() {
         std::string t = "version " + std::to_string(kMapFormatVersion) + "\nbox -20 -1 -20 20 0 20\nspawn any 0 0 0\n";
         for (int k = 12; k < kMapMaterials; k++) { char b[96]; snprintf(b, sizeof b, "%s %d 0 30 %d 1 31\n", kMapMaterialWords[k], k * 2, k * 2 + 1); t += b; }
         CHECK(m.parse(t) && m.brushes.size() == 1 + (size_t)(kMapMaterials - 12));
-        for (int k = 12; k < kMapMaterials; k++) CHECK(m.brushes[k - 11].material == k && (semiMaterial(k) || solidMaterial(k) == !(liquidMaterial(k) || fieldMaterial(k))));   // (a see-through one: when it stops anything, testSeeThrough)   // (the liquids: you wade in)
+        for (int k = 12; k < kMapMaterials; k++) CHECK(m.brushes[k - 11].material == k && (semiMaterial(k) || k == kMatBallWall || solidMaterial(k) == !(liquidMaterial(k) || fieldMaterial(k))));   // (the ball wall: only the ball bounces off it)   // (a see-through one: when it stops anything, testSeeThrough)   // (the liquids: you wade in)
         const std::string out = m.serialize();
         CHECK(out.find("brick 40 0 30 41 1 31") != std::string::npos && out.find("diamondplate 38 0 30 39 1 31") != std::string::npos && out.find("ice 24 0 30 25 1 31") != std::string::npos);
     }
@@ -6134,7 +6209,7 @@ static void testBotGoalsAfterMapChange(uint16_t port) {
     ServerConfig cfg;
     cfg.autoStart = false; cfg.map = "hamlet"; cfg.mode = MODE_HIDE; cfg.port = port;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    if (!START_SERVER(s, cfg)) { return; }
     int bot = s.addBot(TEAM_A, BOT_ADVANCED);
     std::vector<NetClient*> none;
     for (int k = 0; k < 50 && !s.nav_.ready(s.map_); k++) pump(s, none, 0.1, idle);
@@ -6169,7 +6244,7 @@ static void testTagLateJoin(uint16_t port) {
     ServerConfig cfg;
     cfg.autoStart = false; cfg.map = "hamlet"; cfg.mode = MODE_TAG; cfg.port = port;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    if (!START_SERVER(s, cfg)) { return; }
     NetClient c[4];
     std::vector<NetClient*> cls;
     for (int i = 0; i < 3; i++) { c[i].connect("127.0.0.1:" + std::to_string(port), "p" + std::to_string(i)); cls.push_back(&c[i]); }
@@ -6216,7 +6291,7 @@ static void testItModes(uint16_t port) {
         ServerConfig cfg;
         cfg.autoStart = false; cfg.map = "hamlet"; cfg.mode = mode; cfg.port = port++;
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { g_fail++; continue; }
+        if (!START_SERVER(s, cfg)) { continue; }
         NetClient c[3];
         std::vector<NetClient*> cls;
         for (int i = 0; i < 3; i++) { c[i].connect("127.0.0.1:" + std::to_string(cfg.port), "p" + std::to_string(i)); cls.push_back(&c[i]); }
@@ -6881,7 +6956,7 @@ static void testAltFires(uint16_t port) {
         cfg.autoStart = false; // stay in warmup: a match start would move everyone back to spawns
         cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = (uint16_t)(port + kase);
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { g_fail++; continue; }
+        if (!START_SERVER(s, cfg)) { continue; }
         NetClient a, b;
         a.connect("127.0.0.1:" + std::to_string(cfg.port), "shooter");
         b.connect("127.0.0.1:" + std::to_string(cfg.port), "target");
@@ -7032,15 +7107,20 @@ static void testVoteModifiers(uint16_t port) {
     refused("callvote map glacier ffa classic mods damage=abc");
     refused("callvote map glacier ffa classic damage=2");   // (no "mods" word)
     refused("callvote map dojo tourney classic mods damage=2");
-    b.sendCommand("callvote map glacier ffa classic mods damage=2 vampire=1 health=150 dash=0");
+    refused("callvote map glacier ffa classic mods firerate=x");
+    b.sendCommand("callvote map glacier ffa classic mods damage=2 firerate=1.5 projspeed=0.75 vampire=1 health=150 dash=0");
     pump(s, cls, 0.3, idle);
     CHECK(s.vote_.kind == Server::VOTE_MAP && s.vote_.text.find("DAMAGE X2") != std::string::npos && s.vote_.text.find("VAMPIRE") != std::string::npos &&
-          s.vote_.text.find("NO DASH") != std::string::npos);
+          s.vote_.text.find("NO DASH") != std::string::npos && s.vote_.text.find("FIRE RATE X1.5") != std::string::npos &&
+          s.vote_.text.find("PROJECTILE SPEED X0.75") != std::string::npos);
     a.sendCommand("vote yes");
     pump(s, cls, 1.0, idle);
     const CustomRules& r = s.config().custom;
     CHECK(r.active() && r.name == Server::kVotedRules && r.baseMode == MODE_FFA && r.vampire && !r.dash && r.health == 150 &&
           std::fabs(r.damage[WPN_ROCKET] - 2) < 1e-4f && std::fabs(r.damage[0] - 2) < 1e-4f);
+    // (fire rate and projectile speed: every weapon, the damage line's other two numbers)
+    CHECK(std::fabs(r.fireRate[WPN_ROCKET] - 1.5f) < 1e-4f && std::fabs(r.fireRate[WPN_COUNT - 1] - 1.5f) < 1e-4f &&
+          std::fabs(r.projSpeed[WPN_ROCKET] - 0.75f) < 1e-4f && std::fabs(r.damage[WPN_COUNT - 1] - 2) < 1e-4f);
     CHECK(activeRules().active() && activeRules().vampire);
     printf("  passed: %s\n", votedModsTitle("damage=2\nvampire=1\nhealth=150\ndash=0\n").c_str());
     pass("callvote map glacier koth classic");   // a mode vote without modifiers keeps them
@@ -7394,7 +7474,7 @@ static void testRanked(uint16_t port) {
         ServerConfig cfg;
         cfg.map = "qk1"; cfg.mode = MODE_FFA; cfg.port = (uint16_t)(port + variant); cfg.ranked = true; cfg.arenaVariant = variant;
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { g_fail++; continue; }
+        if (!START_SERVER(s, cfg)) { continue; }
         std::vector<std::unique_ptr<NetClient>> owned;
         std::vector<NetClient*> cls;
         std::vector<RankKey> keys;
@@ -8213,7 +8293,7 @@ static void testEditSession(uint16_t port) {
     ServerConfig cfg;
     cfg.map = name; cfg.mode = MODE_FFA; cfg.port = port; cfg.editMode = true;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; std::remove(path.c_str()); return; }
+    if (!START_SERVER(s, cfg)) { std::remove(path.c_str()); return; }
     NetClient a, b;
     a.connect("127.0.0.1:" + std::to_string(port), "a");
     b.connect("127.0.0.1:" + std::to_string(port), "b");
@@ -8795,6 +8875,12 @@ static void testDemoUpgrade() {
     demo::noteVersion(vf.string(), "9.8.1", 200);
     CHECK(demo::versionForProtocol(200) == "9.8.0-9.8.1" && demo::versionForProtocol(201) == "protocol 201");
     CHECK(rd(vf) == "200 9.8.0\n200 9.8.1\n");
+    // a file an older Windows build wrote in text mode (\r\n) reads the same, and a note adds a plain \n line
+    std::ofstream(vf, std::ios::binary | std::ios::trunc) << "200 9.8.0\r\n200 9.8.1\r\n";
+    demo::noteVersion(vf.string(), "9.8.1", 200);
+    demo::noteVersion(vf.string(), "9.8.2", 200);
+    CHECK(demo::versionForProtocol(200) == "9.8.0-9.8.2");
+    CHECK(rd(vf) == "200 9.8.0\r\n200 9.8.1\r\n200 9.8.2\n");
     fs::remove_all(d, ec);
 }
 
@@ -8857,7 +8943,7 @@ static void testBuiltInMapEditSession(uint16_t port) {
     ServerConfig cfg;
     cfg.map = "castle"; cfg.mode = MODE_FFA; cfg.port = port; cfg.editMode = true;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    if (!START_SERVER(s, cfg)) { return; }
     NetClient a;
     a.connect("127.0.0.1:" + std::to_string(port), "a");
     std::vector<NetClient*> cls = {&a};
@@ -9494,7 +9580,7 @@ static void testBots(uint16_t& port) {
         cfg.map = maps[mode]; cfg.mode = mode; cfg.port = port++;
         cfg.vsBots = true; cfg.botsEnemy = 3; cfg.botsAlly = 2; cfg.botSkill = BOT_ADVANCED;
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { g_fail++; continue; }
+        if (!START_SERVER(s, cfg)) { continue; }
         if (isOneVsOneMode(mode) || mode == MODE_DUEL) {
             // 1v1 and duel are the player and their team size of bots (F7: no ally in 1v1): the player joins, a NetClient,
             // so these two run on the real clock (pump) as before; the other modes are bots only
@@ -9540,7 +9626,7 @@ static void serverBench(uint16_t port, int bots, int humans, double seconds, con
     cfg.map = map; cfg.mode = mode; cfg.port = port; cfg.autoStart = true; cfg.maxPlayers = kMaxPlayers;
     if (rate) cfg.maxTickRate = rate;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { printf("  start failed\n"); return; }
+    if (!START_SERVER(s, cfg)) return;
     std::vector<std::unique_ptr<NetClient>> owned;
     std::vector<NetClient*> cls;
     for (int i = 0; i < humans; i++) {
@@ -10463,7 +10549,7 @@ int main(int argc, char** argv) {
         {"brains", [] { g_fail += brainTests(TP(29150)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); testWinnerStays(TP(28522)); testWinnerStaysMode(TP(28523)); testRotateEveryRound(TP(28524)); testAccuracyPerWeapon(); }},
-        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testFlyMove(); testGrappleAgainstWall(); testAcid(); testLiquids(); testFeatureBlocks(); testStrafeEase(); testSeeThrough(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testModeSpawnSets(); testMapFix(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testFlyMove(); testGrappleAgainstWall(); testAcid(); testProjectilesDissolve(); testLiquids(); testFeatureBlocks(); testStrafeEase(); testSeeThrough(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testModeSpawnSets(); testMapFix(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"bombsites", [] { testBombSites(TP(29090)); testPlantKnockback(TP(29091)); }},
@@ -10494,12 +10580,15 @@ int main(int argc, char** argv) {
         //  full run of 3 with 12 groups on 4 cores, and in 10 of 20 runs beside 8 busy loops; ~1 in 30 even idle)
         {"weaponpredict", [] { timingTest("weapon prediction", [] { testGameRules("weaponpredict"); }); }},
     };
-    // `groups` lists the groups (tools/release_check.sh runs each); `group NAME`, or just `NAME`, runs exactly that one
+    // `groups` lists the groups (tools/release_check.sh runs each; `groups alone`: only the timing-sensitive ones it runs
+    // alone, after the others); `group NAME`, or just `NAME`, runs exactly that one
     // group in this process (`group NAME --child`: as one of the run's processes on Windows, below: no summary, and the
     // exit code is the failure count, at most 100, as a forked group's)
     if (argc >= 2 && std::string(argv[1]) == "groups") {
+        const bool aloneOnly = argc >= 3 && std::string(argv[2]) == "alone";
         for (auto* list : {&par, &alone})
-            for (auto& g : *list) printf("%s\n", g.name);
+            if (!aloneOnly || list == &alone)
+                for (auto& g : *list) printf("%s\n", g.name);
         return 0;
     }
     if (argc >= 2 && std::string(argv[1]) != "serial") {

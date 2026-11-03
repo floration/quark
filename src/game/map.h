@@ -1576,6 +1576,24 @@ struct Map {
     std::vector<AABB> lava;   // lava brushes (touch one and you die), from rebuild()
     bool inAcid(const AABB& box) const { for (auto& l : acid) if (box.mn.x < l.mx.x && box.mx.x > l.mn.x && box.mn.y < l.mx.y && box.mx.y > l.mn.y && box.mn.z < l.mx.z && box.mx.z > l.mn.z) return true; return false; }
     std::vector<AABB> acid;   // acid brushes (pmove counts the damage while you touch one), from rebuild()
+    // Lava (and the liquids that kill) and acid destroy a projectile that goes into them, a sticky too (q, 2026-10-27:
+    // "it should destroy, so should lava"): no blast, no hit, nothing left. The server's projectiles and the client's
+    // copies of its own shots ask the same boxes. dissolveAlong: how far along o + dir * t (t up to maxT) the first one
+    // starts (0: o is in one), else -1; maps without either answer at once.
+    bool hasDissolvers() const { return !lava.empty() || !acid.empty(); }
+    bool dissolves(const Vec3& p) const {
+        for (auto& l : lava) if (l.contains(p)) return true;
+        for (auto& l : acid) if (l.contains(p)) return true;
+        return false;
+    }
+    float dissolveAlong(const Vec3& o, const Vec3& dir, float maxT) const {
+        if (!hasDissolvers()) return -1.0f;
+        const Vec3 inv = safeInv(dir);
+        float best = -1.0f;
+        for (const auto* list : {&lava, &acid})
+            for (auto& l : *list) { const float t = rayAABB(o, inv, l, best >= 0 ? best : maxT); if (t >= 0 && (best < 0 || t < best)) best = t; }
+        return best;
+    }
     // the feature fields (FIELD_*): low gravity and slow-mo boxes, the gravity flip tiles' columns (kGravFlipHeight up
     // from the top), from rebuild(); pmove and the projectiles ask them only when there are any
     enum : uint8_t { FIELD_LOWGRAV = 1, FIELD_SLOW = 2, FIELD_FLIP = 4 };

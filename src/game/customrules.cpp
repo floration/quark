@@ -274,6 +274,8 @@ std::string votedModsTitle(const std::string& mods) {
         if (k == "health") part = "HEALTH " + v;
         else if (k == "selfdamage" || k == "dash" || k == "grapple") { if (v == "0") part = k == "selfdamage" ? "NO SELF DAMAGE" : k == "dash" ? "NO DASH" : "NO GRAPPLE"; }
         else if (k == "vampire" || k == "regen" || k == "instagib" || k == "fly") { if (v == "1") part = k == "vampire" ? "VAMPIRE" : k == "regen" ? "REGEN" : k == "fly" ? "3D FLYING" : "INSTAGIB"; }
+        else if (k == "firerate") part = "FIRE RATE X" + v;
+        else if (k == "projspeed") part = "PROJECTILE SPEED X" + v;
         else { part = k; for (auto& c : part) c = (char)toupper((unsigned char)c); part += " X" + v; }
         if (!part.empty()) out += (out.empty() ? "" : ", ") + part;
     }

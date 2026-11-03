@@ -197,6 +197,10 @@ void Audio::synthesize() {
     addThump(s[SND_HYPER], 380, 1150, 0.18f, 0.6f, 0.003f, 0.2f); addRoom(s[SND_HYPER], 0.22f, 0.8f); finish(s[SND_HYPER], 0.36f);
     s[SND_LOCATOR] = make(0.9f); addTone(s[SND_LOCATOR], 1480, 0.8f, 0.002f, 0.25f); addTone(s[SND_LOCATOR], 2960, 0.12f, 0.002f, 0.1f);
     addTone(s[SND_LOCATOR], 1480, 0.35f, 0.002f, 0.25f, 0.24f); addRoom(s[SND_LOCATOR], 0.35f, 1.0f); finish(s[SND_LOCATOR], 0.24f);
+    // a hiss of high noise with a few crackles in it, fading over half a second
+    s[SND_SIZZLE] = make(0.55f); addBand(s[SND_SIZZLE], 2500, 9000, 0.7f, 0.015f, 0.12f, 70, 5000);
+    for (int k = 0; k < 6; k++) addBand(s[SND_SIZZLE], 1200, 6000, 0.9f - k * 0.1f, 0.001f, 0.004f, 71 + k, -1, 0.02f + k * 0.055f + (k % 2) * 0.017f);
+    finish(s[SND_SIZZLE], 0.22f);
     // the kits: RETRO re-voices these (chiptune), HEAVY METAL / MAGICAL / WOODEN are recorded (sfx_recorded.h);
     // anything a kit lacks is the DEFAULT sound
     for (int p = 1; p < kPacks; p++)
@@ -1182,7 +1186,7 @@ void Audio::stop() {
 static const char* kModSoundNames[] = {"HIT", "KILL", "HURT", "STEP", "JUMP", "LAND", "RIFLE", "ROCKET", "KNIFE", "SNIPER", "LASER",
     "SHOTGUN", "STICKY", "CROSSBOW", "BUBBLE", "SYRINGE", "EXPLOSION", "STICKY_ATTACH", "BOLT_HIT", "DASH", "GRAPPLE_FIRE",
     "GRAPPLE_HIT", "DEATH", "STREAK", "TYPING", "CHECKPOINT", "FINISH", "HIT_MED", "HIT_HEAVY", "HIT_BRUTAL",
-    "SUPER", "HYPER", "LOCATOR",
+    "SUPER", "HYPER", "LOCATOR", "SIZZLE",
     // the announcer's lines (SND_VOICE_*), as the asset export and the overrides name them
     "THREE", "TWO", "ONE", "GO", "BOMB_PLANTED", "BOMB_DEFUSED", "HILL_TAKEN", "HILL_LOST", "POINT_TAKEN", "POINT_LOST",
     "ROUND_WON", "ROUND_LOST", "OVERTIME", "YOU_WIN", "YOU_LOSE", "HIGH_SCORE", "NEW_LEADER", "YOU_DIED", "HEADSHOT",
