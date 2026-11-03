@@ -397,6 +397,7 @@ struct Settings {
     float wpnVmOff[WPN_COUNT][3] = {}; // per weapon: added to the WEAPON MODEL element's x / y (720p units) / depth (mm)
     float mouseAccel = 0;              // sensitivity x (1 + accel x counts per ms), at most x4 (0 = off)
     bool rawInput = true;              // raw mouse input (off: the OS's pointer motion, with its acceleration)
+    bool mouseOwnCore = true;          // LATENCY > MOUSE THREAD: OWN CORE (Windows raw input thread time-critical on its own core; rawmouse.h)
     int altToggleWpns = -1;            // ALT-FIRE: TOGGLE applies to these weapons (bits; -1: the ones that zoom)
     int swapFire = 0;                  // these weapons swap FIRE and ALT FIRE (bits)
     bool autoHop = true;               // holding jump jumps again on landing (off: a press a jump)

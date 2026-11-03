@@ -1154,6 +1154,7 @@ GUN: TEAM	ОРУЖ.: КОМАНД.
 GUNFIRE	СТРЕЛЬБА
 GUS	GUS
 Game::frame	Game::frame
+GetSystemCpuSetInformation	GetSystemCpuSetInformation
 HALFTIME - SIDES SWITCHED	ПЕРЕРЫВ - СМЕНА СТОРОН
 HALFTIME - SIDES SWITCHED: YOU ATTACK NOW	ПЕРЕРЫВ - СМЕНА СТОРОН: ТЕПЕРЬ ВЫ АТАКУЕТЕ
 HALFTIME - SIDES SWITCHED: YOU DEFEND NOW	ПЕРЕРЫВ - СМЕНА СТОРОН: ТЕПЕРЬ ВЫ ЗАЩИЩАЕТЕСЬ
@@ -2218,6 +2219,9 @@ MOUSE 1	MOUSE 1
 MOUSE 2	MOUSE 2
 MOUSE 3	MOUSE 3
 MOUSE ACCELERATION	УСКОРЕНИЕ МЫШИ
+MOUSE THREAD	ПОТОК МЫШИ
+MOUSE THREAD: OWN CORE	ПОТОК МЫШИ: СВОЁ ЯДРО
+MOUSE THREAD: SHARED	ПОТОК МЫШИ: ОБЩИЙ
 MOUSE TO PHOTON ~	ОТ МЫШИ ДО ФОТОНА ~
 MOUSE TO PHOTON ~{} NS  (# HZ DISPLAY, {}, {})	ОТ МЫШИ ДО ФОТОНА ~{} НС  (ЭКРАН # ГЦ, {}, {})
 MOUSE TO PHOTON: IN GAME ONLY	ОТ МЫШИ ДО ФОТОНА: ТОЛЬКО В ИГРЕ
@@ -2327,6 +2331,7 @@ NOTHING YET (NEEDS SPAWNS)	ПОКА НИЧЕГО (НУЖНЫ СПАВНЫ)
 NOTICE LINES	СТРОК УВЕДОМЛ.
 NOTICE TIME	ВРЕМЯ УВЕДОМЛ.
 NOTICES	УВЕДОМЛ.
+NOW ON CORE #; THE GAME STAYS OFF IT	СЕЙЧАС НА ЯДРЕ #; ИГРА ЕГО НЕ ЗАНИМАЕТ
 NS	NS
 NS  (MOUSE REPORT IN TO GPU DONE; F3: NEXT VIEW)	NS  (ОТ МЫШИ ДО ГОТОВНОСТИ GPU; F3: ДАЛЕЕ)
 NS (# HZ)	NS (# HZ)
@@ -2422,6 +2427,7 @@ OVERTIME - NEXT KILL WINS	ОВЕРТАЙМ - ДО ПЕРВОГО УБИЙСТВ�
 OWN ACCENT	СВОЙ АКЦЕНТ
 OWN ACCENT: NOT THE TEAM COLOR	СВОЙ АКЦЕНТ: НЕ ЦВЕТ КОМАНДЫ
 OWN COLOR	СВОЙ ЦВЕТ
+OWN CORE: RAW INPUT READ AT TOP PRIORITY ON ONE FAST CORE;	СВОЁ ЯДРО: RAW INPUT С ВЫСШИМ ПРИОРИТЕТОМ НА БЫСТРОМ ЯДРЕ;
 OWN EFFECTS	СВОИ ЭФФЕКТЫ
 OWN SHADOW	СВОЯ ТЕНЬ
 OggS	OggS
@@ -2638,6 +2644,7 @@ RANKED: NO HEALTH BARS	РЕЙТИНГ: БЕЗ ПОЛОС ЗДОРОВЬЯ
 RATE	ЧАСТ.
 RATING	РЕЙТИНГ
 RAW INPUT	RAW INPUT
+RAW INPUT, WINDOWS, 4+ CORES ONLY	RAW INPUT, WINDOWS, ОТ 4 ЯДЕР
 RD	RD
 REACH 12 M/S WITH NO DASH OR GRAPPLE	РАЗГОНИСЬ ДО 12 М/С БЕЗ РЫВКА И КРЮКА
 REACH 27 M/S	РАЗГОНИСЬ ДО 27 М/С
