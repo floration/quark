@@ -2,6 +2,8 @@
 // translucent markers, first-person viewmodel and a 2D layer for HUD/menus.
 // Everything dynamic is streamed into one vertex buffer per layer each frame (few draw calls).
 #pragma once
+#include <array>
+#include <atomic>
 #include <memory>
 #include "fontatlas.h"
 #include "textfit.h"
@@ -64,6 +66,21 @@ public:
     // Late latch: a newer aim just before drawScene (the world and players are in world space, so only the view moves).
     // The view model was already built for the old aim: drawScene carries it over (it never lags the world).
     void relatch(float yaw, float pitch);
+    // GPU LATE LATCH (renderer.cpp): latchArm at the late read (after relatch: this frame's view; on false: off this
+    // frame), the yaw / pitch per mouse count given; latchMouse from the raw mouse thread with the counts since the
+    // game's last read; latchDisarm before the game takes them. latchSupported: the driver has ARB_buffer_storage.
+    bool latchSupported = false;
+    // HUD BEFORE WORLD: the 2D batch so far drawn into its own layer now (false: nothing to draw / no layer), then laid
+    // over the frame by hudLayerComposite (after the world)
+    bool hudLayerDraw();
+    void hudLayerComposite();
+    double (*latchClock)() = nullptr;   // (timeNow, for F3: when the aim was last written)
+    void latchArm(bool on, float kYaw, float kPitch);
+    void latchDisarm();
+    void latchMouse(double dx, double dy);
+    bool latchActive() const { return latchUse_; }
+    long long latchWrites() const { return latchWrites_.load(std::memory_order_relaxed); }
+    double latchLastWrite() const { return latchLastWrite_.load(std::memory_order_relaxed); }
     // Extra culling margin while the aim may still move before drawing (relatch): a sphere counts as on screen this
     // many radians (roughly) outside the frustum, so nothing at the edge pops in a frame late on a flick.
     float cullPad = 0;
@@ -250,8 +267,8 @@ private:
     // Uniform locations, looked up once after linking (init): no lookups in the frame loop. Values that never change are
     // set there too, the per-frame ones that don't depend on the aim in prepareScene, the rest in drawScene (GL keeps
     // each program's values).
-    struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, baseL, accentL, wallbangL, metalL, floorL, metal, glow, full, fullColor, outlineW, time, sunDir, alphaPass; } uWorld_ = {};
-    struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, receive, sunDir; } uDyn_ = {};
+    struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, baseL, accentL, wallbangL, metalL, floorL, metal, glow, full, fullColor, outlineW, time, sunDir, alphaPass, latchUse, worldEdge; } uWorld_ = {};
+    struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, receive, sunDir, latchUse; } uDyn_ = {};
     struct { GLint fwd, right, up, tan, sky, sunDir, bright; } uSky_ = {};
     GLint uDynFade_ = -1, uFlatFade_ = -1;   // (the view pass's see-through amount: WEAPON MODEL OPACITY)
     GLint uFlatViewProj_ = -1, uShadowViewProj_ = -1, uUiScreen_ = -1, uEdgeRcp_ = -1, uSharpRcp_ = -1, uWorldPx_ = -1, uDynPx_ = -1;
@@ -287,7 +304,7 @@ private:
     unsigned swatchProg_ = 0;   // (the world program with every look: compileWorld(nullptr))
     unsigned cleanTex_ = 0, cleanVao_ = 0, cleanVbo_ = 0;   // CLEAN SURFACES' averages (buildCleanMeans), texture unit 5
     std::vector<bool> cleanUsed_;   // the looks in the map (12 on, the large ones as their base)
-    std::vector<float> cleanKey_;   // what the averages were made with (program, palette); cleared: make them again
+    std::array<float, 14> cleanKey_ = {};   // what the averages were made with (program, palette); cleared: make them again
     unsigned swatchTex_ = 0, swatchFbo_ = 0, swatchLm_ = 0, swatchVao_ = 0, swatchVbo_ = 0, imgProg_ = 0, imgVao_ = 0, imgVbo_ = 0;
     GLint uImgScreen_ = -1;
     float swatchKey_[13] = {};
@@ -296,7 +313,7 @@ private:
     std::vector<unsigned> swatchSlotUsed_;            // (the frame each slot was last drawn)
     unsigned swatchFrame_ = 0;
     void buildSwatches();
-    void buildCleanMeans(const std::vector<float>& key);   // CLEAN SURFACES: each look's average (uCleanTex)
+    void buildCleanMeans(const std::array<float, 14>& key);   // CLEAN SURFACES: each look's average (uCleanTex)
     std::vector<std::vector<uint8_t>> previewImgs_;   // (setPreviews': uploaded into previewTex_ when previewDirty_)
     int previewW_ = 0, previewH_ = 0, previewCols_ = 1, previewRows_ = 1;
     bool previewDirty_ = false;
@@ -368,6 +385,24 @@ private:
     Vec3 camPos_, sunDir_ = {0, 1, 0};
     float camYaw_ = 0, camPitch_ = 0, camFov_ = 90, camAspect_ = 0;
     Mat4 viewFix_;   // (relatch: the old view to the new one, for the view model built for the old)
+    GLuint layerProg_ = 0, layerFbo_ = 0, layerTex_ = 0;
+    int layerW_ = 0, layerH_ = 0;
+    bool layerPass_ = false, layerReady_ = false;
+    static constexpr int kLatchSlots = 3;
+    bool latchInit();
+    void latchBlock(GLuint prog);
+    void latchWriteLocked(float yaw, float pitch);
+    GLuint latchUbo_ = 0;
+    uint8_t* latchMap_ = nullptr;
+    int latchStride_ = 256, latchSlot_ = 0;
+    bool latchUse_ = false, latchArmed_ = false;
+    std::atomic_flag latchLock_ = ATOMIC_FLAG_INIT;
+    Vec3 latchEye_;
+    Mat4 latchProj_;
+    float latchYaw_ = 0, latchPitch_ = 0, latchKYaw_ = 0, latchKPitch_ = 0;
+    std::atomic<long long> latchWrites_{0};
+    std::atomic<double> latchLastWrite_{0};
+    GLint uFlatLatch_ = -1;
     Mat4 viewProjFix_;   // (viewProj_ * viewFix_: the view model's pass)
     Mat4 view_m_, proj_, viewProj_;
 };

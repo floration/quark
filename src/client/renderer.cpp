@@ -54,12 +54,14 @@ layout(location=2) in vec2 aUV;
 layout(location=3) in float aMat;
 layout(location=4) in vec4 aEdge;
 uniform mat4 uViewProj;
+layout(std140) uniform Latch { mat4 uLatchVP; };
+uniform int uLatchUse;   // (GPU LATE LATCH: the view from the latch buffer, written until the GPU starts the frame)
 uniform mat4 uShadowMat;
 out vec3 vPos; out vec3 vN; out vec2 vUV; out float vMat; out vec4 vShadow; out vec4 vEdge;
 void main() {
     vPos = aPos; vN = aNormal; vUV = aUV; vMat = aMat; vEdge = aEdge;
     vShadow = uShadowMat * vec4(aPos + aNormal * 0.04, 1.0);
-    gl_Position = uViewProj * vec4(aPos, 1.0);
+    gl_Position = (uLatchUse != 0 ? uLatchVP : uViewProj) * vec4(aPos, 1.0);
 })";
 
 const char* kShadowFn = R"(
@@ -495,6 +497,20 @@ void main() {
     fragColor = vec4(clamp((c + (n + s + w + e) * k) / (1.0 + 4.0 * k), 0.0, 1.0), 1.0);
 })";
 
+// HUD BEFORE WORLD (LATENCY tab, ULTRA): the HUD drawn into its own layer before the late read, laid over the world
+// after it with one triangle (premultiplied: the layer was drawn with its alpha accumulated)
+const char* kLayerVS = R"(#version 330 core
+out vec2 vUV;
+void main() {
+    vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+    vUV = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+})";
+const char* kLayerFS = R"(#version 330 core
+in vec2 vUV;
+uniform sampler2D uLayer;
+out vec4 fragColor;
+void main() { fragColor = texture(uLayer, vUV); })";
+
 // sky: one full-screen triangle at the far plane, drawn after the world so only uncovered pixels shade
 const char* kSkyVS = R"(#version 330 core
 out vec2 vNdc;
@@ -550,12 +566,14 @@ layout(location=2) in vec4 aColor;
 layout(location=3) in vec4 aEdge;
 layout(location=4) in vec4 aOutline; // rgb: the edge colour, a: its width (pixels)
 uniform mat4 uViewProj;
+layout(std140) uniform Latch { mat4 uLatchVP; };
+uniform int uLatchUse;
 uniform mat4 uShadowMat;
 out vec3 vPos; out vec3 vN; out vec4 vColor; out vec4 vShadow; out vec4 vEdge; out vec3 vOutline; flat out float vOutlineW;
 void main() {
     vPos = aPos; vN = aNormal; vColor = aColor; vEdge = aEdge; vOutline = aOutline.rgb; vOutlineW = aOutline.a;
     vShadow = uShadowMat * vec4(aPos + aNormal * 0.03, 1.0);
-    gl_Position = uViewProj * vec4(aPos, 1.0);
+    gl_Position = (uLatchUse != 0 ? uLatchVP : uViewProj) * vec4(aPos, 1.0);
 })";
 
 const char* kDynFS = R"(
@@ -591,8 +609,10 @@ const char* kFlatVS = R"(#version 330 core
 layout(location=0) in vec3 aPos;
 layout(location=1) in vec4 aColor;
 uniform mat4 uViewProj;
+layout(std140) uniform Latch { mat4 uLatchVP; };
+uniform int uLatchUse;
 out vec4 vColor;
-void main() { vColor = aColor; gl_Position = uViewProj * vec4(aPos, 1.0); })";
+void main() { vColor = aColor; gl_Position = (uLatchUse != 0 ? uLatchVP : uViewProj) * vec4(aPos, 1.0); })";
 const char* kFlatFS = R"(#version 330 core
 in vec4 vColor;
 uniform float uFade;   // (as the dynamic shader's: the view model's translucent parts)
@@ -774,7 +794,7 @@ void Renderer::setWorldLooks(const BakedWorld& bw) {
         if (m >= 12 && m < kMapMaterials) cleanUsed_[(size_t)(m >= kMatLarge && m < kMatSemi ? kLarge[m - kMatLarge].base : m)] = true;
     }
     for (size_t m = 0; m < seeUsed_.size(); m++) if (seeUsed_[m]) cleanUsed_[m] = true;
-    cleanKey_.clear();
+    cleanKey_ = {};
     if (used == worldUsed_ && worldProg_) return;
     QZONE("world shader");
     std::string err;
@@ -828,8 +848,10 @@ void Renderer::initWorldUniforms() {
                U(worldProg_, "uCamPos"), U(worldProg_, "uFogColor"), U(worldProg_, "uBright"), U(worldProg_, "uBaseL"),
                U(worldProg_, "uAccentL"), U(worldProg_, "uWallbangL"), U(worldProg_, "uMetalL"), U(worldProg_, "uFloorL"),
                U(worldProg_, "uMetal"), U(worldProg_, "uGlow"), U(worldProg_, "uFull"), U(worldProg_, "uFullColor"), U(worldProg_, "uOutlineW"),
-               U(worldProg_, "uTime"), U(worldProg_, "uSunDir"), U(worldProg_, "uAlphaPass")};
+               U(worldProg_, "uTime"), U(worldProg_, "uSunDir"), U(worldProg_, "uAlphaPass"), U(worldProg_, "uLatchUse"),
+               U(worldProg_, "uWorldEdge")};
     glUniform1f(uWorld_.alphaPass, 0.0f);
+    latchBlock(worldProg_);
     uHoleCount_ = U(worldProg_, "uHoleCount");
     uHoleGrid_ = U(worldProg_, "uHoleGrid"); uHoleGridH_ = U(worldProg_, "uHoleGridH");
     glUniform1i(U(worldProg_, "uHoles"), 2);
@@ -839,7 +861,7 @@ void Renderer::initWorldUniforms() {
     glUniform1i(U(worldProg_, "uLightmap"), 0);
     glUniform1i(U(worldProg_, "uShadow"), 1);
     glUniform1i(U(worldProg_, "uCleanTex"), 5);
-    cleanKey_.clear();   // (a new program: its averages again)
+    cleanKey_ = {};   // (a new program: its averages again)
     glUniform1f(U(worldProg_, "uShadowTexel"), 1.0f / shadowRes_);
     setVec3(U(worldProg_, "uSunColor"), Vec3(0.78f, 0.75f, 0.70f));
     setVec3(U(worldProg_, "uSkyColor"), Vec3(0.42f, 0.45f, 0.52f));
@@ -888,6 +910,7 @@ bool Renderer::init(int shadowRes, std::string* err) {
     flatProg_ = compile(kFlatVS, kFlatFS, err);
     shadowProg_ = compile(kShadowVS, kShadowFS, err);
     uiProg_ = compile(kUiVS, kUiFS, err);
+    layerProg_ = compile(kLayerVS, kLayerFS, err);
     skyProg_ = compile(kSkyVS, kSkyFS, err);
     edgeProg_ = compile(kEdgeVS, kEdgeFS, err);
     sharpProg_ = compile(kEdgeVS, kSharpFS, err);
@@ -989,7 +1012,9 @@ bool Renderer::init(int shadowRes, std::string* err) {
     initWorldUniforms();
     glUseProgram(dynProg_);
     uDyn_ = {U(dynProg_, "uViewProj"), U(dynProg_, "uShadowMat"), U(dynProg_, "uShadowOn"), U(dynProg_, "uCasterRect"),
-             U(dynProg_, "uCamPos"), U(dynProg_, "uFogColor"), U(dynProg_, "uBright"), U(dynProg_, "uReceiveShadow"), U(dynProg_, "uSunDir")};
+             U(dynProg_, "uCamPos"), U(dynProg_, "uFogColor"), U(dynProg_, "uBright"), U(dynProg_, "uReceiveShadow"), U(dynProg_, "uSunDir"),
+             U(dynProg_, "uLatchUse")};
+    latchBlock(dynProg_);
     glUniform1i(U(dynProg_, "uShadow"), 1);
     glUniform1f(U(dynProg_, "uShadowTexel"), 1.0f / shadowRes_);
     setVec3(U(dynProg_, "uSunColor"), sunColor);
@@ -1005,6 +1030,8 @@ bool Renderer::init(int shadowRes, std::string* err) {
     glUniform3f(U(skyProg_, "uGrade"), grade_.x, grade_.y, grade_.z);
     lookUniforms(dynProg_); lookUniforms(skyProg_);
     uFlatViewProj_ = U(flatProg_, "uViewProj");
+    uFlatLatch_ = U(flatProg_, "uLatchUse");
+    latchBlock(flatProg_);
     uDynFade_ = U(dynProg_, "uFade"); uFlatFade_ = U(flatProg_, "uFade");
     uShadowViewProj_ = U(shadowProg_, "uViewProj");
     glUseProgram(uiProg_);
@@ -1305,6 +1332,80 @@ void Renderer::warmup(const Map& map) {
     flush2D();
     glFinish();
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+}
+
+// ---- GPU LATE LATCH (LATENCY tab; owner, 2026-11-02) -------------------------------------------------------------------
+// The main view's matrix also lives in a small ring of uniform-buffer slots, persistently mapped and coherent, so a write
+// from the CPU reaches the GPU without a GL call. The game arms the frame's slot at its late read (latchArm: the eye,
+// the projection, the aim then); the raw mouse thread then writes each newer aim into it (latchMouse) until the next
+// frame's read disarms it. Whatever the GPU reads when it starts the world is the newest aim. A ring of 3: the GPU may
+// still read the last frame's slot while this one is written (LOW LATENCY keeps at most one frame queued).
+
+void Renderer::latchBlock(GLuint prog) {
+    const GLuint i = glGetUniformBlockIndex(prog, "Latch");
+    if (i != GL_INVALID_INDEX) glUniformBlockBinding(prog, i, 0);
+}
+
+bool Renderer::latchInit() {
+    if (latchUbo_) return latchMap_ != nullptr;
+    GLint64 align = 256;
+    glGetInteger64v(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, &align);
+    latchStride_ = (int)std::max<GLint64>(64, ((64 + align - 1) / align) * align);
+    glGenBuffers(1, &latchUbo_);
+    glBindBuffer(GL_UNIFORM_BUFFER, latchUbo_);
+    const GLsizeiptr size = (GLsizeiptr)latchStride_ * kLatchSlots;
+    if (glBufferStorageOpt && latchSupported) {
+        glBufferStorageOpt(GL_UNIFORM_BUFFER, size, nullptr, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
+        latchMap_ = (uint8_t*)glMapBufferRange(GL_UNIFORM_BUFFER, 0, size, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
+    }
+    if (!latchMap_) {   // (no buffer storage: a plain buffer, so the shaders' block is bound to something; never latched)
+        std::vector<uint8_t> zero((size_t)size, 0);
+        glBufferData(GL_UNIFORM_BUFFER, size, zero.data(), GL_DYNAMIC_DRAW);
+    }
+    glBindBufferRange(GL_UNIFORM_BUFFER, 0, latchUbo_, 0, 64);
+    glBindBuffer(GL_UNIFORM_BUFFER, 0);
+    return latchMap_ != nullptr;
+}
+
+void Renderer::latchWriteLocked(float yaw, float pitch) {
+    const Vec3 fwd = angleForward(yaw, pitch);
+    const Mat4 vp = latchProj_ * Mat4::lookAt(latchEye_, latchEye_ + fwd, {0, 1, 0});
+    std::memcpy(latchMap_ + (size_t)latchSlot_ * latchStride_, vp.m, 64);
+    latchWrites_.fetch_add(1, std::memory_order_relaxed);
+    latchLastWrite_.store(latchClock ? latchClock() : 0.0, std::memory_order_relaxed);
+}
+
+void Renderer::latchArm(bool on, float kYaw, float kPitch) {
+    if (!latchUbo_) latchInit();
+    while (latchLock_.test_and_set(std::memory_order_acquire)) {}
+    latchArmed_ = false;
+    latchUse_ = on && latchMap_;
+    if (latchUse_) {
+        latchSlot_ = (latchSlot_ + 1) % kLatchSlots;
+        latchEye_ = camPos_; latchProj_ = proj_;
+        latchYaw_ = camYaw_; latchPitch_ = camPitch_;
+        latchKYaw_ = kYaw; latchKPitch_ = kPitch;
+        latchWriteLocked(latchYaw_, latchPitch_);   // (the aim now: as the CPU's view, until the mouse moves)
+        latchArmed_ = true;
+        glBindBufferRange(GL_UNIFORM_BUFFER, 0, latchUbo_, (GLintptr)latchSlot_ * latchStride_, 64);
+    }
+    latchLock_.clear(std::memory_order_release);
+}
+
+void Renderer::latchDisarm() {
+    while (latchLock_.test_and_set(std::memory_order_acquire)) {}
+    latchArmed_ = false;
+    latchLock_.clear(std::memory_order_release);
+}
+
+void Renderer::latchMouse(double dx, double dy) {   // (the raw mouse thread: the counts since the game's last read)
+    if (latchLock_.test_and_set(std::memory_order_acquire)) return;   // (the game is arming / disarming: skip this report)
+    if (latchArmed_) {
+        const float yaw = std::remainder(latchYaw_ - (float)dx * latchKYaw_, 2 * PI);
+        const float pitch = clampf(latchPitch_ - (float)dy * latchKPitch_, -1.55f, 1.55f);
+        latchWriteLocked(yaw, pitch);
+    }
+    latchLock_.clear(std::memory_order_release);
 }
 
 void Renderer::relatch(float yaw, float pitch) {
@@ -1724,7 +1825,7 @@ void Renderer::prepareScene(bool shadows) {
     setVec3(uWorld_.baseL, highContrast ? lin(vmin(baseColor * 1.3f + Vec3(0.12f, 0.12f, 0.12f), Vec3(1, 1, 1)), hiBase) : lin(baseColor, 1.5f));
     setVec3(uWorld_.accentL, lin(accentColor, hiAccent));
     setVec3(uWorld_.wallbangL, wallbangTint.x >= 0 ? lin(wallbangTint, 1.5f) : lin(baseColor * 0.42f, 1.5f));   // (MORE 4: WALLBANG TINT)
-    setVec3(U(worldProg_, "uWorldEdge"), lin(worldEdge, 1.0f));
+    setVec3(uWorld_.worldEdge, lin(worldEdge, 1.0f));   // (location cached: no string lookup a frame)
     setVec3(uWorld_.metalL, lin(metalColor, 1.5f));
     setVec3(uWorld_.floorL, lin(metalColor, 2.0f));
     setVec3(uWorld_.metal, metalColor);
@@ -1737,7 +1838,7 @@ void Renderer::prepareScene(bool shadows) {
     glUniform1f(uWorld_.outlineW, worldOutline);
     glUniform1f(uWorld_.time, liquidFlow ? (float)std::fmod(timeNow(), 3600.0) : 0.0f);   // (MORE 2: LIQUIDS STILL: time stands)
     setVec3(uWorld_.sunDir, sunDir_);
-    if (look_.clean || look_.fadeAt > 0.0f) buildCleanMeans({(float)worldProg_, baseColor.x, baseColor.y, baseColor.z, accentColor.x, accentColor.y, accentColor.z,
+    if (look_.clean || look_.fadeAt > 0.0f) buildCleanMeans(std::array<float, 14>{(float)worldProg_, baseColor.x, baseColor.y, baseColor.z, accentColor.x, accentColor.y, accentColor.z,
                                       metalColor.x, metalColor.y, metalColor.z, glowColor.x, glowColor.y, glowColor.z, highContrast ? 1.0f : 0.0f});
     glUseProgram(skyProg_);
     setVec3(uSky_.sky, skyColor); setVec3(uSky_.sunDir, sunDir_);
@@ -1785,6 +1886,7 @@ void Renderer::drawScene(bool shadows) {
         QGPUZONE("GPU world pass");
         glUseProgram(worldProg_);
         setMat(uWorld_.viewProj, viewProj_);
+        glUniform1i(uWorld_.latchUse, latchUse_ ? 1 : 0);
         glBindTexture(GL_TEXTURE_2D, lightmapTex_);
         if (lightmapNearest != lmFilterSet_) {   // (changed in the settings: once)
             lmFilterSet_ = lightmapNearest;
@@ -1814,6 +1916,7 @@ void Renderer::drawScene(bool shadows) {
         if (!count && !staticOn_) return;
         glUseProgram(dynProg_);
         setMat(uDyn_.viewProj, vp);
+        glUniform1i(uDyn_.latchUse, latchUse_ && &vp == &viewProj_ ? 1 : 0);   // (the view model's pass: its own fix, never the latch)
         glUniform1i(uDyn_.receive, receive ? 1 : 0);
         glBindVertexArray(dynVao_);
         if (count) glDrawArrays(GL_TRIANGLES, (GLint)first, (GLsizei)count);
@@ -1844,6 +1947,7 @@ void Renderer::drawScene(bool shadows) {
         glDisable(GL_CULL_FACE);
         glUseProgram(flatProg_);
         setMat(uFlatViewProj_, vp);
+        glUniform1i(uFlatLatch_, latchUse_ && &vp == &viewProj_ ? 1 : 0);
         glBindVertexArray(flatVao_);
         glDrawArrays(GL_TRIANGLES, (GLint)first, (GLsizei)count);
         glDepthMask(GL_TRUE);
@@ -1858,6 +1962,7 @@ void Renderer::drawScene(bool shadows) {
         glDisable(GL_CULL_FACE);
         glUseProgram(worldProg_);
         setMat(uWorld_.viewProj, viewProj_);
+        glUniform1i(uWorld_.latchUse, latchUse_ ? 1 : 0);
         glUniform1f(uWorld_.alphaPass, 1.0f);
         glBindVertexArray(seeVao_);
         glDrawArrays(GL_TRIANGLES, 0, seeVerts_);
@@ -2430,6 +2535,7 @@ void Renderer::buildSwatches() {
     glUniform1i(uHoleCount_, 0);
     setVec3(uWorld_.camPos, Vec3(1, 2, 3));
     setMat(uWorld_.viewProj, Mat4::ortho(0, 2, 1, 3, -1, 1));
+    glUniform1i(uWorld_.latchUse, 0);
     glUniform1f(uWorldPx_, 1.0f);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, swatchLm_);
@@ -2450,7 +2556,7 @@ void Renderer::buildSwatches() {
 // 4 m square on a top and on a side (64 px: 6 cm a pixel, the fine patterns fading to their average as they do far off),
 // and its pixels averaged into uCleanTex (unit 5). With it on the world draws those averages flat: no look runs at all.
 // Again only when the program, the palette or high contrast change (key); called from prepareScene, worldProg_ bound.
-void Renderer::buildCleanMeans(const std::vector<float>& key) {
+void Renderer::buildCleanMeans(const std::array<float, 14>& key) {   // (an array: no heap allocation a frame)
     if (key == cleanKey_ || !worldProg_) return;
     cleanKey_ = key;
     QZONE("clean surfaces");
@@ -2500,6 +2606,7 @@ void Renderer::buildCleanMeans(const std::vector<float>& key) {
             for (int k = 0; k < 3; k++) {
                 glViewport(k * P, (int)i * P, P, P);
                 setMat(uWorld_.viewProj, k == 0 ? top : side);
+                glUniform1i(uWorld_.latchUse, 0);
                 glUniform1i(pass, k == 2 ? 2 : 1);
                 glDrawArrays(GL_TRIANGLES, (GLint)(i * 12 + (k == 0 ? 0 : 6)), 6);
             }
@@ -2533,6 +2640,49 @@ void Renderer::buildCleanMeans(const std::vector<float>& key) {
     glActiveTexture(GL_TEXTURE0);
 }
 
+bool Renderer::hudLayerDraw() {
+    if (ui_.empty() || !layerProg_) return false;
+    if (!layerFbo_ || layerW_ != width_ || layerH_ != height_) {
+        if (!layerTex_) glGenTextures(1, &layerTex_);
+        glBindTexture(GL_TEXTURE_2D, layerTex_);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width_, height_, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        if (!layerFbo_) glGenFramebuffers(1, &layerFbo_);
+        glBindFramebuffer(GL_FRAMEBUFFER, layerFbo_);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, layerTex_, 0);
+        const bool ok = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        if (!ok) return false;
+        layerW_ = width_; layerH_ = height_;
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, layerFbo_);
+    glClearColor(0, 0, 0, 0);
+    glClear(GL_COLOR_BUFFER_BIT);
+    layerPass_ = true;   // (flush2D: alpha accumulated, for the premultiplied lay-over)
+    flush2D();
+    layerPass_ = false;
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    layerReady_ = true;
+    return true;
+}
+
+void Renderer::hudLayerComposite() {
+    if (!layerReady_) return;
+    layerReady_ = false;
+    glViewport(0, 0, width_, height_);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    glUseProgram(layerProg_);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, layerTex_);
+    glBindVertexArray(fsVao_);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glDisable(GL_BLEND);
+}
+
 void Renderer::flush2D() {
     if (ui_.empty()) { uiUploaded_ = 0; return; }
     QPLOT("ui verts", ui_.size());
@@ -2543,7 +2693,8 @@ void Renderer::flush2D() {
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
     glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    if (layerPass_) glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    else glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     if (uiUploaded_ != ui_.size()) upload(uiVbo_, uiCap_, ui_);   // (prepare2D did it, unless more was added since)
     uiUploaded_ = 0;
     glUseProgram(uiProg_);

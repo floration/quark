@@ -9,6 +9,7 @@
 // Elsewhere (Linux, macOS) none is available: open() and nvMaxClocks() fail, setGamePriority() does nothing.
 #pragma once
 #include <string>
+#include <vector>
 
 struct GLFWmonitor;
 
@@ -39,6 +40,11 @@ bool nvDxgiPresent(bool on, std::string* msg);
 // HwSchMode under HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers (2 on, 1 off), read at boot.
 // hwSchedState: 1 on, 0 off, -1 unknown / not Windows / not supported (no value: the driver or GPU doesn't offer it).
 int hwSchedState();
+// LATENCY > PERFORMANCE CHECK (owner, 2026-11-02): the graphics driver's and Windows' settings that cost frames or
+// latency, read (never changed): one finding a line, with where to change it. glRenderer: GL_RENDERER (the GPU the
+// game runs on). Empty: nothing found (or not Windows).
+struct PerfFinding { std::string what, fix; };
+std::vector<PerfFinding> perfCheck(const std::string& glRenderer);
 // "Disable fullscreen optimizations" (Properties > Compatibility) for this executable, for this user: the token
 // DISABLEDXMAXIMIZEDWINDOWEDMODE in HKCU\...\AppCompatFlags\Layers under the exe's path (other flags kept). No admin;
 // Windows reads it when the game starts. msg: for a notice.

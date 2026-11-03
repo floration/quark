@@ -60,8 +60,10 @@ public:
     int clientId() const { return clientId_; }
     uint32_t sessionNonce() const { return nonce_; } // (the in-process host makes this session admin)
     bool hasSnapshot() const { return !snaps_.empty(); }
-    const Snapshot& latest() const { return snaps_.back(); }
-    const ModeState& mode() const { return snaps_.back().ms; }
+    // (before the first snapshot: a blank one, never back() of an empty deque: that read freed heap and crashed
+    // Windows LTO builds between PKT_ACCEPT and the first PKT_SNAPSHOT, 2026-11-02)
+    const Snapshot& latest() const { static const Snapshot kNone{}; return snaps_.empty() ? kNone : snaps_.back(); }
+    const ModeState& mode() const { return latest().ms; }
 
     // Prediction
     const MoveState& predicted() const { return pred_; }
