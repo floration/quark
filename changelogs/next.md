@@ -10,7 +10,7 @@
 - macOS builds come out with each testing build again. When GitHub has no Apple Silicon Mac free, the macOS build now runs on an Intel Mac (it still makes the same universal app) instead of being dropped.
 
 ## Performance
-- **Higher frame rates and lows when the GPU is the limit:** the world draws with the GPU's early depth test while no holes have been blown in breakable walls. That's +4% average FPS and +8% on the 1% lows on a 3090 Ti at 1440p, with identical pictures.
+- **Higher frame rates and lows when the GPU is the limit:** the world draws with the GPU's early depth test while no holes have been blown in breakable walls. On a 3090 Ti at 1440p that's +3.8% average FPS, +9.4% on the 1% lows and +11.3% on the 0.1% lows, with identical pictures.
 
 ## Latency
 - **New LATENCY settings tab**, with every latency tweak on its own switch so you can try each combination and compare them in F3 (which now names the tweaks it was taken with):
