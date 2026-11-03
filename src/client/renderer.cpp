@@ -1315,21 +1315,42 @@ void Renderer::uploadBlocks(const Map& map) {
 }
 
 // Drivers compile shader variants and pipeline states lazily, on the first draw that uses them, which
-// is a 30-60 ms hitch on the first frame of a match (and on the first explosion, beam, ...). Draw one
-// throwaway frame that touches every program and state while the loading screen is up, and wait for it.
+// is a 30-60 ms hitch on the first frame of a match (and on the first explosion, beam, ...). Draw throwaway
+// frames that touch every program and state while the loading screen is up, and wait for them.
+// Two frames, as a match draws them (drawScene: the MSAA / RENDER SCALE target and its resolve, the world and its
+// breakable blocks, the sky, the see-through pass, shadows), and between them what a match can turn on later: the
+// GPU late latch's buffer and its read (latchInit used to run on the first frame in play), the view model's fade
+// (WEAPON MODEL OPACITY below 100%: a depth-only draw, then a blended one) and its translucent parts. The second also
+// re-sends the stream buffers while the first frame may still use them (the driver's orphan path), and faces the
+// other way, so more of the world is drawn. Never shown: the bake screen draws over it, glClear after.
 void Renderer::warmup(const Map& map) {
     QZONE("renderer warmup");
-    Vec3 c = map.bounds.center();
-    setCamera(c + Vec3(0, 2, 0), 0, 0, 90);
-    box(c, {0.3f, 0.3f, 0.3f}, 0, {0.5f, 0.5f, 0.5f}, 1.0f, true, true);   // dynamic + shadow caster
-    box(c, {0.3f, 0.3f, 0.3f}, 0, {0.5f, 0.5f, 0.5f}, 1.0f, true, false);  // shadow-only caster
-    translucentBox({c, c + Vec3(0.5f, 0.5f, 0.5f)}, {1, 1, 1, 0.3f});       // blended pass
-    line(c, c + Vec3(0, 1, 0), 0.05f, {1, 1, 1, 0.5f});
-    viewBox({0.2f, -0.2f, -0.5f}, {0.02f, 0.02f, 0.1f}, {0.5f, 0.5f, 0.5f}); // first-person pass
-    drawScene(true);
-    rect(0, 0, 4, 4, {1, 1, 1, 0.5f});
-    text(0, 0, 2, "A", {1, 1, 1, 1});
-    flush2D();
+    if (!latchUbo_) latchInit();
+    const Vec3 c = map.bounds.center();
+    for (int pass = 0; pass < 2; pass++) {
+        setCamera(c + Vec3(0, 2, 0), pass ? PI : 0.0f, pass ? -0.3f : 0.0f, 90);
+        box(c, {0.3f, 0.3f, 0.3f}, 0, {0.5f, 0.5f, 0.5f}, 1.0f, true, true);   // dynamic + shadow caster
+        box(c, {0.3f, 0.3f, 0.3f}, 0, {0.5f, 0.5f, 0.5f}, 1.0f, true, false);  // shadow-only caster
+        translucentBox({c, c + Vec3(0.5f, 0.5f, 0.5f)}, {1, 1, 1, 0.3f});       // blended pass
+        line(c, c + Vec3(0, 1, 0), 0.05f, {1, 1, 1, 0.5f});
+        viewBox({0.2f, -0.2f, -0.5f}, {0.02f, 0.02f, 0.1f}, {0.5f, 0.5f, 0.5f}); // first-person pass
+        if (pass) {   // the view model's translucent parts (an override model's glass), and its fade
+            const Vec3 v = viewPoint({0.2f, -0.2f, -0.5f});
+            for (const Vec3& q : {v, v + Vec3(0.02f, 0, 0), v + Vec3(0, 0.02f, 0)}) {
+                FlatVertex fv;
+                memcpy(fv.pos, &q.x, 12);
+                fv.color[0] = fv.color[1] = fv.color[2] = 1; fv.color[3] = 0.5f;
+                viewFlat_.push_back(fv);
+            }
+            viewOpacity = 0.5f;   // (drawScene puts it back to 1)
+        }
+        latchArm(pass == 0, 0, 0);   // (the first with the late latch's read, where the driver has it; the second without)
+        drawScene(true);
+        rect(0, 0, 4, 4, {1, 1, 1, 0.5f});
+        text(0, 0, 2, "A", {1, 1, 1, 1});
+        flush2D();
+    }
+    latchArm(false, 0, 0);
     glFinish();
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
