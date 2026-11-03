@@ -409,7 +409,7 @@ private:
     bool voteMenu_ = false;
     bool specPick_ = false;     // the vote menu's player list: who to move to spectator (callvote spec)
     void drawVoteMenu(float cx, float y);
-    // The vote builder (owner, 2026-11-01): one VOTE screen; toggles for what the vote changes (GAMEMODE, MODIFIERS,
+    // The vote builder (owner, 2026-11-01): the VOTE page's toggles for what the vote changes (GAMEMODE, MODIFIERS,
     // MAP), then each part in order: the mode (OBJECTIVE or PLAYER first), its modifiers (the ruleset, then the numbers
     // and rules), the map; one vote for all of it ("callvote map <map> <mode> <ruleset> [mods k=v ...]").
     enum VoteStage { VS_TOGGLES = 0, VS_GROUP, VS_MODE, VS_RULESET, VS_MODS, VS_MAP, VS_SUMMARY };
@@ -417,10 +417,11 @@ private:
     int voteStage_ = VS_TOGGLES;
     bool vsMode_ = true, vsMods_ = true, vsMap_ = true;
     int modeGroup_ = 0;                 // 0 all, 1 objective, 2 player (the mode picker's filter in the builder)
-    struct VoteMods { float gravity = 1, speed = 1, jump = 1, knockback = 1, damage = 1; float health = 100;
+    struct VoteMods { float gravity = 1, speed = 1, jump = 1, knockback = 1, damage = 1, fireRate = 1, projSpeed = 1; float health = 100;
                       bool vampire = false, regen = false, selfDamage = true, dash = true, grapple = true, instagib = false, fly = false; } voteMods_;
     void openVoteSetup();
     void voteAdvance();                 // on to the next part the toggles ask for (a picker, or the builder's own page)
+    void voteBack();                    // back to the part before (the last one toggled on before this one), or the VOTE page
     std::string voteModsWords() const;  // " mods k=v ..." (the non-standard ones)
     std::string voteModsText() const;   // the same as k=v lines (votedModsTitle)
     void drawVoteSetup();

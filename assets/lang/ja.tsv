@@ -421,9 +421,13 @@ CHAT SECONDS	チャット表示秒数
 CHECK AGAIN	再確認
 CHECKPOINT	チェックポイント
 CHECKPT	CP
+CHOOSE	選択
 CHOOSE -	選択 -
 CHOOSE A MAP FOR	マップを選択:
 CHOOSE A MODE	モードを選択
+CHOOSE THE GAMEMODE	ゲームモードを選択
+CHOOSE THE MAP	マップを選択
+CHOOSE THE MODIFIERS	修正を選択
 CHOOSING...	選択中...
 CLASSIC	クラシック
 CLEAN SURFACES	クリーンな表面
@@ -1295,7 +1299,6 @@ MAGENTA	マゼンタ
 MAKE	作成
 MALE	男性
 MAP	マップ
-MAP / MODE / MODIFIERS	マップ / モード / 修正
 MAP COLOR	マップの色
 MAP COLORS	マップカラー
 MAP DOWNLOADS	マップのダウンロード
@@ -2256,6 +2259,7 @@ PROFILE:	プロファイル:
 PROFILE: MY CONTROLS	プロファイル: 自分の操作設定
 PROFILE: MY HUD	プロファイル: 自分のHUD
 PROFILES	プロファイル
+PROJECTILE SPEED	弾速
 PUBLIC	公開
 PUBLIC lists the server on the internet server list (off: friends join with your IP, shown on the host screen). Games on your network show up for everyone on it.	公開にするとインターネットのサーバーリストに掲載 (オフ: フレンドはホスト画面に表示されるIPで参加)。ネットワーク内のゲームは同じネットワークの全員に表示されます。
 PULSE	パルス
@@ -3050,7 +3054,6 @@ WEAPON:	武器:
 WEAPONS	武器
 WEAPONS (THEIR NUMBER KEYS STILL WORK)	武器 (数字キーは引き続き有効)
 WHAT THE BOTS PLAY: .QBRAIN FILES IN THE BOTS FOLDER	ボットのAI: botsフォルダの .QBRAIN ファイル
-WHAT THE VOTE CHANGES	投票で変わる内容
 WHEEL DN	WHEEL DN
 WHEEL UP	WHEEL UP
 WHEN ONE FILLS, EVERYONE IN IT IS TOLD (HERE AND ON DISCORD)	成立すると参加者全員に通知 (こことDISCORDで)

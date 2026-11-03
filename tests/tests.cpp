@@ -7032,15 +7032,20 @@ static void testVoteModifiers(uint16_t port) {
     refused("callvote map glacier ffa classic mods damage=abc");
     refused("callvote map glacier ffa classic damage=2");   // (no "mods" word)
     refused("callvote map dojo tourney classic mods damage=2");
-    b.sendCommand("callvote map glacier ffa classic mods damage=2 vampire=1 health=150 dash=0");
+    refused("callvote map glacier ffa classic mods firerate=x");
+    b.sendCommand("callvote map glacier ffa classic mods damage=2 firerate=1.5 projspeed=0.75 vampire=1 health=150 dash=0");
     pump(s, cls, 0.3, idle);
     CHECK(s.vote_.kind == Server::VOTE_MAP && s.vote_.text.find("DAMAGE X2") != std::string::npos && s.vote_.text.find("VAMPIRE") != std::string::npos &&
-          s.vote_.text.find("NO DASH") != std::string::npos);
+          s.vote_.text.find("NO DASH") != std::string::npos && s.vote_.text.find("FIRE RATE X1.5") != std::string::npos &&
+          s.vote_.text.find("PROJECTILE SPEED X0.75") != std::string::npos);
     a.sendCommand("vote yes");
     pump(s, cls, 1.0, idle);
     const CustomRules& r = s.config().custom;
     CHECK(r.active() && r.name == Server::kVotedRules && r.baseMode == MODE_FFA && r.vampire && !r.dash && r.health == 150 &&
           std::fabs(r.damage[WPN_ROCKET] - 2) < 1e-4f && std::fabs(r.damage[0] - 2) < 1e-4f);
+    // (fire rate and projectile speed: every weapon, the damage line's other two numbers)
+    CHECK(std::fabs(r.fireRate[WPN_ROCKET] - 1.5f) < 1e-4f && std::fabs(r.fireRate[WPN_COUNT - 1] - 1.5f) < 1e-4f &&
+          std::fabs(r.projSpeed[WPN_ROCKET] - 0.75f) < 1e-4f && std::fabs(r.damage[WPN_COUNT - 1] - 2) < 1e-4f);
     CHECK(activeRules().active() && activeRules().vampire);
     printf("  passed: %s\n", votedModsTitle("damage=2\nvampire=1\nhealth=150\ndash=0\n").c_str());
     pass("callvote map glacier koth classic");   // a mode vote without modifiers keeps them
