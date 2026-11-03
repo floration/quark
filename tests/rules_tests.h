@@ -2873,7 +2873,8 @@ static void testVamp3D(uint16_t port) {
     const int ia = c[0].clientId(), ib = c[1].clientId();
     auto& pa = s.players_[ia];
     auto& pb = s.players_[ib];
-    pump(s, cls, 0.1, idle);
+    pumpServerTime(s, cls, 0.1, idle);
+    for (int k = 0; k < 50 && !c[0].predicted().fly; k++) pumpServerTime(s, cls, 0.1, idle);   // (the flag's snapshot, under load)
     CHECK(s.vampireFade() == 30.0f && pa.move.fly && pb.move.fly && c[0].predicted().fly);   // (the flag reaches prediction)
     CHECK(s.weaponAllowed(WPN_LASER) && !s.weaponAllowed(WPN_ROCKET));
     auto heal = [&](double into) {   // pa hits pb for 20, `into` s into the round: what pa healed
@@ -2897,7 +2898,7 @@ static void testVamp3D(uint16_t port) {
     // flown out into space: a fall (the round ends), and the next round's ramp starts again
     const int round = s.ms_.round;
     pb.move.pos = {s.map_.bounds.mx.x + Server::kFlyKillMargin + 5, 0, 0};
-    pump(s, cls, 0.1, idle);
+    pumpServerTime(s, cls, 0.1, idle);   // (server time: under load the test clock runs ahead of it)
     CHECK(!pb.alive);
     for (int k = 0; k < 200 && !(s.ms_.phase == PHASE_LIVE && s.ms_.round != round); k++) {
         if (s.ms_.phase == PHASE_FREEZE || s.ms_.phase == PHASE_ROUND_END) s.phaseEnd_ = s.time();
@@ -2927,13 +2928,16 @@ static void testFlyModifier(uint16_t port) {
     NetClient c[2];
     std::vector<NetClient*> cls;
     if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); return; }
-    pump(s, cls, 0.2, idle);
     auto& pa = s.players_[c[0].clientId()];
+    // (server time, not the test clock: under load the server falls behind it, and a bot spawns some ticks after
+    // it joins; up to 5 s of game time for both)
+    for (int k = 0; k < 50 && !(pa.alive && pa.move.fly && c[0].predicted().fly); k++) pumpServerTime(s, cls, 0.1, idle);
     CHECK(pa.alive && pa.move.fly && c[0].predicted().fly);
     // a bot flies up and down too: to its target's height (and not through the floor)
     const int bot = s.addBot(TEAM_A, BOT_ADVANCED);
-    pump(s, cls, 0.5, idle);
     ServerPlayer& bp = s.players_[bot];
+    pumpServerTime(s, cls, 0.5, idle);
+    for (int k = 0; k < 45 && !(bp.alive && bp.move.fly); k++) pumpServerTime(s, cls, 0.1, idle);
     CHECK(bp.alive && bp.move.fly);
     int up = 0;
     for (int k = 0; k < 20 && bp.alive && pa.alive; k++) {

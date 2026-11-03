@@ -799,7 +799,8 @@ const LockCase kLockCases[] = {
     {MODE_POINTS, "midtown", 8, "param roundTime f32 = 25\nparam captureTime f32 = 3\nparam pointBonus f32 = 5\n"},
     {MODE_POWER, "bastion", 6, "param rounds int = 2\nparam roundTime f32 = 20\nparam poolPerPlayer f32 = 150\n"},
     {MODE_BALL, "qk8", 6, "param roundTime f32 = 25\n"},
-    {MODE_WINNER, "temple", 2, "param rounds int = 2\nparam stalemate f32 = 5\nparam drainRate f32 = 50\n"},
+    // (no MODE_WINNER: retired, a server started in it plays 1v1 (retiredTo), so its logic, based on winner stays,
+    // never hooks in; 1v1's case above covers the line it rotates now)
 };
 const char* const kCommonFast = "param freezeTime f32 = 1\nparam roundEndTime f32 = 1\nparam matchEndTime f32 = 1.5\nparam warmupCountdown f32 = 1\n";
 
