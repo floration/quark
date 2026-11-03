@@ -9212,6 +9212,9 @@ void Game::drawLatencySettings(const SetLayout& L) {
     ui_.toggle(f.x(), f.top(), w, h, "HUD BEFORE WORLD", cfg_.hudFirst, UiExp::cfg("hud_first"));
     f.next();
     f.hint("ULTRA ONLY: THE HUD DRAWN BEFORE THE LATE READ,", "LAID OVER THE WORLD AFTER IT");
+    ui_.toggle(f.x(), f.top(), w, h, "EARLY DEPTH TEST", cfg_.fastWorld, UiExp::cfg("fast_world"));
+    f.next();
+    f.hint("THE GPU SKIPS THE WORLD'S HIDDEN PIXELS", "(UNTIL A HOLE IS BLOWN IN A WALL)");
     f.hint(keyOf(A_PERF) + " 3 TIMES: THE GRAPH; 4 TIMES: THE GAME'S PART ONLY");
 
     SetFlow g{ui_, L, kColR, 90};
@@ -10368,6 +10371,7 @@ void Game::applyLive() {
     lk.tone = cfg_.toneCurve; lk.dither = cfg_.dither; lk.clean = cfg_.cleanSurfaces; lk.fadeAt = cfg_.patternFade ? 0.18f * cfg_.fadeDist : 0.0f; lk.fadeLen = cfg_.fadeLen; lk.flatLight = cfg_.flatLight;
     lk.simpleSky = cfg_.simpleSky; lk.pcf = cfg_.shadowFilter; lk.emit = cfg_.playerEmit; lk.outlineA = cfg_.outlineAlpha;
     r_.setLook(lk);
+    r_.fastWorld = cfg_.fastWorld;
     r_.farScenery = cfg_.farScenery; r_.farPlane = (float)cfg_.drawDist; r_.shadowRange = (float)cfg_.shadowDist;
     r_.shadowWorld = cfg_.shadowWorld; r_.shadowPlayers = cfg_.shadowPlayers;
     audio_.setMasterVolume(masterGain());
@@ -10987,6 +10991,7 @@ void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
         add(cfg_.cpuLatch && cfg_.lowLatency > 0, "CPU LATCH");
         add(gpuLatchOn_, "GPU LATCH");
         add(hudLayerOn_, "HUD FIRST");
+        add(cfg_.fastWorld, "EARLY DEPTH");
         char tw[160];
         snprintf(tw, sizeof tw, "LOW LATENCY %s, TWEAKS: %s", cfg_.lowLatency == 2 ? "ULTRA" : cfg_.lowLatency == 1 ? "ON" : "OFF",
                  on.empty() ? "NONE" : on.c_str());

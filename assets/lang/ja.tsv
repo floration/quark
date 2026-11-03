@@ -80,6 +80,7 @@
 (REFUSED 0X#)	(拒否 0X#)
 (TEAM MODES NEED A + B SPAWNS)	(チームモードにはA + Bのスポーンが必要)
 (TEAM)	(チーム)
+(UNTIL A HOLE IS BLOWN IN A WALL)	(壁に穴が開くまで)
 (already in use?)	(使用中?)
 (and copied it) - rename it there	(コピーしました) - そちらで名前を変更してください
 (edited)	(編集済み)
@@ -763,7 +764,6 @@ DYNAMIC RANGE: NIGHT	ダイナミックレンジ: ナイト
 DYNAMIC RANGE: NORMAL	ダイナミックレンジ: 通常
 Dash into a wall head-on (under 45 degrees) and you bounce off it at 16 m/s (it leaves you 1 dash).	壁に正面から (45度未満で) ダッシュすると 16 m/s で跳ね返ります (ダッシュが1回残ります)。
 Dash jump: jump while dashing along the floor to keep the dash's full speed through the jump (it leaves you both dashes).	ダッシュジャンプ: 床をダッシュ中にジャンプするとダッシュの速度を維持したまま跳べます (ダッシュは両方残ります)。
-Decl: no padding (its words are hashed)	Decl: パディングなし (ワードはハッシュ化)
 Display: window mode, vsync, low latency mode, frame cap, player shadows, brightness, anti-aliasing and interpolation. Lower latency settings cost smoothness: the notes under them say how.	ディスプレイ: ウィンドウモード、垂直同期、低遅延モード、フレーム上限、プレイヤーの影、明るさ、アンチエイリアス、補間。低遅延設定は滑らかさを犠牲にします: 詳細は各項目の説明を参照。
 Drag the squares on a selected box's faces to resize it; drag the arrows to move it. The keyboard works too: ARROWS / PGUP / PGDN move it by the grid, SHIFT + ARROWS grow a side, CTRL + ARROWS shrink it.	選択したボックスの面の四角をドラッグでサイズ変更、矢印をドラッグで移動。キーボードも使えます: 矢印 / PGUP / PGDN でグリッド移動、SHIFT + 矢印で面を拡大、CTRL + 矢印で縮小。
 E - use (plant / defuse the bomb).   1-9, 0 - weapons.   MOUSE WHEEL - next / previous weapon.	E - 使用 (爆弾の設置 / 解除)。   1-9, 0 - 武器。   マウスホイール - 次 / 前の武器。
@@ -771,6 +771,8 @@ E-GIRL	E-GIRL
 EACH INPUT SENT IN THIS MANY PACKETS	各入力をこの数のパケットで送信
 EACH OF THE ANNOUNCER'S LINES ON OR OFF	アナウンサーの各セリフのオン / オフ
 EACH SLIDER SHOWS THE VALUE IN THIS MODE (STANDARD x MULTIPLIER)	各スライダーはこのモードでの値を表示 (標準 x 倍率)
+EARLY DEPTH	早期深度
+EARLY DEPTH TEST	早期深度テスト
 EARLY FLUSH	早期送信
 EASY	かんたん
 EASY BOTS	イージーボット
@@ -1044,7 +1046,6 @@ GUN: TEAM	武器: チーム
 GUNFIRE	銃声
 GUS	GUS
 Game::frame	Game::frame
-Game::testHeld_ holds a bit per action	Game::testHeld_ holds a bit per action
 HALFTIME - SIDES SWITCHED	ハーフタイム - 攻守交代
 HALFTIME - SIDES SWITCHED: YOU ATTACK NOW	ハーフタイム - 攻守交代: 攻撃側へ
 HALFTIME - SIDES SWITCHED: YOU DEFEND NOW	ハーフタイム - 攻守交代: 防衛側へ
@@ -2087,7 +2088,6 @@ MY SKY / GLOW: THESE IN PLACE OF EVERY MAP'S;	自分の空 / グロー: 全マ�
 MY TRACER	自分の弾道
 Maps are saved to the maps folder (MAPS FOLDER opens it) as .qmap text files. RESET MAPS puts the built-in maps back.	マップは maps フォルダー (MAPS FOLDER で開く) に .qmap テキストファイルとして保存される. RESET MAPS で内蔵マップに戻る.
 Model	モデル
-ModelOverrides holds kMaxModelsPerKind models of a kind	ModelOverrides holds kMaxModelsPerKind models of a kind
 N/A HERE: LATENT SYNC IS WINDOWS ONLY	ここでは使用不可: LATENT SYNC は WINDOWS のみ
 N/A HERE: LINUX (X11) ONLY	ここでは N/A: LINUX (X11) のみ
 N/A HERE: WINDOWS + NVIDIA ONLY	ここでは使用不可: WINDOWS + NVIDIA のみ
@@ -2958,6 +2958,7 @@ THE FRAME	フレーム
 THE GAME RUNS ON YOUR INTEGRATED GPU	ゲームが内蔵 GPU で動いている
 THE GAME'S PART ONLY: NO MOUSE POLLING, NO DISPLAY; ONE TIME LINE	ゲームのみ: マウスとディスプレイを除く; 一本の時間軸
 THE GPU READS YOUR AIM AS IT STARTS DRAWING;	GPU が描き始めるときに照準を読む;
+THE GPU SKIPS THE WORLD'S HIDDEN PIXELS	GPU が見えない部分のピクセルを飛ばす
 THE GUN'S KICK ON A SHOT (0: NONE)	射撃時の武器の反動 (0: なし)
 THE HAZE OVER DISTANT WALLS (0: NONE)	遠くの壁にかかる霞 (0: なし)
 THE LANGUAGE OF THE MENUS AND THE HUD	メニューと HUD の言語
@@ -3295,25 +3296,18 @@ ZONE OPACITY	ゾーンの不透明度
 ZONE PULSE	ゾーンの脈動
 ZOOM	ズーム
 ZOOM SENSITIVITY	ズーム感度
-a caption for every announcer line	a caption for every announcer line
-a colour per material from ice on (a large one: its base's), then the see-through, breakable and feature ones	a colour per material from ice on (a large one: its base's), then the see-through, breakable and feature ones
 a damaged PAK	破損したPAK
 a damaged WAD	破損したWAD
 a damaged built-in atlas	破損した内蔵アトラス
-a label per material (the cycles below index it by material)	a label per material (the cycles below index it by material)
-a look per material from kMatBlocks on (the large ones: their base's), then the see-through, breakable and feature ones	a look per material from kMatBlocks on (the large ones: their base's), then the see-through, breakable and feature ones
 a map keeps at least one box outside groups - add another box first	マップにはグループ外のボックスが1つ以上必要です - 先に別のボックスを追加してください
 a map needs at least one box	マップにはボックスが1つ以上必要です
 a map needs at least one mode	マップにはモードが1つ以上必要です
 a map needs at least one spawn	マップにはスポーンが1つ以上必要です
-a picker tab for every material (kMatTabs)	a picker tab for every material (kMatTabs)
 a ranked match is being played - no votes until it's over	ランク試合中 - 終了するまで投票できません
 a ranked match is being played - teams stay as they are until it's over	ランク試合中 - 終了するまでチームは変更されません
 a ranked match is being played: '	ランク試合中: '
-a reference palette per prop	a reference palette per prop
 a spectate vote needs at least	観戦投票に必要な最小人数:
 a tag match is being played - you can join the next one	鬼ごっこの試合中 - 次の試合に参加できます
-a theme style per HUD element	a theme style per HUD element
 a tourney is running - you can join the next one	トーナメント進行中 - 次の大会に参加できます
 a vote is already in progress	既に投票が進行中です
 accessor out of range	accessor out of range
@@ -3431,7 +3425,6 @@ demo finished	デモ終了
 demo:	デモ:
 draw - the payload is in the middle	引き分け - ペイロードは中央
 dropped:	ドロップ:
-duelUsed_ is a 32-bit mask	duelUsed_ is a 32-bit mask
 dyn verts	dyn verts
 dynamic pass	dynamic pass
 e.g.  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5	例:  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5
@@ -3448,7 +3441,6 @@ edits dropped	編集を破棄しました
 else if	else if
 ember: gg	ember: gg
 enough players again - the match goes on	人数が戻りました - 試合続行
-every HUD element in the dropdown	every HUD element in the dropdown
 every point taken	全ポイント占拠
 everyone left - back to warmup	全員退出 - ウォームアップに戻ります
 exec: a file name in your data folder (no folders)	exec: データフォルダ内のファイル名 (フォルダ不可)
@@ -3477,6 +3469,7 @@ has no ranked id	にはランクIDがありません
 hdmi:	hdmi:
 high at	最高:
 human cmds	human cmds
+if (blended && alpha < 0.01) discard;	if (blended && alpha < 0.01) discard;
 if players reach it there, start the server with --own-addr	プレイヤーがそこで接続する場合、--own-addr でサーバーを起動してください
 in your data folder	データフォルダ内
 index out of range	index out of range
@@ -3503,8 +3496,6 @@ isn't in this custom mode's map pool	はこのカスタムモードのマップ�
 joined team A	がチームAに参加
 joined team B	がチームBに参加
 joined the game	がゲームに参加
-kElemNames follows Settings::HUD_*	kElemNames follows Settings::HUD_*
-kFrameTimes must be a power of two	kFrameTimes must be a power of two
 kbps (# packets/s), download # kbps (#/s)	kbps (# パケット/s)、ダウンロード # kbps (#/s)
 kick whom? a name or an id (status lists them)	誰をキック? 名前かID (statusで一覧表示)
 kicked by a vote	投票でキックされました
@@ -3572,6 +3563,7 @@ no points	ポイントなし
 no response	応答なし
 no small gaps to close	埋める小さな隙間はありません
 no triangles	no triangles
+no-discard world shader: missing	no-discard world shader: missing
 nobody finished	誰も完走しませんでした
 nobody is out - throw again	脱落者なし - もう一度
 nobody left	誰も残っていません
@@ -3590,6 +3582,7 @@ not enough players	人数不足
 not enough players - back to warmup	人数不足 - ウォームアップに戻ります
 not enough players - the match ends in	人数不足 - 試合終了まで
 not enough players for a tourney	トーナメントの人数が足りません
+not in the main program	not in the main program
 not in this build	このビルドにはありません
 not rated:	レート対象外:
 not the ladder's mode	ラダーのモードではありません
@@ -3606,8 +3599,6 @@ odd sample rate	不正なサンプルレート
 of #	/ #
 off for this match	この試合ではオフ
 on your router to this PC	をルーターでこのPCへ
-one folder per sound kit	one folder per sound kit
-one name per sound, in SoundId order	one name per sound, in SoundId order
 only a timed round can be extended	延長できるのは時間制ラウンドのみ
 over 64 MB	64 MB超
 override {} ({}): # triangles (at most #)	override {} ({}): # triangles (at most #)
@@ -3772,7 +3763,6 @@ the PAK has no gfx.wad	PAKに gfx.wad がありません
 the WAD has no CONCHARS	WADに CONCHARS がありません
 the autosave can't be read	自動保存を読み込めません
 the bomb went back to	爆弾が戻りました:
-the cursor wraps with uint32	the cursor wraps with uint32
 the cutter (the first box selected) doesn't touch the others	カッター (最初に選択したボックス) が他に接していません
 the cutter (the first box selected) has to be a plain box	カッター (最初に選択したボックス) は通常のボックスである必要があります
 the driver has no shorter period	ドライバーにこれより短い周期はありません
@@ -3821,6 +3811,7 @@ tourney seed #: {} (#)	tourney seed #: {} (#)
 tourney started -	トーナメント開始 -
 trying the next rate up: busy #%, upload # kbps	次の上位レートを試行: 使用中 #%、アップロード # kbps
 ui verts	ui verts
+ultra: pace the input read	ultra: pace the input read
 ungrouped into	グループ解除:
 unknown mode	不明なモード
 unknown mode '	不明なモード '
@@ -3864,11 +3855,19 @@ wins the race	がレースに勝利
 wins the round	がラウンドに勝利
 wins the tourney!	がトーナメント優勝!
 world chunks	world chunks
+world fast: back to main	world fast: back to main
+world fast: bind + sync	world fast: bind + sync
+world fast: frame uniforms	world fast: frame uniforms
+world fast: full copy	world fast: full copy
 world pass	world pass
 world shader	world shader
+world shader (no discard):	world shader (no discard):
+world shader (no discard): {}	world shader (no discard): {}
+world shader (no discard): {} not in the main program	world shader (no discard): {} not in the main program
 world shader:	world shader:
 world shader: {}	world shader: {}
 world upload	world upload
+world: frame uniforms	world: frame uniforms
 wraith: nice shot	wraith: ナイスショット
 you already called a vote on	既に投票を開始済み:
 you left the line - join a team to get back in it	列から外れました - 戻るにはチームに参加

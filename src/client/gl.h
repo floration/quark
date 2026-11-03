@@ -25,6 +25,15 @@ typedef int64_t GLint64;
 typedef struct __GLsync* GLsync;
 
 #define GL_FALSE 0
+#define GL_ACTIVE_UNIFORMS 0x8B86
+#define GL_FLOAT_VEC2 0x8B50
+#define GL_FLOAT_VEC3 0x8B51
+#define GL_FLOAT_VEC4 0x8B52
+#define GL_INT_VEC2 0x8B53
+#define GL_INT_VEC3 0x8B54
+#define GL_INT_VEC4 0x8B55
+#define GL_FLOAT_MAT3 0x8B5B
+#define GL_FLOAT_MAT4 0x8B5C
 #define GL_TRUE 1
 #define GL_TRIANGLES 0x0004
 #define GL_LINES 0x0001
@@ -183,6 +192,16 @@ typedef struct __GLsync* GLsync;
     X(void, glUseProgram, (GLuint)) \
     X(GLint, glGetUniformLocation, (GLuint, const GLchar*)) \
     X(void, glUniform1i, (GLint, GLint)) \
+    X(void, glGetActiveUniform, (GLuint, GLuint, GLsizei, GLsizei*, GLint*, GLenum*, GLchar*)) \
+    X(void, glGetUniformfv, (GLuint, GLint, GLfloat*)) \
+    X(void, glGetUniformiv, (GLuint, GLint, GLint*)) \
+    X(void, glUniform1fv, (GLint, GLsizei, const GLfloat*)) \
+    X(void, glUniform2fv, (GLint, GLsizei, const GLfloat*)) \
+    X(void, glUniform3fv, (GLint, GLsizei, const GLfloat*)) \
+    X(void, glUniform2iv, (GLint, GLsizei, const GLint*)) \
+    X(void, glUniform3iv, (GLint, GLsizei, const GLint*)) \
+    X(void, glUniform4iv, (GLint, GLsizei, const GLint*)) \
+    X(void, glUniformMatrix3fv, (GLint, GLsizei, GLboolean, const GLfloat*)) \
     X(void, glUniform1f, (GLint, GLfloat)) \
     X(void, glUniform2f, (GLint, GLfloat, GLfloat)) \
     X(void, glUniform3f, (GLint, GLfloat, GLfloat, GLfloat)) \

@@ -247,6 +247,7 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "cpu_latch") cpuLatch = iv != 0;
         else if (k == "gpu_latch") gpuLatch = iv != 0;
         else if (k == "hud_first") hudFirst = iv != 0;
+        else if (k == "fast_world") fastWorld = iv != 0;
         else if (k == "prioritize") prioritize = iv != 0;
         else if (k == "low_latency") lowLatency = std::min(std::max(iv, 0), 2);
         else if (k == "maxfps") maxFps = iv;
@@ -439,7 +440,7 @@ std::string Settings::toText() const {
     for (auto& a : aliases) f << "\nalias_" << a.first << "=" << a.second;
     f << "\nfs_width=" << fsWidth << "\nfs_height=" << fsHeight << "\nauto_record=" << autoRecord << "\ndemo_keep=" << demoKeep << "\ndemo_sort=" << demoSort << "\nvideo_preset=" << videoPreset << "\nfx_opacity=" << fxOpacity << "\nkill_bursts=" << killBursts << "\ntracers=" << tracers << "\nview_recoil=" << viewRecoil
        << "\nfov=" << fov << "\nbrightness=" << brightness << "\ndisplay_mode=" << displayMode
-      << "\npresent_mode=" << presentMode << "\nlatent_offset_us=" << latentOffsetUs << "\ngpu_max_clocks=" << gpuMaxClocks << "\ndisable_fso=" << disableFso << "\nearly_flush=" << earlyFlush << "\ncpu_latch=" << cpuLatch << "\ngpu_latch=" << gpuLatch << "\nhud_first=" << hudFirst << "\nprioritize=" << prioritize << "\nlow_latency=" << lowLatency << "\ninterp_ms=" << interpMs
+      << "\npresent_mode=" << presentMode << "\nlatent_offset_us=" << latentOffsetUs << "\ngpu_max_clocks=" << gpuMaxClocks << "\ndisable_fso=" << disableFso << "\nearly_flush=" << earlyFlush << "\ncpu_latch=" << cpuLatch << "\ngpu_latch=" << gpuLatch << "\nhud_first=" << hudFirst << "\nfast_world=" << fastWorld << "\nprioritize=" << prioritize << "\nlow_latency=" << lowLatency << "\ninterp_ms=" << interpMs
       << "\nmaxfps=" << maxFps << "\nwidth=" << width << "\nheight=" << height << "\nwin_x=" << winX << "\nwin_y=" << winY << "\nbg_fps=" << bgFps << "\nbg_mute=" << bgMute << "\nbg_draw=" << bgDraw
       << "\nshadows=" << shadows << "\nmsaa=" << msaa << "\nrender_scale=" << renderScale << "\nrender_sharpen=" << renderSharpen << "\nmodel=" << model << "\nsoundpack=" << soundPack << "\nname_color=" << nameColorText() << "\nhealth_bars_117=1" << "\nsocd=" << socd << "\nalt_toggle=" << altToggle
       << "\nhud_verbose=" << hudVerbose << "\nhud_widgets=" << hudWidgets << "\nshadowres=" << shadowRes << "\nvolume=" << volume << "\nvolume_effects=" << volumeEffects << "\nvolume_announcer=" << volumeAnnouncer << "\nquips=" << quips << "\nvolume_quips=" << volumeQuips << "\nhitsounds=" << hitsounds << "\nexclusive_audio=" << exclusiveAudio

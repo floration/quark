@@ -80,6 +80,7 @@
 (REFUSED 0X#)	(거부됨 0X#)
 (TEAM MODES NEED A + B SPAWNS)	(팀 모드는 A + B 스폰 필요)
 (TEAM)	(팀)
+(UNTIL A HOLE IS BLOWN IN A WALL)	(벽에 구멍이 뚫리기 전까지)
 (already in use?)	(이미 사용 중?)
 (and copied it) - rename it there	(복사됨) - 그곳에서 이름 변경
 (edited)	(수정됨)
@@ -763,7 +764,6 @@ DYNAMIC RANGE: NIGHT	다이나믹 레인지: 야간
 DYNAMIC RANGE: NORMAL	다이나믹 레인지: 보통
 Dash into a wall head-on (under 45 degrees) and you bounce off it at 16 m/s (it leaves you 1 dash).	벽에 정면으로 (45도 미만) 대시하면 16 m/s로 튕겨 나옵니다 (대시 1회 남음).
 Dash jump: jump while dashing along the floor to keep the dash's full speed through the jump (it leaves you both dashes).	대시 점프: 바닥에서 대시 중 점프하면 대시 속도를 그대로 유지합니다 (대시 두 번 모두 남음).
-Decl: no padding (its words are hashed)	Decl: 패딩 없음 (단어가 해시됨)
 Display: window mode, vsync, low latency mode, frame cap, player shadows, brightness, anti-aliasing and interpolation. Lower latency settings cost smoothness: the notes under them say how.	화면: 창 모드, 수직 동기화, 저지연 모드, 프레임 제한, 플레이어 그림자, 밝기, 안티앨리어싱, 보간. 지연을 낮추는 설정은 부드러움을 희생합니다: 아래 설명에 자세히 나와 있습니다.
 Drag the squares on a selected box's faces to resize it; drag the arrows to move it. The keyboard works too: ARROWS / PGUP / PGDN move it by the grid, SHIFT + ARROWS grow a side, CTRL + ARROWS shrink it.	선택한 박스 면의 사각형을 드래그해 크기를 조절하고, 화살표를 드래그해 이동합니다. 키보드도 가능: 화살표 / PGUP / PGDN은 그리드 단위로 이동, SHIFT + 화살표는 면 늘리기, CTRL + 화살표는 줄이기.
 E - use (plant / defuse the bomb).   1-9, 0 - weapons.   MOUSE WHEEL - next / previous weapon.	E - 사용 (폭탄 설치 / 해체).   1-9, 0 - 무기.   마우스 휠 - 다음 / 이전 무기.
@@ -771,6 +771,8 @@ E-GIRL	E-GIRL
 EACH INPUT SENT IN THIS MANY PACKETS	각 입력을 이 개수의 패킷으로 전송
 EACH OF THE ANNOUNCER'S LINES ON OR OFF	아나운서 대사별 켜기 / 끄기
 EACH SLIDER SHOWS THE VALUE IN THIS MODE (STANDARD x MULTIPLIER)	각 슬라이더는 이 모드의 값을 표시 (표준 x 배율)
+EARLY DEPTH	조기 깊이
+EARLY DEPTH TEST	조기 깊이 테스트
 EARLY FLUSH	조기 전송
 EASY	쉬움
 EASY BOTS	쉬움 봇
@@ -1044,7 +1046,6 @@ GUN: TEAM	총기: 팀
 GUNFIRE	총성
 GUS	GUS
 Game::frame	Game::frame
-Game::testHeld_ holds a bit per action	Game::testHeld_ holds a bit per action
 HALFTIME - SIDES SWITCHED	하프타임 - 진영 교체
 HALFTIME - SIDES SWITCHED: YOU ATTACK NOW	하프타임 - 진영 교체: 이제 공격
 HALFTIME - SIDES SWITCHED: YOU DEFEND NOW	하프타임 - 진영 교체: 이제 수비
@@ -2087,7 +2088,6 @@ MY SKY / GLOW: THESE IN PLACE OF EVERY MAP'S;	내 하늘 / 광원: 모든 맵 �
 MY TRACER	내 궤적
 Maps are saved to the maps folder (MAPS FOLDER opens it) as .qmap text files. RESET MAPS puts the built-in maps back.	맵은 maps 폴더 (MAPS FOLDER로 열기) 에 .qmap 텍스트 파일로 저장된다. RESET MAPS는 기본 맵을 되돌린다.
 Model	모델
-ModelOverrides holds kMaxModelsPerKind models of a kind	ModelOverrides holds kMaxModelsPerKind models of a kind
 N/A HERE: LATENT SYNC IS WINDOWS ONLY	여기선 사용 불가: LATENT SYNC는 WINDOWS 전용
 N/A HERE: LINUX (X11) ONLY	여기선 N/A: LINUX (X11) 전용
 N/A HERE: WINDOWS + NVIDIA ONLY	여기선 사용 불가: WINDOWS + NVIDIA 전용
@@ -2958,6 +2958,7 @@ THE FRAME	프레임
 THE GAME RUNS ON YOUR INTEGRATED GPU	게임이 내장 GPU에서 실행 중
 THE GAME'S PART ONLY: NO MOUSE POLLING, NO DISPLAY; ONE TIME LINE	게임만: 마우스 폴링과 디스플레이 제외; 하나의 시간선
 THE GPU READS YOUR AIM AS IT STARTS DRAWING;	GPU가 그리기 시작할 때 조준을 읽음;
+THE GPU SKIPS THE WORLD'S HIDDEN PIXELS	GPU가 가려진 월드 픽셀을 건너뜀
 THE GUN'S KICK ON A SHOT (0: NONE)	사격 시 총기 반동 (0: 없음)
 THE HAZE OVER DISTANT WALLS (0: NONE)	먼 벽 위의 연무 (0: 없음)
 THE LANGUAGE OF THE MENUS AND THE HUD	메뉴와 HUD의 언어
@@ -3295,25 +3296,18 @@ ZONE OPACITY	구역 불투명도
 ZONE PULSE	구역 펄스
 ZOOM	줌
 ZOOM SENSITIVITY	줌 감도
-a caption for every announcer line	모든 아나운서 대사에 자막
-a colour per material from ice on (a large one: its base's), then the see-through, breakable and feature ones	a colour per material from ice on (a large one: its base's), then the see-through, breakable and feature ones
 a damaged PAK	손상된 PAK
 a damaged WAD	손상된 WAD
 a damaged built-in atlas	손상된 기본 아틀라스
-a label per material (the cycles below index it by material)	a label per material (the cycles below index it by material)
-a look per material from kMatBlocks on (the large ones: their base's), then the see-through, breakable and feature ones	a look per material from kMatBlocks on (the large ones: their base's), then the see-through, breakable and feature ones
 a map keeps at least one box outside groups - add another box first	맵에는 그룹 밖 박스가 하나 이상 있어야 함 - 먼저 박스를 추가하세요
 a map needs at least one box	맵에는 박스가 하나 이상 필요
 a map needs at least one mode	맵에는 모드가 하나 이상 필요
 a map needs at least one spawn	맵에는 스폰이 하나 이상 필요
-a picker tab for every material (kMatTabs)	a picker tab for every material (kMatTabs)
 a ranked match is being played - no votes until it's over	랭크 경기 진행 중 - 끝날 때까지 투표 불가
 a ranked match is being played - teams stay as they are until it's over	랭크 경기 진행 중 - 끝날 때까지 팀 유지
 a ranked match is being played: '	랭크 경기 진행 중: '
-a reference palette per prop	a reference palette per prop
 a spectate vote needs at least	관전 투표에 필요한 최소 인원:
 a tag match is being played - you can join the next one	태그 경기 진행 중 - 다음 경기에 참가할 수 있음
-a theme style per HUD element	a theme style per HUD element
 a tourney is running - you can join the next one	토너먼트 진행 중 - 다음 대회에 참가할 수 있음
 a vote is already in progress	이미 투표 진행 중
 accessor out of range	accessor 범위 초과
@@ -3431,7 +3425,6 @@ demo finished	데모 종료
 demo:	데모:
 draw - the payload is in the middle	무승부 - 화물이 중앙에 있음
 dropped:	탈락:
-duelUsed_ is a 32-bit mask	duelUsed_ is a 32-bit mask
 dyn verts	dyn verts
 dynamic pass	dynamic pass
 e.g.  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5	예:  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5
@@ -3448,7 +3441,6 @@ edits dropped	편집 내용 취소됨
 else if	else if
 ember: gg	ember: gg
 enough players again - the match goes on	인원이 다시 충분함 - 경기 계속
-every HUD element in the dropdown	드롭다운의 모든 HUD 요소
 every point taken	모든 지점 점령
 everyone left - back to warmup	모두 나감 - 워밍업으로 복귀
 exec: a file name in your data folder (no folders)	exec: 데이터 폴더의 파일 이름 (폴더 불가)
@@ -3477,6 +3469,7 @@ has no ranked id	랭크 ID 없음
 hdmi:	hdmi:
 high at	높음 기준
 human cmds	human cmds
+if (blended && alpha < 0.01) discard;	if (blended && alpha < 0.01) discard;
 if players reach it there, start the server with --own-addr	플레이어가 그 주소로 접속하면 --own-addr로 서버를 시작하세요
 in your data folder	데이터 폴더에
 index out of range	인덱스 범위 초과
@@ -3503,8 +3496,6 @@ isn't in this custom mode's map pool	은(는) 이 커스텀 모드의 맵 풀에
 joined team A	님이 A팀에 참가
 joined team B	님이 B팀에 참가
 joined the game	님이 게임에 참가
-kElemNames follows Settings::HUD_*	kElemNames follows Settings::HUD_*
-kFrameTimes must be a power of two	kFrameTimes must be a power of two
 kbps (# packets/s), download # kbps (#/s)	kbps (# 패킷/s), 다운로드 # kbps (#/s)
 kick whom? a name or an id (status lists them)	누구를 강퇴할까요? 이름 또는 ID (status에 표시됨)
 kicked by a vote	투표로 강퇴됨
@@ -3572,6 +3563,7 @@ no points	지점 없음
 no response	응답 없음
 no small gaps to close	메울 작은 틈 없음
 no triangles	삼각형 없음
+no-discard world shader: missing	no-discard world shader: missing
 nobody finished	아무도 완주 못 함
 nobody is out - throw again	탈락자 없음 - 다시 내세요
 nobody left	남은 사람 없음
@@ -3590,6 +3582,7 @@ not enough players	인원 부족
 not enough players - back to warmup	인원 부족 - 워밍업으로 복귀
 not enough players - the match ends in	인원 부족 - 경기 종료까지
 not enough players for a tourney	토너먼트 인원 부족
+not in the main program	not in the main program
 not in this build	이 빌드에 없음
 not rated:	레이팅 미반영:
 not the ladder's mode	래더 모드가 아님
@@ -3606,8 +3599,6 @@ odd sample rate	지원하지 않는 샘플레이트
 of #	/ #
 off for this match	이번 경기에서 꺼짐
 on your router to this PC	라우터에서 이 PC로
-one folder per sound kit	사운드 킷당 폴더 하나
-one name per sound, in SoundId order	one name per sound, in SoundId order
 only a timed round can be extended	시간제 라운드만 연장 가능
 over 64 MB	64 MB 초과
 override {} ({}): # triangles (at most #)	override {} ({}): # triangles (at most #)
@@ -3772,7 +3763,6 @@ the PAK has no gfx.wad	PAK에 gfx.wad가 없음
 the WAD has no CONCHARS	WAD에 CONCHARS가 없음
 the autosave can't be read	자동 저장을 읽을 수 없음
 the bomb went back to	폭탄이 돌아감:
-the cursor wraps with uint32	the cursor wraps with uint32
 the cutter (the first box selected) doesn't touch the others	자르는 박스(처음 선택한 박스)가 다른 박스에 닿지 않음
 the cutter (the first box selected) has to be a plain box	자르는 박스(처음 선택한 박스)는 일반 박스여야 함
 the driver has no shorter period	드라이버에 더 짧은 주기 없음
@@ -3821,6 +3811,7 @@ tourney seed #: {} (#)	tourney seed #: {} (#)
 tourney started -	토너먼트 시작 -
 trying the next rate up: busy #%, upload # kbps	다음 빈도로 상향 시도: 사용 #%, 업로드 # kbps
 ui verts	ui verts
+ultra: pace the input read	ultra: pace the input read
 ungrouped into	그룹 해제됨:
 unknown mode	알 수 없는 모드
 unknown mode '	알 수 없는 모드 '
@@ -3864,11 +3855,19 @@ wins the race	레이스 승리
 wins the round	라운드 승리
 wins the tourney!	토너먼트 우승!
 world chunks	world chunks
+world fast: back to main	world fast: back to main
+world fast: bind + sync	world fast: bind + sync
+world fast: frame uniforms	world fast: frame uniforms
+world fast: full copy	world fast: full copy
 world pass	world pass
 world shader	world shader
+world shader (no discard):	world shader (no discard):
+world shader (no discard): {}	world shader (no discard): {}
+world shader (no discard): {} not in the main program	world shader (no discard): {} not in the main program
 world shader:	월드 셰이더:
 world shader: {}	world shader: {}
 world upload	world upload
+world: frame uniforms	world: frame uniforms
 wraith: nice shot	wraith: 나이스 샷
 you already called a vote on	이미 투표를 시작했습니다:
 you left the line - join a team to get back in it	줄에서 나갔습니다 - 다시 들어가려면 팀에 참가하세요

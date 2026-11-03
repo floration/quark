@@ -232,6 +232,7 @@ public:
     };
     void setLook(const Look& l);
     bool farScenery = true;     // distant scenery's chunks drawn
+    bool fastWorld = true;      // LATENCY > EARLY DEPTH TEST: the no-discard world program while no hole is blown
     float farPlane = 400.0f;    // DRAW DISTANCE: metres to the far plane (the next setCamera)
     float shadowRange = 32.0f;  // SHADOW DISTANCE: the shadow map's half-width around its focus (metres)
     bool shadowWorld = true, shadowPlayers = true;   // dynamic shadows onto the map / onto players
@@ -267,7 +268,9 @@ private:
     // Uniform locations, looked up once after linking (init): no lookups in the frame loop. Values that never change are
     // set there too, the per-frame ones that don't depend on the aim in prepareScene, the rest in drawScene (GL keeps
     // each program's values).
-    struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, baseL, accentL, wallbangL, metalL, floorL, metal, glow, full, fullColor, outlineW, time, sunDir, alphaPass, latchUse, worldEdge; } uWorld_ = {};
+    struct WorldLocs { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, baseL, accentL, wallbangL, metalL, floorL, metal, glow, full, fullColor, outlineW, time, sunDir, alphaPass, latchUse, worldEdge; };
+    WorldLocs uWorld_ = {}, uWorldFast_ = {};   // (uWorldFast_: worldFastProg_'s)
+    static WorldLocs worldLocs(unsigned prog);
     struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, receive, sunDir, latchUse; } uDyn_ = {};
     struct { GLint fwd, right, up, tan, sky, sunDir, bright; } uSky_ = {};
     GLint uDynFade_ = -1, uFlatFade_ = -1;   // (the view pass's see-through amount: WEAPON MODEL OPACITY)
@@ -287,7 +290,18 @@ private:
     float holeGrid_[4] = {};   // (the hole grid's uniforms as last set: a new world program gets them too)
     int holeGridH_ = 0;
     std::vector<bool> worldUsed_ = std::vector<bool>((size_t)kMapMaterials, false);   // the looks in worldProg_ (setWorldLooks)
-    unsigned compileWorld(const std::vector<bool>* used, std::string* err);
+    unsigned compileWorld(const std::vector<bool>* used, std::string* err, bool noDiscard = false);
+    // The world's opaque pass without discard (its hole and see-through discards cost the GPU its early depth test:
+    // -27% GPU world pass on a 3090 Ti, 2026-11-03): built beside worldProg_, used while no holes are blown, its uniforms
+    // set alongside worldProg_'s each frame (prepareScene, drawScene); the rest, which change only with a setting, are
+    // copied from worldProg_ when worldFastDirty_ says one did (reading uniforms back every frame stalled the driver:
+    // +30 us CPU a frame on the desktop).
+    struct UniformCopy { GLint from, to; GLenum type; };
+    unsigned worldFastProg_ = 0, worldFastFor_ = 0;
+    bool worldFastDirty_ = true;
+    std::vector<UniformCopy> worldFastCopy_;
+    void buildWorldFast();
+    void syncWorldFast();
     void setWorldLooks(const BakedWorld& bw);
     void uploadSeeThrough(const Map& map);
 public:

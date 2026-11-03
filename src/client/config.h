@@ -36,6 +36,7 @@ struct Settings {
     bool earlyFlush = true;     // the shadow pass and the world sent to the GPU as soon as they're drawn (glFlush)
     bool cpuLatch = true;       // the mouse read again just before the world is drawn
     bool gpuLatch = false;      // the GPU reads the view from a buffer the mouse thread keeps writing (Windows raw input)
+    bool fastWorld = true;      // the world drawn by its program without discard while no hole is blown (EARLY DEPTH TEST)
     bool hudFirst = false;      // ULTRA: the HUD drawn into its own layer before the late read, laid over after    // Windows: "Disable fullscreen optimizations" for quark.exe (per user, gpuprefs.h); from the next start
     bool gpuMaxClocks = false;  // Windows, NVIDIA: "Prefer maximum performance" in quark's driver profile (gpuprefs.h)
     bool prioritize = true;     // Windows: GPU + CPU priority raised while the game has focus (setGamePriority)
