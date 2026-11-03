@@ -577,3 +577,57 @@ inline std::vector<float> walkSeconds(const WalkGrid& w, int from) {
     }
     return t;
 }
+
+// Ranked maps needn't be symmetric (q, 2026-10-30: "would it be fair even though it's asymmetrical?"), only fair: on
+// a ladder played 1v1 (vanilla, vampire: rankedLadders bits 0 and 1) each side has as many spawns, and on a plain run
+// the two sides are within 1 s of each other to the enemy spawns and to the middle of the map (the spawns' centre:
+// every spot within r of it across, r growing from 4 m until every spawn reaches one, for a void or a pillar in the
+// very middle). Instagib's free for all spawns everyone from one pool: fair as it is. quark_tests' testMaps and
+// quark_maptool's ranked check both judge with this.
+struct RankedFairness {
+    int a = 0, b = 0;                     // team A / B spawns
+    bool spawnsOk = true;                 // as many on each side (and at least one each on a ladder played 1v1)
+    bool timed = false;                   // the runs were measured (a ladder played 1v1, spawns on both sides)
+    float aFoe = INFINITY, bFoe = INFINITY, aMid = INFINITY, bMid = INFINITY;   // mean seconds, each side's spawns
+    bool fair = true;                     // spawnsOk, and (when timed) every run reachable and within 1 s
+};
+// walk: the map's walk grid if the caller has one (built on m); else it's built here, only when the runs are timed.
+inline RankedFairness rankedFairness(const Map& m, const WalkGrid* walk = nullptr) {
+    RankedFairness r;
+    for (auto& sp : m.spawns) { r.a += sp.team == SPAWN_A; r.b += sp.team == SPAWN_B; }
+    const bool duel = (m.rankedLadders & 3) != 0;   // a ladder played 1v1 (vanilla, vampire): a spawn for each side
+    r.spawnsOk = r.a == r.b && (r.a >= 1 || !duel);
+    r.fair = r.spawnsOk;
+    if (!r.spawnsOk || !duel || !r.a) return r;
+    WalkGrid own;
+    if (!walk) { own.build(m); walk = &own; }
+    const WalkGrid& w = *walk;
+    std::vector<int> sa, sb;
+    Vec3 mid{0, 0, 0};
+    for (auto& sp : m.spawns) if (sp.team == SPAWN_A || sp.team == SPAWN_B) {
+        int n = w.nodeAt(sp.pos);
+        (sp.team == SPAWN_A ? sa : sb).push_back(n);
+        mid = mid + sp.pos * (1.0f / (2 * r.a));
+    }
+    // each spawn's runs, once
+    std::vector<std::vector<float>> ta, tb;
+    for (int n : sa) ta.push_back(walkSeconds(w, n));
+    for (int n : sb) tb.push_back(walkSeconds(w, n));
+    auto meanTo = [](const std::vector<std::vector<float>>& own, const std::vector<int>& goals) {
+        float sum = 0;
+        for (auto& t : own) { float f = INFINITY; for (int g : goals) if (g >= 0) f = std::min(f, t[g]); sum += f; }
+        return sum / own.size();
+    };
+    r.aFoe = meanTo(ta, sb); r.bFoe = meanTo(tb, sa);
+    for (float rad = 4; rad <= 32 && !(std::isfinite(r.aMid) && std::isfinite(r.bMid)); rad += 4) {
+        std::vector<int> mids;
+        for (size_t n = 0; n + w.ladderHubs < w.nodes.size(); n++) {
+            const Vec3& p = w.nodes[n].p;
+            if ((p.x - mid.x) * (p.x - mid.x) + (p.z - mid.z) * (p.z - mid.z) <= rad * rad) mids.push_back((int)n);
+        }
+        r.aMid = meanTo(ta, mids); r.bMid = meanTo(tb, mids);
+    }
+    r.timed = true;
+    r.fair = std::isfinite(r.aFoe + r.aMid + r.bFoe + r.bMid) && std::fabs(r.aFoe - r.bFoe) <= 1.0f && std::fabs(r.aMid - r.bMid) <= 1.0f;
+    return r;
+}

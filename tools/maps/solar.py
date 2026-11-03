@@ -30,7 +30,7 @@ kill liquid over the lower one, so no part is reachable from another. Each stage
 SOLAR_TABLE=<file> writes each stage's numbers (lengths, heights, speeds, gaps, air times)."""
 import math, os
 from .prefabs import *
-from .m4kit import Kit, MAT, num
+from .bigkit import Kit, MAT, num
 
 G = 24.0             # gravity (m/s^2)
 D = 24.0             # corridor half-width (q's layout: the outer walls 24 m each side of the line)

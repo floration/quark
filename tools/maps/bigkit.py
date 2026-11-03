@@ -1,4 +1,5 @@
-"""Building kit for the 1.19.6 large maps (railyard, sewer, riverside, war): named materials, slopes and cut boxes
+"""Building kit for most of the 1.19.6 maps (bridge, convoy, dam, express, greenhouse, jungle, monorail, orbit,
+railyard, rooftoprun, sewer, solar, stadium, war; m5kit and m6kit build on it): named materials, slopes and cut boxes
 (convex prisms, rotated bars, rings, octagonal tubes) written straight into an M builder's lines. Named materials
 are the file keywords of src/game/map.h (kMapMaterialWords); slopes and cut boxes take the material's number, read
 from the same list, so the two can never disagree."""
@@ -178,15 +179,16 @@ class Kit:
             x0, x1 = sorted((x, x - d[0] * 0.7))
             s.line(f"ladder {num(x0)} {num(y0)} {num(z - w)} {num(x1)} {num(y1 + 1.0)} {num(z + w)}")
 
-    def stairs(s, mat, x0, z0, x1, z1, top, axis, rising, base=0.0, solid=True, rise=0.5):
-        """prefabs' stairs (recorded for the stairs check) in a named material"""
+    def stairs(s, mat, x0, z0, x1, z1, top, axis, rising, base=0.0, solid=True, rise=0.5, floor=None):
+        """prefabs' stairs (recorded for the stairs check) in a named material; floor: solid steps reach down to it
+        (a flight between two decks, recorded as a flight in the air: nothing under it is walkable)"""
         x0, x1 = sorted((x0, x1)); z0, z1 = sorted((z0, z1))
-        s.line(f"stairs {num(x0)} {num(z0)} {num(x1)} {num(z1)} {num(base)} {num(top)} {axis} {rising:g} {int(solid)}")
+        s.line(f"stairs {num(x0)} {num(z0)} {num(x1)} {num(z1)} {num(base)} {num(top)} {axis} {rising:g} {int(solid and floor is None)}")
         n = max(1, math.ceil((top - base) / rise - 1e-6)); length = (x1 - x0) if axis == "x" else (z1 - z0)
         for i in range(n):
             a = length * i / n; b = length * (i + 1) / n
             h = base + (top - base) * ((i + 1) if rising > 0 else (n - i)) / n
-            y0 = (min(base, 0) - (1 if base < 0 else 0)) if solid else h - 0.5
+            y0 = floor if floor is not None else (min(base, 0) - (1 if base < 0 else 0)) if solid else h - 0.5
             if axis == "x": s.box(mat, x0 + a, y0, z0, x0 + b, h, z1)
             else: s.box(mat, x0, y0, z0 + a, x1, h, z0 + b)
 

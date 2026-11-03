@@ -1,4 +1,4 @@
-"""Helpers for mapper 6's 1.19.6 maps (museum, cruiseship, fairground, rooftops): straight walls with door and
+"""Helpers for mapper 6's 1.19.6 maps (cruiseship, fairground, rooftops): straight walls with door and
 window openings, floor slabs with holes, thin sloped shells (glass roofs, slides) and a few small shapes, all drawn
 through bigkit's Kit (named materials straight from src/game/map.h)."""
 import math

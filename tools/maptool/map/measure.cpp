@@ -5,6 +5,7 @@
 #include <queue>
 #include "common/u8file.h"
 #include "analysis.h"
+#include "mapbounds.h"
 #include "maptool.h"
 #include "measure_impl.h"
 #include "walkfast.h"
@@ -268,79 +269,17 @@ Json envelopeJson() {
 }
 
 // ---- out of bounds ---------------------------------------------------------------------------------------------
-// COPIED from measure() (measure_impl.h, itself mapreport.cpp's): the samples, the playable floor, the tech graph and
-// its out-of-bounds count, without the rest of the measurement. DEDUPE LATER (with measure()).
+// quark_tests' own check (tests/mapbounds.cpp measureOutOfBounds, compiled into this tool too), so the editors and the
+// tests can't disagree: it used to be a copy of the old map report's measure (the surfaces nav, the report's ladder
+// links), which disagreed with the tests (Tutorial: 46,360 m2 out of bounds here, none in quark_tests).
 OutOfBounds outOfBounds(Analysis& a) {
     OutOfBounds R;
-    const Map& m = a.open();
-    const Map& solid = a.m;
-    const NavGraph& g = a.navOpen();
-    WalkGrid& w = a.walk();
-    const std::vector<char>& reach = a.reach();
-    if (m.spawns.empty()) return R;
-    std::vector<char> playable(g.nodes.size(), 0);
-    for (size_t i = 0; i < g.nodes.size(); i++) {
-        auto& n = g.nodes[i];
-        if (n.y <= m.killY()) continue;
-        AABB box = {{n.x0 - 0.4f, n.y - 0.2f, n.z0 - 0.4f}, {n.x1 + 0.4f, n.y + 0.2f, n.z1 + 0.4f}};
-        w.forColumnsNear(box, 0, [&](int s) {
-            const Vec3& q = w.nodes[s].p;
-            if (!reach[s] || std::fabs(q.y - n.y) >= 0.15f || q.x < box.mn.x || q.x > box.mx.x || q.z < box.mn.z || q.z > box.mx.z) return;
-            playable[i] = 1;
-        });
-    }
-    std::vector<mr::Pt> pts;
-    for (size_t i = 0; i < g.nodes.size(); i++) {
-        auto& n = g.nodes[i];
-        float sx = n.x1 - n.x0 < 2 ? (n.x0 + n.x1) / 2 : n.x0 + 1, sz = n.z1 - n.z0 < 2 ? (n.z0 + n.z1) / 2 : n.z0 + 1;
-        for (float x = sx; x < n.x1; x += 2)
-            for (float z = sz; z < n.z1; z += 2) {
-                Vec3 p = {x, n.y, z};
-                if (!m.boxSolid(playerBox(p + Vec3(0, 0.02f, 0), false))) pts.push_back({p, (int)i});
-            }
-    }
-    mr::TechGraph tech;
-    float techCell = 4;
-    std::vector<char> techPlayable;
-    {
-        std::vector<Vec3> tp;
-        size_t stride = pts.size() / 2500 + 1;
-        for (size_t i = 0; i < pts.size(); i += stride) { tp.push_back(pts[i].p); techPlayable.push_back(playable[pts[i].node]); }
-        techCell = 4.0f * stride;
-        std::vector<AABB> zones = m.checkpoints;
-        zones.insert(zones.end(), m.bombSites.begin(), m.bombSites.end());
-        zones.insert(zones.end(), m.points.begin(), m.points.end());
-        if (m.hasHill) zones.push_back(m.hill);
-        for (const AABB& z : zones)
-            for (size_t i = 0; i < g.nodes.size(); i++) {
-                auto& n = g.nodes[i];
-                if (n.x1 < z.mn.x || n.x0 > z.mx.x || n.z1 < z.mn.z || n.z0 > z.mx.z || n.y < z.mn.y - 1.0f || n.y > z.mx.y) continue;
-                Vec3 q = {std::clamp(z.center().x, n.x0, n.x1), n.y, std::clamp(z.center().z, n.z0, n.z1)};
-                if (m.boxSolid(playerBox(q + Vec3(0, 0.02f, 0), false))) continue;
-                tp.push_back(q); techPlayable.push_back(playable[i]);
-            }
-        for (auto& sp : m.spawns) {
-            int n = g.nodeAt(sp.pos + Vec3(0, 0.05f, 0));
-            if (n < 0) continue;
-            tp.push_back({sp.pos.x, g.nodes[n].y, sp.pos.z}); techPlayable.push_back(playable[n]);
-        }
-        tech.build(solid, g, tp, std::max(6.0f, 3.0f * std::sqrt(techCell)));
-    }
-    const auto& d = tech.from(tech.nearest(m.spawns[0].pos));
-    float x0 = 1e9f, z0 = 1e9f, x1 = -1e9f, z1 = -1e9f;
-    for (size_t i = 0; i < g.nodes.size(); i++) if (playable[i]) { auto& n = g.nodes[i]; x0 = std::min(x0, n.x0); x1 = std::max(x1, n.x1); z0 = std::min(z0, n.z0); z1 = std::max(z1, n.z1); }
-    int extra = 0, out = 0;
-    for (size_t i = 0; i < tech.p.size(); i++) {
-        if (d[i] > 1e29f || techPlayable[i]) continue;
-        extra++;
-        const Vec3& q = tech.p[i];
-        bool o = q.x < x0 - 1 || q.x > x1 + 1 || q.z < z0 - 1 || q.z > z1 + 1;
-        out += o;
-        if (o) R.spots.push_back(q);
-    }
-    R.techExtra = extra * techCell;
-    R.outside = out * techCell;
-    R.measured = true;
+    if (a.m.spawns.empty()) return R;
+    OutOfBoundsMeasure o = measureOutOfBounds(a.m, &a.walk());   // (a.walk(): the same grid, built on every core)
+    R.measured = o.measured;
+    R.techExtra = o.techExtra;
+    R.outside = o.outside;
+    R.spots = std::move(o.spots);
     return R;
 }
 
