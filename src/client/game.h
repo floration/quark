@@ -20,6 +20,7 @@
 #include "../game/server.h"
 #include "../game/ranked.h"
 #include "../game/trainer.h"
+#include "../game/tutorial.h"
 #include "audio.h"
 #include "clientfeel.h"
 #include "modecalls.h"
@@ -95,6 +96,9 @@ struct LaunchOptions {
     std::string benchmarkDemo;  // ...on this demo instead of the shipped one
     double benchmarkSeconds = 0;
     std::string trainer;        // --trainer ID[:DIFF]: start that AIM TRAINER scenario (difficulty 0-2) at once (screenshots)   // ...measuring at most this long (0: to the demo's end)
+    bool tutorial = false;      // --tutorial [LESSON[:PHASE]]: start the TUTORIAL at once, at that lesson (an id or 0-based number;
+    std::string tutorialAt;     // PHASE try / done / finish / lessons: straight to it, for screenshots)
+    bool tutorialOffer = false; // --tutorial-offer: the first launch's tutorial offer on the main menu (screenshots)
     bool uiTest = false;        // --uitest [report.json]: click every widget and check it does what it says (uitest.cpp)
     std::string uiTestReport;   // where the report goes (default uitest-report.json)
     std::string uiTestOnly;     // --uitest-only a,b: just these scenarios (development)
@@ -309,6 +313,49 @@ private:
     bool trainerKey(int key, int action);
     void trainerFrame(double dt);
     void drawTrainerMenu(const SetLayout& L);
+    // ---- TUTORIAL (tutorial.cpp; 1.19.9): the movement tech lessons on the map `tutorial`, a local game whose server
+    // runs the GHOST (tutorial_server.cpp). Each lesson: DEMO (the camera on the ghost doing the tech, its keys shown
+    // with your binds), then TRY (you, the ghost looping beside you, the steps and the lesson's check on your own
+    // predicted movement), DONE, the next one. Off (tut_.on false): one bool tested where it hooks in.
+    struct TutState {
+        enum Phase : uint8_t { DEMO, TRY, DONE, FINISH };
+        bool on = false;            // in the tutorial's game
+        bool begun = false;         // this lesson's command went to the server
+        bool menu = false;          // pause > LESSONS
+        bool camSnap = true;        // the demo camera starts where it should be (no swing in from the last lesson)
+        bool wasAlive = false, wasPaused = false;
+        Phase phase = DEMO;
+        int lesson = 0;
+        int ghost = -1;             // the ghost's player id (found by name)
+        int partner = -1;           // the PARTNER's (the lessons with another player; found by name)
+        double phaseAt = 0;         // time_ the phase began
+        double demoEnd = 0;         // time_ the demo hands over
+        int64_t epochMs = 0;        // the ghost's loop starts (server ms): the keys shown are its script's at the view time
+        uint8_t ev = 0;             // your ME_* events since the last frame (updateSounds takes them)
+        uint8_t ghostEv = 0;        // the ghost's last callout (ME_SUPER / ME_HYPER / ...) and when
+        double ghostEvAt = -10;
+        uint16_t lastGhostKeys = 0;
+        double keyLit[9] = {};      // the ghost's keys, each lit at least a moment (a 30 ms tap would be invisible)
+        tut::Check check;
+        Vec3 camPos;
+        float prevGhostYaw = 0, turn = 0;
+        // (text formatted once a lesson, and again when the binds may have changed: nothing built per frame)
+        std::string title, what, steps[4], goal, keyName[9], keysHint, skipHint, demoHint, readout, scoreLine;
+        int nSteps = 0;
+    };
+    TutState tut_;
+    bool tutorialStart_ = false;   // (startHost: the next host is the tutorial's)
+    bool tutOffer_ = false;        // the first launch's offer is up (main menu)
+    void startTutorial(int lesson);
+    void tutorialBegin(int lesson);
+    void tutorialTexts();
+    void tutorialFrame();
+    bool tutorialKey(int key);
+    void tutorialCamera(const NetClient::PlayerArray& players, Vec3& eye, float& yaw, float& pitch);
+    bool tutorialDemoView() const { return tut_.on && tut_.phase == TutState::DEMO && tut_.begun; }
+    void drawTutorialHud(float W, float H, float s);
+    void drawTutorialPause(float cx, float y);
+    void drawTutorialOffer();
     // ---- BENCHMARK (main menu; --benchmark): a fixed bot match on Hamlet watched from a fixed camera path, then its
     // frame times (benchmark.cpp; the match and the maths: src/game/benchmark.h)
     struct BenchRun {

@@ -532,6 +532,7 @@ static std::vector<B3> b3Keys(Settings& s) {
         {T::I, "death_cam", &s.deathCam, 0, 2}, {T::F, "kill_cam_time", &s.killCamTime, 0, kKillCamTime}, {T::F, "recoil_amount", &s.recoilAmount, 0, 2},
         {T::F, "spec_fov", &s.specFov, 0, 140}, {T::B, "spec_third", &s.specThird, 0, 1}, {T::S, "quip_block", &s.quipBlock, 0, 0},
         {T::I, "quip_pick", &s.quipPick, -1, 255}, {T::B, "use_overrides", &s.useOverrides, 0, 1}, {T::B, "legacy_maps", &s.legacyMaps, 0, 1},
+        {T::B, "tutorial_offered", &s.tutorialOffered, 0, 1}, {T::I, "tutorial_done", &s.tutorialDone, 0, (float)(1 << 30)},
         {T::F, "mouse_accel", &s.mouseAccel, 0, 1}, {T::B, "raw_input", &s.rawInput, 0, 1}, {T::I, "alt_toggle_weapons", &s.altToggleWpns, -1, 0xFFFF},
         {T::I, "swap_fire", &s.swapFire, 0, 0xFFFF}, {T::B, "auto_hop", &s.autoHop, 0, 1}, {T::I, "vertical_keys", &s.verticalKeys, 0, 1}, {T::I, "console_key", &s.consoleKey, 0, 999},
         {T::B, "console_menus", &s.consoleMenus, 0, 1}, {T::B, "ranked_alt_toggle", &s.rankedAltToggle, 0, 1},

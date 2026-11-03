@@ -101,6 +101,9 @@ struct ServerConfig {
     std::vector<int> tourneyVariants;
     bool editMode = false;      // start as a map edit session (anyone connected can edit; the host autosaves)
     std::string restartFlag;    // if this file appears (an update was installed), restart once no match is being played
+    // TUTORIAL (1.19.9; src/game/tutorial.h): the movement lessons' local game on the tutorial map: a ghost bot plays each
+    // lesson's input script, nobody hurts or pushes anybody else (your own blasts still throw you), warmup forever
+    bool tutorial = false;
     bool timeTrial = false;     // solo ranked race on a ranked race map (rankedRaceMaps): no bots, checkpoint splits sent to the racer
     bool ranked = false;        // matches are rated (OpenSkill) once every player reports the same result; no bots
     // Release channel this server runs for (GOV_PROD / GOV_TESTING; -1: by the build, testing for a testing version).
@@ -586,6 +589,24 @@ public:
     // copies stay identical. The map file is autosaved (it's the host's copy) while dirty.
     bool editing_ = false, editDirty_ = false;
     bool practicePassive_ = false;   // practice: bots move but never fire
+    // TUTORIAL (cfg_.tutorial; tutorial_server.cpp): the ghost (a bot playing the lesson's input script, looping from
+    // tutEpoch_, server ms) and the lesson the host's "tutorial <lesson> <epoch>" picked
+    // The PARTNER (tutPartner_): a second scripted bot for the lessons with another player (tut::LessonDef::partner),
+    // spectating in the others; tutTry_: the game's TRY phase ("tutorial try": the partner hooks the player, tutPlayer_,
+    // not the ghost)
+    int tutGhost_ = -1, tutLesson_ = -1, tutPartner_ = -1, tutPlayer_ = -1;
+    bool tutTry_ = false;
+    int64_t tutLoop_ = -2;      // the ghost's loop it was last put back at the start for
+    uint64_t tutEpoch_ = 0;
+    void tutorialStart();
+    UserCmd tutorialGhostCmd(int id);
+    UserCmd tutorialPartnerCmd(int id);
+    void tutorialLoop();        // (each script's command first: a new loop puts the ghost and the partner back)
+    void tutorialGhostReset(int id);
+    void tutorialPartnerReset();
+    bool tutorialHookAllowed(int attacker, int victim) const;   // (the grapple between two players: rulesCanDamage)
+    bool tutorialSpawnAt(int id, Vec3& pos, float& yaw) const;
+    std::string tutorialCommand(int from, const std::string& arg, std::istream& rest);
     bool tempEdit_ = false;     // editing was voted on a normal server: never saved, reverts at the next map change
     bool mapEdited_ = false;    // map_ differs from its file (temporary edits being played)
     bool autosaveBackedUp_ = false; // this edit session's first autosave copied the file to <name>.qmap.bak

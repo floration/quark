@@ -10294,6 +10294,7 @@ static void testReachProbe(uint16_t port) {
 }
 
 #include "trainer_tests.h"   // the aim trainer's scenarios (src/game/trainer.h)
+#include "tutorial_tests.h"   // the movement tutorial's lessons and their ghosts (src/game/tutorial.h)
 #include "rules_tests.h"   // game rule tests (owner answers 5.x, REVIEW batch 2)
 #include "weapon_tests.h"  // weapon sets (.qweapons: the weapons editor's) + the exportweapons / checkweapons tools
 #include "server_tests.h"  // server / netcode tests (FINAL_REVIEW 2.8-2.11, 6.4, 6.5, clock, PERF-8 / 9, ENG-2)
@@ -10539,6 +10540,7 @@ int main(int argc, char** argv) {
         {"maps", [] { testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders(); }},
         {"slopes", [] { testSlopes(); }},
         {"trainer", [] { testTrainer(); }},
+        {"tutorial", [] { testTutorial(); testTutorialGhosts(TP(29210)); testTutorialPartner(TP(29211)); testTutorialCombos(TP(29212)); }},
         {"surf", [] { testSurf(); }},
         {"groupslopes", [] { testGroupSlopes(); }},
         {"materials", [] { testMaterials(); testProjectileMaterials(TP(28931)); testDestruction(TP(28932)); testClientHits(); }},

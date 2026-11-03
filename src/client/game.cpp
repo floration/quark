@@ -182,9 +182,16 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     if (!opts_.uiTest) execFile("autoexec.cfg", true);   // (the console's lines from your data folder, if there; not in the UI test)
 
     botMapIdx_ = bestMapFor(cfg_.botMode);
+    // the first launch: MAIN MENU offers the TUTORIAL once (not in the UI test or a screenshot run, unless asked for)
+    tutOffer_ = opts_.tutorialOffer || (!cfg_.tutorialOffered && !opts_.uiTest && opts_.screenshot.empty());
     if (!opts_.uiTest && opts_.screenshot.empty() && !opts_.benchmark) benchRetryUploads();   // (runs whose upload didn't get through)
     if (opts_.benchmark) benchStart();   // --benchmark: the main menu's, printed then quit
     else if (opts_.timeTrial) startTimeTrial(rankedRaceMap(opts_.hostMap) ? opts_.hostMap : std::string());
+    else if (opts_.tutorial) {   // --tutorial [LESSON[:PHASE]]
+        const size_t c = opts_.tutorialAt.find(':');
+        const int l = tut::lessonFromName(opts_.tutorialAt.substr(0, c).c_str());
+        startTutorial(l < 0 ? 0 : l);
+    }
     else if (opts_.vsBotsMode >= 0) {
         cfg_.botMode = opts_.vsBotsMode;
         botMapIdx_ = bestMapFor(cfg_.botMode);
@@ -264,7 +271,21 @@ void Game::startHost(bool vsBots) {
         sc.mode = MODE_ARENA;
         if (!arenaVariantRanked(sc.arenaVariant)) sc.arenaVariant = 0;
     }
-    if (vsBots && timeTrialStart_) { // solo ranked race: a ranked race map, nobody else, rounds forever (each one is a run)
+    if (vsBots && tutorialStart_) {   // TUTORIAL (tutorial.cpp): its map, you and its ghost (tutorial_server.cpp), warmup for good
+        sc = ServerConfig();
+        sc.name = "tutorial";
+        sc.map = tut::kMapName;
+        sc.mode = MODE_FFA;
+        sc.port = 0;
+        sc.upnp = false;
+        sc.lanOnly = true;
+        sc.publicList = false;
+        sc.maxPlayers = 3;   // (you, the ghost and the PARTNER)
+        sc.tutorial = true;
+        sc.autoStart = false;
+        sc.botsEnemy = sc.botsAlly = 0;
+        sc.balanceBots = false;
+    } else if (vsBots && timeTrialStart_) { // solo ranked race: a ranked race map, nobody else, rounds forever (each one is a run)
         timeTrialStart_ = false;
         sc.name = "time trial";
         sc.map = timeTrialMapName_;
@@ -406,6 +427,7 @@ void Game::connectTo(const std::string& rawAddr) {
 }
 
 void Game::leaveGame(const std::string& error) {
+    if (tut_.on) { tut_.on = false; tut_.begun = false; net_.hookPlayers = ~0u; paused_ = false; }
     if (edSession_ && net_.mapReady()) {
         // leaving an edit session: offer to keep a copy (never saved without asking, B3). Someone else's session: always
         // (unless it's a built-in map nobody changed). Your own: when it's a built-in map you changed, which the server
@@ -642,6 +664,7 @@ void Game::rescanMaps() {
     std::string hostName = maps_.empty() ? cfg_.hostMap : maps_[hostMapIdx_ % maps_.size()];
     std::string botName = maps_.empty() ? "" : maps_[botMapIdx_ % maps_.size()];
     maps_ = listMaps();
+    maps_.erase(std::remove_if(maps_.begin(), maps_.end(), [](const std::string& n) { return mapHiddenFromLists(n); }), maps_.end());   // (the tutorial's)
     mapInfo_.clear();
     // each map's title / modes / ranked ladders: parsed once per file version (it used to load and parse every map,
     // collision grid and all, each time a menu, the editor or the in-game picker opened: a visible hitch)
@@ -1013,6 +1036,7 @@ void Game::onKey(int key, int action, int mods) {
         !ui_.popupOpen() && key != GLFW_KEY_ESCAPE && hudEditKey(key, action, mods)) return;   // (the on-screen HUD editor's keys)
     if (action != GLFW_PRESS) return;
     if (key == GLFW_KEY_ESCAPE && ui_.typing() && !chatting_) { uiIn_.escape = true; return; } // just stop typing, stay on the screen
+    if (tut_.on && screen_ == Screen::InGame && captureAction_ < 0 && !ui_.typing() && tutorialKey(key)) return;   // (TUTORIAL: ENTER skips, R starts over)
     // settings: Ctrl+F or "/" opens SEARCH with its field focused ("/" only when not typing: it's a character); Esc
     // there clears the field first (an open picker still closes first)
     if (settingsShown() && !chatting_ && !console_ && captureAction_ < 0 && !widgetEdit_ && !hudEdit_ && filePick_ == 0) {
@@ -1080,6 +1104,7 @@ void Game::onKey(int key, int action, int mods) {
             if (devicesOpen_) { devicesOpen_ = false; cfg_.save(); return; }   // (DEVICES: back to VIDEO + AUDIO)
             if (moreOpen_) { moreOpen_ = false; cfg_.save(); return; }   // (MORE: back to its tab)
             if (settingsInGame_) { leaveSettings(); return; }   // (any tab: as BACK)
+            if (tut_.menu) { tut_.menu = false; return; }   // (TUTORIAL: LESSONS back to its pause menu)
             if (voteMenu_ || voteSetup_ || queueMenu_ || practiceMenu_ || playersMenu_ || picker_ != PICK_NONE) { voteSetup_ = voteMenu_ = queueMenu_ = practiceMenu_ = playersMenu_ = specPick_ = false; picker_ = PICK_NONE; return; }
             paused_ = !paused_;
             captureMouse(!paused_);
@@ -1299,7 +1324,7 @@ UserCmd Game::buildCmd() {
     // a weapon key's choice goes out until the server has run it (also while paused / typing: the switch you pressed
     // still happens, as the view model already shows it)
     if (net_.hasSnapshot() && !net_.playback()) wp_.fill(c, net_.latest().ackCmdSeq, net_.nextSeq());
-    bool block = paused_ || chatting_ || screen_ != Screen::InGame;
+    bool block = paused_ || chatting_ || screen_ != Screen::InGame || tutorialDemoView();   // (TUTORIAL: watching the ghost)
     if (block) { // keep key edge tracking current, so keys held through a menu aren't fresh presses after it
         socdPrev_[0] = isDown(A_FORWARD); socdPrev_[1] = isDown(A_BACK); socdPrev_[2] = isDown(A_RIGHT); socdPrev_[3] = isDown(A_LEFT);
         socdPrevV_[0] = isDown(A_FLYUP); socdPrevV_[1] = isDown(A_FLYDOWN);
@@ -1394,7 +1419,7 @@ void Game::notify(const std::string& s, float seconds) {
 }
 
 bool Game::isFriendly(int id) const {
-    if (id == net_.clientId()) return true;
+    if (id == net_.clientId() || tut_.on) return true;   // (TUTORIAL: the ghost in your colour, never a target)
     const PlayerSnap* me = net_.findPlayer(net_.clientId());
     const PlayerSnap* p = net_.findPlayer(id);
     if (!me || !p || !net_.hasSnapshot()) return false;
@@ -2509,7 +2534,8 @@ void Game::drawWorld(float alpha) {
     fairModels_ = rankedPlayer();   // (ranked: nobody's own model files, the shipped ones only: decided once a frame)
     // demo playback: through the recorder's eyes (their recorded view, interpolated like everyone else)
     const bool demoView = net_.playback() && me >= 0 && me < kMaxPlayers && players[me].valid;
-    const bool lateLatch = alive && !demoView && mouseCaptured_ && !opts_.camSet;   // (your own view: the aim is re-read before drawing)
+    const bool tutView = tutorialDemoView();   // (TUTORIAL: the demo's camera on the ghost)
+    const bool lateLatch = alive && !demoView && mouseCaptured_ && !opts_.camSet && !tutView;   // (your own view: the aim is re-read before drawing)
     r_.cullPad = lateLatch ? 0.06f : 0.0f;   // (~3.5 degrees: what a fast flick turns in the time until then)
     if (demoView) { yaw_ = players[me].snap.yaw; pitch_ = players[me].snap.pitch; }
 
@@ -2575,9 +2601,11 @@ void Game::drawWorld(float alpha) {
     if (alive || net_.playback() || net_.state() != ConnState::Connected) specSent_ = -2;
     else if (specTarget_ != specSent_) { net_.sendCommand("spectate " + std::to_string(specTarget_)); specSent_ = specTarget_; }
     if (opts_.camSet) { eye = opts_.camPos; camYaw = deg2rad(opts_.camYaw); camPitch = deg2rad(opts_.camPitch); }   // (--cam: screenshots of a match from a fixed spot)
+    else if (tutView) tutorialCamera(players, eye, camYaw, camPitch);
     r_.setCamera(eye, camYaw, camPitch, alive ? viewFov() : cfg_.specFov > 0 ? cfg_.specFov : hfov());   // (SPECTATOR FOV)
     audio_.setListener(eye, camYaw);
     updateSounds(players);
+    if (tut_.on) tutorialFrame();
 
     Vec3 dbgBombPos;   // (--models in bomb mode: a dropped bomb in front of the lineup, which carries it)
     const bool dbgBomb = opts_.debugModels && alive && ms.mode == MODE_BOMB;
@@ -2820,9 +2848,10 @@ void Game::drawWorld(float alpha) {
     // below. Not on a mode without the grapple, nor while hidden or scoped. While hooked the claw is out on the rope and
     // the arm comes up a little and turns toward the hook (eased).
     const bool specGun = !alive && viewing != me && viewing >= 0 && players[viewing].valid;
+    const bool fpView = alive && !tutView;   // (your own view: not the tutorial demo's camera)
     const auto& vm = cfg_.hud[Settings::HUD_VIEWMODEL];
     const auto& gm = cfg_.hud[Settings::HUD_GRAPPLE];
-    const bool fpHook = grappleOn && (alive || specGun) && !(alive && (net_.predicted().mods & MOVE_RUN_ONLY)) &&
+    const bool fpHook = grappleOn && (fpView || specGun) && !(alive && (net_.predicted().mods & MOVE_RUN_ONLY)) &&
                         !(scoped_ && scopeOverlay_ && !specGun) && !gm.hidden;
     bool fpHooked = false;
     Vec3 fpHookTo;
@@ -3290,7 +3319,7 @@ void Game::drawWorld(float alpha) {
     // (per second: it was per frame, so the kick lasted 8 ms at 1000 fps; outside the view model's test: scoped, hidden
     // or dead it never decayed, and unscoping replayed the whole kick, and the muzzle stayed pushed back)
     recoil_ = std::max(0.0, recoil_ - 8.0 * frameDt_);
-    if ((alive || specGun) && !(scoped_ && scopeOverlay_ && !specGun) && !unarmed && !vmHidden(specGun ? (int)players[viewing].snap.weapon : heldWeapon_)) {
+    if ((fpView || specGun) && !(scoped_ && scopeOverlay_ && !specGun) && !unarmed && !vmHidden(specGun ? (int)players[viewing].snap.weapon : heldWeapon_)) {
         int w = specGun ? (int)players[viewing].snap.weapon : heldWeapon_;
         float kick = cfg_.viewRecoil ? (float)recoil_ * 0.06f * cfg_.recoilAmount : 0.0f;   // (VIDEO > MORE 2: GUN RECOIL off: none)
         // Each weapon is a handful of boxes around `at` (camera space: +x right, +y up, -z forward), models.h.
@@ -3972,6 +4001,10 @@ void Game::scoreText(ScoreText& t, bool sample) const {
     const PlayerSnap* mep = net_.findPlayer(me);
     const int myTeam = mep ? (mep->team() == TEAM_SPECTATOR ? TEAM_A : mep->team()) : TEAM_A;
     char b[160];
+    if (tut_.on) {   // TUTORIAL: its name and the lesson, no scores or warmup line
+        t.title = "TUTORIAL"; t.phase = tut_.scoreLine; t.ranked = t.unrated = false; t.scoreA.clear(); t.scoreB.clear();
+        return;
+    }
     if (ms.flags & MS_TIMETRIAL) t.title = "TIME TRIAL - " + upper(net_.map().title.empty() ? net_.map().name : net_.map().title);
     else if (ms.flags & MS_RANKED) { snprintf(b, sizeof b, "%s - %s", rankedKind(ms.arenaVariant), arenaVariant(ms.arenaVariant).title); t.title = b; }
     else if (isOneVsOneMode(ms.mode) || (ms.mode == MODE_TOURNEY && ms.phase != PHASE_WARMUP) || (ms.mode == MODE_FFA && ms.arenaVariant != 0)) {   // (free for all: a ruleset other than vanilla)
@@ -4485,7 +4518,7 @@ void Game::drawHud() {
     }
     const bool rpsOn = (ms.flags & MS_RPS) || opts_.debugRps;   // (drawn over the rest of the HUD, at the end)
     // crosshair (scoped with the overlay on: the scope's reticle replaces it)
-    if (!scopeShown && !paused_ && !rpsOn) drawCrosshair(cx, cy, s, time_ < hitUntil_, heldWeapon_); // menus open: no crosshair through them
+    if (!scopeShown && !paused_ && !rpsOn && !tutorialDemoView()) drawCrosshair(cx, cy, s, time_ < hitUntil_, heldWeapon_); // menus open: no crosshair through them
     if (!paused_ && !rpsOn && net_.selfAlive()) drawDamageArcs(cx, cy, s);
     if (!paused_ && !rpsOn) drawKillMark(cx, cy, s);
     if (time_ < killTextUntil_ && !paused_ && !rpsOn) {   // (GAMEPLAY > MORE 2: KILL TEXT)
@@ -4659,7 +4692,7 @@ void Game::drawHud() {
     if (specP && !specMin && (specP->flags & PS_ALIVE) && !cfg_.hud[Settings::HUD_HEALTH].hidden)
         drawHudHealth(cfg_.hud[Settings::HUD_HEALTH], W, H, s, specP->health, kWhite, rgba(teamColor(specTarget_)));
     if (net_.selfAlive()) {
-        drawHudLive(ms, mep, W, H, s, false);
+        if (!tutorialDemoView()) drawHudLive(ms, mep, W, H, s, false);   // (TUTORIAL's demo: the ghost's keys instead)
     } else if (ms.phase != PHASE_ROUND_END && ms.phase != PHASE_MATCH_END) {
         const bool spectator = mep && (mep->flags & PS_SPECTATOR);
         std::string t = specMin ? "" : spectator ? "SPECTATING" : "DEAD";
@@ -4831,6 +4864,7 @@ void Game::drawHud() {
         ui_.labelCentered(b.x + b.w * 0.5f, y0 + 6 * s, t, kWhite, 1.0f, b.w - 16 * s);
         hudMoveEnd(sm);
     }
+    if (tut_.on && !(paused_ && !settingsInGame_)) drawTutorialHud(W, H, s);
     if (paused_) {
         // dim the game behind the menu so HUD text doesn't show through its panels; not on the pages
         // that preview the HUD / crosshair over the game
@@ -6065,6 +6099,84 @@ struct PauseCol {
 float pauseH(int rows, int sections, bool lastRow) { return rows * (kPRow + kPGap) - kPGap + sections * (20 + 24 - kPGap) + (lastRow ? 20 + kPRow : 0); }
 }
 
+const char* tutorialTitle(int l);   // (tutorial.cpp)
+
+// TUTORIAL's pause menu (tutorial.cpp): RESUME, WATCH AGAIN / SKIP LESSON, START OVER / LESSONS, SETTINGS, then LEAVE
+// TUTORIAL / QUIT. LESSONS: every lesson, the KEY TECH ones first under their heading (q: "big techs that are important"),
+// a green mark on the ones done. After the last lesson: TUTORIAL COMPLETE, with the modes guide (INFO > MODES).
+void Game::drawTutorialPause(float cx, float y) {
+    (void)cx; (void)y;
+    const SetLayout L = ingameLayout(kPW + 32);
+    const Color kDone = {0.45f, 0.95f, 0.5f, 1};   // (a lesson done: a green square at its button's right end)
+    if (tut_.menu) {   // (four columns, 240 wide: every lesson on one page at 720p, the KEY TECH ones first under their heading)
+        constexpr int kCols = 4;
+        constexpr float kCW = 240, kCG = 12, kLW = kCols * kCW + (kCols - 1) * kCG, kLX = 640 - kLW * 0.5f;
+        const SetLayout M = ingameLayout(kLW + 32);
+        int nKey = 0;
+        for (int l = 0; l < tut::L_COUNT; l++) nKey += tut::lesson(l).key;
+        const int keyRows = (nKey + kCols - 1) / kCols, restRows = (tut::L_COUNT - nKey + kCols - 1) / kCols;
+        const float kH = 40 + 24 + pauseH(keyRows + restRows, 0, true) + 16;
+        float y = ingameTop(M, kH);
+        ui_.panel(M.X(kLX - 16), M.Y(y - 16), M.L(kLW + 32), M.L(kH + 32), 0.95f);
+        ui_.labelCentered(M.X(640), M.Y(y), "LESSONS", kWhite, 1.0f, M.L(kLW));
+        y += 40;
+        ui_.label(M.X(kLX), M.Y(y), "KEY TECH", {1.0f, 0.8f, 0.3f, 1}, 1.0f, M.L(kLW));
+        y += 24;
+        auto cell = [&](int l, int k, bool key) {   // (lesson l in cell k of its block: a button, the gold bar, the done mark)
+            const float x = kLX + (k % kCols) * (kCW + kCG), yy = y + (k / kCols) * (kPRow + kPGap);
+            if (ui_.button(M.X(x), M.Y(yy), M.L(kCW), M.L(kPRow), tutorialTitle(l), UiExp::cmd("tutorial"))) { tut_.menu = false; paused_ = false; tutorialBegin(l); }
+            if (key) r_.rect(M.X(x), M.Y(yy), M.L(4), M.L(kPRow), {1.0f, 0.8f, 0.3f, 1});
+            if (cfg_.tutorialDone >> l & 1) r_.rect(M.X(x + kCW) - M.L(14), M.Y(yy) + M.L(kPRow * 0.5f - 4), M.L(8), M.L(8), kDone);
+        };
+        int k = 0;
+        for (int l = 0; l < tut::L_COUNT; l++) if (tut::lesson(l).key) cell(l, k++, true);
+        y += keyRows * (kPRow + kPGap) + 16;
+        k = 0;
+        for (int l = 0; l < tut::L_COUNT; l++) if (!tut::lesson(l).key) cell(l, k++, false);
+        y += restRows * (kPRow + kPGap) - kPGap + 20;
+        if (ui_.button(M.X(kLX), M.Y(y), M.L(kLW), M.L(kPRow), "BACK", UiExp::nav("ingame/pause"))) tut_.menu = false;
+        return;
+    }
+    const bool finished = tut_.phase == TutState::FINISH;
+    const float head = finished ? 40 + 52 : 40;
+    const float kH = head + pauseH(finished ? 2 : 4, 0, true);
+    PauseCol c{ui_, L, ingameTop(L, kH)};
+    ui_.panel(L.X(kPX - 16), L.Y(c.y - 16), L.L(kPW + 32), L.L(kH + 32), 0.95f);
+    if (finished) {
+        ui_.labelCentered(L.X(640), L.Y(c.y), "TUTORIAL COMPLETE", kDone, 1.0f, L.L(kPW));
+        c.y += 28;
+        const std::vector<std::string>& lines = ui_.wrap("THAT IS EVERY MOVEMENT TECH. THE MODES GUIDE SAYS WHAT EACH GAME MODE IS ABOUT.", ui_.hintScale(), L.L(kPW));
+        for (size_t i = 0; i < lines.size() && i < 3; i++) ui_.hintCentered(L.X(640), L.Y(c.y + 14 * i), lines[i], kGrey, L.L(kPW));
+        c.y += 64;
+        if (c.half(1, "LESSONS", UiExp::nav("ingame/pause/lessons"))) tut_.menu = true;
+        if (c.half(2, "MODES GUIDE", UiExp::nav("info/modes"))) { leaveGame(); infoTab_ = 0; setScreen(Screen::Info); return; }
+        c.next();
+        if (c.full("PLAY VS BOTS", UiExp::nav("vsbots"))) { leaveGame(); setScreen(Screen::VsBots); return; }
+        c.next();
+    } else {
+        char b[96];
+        snprintf(b, sizeof b, "TUTORIAL - %s", tutorialTitle(tut_.lesson));
+        ui_.labelCentered(L.X(640), L.Y(c.y), b, kWhite, 1.0f, L.L(kPW));
+        c.y += 40;
+        if (c.full("RESUME", UiExp::nav("ingame"))) paused_ = false;
+        c.next();
+        if (c.half(1, "WATCH AGAIN", UiExp::cmd("tutorial"))) { paused_ = false; tutorialBegin(tut_.lesson); }
+        if (c.half(2, "SKIP LESSON", UiExp::cmd("tutorial"))) {
+            if (tut_.lesson + 1 < tut::L_COUNT) { paused_ = false; tutorialBegin(tut_.lesson + 1); }
+            else tut_.phase = TutState::FINISH;
+        }
+        c.next();
+        if (c.half(1, "START OVER", UiExp::cmd("tutorial reset"))) { paused_ = false; tutorialBegin(tut_.lesson); tut_.demoEnd = time_; }
+        if (c.half(2, "LESSONS", UiExp::nav("ingame/pause/lessons"))) tut_.menu = true;
+        c.next();
+        if (c.full("SETTINGS", UiExp::nav("ingame/pause/settings"))) { settingsInGame_ = true; openSettingsTab(settingsStartTab()); }
+        c.next();
+    }
+    c.last();
+    if (c.half(1, "LEAVE TUTORIAL", UiExp::nav("main"))) { leaveGame(); return; }
+    if (c.half(2, confirmArmed("quit") ? "SURE? QUIT" : "QUIT", (cfg_.confirmLeave && !confirmArmed("quit") ? UiExp::state("confirm", "quit") : UiExp::quit()).withId("QUIT")) && confirmed("quit")) quit_ = true;
+}
+
 // PRACTICE (pause > HOST; the server takes it only while you're alone with bots): save / load a spot, take no damage,
 // bots that don't fire, all off; BACK
 void Game::drawPracticeMenu() {
@@ -6427,6 +6539,7 @@ void Game::drawPauseMenu(float cx, float y) {
     if (practiceMenu_) { drawPracticeMenu(); return; }
     if (playersMenu_) { drawPlayersMenu(); return; }
     if (queueMenu_) { drawQueueMenu(cx, y); return; }
+    if (tut_.on) { drawTutorialPause(cx, y); return; }
     const SetLayout L = ingameLayout(kPW + 32);
     if (net_.playback()) { // watching a demo
         const float kH = pauseH(2, 0, true);
@@ -9624,6 +9737,7 @@ void Game::drawMenu() {
 
     if (picker_ != PICK_NONE && (screen_ == Screen::Host || screen_ == Screen::VsBots)) { drawPicker(cx, H * 0.12f + 80 * s); return; }
     if (edPrompt_ && screen_ == Screen::Main) { drawEditorSavePrompt(); return; }
+    if (tutOffer_ && screen_ == Screen::Main) { drawTutorialOffer(); return; }   // (the first launch: the TUTORIAL, once)
     const SetLayout L = menuLayout(kMW + 32);   // (the column pages: 392 wide)
     switch (screen_) {
         case Screen::Main: drawMainMenu(L); break;
@@ -9656,7 +9770,8 @@ void Game::drawMainMenu(const SetLayout& L) {
         if (ui_.button(x, L.Y(294), hw, h, "JOIN GAME", UiExp::nav("join"))) setScreen(Screen::Join);
         if (ui_.button(x2, L.Y(294), hw, h, "RECONNECT", UiExp::nav("connecting"))) { reconnectAt_ = 0; reconnectTries_ = 0; connectTo(cfg_.lastAddress); }
     }
-    if (ui_.button(x, L.Y(342), w, h, "HOST GAME", UiExp::nav("host"))) setScreen(Screen::Host);
+    if (ui_.button(x, L.Y(342), hw, h, "HOST GAME", UiExp::nav("host"))) setScreen(Screen::Host);
+    if (ui_.button(x2, L.Y(342), hw, h, "TUTORIAL", UiExp::state("hosting", "1"))) startTutorial(0);   // (1.19.9: the movement tech)
     if (ui_.button(x, L.Y(390), hw, h, "MAP EDITOR", UiExp::nav("editor"))) openEditor("");
     if (ui_.button(x2, L.Y(390), hw, h, "LEADERBOARD", UiExp::nav("leaderboard"))) { nextBoardFetch_ = 0; raceStatsView_ = false; setScreen(Screen::Leaderboard); }
     if (ui_.button(x, L.Y(438), hw, h, "SETTINGS", UiExp::nav("settings"))) { openSettingsTab(settingsStartTab()); setScreen(Screen::Settings); }
@@ -10243,15 +10358,15 @@ static const char* const kInfoPages[][48] = {
         "TAB - scoreboard.   ENTER - chat.   F1 / F2 - vote yes / no.   F5 - vote to start the match.",
         "F3 - performance overlay (average, 1% and 0.1% low FPS, input latency).   F12 - screenshot.   ESC - menu, votes, settings.",
         "# MOVEMENT",
-        "You run at 9.5 m/s. In the air, holding a direction drifts you up to run speed (a standing jump moves too).",
+        "You run at 9.5 m/s. In the air you keep your speed: holding a direction steers it, and a standing jump drifts 2.3 m/s at most.",
         "Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping. Above ~13 m/s A / D turns you faster than W alone.",
-        "Each dash leaves you 1 m/s faster than you went in (at least 11, at most 32 m/s).",
+        "Each dash leaves you faster than you went in: on the floor by 1 m/s, in the air by about a third of what you are below 32 m/s (from 10 m/s you leave at 17.7). At least 11, at most 32 m/s: a dash above 32 slows you to 32.",
         "Dash jump: jump while dashing along the floor to keep the dash's full speed through the jump (it leaves you both dashes).",
         "Super dash: look down and dash into the floor while holding jump: you leave 5 m/s faster than you went into the dash (at least 11, at most 36 m/s), with a hop that gets higher the further down you look (it leaves you 1 dash).",
         "Dash into a wall head-on (under 45 degrees) and you bounce off it at 16 m/s (it leaves you 1 dash).",
         "You step up anything 0.55 m high, including stairs mid-jump. Ladders: walk into them, look up or down to climb (6.75 m/s).",
         "# WEAPONS",
-        "ROCKET (splash; rocket jump off the floor for 10% damage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 10 hp, once a second; alt throws it: +30 hp and reset cooldowns for a teammate).",
+        "ROCKET (splash; rocket jump off the floor for 10% damage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 5 hp, once a second; alt throws it: +15 hp and reset cooldowns for a teammate).",
         "A thrown knife or syringe is gone for 4 s (greyed out in the weapon list, with its timer).",
         "Switching weapons with fire held doesn't fire the new one: let go and press again.",
         "# CONTROL PROFILES",
@@ -12033,6 +12148,7 @@ void Game::localBoom(uint16_t id, int type, const Vec3& at) {
 // The nearest enemy (alive, as drawn) whose body or head (rayHitbox, as the server's projectiles) the segment a -> b
 // passes through: *t its fraction along it.
 bool Game::enemyOnSegment(const Vec3& a, const Vec3& b, float* t, int* who, bool* head) {
+    if (tut_.on) return false;   // (TUTORIAL: shots fly through the ghost: Server tickProjectiles)
     const Vec3 d = b - a;
     const float len = length(d);
     if (len < 1e-4f) return false;
@@ -12608,6 +12724,7 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
         // with its dash jump in one frame (a silent super or hyper)
         float land = 0;
         const uint8_t ev = net_.takeMoveEvents(&land);
+        if (tut_.on) tut_.ev |= ev;   // (TUTORIAL: the lesson's check reads them: tutorialFrame)
         if (alive && prevAlive_ && ev) {
             if (ev & ME_LAND) audio_.play(SND_LAND, clampf(land / 20.0f, 0.3f, 1.0f) * cfg_.volSteps);
             if (ev & ME_JUMP) audio_.play(SND_JUMP, 0.5f * cfg_.volSteps);

@@ -381,6 +381,8 @@ struct Settings {
     std::string quipBlock;
     int quipPick = -1;                 // PLAYER > MORE: MY QUIP: the QUIP key says this one (-1: a random one)
     bool legacyMaps = false;           // GAMEPLAY: MAPS: LEGACY MAPS: the old map pool (maps/legacy/) listed in the pickers (1.19.6)
+    bool tutorialOffered = false;      // the first launch's TUTORIAL offer was shown (main menu; 1.19.9): never again
+    int tutorialDone = 0;              // TUTORIAL: a bit per lesson finished (tut::Lesson), the lesson list's ticks
     bool useOverrides = true;          // PLAYER > MORE: MODS: your overrides folder used (next start)             // players whose quips you don't hear (names, ';'-separated)
     // CONTROLS > MORE 2
     float wpnSens[WPN_COUNT];          // per weapon: x SENSITIVITY (1 = the same)
