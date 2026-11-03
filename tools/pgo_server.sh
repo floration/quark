@@ -20,12 +20,12 @@ cmake --build "$OUT-gen" -j --target quark_tests || exit 1
 sh tools/pgo_train.sh "$OUT-gen" || exit 1
 cmake -S . -B "$OUT-use" -DCMAKE_BUILD_TYPE=Release -DQUARK_BUILD_CLIENT=OFF -DQUARK_PGO=USE -DQUARK_PGO_DIR="$PROF" "$@" > /dev/null || exit 1
 cmake --build "$OUT-use" -j --target quark_server quark_tests || exit 1
-"$BASE/quark_tests" simhash 10 | grep '^seed' > "$OUT-simhash-base.txt" || exit 1
-"$OUT-use/quark_tests" simhash 10 | grep '^seed' > "$OUT-simhash-pgo.txt" || exit 1
-[ "$(wc -l < "$OUT-simhash-base.txt")" -eq 10 ] || { echo "pgo: simhash printed no seeds"; exit 1; }
-if ! cmp -s "$OUT-simhash-base.txt" "$OUT-simhash-pgo.txt"; then
+"$BASE/quark_tests" simhash 10 | grep '^seed' > "$OUT-use/simhash-base.txt" || exit 1
+"$OUT-use/quark_tests" simhash 10 | grep '^seed' > "$OUT-use/simhash-pgo.txt" || exit 1
+[ "$(wc -l < "$OUT-use/simhash-base.txt")" -eq 10 ] || { echo "pgo: simhash printed no seeds"; exit 1; }
+if ! cmp -s "$OUT-use/simhash-base.txt" "$OUT-use/simhash-pgo.txt"; then
   echo "pgo: the profiled server simulates DIFFERENTLY from the normal build:"
-  diff "$OUT-simhash-base.txt" "$OUT-simhash-pgo.txt"
+  diff "$OUT-use/simhash-base.txt" "$OUT-use/simhash-pgo.txt"
   exit 1
 fi
 echo "pgo: profiled quark_server simulates the same (10 seeds): $OUT-use/quark_server"
