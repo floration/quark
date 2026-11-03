@@ -215,6 +215,7 @@ AIM UP AT THE CEILING, A FEW METRES AHEAD	APUNTA AL TECHO, UNOS METROS POR DELAN
 AIM UP, OVER THE EDGE OF THE LEDGE	APUNTA ARRIBA, POR ENCIMA DEL BORDE DE LA REPISA
 AIM: A LITTLE DOWN	MIRA: UN POCO ABAJO
 AIM: AT THE PARTNER	APUNTA: AL PARTNER
+AIM: AT THE PILLAR	MIRA: A LA COLUMNA
 AIM: LEVEL	MIRA: AL FRENTE
 AIM: STRAIGHT DOWN	MIRA: RECTO ABAJO
 AIM: UP	MIRA: ARRIBA
@@ -415,6 +416,7 @@ BRIGHTNESS	BRILLO
 BRITISH	BRITÁNICO
 BRUNO	BRUNO
 BUBBLE	BURBUJA
+BUBBLE LAUNCH	LANZAMIENTO DE BURBUJAS
 BUILDINGS	EDIFICIOS
 BUILT FOR	HECHO PARA
 BUILT FOR sets the mode the map is made for; the MODES grid sets what it's offered for. PLAYABLE AS shows what it has the pieces for (team modes need A and B spawns).	HECHO PARA fija el modo para el que está hecho el mapa; la cuadrícula de MODOS fija para qué se ofrece. JUGABLE COMO muestra para qué tiene las piezas (los modos por equipos necesitan spawns A y B).
@@ -855,7 +857,7 @@ EXPORT CSV	EXPORTAR CSV
 EXPORT GROUP	EXPORTAR GRUPO
 EXPORT PNG	EXPORTAR PNG
 EZRA	EZRA
-Each dash leaves you 1 m/s faster than you went in (at least 11, at most 32 m/s).	Cada dash te deja 1 m/s más rápido que al entrar (mínimo 11, máximo 32 m/s).
+Each dash leaves you faster than you went in: on the floor by 1 m/s, in the air by about a third of what you are below 32 m/s (from 10 m/s you leave at 17.7). At least 11, at most 32 m/s: a dash above 32 slows you to 32.	Cada dash te deja más rápido de lo que entraste: en el suelo 1 m/s más, en el aire cerca de un tercio de lo que te falta hasta 32 m/s (desde 10 m/s sales a 17.7). Mínimo 11, máximo 32 m/s: un dash por encima de 32 te frena a 32.
 Each map is built for one mode, plus free for all and any others it lists. You can still start any map in any mode: the menus warn when it isn't built for it (it may be missing spawns or objectives).	Cada mapa está hecho para un modo, además de todos contra todos y los demás que indique. Aun así puedes iniciar cualquier mapa en cualquier modo: los menús avisan si no está hecho para él (puede faltarle spawns u objetivos).
 F3 - performance overlay (average, 1% and 0.1% low FPS, input latency).   F12 - screenshot.   ESC - menu, votes, settings.	F3 - panel de rendimiento (FPS medios, 1% y 0.1% low, latencia de entrada).   F12 - captura.   ESC - menú, votaciones, ajustes.
 F3 COLORBLIND COLORS	COLORES PARA DALTÓNICOS EN F3
@@ -939,6 +941,7 @@ FRIENDS JOIN WITH YOUR PUBLIC IP (STREAMER MODE)	LOS AMIGOS SE UNEN CON TU IP P�
 FRIENDS JOIN WITH YOUR PUBLIC IP:	LOS AMIGOS SE UNEN CON TU IP PÚBLICA:
 FROM	DE
 FROM 11.7 M UP OR MORE THE HOP IS THE BIGGEST, 15.7 M/S	DESDE 11.7 M O MÁS EL SALTO ES EL MAYOR, 15.7 M/S
+FROM STANDING OR A SLOW RISE ONLY: RISING FAST, THE BUBBLES CAN'T CATCH YOU	SOLO DE PIE O SUBIENDO DESPACIO: SI YA SUBES RÁPIDO, LAS BURBUJAS NO TE ALCANZAN
 FROM: APEX LEGENDS	DE: APEX LEGENDS
 FROM: CALL OF DUTY	DE: CALL OF DUTY
 FROM: CS2 / CS:GO	DE: CS2 / CS:GO
@@ -977,6 +980,7 @@ GATE	PUERTA
 GENERAL	GENERAL
 GENERAL + INTERFACE	GENERAL + INTERFAZ
 GET 40 M UP	SUBE 40 M
+GET 55 M UP	SUBE 55 M
 GET 7 M UP	SUBE 7 M
 GET IT WITH /link - THE CODE IS PUBLIC	CONSÍGUELO CON /link - EL CÓDIGO ES PÚBLICO
 GHOST	GHOST
@@ -1025,7 +1029,7 @@ GRAPPLE RANGE	ALCANCE DEL GANCHO
 GRAPPLE RELEASE DISTANCE	DISTANCIA DE SUELTA DEL GANCHO
 GRAPPLE TO 24 M/S, THEN A ROCKET AND A HYPER STRAIGHT DOWN: YOU FLY, CHEAP AND FAST.	CON EL GANCHO A 24 M/S, LUEGO UN COHETE Y UN HYPER RECTO HACIA ABAJO: VUELAS, FÁCIL Y RÁPIDO.
 GRAPPLE TOP SPEED	VELOCIDAD MÁX. DEL GANCHO
-GRAPPLE WALK TO 24 M/S, LET GO, THEN HYPER EVERY LANDING: 29, 34, 35 M/S IN ABOUT 2 S.	ARRASTRE CON GANCHO HASTA 24 M/S, SUELTA Y HYPER EN CADA ATERRIZAJE: 29, 34, 35 M/S EN UNOS 2 S.
+GRAPPLE WALK TO 24 M/S, LET GO, THEN HYPER EVERY LANDING: 29, 34, 35 M/S IN ABOUT 1.3 S.	ARRASTRE CON GANCHO HASTA 24 M/S, SUELTA Y HYPER EN CADA ATERRIZAJE: 29, 34, 35 M/S EN UNOS 1.3 S.
 GRAPPLE WALK UP TO 24 M/S	GANCHO POR EL SUELO HASTA 24 M/S
 GRAPPLE WALKING	GANCHO POR EL SUELO
 GRAPPLE WALKING AT 24 M/S, FIRE A ROCKET STRAIGHT DOWN WHILE STILL HOOKED: ABOUT 40 M/S ALONG.	ARRASTRADO POR EL GANCHO A 24 M/S, DISPARA UN COHETE RECTO ABAJO SIN SOLTARLO: UNOS 40 M/S HACIA DELANTE.
@@ -2549,7 +2553,7 @@ RMB	RMB
 ROBOT	ROBOT
 ROCK	PIEDRA
 ROCKET	COHETE
-ROCKET (splash; rocket jump off the floor for 10#amage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 10 hp, once a second; alt throws it: +30 hp and reset cooldowns for a teammate).	COHETE (daño de área; rocket jump desde el suelo por 10# de daño), RIFLE (automático; mira con alt.), LÁSER (un rayo; alt. atrae), ESCOPETA (alt.: rebote), FRANCOTIRADOR (mira con alt.), STICKY (alt. detona), BALLESTA (disparos a la cabeza), BURBUJA (alt.: un chorro de burbujas), CUCHILLO (alt.: lanzarlo), JERINGA (disparar te cura 10 hp, una vez por segundo; alt. la lanza: +30 hp y reinicia los enfriamientos de un compañero).
+ROCKET (splash; rocket jump off the floor for 10#amage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 5 hp, once a second; alt throws it: +15 hp and reset cooldowns for a teammate).	COHETE (daño de área; rocket jump desde el suelo por 10# de daño), RIFLE (automático; mira con alt.), LÁSER (un rayo; alt. atrae), ESCOPETA (alt.: rebote), FRANCOTIRADOR (mira con alt.), STICKY (alt. detona), BALLESTA (disparos a la cabeza), BURBUJA (alt.: un chorro de burbujas), CUCHILLO (alt.: lanzarlo), JERINGA (disparar te cura 5 hp, una vez por segundo; alt. la lanza: +15 hp y reinicia los enfriamientos de un compañero).
 ROCKET GRAPPLE	GANCHO AL COHETE
 ROCKET JUMP	SALTO CON COHETE
 ROCKET JUMPERS	ROCKET JUMPERS
@@ -2815,6 +2819,8 @@ STALEMATE - HEALTH DRAINS IN	EMPATE - LA SALUD SE DRENA EN
 STALEMATE WARNING	AVISO DE EMPATE
 STALLED #S	DETENIDO #S
 STAND ON THE 10 M LEDGE	PONTE EN LA REPISA DE 10 M
+STAND STILL AND AIM STRAIGHT DOWN	QUÉDATE QUIETO Y APUNTA RECTO ABAJO
+STAND STILL, AIM STRAIGHT DOWN AND ALT-FIRE THE BUBBLE GUN: 58 M/S UP, ABOUT 73 M, FOR ABOUT 12 HP.	QUIETO, APUNTA RECTO ABAJO Y USA EL DISPARO ALT. DE LA PISTOLA DE BURBUJAS: 58 M/S HACIA ARRIBA, UNOS 73 M, POR UNOS 12 HP.
 STANDARD	ESTÁNDAR
 STANDARD RULES	REGLAS ESTÁNDAR
 STANDARD: SNIPER	ESTÁNDAR: FRANCOTIRADOR
@@ -3006,6 +3012,7 @@ THE SAVED MONITOR IS GONE: THE PRIMARY	EL MONITOR GUARDADO YA NO ESTÁ: EL PRINC
 THE SCROLL WHEEL PASSES OVER SKIPPED	LA RUEDA DEL RATÓN SE SALTA LOS OMITIDOS
 THE SHARE OF THE MODE'S MAX HEALTH	LA PARTE DE LA SALUD MÁXIMA DEL MODO
 THE TASKBAR BUTTON FLASHES	EL BOTÓN DE LA BARRA DE TAREAS PARPADEA
+THE WHOLE STREAM POPS UNDER YOU. HOLD IT: ANOTHER EVERY 1.8 S	TODA LA RÁFAGA ESTALLA BAJO TI. MANTENLO: OTRA CADA 1.8 S
 THE WINDOW'S SIZE AND PLACE ARE KEPT	SE CONSERVAN EL TAMAÑO Y LA POSICIÓN DE LA VENTANA
 THEIRS	SUYOS
 THEME.CFG LINE	LÍNEA DE THEME.CFG
@@ -3269,6 +3276,7 @@ WINNER STAYS - FIRST TO	EL GANADOR SIGUE - EL PRIMERO EN
 WINNERS CROWN	CORONA DE GANADORES
 WINS	VICT.
 WINS THE MATCH	GANA LA PARTIDA
+WITH AN ENEMY WITHIN 5 M THE STREAM IS ONLY 5 BUBBLES: 17 M/S UP	CON UN ENEMIGO A MENOS DE 5 M LA RÁFAGA SON SOLO 5 BURBUJAS: 17 M/S ARRIBA
 WITHIN 1.3 M OF THE FLOOR. 10 MS LATE LOSES 3 M/S	A MENOS DE 1.3 M DEL SUELO. 10 MS TARDE PIERDE 3 M/S
 WIZARD	MAGO
 WORD FILTER	FILTRO PALABRAS
@@ -3320,7 +3328,7 @@ YOUR SHOTS: NEVER	TUS DISPAROS: NUNCA
 YOUR SHOTS: WITH WEAPON MODEL	TUS DISPAROS: CON MODELO DEL ARMA
 YOUR TEAM IS PUSHING	TU EQUIPO ESTÁ EMPUJANDO
 YOUR TURN	TU TURNO
-You run at 9.5 m/s. In the air, holding a direction drifts you up to run speed (a standing jump moves too).	Corres a 9.5 m/s. En el aire, mantener una dirección te lleva hasta la velocidad de carrera (un salto parado también se mueve).
+You run at 9.5 m/s. In the air you keep your speed: holding a direction steers it, and a standing jump drifts 2.3 m/s at most.	Corres a 9.5 m/s. En el aire conservas tu velocidad: mantener una dirección la dirige, y un salto parado deriva 2.3 m/s como mucho.
 You step up anything 0.55 m high, including stairs mid-jump. Ladders: walk into them, look up or down to climb (6.75 m/s).	Subes cualquier cosa de hasta 0.55 m, incluso escalones en pleno salto. Escaleras de mano: camina hacia ellas, mira arriba o abajo para trepar (6.75 m/s).
 ZERO-G FLIGHT, LASERS - HEAL 100% TO 50% OVER 30 S, NO KNOCKBACK	VUELO EN GRAVEDAD CERO, LÁSERES - CURA DEL 100% AL 50% EN 30 S, SIN EMPUJE
 ZOMBIE	ZOMBI

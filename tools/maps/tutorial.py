@@ -8,7 +8,7 @@ stops working on this map). Side by side, not in a row: a row of them ran past t
 the bay's start wall, facing +x. Nothing joins the bays: the tutorial moves you from one to the next, and a fall into
 the lava puts you back at your bay's start. Each bay is built for its one tech: a long flat lane for strafing and the
 chains, a lava gap only a dash crosses, a wall to bounce off, a 10 m ledge for the grapple, 8 m ledges for the rocket
-and sticky jumps, a 72 m tall hall for the launch, and two bays where a second bot, the PARTNER, runs across the
+and sticky jumps, a 72 m tall hall for the launch, an 80 m one for the bubble launch, and two bays where a second bot, the PARTNER, runs across the
 middle (grapple a player) or hooks you from the far end (dash out of a grapple): a disc marks where it starts."""
 from .prefabs import *
 
@@ -18,7 +18,8 @@ BAYS = [("move", 50, 12), ("strafe", 150, 12), ("dash", 50, 12), ("sidedash", 30
         ("rampdash", 40, 20), ("grapple", 40, 18), ("ceilhang", 40, 16), ("swing", 70, 16), ("hookwalk", 80, 12),
         ("hookchain", 120, 16), ("hookplayer", 50, 14), ("breakfree", 50, 12), ("rocketjump", 40, 24),
         ("fallbounce", 30, 28), ("rocketsuper", 110, 16), ("rocketpop", 100, 60), ("launch", 160, 72),
-        ("hookboost", 120, 16), ("stickyjump", 40, 24), ("stickystack", 30, 64), ("rocketgrapple", 110, 16)]
+        ("hookboost", 120, 16), ("stickyjump", 40, 24), ("stickystack", 30, 64),
+        ("bubblelaunch", 30, 80), ("rocketgrapple", 110, 16)]
 WALL = 1.0      # between bays (kWall)
 HZ = 12.0       # half the width (kBayHalfZ)
 X0 = -90.0      # every bay's start wall, inside face (kBayX0)

@@ -45,6 +45,7 @@ enum Lesson : int {
     L_HOOKBOOST,    // KEY TECH: the hook boost: grapple walking at 24 m/s, a rocket straight down while still hooked
     L_STICKYJUMP,   // sticky jumping
     L_STICKYSTACK,  // KEY TECH: the sticky stack: three stickies at your feet set off at once as you jump
+    L_BUBBLELAUNCH, // KEY TECH (q): standing still, the bubble gun's stream straight down: 58 m/s up
     L_ROCKETGRAPPLE,   // KEY TECH (q): the rocket grapple (rocket riding): the grapple catches your own rocket
     L_COUNT
 };

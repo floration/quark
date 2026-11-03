@@ -3108,7 +3108,8 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
             // the nearest enemy in sight (F15: counting through walls told you someone was within 5 m): a ray or two
             // per enemy inside the count's range, once a stream (1.8 s)
             float nearest = 1e9f;
-            for (int i = 0; i < kMaxPlayers; i++) {
+            // (the tutorial: nobody is an enemy, or the ghost 12 m off in the next lane would cut your stream)
+            for (int i = 0; i < kMaxPlayers && !cfg_.tutorial; i++) {
                 const auto& o = players_[i];
                 if (i == id || !o.connected || !o.alive || (modeIsTeamBased(cfg_.mode) && o.team == p.team)) continue;
                 const float dist = length(o.move.pos - p.move.pos);

@@ -21,7 +21,7 @@ inline void testTutorial() {
     }
     CHECK(tut::lessonFromName("nope") < 0 && tut::lessonFromName("") < 0 && tut::lessonFromName(std::to_string(tut::L_COUNT).c_str()) < 0);
     // (q: the big ones, marked KEY TECH: the launch, grappling a player, dashing out of a grapple, the rocket grapple)
-    for (int l : {tut::L_LAUNCH, tut::L_HOOKPLAYER, tut::L_BREAKFREE, tut::L_ROCKETGRAPPLE}) CHECK(tut::lesson(l).key);
+    for (int l : {tut::L_LAUNCH, tut::L_HOOKPLAYER, tut::L_BREAKFREE, tut::L_ROCKETGRAPPLE, tut::L_BUBBLELAUNCH}) CHECK(tut::lesson(l).key);
     // the PARTNER's lessons: its script, its spot on the bay's floor ahead of you, its aim at the other one
     for (int l = 0; l < tut::L_COUNT; l++) {
         const tut::LessonDef& d = tut::lesson(l);
@@ -192,6 +192,7 @@ inline void testTutorialGhosts(uint16_t port) {
         if (l == tut::L_POP) { near("up m/s", r.up, 26.1f, 1.0f); near("high m", r.top, 14.2f, 1.0f); }
         if (l == tut::L_ROCKETPOP) { near("up m/s", r.up, 47.4f, 3.0f); near("high m", r.top, 48.0f, 4.0f); }
         if (l == tut::L_STICKYSTACK) { near("up m/s", r.up, 50.5f, 1.5f); near("high m", r.top, 53.2f, 2.0f); }
+        if (l == tut::L_BUBBLELAUNCH) { near("up m/s", r.up, 58.4f, 1.5f); near("high m", r.top, 72.8f, 2.0f); }
         if (l == tut::L_ROCKETSUPER) { near("level m/s", r.peak, 33.3f, 0.6f); CHECK(r.peak > 32.0f); }   // (past the dash's 32 cap)
         if (l == tut::L_HOOKBOOST) { near("level m/s", r.peak, 40.4f, 1.0f); }
         if (l == tut::L_HOOKCHAIN) { near("level m/s", r.peak, 35.0f, 0.5f); CHECK(r.doneMs > 0 && r.doneMs < 3000); }   // (34 from the hook's 24 in ~1.3 s)
@@ -384,7 +385,7 @@ inline void testTutorialCombos(uint16_t port) {
         if (fireOnHyper >= 0 && hyperAt >= 0 && t >= hyperAt + fireOnHyper && t < hyperAt + fireOnHyper + 40) c.buttons |= BTN_FIRE;
         return c;
     };
-    struct Out { float up = 0, top = 0, level = 0, lastLevel = 0; };
+    struct Out { float up = 0, top = 0, level = 0, lastLevel = 0, minHp = 1e9f; };
     auto play = [&](int lesson, uint8_t wpn, std::vector<tut::Seg> script) {
         s.tutLesson_ = lesson; s.tutEpoch_ = s.timeMs_; s.tutLoop_ = -2;
         weapon = wpn; sc = std::move(script); hyperAt = -1;
@@ -399,6 +400,7 @@ inline void testTutorialCombos(uint16_t port) {
             if ((p.move.events & ME_HYPER) && hyperAt < 0) hyperAt = (int)((int64_t)s.timeMs_ - (int64_t)t0);
             const float h = std::sqrt(p.move.vel.x * p.move.vel.x + p.move.vel.z * p.move.vel.z);
             o.up = std::max(o.up, p.move.vel.y); o.top = std::max(o.top, p.move.pos.y); o.level = std::max(o.level, h); o.lastLevel = h;
+            o.minHp = std::min(o.minHp, p.health);
         });
         return o;
     };
@@ -436,5 +438,38 @@ inline void testTutorialCombos(uint16_t port) {
                                                             {40, F, 0, FI, 0, -89}, {600, F, 0, D, 0, 0}, {30, 0, 0, 0, 0, 0}});
     printf("  rocket super %.1f m/s, then an air dash: %.1f m/s\n", capped.level, capped.lastLevel);
     CHECK(capped.level > 32.5f && std::fabs(capped.lastLevel - 32.0f) < 0.3f);
+    // the bubble launch (q: "if it doesnt [kill you] thats cool"): standing, a jump first, from a run; then with "you" (a
+    // bot) in your lane 12 m off: no enemy in the tutorial, the full stream still; then out of the tutorial's rules with
+    // an enemy 3 m off: the stream is 5 bubbles. And what it costs.
+    const std::vector<tut::Seg> stand = {{600, 0, 0, 0, 0, -89}, {60, 0, 0, AL, 0, -89}, {3000, 0, 0, 0, 0, 0}};
+    const Out bl = play(tut::L_BUBBLELAUNCH, WPN_BUBBLE, stand);
+    const Out blJump = play(tut::L_BUBBLELAUNCH, WPN_BUBBLE, {{600, 0, 0, 0, 0, -89}, {40, 0, 0, AL | J, 0, -89}, {3000, 0, 0, 0, 0, 0}});
+    const Out blRun = play(tut::L_BUBBLELAUNCH, WPN_BUBBLE, {{700, F, 0, 0, 0, -89}, {40, F, 0, AL | J, 0, -89}, {1500, F, 0, 0, 0, -89}});
+    printf("  bubble launch standing: up %.1f m/s, %.1f m high; a jump first: up %.1f; from a run: up %.1f, %.1f m/s along\n",
+           bl.up, bl.top, blJump.up, blRun.up, blRun.level);
+    CHECK(std::fabs(bl.up - 58.4f) <= 1.5f && std::fabs(blJump.up - 48.0f) <= 1.5f && blJump.up < bl.up - 6);
+    CHECK(std::fabs(blRun.up - 42.6f) <= 1.5f && std::fabs(blRun.level - 25.3f) <= 1.0f);
+    const int me = s.addBot(TEAM_A, BOT_BEGINNER);
+    CHECK(me >= 0);
+    if (me >= 0) {
+        s.bots_[me].script = [](Server&, int) { UserCmd c; c.yaw = tut::kStartYaw; return c; };
+        simRun(s, 0.5);
+        auto put = [&](const Vec3& at) { s.players_[me].move.pos = at; s.players_[me].move.vel = {}; };
+        const Vec3 gs = tut::ghostStart(tut::L_BUBBLELAUNCH);
+        put(tut::playerStart(tut::L_BUBBLELAUNCH));
+        const Out lane = play(tut::L_BUBBLELAUNCH, WPN_BUBBLE, stand);
+        s.cfg_.tutorial = false;   // (the real rules: an enemy, damage)
+        put(gs + Vec3(3, 0, 0));
+        const Out close = play(tut::L_BUBBLELAUNCH, WPN_BUBBLE, stand);
+        put(gs + Vec3(0, 0, 40));   // (out of range: the other side of the bay's wall, 40 m off)
+        s.players_[g].health = s.lifeMaxHealth();
+        const Out alone = play(tut::L_BUBBLELAUNCH, WPN_BUBBLE, stand);
+        s.cfg_.tutorial = true;
+        printf("  bubble launch, \"you\" in your lane: up %.1f m/s; out of the tutorial: an enemy 3 m off: up %.1f m/s; none: up %.1f, %.1f hp\n",
+               lane.up, close.up, alone.up, s.lifeMaxHealth() - alone.minHp);
+        CHECK(s.players_[me].alive && std::fabs(lane.up - bl.up) < 0.5f);
+        CHECK(close.up < bl.up - 15);
+        CHECK(std::fabs(alone.up - bl.up) < 0.5f && std::fabs(s.lifeMaxHealth() - alone.minHp - 11.9f) <= 1.5f);
+    }
     s.stop();
 }

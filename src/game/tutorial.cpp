@@ -95,7 +95,7 @@ const Seg kRocketJump[] = {
 // The fall bounce: a rocket jump straight up (17 m), jump held all the way down: landing from that high, the hop is
 // 15.7 m/s up (the most a landing gives: from 11.7 m) and a dash charge comes back
 const Seg kFallBounce[] = {
-    {600, 0, 0, 0, 0, -89}, {60, 0, 0, J | FI, 0, -89}, {4200, 0, 0, J, 0, 0}, {600, 0, 0, 0, 0, 0},
+    {600, 0, 0, 0, 0, -89}, {60, 0, 0, J | FI, 0, -89}, {400, 0, 0, J, 0, -89}, {3800, 0, 0, J, 0, 0}, {600, 0, 0, 0, 0, 0},
 };
 // The rocket super (key tech): a super, then a rocket straight down 0.3 s into it: the blast adds to the 24 m/s, past the
 // dash's 32 m/s cap; hold jump to hop on (an air dash now would cap you back to 32)
@@ -105,12 +105,12 @@ const Seg kRocketSuper[] = {
 // The rocket pop (key tech): the pop, with the rocket fired in the very input the hyper's dash starts in (the super's
 // dash cooldown ends 930 ms in: that's when the held dash goes): the hyper lifts you, the blast under you adds its 22 m/s
 const Seg kRocketPop[] = {
-    {300, 0, 0, 0, 0, 0}, {30, F, 0, D, 0, 0}, {80, F, 0, D | J, 0, 0}, {220, F, 0, 0, 0, 0}, {300, F, 0, D | J, 0, -89}, {70, F, 0, D | J | FI, 0, -89}, {4000, 0, 0, 0, 0, 0},
+    {300, 0, 0, 0, 0, 0}, {30, F, 0, D, 0, 0}, {80, F, 0, D | J, 0, 0}, {220, F, 0, 0, 0, 0}, {300, F, 0, D | J, 0, -89}, {70, F, 0, D | J | FI, 0, -89}, {400, 0, 0, 0, 0, -89}, {3600, 0, 0, 0, 0, 0},
 };
 // THE LAUNCH (key tech): grapple the floor far ahead to 24 m/s, then look straight down: jump, dash and fire at once (the
 // hyper takes the 24 m/s carried in, + 5, 90% of it up; the rocket at your feet adds its blast)
 const Seg kLaunch[] = {
-    {300, 0, 0, 0, 0, -5}, {900, F, 0, G, 0, -5}, {40, F, 0, J | D | FI, 0, -89}, {3800, F, 0, 0, 0, 0},
+    {300, 0, 0, 0, 0, -5}, {900, F, 0, G, 0, -5}, {40, F, 0, J | D | FI, 0, -89}, {400, F, 0, 0, 0, -89}, {3400, F, 0, 0, 0, 0},
 };
 // The hook boost (key tech): grapple walk to 24 m/s, then, still hooked, look straight down and fire: the blast throws
 // you along at about 40 m/s; let go 40 ms later (held on, the hook pulls you back toward it)
@@ -125,7 +125,13 @@ const Seg kStickyJump[] = {
 // off together: 22, 36, 50 m/s up for one, two, three
 const Seg kStickyStack[] = {
     {300, 0, 0, 0, 0, -89}, {60, 0, 0, FI, 0, -89}, {700, 0, 0, 0, 0, -89}, {60, 0, 0, FI, 0, -89}, {700, 0, 0, 0, 0, -89},
-    {60, 0, 0, FI, 0, -89}, {700, 0, 0, 0, 0, -89}, {80, 0, 0, J | AL, 0, -89}, {4400, 0, 0, 0, 0, 0},
+    {60, 0, 0, FI, 0, -89}, {700, 0, 0, 0, 0, -89}, {80, 0, 0, J | AL, 0, -89}, {400, 0, 0, 0, 0, -89}, {4000, 0, 0, 0, 0, 0},
+};
+// The bubble launch (key tech; q: "if it doesnt [kill you] thats cool"): standing still, look straight down and
+// alt-fire: the whole stream (25 bubbles with no enemy within 30 m) pops under you: 58 m/s up, about 73 m (out of the
+// tutorial, about 12 hp). Rising already, the slower bubbles can't catch you: a jump first gives 48 m/s
+const Seg kBubbleLaunch[] = {
+    {600, 0, 0, 0, 0, -89}, {60, 0, 0, AL, 0, -89}, {500, 0, 0, 0, 0, -89}, {4800, 0, 0, 0, 0, 0},
 };
 // Grapple a player (key tech): the PARTNER runs across the bay; aimed at it, a press of grapple latches on and pulls
 // the two together (it lets go as they meet)
@@ -148,6 +154,7 @@ const Seg kRocketRide[] = {
     {500, 0, 0, 0, 0, 2}, {60, 0, 0, FI | G, 0, 2}, {2200, 0, 0, G, 0, 2}, {1400, 0, 0, 0, 0, 0},
 };
 
+// (the lessons that shoot straight down keep looking down 0.4 s after the shot, so the demo's AIM reads with the lit key)
 #define SCRIPT(a) a, (int)(sizeof(a) / sizeof(a[0]))
 // (the bays: tools/maps/tutorial.py builds them from the same lengths and heights, in this order)
 const LessonDef kLessons[L_COUNT] = {
@@ -172,12 +179,13 @@ const LessonDef kLessons[L_COUNT] = {
     {"breakfree",     50,    12,  kNoWeaponChange,  SCRIPT(kBreakFree),      G_BREAKFREE,  1,     0,     true,  SCRIPT(kBreakFreePartner), 34},
     {"rocketjump",    40,    24,  WPN_ROCKET,       SCRIPT(kRocketJump),     G_KNOCKUP,    7,     0,     false},
     {"fallbounce",    30,    28,  WPN_ROCKET,       SCRIPT(kFallBounce),     G_HOPUP,      15,    0,     false},
-    {"rocketsuper",   110,    16,  WPN_ROCKET,       SCRIPT(kRocketSuper),    G_KNOCKSPEED, 32.5f, 0,     true},
+    {"rocketsuper",   110,   16,   WPN_ROCKET,       SCRIPT(kRocketSuper),    G_KNOCKSPEED, 32.5f, 0,     true},
     {"rocketpop",     100,   60,  WPN_ROCKET,       SCRIPT(kRocketPop),      G_LAUNCH,     30,    20,    true},
     {"launch",        160,   72,  WPN_ROCKET,       SCRIPT(kLaunch),         G_LAUNCH,     16,    20,    true},
     {"hookboost",     120,   16,  WPN_ROCKET,       SCRIPT(kHookBoost),      G_SPEED,      37,    1,     true},
     {"stickyjump",    40,    24,  WPN_STICKY,       SCRIPT(kStickyJump),     G_KNOCKUP,    7,     0,     false},
     {"stickystack",   30,    64,  WPN_STICKY,       SCRIPT(kStickyStack),    G_KNOCKUP,    40,    0,     true},
+    {"bubblelaunch",  30,    80,  WPN_BUBBLE,       SCRIPT(kBubbleLaunch),   G_KNOCKUP,    55,    0,     true},
     {"rocketgrapple", 110,   16,  WPN_ROCKET,       SCRIPT(kRocketRide),     G_RIDE,       0.4f,  0,     true},
 };
 #undef SCRIPT

@@ -215,6 +215,7 @@ AIM UP AT THE CEILING, A FEW METRES AHEAD	VISE LE PLAFOND, QUELQUES MÈTRES DEVA
 AIM UP, OVER THE EDGE OF THE LEDGE	VISE EN HAUT, AU-DESSUS DU BORD DE LA CORNICHE
 AIM: A LITTLE DOWN	VISÉE : UN PEU EN BAS
 AIM: AT THE PARTNER	VISÉE : SUR LE PARTNER
+AIM: AT THE PILLAR	VISÉE : SUR LE PILIER
 AIM: LEVEL	VISÉE : HORIZONTALE
 AIM: STRAIGHT DOWN	VISÉE : DROIT EN BAS
 AIM: UP	VISÉE : EN HAUT
@@ -415,6 +416,7 @@ BRIGHTNESS	LUMINOSITÉ
 BRITISH	BRITANN.
 BRUNO	BRUNO
 BUBBLE	BULLE
+BUBBLE LAUNCH	ENVOL À BULLES
 BUILDINGS	BÂTIMENTS
 BUILT FOR	CONÇUE POUR
 BUILT FOR sets the mode the map is made for; the MODES grid sets what it's offered for. PLAYABLE AS shows what it has the pieces for (team modes need A and B spawns).	CONÇUE POUR définit le mode pour lequel la carte est faite ; la grille MODES définit ceux où elle est proposée. JOUABLE EN montre ce pour quoi elle a les éléments (les modes en équipe exigent des spawns A et B).
@@ -855,7 +857,7 @@ EXPORT CSV	EXPORTER CSV
 EXPORT GROUP	EXPORTER LE GROUPE
 EXPORT PNG	EXPORTER PNG
 EZRA	EZRA
-Each dash leaves you 1 m/s faster than you went in (at least 11, at most 32 m/s).	Chaque dash vous fait sortir 1 m/s plus vite qu'à l'entrée (au moins 11, au plus 32 m/s).
+Each dash leaves you faster than you went in: on the floor by 1 m/s, in the air by about a third of what you are below 32 m/s (from 10 m/s you leave at 17.7). At least 11, at most 32 m/s: a dash above 32 slows you to 32.	Chaque dash te fait ressortir plus vite que tu n'es entré : au sol de 1 m/s, en l'air d'environ un tiers de ce qui te manque pour 32 m/s (à 10 m/s tu ressors à 17.7). Au moins 11, au plus 32 m/s : un dash au-dessus de 32 te ramène à 32.
 Each map is built for one mode, plus free for all and any others it lists. You can still start any map in any mode: the menus warn when it isn't built for it (it may be missing spawns or objectives).	Chaque carte est conçue pour un mode, plus le chacun pour soi et les autres qu'elle liste. Vous pouvez quand même lancer n'importe quelle carte dans n'importe quel mode : les menus préviennent quand elle n'est pas faite pour (spawns ou objectifs peut-être manquants).
 F3 - performance overlay (average, 1% and 0.1% low FPS, input latency).   F12 - screenshot.   ESC - menu, votes, settings.	F3 - overlay de performances (FPS moyen, 1% et 0.1% bas, latence d'entrée).   F12 - capture d'écran.   ÉCHAP - menu, votes, paramètres.
 F3 COLORBLIND COLORS	COULEURS DALTONIENS F3
@@ -939,6 +941,7 @@ FRIENDS JOIN WITH YOUR PUBLIC IP (STREAMER MODE)	LES AMIS REJOIGNENT AVEC VOTRE 
 FRIENDS JOIN WITH YOUR PUBLIC IP:	LES AMIS REJOIGNENT AVEC VOTRE IP PUBLIQUE :
 FROM	DE
 FROM 11.7 M UP OR MORE THE HOP IS THE BIGGEST, 15.7 M/S	À PARTIR DE 11.7 M, LE REBOND EST MAXIMAL : 15.7 M/S
+FROM STANDING OR A SLOW RISE ONLY: RISING FAST, THE BUBBLES CAN'T CATCH YOU	SEULEMENT À L'ARRÊT OU EN MONTANT LENTEMENT : SI TU MONTES VITE, LES BULLES NE TE RATTRAPENT PAS
 FROM: APEX LEGENDS	DE : APEX LEGENDS
 FROM: CALL OF DUTY	DE : CALL OF DUTY
 FROM: CS2 / CS:GO	DE : CS2 / CS:GO
@@ -977,6 +980,7 @@ GATE	PORTE
 GENERAL	GÉNÉRAL
 GENERAL + INTERFACE	GÉNÉRAL + INTERFACE
 GET 40 M UP	MONTE DE 40 M
+GET 55 M UP	MONTE À 55 M
 GET 7 M UP	MONTE DE 7 M
 GET IT WITH /link - THE CODE IS PUBLIC	OBTENEZ-LE AVEC /link - LE CODE EST PUBLIC
 GHOST	GHOST
@@ -1025,7 +1029,7 @@ GRAPPLE RANGE	PORTÉE DU GRAPPIN
 GRAPPLE RELEASE DISTANCE	DISTANCE DE LÂCHER DU GRAPPIN
 GRAPPLE TO 24 M/S, THEN A ROCKET AND A HYPER STRAIGHT DOWN: YOU FLY, CHEAP AND FAST.	GRAPPIN JUSQU'À 24 M/S, PUIS ROQUETTE ET HYPER DROIT EN BAS : TU VOLES, FACILE ET RAPIDE.
 GRAPPLE TOP SPEED	VITESSE MAX DU GRAPPIN
-GRAPPLE WALK TO 24 M/S, LET GO, THEN HYPER EVERY LANDING: 29, 34, 35 M/S IN ABOUT 2 S.	TRACTION AU GRAPPIN JUSQU'À 24 M/S, LÂCHE, PUIS HYPER À CHAQUE ATTERRISSAGE : 29, 34, 35 M/S EN 2 S ENVIRON.
+GRAPPLE WALK TO 24 M/S, LET GO, THEN HYPER EVERY LANDING: 29, 34, 35 M/S IN ABOUT 1.3 S.	TRACTION AU GRAPPIN JUSQU'À 24 M/S, LÂCHE, PUIS HYPER À CHAQUE ATTERRISSAGE : 29, 34, 35 M/S EN 1.3 S ENVIRON.
 GRAPPLE WALK UP TO 24 M/S	MARCHE AU GRAPPIN JUSQU'À 24 M/S
 GRAPPLE WALKING	MARCHE AU GRAPPIN
 GRAPPLE WALKING AT 24 M/S, FIRE A ROCKET STRAIGHT DOWN WHILE STILL HOOKED: ABOUT 40 M/S ALONG.	TIRÉ PAR LE GRAPPIN À 24 M/S, TIRE UNE ROQUETTE DROIT EN BAS SANS LÂCHER : ENVIRON 40 M/S VERS L'AVANT.
@@ -2549,7 +2553,7 @@ RMB	RMB
 ROBOT	ROBOT
 ROCK	PIERRE
 ROCKET	ROQUETTE
-ROCKET (splash; rocket jump off the floor for 10#amage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 10 hp, once a second; alt throws it: +30 hp and reset cooldowns for a teammate).	ROQUETTE (splash ; rocket jump depuis le sol pour 10#dégâts), FUSIL (automatique ; lunette en secondaire), LASER (un rayon ; le secondaire attire), FUSIL À POMPE (secondaire : ricochet), SNIPER (lunette en secondaire), STICKY (le secondaire fait exploser), ARBALÈTE (headshots), BULLE (secondaire : un flux de bulles), COUTEAU (secondaire : le lancer), SERINGUE (le tir vous soigne de 10 pv, une fois par seconde ; le secondaire la lance : +30 pv et recharges réinitialisées pour un coéquipier).
+ROCKET (splash; rocket jump off the floor for 10#amage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 5 hp, once a second; alt throws it: +15 hp and reset cooldowns for a teammate).	ROQUETTE (splash ; rocket jump depuis le sol pour 10#dégâts), FUSIL (automatique ; lunette en secondaire), LASER (un rayon ; le secondaire attire), FUSIL À POMPE (secondaire : ricochet), SNIPER (lunette en secondaire), STICKY (le secondaire fait exploser), ARBALÈTE (headshots), BULLE (secondaire : un flux de bulles), COUTEAU (secondaire : le lancer), SERINGUE (le tir vous soigne de 5 pv, une fois par seconde ; le secondaire la lance : +15 pv et recharges réinitialisées pour un coéquipier).
 ROCKET GRAPPLE	GRAPPIN SUR ROQUETTE
 ROCKET JUMP	ROCKET JUMP
 ROCKET JUMPERS	ROCKET JUMPERS
@@ -2815,6 +2819,8 @@ STALEMATE - HEALTH DRAINS IN	IMPASSE - LA SANTÉ DIMINUE DANS
 STALEMATE WARNING	ALERTE D'IMPASSE
 STALLED #S	BLOQUÉ #S
 STAND ON THE 10 M LEDGE	TIENS-TOI SUR LA CORNICHE DE 10 M
+STAND STILL AND AIM STRAIGHT DOWN	RESTE IMMOBILE ET VISE DROIT VERS LE BAS
+STAND STILL, AIM STRAIGHT DOWN AND ALT-FIRE THE BUBBLE GUN: 58 M/S UP, ABOUT 73 M, FOR ABOUT 12 HP.	IMMOBILE, VISE DROIT VERS LE BAS ET TIR SECONDAIRE AU PISTOLET À BULLES : 58 M/S VERS LE HAUT, ENVIRON 73 M, POUR ENVIRON 12 PV.
 STANDARD	STANDARD
 STANDARD RULES	RÈGLES STANDARD
 STANDARD: SNIPER	STANDARD : SNIPER
@@ -3006,6 +3012,7 @@ THE SAVED MONITOR IS GONE: THE PRIMARY	L'ÉCRAN SAUVEGARDÉ A DISPARU : LE PRINC
 THE SCROLL WHEEL PASSES OVER SKIPPED	LA MOLETTE SAUTE CE QUI EST IGNORÉ
 THE SHARE OF THE MODE'S MAX HEALTH	LA PART DE LA SANTÉ MAX DU MODE
 THE TASKBAR BUTTON FLASHES	LE BOUTON DE LA BARRE DES TÂCHES CLIGNOTE
+THE WHOLE STREAM POPS UNDER YOU. HOLD IT: ANOTHER EVERY 1.8 S	TOUT LE FLOT ÉCLATE SOUS TOI. GARDE-LE ENFONCÉ : UN AUTRE TOUTES LES 1.8 S
 THE WINDOW'S SIZE AND PLACE ARE KEPT	LA TAILLE ET LA POSITION DE LA FENÊTRE SONT CONSERVÉES
 THEIRS	LES LEURS
 THEME.CFG LINE	LIGNE THEME.CFG
@@ -3269,6 +3276,7 @@ WINNER STAYS - FIRST TO	LE GAGNANT RESTE - PREMIER À
 WINNERS CROWN	COURONNE VAINQUEUR
 WINS	VICT.
 WINS THE MATCH	REMPORTE LE MATCH
+WITH AN ENEMY WITHIN 5 M THE STREAM IS ONLY 5 BUBBLES: 17 M/S UP	AVEC UN ENNEMI À MOINS DE 5 M, LE FLOT N'A QUE 5 BULLES : 17 M/S VERS LE HAUT
 WITHIN 1.3 M OF THE FLOOR. 10 MS LATE LOSES 3 M/S	À MOINS DE 1.3 M DU SOL. 10 MS DE RETARD COÛTENT 3 M/S
 WIZARD	SORCIER
 WORD FILTER	FILTRE DE MOTS
@@ -3320,7 +3328,7 @@ YOUR SHOTS: NEVER	VOS TIRS : JAMAIS
 YOUR SHOTS: WITH WEAPON MODEL	VOS TIRS : AVEC LE MODÈLE D'ARME
 YOUR TEAM IS PUSHING	VOTRE ÉQUIPE POUSSE
 YOUR TURN	À TOI
-You run at 9.5 m/s. In the air, holding a direction drifts you up to run speed (a standing jump moves too).	Vous courez à 9.5 m/s. En l'air, maintenir une direction vous pousse jusqu'à la vitesse de course (un saut sur place bouge aussi).
+You run at 9.5 m/s. In the air you keep your speed: holding a direction steers it, and a standing jump drifts 2.3 m/s at most.	Tu cours à 9.5 m/s. En l'air tu gardes ta vitesse : tenir une direction l'oriente, et un saut sur place dérive de 2.3 m/s au plus.
 You step up anything 0.55 m high, including stairs mid-jump. Ladders: walk into them, look up or down to climb (6.75 m/s).	Vous montez tout ce qui fait jusqu'à 0.55 m, y compris des marches en plein saut. Échelles : avancez dedans, regardez en haut ou en bas pour grimper (6.75 m/s).
 ZERO-G FLIGHT, LASERS - HEAL 100% TO 50% OVER 30 S, NO KNOCKBACK	VOL EN APESANTEUR, LASERS - SOIN DE 100% À 50% EN 30 S, SANS RECUL
 ZOMBIE	ZOMBIE

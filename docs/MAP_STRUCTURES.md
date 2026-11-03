@@ -83,7 +83,15 @@ Each ranked ladder has the map it's designed for (q, 2026-10-31), which going ra
 
 Why each bay is the shape it is (the bay lengths and heights are `kLessons` in src/game/tutorial.h; `quark_tests tutorial` runs every lesson's ghost on this map and fails if the map stops working for it):
 - **Walking** (50 x 12): two metal hurdles (0.8 m: a jump, not a step) and a glowing finish line at 44 m.
-- **AD strafing** (150 m) and **super chaining** (180 m, 16 m tall: hypers rise 2-3 m): long and empty. Strafing needs room to build speed by turning, and the chain gets to 34 m/s.
+- **AD strafing** (150 m) and **super chaining** (180 m, 16 m tall: hypers rise 2-3 m): long and empty. Strafing needs room to build speed by turning, and the chain gets to 35 m/s.
+- **Hook-start chain** (120 x 16), **rocket super** (110 x 16) and **hook boost** (120 x 16): long and empty, 16 m tall for the hops. Each reaches 33-40 m/s and needs the room to show it.
+- **Pop** (70 x 20): a pop rises 14 m, so the ceiling sits 20 m up.
+- **Rocket pop** (100 x 60, KEY TECH): 48 m up and on, so 60 m tall.
+- **Ramp dash** (40 x 20): a 60 degree ramp (a wedge) 18 m in, 10.4 m tall onto a shelf, its foot striped. Walking, the face is a wall. A dash into it runs on up the face at 24 m/s, about 9 m up.
+- **Ceiling hang** (40 x 16): flat, its ceiling low enough (16 m) for the hook's 45 m reach from anywhere in the bay.
+- **Swing turn** (70 x 16): a metal pillar 32 m in, 1 m left of the middle, floor to ceiling. The ghost passes it at 24 m/s off a super and hooks it (its aim point: `LessonDef::aimPoint`), and you do the same on the other side of it.
+- **Fall bounce** (30 x 28): short and tall. A rocket jump straight up takes you 17 m, above the 11.7 m that gives the biggest hop.
+- **Sticky stack** (30 x 64, KEY TECH) and **bubble launch** (30 x 80, KEY TECH): short and tall, for launches straight up (53 m and 73 m).
 - **Dash** (50): a 9 m lava pit (16-25 m in, hazard-striped edges, its bottom 6 m down). A running jump falls short and a jump with an air dash clears it. Touching the lava puts you back at the start.
 - **Sideways dashes** (30), **super** and **hyper** (60), **dash slide** (60), **grapple walking** (80): flat and long enough for the tech and its landing.
 - **Wall bounce** (12): short, its end wall hazard-striped. That's the wall to dash into, 9 m from the start.

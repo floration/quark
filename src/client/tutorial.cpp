@@ -95,7 +95,7 @@ const Text kTexts[tut::L_COUNT] = {
     {"GRAPPLE WALKING", "HOOK THE FLOOR FAR AHEAD: IT DRAGS YOU ALONG WITH NO FRICTION, UP TO 24 M/S.",
      {{nullptr, {K_N, K_N, K_N}, "AIM JUST UNDER LEVEL, AT THE FLOOR FAR AHEAD"}, {"%s + %s", {K_G, K_F, K_N}, "HOLD BOTH"},
       {nullptr, {K_N, K_N, K_N}, "LET GO BEFORE YOU REACH THE HOOK"}}, 3, "16 M/S ALONG THE FLOOR"},
-    {"HOOK-START CHAIN", "GRAPPLE WALK TO 24 M/S, LET GO, THEN HYPER EVERY LANDING: 29, 34, 35 M/S IN ABOUT 2 S.",
+    {"HOOK-START CHAIN", "GRAPPLE WALK TO 24 M/S, LET GO, THEN HYPER EVERY LANDING: 29, 34, 35 M/S IN ABOUT 1.3 S.",
      {{"%s + %s", {K_G, K_F, K_N}, "GRAPPLE WALK UP TO 24 M/S"}, {"%s + %s + %s", {K_F, K_J, K_D}, "LET GO OF THE GRAPPLE AND HOLD ALL THREE"},
       {nullptr, {K_N, K_N, K_N}, "AIM 15 DEGREES DOWN: EVERY LANDING IS A HYPER"},
       {nullptr, {K_N, K_N, K_N}, "A HYPER ABOVE 36 M/S CAPS YOU DOWN: 35 IS THE TOP"}}, 4, "REACH 34 M/S"},
@@ -137,6 +137,11 @@ const Text kTexts[tut::L_COUNT] = {
     {"STICKY STACK", "THREE STICKIES AT YOUR FEET, SET OFF AT ONCE AS YOU JUMP: 50 M/S UP (ONE: 22, TWO: 36).",
      {{"%s", {K_FI, K_N, K_N}, "AIM STRAIGHT DOWN AND FIRE THREE STICKIES"}, {nullptr, {K_N, K_N, K_N}, "WAIT FOR THEM TO ARM (0.35 S EACH)"},
       {"%s + %s", {K_J, K_AL, K_N}, "JUMP AND SET THEM ALL OFF TOGETHER"}}, 3, "GET 40 M UP"},
+    {"BUBBLE LAUNCH", "STAND STILL, AIM STRAIGHT DOWN AND ALT-FIRE THE BUBBLE GUN: 58 M/S UP, ABOUT 73 M, FOR ABOUT 12 HP.",
+     {{nullptr, {K_N, K_N, K_N}, "STAND STILL AND AIM STRAIGHT DOWN"},
+      {"%s", {K_AL, K_N, K_N}, "THE WHOLE STREAM POPS UNDER YOU. HOLD IT: ANOTHER EVERY 1.8 S"},
+      {nullptr, {K_N, K_N, K_N}, "FROM STANDING OR A SLOW RISE ONLY: RISING FAST, THE BUBBLES CAN'T CATCH YOU"},
+      {nullptr, {K_N, K_N, K_N}, "WITH AN ENEMY WITHIN 5 M THE STREAM IS ONLY 5 BUBBLES: 17 M/S UP"}}, 4, "GET 55 M UP"},
     {"ROCKET GRAPPLE", "FIRE A ROCKET AND HOOK IT AS IT LEAVES: IT CARRIES YOU ALONG.",
      {{nullptr, {K_N, K_N, K_N}, "AIM STRAIGHT AHEAD"}, {"%s + %s", {K_FI, K_G, K_N}, "FIRE AND GRAPPLE TOGETHER"},
       {"%s", {K_G, K_N, K_N}, "KEEP HOLDING IT TO RIDE"}}, 3, "RIDE FOR 0.4 S"},
@@ -435,7 +440,7 @@ void Game::drawTutorialHud(float W, float H, float s) {
         const int64_t t = (int64_t)std::llround(net_.renderTime() * 1000.0) - tut_.epochMs;
         const int tl = t < 0 ? -1 : (int)(t % std::max(1, tut::loopMs(tut_.lesson)));
         const float pitchDeg = tut::ghostCmd(tut_.lesson, tl).pitch * 180.0f / PI;
-        const char* aim = tut::ghostAimsAt(tut_.lesson, tl) ? "AIM: AT THE PARTNER" : pitchDeg <= -70 ? "AIM: STRAIGHT DOWN" : pitchDeg <= -8 ? "AIM: A LITTLE DOWN" : pitchDeg >= 8 ? "AIM: UP" : "AIM: LEVEL";
+        const char* aim = tut::ghostAimsAt(tut_.lesson, tl) ? (tut::lesson(tut_.lesson).partner ? "AIM: AT THE PARTNER" : "AIM: AT THE PILLAR") : pitchDeg <= -70 ? "AIM: STRAIGHT DOWN" : pitchDeg <= -8 ? "AIM: A LITTLE DOWN" : pitchDeg >= 8 ? "AIM: UP" : "AIM: LEVEL";
         ui_.label(gx + 12 * s, gy, aim, kWhite, 1.0f, gw - 24 * s);
         gy += lh;
         const float deg = tut_.turn * 180.0f / PI;

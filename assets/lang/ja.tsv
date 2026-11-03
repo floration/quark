@@ -215,6 +215,7 @@ AIM UP AT THE CEILING, A FEW METRES AHEAD	数メートル前の天井を狙う
 AIM UP, OVER THE EDGE OF THE LEDGE	上、足場の縁の上を狙う
 AIM: A LITTLE DOWN	照準: 少し下
 AIM: AT THE PARTNER	照準: PARTNER
+AIM: AT THE PILLAR	照準: 柱
 AIM: LEVEL	照準: 水平
 AIM: STRAIGHT DOWN	照準: 真下
 AIM: UP	照準: 上
@@ -415,6 +416,7 @@ BRIGHTNESS	明るさ
 BRITISH	イギリス英語
 BRUNO	BRUNO
 BUBBLE	バブル
+BUBBLE LAUNCH	バブルランチ
 BUILDINGS	建物
 BUILT FOR	対応モード
 BUILT FOR sets the mode the map is made for; the MODES grid sets what it's offered for. PLAYABLE AS shows what it has the pieces for (team modes need A and B spawns).	対応モードはマップの想定モードを設定; モード表は提供先を設定します。プレイ可能は必要な要素が揃っているモードを表示 (チームモードにはAとBのスポーンが必要)。
@@ -855,7 +857,7 @@ EXPORT CSV	CSVエクスポート
 EXPORT GROUP	グループをエクスポート
 EXPORT PNG	PNGエクスポート
 EZRA	EZRA
-Each dash leaves you 1 m/s faster than you went in (at least 11, at most 32 m/s).	ダッシュごとに入る前より 1 m/s 速く抜けます (最低 11、最大 32 m/s)。
+Each dash leaves you faster than you went in: on the floor by 1 m/s, in the air by about a third of what you are below 32 m/s (from 10 m/s you leave at 17.7). At least 11, at most 32 m/s: a dash above 32 slows you to 32.	ダッシュは入る前より速く抜けます: 地上では 1 m/s、空中では 32 m/s までの差の約 3 分の 1 (10 m/s からなら 17.7)。最低 11、最大 32 m/s: 32 を超えてダッシュすると 32 に落ちます。
 Each map is built for one mode, plus free for all and any others it lists. You can still start any map in any mode: the menus warn when it isn't built for it (it may be missing spawns or objectives).	各マップは1つのモード用に作られ、個人戦と記載された他モードにも対応します。どのマップもどのモードで開始できますが、非対応の場合はメニューで警告されます (スポーンや目標がない場合があります)。
 F3 - performance overlay (average, 1% and 0.1% low FPS, input latency).   F12 - screenshot.   ESC - menu, votes, settings.	F3 - パフォーマンス表示 (平均、1% / 0.1% LOW FPS、入力遅延)。   F12 - スクリーンショット。   ESC - メニュー、投票、設定。
 F3 COLORBLIND COLORS	F3 色覚補正カラー
@@ -939,6 +941,7 @@ FRIENDS JOIN WITH YOUR PUBLIC IP (STREAMER MODE)	フレンドはグローバルI
 FRIENDS JOIN WITH YOUR PUBLIC IP:	フレンドはグローバルIPで参加:
 FROM	から
 FROM 11.7 M UP OR MORE THE HOP IS THE BIGGEST, 15.7 M/S	11.7 M 以上からなら最大の 15.7 M/S
+FROM STANDING OR A SLOW RISE ONLY: RISING FAST, THE BUBBLES CAN'T CATCH YOU	立ち止まりかゆっくり上昇中のみ: 速く上昇中だと泡が追いつかない
 FROM: APEX LEGENDS	元: APEX LEGENDS
 FROM: CALL OF DUTY	元: CALL OF DUTY
 FROM: CS2 / CS:GO	元: CS2 / CS:GO
@@ -977,6 +980,7 @@ GATE	ゲート
 GENERAL	一般
 GENERAL + INTERFACE	一般 + インターフェース
 GET 40 M UP	40 M 上がる
+GET 55 M UP	55 M 上がる
 GET 7 M UP	7 M 上がる
 GET IT WITH /link - THE CODE IS PUBLIC	/link で取得 - コードは公開されます
 GHOST	GHOST
@@ -1025,7 +1029,7 @@ GRAPPLE RANGE	グラップル射程
 GRAPPLE RELEASE DISTANCE	グラップル解除距離
 GRAPPLE TO 24 M/S, THEN A ROCKET AND A HYPER STRAIGHT DOWN: YOU FLY, CHEAP AND FAST.	グラップルで 24 M/S、そして真下へロケットとハイパー: 安く速く飛べる。
 GRAPPLE TOP SPEED	グラップル最高速度
-GRAPPLE WALK TO 24 M/S, LET GO, THEN HYPER EVERY LANDING: 29, 34, 35 M/S IN ABOUT 2 S.	グラップル歩きで 24 M/S、離して着地ごとにハイパー: 約 2 S で 29、34、35 M/S。
+GRAPPLE WALK TO 24 M/S, LET GO, THEN HYPER EVERY LANDING: 29, 34, 35 M/S IN ABOUT 1.3 S.	グラップル歩きで 24 M/S、離して着地ごとにハイパー: 約 1.3 S で 29、34、35 M/S。
 GRAPPLE WALK UP TO 24 M/S	グラップル歩きで 24 M/S まで
 GRAPPLE WALKING	グラップル歩き
 GRAPPLE WALKING AT 24 M/S, FIRE A ROCKET STRAIGHT DOWN WHILE STILL HOOKED: ABOUT 40 M/S ALONG.	24 M/S のグラップル歩きで、フックしたまま真下へロケット: 前へ約 40 M/S。
@@ -2549,7 +2553,7 @@ RMB	右クリック
 ROBOT	ロボット
 ROCK	グー
 ROCKET	ロケット
-ROCKET (splash; rocket jump off the floor for 10#amage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 10 hp, once a second; alt throws it: +30 hp and reset cooldowns for a teammate).	ロケット (範囲攻撃; 床でロケットジャンプすると10#ダメージ)、ライフル (フルオート; サブでスコープ)、レーザー (ビーム; サブで引き寄せ)、ショットガン (サブ: 跳弾)、スナイパー (サブでスコープ)、スティッキー (サブで起爆)、クロスボウ (ヘッドショット)、バブル (サブ: バブルを連射)、ナイフ (サブ: 投擲)、注射器 (射撃で毎秒1回10 HP回復; サブで投擲: 味方に +30 HP とクールダウンリセット)。
+ROCKET (splash; rocket jump off the floor for 10#amage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 5 hp, once a second; alt throws it: +15 hp and reset cooldowns for a teammate).	ロケット (範囲攻撃; 床でロケットジャンプすると10#ダメージ)、ライフル (フルオート; サブでスコープ)、レーザー (ビーム; サブで引き寄せ)、ショットガン (サブ: 跳弾)、スナイパー (サブでスコープ)、スティッキー (サブで起爆)、クロスボウ (ヘッドショット)、バブル (サブ: バブルを連射)、ナイフ (サブ: 投擲)、注射器 (射撃で毎秒1回5 HP回復; サブで投擲: 味方に +15 HP とクールダウンリセット)。
 ROCKET GRAPPLE	ロケットグラップル
 ROCKET JUMP	ロケットジャンプ
 ROCKET JUMPERS	ロケットジャンパー
@@ -2815,6 +2819,8 @@ STALEMATE - HEALTH DRAINS IN	膠着 - 体力減少まで
 STALEMATE WARNING	膠着警告
 STALLED #S	停滞 #秒
 STAND ON THE 10 M LEDGE	10 M の足場に立つ
+STAND STILL AND AIM STRAIGHT DOWN	立ち止まって真下を狙う
+STAND STILL, AIM STRAIGHT DOWN AND ALT-FIRE THE BUBBLE GUN: 58 M/S UP, ABOUT 73 M, FOR ABOUT 12 HP.	立ち止まって真下を狙い、バブルガンをサブ射撃: 58 M/S で上昇、約 73 M、約 12 HP。
 STANDARD	標準
 STANDARD RULES	標準ルール
 STANDARD: SNIPER	標準: スナイパー
@@ -3006,6 +3012,7 @@ THE SAVED MONITOR IS GONE: THE PRIMARY	保存したモニターがありませ�
 THE SCROLL WHEEL PASSES OVER SKIPPED	ホイールはスキップした武器を飛ばす
 THE SHARE OF THE MODE'S MAX HEALTH	モードの最大体力に対する割合
 THE TASKBAR BUTTON FLASHES	タスクバーのボタンが点滅
+THE WHOLE STREAM POPS UNDER YOU. HOLD IT: ANOTHER EVERY 1.8 S	泡がまとめて足元で弾ける。押し続ければ 1.8 S ごとにもう一回
 THE WINDOW'S SIZE AND PLACE ARE KEPT	ウィンドウのサイズと位置を保持
 THEIRS	相手
 THEME.CFG LINE	THEME.CFG 行
@@ -3269,6 +3276,7 @@ WINNER STAYS - FIRST TO	勝ち残り - 先取
 WINNERS CROWN	勝者の冠
 WINS	勝利
 WINS THE MATCH	が試合に勝利
+WITH AN ENEMY WITHIN 5 M THE STREAM IS ONLY 5 BUBBLES: 17 M/S UP	5 M 以内に敵がいると泡は 5 個だけ: 17 M/S しか上がらない
 WITHIN 1.3 M OF THE FLOOR. 10 MS LATE LOSES 3 M/S	床から 1.3 M 以内で。10 MS 遅れると 3 M/S 失う
 WIZARD	ウィザード
 WORD FILTER	ワードフィルター
@@ -3320,7 +3328,7 @@ YOUR SHOTS: NEVER	自分の弾: 表示しない
 YOUR SHOTS: WITH WEAPON MODEL	自分の弾: 武器モデル表示時
 YOUR TEAM IS PUSHING	味方が押し進めている
 YOUR TURN	あなたの番
-You run at 9.5 m/s. In the air, holding a direction drifts you up to run speed (a standing jump moves too).	走る速さは 9.5 m/s。空中では方向キーを押し続けると走る速さまで流れます (その場ジャンプでも動きます)。
+You run at 9.5 m/s. In the air you keep your speed: holding a direction steers it, and a standing jump drifts 2.3 m/s at most.	走る速さは 9.5 m/s。空中では速度を保ち、方向キーで向きを変えます。その場ジャンプで流れるのは最大 2.3 m/s。
 You step up anything 0.55 m high, including stairs mid-jump. Ladders: walk into them, look up or down to climb (6.75 m/s).	高さ 0.55 m までなら何でも段差として上れます (ジャンプ中の階段も)。はしご: 向かって歩き、上か下を見て登ります (6.75 m/s)。
 ZERO-G FLIGHT, LASERS - HEAL 100% TO 50% OVER 30 S, NO KNOCKBACK	無重力飛行、レーザー - 30秒で100%から50%に回復、ノックバックなし
 ZOMBIE	ゾンビ

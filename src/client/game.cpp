@@ -6042,12 +6042,13 @@ void Game::drawTutorialPause(float cx, float y) {
     (void)cx; (void)y;
     const SetLayout L = ingameLayout(kPW + 32);
     const Color kDone = {0.45f, 0.95f, 0.5f, 1};   // (a lesson done: a green square at its button's right end)
-    if (tut_.menu) {   // (three columns, 240 wide: every lesson on one page, the KEY TECH ones first under their heading)
-        constexpr float kCW = 240, kCG = 12, kLW = 3 * kCW + 2 * kCG, kLX = 640 - kLW * 0.5f;
+    if (tut_.menu) {   // (four columns, 240 wide: every lesson on one page at 720p, the KEY TECH ones first under their heading)
+        constexpr int kCols = 4;
+        constexpr float kCW = 240, kCG = 12, kLW = kCols * kCW + (kCols - 1) * kCG, kLX = 640 - kLW * 0.5f;
         const SetLayout M = ingameLayout(kLW + 32);
         int nKey = 0;
         for (int l = 0; l < tut::L_COUNT; l++) nKey += tut::lesson(l).key;
-        const int keyRows = (nKey + 2) / 3, restRows = (tut::L_COUNT - nKey + 2) / 3;
+        const int keyRows = (nKey + kCols - 1) / kCols, restRows = (tut::L_COUNT - nKey + kCols - 1) / kCols;
         const float kH = 40 + 24 + pauseH(keyRows + restRows, 0, true) + 16;
         float y = ingameTop(M, kH);
         ui_.panel(M.X(kLX - 16), M.Y(y - 16), M.L(kLW + 32), M.L(kH + 32), 0.95f);
@@ -6056,7 +6057,7 @@ void Game::drawTutorialPause(float cx, float y) {
         ui_.label(M.X(kLX), M.Y(y), "KEY TECH", {1.0f, 0.8f, 0.3f, 1}, 1.0f, M.L(kLW));
         y += 24;
         auto cell = [&](int l, int k, bool key) {   // (lesson l in cell k of its block: a button, the gold bar, the done mark)
-            const float x = kLX + (k % 3) * (kCW + kCG), yy = y + (k / 3) * (kPRow + kPGap);
+            const float x = kLX + (k % kCols) * (kCW + kCG), yy = y + (k / kCols) * (kPRow + kPGap);
             if (ui_.button(M.X(x), M.Y(yy), M.L(kCW), M.L(kPRow), tutorialTitle(l), UiExp::cmd("tutorial"))) { tut_.menu = false; paused_ = false; tutorialBegin(l); }
             if (key) r_.rect(M.X(x), M.Y(yy), M.L(4), M.L(kPRow), {1.0f, 0.8f, 0.3f, 1});
             if (cfg_.tutorialDone >> l & 1) r_.rect(M.X(x + kCW) - M.L(14), M.Y(yy) + M.L(kPRow * 0.5f - 4), M.L(8), M.L(8), kDone);
@@ -10220,15 +10221,15 @@ static const char* const kInfoPages[][48] = {
         "TAB - scoreboard.   ENTER - chat.   F1 / F2 - vote yes / no.   F5 - vote to start the match.",
         "F3 - performance overlay (average, 1% and 0.1% low FPS, input latency).   F12 - screenshot.   ESC - menu, votes, settings.",
         "# MOVEMENT",
-        "You run at 9.5 m/s. In the air, holding a direction drifts you up to run speed (a standing jump moves too).",
+        "You run at 9.5 m/s. In the air you keep your speed: holding a direction steers it, and a standing jump drifts 2.3 m/s at most.",
         "Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping. Above ~13 m/s A / D turns you faster than W alone.",
-        "Each dash leaves you 1 m/s faster than you went in (at least 11, at most 32 m/s).",
+        "Each dash leaves you faster than you went in: on the floor by 1 m/s, in the air by about a third of what you are below 32 m/s (from 10 m/s you leave at 17.7). At least 11, at most 32 m/s: a dash above 32 slows you to 32.",
         "Dash jump: jump while dashing along the floor to keep the dash's full speed through the jump (it leaves you both dashes).",
         "Super dash: look down and dash into the floor while holding jump: you leave 5 m/s faster than you went into the dash (at least 11, at most 36 m/s), with a hop that gets higher the further down you look (it leaves you 1 dash).",
         "Dash into a wall head-on (under 45 degrees) and you bounce off it at 16 m/s (it leaves you 1 dash).",
         "You step up anything 0.55 m high, including stairs mid-jump. Ladders: walk into them, look up or down to climb (6.75 m/s).",
         "# WEAPONS",
-        "ROCKET (splash; rocket jump off the floor for 10% damage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 10 hp, once a second; alt throws it: +30 hp and reset cooldowns for a teammate).",
+        "ROCKET (splash; rocket jump off the floor for 10% damage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 5 hp, once a second; alt throws it: +15 hp and reset cooldowns for a teammate).",
         "A thrown knife or syringe is gone for 4 s (greyed out in the weapon list, with its timer).",
         "Switching weapons with fire held doesn't fire the new one: let go and press again.",
         "# CONTROL PROFILES",
