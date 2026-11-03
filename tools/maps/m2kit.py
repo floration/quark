@@ -1,5 +1,5 @@
-"""Small geometry kit for the 1.19.6 maps (datacenter, mine, qk5-qk8): boxes in any material by name, slopes, convex
-prisms (cut boxes), walls with openings (straight or along any line), and the material numbers slopes and cuts need.
+"""Small geometry kit for the 1.19.6 maps (datacenter, mine, qk5-qk8, stadium): boxes in any material by name, slopes,
+convex prisms (cut boxes), straight walls with openings, and the material numbers slopes and cuts need.
 Everything here only appends lines to an M (prefabs.py); output stays deterministic."""
 import os, re, math
 
@@ -92,25 +92,6 @@ def wall(m, mat, x0, z0, x1, z1, y0, y1, holes=()):
 def door(c, w=4.5, h=4.0, y=0.0):
     """an opening for wall(): centred at c along the run, w wide, h tall from y"""
     return (c - w / 2, c + w / 2, y, y + h)
-
-
-def line_wall(m, mat, p0, p1, t, y0, y1, holes=(), inward=None):
-    """a wall t thick along the segment p0 -> p1 (on its side toward inward, a point; default: centred), with openings
-    holes = [(s0, s1, h0, h1)] in metres along it from p0"""
-    (ax, az), (bx, bz) = p0, p1
-    L = math.hypot(bx - ax, bz - az)
-    ux, uz = (bx - ax) / L, (bz - az) / L
-    nx, nz = -uz, ux
-    if inward is not None and (inward[0] - ax) * nx + (inward[1] - az) * nz < 0: nx, nz = -nx, -nz
-    o0, o1 = (0.0, t) if inward is not None else (-t / 2, t / 2)
-    cuts = sorted({0.0, L} | {min(max(v, 0.0), L) for h in holes for v in h[:2]})
-    for (s, e) in zip(cuts, cuts[1:]):
-        if e - s < 1e-4: continue
-        mid = (s + e) / 2
-        over = [(h[2], h[3]) for h in holes if h[0] < mid < h[1]]
-        q = [(ax + ux * s + nx * o0, az + uz * s + nz * o0), (ax + ux * e + nx * o0, az + uz * e + nz * o0),
-             (ax + ux * e + nx * o1, az + uz * e + nz * o1), (ax + ux * s + nx * o1, az + uz * s + nz * o1)]
-        for (ya, yb) in solid_spans(y0, y1, over): prism(m, mat, q, ya, yb)
 
 
 def octagon(cx, cz, apothem):
@@ -258,11 +239,6 @@ def mirror_all(m, since):
         t = _mirror_line(l)
         if t and t not in have:
             m.lines.append(t); have.add(t)
-
-
-def cutbox(m, mat, planes, box):
-    """cut3d (world planes) under its old name for the qk maps"""
-    cut3d(m, mat, planes, box)
 
 
 def ramp(m, mat, x0, z0, x1, z1, axis, ya, yb, thick=0.8):
