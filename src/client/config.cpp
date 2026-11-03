@@ -27,6 +27,7 @@ static std::string colorHex(const Vec3& c) {
 
 void Settings::load() {
     std::ifstream f(utf8Path(cfgPath()));
+    newConfig = !f.is_open();
     std::string line;
     bindVersion = 0;   // (a file from before bind_version: its binds get the migrations)
     ultraMarginMigrated = false;   // (likewise ultra_margin_us: see set())

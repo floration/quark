@@ -121,6 +121,9 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     win_ = win;
     opts_ = opts;
     cfg_.load();
+    // (screenshot and UI test runs on a fresh data folder stay in a window of the config's size, as before borderless
+    // became the default: their pictures and layouts don't depend on the monitor)
+    if (cfg_.newConfig && (!opts_.screenshot.empty() || opts_.uiTest)) cfg_.displayMode = 0;
     if (!cfg_.useOverrides) overrides::useUserFolder(false);   // (PLAYER > MORE: MODS: USE MY OVERRIDES off: the shipped ones only)
     setLegacyMapsListed(cfg_.legacyMaps);   // (GAMEPLAY: LEGACY MAPS: the old pool in the pickers; a hosted server's list too)
     int w, h;

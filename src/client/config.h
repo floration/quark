@@ -21,7 +21,10 @@ struct Settings {
     bool scoreToggle = false;   // the scoreboard key: hold (off) or press to show / hide
     float fov = 100.0f;         // horizontal degrees
     float brightness = 1.0f;    // scales the lit scene (0.6 - 1.8)
-    int displayMode = 0;        // 0 windowed, 1 borderless fullscreen, 2 exclusive fullscreen (legacy)
+    // 0 windowed, 1 borderless fullscreen, 2 exclusive fullscreen (legacy). Borderless is the default for a new config
+    // (owner, 2026-11-03: "borderless gets more perf than windowed already massively"): a window is composed by the
+    // desktop compositor (DWM), a borderless one covering the monitor gets the driver's direct flip.
+    int displayMode = 1;
     int interpMs = 0;           // other players' interpolation delay: 0 = adaptive, else fixed ms (ranked: always 10)
 #ifdef _WIN32
     int presentMode = 3;        // (the default: latent sync; a typical PC runs many times the refresh rate)
@@ -225,6 +228,7 @@ struct Settings {
     bool wallbangTint = false;     // MORE 4: wallbang walls in WALLBANG COLOR (not dark grey)
     Vec3 wallbangColor = {0.55f, 0.25f, 0.6f};
     int ultraMarginUs = 0;         // MORE 8: LOW LATENCY ULTRA's safety: the frame starts this many us early; 0 AUTO (learnt: ultramargin.h)
+    bool newConfig = false;             // (load() found no config file: the defaults were used)
     bool ultraMarginMigrated = true;    // (ultra_margin_auto; false while load() reads a file from before AUTO came: its 150 moves to AUTO)
     bool nvThreaded = false;       // ...Windows NVIDIA: threaded optimization off (driver profile)
     bool nvDxgi = false;           // ...Windows NVIDIA: present through DXGI (driver profile)
