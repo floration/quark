@@ -1,10 +1,11 @@
-"""RAILYARD (1.19.6): neutral payload in a freight yard, 140 x 260 m. The main line runs the yard's length (along z)
-with an S-bend near each end; the cart starts in the middle and each team pushes it about 107 m into the other's
-building: the roundhouse at the south end (team A's home: the track's start) and the goods shed at the north end (team
-B's home: its end). Three sidings each side carry parked trains (boxcars, tank cars, flatcars with containers): lanes
-along the yard with gaps every 15-25 m to cross, wagon roofs at 4 m the mid level (end ladders). Two gantry cranes span
-every track (deck at 15 m: the high ground, leg ladders), container stacks 1-3 high outside the roads are a maze layer
-with stairs up, and a signal box at each quarter mark looks down the yard.
+"""RAILYARD (1.19.6): one-way payload in a freight yard, 140 x 260 m (built for neutral payload until the map cleanup
+of 2026-11-03, and still offered for it and ball). The main line runs the yard's length (along z) with an S-bend near
+each end: in payload the attackers push the cart from the roundhouse at the south end (team A's home: the track's
+start) to the goods shed at the north end (team B's home: its end); in neutral payload it starts in the middle and each team pushes it about 107 m
+into the other's building. Three sidings each side carry parked trains (boxcars, tank cars, flatcars with containers):
+lanes along the yard with gaps every 15-25 m to cross, wagon roofs at 4 m the mid level (end ladders). Two gantry
+cranes span every track (deck at 15 m: the high ground, leg ladders), container stacks 1-3 high outside the roads are a
+maze layer with stairs up, and a signal box at each quarter mark looks down the yard.
 Built point-symmetric through the yard's centre (the two ends dressed differently), then shifted 1 m along x so the
 tracks sit on the rail-track look's 2 m grid (its rails are drawn on odd x).
 
@@ -89,8 +90,8 @@ def offset(pts, d):
 
 
 def build():
-    m = M("Railyard", "npayload", sun=(0.55, 0.42, -0.45))
-    m.also = ["payload", "ball"]
+    m = M("Railyard", "payload", sun=(0.55, 0.42, -0.45))   # (built for one-way payload since the map cleanup, 2026-11-03: A pushes from the roundhouse)
+    m.also = ["npayload", "ball"]
     k = Kit(m); S = Sym(k)
 
     # ---- the main line: start in the roundhouse (south, A's home), S-bends, the long straight, the goods shed (north)
