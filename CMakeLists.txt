@@ -150,6 +150,61 @@ endif()
 if(WIN32)
   add_compile_definitions(_WIN32_WINNT=0x0601 NOMINMAX)   # Windows 7; no min / max macros from windows.h
 endif()
+
+# Profile-guided optimisation (prototype, not in CI): OFF (default, changes nothing) | GEN | USE.
+#   GEN: instrumented binaries; running them writes the profile into QUARK_PGO_DIR (tools/pgo_train.sh does the runs)
+#   USE: optimised with that profile (branch layout, inlining, hot / cold splitting, loop choices). It only moves
+#        code: FP rules above are unchanged, so results stay bit for bit (quark_tests simhash checks it).
+#   GCC: one .gcda per object file, named after the object's path relative to the build folder
+#        (-fprofile-prefix-path), so a GEN build folder's profile fits a USE build folder of the same sources and
+#        flags (same ISA, ZONESTATS, LTO). -fprofile-update=atomic: the game's threads share the counters.
+#        -fprofile-partial-training: code the training didn't run stays optimised normally, not "for size".
+#   clang: GEN writes .profraw files; tools/pgo_train.sh merges them into QUARK_PGO_DIR/quark.profdata for USE
+#        (checked on a small program only, not the game).
+#   Measured (4-core VM, GCC 13, LTO, v2, 10 interleaved serverbench pairs): server tick avg -3.7%, bot think -6%,
+#   p99 -1.5% (noise), p99.9 / worst within the noise; client CPU zones on software GL unchanged. A v2 profile used
+#   for a v3 build mismatches ~116 functions (they lose the profile): each ISA needs its own training run.
+set(QUARK_PGO "OFF" CACHE STRING "Profile-guided optimisation: OFF, GEN (instrument) or USE (optimise with the profile)")
+set_property(CACHE QUARK_PGO PROPERTY STRINGS OFF GEN USE)
+set(QUARK_PGO_DIR "${CMAKE_SOURCE_DIR}/pgo-profile" CACHE PATH "Where GEN writes and USE reads the profile")
+if(QUARK_PGO STREQUAL "GEN" OR QUARK_PGO STREQUAL "USE")
+  if(QUARK_SANITIZE OR QUARK_FUZZ)
+    message(FATAL_ERROR "QUARK_PGO is for release-type builds, not with QUARK_SANITIZE / QUARK_FUZZ")
+  endif()
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set(QUARK_PGO_FLAGS -fprofile-prefix-path=${CMAKE_BINARY_DIR})
+    if(QUARK_PGO STREQUAL "GEN")
+      list(APPEND QUARK_PGO_FLAGS -fprofile-generate=${QUARK_PGO_DIR} -fprofile-update=atomic)
+    else()
+      if(NOT EXISTS "${QUARK_PGO_DIR}")
+        message(FATAL_ERROR "QUARK_PGO=USE: no profile in ${QUARK_PGO_DIR} (make one: tools/pgo_train.sh)")
+      endif()
+      # -fprofile-correction: counters of threaded code can be a little inconsistent even with atomic updates.
+      # -Wno-error=coverage-mismatch: a function edited since the training (or built for another target) has a
+      # different control flow than its profile; GCC makes that an error by default. As a warning, that function is
+      # just optimised without its profile.
+      list(APPEND QUARK_PGO_FLAGS -fprofile-use=${QUARK_PGO_DIR} -fprofile-partial-training -fprofile-correction
+                                  -Wno-missing-profile -Wno-error=coverage-mismatch)
+    endif()
+  elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    if(QUARK_PGO STREQUAL "GEN")
+      set(QUARK_PGO_FLAGS -fprofile-generate=${QUARK_PGO_DIR})
+    else()
+      if(NOT EXISTS "${QUARK_PGO_DIR}/quark.profdata")
+        message(FATAL_ERROR "QUARK_PGO=USE: no ${QUARK_PGO_DIR}/quark.profdata (llvm-profdata merge the .profraw files)")
+      endif()
+      set(QUARK_PGO_FLAGS -fprofile-use=${QUARK_PGO_DIR}/quark.profdata -Wno-profile-instr-unprofiled
+                          -Wno-profile-instr-out-of-date)
+    endif()
+  else()
+    message(FATAL_ERROR "QUARK_PGO needs GCC or clang")
+  endif()
+  add_compile_options(${QUARK_PGO_FLAGS})
+  add_link_options(${QUARK_PGO_FLAGS})   # (GEN: links the profiling runtime; LTO: the link-time code generation sees them)
+  message(STATUS "PGO ${QUARK_PGO}: ${QUARK_PGO_DIR}")
+elseif(NOT QUARK_PGO STREQUAL "OFF")
+  message(FATAL_ERROR "QUARK_PGO must be OFF, GEN or USE (not ${QUARK_PGO})")
+endif()
 if(QUARK_FUZZ)
   if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     message(FATAL_ERROR "QUARK_FUZZ needs clang (libFuzzer): CC=clang CXX=clang++ cmake ... -DQUARK_FUZZ=ON")
