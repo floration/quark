@@ -78,7 +78,23 @@ const Seg kLaunch[] = {
 const Seg kStickyJump[] = {
     {500, 0, 0, 0, 0, -89}, {60, 0, 0, FI, 0, -89}, {500, 0, 0, 0, 0, -89}, {80, F, 0, J | AL, 0, -89}, {1500, F, 0, 0, 0, -20}, {1400, 0, 0, 0, 0, 0},
 };
-// Rocket riding: fire ahead and hold grapple along the rocket: it catches it and rides it
+// Grapple a player (key tech): the PARTNER runs across the bay; aimed at it, a press of grapple latches on and pulls
+// the two together (it lets go as they meet)
+const Seg kHookPlayer[] = {
+    {900, 0, 0, 0, 0, kAimAt}, {1000, 0, 0, G, 0, kAimAt}, {2100, 0, 0, 0, 0, 0},
+};
+const Seg kHookPlayerPartner[] = {   // (facing back down the bay: R and L across it)
+    {300, 0, 0, 0, 0, 0}, {700, 0, R, 0, 0, 0}, {1400, 0, Lf, 0, 0, 0}, {1400, 0, R, 0, 0, 0}, {200, 0, 0, 0, 0, 0},
+};
+// Dash out of a grapple (key tech): the PARTNER hooks the ghost (you, your turn) from the far end; pulled toward it a
+// moment, the ghost dashes (left, away from your lane): the pull lets go at once
+const Seg kBreakFree[] = {
+    {950, 0, 0, 0, 0, 0}, {120, 0, Lf, D, 0, 0}, {2430, 0, 0, 0, 0, 0},
+};
+const Seg kBreakFreePartner[] = {
+    {600, 0, 0, 0, 0, kAimAt}, {900, 0, 0, G, 0, kAimAt}, {2000, 0, 0, 0, 0, 0},
+};
+// The rocket grapple (rocket riding): fire ahead and hold grapple along the rocket: it catches it and rides it
 const Seg kRocketRide[] = {
     {500, 0, 0, 0, 0, 2}, {60, 0, 0, FI | G, 0, 2}, {2200, 0, 0, G, 0, 2}, {1400, 0, 0, 0, 0, 0},
 };
@@ -98,10 +114,12 @@ const LessonDef kLessons[L_COUNT] = {
     {"bounce",        12,    12,  kNoWeaponChange,  SCRIPT(kBounce),         G_BOUNCES,    2,     0,     false},
     {"grapple",       40,    18,  kNoWeaponChange,  SCRIPT(kGrapple),        G_LEDGE,      9.5f,  0,     false},
     {"hookwalk",      80,    12,  kNoWeaponChange,  SCRIPT(kHookWalk),       G_HOOKSPEED,  16,    0,     false},
+    {"hookplayer",    50,    14,  kNoWeaponChange,  SCRIPT(kHookPlayer),     G_HOOKPLAYER, 1,     0,     true,  SCRIPT(kHookPlayerPartner), 30},
+    {"breakfree",     50,    12,  kNoWeaponChange,  SCRIPT(kBreakFree),      G_BREAKFREE,  1,     0,     true,  SCRIPT(kBreakFreePartner), 34},
     {"rocketjump",    40,    24,  WPN_ROCKET,       SCRIPT(kRocketJump),     G_KNOCKUP,    7,     0,     false},
     {"launch",        160,   72,  WPN_ROCKET,       SCRIPT(kLaunch),         G_LAUNCH,     16,    20,    true},
     {"stickyjump",    40,    24,  WPN_STICKY,       SCRIPT(kStickyJump),     G_KNOCKUP,    7,     0,     false},
-    {"rocketride",    110,   16,  WPN_ROCKET,       SCRIPT(kRocketRide),     G_RIDE,       0.4f,  0,     false},
+    {"rocketgrapple", 110,   16,  WPN_ROCKET,       SCRIPT(kRocketRide),     G_RIDE,       0.4f,  0,     true},
 };
 #undef SCRIPT
 
@@ -131,30 +149,66 @@ int loopMs(int l) {
     return t;
 }
 
-UserCmd ghostCmd(int l, int tMs) {
-    const LessonDef& d = lesson(l);
+namespace {
+// a script's command at tMs into its loop (the last step held past its end); `aim`: whether that step aims at the other
+UserCmd scriptCmd(const Seg* sc, int segs, int tMs, float yaw0, uint8_t weapon, bool* aim = nullptr) {
     UserCmd c;
-    c.yaw = kStartYaw;
-    c.weapon = d.weapon;
-    if (tMs < 0) return c;
+    c.yaw = yaw0;
+    c.weapon = weapon;
+    if (aim) *aim = false;
+    if (tMs < 0 || !sc) return c;
     float yawDeg = 0;
     int t0 = 0;
-    for (int i = 0; i < d.segs; i++) {
-        const Seg& s = d.script[i];
-        if (tMs < t0 + s.ms || i == d.segs - 1) {
+    for (int i = 0; i < segs; i++) {
+        const Seg& s = sc[i];
+        if (tMs < t0 + s.ms || i == segs - 1) {
             const int in = std::min(tMs - t0, (int)s.ms);
             yawDeg += s.yawRate * in * 0.001f;
             c.forward = s.fwd;
             c.side = s.side;
             c.buttons = s.btn;
-            c.pitch = s.pitch * (PI / 180.0f);
-            c.yaw = kStartYaw + yawDeg * (PI / 180.0f);
+            c.pitch = s.pitch == kAimAt ? 0.0f : s.pitch * (PI / 180.0f);
+            c.yaw = yaw0 + yawDeg * (PI / 180.0f);
+            if (aim) *aim = s.pitch == kAimAt;
             return c;
         }
         yawDeg += s.yawRate * s.ms * 0.001f;
         t0 += s.ms;
     }
     return c;
+}
+}  // namespace
+
+UserCmd ghostCmd(int l, int tMs) {
+    const LessonDef& d = lesson(l);
+    return scriptCmd(d.script, d.segs, tMs, kStartYaw, d.weapon);
+}
+
+UserCmd partnerCmd(int l, int tMs) {
+    const LessonDef& d = lesson(l);
+    return scriptCmd(d.partner, d.partnerSegs, tMs, kPartnerYaw, kNoWeaponChange);
+}
+
+Vec3 partnerStart(int l) { return {bayX0(l) + lesson(l).partnerIn, 0, bayZ(l)}; }
+
+bool ghostAimsAt(int l, int tMs) {
+    const LessonDef& d = lesson(l);
+    bool a;
+    scriptCmd(d.script, d.segs, tMs, kStartYaw, d.weapon, &a);
+    return a;
+}
+
+bool partnerAimsAt(int l, int tMs) {
+    const LessonDef& d = lesson(l);
+    bool a;
+    scriptCmd(d.partner, d.partnerSegs, tMs, kPartnerYaw, kNoWeaponChange, &a);
+    return a;
+}
+
+void aimAt(const Vec3& eye, const Vec3& at, float& yaw, float& pitch) {
+    const Vec3 d = at - eye;
+    yaw = std::atan2(-d.x, -d.z);
+    pitch = std::atan2(d.y, std::sqrt(d.x * d.x + d.z * d.z));
 }
 
 void Check::start(int l) {
@@ -267,6 +321,24 @@ void Check::frame(const MoveState& m, uint8_t ev, int fwd, int side, int weapon,
             progress = best / d.target;
             done = armed && knocked && y >= d.target;
             break;
+        case G_HOOKPLAYER: {   // (the moment it latches on: a player's id + 1, not the map, a rocket or the ball)
+            const bool on = hookedNow && m.hookTarget >= 1 && m.hookTarget <= kMaxPlayers;
+            if (on && !prevOn) count++;
+            prevOn = on;
+            value = (float)count;
+            progress = count / d.target;
+            done = count >= d.target;
+            break;
+        }
+        case G_BREAKFREE: {   // (held last frame, a dash this one, held no more: pmove's dash clears MF_PULLED)
+            const bool pulled = (m.flags & MF_PULLED) != 0;
+            if (prevOn && !pulled && (ev & ME_DASH)) count++;
+            prevOn = pulled;
+            value = (float)count;
+            progress = count / d.target;
+            done = count >= d.target;
+            break;
+        }
     }
     if (progress > 1) progress = 1;
     if (progress < 0) progress = 0;

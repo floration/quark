@@ -325,6 +325,7 @@ private:
         Phase phase = DEMO;
         int lesson = 0;
         int ghost = -1;             // the ghost's player id (found by name)
+        int partner = -1;           // the PARTNER's (the lessons with another player; found by name)
         double phaseAt = 0;         // time_ the phase began
         double demoEnd = 0;         // time_ the demo hands over
         int64_t epochMs = 0;        // the ghost's loop starts (server ms): the keys shown are its script's at the view time

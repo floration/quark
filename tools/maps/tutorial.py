@@ -8,13 +8,15 @@ stops working on this map). Side by side, not in a row: a row of them ran past t
 the bay's start wall, facing +x. Nothing joins the bays: the tutorial moves you from one to the next, and a fall into
 the lava puts you back at your bay's start. Each bay is built for its one tech: a long flat lane for strafing and the
 chains, a lava gap only a dash crosses, a wall to bounce off, a 10 m ledge for the grapple, 8 m ledges for the rocket
-and sticky jumps, and a 72 m tall hall for the launch."""
+and sticky jumps, a 72 m tall hall for the launch, and two bays where a second bot, the PARTNER, runs across the
+middle (grapple a player) or hooks you from the far end (dash out of a grapple): a disc marks where it starts."""
 from .prefabs import *
 
 # (id, inside length, ceiling): kLessons in src/game/tutorial.h, in order
 BAYS = [("move", 50, 12), ("strafe", 150, 12), ("dash", 50, 12), ("sidedash", 30, 12), ("super", 60, 12),
         ("hyper", 60, 12), ("chain", 180, 16), ("slide", 60, 12), ("bounce", 12, 12), ("grapple", 40, 18),
-        ("hookwalk", 80, 12), ("rocketjump", 40, 24), ("launch", 160, 72), ("stickyjump", 40, 24), ("rocketride", 110, 16)]
+        ("hookwalk", 80, 12), ("hookplayer", 50, 14), ("breakfree", 50, 12), ("rocketjump", 40, 24), ("launch", 160, 72),
+        ("stickyjump", 40, 24), ("rocketgrapple", 110, 16)]
 WALL = 1.0      # between bays (kWall)
 HZ = 12.0       # half the width (kBayHalfZ)
 X0 = -90.0      # every bay's start wall, inside face (kBayX0)
@@ -80,6 +82,9 @@ def build():
             for d in HURDLES:
                 m.box(x0 + d, 0, z0, x0 + d + 0.4, 0.8, z1, mat="metal")
             m.box(x0 + 44, 0, z0, x0 + 45, 0.01, z1, mat="glow")   # the finish line
+        elif name in ("hookplayer", "breakfree"):   # the PARTNER's spot (tut::LessonDef::partnerIn): a glowing pad
+            px = x0 + (30 if name == "hookplayer" else 34)
+            m.box(px - 0.8, 0, zc - 0.8, px + 0.8, 0.01, zc + 0.8, mat="glow")
         elif name in ("grapple", "rocketjump", "stickyjump"):
             d, h = LEDGE_GRAPPLE if name == "grapple" else LEDGE_JUMP
             m.box(x0 + d, 0, z0, x1, h - 0.3, z1)                        # the ledge (a flat face: nothing to snag on)

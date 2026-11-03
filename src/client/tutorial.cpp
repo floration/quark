@@ -83,6 +83,14 @@ const Text kTexts[tut::L_COUNT] = {
     {"GRAPPLE WALKING", "HOOK THE FLOOR FAR AHEAD: IT DRAGS YOU ALONG WITH NO FRICTION, UP TO 24 M/S.",
      {{nullptr, {K_N, K_N, K_N}, "AIM JUST UNDER LEVEL, AT THE FLOOR FAR AHEAD"}, {"%s + %s", {K_G, K_F, K_N}, "HOLD BOTH"},
       {nullptr, {K_N, K_N, K_N}, "LET GO BEFORE YOU REACH THE HOOK"}}, 3, "16 M/S ALONG THE FLOOR"},
+    {"GRAPPLE A PLAYER", "YOUR HOOK CATCHES PLAYERS TOO: IT PULLS YOU BOTH TOGETHER. CATCH THEM, OR DRAG THEM IN.",
+     {{nullptr, {K_N, K_N, K_N}, "PUT YOUR CROSSHAIR ON THE PARTNER AS IT RUNS"},
+      {"%s", {K_G, K_N, K_N}, "PRESS IT. THE HOOK LATCHES ON"},
+      {nullptr, {K_N, K_N, K_N}, "YOU FLY AT EACH OTHER, UP TO 24 M/S, FOR UP TO 3 S"}}, 3, "HOOK THE PARTNER"},
+    {"DASH OUT OF A GRAPPLE", "WHEN SOMEONE HOOKS YOU, YOU ARE PULLED TO THEM. A DASH BREAKS FREE AT ONCE.",
+     {{nullptr, {K_N, K_N, K_N}, "WAIT FOR THE PARTNER'S HOOK TO CATCH YOU"},
+      {"%s", {K_D, K_N, K_N}, "DASH ANY WAY: THE PULL LETS GO"},
+      {"%s", {K_G, K_N, K_N}, "HOOKING SOMETHING YOURSELF BREAKS FREE TOO"}}, 3, "BREAK FREE WITH A DASH"},
     {"ROCKET JUMP", "YOUR OWN ROCKET THROWS YOU. HERE IT DOES NO DAMAGE.",
      {{nullptr, {K_N, K_N, K_N}, "AIM STRAIGHT DOWN"}, {"%s + %s", {K_J, K_FI, K_N}, "JUMP AND FIRE TOGETHER"},
       {"%s", {K_F, K_N, K_N}, "STEER ONTO THE LEDGE"}}, 3, "GET 7 M UP"},
@@ -94,13 +102,13 @@ const Text kTexts[tut::L_COUNT] = {
     {"STICKY JUMP", "LAY A STICKY BOMB, STAND ON IT, SET IT OFF AS YOU JUMP.",
      {{"%s", {K_FI, K_N, K_N}, "AIM STRAIGHT DOWN AND FIRE A STICKY"}, {"%s + %s", {K_J, K_AL, K_N}, "JUMP AND SET IT OFF TOGETHER"},
       {"%s", {K_F, K_N, K_N}, "STEER ONTO THE LEDGE"}}, 3, "GET 7 M UP"},
-    {"ROCKET RIDING", "FIRE A ROCKET AND HOOK IT AS IT LEAVES: IT CARRIES YOU ALONG.",
+    {"ROCKET GRAPPLE", "FIRE A ROCKET AND HOOK IT AS IT LEAVES: IT CARRIES YOU ALONG.",
      {{nullptr, {K_N, K_N, K_N}, "AIM STRAIGHT AHEAD"}, {"%s + %s", {K_FI, K_G, K_N}, "FIRE AND GRAPPLE TOGETHER"},
       {"%s", {K_G, K_N, K_N}, "KEEP HOLDING IT TO RIDE"}}, 3, "RIDE FOR 0.4 S"},
 };
 }  // namespace
 
-static_assert(tut::L_COUNT <= 15);   // (Settings::tutorialDone: a bit a lesson, tutorial_done at most 0x7FFF)
+static_assert(tut::L_COUNT <= 17);   // (Settings::tutorialDone: a bit a lesson, tutorial_done at most 0x1FFFF)
 
 const char* tutorialTitle(int l) { return kTexts[std::clamp(l, 0, tut::L_COUNT - 1)].title; }
 
@@ -114,7 +122,7 @@ void Game::startTutorial(int lesson) {
     tutorialStart_ = false;
     if (!host_) { setScreen(Screen::Main); return; }   // (error_ says why)
     tut_.on = true;
-    net_.noPlayerHooks = true;
+    net_.hookPlayers = 0;   // (tutorialFrame: the PARTNER, in the lesson that hooks it)
 }
 
 // To a lesson: the server puts you at its start and the ghost's loop starts half a second on (the view time + 0.5 s:
@@ -174,6 +182,13 @@ void Game::tutorialFrame() {
         for (int i = 0; i < kMaxPlayers; i++)
             if (i != net_.clientId() && players[i].valid && net_.playerName(i) == "GHOST") { tut_.ghost = i; break; }
     }
+    if (tut_.partner < 0 || !players[tut_.partner].valid) {   // (the PARTNER, the same way)
+        tut_.partner = -1;
+        for (int i = 0; i < kMaxPlayers; i++)
+            if (i != net_.clientId() && players[i].valid && net_.playerName(i) == "PARTNER") { tut_.partner = i; break; }
+    }
+    // your grapple catches the partner in the lesson about it, and nobody else (the server's rule: tutorialHookAllowed)
+    net_.hookPlayers = tut_.lesson == tut::L_HOOKPLAYER && tut_.partner >= 0 ? 1u << tut_.partner : 0u;
     if (!tut_.begun) {
         if (!alive) return;
         tutorialBegin(tut_.lesson);
@@ -219,6 +234,7 @@ void Game::tutorialFrame() {
                 tut_.phase = TutState::TRY;
                 tut_.phaseAt = time_;
                 tut_.check.start(tut_.lesson);
+                if (tut::lesson(tut_.lesson).partner) net_.sendCommand("tutorial try");   // (the PARTNER's hook: for you now)
                 yaw_ = tut::kStartYaw;   // (looking down your lane, whatever the mouse did meanwhile)
                 pitch_ = 0;
             }
@@ -254,7 +270,7 @@ void Game::tutorialFrame() {
     switch (d.goal) {
         case tut::G_REACH: case tut::G_GAP: snprintf(b, sizeof b, "%.0f / %.0f M", c.value, d.target - tut::kStartIn); break;
         case tut::G_SPEED: case tut::G_HOOKSPEED: snprintf(b, sizeof b, "%.1f / %.0f M/S", c.value, d.target); break;
-        case tut::G_SIDEDASH: case tut::G_EVENTS: case tut::G_BOUNCES: snprintf(b, sizeof b, "%d / %.0f", c.count, d.target); break;
+        case tut::G_SIDEDASH: case tut::G_EVENTS: case tut::G_BOUNCES: case tut::G_HOOKPLAYER: case tut::G_BREAKFREE: snprintf(b, sizeof b, "%d / %.0f", c.count, d.target); break;
         case tut::G_SLIDE: case tut::G_RIDE: snprintf(b, sizeof b, "%.1f / %.1f S", std::max(c.value, c.best), d.target); break;
         default: snprintf(b, sizeof b, "%.1f / %.0f M", std::max(c.value, c.best), d.target); break;
     }
@@ -381,8 +397,9 @@ void Game::drawTutorialHud(float W, float H, float s) {
         gy += 3 * (kh + 16 * s + gap) + 4 * s;
         // where it aims, and its turning
         const int64_t t = (int64_t)std::llround(net_.renderTime() * 1000.0) - tut_.epochMs;
-        const float pitchDeg = tut::ghostCmd(tut_.lesson, t < 0 ? -1 : (int)(t % std::max(1, tut::loopMs(tut_.lesson)))).pitch * 180.0f / PI;
-        const char* aim = pitchDeg <= -70 ? "AIM: STRAIGHT DOWN" : pitchDeg <= -8 ? "AIM: A LITTLE DOWN" : pitchDeg >= 8 ? "AIM: UP" : "AIM: LEVEL";
+        const int tl = t < 0 ? -1 : (int)(t % std::max(1, tut::loopMs(tut_.lesson)));
+        const float pitchDeg = tut::ghostCmd(tut_.lesson, tl).pitch * 180.0f / PI;
+        const char* aim = tut::ghostAimsAt(tut_.lesson, tl) ? "AIM: AT THE PARTNER" : pitchDeg <= -70 ? "AIM: STRAIGHT DOWN" : pitchDeg <= -8 ? "AIM: A LITTLE DOWN" : pitchDeg >= 8 ? "AIM: UP" : "AIM: LEVEL";
         ui_.label(gx + 12 * s, gy, aim, kWhite, 1.0f, gw - 24 * s);
         gy += lh;
         const float deg = tut_.turn * 180.0f / PI;

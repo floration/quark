@@ -199,6 +199,7 @@ AIM STRAIGHT DOWN AND FIRE A STICKY	瞄准正下方并发射粘弹
 AIM TRAINER	瞄准训练
 AIM UP, OVER THE EDGE OF THE LEDGE	向上瞄准，越过平台边缘
 AIM: A LITTLE DOWN	瞄准: 稍微向下
+AIM: AT THE PARTNER	瞄准: PARTNER
 AIM: LEVEL	瞄准: 水平
 AIM: STRAIGHT DOWN	瞄准: 正下方
 AIM: UP	瞄准: 向上
@@ -389,6 +390,7 @@ BOTS: OFF (RANKED)	机器人: 关 (排位)
 BOX	方块
 BOX OPACITY	方块不透明度
 BOXES, STRETCHED AS ONE - UNGROUP TO EDIT THEM	方块整体拉伸 - 取消编组以编辑
+BREAK FREE WITH A DASH	用冲刺挣脱
 BREAKABLE	可破坏
 BRICK	砖块
 BRIGHTNESS	亮度
@@ -619,6 +621,7 @@ DAMAGE NUMBERS	伤害数字
 DASH	冲刺
 DASH + GRAPPLE	冲刺 + 钩索
 DASH AND JUMP TOGETHER	同时冲刺和跳跃
+DASH ANY WAY: THE PULL LETS GO	向任意方向冲刺: 拉扯就会松开
 DASH BUFFER	冲刺缓冲
 DASH BUFFER: 0.05 S	冲刺缓冲: 0.05 秒
 DASH BUFFER: 0.1 S	冲刺缓冲: 0.1 秒
@@ -639,6 +642,7 @@ DASH JUST BEFORE YOU LAND, AND DON'T JUMP	落地前一刻冲刺，不要跳
 DASH LEFT	向左冲刺
 DASH LEFT AND DASH RIGHT	向左和向右各冲刺一次
 DASH LENGTH	冲刺距离
+DASH OUT OF A GRAPPLE	冲刺脱离钩索
 DASH RIGHT	向右冲刺
 DASH SLIDE	冲刺滑行
 DASH SPEED	冲刺速度
@@ -984,6 +988,7 @@ GPU world pass	GPU world pass
 GRADE FROM LOW COLOR	从低值颜色渐变
 GRAPPLE	钩索
 GRAPPLE + HAND	钩索 + 手
+GRAPPLE A PLAYER	钩住玩家
 GRAPPLE COOLDOWN	钩索冷却
 GRAPPLE GRAVITY	钩索重力
 GRAPPLE MODEL	钩索模型
@@ -1099,7 +1104,9 @@ HOME	HOME
 HOOK	钩子
 HOOK CAPTION	钩子标题
 HOOK THE FLOOR FAR AHEAD: IT DRAGS YOU ALONG WITH NO FRICTION, UP TO 24 M/S.	把钩索勾在远处地面: 它无摩擦地拖着你走，最高 24 M/S。
+HOOK THE PARTNER	钩住 PARTNER
 HOOKED	已钩住
+HOOKING SOMETHING YOURSELF BREAKS FREE TOO	自己钩住别的东西也能挣脱
 HOST	主机
 HOST EDIT SESSION	主持编辑会话
 HOST EDIT SESSION: friends join and build with you; everyone's camera shows in the view.	主持编辑会话: 好友加入与你一起建造; 视野中会显示每个人的镜头。
@@ -1230,8 +1237,6 @@ KEY 3	按键 3
 KEY OVERLAY	按键显示
 KEY OVERLAY (VERBOSE)	按键显示 (详细)
 KEY TECH	核心技巧
-KEY TECH:	核心技巧:
-KEY TECH: {}	核心技巧: {}
 KEYS	按键
 KICK	踢出
 KICK A PLAYER	踢出玩家
@@ -2250,6 +2255,7 @@ PALETTE: THE BOMB'S BLINK AND CHECKPOINTS NOT	调色板: 炸弹闪烁和检查�
 PANEL DARKNESS	面板暗度
 PANEL SEAMS; FLAT: NO BAKED LIGHT OR SHADOW	面板接缝; 平面: 无烘焙光影
 PAPER	布
+PARTNER	PARTNER
 PASTE CODE	粘贴代码
 PASTE COLORS	粘贴颜色
 PATH PT	路径点
@@ -2324,6 +2330,7 @@ PRESET: LOW	预设: 低
 PRESET: MEDIUM	预设: 中
 PRESETS SET BOTH COLORS BELOW	预设会同时设定下方两种颜色
 PRESS A KEY, MOUSE BUTTON OR SCROLL - ESC CANCELS, DEL CLEARS	按下按键、鼠标键或滚轮 - ESC 取消, DEL 清除
+PRESS IT. THE HOOK LATCHES ON	按下。钩索会勾住
 PRESS...	请按键...
 PREV WEAP	上一把
 PREV WEAPON	上一把武器
@@ -2343,6 +2350,7 @@ PULSE	脉冲
 PUSH THE PAYLOAD	推进运载车
 PUSH THE PAYLOAD TO THE ENEMY END	将运载车推到敌方终点
 PUT .QBRAIN FILES IN THE BOTS FOLDER TO PICK ONE	将 .QBRAIN 文件放入 bots 文件夹即可选择
+PUT YOUR CROSSHAIR ON THE PARTNER AS IT RUNS	在 PARTNER 跑动时把准星对准它
 Pick a server from the list (internet and LAN), or type its address as IP:PORT.	从列表中选择服务器 (互联网和局域网), 或以 IP:端口 格式输入地址。
 Pick an element in the dropdown (health, weapon name, cooldown bars, speed meter, weapon list) and move it, resize it, recolour it or hide it.	在下拉菜单中选择元素 (生命值、武器名称、冷却条、速度表、武器列表), 然后移动、调整大小、改色或隐藏。
 Pick the mode and map, a server name and the max players. The game picks the map built for the mode; any other map works with a warning.	选择模式和地图、服务器名称和最大玩家数。游戏会选择为该模式打造的地图; 其他地图也能用, 但会有提示。
@@ -2493,10 +2501,10 @@ ROBOT	机器人
 ROCK	石头
 ROCKET	火箭
 ROCKET (splash; rocket jump off the floor for 10#amage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 10 hp, once a second; alt throws it: +30 hp and reset cooldowns for a teammate).	火箭 (溅射; 对地火箭跳造成 10# 伤害)、步枪 (全自动; 辅助开火开镜)、激光 (光束; 辅助开火牵引)、霰弹枪 (辅助: 跳弹)、狙击 (辅助开火开镜)、粘弹 (辅助开火引爆)、弩 (爆头)、气泡 (辅助: 气泡流)、刀 (辅助: 投掷)、针筒 (开火为自己回 10 hp, 每秒一次; 辅助开火投掷: 为队友 +30 hp 并重置冷却)。
+ROCKET GRAPPLE	火箭钩索
 ROCKET JUMP	火箭跳
 ROCKET JUMPERS	火箭跳跃者
 ROCKET RIDE	火箭骑乘
-ROCKET RIDING	乘火箭
 ROCKET, LASER AND KNIFE	火箭、激光和刀
 ROCKETS AND STICKIES - NO SELF DAMAGE	火箭和粘弹 - 无自伤
 ROCKETS ONLY	仅火箭
@@ -3135,6 +3143,7 @@ VSYNC: OFF	垂直同步: 关
 VSYNC: ON	垂直同步: 开
 W A S D - move.   SPACE - jump (hold it as you land to bounce: bunny hop).	W A S D - 移动。   空格 - 跳跃 (落地时按住可弹跳: 连跳)。
 WAD2	WAD2
+WAIT FOR THE PARTNER'S HOOK TO CATCH YOU	等 PARTNER 的钩索勾住你
 WAITING FOR THE LATE READ (AVG)	等待延后读取 (平均)
 WAITING FOR THE LATE READ (AVG)  00,000,000 NS	等待延后读取 (平均)  00,000,000 NS
 WAITING FOR THE NEXT READ (AVG)	等待下次读取 (平均)
@@ -3175,6 +3184,7 @@ WHAT THE VOTE CHANGES	投票更改的内容
 WHEEL DN	WHEEL DN
 WHEEL UP	WHEEL UP
 WHEN ONE FILLS, EVERYONE IN IT IS TOLD (HERE AND ON DISCORD)	队列满员时会通知其中所有人 (此处及 DISCORD)
+WHEN SOMEONE HOOKS YOU, YOU ARE PULLED TO THEM. A DASH BREAKS FREE AT ONCE.	被人钩住时，你会被拉向对方。冲刺立刻挣脱。
 WHEN UNFOCUSED	失去焦点时
 WHEN UNFOCUSED, FLASH ON	失去焦点时闪烁
 WHERE THE HITS YOU TAKE COME FROM	你受到攻击的方向
@@ -3220,6 +3230,7 @@ YES	是
 YES #  NO #  OF #   F1 YES / F2 NO   #s	赞成 #  反对 #  共 #   F1 赞成 / F2 反对   #s
 YET REACHED IN YOUR ENEMY COLOUR	尚未到达的显示为敌方颜色
 YOU DIED	你阵亡了
+YOU FLY AT EACH OTHER, UP TO 24 M/S, FOR UP TO 3 S	你们互相飞向对方，最高 24 M/S，最多 3 S
 YOU HAVE THE BOMB - PLANT AT A SITE	你拿到了炸弹 - 去炸弹点安放
 YOU HEALED	你治疗了
 YOU LOSE	你输了
@@ -3234,6 +3245,7 @@ YOU: NO TIME TRIALS YET	你: 尚无计时赛成绩
 YOUR BOTS: ALL STANDARD	你的机器人: 全部标准
 YOUR BOTS: MIXED MODELS	你的机器人: 混合模型
 YOUR GOAL	我方球门
+YOUR HOOK CATCHES PLAYERS TOO: IT PULLS YOU BOTH TOGETHER. CATCH THEM, OR DRAG THEM IN.	钩索也能勾住玩家: 把你们俩拉到一起。追上对方，或把对方拉过来。
 YOUR KILLS	你的击杀
 YOUR MATCH:  # SHOTS  # HITS  #% ACCURACY  # DAMAGE  BEST STREAK #	你的比赛:  # 次射击  # 次命中  #% 命中率  # 伤害  最佳连杀 #
 YOUR NAME (CHAT AND SCOREBOARD)	你的名字 (聊天和计分板)
@@ -3781,6 +3793,7 @@ tourney seed #: {} (#)	tourney seed #: {} (#)
 tourney started -	锦标赛已开始 -
 trying the next rate up: busy #%, upload # kbps	尝试提高速率: 繁忙 #%, 上传 # kbps
 tutorial reset	tutorial reset
+tutorial try	tutorial try
 ui verts	ui verts
 ungrouped into	已取消编组为
 unknown mode	未知模式

@@ -199,6 +199,7 @@ AIM STRAIGHT DOWN AND FIRE A STICKY	바로 아래를 조준하고 점착탄 발�
 AIM TRAINER	에임 트레이너
 AIM UP, OVER THE EDGE OF THE LEDGE	위로, 턱 가장자리 너머를 조준
 AIM: A LITTLE DOWN	조준: 약간 아래
+AIM: AT THE PARTNER	조준: PARTNER
 AIM: LEVEL	조준: 수평
 AIM: STRAIGHT DOWN	조준: 바로 아래
 AIM: UP	조준: 위
@@ -389,6 +390,7 @@ BOTS: OFF (RANKED)	봇: 끄기 (랭크)
 BOX	박스
 BOX OPACITY	박스 불투명도
 BOXES, STRETCHED AS ONE - UNGROUP TO EDIT THEM	하나로 늘어나는 박스 - 편집하려면 그룹 해제
+BREAK FREE WITH A DASH	대시로 풀려나기
 BREAKABLE	파괴 가능
 BRICK	벽돌
 BRIGHTNESS	밝기
@@ -619,6 +621,7 @@ DAMAGE NUMBERS	피해량 숫자
 DASH	대시
 DASH + GRAPPLE	대시 + 그래플
 DASH AND JUMP TOGETHER	대시와 점프를 동시에
+DASH ANY WAY: THE PULL LETS GO	아무 방향으로 대시: 끌어당김이 풀린다
 DASH BUFFER	대시 버퍼
 DASH BUFFER: 0.05 S	대시 버퍼: 0.05초
 DASH BUFFER: 0.1 S	대시 버퍼: 0.1초
@@ -639,6 +642,7 @@ DASH JUST BEFORE YOU LAND, AND DON'T JUMP	착지 직전에 대시, 점프는 하
 DASH LEFT	왼쪽으로 대시
 DASH LEFT AND DASH RIGHT	왼쪽과 오른쪽으로 대시
 DASH LENGTH	대시 길이
+DASH OUT OF A GRAPPLE	대시로 갈고리 탈출
 DASH RIGHT	오른쪽으로 대시
 DASH SLIDE	대시 슬라이드
 DASH SPEED	대시 속도
@@ -984,6 +988,7 @@ GPU world pass	GPU world pass
 GRADE FROM LOW COLOR	낮은 색상부터 그라데이션
 GRAPPLE	그래플
 GRAPPLE + HAND	그래플 + 손
+GRAPPLE A PLAYER	플레이어에게 갈고리
 GRAPPLE COOLDOWN	그래플 쿨다운
 GRAPPLE GRAVITY	그래플 중력
 GRAPPLE MODEL	그래플 모델
@@ -1099,7 +1104,9 @@ HOME	HOME
 HOOK	훅
 HOOK CAPTION	훅 설명
 HOOK THE FLOOR FAR AHEAD: IT DRAGS YOU ALONG WITH NO FRICTION, UP TO 24 M/S.	멀리 앞 바닥에 갈고리를 건다: 마찰 없이 끌려가며 최대 24 M/S.
+HOOK THE PARTNER	PARTNER에게 갈고리 걸기
 HOOKED	걸림
+HOOKING SOMETHING YOURSELF BREAKS FREE TOO	직접 무언가에 갈고리를 걸어도 풀려난다
 HOST	호스트
 HOST EDIT SESSION	편집 세션 호스트
 HOST EDIT SESSION: friends join and build with you; everyone's camera shows in the view.	편집 세션 호스트: 친구가 참가해 함께 제작합니다; 모두의 카메라가 화면에 표시됩니다.
@@ -1230,8 +1237,6 @@ KEY 3	키 3
 KEY OVERLAY	키 오버레이
 KEY OVERLAY (VERBOSE)	키 오버레이 (상세)
 KEY TECH	핵심 테크
-KEY TECH:	핵심 테크:
-KEY TECH: {}	핵심 테크: {}
 KEYS	키
 KICK	강퇴
 KICK A PLAYER	플레이어 강퇴
@@ -2250,6 +2255,7 @@ PALETTE: THE BOMB'S BLINK AND CHECKPOINTS NOT	팔레트: 폭탄 깜빡임과 체
 PANEL DARKNESS	패널 어둡기
 PANEL SEAMS; FLAT: NO BAKED LIGHT OR SHADOW	패널 이음매; 평면: 구운 조명이나 그림자 없음
 PAPER	보
+PARTNER	PARTNER
 PASTE CODE	코드 붙여넣기
 PASTE COLORS	색상 붙여넣기
 PATH PT	경로 지점
@@ -2324,6 +2330,7 @@ PRESET: LOW	프리셋: 낮음
 PRESET: MEDIUM	프리셋: 중간
 PRESETS SET BOTH COLORS BELOW	프리셋은 아래 두 색상을 모두 설정
 PRESS A KEY, MOUSE BUTTON OR SCROLL - ESC CANCELS, DEL CLEARS	키, 마우스 버튼 또는 스크롤 입력 - ESC 취소, DEL 해제
+PRESS IT. THE HOOK LATCHES ON	누른다. 갈고리가 걸린다
 PRESS...	입력...
 PREV WEAP	이전 무기
 PREV WEAPON	이전 무기
@@ -2343,6 +2350,7 @@ PULSE	펄스
 PUSH THE PAYLOAD	화물 밀기
 PUSH THE PAYLOAD TO THE ENEMY END	화물을 적 진영 끝까지 밀기
 PUT .QBRAIN FILES IN THE BOTS FOLDER TO PICK ONE	.QBRAIN 파일을 BOTS 폴더에 넣으면 선택 가능
+PUT YOUR CROSSHAIR ON THE PARTNER AS IT RUNS	달리는 PARTNER에게 조준점을 맞춘다
 Pick a server from the list (internet and LAN), or type its address as IP:PORT.	목록(인터넷 및 LAN)에서 서버를 고르거나 주소를 IP:PORT 형식으로 입력하세요.
 Pick an element in the dropdown (health, weapon name, cooldown bars, speed meter, weapon list) and move it, resize it, recolour it or hide it.	드롭다운에서 요소(체력, 무기 이름, 쿨다운 바, 속도계, 무기 목록)를 골라 이동, 크기 조절, 색상 변경, 숨기기를 하세요.
 Pick the mode and map, a server name and the max players. The game picks the map built for the mode; any other map works with a warning.	모드와 맵, 서버 이름, 최대 인원을 정하세요. 게임은 모드에 맞게 제작된 맵을 고릅니다; 다른 맵도 경고와 함께 사용 가능합니다.
@@ -2493,10 +2501,10 @@ ROBOT	로봇
 ROCK	바위
 ROCKET	로켓
 ROCKET (splash; rocket jump off the floor for 10#amage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 10 hp, once a second; alt throws it: +30 hp and reset cooldowns for a teammate).	로켓 (범위 피해; 바닥에서 로켓 점프 시 10#피해), 소총 (자동; 보조 사격 시 스코프), 레이저 (광선; 보조 사격 시 끌어당김), 샷건 (보조: 도탄), 저격총 (보조 사격 시 스코프), 점착탄 (보조: 기폭), 석궁 (헤드샷), 버블 (보조: 버블 연속 분사), 나이프 (보조: 투척), 주사기 (사격 시 초당 한 번 10 hp 회복; 보조 사격으로 투척: 팀원 +30 hp 및 쿨다운 초기화).
+ROCKET GRAPPLE	로켓 그래플
 ROCKET JUMP	로켓 점프
 ROCKET JUMPERS	로켓 점퍼
 ROCKET RIDE	로켓 라이드
-ROCKET RIDING	로켓 라이딩
 ROCKET, LASER AND KNIFE	로켓, 레이저, 나이프
 ROCKETS AND STICKIES - NO SELF DAMAGE	로켓과 점착탄 - 자해 피해 없음
 ROCKETS ONLY	로켓만
@@ -3135,6 +3143,7 @@ VSYNC: OFF	수직 동기화: 끄기
 VSYNC: ON	수직 동기화: 켜기
 W A S D - move.   SPACE - jump (hold it as you land to bounce: bunny hop).	W A S D - 이동.   SPACE - 점프 (착지할 때 누르고 있으면 튕김: 버니합).
 WAD2	WAD2
+WAIT FOR THE PARTNER'S HOOK TO CATCH YOU	PARTNER의 갈고리에 걸릴 때까지 기다린다
 WAITING FOR THE LATE READ (AVG)	늦은 읽기 대기 (평균)
 WAITING FOR THE LATE READ (AVG)  00,000,000 NS	늦은 읽기 대기 (평균)  00,000,000 NS
 WAITING FOR THE NEXT READ (AVG)	다음 읽기 대기 (평균)
@@ -3175,6 +3184,7 @@ WHAT THE VOTE CHANGES	투표로 바뀌는 것
 WHEEL DN	WHEEL DN
 WHEEL UP	WHEEL UP
 WHEN ONE FILLS, EVERYONE IN IT IS TOLD (HERE AND ON DISCORD)	대기열이 차면 참가한 모두에게 알림 (여기와 DISCORD에서)
+WHEN SOMEONE HOOKS YOU, YOU ARE PULLED TO THEM. A DASH BREAKS FREE AT ONCE.	누군가 갈고리를 걸면 그쪽으로 끌려간다. 대시하면 즉시 풀려난다.
 WHEN UNFOCUSED	창 비활성 시
 WHEN UNFOCUSED, FLASH ON	창 비활성 시 깜빡임
 WHERE THE HITS YOU TAKE COME FROM	받는 공격의 방향
@@ -3220,6 +3230,7 @@ YES	예
 YES #  NO #  OF #   F1 YES / F2 NO   #s	찬성 #  반대 #  / #   F1 찬성 / F2 반대   #초
 YET REACHED IN YOUR ENEMY COLOUR	아직 도달 못 한 곳은 적 색상으로
 YOU DIED	사망했습니다
+YOU FLY AT EACH OTHER, UP TO 24 M/S, FOR UP TO 3 S	서로를 향해 날아간다. 최대 24 M/S, 최대 3 S
 YOU HAVE THE BOMB - PLANT AT A SITE	폭탄 보유 중 - 지점에 설치하세요
 YOU HEALED	회복함
 YOU LOSE	패배
@@ -3234,6 +3245,7 @@ YOU: NO TIME TRIALS YET	나: 아직 타임 트라이얼 없음
 YOUR BOTS: ALL STANDARD	내 봇: 모두 표준
 YOUR BOTS: MIXED MODELS	내 봇: 다양한 모델
 YOUR GOAL	우리 골대
+YOUR HOOK CATCHES PLAYERS TOO: IT PULLS YOU BOTH TOGETHER. CATCH THEM, OR DRAG THEM IN.	갈고리는 플레이어도 잡는다: 둘을 서로 끌어당긴다. 따라잡거나 끌어오기.
 YOUR KILLS	내 킬
 YOUR MATCH:  # SHOTS  # HITS  #% ACCURACY  # DAMAGE  BEST STREAK #	내 경기:  발사 #  적중 #  정확도 #%  피해량 #  최고 연속 처치 #
 YOUR NAME (CHAT AND SCOREBOARD)	내 이름 (채팅 및 스코어보드)
@@ -3781,6 +3793,7 @@ tourney seed #: {} (#)	tourney seed #: {} (#)
 tourney started -	토너먼트 시작 -
 trying the next rate up: busy #%, upload # kbps	다음 빈도로 상향 시도: 사용 #%, 업로드 # kbps
 tutorial reset	tutorial reset
+tutorial try	tutorial try
 ui verts	ui verts
 ungrouped into	그룹 해제됨:
 unknown mode	알 수 없는 모드

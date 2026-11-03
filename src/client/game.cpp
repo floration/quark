@@ -274,7 +274,7 @@ void Game::startHost(bool vsBots) {
         sc.upnp = false;
         sc.lanOnly = true;
         sc.publicList = false;
-        sc.maxPlayers = 2;
+        sc.maxPlayers = 3;   // (you, the ghost and the PARTNER)
         sc.tutorial = true;
         sc.autoStart = false;
         sc.botsEnemy = sc.botsAlly = 0;
@@ -421,7 +421,7 @@ void Game::connectTo(const std::string& rawAddr) {
 }
 
 void Game::leaveGame(const std::string& error) {
-    if (tut_.on) { tut_.on = false; tut_.begun = false; net_.noPlayerHooks = false; paused_ = false; }
+    if (tut_.on) { tut_.on = false; tut_.begun = false; net_.hookPlayers = ~0u; paused_ = false; }
     if (edSession_ && net_.mapReady()) {
         // leaving an edit session: offer to keep a copy (never saved without asking, B3). Someone else's session: always
         // (unless it's a built-in map nobody changed). Your own: when it's a built-in map you changed, which the server
@@ -6036,7 +6036,7 @@ float pauseH(int rows, int sections, bool lastRow) { return rows * (kPRow + kPGa
 const char* tutorialTitle(int l);   // (tutorial.cpp)
 
 // TUTORIAL's pause menu (tutorial.cpp): RESUME, WATCH AGAIN / SKIP LESSON, START OVER / LESSONS, SETTINGS, then LEAVE
-// TUTORIAL / QUIT. LESSONS: every lesson, the KEY TECH one first on its own row (q: "big techs that are important"),
+// TUTORIAL / QUIT. LESSONS: every lesson, the KEY TECH ones first under their heading (q: "big techs that are important"),
 // a green mark on the ones done. After the last lesson: TUTORIAL COMPLETE, with the modes guide (INFO > MODES).
 void Game::drawTutorialPause(float cx, float y) {
     (void)cx; (void)y;
@@ -6046,22 +6046,29 @@ void Game::drawTutorialPause(float cx, float y) {
         if (done) r_.rect(L.X(x) - L.L(14), L.Y(yy) + L.L(kPRow * 0.5f - 4), L.L(8), L.L(8), kDone);
     };
     if (tut_.menu) {
-        const int n = tut::L_COUNT - 1;   // (the KEY TECH lesson on its own row)
-        const float kH = 40 + pauseH(1 + (n + 1) / 2, 0, true);
+        int nKey = 0;
+        for (int l = 0; l < tut::L_COUNT; l++) nKey += tut::lesson(l).key;
+        const int keyRows = (nKey + 1) / 2, restRows = (tut::L_COUNT - nKey + 1) / 2;
+        const float kH = 40 + 24 + pauseH(keyRows + restRows, 0, true);
         PauseCol c{ui_, L, ingameTop(L, kH)};
         ui_.panel(L.X(kPX - 16), L.Y(c.y - 16), L.L(kPW + 32), L.L(kH + 32), 0.95f);
         ui_.labelCentered(L.X(640), L.Y(c.y), "LESSONS", kWhite, 1.0f, L.L(kPW));
         c.y += 40;
         auto go = [&](int l) { tut_.menu = false; paused_ = false; tutorialBegin(l); };
-        for (int l = 0; l < tut::L_COUNT; l++)
-            if (tut::lesson(l).key) {
-                char b[96];
-                snprintf(b, sizeof b, "KEY TECH: %s", tutorialTitle(l));
-                if (c.full(b, UiExp::cmd("tutorial").withId("KEY TECH"))) go(l);
-                r_.rect(L.X(kPX), L.Y(c.y), L.L(4), L.L(kPRow), {1.0f, 0.8f, 0.3f, 1});   // (gold: the KEY TECH)
-                mark(kPX + kPW, c.y, cfg_.tutorialDone >> l & 1);
-                c.next();
-            }
+        // the KEY TECH lessons first, together, each with a gold bar (q: "big techs that are important")
+        ui_.label(L.X(kPX), L.Y(c.y), "KEY TECH", {1.0f, 0.8f, 0.3f, 1}, 1.0f, L.L(kPW));
+        c.y += 24;
+        int kk = 0;
+        for (int l = 0; l < tut::L_COUNT; l++) {
+            if (!tut::lesson(l).key) continue;
+            const int side = 1 + kk % 2;
+            if (c.half(side, tutorialTitle(l), UiExp::cmd("tutorial"))) go(l);
+            r_.rect(L.X(side == 1 ? kPX : kPX + kPW - kPHalf), L.Y(c.y), L.L(4), L.L(kPRow), {1.0f, 0.8f, 0.3f, 1});
+            mark(side == 1 ? kPX + kPHalf : kPX + kPW, c.y, cfg_.tutorialDone >> l & 1);
+            if (kk % 2) c.next();
+            kk++;
+        }
+        if (kk % 2) c.next();
         int k = 0;
         for (int l = 0; l < tut::L_COUNT; l++) {
             if (tut::lesson(l).key) continue;

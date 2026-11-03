@@ -30,10 +30,12 @@ enum Lesson : int {
     L_BOUNCE,       // the dash wall bounce: dash head on into a wall
     L_GRAPPLE,      // the grapple: up onto a 10 m ledge
     L_HOOKWALK,     // grapple walking: hook the floor far ahead, dragged along it with no friction
+    L_HOOKPLAYER,   // KEY TECH (q): grappling another player: the hook latches onto the PARTNER running across the bay
+    L_BREAKFREE,    // KEY TECH (q): the PARTNER's grapple catches you (the ghost in the demo): a dash breaks free
     L_ROCKETJUMP,   // rocket jumping
     L_LAUNCH,       // KEY TECH (q): grapple to 24 m/s, then a rocket straight down and a hyper straight down
     L_STICKYJUMP,   // sticky jumping
-    L_ROCKETRIDE,   // rocket riding ("rocket grappling"): the grapple catches your own rocket
+    L_ROCKETGRAPPLE,   // KEY TECH (q): the rocket grapple (rocket riding): the grapple catches your own rocket
     L_COUNT
 };
 
@@ -48,8 +50,10 @@ constexpr float kWall = 1.0f;             // the walls between bays
 constexpr float kBayX0 = -90.0f;
 
 // One step of a script: held for `ms`. fwd / side -127..127 (side + = right), btn BTN_*, the yaw turning at yawRate
-// degrees a second (+ = left) and the pitch set to `pitch` degrees.
+// degrees a second (+ = left) and the pitch set to `pitch` degrees; pitch kAimAt: aimed at the other one (the ghost at
+// the PARTNER, the partner at whoever it hooks: the server works the yaw and pitch out every tick, aimAt)
 struct Seg { uint16_t ms; int8_t fwd, side; uint16_t btn; float yawRate, pitch; };
+constexpr float kAimAt = 1000.0f;
 
 // What a lesson asks for (Check)
 enum Goal : uint8_t {
@@ -65,6 +69,8 @@ enum Goal : uint8_t {
     G_KNOCKUP,      // thrown up by your own blast (holding this lesson's weapon), then `target` m up or higher
     G_RIDE,         // riding a rocket on the grapple for `target` seconds
     G_LAUNCH,       // a hyper out of `aux` m/s or more, then thrown up by your own rocket, then `target` m up or higher
+    G_HOOKPLAYER,   // your grapple latched onto a player `target` times (MoveState::hookTarget 1 + their id)
+    G_BREAKFREE,    // held by another player's grapple (MF_PULLED), then a dash that breaks free: `target` times
 };
 
 struct LessonDef {
@@ -76,6 +82,11 @@ struct LessonDef {
     Goal goal;
     float target, aux;
     bool key;            // KEY TECH (q: "big techs that are important")
+    // the PARTNER (the grapple lessons with another player: a second scripted bot), null: none; it starts `partnerIn` m
+    // into the bay in its middle, facing back down it (-x), and loops its script with the ghost's
+    const Seg* partner = nullptr;
+    int partnerSegs = 0;
+    float partnerIn = 0;
 };
 
 const LessonDef& lesson(int l);
@@ -88,6 +99,15 @@ int loopMs(int l);                   // the ghost's loop
 // The ghost's command at `tMs` into its loop (yaw / pitch absolute, radians; weapon: the lesson's). tMs < 0: standing
 // at the start, nothing pressed.
 UserCmd ghostCmd(int l, int tMs);
+// The PARTNER's (lessons with one: LessonDef::partner); yaw from facing -x
+UserCmd partnerCmd(int l, int tMs);
+Vec3 partnerStart(int l);
+constexpr float kPartnerYaw = PI * 0.5f;   // facing -x, back down the bay at you
+// Whether the ghost's (partner's) script aims at the other one at tMs (Seg pitch kAimAt), and the yaw / pitch that
+// aims from `eye` at `at`
+bool ghostAimsAt(int l, int tMs);
+bool partnerAimsAt(int l, int tMs);
+void aimAt(const Vec3& eye, const Vec3& at, float& yaw, float& pitch);
 
 // A lesson's check, fed the own movement once a frame (predicted: what you see). No allocation, a few comparisons.
 struct Check {
@@ -99,6 +119,7 @@ struct Check {
     bool havePrev = false, dashed = false, hooked = false, knocked = false, armed = false, left = false, right = false;
     Vec3 prevVel;
     uint8_t prevBounces = 0;
+    bool prevOn = false;   // (G_HOOKPLAYER: latched onto a player last frame; G_BREAKFREE: held by one)
     int count = 0;
     float timer = 0, still = 0, best = 0;
     void start(int l);

@@ -1705,7 +1705,7 @@ bool nativeCanDamage(const Server& s, int attacker, int victim) {
     if (s.ms_.mode == MODE_SURF) return false;   // surf: nobody hurts anybody, warmup too (owner, 2026-10-28; surf.qlogic)
     if (isRaceMode(s.ms_.mode) && s.ms_.phase != PHASE_WARMUP) return false; // race: knockback only
     if (attacker < 0 || attacker == victim) return true;
-    if (s.cfg_.tutorial) return false;   // (the tutorial: the ghost and you never touch each other, grapples too)
+    if (s.cfg_.tutorial) return s.tutorialHookAllowed(attacker, victim);   // (the tutorial: nobody touches anybody but the PARTNER's grapple lessons' hooks: this decides only grapples there, damagePlayer stops the rest)
     if (modeIsTeamBased(s.ms_.mode) && s.players_[attacker].team == s.players_[victim].team) return false;
     return true;
 }

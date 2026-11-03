@@ -199,6 +199,7 @@ AIM STRAIGHT DOWN AND FIRE A STICKY	真下を狙ってスティッキーを撃�
 AIM TRAINER	エイムトレーナー
 AIM UP, OVER THE EDGE OF THE LEDGE	上、足場の縁の上を狙う
 AIM: A LITTLE DOWN	照準: 少し下
+AIM: AT THE PARTNER	照準: PARTNER
 AIM: LEVEL	照準: 水平
 AIM: STRAIGHT DOWN	照準: 真下
 AIM: UP	照準: 上
@@ -389,6 +390,7 @@ BOTS: OFF (RANKED)	ボット: オフ (ランク)
 BOX	ボックス
 BOX OPACITY	ボックス不透明度
 BOXES, STRETCHED AS ONE - UNGROUP TO EDIT THEM	ボックスをまとめて伸縮 - 編集するにはグループ解除
+BREAK FREE WITH A DASH	ダッシュで振りほどく
 BREAKABLE	破壊可能
 BRICK	レンガ
 BRIGHTNESS	明るさ
@@ -619,6 +621,7 @@ DAMAGE NUMBERS	ダメージ数値
 DASH	ダッシュ
 DASH + GRAPPLE	ダッシュ + グラップル
 DASH AND JUMP TOGETHER	ダッシュとジャンプを同時に
+DASH ANY WAY: THE PULL LETS GO	どの向きでもダッシュ: 引っ張りが外れる
 DASH BUFFER	ダッシュ先行入力
 DASH BUFFER: 0.05 S	ダッシュ先行入力: 0.05秒
 DASH BUFFER: 0.1 S	ダッシュ先行入力: 0.1秒
@@ -639,6 +642,7 @@ DASH JUST BEFORE YOU LAND, AND DON'T JUMP	着地の直前にダッシュ、ジ�
 DASH LEFT	左へダッシュ
 DASH LEFT AND DASH RIGHT	左と右へダッシュ
 DASH LENGTH	ダッシュ距離
+DASH OUT OF A GRAPPLE	ダッシュでフック脱出
 DASH RIGHT	右へダッシュ
 DASH SLIDE	ダッシュスライド
 DASH SPEED	ダッシュ速度
@@ -984,6 +988,7 @@ GPU world pass	GPU world pass
 GRADE FROM LOW COLOR	低い値の色からグラデーション
 GRAPPLE	グラップル
 GRAPPLE + HAND	グラップル + 手
+GRAPPLE A PLAYER	プレイヤーにフック
 GRAPPLE COOLDOWN	グラップルクールダウン
 GRAPPLE GRAVITY	グラップル重力
 GRAPPLE MODEL	グラップルモデル
@@ -1099,7 +1104,9 @@ HOME	HOME
 HOOK	フック
 HOOK CAPTION	フックのキャプション
 HOOK THE FLOOR FAR AHEAD: IT DRAGS YOU ALONG WITH NO FRICTION, UP TO 24 M/S.	遠くの床にフックを掛ける: 摩擦なしで引きずられ、最大 24 M/S。
+HOOK THE PARTNER	PARTNER にフックを掛ける
 HOOKED	フック中
+HOOKING SOMETHING YOURSELF BREAKS FREE TOO	自分で何かにフックしても脱出できる
 HOST	ホスト
 HOST EDIT SESSION	編集セッションをホスト
 HOST EDIT SESSION: friends join and build with you; everyone's camera shows in the view.	編集セッションをホスト: フレンドが参加して一緒に制作; 全員のカメラが画面に表示されます。
@@ -1230,8 +1237,6 @@ KEY 3	キー 3
 KEY OVERLAY	キーオーバーレイ
 KEY OVERLAY (VERBOSE)	キーオーバーレイ (詳細)
 KEY TECH	重要テク
-KEY TECH:	重要テク:
-KEY TECH: {}	重要テク: {}
 KEYS	キー
 KICK	キック
 KICK A PLAYER	プレイヤーをキック
@@ -2250,6 +2255,7 @@ PALETTE: THE BOMB'S BLINK AND CHECKPOINTS NOT	パレット: 爆弾の点滅と�
 PANEL DARKNESS	パネルの暗さ
 PANEL SEAMS; FLAT: NO BAKED LIGHT OR SHADOW	パネルの継ぎ目; フラット: ベイクした光と影なし
 PAPER	パー
+PARTNER	PARTNER
 PASTE CODE	コードを貼り付け
 PASTE COLORS	カラーを貼り付け
 PATH PT	経路点
@@ -2324,6 +2330,7 @@ PRESET: LOW	プリセット: 低
 PRESET: MEDIUM	プリセット: 中
 PRESETS SET BOTH COLORS BELOW	プリセットは下の両方の色を設定
 PRESS A KEY, MOUSE BUTTON OR SCROLL - ESC CANCELS, DEL CLEARS	キー、マウスボタン、ホイールを入力 - ESCでキャンセル、DELで解除
+PRESS IT. THE HOOK LATCHES ON	押す。フックが食いつく
 PRESS...	入力...
 PREV WEAP	前の武器
 PREV WEAPON	前の武器
@@ -2343,6 +2350,7 @@ PULSE	パルス
 PUSH THE PAYLOAD	ペイロードを押せ
 PUSH THE PAYLOAD TO THE ENEMY END	ペイロードを敵陣まで押せ
 PUT .QBRAIN FILES IN THE BOTS FOLDER TO PICK ONE	.QBRAIN ファイルをbotsフォルダに置くと選択可能
+PUT YOUR CROSSHAIR ON THE PARTNER AS IT RUNS	走る PARTNER に照準を合わせる
 Pick a server from the list (internet and LAN), or type its address as IP:PORT.	リスト (インターネットとLAN) からサーバーを選ぶか、アドレスを IP:PORT で入力。
 Pick an element in the dropdown (health, weapon name, cooldown bars, speed meter, weapon list) and move it, resize it, recolour it or hide it.	ドロップダウンで要素 (体力、武器名、クールダウンバー、スピードメーター、武器リスト) を選び、移動・サイズ変更・色変更・非表示ができます。
 Pick the mode and map, a server name and the max players. The game picks the map built for the mode; any other map works with a warning.	モードとマップ、サーバー名、最大人数を選択。モード用のマップが自動で選ばれます; 他のマップも警告付きで使用可能。
@@ -2493,10 +2501,10 @@ ROBOT	ロボット
 ROCK	グー
 ROCKET	ロケット
 ROCKET (splash; rocket jump off the floor for 10#amage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 10 hp, once a second; alt throws it: +30 hp and reset cooldowns for a teammate).	ロケット (範囲攻撃; 床でロケットジャンプすると10#ダメージ)、ライフル (フルオート; サブでスコープ)、レーザー (ビーム; サブで引き寄せ)、ショットガン (サブ: 跳弾)、スナイパー (サブでスコープ)、スティッキー (サブで起爆)、クロスボウ (ヘッドショット)、バブル (サブ: バブルを連射)、ナイフ (サブ: 投擲)、注射器 (射撃で毎秒1回10 HP回復; サブで投擲: 味方に +30 HP とクールダウンリセット)。
+ROCKET GRAPPLE	ロケットグラップル
 ROCKET JUMP	ロケットジャンプ
 ROCKET JUMPERS	ロケットジャンパー
 ROCKET RIDE	ロケットライド
-ROCKET RIDING	ロケットライド
 ROCKET, LASER AND KNIFE	ロケット、レーザー、ナイフ
 ROCKETS AND STICKIES - NO SELF DAMAGE	ロケットとスティッキー - 自爆ダメージなし
 ROCKETS ONLY	ロケットのみ
@@ -3135,6 +3143,7 @@ VSYNC: OFF	垂直同期: オフ
 VSYNC: ON	垂直同期: オン
 W A S D - move.   SPACE - jump (hold it as you land to bounce: bunny hop).	W A S D - 移動。   SPACE - ジャンプ (着地時に押し続けると跳ねる: バニーホップ)。
 WAD2	WAD2
+WAIT FOR THE PARTNER'S HOOK TO CATCH YOU	PARTNER のフックに捕まるのを待つ
 WAITING FOR THE LATE READ (AVG)	遅延読取待ち (平均)
 WAITING FOR THE LATE READ (AVG)  00,000,000 NS	遅延読取待ち (平均)  00,000,000 NS
 WAITING FOR THE NEXT READ (AVG)	次の読取待ち (平均)
@@ -3175,6 +3184,7 @@ WHAT THE VOTE CHANGES	投票で変わる内容
 WHEEL DN	WHEEL DN
 WHEEL UP	WHEEL UP
 WHEN ONE FILLS, EVERYONE IN IT IS TOLD (HERE AND ON DISCORD)	成立すると参加者全員に通知 (こことDISCORDで)
+WHEN SOMEONE HOOKS YOU, YOU ARE PULLED TO THEM. A DASH BREAKS FREE AT ONCE.	誰かにフックされると、その相手へ引き寄せられる。ダッシュですぐ脱出。
 WHEN UNFOCUSED	非フォーカス時
 WHEN UNFOCUSED, FLASH ON	非フォーカス時に点滅:
 WHERE THE HITS YOU TAKE COME FROM	被弾した方向
@@ -3220,6 +3230,7 @@ YES	はい
 YES #  NO #  OF #   F1 YES / F2 NO   #s	賛成 #  反対 #  / #   F1 賛成 / F2 反対   #秒
 YET REACHED IN YOUR ENEMY COLOUR	未到達を敵カラーで
 YOU DIED	死亡した
+YOU FLY AT EACH OTHER, UP TO 24 M/S, FOR UP TO 3 S	互いに向かって飛ぶ。最大 24 M/S、最長 3 S
 YOU HAVE THE BOMB - PLANT AT A SITE	爆弾を所持中 - サイトに設置せよ
 YOU HEALED	回復した
 YOU LOSE	敗北
@@ -3234,6 +3245,7 @@ YOU: NO TIME TRIALS YET	あなた: タイムアタック記録なし
 YOUR BOTS: ALL STANDARD	自分のボット: 全員標準
 YOUR BOTS: MIXED MODELS	自分のボット: モデル混合
 YOUR GOAL	自陣ゴール
+YOUR HOOK CATCHES PLAYERS TOO: IT PULLS YOU BOTH TOGETHER. CATCH THEM, OR DRAG THEM IN.	フックはプレイヤーも捕まえる: 2 人を引き寄せ合う。追いつくのも、引き込むのも。
 YOUR KILLS	自分のキル
 YOUR MATCH:  # SHOTS  # HITS  #% ACCURACY  # DAMAGE  BEST STREAK #	あなたの試合:  # 発  # ヒット  命中率 #%  # ダメージ  最高連続キル #
 YOUR NAME (CHAT AND SCOREBOARD)	名前 (チャットとスコアボード)
@@ -3781,6 +3793,7 @@ tourney seed #: {} (#)	tourney seed #: {} (#)
 tourney started -	トーナメント開始 -
 trying the next rate up: busy #%, upload # kbps	次の上位レートを試行: 使用中 #%、アップロード # kbps
 tutorial reset	tutorial reset
+tutorial try	tutorial try
 ui verts	ui verts
 ungrouped into	グループ解除:
 unknown mode	不明なモード

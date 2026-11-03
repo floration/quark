@@ -10446,7 +10446,7 @@ int main(int argc, char** argv) {
         {"maps", [] { testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders(); }},
         {"slopes", [] { testSlopes(); }},
         {"trainer", [] { testTrainer(); }},
-        {"tutorial", [] { testTutorial(); testTutorialGhosts(TP(29210)); }},
+        {"tutorial", [] { testTutorial(); testTutorialGhosts(TP(29210)); testTutorialPartner(TP(29211)); }},
         {"surf", [] { testSurf(); }},
         {"groupslopes", [] { testGroupSlopes(); }},
         {"materials", [] { testMaterials(); testProjectileMaterials(TP(28931)); testDestruction(TP(28932)); testClientHits(); }},

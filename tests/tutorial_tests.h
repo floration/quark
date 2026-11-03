@@ -20,7 +20,27 @@ inline void testTutorial() {
         CHECK(tut::ghostCmd(l, tut::loopMs(l) - 1).weapon == d.weapon);
     }
     CHECK(tut::lessonFromName("nope") < 0 && tut::lessonFromName("") < 0 && tut::lessonFromName(std::to_string(tut::L_COUNT).c_str()) < 0);
-    CHECK(tut::lesson(tut::L_LAUNCH).key);   // (q: the big one, marked KEY TECH)
+    // (q: the big ones, marked KEY TECH: the launch, grappling a player, dashing out of a grapple, the rocket grapple)
+    for (int l : {tut::L_LAUNCH, tut::L_HOOKPLAYER, tut::L_BREAKFREE, tut::L_ROCKETGRAPPLE}) CHECK(tut::lesson(l).key);
+    // the PARTNER's lessons: its script, its spot on the bay's floor ahead of you, its aim at the other one
+    for (int l = 0; l < tut::L_COUNT; l++) {
+        const tut::LessonDef& d = tut::lesson(l);
+        CHECK((d.partner != nullptr) == (l == tut::L_HOOKPLAYER || l == tut::L_BREAKFREE));
+        if (!d.partner) { CHECK(!tut::partnerAimsAt(l, 500) && tut::partnerCmd(l, 500).buttons == 0); continue; }
+        CHECK(d.partnerIn > tut::kStartIn + 10 && d.partnerIn < d.len - 2);
+        const UserCmd pc = tut::partnerCmd(l, -1);
+        CHECK(pc.buttons == 0 && std::fabs(pc.yaw - tut::kPartnerYaw) < 1e-6f);
+    }
+    CHECK(tut::ghostAimsAt(tut::L_HOOKPLAYER, 1000) && !tut::ghostAimsAt(tut::L_HOOKPLAYER, 3500) && tut::partnerAimsAt(tut::L_BREAKFREE, 700));
+    CHECK(std::fabs(tut::ghostCmd(tut::L_HOOKPLAYER, 1000).pitch) < 1e-6f);   // (kAimAt is a marker, never a pitch)
+    {   // aimAt: the yaw convention of kStartYaw (+x) and kPartnerYaw (-x)
+        float y, p;
+        tut::aimAt({0, 0, 0}, {10, 0, 0}, y, p);
+        CHECK(std::fabs(y - tut::kStartYaw) < 1e-5f && std::fabs(p) < 1e-5f);
+        tut::aimAt({0, 0, 0}, {-10, 10, 0}, y, p);
+        CHECK(std::fabs(y - tut::kPartnerYaw) < 1e-5f && std::fabs(p - PI * 0.25f) < 1e-5f);
+    }
+    CHECK(tut::lessonFromName("rocketgrapple") == tut::L_ROCKETGRAPPLE);
     // (yaw: the strafe script turns both ways and ends near where it started)
     {
         float lo = 0, hi = 0;
@@ -34,7 +54,7 @@ inline void testTutorial() {
     if (!err.empty()) printf("  %s\n", err.c_str());
     CHECK(mapHiddenFromLists(tut::kMapName) && !mapHiddenFromLists("sewer"));
     for (int l = 0; l < tut::L_COUNT; l++)
-        for (Vec3 p : {tut::ghostStart(l), tut::playerStart(l)}) {
+        for (Vec3 p : {tut::ghostStart(l), tut::playerStart(l), tut::lesson(l).partner ? tut::partnerStart(l) : tut::playerStart(l)}) {
             const bool room = !m.boxSolid(playerBox(p + Vec3(0, 0.02f, 0), false)) && m.boxSolid(playerBox(p - Vec3(0, 0.05f, 0), false));
             if (!room) printf("  %s: no floor / room at %.1f %.1f %.1f\n", tut::lesson(l).id, p.x, p.y, p.z);
             CHECK(room);
@@ -76,6 +96,32 @@ inline void testTutorial() {
         c.frame(q, 0, 0, 0, WPN_ROCKET, 0.01f);
         CHECK(c.done);
     }
+    {   // grapple a player: the map or a rocket isn't one; dash out of a grapple: a dash with nobody holding you isn't one,
+        // nor is being let go without a dash
+        tut::Check c;
+        c.start(tut::L_HOOKPLAYER);
+        MoveState m; m.flags = MF_HOOKED; m.hookTarget = 0;
+        c.frame(m, ME_HOOK, 0, 0, 0, 0.01f);
+        m.hookTarget = kHookRocket;
+        c.frame(m, 0, 0, 0, 0, 0.01f);
+        CHECK(!c.done);
+        m.hookTarget = 3;
+        c.frame(m, 0, 0, 0, 0, 0.01f);
+        CHECK(c.done);
+        c.start(tut::L_BREAKFREE);
+        MoveState b; b.flags = 0;
+        c.frame(b, ME_DASH, 0, -127, 0, 0.01f);
+        b.flags = MF_PULLED;
+        c.frame(b, 0, 0, 0, 0, 0.01f);
+        b.flags = 0;
+        c.frame(b, 0, 0, 0, 0, 0.01f);   // (let go: met, or out of reach)
+        CHECK(!c.done);
+        b.flags = MF_PULLED;
+        c.frame(b, 0, 0, 0, 0, 0.01f);
+        b.flags = 0;
+        c.frame(b, ME_DASH, 0, -127, 0, 0.01f);
+        CHECK(c.done);
+    }
 }
 
 // Every lesson's ghost, as the tutorial's server plays it: the lesson's check, fed the ghost's own movement each tick
@@ -86,7 +132,7 @@ inline void testTutorialGhosts(uint16_t port) {
     SimClock clock;
     Server s;
     ServerConfig cfg;
-    cfg.map = tut::kMapName; cfg.mode = MODE_FFA; cfg.port = port; cfg.tutorial = true; cfg.maxPlayers = 2;
+    cfg.map = tut::kMapName; cfg.mode = MODE_FFA; cfg.port = port; cfg.tutorial = true; cfg.maxPlayers = 3;   // (you, the ghost, the partner)
     s.setLog([](const std::string&) {});
     { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     const int g = s.tutGhost_;
@@ -143,6 +189,117 @@ inline void testTutorialGhosts(uint16_t port) {
             CHECK(r.launchUp > bare.launchUp + 5 && r.top > bare.top + 4);   // (the rocket is what makes it a launch)
             CHECK(!bare.done);                                               // (and the lesson asks for it)
         }
+    }
+    s.stop();
+}
+
+// The PARTNER's lessons with the real grapple (q: "grappling other players, and when you get grappled, dashing out of
+// it"): the ghost's hook latches onto the running partner and the server holds the latch both ways; the partner's hook
+// on you pulls you, and a dash breaks it at once (pmove clears MF_PULLED, the server ends the latch the same tick and
+// the partner's hook goes to its cooldown); with no dash the pull holds as long as the partner holds its grapple. Who may hook whom: only the
+// lesson's pair, and in no other lesson. The numbers are printed for the changelog.
+inline void testTutorialPartner(uint16_t port) {
+    printf("tutorial: the partner's grapple lessons, the real latch\n");
+    SimClock clock;
+    Server s;
+    ServerConfig cfg;
+    cfg.map = tut::kMapName; cfg.mode = MODE_FFA; cfg.port = port; cfg.tutorial = true; cfg.maxPlayers = 4;   // (+ a bot as you)
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    const int g = s.tutGhost_, pa = s.tutPartner_;
+    CHECK(g >= 0 && pa >= 0 && s.players_[pa].isBot && s.players_[pa].name == "PARTNER");
+    if (g < 0 || pa < 0) { s.stop(); return; }
+    // "you": a bot standing in for the player (the server takes the commands the same way), its input set per run
+    const int me = s.addBot(TEAM_A, BOT_BEGINNER);
+    CHECK(me >= 0);
+    if (me < 0) { s.stop(); return; }
+    int dashAt = -1;   // ms after the partner's hook catches you: dash (left); -1: never
+    uint64_t caughtMs = 0;
+    s.bots_[me].script = [&](Server& sv, int id) {
+        UserCmd c; c.yaw = tut::kStartYaw;
+        const ServerPlayer& p = sv.players_[id];
+        if ((p.move.flags & MF_PULLED) && caughtMs == 0) caughtMs = sv.timeMs_;
+        if (dashAt >= 0 && caughtMs && sv.timeMs_ >= caughtMs + (uint64_t)dashAt && sv.timeMs_ < caughtMs + (uint64_t)dashAt + 100) { c.side = -127; c.buttons = BTN_DASH; }
+        return c;
+    };
+    s.tutPlayer_ = me;
+    simRun(s, 1.0);
+    auto lessonStart = [&](int l, bool tryPhase) {
+        s.tutLesson_ = l; s.tutEpoch_ = s.timeMs_ + 5; s.tutLoop_ = -2; s.tutTry_ = tryPhase;
+        s.spawnPlayer(me);
+        simRun(s, 0.004);
+    };
+    // nobody may hook anybody outside the partner's two lessons; in them only the lesson's pair
+    lessonStart(tut::L_GRAPPLE, false);
+    CHECK(s.players_[pa].team == TEAM_SPECTATOR && !s.players_[pa].alive);   // (not in this lesson: watching)
+    CHECK(!rulesCanDamage(s, g, me, kDamageGrapple) && !rulesCanDamage(s, me, g, kDamageGrapple) && !rulesCanDamage(s, pa, me, kDamageGrapple));
+    lessonStart(tut::L_HOOKPLAYER, false);
+    CHECK(s.players_[pa].alive && s.players_[pa].team != TEAM_SPECTATOR);
+    CHECK(rulesCanDamage(s, me, pa, kDamageGrapple) && rulesCanDamage(s, g, pa, kDamageGrapple));
+    CHECK(!rulesCanDamage(s, g, me, kDamageGrapple) && !rulesCanDamage(s, pa, me, kDamageGrapple) && !rulesCanDamage(s, me, g, kDamageGrapple));
+    // grapple a player: the ghost latches onto the running partner, both are pulled together, the partner takes no damage
+    {
+        bool latched = false;
+        float runSpeed = 0, top = 0, healthLost = 0;
+        int latchMs = -1, metMs = -1;
+        simRun(s, tut::loopMs(tut::L_HOOKPLAYER) * 0.001 - 0.02, [&] {
+            const ServerPlayer& G = s.players_[g];
+            const ServerPlayer& P = s.players_[pa];
+            const int t = (int)((int64_t)s.timeMs_ - (int64_t)s.tutEpoch_);
+            const bool on = G.hookVictim == pa && P.hookedBy == g && (P.move.flags & MF_PULLED) && (G.move.flags & MF_HOOKED) && G.move.hookTarget == pa + 1;
+            if (on && !latched) { latched = true; latchMs = t; runSpeed = std::sqrt(P.move.vel.x * P.move.vel.x + P.move.vel.z * P.move.vel.z); }
+            if (latched && !on && metMs < 0) metMs = t;
+            if (on) top = std::max(top, length(G.move.vel));
+            healthLost = std::max(healthLost, s.lifeMaxHealth() - P.health);
+        });
+        printf("  hookplayer: latched at %d ms onto the partner running at %.1f m/s, pulled up to %.1f m/s, let go at %d ms (met)\n", latchMs, runSpeed, top, metMs);
+        CHECK(latched && runSpeed > 3.0f && top > 15.0f && metMs > latchMs && healthLost == 0);
+    }
+    // dash out of a grapple, the demo: the partner hooks the ghost, the ghost dashes and is free that tick
+    lessonStart(tut::L_BREAKFREE, false);
+    CHECK(rulesCanDamage(s, pa, g, kDamageGrapple) && rulesCanDamage(s, pa, me, kDamageGrapple) && !rulesCanDamage(s, g, pa, kDamageGrapple));
+    {
+        int caught = -1, freed = -1, dashT = -1;
+        float before = 0, after = 0, cooldown = 0;
+        simRun(s, tut::loopMs(tut::L_BREAKFREE) * 0.001 - 0.02, [&] {
+            const ServerPlayer& G = s.players_[g];
+            const ServerPlayer& P = s.players_[pa];
+            const int t = (int)((int64_t)s.timeMs_ - (int64_t)s.tutEpoch_);
+            const bool held = G.hookedBy == pa && (G.move.flags & MF_PULLED);
+            if (held && caught < 0) caught = t;
+            if (held) before = length(G.move.vel);
+            if ((G.move.events & ME_DASH) && dashT < 0) { dashT = t; after = length(G.move.vel); }
+            if (caught >= 0 && !held && freed < 0) { freed = t; cooldown = P.move.hookCooldown; CHECK(P.hookVictim < 0 && !(P.move.flags & MF_HOOKED)); }
+        });
+        printf("  breakfree (ghost): caught at %d ms, pulled at %.1f m/s, dashed at %d ms (%.1f m/s), free at %d ms, the partner's hook cooldown %.2f s\n",
+               caught, before, dashT, after, freed, cooldown);
+        CHECK(caught >= 0 && dashT > caught && freed == dashT && before > 5.0f && cooldown > 0.9f);
+    }
+    // your turn: the partner hooks you. No dash: pulled toward it as long as it holds its grapple (0.9 s); a dash 300 ms
+    // in: free that tick
+    for (int run = 0; run < 2; run++) {
+        dashAt = run == 0 ? -1 : 300;
+        caughtMs = 0;
+        lessonStart(tut::L_BREAKFREE, true);
+        tut::Check c;
+        c.start(tut::L_BREAKFREE);
+        int caught = -1, freed = -1;
+        float top = 0, travelled = 0;
+        Vec3 at;
+        simRun(s, tut::loopMs(tut::L_BREAKFREE) * 0.001 - 0.02, [&] {
+            const ServerPlayer& M = s.players_[me];
+            const int t = (int)((int64_t)s.timeMs_ - (int64_t)s.tutEpoch_);
+            const bool held = M.hookedBy == pa && (M.move.flags & MF_PULLED);
+            if (held && caught < 0) { caught = t; at = M.move.pos; }
+            if (held) { top = std::max(top, length(M.move.vel)); travelled = length(M.move.pos - at); }
+            if (caught >= 0 && !held && freed < 0) freed = t;
+            c.frame(M.move, M.move.events, 0, -127, M.weapon, 1.0f / s.tickRate());
+        });
+        printf("  breakfree (you, %s): caught at %d ms, pulled up to %.1f m/s over %.1f m, free at %d ms; the lesson %s\n",
+               run == 0 ? "no dash" : "a dash 300 ms in", caught, top, travelled, freed, c.done ? "done" : "not done");
+        CHECK(caught >= 0 && s.players_[g].hookedBy < 0);   // (your turn: the partner's hook is for you, not the ghost)
+        if (run == 0) CHECK(!c.done && freed > caught + 500 && travelled > 10.0f);   // (held till it lets go)
+        else CHECK(c.done && freed >= caught + 300 && freed <= caught + 320);
     }
     s.stop();
 }

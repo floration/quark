@@ -577,12 +577,20 @@ public:
     bool practicePassive_ = false;   // practice: bots move but never fire
     // TUTORIAL (cfg_.tutorial; tutorial_server.cpp): the ghost (a bot playing the lesson's input script, looping from
     // tutEpoch_, server ms) and the lesson the host's "tutorial <lesson> <epoch>" picked
-    int tutGhost_ = -1, tutLesson_ = -1;
+    // The PARTNER (tutPartner_): a second scripted bot for the lessons with another player (tut::LessonDef::partner),
+    // spectating in the others; tutTry_: the game's TRY phase ("tutorial try": the partner hooks the player, tutPlayer_,
+    // not the ghost)
+    int tutGhost_ = -1, tutLesson_ = -1, tutPartner_ = -1, tutPlayer_ = -1;
+    bool tutTry_ = false;
     int64_t tutLoop_ = -2;      // the ghost's loop it was last put back at the start for
     uint64_t tutEpoch_ = 0;
     void tutorialStart();
     UserCmd tutorialGhostCmd(int id);
+    UserCmd tutorialPartnerCmd(int id);
+    void tutorialLoop();        // (each script's command first: a new loop puts the ghost and the partner back)
     void tutorialGhostReset(int id);
+    void tutorialPartnerReset();
+    bool tutorialHookAllowed(int attacker, int victim) const;   // (the grapple between two players: rulesCanDamage)
     bool tutorialSpawnAt(int id, Vec3& pos, float& yaw) const;
     std::string tutorialCommand(int from, const std::string& arg, std::istream& rest);
     bool tempEdit_ = false;     // editing was voted on a normal server: never saved, reverts at the next map change

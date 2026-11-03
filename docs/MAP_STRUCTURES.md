@@ -90,7 +90,9 @@ Why each bay is the shape it is (the bay lengths and heights are `kLessons` in s
 - **Grapple** (40 x 18): a 10 m ledge 18 m in with a flat face (a 5 cm overhang caught the rope) and a striped edge. The hook takes the ceiling over it.
 - **Rocket jump** and **sticky jump** (40 x 24): an 8 m ledge 14 m in. A jump plus a blast reaches it and a plain jump doesn't.
 - **The launch** (160 x 72, KEY TECH): the tall hall. The launch goes 50 m up and 65 m along, so it needs the height and the run-up for the grapple walk. Rows of lights and glow bands every 16 m up its walls keep it lit to the top.
-- **Rocket riding** (110 x 16): long, for the ride along the lane.
+- **Grapple a player** (50 x 14, KEY TECH): flat and empty, a glowing pad 30 m in where the PARTNER starts; it runs across the middle of the bay, so you track a moving target over open floor and the two of you meet in the middle.
+- **Dash out of a grapple** (50 x 12, KEY TECH): the PARTNER's pad 34 m in, inside the grapple's 45 m reach of your start, far enough that the pull lasts most of a second before you'd meet it.
+- **The rocket grapple** (110 x 16, KEY TECH): long, for the ride along the lane.
 
 It has 8 "any" spawns at the first bay's start (a match on it, from the console, still works). `quark_tests` checks it like every map: spawns, walk routes, nothing out of bounds.
 
