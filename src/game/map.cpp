@@ -1569,7 +1569,7 @@ bool Map::buildGrid() {
     for (auto& br : brushes) {
         if (!gridSolid(br)) continue;
         total += gridSpan(br.box, gridX0, gridZ0, gridW, gridH).count();
-        if (total > kMaxMapGridRefs) { cells.assign(1, GridCell()); cellBrushes.clear(); gridRefs = 0; gridW = gridH = 1; return false; }
+        if (total > kMaxMapGridRefs) { cells.assign(1, GridCell()); cellBrushes.clear(); cellRefs.clear(); gridRefs = 0; gridW = gridH = 1; return false; }
     }
     cells.assign(ncells, GridCell());
     gridYLo = 1e30f; gridYHi = -1e30f;
@@ -1588,11 +1588,13 @@ bool Map::buildGrid() {
         at += n + (n ? n / 4 + 2 : ncells <= (1u << 20) ? 2 : 0);
     }
     cellBrushes.assign(at, 0);
+    cellRefs.assign(at, GridRef());
     for (size_t i = 0; i < brushes.size(); i++) {   // (in brush order within each cell)
         if (!gridSolid(brushes[i])) continue;
+        const GridRef r = gridRef(brushes[i], i);
         GridSpan sp = gridSpan(brushes[i].box, gridX0, gridZ0, gridW, gridH);
         for (int z = sp.z0; z <= sp.z1; z++)
-            for (int x = sp.x0; x <= sp.x1; x++) { GridCell& c = cells[(size_t)z * gridW + x]; cellBrushes[c.end++] = (uint16_t)i; }
+            for (int x = sp.x0; x <= sp.x1; x++) { GridCell& c = cells[(size_t)z * gridW + x]; cellRefs[c.end] = r; cellBrushes[c.end++] = (uint16_t)i; }
     }
     gridRefs = total;
     return true;
@@ -1688,28 +1690,36 @@ bool Map::changeBrush(int op, size_t i, const Brush& b) {
             for (int x = so.x0; x <= so.x1; x++) {
                 GridCell& c = cells[(size_t)z * gridW + x];
                 uint16_t* d = cellBrushes.data();
+                GridRef* r = cellRefs.data();
                 uint32_t k = c.start;
                 while (k < c.end && d[k] != ix) k++;
-                if (k < c.end) { memmove(d + k, d + k + 1, (c.end - k - 1) * sizeof *d); c.end--; }
+                if (k < c.end) { memmove(d + k, d + k + 1, (c.end - k - 1) * sizeof *d); memmove(r + k, r + k + 1, (c.end - k - 1) * sizeof *r); c.end--; }
             }
     if (op != 0 && !(op == 1 && i + 1 == brushes.size())) {   // the brushes after i moved up or down one (none after one added at the end) (the whole array, spare slots too: one vectorized pass)
         uint16_t* d = cellBrushes.data();
         size_t n = cellBrushes.size();
         if (op == 1) for (size_t k = 0; k < n; k++) d[k] = (uint16_t)(d[k] + (d[k] >= ix));
         else for (size_t k = 0; k < n; k++) d[k] = (uint16_t)(d[k] - (d[k] > ix));
+        GridRef* r = cellRefs.data();
+        for (size_t k = 0; k < n; k++) r[k].brush = d[k];   // (the refs name the same brushes)
     }
     if (newSolid) { gridYLo = std::min(gridYLo, b.box.mn.y); gridYHi = std::max(gridYHi, b.box.mx.y); }
-    if (newSolid)   // into its cells, keeping each cell in brush order
+    if (newSolid) {   // into its cells, keeping each cell in brush order
+        const GridRef nr = gridRef(b, i);
         for (int z = sn.z0; z <= sn.z1; z++)
             for (int x = sn.x0; x <= sn.x1; x++) {
                 GridCell& c = cells[(size_t)z * gridW + x];
                 uint16_t* d = cellBrushes.data();
+                GridRef* r = cellRefs.data();
                 uint32_t k = c.start;
                 while (k < c.end && d[k] < ix) k++;
                 memmove(d + k + 1, d + k, (c.end - k) * sizeof *d);
+                memmove(r + k + 1, r + k, (c.end - k) * sizeof *r);
                 d[k] = ix;
+                r[k] = nr;
                 c.end++;
             }
+    }
     gridRefs = gridRefs - (oldSolid ? so.count() : 0) + (newSolid ? sn.count() : 0);
     return true;
 }
@@ -1721,8 +1731,19 @@ template <class F> void Map::forBox(const AABB& b, F f) const {
         for (int x = x0; x <= x1; x++) {
             size_t c = (size_t)z * gridW + x;
             for (uint32_t k = cells[c].start, e = cells[c].end; k < e; k++)
-                if (stopsPlayers(brushes[cellBrushes[k]].material)) f(brushes[cellBrushes[k]]);   // (a laser barrier, smoke: walk through)
+                if (cellRefs[k].stops & kRefPlayers) f(cellRefs[k]);   // (a laser barrier, smoke: walk through)
         }
+}
+
+bool Map::gridRefsInStep() const {
+    if (cellRefs.size() != cellBrushes.size()) return false;
+    for (const GridCell& c : cells)
+        for (uint32_t k = c.start; k < c.end; k++) {
+            if (cellBrushes[k] >= brushes.size()) return false;
+            const GridRef a = cellRefs[k], b = gridRef(brushes[cellBrushes[k]], cellBrushes[k]);
+            if (memcmp(&a.box, &b.box, sizeof a.box) || a.stops != b.stops || a.shape != b.shape || a.brush != b.brush) return false;
+        }
+    return true;
 }
 
 bool Map::breakGlass(size_t i) {
@@ -1934,8 +1955,8 @@ float Map::sweepAxis(const AABB& box, int axis, float delta, const Brush** hit, 
     AABB q = box;
     if (delta > 0) q.mx[axis] += delta; else q.mn[axis] += delta;
     float glassAt = delta;   // (how far the move got to the nearest pane it passes)
-    auto clip = [&](const AABB& b, const Brush* who) {
-        if (glassOut && who && who->material == kMatGlassBreak) {   // (passed through: only noted)
+    auto clip = [&](const AABB& b, const Brush* who, bool pane) {
+        if (glassOut && pane) {   // (breakable glass, passed through: only noted)
             if (box.mx[a1] <= b.mn[a1] || box.mn[a1] >= b.mx[a1] || box.mx[a2] <= b.mn[a2] || box.mn[a2] >= b.mx[a2]) return;
             const float allowed = delta > 0 ? b.mn[axis] - box.mx[axis] - eps : b.mx[axis] - box.mn[axis] + eps;
             const bool ahead = delta > 0 ? box.mx[axis] <= b.mn[axis] + eps : box.mn[axis] >= b.mx[axis] - eps;
@@ -1956,17 +1977,18 @@ float Map::sweepAxis(const AABB& box, int axis, float delta, const Brush** hit, 
             }
         }
     };
-    forBox(q, [&](const Brush& br) {
+    forBox(q, [&](const GridRef& r) {
         // (a slope, map.h: the part of it in the way, a box)
-        clip(br.shape == BRUSH_BOX ? br.box : brushObstacle(br, box, axis, delta), &br);
+        const Brush* br = &brushes[r.brush];   // (only a slope's shape is read from it)
+        clip(r.shape == BRUSH_BOX ? r.box : brushObstacle(*br, box, axis, delta), br, (r.stops & kRefGlassBreak) != 0);
     });
-    for (const AABB& b : dynSolids) clip(b, nullptr);
+    for (const AABB& b : dynSolids) clip(b, nullptr, false);
     return delta;
 }
 
 bool Map::boxSolid(const AABB& box) const {
     bool hit = false;
-    forBox(box, [&](const Brush& b) { hit = hit || brushOverlaps(b, box); });
+    forBox(box, [&](const GridRef& r) { hit = hit || (box.overlaps(r.box) && (r.shape == BRUSH_BOX || brushOverlaps(brushes[r.brush], box))); });   // (brushOverlaps' own box test first)
     for (const AABB& b : dynSolids) hit = hit || box.overlaps(b);
     return hit;
 }
@@ -2007,17 +2029,30 @@ template <class V> static void walkCells(const Map& m, const Vec3& o, const Vec3
     }
 }
 
+// rayBrush(o, dir, inv, m.brushes[r.brush], maxT, normal), exactly, from a grid ref: the box test on the ref's copy of
+// the box (rayBrush starts with the same rayAABB on the same numbers), the Brush itself read only for a slope's planes.
+static inline float rayRef(const Map& m, const Vec3& o, const Vec3& dir, const Vec3& inv, const Map::GridRef& r, float maxT, Vec3* normal = nullptr) {
+    if (r.shape != BRUSH_BOX) return rayAABB(o, inv, r.box, maxT) < 0 ? -1.0f : rayBrush(o, dir, inv, m.brushes[r.brush], maxT, normal);
+    int axis = -1;
+    const float t = rayAABB(o, inv, r.box, maxT, &axis);
+    if (t < 0) return -1.0f;
+    if (normal) { *normal = Vec3(); if (axis >= 0) (*normal)[axis] = dir[axis] > 0 ? -1.0f : 1.0f; }
+    return t;
+}
+
 float Map::raycast(const Vec3& o, const Vec3& dir, float maxDist, Vec3* normal, int* material, bool hitClip) const {
     Vec3 inv = safeInv(dir);
     float best = -1.0f;
     int bestMat = -1;
     Vec3 bestN;
+    const uint8_t want = hitClip ? (kRefShots | kRefClip) : kRefShots;   // clip: players only (a force field, a net too), and the grapple
     walkCells(*this, o, dir, maxDist, [&](size_t c, float tExit) {
         for (uint32_t k = cells[c].start, e = cells[c].end; k < e; k++) {
-            if (!stopsShots(brushes[cellBrushes[k]].material) && !(hitClip && brushes[cellBrushes[k]].material == 9)) continue;   // clip: players only (a force field, a net too), and the grapple
+            const GridRef& r = cellRefs[k];
+            if (!(r.stops & want)) continue;
             Vec3 n;
-            float t = rayBrush(o, dir, inv, brushes[cellBrushes[k]], best < 0 ? maxDist : best, &n);
-            if (t >= 0 && (best < 0 || t < best)) { best = t; bestN = n; bestMat = brushes[cellBrushes[k]].material; }
+            float t = rayRef(*this, o, dir, inv, r, best < 0 ? maxDist : best, &n);
+            if (t >= 0 && (best < 0 || t < best)) { best = t; bestN = n; bestMat = brushes[r.brush].material; }
         }
         return !(best >= 0 && best <= tExit); // nearest hit is inside this cell: done
     });
@@ -2038,11 +2073,11 @@ float Map::raycastBullet(const Vec3& o, const Vec3& dir, float maxDist, float* b
     float best = -1.0f, bang = -1.0f; // nearest solid / nearest wallbang
     walkCells(*this, o, dir, maxDist, [&](size_t c, float tExit) {
         for (uint32_t k = cells[c].start, e = cells[c].end; k < e; k++) {
-            const Brush& br = brushes[cellBrushes[k]];
-            if (!stopsShots(br.material)) continue;   // clip: players only
-            float t = rayBrush(o, dir, inv, br, best < 0 ? maxDist : best);
+            const GridRef& r = cellRefs[k];
+            if (!(r.stops & kRefShots)) continue;   // clip: players only
+            float t = rayRef(*this, o, dir, inv, r, best < 0 ? maxDist : best);
             if (t < 0) continue;
-            if (wallbangBrush(br)) { if (bang < 0 || t < bang) bang = t; }
+            if (r.stops & kRefWallbang) { if (bang < 0 || t < bang) bang = t; }
             else if (best < 0 || t < best) best = t;
         }
         return !(best >= 0 && best <= tExit);
@@ -2057,15 +2092,17 @@ float Map::raycastBullet(const Vec3& o, const Vec3& dir, float maxDist, float* b
 
 // raycastAny's cast, shared with raycastAnyHinted (one filter, one box test, one walk: the hint's pretest leans on
 // them being the same). Learn: note in *learn where the blocker was found.
-// clip: players only (light, sight and shots pass); glass: sight and light pass (shots break it: they use raycast)
-static bool skipsSight(const Brush& br, bool hitClip) { return (br.material == 9 && !hitClip) || (br.material != 9 && !stopsSight(br.material)); }
+// clip: players only (light, sight and shots pass), unless hitClip; glass: sight and light pass (shots break it: they
+// use raycast). What a ref must stop for the cast to test it:
+static uint8_t sightRefs(bool hitClip) { return hitClip ? (Map::kRefSight | Map::kRefClip) : Map::kRefSight; }
 template <bool Learn> static bool castAny(const Map& m, const Vec3& o, const Vec3& dir, const Vec3& inv, float maxDist, bool hitClip, Map::RayHint* learn) {
     bool hit = false;
+    const uint8_t want = sightRefs(hitClip);
     walkCells(m, o, dir, maxDist, [&](size_t c, float) {
         for (uint32_t k = m.cells[c].start, e = m.cells[c].end; k < e && !hit; k++) {
-            const Brush& br = m.brushes[m.cellBrushes[k]];
-            if (skipsSight(br, hitClip)) continue;
-            hit = rayBrush(o, dir, inv, br, maxDist) >= 0;
+            const Map::GridRef& r = m.cellRefs[k];
+            if (!(r.stops & want)) continue;
+            hit = rayRef(m, o, dir, inv, r, maxDist) >= 0;
             if (Learn && hit) *learn = {(uint32_t)c, k, -1};
         }
         return !hit;
@@ -2085,8 +2122,8 @@ bool Map::raycastAnyHinted(const Vec3& o, const Vec3& dir, float maxDist, RayHin
     if (hint.dyn >= 0) {
         if ((size_t)hint.dyn < dynSolids.size() && rayAABB(o, inv, dynSolids[hint.dyn], maxDist) >= 0) return true;
     } else if (hint.cell < cells.size() && hint.ref >= cells[hint.cell].start && hint.ref < cells[hint.cell].end) {
-        const Brush& br = brushes[cellBrushes[hint.ref]];
-        if (!skipsSight(br, hitClip) && rayBrush(o, dir, inv, br, maxDist) >= 0) {
+        const GridRef& r = cellRefs[hint.ref];
+        if ((r.stops & sightRefs(hitClip)) && rayRef(*this, o, dir, inv, r, maxDist) >= 0) {
             bool reached = false;
             walkCells(*this, o, dir, maxDist, [&](size_t c, float) { reached = c == hint.cell; return !reached; });
             if (reached) return true;
