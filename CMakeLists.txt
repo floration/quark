@@ -151,7 +151,8 @@ if(WIN32)
   add_compile_definitions(_WIN32_WINNT=0x0601 NOMINMAX)   # Windows 7; no min / max macros from windows.h
 endif()
 
-# Profile-guided optimisation (prototype, not in CI): OFF (default, changes nothing) | GEN | USE.
+# Profile-guided optimisation: OFF (default, changes nothing) | GEN | USE. The Linux release job builds the shipped
+# quark_server this way (tools/pgo_server.sh, with a simhash check); the clients don't use it.
 #   GEN: instrumented binaries; running them writes the profile into QUARK_PGO_DIR (tools/pgo_train.sh does the runs)
 #   USE: optimised with that profile (branch layout, inlining, hot / cold splitting, loop choices). It only moves
 #        code: FP rules above are unchanged, so results stay bit for bit (quark_tests simhash checks it).
