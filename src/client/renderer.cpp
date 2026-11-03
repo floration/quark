@@ -1906,6 +1906,16 @@ void Renderer::prepareScene(bool shadows) {
         if (x0 <= x1 && y0 <= y1) {
             glBindFramebuffer(GL_FRAMEBUFFER, shadowFbo_);
             glViewport(0, 0, shadowRes_, shadowRes_);
+            {   // The clear and the casters only within the rect (it was the whole map: a 2048 x 2048 depth clear every
+                // frame, however few casters). Nothing outside it is ever read: a point outside the rect isn't shadowed
+                // (shadowAt), and the softest filter's taps from a point inside reach 1.5 texels further, each a 2 x 2
+                // texel lookup: 2.5 texels past the rect at most. 3 more texels each side; outside, last frames' depth stays.
+                const float res = (float)shadowRes_;
+                const int sx0 = std::max(0, (int)std::floor(casterRect_[0] * res) - 3), sy0 = std::max(0, (int)std::floor(casterRect_[1] * res) - 3);
+                const int sx1 = std::min(shadowRes_, (int)std::ceil(casterRect_[2] * res) + 3), sy1 = std::min(shadowRes_, (int)std::ceil(casterRect_[3] * res) + 3);
+                glEnable(GL_SCISSOR_TEST);
+                glScissor(sx0, sy0, sx1 - sx0, sy1 - sy0);
+            }
             glClear(GL_DEPTH_BUFFER_BIT);
             glEnable(GL_DEPTH_TEST);
             glDepthFunc(GL_LEQUAL);
@@ -1914,6 +1924,7 @@ void Renderer::prepareScene(bool shadows) {
             setMat(uShadowViewProj_, shadowMat);
             glBindVertexArray(dynVao_);
             glDrawArrays(GL_TRIANGLES, 0, (GLsizei)(nShadow + nDyn));   // (shadow-only, then the lit ones: both cast)
+            glDisable(GL_SCISSOR_TEST);
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
         }
     }
