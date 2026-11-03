@@ -72,6 +72,7 @@
 (FINISH)	(완주)
 (HIDDEN: STREAMER MODE)	(숨김: 스트리머 모드)
 (HS)	(HS)
+(INSTALLED)	(INSTALLED)
 (IT AFFECTS GAMEPLAY)	(게임플레이에 영향)
 (LEAVE)	(나가기)
 (MISSING)	(없음)
@@ -88,13 +89,16 @@
 (exclusive: no format the device takes)	(독점: 장치가 지원하는 포맷 없음)
 (exclusive: the device is busy)	(독점: 장치 사용 중)
 (first: takes the loss)	(먼저: 패배 처리)
+(is the game running?)	(게임이 실행 중인가요?)
 (its CONTROLS action too, if it has one)	(조작 설정 동작이 있으면 그것도)
 (legacy)	(레거시)
 (lowered)	(낮춤)
 (own goal)	(자책골)
+(pinned)	(pinned)
 (playing the built-in brain)	(기본 AI 사용 중)
 (score #-#)	(점수 #-#)
 (team):	(팀):
+(unknown)	(알 수 없음)
 (vote ranked off first)	(먼저 랭크 끄기 투표)
 (winner stays)	(승자 잔류)
 + (BIGGER)	+ (크게)
@@ -119,20 +123,26 @@
 - WHEEL TO SCROLL	- 휠로 스크롤
 - beats	- 이김
 - best of 3 between the last two	- 마지막 두 명이 3판 2선승
+- installed:	- installed:
 - it may not work	- 작동하지 않을 수 있음
 - it moves and stretches as one	- 하나로 이동·늘어남
 - level with	- 동점
 - map	- 맵
 - match started	- 경기 시작
 - not played: the server plays	- 미플레이: 서버가 진행
+- pick a version and press INSTALL	- pick a version and press INSTALL
+- pick a version to change	- pick a version to change
 - playing mode logic	- 모드 로직 실행 중
 - plays the next match	- 다음 경기 출전
 - rock paper scissors decides it	- 가위바위보로 결정
+- see below	- see below
 - short of	- 부족
+- the download may have been tampered with	- the download may have been tampered with
 - their place is kept for	- 자리 유지 시간
 -INF DB	-INF DB
 -Wcast-function-type	-Wcast-function-type
 -Y (under)	-Y (아래)
+-fsSL	-fsSL
 0.1% LOW	0.1% LOW
 00,000,000 NS	00,000,000 NS
 1 HP	1 HP
@@ -175,6 +185,7 @@ A MOMENT LATER, AIM STRAIGHT DOWN AND FIRE	잠시 뒤 바로 아래를 조준하
 A NEW CODE FROM /link RELINKS IT - unlink REMOVES IT	/link의 새 코드로 재연결 - unlink로 해제
 A NEW DIAGONAL EVERY 0.3 S	0.3초마다 새 대각선
 A NEW DIAGONAL EVERY 0.3 S, 10 HP	0.3초마다 새 대각선, 10 HP
+A NEW VERSION INSTALLS WHEN THE LAUNCHER NEXT STARTS.	새 버전은 다음에 런처를 실행할 때 설치됩니다.
 A PLAYER JOINED VIA	플레이어 참가 경로:
 A ROCKET JUMP STRAIGHT UP	바로 위로 로켓 점프
 A SERVER	서버
@@ -330,6 +341,8 @@ AUTO-HIDE HEALTH	체력 자동 숨김
 AUTO-HIDE WEAPON LIST	무기 목록 자동 숨김
 AUTO-HOP	자동 점프
 AUTO-HOP OFF: HELD JUMP JUMPS ONCE	자동 점프 끄기: 점프를 누르고 있으면 한 번만 점프
+AUTO-START GAME	게임 자동 시작
+AUTO-START: PLAYS ONCE UP TO DATE. AT NEXT LAUNCH:	자동 시작: 최신 상태가 되면 플레이. 다음 실행 시:
 AUTO: YOUR SYSTEM'S LANGUAGE	자동: 시스템 언어
 AVERAGE	평균
 AVERAGE, LAST	평균, 최근
@@ -499,6 +512,9 @@ CHAMPION	챔피언
 CHANGE ANYTHING AFTER (IT STAYS)	이후 무엇이든 변경 (유지됨)
 CHANGE MAP / MODE	맵 / 모드 변경
 CHANGE MAP / MODE (pick the mode, then the map), FORCE START, RELOAD MAP, EDIT MODE (everyone edits the map together).	맵 / 모드 변경 (모드 선택 후 맵 선택), 강제 시작, 맵 다시 불러오기, 편집 모드 (모두 함께 맵 편집).
+CHANGELOG	변경 사항
+CHANNEL: PRODUCTION	채널: 정식
+CHANNEL: TESTING	채널: 테스트
 CHANNELS	채널
 CHANNELS: MONO	채널: 모노
 CHANNELS: STEREO	채널: 스테레오
@@ -512,6 +528,7 @@ CHAT ON	채팅 켜기
 CHAT OPACITY	채팅 불투명도
 CHAT SECONDS	채팅 표시 시간(초)
 CHECK AGAIN	다시 확인
+CHECK FILES	파일 확인
 CHECKING...	확인 중...
 CHECKPOINT	체크포인트
 CHECKPT	체크포인트
@@ -1032,6 +1049,7 @@ FULLSCREEN SIZE: DESKTOP	전체 화면 해상도: 데스크톱
 FULLSCREEN: OFF KEEPS IT ON SCREEN	전체 화면: 끄면 화면에 유지
 G-SYNC / FREESYNC	G-SYNC / FREESYNC
 GAME	게임
+GAME FILE(S) MISSING OR CHANGED	GAME FILE(S) MISSING OR CHANGED
 GAME FONTS: YOUR OWN COPY OF THE REAL FONT IF FOUND	게임 폰트: 실제 폰트가 있으면 해당 폰트 사용
 GAME LATENCY ~	게임 지연 ~
 GAME LATENCY ~{} NS  (MOUSE REPORT IN TO GPU DONE; F3: NEXT VIEW)	게임 지연 ~{} NS  (마우스 보고부터 GPU 완료까지; F3: 다음 보기)
@@ -1234,6 +1252,7 @@ HOSTING ON UDP PORT	UDP 포트에서 호스트 중
 HOW	방법
 HOW OTHER PLAYERS' MOVES ARE SMOOTHED	다른 플레이어 움직임 보정 방식
 HP	HP
+HTTP	HTTP
 HUD	HUD
 HUD & SETTINGS	HUD 및 설정
 HUD 2	HUD 2
@@ -1298,6 +1317,8 @@ INSERT	INSERT
 INSTAGIB	인스타깁
 INSTAGIB CROSSBOWS	인스타깁 석궁
 INSTAGIB SNIPERS	인스타깁 저격수
+INSTALL	INSTALL
+INSTALL {}	{} 설치
 INTEL	INTEL
 INTEL DRIVER SETTINGS COULDN'T BE READ	INTEL 드라이버 설정을 읽지 못함
 INTEL ENDURANCE GAMING SAVES POWER OVER FRAMES	INTEL ENDURANCE GAMING가 FPS보다 전력 절약을 우선함
@@ -1317,7 +1338,9 @@ INVERT Y	Y축 반전
 IOID	IOID
 IRIS	IRIS
 IS A BUILT-IN MAP: IT STAYS AS IT IS. SAVE YOUR EDITS AS YOUR OWN MAP (IN YOUR MAPS FOLDER, UNDER THIS NAME) OR DROP THEM.	은(는) 기본 제공 맵이라 변경되지 않습니다. 편집 내용을 내 맵으로 저장하거나 (내 맵 폴더에 이 이름으로) 버리세요.
+IS BLOCKED	IS BLOCKED
 IS GODLIKE	신급입니다
+IS MISSING	IS MISSING
 IS ON A KILLING SPREE	연속 처치 중
 IS ON A RAMPAGE	광란 중
 IS UNSTOPPABLE	아무도 못 막습니다
@@ -1355,6 +1378,7 @@ KB; OFF: A SERVER'S	KB; 끄기: 서버의
 KEEP	유지
 KEEP HOLDING IT ALL THE WAY DOWN	떨어지는 내내 누르고 있기
 KEEP HOLDING IT TO RIDE	계속 누르고 있으면 타고 간다
+KEEP LAUNCHER OPEN	런처 계속 열기
 KEEP THESE DISPLAY SETTINGS? REVERTING IN	이 화면 설정을 유지할까요? 되돌리기까지
 KEEP YOUR EDITS AS A NEW MAP?	편집 내용을 새 맵으로 저장할까요?
 KEEP: ALL	보관: 전체
@@ -1408,6 +1432,8 @@ LAID OVER THE WORLD AFTER IT	그 뒤 월드 위에 위에 그림
 LAND	착지
 LAND ON THE FAR SIDE OF THE LAVA	용암 건너편에 착지
 LANGUAGE	언어
+LANGUAGE:	LANGUAGE:
+LANGUAGE: AUTO	언어: 자동
 LARGE	크게
 LASER	레이저
 LASER VAMPIRE	레이저 뱀파이어
@@ -1428,6 +1454,8 @@ LATENT SAFETY	LATENT 안전 여유
 LATENT SYNC	LATENT SYNC
 LATENT SYNC: HOLD FOR THE BLANK	LATENT SYNC: 블랭크까지 대기
 LATENT SYNC: WAIT FOR THE RASTER	LATENT SYNC: 래스터 대기
+LATEST ({})	최신 ({})
+LAUNCH OPTIONS (PASSED TO THE GAME)	실행 옵션 (게임에 전달)
 LAUNCHER ON THE RIGHT	런처를 오른쪽에
 LAY A STICKY BOMB, STAND ON IT, SET IT OFF AS YOU JUMP.	점착 폭탄을 깔고 그 위에 서서 점프하며 터뜨리기.
 LEADERBOARD	리더보드
@@ -2367,6 +2395,7 @@ OPENS THE UDP PORT ON YOUR ROUTER (UPNP)	라우터의 UDP 포트 개방 (UPNP)
 OPPOSITE KEYS: CANCEL	반대 키 동시 입력: 취소
 OPPOSITE KEYS: FIRST WINS	반대 키 동시 입력: 먼저 누른 키
 OPPOSITE KEYS: LAST WINS	반대 키 동시 입력: 나중에 누른 키
+OPTIONS	옵션
 OR RESTART: IT'S ASKED FOR AT START	또는 재시작: 시작 시 요청됨
 ORB	오브
 OTHER PLAYERS	다른 플레이어
@@ -2394,6 +2423,9 @@ OWN SHADOW	내 그림자
 OggS	OggS
 OpenGL function missing:	OpenGL 함수 없음:
 OpenGL function missing: {}	OpenGL function missing: {}
+Or press REPAIR to download the game again, check it and put it back (your settings and files stay).	또는 복구를 눌러 게임을 다시 내려받고 확인한 뒤 되돌려 놓으세요 (설정과 파일은 그대로 유지됩니다).
+Or press REPAIR to download version	Or press REPAIR to download version
+Or press REPAIR to download version {} again, check it and put it back (your settings and files stay).	또는 복구를 눌러 {} 버전을 다시 내려받고 확인한 뒤 되돌려 놓으세요 (설정과 파일은 그대로 유지됩니다).
 Output	출력
 PACING WAIT (ULTRA)	페이싱 대기 (울트라)
 PACK	팩
@@ -2528,6 +2560,8 @@ Pick the mode and map, a server name and the max players. The game picks the map
 Player	플레이어
 PowerGetActiveScheme	PowerGetActiveScheme
 PowerGetEffectiveOverlayScheme	PowerGetEffectiveOverlayScheme
+Press REPAIR to download version	Press REPAIR to download version
+Press REPAIR to download version {} again and put them back (your settings and files stay).	복구를 눌러 {} 버전을 다시 내려받고 되돌려 놓으세요 (설정과 파일은 그대로 유지됩니다).
 Q - grapple: hold to hook what you're aiming at and pull toward it; release to let go.	Q - 그래플: 누르고 있으면 조준한 곳에 훅을 걸어 그쪽으로 당겨집니다; 떼면 놓습니다.
 QK1 - QK8 - ranked arenas for all three ladders (vanilla and laser vampire 1v1, instagib free for all), also duel and tourney.	QK1 - QK8 - 세 래더 모두의 랭크 아레나 (바닐라 및 레이저 뱀파이어 1v1, 인스타깁 개인전), 결투와 토너먼트도 지원.
 QUAKE	QUAKE
@@ -2638,6 +2672,9 @@ REMEMBER LAST TAB	마지막 탭 기억
 REMEMBER MY QUEUES	내 대기열 기억
 RENAME	이름 변경
 RENDER SCALE	렌더 배율
+REPAIR	복구
+REPAIR needs the internet:	REPAIR needs the internet:
+REPAIR needs the internet: {}	복구하려면 인터넷이 필요합니다: {}
 RESET ALL	모두 초기화
 RESET ALL KEYS	모든 키 초기화
 RESET CROSSHAIR	조준점 초기화
@@ -2658,6 +2695,7 @@ RESUME	계속
 RESUME (ESC)	계속 (ESC)
 RETICLE COLOR	레티클 색상
 RETICLE WIDTH	레티클 두께
+RETRY	다시 시도
 REVERT	되돌리기
 RIDE FOR 0.4 S	0.4 S 타기
 RIFF	RIFF
@@ -2735,6 +2773,8 @@ RUN SPEED	달리기 속도
 RUN, JUMP THE HURDLES, REACH THE GLOWING LINE.	달리고, 허들을 넘고, 빛나는 선까지.
 RUNS	기록
 Ranked games use the default model, HUD and controls and 10 ms interpolation, so everyone plays the same game.	랭크 게임은 기본 모델, HUD, 조작과 10 ms 보간을 사용해 모두가 같은 조건으로 플레이합니다.
+Restore	Restore
+Restore {} from that tool's quarantine, and add an exclusion for the quark folder:	해당 프로그램의 격리 항목에서 {} 을(를) 복원하고 quark 폴더를 예외에 추가하세요:
 SAFE OK / ERROR	안전 정상 / 오류
 SAFE: OK BLUE, ERRORS ORANGE; IT: TAG / HIDE'S	안전: 정상 파랑, 오류 주황; 술래: 태그 / 숨바꼭질의
 SAME	동일
@@ -3037,6 +3077,7 @@ SYSTEM MESSAGES: ALL	시스템 메시지: 전체
 SYSTEM MESSAGES: IMPORTANT	시스템 메시지: 중요
 SYSTEM MESSAGES: OFF	시스템 메시지: 끄기
 SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)	시스템: OS 기본 화살표 (색상: 게임 커서만)
+SetDefaultDllDirectories	SetDefaultDllDirectories
 Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).	설정 > 조작에서 키 설정을 내보내거나 다른 사람의 설정을 가져올 수 있습니다 (텍스트 복사 / 붙여넣기).
 Start the match, change map / mode, ranked on / off, edit the map together, bots on. A majority of the human players decides.	경기 시작, 맵 / 모드 변경, 랭크 켜기 / 끄기, 맵 함께 편집, 봇 켜기. 사람 플레이어 과반수가 결정합니다.
 Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping. Above ~13 m/s A / D turns you faster than W alone.	스트레이프 점프로 속도를 얻는다: 옆 이동 키를 누른 채 같은 방향으로 마우스를 돌리며 계속 점프한다. ~13 m/s 이상에선 A / D가 W만 쓸 때보다 빨리 돈다.
@@ -3107,6 +3148,7 @@ TEST MODE:	테스트 모드:
 TEST MODE: THE MAP'S	테스트 모드: 맵 기본
 TEST plays the map right away; BAKE LIGHT previews the real lighting.	테스트는 맵을 바로 플레이합니다; 조명 굽기는 실제 조명을 미리 보여줍니다.
 TESTING BUILD - RANKED NOT RATED (PLAYED, NEVER COUNTED)	테스트 빌드 - 랭크 레이팅 미반영 (플레이되지만 집계 안 됨)
+TESTING VERSIONS	테스트 버전
 TEXT	텍스트
 TEXT AFTER THE LAST RULE	마지막 규칙 뒤 텍스트
 TEXT ALIGN	텍스트 정렬
@@ -3262,7 +3304,21 @@ TWO TINY DRIFTING BALLS, 10 HP	떠다니는 아주 작은 공 두 개, 10 HP
 TYPE TO SEARCH: A NAME OR WHAT IT DOES (CTRL+F)	검색어 입력: 이름 또는 기능 (CTRL+F)
 TYPING	입력 중
 TYPING SOUNDS	타이핑 소리
+The game can still start, but may miss maps or sounds. If you didn't change them yourself, an antivirus may have removed them.	게임은 실행되지만 맵이나 사운드가 빠졌을 수 있습니다. 직접 바꾸지 않았다면 백신 프로그램이 지웠을 수 있습니다.
+The game can't start:	The game can't start:
+The game can't start: {} can't be opened (Windows refuses to run a file its antivirus flagged).	게임을 시작할 수 없습니다: {} 을(를) 열 수 없습니다 (Windows는 백신이 표시한 파일을 실행하지 않습니다).
+The game can't start: {} is gone from the game folder.	게임을 시작할 수 없습니다: 게임 폴더에 {} 이(가) 없습니다.
+The game can't start: {} isn't the file that was installed (something changed or replaced it).	게임을 시작할 수 없습니다: {} 이(가) 설치된 파일이 아닙니다 (무언가 바꾸거나 교체했습니다).
 The server listens on UDP port 27500 (change it under UDP PORT). Quark asks your router to forward it automatically (UPnP); if friends can't connect, forward that UDP port on your router by hand.	서버는 UDP 포트 27500을 사용합니다 (UDP 포트에서 변경). Quark는 라우터에 자동 포워딩을 요청합니다 (UPnP); 친구가 접속하지 못하면 라우터에서 해당 UDP 포트를 직접 포워딩하세요.
+The update stopped:	The update stopped:
+The update stopped: {}. Nothing was changed: version {} is still installed and playable.	업데이트가 멈췄습니다: {}. 바뀐 것은 없습니다: {} 버전이 그대로 설치되어 있고 플레이할 수 있습니다.
+The update stopped: {}. Nothing was installed.	업데이트가 멈췄습니다: {}. 설치된 것은 없습니다.
+Then press RETRY.	그런 다음 다시 시도를 누르세요.
+This is almost always an antivirus false positive: quark isn't code-signed, so Windows Defender (or another antivirus) sometimes quarantines a new build. The launcher never deletes game files.	거의 항상 백신의 오탐입니다: quark는 코드 서명이 없어서 Windows Defender(또는 다른 백신)가 가끔 새 빌드를 격리합니다. 런처는 게임 파일을 절대 지우지 않습니다.
+This is most likely an antivirus or cleanup tool removing it as a false positive (quark isn't code-signed). The launcher never deletes game files.	백신이나 정리 프로그램이 오탐으로 지웠을 가능성이 큽니다 (quark는 코드 서명이 없습니다). 런처는 게임 파일을 절대 지우지 않습니다.
+To get it back: Windows Security > Virus & threat protection > Protection history, open the entry for	To get it back: Windows Security > Virus & threat protection > Protection history, open the entry for
+To get it back: Windows Security > Virus & threat protection > Protection history, open the entry for {}, then Actions > Restore (or Allow on device).	되돌리려면: Windows 보안 > 바이러스 및 위협 방지 > 보호 기록에서 {} 항목을 열고 작업 > 복원(또는 장치에서 허용)을 누르세요.
+To stop it happening again: Windows Security > Virus & threat protection > Manage settings > Exclusions > Add an exclusion > Folder:	다시 일어나지 않게 하려면: Windows 보안 > 바이러스 및 위협 방지 > 설정 관리 > 제외 > 제외 추가 > 폴더:
 UARK	UARK
 UDP	UDP
 UDP PORT	UDP 포트
@@ -3280,6 +3336,7 @@ UNBOUND	미지정
 UNCHANGED	변경 없음
 UNDO	실행 취소
 UNGROUP	그룹 해제
+UNINSTALL	제거
 UNKNOWN	알 수 없음
 UNKNOWN SELECTOR '	알 수 없는 선택자 '
 UNLIMITED	무제한
@@ -3287,6 +3344,10 @@ UNPLAYED MAPS COUNT AT THEIR DEFAULT TIME	플레이하지 않은 맵은 기본 �
 UNSTOPPABLE	아무도 못 막음
 UP	위
 UP / DOWN AS A MULTIPLE OF SENSITIVITY	위 / 아래를 감도의 배수로
+UPDATES	업데이트
+UPDATES: ASK FIRST	업데이트: 먼저 묻기
+UPDATES: AT NEXT LAUNCH	업데이트: 다음 실행 시
+UPDATES: AUTOMATIC	업데이트: 자동
 UPLOAD CAP (MBIT/S)	업로드 한도 (MBIT/S)
 USE	사용
 USE #	사용 #
@@ -3312,6 +3373,10 @@ VERBOSE INFO	상세 정보
 VERBOSE INFO LINES	상세 정보 줄
 VERDANA BOLD	VERDANA BOLD
 VERSION	버전
+VERSION {}	버전 {}
+VERSION {} (INSTALLED)	버전 {} (설치됨)
+VERSION {} WAS NOT INSTALLED	버전 {} 설치되지 않음
+VERSIONS	버전
 VERTICAL KEYS	수직 이동 키
 VERTICAL SENSITIVITY	수직 감도
 VERTICAL: ONE KEY	수직: 키 하나
@@ -3384,6 +3449,8 @@ WARMUP - {} TO VOTE START	워밍업 - {} 시작 투표하려면
 WARNING BEEP	경고음
 WARNING: DON'T TOUCH THIS UNLESS YOU KNOW WHAT YOU'RE DOING	경고: 잘 모르면 건드리지 마세요
 WARNINGS	경고
+WAS CHANGED	WAS CHANGED
+WAS NOT INSTALLED	WAS NOT INSTALLED
 WAS ON	이전 상태
 WASTELAND	황무지
 WATCH AGAIN	다시 보기
@@ -3449,12 +3516,16 @@ WITHIN 1.3 M OF THE FLOOR. 10 MS LATE LOSES 3 M/S	바닥에서 1.3 M 이내. 10 
 WIZARD	마법사
 WORD FILTER	단어 필터
 WORK SANS	WORK SANS
+WORKING...	작업 중...
 WORLD	월드
 WORLD + HUD + SHADOW MAP BUILD	월드 + HUD + 그림자 맵 생성
 WORLD OUTLINE	월드 외곽선
 WORLD OUTLINE WIDTH	월드 외곽선 두께
 WORST #MS  PING #  3D #X#	최악 #MS  PING #  3D #X#
 WRAP AROUND	순환
+WinHttpOpen failed	WinHttpOpen failed
+Windows refused to start	Windows refused to start
+Windows refused to start {} (error {})	Windows가 {} 실행을 거부했습니다 (오류 {})
 X MSAA	X MSAA
 X OFFSET	X 오프셋
 X SENSITIVITY WHILE THIS WEAPON IS HELD	이 무기를 들고 있을 때 감도 배율
@@ -3523,6 +3594,8 @@ add must be 3 numbers from 0 to 16	add는 0에서 16 사이의 숫자 3개여야
 advances (walkover)	부전승 진출
 after a session	세션 후
 after swap (low latency wait)	스왑 후 (저지연 대기)
+again and put them back (your settings and files stay).	again and put them back (your settings and files stay).
+again, check it and put it back (your settings and files stay).	again, check it and put it back (your settings and files stay).
 ahead of you (winner stays)	앞 순서 (승자 잔류)
 alpha must be over 0 and at most 1	alpha는 0 초과 1 이하여야 함
 an update is ready - the server restarts after this match	업데이트 준비됨 - 이 경기 후 서버 재시작
@@ -3553,6 +3626,7 @@ bad mesh	잘못된 mesh
 bad modifier '	잘못된 변형 '
 bad node	잘못된 node
 bad request	잘못된 요청
+bad url	bad url
 bench:	bench:
 big noodle*	big noodle*
 bignoodletitling*	bignoodletitling*
@@ -3572,6 +3646,10 @@ box model:	박스 모델:
 boxes into	박스 합치기:
 boxes into one	박스를 하나로
 buffer without data	데이터 없는 buffer
+builds from 1.17 on in the	builds from 1.17 on in the
+builds from 1.17 on yet - pick a version to install it	builds from 1.17 on yet - pick a version to install it
+builds in the	builds in the
+builds published yet	builds published yet
 built in # ms	# ms 만에 생성
 built-in maps reset to the original version	기본 맵이 원래 버전으로 초기화됨
 busy #%, late #%	사용 #%, 지연 #%
@@ -3595,6 +3673,7 @@ callvote start	callvote start
 callvote tmaps	callvote tmaps
 callvote tmodes	callvote tmodes
 can't	불가
+can't be opened (Windows refuses to run a file its antivirus flagged).	can't be opened (Windows refuses to run a file its antivirus flagged).
 can't do that	할 수 없습니다
 can't go ranked: no ranked map for that ladder installed	랭크 불가: 해당 래더의 랭크 맵이 설치되지 않음
 can't read	읽을 수 없음
@@ -3602,24 +3681,46 @@ can't save:	저장 불가:
 can't turn that	변경 불가
 can't vote for that list	해당 목록에는 투표 불가
 can't vote:	투표 불가:
+cannot copy	복사할 수 없음
+cannot read	읽을 수 없음
+cannot repair: version	cannot repair: version
+cannot repair: version {} isn't published for {} - pick a version and press INSTALL	복구할 수 없음: 버전 {} 은(는) {} 용으로 배포되지 않았습니다 - 버전을 골라 설치를 누르세요
+cannot replace	교체할 수 없음
+cannot write	쓸 수 없음
 capture of every point in	모든 지점 점령:
+channel - latest	channel - latest
+channel - offline	channel - offline
+channel yet	channel yet
+channel yet - pick a version to install it	channel yet - pick a version to install it
 chat # "	chat # "
 chat # "{}": {}	chat # "{}": {}
 chat: slow down	채팅: 천천히 입력하세요
+checked {} game files of version {}: all fine	게임 파일 {}개 확인 (버전 {}): 모두 정상
+checked {} game files: {}	게임 파일 {}개 확인: {}
+checking for updates...	업데이트 확인 중...
+checking game files...	게임 파일 확인 중...
 checking if UDP	UDP 확인 중
 clean surfaces	깔끔한 표면
 closed by the load governor	부하 관리로 닫힘
 color must be 3 numbers from 0 to 16	color는 0에서 16 사이의 숫자 3개여야 함
 connect from	접속 위치
 connected from	접속 위치
+connection failed (error {})	연결 실패 (오류 {})
 connection to server lost	서버 연결 끊김
+could not be written (a full disk, or blocked as it was written)	쓸 수 없었습니다 (디스크가 가득 찼거나 쓰는 중에 차단됨)
 could not bind UDP port	UDP 포트를 바인드할 수 없음
 could not create an OpenGL 3.3 window - update your graphics driver	OpenGL 3.3 창을 만들 수 없음 - 그래픽 드라이버를 업데이트하세요
+could not download its release manifest ({})	릴리스 매니페스트를 내려받지 못했습니다 ({})
+could not download its signature ({})	서명을 내려받지 못했습니다 ({})
 could not host:	호스트 불가:
 could not open	열 수 없음
 could not open log file	로그 파일을 열 수 없음
+could not read the download	내려받은 파일을 읽지 못했습니다
+could not run curl	curl을 실행하지 못했습니다
 could not save maps/	저장할 수 없음: maps/
 could not save the map	맵을 저장할 수 없음
+could not start the game in	could not start the game in
+could not start the game in {} (error {})	{} 에서 게임을 시작하지 못했습니다 (오류 {})
 could not write maps/	쓸 수 없음: maps/
 could not write to the groups folder	그룹 폴더에 쓸 수 없음
 couldn't check reachability:	접속 가능 여부 확인 불가:
@@ -3631,6 +3732,11 @@ delivered the payload in	화물 운반 완료:
 delivery in	운반까지
 demo finished	데모 종료
 demo:	데모:
+download failed:	download failed:
+download failed: {}	내려받기 실패: {}
+download interrupted	내려받기가 중단되었습니다
+downloading version	downloading version
+downloading version {}...	버전 {} 내려받는 중...
 draw - the payload is in the middle	무승부 - 화물이 중앙에 있음
 dropped:	탈락:
 dyn + view + flat verts	dyn + view + flat verts
@@ -3664,9 +3770,13 @@ flush2D	flush2D
 font {}: {}	font {}: {}
 font:	폰트:
 font: {} built in # ms	font: {} built in # ms
+found - it installs at the next launch (or press INSTALL)	found - it installs at the next launch (or press INSTALL)
 found everyone	모두 찾음
+from that tool's quarantine, and add an exclusion for the quark folder:	from that tool's quarantine, and add an exclusion for the quark folder:
 g del	g del
 g part # # # # # # # #	g part # # # # # # # #
+game files of version	game files of version
+game files:	game files:
 glass shards	유리 파편
 glfwInit failed	glfwInit 실패
 go to the back of the line	줄 맨 뒤로 이동
@@ -3685,6 +3795,13 @@ index out of range	인덱스 범위 초과
 init failed:	초기화 실패:
 init failed: {}	init failed: {}
 input + prediction ticks	입력 + 예측 틱
+install failed:	install failed:
+install failed: {}	설치 실패: {}
+installed version	installed version
+installed version {}	버전 {} 설치됨
+installed {} is newer than the latest {} release {} - pick a version to change	설치된 {} 이(가) 최신 {} 릴리스 {} 보다 새롭습니다 - 바꾸려면 버전을 고르세요
+installing version	installing version
+installing version {}...	버전 {} 설치 중...
 into others, removed	다른 것에 합쳐져 제거됨
 is a built-in map - nothing changed to save	은(는) 기본 제공 맵 - 저장할 변경 사항 없음
 is a built-in map - pick a new name for yours	은(는) 기본 제공 맵 - 새 이름을 정하세요
@@ -3693,15 +3810,25 @@ is a built-in map: pick a new name	은(는) 기본 제공 맵: 새 이름을 정
 is a legacy map (never ranked): ranked plays	은(는) 레거시 맵 (랭크 불가): 랭크 진행 맵
 is a legacy map (this server doesn't list the old maps)	은(는) 레거시 맵 (이 서버는 구 맵을 표시하지 않음)
 is already spectating	님은 이미 관전 중
+is blocked (it can't be read)	is blocked (it can't be read)
+is gone from the game folder.	is gone from the game folder.
 is it	님이 술래
 is it - run!	님이 술래 - 도망치세요!
+is missing	is missing
+is newer than the latest	is newer than the latest
 is not reachable from the internet - forward UDP	인터넷에서 접속 불가 - UDP 포워딩 필요
 is now	님이 이제
 is reachable from the internet - friends can join	인터넷에서 접속 가능 - 친구가 참가할 수 있음
 is spectating	님이 관전 중
+is still installed and playable.	is still installed and playable.
 isn't a ranked ruleset	은(는) 랭크 규칙이 아님
 isn't built for	용으로 제작되지 않음:
 isn't in this custom mode's map pool	은(는) 이 커스텀 모드의 맵 풀에 없음
+isn't published for	isn't published for
+isn't the file that was installed (something changed or replaced it).	isn't the file that was installed (something changed or replaced it).
+it has no signed release manifest	서명된 릴리스 매니페스트가 없습니다
+it is not signed	서명되지 않았습니다
+its signature does not verify	서명이 확인되지 않습니다
 joined team A	님이 A팀에 참가
 joined team B	님이 B팀에 참가
 joined the game	님이 게임에 참가
@@ -3721,6 +3848,8 @@ listening on UDP	UDP 수신 대기 중
 live (testing server: not rated)	라이브 (테스트 서버: 레이팅 미반영)
 load governor:	부하 관리:
 look at a side of the selected box	선택한 박스의 면을 바라보세요
+looking up version	looking up version
+looking up version {}...	버전 {} 찾는 중...
 lost connection	연결 끊김
 low latency: wait for the GPU	저지연: GPU 대기
 mac:	mac:
@@ -3772,6 +3901,10 @@ no points	지점 없음
 no response	응답 없음
 no small gaps to close	메울 작은 틈 없음
 no triangles	삼각형 없음
+no {} builds from 1.17 on in the {} channel yet - pick a version to install it	{} 용 1.17 이후 빌드가 {} 채널에 아직 없습니다 - 설치할 버전을 고르세요
+no {} builds from 1.17 on yet - pick a version to install it	{} 1.17 이후 빌드가 아직 없습니다 - 설치할 버전을 고르세요
+no {} builds in the {} channel yet	{} 용 빌드가 {} 채널에 아직 없습니다
+no {} builds published yet	{} 빌드가 아직 배포되지 않았습니다
 no-discard world shader: missing	no-discard world shader: missing
 nobody finished	아무도 완주 못 함
 nobody is out - throw again	탈락자 없음 - 다시 내세요
@@ -3791,6 +3924,7 @@ not enough players	인원 부족
 not enough players - back to warmup	인원 부족 - 워밍업으로 복귀
 not enough players - the match ends in	인원 부족 - 경기 종료까지
 not enough players for a tourney	토너먼트 인원 부족
+not found (release list incomplete) - installed:	not found (release list incomplete) - installed:
 not in the main program	not in the main program
 not in the tutorial	튜토리얼에서는 안 됩니다
 not in this build	이 빌드에 없음
@@ -3807,7 +3941,12 @@ nothing to undo	실행 취소할 것 없음
 now playing	현재 플레이 중
 odd sample rate	지원하지 않는 샘플레이트
 of #	/ #
+of version	of version
 off for this match	이번 경기에서 꺼짐
+offline -	offline -
+offline - playing installed version	offline - playing installed version
+offline - playing installed version {}	오프라인 - 설치된 버전 {} 으로 플레이
+offline - {}	오프라인 - {}
 on your router to this PC	라우터에서 이 PC로
 only a timed round can be extended	시간제 라운드만 연장 가능
 over 64 MB	64 MB 초과
@@ -3827,6 +3966,9 @@ paused: no humans (bots wait)	일시정지: 사람 없음 (봇 대기)
 payload delivered	화물 운반 완료
 pick a new name for your copy	사본의 새 이름을 정하세요
 ping up on # of # players	플레이어 #/#명 핑 상승
+pinned version	pinned version
+pinned version {} (installed: {}) - press INSTALL to switch to it	고정 버전 {} (설치됨: {}) - 바꾸려면 설치를 누르세요
+pinned version {} not found (release list incomplete) - installed: {}	고정 버전 {} 을(를) 찾지 못했습니다 (릴리스 목록 불완전) - 설치됨: {}
 placed the group from the clipboard	클립보드의 그룹 배치됨
 point # taken by team #	#팀이 지점 # 점령
 poll events	poll events
@@ -3852,6 +3994,9 @@ proj # type # owner # pos # # # vel # # #{}	proj # type # owner # pos # # # vel 
 properties background, color, opacity, border, radius, padding, margin, gap, font-size,	properties background, color, opacity, border, radius, padding, margin, gap, font-size,
 puts every built-in map back to its original version and removes retired ones (your own maps are kept) - click again	모든 기본 맵을 원래 버전으로 되돌리고 폐기된 맵을 제거합니다 (내 맵은 유지) - 다시 클릭
 quark --bake-maps <dir>	quark --bake-maps <dir>
+quark installed files 1	quark installed files 1
+quark installed files 2	quark installed files 2
+quark launcher	quark launcher
 quark server	quark server
 quark server log, level	quark server log, level
 quark server log, level {}, version {}	quark server log, level {}, version {}
@@ -3888,12 +4033,15 @@ rate limited	요청 제한됨
 reachability:	접속 가능 여부:
 reached checkpoint	체크포인트 도달
 reconnected from	재접속 위치
+refused version	refused version
+refused version {}: {} - the download may have been tampered with	버전 {} 거부됨: {} - 내려받은 파일이 변조되었을 수 있습니다
 renderer warmup	렌더러 워밍업
 reopened by the load governor	부하 관리로 다시 열림
 reopened by the load governor at	부하 관리로 다시 열림:
 restarting for an update	업데이트를 위해 재시작 중
 restarting for an update - rejoin in a few seconds	업데이트를 위해 재시작 중 - 몇 초 후 다시 참가하세요
 restored the autosave of	자동 저장 복원됨:
+right after it was written	쓴 직후에
 rock paper scissors:	가위바위보:
 rotated about X	X축 기준 회전됨
 rotated about Y	Y축 기준 회전됨
@@ -4039,10 +4187,20 @@ unsaved changes - click EXIT again to leave	저장하지 않은 변경 사항 - 
 unsaved changes - press ESC again to leave	저장하지 않은 변경 사항 - 나가려면 ESC를 다시 누르세요
 unsupported WAV (PCM 8 / 16 / 24 / 32-bit or float)	지원하지 않는 WAV (PCM 8 / 16 / 24 / 32비트 또는 float)
 unsupported accessor	지원하지 않는 accessor
+up to date -	up to date -
+up to date - {} {}	최신 상태 - {} {}
 update ready: waiting for the match to end	업데이트 준비됨: 경기 종료 대기 중
+update {} available - press INSTALL (installed: {})	업데이트 {} 있음 - 설치를 누르세요 (설치됨: {})
+update {} found - it installs at the next launch (or press INSTALL)	업데이트 {} 발견 - 다음 실행 때 설치됩니다 (또는 설치를 누르세요)
+update: removed retired game file	update: removed retired game file
+update: removed retired game file {}	update: removed retired game file {}
 upload # of # kbps	업로드 # / # kbps
 upload bytes	업로드 바이트
 user:	사용자:
+verifying version	verifying version
+verifying version {}...	버전 {} 확인 중...
+version {} (pinned)	버전 {} (고정됨)
+version {} was not installed: {}	버전 {} 설치되지 않음: {}
 vote builder	vote builder
 vote cancelled: the ranked match is live	투표 취소됨: 랭크 경기 진행 중
 vote failed:	투표 실패:
@@ -4054,8 +4212,12 @@ voted rules:	투표된 규칙:
 voted rules: {}	voted rules: {}
 vs bots	봇 대전
 warning:	경고:
+was blocked	차단되었습니다
+was changed	was changed
 was it -	님이 술래였음 -
 was moved to spectator until the next map	님이 다음 맵까지 관전자로 이동됨
+was not installed:	was not installed:
+was removed	삭제되었습니다
 wedge rising toward	쐐기 오르막 방향
 will fill the uneven teams	님이 불균형 팀을 채웁니다
 win:	승리:
@@ -4093,4 +4255,20 @@ you're next in line: you play the winner of this	다음 차례입니다: 이 경
 your last vote failed: wait a few seconds	지난 투표 실패: 몇 초 기다리세요
 your map is autosaved	맵이 자동 저장됨
 {} # us (last 1000 ticks)	{} # us (last 1000 ticks)
+{} (launcher update failed: {})	{} (런처 업데이트 실패: {})
+{} (launcher update skipped: {})	{} (런처 업데이트 건너뜀: {})
+{} - installed: {}	{} - 설치됨: {}
+{} - see below	{} - 아래 참고
+{} - {} game file(s) missing or changed ({}): CHECK FILES	{} - 게임 파일 {}개 없음 또는 변경됨 ({}): 파일 확인
+{} GAME FILE(S) MISSING OR CHANGED	게임 파일 {}개 없음 또는 변경됨
+{} IS BLOCKED	{} 차단됨
+{} IS MISSING	{} 없음
 {} THEN {}	{} 그다음 {}
+{} WAS CHANGED	{} 변경됨
+{} channel - latest {}	{} 채널 - 최신 {}
+{} channel - latest {}, installed {}	{} 채널 - 최신 {}, 설치됨 {}
+{} channel - offline	{} 채널 - 오프라인
+{} is blocked (it can't be read)	{} 차단됨 (읽을 수 없음)
+{} is missing	{} 없음
+{} of version {}	{} (버전 {})
+{} was changed	{} 변경됨

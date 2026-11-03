@@ -209,6 +209,16 @@ static void testChannels() {
         LCHECK(ob.autoStart && ob.keepOpen && ob.args == o.args && ob.updates == 2 && ob.nextVersion == "1.19.4");
         LCHECK(!old.autoStart && !old.keepOpen && old.args.empty() && old.updates == 0);
     }
+    {   // LANGUAGE (1.19.8): the game's quark.cfg line, read and set with every other line kept; the pending pick
+        LCHECK(releases::cfgLanguage("") == "auto" && releases::cfgLanguage("name=a\nlanguage=\n") == "auto");
+        LCHECK(releases::cfgLanguage("name=a\r\nlanguage=de\r\nfov=90\r\n") == "de");
+        LCHECK(releases::withCfgLanguage("name=a\nlanguage=de\nfov=90\n", "ja") == "name=a\nlanguage=ja\nfov=90\n");
+        LCHECK(releases::withCfgLanguage("name=a\nfov=90", "auto") == "name=a\nfov=90\nlanguage=auto\n");
+        LCHECK(releases::cfgLanguage(releases::withCfgLanguage("language=ru\nx=1\nlanguage=fr\n", "ko")) == "ko");
+        releases::Config l;
+        l.language = "pt-BR";
+        LCHECK(releases::parseConfig(releases::formatConfig(l)).language == "pt-BR" && old.language.empty());
+    }
     auto prod = releases::forChannel(all, releases::Channel::Production);
     LCHECK(releases::selectIndex(prod, old) == 1);
     LCHECK(releases::selectIndex(prod, releases::parseConfig("pin=1.2.3")) == 0); // gone: the newest

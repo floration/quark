@@ -19,6 +19,7 @@
 #include <thread>
 #include <vector>
 #include "../client/gl.h"
+#include "../client/lang.h"
 #include "../client/renderer.h"
 #include "../client/ui.h"
 #include "../common/net.h"
@@ -30,6 +31,7 @@
 #include "../common/proc.h"
 #include "../common/sha256.h"
 #include "../common/sign.h"
+#include "../common/u8file.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -43,6 +45,7 @@
 namespace fs = std::filesystem;
 
 namespace {
+using gamefiles::say;   // (the launcher's text, one line per translation: gamefiles.h)
 // Releases of both channels, newest first, every page (releases::fetchAll): production releases stay listed however
 // many test builds come after them, and every old version stays installable.
 const char* kApi = "https://api.github.com/repos/floration/quark/releases?per_page=100"; // = releases::kPageSize
@@ -90,7 +93,7 @@ bool httpGet(const std::string& url, std::ostream& out, const Progress& prog, st
     DWORD status = 0, sz = sizeof status;
     if (ok) WinHttpQueryHeaders(r, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, nullptr, &status, &sz, nullptr);
     if (ok && status != 200) { ok = false; *err = "HTTP " + std::to_string(status); }
-    else if (!ok) *err = "connection failed (error " + std::to_string(GetLastError()) + ")";
+    else if (!ok) *err = say("connection failed (error %s)", {std::to_string(GetLastError())});
     if (ok) {
         wchar_t lenBuf[32]; DWORD lb = sizeof lenBuf;
         uint64_t total = 0;
@@ -205,24 +208,24 @@ std::string fileName(const std::string& rel) { return fs::u8path(rel).filename()
 // and keep it, and REPAIR.
 Notice exeNotice(const gamefiles::Issue& exe, const std::string& version, const fs::path& dir) {
     Notice n;
-    std::string file = fileName(exe.path), v = version.empty() ? std::string() : " of version " + version;
+    std::string file = fileName(exe.path), f = version.empty() ? file : say("%s of version %s", {file, version});
     switch (exe.problem) {
     case gamefiles::Problem::Missing:
-        n.title = upper(file) + " IS MISSING";
-        n.body = "The game can't start: " + file + v + " is gone from the game folder.";
+        n.title = say("%s IS MISSING", {upper(file)});
+        n.body = say("The game can't start: %s is gone from the game folder.", {f});
         break;
     case gamefiles::Problem::Changed:
-        n.title = upper(file) + " WAS CHANGED";
-        n.body = "The game can't start: " + file + v + " isn't the file that was installed (something changed or replaced it).";
+        n.title = say("%s WAS CHANGED", {upper(file)});
+        n.body = say("The game can't start: %s isn't the file that was installed (something changed or replaced it).", {f});
         break;
     default:
-        n.title = upper(file) + " IS BLOCKED";
-        n.body = "The game can't start: " + file + v + " can't be opened (Windows refuses to run a file its antivirus flagged).";
+        n.title = say("%s IS BLOCKED", {upper(file)});
+        n.body = say("The game can't start: %s can't be opened (Windows refuses to run a file its antivirus flagged).", {f});
         break;
     }
     n.body += "\n" + gamefiles::antivirusHelp(file, dir.parent_path());
-    n.body += "\nOr press REPAIR to download" + (version.empty() ? std::string(" the game") : " version " + version) +
-              " again, check it and put it back (your settings and files stay).";
+    n.body += "\n" + (version.empty() ? std::string("Or press REPAIR to download the game again, check it and put it back (your settings and files stay).")
+                                        : say("Or press REPAIR to download version %s again, check it and put it back (your settings and files stay).", {version}));
     n.action = Notice::Repair;
     n.release.version = version;
     n.blocksPlay = true;
@@ -233,9 +236,9 @@ Notice exeNotice(const gamefiles::Issue& exe, const std::string& version, const 
 Notice stageNotice(const std::string& what, const Release& r, const std::string& installed, const fs::path& dir,
                    const std::string& file) {
     Notice n;
-    n.title = "VERSION " + upper(r.version) + " WAS NOT INSTALLED";
-    n.body = "The update stopped: " + what + ". " +
-             (installed.empty() ? std::string("Nothing was installed.") : "Nothing was changed: version " + installed + " is still installed and playable.");
+    n.title = say("VERSION %s WAS NOT INSTALLED", {upper(r.version)});
+    n.body = installed.empty() ? say("The update stopped: %s. Nothing was installed.", {what})
+                               : say("The update stopped: %s. Nothing was changed: version %s is still installed and playable.", {what, installed});
     n.body += "\n" + gamefiles::antivirusHelp(file, dir.parent_path()) + "\nThen press RETRY.";
     n.action = Notice::Retry;
     n.release = r;
@@ -268,35 +271,79 @@ bool checkGame(State* st, const fs::path& dir, bool full) {
     std::lock_guard<std::mutex> l(st->mu);
     if (h.exeBad) {
         st->notice = exeNotice(h.exe, st->installed, dir);
-        st->status = gamefiles::describe(h.exe) + " - see below";
+        st->status = say("%s - see below", {gamefiles::describe(h.exe)});
         return false;
     }
     if (st->notice.action == Notice::Repair) st->notice = Notice(); // (it's back)
     if (h.issues.empty()) {
-        if (full) st->status = "checked " + std::to_string(h.checked) + " game files of version " + st->installed + ": all fine";
+        if (full) st->status = say("checked %s game files of version %s: all fine", {std::to_string(h.checked), st->installed});
         return true;
     }
     std::string first = gamefiles::describe(h.issues[0]);
     if (!full) {
-        st->status += " - " + std::to_string(h.issues.size()) + " game file(s) missing or changed (" + first + "): CHECK FILES";
+        st->status = say("%s - %s game file(s) missing or changed (%s): CHECK FILES", {st->status, std::to_string(h.issues.size()), first});
         return true;
     }
     Notice n;
-    n.title = std::to_string(h.issues.size()) + " GAME FILE(S) MISSING OR CHANGED";
+    n.title = say("%s GAME FILE(S) MISSING OR CHANGED", {std::to_string(h.issues.size())});
     for (size_t i = 0; i < h.issues.size() && i < 6; i++) n.body += (i ? ", " : "") + gamefiles::describe(h.issues[i]);
-    if (h.issues.size() > 6) n.body += ", and " + std::to_string(h.issues.size() - 6) + " more";
-    n.body += ".\nThe game can still start, but may miss maps or sounds. If you didn't change them yourself, an antivirus "
-              "may have removed them.\nPress REPAIR to download version " + st->installed + " again and put them back "
-              "(your settings and files stay).";
+    if (h.issues.size() > 6) n.body = say("%s, and %s more", {n.body, std::to_string(h.issues.size() - 6)});
+    n.body += std::string(".\n") + "The game can still start, but may miss maps or sounds. If you didn't change them yourself, an antivirus may have removed them." + "\n" +
+              say("Press REPAIR to download version %s again and put them back (your settings and files stay).", {st->installed});
     n.action = Notice::Repair;
     n.release.version = st->installed;
     st->notice = n;
-    st->status = "checked " + std::to_string(h.checked) + " game files: " + first;
+    st->status = say("checked %s game files: %s", {std::to_string(h.checked), first});
     return true;
 }
 
 fs::path launcherCfg() { return install::appDir() / "launcher.cfg"; }
 void saveCfg(const releases::Config& c) { std::ofstream(launcherCfg(), std::ios::trunc) << releases::formatConfig(c); }
+
+// LANGUAGE: the game's own setting (Settings > INTERFACE > LANGUAGE), in the game's quark.cfg in the player's data
+// folder, so a pick in either one is the other's too. Before the game has made that file (never started): the
+// launcher's pending pick (launcher.cfg), given to the game's first start as --language.
+fs::path gameCfg() { return utf8Path(userDataPath("quark.cfg")); }
+
+struct LanguageSync {
+    std::string setting = "auto";   // what the launcher draws in: "auto" (the system's) or a code (lang.h)
+    fs::file_time_type stamp{};
+    bool haveFile = false;
+    double nextCheck = 0;
+    // the setting from the game's file (or the pending pick); true when it changed
+    bool read(releases::Config& cfg) {
+        std::error_code ec;
+        auto t = fs::last_write_time(gameCfg(), ec);
+        bool file = !ec;
+        if (file == haveFile && (!file || t == stamp) && nextCheck > 0) return false;
+        haveFile = file;
+        stamp = file ? t : fs::file_time_type{};
+        std::string v = file ? releases::cfgLanguage(readFile(gameCfg())) : (cfg.language.empty() ? "auto" : cfg.language);
+        if (file && !cfg.language.empty()) { cfg.language.clear(); saveCfg(cfg); }   // (the game has it now: its file wins)
+        bool changed = v != setting || nextCheck == 0;
+        setting = v;
+        return changed;
+    }
+    // the player's pick in OPTIONS: into the game's file, or pending until there is one
+    void write(releases::Config& cfg, const std::string& v) {
+        setting = v;
+        std::error_code ec;
+        if (fs::exists(gameCfg(), ec)) {
+            writeFileAtomic(userDataPath("quark.cfg"), releases::withCfgLanguage(readFile(gameCfg()) + "\n", v));
+            stamp = fs::last_write_time(gameCfg(), ec);
+            haveFile = true;
+        } else { cfg.language = v; saveCfg(cfg); }
+    }
+};
+
+// The language drawn: its table and glyph atlas (as the game's Game::applyLanguageSetting)
+void applyLanguage(Renderer& r, const std::string& setting) {
+    lang::ExtGlyphs g;
+    if (!lang::setLanguage(lang::resolve(setting))) lang::setLanguage("en");
+    if (lang::loadGlyphs(lang::current(), g)) r.setExtGlyphs(g.cp, g.adv, g.tex.data(), g.texW, g.texH, g.cols);
+    else r.setExtGlyphs({}, {}, nullptr, 0, 0, 0);
+    Renderer::setTranslate(lang::active() ? &lang::tr : nullptr);
+}
 
 // Under st->mu: the visible list for the current channel and the selection the config asks for.
 void applyChannel(State* st) {
@@ -324,7 +371,7 @@ bool fetchReleases(State* st, std::string* err) {
     st->complete = complete;
     applyChannel(st);
     if (st->releases.empty()) {
-        *err = std::string("no ") + kPlatform + " builds in the " + releases::channelName(st->cfg.channel) + " channel yet";
+        *err = say("no %s builds in the %s channel yet", {kPlatform, releases::channelName(st->cfg.channel)});
         return false;
     }
     return true;
@@ -342,12 +389,12 @@ void checkSelfUpdate(State* st, const fs::path& dir) {
     check.pubHex = sign::kReleasePublicKey;
     if (!selfupdate::launcherSigned(packaged, &check.sigHex, &err)) {
         std::lock_guard<std::mutex> l(st->mu);
-        st->status += " (launcher update skipped: " + err + ")";
+        st->status = say("%s (launcher update skipped: %s)", {st->status, err});
         return;
     }
     if (!selfupdate::isNewer(pv, selfupdate::fileVersion(target))) { st->relaunch = true; return; } // already swapped (by the game)
     if (selfupdate::replaceFile(packaged, target, &err, nullptr, &check) && selfupdate::fileVersion(target) == pv) st->relaunch = true;
-    else { std::lock_guard<std::mutex> l(st->mu); st->status += " (launcher update failed: " + err + ")"; }
+    else { std::lock_guard<std::mutex> l(st->mu); st->status = say("%s (launcher update failed: %s)", {st->status, err}); }
 }
 
 // The package's .sig only proves the release key signed it, not which release it is: the signed manifest
@@ -358,7 +405,7 @@ std::string checkReleaseManifest(const Release& r, const fs::path& package) {
     std::ostringstream text, sig;
     std::string err;
     if (!httpGet(r.manifestUrl, text, nullptr, &err) || !httpGet(r.manifestSigUrl, sig, nullptr, &err))
-        return "could not download its release manifest (" + err + ")";
+        return say("could not download its release manifest (%s)", {err});
     std::ifstream in(package, std::ios::binary);
     std::string sha = in ? sha256StreamHex(in) : "";
     if (sha.empty()) return "could not read the download";
@@ -371,7 +418,7 @@ std::string checkReleaseManifest(const Release& r, const fs::path& package) {
 void installRelease(std::shared_ptr<State> st, fs::path dir, Release r) {
     auto setStatus = [&](const std::string& s) { std::lock_guard<std::mutex> l(st->mu); st->status = s; };
     std::string err;
-    setStatus("downloading version " + r.version + "...");
+    setStatus(say("downloading version %s...", {r.version}));
     std::error_code ec;
     fs::create_directories(dir, ec);
     fs::path tmp = dir.parent_path() / "update.qpak";
@@ -381,31 +428,31 @@ void installRelease(std::shared_ptr<State> st, fs::path dir, Release r) {
         if (!ok) {
             out.close();
             fs::remove(tmp, ec);
-            setStatus("download failed: " + err);
+            setStatus(say("download failed: %s", {err}));
             st->busy = false;
             return;
         }
     }
     // Only install what the release key signed: a tampered or swapped package is refused before anything is
     // extracted. A release from before signing (<= 1.16.x) has nothing to check.
-    setStatus("verifying version " + r.version + "...");
+    setStatus(say("verifying version %s...", {r.version}));
     st->progress = -1;
     if (!releases::needsSignature(r)) {
         // (from before signing: installed as published)
     } else {
         std::ostringstream sig;
         if (r.sigUrl.empty()) err = "it is not signed";
-        else if (!httpGet(r.sigUrl, sig, nullptr, &err)) err = "could not download its signature (" + err + ")";
+        else if (!httpGet(r.sigUrl, sig, nullptr, &err)) err = say("could not download its signature (%s)", {err});
         else if (!sign::verifyFile(tmp.string(), sig.str(), sign::kReleasePublicKey, &err)) err = "its signature does not verify";
         else err = checkReleaseManifest(r, tmp);
         if (!err.empty()) {
             fs::remove(tmp, ec);
-            setStatus("refused version " + r.version + ": " + err + " - the download may have been tampered with");
+            setStatus(say("refused version %s: %s - the download may have been tampered with", {r.version, err}));
             st->busy = false;
             return;
         }
     }
-    setStatus("installing version " + r.version + "...");
+    setStatus(say("installing version %s...", {r.version}));
     st->progress = -1;
     // extracted into a stage, every file checked against the package (an antivirus taking one stops it here, with
     // the installed version untouched), then swapped in; the list it writes is what the next update may retire
@@ -414,8 +461,8 @@ void installRelease(std::shared_ptr<State> st, fs::path dir, Release r) {
         std::lock_guard<std::mutex> l(st->mu);
         if (!rep.stageIssues.empty()) {
             st->notice = stageNotice(err, r, st->installed, dir, fileName(rep.stageIssues[0].path));
-            st->status = "version " + r.version + " was not installed: " + err;
-        } else st->status = "install failed: " + err;
+            st->status = say("version %s was not installed: %s", {r.version, err});
+        } else st->status = say("install failed: %s", {err});
     } else {
         for (auto& f : rep.swap.retired) fprintf(stderr, "update: removed retired game file %s\n", f.c_str());
         std::ofstream(dir / "version.txt") << r.version << "\n";
@@ -429,7 +476,7 @@ void installRelease(std::shared_ptr<State> st, fs::path dir, Release r) {
         {
             std::lock_guard<std::mutex> l(st->mu);
             st->installed = r.version;
-            st->status = "installed version " + r.version;
+            st->status = say("installed version %s", {r.version});
             st->ready = true;
             st->awaitingInstall = false;
             st->notice = Notice();
@@ -448,12 +495,12 @@ void repairInstall(std::shared_ptr<State> st, fs::path dir, std::string version)
     {
         std::lock_guard<std::mutex> l(st->mu);
         fetched = st->fetched;
-        st->status = "looking up version " + version + "...";
+        st->status = say("looking up version %s...", {version});
     }
     if (!fetched && !fetchReleases(st.get(), &err)) {
         std::lock_guard<std::mutex> l(st->mu);
         if (!st->fetched) { // (fetchReleases fails on an empty channel too, with the list read)
-            st->status = "REPAIR needs the internet: " + err;
+            st->status = say("REPAIR needs the internet: %s", {err});
             st->busy = false;
             return;
         }
@@ -464,8 +511,8 @@ void repairInstall(std::shared_ptr<State> st, fs::path dir, std::string version)
         for (const Release& r : st->all)
             if (r.version == version) { found = r; break; }
         if (found.version.empty()) {
-            st->status = "cannot repair: version " + (version.empty() ? std::string("(unknown)") : version) +
-                         " isn't published for " + kPlatform + " - pick a version and press INSTALL";
+            st->status = say("cannot repair: version %s isn't published for %s - pick a version and press INSTALL",
+                             {version.empty() ? std::string("(unknown)") : version, kPlatform});
             st->busy = false;
             return;
         }
@@ -494,8 +541,8 @@ void updater(std::shared_ptr<State> st, fs::path dir) {
     if (!fetchReleases(st.get(), &err)) {
         {
             std::lock_guard<std::mutex> l(st->mu);
-            if (!st->fetched) st->status = installed.empty() ? "offline - " + err : "offline - playing installed version " + installed;
-            else st->status = installed.empty() ? err : err + " - installed: " + installed;
+            if (!st->fetched) st->status = installed.empty() ? say("offline - %s", {err}) : say("offline - playing installed version %s", {installed});
+            else st->status = installed.empty() ? err : say("%s - installed: %s", {err, installed});
         }
         if (!installed.empty()) {
             checkGame(st.get(), dir, false);
@@ -516,21 +563,21 @@ void updater(std::shared_ptr<State> st, fs::path dir) {
             if (st->cfg.updates == 2) {
                 st->cfg.nextVersion = target.version;
                 saveCfg(st->cfg);
-                st->status = "update " + target.version + " found - it installs at the next launch (or press INSTALL)";
-            } else st->status = "update " + target.version + " available - press INSTALL (installed: " + installed + ")";
+                st->status = say("update %s found - it installs at the next launch (or press INSTALL)", {target.version});
+            } else st->status = say("update %s available - press INSTALL (installed: %s)", {target.version, installed});
         } else if (plan.offer) {
             st->awaitingInstall = true;
-            st->status = "pinned version " + target.version + " (installed: " + installed + ") - press INSTALL to switch to it";
+            st->status = say("pinned version %s (installed: %s) - press INSTALL to switch to it", {target.version, installed});
         } else if (installed == target.version) {
-            st->status = plan.pinned ? "version " + installed + " (pinned)" : "up to date - " + ch + " " + installed;
+            st->status = plan.pinned ? say("version %s (pinned)", {installed}) : say("up to date - %s %s", {ch, installed});
         } else if (plan.install) {
             doInstall = true;
         } else if (st->cfg.pinned() && !plan.pinned && !st->complete) {
-            st->status = "pinned version " + st->cfg.pin + " not found (release list incomplete) - installed: " + (installed.empty() ? "none" : installed);
+            st->status = say("pinned version %s not found (release list incomplete) - installed: %s", {st->cfg.pin, installed.empty() ? "none" : installed});
         } else if (!target.isSigned()) {
-            st->status = std::string("no ") + kPlatform + " builds from 1.17 on in the " + ch + " channel yet - pick a version to install it";
+            st->status = say("no %s builds from 1.17 on in the %s channel yet - pick a version to install it", {kPlatform, ch});
         } else {
-            st->status = "installed " + installed + " is newer than the latest " + ch + " release " + target.version + " - pick a version to change";
+            st->status = say("installed %s is newer than the latest %s release %s - pick a version to change", {installed, ch, target.version});
         }
     }
     if (doInstall) { installRelease(std::move(st), dir, target); return; }
@@ -619,6 +666,10 @@ int main(int argc, char** argv) {
     // only the installed launcher swaps itself, and never twice in a row
     st.noSelfUpdate = relaunched || !fs::equivalent(self, install::installedLauncher(), eqEc);
     std::thread worker(updater, stp, dir);
+    LanguageSync language;
+    { std::lock_guard<std::mutex> l(st.mu); language.read(st.cfg); }
+    applyLanguage(r, language.setting);
+    language.nextCheck = timeNow() + 1.0;
     Ui ui;
     // (the launcher shares the game's Ui; the game's UI test doesn't cover it: its buttons are tested by the launcher tests)
     constexpr UiExp kLauncherUi = UiExp::inert();
@@ -634,7 +685,8 @@ int main(int argc, char** argv) {
     double uninstallArmed = 0;
     bool autoPlay = st.cfg.autoStart;   // (OPTIONS > AUTO-START: as --play)
     for (int i = 1; i < argc; i++) autoPlay = autoPlay || std::string(argv[i]) == "--play";
-    bool optionsOpen = false;   // OPTIONS: in place of the changelog
+    bool optionsOpen = false;   // OPTIONS: in place of the changelog (--options: open at start, for screenshots)
+    for (int i = 1; i < argc; i++) optionsOpen = optionsOpen || std::string(argv[i]) == "--options";
     glfwSetCharCallback(win, [](GLFWwindow*, unsigned cp) { if (cp >= 32 && cp < 127) g_in->chars += (char)cp; });
     glfwSetKeyCallback(win, [](GLFWwindow*, int key, int, int action, int) {
         if (action == GLFW_RELEASE) return;
@@ -644,6 +696,13 @@ int main(int argc, char** argv) {
     });
     while (!glfwWindowShouldClose(win) && !quit) {
         glfwPollEvents();
+        lang::frame();
+        if (timeNow() >= language.nextCheck) {   // (changed in the game: followed within a second)
+            bool changed;
+            { std::lock_guard<std::mutex> l(st.mu); changed = language.read(st.cfg); }
+            if (changed) applyLanguage(r, language.setting);
+            language.nextCheck = timeNow() + 1.0;
+        }
         int fw, fh, ww, wh;
         double mx, my;
         glfwGetFramebufferSize(win, &fw, &fh);
@@ -679,7 +738,7 @@ int main(int argc, char** argv) {
             latestRow = releases::latestIndex(st.releases);
             for (size_t i = 0; i < st.releases.size(); i++) {
                 versions.push_back(st.releases[i].version);
-                versionNames.push_back((int)i == latestRow ? "LATEST (" + st.releases[i].version + ")" : st.releases[i].version);
+                versionNames.push_back((int)i == latestRow ? say("LATEST (%s)", {st.releases[i].version}) : st.releases[i].version);
             }
             if (!st.releases.empty()) {
                 sel = st.releases[std::min<size_t>(st.selected, st.releases.size() - 1)];
@@ -740,23 +799,19 @@ int main(int argc, char** argv) {
         float y = 120 * s, yMax = notice.title.empty() ? 322 * s : 290 * s;
         const Color warn = {1.0f, 0.62f, 0.3f, 1};
         if (!notice.title.empty()) ui.label(36 * s, y, notice.title, warn);
-        else ui.label(36 * s, y, latest.empty() ? "CHANGELOG" : "VERSION " + latest + (latest == installed ? " (INSTALLED)" : ""), ui.accent);
+        else if (!optionsOpen) ui.label(36 * s, y, latest.empty() ? std::string("CHANGELOG") : say(latest == installed ? "VERSION %s (INSTALLED)" : "VERSION %s", {latest}), ui.accent);
         y += 22 * s;
         float ts = std::max(1.0f, std::round(ui.textScale() * 0.75f));
         float maxW = fw - 80 * s - listW - 8 * s;
         // one paragraph, wrapped by width (the UI font is proportional): break at the last space that fits
-        auto wrapped = [&](std::string line, const Color& c) {
-            while (r.textWidth(line, ts) > maxW && y < yMax) {
-                size_t cut = std::max<size_t>(1, r.textFit(line, ts, maxW));
-                size_t sp = line.rfind(' ', cut);
-                if (sp != std::string::npos && sp > 0) cut = sp;
-                r.text(36 * s, y, ts, line.substr(0, cut), c);
-                line = line.substr(cut);
-                while (!line.empty() && line[0] == ' ') line.erase(0, 1);
+        // (Ui::wrap: the language's text is what's wrapped, Chinese and Japanese between characters)
+        auto wrapped = [&](const std::string& line, const Color& c) {
+            const std::vector<std::string>& lines = ui.wrap(line, ts, maxW);
+            for (size_t i = 0; i < lines.size() && (i == 0 || y < yMax); i++) {
+                r.text(36 * s, y, ts, lines[i], c);
                 y += 10 * ts;
             }
-            r.text(36 * s, y, ts, line, c);
-            y += 10 * ts;
+            if (lines.empty()) y += 10 * ts;
         };
         if (optionsOpen && notice.title.empty()) {   // OPTIONS (1.19.4): auto-start, keep open, updates, launch options
             const float ox = 36 * s, ow = panelW - 24 * s, oh = 26 * s, ohw = (ow - 8 * s) * 0.5f;
@@ -771,6 +826,17 @@ int main(int argc, char** argv) {
                 oy += oh + 8 * s;
                 static const std::vector<std::string> un = {"UPDATES: AUTOMATIC", "UPDATES: ASK FIRST", "UPDATES: AT NEXT LAUNCH"};
                 changed |= ui.cycle(ox, oy, ow, oh, "UPDATES", st.cfg.updates, 3, un, kLauncherUi);
+                oy += oh + 8 * s;
+                // LANGUAGE: the game's setting, AUTO (the system's) then each language in its own name
+                static std::vector<std::string> ln;
+                const auto& L = lang::languages();
+                if (ln.empty()) { ln.push_back("LANGUAGE: AUTO"); for (const auto& lg : L) ln.push_back(std::string("LANGUAGE: ") + lg.name); }
+                int li = language.setting == "auto" ? 0 : lang::indexOf(language.setting) + 1;
+                if (li < 0) li = 0;
+                if (ui.cycle(ox, oy, ow, oh, "LANGUAGE", li, (int)ln.size(), ln, kLauncherUi)) {
+                    language.write(st.cfg, li <= 0 ? std::string("auto") : std::string(L[li - 1].code));
+                    applyLanguage(r, language.setting);
+                }
                 oy += oh + 14 * s;
                 ui.label(ox, oy, "LAUNCH OPTIONS (PASSED TO THE GAME)", {0.8f, 0.82f, 0.85f, 1}, 0.85f);
                 oy += 16 * s;
@@ -820,10 +886,11 @@ int main(int argc, char** argv) {
                 listScroll = 0;
                 std::string ch = releases::channelName(st.cfg.channel);
                 int li = releases::latestIndex(st.releases);
-                if (!st.fetched) st.status = ch + " channel - offline";
-                else if (st.releases.empty()) st.status = "no " + ch + " builds published yet";
-                else if (li < 0) st.status = "no " + ch + " builds from 1.17 on yet - pick a version to install it";
-                else st.status = ch + " channel - latest " + st.releases[li].version + (st.installed.empty() ? "" : ", installed " + st.installed);
+                if (!st.fetched) st.status = say("%s channel - offline", {ch});
+                else if (st.releases.empty()) st.status = say("no %s builds published yet", {ch});
+                else if (li < 0) st.status = say("no %s builds from 1.17 on yet - pick a version to install it", {ch});
+                else st.status = st.installed.empty() ? say("%s channel - latest %s", {ch, st.releases[li].version})
+                                                      : say("%s channel - latest %s, installed %s", {ch, st.releases[li].version, st.installed});
             }
             if (ui.button(bx, by, bw, bh, armed ? "CLICK TO CONFIRM" : "UNINSTALL", kLauncherUi, !st.busy)) {
                 if (armed) {
@@ -837,7 +904,7 @@ int main(int argc, char** argv) {
         if (notice.blocksPlay) autoPlay = false; // (a --play waits for the player: never a start that can't work)
         bool offerInstall = needInstall && !st.busy;
         // installing is always the player's click (or startup's newer-only rule); the installed version stays playable.
-        if (offerInstall && ui.button(fw - (canPlay ? 432 : 224) * s, 414 * s, 200 * s, 48 * s, "INSTALL " + sel.version, kLauncherUi)) {
+        if (offerInstall && ui.button(fw - (canPlay ? 432 : 224) * s, 414 * s, 200 * s, 48 * s, say("INSTALL %s", {sel.version}), kLauncherUi)) {
             st.busy = true;
             if (worker.joinable()) worker.join();
             worker = std::thread(installRelease, stp, dir, sel);
@@ -846,15 +913,17 @@ int main(int argc, char** argv) {
             autoPlay = false;
             // never a start of a game that isn't there: checked (existence and size) before every start
             if (checkGame(&st, dir, false)) {
-                int e = launchGame(dir, st.cfg.args);
+                std::string args = st.cfg.args;   // (+ a LANGUAGE picked before the game made its quark.cfg)
+                { std::lock_guard<std::mutex> l(st.mu); if (!st.cfg.language.empty()) args += " --language " + st.cfg.language; }
+                int e = launchGame(dir, args);
                 if (e == 0) quit = !st.cfg.keepOpen;   // (OPTIONS > KEEP LAUNCHER OPEN)
                 else if (e == kErrVirusInfected || e == kErrVirusDeleted) {
                     std::lock_guard<std::mutex> l(st.mu);
                     st.notice = exeNotice({gamefiles::kGameExe, gamefiles::Problem::Blocked}, st.installed, dir);
-                    st.status = "Windows refused to start " + fileName(gamefiles::kGameExe) + " (error " + std::to_string(e) + ")";
+                    st.status = say("Windows refused to start %s (error %s)", {fileName(gamefiles::kGameExe), std::to_string(e)});
                 } else if (checkGame(&st, dir, false)) { // (gone in between: the notice says so)
                     std::lock_guard<std::mutex> l(st.mu);
-                    st.status = "could not start the game in " + dir.u8string() + " (error " + std::to_string(e) + ")";
+                    st.status = say("could not start the game in %s (error %s)", {dir.u8string(), std::to_string(e)});
                 }
             }
         }

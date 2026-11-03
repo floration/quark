@@ -33,6 +33,8 @@
   - **PERFORMANCE CHECK**: the game reads your graphics driver's settings (NVIDIA; AMD Radeon, integrated Radeon Graphics too; Intel, integrated and Arc) and Windows' power plan, power mode, battery, Game Mode, GPU scheduling and which GPU it runs on, and lists anything that costs frames or adds latency with where to change it: triple buffering, forced vsync, frames queued up, frame caps (Chill, FRTC, max frame rate, Intel's limiter), Radeon Boost, Enhanced Sync, Anti-Lag or Intel Low Latency off, Intel Endurance Gaming, power saving, the integrated GPU while a dedicated one is there.
 
 ## Languages
+- **The launcher speaks your language:** OPTIONS has a LANGUAGE choice, and it's the same setting as the game's. Change it in either one and the other follows. The launcher's buttons, messages and help are translated into all 10 languages.
+- **AUTO now follows your system's display language.** On Windows it used to follow the region format, so English Windows with a German date format got German. It now reads the display language, then your other preferred languages in order, and English if none of them is one of the game's. Mac apps now use System Settings' language list too.
 - **More of the game is translated:** the aim trainer, the info pages' headings, settings hints with numbers in them, and labels with a value after them.
 - Chinese, Japanese and Korean text fills the line before wrapping, and F3's latency rows no longer run into their numbers.
 - Squeezed labels keep their word spaces.

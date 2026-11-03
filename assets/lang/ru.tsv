@@ -72,6 +72,7 @@
 (FINISH)	(ФИНИШ)
 (HIDDEN: STREAMER MODE)	(СКРЫТО: РЕЖИМ СТРИМЕРА)
 (HS)	(HS)
+(INSTALLED)	(INSTALLED)
 (IT AFFECTS GAMEPLAY)	(ВЛИЯЕТ НА ГЕЙМПЛЕЙ)
 (LEAVE)	(ВЫЙТИ)
 (MISSING)	(НЕТ)
@@ -88,13 +89,16 @@
 (exclusive: no format the device takes)	(эксклюзивный: устройство не поддерживает формат)
 (exclusive: the device is busy)	(эксклюзивный: устройство занято)
 (first: takes the loss)	(первый: засчитывается поражение)
+(is the game running?)	(игра запущена?)
 (its CONTROLS action too, if it has one)	(и его действие в УПРАВЛЕНИИ, если есть)
 (legacy)	(устар.)
 (lowered)	(понижено)
 (own goal)	(автогол)
+(pinned)	(pinned)
 (playing the built-in brain)	(играет встроенный ИИ)
 (score #-#)	(счёт #-#)
 (team):	(команда):
+(unknown)	(неизвестно)
 (vote ranked off first)	(сначала отключите рейтинг голосованием)
 (winner stays)	(победитель остаётся)
 + (BIGGER)	+ (БОЛЬШЕ)
@@ -119,20 +123,26 @@
 - WHEEL TO SCROLL	- КОЛЕСО ДЛЯ ПРОКРУТКИ
 - beats	- побеждает
 - best of 3 between the last two	- до 2 побед между последними двумя
+- installed:	- installed:
 - it may not work	- может не работать
 - it moves and stretches as one	- двигается и растягивается целиком
 - level with	- вровень с
 - map	- карта
 - match started	- матч начался
 - not played: the server plays	- не сыгран: играет сервер
+- pick a version and press INSTALL	- pick a version and press INSTALL
+- pick a version to change	- pick a version to change
 - playing mode logic	- логика режима
 - plays the next match	- играет следующий матч
 - rock paper scissors decides it	- решает камень-ножницы-бумага
+- see below	- see below
 - short of	- не хватает
+- the download may have been tampered with	- the download may have been tampered with
 - their place is kept for	- их место сохраняется на
 -INF DB	-INF ДБ
 -Wcast-function-type	-Wcast-function-type
 -Y (under)	-Y (снизу)
+-fsSL	-fsSL
 0.1% LOW	0.1% LOW
 00,000,000 NS	00,000,000 NS
 1 HP	1 HP
@@ -175,6 +185,7 @@ A MOMENT LATER, AIM STRAIGHT DOWN AND FIRE	ЧЕРЕЗ МГНОВЕНИЕ ЦЕЛ�
 A NEW CODE FROM /link RELINKS IT - unlink REMOVES IT	НОВЫЙ КОД ИЗ /link ПРИВЯЖЕТ ЗАНОВО - unlink ОТВЯЖЕТ
 A NEW DIAGONAL EVERY 0.3 S	НОВАЯ ДИАГОНАЛЬ КАЖДЫЕ 0.3 С
 A NEW DIAGONAL EVERY 0.3 S, 10 HP	НОВАЯ ДИАГОНАЛЬ КАЖДЫЕ 0.3 С, 10 HP
+A NEW VERSION INSTALLS WHEN THE LAUNCHER NEXT STARTS.	НОВАЯ ВЕРСИЯ УСТАНОВИТСЯ ПРИ СЛЕДУЮЩЕМ ЗАПУСКЕ ЛАУНЧЕРА.
 A PLAYER JOINED VIA	ИГРОК ЗАШЁЛ ЧЕРЕЗ
 A ROCKET JUMP STRAIGHT UP	РАКЕТНЫЙ ПРЫЖОК ПРЯМО ВВЕРХ
 A SERVER	СЕРВЕР
@@ -330,6 +341,8 @@ AUTO-HIDE HEALTH	АВТОСКРЫТИЕ ЗДОРОВЬЯ
 AUTO-HIDE WEAPON LIST	АВТОСКРЫТИЕ СПИСКА ОРУЖИЯ
 AUTO-HOP	АВТОБХОП
 AUTO-HOP OFF: HELD JUMP JUMPS ONCE	АВТОБХОП ВЫКЛ: УДЕРЖАНИЕ ПРЫЖКА - ОДИН ПРЫЖОК
+AUTO-START GAME	АВТОЗАПУСК ИГРЫ
+AUTO-START: PLAYS ONCE UP TO DATE. AT NEXT LAUNCH:	АВТОЗАПУСК: ИГРА ПОСЛЕ ОБНОВЛЕНИЯ. ПРИ СЛЕДУЮЩЕМ ЗАПУСКЕ:
 AUTO: YOUR SYSTEM'S LANGUAGE	АВТО: ЯЗЫК СИСТЕМЫ
 AVERAGE	СРЕДНЕЕ
 AVERAGE, LAST	СРЕДНЕЕ, ПОСЛЕДНЕЕ
@@ -499,6 +512,9 @@ CHAMPION	ЧЕМПИОН
 CHANGE ANYTHING AFTER (IT STAYS)	МЕНЯЙТЕ ЧТО УГОДНО ПОТОМ (СОХРАНИТСЯ)
 CHANGE MAP / MODE	СМЕНИТЬ КАРТУ / РЕЖИМ
 CHANGE MAP / MODE (pick the mode, then the map), FORCE START, RELOAD MAP, EDIT MODE (everyone edits the map together).	СМЕНИТЬ КАРТУ / РЕЖИМ (выберите режим, затем карту), ФОРС-СТАРТ, ПЕРЕЗАГРУЗИТЬ КАРТУ, РЕЖИМ ПРАВКИ (все правят карту вместе).
+CHANGELOG	СПИСОК ИЗМЕНЕНИЙ
+CHANNEL: PRODUCTION	КАНАЛ: ОСНОВНОЙ
+CHANNEL: TESTING	КАНАЛ: ТЕСТОВЫЙ
 CHANNELS	КАНАЛЫ
 CHANNELS: MONO	КАНАЛЫ: МОНО
 CHANNELS: STEREO	КАНАЛЫ: СТЕРЕО
@@ -512,6 +528,7 @@ CHAT ON	ЧАТ ВКЛ
 CHAT OPACITY	ПРОЗРАЧН. ЧАТА
 CHAT SECONDS	СЕКУНД ЧАТА
 CHECK AGAIN	ПРОВЕРИТЬ СНОВА
+CHECK FILES	ПРОВЕРИТЬ ФАЙЛЫ
 CHECKING...	ПРОВЕРКА...
 CHECKPOINT	ЧЕКПОИНТ
 CHECKPT	ЧЕКП.
@@ -1032,6 +1049,7 @@ FULLSCREEN SIZE: DESKTOP	РАЗРЕШ. ПОЛН. ЭКРАНА: КАК У СТО�
 FULLSCREEN: OFF KEEPS IT ON SCREEN	ПОЛНЫЙ ЭКРАН: ВЫКЛ ДЕРЖИТ ЕГО НА ЭКРАНЕ
 G-SYNC / FREESYNC	G-SYNC / FREESYNC
 GAME	ИГРА
+GAME FILE(S) MISSING OR CHANGED	GAME FILE(S) MISSING OR CHANGED
 GAME FONTS: YOUR OWN COPY OF THE REAL FONT IF FOUND	ИГРОВЫЕ ШРИФТЫ: ВАША КОПИЯ НАСТОЯЩЕГО ШРИФТА, ЕСЛИ НАЙДЕНА
 GAME LATENCY ~	ЗАДЕРЖКА ИГРЫ ~
 GAME LATENCY ~{} NS  (MOUSE REPORT IN TO GPU DONE; F3: NEXT VIEW)	ЗАДЕРЖКА ИГРЫ ~{} НС  (ОТ ОТЧЁТА МЫШИ ДО ГОТОВОЙ GPU; F3: СЛЕД. ВИД)
@@ -1234,6 +1252,7 @@ HOSTING ON UDP PORT	ХОСТИНГ НА UDP-ПОРТУ
 HOW	КАК
 HOW OTHER PLAYERS' MOVES ARE SMOOTHED	КАК СГЛАЖИВАЮТСЯ ДВИЖЕНИЯ ДРУГИХ ИГРОКОВ
 HP	HP
+HTTP	HTTP
 HUD	HUD
 HUD & SETTINGS	HUD И НАСТРОЙКИ
 HUD 2	HUD 2
@@ -1298,6 +1317,8 @@ INSERT	INSERT
 INSTAGIB	ИНСТАГИБ
 INSTAGIB CROSSBOWS	ИНСТАГИБ-АРБАЛЕТЫ
 INSTAGIB SNIPERS	ИНСТАГИБ-СНАЙПЕРЫ
+INSTALL	INSTALL
+INSTALL {}	УСТАНОВИТЬ {}
 INTEL	INTEL
 INTEL DRIVER SETTINGS COULDN'T BE READ	НЕ УДАЛОСЬ ПРОЧИТАТЬ НАСТРОЙКИ ДРАЙВЕРА INTEL
 INTEL ENDURANCE GAMING SAVES POWER OVER FRAMES	INTEL ENDURANCE GAMING ЭКОНОМИТ ЭНЕРГИЮ ЗА СЧЁТ FPS
@@ -1317,7 +1338,9 @@ INVERT Y	ИНВЕРСИЯ Y
 IOID	IOID
 IRIS	IRIS
 IS A BUILT-IN MAP: IT STAYS AS IT IS. SAVE YOUR EDITS AS YOUR OWN MAP (IN YOUR MAPS FOLDER, UNDER THIS NAME) OR DROP THEM.	- ВСТРОЕННАЯ КАРТА: ОНА НЕ МЕНЯЕТСЯ. СОХРАНИТЕ ПРАВКИ КАК СВОЮ КАРТУ (В ПАПКЕ MAPS, ПОД ЭТИМ ИМЕНЕМ) ИЛИ ОТМЕНИТЕ ИХ.
+IS BLOCKED	IS BLOCKED
 IS GODLIKE	БОГОПОДОБЕН
+IS MISSING	IS MISSING
 IS ON A KILLING SPREE	УСТРОИЛ СЕРИЮ УБИЙСТВ
 IS ON A RAMPAGE	БУЙСТВУЕТ
 IS UNSTOPPABLE	НЕУДЕРЖИМ
@@ -1355,6 +1378,7 @@ KB; OFF: A SERVER'S	КБ; ВЫКЛ: СЕРВЕРНЫЙ
 KEEP	ОСТ.
 KEEP HOLDING IT ALL THE WAY DOWN	ДЕРЖИ ВСЁ ПАДЕНИЕ
 KEEP HOLDING IT TO RIDE	ДЕРЖИ, ЧТОБЫ ЛЕТЕТЬ НА НЕЙ
+KEEP LAUNCHER OPEN	НЕ ЗАКРЫВАТЬ ЛАУНЧЕР
 KEEP THESE DISPLAY SETTINGS? REVERTING IN	ОСТАВИТЬ ЭТИ НАСТРОЙКИ ЭКРАНА? ОТКАТ ЧЕРЕЗ
 KEEP YOUR EDITS AS A NEW MAP?	СОХРАНИТЬ ПРАВКИ КАК НОВУЮ КАРТУ?
 KEEP: ALL	ХРАНИТЬ: ВСЕ
@@ -1408,6 +1432,8 @@ LAID OVER THE WORLD AFTER IT	И НАЛОЖЕН НА МИР ПОСЛЕ НЕГО
 LAND	ПРИЗ.
 LAND ON THE FAR SIDE OF THE LAVA	ПРИЗЕМЛИСЬ ПО ТУ СТОРОНУ ЛАВЫ
 LANGUAGE	ЯЗЫК
+LANGUAGE:	LANGUAGE:
+LANGUAGE: AUTO	ЯЗЫК: АВТО
 LARGE	БОЛЬШОЙ
 LASER	ЛАЗЕР
 LASER VAMPIRE	ЛАЗЕРНЫЙ ВАМПИР
@@ -1428,6 +1454,8 @@ LATENT SAFETY	ЗАПАС LATENT
 LATENT SYNC	LATENT SYNC
 LATENT SYNC: HOLD FOR THE BLANK	LATENT SYNC: ЖДАТЬ ГАШЕНИЯ
 LATENT SYNC: WAIT FOR THE RASTER	LATENT SYNC: ЖДАТЬ РАСТР
+LATEST ({})	ПОСЛЕДНЯЯ ({})
+LAUNCH OPTIONS (PASSED TO THE GAME)	ПАРАМЕТРЫ ЗАПУСКА (ДЛЯ ИГРЫ)
 LAUNCHER ON THE RIGHT	ЛАУНЧЕР СПРАВА
 LAY A STICKY BOMB, STAND ON IT, SET IT OFF AS YOU JUMP.	ПОЛОЖИ ЛИПКУЮ БОМБУ, ВСТАНЬ НА НЕЁ, ПОДОРВИ В ПРЫЖКЕ.
 LEADERBOARD	ТАБЛИЦА ЛИДЕРОВ
@@ -2367,6 +2395,7 @@ OPENS THE UDP PORT ON YOUR ROUTER (UPNP)	ОТКРЫВАЕТ UDP-ПОРТ НА Р
 OPPOSITE KEYS: CANCEL	ПРОТИВОП. КЛАВИШИ: ОТМЕНА
 OPPOSITE KEYS: FIRST WINS	ПРОТИВОПОЛОЖНЫЕ КЛАВИШИ: ПЕРВАЯ
 OPPOSITE KEYS: LAST WINS	ПРОТИВОП. КЛАВИШИ: ПОСЛЕДНЯЯ
+OPTIONS	НАСТРОЙКИ
 OR RESTART: IT'S ASKED FOR AT START	ИЛИ ПЕРЕЗАПУСК: ЗАПРАШИВАЕТСЯ ПРИ СТАРТЕ
 ORB	СФЕР.
 OTHER PLAYERS	ДРУГИЕ ИГРОКИ
@@ -2394,6 +2423,9 @@ OWN SHADOW	СВОЯ ТЕНЬ
 OggS	OggS
 OpenGL function missing:	Нет функции OpenGL:
 OpenGL function missing: {}	OpenGL function missing: {}
+Or press REPAIR to download the game again, check it and put it back (your settings and files stay).	Или нажмите ВОССТАНОВИТЬ, чтобы скачать игру заново, проверить и вернуть её (ваши настройки и файлы останутся).
+Or press REPAIR to download version	Or press REPAIR to download version
+Or press REPAIR to download version {} again, check it and put it back (your settings and files stay).	Или нажмите ВОССТАНОВИТЬ, чтобы скачать версию {} заново, проверить и вернуть её (ваши настройки и файлы останутся).
 Output	Вывод
 PACING WAIT (ULTRA)	ОЖИДАНИЕ ТЕМПА (УЛЬТРА)
 PACK	ПАК
@@ -2528,6 +2560,8 @@ Pick the mode and map, a server name and the max players. The game picks the map
 Player	Игрок
 PowerGetActiveScheme	PowerGetActiveScheme
 PowerGetEffectiveOverlayScheme	PowerGetEffectiveOverlayScheme
+Press REPAIR to download version	Press REPAIR to download version
+Press REPAIR to download version {} again and put them back (your settings and files stay).	Нажмите ВОССТАНОВИТЬ, чтобы скачать версию {} заново и вернуть их (ваши настройки и файлы останутся).
 Q - grapple: hold to hook what you're aiming at and pull toward it; release to let go.	Q - крюк: удерживайте, чтобы зацепиться за то, куда целитесь, и подтянуться; отпустите, чтобы отцепиться.
 QK1 - QK8 - ranked arenas for all three ladders (vanilla and laser vampire 1v1, instagib free for all), also duel and tourney.	QK1 - QK8 - рейтинговые арены для всех трёх таблиц (ванильный и лазерный вампир 1v1, инстагиб FFA), а также дуэль и турнир.
 QUAKE	QUAKE
@@ -2638,6 +2672,9 @@ REMEMBER LAST TAB	ПОМНИТЬ ВКЛАДКУ
 REMEMBER MY QUEUES	ПОМНИТЬ МОИ ОЧЕРЕДИ
 RENAME	ПЕРЕИМ.
 RENDER SCALE	МАСШТАБ РЕНДЕРА
+REPAIR	ВОССТАНОВИТЬ
+REPAIR needs the internet:	REPAIR needs the internet:
+REPAIR needs the internet: {}	Для восстановления нужен интернет: {}
 RESET ALL	СБРОСИТЬ ВСЁ
 RESET ALL KEYS	СБРОС ВСЕХ КЛАВИШ
 RESET CROSSHAIR	СБРОСИТЬ ПРИЦЕЛ
@@ -2658,6 +2695,7 @@ RESUME	ДАЛЕЕ
 RESUME (ESC)	ПРОДОЛЖИТЬ (ESC)
 RETICLE COLOR	ЦВЕТ ПРИЦЕЛА
 RETICLE WIDTH	ШИРИНА ПРИЦЕЛА
+RETRY	ПОВТОРИТЬ
 REVERT	ОТКАТИТЬ
 RIDE FOR 0.4 S	ЛЕТИ НА НЕЙ 0.4 С
 RIFF	RIFF
@@ -2735,6 +2773,8 @@ RUN SPEED	СКОРОСТЬ БЕГА
 RUN, JUMP THE HURDLES, REACH THE GLOWING LINE.	БЕГИ, ПЕРЕПРЫГИВАЙ БАРЬЕРЫ, ДОБЕРИСЬ ДО СВЕТЯЩЕЙСЯ ЛИНИИ.
 RUNS	ЗАПУСК.
 Ranked games use the default model, HUD and controls and 10 ms interpolation, so everyone plays the same game.	В рейтинговых играх модель, HUD и управление по умолчанию и интерполяция 10 мс, чтобы все играли в одну и ту же игру.
+Restore	Restore
+Restore {} from that tool's quarantine, and add an exclusion for the quark folder:	Восстановите {} из карантина этой программы и добавьте исключение для папки quark:
 SAFE OK / ERROR	НАДЁЖНО ОК / ОШИБКА
 SAFE: OK BLUE, ERRORS ORANGE; IT: TAG / HIDE'S	НАДЁЖНО: ОК СИНИЙ, ОШИБКИ ОРАНЖЕВЫЕ; IT: САЛКИ / ПРЯТКИ
 SAME	ТОТ ЖЕ
@@ -3037,6 +3077,7 @@ SYSTEM MESSAGES: ALL	СИСТЕМНЫЕ СООБЩЕНИЯ: ВСЕ
 SYSTEM MESSAGES: IMPORTANT	СИСТЕМНЫЕ СООБЩЕНИЯ: ВАЖНЫЕ
 SYSTEM MESSAGES: OFF	СИСТЕМНЫЕ СООБЩЕНИЯ: ВЫКЛ
 SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)	СИСТЕМНЫЙ: СТРЕЛКА ВАШЕЙ ОС (ЦВЕТ: ТОЛЬКО НАШ)
+SetDefaultDllDirectories	SetDefaultDllDirectories
 Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).	Настройки > УПРАВЛЕНИЕ позволяют экспортировать свои бинды и импортировать чужие (копировать / вставить текст).
 Start the match, change map / mode, ranked on / off, edit the map together, bots on. A majority of the human players decides.	Начать матч, сменить карту / режим, рейтинг вкл / выкл, редактировать карту вместе, включить ботов. Решает большинство живых игроков.
 Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping. Above ~13 m/s A / D turns you faster than W alone.	Стрейф-джамп набирает скорость: держите клавишу стрейфа, поворачивайте мышь в ту же сторону и продолжайте прыгать. Выше ~13 м/с A / D поворачивают быстрее, чем одна W.
@@ -3107,6 +3148,7 @@ TEST MODE:	РЕЖИМ ТЕСТА:
 TEST MODE: THE MAP'S	РЕЖИМ ТЕСТА: КАК У КАРТЫ
 TEST plays the map right away; BAKE LIGHT previews the real lighting.	ТЕСТ сразу запускает карту; ЗАПЕЧЬ СВЕТ показывает настоящее освещение.
 TESTING BUILD - RANKED NOT RATED (PLAYED, NEVER COUNTED)	ТЕСТОВАЯ СБОРКА - РЕЙТИНГ НЕ ЗАСЧИТЫВАЕТСЯ (ИГРАЕТСЯ, НО НЕ СЧИТАЕТСЯ)
+TESTING VERSIONS	ТЕСТОВЫЕ ВЕРСИИ
 TEXT	ТЕКСТ
 TEXT AFTER THE LAST RULE	ТЕКСТ ПОСЛЕ ПОСЛЕДНЕГО ПРАВИЛА
 TEXT ALIGN	ВЫРАВН. ТЕКСТА
@@ -3262,7 +3304,21 @@ TWO TINY DRIFTING BALLS, 10 HP	ДВА КРОШЕЧНЫХ ДРЕЙФУЮЩИХ Ш
 TYPE TO SEARCH: A NAME OR WHAT IT DOES (CTRL+F)	ВВЕДИТЕ ДЛЯ ПОИСКА: ИМЯ ИЛИ ЧТО ДЕЛАЕТ (CTRL+F)
 TYPING	НАБОР
 TYPING SOUNDS	ЗВУКИ НАБОРА
+The game can still start, but may miss maps or sounds. If you didn't change them yourself, an antivirus may have removed them.	Игра всё ещё запускается, но может не хватать карт или звуков. Если вы их не меняли, их мог удалить антивирус.
+The game can't start:	The game can't start:
+The game can't start: {} can't be opened (Windows refuses to run a file its antivirus flagged).	Игра не запускается: {} не открывается (Windows не запускает файл, отмеченный антивирусом).
+The game can't start: {} is gone from the game folder.	Игра не запускается: {} пропал из папки игры.
+The game can't start: {} isn't the file that was installed (something changed or replaced it).	Игра не запускается: {} — не тот файл, что был установлен (его изменили или заменили).
 The server listens on UDP port 27500 (change it under UDP PORT). Quark asks your router to forward it automatically (UPnP); if friends can't connect, forward that UDP port on your router by hand.	Сервер слушает UDP-порт 27500 (меняется в UDP-ПОРТ). Quark просит роутер пробросить его автоматически (UPnP); если друзья не могут подключиться, пробросьте этот UDP-порт на роутере вручную.
+The update stopped:	The update stopped:
+The update stopped: {}. Nothing was changed: version {} is still installed and playable.	Обновление остановлено: {}. Ничего не изменилось: версия {} по-прежнему установлена и работает.
+The update stopped: {}. Nothing was installed.	Обновление остановлено: {}. Ничего не установлено.
+Then press RETRY.	Затем нажмите ПОВТОРИТЬ.
+This is almost always an antivirus false positive: quark isn't code-signed, so Windows Defender (or another antivirus) sometimes quarantines a new build. The launcher never deletes game files.	Почти всегда это ложное срабатывание антивируса: у quark нет цифровой подписи кода, поэтому Защитник Windows (или другой антивирус) иногда помещает новую сборку в карантин. Лаунчер никогда не удаляет файлы игры.
+This is most likely an antivirus or cleanup tool removing it as a false positive (quark isn't code-signed). The launcher never deletes game files.	Скорее всего, его удалил антивирус или программа очистки по ложному срабатыванию (у quark нет подписи кода). Лаунчер никогда не удаляет файлы игры.
+To get it back: Windows Security > Virus & threat protection > Protection history, open the entry for	To get it back: Windows Security > Virus & threat protection > Protection history, open the entry for
+To get it back: Windows Security > Virus & threat protection > Protection history, open the entry for {}, then Actions > Restore (or Allow on device).	Чтобы вернуть: Безопасность Windows > Защита от вирусов и угроз > Журнал защиты, откройте запись для {}, затем Действия > Восстановить (или Разрешить на устройстве).
+To stop it happening again: Windows Security > Virus & threat protection > Manage settings > Exclusions > Add an exclusion > Folder:	Чтобы это не повторилось: Безопасность Windows > Защита от вирусов и угроз > Управление настройками > Исключения > Добавить исключение > Папка:
 UARK	UARK
 UDP	UDP
 UDP PORT	UDP-ПОРТ
@@ -3280,6 +3336,7 @@ UNBOUND	НЕ НАЗНАЧЕНО
 UNCHANGED	БЕЗ ИЗМЕНЕНИЙ
 UNDO	ОТМЕН.
 UNGROUP	РАЗГРУПП.
+UNINSTALL	УДАЛИТЬ
 UNKNOWN	НЕИЗВЕСТНО
 UNKNOWN SELECTOR '	НЕИЗВЕСТНЫЙ СЕЛЕКТОР '
 UNLIMITED	БЕЗ ЛИМИТА
@@ -3287,6 +3344,10 @@ UNPLAYED MAPS COUNT AT THEIR DEFAULT TIME	НЕПРОЙДЕННЫЕ КАРТЫ И
 UNSTOPPABLE	НЕУДЕРЖИМ
 UP	ВВЕРХ
 UP / DOWN AS A MULTIPLE OF SENSITIVITY	ВВЕРХ / ВНИЗ КАК МНОЖИТЕЛЬ ЧУВСТВИТЕЛЬНОСТИ
+UPDATES	ОБНОВЛЕНИЯ
+UPDATES: ASK FIRST	ОБНОВЛЕНИЯ: СПРАШИВАТЬ
+UPDATES: AT NEXT LAUNCH	ОБНОВЛЕНИЯ: ПРИ СЛЕД. ЗАПУСКЕ
+UPDATES: AUTOMATIC	ОБНОВЛЕНИЯ: АВТОМАТИЧЕСКИ
 UPLOAD CAP (MBIT/S)	ЛИМИТ ОТДАЧИ (МБИТ/С)
 USE	ИСП.
 USE #	ИСП. #
@@ -3312,6 +3373,10 @@ VERBOSE INFO	ПОДРОБНАЯ ИНФО
 VERBOSE INFO LINES	ПОДРОБНЫЕ ИНФОСТРОКИ
 VERDANA BOLD	VERDANA BOLD
 VERSION	ВЕРСИЯ
+VERSION {}	ВЕРСИЯ {}
+VERSION {} (INSTALLED)	ВЕРСИЯ {} (УСТАНОВЛЕНА)
+VERSION {} WAS NOT INSTALLED	ВЕРСИЯ {} НЕ УСТАНОВЛЕНА
+VERSIONS	ВЕРСИИ
 VERTICAL KEYS	ВВЕРХ/ВНИЗ
 VERTICAL SENSITIVITY	ВЕРТИК. ЧУВСТВИТЕЛЬНОСТЬ
 VERTICAL: ONE KEY	ВЕРТ.: 1 КЛАВИША
@@ -3384,6 +3449,8 @@ WARMUP - {} TO VOTE START	РАЗМИНКА - {} ЗА СТАРТ
 WARNING BEEP	СИГНАЛ ПРЕДУПР.
 WARNING: DON'T TOUCH THIS UNLESS YOU KNOW WHAT YOU'RE DOING	ВНИМАНИЕ: НЕ ТРОГАЙТЕ, ЕСЛИ НЕ ЗНАЕТЕ, ЧТО ДЕЛАЕТЕ
 WARNINGS	ПРЕДУПР.
+WAS CHANGED	WAS CHANGED
+WAS NOT INSTALLED	WAS NOT INSTALLED
 WAS ON	БЫЛ НА
 WASTELAND	ПУСТОШЬ
 WATCH AGAIN	СМОТРЕТЬ СНОВА
@@ -3449,12 +3516,16 @@ WITHIN 1.3 M OF THE FLOOR. 10 MS LATE LOSES 3 M/S	НЕ ВЫШЕ 1.3 М НАД П
 WIZARD	МАГ
 WORD FILTER	ФИЛЬТР СЛОВ
 WORK SANS	WORK SANS
+WORKING...	РАБОТАЮ...
 WORLD	МИР
 WORLD + HUD + SHADOW MAP BUILD	МИР + HUD + КАРТА ТЕНЕЙ
 WORLD OUTLINE	КОНТУР МИРА
 WORLD OUTLINE WIDTH	ТОЛЩИНА КОНТУРА МИРА
 WORST #MS  PING #  3D #X#	ХУДШИЙ #МС  PING #  3D #X#
 WRAP AROUND	ПО КРУГУ
+WinHttpOpen failed	WinHttpOpen failed
+Windows refused to start	Windows refused to start
+Windows refused to start {} (error {})	Windows отказалась запускать {} (ошибка {})
 X MSAA	X MSAA
 X OFFSET	СМЕЩЕНИЕ X
 X SENSITIVITY WHILE THIS WEAPON IS HELD	ЧУВСТВИТЕЛЬНОСТЬ X С ЭТИМ ОРУЖИЕМ В РУКАХ
@@ -3523,6 +3594,8 @@ add must be 3 numbers from 0 to 16	add - это 3 числа от 0 до 16
 advances (walkover)	проходит дальше (без игры)
 after a session	после сессии
 after swap (low latency wait)	после swap (ожидание низкой задержки)
+again and put them back (your settings and files stay).	again and put them back (your settings and files stay).
+again, check it and put it back (your settings and files stay).	again, check it and put it back (your settings and files stay).
 ahead of you (winner stays)	перед вами (победитель остаётся)
 alpha must be over 0 and at most 1	alpha должна быть больше 0 и не больше 1
 an update is ready - the server restarts after this match	готово обновление - сервер перезапустится после этого матча
@@ -3553,6 +3626,7 @@ bad mesh	bad mesh
 bad modifier '	неверный модификатор '
 bad node	bad node
 bad request	неверный запрос
+bad url	bad url
 bench:	бенч:
 big noodle*	big noodle*
 bignoodletitling*	bignoodletitling*
@@ -3572,6 +3646,10 @@ box model:	модель блока:
 boxes into	блоков в
 boxes into one	блоков в один
 buffer without data	buffer without data
+builds from 1.17 on in the	builds from 1.17 on in the
+builds from 1.17 on yet - pick a version to install it	builds from 1.17 on yet - pick a version to install it
+builds in the	builds in the
+builds published yet	builds published yet
 built in # ms	собрано за # мс
 built-in maps reset to the original version	встроенные карты сброшены к исходной версии
 busy #%, late #%	занято #%, опоздание #%
@@ -3595,6 +3673,7 @@ callvote start	callvote start
 callvote tmaps	callvote tmaps
 callvote tmodes	callvote tmodes
 can't	нельзя
+can't be opened (Windows refuses to run a file its antivirus flagged).	can't be opened (Windows refuses to run a file its antivirus flagged).
 can't do that	так нельзя
 can't go ranked: no ranked map for that ladder installed	рейтинг невозможен: не установлена рейтинговая карта для этой таблицы
 can't read	не удаётся прочитать
@@ -3602,24 +3681,46 @@ can't save:	не удаётся сохранить:
 can't turn that	нельзя переключить
 can't vote for that list	нельзя голосовать за этот список
 can't vote:	нельзя голосовать:
+cannot copy	не удаётся скопировать
+cannot read	не удаётся прочитать
+cannot repair: version	cannot repair: version
+cannot repair: version {} isn't published for {} - pick a version and press INSTALL	восстановление невозможно: версия {} не выпущена для {} - выберите версию и нажмите УСТАНОВИТЬ
+cannot replace	не удаётся заменить
+cannot write	не удаётся записать
 capture of every point in	захват каждой точки за
+channel - latest	channel - latest
+channel - offline	channel - offline
+channel yet	channel yet
+channel yet - pick a version to install it	channel yet - pick a version to install it
 chat # "	chat # "
 chat # "{}": {}	chat # "{}": {}
 chat: slow down	чат: не так быстро
+checked {} game files of version {}: all fine	проверено файлов игры: {}, версия {}: всё в порядке
+checked {} game files: {}	проверено файлов игры: {}: {}
+checking for updates...	проверка обновлений...
+checking game files...	проверка файлов игры...
 checking if UDP	проверка, доступен ли UDP
 clean surfaces	чистые поверхности
 closed by the load governor	закрыт регулятором нагрузки
 color must be 3 numbers from 0 to 16	color - это 3 числа от 0 до 16
 connect from	подключение с
 connected from	подключён с
+connection failed (error {})	ошибка соединения ({})
 connection to server lost	соединение с сервером потеряно
+could not be written (a full disk, or blocked as it was written)	не удалось записать (диск заполнен или запись заблокирована)
 could not bind UDP port	не удалось занять UDP-порт
 could not create an OpenGL 3.3 window - update your graphics driver	не удалось создать окно OpenGL 3.3 - обновите графический драйвер
+could not download its release manifest ({})	не удалось скачать манифест выпуска ({})
+could not download its signature ({})	не удалось скачать подпись ({})
 could not host:	не удалось запустить хост:
 could not open	не удалось открыть
 could not open log file	не удалось открыть файл лога
+could not read the download	не удалось прочитать загрузку
+could not run curl	не удалось запустить curl
 could not save maps/	не удалось сохранить maps/
 could not save the map	не удалось сохранить карту
+could not start the game in	could not start the game in
+could not start the game in {} (error {})	не удалось запустить игру в {} (ошибка {})
 could not write maps/	не удалось записать maps/
 could not write to the groups folder	не удалось записать в папку groups
 couldn't check reachability:	не удалось проверить доступность:
@@ -3631,6 +3732,11 @@ delivered the payload in	доставила вагонетку за
 delivery in	доставка за
 demo finished	демо окончено
 demo:	демо:
+download failed:	download failed:
+download failed: {}	ошибка загрузки: {}
+download interrupted	загрузка прервана
+downloading version	downloading version
+downloading version {}...	загрузка версии {}...
 draw - the payload is in the middle	ничья - вагонетка посередине
 dropped:	выбыл:
 dyn + view + flat verts	dyn + view + flat verts
@@ -3664,9 +3770,13 @@ flush2D	flush2D
 font {}: {}	font {}: {}
 font:	шрифт:
 font: {} built in # ms	font: {} built in # ms
+found - it installs at the next launch (or press INSTALL)	found - it installs at the next launch (or press INSTALL)
 found everyone	все найдены
+from that tool's quarantine, and add an exclusion for the quark folder:	from that tool's quarantine, and add an exclusion for the quark folder:
 g del	g del
 g part # # # # # # # #	g part # # # # # # # #
+game files of version	game files of version
+game files:	game files:
 glass shards	осколки стекла
 glfwInit failed	glfwInit failed
 go to the back of the line	в конец очереди
@@ -3685,6 +3795,13 @@ index out of range	index out of range
 init failed:	ошибка инициализации:
 init failed: {}	init failed: {}
 input + prediction ticks	тики ввода + предсказания
+install failed:	install failed:
+install failed: {}	ошибка установки: {}
+installed version	installed version
+installed version {}	установлена версия {}
+installed {} is newer than the latest {} release {} - pick a version to change	установленная {} новее последнего выпуска ({}) {} - выберите версию, чтобы сменить
+installing version	installing version
+installing version {}...	установка версии {}...
 into others, removed	в других, удалено
 is a built-in map - nothing changed to save	- встроенная карта - нечего сохранять
 is a built-in map - pick a new name for yours	- встроенная карта - выберите новое имя для своей
@@ -3693,15 +3810,25 @@ is a built-in map: pick a new name	- встроенная карта: выбер
 is a legacy map (never ranked): ranked plays	- старая карта (не рейтинговая): рейтинг играется
 is a legacy map (this server doesn't list the old maps)	- старая карта (этот сервер не показывает старые карты)
 is already spectating	уже наблюдает
+is blocked (it can't be read)	is blocked (it can't be read)
+is gone from the game folder.	is gone from the game folder.
 is it	водит
 is it - run!	водит - бегите!
+is missing	is missing
+is newer than the latest	is newer than the latest
 is not reachable from the internet - forward UDP	недоступен из интернета - пробросьте UDP
 is now	теперь
 is reachable from the internet - friends can join	доступен из интернета - друзья могут зайти
 is spectating	наблюдает
+is still installed and playable.	is still installed and playable.
 isn't a ranked ruleset	- не рейтинговый набор правил
 isn't built for	не сделана для
 isn't in this custom mode's map pool	нет в пуле карт этого своего режима
+isn't published for	isn't published for
+isn't the file that was installed (something changed or replaced it).	isn't the file that was installed (something changed or replaced it).
+it has no signed release manifest	у неё нет подписанного манифеста выпуска
+it is not signed	она не подписана
+its signature does not verify	подпись не проходит проверку
 joined team A	вступил в команду A
 joined team B	вступил в команду B
 joined the game	вошёл в игру
@@ -3721,6 +3848,8 @@ listening on UDP	слушает UDP
 live (testing server: not rated)	идёт (тестовый сервер: без рейтинга)
 load governor:	регулятор нагрузки:
 look at a side of the selected box	посмотрите на сторону выбранного блока
+looking up version	looking up version
+looking up version {}...	поиск версии {}...
 lost connection	соединение потеряно
 low latency: wait for the GPU	низкая задержка: ожидание GPU
 mac:	mac:
@@ -3772,6 +3901,10 @@ no points	нет точек
 no response	нет ответа
 no small gaps to close	нет мелких щелей для закрытия
 no triangles	нет треугольников
+no {} builds from 1.17 on in the {} channel yet - pick a version to install it	сборок {} от 1.17 в канале {} пока нет - выберите версию для установки
+no {} builds from 1.17 on yet - pick a version to install it	сборок {} от 1.17 пока нет - выберите версию для установки
+no {} builds in the {} channel yet	сборок {} в канале {} пока нет
+no {} builds published yet	сборок {} пока не выпущено
 no-discard world shader: missing	no-discard world shader: missing
 nobody finished	никто не финишировал
 nobody is out - throw again	никто не выбыл - бросайте снова
@@ -3791,6 +3924,7 @@ not enough players	недостаточно игроков
 not enough players - back to warmup	недостаточно игроков - назад в разминку
 not enough players - the match ends in	недостаточно игроков - матч закончится через
 not enough players for a tourney	недостаточно игроков для турнира
+not found (release list incomplete) - installed:	not found (release list incomplete) - installed:
 not in the main program	not in the main program
 not in the tutorial	не в обучении
 not in this build	нет в этой сборке
@@ -3807,7 +3941,12 @@ nothing to undo	нечего отменять
 now playing	сейчас играет
 odd sample rate	странная частота дискретизации
 of #	из #
+of version	of version
 off for this match	выкл на этот матч
+offline -	offline -
+offline - playing installed version	offline - playing installed version
+offline - playing installed version {}	нет сети - запуск установленной версии {}
+offline - {}	нет сети - {}
 on your router to this PC	на роутере на этот ПК
 only a timed round can be extended	продлить можно только раунд на время
 over 64 MB	больше 64 МБ
@@ -3827,6 +3966,9 @@ paused: no humans (bots wait)	пауза: нет людей (боты ждут)
 payload delivered	вагонетка доставлена
 pick a new name for your copy	выберите новое имя для своей копии
 ping up on # of # players	ping вырос у # из # игроков
+pinned version	pinned version
+pinned version {} (installed: {}) - press INSTALL to switch to it	закреплённая версия {} (установлена: {}) - нажмите УСТАНОВИТЬ, чтобы перейти на неё
+pinned version {} not found (release list incomplete) - installed: {}	закреплённая версия {} не найдена (список выпусков неполный) - установлена: {}
 placed the group from the clipboard	группа вставлена из буфера
 point # taken by team #	точка # взята командой #
 poll events	опрос событий
@@ -3852,6 +3994,9 @@ proj # type # owner # pos # # # vel # # #{}	proj # type # owner # pos # # # vel 
 properties background, color, opacity, border, radius, padding, margin, gap, font-size,	properties background, color, opacity, border, radius, padding, margin, gap, font-size,
 puts every built-in map back to its original version and removes retired ones (your own maps are kept) - click again	возвращает все встроенные карты к исходной версии и удаляет снятые (ваши карты остаются) - кликните ещё раз
 quark --bake-maps <dir>	quark --bake-maps <dir>
+quark installed files 1	quark installed files 1
+quark installed files 2	quark installed files 2
+quark launcher	quark launcher
 quark server	сервер quark
 quark server log, level	лог сервера quark, уровень
 quark server log, level {}, version {}	quark server log, level {}, version {}
@@ -3888,12 +4033,15 @@ rate limited	лимит запросов
 reachability:	доступность:
 reached checkpoint	чекпоинт пройден
 reconnected from	переподключился с
+refused version	refused version
+refused version {}: {} - the download may have been tampered with	версия {} отклонена: {} - загрузку могли подменить
 renderer warmup	прогрев рендерера
 reopened by the load governor	снова открыт регулятором нагрузки
 reopened by the load governor at	снова открыт регулятором нагрузки в
 restarting for an update	перезапуск для обновления
 restarting for an update - rejoin in a few seconds	перезапуск для обновления - зайдите снова через пару секунд
 restored the autosave of	восстановлено автосохранение
+right after it was written	сразу после записи
 rock paper scissors:	камень-ножницы-бумага:
 rotated about X	повёрнуто вокруг X
 rotated about Y	повёрнуто вокруг Y
@@ -4039,10 +4187,20 @@ unsaved changes - click EXIT again to leave	несохранённые изме�
 unsaved changes - press ESC again to leave	несохранённые изменения - нажмите ESC ещё раз, чтобы выйти
 unsupported WAV (PCM 8 / 16 / 24 / 32-bit or float)	неподдерживаемый WAV (PCM 8 / 16 / 24 / 32 бит или float)
 unsupported accessor	unsupported accessor
+up to date -	up to date -
+up to date - {} {}	актуально - {} {}
 update ready: waiting for the match to end	обновление готово: ждём конца матча
+update {} available - press INSTALL (installed: {})	доступно обновление {} - нажмите УСТАНОВИТЬ (установлена: {})
+update {} found - it installs at the next launch (or press INSTALL)	найдено обновление {} - установится при следующем запуске (или нажмите УСТАНОВИТЬ)
+update: removed retired game file	update: removed retired game file
+update: removed retired game file {}	update: removed retired game file {}
 upload # of # kbps	отдача # из # кбит/с
 upload bytes	байт отдачи
 user:	пользователь:
+verifying version	verifying version
+verifying version {}...	проверка версии {}...
+version {} (pinned)	версия {} (закреплена)
+version {} was not installed: {}	версия {} не установлена: {}
 vote builder	vote builder
 vote cancelled: the ranked match is live	голосование отменено: идёт рейтинговый матч
 vote failed:	голосование не прошло:
@@ -4054,8 +4212,12 @@ voted rules:	правила по голосованию:
 voted rules: {}	voted rules: {}
 vs bots	против ботов
 warning:	внимание:
+was blocked	заблокирован
+was changed	was changed
 was it -	водил -
 was moved to spectator until the next map	переведён в наблюдатели до следующей карты
+was not installed:	was not installed:
+was removed	удалён
 wedge rising toward	клин поднимается в сторону
 will fill the uneven teams	заполнят неравные команды
 win:	победа:
@@ -4093,4 +4255,20 @@ you're next in line: you play the winner of this	вы следующий: игр
 your last vote failed: wait a few seconds	ваше последнее голосование не прошло: подождите пару секунд
 your map is autosaved	ваша карта автосохранена
 {} # us (last 1000 ticks)	{} # us (last 1000 ticks)
+{} (launcher update failed: {})	{} (обновление лаунчера не удалось: {})
+{} (launcher update skipped: {})	{} (обновление лаунчера пропущено: {})
+{} - installed: {}	{} - установлена: {}
+{} - see below	{} - см. ниже
+{} - {} game file(s) missing or changed ({}): CHECK FILES	{} - файлов игры отсутствует или изменено: {} ({}): ПРОВЕРИТЬ ФАЙЛЫ
+{} GAME FILE(S) MISSING OR CHANGED	ФАЙЛОВ ИГРЫ ОТСУТСТВУЕТ ИЛИ ИЗМЕНЕНО: {}
+{} IS BLOCKED	{} ЗАБЛОКИРОВАН
+{} IS MISSING	{} ОТСУТСТВУЕТ
 {} THEN {}	{} ПОТОМ {}
+{} WAS CHANGED	{} ИЗМЕНЁН
+{} channel - latest {}	канал {} - последняя {}
+{} channel - latest {}, installed {}	канал {} - последняя {}, установлена {}
+{} channel - offline	канал {} - нет сети
+{} is blocked (it can't be read)	{} заблокирован (не читается)
+{} is missing	{} отсутствует
+{} of version {}	{} версии {}
+{} was changed	{} изменён

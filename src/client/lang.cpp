@@ -6,11 +6,15 @@
 #include <cstring>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 #include "lang_data.h"   // (generated: tools/lang/embed.py, the tables and atlases in assets/lang)
 #include "overrides.h"   // (decodeImageGrey)
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#endif
+#ifdef __APPLE__
+#include <CoreFoundation/CoreFoundation.h>
 #endif
 
 namespace lang {
@@ -39,30 +43,73 @@ int indexOf(const std::string& code) {
     return -1;
 }
 
-static std::string fromLocale(std::string s) {   // "pt_BR.UTF-8", "zh-Hans-CN", "de-DE" -> one of ours
+static std::string fromLocale(std::string s) {   // "pt_BR.UTF-8", "zh-Hans-CN", "de-DE" -> one of ours, "" if none
     for (char& c : s) c = c == '_' ? '-' : (char)std::tolower((unsigned char)c);
     s = s.substr(0, s.find('.'));
-    auto starts = [&](const char* p) { return s.compare(0, strlen(p), p) == 0; };
-    if (starts("zh")) return "zh-CN";   // (Traditional Chinese readers read Simplified; better than English)
-    if (starts("pt")) return "pt-BR";
-    for (const char* c : {"ru", "es", "de", "ja", "fr", "ko", "tr"}) if (starts(c)) return c;
-    return "en";
+    s = s.substr(0, s.find('@'));
+    auto lang2 = [&](const char* p) { size_t n = strlen(p); return s.compare(0, n, p) == 0 && (s.size() == n || s[n] == '-'); };
+    if (lang2("zh")) return "zh-CN";   // (Traditional Chinese readers read Simplified; better than English)
+    if (lang2("pt")) return "pt-BR";
+    for (const char* c : {"en", "ru", "es", "de", "ja", "fr", "ko", "tr"}) if (lang2(c)) return c;
+    return "";
 }
 
 std::string systemLanguage() {
+    // The system's display language, then its other preferred languages in order: the first one the game has.
+    // Not the region format (Windows' locale): English Windows with a German date format stays English.
 #ifdef _WIN32
-    wchar_t name[LOCALE_NAME_MAX_LENGTH] = {};
-    if (GetUserDefaultLocaleName(name, LOCALE_NAME_MAX_LENGTH) > 0) {
-        std::string s;
-        for (const wchar_t* p = name; *p; p++) s += (char)(*p < 128 ? *p : '?');
-        return fromLocale(s);
+    ULONG n = 0, size = 0;
+    if (GetUserPreferredUILanguages(MUI_LANGUAGE_NAME, &n, nullptr, &size) && size > 0) {
+        std::vector<wchar_t> buf(size);
+        if (GetUserPreferredUILanguages(MUI_LANGUAGE_NAME, &n, buf.data(), &size)) {
+            for (const wchar_t* p = buf.data(); *p; p += wcslen(p) + 1) {
+                std::string s;
+                for (const wchar_t* q = p; *q; q++) s += (char)(*q < 128 ? *q : '?');
+                std::string l = fromLocale(s);
+                if (!l.empty()) return l;
+            }
+        }
+    }
+    {
+        wchar_t name[LOCALE_NAME_MAX_LENGTH] = {};
+        if (LCIDToLocaleName(MAKELCID(GetUserDefaultUILanguage(), SORT_DEFAULT), name, LOCALE_NAME_MAX_LENGTH, 0) > 0) {
+            std::string s;
+            for (const wchar_t* q = name; *q; q++) s += (char)(*q < 128 ? *q : '?');
+            std::string l = fromLocale(s);
+            if (!l.empty()) return l;
+        }
     }
     return "en";
 #else
-    for (const char* v : {"LC_ALL", "LC_MESSAGES", "LANG"}) {
-        const char* e = getenv(v);
-        if (e && *e && strcmp(e, "C") != 0 && strcmp(e, "POSIX") != 0) return fromLocale(e);
+#ifdef __APPLE__
+    // an app started from the Finder has no LANG: System Settings > Language & Region's list
+    if (CFArrayRef langs = CFLocaleCopyPreferredLanguages()) {
+        std::string found;
+        for (CFIndex i = 0; i < CFArrayGetCount(langs) && found.empty(); i++) {
+            char b[64];
+            if (CFStringGetCString((CFStringRef)CFArrayGetValueAtIndex(langs, i), b, sizeof b, kCFStringEncodingUTF8)) found = fromLocale(b);
+        }
+        CFRelease(langs);
+        if (!found.empty()) return found;
     }
+#endif
+    // GNU LANGUAGE: a priority list ("de:en"), honoured only with a real locale set (as gettext does)
+    const char* lc = getenv("LC_ALL");
+    if (!lc || !*lc) lc = getenv("LC_MESSAGES");
+    if (!lc || !*lc) lc = getenv("LANG");
+    const bool real = lc && *lc && strcmp(lc, "C") != 0 && strcmp(lc, "POSIX") != 0;
+    if (const char* list = getenv("LANGUAGE"); real && list && *list) {
+        std::string all = list;
+        size_t i = 0;
+        while (i <= all.size()) {
+            size_t j = all.find(':', i);
+            if (j == std::string::npos) j = all.size();
+            std::string l = fromLocale(all.substr(i, j - i));
+            if (!l.empty()) return l;
+            i = j + 1;
+        }
+    }
+    if (real) { std::string l = fromLocale(lc); if (!l.empty()) return l; }
     return "en";
 #endif
 }

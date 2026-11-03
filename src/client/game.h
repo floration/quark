@@ -46,6 +46,7 @@ struct SetLayout {
 
 struct LaunchOptions {
     std::string connect;        // --connect addr
+    std::string language;       // --language code: LANGUAGE for this start, kept (the launcher's pick before a quark.cfg)
     int hostMode = -1;          // --host mode
     int vsBotsMode = -1;        // --vsbots mode (uses the saved bot settings)
     std::string hostMap;        // --map name

@@ -94,10 +94,16 @@ struct Config {
     std::string args;         // LAUNCH OPTIONS: passed to the game (e.g. --novsync), split at spaces
     int updates = 0;          // UPDATES: 0 automatic, 1 ask (INSTALL), 2 at the next launch
     std::string nextVersion;  // (UPDATES: AT NEXT LAUNCH: the version seen, installed when the launcher next starts)
+    std::string language;     // LANGUAGE picked before the game made its quark.cfg: given to its first start (--language)
     bool pinned() const { return !pin.empty() && pin != "latest"; }
 };
 Config parseConfig(const std::string& text);
 std::string formatConfig(const Config& c);
+// LANGUAGE: the game's own setting (quark.cfg's language=, Settings > INTERFACE > LANGUAGE), shared by the launcher and
+// the game. cfgLanguage: its value in a quark.cfg's text, "auto" (the system's) when it has none. withCfgLanguage: the
+// text with that line set to code (added at the end when missing; every other line kept as it is).
+std::string cfgLanguage(const std::string& gameCfg);
+std::string withCfgLanguage(const std::string& gameCfg, const std::string& code);
 // The index in `list` the config selects: the pinned version if it's there, else latestIndex (0 if nothing is signed).
 int selectIndex(const std::vector<Release>& list, const Config& c);
 
