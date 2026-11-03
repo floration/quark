@@ -10997,9 +10997,9 @@ void Game::pipeCollect() {    // afterSwap: this frame's marks into its slot; fi
         sl.used = false;
         const double poll = sl.marks[PM_POLL];
         for (int k = 0; k < PM_COUNT; k++) pipeSum_[k] += sl.marks[k] - poll;
-        pipeSum_[PM_COUNT] += t0 * 1e-9 + gpuClockOffset_ - poll;
-        pipeSum_[PM_COUNT + 1] += t1 * 1e-9 + gpuClockOffset_ - poll;
-        double flip = std::max(t1 * 1e-9 + gpuClockOffset_, sl.marks[PM_SWAP1]);   // (no vsync: as soon as it's done)
+        pipeSum_[PM_COUNT] += gpuToCpu(t0) - poll;
+        pipeSum_[PM_COUNT + 1] += gpuToCpu(t1) - poll;
+        double flip = std::max(gpuToCpu(t1), sl.marks[PM_SWAP1]);   // (no vsync: as soon as it's done)
         if (pipePrevFrame_ > 0) pipeFrameDt_ += (sl.marks[PM_FRAME] - pipePrevFrame_ - pipeFrameDt_) * 0.1;
         pipePrevFrame_ = sl.marks[PM_FRAME];
         if (pipeFlipOk_) {
@@ -11482,14 +11482,22 @@ void Game::afterSwap() {
     if (now - gpuCalibAt_ > 10.0) {   // (a synchronous GPU query: it can stall the driver, so rarely; the clocks drift by microseconds)
         // (the CPU time halfway through the query, the best of 3: the time after it returned put every GPU time late
         // by the call's return; and before the collect, so the first results after F3 / F4 turn on use it)
-        double best = 1e9;
+        double best = 1e9, off = 0, gs = 0;
         for (int k = 0; k < 3; k++) {
             GLint64 g = 0;
             const double c0 = timeNow();
             glGetInteger64v(GL_TIMESTAMP, &g);
             const double c1 = timeNow();
-            if (c1 - c0 < best) { best = c1 - c0; gpuClockOffset_ = 0.5 * (c0 + c1) - g * 1e-9; }
+            if (c1 - c0 < best) { best = c1 - c0; off = 0.5 * (c0 + c1) - g * 1e-9; gs = g * 1e-9; }
         }
+        // the drift since the last calibration (the two clocks tick at slightly different rates): kept when it's a
+        // plausible clock-rate difference (under 0.1%), else the clocks jumped (driver reset, sleep) and it starts over
+        const double span = gs - gpuCalibGpu_;
+        const double drift = span > 1.0 ? (off - gpuClockOffset_) / span : 0.0;
+        gpuDrift_ = gpuCalibHave_ && std::fabs(drift) < 1e-3 ? drift : 0.0;
+        gpuClockOffset_ = off;
+        gpuCalibGpu_ = gs;
+        gpuCalibHave_ = true;
         gpuCalibAt_ = now;
     }
     pipeCollect();
@@ -11513,7 +11521,7 @@ void Game::afterSwap() {
         if (!avail) continue;
         GLuint64 t = 0;
         glGetQueryObjectui64v(q.q, GL_QUERY_RESULT, &t);
-        double done = t * 1e-9 + gpuClockOffset_;
+        double done = gpuToCpu(t);
         double ms = (done - q.input) * 1000.0;
         if (ms >= 0 && ms < 1000) latSamples_.push_back((float)ms);
         q.used = false;
