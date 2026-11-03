@@ -207,6 +207,34 @@ void setGamePriority(int level) {
     // thousands of frames a second can starve the rest of the desktop (input, the launcher, voice chat). VIDEO > MORE:
     // CPU PRIORITY HIGH asks for it anyway (level 2).
     SetPriorityClass(self, level >= 2 ? HIGH_PRIORITY_CLASS : high ? ABOVE_NORMAL_PRIORITY_CLASS : NORMAL_PRIORITY_CLASS);
+    // The game's own thread (every call is on it: init, focus, settings): HIGHEST while it has priority, so another
+    // program's thread waking doesn't take its core for a slice mid-frame (owner, 2026-11-03, 1000 FPS cap: the 0.1%
+    // low's frames were 20-50 us late, each paired with a short one: the frame started on time, then got held up).
+    SetThreadPriority(GetCurrentThread(), high ? THREAD_PRIORITY_HIGHEST : THREAD_PRIORITY_NORMAL);
+    // Never "EcoQoS" (Windows 11 may run a throttled thread slower or on an efficiency core, and stretch its timers):
+    // the process and this thread opt out of execution-speed throttling, and the process of timer-resolution
+    // throttling (Windows 11 ignores a hidden or minimized process's 1 ms timer request otherwise). Once; older
+    // Windows lacks the calls (looked up, so nothing fails to load).
+    static bool qosDone = false;
+    if (!qosDone) {
+        qosDone = true;
+        struct Throttle { ULONG version, controlMask, stateMask; };   // (PROCESS/THREAD_POWER_THROTTLING_STATE, version 1)
+        constexpr ULONG kExecSpeed = 0x1, kIgnoreTimerRes = 0x4;
+        HMODULE k32 = GetModuleHandleW(L"kernel32.dll");
+        using SetProcInfoFn = BOOL(WINAPI*)(HANDLE, int, void*, DWORD);
+        using SetThreadInfoFn = BOOL(WINAPI*)(HANDLE, int, void*, DWORD);
+        if (auto f = k32 ? (SetProcInfoFn)(void*)GetProcAddress(k32, "SetProcessInformation") : nullptr) {
+            Throttle t{1, kExecSpeed | kIgnoreTimerRes, 0};   // (controlled, and off)
+            if (!f(self, 4 /*ProcessPowerThrottling*/, &t, sizeof t)) {
+                t.controlMask = kExecSpeed;   // (Windows 10: no timer-resolution flag)
+                f(self, 4, &t, sizeof t);
+            }
+        }
+        if (auto f = k32 ? (SetThreadInfoFn)(void*)GetProcAddress(k32, "SetThreadInformation") : nullptr) {
+            Throttle t{1, kExecSpeed, 0};
+            f(GetCurrentThread(), 3 /*ThreadPowerThrottling*/, &t, sizeof t);
+        }
+    }
 }
 
 std::string gamePriorityStatus() {
