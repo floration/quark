@@ -1942,7 +1942,7 @@ void Game::drawStuckProps(const Vec3& eye, float alpha) {
         if (d2 > kFar2 || !r_.inView(pos, 0.6f)) continue;
         const bool far = d2 > kNear2;
         const int mt = modelExists(MODEL_PROJECTILE, sp.type) ? sp.type : MODEL_PROJ_ORB;
-        const float yaw = std::atan2(-sp.dir.x, -sp.dir.z), pitch = std::asin(clampf(sp.dir.y, -1, 1));
+        const float yaw = sp.yaw, pitch = sp.pitch;   // (readPropEvent's: the direction never changes once stuck)
         ModelPalette ppal;
         if (sp.owner < kMaxPlayers) {
             if (!(haveCol >> sp.owner & 1)) { ownerCol[sp.owner] = teamColor(sp.owner); haveCol |= 1u << sp.owner; }
@@ -2371,9 +2371,17 @@ void Game::frame(double dt) {
         editorFrame(dt);
     } else if (screen_ == Screen::InGame && bake_) {
         drawBakeScreen(bake_->map.name, bake_->progress.load());
-        // (a loading bar needs ~30 fps: the cores go to the bake; under software GL every frame costs them. In 1 ms
-        // steps, ending as the bake does: a finished one waited up to 30 ms for the next frame, ~15 ms every load)
-        for (int k = 0; k < 30 && bake_ && !bake_->done.load(); k++) sleepMs(1);
+        // (a loading bar needs ~30 fps: the cores go to the bake; under software GL every frame costs them. To a
+        // deadline 1/30 s after the last frame's, in 1 ms steps that end as the bake does: a finished one waited up to
+        // 30 ms for the next frame, ~15 ms every load. It was 30 x sleepMs(1), and Windows' Sleep(1) takes up to 2 ms:
+        // ~60 ms frames, a ~16 fps bar. Fell behind (or the first frame): due from now, no catching up.)
+        if (bake_ && !manualClock()) {
+            BakeJob& bj = *bake_;
+            const double period = timeScale() / 30.0, now = timeNow();   // (timeNow's seconds: timeScale() per real one)
+            if (bj.due < now - period) bj.due = now;
+            bj.due += period;
+            for (double left; !bj.done.load() && (left = (bj.due - timeNow()) / timeScale()) > 0;) sleepPrecise(std::min(left, 0.001));
+        }
     } else if (screen_ == Screen::InGame && net_.hasSnapshot() && r_.worldLoaded()) {
         drawWorld((float)clampf((float)(tickAcc_ / net_.tickPeriod()), 0, 1));   // (and the HUD, before its late read)
     } else {
@@ -9325,6 +9333,9 @@ void Game::drawLatencySettings(const SetLayout& L) {
     ui_.toggle(f.x(), f.top(), w, h, "HUD BEFORE WORLD", cfg_.hudFirst, UiExp::cfg("hud_first"));
     f.next();
     f.hint("ULTRA ONLY: THE HUD DRAWN BEFORE THE LATE READ,", "LAID OVER THE WORLD AFTER IT");
+    ui_.toggle(f.x(), f.top(), w, h, "EARLY DEPTH TEST", cfg_.fastWorld, UiExp::cfg("fast_world"));
+    f.next();
+    f.hint("THE GPU SKIPS THE WORLD'S HIDDEN PIXELS", "(UNTIL A HOLE IS BLOWN IN A WALL)");
     f.hint(keyOf(A_PERF) + " 3 TIMES: THE GRAPH; 4 TIMES: THE GAME'S PART ONLY");
 
     SetFlow g{ui_, L, kColR, 90};
@@ -10483,6 +10494,7 @@ void Game::applyLive() {
     lk.tone = cfg_.toneCurve; lk.dither = cfg_.dither; lk.clean = cfg_.cleanSurfaces; lk.fadeAt = cfg_.patternFade ? 0.18f * cfg_.fadeDist : 0.0f; lk.fadeLen = cfg_.fadeLen; lk.flatLight = cfg_.flatLight;
     lk.simpleSky = cfg_.simpleSky; lk.pcf = cfg_.shadowFilter; lk.emit = cfg_.playerEmit; lk.outlineA = cfg_.outlineAlpha;
     r_.setLook(lk);
+    r_.fastWorld = cfg_.fastWorld;
     r_.farScenery = cfg_.farScenery; r_.farPlane = (float)cfg_.drawDist; r_.shadowRange = (float)cfg_.shadowDist;
     r_.shadowWorld = cfg_.shadowWorld; r_.shadowPlayers = cfg_.shadowPlayers;
     audio_.setMasterVolume(masterGain());
@@ -11102,6 +11114,7 @@ void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
         add(cfg_.cpuLatch && cfg_.lowLatency > 0, "CPU LATCH");
         add(gpuLatchOn_, "GPU LATCH");
         add(hudLayerOn_, "HUD FIRST");
+        add(cfg_.fastWorld, "EARLY DEPTH");
         char tw[160];
         snprintf(tw, sizeof tw, "LOW LATENCY %s, TWEAKS: %s", cfg_.lowLatency == 2 ? "ULTRA" : cfg_.lowLatency == 1 ? "ON" : "OFF",
                  on.empty() ? "NONE" : on.c_str());

@@ -41,6 +41,7 @@ def main():
         text = open(path, encoding="utf-8", errors="replace").read()
         text = re.sub(r"//[^\n]*", "", text)                     # (comments)
         text = re.sub(r"R\"[A-Za-z]*\(.*?\)[A-Za-z]*\"", "", text, flags=re.S)   # (raw strings: shaders)
+        text = re.sub(r"static_assert\s*\(.*?\);", "", text, flags=re.S)   # (compile-time messages: never drawn)
         for m in LIT.finditer(text):
             s = bytes(m.group(1), "utf-8").decode("unicode_escape", errors="replace") if "\\" in m.group(1) else m.group(1)
             pieces = s.split("%s") + (s.split("\n") if "\n" in s else [])   # (a multi-line literal: each line too)

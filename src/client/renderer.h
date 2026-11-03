@@ -3,6 +3,7 @@
 // Everything dynamic is streamed into one vertex buffer per layer each frame (few draw calls).
 #pragma once
 #include <array>
+#include <cstdint>
 #include <atomic>
 #include <memory>
 #include "fontatlas.h"
@@ -15,7 +16,13 @@
 #include "lightmap.h"
 #include "models.h"
 
-struct DynVertex { float pos[3]; float normal[3]; float color[4]; float edge[4]; float outline[4]; }; // color.a = sun visibility; outline = edge colour (black unless set) + width (pixels)
+// A lit vertex (players, props, the view model, the editor's boxes): 44 bytes, it was 72 (all floats). pos as floats
+// (the same pixels); the normal as 16-bit integers x 32767 (w unused); colour (a = sun visibility), edge and outline
+// (rgb = the edge colour, black unless set; a = its width in pixels) as half floats. edge: the distances to the face's
+// edges 0 and 1 (xy) and to 2 and 3 (zw); the shader rebuilds the old (xy, xy + zw) form. The default constructor
+// does nothing: the lists grow with resize and every field is written after (no zero fill first).
+struct DynVertex { DynVertex() {} float pos[3]; int16_t normal[4]; uint16_t color[4]; uint16_t edge[4]; uint16_t outline[4]; };
+static_assert(sizeof(DynVertex) == 44, "DynVertex: setupDynVao's offsets");
 struct FlatVertex { float pos[3]; float color[4]; };
 // 16 bytes: screen pixels, font atlas texel coords (u16 fixed point: (texel + 1) * 32), color (RGBA8), and for text
 // the text scale (integer part + 1/256ths; 0 = plain rect), which sets the distance-field edge and outline width
@@ -232,6 +239,7 @@ public:
     };
     void setLook(const Look& l);
     bool farScenery = true;     // distant scenery's chunks drawn
+    bool fastWorld = true;      // LATENCY > EARLY DEPTH TEST: the no-discard world program while no hole is blown
     float farPlane = 400.0f;    // DRAW DISTANCE: metres to the far plane (the next setCamera)
     float shadowRange = 32.0f;  // SHADOW DISTANCE: the shadow map's half-width around its focus (metres)
     bool shadowWorld = true, shadowPlayers = true;   // dynamic shadows onto the map / onto players
@@ -254,7 +262,6 @@ private:
     Vec3 grade_ = {1, 1, 1};
     unsigned compile(const char* vs, const char* fs, std::string* err);
     void aim(float yaw, float pitch);   // (setCamera's view half: the view, its vectors, viewProj_ and the frustum planes)
-    void addQuad(std::vector<DynVertex>& out, const Vec3* c, const Vec3& n, const Vec3& col, float sv);
     void emitBox(std::vector<DynVertex>& out, const Mat4& xf, const Vec3& half, const Vec3& color, float sunVis);
     void emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, std::vector<FlatVertex>* flatOut);
 public:
@@ -267,7 +274,9 @@ private:
     // Uniform locations, looked up once after linking (init): no lookups in the frame loop. Values that never change are
     // set there too, the per-frame ones that don't depend on the aim in prepareScene, the rest in drawScene (GL keeps
     // each program's values).
-    struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, baseL, accentL, wallbangL, metalL, floorL, metal, glow, full, fullColor, outlineW, time, sunDir, alphaPass, latchUse, worldEdge; } uWorld_ = {};
+    struct WorldLocs { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, baseL, accentL, wallbangL, metalL, floorL, metal, glow, full, fullColor, outlineW, time, sunDir, alphaPass, latchUse, worldEdge; };
+    WorldLocs uWorld_ = {}, uWorldFast_ = {};   // (uWorldFast_: worldFastProg_'s)
+    static WorldLocs worldLocs(unsigned prog);
     struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, receive, sunDir, latchUse; } uDyn_ = {};
     struct { GLint fwd, right, up, tan, sky, sunDir, bright; } uSky_ = {};
     GLint uDynFade_ = -1, uFlatFade_ = -1;   // (the view pass's see-through amount: WEAPON MODEL OPACITY)
@@ -287,7 +296,18 @@ private:
     float holeGrid_[4] = {};   // (the hole grid's uniforms as last set: a new world program gets them too)
     int holeGridH_ = 0;
     std::vector<bool> worldUsed_ = std::vector<bool>((size_t)kMapMaterials, false);   // the looks in worldProg_ (setWorldLooks)
-    unsigned compileWorld(const std::vector<bool>* used, std::string* err);
+    unsigned compileWorld(const std::vector<bool>* used, std::string* err, bool noDiscard = false);
+    // The world's opaque pass without discard (its hole and see-through discards cost the GPU its early depth test:
+    // -27% GPU world pass on a 3090 Ti, 2026-11-03): built beside worldProg_, used while no holes are blown, its uniforms
+    // set alongside worldProg_'s each frame (prepareScene, drawScene); the rest, which change only with a setting, are
+    // copied from worldProg_ when worldFastDirty_ says one did (reading uniforms back every frame stalled the driver:
+    // +30 us CPU a frame on the desktop).
+    struct UniformCopy { GLint from, to; GLenum type; };
+    unsigned worldFastProg_ = 0, worldFastFor_ = 0;
+    bool worldFastDirty_ = true;
+    std::vector<UniformCopy> worldFastCopy_;
+    void buildWorldFast();
+    void syncWorldFast();
     void setWorldLooks(const BakedWorld& bw);
     void uploadSeeThrough(const Map& map);
 public:
@@ -357,7 +377,7 @@ private:
     float splitP_[2] = {}, splitN_[2] = {1, 0}, splitSeam_ = 0;
     float minScale_ = kMinTextScale;   // (the UI font's smallest scale: setUiFont)
     int fontGen_ = 0;
-    size_t dynCap_ = 0, flatCap_ = 0, uiCap_ = 0;
+    size_t flatCap_ = 0, uiCap_ = 0;
     float alpha_ = 1;         // (setAlpha)
     void uiIndices(size_t quads);   // (the 2D batch's index buffer covers at least this many quads)
     unsigned uiEbo_ = 0;      // the 2D batch's indices: 4 vertices a quad, drawn as 0 1 2 / 0 3 2 (fixed; grown when needed)
@@ -366,6 +386,10 @@ private:
 
     std::vector<DynVertex> dyn_, dynShadowOnly_, view_;
     std::vector<DynVertex> dynNoCast_;   // drawn with dyn_, but no shadow (and not in the shadow pass's caster rect)
+    // Each caster's bounding sphere, recorded as it goes into dyn_ / dynShadowOnly_ (cleared with them): the shadow
+    // pass's caster rect covers these, not every triangle (one projection a box, not 108 a frame per box).
+    struct CasterBound { Vec3 c; float r; };
+    std::vector<CasterBound> casters_;
     struct StaticItem { Vec3 c; float r; int first, count; };
     std::vector<StaticItem> staticItems_;
     std::vector<DynVertex> staticVerts_;          // (only while setStaticBoxes builds it; its memory kept until clearStaticBoxes)

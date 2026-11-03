@@ -117,6 +117,7 @@ struct StuckProp {
     uint8_t player = PROP_WORLD;   // the player it's in, or PROP_WORLD
     Vec3 pos;                      // world position, or the offset from that player's feet
     Vec3 dir = Vec3(0, 0, -1);     // the way it flew (unit)
+    float yaw = 0, pitch = 0;      // client: the model's turn for dir, worked out once (readPropEvent), not every frame
 };
 inline bool leavesProp(int weapon) { return weapon == WPN_KNIFE || weapon == WPN_CROSSBOW || weapon == WPN_SYRINGE; }
 struct GameEvent;

@@ -179,6 +179,7 @@ private:
         std::atomic<float> progress{0};
         std::atomic<bool> done{false}, cancel{false};
         uint32_t gen = 0;                  // net_.mapGeneration() it was started for
+        double due = 0;                    // the loading screen's next frame (timeNow; ~30 fps)
     };
     std::unique_ptr<BakeJob> bake_;
     void stopBake();                       // cancel a running bake and wait for its worker (leaving, shutdown)
