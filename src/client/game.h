@@ -1016,6 +1016,12 @@ private:
     LatQuery latQ_[16] = {};
     int latNext_ = 0;
     double gpuClockOffset_ = 0, gpuCalibAt_ = -10;
+    // the GPU clock's drift against the CPU's (seconds per second), from the last two calibrations, and the GPU time
+    // (s) of the last one: GPU times are placed with offset + drift * (t - gpuCalibGpu_), so they don't slide between
+    // calibrations (F3's swap-to-GPU gap grew over 10 s, then snapped back)
+    double gpuDrift_ = 0, gpuCalibGpu_ = 0;
+    bool gpuCalibHave_ = false;
+    double gpuToCpu(GLint64 t) const { const double g = t * 1e-9; return g + gpuClockOffset_ + gpuDrift_ * (g - gpuCalibGpu_); }
     std::vector<float> latSamples_;      // ms, last second
     std::string latText_;
     double latNextUpdate_ = 0;
