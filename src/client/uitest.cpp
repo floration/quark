@@ -49,6 +49,7 @@ std::string Game::uiScreenPath() const {
             case TAB_VIDEO: return devicesOpen_ ? "/video/devices" : moreOpen_ == 8 ? "/video/more8" : moreOpen_ == 7 ? "/video/more7" : moreOpen_ == 6 ? "/video/more6" : moreOpen_ == 5 ? "/video/more5" : moreOpen_ == 4 ? "/video/more4" : moreOpen_ == 3 ? "/video/more3" : moreOpen_ == 2 ? "/video/more2" : moreOpen_ ? "/video/more" : "/video";
             case TAB_CROSSHAIR: return "/crosshair";
             case TAB_SEARCH: return "/search";
+            case TAB_LATENCY: return "/latency";
             case TAB_HUD:
                 if (hudEdit_) return "/hud/edit";
                 if (widgetEdit_) return filePick_ == 1 ? "/hud/widgets/files" : valueDrop_ && widgetSel_ >= 0 ? "/hud/widgets/values" : "/hud/widgets";

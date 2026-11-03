@@ -54,6 +54,9 @@ struct TextMetrics {
     // the fills never touch: the black outline stays between them), and never over kMaxTighten of a's advance.
     float room(int a, int b, float o) const {
         float r = kMaxTighten * A(a);
+        // a word space keeps most of its width: closed up from both sides it all but vanished ("BOTSAUSGLEICHEN")
+        if (b == 0) return 0;
+        if (a == 0) return 0.1f * A(a);   // (a third of what both sides closed before)
         const GlyphInk &ia = I(a), &ib = I(b);
         if (!ia.empty() && !ib.empty()) {
             float gap = advance(a, b) + ib.x0 - ia.x1 - o;

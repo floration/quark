@@ -9,6 +9,7 @@
 #include <string>
 #include <chrono>
 #include <thread>
+#include <future>
 #include <vector>
 #include "hudwidgets.h"
 #include "layout.h"
@@ -225,7 +226,7 @@ private:
     void checkHostBrain();                  // compile the chosen brain (loadBrain: cached while the file is unchanged)
     void drawPauseMenu(float cx, float y);
     // Settings: one shell, six tabs (drawSettings: the menus and the pause menu; game.cpp "Settings")
-    enum { TAB_PLAYER, TAB_GAMEPLAY, TAB_CONTROLS, TAB_VIDEO, TAB_CROSSHAIR, TAB_HUD, TAB_SEARCH };   // (SEARCH: every setting in one list)
+    enum { TAB_PLAYER, TAB_GAMEPLAY, TAB_CONTROLS, TAB_VIDEO, TAB_CROSSHAIR, TAB_HUD, TAB_LATENCY, TAB_SEARCH };   // (SEARCH: every setting in one list)
     int setTab_ = TAB_PLAYER;
     int controlsSub_ = 0;    // CONTROLS: 0 general + interface keys, 1 move + weapon keys
     void drawSettings();
@@ -784,12 +785,20 @@ private:
     // F3 performance overlay: frame-time percentiles (lows matter, averages hide stutter)
     // F3 cycles (owner 2026-10-29): 1 the FPS line, 2 + ping / 3D size / server, 3 everything with the pipeline graph, 0 off.
     // Only 3 runs the graph's and input-to-frame measuring (GPU timestamps): 1 and 2 cost just their text.
+    void turnGain(float* kYaw, float* kPitch) const;
+    void drawLatencySettings(const struct SetLayout& L);
+    std::vector<struct PerfFinding> perfFindings_;
+    std::future<std::vector<struct PerfFinding>> perfFuture_;   // (the check runs on its own thread)
+    bool perfChecked_ = false;
+    bool gpuLatchOn_ = false, hudLayerOn_ = false;   // (this frame's LATENCY tweaks that took: F3 lists them)
     int perfStage_ = 0;
     bool hudBuilt_ = false;            // drawWorld built the HUD (and F3 / F4) before its late read this frame
     bool perfMini_ = false;            // F4: only the mouse to photon number (drawPerfMini)
     bool perfOn() const { return perfStage_ >= 3 || perfMini_; }   // (the pipeline graph's measuring runs)
     std::string perfMiniText_;
-    std::vector<float> frameTimes_ = std::vector<float>(2048, 0.0f);
+    static constexpr size_t kFrameTimes = 2048;   // (a power of two: the ring index wraps with a mask)
+    static_assert((kFrameTimes & (kFrameTimes - 1)) == 0, "kFrameTimes must be a power of two");
+    std::vector<float> frameTimes_ = std::vector<float>(kFrameTimes, 0.0f);
     size_t frameIdx_ = 0, frameCount_ = 0;
     double perfNextUpdate_ = 0;
     std::string perfText_, perfText2_;   // F3's first two lines: the frame rates, then the worst frame and the ping
