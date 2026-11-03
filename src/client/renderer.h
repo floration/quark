@@ -3,6 +3,7 @@
 // Everything dynamic is streamed into one vertex buffer per layer each frame (few draw calls).
 #pragma once
 #include <array>
+#include <cstdint>
 #include <atomic>
 #include <memory>
 #include "fontatlas.h"
@@ -15,7 +16,13 @@
 #include "lightmap.h"
 #include "models.h"
 
-struct DynVertex { float pos[3]; float normal[3]; float color[4]; float edge[4]; float outline[4]; }; // color.a = sun visibility; outline = edge colour (black unless set) + width (pixels)
+// A lit vertex (players, props, the view model, the editor's boxes): 44 bytes, it was 72 (all floats). pos as floats
+// (the same pixels); the normal as 16-bit integers x 32767 (w unused); colour (a = sun visibility), edge and outline
+// (rgb = the edge colour, black unless set; a = its width in pixels) as half floats. edge: the distances to the face's
+// edges 0 and 1 (xy) and to 2 and 3 (zw); the shader rebuilds the old (xy, xy + zw) form. The default constructor
+// does nothing: the lists grow with resize and every field is written after (no zero fill first).
+struct DynVertex { DynVertex() {} float pos[3]; int16_t normal[4]; uint16_t color[4]; uint16_t edge[4]; uint16_t outline[4]; };
+static_assert(sizeof(DynVertex) == 44, "DynVertex: setupDynVao's offsets");
 struct FlatVertex { float pos[3]; float color[4]; };
 // 16 bytes: screen pixels, font atlas texel coords (u16 fixed point: (texel + 1) * 32), color (RGBA8), and for text
 // the text scale (integer part + 1/256ths; 0 = plain rect), which sets the distance-field edge and outline width
@@ -254,7 +261,6 @@ private:
     Vec3 grade_ = {1, 1, 1};
     unsigned compile(const char* vs, const char* fs, std::string* err);
     void aim(float yaw, float pitch);   // (setCamera's view half: the view, its vectors, viewProj_ and the frustum planes)
-    void addQuad(std::vector<DynVertex>& out, const Vec3* c, const Vec3& n, const Vec3& col, float sv);
     void emitBox(std::vector<DynVertex>& out, const Mat4& xf, const Vec3& half, const Vec3& color, float sunVis);
     void emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, std::vector<FlatVertex>* flatOut);
 public:
