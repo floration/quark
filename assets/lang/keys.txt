@@ -273,6 +273,7 @@ AUDIO LATENCY: NORMAL
 AUDIO LATENCY: SAFE
 AUDIO OUTPUT
 AUTO
+AUTO LEARNS IT; MORE: FEWER GPU BUBBLES, MORE LAG
 AUTO PORT FORWARD
 AUTO RECONNECT
 AUTO RECORD
@@ -2049,7 +2050,6 @@ MOON SHOTGUN
 MOON SHOTGUNS
 MORE
 MORE KEYS
-MORE: FEWER GPU BUBBLES, A LITTLE MORE LAG
 MOUSE
 MOUSE 1
 MOUSE 2
@@ -3077,6 +3077,8 @@ UDP PORT
 UHD
 UI FONT
 ULTRA
+ULTRA (AUTO SAFETY # US)
+ULTRA (SAFETY # US)
 ULTRA ONLY: THE HUD DRAWN BEFORE THE LATE READ,
 ULTRA SAFETY
 ULTRA: 0 QUEUED + EACH FRAME STARTED LATE
@@ -3821,6 +3823,9 @@ tourney seed #: {} (#)
 tourney started -
 trying the next rate up: busy #%, upload # kbps
 ui verts
+ultra: after swap wait (us)
+ultra: margin (us)
+ultra: pace the input read
 ungrouped into
 unknown mode
 unknown mode '
