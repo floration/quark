@@ -92,6 +92,11 @@ int main(int argc, char** argv) {
         else if (a == "--models") opts.debugModels = true;
         else if (a == "--rpsshot") opts.debugRps = atoi(next().c_str());   // the tiebreak panel (screenshots)
         else if (a == "--timetrial") opts.timeTrial = true;
+        else if (a == "--tutorial") {   // the TUTORIAL at once: [LESSON[:PHASE]] (an id or 0-based number; PHASE try / done / finish / lessons)
+            opts.tutorial = true;
+            if (i + 1 < argc && argv[i + 1][0] != '-') opts.tutorialAt = next();
+        }
+        else if (a == "--tutorial-offer") opts.tutorialOffer = true;   // the first launch's tutorial offer (screenshots)
         else if (a == "--racestats") { opts.debugLeaderboard = true; opts.debugRaceStats = true; }
         else if (a == "--widgets") { opts.debugSettings = true; opts.debugWidgets = true; }
         else if (a == "--controls") { opts.debugSettings = true; opts.debugControls = true; }

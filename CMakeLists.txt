@@ -259,6 +259,8 @@ add_library(quark_core STATIC
   src/game/moveexpr.cpp
   src/game/demo.cpp
   src/game/trainer.cpp
+  src/game/tutorial.cpp
+  src/game/tutorial_server.cpp
   ${CMAKE_BINARY_DIR}/generated/version.cpp
   ${CMAKE_BINARY_DIR}/generated/default_brain.h
   ${CMAKE_BINARY_DIR}/generated/default_modes.h
@@ -474,6 +476,7 @@ if(QUARK_BUILD_CLIENT)
     src/client/editor.cpp
     src/client/benchmark.cpp
     src/client/trainer.cpp
+    src/client/tutorial.cpp
     src/client/isa.cpp
     src/client/openurl.cpp
     src/client/gl.cpp

@@ -3,6 +3,7 @@
 "IT" IN YOUR ENEMY COLOUR, THE REST YOUR TEAM'S	«IT» — ЦВЕТОМ ВРАГА, ОСТАЛЬНЫЕ — ЦВЕТОМ ВАШЕЙ КОМАНДЫ
 "path"	"path"
 # # # TO # # #	# # # ДО # # #
+# / # DEG	# / # ГРАД
 # BOXES  # SPAWNS  # LIGHTS	# БЛОКОВ  # СПАВНОВ  # ИСТОЧНИКОВ СВЕТА
 # CONTROL PROFILES	# ПРОФИЛИ УПРАВЛЕНИЯ
 # CUSTOM MODES	# СВОИ РЕЖИМЫ
@@ -142,28 +143,47 @@
 10-BIT: AT THE NEXT START, WHERE SUPPORTED	10 БИТ: ПРИ СЛЕДУЮЩЕМ ЗАПУСКЕ, ГДЕ ПОДДЕРЖИВАЕТСЯ
 10-BIT: ON (A 10-BIT WINDOW)	10 БИТ: ВКЛ (10-БИТНОЕ ОКНО)
 12 H CLOCK	12-Ч ЧАСЫ
+12 M UP, OUT OF A HYPER FROM 20 M/S	12 М ВВЕРХ ПОСЛЕ ГИПЕРА С 20 М/С
 144 FPS	144 FPS
+16 M UP, OUT OF A HYPER FROM 20 M/S	16 М ВВЕРХ ПОСЛЕ ГИПЕРА С 20 М/С
+16 M/S ALONG THE FLOOR	16 М/С ВДОЛЬ ПОЛА
 1V1 - rounds on one ruleset (vanilla, laser vampire, instagib...). First to 5. Ranked 1v1 rates you on its own ladder.	1V1 - раунды по одним правилам (ванилла, лазерный вампир, инстагиб...). До 5 побед. Рейтинговый 1v1 считается в отдельной таблице.
 2 BALL	2 BALL
+2 BOUNCES	2 ОТСКОКА
+2 HYPERS	2 ГИПЕРА
+2 SUPERS	2 СУПЕРА
 240 FPS	240 FPS
 2:00  -  1ST OF 6	2:00  -  1-Й ИЗ 6
 2D: THE VIEW STAYS STILL, YOUR MOUSE MOVES THE CROSSHAIR	2D: ВИД НЕПОДВИЖЕН, МЫШЬ ДВИГАЕТ ПРИЦЕЛ
 3 TIMES: THE GRAPH; 4 TIMES: THE GAME'S PART ONLY	3 РАЗА: ГРАФИК; 4 РАЗА: ТОЛЬКО ДОЛЯ ИГРЫ
+30 M UP, OUT OF A HYPER FROM 20 M/S	30 М ВВЕРХ ПОСЛЕ ГИПЕРА С 20 М/С
 30 SECONDS LEFT	ОСТАЛОСЬ 30 СЕКУНД
 32-bit float	32-bit float
 3D FLYING	3D ПОЛЁТ
 3D STATIC	3D СТАТИКА
 3D STATIC: YOU CAN'T MOVE - LOOK AND SHOOT	3D СТАТИКА: ДВИГАТЬСЯ НЕЛЬЗЯ - ЦЕЛЬТЕСЬ И СТРЕЛЯЙТЕ
 3D VAMP	3D ВАМП
+5 M UP THE RAMP	5 М ВВЕРХ ПО РАМПЕ
 5 MORE MINUTES	ЕЩЁ 5 МИНУТ
 60 FPS	60 FPS
+A BURST OF 24 M/S THE WAY YOU MOVE. TWO CHARGES, EACH BACK IN 1.2 S.	РЫВОК 24 М/С ТУДА, КУДА ТЫ ДВИЖЕШЬСЯ. ДВА ЗАРЯДА, КАЖДЫЙ ВОССТАНАВЛИВАЕТСЯ ЗА 1.2 С.
+A DASH GOES THE WAY YOU MOVE, NOT THE WAY YOU LOOK.	РЫВОК ИДЁТ ТУДА, КУДА ТЫ ДВИЖЕШЬСЯ, А НЕ КУДА СМОТРИШЬ.
 A DASH PRESSED THIS SOON BEFORE IT'S READY	РЫВОК, НАЖАТЫЙ ЗА СТОЛЬКО ДО ГОТОВНОСТИ
 A DROPPED CONNECTION TRIES AGAIN (3 TIMES)	ОБОРВАННОЕ СОЕДИНЕНИЕ ПОВТОРЯЕТСЯ (3 РАЗА)
+A HYPER ABOVE 36 M/S CAPS YOU DOWN: 35 IS THE TOP	ГИПЕР ВЫШЕ 36 М/С СРЕЗАЕТ СКОРОСТЬ: 35 — ПОТОЛОК
+A MOMENT LATER, AIM STRAIGHT DOWN AND FIRE	ЧЕРЕЗ МГНОВЕНИЕ ЦЕЛЬСЯ ПРЯМО ВНИЗ И СТРЕЛЯЙ
 A NEW CODE FROM /link RELINKS IT - unlink REMOVES IT	НОВЫЙ КОД ИЗ /link ПРИВЯЖЕТ ЗАНОВО - unlink ОТВЯЖЕТ
 A NEW DIAGONAL EVERY 0.3 S	НОВАЯ ДИАГОНАЛЬ КАЖДЫЕ 0.3 С
 A NEW DIAGONAL EVERY 0.3 S, 10 HP	НОВАЯ ДИАГОНАЛЬ КАЖДЫЕ 0.3 С, 10 HP
 A PLAYER JOINED VIA	ИГРОК ЗАШЁЛ ЧЕРЕЗ
+A ROCKET JUMP STRAIGHT UP	РАКЕТНЫЙ ПРЫЖОК ПРЯМО ВВЕРХ
 A SERVER	СЕРВЕР
+A SUPER	СУПЕР
+A SUPER FOR SPEED	СУПЕР ДЛЯ СКОРОСТИ
+A SUPER, AND KEEP HOPPING	СУПЕР, И ПРЫГАЙ ДАЛЬШЕ
+A SUPER, THEN A HYPER STRAIGHT DOWN AS YOU LAND: THE SUPER'S SPEED GOES UP, ABOUT 14 M.	СУПЕР, ЗАТЕМ ПРИ ПРИЗЕМЛЕНИИ ГИПЕР ПРЯМО ВНИЗ: СКОРОСТЬ СУПЕРА УХОДИТ ВВЕРХ, ОКОЛО 14 М.
+A SUPER, THEN A ROCKET STRAIGHT DOWN: ABOUT 33 M/S, PAST THE DASH'S 32 M/S CAP.	СУПЕР, ЗАТЕМ РАКЕТА ПРЯМО ВНИЗ: ОКОЛО 33 М/С, ВЫШЕ ПРЕДЕЛА РЫВКА В 32 М/С.
+A SUPER, THEN AIM STRAIGHT DOWN	СУПЕР, ЗАТЕМ ЦЕЛЬСЯ ПРЯМО ВНИЗ
 A VARIABLE FONT IS DRAWN AT ITS DEFAULT WEIGHT	ВАРИАТИВНЫЙ ШРИФТ РИСУЕТСЯ С НАЧЕРТАНИЕМ ПО УМОЛЧАНИЮ
 A private game with bots at your chosen level (beginner, intermediate, advanced, expert), on any mode and map.	Закрытая игра с ботами нужного уровня (новичок, средний, продвинутый, эксперт) в любом режиме и на любой карте.
 A thrown knife or syringe is gone for 4 s (greyed out in the weapon list, with its timer).	Брошенный нож или шприц пропадает на 4 с (серый в списке оружия, с таймером).
@@ -180,6 +200,7 @@ ACCURACY	ТОЧНОСТЬ
 ACE	ACE
 ACROSS THE WALL, 10 HP	ПО ВСЕЙ СТЕНЕ, 10 HP
 ACROSS THE WALL, SIDE TO SIDE	ПО СТЕНЕ, ИЗ СТОРОНЫ В СТОРОНУ
+AD STRAFING	AD-СТРЕЙФ
 ADAPTIVE	АДАПТИВНЫЙ
 ADD (AT THE SCREEN CENTER)	ДОБАВИТЬ (В ЦЕНТРЕ ЭКРАНА)
 ADD BOT	+ БОТ
@@ -202,7 +223,25 @@ ADVANCED  >	ПРОДВИНУТЫЙ  >
 ADVANCED > BOT BRAIN: what your bots play: the built-in brain, or a .qbrain file from the bots folder in your data folder. A file that doesn't compile shows its error line and the bots play the built-in brain. Never in ranked.	ПРОДВИНУТЫЙ > ИИ БОТА: как играют ваши боты: встроенный ИИ или файл .qbrain из папки bots в папке данных. Если файл не компилируется, показывается строка с ошибкой, а боты играют со встроенным ИИ. Никогда в рейтинге.
 AGAIN (R)	ЕЩЁ РАЗ (R)
 AHEAD	ВПЕРЕДИ
+AIM 15 DEGREES DOWN: EVERY LANDING IS A HYPER	ЦЕЛЬСЯ НА 15 ГРАДУСОВ ВНИЗ: КАЖДОЕ ПРИЗЕМЛЕНИЕ — ГИПЕР
+AIM A LITTLE DOWN	ЦЕЛЬСЯ ЧУТЬ ВНИЗ
+AIM A LITTLE DOWN THE WHOLE WAY	ВСЁ ВРЕМЯ ЦЕЛЬСЯ ЧУТЬ ВНИЗ
+AIM AT THE FLOOR A FEW METRES AHEAD (15 DEGREES DOWN IS ENOUGH)	ЦЕЛЬСЯ В ПОЛ В НЕСКОЛЬКИХ МЕТРАХ ВПЕРЕДИ (15 ГРАДУСОВ ВНИЗ ХВАТИТ)
+AIM JUST UNDER LEVEL, AT THE FLOOR FAR AHEAD	ЦЕЛЬСЯ ЧУТЬ НИЖЕ ГОРИЗОНТА, В ПОЛ ДАЛЕКО ВПЕРЕДИ
+AIM STRAIGHT AHEAD	ЦЕЛЬСЯ ПРЯМО ВПЕРЁД
+AIM STRAIGHT DOWN	ЦЕЛЬСЯ ПРЯМО ВНИЗ
+AIM STRAIGHT DOWN AND FIRE A STICKY	ЦЕЛЬСЯ ВНИЗ И ВЫСТРЕЛИ ЛИПУЧКОЙ
+AIM STRAIGHT DOWN AND FIRE THREE STICKIES	ЦЕЛЬСЯ ВНИЗ И ВЫПУСТИ ТРИ ЛИПУЧКИ
+AIM STRAIGHT DOWN WHILE YOU FLY	В ПОЛЁТЕ ЦЕЛЬСЯ ПРЯМО ВНИЗ
 AIM TRAINER	АИМ-ТРЕНАЖЁР
+AIM UP AT THE CEILING, A FEW METRES AHEAD	ЦЕЛЬСЯ В ПОТОЛОК НА НЕСКОЛЬКО МЕТРОВ ВПЕРЕДИ
+AIM UP, OVER THE EDGE OF THE LEDGE	ЦЕЛЬСЯ ВВЕРХ, ВЫШЕ КРАЯ УСТУПА
+AIM: A LITTLE DOWN	ПРИЦЕЛ: ЧУТЬ ВНИЗ
+AIM: AT THE PARTNER	ПРИЦЕЛ: НА PARTNER
+AIM: AT THE PILLAR	ПРИЦЕЛ: НА КОЛОННУ
+AIM: LEVEL	ПРИЦЕЛ: ПРЯМО
+AIM: STRAIGHT DOWN	ПРИЦЕЛ: ПРЯМО ВНИЗ
+AIM: UP	ПРИЦЕЛ: ВВЕРХ
 AIR	ВОЗД
 AIR ACCELERATION	УСКОРЕНИЕ В ВОЗДУХЕ
 AIR BALL	AIR BALL
@@ -257,6 +296,8 @@ ARC TIME	ВРЕМЯ ДУГИ
 ARM	РУКА
 ARROW (NUDGE)	СТРЕЛКА (СДВИГ)
 ARROWS / PGUP / PGDN: MOVE BY GRID (ALONG YOUR VIEW)	СТРЕЛКИ / PGUP / PGDN: СДВИГ ПО СЕТКЕ (ПО ВЗГЛЯДУ)
+AS THE PILLAR COMES UP BESIDE YOU, HOOK IT	КОГДА КОЛОННА ПОРАВНЯЕТСЯ С ТОБОЙ, ЗАЦЕПИ ЕЁ
+AS THEY ARRIVE, SHOTGUN OR KNIFE THEM. YOUR DASH DOESN'T BREAK IT: THE PULL FOLLOWS YOU	КОГДА ПОДЛЕТЯТ — ДРОБОВИК ИЛИ НОЖ. ТВОЙ РЫВОК НЕ РВЁТ КРЮК: ТЯГА СЛЕДУЕТ ЗА ТОБОЙ
 AS THEY'RE DRAWN, NOT AT THE SWAP	СРАЗУ ПОСЛЕ ОТРИСОВКИ, А НЕ ПРИ SWAP
 AS THICK	ТА ЖЕ ТОЛЩ.
 ASIDE: A FRAME LESS LAG IN A WINDOW	ПОПУТНО: НА КАДР МЕНЬШЕ ЗАДЕРЖКИ В ОКНЕ
@@ -264,6 +305,7 @@ ASK "SURE?" FIRST: CLICK AGAIN	СПРАШИВАТЬ «ТОЧНО?»: КЛИКН�
 ASSUMED	ПРЕДПОЛ.
 AT # # #	В # # #
 AT CAMERA	У КАМЕРЫ
+AT SPEED, HOOK A PILLAR BESIDE YOU: THE HOOK TURNS YOU ROUND IT AND YOU KEEP YOUR SPEED.	НА СКОРОСТИ ЗАЦЕПИ КОЛОННУ СБОКУ: КРЮК РАЗВЕРНЁТ ТЕБЯ ВОКРУГ НЕЁ, СКОРОСТЬ ОСТАНЕТСЯ.
 ATTACK + RACE	АТАКА + ГОНКА
 ATTACK - PLANT THE BOMB	АТАКА - ЗАЛОЖИТЕ БОМБУ
 ATTACK: CARRY THE BOMB TO A SITE AND PLANT IT	АТАКА: ДОНЕСИТЕ БОМБУ ДО ТОЧКИ И ЗАЛОЖИТЕ
@@ -414,17 +456,20 @@ BOX	БЛОК
 BOX OPACITY	ПРОЗРАЧН. БЛОКА
 BOXES, STRETCHED AS ONE - UNGROUP TO EDIT THEM	БЛОКИ, РАСТЯГИВАЮТСЯ ВМЕСТЕ - РАЗГРУППИРУЙТЕ ДЛЯ ПРАВКИ
 BRACKET OF 1V1S - RULESETS >	СЕТКА 1V1 - ПРАВИЛА >
+BREAK FREE WITH A DASH	ВЫРВИСЬ РЫВКОМ
 BREAKABLE	РАЗРУШАЕМЫЙ
 BRICK	КИРПИЧ
 BRIGHTNESS	ЯРКОСТЬ
 BRITISH	БРИТАН.
 BRUNO	BRUNO
 BUBBLE	ПУЗЫРЬ
+BUBBLE LAUNCH	ПУЗЫРНЫЙ ВЗЛЁТ
 BUILDINGS	ЗДАНИЯ
 BUILT FOR	СДЕЛАНА ДЛЯ
 BUILT FOR sets the mode the map is made for; the MODES grid sets what it's offered for. PLAYABLE AS shows what it has the pieces for (team modes need A and B spawns).	СДЕЛАНА ДЛЯ задаёт режим, под который сделана карта; сетка РЕЖИМЫ - для каких режимов она предлагается. ИГРАБЕЛЬНА КАК показывает, для чего на ней есть всё нужное (командным режимам нужны спавны A и B).
 BUILT FOR:	СДЕЛАНА ДЛЯ:
 BUILT FOR: ANY	СДЕЛАНА ДЛЯ: ЛЮБОГО
+BUNNY HOP WITH ONE STRAFE KEY AT A TIME, TURNING WITH IT: SPEED WITH NO DASH.	БАННИХОП С ОДНОЙ КЛАВИШЕЙ СТРЕЙФА ЗА РАЗ, ПОВОРАЧИВАЯ ВМЕСТЕ С НЕЙ: СКОРОСТЬ БЕЗ РЫВКА.
 BURSTS UP TO 24 M/S ON A 180 WALL	РЫВКИ ДО 24 М/С НА СТЕНЕ 180
 BURSTS UP TO 24 M/S ON THE WALL	РЫВКИ ДО 24 М/С НА СТЕНЕ
 BY NAME	ПО ИМЕНИ
@@ -449,6 +494,7 @@ CAPTIONS: THE ANNOUNCER AS TEXT TOO	СУБТИТРЫ: КОММЕНТАТОР Т�
 CAPTURE	ЗАХВАТ
 CAPTURE THE HILL	ЗАХВАТИТЕ ХОЛМ
 CART	ВАГОН
+CEILING HANG	ВИС НА ПОТОЛКЕ
 CHAMPION	ЧЕМПИОН
 CHANGE ANYTHING AFTER (IT STAYS)	МЕНЯЙТЕ ЧТО УГОДНО ПОТОМ (СОХРАНИТСЯ)
 CHANGE MAP / MODE	СМЕНИТЬ КАРТУ / РЕЖИМ
@@ -655,6 +701,8 @@ DAMAGE NUMBER SIZE	РАЗМЕР ЦИФР УРОНА
 DAMAGE NUMBERS	ЦИФРЫ УРОНА
 DASH	РЫВОК
 DASH + GRAPPLE	РЫВОК + КРЮК
+DASH AND JUMP TOGETHER	РЫВОК И ПРЫЖОК ВМЕСТЕ
+DASH ANY WAY: THE PULL LETS GO	РЫВОК В ЛЮБУЮ СТОРОНУ: ТЯГА ОТПУСКАЕТ
 DASH BUFFER	БУФЕР РЫВКА
 DASH BUFFER: 0.05 S	БУФЕР РЫВКА: 0.05 С
 DASH BUFFER: 0.1 S	БУФЕР РЫВКА: 0.1 С
@@ -663,14 +711,28 @@ DASH BUFFER: OFF	БУФЕР РЫВКА: ВЫКЛ
 DASH CAPTION	ПОДПИСЬ РЫВКА
 DASH CHARGES	ЗАРЯДЫ РЫВКА
 DASH COOLDOWN	ПЕРЕЗАРЯДКА РЫВКА
+DASH DOWN INTO THE FLOOR WHILE YOU JUMP: YOUR SPEED + 5 M/S, UP AND AHEAD.	РЫВОК ВНИЗ В ПОЛ ВО ВРЕМЯ ПРЫЖКА: ТВОЯ СКОРОСТЬ + 5 М/С, ВВЕРХ И ВПЕРЁД.
+DASH DOWN INTO THE FLOOR WITHOUT A JUMP: YOU SLIDE AS ON ICE AND KEEP YOUR SPEED.	РЫВОК ВНИЗ В ПОЛ БЕЗ ПРЫЖКА: СКОЛЬЗИШЬ КАК ПО ЛЬДУ И СОХРАНЯЕШЬ СКОРОСТЬ.
 DASH EXIT SPEED (MAX)	СКОР. ВЫХОДА ИЗ РЫВКА (МАКС.)
 DASH EXIT SPEED (MIN)	СКОР. ВЫХОДА ИЗ РЫВКА (МИН.)
+DASH HEAD ON INTO A WALL: YOU BOUNCE BACK OFF IT AT 16 M/S.	РЫВОК ЛОБОМ В СТЕНУ: ОТСКАКИВАЕШЬ НА 16 М/С.
+DASH IN THE AIR TO CROSS THE LAVA	РЫВОК В ВОЗДУХЕ НАД ЛАВОЙ
+DASH INTO A STEEP SLOPE: THE DASH CARRIES ON UP ITS FACE. WALKING, IT IS A WALL.	РЫВОК В КРУТОЙ СКЛОН: РЫВОК ИДЁТ ВВЕРХ ПО НЕМУ. ПЕШКОМ ЭТО СТЕНА.
+DASH INTO IT	РЫВОК В НЕЁ
+DASH INTO IT FROM A FEW METRES AWAY	РЫВОК В НЕЁ С НЕСКОЛЬКИХ МЕТРОВ
 DASH JUMP WINDOW	ОКНО ПРЫЖКА С РЫВКА
+DASH JUST BEFORE YOU LAND, AND DON'T JUMP	РЫВОК ПЕРЕД САМЫМ ПРИЗЕМЛЕНИЕМ, БЕЗ ПРЫЖКА
+DASH LEFT	РЫВОК ВЛЕВО
+DASH LEFT AND DASH RIGHT	РЫВОК ВЛЕВО И ВПРАВО
 DASH LENGTH	ДЛИНА РЫВКА
+DASH OUT OF A GRAPPLE	РЫВОК ИЗ КРЮКА
+DASH RIGHT	РЫВОК ВПРАВО
+DASH SLIDE	СКОЛЬЖЕНИЕ РЫВКОМ
 DASH SPEED	СКОРОСТЬ РЫВКА
 DASH SPEED KEPT	СОХР. СКОР. РЫВКА
 DASH VERTICAL	РЫВОК ПО ВЕРТИКАЛИ
 DASH WALL BOUNCE ANGLE	УГОЛ ОТСКОКА РЫВКА ОТ СТЕНЫ
+DASH, AND JUMP A MOMENT LATER	РЫВОК, И ЧЕРЕЗ МГНОВЕНИЕ ПРЫЖОК
 DASHING BLADES	КЛИНКИ С РЫВКОМ
 DATA FOLDER	ПАПКА ДАННЫХ
 DATE FORMAT	ФОРМАТ ДАТЫ
@@ -729,6 +791,9 @@ DISPLAY: WINDOWED	ЭКРАН: В ОКНЕ
 DISTANCE	ДИСТАНЦИЯ
 DMG	УРОН
 DMITRI	DMITRI
+DON'T DASH NOW: A DASH ABOVE 32 M/S CAPS YOU DOWN (A HYPER ABOVE 36)	НЕ ДЕЛАЙ РЫВОК: РЫВОК ВЫШЕ 32 М/С СРЕЗАЕТ СКОРОСТЬ (ГИПЕР ВЫШЕ 36)
+DON'T HOLD IT WHILE YOU STRAFE	НЕ ДЕРЖИ ЕЁ ВО ВРЕМЯ СТРЕЙФА
+DON'T HOLD IT, OR THE DASH GOES FORWARD TOO	НЕ ДЕРЖИ, ИНАЧЕ РЫВОК ПОЙДЁТ И ВПЕРЁД
 DON'T SAVE	НЕ СОХРАНЯТЬ
 DONE	ГОТОВО
 DOT	ТОЧ.
@@ -823,7 +888,9 @@ ERROR ON LINE	ОШИБКА В СТРОКЕ
 ESC	ESC
 ESC (CLEAR SEARCH)	ESC (ОЧИСТИТЬ ПОИСК)
 ESC TO CANCEL	ESC ДЛЯ ОТМЕНЫ
+ESC: LESSONS	ESC: УРОКИ
 ESC: PAUSE / SETTINGS   R: RESTART	ESC: ПАУЗА / НАСТРОЙКИ   R: ЗАНОВО
+EVERY LANDING HYPERS AGAIN AS SOON AS A DASH CHARGE IS BACK	КАЖДОЕ ПРИЗЕМЛЕНИЕ — СНОВА ГИПЕР, КАК ТОЛЬКО ВЕРНЁТСЯ ЗАРЯД РЫВКА
 EVERY SETTING IS BACK TO ITS DEFAULT	ВСЕ НАСТРОЙКИ СБРОШЕНЫ ПО УМОЛЧАНИЮ
 EVERY WEAPON, ALL MOVEMENT - NO GIMMICKS	ВСЁ ОРУЖИЕ, ВСЁ ПЕРЕДВИЖЕНИЕ - БЕЗ ФОКУСОВ
 EVERYONE THROWS - THE LOSING SHAPE IS OUT	ВСЕ ВЫБРАСЫВАЮТ - ПРОИГРАВШАЯ ФИГУРА ВЫБЫВАЕТ
@@ -854,14 +921,16 @@ EXPORT CSV	ЭКСПОРТ CSV
 EXPORT GROUP	ЭКСПОРТ ГРУППЫ
 EXPORT PNG	ЭКСПОРТ PNG
 EZRA	EZRA
-Each dash leaves you 1 m/s faster than you went in (at least 11, at most 32 m/s).	Каждый рывок выводит вас на 1 м/с быстрее, чем вы вошли (минимум 11, максимум 32 м/с).
+Each dash leaves you faster than you went in: on the floor by 1 m/s, in the air by about a third of what you are below 32 m/s (from 10 m/s you leave at 17.7). At least 11, at most 32 m/s: a dash above 32 slows you to 32.	Каждый рывок выпускает тебя быстрее, чем ты входил: на земле на 1 м/с, в воздухе примерно на треть того, чего не хватает до 32 м/с (с 10 м/с выходишь на 17.7). Минимум 11, максимум 32 м/с: рывок быстрее 32 сбрасывает тебя до 32.
 Each map is built for one mode, plus free for all and any others it lists. You can still start any map in any mode: the menus warn when it isn't built for it (it may be missing spawns or objectives).	Каждая карта сделана для одного режима, а также для «каждый сам за себя» и других указанных. Любую карту можно запустить в любом режиме: меню предупредят, если она не для него (могут не быть спавнов или целей).
 F3 - performance overlay (average, 1% and 0.1% low FPS, input latency).   F12 - screenshot.   ESC - menu, votes, settings.	F3 - оверлей производительности (средний, 1% и 0.1% low FPS, задержка ввода).   F12 - скриншот.   ESC - меню, голосования, настройки.
 F3 COLORBLIND COLORS	ЦВЕТА F3 ДЛЯ ДАЛЬТОНИКОВ
+FACE IT (WITHIN 45 DEGREES)	ВСТАНЬ К НЕЙ ЛИЦОМ (В ПРЕДЕЛАХ 45 ГРАДУСОВ)
 FACING (Q E)	НАПРАВЛ. (Q E)
 FADE DISTANCE	ДИСТ. ЗАТУХАНИЯ
 FADE LENGTH	ДЛИНА ЗАТУХАНИЯ
 FAIRNESS: DEFAULT MODEL, HUD, CONTROLS, 10 MS INTERP	ЧЕСТНОСТЬ: МОДЕЛЬ, HUD, УПРАВЛЕНИЕ ПО УМОЛЧ., ИНТЕРП. 10 МС
+FALL BOUNCE	ОТСКОК С ПАДЕНИЯ
 FAR SCENERY	ДАЛЬН. ДЕКОР
 FAST FLY	БЫСТ. ПОЛЁТ
 FASTER MOVES TURN FURTHER (AT MOST X4)	БЫСТРЫЕ ДВИЖЕНИЯ ПОВОРАЧИВАЮТ СИЛЬНЕЕ (МАКС. X4)
@@ -884,7 +953,11 @@ FIND INVISIBLE WALLS:	НАЙТИ НЕВИДИМЫЕ СТЕНЫ:
 FINISH	ФИНИШ
 FINISHED	ФИНИШ
 FIRE	ОГОНЬ
+FIRE A ROCKET AND HOOK IT AS IT LEAVES: IT CARRIES YOU ALONG.	ВЫСТРЕЛИ РАКЕТОЙ И ЗАЦЕПИ ЕЁ КРЮКОМ НА ВЫЛЕТЕ: ОНА ПОНЕСЁТ ТЕБЯ.
+FIRE AFTER A DASH, NEVER JUST BEFORE ONE: A DASH ERASES A BLAST'S PUSH	СТРЕЛЯЙ ПОСЛЕ РЫВКА, НЕ ПРЯМО ПЕРЕД НИМ: РЫВОК СТИРАЕТ ТОЛЧОК ВЗРЫВА
+FIRE AND GRAPPLE TOGETHER	ВЫСТРЕЛ И КРЮК ВМЕСТЕ
 FIRE RATE	СКОРОСТР.
+FIRE THE MOMENT THE DASH GOES, NEVER BEFORE: A DASH ERASES A BLAST'S PUSH	СТРЕЛЯЙ В МИГ РЫВКА, НЕ РАНЬШЕ: РЫВОК СТИРАЕТ ТОЛЧОК ВЗРЫВА
 FIRES THE MOMENT IT IS	СТРЕЛЯЕТ В ТОТ ЖЕ МИГ, КАК
 FIRST TO #	ДО #
 FIX GAPS	ЗАКР. ЩЕЛИ
@@ -933,6 +1006,8 @@ FRENZY	FRENZY
 FRIENDS JOIN WITH YOUR PUBLIC IP (STREAMER MODE)	ДРУЗЬЯ ЗАХОДЯТ ПО ВАШЕМУ ВНЕШНЕМУ IP (РЕЖИМ СТРИМЕРА)
 FRIENDS JOIN WITH YOUR PUBLIC IP:	ДРУЗЬЯ ЗАХОДЯТ ПО ВАШЕМУ ВНЕШНЕМУ IP:
 FROM	ИЗ
+FROM 11.7 M UP OR MORE THE HOP IS THE BIGGEST, 15.7 M/S	С 11.7 М И ВЫШЕ ОТСКОК МАКСИМАЛЕН: 15.7 М/С
+FROM STANDING OR A SLOW RISE ONLY: RISING FAST, THE BUBBLES CAN'T CATCH YOU	ТОЛЬКО СТОЯ ИЛИ МЕДЛЕННО ПОДНИМАЯСЬ: ЕСЛИ ВЗЛЕТАЕШЬ БЫСТРО, ПУЗЫРИ ТЕБЯ НЕ ДОГОНЯТ
 FROM: APEX LEGENDS	ИЗ: APEX LEGENDS
 FROM: CALL OF DUTY	ИЗ: CALL OF DUTY
 FROM: CS2 / CS:GO	ИЗ: CS2 / CS:GO
@@ -973,7 +1048,12 @@ GATE	ВОРОТА
 GEFORCE	GEFORCE
 GENERAL	ОБЩЕЕ
 GENERAL + INTERFACE	ОБЩЕЕ + ИНТЕРФЕЙС
+GET 40 M UP	ПОДНИМИСЬ НА 40 М
+GET 55 M UP	ПОДНИМИСЬ НА 55 М
+GET 7 M UP	ПОДНИМИСЬ НА 7 М
 GET IT WITH /link - THE CODE IS PUBLIC	ПОЛУЧИТЕ ЧЕРЕЗ /link - КОД ПУБЛИЧНЫЙ
+GHOST	GHOST
+GHOST'S KEYS	КЛАВИШИ ПРИЗРАКА
 GIANT SNIPERS	ГИГАНТ. СНАЙПЕРЫ
 GIBS	ГИБЫ
 GL	GL
@@ -983,6 +1063,7 @@ GLOW	СВЕЧ.
 GLOW STRENGTH	СИЛА СВЕЧЕНИЯ
 GO	ИДИ
 GO!	ИДИ!
+GOAL	ЦЕЛЬ
 GODLIKE	БОЖЕСТВ.
 GPU	GPU
 GPU + CPU GO TO THE GAME FIRST WHILE FOCUSED	GPU + ЦП В ПРИОРИТЕТЕ У ИГРЫ, ПОКА ОНА В ФОКУСЕ
@@ -1011,6 +1092,7 @@ GPU world pass	GPU: проход мира
 GRADE FROM LOW COLOR	ГРАДИЕНТ ОТ ЦВЕТА НИЗА
 GRAPPLE	КРЮК
 GRAPPLE + HAND	КРЮК + РУКА
+GRAPPLE A PLAYER	КРЮК НА ИГРОКА
 GRAPPLE COOLDOWN	ПЕРЕЗАРЯДКА КРЮКА
 GRAPPLE GRAVITY	ГРАВИТАЦИЯ КРЮКА
 GRAPPLE MODEL	МОДЕЛЬ КРЮКА
@@ -1018,7 +1100,12 @@ GRAPPLE MOVEMENT ONLY	ТОЛЬКО КРЮК ДЛЯ ДВИЖЕНИЯ
 GRAPPLE PULL	ТЯГА КРЮКА
 GRAPPLE RANGE	ДАЛЬНОСТЬ КРЮКА
 GRAPPLE RELEASE DISTANCE	ДИСТАНЦИЯ ОТЦЕПА КРЮКА
+GRAPPLE TO 24 M/S, THEN A ROCKET AND A HYPER STRAIGHT DOWN: YOU FLY, CHEAP AND FAST.	КРЮКОМ ДО 24 М/С, ПОТОМ РАКЕТА И ГИПЕР ПРЯМО ВНИЗ: ТЫ ЛЕТИШЬ, ДЁШЕВО И БЫСТРО.
 GRAPPLE TOP SPEED	МАКС. СКОРОСТЬ КРЮКА
+GRAPPLE WALK TO 24 M/S, LET GO, THEN HYPER EVERY LANDING: 29, 34, 35 M/S IN ABOUT 1.3 S.	НА КРЮКЕ ДО 24 М/С, ОТПУСТИ, ЗАТЕМ ГИПЕР ПРИ КАЖДОМ ПРИЗЕМЛЕНИИ: 29, 34, 35 М/С ЗА 1.3 С.
+GRAPPLE WALK UP TO 24 M/S	ТЯНИСЬ КРЮКОМ ПО ПОЛУ ДО 24 М/С
+GRAPPLE WALKING	ХОДЬБА НА КРЮКЕ
+GRAPPLE WALKING AT 24 M/S, FIRE A ROCKET STRAIGHT DOWN WHILE STILL HOOKED: ABOUT 40 M/S ALONG.	НА КРЮКЕ ПО ПОЛУ НА 24 М/С, НЕ ОТПУСКАЯ, РАКЕТА ПРЯМО ВНИЗ: ОКОЛО 40 М/С ВПЕРЁД.
 GRAPPLE: HOLD	КРЮК: УДЕРЖАНИЕ
 GRAPPLE: TOGGLE	КРЮК: ПЕРЕКЛЮЧЕНИЕ
 GRAVITY	ГРАВИТАЦИЯ
@@ -1054,12 +1141,14 @@ HANA	HANA
 HAND	РУКА
 HAND: LEFT	РУКА: ЛЕВАЯ
 HAND: RIGHT	РУКА: ПРАВАЯ
+HANG FOR 1.5 S	ВИСИ 1.5 С
 HARD	СЛОЖНО
 HARD BOTS	СЛОЖНЫЕ БОТЫ
 HARD TO TELL APART WITH	ТРУДНО РАЗЛИЧИТЬ ПРИ
 HARDWARE GPU SCHEDULING IS OFF	АППАРАТНОЕ ПЛАНИРОВАНИЕ GPU ВЫКЛЮЧЕНО
 HAS NO BINDS	НЕТ НАЗНАЧЕНИЙ
 HAS NO WIDGETS	НЕТ ВИДЖЕТОВ
+HEAD ON: THE DASH RUNS ON UP THE FACE AT ITS FULL 24 M/S	В ЛОБ: РЫВОК ИДЁТ ВВЕРХ ПО СКЛОНУ НА ПОЛНЫХ 24 М/С
 HEADSHOT	ХЕДШОТ
 HEADSHOT HIT	ПОПАДАНИЕ В ГОЛОВУ
 HEADSHOTS STAY RED, BIG HITS GOLD	ХЕДШОТЫ КРАСНЫЕ, МОЩНЫЕ ПОПАДАНИЯ ЗОЛОТЫЕ
@@ -1114,18 +1203,35 @@ HITSOUND: MOUTH	ХИТСАУНД: РОТОМ
 HITSOUND: MY SOUND PACK	ХИТСАУНД: МОЙ ЗВУКПАК
 HITSOUND: RETRO	ХИТСАУНД: РЕТРО
 HITSOUNDS	ХИТСАУНДЫ
+HOLD ALL THREE	ДЕРЖИ ВСЕ ТРИ
+HOLD BOTH	ДЕРЖИ ОБЕ
+HOLD BOTH AS YOU COME DOWN	ДЕРЖИ ОБЕ НА СНИЖЕНИИ
+HOLD BOTH AS YOU COME DOWN: THE DASH GOES AS SOON AS IT IS BACK	ДЕРЖИ ОБЕ НА СНИЖЕНИИ: РЫВОК СРАБОТАЕТ, КАК ТОЛЬКО ВЕРНЁТСЯ
 HOLD FIRE	НЕ СТРЕЛЯТЬ
+HOLD IT	ДЕРЖИ
+HOLD IT TO HOP ON AND KEEP THE SPEED	ДЕРЖИ, ЧТОБЫ ПРЫГАТЬ ДАЛЬШЕ И СОХРАНИТЬ СКОРОСТЬ
+HOLD IT. IT PULLS YOU TO THE WALL AND UP	ДЕРЖИ. ОН ТЯНЕТ ТЕБЯ К СТЕНЕ И ВВЕРХ
+HOLD IT. YOU HOP AGAIN EVERY TIME YOU LAND	ДЕРЖИ. ПРЫГАЕШЬ СНОВА ПРИ КАЖДОМ ПРИЗЕМЛЕНИИ
+HOLD JUMP AS YOU LAND FROM A BIG FALL: YOU HOP UP AT 15.7 M/S AND GET A DASH CHARGE BACK.	ДЕРЖИ ПРЫЖОК ПРИ ПРИЗЕМЛЕНИИ С БОЛЬШОЙ ВЫСОТЫ: ОТСКОК НА 15.7 М/С И ЗАРЯД РЫВКА НАЗАД.
 HOLDING THE HILL	УДЕРЖАНИЕ ХОЛМА
 HOME	HOME
 HOOK	КРЮК
+HOOK BOOST	РАЗГОН С КРЮКА
 HOOK CAPTION	ПОДПИСЬ КРЮКА
+HOOK THE CEILING A LITTLE AHEAD OF YOU AND HOLD: YOU HANG UNDER IT AND SWING.	ЗАЦЕПИ ПОТОЛОК ЧУТЬ ВПЕРЕДИ И ДЕРЖИ: ПОВИСНЕШЬ ПОД НИМ И БУДЕШЬ КАЧАТЬСЯ.
+HOOK THE FLOOR FAR AHEAD: IT DRAGS YOU ALONG WITH NO FRICTION, UP TO 24 M/S.	ЗАЦЕПИ ПОЛ ДАЛЕКО ВПЕРЕДИ: ОН ТЯНЕТ ТЕБЯ БЕЗ ТРЕНИЯ, ДО 24 М/С.
+HOOK THE PARTNER	ЗАЦЕПИ PARTNER
+HOOK-START CHAIN	ЦЕПОЧКА С КРЮКА
 HOOKED	ЗАЦЕПЛЕН
+HOOKING SOMETHING YOURSELF BREAKS FREE TOO	СВОЙ КРЮК ВО ЧТО-НИБУДЬ ТОЖЕ ОСВОБОЖДАЕТ
+HOP 15 M/S UP OFF A LANDING	ОТСКОК 15 М/С ПРИ ПРИЗЕМЛЕНИИ
 HOST	ХОСТ
 HOST EDIT SESSION	СЕССИЯ ПРАВКИ (ХОСТ)
 HOST EDIT SESSION: friends join and build with you; everyone's camera shows in the view.	СЕССИЯ ПРАВКИ (ХОСТ): друзья заходят и строят с вами; камеры всех видны на экране.
 HOST GAME	СОЗДАТЬ ИГРУ
 HOSTING	ХОСТИНГ
 HOSTING ON UDP PORT	ХОСТИНГ НА UDP-ПОРТУ
+HOW	КАК
 HOW OTHER PLAYERS' MOVES ARE SMOOTHED	КАК СГЛАЖИВАЮТСЯ ДВИЖЕНИЯ ДРУГИХ ИГРОКОВ
 HP	HP
 HUD	HUD
@@ -1142,6 +1248,7 @@ HUD SIZE	РАЗМЕР HUD
 HUD.CFG LINE	СТРОКА HUD.CFG
 HURT	РАНЕН.
 HYPER	ГИПЕР
+HYPER AGAIN EVERY TIME YOU LAND: EACH ONE ADDS 5 M/S, UP TO 36.	ГИПЕР ПРИ КАЖДОМ ПРИЗЕМЛЕНИИ: КАЖДЫЙ ДОБАВЛЯЕТ 5 М/С, ДО 36.
 HZ	ГЦ
 HZ  LOSS	ГЦ  ПОТЕРИ
 HZ (NOT ON THIS MONITOR)	ГЦ (НЕ НА ЭТОМ МОНИТОРЕ)
@@ -1178,6 +1285,7 @@ IN (TEAMS GO UNEVEN)	ВХОДИТ (КОМАНДЫ НЕРАВНЫ)
 IN A TIME TRIAL OR A RACE	В ЗАЕЗДЕ НА ВРЕМЯ ИЛИ ГОНКЕ
 IN GAME, ESC SHOWS IF THE PORT CAN BE REACHED	В ИГРЕ ESC ПОКАЗЫВАЕТ, ДОСТУПЕН ЛИ ПОРТ
 IN MY PALETTE	В МОЕЙ ПАЛИТРЕ
+IN THE AIR, HOLD ONLY THIS AND TURN THE MOUSE RIGHT, SMOOTHLY	В ВОЗДУХЕ ДЕРЖИ ТОЛЬКО ЕЁ И ПЛАВНО ПОВОРАЧИВАЙ МЫШЬ ВПРАВО
 IN THIS MAP	НА ЭТОЙ КАРТЕ
 INDIA	INDIA
 INDUSTRIAL	ИНДУСТР.
@@ -1214,6 +1322,7 @@ IS ON A KILLING SPREE	УСТРОИЛ СЕРИЮ УБИЙСТВ
 IS ON A RAMPAGE	БУЙСТВУЕТ
 IS UNSTOPPABLE	НЕУДЕРЖИМ
 IT IN MY PALETTE	ЕГО В МОЕЙ ПАЛИТРЕ
+IT IS ALWAYS IN THE MAIN MENU: TUTORIAL	ВСЕГДА В ГЛАВНОМ МЕНЮ: ОБУЧЕНИЕ
 ITS COLOURS ARE ON THE CROSSHAIR TAB	ЕГО ЦВЕТА НА ВКЛАДКЕ ПРИЦЕЛ
 ITS STYLE	ЕГО СТИЛЬ
 ITS STYLE: CIRCLE	ЕГО СТИЛЬ: КРУГ
@@ -1233,10 +1342,19 @@ JOIN THE GAME FROM THE MENU (ESC)	ВОЙДИТЕ В ИГРУ ЧЕРЕЗ МЕНЮ
 JOINING + PRIVACY	ВХОД + ПРИВАТНОСТЬ
 JOST	JOST
 JUMP	ПРЫЖ.
+JUMP AND FIRE TOGETHER	ПРЫЖОК И ВЫСТРЕЛ ВМЕСТЕ
+JUMP AND SET IT OFF TOGETHER	ПРЫЖОК И ПОДРЫВ ВМЕСТЕ
+JUMP AND SET THEM ALL OFF TOGETHER	ПРЫЖОК И ПОДРЫВ ВСЕХ ВМЕСТЕ
+JUMP AT THE EDGE	ПРЫГАЙ У КРАЯ
+JUMP THE HURDLES. YOU KEEP YOUR SPEED IN THE AIR	ПЕРЕПРЫГИВАЙ БАРЬЕРЫ. В ВОЗДУХЕ СКОРОСТЬ СОХРАНЯЕТСЯ
+JUMP WHILE YOU DASH ALONG THE FLOOR: 24 M/S, UP AND AHEAD.	ПРЫГНИ ВО ВРЕМЯ РЫВКА ПО ПОЛУ: 24 М/С, ВВЕРХ И ВПЕРЁД.
+JUMP, DASH AND FIRE TOGETHER	ПРЫЖОК, РЫВОК И ВЫСТРЕЛ ВМЕСТЕ
 JUNE	JUNE
 KAI	KAI
 KB; OFF: A SERVER'S	КБ; ВЫКЛ: СЕРВЕРНЫЙ
 KEEP	ОСТ.
+KEEP HOLDING IT ALL THE WAY DOWN	ДЕРЖИ ВСЁ ПАДЕНИЕ
+KEEP HOLDING IT TO RIDE	ДЕРЖИ, ЧТОБЫ ЛЕТЕТЬ НА НЕЙ
 KEEP THESE DISPLAY SETTINGS? REVERTING IN	ОСТАВИТЬ ЭТИ НАСТРОЙКИ ЭКРАНА? ОТКАТ ЧЕРЕЗ
 KEEP YOUR EDITS AS A NEW MAP?	СОХРАНИТЬ ПРАВКИ КАК НОВУЮ КАРТУ?
 KEEP: ALL	ХРАНИТЬ: ВСЕ
@@ -1250,6 +1368,7 @@ KEY 2	КЛ. 2
 KEY 3	КЛ. 3
 KEY OVERLAY	ОВЕРЛЕЙ КЛАВИШ
 KEY OVERLAY (VERBOSE)	ОВЕРЛЕЙ КЛАВИШ (ПОДРОБНО)
+KEY TECH	КЛЮЧЕВАЯ ТЕХНИКА
 KEYS	КЛАВ.
 KICK	КИК
 KICK A PLAYER	КИКНУТЬ ИГРОКА
@@ -1287,6 +1406,7 @@ LADDER SIDE SPEED	СКОРОСТЬ ВБОК НА ЛЕСТНИЦЕ
 LADDERS (1V1, INSTAGIB FFA) - DEFAULT MODEL, HUD, CONTROLS >	РЕЙТИНГИ (1V1, INSTAGIB FFA) - МОДЕЛЬ ПО УМОЛЧАНИЮ, HUD, УПРАВЛЕНИЕ >
 LAID OVER THE WORLD AFTER IT	И НАЛОЖЕН НА МИР ПОСЛЕ НЕГО
 LAND	ПРИЗ.
+LAND ON THE FAR SIDE OF THE LAVA	ПРИЗЕМЛИСЬ ПО ТУ СТОРОНУ ЛАВЫ
 LANGUAGE	ЯЗЫК
 LARGE	БОЛЬШОЙ
 LASER	ЛАЗЕР
@@ -1309,10 +1429,12 @@ LATENT SYNC	LATENT SYNC
 LATENT SYNC: HOLD FOR THE BLANK	LATENT SYNC: ЖДАТЬ ГАШЕНИЯ
 LATENT SYNC: WAIT FOR THE RASTER	LATENT SYNC: ЖДАТЬ РАСТР
 LAUNCHER ON THE RIGHT	ЛАУНЧЕР СПРАВА
+LAY A STICKY BOMB, STAND ON IT, SET IT OFF AS YOU JUMP.	ПОЛОЖИ ЛИПКУЮ БОМБУ, ВСТАНЬ НА НЕЁ, ПОДОРВИ В ПРЫЖКЕ.
 LEADERBOARD	ТАБЛИЦА ЛИДЕРОВ
 LEADERBOARD: SOON	ТАБЛИЦА ЛИДЕРОВ: СКОРО
 LEAVE	ВЫЙТИ
 LEAVE ALL	ВЫЙТИ ИЗ ВСЕХ
+LEAVE TUTORIAL	ВЫЙТИ ИЗ ОБУЧЕНИЯ
 LEFT	ВЛЕВО
 LEFT + RIGHT HELD: LAST WINS = SNAP TAP (FLYING UP + DOWN TOO)	ЛЕВО + ПРАВО ЗАЖАТЫ: ПОБЕЖДАЕТ ПОСЛЕДНЯЯ = SNAP TAP (В ПОЛЁТЕ ВВЕРХ + ВНИЗ ТОЖЕ)
 LEFT AND RIGHT, CHANGING SPEED	ВЛЕВО И ВПРАВО, С МЕНЯЮЩЕЙСЯ СКОРОСТЬЮ
@@ -1323,7 +1445,14 @@ LEGACY MAPS	СТАРЫЕ КАРТЫ
 LEGACY MAPS (settings > GAMEPLAY) lists the old maps from before 1.19.6 too. They are never ranked.	СТАРЫЕ КАРТЫ (настройки > ГЕЙМПЛЕЙ) показывает и старые карты до 1.19.6. Они никогда не рейтинговые.
 LENA	LENA
 LENGTH	ДЛИНА
+LESSON # OF #	УРОК # ИЗ #
+LESSON DONE	УРОК ПРОЙДЕН
+LESSONS	УРОКИ
 LET	ПУСК
+LET GO 40 TO 80 MS LATER: HELD ON, THE HOOK PULLS YOU BACK	ОТПУСТИ ЧЕРЕЗ 40-80 МС: ЕСЛИ ДЕРЖАТЬ, КРЮК ТЯНЕТ НАЗАД
+LET GO AS YOU PASS IT: HELD ON, THE HOOK BRAKES YOU (24 TO 15 M/S)	ОТПУСТИ, ПРОЛЕТАЯ МИМО: ЕСЛИ ДЕРЖАТЬ, КРЮК ТОРМОЗИТ (С 24 ДО 15 М/С)
+LET GO BEFORE YOU REACH THE HOOK	ОТПУСТИ ДО ТОГО, КАК ДОЛЕТИШЬ ДО КРЮКА
+LET GO OF THE GRAPPLE AND HOLD ALL THREE	ОТПУСТИ КРЮК И ДЕРЖИ ВСЕ ТРИ
 LG	LG
 LIBREQUAKE 8X8	LIBREQUAKE 8X8
 LIGHT	СВЕТ
@@ -2038,6 +2167,7 @@ MODEL	МОДЕЛЬ
 MODEL OF	МОДЕЛЬ ДЛЯ
 MODES	РЕЖИМЫ
 MODES (CLICK: ALLOW / BLOCK)	РЕЖИМЫ (КЛИК: РАЗРЕШИТЬ / ЗАПРЕТИТЬ)
+MODES GUIDE	ГИД ПО РЕЖИМАМ
 MODES:	РЕЖИМЫ:
 MODIFIERS	МОДИФИК.
 MODIFIERS:	МОДИФИК.:
@@ -2107,14 +2237,18 @@ NEUTRAL PAYLOAD	НЕЙТРАЛЬНАЯ ВАГОНЕТКА
 NEUTRAL PAYLOAD - either team pushes the cart toward the other team's end. The team whose side it's on when time runs out wins.	НЕЙТРАЛЬНАЯ ВАГОНЕТКА - любая команда толкает вагонетку к концу соперника. Побеждает команда, на чьей стороне она к концу времени.
 NEW	НОВ.
 NEW BEST	РЕКОРД
+NEW HERE? THE TUTORIAL SHOWS EVERY MOVEMENT TECH: A GHOST DOES IT, THEN YOU DO.	ВПЕРВЫЕ ЗДЕСЬ? ОБУЧЕНИЕ ПОКАЖЕТ ВСЕ ТЕХНИКИ ДВИЖЕНИЯ: СНАЧАЛА ПРИЗРАК, ПОТОМ ТЫ.
 NEW LEADER	НОВЫЙ ЛИДЕР
 NEW NAME	НОВОЕ ИМЯ
 NEW ONES:	НОВЫЕ:
 NEW PERSONAL BEST	НОВЫЙ ЛИЧНЫЙ РЕКОРД
 NEXT	ДАЛЕЕ
+NEXT HOP, HOLD ONLY THIS AND TURN LEFT	НА СЛЕДУЮЩЕМ ПРЫЖКЕ ДЕРЖИ ТОЛЬКО ЕЁ И ПОВОРАЧИВАЙ ВЛЕВО
 NEXT PAGE	СЛЕД. СТР.
 NEXT WEAP	СЛЕД. ОРУЖ.
 NEXT WEAPON	СЛЕД. ОРУЖИЕ
+NEXT:	ДАЛЕЕ:
+NEXT: {}	ДАЛЕЕ: {}
 NIGHT: QUIET UP, LOUD DOWN; LOW: AS NORMAL	НОЧЬ: ТИХОЕ ГРОМЧЕ, ГРОМКОЕ ТИШЕ; НИЗКАЯ: КАК ОБЫЧНАЯ
 NIGHT: QUIET UP, LOUD DOWN; SAFE: MORE	НОЧЬ: ТИХОЕ ГРОМЧЕ, ГРОМКОЕ ТИШЕ; НАДЁЖНАЯ: БОЛЬШЕ
 NINJA	НИНДЗЯ
@@ -2149,6 +2283,7 @@ NOT BUILT FOR THIS MODE - IT MAY NOT WORK	НЕ ДЛЯ ЭТОГО РЕЖИМА - 
 NOT CHANGED IN THE UI TEST	НЕ МЕНЯЕТСЯ В UI-ТЕСТЕ
 NOT FOR THIS MODE	НЕ ДЛЯ ЭТОГО РЕЖИМА
 NOT FOUND: USING THE PRIMARY	НЕ НАЙДЕН: ИСПОЛЬЗУЕТСЯ ОСНОВНОЙ
+NOT NOW	НЕ СЕЙЧАС
 NOT PLAYED YET	ЕЩЁ НЕ СЫГРАНО
 NOT REPORTED - NOT A RANKED MAP FOR THIS LADDER	НЕ ЗАСЧИТАНО - НЕ РЕЙТИНГОВАЯ КАРТА ДЛЯ ЭТОЙ ТАБЛИЦЫ
 NOT USABLE	НЕДОСТУПНО
@@ -2214,6 +2349,7 @@ ON WINDOWS (ALREADY ITS SHORTEST); SAFE: X2	В WINDOWS (УЖЕ МИНИМУМ); 
 ON: AT MOST 1 FRAME QUEUED	ВКЛ: НЕ БОЛЕЕ 1 КАДРА В ОЧЕРЕДИ
 ON: FROM THE NEXT START	ВКЛ: СО СЛЕДУЮЩЕГО ЗАПУСКА
 ON: USES YOUR TEAM COLOR, NOT THE ONE BELOW	ВКЛ: ЦВЕТ ВАШЕЙ КОМАНДЫ, А НЕ ТОТ, ЧТО НИЖЕ
+ONCE ABOVE THE EDGE, LET GO OF THE GRAPPLE AND MOVE ONTO THE LEDGE	НАД КРАЕМ ОТПУСТИ КРЮК И ЗАЙДИ НА УСТУП
 ONE	ОДИН
 ONE BIG BALL, BACK AFTER 1 S	ОДИН БОЛЬШОЙ ШАР, ВОЗВРАЩАЕТСЯ ЧЕРЕЗ 1 С
 ONE CHAT COLOR	ОДИН ЦВЕТ ЧАТА
@@ -2282,6 +2418,8 @@ PALETTE: THE BOMB'S BLINK AND CHECKPOINTS NOT	ПАЛИТРА: МИГАНИЕ Б�
 PANEL DARKNESS	ЗАТЕМНЕНИЕ ПАНЕЛЕЙ
 PANEL SEAMS; FLAT: NO BAKED LIGHT OR SHADOW	ШВЫ ПАНЕЛЕЙ; ПЛОСКО: БЕЗ ЗАПЕЧЁННОГО СВЕТА И ТЕНИ
 PAPER	БУМАГА
+PARTNER	PARTNER
+PAST 32 M/S, THROWN BY YOUR ROCKET	БОЛЬШЕ 32 М/С ОТ СВОЕЙ РАКЕТЫ
 PASTE CODE	ВСТАВИТЬ КОД
 PASTE COLORS	ВСТАВИТЬ ЦВЕТА
 PATH PT	ТЧК. ПУТИ
@@ -2343,6 +2481,7 @@ POINT	ТОЧКА
 POINT LOST	ТОЧКА ПОТЕРЯНА
 POINT TAKEN	ТОЧКА ВЗЯТА
 POLLS AT	ОПРОС НА
+POP	ПОП
 POSITION	ПОЗИЦИЯ
 POSITION must be VEC3	POSITION must be VEC3
 POWER	ЭНЕРГИЯ
@@ -2361,6 +2500,7 @@ PRESET: LOW	ПРЕСЕТ: НИЗКИЙ
 PRESET: MEDIUM	ПРЕСЕТ: СРЕДНИЙ
 PRESETS SET BOTH COLORS BELOW	ПРЕСЕТЫ ЗАДАЮТ ОБА ЦВЕТА НИЖЕ
 PRESS A KEY, MOUSE BUTTON OR SCROLL - ESC CANCELS, DEL CLEARS	НАЖМИТЕ КЛАВИШУ, КНОПКУ МЫШИ ИЛИ КОЛЕСО - ESC ОТМЕНА, DEL СБРОС
+PRESS IT. THE HOOK LATCHES ON	НАЖМИ. КРЮК ЦЕПЛЯЕТСЯ
 PRESS...	НАЖМИТЕ...
 PREV WEAP	ПРЕД. ОРУЖ.
 PREV WEAPON	ПРЕД. ОРУЖИЕ
@@ -2381,6 +2521,7 @@ PULSE	ПУЛЬС
 PUSH THE PAYLOAD	ТОЛКАЙТЕ ВАГОНЕТКУ
 PUSH THE PAYLOAD TO THE ENEMY END	ДОТОЛКАЙТЕ ВАГОНЕТКУ ДО КОНЦА ВРАГА
 PUT .QBRAIN FILES IN THE BOTS FOLDER TO PICK ONE	ПОЛОЖИТЕ ФАЙЛЫ .QBRAIN В ПАПКУ BOTS, ЧТОБЫ ВЫБРАТЬ
+PUT YOUR CROSSHAIR ON THE PARTNER AS IT RUNS	ДЕРЖИ ПРИЦЕЛ НА БЕГУЩЕМ PARTNER
 Pick a server from the list (internet and LAN), or type its address as IP:PORT.	Выберите сервер из списка (интернет и LAN) или введите адрес в виде IP:ПОРТ.
 Pick an element in the dropdown (health, weapon name, cooldown bars, speed meter, weapon list) and move it, resize it, recolour it or hide it.	Выберите элемент в списке (здоровье, название оружия, полосы перезарядки, спидометр, список оружия) и переместите, измените размер, цвет или скройте его.
 Pick the mode and map, a server name and the max players. The game picks the map built for the mode; any other map works with a warning.	Выберите режим и карту, имя сервера и макс. игроков. Игра берёт карту, сделанную для режима; любая другая работает с предупреждением.
@@ -2433,6 +2574,7 @@ RADEON	RADEON
 RADEON(TM) GRAPHICS	RADEON(TM) GRAPHICS
 RADIUS	РАДИУС
 RAILYARD / DAM / EXPRESS / MONORAIL - neutral payload (Railyard: payload too).   WAR / CONVOY - multi point.	RAILYARD / DAM / EXPRESS / MONORAIL - нейтральная вагонетка (Railyard: и вагонетка).   WAR / CONVOY - мультиточка.
+RAMP DASH	РЫВОК ПО РАМПЕ
 RAMPAGE	БУЙСТВО
 RANDOM TURNS ON THE WALL	СЛУЧАЙНЫЕ ПОВОРОТЫ НА СТЕНЕ
 RANKED	РЕЙТИНГ
@@ -2459,6 +2601,11 @@ RATE	ЧАСТ.
 RATING	РЕЙТИНГ
 RAW INPUT	RAW INPUT
 RD	RD
+REACH 12 M/S WITH NO DASH OR GRAPPLE	РАЗГОНИСЬ ДО 12 М/С БЕЗ РЫВКА И КРЮКА
+REACH 27 M/S	РАЗГОНИСЬ ДО 27 М/С
+REACH 34 M/S	РАЗГОНИСЬ ДО 34 М/С
+REACH 37 M/S	РАЗГОНИСЬ ДО 37 М/С
+REACH THE GLOWING LINE	ДОБЕРИСЬ ДО СВЕТЯЩЕЙСЯ ЛИНИИ
 REACTOR	REACTOR
 READ INPUT	ЧТЕНИЕ ВВОДА
 READY	ГОТОВ
@@ -2512,6 +2659,7 @@ RESUME (ESC)	ПРОДОЛЖИТЬ (ESC)
 RETICLE COLOR	ЦВЕТ ПРИЦЕЛА
 RETICLE WIDTH	ШИРИНА ПРИЦЕЛА
 REVERT	ОТКАТИТЬ
+RIDE FOR 0.4 S	ЛЕТИ НА НЕЙ 0.4 С
 RIFF	RIFF
 RIFLE	ВИНТ.
 RIFLE ZOOM FOV	FOV ЗУМА ВИНТОВКИ
@@ -2533,9 +2681,13 @@ RMB	ПКМ
 ROBOT	РОБОТ
 ROCK	КАМЕНЬ
 ROCKET	РАКЕТА
-ROCKET (splash; rocket jump off the floor for 10% damage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 10 hp, once a second; alt throws it: +30 hp and reset cooldowns for a teammate).	РАКЕТА (сплэш; рокет-джамп от пола за 10% урона), ВИНТОВКА (автомат; прицел на альт.), ЛАЗЕР (луч; альт. притягивает), ДРОБОВИК (альт.: рикошет), СНАЙПЕРКА (прицел на альт.), ЛИПУЧКА (альт. взрывает), АРБАЛЕТ (хедшоты), ПУЗЫРЬ (альт.: поток пузырей), НОЖ (альт.: бросок), ШПРИЦ (огонь лечит вас на 10 hp раз в секунду; альт. бросает его: +30 hp и сброс перезарядок союзнику).
+ROCKET (splash; rocket jump off the floor for 10% damage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 5 hp, once a second; alt throws it: +15 hp and reset cooldowns for a teammate).	РАКЕТА (сплэш; рокет-джамп от пола за 10% урона), ВИНТОВКА (автомат; прицел на альт.), ЛАЗЕР (луч; альт. притягивает), ДРОБОВИК (альт.: рикошет), СНАЙПЕРКА (прицел на альт.), ЛИПУЧКА (альт. взрывает), АРБАЛЕТ (хедшоты), ПУЗЫРЬ (альт.: поток пузырей), НОЖ (альт.: бросок), ШПРИЦ (огонь лечит вас на 5 hp раз в секунду; альт. бросает его: +15 hp и сброс перезарядок союзнику).
+ROCKET GRAPPLE	КРЮК НА РАКЕТУ
+ROCKET JUMP	РАКЕТНЫЙ ПРЫЖОК
 ROCKET JUMPERS	РОКЕТ-ДЖАМПЕРЫ
+ROCKET POP	РАКЕТНЫЙ ПОП
 ROCKET RIDE	ВЕРХОМ НА РАКЕТЕ
+ROCKET SUPER	РАКЕТНЫЙ СУПЕР
 ROCKET, LASER AND KNIFE	РАКЕТА, ЛАЗЕР И НОЖ
 ROCKETS AND STICKIES - NO SELF DAMAGE	РАКЕТЫ И ЛИПУЧКИ - БЕЗ УРОНА СЕБЕ
 ROCKETS ONLY	ТОЛЬКО РАКЕТЫ
@@ -2574,9 +2726,13 @@ RULESETS >	ПРАВИЛА >
 RUN	БЕГ
 RUN - DON'T BE THE TAGGER WHEN TIME RUNS OUT	БЕГИТЕ - НЕ БУДЬТЕ ВОДЯЩИМ К КОНЦУ ВРЕМЕНИ
 RUN AGAIN	ЕЩЁ РАЗ
+RUN AT THE GAP	БЕГИ К ПРОВАЛУ
+RUN AT THE RAMP	БЕГИ К РАМПЕ
 RUN BENCHMARK	ЗАПУСТИТЬ БЕНЧМАРК
+RUN FORWARD	БЕГИ ВПЕРЁД
 RUN NAME	ИМЯ ЗАПУСКА
 RUN SPEED	СКОРОСТЬ БЕГА
+RUN, JUMP THE HURDLES, REACH THE GLOWING LINE.	БЕГИ, ПЕРЕПРЫГИВАЙ БАРЬЕРЫ, ДОБЕРИСЬ ДО СВЕТЯЩЕЙСЯ ЛИНИИ.
 RUNS	ЗАПУСК.
 Ranked games use the default model, HUD and controls and 10 ms interpolation, so everyone plays the same game.	В рейтинговых играх модель, HUD и управление по умолчанию и интерполяция 10 мс, чтобы все играли в одну и ту же игру.
 SAFE OK / ERROR	НАДЁЖНО ОК / ОШИБКА
@@ -2686,6 +2842,7 @@ SHOWN WITH VERBOSE INFO ON. DRAG TO MOVE, CORNER / WHEEL TO SIZE, ARROWS NUDGE, 
 SHOWS INPUT->FRAME LATENCY	ПОКАЗЫВАЕТ ЗАДЕРЖКУ INPUT->FRAME
 SHUFFLE TEAMS	ПЕРЕМЕШАТЬ КОМАНДЫ
 SHUFFLE THE TEAMS (THE MATCH RESTARTS)	ПЕРЕМЕШАТЬ КОМАНДЫ (МАТЧ ПЕРЕЗАПУСТИТСЯ)
+SIDEWAYS DASHES	РЫВКИ В СТОРОНУ
 SIMPLE	ПРОСТОЙ
 SIMPLE SKY	ПРОСТОЕ НЕБО
 SITE	ТОЧКА
@@ -2699,9 +2856,12 @@ SIZING	МАСШТ.
 SIZING: EXACT PIXELS	МАСШТ.: ТОЧНЫЕ ПИКСЕЛИ
 SIZING: SCALE WITH RESOLUTION	МАСШТАБИРОВАНИЕ: ПО РАЗРЕШЕНИЮ
 SIZZLE	ШИПЕНИЕ
+SKIP	ПРОПУСТИТЬ
 SKIP IT	ПРОПУСК
+SKIP LESSON	ПРОПУСТИТЬ УРОК
 SKIP WARMUP	БЕЗ РАЗМИНКИ
 SKY	НЕБО
+SLIDE FOR 0.8 S	СКОЛЬЗИ 0.8 С
 SLOT	СЛОТ
 SLOT 1	СЛОТ 1
 SLOT 2	СЛОТ 2
@@ -2792,16 +2952,23 @@ STALEMATE - HEALTH DRAINING	ПАТ - ЗДОРОВЬЕ УБЫВАЕТ
 STALEMATE - HEALTH DRAINS IN	ПАТ - ЗДОРОВЬЕ НАЧНЁТ УБЫВАТЬ ЧЕРЕЗ
 STALEMATE WARNING	ПРЕДУПРЕЖДЕНИЕ О ПАТЕ
 STALLED #S	ЗАВИСАНИЕ #С
+STAND ON THE 10 M LEDGE	ВСТАНЬ НА УСТУП В 10 М
+STAND STILL AND AIM STRAIGHT DOWN	СТОЙ НА МЕСТЕ И ЦЕЛЬСЯ ПРЯМО ВНИЗ
+STAND STILL, AIM STRAIGHT DOWN AND ALT-FIRE THE BUBBLE GUN: 58 M/S UP, ABOUT 73 M, FOR ABOUT 12 HP.	СТОЯ НА МЕСТЕ, ЦЕЛЬСЯ ПРЯМО ВНИЗ И ДАЙ АЛЬТ. ОГОНЬ ИЗ ПУЗЫРЬКОВОГО РУЖЬЯ: 58 М/С ВВЕРХ, ОКОЛО 73 М, ЗА ОКОЛО 12 HP.
 STANDARD	СТАНДАРТ
 STANDARD RULES	СТАНДАРТНЫЕ ПРАВИЛА
 STANDARD: SNIPER	СТАНДАРТ: СНАЙПЕРКА
 START	СТАРТ
+START OVER	ЗАНОВО
 START THE MATCH	НАЧАТЬ МАТЧ
+START TUTORIAL	НАЧАТЬ ОБУЧЕНИЕ
 STARTING IN #	НАЧАЛО ЧЕРЕЗ #
 STAY HIDDEN -	НЕ ПОПАДАЙТЕСЬ -
 STDEV	СТ. ОТКЛ.
+STEER ONTO THE LEDGE	ПРАВЬ НА УСТУП
 STEP	ШАГ
 STEP HEIGHT	ВЫСОТА ШАГА
+STEP LEFT, BACK AND RIGHT	ШАГ ВЛЕВО, НАЗАД И ВПРАВО
 STEPS	ШАГИ
 STEPS, SHOTS, BOOMS... AS WORDS ROUND THE	ШАГИ, ВЫСТРЕЛЫ, ВЗРЫВЫ... СЛОВАМИ ВОКРУГ
 STEREO WIDTH	ШИРИНА СТЕРЕО
@@ -2811,8 +2978,11 @@ STICKIES ON YOU	НА ВАС ЛИПУЧКИ
 STICKIES ONLY	ТОЛЬКО ЛИПУЧКИ
 STICKY	ЛИПУЧКА
 STICKY COUNTER	СЧЁТЧИК ЛИПУЧЕК
+STICKY JUMP	ПРЫЖОК НА ЛИПУЧКЕ
 STICKY ON YOU	НА ВАС ЛИПУЧКА
+STICKY STACK	СТОПКА ЛИПУЧЕК
 STILL HIDDEN	ВСЁ ЕЩЁ СПРЯТАН
+STILL HOOKED, AIM STRAIGHT DOWN AND FIRE	НЕ ОТПУСКАЯ КРЮК, ЦЕЛЬСЯ ВНИЗ И СТРЕЛЯЙ
 STONE	КАМЕНЬ
 STOP DEMO	СТОП ДЕМО
 STOP EDITING AND PLAY THE MAP	ЗАКОНЧИТЬ ПРАВКУ И СЫГРАТЬ НА КАРТЕ
@@ -2822,6 +2992,7 @@ STOP THE PAYLOAD	ОСТАНОВИТЕ ВАГОНЕТКУ
 STOPPING SPEED	СКОРОСТЬ ОСТАНОВКИ
 STRAFE	STRAFE
 STRAFE BOOST (AT SPEED)	БУСТ СТРЕЙФА (НА СКОРОСТИ)
+STRAIGHT ABOVE YOU IT PULLS YOU IN AND LETS GO: HOOK MORE THAN 1 M TO THE SIDE	ПРЯМО НАД ТОБОЙ ОН ПРИТЯНЕТ И ОТПУСТИТ: ЦЕПЛЯЙ БОЛЬШЕ ЧЕМ В 1 М В СТОРОНУ
 STREAK	СЕРИЯ
 STREAK CALLOUTS	ОБЪЯВЛЕНИЯ СЕРИЙ
 STREAK CALLOUTS: ALL	ОБЪЯВЛЕНИЯ СЕРИЙ: ВСЕ
@@ -2844,6 +3015,7 @@ STYLE: NUMBER	СТИЛЬ: ЧИСЛО
 STYLE: T	СТИЛЬ: T
 SUBTRACT	ВЫЧЕСТЬ
 SUPER	СУПЕР
+SUPER CHAINING	ЦЕПОЧКА СУПЕРОВ
 SUPER DASH	СУПЕРРЫВОК
 SUPER DASH BOOST	БУСТ СУПЕРРЫВКА
 SUPER DASH JUMP	ПРЫЖОК С СУПЕРРЫВКА
@@ -2855,6 +3027,7 @@ SURFACES	ПОВЕРХНОСТИ
 SW	SW
 SWAP	СМЕНА
 SWAP FIRE	СМЕНА ОГНЯ
+SWING TURN	РАЗВОРОТ НА КАЧЕЛЯХ
 SWITCHING	ПЕРЕКЛЮЧЕНИЕ
 SYRINGE	ШПРИЦ
 SYSTEM DEFAULT	СИСТЕМНЫЙ
@@ -2946,6 +3119,7 @@ TEXT: RIGHT	ТЕКСТ: СПРАВА
 TF2 BUILD	TF2 BUILD
 TF2 SECONDARY	TF2 SECONDARY
 TH	TH
+THAT IS EVERY MOVEMENT TECH. THE MODES GUIDE SAYS WHAT EACH GAME MODE IS ABOUT.	ЭТО ВСЕ ТЕХНИКИ ДВИЖЕНИЯ. ГИД ПО РЕЖИМАМ РАССКАЖЕТ О КАЖДОМ РЕЖИМЕ ИГРЫ.
 THE 3D SCENE (THE HUD STAYS AS IT IS);	3D-СЦЕНА (HUD НЕ МЕНЯЕТСЯ);
 THE BOMB IS CARRIED AGAIN	БОМБУ СНОВА НЕСУТ
 THE BOMB IS DOWN	БОМБА НА ЗЕМЛЕ
@@ -2961,13 +3135,18 @@ THE GPU READS YOUR AIM AS IT STARTS DRAWING;	GPU ЧИТАЕТ ПРИЦЕЛ, КО
 THE GPU SKIPS THE WORLD'S HIDDEN PIXELS	GPU ПРОПУСКАЕТ СКРЫТЫЕ ПИКСЕЛИ МИРА
 THE GUN'S KICK ON A SHOT (0: NONE)	ОТДАЧА ОРУЖИЯ ПРИ ВЫСТРЕЛЕ (0: НЕТ)
 THE HAZE OVER DISTANT WALLS (0: NONE)	ДЫМКА НАД ДАЛЬНИМИ СТЕНАМИ (0: НЕТ)
+THE HOOK PULLS YOU TO WHERE IT CATCHES. LET GO AND YOU KEEP THE SPEED.	КРЮК ТЯНЕТ ТЕБЯ ТУДА, ГДЕ ЗАЦЕПИЛСЯ. ОТПУСТИ — СКОРОСТЬ ОСТАНЕТСЯ.
+THE HYPER LIFTS YOU, THE ROCKET ADDS 20 M/S MORE	ГИПЕР ПОДНИМАЕТ, РАКЕТА ДОБАВЛЯЕТ ЕЩЁ 20 М/С
+THE JUMP MUST COME WHILE THE DASH STILL RUNS (0.12 S)	ПРЫЖОК — ПОКА ЕЩЁ ИДЁТ РЫВОК (0.12 С)
 THE LANGUAGE OF THE MENUS AND THE HUD	ЯЗЫК МЕНЮ И HUD
+THE LAUNCH	ЗАПУСК
 THE MAP ISN'T BUILT FOR THIS MODE: IT MAY NOT WORK	КАРТА НЕ ДЛЯ ЭТОГО РЕЖИМА: МОЖЕТ НЕ РАБОТАТЬ
 THE MESSAGES UNDER THE SCORE BOX	СООБЩЕНИЯ ПОД БЛОКОМ СЧЁТА
 THE MOUSE READ AGAIN JUST BEFORE THE WORLD IS DRAWN	МЫШЬ ЧИТАЕТСЯ СНОВА ПЕРЕД ОТРИСОВКОЙ МИРА
 THE OLD MAPS (BEFORE 1.19.6) IN THE MAP LISTS. NEVER RANKED	СТАРЫЕ КАРТЫ (ДО 1.19.6) В СПИСКАХ. НИКОГДА НЕ РЕЙТИНГОВЫЕ
 THE ORIGINAL PIXEL FONT	ОРИГИНАЛЬНЫЙ ПИКСЕЛЬНЫЙ ШРИФТ
 THE OTHER CONTROL SCRIPTS STAY OFF IN RANKED	ОСТАЛЬНЫЕ СКРИПТЫ УПРАВЛЕНИЯ ОТКЛЮЧЕНЫ В РЕЙТИНГЕ
+THE POP WITH A ROCKET FIRED WITH THE HYPER'S DASH: ABOUT 47 M UP, NO GRAPPLE NEEDED.	ПОП С РАКЕТОЙ, ВЫПУЩЕННОЙ ВМЕСТЕ С РЫВКОМ ГИПЕРА: ОКОЛО 47 М ВВЕРХ, БЕЗ КРЮКА.
 THE QUEUES YOU'RE IN, JOINED AGAIN NEXT START	ВАШИ ОЧЕРЕДИ, ВХОД СНОВА ПРИ СЛЕДУЮЩЕМ ЗАПУСКЕ
 THE SAVED DEVICE IS GONE: THE DEFAULT PLAYS	СОХРАНЁННОЕ УСТРОЙСТВО ПРОПАЛО: ИГРАЕТ СТАНДАРТНОЕ
 THE SAVED MICROPHONE IS GONE: THE DEFAULT	СОХРАНЁННЫЙ МИКРОФОН ПРОПАЛ: СТАНДАРТНЫЙ
@@ -2976,10 +3155,13 @@ THE SCROLL WHEEL PASSES OVER SKIPPED	КОЛЕСО ПРОКРУТКИ ПРОПУ�
 THE SHADOWS AND THE WORLD GO TO THE GPU AS SOON	ТЕНИ И МИР УХОДЯТ В GPU
 THE SHARE OF THE MODE'S MAX HEALTH	ДОЛЯ МАКС. ЗДОРОВЬЯ РЕЖИМА
 THE TASKBAR BUTTON FLASHES	КНОПКА НА ПАНЕЛИ ЗАДАЧ МИГАЕТ
+THE WHOLE STREAM POPS UNDER YOU. HOLD IT: ANOTHER EVERY 1.8 S	ВЕСЬ ПОТОК ЛОПАЕТСЯ ПОД ТОБОЙ. ДЕРЖИ: ЕЩЁ ОДИН КАЖДЫЕ 1.8 С
 THE WINDOW'S SIZE AND PLACE ARE KEPT	РАЗМЕР И ПОЛОЖЕНИЕ ОКНА СОХРАНЯЮТСЯ
 THEIR OWN LIGHT: 1 = THEIR FULL COLOUR IN ANY SHADE	СОБСТВЕННЫЙ СВЕТ: 1 = ПОЛНЫЙ ЦВЕТ В ЛЮБОЙ ТЕНИ
 THEIRS	ИХ
 THEME.CFG LINE	СТРОКА THEME.CFG
+THEN	ПОТОМ
+THEN ALL AT ONCE: LET GO, AIM STRAIGHT DOWN AND...	ПОТОМ РАЗОМ: ОТПУСТИ, ЦЕЛЬСЯ ПРЯМО ВНИЗ И...
 THEN REFRESH	ЗАТЕМ ОБНОВИТЕ
 THESE ONLY APPLY TO IT	ДЕЙСТВУЮТ ТОЛЬКО НА НЕГО
 THEY DROPPED THE BOMB	ОНИ ВЫРОНИЛИ БОМБУ
@@ -2997,6 +3179,7 @@ THREADED OPTIMIZATION: WINDOWS ONLY	THREADED OPTIMIZATION: ТОЛЬКО WINDOWS
 THREE	ТРИ
 THREE HUGE BALLS, AS FAST AS YOU CAN	ТРИ ОГРОМНЫХ ШАРА, КАК МОЖНО БЫСТРЕЕ
 THREE HUGE BALLS, JUST HOLD FIRE, 10 HP	ТРИ ОГРОМНЫХ ШАРА, ПРОСТО ДЕРЖИТЕ ОГОНЬ, 10 HP
+THREE STICKIES AT YOUR FEET, SET OFF AT ONCE AS YOU JUMP: 50 M/S UP (ONE: 22, TWO: 36).	ТРИ ЛИПУЧКИ ПОД НОГАМИ, ПОДОРВАННЫЕ РАЗОМ В ПРЫЖКЕ: 50 М/С ВВЕРХ (ОДНА: 22, ДВЕ: 36).
 THROW	БРОСОК
 TICK / SNAP	ТИК / СНАПШОТ
 TICK RATE	ТИКРЕЙТ
@@ -3063,7 +3246,15 @@ TRAILS: SHORT	СЛЕДЫ: КОРОТКИЕ
 TRAILS: THE STREAKS BEHIND ROCKETS, BOLTS,	СЛЕДЫ: ПОЛОСЫ ЗА РАКЕТАМИ, БОЛТАМИ,
 TRAINER MENU	МЕНЮ ТРЕНАЖЁРА
 TRIAL MAP	КАРТА ЗАЕЗДА
+TRY IT NOW	ПОПРОБОВАТЬ
 TT	TT
+TURN 35 DEGREES AT 20 M/S OR MORE	ПОВЕРНИ НА 35 ГРАДУСОВ НА 20 М/С ИЛИ БЫСТРЕЕ
+TURNING LEFT	ПОВОРОТ ВЛЕВО
+TURNING RIGHT	ПОВОРОТ ВПРАВО
+TUTORIAL	ОБУЧЕНИЕ
+TUTORIAL -	ОБУЧЕНИЕ -
+TUTORIAL - {}	ОБУЧЕНИЕ - {}
+TUTORIAL COMPLETE	ОБУЧЕНИЕ ПРОЙДЕНО
 TWO	ДВА
 TWO BALLS ON 9 SPOTS, 20 HP	ДВА ШАРА НА 9 ТОЧКАХ, 20 HP
 TWO TINY BALLS	ДВА КРОШЕЧНЫХ ШАРА
@@ -3175,9 +3366,14 @@ VSYNC: OFF	VSYNC: ВЫКЛ
 VSYNC: ON	VSYNC: ВКЛ
 W A S D - move.   SPACE - jump (hold it as you land to bounce: bunny hop).	W A S D - движение.   SPACE - прыжок (держите при приземлении, чтобы отскочить: бхоп).
 WAD2	WAD2
+WAIT FOR THE PARTNER'S HOOK TO CATCH YOU	ЖДИ, ПОКА КРЮК PARTNER ТЕБЯ ПОЙМАЕТ
+WAIT FOR THEM TO ARM (0.35 S EACH)	ЖДИ, ПОКА ВЗВЕДУТСЯ (ПО 0.35 С)
 WAITING FOR THE LATE READ (AVG)	ОЖИДАНИЕ ПОЗДНЕГО ЧТЕНИЯ (СРЕДН.)
 WAITING FOR THE NEXT READ (AVG)	ОЖИДАНИЕ СЛЕД. ЧТЕНИЯ (СРЕДН.)
+WALK TO THE STRIPED WALL	ПОДОЙДИ К ПОЛОСАТОЙ СТЕНЕ
+WALKING	ХОДЬБА
 WALL BALL	WALL BALL
+WALL BOUNCE	ОТСКОК ОТ СТЕНЫ
 WALL WANDER	WALL WANDER
 WALLBANG	ПРОСТРЕЛ
 WALLBANG TINT	ОТТЕНОК ПРОСТРЕЛА
@@ -3190,6 +3386,8 @@ WARNING: DON'T TOUCH THIS UNLESS YOU KNOW WHAT YOU'RE DOING	ВНИМАНИЕ: Н
 WARNINGS	ПРЕДУПР.
 WAS ON	БЫЛ НА
 WASTELAND	ПУСТОШЬ
+WATCH AGAIN	СМОТРЕТЬ СНОВА
+WATCH THE GHOST	СМОТРИ НА ПРИЗРАКА
 WAVE	ВОЛНА
 WEAPON	ОРУЖИЕ
 WEAPON CAPTION	ПОДПИСЬ ОРУЖИЯ
@@ -3206,10 +3404,12 @@ WEAPON SENSITIVITY	ЧУВСТВИТЕЛЬНОСТЬ ОРУЖИЯ
 WEAPON:	ОРУЖИЕ:
 WEAPONS	ОРУЖИЕ
 WEAPONS (THEIR NUMBER KEYS STILL WORK)	ОРУЖИЕ (КЛАВИШИ С ЦИФРАМИ РАБОТАЮТ)
+WELCOME TO QUARK	ДОБРО ПОЖАЛОВАТЬ В QUARK
 WHAT THE BOTS PLAY: .QBRAIN FILES IN THE BOTS FOLDER	ЧЕМ ИГРАЮТ БОТЫ: ФАЙЛЫ .QBRAIN В ПАПКЕ BOTS
 WHEEL DN	WHEEL DN
 WHEEL UP	WHEEL UP
 WHEN ONE FILLS, EVERYONE IN IT IS TOLD (HERE AND ON DISCORD)	КОГДА ОЧЕРЕДЬ СОБРАНА, ВСЕМ В НЕЙ СООБЩАЮТ (ЗДЕСЬ И В DISCORD)
+WHEN SOMEONE HOOKS YOU, YOU ARE PULLED TO THEM. A DASH BREAKS FREE AT ONCE.	КОГДА ТЕБЯ ЦЕПЛЯЮТ КРЮКОМ, ТЕБЯ ТЯНЕТ К НИМ. РЫВОК СРАЗУ ОСВОБОЖДАЕТ.
 WHEN UNFOCUSED	ВНЕ ФОКУСА
 WHEN UNFOCUSED, FLASH ON	ВНЕ ФОКУСА МИГАТЬ ПРИ
 WHERE THE HITS YOU TAKE COME FROM	ОТКУДА ПРИХОДЯТ ПОПАДАНИЯ ПО ВАМ
@@ -3244,6 +3444,8 @@ WINNER STAYS - FIRST TO	ПОБЕДИТЕЛЬ ОСТАЁТСЯ - ДО
 WINNERS CROWN	КОРОНА ПОБЕДИТЕЛЯ
 WINS	ПОБЕД.
 WINS THE MATCH	ПОБЕЖДАЕТ В МАТЧЕ
+WITH AN ENEMY WITHIN 5 M THE STREAM IS ONLY 5 BUBBLES: 17 M/S UP	С ВРАГОМ БЛИЖЕ 5 М В ПОТОКЕ ВСЕГО 5 ПУЗЫРЕЙ: 17 М/С ВВЕРХ
+WITHIN 1.3 M OF THE FLOOR. 10 MS LATE LOSES 3 M/S	НЕ ВЫШЕ 1.3 М НАД ПОЛОМ. ОПОЗДАНИЕ НА 10 МС СТОИТ 3 М/С
 WIZARD	МАГ
 WORD FILTER	ФИЛЬТР СЛОВ
 WORK SANS	WORK SANS
@@ -3265,6 +3467,7 @@ YES	ДА
 YES #  NO #  OF #   F1 YES / F2 NO   #s	ЗА #  ПРОТИВ #  ИЗ #   F1 ЗА / F2 ПРОТИВ   #с
 YET REACHED IN YOUR ENEMY COLOUR	ЕЩЁ НЕ ДОСТИГНУТЫ - ЦВЕТОМ ВРАГА
 YOU DIED	ВЫ ПОГИБЛИ
+YOU FLY AT EACH OTHER, UP TO 24 M/S, FOR UP TO 3 S	ВЫ ЛЕТИТЕ ДРУГ К ДРУГУ, ДО 24 М/С, ДО 3 С
 YOU HAVE THE BOMB - PLANT AT A SITE	БОМБА У ВАС - ЗАЛОЖИТЕ НА ТОЧКЕ
 YOU HEALED	ВЫ ВЫЛЕЧИЛИ
 YOU LOSE	ПОРАЖЕНИЕ
@@ -3279,10 +3482,12 @@ YOU: NO TIME TRIALS YET	ВЫ: ЗАЕЗДОВ НА ВРЕМЯ ПОКА НЕТ
 YOUR BOTS: ALL STANDARD	ВАШИ БОТЫ: ВСЕ СТАНДАРТНЫЕ
 YOUR BOTS: MIXED MODELS	ВАШИ БОТЫ: РАЗНЫЕ МОДЕЛИ
 YOUR GOAL	ВАШИ ВОРОТА
+YOUR HOOK CATCHES PLAYERS TOO: IT PULLS YOU BOTH TOGETHER. CATCH THEM, OR DRAG THEM IN.	КРЮК ЦЕПЛЯЕТ И ИГРОКОВ: ОН ТЯНЕТ ВАС ДРУГ К ДРУГУ. ДОГОНИ ИЛИ ПРИТЯНИ.
 YOUR KILLS	ВАШИ УБИЙСТВА
 YOUR MATCH:  # SHOTS  # HITS  #% ACCURACY  # DAMAGE  BEST STREAK #	ВАШ МАТЧ:  # ВЫСТРЕЛОВ  # ПОПАДАНИЙ  #% ТОЧНОСТЬ  # УРОНА  ЛУЧШАЯ СЕРИЯ #
 YOUR NAME (CHAT AND SCOREBOARD)	ВАШЕ ИМЯ (ЧАТ И ТАБЛИЦА СЧЁТА)
 YOUR OWN MODEL FILE: NO PREVIEW HERE	ВАШ ФАЙЛ МОДЕЛИ: ПРЕВЬЮ НЕТ
+YOUR OWN ROCKET THROWS YOU. HERE IT DOES NO DAMAGE.	ТВОЯ РАКЕТА ПОДБРАСЫВАЕТ ТЕБЯ. ЗДЕСЬ БЕЗ УРОНА.
 YOUR OWN: PUT .TTF / .OTF FILES IN MODS/FONTS,	СВОИ: КЛАДИТЕ ФАЙЛЫ .TTF / .OTF В MODS/FONTS,
 YOUR QUEUE FOR	ВАША ОЧЕРЕДЬ НА
 YOUR SHOTS	ВАШИ ВЫСТРЕЛЫ
@@ -3290,7 +3495,8 @@ YOUR SHOTS: ALWAYS	ВАШИ ВЫСТРЕЛЫ: ВСЕГДА
 YOUR SHOTS: NEVER	ВАШИ ВЫСТРЕЛЫ: НИКОГДА
 YOUR SHOTS: WITH WEAPON MODEL	ВАШИ ВЫСТРЕЛЫ: С МОДЕЛЬЮ ОРУЖИЯ
 YOUR TEAM IS PUSHING	ВАША КОМАНДА ТОЛКАЕТ
-You run at 9.5 m/s. In the air, holding a direction drifts you up to run speed (a standing jump moves too).	Вы бегаете со скоростью 9.5 м/с. В воздухе удерживаемое направление разгоняет вас до скорости бега (прыжок с места тоже движется).
+YOUR TURN	ТВОЙ ХОД
+You run at 9.5 m/s. In the air you keep your speed: holding a direction steers it, and a standing jump drifts 2.3 m/s at most.	Ты бежишь со скоростью 9.5 м/с. В воздухе скорость сохраняется: зажатое направление поворачивает её, а прыжок с места сносит не больше чем на 2.3 м/с.
 You step up anything 0.55 m high, including stairs mid-jump. Ladders: walk into them, look up or down to climb (6.75 m/s).	Вы поднимаетесь на всё высотой до 0.55 м, включая ступени в прыжке. Лестницы: подойдите вплотную, смотрите вверх или вниз, чтобы лезть (6.75 м/с).
 ZERO-G FLIGHT, LASERS - HEAL 100% TO 50% OVER 30 S, NO KNOCKBACK	НЕВЕСОМОСТЬ, ЛАЗЕРЫ - ЛЕЧЕНИЕ ОТ 100% ДО 50% ЗА 30 С, БЕЗ ОТБРАСЫВАНИЯ
 ZOMBIE	ЗОМБИ
@@ -3586,6 +3792,7 @@ not enough players - back to warmup	недостаточно игроков - н
 not enough players - the match ends in	недостаточно игроков - матч закончится через
 not enough players for a tourney	недостаточно игроков для турнира
 not in the main program	not in the main program
+not in the tutorial	не в обучении
 not in this build	нет в этой сборке
 not rated:	без рейтинга:
 not the ladder's mode	не режим этой таблицы
@@ -3814,6 +4021,8 @@ tourney seed #:	посев турнира #:
 tourney seed #: {} (#)	tourney seed #: {} (#)
 tourney started -	турнир начался -
 trying the next rate up: busy #%, upload # kbps	пробуем следующую частоту: занято #%, отдача # кбит/с
+tutorial reset	tutorial reset
+tutorial try	tutorial try
 ui verts	ui verts
 ultra: after swap wait (us)	ultra: after swap wait (us)
 ultra: margin (us)	ultra: margin (us)
@@ -3884,3 +4093,4 @@ you're next in line: you play the winner of this	вы следующий: игр
 your last vote failed: wait a few seconds	ваше последнее голосование не прошло: подождите пару секунд
 your map is autosaved	ваша карта автосохранена
 {} # us (last 1000 ticks)	{} # us (last 1000 ticks)
+{} THEN {}	{} ПОТОМ {}
