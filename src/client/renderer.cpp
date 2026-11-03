@@ -1062,7 +1062,7 @@ bool Renderer::init(int shadowRes, std::string* err) {
     uiScreen_[0] = uiScreen_[1] = edgeRcp_[0] = edgeRcp_[1] = sharpRcp_[0] = sharpRcp_[1] = 0;   // (set on first use)
 
     // the frame's vertex lists sized for a busy frame up front, so one never grows them mid-frame
-    dyn_.reserve(16384); dynShadowOnly_.reserve(16384);
+    dyn_.reserve(16384); dynShadowOnly_.reserve(16384); casters_.reserve(1024);
     dynNoCast_.reserve(2048); view_.reserve(2048);
     flat_.reserve(4096); viewFlat_.reserve(4096);
     return true;
@@ -1547,10 +1547,11 @@ void Renderer::box(const Vec3& center, const Vec3& half, float yaw, const Vec3& 
         staticItems_.push_back({center, length(half), first, (int)staticVerts_.size() - first});
         return;
     }
-    if (visible && !inView(center, length(half))) { visible = false; if (!castShadow) return; } // off screen: only its shadow can show
-    Mat4 xf = Mat4::translate(center) * Mat4::rotY(yaw);
-    if (visible) emitBox(dyn_, xf, half, color, sunVis);
-    else if (castShadow && shadowCasters) emitBox(dynShadowOnly_, xf, half, color, sunVis);
+    const float r = length(half);
+    if (visible && !inView(center, r)) { visible = false; if (!castShadow) return; } // off screen: only its shadow can show
+    if (!visible && !(castShadow && shadowCasters)) return;
+    emitBox(visible ? dyn_ : dynShadowOnly_, Mat4::translate(center) * Mat4::rotY(yaw), half, color, sunVis);
+    casters_.push_back({center, r});   // (both lists cast: the lit one is drawn in the shadow pass too)
 }
 
 void Renderer::slope(const Brush& b, const Vec3& color) {
@@ -1592,11 +1593,13 @@ void Renderer::slope(const Brush& b, const Vec3& color) {
       }
     });
     if (buildingStatic_) staticItems_.push_back({b.box.center(), length(b.box.mx - b.box.mn) * 0.5f, first, (int)out.size() - first});
+    else casters_.push_back({b.box.center(), length(b.box.mx - b.box.mn) * 0.5f});   // (the shape lies within its box)
 }
 
 void Renderer::boxPitched(const Vec3& pivot, const Vec3& offset, const Vec3& half, float yaw, float pitch, const Vec3& color, float sunVis, bool castShadow) {
     Mat4 xf = Mat4::translate(pivot) * Mat4::rotY(yaw) * Mat4::rotX(pitch) * Mat4::translate(offset);
     emitBox(castShadow ? dyn_ : dynNoCast_, xf, half, color, sunVis);   // (no shadow: small things scattered over the map, stuck props, would spread the shadow pass's caster rect over all of it)
+    if (castShadow) casters_.push_back({Vec3(xf.m[12], xf.m[13], xf.m[14]), length(half)});   // (the box's centre: xf's origin)
 }
 
 void Renderer::viewBox(const Vec3& offset, const Vec3& half, const Vec3& color) {
@@ -1651,6 +1654,10 @@ void Renderer::mesh(const ModelMesh& m, const Mat4& xf, const Vec3* tint, float 
     if (visible && !inView(c, m.radius * sc)) { visible = false; if (!castShadow) return; } // off screen: only its shadow can show
     if (visible) emitMesh(dyn_, m, xf, tint, sunVis, &flat_);
     else if (castShadow && shadowCasters) emitMesh(dynShadowOnly_, m, xf, tint, sunVis, nullptr);
+    else return;
+    // (radius * the longest axis bounds it for every caller's xf: a rotation times a scale, whose axes stay
+    // perpendicular, so no direction stretches more than the longest one)
+    casters_.push_back({c, m.radius * sc});
 }
 
 void Renderer::viewMesh(const ModelMesh& m, const Vec3& offset, float scale, const Vec3* tint) {
@@ -1771,27 +1778,25 @@ void Renderer::prepareScene(bool shadows) {
         QZONE("shadow pass");
         QGPUZONE("GPU shadow pass");
         // Where in the shadow map the casters land (plus a 2 texel margin for the filter): every other pixel of the
-        // world and of players skips the 4 shadow taps. Per triangle, clipped to the map: one that falls wholly outside
+        // world and of players skips the 4 shadow taps. Per caster, clipped to the map: one that falls wholly outside
         // the 64 m box draws nothing (a far player used to stretch the rect over the whole map, and with it the taps).
+        // Each caster is its bounding sphere: the light is orthographic, so a sphere lands as a circle of radius r times
+        // the row's length (it was every triangle of both lists through the matrix, ~80 ns a box: 13 us a frame at 8
+        // players). The rect can only be as large or a little larger (a box's corners lie on its sphere), never
+        // smaller; the radius gets 1e-4 (relative and in metres) so float rounding can't shave a corner off.
         float x0 = 1, y0 = 1, x1 = 0, y1 = 0;
         const float* sm = shadowMat.m;
-        auto cover = [&](const std::vector<DynVertex>& vs) {
-            for (size_t i = 0; i + 2 < vs.size(); i += 3) {
-                float tx[3], ty[3];
-                for (int k = 0; k < 3; k++) {
-                    const float* p = vs[i + k].pos;
-                    tx[k] = (sm[0] * p[0] + sm[4] * p[1] + sm[8] * p[2] + sm[12]) * 0.5f + 0.5f;
-                    ty[k] = (sm[1] * p[0] + sm[5] * p[1] + sm[9] * p[2] + sm[13]) * 0.5f + 0.5f;
-                }
-                float ax = std::min({tx[0], tx[1], tx[2]}), bx = std::max({tx[0], tx[1], tx[2]});
-                float ay = std::min({ty[0], ty[1], ty[2]}), by = std::max({ty[0], ty[1], ty[2]});
-                if (bx < 0 || ax > 1 || by < 0 || ay > 1) continue;
-                x0 = std::min(x0, std::max(ax, 0.0f)); x1 = std::max(x1, std::min(bx, 1.0f));
-                y0 = std::min(y0, std::max(ay, 0.0f)); y1 = std::max(y1, std::min(by, 1.0f));
-            }
-        };
-        cover(dynShadowOnly_);
-        cover(dyn_);
+        const float lx = 0.5f * std::sqrt(sm[0] * sm[0] + sm[4] * sm[4] + sm[8] * sm[8]);
+        const float ly = 0.5f * std::sqrt(sm[1] * sm[1] + sm[5] * sm[5] + sm[9] * sm[9]);
+        for (const CasterBound& b : casters_) {
+            const float tx = (sm[0] * b.c.x + sm[4] * b.c.y + sm[8] * b.c.z + sm[12]) * 0.5f + 0.5f;
+            const float ty = (sm[1] * b.c.x + sm[5] * b.c.y + sm[9] * b.c.z + sm[13]) * 0.5f + 0.5f;
+            const float r = b.r * 1.0001f + 1e-4f, rx = r * lx, ry = r * ly;
+            const float ax = tx - rx, bx = tx + rx, ay = ty - ry, by = ty + ry;
+            if (bx < 0 || ax > 1 || by < 0 || ay > 1) continue;
+            x0 = std::min(x0, std::max(ax, 0.0f)); x1 = std::max(x1, std::min(bx, 1.0f));
+            y0 = std::min(y0, std::max(ay, 0.0f)); y1 = std::max(y1, std::min(by, 1.0f));
+        }
         float margin = 2.0f / shadowRes_;
         casterRect_[0] = x0 - margin; casterRect_[1] = y0 - margin; casterRect_[2] = x1 + margin; casterRect_[3] = y1 + margin;
         // nothing lands in the map: no pass (the empty rect means no pixel reads it, so last frame's depth can stay)
@@ -2042,6 +2047,7 @@ void Renderer::drawScene(bool shadows) {
     }
     dyn_.clear();
     dynShadowOnly_.clear();
+    casters_.clear();
     dynNoCast_.clear();
     view_.clear();
     flat_.clear();

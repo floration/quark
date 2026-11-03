@@ -366,6 +366,10 @@ private:
 
     std::vector<DynVertex> dyn_, dynShadowOnly_, view_;
     std::vector<DynVertex> dynNoCast_;   // drawn with dyn_, but no shadow (and not in the shadow pass's caster rect)
+    // Each caster's bounding sphere, recorded as it goes into dyn_ / dynShadowOnly_ (cleared with them): the shadow
+    // pass's caster rect covers these, not every triangle (one projection a box, not 108 a frame per box).
+    struct CasterBound { Vec3 c; float r; };
+    std::vector<CasterBound> casters_;
     struct StaticItem { Vec3 c; float r; int first, count; };
     std::vector<StaticItem> staticItems_;
     std::vector<DynVertex> staticVerts_;          // (only while setStaticBoxes builds it; its memory kept until clearStaticBoxes)
