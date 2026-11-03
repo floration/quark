@@ -10967,6 +10967,7 @@ void Game::pipeReset() {
     for (auto& q : latQ_) q.used = false;
     latSamples_.clear();
     gpuCalibAt_ = -1e9;   // (the GPU clock calibrated at once)
+    if (const char* e = std::getenv("QUARK_GPU_CALIB")) { const double v = std::atof(e); if (v >= 0.5 && v <= 60) gpuCalibPeriod_ = v; }
 }
 
 void Game::pipeCollect() {    // afterSwap: this frame's marks into its slot; finished slots into the averages
@@ -11479,7 +11480,7 @@ void Game::afterSwap() {
     if (!perfOn()) return;
     pipeMark(PM_AFTER);
     double now = timeNow();
-    if (now - gpuCalibAt_ > 10.0) {   // (a synchronous GPU query: it can stall the driver, so rarely; the clocks drift by microseconds)
+    if (now - gpuCalibAt_ > gpuCalibPeriod_) {   // (a synchronous GPU query: a driver round trip, so every few seconds only)
         // (the CPU time halfway through the query, the best of 3: the time after it returned put every GPU time late
         // by the call's return; and before the collect, so the first results after F3 / F4 turn on use it)
         double best = 1e9, off = 0, gs = 0;
@@ -11490,14 +11491,26 @@ void Game::afterSwap() {
             const double c1 = timeNow();
             if (c1 - c0 < best) { best = c1 - c0; off = 0.5 * (c0 + c1) - g * 1e-9; gs = g * 1e-9; }
         }
-        // the drift since the last calibration (the two clocks tick at slightly different rates): kept when it's a
-        // plausible clock-rate difference (under 0.1%), else the clocks jumped (driver reset, sleep) and it starts over
-        const double span = gs - gpuCalibGpu_;
-        const double drift = span > 1.0 ? (off - gpuClockOffset_) / span : 0.0;
-        gpuDrift_ = gpuCalibHave_ && std::fabs(drift) < 1e-3 ? drift : 0.0;
-        gpuClockOffset_ = off;
-        gpuCalibGpu_ = gs;
-        gpuCalibHave_ = true;
+        // The two clocks tick at slightly different rates: the offset is fitted as a line (least squares) through the
+        // last kGpuCalib samples, so one noisy sample (a few us) doesn't tilt the slope the way two samples 10 s apart
+        // did. A sample far off the line (over 0.5 ms: driver reset, sleep, clock jump) starts the fit over.
+        if (gpuCalibN_ > 0 && std::fabs(off - gpuToCpuSec(gs) + gs) > 5e-4) gpuCalibN_ = 0;
+        gpuCalibS_[gpuCalibN_ % kGpuCalib][0] = gs;
+        gpuCalibS_[gpuCalibN_ % kGpuCalib][1] = off;
+        gpuCalibN_++;
+        const int n = std::min(gpuCalibN_, kGpuCalib);
+        double mg = 0, mo = 0;
+        for (int i = 0; i < n; i++) { mg += gpuCalibS_[i][0]; mo += gpuCalibS_[i][1]; }
+        mg /= n; mo /= n;
+        double sgg = 0, sgo = 0;
+        for (int i = 0; i < n; i++) {
+            const double dg = gpuCalibS_[i][0] - mg;
+            sgg += dg * dg; sgo += dg * (gpuCalibS_[i][1] - mo);
+        }
+        const double drift = n >= 2 && sgg > 1.0 ? sgo / sgg : 0.0;   // (needs a few seconds of samples)
+        gpuDrift_ = std::fabs(drift) < 1e-3 ? drift : 0.0;   // (a plausible clock-rate difference: under 0.1%)
+        gpuCalibGpu_ = mg;
+        gpuClockOffset_ = n >= 2 ? mo : off;
         gpuCalibAt_ = now;
     }
     pipeCollect();
