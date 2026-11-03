@@ -2698,6 +2698,7 @@ SIZE: X2	BOYUT: X2
 SIZING	BOYUT
 SIZING: EXACT PIXELS	BOYUTLANDIRMA: TAM PİKSEL
 SIZING: SCALE WITH RESOLUTION	BOYUTLANDIRMA: ÇÖZÜNÜRLÜKLE ÖLÇEKLE
+SIZZLE	CIZIRTI
 SKIP IT	ATLA
 SKIP WARMUP	ISINMAYI ATLA
 SKY	GÖK
@@ -3503,6 +3504,7 @@ joined team A	A takımına katıldı
 joined team B	B takımına katıldı
 joined the game	oyuna katıldı
 kElemNames follows Settings::HUD_*	kElemNames follows Settings::HUD_*
+kFrameTimes must be a power of two	kFrameTimes must be a power of two
 kbps (# packets/s), download # kbps (#/s)	kbps (# paket/s), indirme # kbps (#/s)
 kick whom? a name or an id (status lists them)	kimi atalım? bir ad veya kimlik (status listeler)
 kicked by a vote	oylamayla atıldı
@@ -3835,6 +3837,7 @@ update ready: waiting for the match to end	güncelleme hazır: maçın bitmesi b
 upload # of # kbps	upload # / # kbps
 upload bytes	upload bayt
 user:	kullanıcı:
+vote builder	vote builder
 vote cancelled: the ranked match is live	oylama iptal: dereceli maç canlı
 vote failed:	oylama başarısız:
 vote no	hayır oyu

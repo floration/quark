@@ -2698,6 +2698,7 @@ SIZE: X2	大小: X2
 SIZING	尺寸
 SIZING: EXACT PIXELS	尺寸: 精确像素
 SIZING: SCALE WITH RESOLUTION	尺寸: 随分辨率缩放
+SIZZLE	腐蚀声
 SKIP IT	跳过
 SKIP WARMUP	跳过热身
 SKY	天空
@@ -3503,6 +3504,7 @@ joined team A	加入了 A 队
 joined team B	加入了 B 队
 joined the game	加入了游戏
 kElemNames follows Settings::HUD_*	kElemNames follows Settings::HUD_*
+kFrameTimes must be a power of two	kFrameTimes must be a power of two
 kbps (# packets/s), download # kbps (#/s)	kbps (# 包/秒), 下载 # kbps (#/秒)
 kick whom? a name or an id (status lists them)	踢谁? 名字或 ID (status 会列出)
 kicked by a vote	被投票踢出
@@ -3835,6 +3837,7 @@ update ready: waiting for the match to end	更新已就绪: 等待比赛结束
 upload # of # kbps	上传 # / # kbps
 upload bytes	upload bytes
 user:	用户:
+vote builder	vote builder
 vote cancelled: the ranked match is live	投票取消: 排位比赛进行中
 vote failed:	投票失败:
 vote no	投反对

@@ -2698,6 +2698,7 @@ SIZE: X2	РАЗМЕР: X2
 SIZING	МАСШТ.
 SIZING: EXACT PIXELS	МАСШТ.: ТОЧНЫЕ ПИКСЕЛИ
 SIZING: SCALE WITH RESOLUTION	МАСШТАБИРОВАНИЕ: ПО РАЗРЕШЕНИЮ
+SIZZLE	ШИПЕНИЕ
 SKIP IT	ПРОПУСК
 SKIP WARMUP	БЕЗ РАЗМИНКИ
 SKY	НЕБО
@@ -3503,6 +3504,7 @@ joined team A	вступил в команду A
 joined team B	вступил в команду B
 joined the game	вошёл в игру
 kElemNames follows Settings::HUD_*	kElemNames follows Settings::HUD_*
+kFrameTimes must be a power of two	kFrameTimes must be a power of two
 kbps (# packets/s), download # kbps (#/s)	кбит/с (# пакетов/с), загрузка # кбит/с (#/с)
 kick whom? a name or an id (status lists them)	кого кикнуть? имя или id (список в status)
 kicked by a vote	кикнут голосованием
@@ -3835,6 +3837,7 @@ update ready: waiting for the match to end	обновление готово: ж
 upload # of # kbps	отдача # из # кбит/с
 upload bytes	байт отдачи
 user:	пользователь:
+vote builder	vote builder
 vote cancelled: the ranked match is live	голосование отменено: идёт рейтинговый матч
 vote failed:	голосование не прошло:
 vote no	против

@@ -2698,6 +2698,7 @@ SIZE: X2	サイズ: X2
 SIZING	サイズ調整
 SIZING: EXACT PIXELS	サイズ調整: ピクセル指定
 SIZING: SCALE WITH RESOLUTION	サイズ調整: 解像度に合わせる
+SIZZLE	ジュージュー
 SKIP IT	スキップ
 SKIP WARMUP	ウォームアップをスキップ
 SKY	空
@@ -3503,6 +3504,7 @@ joined team A	がチームAに参加
 joined team B	がチームBに参加
 joined the game	がゲームに参加
 kElemNames follows Settings::HUD_*	kElemNames follows Settings::HUD_*
+kFrameTimes must be a power of two	kFrameTimes must be a power of two
 kbps (# packets/s), download # kbps (#/s)	kbps (# パケット/s)、ダウンロード # kbps (#/s)
 kick whom? a name or an id (status lists them)	誰をキック? 名前かID (statusで一覧表示)
 kicked by a vote	投票でキックされました
@@ -3835,6 +3837,7 @@ update ready: waiting for the match to end	アップデート準備完了: 試�
 upload # of # kbps	アップロード # / # kbps
 upload bytes	アップロードバイト
 user:	ユーザー:
+vote builder	vote builder
 vote cancelled: the ranked match is live	投票キャンセル: ランク試合が進行中
 vote failed:	投票否決:
 vote no	vote no

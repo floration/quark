@@ -2698,6 +2698,7 @@ SIZE: X2	TAM.: X2
 SIZING	DIMENS.
 SIZING: EXACT PIXELS	DIMENS.: PIXELS EXATOS
 SIZING: SCALE WITH RESOLUTION	DIMENSIONAMENTO: ESCALA COM A RESOLUÇÃO
+SIZZLE	CHIADO
 SKIP IT	PULAR
 SKIP WARMUP	PULAR AQUECIMENTO
 SKY	CÉU
@@ -3503,6 +3504,7 @@ joined team A	entrou no time A
 joined team B	entrou no time B
 joined the game	entrou no jogo
 kElemNames follows Settings::HUD_*	kElemNames follows Settings::HUD_*
+kFrameTimes must be a power of two	kFrameTimes must be a power of two
 kbps (# packets/s), download # kbps (#/s)	kbps (# pacotes/s), download # kbps (#/s)
 kick whom? a name or an id (status lists them)	kickar quem? um nome ou um id (status lista)
 kicked by a vote	kickado por votação
@@ -3835,6 +3837,7 @@ update ready: waiting for the match to end	atualização pronta: esperando a par
 upload # of # kbps	upload # de # kbps
 upload bytes	bytes de upload
 user:	usuário:
+vote builder	vote builder
 vote cancelled: the ranked match is live	votação cancelada: a partida ranqueada está ao vivo
 vote failed:	votação falhou:
 vote no	vote no

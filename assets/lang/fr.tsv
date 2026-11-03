@@ -2698,6 +2698,7 @@ SIZE: X2	TAILLE : X2
 SIZING	TAILLE
 SIZING: EXACT PIXELS	DIMENSIONS : PIXELS EXACTS
 SIZING: SCALE WITH RESOLUTION	DIMENSIONS : SELON LA RÉSOLUTION
+SIZZLE	GRÉSILLEMENT
 SKIP IT	PASSER
 SKIP WARMUP	PASSER ÉCHAUFF.
 SKY	CIEL
@@ -3503,6 +3504,7 @@ joined team A	a rejoint l'équipe A
 joined team B	a rejoint l'équipe B
 joined the game	a rejoint la partie
 kElemNames follows Settings::HUD_*	kElemNames follows Settings::HUD_*
+kFrameTimes must be a power of two	kFrameTimes must be a power of two
 kbps (# packets/s), download # kbps (#/s)	kbps (# paquets/s), téléchargement # kbps (#/s)
 kick whom? a name or an id (status lists them)	kicker qui ? un nom ou un id (status les liste)
 kicked by a vote	kické par un vote
@@ -3835,6 +3837,7 @@ update ready: waiting for the match to end	mise à jour prête : attente de la f
 upload # of # kbps	upload # sur # kbps
 upload bytes	octets envoyés
 user:	utilisateur :
+vote builder	vote builder
 vote cancelled: the ranked match is live	vote annulé : le match classé est en cours
 vote failed:	vote échoué :
 vote no	vote non

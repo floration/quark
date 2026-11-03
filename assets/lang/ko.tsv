@@ -2698,6 +2698,7 @@ SIZE: X2	크기: X2
 SIZING	크기 조정
 SIZING: EXACT PIXELS	크기 조정: 픽셀 고정
 SIZING: SCALE WITH RESOLUTION	크기 조정: 해상도에 맞춤
+SIZZLE	SIZZLE
 SKIP IT	건너뛰기
 SKIP WARMUP	워밍업 건너뛰기
 SKY	하늘
@@ -3503,6 +3504,7 @@ joined team A	님이 A팀에 참가
 joined team B	님이 B팀에 참가
 joined the game	님이 게임에 참가
 kElemNames follows Settings::HUD_*	kElemNames follows Settings::HUD_*
+kFrameTimes must be a power of two	kFrameTimes must be a power of two
 kbps (# packets/s), download # kbps (#/s)	kbps (# 패킷/s), 다운로드 # kbps (#/s)
 kick whom? a name or an id (status lists them)	누구를 강퇴할까요? 이름 또는 ID (status에 표시됨)
 kicked by a vote	투표로 강퇴됨
@@ -3835,6 +3837,7 @@ update ready: waiting for the match to end	업데이트 준비됨: 경기 종료
 upload # of # kbps	업로드 # / # kbps
 upload bytes	업로드 바이트
 user:	사용자:
+vote builder	vote builder
 vote cancelled: the ranked match is live	투표 취소됨: 랭크 경기 진행 중
 vote failed:	투표 실패:
 vote no	반대
