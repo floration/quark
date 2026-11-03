@@ -188,8 +188,12 @@ vec2 stones(vec2 p) {
         float d = dot(r, r);
         if (d < md) { md = d; mr = r; mg = g; }
     }
+    // (the border pass over the 3 x 3 around the nearest cell, not 5 x 5: 9 cells instead of 25. A bisector that
+    // could be nearer lies two cells out only where a point sits in a far corner; such a miss shifts a joint by a
+    // fraction of a centimetre, below a pixel: cobblestone's 0.1% low on q's all-cobblestone benchmark map was 800 FPS
+    // against 2800 for the old materials, 2026-10-29)
     md = 8.0;
-    for (int y = -2; y <= 2; y++) for (int x = -2; x <= 2; x++) {
+    for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
         vec2 g = mg + vec2(x, y), r = g + hash22(i + g) - f, e = r - mr;
         if (dot(e, e) > 1e-5) md = min(md, dot(0.5 * (mr + r), normalize(e)));
     }
@@ -359,8 +363,16 @@ void main() {
         albedo = lin(mix(vec3(0.32, 0.22, 0.13), vec3(0.18, 0.12, 0.07), pud)) * (0.85 + 0.25 * fbm(q * 4.0));
         spec = 0.7 * pud; gloss = 80.0;
     } else if (mat == 24) {   // cobblestone: rounded grey stones in dark joints
-        vec2 w = stones(q * 3.0);
-        albedo = lin(mix(vec3(0.25, 0.24, 0.22), vec3(0.55, 0.53, 0.5) * (0.8 + 0.3 * w.y), smoothstep(0.015, 0.06, w.x))) * (0.9 + 0.15 * fbm(q * 8.0));
+        // far / grazing (a stone under ~2.5 pixels): the stones' average colour, without the cells at all, faded in
+        // over the same footprint the noise fades over (no pop); the grain is one octave of noise, not three
+        float far = noiseFade(footprint(q * 3.0) * 0.5);
+        vec3 avg = mix(vec3(0.25, 0.24, 0.22), vec3(0.55, 0.53, 0.5) * 0.95, 0.85);
+        vec3 c = avg;
+        if (far > 0.0) {
+            vec2 w = stones(q * 3.0);
+            c = mix(avg, mix(vec3(0.25, 0.24, 0.22), vec3(0.55, 0.53, 0.5) * (0.8 + 0.3 * w.y), smoothstep(0.015, 0.06, w.x)), far);
+        }
+        albedo = lin(c) * (0.9 + 0.15 * (0.5 * vnoiseAA(q * 8.0) + 0.5 * vnoiseAA(q * 16.1 + 17.1)));
     } else if (mat == 25) {   // concrete: cast slabs 1.2 x 0.6 m with form-tie holes
         vec2 c = fract(q / vec2(1.2, 0.6));
         float seam = min(min(c.x, 1.0 - c.x) * 1.2, min(c.y, 1.0 - c.y) * 0.6), tie = length((fract(q / vec2(0.6, 0.3)) - 0.5) * vec2(0.6, 0.3));
