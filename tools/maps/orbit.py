@@ -21,9 +21,8 @@ the spawns face out along the floor lanes; coolant tanks cut the bay-to-bay line
 strips, two more ceiling barriers and a round planet dress it; the warm-up spawns are behind cover.
 Known: bots and the walk check treat the flip tiles as floor (no code outside pmove reads FIELD_FLIP) and the camera
 doesn't turn over on the ceiling; both are engine work, not map work."""
-import math, os
+import math
 from .prefabs import M, minus
-from . import prefabs
 from .bigkit import Kit, num, yaw_to
 
 HX, HZ = 24.0, 16.0
@@ -175,8 +174,5 @@ def build():
         la, lb = sorted((sz * 13.6, sz * 13.75))
         k.box("lightblock", -12, CAT_Y - 0.36, la, 12, CAT_Y - 0.3, lb)
     m.raw("setting space station centrifuge")
+    m.no_ffa = True   # (one chamber: no free for all)
     m.save("orbit", dress=False)
-    # (one chamber: no free for all, whatever save() adds)
-    path = os.path.join(prefabs.OUT, "orbit.qmap")
-    text = open(path, encoding="utf-8").read().replace("\nmodes 1v1 duel vs tourney ffa\n", "\nmodes 1v1 duel vs tourney\n")
-    with open(path, "w", newline="\n") as f: f.write(text)

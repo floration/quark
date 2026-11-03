@@ -9,6 +9,12 @@
 - Dedicated servers: re-running install.sh no longer puts the testing server back on the production build, and a server that can't start yet keeps retrying instead of staying down.
 - macOS builds come out with each testing build again. When GitHub has no Apple Silicon Mac free, the macOS build now runs on an Intel Mac (it still makes the same universal app) instead of being dropped.
 
+## Maps
+- **Payload has its own default map:** payload now picks Railyard (it still plays neutral payload and ball). The ranked ladders are unchanged.
+- **Black Hole** can now be played in duel and team vs too.
+- Small geometry fixes: walls that were drawn twice on Mine, QK6, Cruise Ship and Railyard (two door sills on Mine flickered between two materials), a doubled floodlight mast pair on Railyard, two invisible boxes on Black Hole.
+- Map editor (Quarkology): its checks now agree with the game's tests. Greenhouse and Spire no longer fail the ranked check (ranked maps must be fair, not mirror images), Solar no longer fails its routes, and Tutorial no longer shows 46,000 m² out of bounds.
+
 ## Performance
 - **Higher frame rates and lows when the GPU is the limit:** the world draws with the GPU's early depth test while no holes have been blown in breakable walls. On a 3090 Ti at 1440p that's +3.8% average FPS, +9.4% on the 1% lows and +11.3% on the 0.1% lows, with identical pictures. It's a switch on the LATENCY tab, **EARLY DEPTH TEST** (on by default), so you can compare it yourself.
 - **Higher frame rates from a leaner renderer:** players, props and effects upload 40% less data each frame, the shadow pass only touches the part of its map that's used, and stuck knives and bolts skip per-frame maths. On a 3090 Ti at 1440p: +6.9% average FPS, +4.0% on the 1% and 0.1% lows (before the early depth test above, which stacks on top).

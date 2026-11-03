@@ -52,6 +52,21 @@ def build():
                           nofloor=nofloor, noceil=noceil, walls=walls))
 
     def build_rooms():
+        start = len(m.lines)
+        emit_rooms()
+        # neighbouring rooms share wall and ceiling boxes (one room's east wall is the next one's west wall): keep
+        # each box once. Where a room of its own material (the refuge's cast iron, the grotto's glow-worm rock)
+        # meets plain rock on the same box, its material stays (it was drawn twice on one box: z-fighting).
+        kept, out = {}, []
+        for l in m.lines[start:]:
+            p = l.split()
+            key = tuple(p[1:])
+            if len(p) != 7 or key not in kept: kept.setdefault(key, len(out)); out.append(l); continue
+            i = kept[key]
+            if out[i].split()[0] == ROCK and p[0] != ROCK: out[i] = l
+        m.lines[start:] = out
+
+    def emit_rooms():
         for R in rooms:
             x0, z0, x1, z1 = R["r"]; yf, yc = R["yf"], R["yc"]
             if not R["nofloor"]:

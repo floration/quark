@@ -1,7 +1,8 @@
 // Out of bounds: nothing outside a map's playable floor may be reachable with the full movement envelope (clip, or
 // walls too high to dash up, keep everyone in). The envelope is measured with the game's own movement code, so the
 // check follows any change to movement; the leaps and grapple pulls it allows are walked over samples of the floor.
-// Debugging: OOB_TRACE=<map> lists the spots out of bounds.
+// measureOutOfBounds (mapbounds.h) is the one implementation: quark_tests' outOfBoundsTests (tests.cpp) and
+// quark_maptool's out_of_bounds check (the editors') both call it.
 #include <chrono>
 #include <algorithm>
 #include <cmath>
@@ -16,6 +17,7 @@
 #include "game/map.h"
 #include "game/pmove.h"
 #include "walkgrid.h"
+#include "mapbounds.h"
 
 namespace {
 
@@ -378,104 +380,87 @@ struct TechGraph {
 
 } // namespace
 
-bool isHumanMadeMap(const std::string& name, const Map& m);   // tests.cpp
-
-// Every map (but the zz_ ones other tests write): with every move a good player has, from the first spawn, no floor
-// outside the playable floor's footprint (the floor you can walk to from a spawn) is reachable. Returns the failures;
-// a human-made map's are printed and reported, not counted. part / parts: every parts-th map from the part-th (the
-// suite runs it as two groups, ~12 s of CPU each: one was the longest of all the groups).
-int outOfBoundsTests(int part, int parts) {
-    printf("out of bounds: nothing outside the playable floor reachable with every move\n");
-    int fails = 0, index = -1;
-    for (const std::string& name : listMaps()) {
-        if (name.rfind("zz_", 0) == 0) continue;
-        if (++index % parts != part) continue;
-        auto t0 = std::chrono::steady_clock::now();
-        Map m;
-        if (!m.load(name)) continue;   // (testAllMaps fails a map that doesn't load)
-        const bool human = isHumanMadeMap(name, m);
-        const Map solid = m;   // (with clip: leaps can't go through it)
-        // clip (invisible, out of reach above the walls) is no part of the floor anyone sees or plays on
-        m.brushes.erase(std::remove_if(m.brushes.begin(), m.brushes.end(), [](const Brush& b) { return b.material == 9; }), m.brushes.end());
-        m.rebuild();
-        NavGraph g;
-        g.build(m);
-        WalkGrid w;   // (walked with the player's hull against the real collision)
-        w.build(solid);
-        w.components();
-        const std::vector<char> reach = walkReachable(solid, w);
-        // the playable floor: nav surfaces with a walk-grid spot on them a player can get to (alive)
-        std::vector<char> playable(g.nodes.size(), 0);
-        for (size_t i = 0; i < g.nodes.size(); i++) {
-            auto& n = g.nodes[i];
-            if (n.y <= m.killY()) continue;   // (below the kill height you're dead)
-            AABB box = {{n.x0 - 0.4f, n.y - 0.2f, n.z0 - 0.4f}, {n.x1 + 0.4f, n.y + 0.2f, n.z1 + 0.4f}};
-            w.forColumnsNear(box, 0, [&](int a) {
-                const Vec3& q = w.nodes[a].p;
-                if (reach[a] && std::fabs(q.y - n.y) < 0.15f && q.x >= box.mn.x && q.x <= box.mx.x && q.z >= box.mn.z && q.z <= box.mx.z) playable[i] = 1;
-            });
-        }
-        // samples of every nav surface (playable or not: roofs and wall tops only movement tech reaches are what this
-        // looks for), every 2 m with standing room; a surface under 2 m across (a stair step, a beam) gets one row
-        // down its middle
-        std::vector<std::pair<Vec3, int>> pts;
-        for (size_t i = 0; i < g.nodes.size(); i++) {
-            auto& n = g.nodes[i];
-            float sx = n.x1 - n.x0 < 2 ? (n.x0 + n.x1) / 2 : n.x0 + 1, sz = n.z1 - n.z0 < 2 ? (n.z0 + n.z1) / 2 : n.z0 + 1;
-            for (float x = sx; x < n.x1; x += 2)
-                for (float z = sz; z < n.z1; z += 2) {
-                    Vec3 p = {x, n.y, z};
-                    if (!m.boxSolid(playerBox(p + Vec3(0, 0.02f, 0), false))) pts.push_back({p, (int)i});
-                }
-        }
-        TechGraph tech;
-        std::vector<Vec3> tp;
-        std::vector<char> techPlayable;
-        size_t stride = pts.size() / 2500 + 1;   // up to ~2500 samples
-        for (size_t i = 0; i < pts.size(); i += stride) { tp.push_back(pts[i].first); techPlayable.push_back(playable[pts[i].second]); }
-        const float techCell = 4.0f * stride;   // m2 of floor per sample
-        // and a sample on every floor inside each objective (race checkpoints, bomb sites, the hill, capture points)
-        // and under every spawn, so a thin sampling doesn't cut the way there
-        std::vector<AABB> zones = m.checkpoints;
-        zones.insert(zones.end(), m.bombSites.begin(), m.bombSites.end());
-        zones.insert(zones.end(), m.points.begin(), m.points.end());
-        if (m.hasHill) zones.push_back(m.hill);
-        for (const AABB& z : zones)
-            for (size_t i = 0; i < g.nodes.size(); i++) {
-                auto& n = g.nodes[i];
-                if (n.x1 < z.mn.x || n.x0 > z.mx.x || n.z1 < z.mn.z || n.z0 > z.mx.z || n.y < z.mn.y - 1.0f || n.y > z.mx.y) continue;
-                Vec3 q = {std::clamp(z.center().x, n.x0, n.x1), n.y, std::clamp(z.center().z, n.z0, n.z1)};
-                if (m.boxSolid(playerBox(q + Vec3(0, 0.02f, 0), false))) continue;
-                tp.push_back(q); techPlayable.push_back(playable[i]);
-            }
-        for (auto& sp : m.spawns) {
-            int n = g.nodeAt(sp.pos + Vec3(0, 0.05f, 0));
-            if (n < 0) continue;
-            tp.push_back({sp.pos.x, g.nodes[n].y, sp.pos.z}); techPlayable.push_back(playable[n]);
-        }
-        tech.build(solid, g, tp, std::max(6.0f, 3.0f * std::sqrt(techCell)));
-        // the playable floor's footprint: every surface of it (not the samples, whose edge moves with the sampling)
-        float x0 = 1e9f, z0 = 1e9f, x1 = -1e9f, z1 = -1e9f;
-        for (size_t i = 0; i < g.nodes.size(); i++)
-            if (playable[i]) { auto& n = g.nodes[i]; x0 = std::min(x0, n.x0); x1 = std::max(x1, n.x1); z0 = std::min(z0, n.z0); z1 = std::max(z1, n.z1); }
-        if (m.spawns.empty() || x0 > x1) continue;   // (no spawn, no floor to walk to: testAllMaps fails those)
-        // what the full envelope opens up from the first spawn: surfaces the run never reaches (roofs, wall tops), and
-        // any of them outside the footprint (out of bounds)
-        const std::vector<float> d = tech.from(tech.nearest(m.spawns[0].pos));
-        int extra = 0, out = 0;
-        for (size_t i = 0; i < tech.p.size(); i++) {
-            if (d[i] > 1e29f || techPlayable[i]) continue;
-            extra++;
-            const Vec3& q = tech.p[i];
-            bool o = q.x < x0 - 1 || q.x > x1 + 1 || q.z < z0 - 1 || q.z > z1 + 1;
-            out += o;
-            if (o && std::getenv("OOB_TRACE") && name == std::getenv("OOB_TRACE")) printf("    out of bounds: %.1f %.1f %.1f (floor spans x %.1f..%.1f z %.1f..%.1f)\n", q.x, q.y, q.z, x0, x1, z0, z1);
-        }
-        printf("  %-10s %6.0f m2 only movement tech reaches, %.0f m2 of it out of bounds (%.0f ms)\n", name.c_str(), extra * techCell, out * techCell,
-               std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
-        if (!out) continue;
-        if (human) printf("  %s is HUMAN-MADE: %.0f m2 out of bounds - reported, not failing the run\n", name.c_str(), out * techCell);
-        else { printf("  FAIL %s: %.0f m2 outside the playable floor is reachable (OOB_TRACE=%s lists it)\n", name.c_str(), out * techCell, name.c_str()); fails++; }
+OutOfBoundsMeasure measureOutOfBounds(const Map& loaded, const WalkGrid* walk) {
+    OutOfBoundsMeasure R;
+    const Map& solid = loaded;   // (with clip: leaps can't go through it)
+    // clip (invisible, out of reach above the walls) is no part of the floor anyone sees or plays on
+    Map m = loaded;
+    m.brushes.erase(std::remove_if(m.brushes.begin(), m.brushes.end(), [](const Brush& b) { return b.material == 9; }), m.brushes.end());
+    m.rebuild();
+    NavGraph g;
+    g.build(m);
+    WalkGrid own;   // (walked with the player's hull against the real collision)
+    if (!walk) { own.build(solid); own.components(); walk = &own; }
+    const WalkGrid& w = *walk;
+    const std::vector<char> reach = walkReachable(solid, w);
+    // the playable floor: nav surfaces with a walk-grid spot on them a player can get to (alive)
+    std::vector<char> playable(g.nodes.size(), 0);
+    for (size_t i = 0; i < g.nodes.size(); i++) {
+        auto& n = g.nodes[i];
+        if (n.y <= m.killY()) continue;   // (below the kill height you're dead)
+        AABB box = {{n.x0 - 0.4f, n.y - 0.2f, n.z0 - 0.4f}, {n.x1 + 0.4f, n.y + 0.2f, n.z1 + 0.4f}};
+        w.forColumnsNear(box, 0, [&](int a) {
+            const Vec3& q = w.nodes[a].p;
+            if (reach[a] && std::fabs(q.y - n.y) < 0.15f && q.x >= box.mn.x && q.x <= box.mx.x && q.z >= box.mn.z && q.z <= box.mx.z) playable[i] = 1;
+        });
     }
-    return fails;
+    // samples of every nav surface (playable or not: roofs and wall tops only movement tech reaches are what this
+    // looks for), every 2 m with standing room; a surface under 2 m across (a stair step, a beam) gets one row
+    // down its middle
+    std::vector<std::pair<Vec3, int>> pts;
+    for (size_t i = 0; i < g.nodes.size(); i++) {
+        auto& n = g.nodes[i];
+        float sx = n.x1 - n.x0 < 2 ? (n.x0 + n.x1) / 2 : n.x0 + 1, sz = n.z1 - n.z0 < 2 ? (n.z0 + n.z1) / 2 : n.z0 + 1;
+        for (float x = sx; x < n.x1; x += 2)
+            for (float z = sz; z < n.z1; z += 2) {
+                Vec3 p = {x, n.y, z};
+                if (!m.boxSolid(playerBox(p + Vec3(0, 0.02f, 0), false))) pts.push_back({p, (int)i});
+            }
+    }
+    TechGraph tech;
+    std::vector<Vec3> tp;
+    std::vector<char> techPlayable;
+    size_t stride = pts.size() / 2500 + 1;   // up to ~2500 samples
+    for (size_t i = 0; i < pts.size(); i += stride) { tp.push_back(pts[i].first); techPlayable.push_back(playable[pts[i].second]); }
+    const float techCell = 4.0f * stride;   // m2 of floor per sample
+    // and a sample on every floor inside each objective (race checkpoints, bomb sites, the hill, capture points)
+    // and under every spawn, so a thin sampling doesn't cut the way there
+    std::vector<AABB> zones = m.checkpoints;
+    zones.insert(zones.end(), m.bombSites.begin(), m.bombSites.end());
+    zones.insert(zones.end(), m.points.begin(), m.points.end());
+    if (m.hasHill) zones.push_back(m.hill);
+    for (const AABB& z : zones)
+        for (size_t i = 0; i < g.nodes.size(); i++) {
+            auto& n = g.nodes[i];
+            if (n.x1 < z.mn.x || n.x0 > z.mx.x || n.z1 < z.mn.z || n.z0 > z.mx.z || n.y < z.mn.y - 1.0f || n.y > z.mx.y) continue;
+            Vec3 q = {std::clamp(z.center().x, n.x0, n.x1), n.y, std::clamp(z.center().z, n.z0, n.z1)};
+            if (m.boxSolid(playerBox(q + Vec3(0, 0.02f, 0), false))) continue;
+            tp.push_back(q); techPlayable.push_back(playable[i]);
+        }
+    for (auto& sp : m.spawns) {
+        int n = g.nodeAt(sp.pos + Vec3(0, 0.05f, 0));
+        if (n < 0) continue;
+        tp.push_back({sp.pos.x, g.nodes[n].y, sp.pos.z}); techPlayable.push_back(playable[n]);
+    }
+    tech.build(solid, g, tp, std::max(6.0f, 3.0f * std::sqrt(techCell)));
+    // the playable floor's footprint: every surface of it (not the samples, whose edge moves with the sampling)
+    float x0 = 1e9f, z0 = 1e9f, x1 = -1e9f, z1 = -1e9f;
+    for (size_t i = 0; i < g.nodes.size(); i++)
+        if (playable[i]) { auto& n = g.nodes[i]; x0 = std::min(x0, n.x0); x1 = std::max(x1, n.x1); z0 = std::min(z0, n.z0); z1 = std::max(z1, n.z1); }
+    if (m.spawns.empty() || x0 > x1) return R;   // (no spawn, no floor to walk to: testAllMaps fails those)
+    // what the full envelope opens up from the first spawn: surfaces the run never reaches (roofs, wall tops), and
+    // any of them outside the footprint (out of bounds)
+    const std::vector<float> d = tech.from(tech.nearest(m.spawns[0].pos));
+    int extra = 0;
+    for (size_t i = 0; i < tech.p.size(); i++) {
+        if (d[i] > 1e29f || techPlayable[i]) continue;
+        extra++;
+        const Vec3& q = tech.p[i];
+        if (q.x < x0 - 1 || q.x > x1 + 1 || q.z < z0 - 1 || q.z > z1 + 1) R.spots.push_back(q);
+    }
+    R.measured = true;
+    R.techExtra = extra * techCell;
+    R.outside = R.spots.size() * techCell;
+    R.x0 = x0; R.z0 = z0; R.x1 = x1; R.z1 = z1;
+    return R;
 }

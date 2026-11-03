@@ -1,5 +1,5 @@
 """BLACK HOLE (owner, 2026-11-01): built for 3D VAMP, the zero-g 1v1 ruleset (lasers, flight, no knockback); offered for
-1v1 (any ruleset), tourney, winner stays and free for all. Final Destination in space: one lone asteroid, its top a
+1v1 (any ruleset), duel, team vs, tourney and free for all. Final Destination in space: one lone asteroid, its top a
 flat 40 x 20 m floor with four slim pillars on it (landmarks, not cover: the fight is the flying), the rock tapering
 away under it. Nothing else is solid (2026-11-02: jets, a debris ring and stray rocks out past the edge, all scenery).
 Far off to the north a black hole eats the galaxy: a black disc (far scenery) with its accretion disc round it, a
@@ -20,6 +20,7 @@ RING = 4.0            # the lensed ring's width round the hole's edge
 
 def build():
     m = M("Black Hole", "1v1", sun=(0.12, 0.45, -0.88))   # (the light comes off the accretion disc, low in the north)
+    m.also = ["duel", "vs"]   # (every map that plays 1v1 also offers duel and team vs; 4 + 4 team spawns)
     m.raw("palette base 0.30 0.28 0.27 accent 0.20 0.18 0.18 metal 0 0 0 glow 1.00 0.62 0.25 sky 0 0 0")
     m.raw("void -50")
     m.raw("holdfire 3")   # (no cover, and the spawns face each other across the floor: 3 s to get airborne first, as Dojo's bow)
@@ -28,7 +29,7 @@ def build():
     black_hole(m)
     space(m)
     # ---- the spawns: 1v1 at each end of the floor facing each other; free for all spread round it
-    for z in (-3.75, -1.25, 1.25, 3.75):   # (four a side: winner stays draws from them)
+    for z in (-3.75, -1.25, 1.25, 3.75):   # (four a side: duel and team vs draw from them)
         m.spawn("a", -14, 0, z, -90, "b")
     for (x, z, yaw) in ((-16, -6, -90), (-16, 6, -90), (-6, -7, 0), (-6, 7, 180)):
         m.spawn("any", x, 0, z, yaw, "any")
@@ -65,6 +66,7 @@ def black_hole(m):
         y0 = cy - R + 2 * R * i / rows; y1 = cy - R + 2 * R * (i + 1) / rows
         h = max(abs(y0 - cy), abs(y1 - cy)) if (y0 - cy) * (y1 - cy) > 0 else 0.0
         w = math.sqrt(max(0.0, R * R - h * h))
+        if w < 0.01: continue   # (the top and bottom rows touch the circle only at a point: nothing to draw)
         m.box(round(cx - w, 2), round(y0, 2), cz - 6, round(cx + w, 2), round(y1, 2), cz + 6, mat="far")
     # the lensed ring: a thin band of light just round the disc's edge, behind it
     n = 24
