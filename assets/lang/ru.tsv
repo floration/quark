@@ -763,7 +763,6 @@ DYNAMIC RANGE: NIGHT	ДИН. ДИАПАЗОН: НОЧЬ
 DYNAMIC RANGE: NORMAL	ДИН. ДИАПАЗОН: ОБЫЧНЫЙ
 Dash into a wall head-on (under 45 degrees) and you bounce off it at 16 m/s (it leaves you 1 dash).	Рывок в стену в лоб (меньше 45 градусов) отбрасывает вас на 16 м/с (остаётся 1 рывок).
 Dash jump: jump while dashing along the floor to keep the dash's full speed through the jump (it leaves you both dashes).	Прыжок с рывка: прыгните во время рывка по полу, чтобы сохранить полную скорость рывка в прыжке (оба рывка остаются).
-Decl: no padding (its words are hashed)	Decl: без выравнивания (его слова хешируются)
 Display: window mode, vsync, low latency mode, frame cap, player shadows, brightness, anti-aliasing and interpolation. Lower latency settings cost smoothness: the notes under them say how.	Экран: режим окна, vsync, режим низкой задержки, лимит кадров, тени игроков, яркость, сглаживание и интерполяция. Настройки меньшей задержки стоят плавности: подсказки под ними объясняют как.
 Drag the squares on a selected box's faces to resize it; drag the arrows to move it. The keyboard works too: ARROWS / PGUP / PGDN move it by the grid, SHIFT + ARROWS grow a side, CTRL + ARROWS shrink it.	Тяните квадраты на гранях выбранного блока, чтобы менять размер; тяните стрелки, чтобы двигать. Клавиатура тоже работает: СТРЕЛКИ / PGUP / PGDN двигают по сетке, SHIFT + СТРЕЛКИ растят сторону, CTRL + СТРЕЛКИ уменьшают.
 E - use (plant / defuse the bomb).   1-9, 0 - weapons.   MOUSE WHEEL - next / previous weapon.	E - использовать (заложить / обезвредить бомбу).   1-9, 0 - оружие.   КОЛЕСО МЫШИ - след. / пред. оружие.
@@ -1044,7 +1043,6 @@ GUN: TEAM	ОРУЖ.: КОМАНД.
 GUNFIRE	СТРЕЛЬБА
 GUS	GUS
 Game::frame	Game::frame
-Game::testHeld_ holds a bit per action	Game::testHeld_ holds a bit per action
 HALFTIME - SIDES SWITCHED	ПЕРЕРЫВ - СМЕНА СТОРОН
 HALFTIME - SIDES SWITCHED: YOU ATTACK NOW	ПЕРЕРЫВ - СМЕНА СТОРОН: ТЕПЕРЬ ВЫ АТАКУЕТЕ
 HALFTIME - SIDES SWITCHED: YOU DEFEND NOW	ПЕРЕРЫВ - СМЕНА СТОРОН: ТЕПЕРЬ ВЫ ЗАЩИЩАЕТЕСЬ
@@ -2087,7 +2085,6 @@ MY SKY / GLOW: THESE IN PLACE OF EVERY MAP'S;	МОЁ НЕБО / СВЕЧЕНИЕ
 MY TRACER	МОЙ ТРАССЕР
 Maps are saved to the maps folder (MAPS FOLDER opens it) as .qmap text files. RESET MAPS puts the built-in maps back.	Карты сохраняются в папку maps (MAPS FOLDER открывает её) как текстовые файлы .qmap. RESET MAPS возвращает встроенные карты.
 Model	Модель
-ModelOverrides holds kMaxModelsPerKind models of a kind	ModelOverrides holds kMaxModelsPerKind models of a kind
 N/A HERE: LATENT SYNC IS WINDOWS ONLY	НЕДОСТУПНО: LATENT SYNC ТОЛЬКО В WINDOWS
 N/A HERE: LINUX (X11) ONLY	НЕДОСТУПНО: ТОЛЬКО LINUX (X11)
 N/A HERE: WINDOWS + NVIDIA ONLY	НЕДОСТУПНО: ТОЛЬКО WINDOWS + NVIDIA
@@ -3295,25 +3292,18 @@ ZONE OPACITY	ПРОЗРАЧН. ЗОНЫ
 ZONE PULSE	ПУЛЬС ЗОНЫ
 ZOOM	ЗУМ
 ZOOM SENSITIVITY	ЧУВСТВ. ПРИ ЗУМЕ
-a caption for every announcer line	субтитры для каждой фразы комментатора
-a colour per material from ice on (a large one: its base's), then the see-through, breakable and feature ones	цвет для каждого материала начиная со льда (крупные: как у основы), затем прозрачные, разрушаемые и особые
 a damaged PAK	повреждённый PAK
 a damaged WAD	повреждённый WAD
 a damaged built-in atlas	повреждённый встроенный атлас
-a label per material (the cycles below index it by material)	метка для каждого материала (циклы ниже индексируют по материалу)
-a look per material from kMatBlocks on (the large ones: their base's), then the see-through, breakable and feature ones	вид для каждого материала начиная с kMatBlocks (крупные: как у основы), затем прозрачные, разрушаемые и особые
 a map keeps at least one box outside groups - add another box first	на карте должен остаться хотя бы один блок вне групп - сначала добавьте ещё блок
 a map needs at least one box	карте нужен хотя бы один блок
 a map needs at least one mode	карте нужен хотя бы один режим
 a map needs at least one spawn	карте нужен хотя бы один спавн
-a picker tab for every material (kMatTabs)	вкладка выбора для каждого материала (kMatTabs)
 a ranked match is being played - no votes until it's over	идёт рейтинговый матч - голосования только после его окончания
 a ranked match is being played - teams stay as they are until it's over	идёт рейтинговый матч - команды не меняются до его окончания
 a ranked match is being played: '	идёт рейтинговый матч: '
-a reference palette per prop	эталонная палитра для каждого пропа
 a spectate vote needs at least	для голосования о наблюдении нужно хотя бы
 a tag match is being played - you can join the next one	идёт матч в салки - можно войти в следующий
-a theme style per HUD element	стиль темы для каждого элемента HUD
 a tourney is running - you can join the next one	идёт турнир - можно войти в следующий
 a vote is already in progress	голосование уже идёт
 accessor out of range	accessor out of range
@@ -3431,7 +3421,6 @@ demo finished	демо окончено
 demo:	демо:
 draw - the payload is in the middle	ничья - вагонетка посередине
 dropped:	выбыл:
-duelUsed_ is a 32-bit mask	duelUsed_ is a 32-bit mask
 dyn verts	dyn verts
 dynamic pass	динамический проход
 e.g.  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5	напр.  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5
@@ -3448,7 +3437,6 @@ edits dropped	правки отменены
 else if	else if
 ember: gg	ember: gg
 enough players again - the match goes on	снова хватает игроков - матч продолжается
-every HUD element in the dropdown	каждый элемент HUD в списке
 every point taken	каждая взятая точка
 everyone left - back to warmup	все вышли - назад в разминку
 exec: a file name in your data folder (no folders)	exec: имя файла в папке данных (без папок)
@@ -3477,6 +3465,7 @@ has no ranked id	нет рейтингового id
 hdmi:	hdmi:
 high at	высокое при
 human cmds	human cmds
+if (blended && alpha < 0.01) discard;	if (blended && alpha < 0.01) discard;
 if players reach it there, start the server with --own-addr	если игроки заходят туда, запустите сервер с --own-addr
 in your data folder	в папке данных
 index out of range	index out of range
@@ -3503,8 +3492,6 @@ isn't in this custom mode's map pool	нет в пуле карт этого св
 joined team A	вступил в команду A
 joined team B	вступил в команду B
 joined the game	вошёл в игру
-kElemNames follows Settings::HUD_*	kElemNames follows Settings::HUD_*
-kFrameTimes must be a power of two	kFrameTimes must be a power of two
 kbps (# packets/s), download # kbps (#/s)	кбит/с (# пакетов/с), загрузка # кбит/с (#/с)
 kick whom? a name or an id (status lists them)	кого кикнуть? имя или id (список в status)
 kicked by a vote	кикнут голосованием
@@ -3572,6 +3559,7 @@ no points	нет точек
 no response	нет ответа
 no small gaps to close	нет мелких щелей для закрытия
 no triangles	нет треугольников
+no-discard world shader: missing	no-discard world shader: missing
 nobody finished	никто не финишировал
 nobody is out - throw again	никто не выбыл - бросайте снова
 nobody left	никого не осталось
@@ -3590,6 +3578,7 @@ not enough players	недостаточно игроков
 not enough players - back to warmup	недостаточно игроков - назад в разминку
 not enough players - the match ends in	недостаточно игроков - матч закончится через
 not enough players for a tourney	недостаточно игроков для турнира
+not in the main program	not in the main program
 not in this build	нет в этой сборке
 not rated:	без рейтинга:
 not the ladder's mode	не режим этой таблицы
@@ -3606,8 +3595,6 @@ odd sample rate	странная частота дискретизации
 of #	из #
 off for this match	выкл на этот матч
 on your router to this PC	на роутере на этот ПК
-one folder per sound kit	одна папка на звуковой набор
-one name per sound, in SoundId order	одно имя на звук, в порядке SoundId
 only a timed round can be extended	продлить можно только раунд на время
 over 64 MB	больше 64 МБ
 override {} ({}): # triangles (at most #)	override {} ({}): # triangles (at most #)
@@ -3772,7 +3759,6 @@ the PAK has no gfx.wad	в PAK нет gfx.wad
 the WAD has no CONCHARS	в WAD нет CONCHARS
 the autosave can't be read	автосохранение не читается
 the bomb went back to	бомба вернулась на
-the cursor wraps with uint32	the cursor wraps with uint32
 the cutter (the first box selected) doesn't touch the others	резак (первый выбранный блок) не касается остальных
 the cutter (the first box selected) has to be a plain box	резак (первый выбранный блок) должен быть обычным блоком
 the driver has no shorter period	у драйвера нет более короткого периода
@@ -3866,6 +3852,9 @@ wins the tourney!	побеждает в турнире!
 world chunks	чанки мира
 world pass	проход мира
 world shader	шейдер мира
+world shader (no discard):	world shader (no discard):
+world shader (no discard): {}	world shader (no discard): {}
+world shader (no discard): {} not in the main program	world shader (no discard): {} not in the main program
 world shader:	шейдер мира:
 world shader: {}	world shader: {}
 world upload	загрузка мира

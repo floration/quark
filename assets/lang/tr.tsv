@@ -763,7 +763,6 @@ DYNAMIC RANGE: NIGHT	DİNAMİK ARALIK: GECE
 DYNAMIC RANGE: NORMAL	DİNAMİK ARALIK: NORMAL
 Dash into a wall head-on (under 45 degrees) and you bounce off it at 16 m/s (it leaves you 1 dash).	Bir duvara önden (45 dereceden az) dash atarsan 16 m/s ile sekersin (1 dash kalır).
 Dash jump: jump while dashing along the floor to keep the dash's full speed through the jump (it leaves you both dashes).	Dash zıplama: yerde dash atarken zıpla, dash'in tam hızını zıplama boyunca koru (iki dash'in de kalır).
-Decl: no padding (its words are hashed)	Decl: dolgu yok (kelimeleri hash'lenir)
 Display: window mode, vsync, low latency mode, frame cap, player shadows, brightness, anti-aliasing and interpolation. Lower latency settings cost smoothness: the notes under them say how.	Ekran: pencere modu, vsync, düşük gecikme modu, kare sınırı, oyuncu gölgeleri, parlaklık, kenar yumuşatma ve interpolasyon. Düşük gecikme ayarları akıcılıktan götürür: altlarındaki notlar nasıl olduğunu söyler.
 Drag the squares on a selected box's faces to resize it; drag the arrows to move it. The keyboard works too: ARROWS / PGUP / PGDN move it by the grid, SHIFT + ARROWS grow a side, CTRL + ARROWS shrink it.	Seçili kutunun yüzlerindeki kareleri sürükleyerek boyutlandır; okları sürükleyerek taşı. Klavye de çalışır: OKLAR / PGUP / PGDN ızgaraya göre taşır, SHIFT + OKLAR bir yüzü büyütür, CTRL + OKLAR küçültür.
 E - use (plant / defuse the bomb).   1-9, 0 - weapons.   MOUSE WHEEL - next / previous weapon.	E - kullan (bombayı kur / imha et).   1-9, 0 - silahlar.   FARE TEKERLEĞİ - sonraki / önceki silah.
@@ -1044,7 +1043,6 @@ GUN: TEAM	SİLAH: TAKIM
 GUNFIRE	SİLAH SESİ
 GUS	GUS
 Game::frame	Game::frame
-Game::testHeld_ holds a bit per action	Game::testHeld_ holds a bit per action
 HALFTIME - SIDES SWITCHED	DEVRE ARASI - TARAFLAR DEĞİŞTİ
 HALFTIME - SIDES SWITCHED: YOU ATTACK NOW	DEVRE ARASI - TARAFLAR DEĞİŞTİ: ARTIK SALDIRIYORSUN
 HALFTIME - SIDES SWITCHED: YOU DEFEND NOW	DEVRE ARASI - TARAFLAR DEĞİŞTİ: ARTIK SAVUNUYORSUN
@@ -2087,7 +2085,6 @@ MY SKY / GLOW: THESE IN PLACE OF EVERY MAP'S;	GÖKYÜZÜM / PARLAMAM: HER HARİT
 MY TRACER	İZ MERMİM
 Maps are saved to the maps folder (MAPS FOLDER opens it) as .qmap text files. RESET MAPS puts the built-in maps back.	Haritalar maps klasörüne (MAPS FOLDER açar) .qmap metin dosyaları olarak kaydedilir. RESET MAPS yerleşik haritaları geri getirir.
 Model	Model
-ModelOverrides holds kMaxModelsPerKind models of a kind	ModelOverrides holds kMaxModelsPerKind models of a kind
 N/A HERE: LATENT SYNC IS WINDOWS ONLY	BURADA YOK: LATENT SYNC YALNIZCA WINDOWS'TA
 N/A HERE: LINUX (X11) ONLY	BURADA YOK: SADECE LINUX (X11)
 N/A HERE: WINDOWS + NVIDIA ONLY	BURADA YOK: YALNIZCA WINDOWS + NVIDIA
@@ -3295,25 +3292,18 @@ ZONE OPACITY	BÖLGE OPAKLIĞI
 ZONE PULSE	BÖLGE NABZI
 ZOOM	ZOOM
 ZOOM SENSITIVITY	ZOOM HASSASİYETİ
-a caption for every announcer line	her spiker repliği için bir altyazı
-a colour per material from ice on (a large one: its base's), then the see-through, breakable and feature ones	buzdan itibaren malzeme başına bir renk (büyük olanlar: tabanınınki), sonra saydam, kırılabilir ve özel olanlar
 a damaged PAK	hasarlı bir PAK
 a damaged WAD	hasarlı bir WAD
 a damaged built-in atlas	hasarlı bir yerleşik atlas
-a label per material (the cycles below index it by material)	malzeme başına bir etiket (aşağıdaki döngüler malzemeye göre indeksler)
-a look per material from kMatBlocks on (the large ones: their base's), then the see-through, breakable and feature ones	kMatBlocks'tan itibaren malzeme başına bir görünüm (büyük olanlar: tabanlarınınki), sonra saydam, kırılabilir ve özel olanlar
 a map keeps at least one box outside groups - add another box first	haritada gruplar dışında en az bir kutu kalmalı - önce başka bir kutu ekle
 a map needs at least one box	haritada en az bir kutu olmalı
 a map needs at least one mode	haritada en az bir mod olmalı
 a map needs at least one spawn	haritada en az bir doğma noktası olmalı
-a picker tab for every material (kMatTabs)	her malzeme için bir seçici sekmesi (kMatTabs)
 a ranked match is being played - no votes until it's over	dereceli maç oynanıyor - bitene kadar oylama yok
 a ranked match is being played - teams stay as they are until it's over	dereceli maç oynanıyor - bitene kadar takımlar olduğu gibi kalır
 a ranked match is being played: '	dereceli maç oynanıyor: '
-a reference palette per prop	nesne başına bir referans paleti
 a spectate vote needs at least	izleme oylaması için en az şu gerekir:
 a tag match is being played - you can join the next one	ebelemece maçı oynanıyor - bir sonrakine katılabilirsin
-a theme style per HUD element	her hud öğesi için bir tema stili
 a tourney is running - you can join the next one	turnuva sürüyor - bir sonrakine katılabilirsin
 a vote is already in progress	zaten bir oylama sürüyor
 accessor out of range	accessor aralık dışında
@@ -3431,7 +3421,6 @@ demo finished	demo bitti
 demo:	demo:
 draw - the payload is in the middle	berabere - payload ortada
 dropped:	düştü:
-duelUsed_ is a 32-bit mask	duelUsed_ is a 32-bit mask
 dyn verts	dyn verts
 dynamic pass	dinamik geçiş
 e.g.  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5	ör.  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5
@@ -3448,7 +3437,6 @@ edits dropped	düzenlemeler atıldı
 else if	else if
 ember: gg	ember: gg
 enough players again - the match goes on	yine yeterli oyuncu var - maç devam ediyor
-every HUD element in the dropdown	açılır listedeki her hud öğesi
 every point taken	alınan her nokta
 everyone left - back to warmup	herkes ayrıldı - ısınmaya dönülüyor
 exec: a file name in your data folder (no folders)	exec: veri klasöründe bir dosya adı (klasör yok)
@@ -3477,6 +3465,7 @@ has no ranked id	dereceli kimliği yok
 hdmi:	hdmi:
 high at	yüksek:
 human cmds	insan komutları
+if (blended && alpha < 0.01) discard;	if (blended && alpha < 0.01) discard;
 if players reach it there, start the server with --own-addr	oyuncular ona oradan ulaşıyorsa sunucuyu --own-addr ile başlat
 in your data folder	veri klasöründe
 index out of range	indeks aralık dışında
@@ -3503,8 +3492,6 @@ isn't in this custom mode's map pool	bu özel modun harita havuzunda değil
 joined team A	A takımına katıldı
 joined team B	B takımına katıldı
 joined the game	oyuna katıldı
-kElemNames follows Settings::HUD_*	kElemNames follows Settings::HUD_*
-kFrameTimes must be a power of two	kFrameTimes must be a power of two
 kbps (# packets/s), download # kbps (#/s)	kbps (# paket/s), indirme # kbps (#/s)
 kick whom? a name or an id (status lists them)	kimi atalım? bir ad veya kimlik (status listeler)
 kicked by a vote	oylamayla atıldı
@@ -3572,6 +3559,7 @@ no points	nokta yok
 no response	yanıt yok
 no small gaps to close	kapatılacak küçük boşluk yok
 no triangles	üçgen yok
+no-discard world shader: missing	no-discard world shader: missing
 nobody finished	kimse bitirmedi
 nobody is out - throw again	kimse elenmedi - tekrar at
 nobody left	kimse kalmadı
@@ -3590,6 +3578,7 @@ not enough players	yeterli oyuncu yok
 not enough players - back to warmup	yeterli oyuncu yok - ısınmaya dönülüyor
 not enough players - the match ends in	yeterli oyuncu yok - maç şu sürede biter:
 not enough players for a tourney	turnuva için yeterli oyuncu yok
+not in the main program	not in the main program
 not in this build	bu sürümde yok
 not rated:	puanlanmadı:
 not the ladder's mode	sıralamanın modu değil
@@ -3606,8 +3595,6 @@ odd sample rate	garip örnekleme hızı
 of #	/ #
 off for this match	bu maç için kapalı
 on your router to this PC	modeminde bu PC'ye
-one folder per sound kit	ses kiti başına bir klasör
-one name per sound, in SoundId order	ses başına bir ad, SoundId sırasıyla
 only a timed round can be extended	sadece süreli raund uzatılabilir
 over 64 MB	64 MB'tan büyük
 override {} ({}): # triangles (at most #)	override {} ({}): # triangles (at most #)
@@ -3772,7 +3759,6 @@ the PAK has no gfx.wad	PAK'ta gfx.wad yok
 the WAD has no CONCHARS	WAD'da CONCHARS yok
 the autosave can't be read	otomatik kayıt okunamıyor
 the bomb went back to	bomba şuraya geri döndü:
-the cursor wraps with uint32	imleç uint32 ile başa sarar
 the cutter (the first box selected) doesn't touch the others	kesici (ilk seçilen kutu) diğerlerine değmiyor
 the cutter (the first box selected) has to be a plain box	kesici (ilk seçilen kutu) düz bir kutu olmalı
 the driver has no shorter period	sürücünün daha kısa periyodu yok
@@ -3866,6 +3852,9 @@ wins the tourney!	turnuvayı kazandı!
 world chunks	dünya parçaları
 world pass	dünya geçişi
 world shader	dünya shader'ı
+world shader (no discard):	world shader (no discard):
+world shader (no discard): {}	world shader (no discard): {}
+world shader (no discard): {} not in the main program	world shader (no discard): {} not in the main program
 world shader:	dünya shader'ı:
 world shader: {}	world shader: {}
 world upload	dünya upload

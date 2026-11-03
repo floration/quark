@@ -9,6 +9,9 @@
 - Dedicated servers: re-running install.sh no longer puts the testing server back on the production build, and a server that can't start yet keeps retrying instead of staying down.
 - macOS builds come out with each testing build again. When GitHub has no Apple Silicon Mac free, the macOS build now runs on an Intel Mac (it still makes the same universal app) instead of being dropped.
 
+## Performance
+- **Higher frame rates and lows when the GPU is the limit:** the world draws with the GPU's early depth test while no holes have been blown in breakable walls. That's +4% average FPS and +8% on the 1% lows on a 3090 Ti at 1440p, with identical pictures.
+
 ## Latency
 - **New LATENCY settings tab**, with every latency tweak on its own switch so you can try each combination and compare them in F3 (which now names the tweaks it was taken with):
   - LOW LATENCY (OFF / ON / ULTRA), EARLY FLUSH, CPU LATE LATCH, **GPU LATE LATCH** (new: on Windows the graphics card reads your newest mouse movement as it starts drawing the world, after the frame was sent; off by default) and **HUD BEFORE WORLD** (new, ULTRA only: the HUD is drawn before the last mouse read and laid over the world after it; off by default).
