@@ -10,7 +10,7 @@
 - macOS builds come out with each testing build again. When GitHub has no Apple Silicon Mac free, the macOS build now runs on an Intel Mac (it still makes the same universal app) instead of being dropped.
 
 ## Maps
-- **Duel and payload have their own default maps:** duel now picks Orbit (it still plays 1v1, team vs and tourney) and payload Railyard (it still plays neutral payload and ball). The QK maps stay 1v1 maps and the ranked ladders are unchanged.
+- **Payload has its own default map:** payload now picks Railyard (it still plays neutral payload and ball). The ranked ladders are unchanged.
 - **Black Hole** can now be played in duel and team vs too.
 - Small geometry fixes: walls that were drawn twice on Mine, QK6, Cruise Ship and Railyard (two door sills on Mine flickered between two materials), a doubled floodlight mast pair on Railyard, two invisible boxes on Black Hole.
 - Map editor (Quarkology): its checks now agree with the game's tests. Greenhouse and Spire no longer fail the ranked check (ranked maps must be fair, not mirror images), Solar no longer fails its routes, and Tutorial no longer shows 46,000 m² out of bounds.

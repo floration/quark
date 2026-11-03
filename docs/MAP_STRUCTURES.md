@@ -53,7 +53,7 @@ Every map before 1.19.6 was replaced (q: "every current map goes except q's two 
 | Mine | bomb | king of the hill, free for all | - | a deep mine |
 | Monorail | neutral payload | king of the hill, power, free for all | - | futuristic city monorail at dusk |
 | Museum | hide and seek | free for all, tag, bomb | - | a natural history museum at night |
-| Orbit | duel | 1v1, team vs, tourney | - | space station centrifuge |
+| Orbit | 1v1 | duel, team vs, tourney | - | space station centrifuge |
 | QK1 Ring | 1v1 | duel, team vs, tourney, free for all | ranked vanilla vampire instagib | a ring of corridors round a pit, box and accent |
 | QK2 Stack | 1v1 | duel, team vs, tourney, free for all | ranked vanilla vampire instagib | a stacked tower of open floors, box and accent |
 | QK3 Pinwheel | 1v1 | duel, team vs, tourney, free for all | ranked vanilla vampire instagib | four decks wound round a sunken bowl like a pinwheel, box and accent |
@@ -78,7 +78,7 @@ Every map before 1.19.6 was replaced (q: "every current map goes except q's two 
 
 **Stadium** (owner, 2026-11-02: "ball needs a soccer field map") is built for ball: a 120 x 76 m astroturf pitch with a 14 m goal in the middle of each goal line (the ball's centre inside the frame scores; A defends the west goal), ringed 4 m outside its lines by 40 m ball walls open to the sky (an invisible block only the ball bounces off, so it stays in play while players walk through to the stands). Four tiers of walkable seating round it, a dugout either side of the halfway line (cover) and floodlight masts in the corners. Mirrored west to east; `holdfire 3`: the teams line up facing each other at kickoff.
 
-Map cleanup (2026-11-03): Orbit is built for duel (it had no map of its own; the QK maps stay built for 1v1: q, they're the competitive 1v1 maps), Railyard for one-way payload (neutral payload keeps Dam, Express and Monorail); Black Hole offers duel and team vs like every map that offers 1v1. Ball's second built-for map waits on q.
+Map cleanup (2026-11-03): Railyard is built for one-way payload (neutral payload keeps Dam, Express and Monorail); Black Hole offers duel and team vs like every map that offers 1v1. Duel and tourney are 1v1 variants and play every 1v1 map, so they have no maps of their own. Ball stays on Stadium until a new ball map is built.
 
 Each ranked ladder has the map it's designed for (q, 2026-10-31), which going ranked and the ranked pickers choose first: vanilla 1v1 **Greenhouse**, laser vampire 1v1 **Dojo** (`holdfire 5`), instagib free for all **Spire**. qk1-qk8 are ranked on all three.
 

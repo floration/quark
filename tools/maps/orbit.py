@@ -1,4 +1,4 @@
-"""ORBIT (1.19.6): duel (and 1v1, team vs, tourney) in one space-station module, a centrifuge lab 48 x 32 m and 18 m
+"""ORBIT (1.19.6): 1v1 (and duel, team vs, tourney) in one space-station module, a centrifuge lab 48 x 32 m and 18 m
 tall, mirrored west to east:
   bays       a docking bay at each end (10 m deep, normal gravity), a shuttle's nose as cover; the spawns are behind it
              (A west, B east), stairs up both long walls to the catwalks;
@@ -34,8 +34,8 @@ ANY = [(-18.0, 12.0, -24, 12.0), (-22.6, 2.0, -24, 8), (-22.0, -10.0, -24, -4), 
 
 
 def build():
-    m = M("Orbit", "duel", sun=(0.6, 0.7, -0.4))   # (built for duel since the map cleanup, 2026-11-03: duel had no map of its own)
-    m.also = ["1v1", "vs", "tourney"]
+    m = M("Orbit", "1v1", sun=(0.6, 0.7, -0.4))
+    m.also = ["duel", "vs", "tourney"]
     k = Kit(m)
     m.raw("palette base 0.78 0.80 0.84 accent 0.22 0.36 0.62 metal 0.28 0.30 0.34 glow 0.40 0.85 1.00 sky 0 0 0")
 
