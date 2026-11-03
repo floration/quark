@@ -118,6 +118,11 @@ public:
     void shutdown();
     void frame(double dt);
     bool quitRequested() const { return quit_; }
+    // the frame cap's head start (s) for a cap of `period` s: LATENCY > FRAME CAP OFFSET (AUTO: 5% of the period)
+    double capOffset(double period) const {
+        const double o = cfg_.capOffsetUs < 0 ? period * 0.05 : cfg_.capOffsetUs * 1e-6;
+        return std::min(o, period * 0.5);   // (never more than half the frame: the rest is the frame's own)
+    }
     int maxFps() const {   // (VIDEO > MORE: WHEN UNFOCUSED caps it while the window is in the background or minimized)
         int cap = cfg_.maxFps;
         if (cfg_.vrr && vrrHz_ > 3) cap = cap > 0 ? std::min(cap, vrrHz_ - 3) : vrrHz_ - 3;   // (VRR: under the refresh, never at it)

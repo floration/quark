@@ -45,6 +45,7 @@ struct Settings {
     bool prioritize = true;     // Windows: GPU + CPU priority raised while the game has focus (setGamePriority)
     int lowLatency = 1;         // 0 off, 1 on (max 1 frame queued), 2 ultra (0 queued, just-in-time input)
     int maxFps = 0;             // 0 = unlimited
+    int capOffsetUs = -1;       // LATENCY > FRAME CAP OFFSET: the cap wakes this early, runs the GPU wait / network, then spins to the deadline before the mouse read; -1 AUTO (5% of the cap's frame), 0 off
     int width = 1280, height = 720;
     int winX = -100000, winY = -100000;   // the window's last position when windowed (-100000: never moved; 100 px in)
     int bgFps = 60;             // VIDEO > MORE: the frame cap while the window isn't focused or is minimized (0 = FPS LIMIT as usual)

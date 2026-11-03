@@ -156,6 +156,7 @@ void Settings::set(const std::string& k, const std::string& v) {
             // AUTO. Any other value was picked and stays; 0, the lowest it had, is 1 us now (0 is AUTO; the same in practice).
             if (!ultraMarginMigrated) ultraMarginUs = ultraMarginUs == 150 ? 0 : ultraMarginUs == 0 ? 1 : ultraMarginUs;
         }
+        else if (k == "cap_offset_us") capOffsetUs = std::min(std::max(iv, -1), 5000);
         else if (k == "ultra_margin_auto") ultraMarginMigrated = iv != 0;
         else if (k == "display_default") displayMigrated = iv != 0;
         else if (k == "nv_threaded") nvThreaded = iv != 0;
@@ -449,7 +450,7 @@ std::string Settings::toText() const {
       << "\nfx_color_mode=" << fxColorMode << "\nfx_color=" << colorHex(fxColor) << "\nobj_palette=" << objPalette << "\nsky_override=" << skyOverride << "\nglow_override=" << glowOverride
       << "\nsky_color=" << colorHex(skyColor) << "\nglow_color=" << colorHex(glowColor) << "\nhigh_contrast=" << highContrast << "\nf3_safe=" << f3Safe << "\non_top=" << onTop << "\ngun_color=" << gunColor
       << "\ngun_custom=" << colorHex(gunCustom) << "\nobj_opacity=" << objOpacity << "\nobj_pulse=" << objPulse << "\ndash_buffer=" << dashBuffer << "\nsmooth_amt=" << smoothAmt << "\nlightmap_nearest=" << lightmapNearest
-      << "\nwallbang_tint=" << wallbangTint << "\nwallbang_color=" << colorHex(wallbangColor) << "\nultra_margin_auto=1" << "\nultra_margin_us=" << ultraMarginUs << "\nnv_threaded=" << nvThreaded << "\nnv_dxgi=" << nvDxgi
+      << "\nwallbang_tint=" << wallbangTint << "\nwallbang_color=" << colorHex(wallbangColor) << "\nultra_margin_auto=1" << "\nultra_margin_us=" << ultraMarginUs << "\ncap_offset_us=" << capOffsetUs << "\nnv_threaded=" << nvThreaded << "\nnv_dxgi=" << nvDxgi
       << "\nquip_captions=" << quipCaptions << "\nann_duck=" << annDuck;
     for (int i = 0; i < 3; i++) if (!colorPreset[i].empty()) f << "\ncolor_preset_" << i + 1 << "=" << colorPreset[i];
     for (auto& b : cmdBinds) f << "\ncbind_" << b.first << "=" << b.second;

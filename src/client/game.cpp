@@ -8352,6 +8352,16 @@ void Game::drawMoreSettings(const SetLayout& L) {
             g.next();
             g.hint("LOW LATENCY: ULTRA STARTS EACH FRAME THIS EARLY;", "AUTO LEARNS IT; MORE: FEWER GPU BUBBLES, MORE LAG");
         }
+        {
+            float v = (float)cfg_.capOffsetUs;   // (-1, the far left: AUTO, 5% of the cap's frame; 0: off)
+            char autoTxt[48];
+            snprintf(autoTxt, sizeof autoTxt, "AUTO (%.0f US)", maxFps() > 0 ? capOffset(1.0 / maxFps()) * 1e6 : 0.0);
+            const std::string shown = cfg_.capOffsetUs < 0 ? (maxFps() > 0 ? std::string(autoTxt) : std::string("AUTO")) : cfg_.capOffsetUs == 0 ? std::string("OFF") : std::string("%.0f US");
+            ui_.slider(g.x(), g.top(), w, h, "FRAME CAP OFFSET", v, -1, 1000, shown.c_str(), UiExp::cfg("cap_offset_us"), (float)d.capOffsetUs);
+            cfg_.capOffsetUs = std::min(std::max(-1, (int)std::lround(v)), 5000);
+            g.next();
+            g.hint("FPS LIMIT: WAKES THIS EARLY, THEN WAITS EXACTLY TO THE", "FRAME'S START: EVEN FRAMES; AUTO 5% OF THE FRAME");
+        }
         if (ui_.toggle(g.x(), g.top(), hw, h, "NV THREADED OFF", cfg_.nvThreaded, UiExp::cfg("nv_threaded"))) {
             std::string msg = "NOT CHANGED IN THE UI TEST";
             if (!uiTest_ && !nvThreadedOff(cfg_.nvThreaded, &msg)) cfg_.nvThreaded = false;

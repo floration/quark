@@ -324,6 +324,7 @@ AUDIO LATENCY: NORMAL	オーディオ遅延: 通常
 AUDIO LATENCY: SAFE	オーディオ遅延: 安全
 AUDIO OUTPUT	音声出力
 AUTO	自動
+AUTO (# US)	自動 (# US)
 AUTO LEARNS IT; MORE: FEWER GPU BUBBLES, MORE LAG	自動で調整; 多い: GPUの空き減、遅延増
 AUTO PORT FORWARD	自動ポート開放
 AUTO RECONNECT	自動再接続
@@ -1011,9 +1012,12 @@ FOV: HORIZONTAL AT 4:3	FOV: 4:3で水平
 FOV: VERTICAL	FOV: 垂直
 FPS	FPS
 FPS LIMIT	FPS制限
+FPS LIMIT: WAKES THIS EARLY, THEN WAITS EXACTLY TO THE	FPS制限: この分早く起き、フレーム開始まで
 FPS MIN (1S)	FPS 最小 (1秒)
+FRAME CAP OFFSET	FPS制限の先行
 FRAME CAP WAIT	フレーム上限待機
 FRAME TIME OVER THE RUN	ラン中のフレームタイム
+FRAME'S START: EVEN FRAMES; AUTO 5% OF THE FRAME	正確に待つ: 均一なフレーム; 自動はフレームの5%
 FRAMES	フレーム
 FREE FOR ALL	個人戦
 FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next kill wins).	個人戦 - 時間切れ時に最多キルで勝利 (同点は延長戦: 次のキルで勝利)。
@@ -3078,6 +3082,8 @@ SYSTEM MESSAGES: IMPORTANT	システムメッセージ: 重要のみ
 SYSTEM MESSAGES: OFF	システムメッセージ: オフ
 SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)	システム: OSの矢印 (色: 独自のみ)
 SetDefaultDllDirectories	SetDefaultDllDirectories
+SetProcessInformation	SetProcessInformation
+SetThreadInformation	SetThreadInformation
 Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).	設定 > 操作設定 でキー割り当てをエクスポートしたり、他人のものをインポートできます (テキストをコピー / 貼り付け)。
 Start the match, change map / mode, ranked on / off, edit the map together, bots on. A majority of the human players decides.	試合開始、マップ / モード変更、ランクのオン / オフ、マップの共同編集、ボットのオン。人間プレイヤーの過半数で決定します。
 Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping. Above ~13 m/s A / D turns you faster than W alone.	ストレイフジャンプで加速: 横移動キーを押したまま同じ向きにマウスを回し, ジャンプを続ける. ~13 m/s を超えると A / D の方が W だけより速く曲がれる.

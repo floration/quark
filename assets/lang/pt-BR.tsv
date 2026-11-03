@@ -324,6 +324,7 @@ AUDIO LATENCY: NORMAL	LATÊNCIA DE ÁUDIO: NORMAL
 AUDIO LATENCY: SAFE	LATÊNCIA DE ÁUDIO: SEGURA
 AUDIO OUTPUT	SAÍDA DE ÁUDIO
 AUTO	AUTO
+AUTO (# US)	AUTO (# US)
 AUTO LEARNS IT; MORE: FEWER GPU BUBBLES, MORE LAG	AUTO APRENDE SOZINHO; MAIS: MENOS BOLHAS NA GPU, MAIS LAG
 AUTO PORT FORWARD	REDIRECIONAR PORTA AUTO
 AUTO RECONNECT	RECONECTAR AUTO
@@ -1011,9 +1012,12 @@ FOV: HORIZONTAL AT 4:3	FOV: HORIZONTAL EM 4:3
 FOV: VERTICAL	FOV: VERTICAL
 FPS	FPS
 FPS LIMIT	LIMITE DE FPS
+FPS LIMIT: WAKES THIS EARLY, THEN WAITS EXACTLY TO THE	LIMITE DE FPS: ACORDA ESSE TEMPO ANTES E ESPERA EXATO ATÉ O
 FPS MIN (1S)	FPS MÍN (1S)
+FRAME CAP OFFSET	ANTECIPAÇÃO DO LIMITE
 FRAME CAP WAIT	ESPERA LIM. FPS
 FRAME TIME OVER THE RUN	FRAME TIME DURANTE A RUN
+FRAME'S START: EVEN FRAMES; AUTO 5% OF THE FRAME	INÍCIO DO FRAME: FRAMES REGULARES; AUTO 5% DO FRAME
 FRAMES	FRAMES
 FREE FOR ALL	TODOS X TODOS
 FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next kill wins).	TODOS CONTRA TODOS - mais kills quando o tempo acaba vence (empate vai para a prorrogação: próximo kill vence).
@@ -3078,6 +3082,8 @@ SYSTEM MESSAGES: IMPORTANT	MENSAGENS DO SISTEMA: IMPORTANTES
 SYSTEM MESSAGES: OFF	MENSAGENS DO SISTEMA: DESLIGADAS
 SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)	SISTEMA: A SETA DO SEU SO (COR: SÓ A NOSSA)
 SetDefaultDllDirectories	SetDefaultDllDirectories
+SetProcessInformation	SetProcessInformation
+SetThreadInformation	SetThreadInformation
 Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).	Configurações > CONTROLES pode exportar seus binds e importar os de outra pessoa (copiar / colar o texto).
 Start the match, change map / mode, ranked on / off, edit the map together, bots on. A majority of the human players decides.	Iniciar a partida, mudar mapa / modo, ranqueada sim / não, editar o mapa juntos, bots ligados. A maioria dos jogadores humanos decide.
 Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping. Above ~13 m/s A / D turns you faster than W alone.	O strafe-jumping ganha velocidade: segure uma tecla lateral, gire o mouse junto e continue pulando. Acima de ~13 m/s A / D vira você mais rápido que só W.

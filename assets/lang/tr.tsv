@@ -324,6 +324,7 @@ AUDIO LATENCY: NORMAL	SES GECİKMESİ: NORMAL
 AUDIO LATENCY: SAFE	SES GECİKMESİ: GÜVENLİ
 AUDIO OUTPUT	SES ÇIKIŞI
 AUTO	OTO
+AUTO (# US)	OTO (# US)
 AUTO LEARNS IT; MORE: FEWER GPU BUBBLES, MORE LAG	OTO KENDİ ÖĞRENİR; DAHA FAZLA: DAHA AZ GPU BOŞLUĞU, DAHA FAZLA GECİKME
 AUTO PORT FORWARD	OTOMATİK PORT YÖNLENDİRME
 AUTO RECONNECT	OTOMATİK YENİDEN BAĞLAN
@@ -1011,9 +1012,12 @@ FOV: HORIZONTAL AT 4:3	FOV: 4:3'TE YATAY
 FOV: VERTICAL	FOV: DİKEY
 FPS	FPS
 FPS LIMIT	FPS SINIRI
+FPS LIMIT: WAKES THIS EARLY, THEN WAITS EXACTLY TO THE	FPS SINIRI: BU KADAR ERKEN UYANIR, SONRA TAM OLARAK
 FPS MIN (1S)	FPS MİN (1SN)
+FRAME CAP OFFSET	FPS SINIRI ÖNCELİĞİ
 FRAME CAP WAIT	KARE SINIRI BEKLEMESİ
 FRAME TIME OVER THE RUN	KOŞU BOYUNCA KARE SÜRESİ
+FRAME'S START: EVEN FRAMES; AUTO 5% OF THE FRAME	KARE BAŞLANGICINA KADAR BEKLER: DÜZGÜN KARELER; OTO KARENİN %5İ
 FRAMES	KARELER
 FREE FOR ALL	HERKES KENDİ İÇİN
 FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next kill wins).	HERKES KENDİ İÇİN - süre bittiğinde en çok kill alan kazanır (beraberlikte uzatma: sonraki kill kazanır).
@@ -3078,6 +3082,8 @@ SYSTEM MESSAGES: IMPORTANT	SİSTEM MESAJLARI: ÖNEMLİ
 SYSTEM MESSAGES: OFF	SİSTEM MESAJLARI: KAPALI
 SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)	SİSTEM: İŞLETİM SİSTEMİNİN OKU (RENK: SADECE BİZİMKİ)
 SetDefaultDllDirectories	SetDefaultDllDirectories
+SetProcessInformation	SetProcessInformation
+SetThreadInformation	SetThreadInformation
 Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).	Ayarlar > KONTROLLER tuş atamalarını dışa aktarabilir ve başkasınınkini içe aktarabilir (metni kopyala / yapıştır).
 Start the match, change map / mode, ranked on / off, edit the map together, bots on. A majority of the human players decides.	Maçı başlat, harita / mod değiştir, dereceli açık / kapalı, haritayı birlikte düzenle, botlar açık. İnsan oyuncuların çoğunluğu karar verir.
 Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping. Above ~13 m/s A / D turns you faster than W alone.	Strafe-jumping hız kazandırır: bir yan tuşu basılı tut, fareyi onunla birlikte çevir ve zıplamaya devam et. ~13 m/s üstünde A / D seni tek başına W'den daha hızlı döndürür.

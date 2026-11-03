@@ -324,6 +324,7 @@ AUDIO LATENCY: NORMAL	ЗАДЕРЖКА ЗВУКА: ОБЫЧНАЯ
 AUDIO LATENCY: SAFE	ЗАДЕРЖКА ЗВУКА: НАДЁЖНАЯ
 AUDIO OUTPUT	АУДИОВЫХОД
 AUTO	АВТО
+AUTO (# US)	АВТО (# МКС)
 AUTO LEARNS IT; MORE: FEWER GPU BUBBLES, MORE LAG	АВТО ПОДБИРАЕТ САМ; БОЛЬШЕ: МЕНЬШЕ ПРОСТОЕВ GPU, БОЛЬШЕ ЛАГА
 AUTO PORT FORWARD	АВТОПРОБРОС ПОРТА
 AUTO RECONNECT	АВТОПЕРЕПОДКЛЮЧЕНИЕ
@@ -1011,9 +1012,12 @@ FOV: HORIZONTAL AT 4:3	FOV: ГОРИЗОНТАЛЬНЫЙ ПРИ 4:3
 FOV: VERTICAL	FOV: ВЕРТИКАЛЬНЫЙ
 FPS	FPS
 FPS LIMIT	ЛИМИТ FPS
+FPS LIMIT: WAKES THIS EARLY, THEN WAITS EXACTLY TO THE	ЛИМИТ FPS: ПРОСЫПАЕТСЯ НАСТОЛЬКО РАНЬШЕ И ЖДЁТ ТОЧНО ДО
 FPS MIN (1S)	МИН. FPS (1С)
+FRAME CAP OFFSET	ОПЕРЕЖЕНИЕ ЛИМИТА
 FRAME CAP WAIT	ОЖИД. ЛИМИТА КАДРОВ
 FRAME TIME OVER THE RUN	ВРЕМЯ КАДРА ЗА ЗАПУСК
+FRAME'S START: EVEN FRAMES; AUTO 5% OF THE FRAME	НАЧАЛА КАДРА: РОВНЫЕ КАДРЫ; АВТО 5% КАДРА
 FRAMES	КАДРЫ
 FREE FOR ALL	КАЖДЫЙ ЗА СЕБЯ
 FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next kill wins).	КАЖДЫЙ САМ ЗА СЕБЯ - побеждает больше убийств к концу времени (при ничьей овертайм: следующее убийство побеждает).
@@ -3078,6 +3082,8 @@ SYSTEM MESSAGES: IMPORTANT	СИСТЕМНЫЕ СООБЩЕНИЯ: ВАЖНЫЕ
 SYSTEM MESSAGES: OFF	СИСТЕМНЫЕ СООБЩЕНИЯ: ВЫКЛ
 SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)	СИСТЕМНЫЙ: СТРЕЛКА ВАШЕЙ ОС (ЦВЕТ: ТОЛЬКО НАШ)
 SetDefaultDllDirectories	SetDefaultDllDirectories
+SetProcessInformation	SetProcessInformation
+SetThreadInformation	SetThreadInformation
 Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).	Настройки > УПРАВЛЕНИЕ позволяют экспортировать свои бинды и импортировать чужие (копировать / вставить текст).
 Start the match, change map / mode, ranked on / off, edit the map together, bots on. A majority of the human players decides.	Начать матч, сменить карту / режим, рейтинг вкл / выкл, редактировать карту вместе, включить ботов. Решает большинство живых игроков.
 Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping. Above ~13 m/s A / D turns you faster than W alone.	Стрейф-джамп набирает скорость: держите клавишу стрейфа, поворачивайте мышь в ту же сторону и продолжайте прыгать. Выше ~13 м/с A / D поворачивают быстрее, чем одна W.

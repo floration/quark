@@ -324,6 +324,7 @@ AUDIO LATENCY: NORMAL
 AUDIO LATENCY: SAFE
 AUDIO OUTPUT
 AUTO
+AUTO (# US)
 AUTO LEARNS IT; MORE: FEWER GPU BUBBLES, MORE LAG
 AUTO PORT FORWARD
 AUTO RECONNECT
@@ -1011,9 +1012,12 @@ FOV: HORIZONTAL AT 4:3
 FOV: VERTICAL
 FPS
 FPS LIMIT
+FPS LIMIT: WAKES THIS EARLY, THEN WAITS EXACTLY TO THE
 FPS MIN (1S)
+FRAME CAP OFFSET
 FRAME CAP WAIT
 FRAME TIME OVER THE RUN
+FRAME'S START: EVEN FRAMES; AUTO 5% OF THE FRAME
 FRAMES
 FREE FOR ALL
 FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next kill wins).
@@ -3078,6 +3082,8 @@ SYSTEM MESSAGES: IMPORTANT
 SYSTEM MESSAGES: OFF
 SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)
 SetDefaultDllDirectories
+SetProcessInformation
+SetThreadInformation
 Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).
 Start the match, change map / mode, ranked on / off, edit the map together, bots on. A majority of the human players decides.
 Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping. Above ~13 m/s A / D turns you faster than W alone.

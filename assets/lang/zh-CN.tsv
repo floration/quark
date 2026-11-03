@@ -324,6 +324,7 @@ AUDIO LATENCY: NORMAL	音频延迟: 正常
 AUDIO LATENCY: SAFE	音频延迟: 安全
 AUDIO OUTPUT	音频输出
 AUTO	自动
+AUTO (# US)	自动 (# US)
 AUTO LEARNS IT; MORE: FEWER GPU BUBBLES, MORE LAG	自动: 运行中调整; 更多: GPU 空泡更少, 延迟更高
 AUTO PORT FORWARD	自动端口转发
 AUTO RECONNECT	自动重连
@@ -1011,9 +1012,12 @@ FOV: HORIZONTAL AT 4:3	FOV: 4:3 水平
 FOV: VERTICAL	FOV: 垂直
 FPS	FPS
 FPS LIMIT	FPS 上限
+FPS LIMIT: WAKES THIS EARLY, THEN WAITS EXACTLY TO THE	FPS 上限: 提前这么多唤醒, 然后精确等到
 FPS MIN (1S)	FPS 最低 (1 秒)
+FRAME CAP OFFSET	帧率上限提前量
 FRAME CAP WAIT	帧率上限等待
 FRAME TIME OVER THE RUN	运行期间帧时间
+FRAME'S START: EVEN FRAMES; AUTO 5% OF THE FRAME	帧开始: 帧时间均匀; 自动为一帧的 5%
 FRAMES	帧
 FREE FOR ALL	自由混战
 FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next kill wins).	自由混战 - 时间结束时击杀最多者胜 (平局进入加时: 下一个击杀者胜)。
@@ -3078,6 +3082,8 @@ SYSTEM MESSAGES: IMPORTANT	系统消息: 重要
 SYSTEM MESSAGES: OFF	系统消息: 关
 SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)	系统: 系统箭头光标 (颜色: 仅限我们的)
 SetDefaultDllDirectories	SetDefaultDllDirectories
+SetProcessInformation	SetProcessInformation
+SetThreadInformation	SetThreadInformation
 Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).	设置 > 操作 可以导出你的绑定并导入他人的 (复制 / 粘贴文本)。
 Start the match, change map / mode, ranked on / off, edit the map together, bots on. A majority of the human players decides.	开始比赛, 更换地图 / 模式, 开关排位, 一起编辑地图, 开启机器人. 由多数真人玩家决定.
 Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping. Above ~13 m/s A / D turns you faster than W alone.	侧跳 (strafe-jumping) 可以加速: 按住侧移键, 同向转动鼠标, 并持续跳跃. 超过 ~13 m/s 时 A / D 比只按 W 转得更快.
