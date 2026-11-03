@@ -507,9 +507,9 @@ void Game::drawBenchResults(const SetLayout& L) {
     row("AVG FPS", fmt("%.1f", f.avgFps), fmt("%.1f", p.avgFps), {1.0f, 0.8f, 0.3f, 1});
     row("1% LOW", fmt("%.1f", f.low1), fmt("%.1f", p.low1), kWhite);
     row("0.1% LOW", fmt("%.1f", f.low01), fmt("%.1f", p.low01), kWhite);
-    row("MIN FPS (WORST FRAME)", fmt("%.1f", f.minFps) + fmt(" (%.2f MS)", f.worstMs), fmt("%.1f", p.minFps), kWhite);
-    row("STDEV", fmt("%.3f MS", f.stdevMs), fmt("%.3f MS", p.stdevMs), kWhite);
-    row("AVG FRAME", fmt("%.3f MS", f.avgMs), fmt("%.3f MS", p.avgMs), kWhite);
+    row("MIN FPS (WORST FRAME)", fmt("%.1f", f.minFps) + fmt(" (%.1f US)", f.worstMs * 1000.0), fmt("%.1f", p.minFps), kWhite);   // (us: at a 1000 cap the worst is 1.005 ms, "1.00 MS")
+    row("STDEV", fmt("%.1f US", f.stdevMs * 1000.0), fmt("%.1f US", p.stdevMs * 1000.0), kWhite);   // (us: a capped run's is under 1 us, "0.000 MS")
+    row("AVG FRAME", fmt("%.1f US", f.avgMs * 1000.0), fmt("%.1f US", p.avgMs * 1000.0), kWhite);
     row("FRAMES", std::to_string(f.frames) + fmt(" IN %.1f S", f.seconds), std::to_string(p.frames), kWhite);
     if (R.havePrev) ui_.hint(L.X(176), L.Y(y), "PREVIOUS: " + upperStr(p.name), kGrey, L.L(500));
     y = 380;

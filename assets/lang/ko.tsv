@@ -62,7 +62,7 @@
 ' (names as CONTROLS shows them: R, F5, MOUSE 4, WHEEL UP)	' (조작 설정에 표시된 이름: R, F5, MOUSE 4, WHEEL UP)
 ' - try: list	' - 시도: list
 ' has to wait until it's over	'은(는) 끝날 때까지 기다려야 함
-(# MS)	(# MS)
+(# US)	(# US)
 (# glyphs) in # ms	(# glyphs) in # ms
 (BROWSER VIDEOS, ELECTRON APPS WAIT)	(브라우저 영상, ELECTRON 앱은 대기)
 (BY DEFAULT ONLY THE SCOPES)	(기본값: 스코프만)

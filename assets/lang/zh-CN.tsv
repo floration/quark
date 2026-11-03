@@ -62,7 +62,7 @@
 ' (names as CONTROLS shows them: R, F5, MOUSE 4, WHEEL UP)	' (名称同操作设置中的显示: R, F5, MOUSE 4, WHEEL UP)
 ' - try: list	' - 试试: list
 ' has to wait until it's over	' 须等到结束
-(# MS)	(# MS)
+(# US)	(# US)
 (# glyphs) in # ms	(# glyphs) in # ms
 (BROWSER VIDEOS, ELECTRON APPS WAIT)	(浏览器视频、ELECTRON 应用会等待)
 (BY DEFAULT ONLY THE SCOPES)	(默认仅瞄准镜)

@@ -62,7 +62,7 @@
 ' (names as CONTROLS shows them: R, F5, MOUSE 4, WHEEL UP)	' (названия как в УПРАВЛЕНИИ: R, F5, MOUSE 4, WHEEL UP)
 ' - try: list	' - попробуйте: list
 ' has to wait until it's over	' придётся ждать окончания
-(# MS)	(# МС)
+(# US)	(# МКС)
 (# glyphs) in # ms	(# glyphs) in # ms
 (BROWSER VIDEOS, ELECTRON APPS WAIT)	(ВИДЕО В БРАУЗЕРЕ, ELECTRON-ПРИЛОЖЕНИЯ ЖДУТ)
 (BY DEFAULT ONLY THE SCOPES)	(ПО УМОЛЧАНИЮ ТОЛЬКО ПРИЦЕЛЫ)

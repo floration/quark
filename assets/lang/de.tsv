@@ -62,7 +62,7 @@
 ' (names as CONTROLS shows them: R, F5, MOUSE 4, WHEEL UP)	' (Namen wie in STEUERUNG: R, F5, MOUSE 4, WHEEL UP)
 ' - try: list	' - versuch: list
 ' has to wait until it's over	' muss warten, bis es vorbei ist
-(# MS)	(# MS)
+(# US)	(# US)
 (# glyphs) in # ms	(# glyphs) in # ms
 (BROWSER VIDEOS, ELECTRON APPS WAIT)	(BROWSER-VIDEOS, ELECTRON-APPS WARTEN)
 (BY DEFAULT ONLY THE SCOPES)	(STANDARD: NUR DIE SCOPES)

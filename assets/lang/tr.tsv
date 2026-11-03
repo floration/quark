@@ -62,7 +62,7 @@
 ' (names as CONTROLS shows them: R, F5, MOUSE 4, WHEEL UP)	' (adlar KONTROLLER'deki gibi: R, F5, MOUSE 4, WHEEL UP)
 ' - try: list	' - dene: list
 ' has to wait until it's over	' bitene kadar beklemeli
-(# MS)	(# MS)
+(# US)	(# US)
 (# glyphs) in # ms	(# glyphs) in # ms
 (BROWSER VIDEOS, ELECTRON APPS WAIT)	(TARAYICI VİDEOLARI, ELECTRON UYGULAMALARI BEKLER)
 (BY DEFAULT ONLY THE SCOPES)	(VARSAYILAN: SADECE DÜRBÜNLER)

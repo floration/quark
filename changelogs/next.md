@@ -28,7 +28,7 @@
 - **Slightly faster HUD, menus and server ticks:** rounding and square roots no longer call the C maths library.
 
 ## Latency
-- BENCHMARK results: the frame-time graph is now a line, zoomed so the run's fastest and slowest frames are its edges, with MIN, MAX and AVG shown in µs. Each frame's spread shows faintly behind the line.
+- BENCHMARK results: the frame-time graph is now a line, zoomed so the run's fastest and slowest frames are its edges, with MIN, MAX and AVG shown in µs. Each frame's spread shows faintly behind the line. STDEV, AVG FRAME and the worst frame are in µs too.
 - FPS LIMIT holds its rate much more evenly: the limiter used to wake up late now and then (a 1000 cap's 0.1% low was 589). It now learns how late your PC's timer wakes and spins the rest, so capped frames come out on time. While the game has focus, its main thread also runs at the highest priority, and Windows 11 can no longer throttle it onto an efficiency core.
 - New LATENCY setting, FRAME CAP OFFSET: with an FPS limit on, the game wakes this much early, does its network and GPU check, and then reads your mouse exactly on the beat, so small hold-ups no longer make a frame late. AUTO is 5% of a frame (50 µs at 1000). You can set it in µs or turn it OFF.
 - Fixed a tiny hitch twice a second while the mouse is captured: the game re-centred the cursor every half second even when it was already there.

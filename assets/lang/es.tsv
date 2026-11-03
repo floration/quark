@@ -62,7 +62,7 @@
 ' (names as CONTROLS shows them: R, F5, MOUSE 4, WHEEL UP)	' (nombres como los muestra CONTROLES: R, F5, MOUSE 4, WHEEL UP)
 ' - try: list	' - prueba: list
 ' has to wait until it's over	' tiene que esperar a que termine
-(# MS)	(# MS)
+(# US)	(# US)
 (# glyphs) in # ms	(# glyphs) in # ms
 (BROWSER VIDEOS, ELECTRON APPS WAIT)	(VÍDEOS DEL NAVEGADOR, APPS ELECTRON ESPERAN)
 (BY DEFAULT ONLY THE SCOPES)	(POR DEFECTO SOLO LAS MIRAS)
