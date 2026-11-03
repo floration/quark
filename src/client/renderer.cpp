@@ -2133,7 +2133,7 @@ void Renderer::uiTransform(size_t from, float px, float py, float k, float dx, f
         } else if (v.scaleInt || v.scaleFrac) {   // a glyph: its text scale (the outline's width follows it)
             const float sc = clampf((v.scaleInt + v.scaleFrac / 256.0f) * k, 1.0f / 256, 255);
             v.scaleInt = (uint8_t)sc;
-            v.scaleFrac = (uint8_t)std::min(255L, std::lround((sc - (float)v.scaleInt) * 256));
+            v.scaleFrac = (uint8_t)std::min(255.0f, uiRound((sc - (float)v.scaleInt) * 256));
         }
     }
 }
@@ -2235,7 +2235,7 @@ void Renderer::text(float x, float y, float s, const std::string& in, const Colo
     const float k = uiMetrics().fitScale, sk = s * k;
     float cx = x, cy = uiRound(y);
     float sc = clampf(sk, 1.0f / 256, 255);
-    uint8_t si = (uint8_t)sc, sf = (uint8_t)std::lround((sc - si) * 256 > 255 ? 255 : (sc - si) * 256);
+    uint8_t si = (uint8_t)sc, sf = (uint8_t)std::min(255.0f, uiRound((sc - si) * 256));   // (= lround, without the libm call)
     const float pad = kUiPad * sk, box = 8.0f * sk, top = cy + uiMetrics().fitShift * s, o = outlineUnits(sk);
     const TextMetrics& m = uiMetrics();
     const Rgba8 col = rgba8(c, alpha_);
@@ -2275,7 +2275,7 @@ void Renderer::textMono(float x, float y, float s, const std::string& str, const
     if (s < minScale_) s = minScale_;
     const float k = uiMetrics().fitScale;   // (the line-box fit, as text())
     float sc = clampf(s * k, 1.0f / 256, 255);
-    uint8_t si = (uint8_t)sc, sf = (uint8_t)std::lround((sc - si) * 256 > 255 ? 255 : (sc - si) * 256);
+    uint8_t si = (uint8_t)sc, sf = (uint8_t)std::min(255.0f, uiRound((sc - si) * 256));   // (= lround, without the libm call)
     const float pad = kUiPad * s * k, cy = uiRound(y) + uiMetrics().fitShift * s;
     const Rgba8 col = rgba8(c, alpha_);
     for (size_t i = 0; i < str.size(); i++) {
