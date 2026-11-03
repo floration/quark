@@ -14,6 +14,8 @@ Every change since 1.19.7, with what changed and why.
 
 ## Latency
 
+- **ULTRA's pacing loop polls the GPU fence every 10 µs instead of every 100 µs** (optimization thread's Tracy reading, 2026-11-03). Each step was already a spin, so this adds only non-blocking polls. Before, a GPU that finished mid-step was seen up to 100 µs late, the input read started that much later than it could, and the learnt GPU time (`ultraGpu_`) took in the delay too. The loop now has its own Tracy zone ("ultra: pace the input read", about 70-110 µs of every frame on the desktop).
+
 - **LATENCY tab** (owner, 2026-11-02: "actually make a latency settings tab and each tweak gets its own toggle, so i can test every combination myself"). `TAB_LATENCY` sits before SEARCH (8 tabs; `last_tab` clamps to 7). Each tweak that was tied to LOW LATENCY is now its own config key, so any combination can be measured:
   - `early_flush` (on): the two `glFlush()` calls of 1.19.7's early flush (after the shadow pass and after the world's draw calls).
   - `cpu_latch` (on): the CPU late latch, the mouse read again just before the world's draw calls (it still needs LOW LATENCY ON or ULTRA, which time the frame for it).
