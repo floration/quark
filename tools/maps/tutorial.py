@@ -14,10 +14,11 @@ from .prefabs import *
 
 # (id, inside length, ceiling): kLessons in src/game/tutorial.h, in order
 BAYS = [("move", 50, 12), ("strafe", 150, 12), ("dash", 50, 12), ("sidedash", 30, 12), ("super", 60, 12),
-        ("hyper", 60, 12), ("pop", 70, 20), ("chain", 180, 16), ("slide", 60, 12), ("bounce", 12, 12), ("grapple", 40, 18),
-        ("hookwalk", 80, 12), ("hookplayer", 50, 14), ("breakfree", 50, 12), ("rocketjump", 40, 24), ("rocketsuper", 110, 16),
-        ("rocketpop", 100, 60), ("launch", 160, 72), ("hookboost", 120, 16), ("stickyjump", 40, 24), ("stickystack", 30, 64),
-        ("rocketgrapple", 110, 16)]
+        ("hyper", 60, 12), ("pop", 70, 20), ("chain", 180, 16), ("slide", 60, 12), ("bounce", 12, 12),
+        ("rampdash", 40, 20), ("grapple", 40, 18), ("ceilhang", 40, 16), ("swing", 70, 16), ("hookwalk", 80, 12),
+        ("hookchain", 120, 16), ("hookplayer", 50, 14), ("breakfree", 50, 12), ("rocketjump", 40, 24),
+        ("fallbounce", 30, 28), ("rocketsuper", 110, 16), ("rocketpop", 100, 60), ("launch", 160, 72),
+        ("hookboost", 120, 16), ("stickyjump", 40, 24), ("stickystack", 30, 64), ("rocketgrapple", 110, 16)]
 WALL = 1.0      # between bays (kWall)
 HZ = 12.0       # half the width (kBayHalfZ)
 X0 = -90.0      # every bay's start wall, inside face (kBayX0)
@@ -26,6 +27,7 @@ GAP = (16, 25)  # the dash bay's lava gap (x into the bay; the check: G_GAP's au
 HURDLES = (15, 27)
 LEDGE_GRAPPLE = (18, 10.0)   # from x, height
 LEDGE_JUMP = (14, 8.0)
+RAMP = (18, 10.4)   # the ramp dash bay's ramp: from x (in), its height (a 60 degree face: tut::G_RAMP's aux)
 
 
 def bay_z(i):
@@ -83,6 +85,13 @@ def build():
             for d in HURDLES:
                 m.box(x0 + d, 0, z0, x0 + d + 0.4, 0.8, z1, mat="metal")
             m.box(x0 + 44, 0, z0, x0 + 45, 0.01, z1, mat="glow")   # the finish line
+        elif name == "swing":   # the pillar to swing round (tut::LessonDef::aimPoint: 32 m in, 1 m left of the middle)
+            m.box(x0 + 31.4, 0, zc - 1.6, x0 + 32.6, height, zc - 0.4, mat="metal")
+        elif name == "rampdash":   # the 60 degree ramp (tan 60: 1.73 up a metre along), 18 m in, onto a 10.4 m shelf
+            r0, r1, top = x0 + RAMP[0], x0 + RAMP[0] + RAMP[1] / 1.732, RAMP[1]
+            m.raw(f"wedge 0 0 {r0:g} 0 {z0:g} {r1:.3f} {top:g} {z1:g}")
+            m.box(r1, 0, z0, x1, top, z1)
+            m.box(r0 - 0.3, 0, z0, r0, 0.01, z1, mat="hazard")   # (where the ramp starts, striped)
         elif name in ("hookplayer", "breakfree"):   # the PARTNER's spot (tut::LessonDef::partnerIn): a glowing pad
             px = x0 + (30 if name == "hookplayer" else 34)
             m.box(px - 0.8, 0, zc - 0.8, px + 0.8, 0.01, zc + 0.8, mat="glow")

@@ -29,11 +29,16 @@ enum Lesson : int {
     L_CHAIN,        // super chaining: hypers chained off bhop landings
     L_SLIDE,        // the dash slide: dash down into the floor without jumping, ice's grip
     L_BOUNCE,       // the dash wall bounce: dash head on into a wall
+    L_RAMPDASH,     // the ramp dash: a dash into a steep (60 degree) slope carries on up its face
     L_GRAPPLE,      // the grapple: up onto a 10 m ledge
+    L_CEILHANG,     // the ceiling hang: hook the ceiling a little ahead and hold: you hang and swing under it
+    L_SWING,        // the swing turn: at speed, hook the pillar beside you and let go at its closest: you turn, keeping the speed
     L_HOOKWALK,     // grapple walking: hook the floor far ahead, dragged along it with no friction
+    L_HOOKCHAIN,    // the hook-start chain: grapple walk to 24, let go, hyper every landing: 29, 34, 35
     L_HOOKPLAYER,   // KEY TECH (q): grappling another player: the hook latches onto the PARTNER running across the bay
     L_BREAKFREE,    // KEY TECH (q): the PARTNER's grapple catches you (the ghost in the demo): a dash breaks free
     L_ROCKETJUMP,   // rocket jumping
+    L_FALLBOUNCE,   // the fall bounce: hold jump landing from a big fall: a 15.7 m/s hop and a dash charge back
     L_ROCKETSUPER,  // KEY TECH: a super, then a rocket straight down: past the dash's 32 m/s cap, along
     L_ROCKETPOP,    // KEY TECH: the pop with a rocket fired in the very input of the hyper: the launch with no grapple
     L_LAUNCH,       // KEY TECH (q): grapple to 24 m/s, then a rocket straight down and a hyper straight down
@@ -74,6 +79,10 @@ enum Goal : uint8_t {
     G_KNOCKUP,      // thrown up by your own blast (holding this lesson's weapon), then `target` m up or higher
     G_RIDE,         // riding a rocket on the grapple for `target` seconds
     G_LAUNCH,       // a hyper out of `aux` m/s or more, then thrown up by your own rocket, then `target` m up or higher
+    G_SWING,        // at `aux` m/s or more on a hook on the map, the heading turned `target` degrees, still at `aux` m/s
+    G_RAMP,         // on or over the ramp (x past `aux` m into the bay) `target` m up or higher, having dashed since the floor
+    G_HOPUP,        // a hop off a landing (ME_LAND + ME_JUMP, no dash) leaving at `target` m/s up or more
+    G_HANG,         // hooked to the map above you (the anchor 2 m or more over you), off the floor, `target` s in a row
     G_POP,          // a hyper out of `aux` m/s or more, then `target` m up or higher (no blast needed)
     G_KNOCKSPEED,   // thrown by your own blast (holding this lesson's weapon) since you left the floor, at `target` m/s level
     G_HOOKPLAYER,   // your grapple latched onto a player `target` times (MoveState::hookTarget 1 + their id)
@@ -94,6 +103,9 @@ struct LessonDef {
     const Seg* partner = nullptr;
     int partnerSegs = 0;
     float partnerIn = 0;
+    // what the ghost's kAimAt aims at in a lesson with no partner: a point of the bay (x in from its start wall, y up,
+    // z from its middle: the swing turn's pillar)
+    Vec3 aimPoint = {};
 };
 
 const LessonDef& lesson(int l);
@@ -109,6 +121,7 @@ UserCmd ghostCmd(int l, int tMs);
 // The PARTNER's (lessons with one: LessonDef::partner); yaw from facing -x
 UserCmd partnerCmd(int l, int tMs);
 Vec3 partnerStart(int l);
+Vec3 aimPoint(int l);   // (LessonDef::aimPoint in the world)
 constexpr float kPartnerYaw = PI * 0.5f;   // facing -x, back down the bay at you
 // Whether the ghost's (partner's) script aims at the other one at tMs (Seg pitch kAimAt), and the yaw / pitch that
 // aims from `eye` at `at`
@@ -126,7 +139,9 @@ struct Check {
     bool havePrev = false, dashed = false, hooked = false, knocked = false, armed = false, left = false, right = false;
     Vec3 prevVel;
     uint8_t prevBounces = 0;
-    bool prevOn = false;   // (G_HOOKPLAYER: latched onto a player last frame; G_BREAKFREE: held by one)
+    bool prevOn = false;
+    bool swinging = false;   // (G_SWING: on the hook at speed, turned from heading0, radians)
+    float heading0 = 0;   // (G_HOOKPLAYER: latched onto a player last frame; G_BREAKFREE: held by one)
     int count = 0;
     float timer = 0, still = 0, best = 0;
     void start(int l);

@@ -80,16 +80,30 @@ const Text kTexts[tut::L_COUNT] = {
     {"WALL BOUNCE", "DASH HEAD ON INTO A WALL: YOU BOUNCE BACK OFF IT AT 16 M/S.",
      {{"%s", {K_F, K_N, K_N}, "WALK TO THE STRIPED WALL"}, {nullptr, {K_N, K_N, K_N}, "FACE IT (WITHIN 45 DEGREES)"},
       {"%s", {K_D, K_N, K_N}, "DASH INTO IT"}}, 3, "2 BOUNCES"},
+    {"RAMP DASH", "DASH INTO A STEEP SLOPE: THE DASH CARRIES ON UP ITS FACE. WALKING, IT IS A WALL.",
+     {{"%s", {K_F, K_N, K_N}, "RUN AT THE RAMP"}, {"%s", {K_D, K_N, K_N}, "DASH INTO IT FROM A FEW METRES AWAY"},
+      {nullptr, {K_N, K_N, K_N}, "HEAD ON: THE DASH RUNS ON UP THE FACE AT ITS FULL 24 M/S"}}, 3, "5 M UP THE RAMP"},
     {"GRAPPLE", "THE HOOK PULLS YOU TO WHERE IT CATCHES. LET GO AND YOU KEEP THE SPEED.",
      {{nullptr, {K_N, K_N, K_N}, "AIM UP, OVER THE EDGE OF THE LEDGE"}, {"%s", {K_G, K_N, K_N}, "HOLD IT. IT PULLS YOU TO THE WALL AND UP"},
       {"%s", {K_F, K_N, K_N}, "ONCE ABOVE THE EDGE, LET GO OF THE GRAPPLE AND MOVE ONTO THE LEDGE"}}, 3, "STAND ON THE 10 M LEDGE"},
+    {"CEILING HANG", "HOOK THE CEILING A LITTLE AHEAD OF YOU AND HOLD: YOU HANG UNDER IT AND SWING.",
+     {{nullptr, {K_N, K_N, K_N}, "AIM UP AT THE CEILING, A FEW METRES AHEAD"}, {"%s", {K_G, K_N, K_N}, "HOLD IT"},
+      {nullptr, {K_N, K_N, K_N}, "STRAIGHT ABOVE YOU IT PULLS YOU IN AND LETS GO: HOOK MORE THAN 1 M TO THE SIDE"}}, 3, "HANG FOR 1.5 S"},
+    {"SWING TURN", "AT SPEED, HOOK A PILLAR BESIDE YOU: THE HOOK TURNS YOU ROUND IT AND YOU KEEP YOUR SPEED.",
+     {{"%s THEN %s", {K_D, K_J, K_N}, "A SUPER, AND KEEP HOPPING"}, {"%s", {K_G, K_N, K_N}, "AS THE PILLAR COMES UP BESIDE YOU, HOOK IT"},
+      {"%s", {K_G, K_N, K_N}, "LET GO AS YOU PASS IT: HELD ON, THE HOOK BRAKES YOU (24 TO 15 M/S)"}}, 3, "TURN 35 DEGREES AT 20 M/S OR MORE"},
     {"GRAPPLE WALKING", "HOOK THE FLOOR FAR AHEAD: IT DRAGS YOU ALONG WITH NO FRICTION, UP TO 24 M/S.",
      {{nullptr, {K_N, K_N, K_N}, "AIM JUST UNDER LEVEL, AT THE FLOOR FAR AHEAD"}, {"%s + %s", {K_G, K_F, K_N}, "HOLD BOTH"},
       {nullptr, {K_N, K_N, K_N}, "LET GO BEFORE YOU REACH THE HOOK"}}, 3, "16 M/S ALONG THE FLOOR"},
+    {"HOOK-START CHAIN", "GRAPPLE WALK TO 24 M/S, LET GO, THEN HYPER EVERY LANDING: 29, 34, 35 M/S IN ABOUT 2 S.",
+     {{"%s + %s", {K_G, K_F, K_N}, "GRAPPLE WALK UP TO 24 M/S"}, {"%s + %s + %s", {K_F, K_J, K_D}, "LET GO OF THE GRAPPLE AND HOLD ALL THREE"},
+      {nullptr, {K_N, K_N, K_N}, "AIM 15 DEGREES DOWN: EVERY LANDING IS A HYPER"},
+      {nullptr, {K_N, K_N, K_N}, "A HYPER ABOVE 36 M/S CAPS YOU DOWN: 35 IS THE TOP"}}, 4, "REACH 34 M/S"},
     {"GRAPPLE A PLAYER", "YOUR HOOK CATCHES PLAYERS TOO: IT PULLS YOU BOTH TOGETHER. CATCH THEM, OR DRAG THEM IN.",
      {{nullptr, {K_N, K_N, K_N}, "PUT YOUR CROSSHAIR ON THE PARTNER AS IT RUNS"},
       {"%s", {K_G, K_N, K_N}, "PRESS IT. THE HOOK LATCHES ON"},
-      {nullptr, {K_N, K_N, K_N}, "YOU FLY AT EACH OTHER, UP TO 24 M/S, FOR UP TO 3 S"}}, 3, "HOOK THE PARTNER"},
+      {nullptr, {K_N, K_N, K_N}, "YOU FLY AT EACH OTHER, UP TO 24 M/S, FOR UP TO 3 S"},
+      {nullptr, {K_N, K_N, K_N}, "AS THEY ARRIVE, SHOTGUN OR KNIFE THEM. YOUR DASH DOESN'T BREAK IT: THE PULL FOLLOWS YOU"}}, 4, "HOOK THE PARTNER"},
     {"DASH OUT OF A GRAPPLE", "WHEN SOMEONE HOOKS YOU, YOU ARE PULLED TO THEM. A DASH BREAKS FREE AT ONCE.",
      {{nullptr, {K_N, K_N, K_N}, "WAIT FOR THE PARTNER'S HOOK TO CATCH YOU"},
       {"%s", {K_D, K_N, K_N}, "DASH ANY WAY: THE PULL LETS GO"},
@@ -97,6 +111,9 @@ const Text kTexts[tut::L_COUNT] = {
     {"ROCKET JUMP", "YOUR OWN ROCKET THROWS YOU. HERE IT DOES NO DAMAGE.",
      {{nullptr, {K_N, K_N, K_N}, "AIM STRAIGHT DOWN"}, {"%s + %s", {K_J, K_FI, K_N}, "JUMP AND FIRE TOGETHER"},
       {"%s", {K_F, K_N, K_N}, "STEER ONTO THE LEDGE"}}, 3, "GET 7 M UP"},
+    {"FALL BOUNCE", "HOLD JUMP AS YOU LAND FROM A BIG FALL: YOU HOP UP AT 15.7 M/S AND GET A DASH CHARGE BACK.",
+     {{"%s + %s", {K_J, K_FI, K_N}, "A ROCKET JUMP STRAIGHT UP"}, {"%s", {K_J, K_N, K_N}, "KEEP HOLDING IT ALL THE WAY DOWN"},
+      {nullptr, {K_N, K_N, K_N}, "FROM 11.7 M UP OR MORE THE HOP IS THE BIGGEST, 15.7 M/S"}}, 3, "HOP 15 M/S UP OFF A LANDING"},
     {"ROCKET SUPER", "A SUPER, THEN A ROCKET STRAIGHT DOWN: ABOUT 33 M/S, PAST THE DASH'S 32 M/S CAP.",
      {{"%s THEN %s", {K_D, K_J, K_N}, "A SUPER"}, {"%s", {K_FI, K_N, K_N}, "A MOMENT LATER, AIM STRAIGHT DOWN AND FIRE"},
       {"%s", {K_J, K_N, K_N}, "HOLD IT TO HOP ON AND KEEP THE SPEED"},
@@ -287,9 +304,10 @@ void Game::tutorialFrame() {
     char b[64];
     switch (d.goal) {
         case tut::G_REACH: case tut::G_GAP: snprintf(b, sizeof b, "%.0f / %.0f M", c.value, d.target - tut::kStartIn); break;
-        case tut::G_SPEED: case tut::G_HOOKSPEED: case tut::G_KNOCKSPEED: snprintf(b, sizeof b, "%.1f / %.0f M/S", c.value, d.target); break;
+        case tut::G_SPEED: case tut::G_HOOKSPEED: case tut::G_KNOCKSPEED: case tut::G_HOPUP: snprintf(b, sizeof b, "%.1f / %.0f M/S", c.value, d.target); break;
+        case tut::G_SWING: snprintf(b, sizeof b, "%.0f / %.0f DEG", std::max(c.value, c.best), d.target); break;
         case tut::G_SIDEDASH: case tut::G_EVENTS: case tut::G_BOUNCES: case tut::G_HOOKPLAYER: case tut::G_BREAKFREE: snprintf(b, sizeof b, "%d / %.0f", c.count, d.target); break;
-        case tut::G_SLIDE: case tut::G_RIDE: snprintf(b, sizeof b, "%.1f / %.1f S", std::max(c.value, c.best), d.target); break;
+        case tut::G_SLIDE: case tut::G_RIDE: case tut::G_HANG: snprintf(b, sizeof b, "%.1f / %.1f S", std::max(c.value, c.best), d.target); break;
         default: snprintf(b, sizeof b, "%.1f / %.0f M", std::max(c.value, c.best), d.target); break;
     }
     tut_.readout = b;

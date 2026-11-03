@@ -156,18 +156,22 @@
 3D FLYING	3D 飛行
 3D STATIC: YOU CAN'T MOVE - LOOK AND SHOOT	3D 固定: 移動不可 - 狙って撃つ
 3D VAMP	3D ヴァンプ
+5 M UP THE RAMP	坂を 5 M 上がる
 5 MORE MINUTES	あと5分
 60 FPS	60 FPS
 A BURST OF 24 M/S THE WAY YOU MOVE. TWO CHARGES, EACH BACK IN 1.2 S.	移動方向へ 24 M/S の加速。チャージは 2 つ、それぞれ 1.2 S で回復。
 A DASH GOES THE WAY YOU MOVE, NOT THE WAY YOU LOOK.	ダッシュは視線ではなく移動方向へ進む。
 A DASH PRESSED THIS SOON BEFORE IT'S READY	使用可能になる直前に押したダッシュの受付時間
 A DROPPED CONNECTION TRIES AGAIN (3 TIMES)	切断時に再接続 (3回)
+A HYPER ABOVE 36 M/S CAPS YOU DOWN: 35 IS THE TOP	36 M/S 超のハイパーは速度を抑える: 35 が上限
 A MOMENT LATER, AIM STRAIGHT DOWN AND FIRE	少し後に真下を狙って撃つ
 A NEW CODE FROM /link RELINKS IT - unlink REMOVES IT	/link の新コードで再連携 - unlink で解除
 A PLAYER JOINED VIA	プレイヤーが参加 経由:
+A ROCKET JUMP STRAIGHT UP	真上へロケットジャンプ
 A SERVER	サーバー
 A SUPER	スーパー
 A SUPER FOR SPEED	スーパーで加速
+A SUPER, AND KEEP HOPPING	スーパーの後、跳ね続ける
 A SUPER, THEN A HYPER STRAIGHT DOWN AS YOU LAND: THE SUPER'S SPEED GOES UP, ABOUT 14 M.	スーパーの後、着地で真下へハイパー: スーパーの速度が上向きに、約 14 M。
 A SUPER, THEN A ROCKET STRAIGHT DOWN: ABOUT 33 M/S, PAST THE DASH'S 32 M/S CAP.	スーパーの後、真下へロケット: 約 33 M/S、ダッシュの上限 32 M/S を超える。
 A SUPER, THEN AIM STRAIGHT DOWN	スーパーの後、真下を狙う
@@ -196,6 +200,7 @@ ADVANCED	上級
 ADVANCED > BOT BRAIN: what your bots play: the built-in brain, or a .qbrain file from the bots folder in your data folder. A file that doesn't compile shows its error line and the bots play the built-in brain. Never in ranked.	上級 > ボットAI: ボットの戦い方: 内蔵AI、またはデータフォルダ内の bots フォルダにある .qbrain ファイル。コンパイルできないファイルはエラー行を表示し、ボットは内蔵AIで戦います。ランクでは使われません。
 AGAIN (R)	もう一度 (R)
 AHEAD	リード
+AIM 15 DEGREES DOWN: EVERY LANDING IS A HYPER	15 度下を狙う: 着地のたびにハイパー
 AIM A LITTLE DOWN	少し下を狙う
 AIM A LITTLE DOWN THE WHOLE WAY	ずっと少し下を狙う
 AIM AT THE FLOOR A FEW METRES AHEAD (15 DEGREES DOWN IS ENOUGH)	数メートル先の床を狙う (下に 15 度で十分)
@@ -206,6 +211,7 @@ AIM STRAIGHT DOWN AND FIRE A STICKY	真下を狙ってスティッキーを撃�
 AIM STRAIGHT DOWN AND FIRE THREE STICKIES	真下を狙ってスティッキーを 3 発撃つ
 AIM STRAIGHT DOWN WHILE YOU FLY	飛んでいる間に真下を狙う
 AIM TRAINER	エイムトレーナー
+AIM UP AT THE CEILING, A FEW METRES AHEAD	数メートル前の天井を狙う
 AIM UP, OVER THE EDGE OF THE LEDGE	上、足場の縁の上を狙う
 AIM: A LITTLE DOWN	照準: 少し下
 AIM: AT THE PARTNER	照準: PARTNER
@@ -255,12 +261,15 @@ ARC TIME	アークの時間
 ARM	腕
 ARROW (NUDGE)	矢印キー (微調整)
 ARROWS / PGUP / PGDN: MOVE BY GRID (ALONG YOUR VIEW)	矢印 / PGUP / PGDN: グリッド単位で移動 (視点方向)
+AS THE PILLAR COMES UP BESIDE YOU, HOOK IT	柱が横に来たらフックを掛ける
+AS THEY ARRIVE, SHOTGUN OR KNIFE THEM. YOUR DASH DOESN'T BREAK IT: THE PULL FOLLOWS YOU	到着したらショットガンかナイフ。自分のダッシュでは外れない: 引っ張りが追ってくる
 AS THICK	同じ太さ
 ASIDE: A FRAME LESS LAG IN A WINDOW	補足: ウィンドウで1フレーム遅延減
 ASK "SURE?" FIRST: CLICK AGAIN	先に確認: もう一度クリック
 ASSUMED	推定
 AT # # #	位置 # # #
 AT CAMERA	カメラ位置
+AT SPEED, HOOK A PILLAR BESIDE YOU: THE HOOK TURNS YOU ROUND IT AND YOU KEEP YOUR SPEED.	速度に乗って横の柱にフック: 柱を回るように曲がり、速度は保たれる。
 ATTACK + RACE	攻撃 + レース
 ATTACK - PLANT THE BOMB	攻撃 - 爆弾を設置
 ATTACK: CARRY THE BOMB TO A SITE AND PLANT IT	攻撃: 爆弾をサイトに運んで設置
@@ -434,6 +443,7 @@ CAPTIONS: THE ANNOUNCER AS TEXT TOO	字幕: アナウンサーをテキストで
 CAPTURE	占拠
 CAPTURE THE HILL	ヒルを占拠
 CART	カート
+CEILING HANG	天井ぶら下がり
 CHAMPION	チャンピオン
 CHANGE ANYTHING AFTER (IT STAYS)	後から自由に変更可 (保持されます)
 CHANGE MAP / MODE	マップ / モード変更
@@ -645,7 +655,9 @@ DASH EXIT SPEED (MAX)	ダッシュ終了速度 (最大)
 DASH EXIT SPEED (MIN)	ダッシュ終了速度 (最小)
 DASH HEAD ON INTO A WALL: YOU BOUNCE BACK OFF IT AT 16 M/S.	壁に正面からダッシュ: 16 M/S で跳ね返る。
 DASH IN THE AIR TO CROSS THE LAVA	空中でダッシュして溶岩を越える
+DASH INTO A STEEP SLOPE: THE DASH CARRIES ON UP ITS FACE. WALKING, IT IS A WALL.	急斜面へダッシュ: ダッシュが面を駆け上がる。歩きでは壁。
 DASH INTO IT	そこへダッシュ
+DASH INTO IT FROM A FEW METRES AWAY	数メートル手前からダッシュで突っ込む
 DASH JUMP WINDOW	ダッシュジャンプ猶予
 DASH JUST BEFORE YOU LAND, AND DON'T JUMP	着地の直前にダッシュ、ジャンプはしない
 DASH LEFT	左へダッシュ
@@ -852,6 +864,7 @@ FACING (Q E)	向き (Q E)
 FADE DISTANCE	フェード距離
 FADE LENGTH	フェード長
 FAIRNESS: DEFAULT MODEL, HUD, CONTROLS, 10 MS INTERP	公平性: デフォルトのモデル、HUD、操作、10 MS補間
+FALL BOUNCE	落下バウンス
 FAR SCENERY	遠景
 FAST FLY	高速飛行
 FASTER MOVES TURN FURTHER (AT MOST X4)	速く動かすほど大きく回転 (最大X4)
@@ -925,6 +938,7 @@ FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next 
 FRIENDS JOIN WITH YOUR PUBLIC IP (STREAMER MODE)	フレンドはグローバルIPで参加 (配信者モード)
 FRIENDS JOIN WITH YOUR PUBLIC IP:	フレンドはグローバルIPで参加:
 FROM	から
+FROM 11.7 M UP OR MORE THE HOP IS THE BIGGEST, 15.7 M/S	11.7 M 以上からなら最大の 15.7 M/S
 FROM: APEX LEGENDS	元: APEX LEGENDS
 FROM: CALL OF DUTY	元: CALL OF DUTY
 FROM: CS2 / CS:GO	元: CS2 / CS:GO
@@ -1011,6 +1025,7 @@ GRAPPLE RANGE	グラップル射程
 GRAPPLE RELEASE DISTANCE	グラップル解除距離
 GRAPPLE TO 24 M/S, THEN A ROCKET AND A HYPER STRAIGHT DOWN: YOU FLY, CHEAP AND FAST.	グラップルで 24 M/S、そして真下へロケットとハイパー: 安く速く飛べる。
 GRAPPLE TOP SPEED	グラップル最高速度
+GRAPPLE WALK TO 24 M/S, LET GO, THEN HYPER EVERY LANDING: 29, 34, 35 M/S IN ABOUT 2 S.	グラップル歩きで 24 M/S、離して着地ごとにハイパー: 約 2 S で 29、34、35 M/S。
 GRAPPLE WALK UP TO 24 M/S	グラップル歩きで 24 M/S まで
 GRAPPLE WALKING	グラップル歩き
 GRAPPLE WALKING AT 24 M/S, FIRE A ROCKET STRAIGHT DOWN WHILE STILL HOOKED: ABOUT 40 M/S ALONG.	24 M/S のグラップル歩きで、フックしたまま真下へロケット: 前へ約 40 M/S。
@@ -1049,10 +1064,12 @@ HANA	HANA
 HAND	手
 HAND: LEFT	手: 左
 HAND: RIGHT	手: 右
+HANG FOR 1.5 S	1.5 S ぶら下がる
 HARD BOTS	ハードボット
 HARD TO TELL APART WITH	見分けにくい色覚:
 HAS NO BINDS	割り当てなし
 HAS NO WIDGETS	ウィジェットなし
+HEAD ON: THE DASH RUNS ON UP THE FACE AT ITS FULL 24 M/S	正面から: ダッシュはそのまま 24 M/S で面を上る
 HEADSHOT	ヘッドショット
 HEADSHOT HIT	ヘッドショットヒット
 HEADSHOTS STAY RED, BIG HITS GOLD	ヘッドショットは赤、大ダメージは金
@@ -1116,15 +1133,19 @@ HOLD IT	押し続ける
 HOLD IT TO HOP ON AND KEEP THE SPEED	押し続けて跳ね続け、速度を保つ
 HOLD IT. IT PULLS YOU TO THE WALL AND UP	押し続ける。壁へ、そして上へ引っ張られる
 HOLD IT. YOU HOP AGAIN EVERY TIME YOU LAND	押し続ける。着地のたびにまた跳ぶ
+HOLD JUMP AS YOU LAND FROM A BIG FALL: YOU HOP UP AT 15.7 M/S AND GET A DASH CHARGE BACK.	大きく落ちて着地するときジャンプを押す: 15.7 M/S で跳ね上がり、ダッシュが 1 回戻る。
 HOLDING THE HILL	ヒル確保中
 HOME	HOME
 HOOK	フック
 HOOK BOOST	フックブースト
 HOOK CAPTION	フックのキャプション
+HOOK THE CEILING A LITTLE AHEAD OF YOU AND HOLD: YOU HANG UNDER IT AND SWING.	少し前の天井にフックして押し続ける: その下にぶら下がって揺れる。
 HOOK THE FLOOR FAR AHEAD: IT DRAGS YOU ALONG WITH NO FRICTION, UP TO 24 M/S.	遠くの床にフックを掛ける: 摩擦なしで引きずられ、最大 24 M/S。
 HOOK THE PARTNER	PARTNER にフックを掛ける
+HOOK-START CHAIN	フックスタートチェイン
 HOOKED	フック中
 HOOKING SOMETHING YOURSELF BREAKS FREE TOO	自分で何かにフックしても脱出できる
+HOP 15 M/S UP OFF A LANDING	着地から 15 M/S で跳ねる
 HOST	ホスト
 HOST EDIT SESSION	編集セッションをホスト
 HOST EDIT SESSION: friends join and build with you; everyone's camera shows in the view.	編集セッションをホスト: フレンドが参加して一緒に制作; 全員のカメラが画面に表示されます。
@@ -1241,6 +1262,7 @@ JUNE	JUNE
 KAI	KAI
 KB; OFF: A SERVER'S	KB; オフ: サーバーの
 KEEP	保持
+KEEP HOLDING IT ALL THE WAY DOWN	落ちる間ずっと押し続ける
 KEEP HOLDING IT TO RIDE	押し続けて乗り続ける
 KEEP THESE DISPLAY SETTINGS? REVERTING IN	このディスプレイ設定を保持しますか? 元に戻るまで
 KEEP YOUR EDITS AS A NEW MAP?	編集を新しいマップとして保存しますか?
@@ -1333,7 +1355,9 @@ LESSON DONE	レッスン完了
 LESSONS	レッスン
 LET	LET
 LET GO 40 TO 80 MS LATER: HELD ON, THE HOOK PULLS YOU BACK	40〜80 MS 後に離す: 押したままだとフックに引き戻される
+LET GO AS YOU PASS IT: HELD ON, THE HOOK BRAKES YOU (24 TO 15 M/S)	通り過ぎたら離す: 押したままだとフックが減速させる (24 から 15 M/S)
 LET GO BEFORE YOU REACH THE HOOK	フックに着く前に離す
+LET GO OF THE GRAPPLE AND HOLD ALL THREE	グラップルを離して 3 つとも押し続ける
 LG	LG
 LIBREQUAKE 8X8	LIBREQUAKE 8X8
 LIGHT	ライト
@@ -2421,6 +2445,7 @@ RADAR RANGE	レーダー範囲
 RADAR: TEAMMATES AND OBJECTIVES, NEVER ENEMIES	レーダー: 味方と目標のみ、敵は表示しない
 RADIUS	半径
 RAILYARD / DAM / EXPRESS / MONORAIL - neutral payload (Railyard: payload too).   WAR / CONVOY - multi point.	RAILYARD / DAM / EXPRESS / MONORAIL - ニュートラルペイロード (Railyard: ペイロードも)。   WAR / CONVOY - マルチポイント。
+RAMP DASH	坂ダッシュ
 RAMPAGE	ランペイジ
 RANKED	ランク
 RANKED - CHOOSE A LADDER	ランク - ラダーを選択
@@ -2448,6 +2473,7 @@ RAW INPUT	RAW入力
 RD	RD
 REACH 12 M/S WITH NO DASH OR GRAPPLE	ダッシュもグラップルも使わず 12 M/S に到達
 REACH 27 M/S	27 M/S に到達
+REACH 34 M/S	34 M/S に到達
 REACH 37 M/S	37 M/S に到達
 REACH THE GLOWING LINE	光るラインに到達
 READ INPUT	入力読取
@@ -2566,6 +2592,7 @@ RUN	逃げろ
 RUN - DON'T BE THE TAGGER WHEN TIME RUNS OUT	逃げろ - 時間切れ時に鬼にならないように
 RUN AGAIN	もう一度実行
 RUN AT THE GAP	穴に向かって走る
+RUN AT THE RAMP	坂に向かって走る
 RUN BENCHMARK	ベンチマーク実行
 RUN FORWARD	前へ走る
 RUN NAME	ラン名
@@ -2824,6 +2851,7 @@ STOP RECORDING	録画を停止
 STOP THE PAYLOAD	ペイロードを止めろ
 STOPPING SPEED	停止速度
 STRAFE BOOST (AT SPEED)	ストレイフブースト (高速時)
+STRAIGHT ABOVE YOU IT PULLS YOU IN AND LETS GO: HOOK MORE THAN 1 M TO THE SIDE	真上だと引き寄せて外れる: 1 M 以上横にフック
 STREAK	連続キル
 STREAK CALLOUTS	連続キルのコール
 STREAK CALLOUTS: ALL	連続キルのコール: すべて
@@ -2858,6 +2886,7 @@ SURFACES	表面
 SW	SW
 SWAP	入れ替え
 SWAP FIRE	射撃ボタン入れ替え
+SWING TURN	スイングターン
 SYRINGE	注射器
 SYSTEM DEFAULT	システムデフォルト
 SYSTEM LINE COLOR	システム行の色
@@ -3064,6 +3093,7 @@ TRAINER MENU	トレーナーメニュー
 TRIAL MAP	タイムアタックマップ
 TRY IT NOW	今すぐ挑戦
 TT	TT
+TURN 35 DEGREES AT 20 M/S OR MORE	20 M/S 以上で 35 度曲がる
 TURNING LEFT	左へ回転中
 TURNING RIGHT	右へ回転中
 TUTORIAL	チュートリアル

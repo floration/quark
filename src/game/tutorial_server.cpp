@@ -115,7 +115,10 @@ UserCmd Server::tutorialGhostCmd(int id) {
     const int64_t t = (int64_t)timeMs_ - (int64_t)tutEpoch_;
     const int tl = t < 0 ? -1 : (int)(t % std::max(1, tut::loopMs(tutLesson_)));
     UserCmd c = tut::ghostCmd(tutLesson_, tl);
-    if (tut::ghostAimsAt(tutLesson_, tl)) aimCmd(*this, id, tutPartner_, c);
+    if (tut::ghostAimsAt(tutLesson_, tl)) {
+        if (tut::lesson(tutLesson_).partner) aimCmd(*this, id, tutPartner_, c);
+        else tut::aimAt(players_[id].move.pos + Vec3(0, kEyeHeight, 0), tut::aimPoint(tutLesson_), c.yaw, c.pitch);   // (the swing's pillar)
+    }
     return c;
 }
 

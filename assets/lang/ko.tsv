@@ -156,18 +156,22 @@
 3D FLYING	3D 비행
 3D STATIC: YOU CAN'T MOVE - LOOK AND SHOOT	3D 고정: 이동 불가 - 조준하고 사격
 3D VAMP	3D 뱀프
+5 M UP THE RAMP	경사로 5 M 오르기
 5 MORE MINUTES	5분 더
 60 FPS	60 FPS
 A BURST OF 24 M/S THE WAY YOU MOVE. TWO CHARGES, EACH BACK IN 1.2 S.	이동 방향으로 24 M/S 돌진. 충전 2회, 각각 1.2 S 후 회복.
 A DASH GOES THE WAY YOU MOVE, NOT THE WAY YOU LOOK.	대시는 보는 방향이 아니라 움직이는 방향으로 나간다.
 A DASH PRESSED THIS SOON BEFORE IT'S READY	준비되기 이만큼 전에 누른 대시 입력 인정
 A DROPPED CONNECTION TRIES AGAIN (3 TIMES)	연결 끊김 시 재시도 (3회)
+A HYPER ABOVE 36 M/S CAPS YOU DOWN: 35 IS THE TOP	36 M/S 이상에서 하이퍼는 속도를 깎는다: 35가 최고
 A MOMENT LATER, AIM STRAIGHT DOWN AND FIRE	잠시 뒤 바로 아래를 조준하고 발사
 A NEW CODE FROM /link RELINKS IT - unlink REMOVES IT	/link의 새 코드로 재연결 - unlink로 해제
 A PLAYER JOINED VIA	플레이어 참가 경로:
+A ROCKET JUMP STRAIGHT UP	바로 위로 로켓 점프
 A SERVER	서버
 A SUPER	슈퍼
 A SUPER FOR SPEED	슈퍼로 속도 내기
+A SUPER, AND KEEP HOPPING	슈퍼 후 계속 뛰기
 A SUPER, THEN A HYPER STRAIGHT DOWN AS YOU LAND: THE SUPER'S SPEED GOES UP, ABOUT 14 M.	슈퍼 후 착지하며 바로 아래로 하이퍼: 슈퍼의 속도가 위로, 약 14 M.
 A SUPER, THEN A ROCKET STRAIGHT DOWN: ABOUT 33 M/S, PAST THE DASH'S 32 M/S CAP.	슈퍼 후 바로 아래로 로켓: 약 33 M/S, 대시 상한 32 M/S를 넘는다.
 A SUPER, THEN AIM STRAIGHT DOWN	슈퍼 후 바로 아래를 조준
@@ -196,6 +200,7 @@ ADVANCED	상급
 ADVANCED > BOT BRAIN: what your bots play: the built-in brain, or a .qbrain file from the bots folder in your data folder. A file that doesn't compile shows its error line and the bots play the built-in brain. Never in ranked.	상급 > 봇 AI: 봇의 플레이 방식: 내장 AI 또는 데이터 폴더의 bots 폴더에 있는 .qbrain 파일. 컴파일되지 않는 파일은 오류 줄을 표시하고 봇은 내장 AI로 플레이합니다. 랭크에서는 사용하지 않습니다.
 AGAIN (R)	다시 (R)
 AHEAD	앞섬
+AIM 15 DEGREES DOWN: EVERY LANDING IS A HYPER	15도 아래 조준: 착지마다 하이퍼
 AIM A LITTLE DOWN	약간 아래를 조준
 AIM A LITTLE DOWN THE WHOLE WAY	계속 약간 아래를 조준
 AIM AT THE FLOOR A FEW METRES AHEAD (15 DEGREES DOWN IS ENOUGH)	몇 미터 앞 바닥을 조준 (아래로 15도면 충분)
@@ -206,6 +211,7 @@ AIM STRAIGHT DOWN AND FIRE A STICKY	바로 아래를 조준하고 점착탄 발�
 AIM STRAIGHT DOWN AND FIRE THREE STICKIES	바로 아래를 조준하고 스티키를 3발 쏜다
 AIM STRAIGHT DOWN WHILE YOU FLY	날아가는 동안 바로 아래를 조준
 AIM TRAINER	에임 트레이너
+AIM UP AT THE CEILING, A FEW METRES AHEAD	몇 미터 앞 천장을 조준
 AIM UP, OVER THE EDGE OF THE LEDGE	위로, 턱 가장자리 너머를 조준
 AIM: A LITTLE DOWN	조준: 약간 아래
 AIM: AT THE PARTNER	조준: PARTNER
@@ -255,12 +261,15 @@ ARC TIME	호 시간
 ARM	설치
 ARROW (NUDGE)	화살표 (미세 이동)
 ARROWS / PGUP / PGDN: MOVE BY GRID (ALONG YOUR VIEW)	화살표 / PGUP / PGDN: 그리드 단위 이동 (시점 방향)
+AS THE PILLAR COMES UP BESIDE YOU, HOOK IT	기둥이 옆에 오면 갈고리를 건다
+AS THEY ARRIVE, SHOTGUN OR KNIFE THEM. YOUR DASH DOESN'T BREAK IT: THE PULL FOLLOWS YOU	도착하면 샷건이나 칼. 내 대시로는 안 풀린다: 끌어당김이 따라온다
 AS THICK	같은 두께
 ASIDE: A FRAME LESS LAG IN A WINDOW	참고: 창 모드에서 1프레임 지연 감소
 ASK "SURE?" FIRST: CLICK AGAIN	"확실합니까?" 먼저 묻기: 다시 클릭
 ASSUMED	가정
 AT # # #	위치 # # #
 AT CAMERA	카메라 위치
+AT SPEED, HOOK A PILLAR BESIDE YOU: THE HOOK TURNS YOU ROUND IT AND YOU KEEP YOUR SPEED.	속도를 낸 채 옆 기둥에 갈고리: 기둥을 돌며 방향을 틀고 속도는 유지된다.
 ATTACK + RACE	공격 + 레이스
 ATTACK - PLANT THE BOMB	공격 - 폭탄 설치
 ATTACK: CARRY THE BOMB TO A SITE AND PLANT IT	공격: 폭탄을 지점으로 옮겨 설치
@@ -434,6 +443,7 @@ CAPTIONS: THE ANNOUNCER AS TEXT TOO	자막: 아나운서 음성도 텍스트로
 CAPTURE	점령
 CAPTURE THE HILL	언덕 점령
 CART	화물
+CEILING HANG	천장 매달리기
 CHAMPION	챔피언
 CHANGE ANYTHING AFTER (IT STAYS)	이후 무엇이든 변경 (유지됨)
 CHANGE MAP / MODE	맵 / 모드 변경
@@ -645,7 +655,9 @@ DASH EXIT SPEED (MAX)	대시 종료 속도 (최대)
 DASH EXIT SPEED (MIN)	대시 종료 속도 (최소)
 DASH HEAD ON INTO A WALL: YOU BOUNCE BACK OFF IT AT 16 M/S.	벽에 정면으로 대시: 16 M/S로 튕겨 나온다.
 DASH IN THE AIR TO CROSS THE LAVA	공중에서 대시해 용암을 건넌다
+DASH INTO A STEEP SLOPE: THE DASH CARRIES ON UP ITS FACE. WALKING, IT IS A WALL.	가파른 경사면으로 대시: 대시가 면을 타고 올라간다. 걸어서는 벽.
 DASH INTO IT	그쪽으로 대시
+DASH INTO IT FROM A FEW METRES AWAY	몇 미터 앞에서 대시로 들이받기
 DASH JUMP WINDOW	대시 점프 허용 시간
 DASH JUST BEFORE YOU LAND, AND DON'T JUMP	착지 직전에 대시, 점프는 하지 않기
 DASH LEFT	왼쪽으로 대시
@@ -852,6 +864,7 @@ FACING (Q E)	방향 (Q E)
 FADE DISTANCE	페이드 거리
 FADE LENGTH	페이드 길이
 FAIRNESS: DEFAULT MODEL, HUD, CONTROLS, 10 MS INTERP	공정성: 기본 모델, HUD, 조작, 10 MS 보간
+FALL BOUNCE	낙하 바운스
 FAR SCENERY	원경
 FAST FLY	빠른 비행
 FASTER MOVES TURN FURTHER (AT MOST X4)	빠르게 움직일수록 더 많이 회전 (최대 X4)
@@ -925,6 +938,7 @@ FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next 
 FRIENDS JOIN WITH YOUR PUBLIC IP (STREAMER MODE)	친구는 공인 IP로 참가 (스트리머 모드)
 FRIENDS JOIN WITH YOUR PUBLIC IP:	친구는 공인 IP로 참가:
 FROM	출처
+FROM 11.7 M UP OR MORE THE HOP IS THE BIGGEST, 15.7 M/S	11.7 M 이상에서 떨어지면 최대 15.7 M/S
 FROM: APEX LEGENDS	출처: APEX LEGENDS
 FROM: CALL OF DUTY	출처: CALL OF DUTY
 FROM: CS2 / CS:GO	출처: CS2 / CS:GO
@@ -1011,6 +1025,7 @@ GRAPPLE RANGE	그래플 사거리
 GRAPPLE RELEASE DISTANCE	그래플 해제 거리
 GRAPPLE TO 24 M/S, THEN A ROCKET AND A HYPER STRAIGHT DOWN: YOU FLY, CHEAP AND FAST.	그래플로 24 M/S, 그다음 바로 아래로 로켓과 하이퍼: 싸고 빠르게 날아간다.
 GRAPPLE TOP SPEED	그래플 최고 속도
+GRAPPLE WALK TO 24 M/S, LET GO, THEN HYPER EVERY LANDING: 29, 34, 35 M/S IN ABOUT 2 S.	갈고리 걷기로 24 M/S, 놓고 착지마다 하이퍼: 약 2 S에 29, 34, 35 M/S.
 GRAPPLE WALK UP TO 24 M/S	그래플 워킹으로 24 M/S까지
 GRAPPLE WALKING	그래플 워킹
 GRAPPLE WALKING AT 24 M/S, FIRE A ROCKET STRAIGHT DOWN WHILE STILL HOOKED: ABOUT 40 M/S ALONG.	24 M/S로 갈고리 걷기 중, 걸린 채로 바로 아래로 로켓: 앞으로 약 40 M/S.
@@ -1049,10 +1064,12 @@ HANA	HANA
 HAND	손
 HAND: LEFT	손: 왼쪽
 HAND: RIGHT	손: 오른쪽
+HANG FOR 1.5 S	1.5 S 매달리기
 HARD BOTS	어려움 봇
 HARD TO TELL APART WITH	구분하기 어려운 색:
 HAS NO BINDS	키 지정 없음
 HAS NO WIDGETS	위젯 없음
+HEAD ON: THE DASH RUNS ON UP THE FACE AT ITS FULL 24 M/S	정면으로: 대시가 24 M/S 그대로 면을 오른다
 HEADSHOT	헤드샷
 HEADSHOT HIT	헤드샷 적중
 HEADSHOTS STAY RED, BIG HITS GOLD	헤드샷은 빨강, 큰 피해는 금색 유지
@@ -1116,15 +1133,19 @@ HOLD IT	누르고 있기
 HOLD IT TO HOP ON AND KEEP THE SPEED	계속 눌러 뛰어가며 속도 유지
 HOLD IT. IT PULLS YOU TO THE WALL AND UP	누르고 있기. 벽으로, 그리고 위로 끌려간다
 HOLD IT. YOU HOP AGAIN EVERY TIME YOU LAND	누르고 있기. 착지할 때마다 다시 뛴다
+HOLD JUMP AS YOU LAND FROM A BIG FALL: YOU HOP UP AT 15.7 M/S AND GET A DASH CHARGE BACK.	높이서 떨어져 착지할 때 점프 유지: 15.7 M/S로 튀어 오르고 대시 1회가 돌아온다.
 HOLDING THE HILL	언덕 점령 중
 HOME	HOME
 HOOK	훅
 HOOK BOOST	훅 부스트
 HOOK CAPTION	훅 설명
+HOOK THE CEILING A LITTLE AHEAD OF YOU AND HOLD: YOU HANG UNDER IT AND SWING.	조금 앞 천장에 갈고리를 걸고 유지: 그 아래 매달려 흔들린다.
 HOOK THE FLOOR FAR AHEAD: IT DRAGS YOU ALONG WITH NO FRICTION, UP TO 24 M/S.	멀리 앞 바닥에 갈고리를 건다: 마찰 없이 끌려가며 최대 24 M/S.
 HOOK THE PARTNER	PARTNER에게 갈고리 걸기
+HOOK-START CHAIN	훅 스타트 체인
 HOOKED	걸림
 HOOKING SOMETHING YOURSELF BREAKS FREE TOO	직접 무언가에 갈고리를 걸어도 풀려난다
+HOP 15 M/S UP OFF A LANDING	착지에서 15 M/S로 튀어 오르기
 HOST	호스트
 HOST EDIT SESSION	편집 세션 호스트
 HOST EDIT SESSION: friends join and build with you; everyone's camera shows in the view.	편집 세션 호스트: 친구가 참가해 함께 제작합니다; 모두의 카메라가 화면에 표시됩니다.
@@ -1241,6 +1262,7 @@ JUNE	JUNE
 KAI	KAI
 KB; OFF: A SERVER'S	KB; 끄기: 서버의
 KEEP	유지
+KEEP HOLDING IT ALL THE WAY DOWN	떨어지는 내내 누르고 있기
 KEEP HOLDING IT TO RIDE	계속 누르고 있으면 타고 간다
 KEEP THESE DISPLAY SETTINGS? REVERTING IN	이 화면 설정을 유지할까요? 되돌리기까지
 KEEP YOUR EDITS AS A NEW MAP?	편집 내용을 새 맵으로 저장할까요?
@@ -1333,7 +1355,9 @@ LESSON DONE	레슨 완료
 LESSONS	레슨
 LET	허용
 LET GO 40 TO 80 MS LATER: HELD ON, THE HOOK PULLS YOU BACK	40~80 MS 뒤에 놓기: 계속 잡고 있으면 갈고리가 되당긴다
+LET GO AS YOU PASS IT: HELD ON, THE HOOK BRAKES YOU (24 TO 15 M/S)	지나칠 때 놓기: 계속 잡으면 갈고리가 감속시킨다 (24에서 15 M/S)
 LET GO BEFORE YOU REACH THE HOOK	갈고리에 닿기 전에 놓기
+LET GO OF THE GRAPPLE AND HOLD ALL THREE	갈고리를 놓고 셋 다 누르기
 LG	LG
 LIBREQUAKE 8X8	LIBREQUAKE 8X8
 LIGHT	조명
@@ -2421,6 +2445,7 @@ RADAR RANGE	레이더 범위
 RADAR: TEAMMATES AND OBJECTIVES, NEVER ENEMIES	레이더: 팀원과 목표만, 적은 표시 안 함
 RADIUS	반경
 RAILYARD / DAM / EXPRESS / MONORAIL - neutral payload (Railyard: payload too).   WAR / CONVOY - multi point.	RAILYARD / DAM / EXPRESS / MONORAIL - 중립 화물 (Railyard: 화물도 가능).   WAR / CONVOY - 멀티 포인트.
+RAMP DASH	경사로 대시
 RAMPAGE	광란
 RANKED	랭크
 RANKED - CHOOSE A LADDER	랭크 - 래더 선택
@@ -2448,6 +2473,7 @@ RAW INPUT	RAW INPUT
 RD	RD
 REACH 12 M/S WITH NO DASH OR GRAPPLE	대시나 그래플 없이 12 M/S 달성
 REACH 27 M/S	27 M/S 달성
+REACH 34 M/S	34 M/S 도달
 REACH 37 M/S	37 M/S 도달
 REACH THE GLOWING LINE	빛나는 선에 도달
 READ INPUT	입력 읽기
@@ -2566,6 +2592,7 @@ RUN	도망
 RUN - DON'T BE THE TAGGER WHEN TIME RUNS OUT	도망 - 시간이 끝날 때 술래가 되지 마세요
 RUN AGAIN	다시 실행
 RUN AT THE GAP	틈을 향해 달리기
+RUN AT THE RAMP	경사로를 향해 달린다
 RUN BENCHMARK	벤치마크 실행
 RUN FORWARD	앞으로 달리기
 RUN NAME	기록 이름
@@ -2824,6 +2851,7 @@ STOP RECORDING	녹화 중지
 STOP THE PAYLOAD	화물 저지
 STOPPING SPEED	정지 속도
 STRAFE BOOST (AT SPEED)	스트레이프 부스트 (고속 시)
+STRAIGHT ABOVE YOU IT PULLS YOU IN AND LETS GO: HOOK MORE THAN 1 M TO THE SIDE	바로 위면 끌어당긴 뒤 풀린다: 옆으로 1 M 넘게 떨어진 곳에
 STREAK	연속 처치
 STREAK CALLOUTS	연속 처치 안내
 STREAK CALLOUTS: ALL	연속 처치 안내: 전체
@@ -2858,6 +2886,7 @@ SURFACES	표면
 SW	SW
 SWAP	교체
 SWAP FIRE	사격 버튼 교체
+SWING TURN	스윙 턴
 SYRINGE	주사기
 SYSTEM DEFAULT	시스템 기본값
 SYSTEM LINE COLOR	시스템 줄 색상
@@ -3064,6 +3093,7 @@ TRAINER MENU	트레이너 메뉴
 TRIAL MAP	트라이얼 맵
 TRY IT NOW	지금 해 보기
 TT	TT
+TURN 35 DEGREES AT 20 M/S OR MORE	20 M/S 이상으로 35도 돌기
 TURNING LEFT	왼쪽으로 회전 중
 TURNING RIGHT	오른쪽으로 회전 중
 TUTORIAL	튜토리얼

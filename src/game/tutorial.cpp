@@ -61,18 +61,41 @@ const Seg kSlide[] = {
 const Seg kBounce[] = {
     {820, F, 0, 0, 0, 0}, {120, F, 0, D, 0, 0}, {1100, 0, 0, 0, 0, 0}, {520, F, 0, 0, 0, 0}, {120, F, 0, D, 0, 0}, {1300, 0, 0, 0, 0, 0},
 };
+// The ramp dash: run at the 60 degree ramp and dash into it 1.6 m before it: the dash carries on up its face at its
+// 24 m/s (20.8 up), about 9 m up; walking, the face is a wall
+const Seg kRampDash[] = {
+    {1440, F, 0, 0, 0, 0}, {120, F, 0, D, 0, 0}, {1500, F, 0, 0, 0, 0}, {800, 0, 0, 0, 0, 0},
+};
 // The grapple: look up past the ledge's edge (the hook takes the ceiling over it), hold grapple: it pulls you to the
 // wall and up it; let go once over the edge and hold W onto the ledge
 const Seg kGrapple[] = {
     {400, 0, 0, 0, 0, 30}, {1550, F, 0, G, 0, 30}, {1200, F, 0, 0, 0, 0}, {800, 0, 0, 0, 0, 0},
 };
+// The ceiling hang: look up ahead, hold grapple: pulled up under the ceiling you hang and swing there while you hold
+const Seg kCeilHang[] = {
+    {300, 0, 0, 0, 0, 30}, {2500, 0, 0, G, 0, 30}, {1800, 0, 0, 0, 0, 0},
+};
+// The swing turn: a super to 24 m/s, hopping on; as the pillar comes up beside you, hook it (aimed at it) and hold till
+// you pass its closest point, then let go: the hook turns you round it at your speed
+const Seg kSwing[] = {
+    {300, 0, 0, 0, 0, 0}, {30, F, 0, D, 0, 0}, {80, F, 0, D | J, 0, 0}, {700, F, 0, J, 0, 0}, {450, F, 0, G | J, 0, kAimAt}, {1500, 0, 0, J, 0, 0}, {800, 0, 0, 0, 0, 0},
+};
 // Grapple walking: aim at the floor far ahead, hold grapple: dragged along it at up to 24 m/s
 const Seg kHookWalk[] = {
     {300, 0, 0, 0, 0, -5}, {1100, F, 0, G, 0, -5}, {1600, 0, 0, 0, 0, 0},
 };
+// The hook-start chain: grapple walk to 24 m/s, then let go and hyper on every landing, 15 degrees down: 29, 34, 35
+const Seg kHookChain[] = {
+    {300, 0, 0, 0, 0, -5}, {900, F, 0, G, 0, -5}, {80, F, 0, J | D, 0, -15}, {1500, F, 0, J | D, 0, -15}, {1200, 0, 0, 0, 0, 0},
+};
 // Rocket jump: look straight down, jump and fire together
 const Seg kRocketJump[] = {
     {600, 0, 0, 0, 0, -89}, {60, F, 0, J | FI, 0, -89}, {1500, F, 0, 0, 0, -20}, {1400, 0, 0, 0, 0, 0},
+};
+// The fall bounce: a rocket jump straight up (17 m), jump held all the way down: landing from that high, the hop is
+// 15.7 m/s up (the most a landing gives: from 11.7 m) and a dash charge comes back
+const Seg kFallBounce[] = {
+    {600, 0, 0, 0, 0, -89}, {60, 0, 0, J | FI, 0, -89}, {4200, 0, 0, J, 0, 0}, {600, 0, 0, 0, 0, 0},
 };
 // The rocket super (key tech): a super, then a rocket straight down 0.3 s into it: the blast adds to the 24 m/s, past the
 // dash's 32 m/s cap; hold jump to hop on (an air dash now would cap you back to 32)
@@ -139,11 +162,16 @@ const LessonDef kLessons[L_COUNT] = {
     {"chain",         180,   16,  kNoWeaponChange,  SCRIPT(kChain),          G_SPEED,      27,    1,     false},
     {"slide",         60,    12,  kNoWeaponChange,  SCRIPT(kSlide),          G_SLIDE,      0.8f,  0,     false},
     {"bounce",        12,    12,  kNoWeaponChange,  SCRIPT(kBounce),         G_BOUNCES,    2,     0,     false},
+    {"rampdash",      40,    20,  kNoWeaponChange,  SCRIPT(kRampDash),       G_RAMP,       5,     18,    false},
     {"grapple",       40,    18,  kNoWeaponChange,  SCRIPT(kGrapple),        G_LEDGE,      9.5f,  0,     false},
+    {"ceilhang",      40,    16,  kNoWeaponChange,  SCRIPT(kCeilHang),       G_HANG,       1.5f,  0,     false},
+    {"swing",         70,    16,  kNoWeaponChange,  SCRIPT(kSwing),          G_SWING,      35,    20,    false,  nullptr, 0, 0, {32, 4, -1}},
     {"hookwalk",      80,    12,  kNoWeaponChange,  SCRIPT(kHookWalk),       G_HOOKSPEED,  16,    0,     false},
+    {"hookchain",     120,   16,  kNoWeaponChange,  SCRIPT(kHookChain),      G_SPEED,      34,    1,     false},
     {"hookplayer",    50,    14,  kNoWeaponChange,  SCRIPT(kHookPlayer),     G_HOOKPLAYER, 1,     0,     true,  SCRIPT(kHookPlayerPartner), 30},
     {"breakfree",     50,    12,  kNoWeaponChange,  SCRIPT(kBreakFree),      G_BREAKFREE,  1,     0,     true,  SCRIPT(kBreakFreePartner), 34},
     {"rocketjump",    40,    24,  WPN_ROCKET,       SCRIPT(kRocketJump),     G_KNOCKUP,    7,     0,     false},
+    {"fallbounce",    30,    28,  WPN_ROCKET,       SCRIPT(kFallBounce),     G_HOPUP,      15,    0,     false},
     {"rocketsuper",   110,    16,  WPN_ROCKET,       SCRIPT(kRocketSuper),    G_KNOCKSPEED, 32.5f, 0,     true},
     {"rocketpop",     100,   60,  WPN_ROCKET,       SCRIPT(kRocketPop),      G_LAUNCH,     30,    20,    true},
     {"launch",        160,   72,  WPN_ROCKET,       SCRIPT(kLaunch),         G_LAUNCH,     16,    20,    true},
@@ -219,6 +247,8 @@ UserCmd partnerCmd(int l, int tMs) {
     const LessonDef& d = lesson(l);
     return scriptCmd(d.partner, d.partnerSegs, tMs, kPartnerYaw, kNoWeaponChange);
 }
+
+Vec3 aimPoint(int l) { const Vec3 a = lesson(l).aimPoint; return {bayX0(l) + a.x, a.y, bayZ(l) + a.z}; }
 
 Vec3 partnerStart(int l) { return {bayX0(l) + lesson(l).partnerIn, 0, bayZ(l)}; }
 
@@ -352,6 +382,41 @@ void Check::frame(const MoveState& m, uint8_t ev, int fwd, int side, int weapon,
             progress = best / d.target;
             done = armed && knocked && y >= d.target;
             break;
+        case G_SWING: {   // (the heading when the hook took you at speed; how far round from it you've come since)
+            const float head = std::atan2(m.vel.z, m.vel.x);
+            if (hookedNow && m.hookTarget == 0 && h >= d.aux && !swinging) { swinging = true; heading0 = head; }
+            if (!hookedNow && h < d.aux) swinging = false;
+            float turn = std::fabs(head - heading0);
+            if (turn > PI) turn = 2 * PI - turn;
+            turn *= 180.0f / PI;
+            value = swinging && h >= d.aux ? turn : 0.0f;
+            best = std::max(best, value);
+            progress = best / d.target;
+            done = swinging && h >= d.aux && turn >= d.target;
+            break;
+        }
+        case G_RAMP:
+            if (ground && x < d.aux && m.dashTimer <= 0 && !(ev & ME_DASH)) dashed = false;   // (on the floor before the ramp, no dash running: a new try)
+            value = x >= d.aux ? std::max(0.0f, y) : 0.0f;
+            best = std::max(best, dashed ? value : 0.0f);
+            progress = best / d.target;
+            done = dashed && x >= d.aux && y >= d.target;
+            break;
+        case G_HOPUP:
+            if ((ev & ME_LAND) && (ev & ME_JUMP) && !(ev & (ME_DASH | ME_SUPER | ME_HYPER))) best = std::max(best, m.vel.y);
+            value = best;
+            progress = best / d.target;
+            done = best >= d.target;
+            break;
+        case G_HANG: {
+            const bool hang = hookedNow && m.hookTarget == 0 && m.hookPoint.y >= y + 2.0f && !ground;
+            timer = hang ? timer + dt : 0.0f;
+            best = std::max(best, timer);
+            value = timer;
+            progress = best / d.target;
+            done = timer >= d.target;
+            break;
+        }
         case G_POP:
             if ((ev & ME_HYPER) && m.dashFromSpeed >= d.aux) armed = true;
             if (ground && !(ev & ME_HYPER) && m.vel.y <= 0) armed = false;   // (back on the floor: a new try)

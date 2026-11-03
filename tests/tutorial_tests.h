@@ -61,7 +61,7 @@ inline void testTutorial() {
             // the bay is its own: its far wall where the lesson's length says
             const float far = m.raycast(p + Vec3(0, 1.0f, 0), {1, 0, 0}, 400.0f);
             const float want = tut::bayX0(l) + tut::lesson(l).len - p.x;
-            if (l != tut::L_MOVE && l != tut::L_GRAPPLE && l != tut::L_ROCKETJUMP && l != tut::L_STICKYJUMP && std::fabs(far - want) > 0.1f)
+            if (l != tut::L_MOVE && l != tut::L_GRAPPLE && l != tut::L_ROCKETJUMP && l != tut::L_STICKYJUMP && l != tut::L_RAMPDASH && std::fabs(far - want) > 0.1f)
                 { printf("  %s: the far wall %.1f m ahead, the lesson says %.1f\n", tut::lesson(l).id, far, want); g_fail++; }
         }
     // the check on made-up movement: a strafe speed with a dash in it doesn't count; landing on the floor before the gap
@@ -140,7 +140,7 @@ inline void testTutorialGhosts(uint16_t port) {
     if (g < 0) { s.stop(); return; }
     simRun(s, 1.0);
     CHECK(s.ms_.phase == PHASE_WARMUP && s.players_[g].alive);
-    struct Run { bool done = false; float best = 0, peak = 0, top = 0, dist = 0, launchUp = 0, launchH = 0, up = 0; int doneMs = -1; };
+    struct Run { bool done = false; float best = 0, peak = 0, top = 0, dist = 0, launchUp = 0, launchH = 0, up = 0, turn = 0; int doneMs = -1; };
     auto play = [&](int l, bool noFire) {
         Run r;
         s.tutLesson_ = l;
@@ -169,6 +169,7 @@ inline void testTutorialGhosts(uint16_t port) {
             r.peak = std::max(r.peak, std::sqrt(p.move.vel.x * p.move.vel.x + p.move.vel.z * p.move.vel.z));
             r.top = std::max(r.top, p.move.pos.y);
             r.up = std::max(r.up, p.move.vel.y);
+            if (std::sqrt(p.move.vel.x * p.move.vel.x + p.move.vel.z * p.move.vel.z) > 20) r.turn = std::max(r.turn, std::fabs(std::atan2(p.move.vel.z, p.move.vel.x)) * 180.0f / PI);   // (from +x)
             r.dist = std::max(r.dist, p.move.pos.x - start.x);
             if ((p.move.events & ME_HYPER) && !launched) { launched = true; launchAt = p.move.pos; }
             if (launched && p.move.vel.y > r.launchUp) { r.launchUp = p.move.vel.y; r.launchH = std::sqrt(p.move.vel.x * p.move.vel.x + p.move.vel.z * p.move.vel.z); }
@@ -193,6 +194,10 @@ inline void testTutorialGhosts(uint16_t port) {
         if (l == tut::L_STICKYSTACK) { near("up m/s", r.up, 50.5f, 1.5f); near("high m", r.top, 53.2f, 2.0f); }
         if (l == tut::L_ROCKETSUPER) { near("level m/s", r.peak, 33.3f, 0.6f); CHECK(r.peak > 32.0f); }   // (past the dash's 32 cap)
         if (l == tut::L_HOOKBOOST) { near("level m/s", r.peak, 40.4f, 1.0f); }
+        if (l == tut::L_HOOKCHAIN) { near("level m/s", r.peak, 35.0f, 0.5f); CHECK(r.doneMs > 0 && r.doneMs < 3000); }   // (34 from the hook's 24 in ~1.3 s)
+        if (l == tut::L_SWING) { near("turned deg", r.turn, 41.0f, 4.0f); CHECK(r.peak < 24.5f); }   // (round the pillar at its speed)
+        if (l == tut::L_RAMPDASH) near("high m", r.top, 9.0f, 0.5f);
+        if (l == tut::L_FALLBOUNCE) { near("hop up m/s", r.best, 15.7f, 0.2f); CHECK(r.top > 11.7f); }
         if (l == tut::L_LAUNCH) {
             const Run bare = play(l, true);   // the same, the rocket held back: the hyper alone
             printf("  launch: up %.1f m/s and %.1f m/s level off the floor, %.1f m high, %.1f m on (the hyper alone: up %.1f, %.1f m high)\n",
@@ -311,6 +316,38 @@ inline void testTutorialPartner(uint16_t port) {
         CHECK(caught >= 0 && s.players_[g].hookedBy < 0);   // (your turn: the partner's hook is for you, not the ghost)
         if (run == 0) CHECK(!c.done && freed > caught + 500 && travelled > 10.0f);   // (held till it lets go)
         else CHECK(c.done && freed >= caught + 300 && freed <= caught + 320);
+    }
+    // grapple a player, then dash while your hook holds them: the latch holds (only the held one's dash breaks it) and
+    // they're dragged after you (q's "dash while hooked drags them")
+    {
+        lessonStart(tut::L_HOOKPLAYER, true);
+        uint64_t latchAt = 0;
+        const uint64_t from = s.timeMs_ + 200;   // (the partner at its start first: a hook fired before that takes the wall)
+        s.bots_[me].script = [&](Server& sv, int id) {
+            UserCmd c; c.yaw = tut::kStartYaw;
+            const ServerPlayer& p = sv.players_[id];
+            const ServerPlayer& P = sv.players_[pa];
+            tut::aimAt(p.move.pos + Vec3(0, kEyeHeight, 0), P.move.pos + Vec3(0, 1.0f, 0), c.yaw, c.pitch);
+            if (P.hookedBy == id && !latchAt) latchAt = sv.timeMs_;
+            c.buttons = sv.timeMs_ >= from ? BTN_GRAPPLE : 0;
+            if (latchAt && sv.timeMs_ >= latchAt + 150 && sv.timeMs_ < latchAt + 250) { c.side = 127; c.buttons |= BTN_DASH; }   // (a dash sideways)
+            return c;
+        };
+        bool dashed = false, heldAfter = false;
+        float partnerSide = 0;
+        Vec3 meAtDash;
+        simRun(s, 1.0, [&] {
+            const ServerPlayer& M = s.players_[me];
+            const ServerPlayer& P = s.players_[pa];
+            if ((M.move.events & ME_DASH) && latchAt && !dashed) { dashed = true; meAtDash = M.move.pos; }
+            if (dashed && s.timeMs_ < latchAt + 400) {
+                heldAfter = P.hookedBy == me && (P.move.flags & MF_PULLED);
+                partnerSide = std::max(partnerSide, std::fabs(P.move.vel.z));
+            }
+        });
+        printf("  hookplayer + a dash while holding: latched %s, dashed %s, still held 400 ms on %s, the partner's sideways speed up to %.1f m/s\n",
+               latchAt ? "yes" : "no", dashed ? "yes" : "no", heldAfter ? "yes" : "no", partnerSide);
+        CHECK(latchAt && dashed && heldAfter && partnerSide > 1.5f);   // (pulled toward where you are now: 2.5 m/s sideways after a sideways dash)
     }
     s.stop();
 }

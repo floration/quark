@@ -156,18 +156,22 @@
 3D FLYING	3D ПОЛЁТ
 3D STATIC: YOU CAN'T MOVE - LOOK AND SHOOT	3D СТАТИКА: ДВИГАТЬСЯ НЕЛЬЗЯ - ЦЕЛЬТЕСЬ И СТРЕЛЯЙТЕ
 3D VAMP	3D ВАМП
+5 M UP THE RAMP	5 М ВВЕРХ ПО РАМПЕ
 5 MORE MINUTES	ЕЩЁ 5 МИНУТ
 60 FPS	60 FPS
 A BURST OF 24 M/S THE WAY YOU MOVE. TWO CHARGES, EACH BACK IN 1.2 S.	РЫВОК 24 М/С ТУДА, КУДА ТЫ ДВИЖЕШЬСЯ. ДВА ЗАРЯДА, КАЖДЫЙ ВОССТАНАВЛИВАЕТСЯ ЗА 1.2 С.
 A DASH GOES THE WAY YOU MOVE, NOT THE WAY YOU LOOK.	РЫВОК ИДЁТ ТУДА, КУДА ТЫ ДВИЖЕШЬСЯ, А НЕ КУДА СМОТРИШЬ.
 A DASH PRESSED THIS SOON BEFORE IT'S READY	РЫВОК, НАЖАТЫЙ ЗА СТОЛЬКО ДО ГОТОВНОСТИ
 A DROPPED CONNECTION TRIES AGAIN (3 TIMES)	ОБОРВАННОЕ СОЕДИНЕНИЕ ПОВТОРЯЕТСЯ (3 РАЗА)
+A HYPER ABOVE 36 M/S CAPS YOU DOWN: 35 IS THE TOP	ГИПЕР ВЫШЕ 36 М/С СРЕЗАЕТ СКОРОСТЬ: 35 — ПОТОЛОК
 A MOMENT LATER, AIM STRAIGHT DOWN AND FIRE	ЧЕРЕЗ МГНОВЕНИЕ ЦЕЛЬСЯ ПРЯМО ВНИЗ И СТРЕЛЯЙ
 A NEW CODE FROM /link RELINKS IT - unlink REMOVES IT	НОВЫЙ КОД ИЗ /link ПРИВЯЖЕТ ЗАНОВО - unlink ОТВЯЖЕТ
 A PLAYER JOINED VIA	ИГРОК ЗАШЁЛ ЧЕРЕЗ
+A ROCKET JUMP STRAIGHT UP	РАКЕТНЫЙ ПРЫЖОК ПРЯМО ВВЕРХ
 A SERVER	СЕРВЕР
 A SUPER	СУПЕР
 A SUPER FOR SPEED	СУПЕР ДЛЯ СКОРОСТИ
+A SUPER, AND KEEP HOPPING	СУПЕР, И ПРЫГАЙ ДАЛЬШЕ
 A SUPER, THEN A HYPER STRAIGHT DOWN AS YOU LAND: THE SUPER'S SPEED GOES UP, ABOUT 14 M.	СУПЕР, ЗАТЕМ ПРИ ПРИЗЕМЛЕНИИ ГИПЕР ПРЯМО ВНИЗ: СКОРОСТЬ СУПЕРА УХОДИТ ВВЕРХ, ОКОЛО 14 М.
 A SUPER, THEN A ROCKET STRAIGHT DOWN: ABOUT 33 M/S, PAST THE DASH'S 32 M/S CAP.	СУПЕР, ЗАТЕМ РАКЕТА ПРЯМО ВНИЗ: ОКОЛО 33 М/С, ВЫШЕ ПРЕДЕЛА РЫВКА В 32 М/С.
 A SUPER, THEN AIM STRAIGHT DOWN	СУПЕР, ЗАТЕМ ЦЕЛЬСЯ ПРЯМО ВНИЗ
@@ -196,6 +200,7 @@ ADVANCED	ПРОДВИНУТЫЙ
 ADVANCED > BOT BRAIN: what your bots play: the built-in brain, or a .qbrain file from the bots folder in your data folder. A file that doesn't compile shows its error line and the bots play the built-in brain. Never in ranked.	ПРОДВИНУТЫЙ > ИИ БОТА: как играют ваши боты: встроенный ИИ или файл .qbrain из папки bots в папке данных. Если файл не компилируется, показывается строка с ошибкой, а боты играют со встроенным ИИ. Никогда в рейтинге.
 AGAIN (R)	ЕЩЁ РАЗ (R)
 AHEAD	ВПЕРЕДИ
+AIM 15 DEGREES DOWN: EVERY LANDING IS A HYPER	ЦЕЛЬСЯ НА 15 ГРАДУСОВ ВНИЗ: КАЖДОЕ ПРИЗЕМЛЕНИЕ — ГИПЕР
 AIM A LITTLE DOWN	ЦЕЛЬСЯ ЧУТЬ ВНИЗ
 AIM A LITTLE DOWN THE WHOLE WAY	ВСЁ ВРЕМЯ ЦЕЛЬСЯ ЧУТЬ ВНИЗ
 AIM AT THE FLOOR A FEW METRES AHEAD (15 DEGREES DOWN IS ENOUGH)	ЦЕЛЬСЯ В ПОЛ В НЕСКОЛЬКИХ МЕТРАХ ВПЕРЕДИ (15 ГРАДУСОВ ВНИЗ ХВАТИТ)
@@ -206,6 +211,7 @@ AIM STRAIGHT DOWN AND FIRE A STICKY	ЦЕЛЬСЯ ВНИЗ И ВЫСТРЕЛИ Л
 AIM STRAIGHT DOWN AND FIRE THREE STICKIES	ЦЕЛЬСЯ ВНИЗ И ВЫПУСТИ ТРИ ЛИПУЧКИ
 AIM STRAIGHT DOWN WHILE YOU FLY	В ПОЛЁТЕ ЦЕЛЬСЯ ПРЯМО ВНИЗ
 AIM TRAINER	АИМ-ТРЕНАЖЁР
+AIM UP AT THE CEILING, A FEW METRES AHEAD	ЦЕЛЬСЯ В ПОТОЛОК НА НЕСКОЛЬКО МЕТРОВ ВПЕРЕДИ
 AIM UP, OVER THE EDGE OF THE LEDGE	ЦЕЛЬСЯ ВВЕРХ, ВЫШЕ КРАЯ УСТУПА
 AIM: A LITTLE DOWN	ПРИЦЕЛ: ЧУТЬ ВНИЗ
 AIM: AT THE PARTNER	ПРИЦЕЛ: НА PARTNER
@@ -255,12 +261,15 @@ ARC TIME	ВРЕМЯ ДУГИ
 ARM	РУКА
 ARROW (NUDGE)	СТРЕЛКА (СДВИГ)
 ARROWS / PGUP / PGDN: MOVE BY GRID (ALONG YOUR VIEW)	СТРЕЛКИ / PGUP / PGDN: СДВИГ ПО СЕТКЕ (ПО ВЗГЛЯДУ)
+AS THE PILLAR COMES UP BESIDE YOU, HOOK IT	КОГДА КОЛОННА ПОРАВНЯЕТСЯ С ТОБОЙ, ЗАЦЕПИ ЕЁ
+AS THEY ARRIVE, SHOTGUN OR KNIFE THEM. YOUR DASH DOESN'T BREAK IT: THE PULL FOLLOWS YOU	КОГДА ПОДЛЕТЯТ — ДРОБОВИК ИЛИ НОЖ. ТВОЙ РЫВОК НЕ РВЁТ КРЮК: ТЯГА СЛЕДУЕТ ЗА ТОБОЙ
 AS THICK	ТА ЖЕ ТОЛЩ.
 ASIDE: A FRAME LESS LAG IN A WINDOW	ПОПУТНО: НА КАДР МЕНЬШЕ ЗАДЕРЖКИ В ОКНЕ
 ASK "SURE?" FIRST: CLICK AGAIN	СПРАШИВАТЬ «ТОЧНО?»: КЛИКНИТЕ ЕЩЁ РАЗ
 ASSUMED	ПРЕДПОЛ.
 AT # # #	В # # #
 AT CAMERA	У КАМЕРЫ
+AT SPEED, HOOK A PILLAR BESIDE YOU: THE HOOK TURNS YOU ROUND IT AND YOU KEEP YOUR SPEED.	НА СКОРОСТИ ЗАЦЕПИ КОЛОННУ СБОКУ: КРЮК РАЗВЕРНЁТ ТЕБЯ ВОКРУГ НЕЁ, СКОРОСТЬ ОСТАНЕТСЯ.
 ATTACK + RACE	АТАКА + ГОНКА
 ATTACK - PLANT THE BOMB	АТАКА - ЗАЛОЖИТЕ БОМБУ
 ATTACK: CARRY THE BOMB TO A SITE AND PLANT IT	АТАКА: ДОНЕСИТЕ БОМБУ ДО ТОЧКИ И ЗАЛОЖИТЕ
@@ -434,6 +443,7 @@ CAPTIONS: THE ANNOUNCER AS TEXT TOO	СУБТИТРЫ: КОММЕНТАТОР Т�
 CAPTURE	ЗАХВАТ
 CAPTURE THE HILL	ЗАХВАТИТЕ ХОЛМ
 CART	ВАГОН
+CEILING HANG	ВИС НА ПОТОЛКЕ
 CHAMPION	ЧЕМПИОН
 CHANGE ANYTHING AFTER (IT STAYS)	МЕНЯЙТЕ ЧТО УГОДНО ПОТОМ (СОХРАНИТСЯ)
 CHANGE MAP / MODE	СМЕНИТЬ КАРТУ / РЕЖИМ
@@ -645,7 +655,9 @@ DASH EXIT SPEED (MAX)	СКОР. ВЫХОДА ИЗ РЫВКА (МАКС.)
 DASH EXIT SPEED (MIN)	СКОР. ВЫХОДА ИЗ РЫВКА (МИН.)
 DASH HEAD ON INTO A WALL: YOU BOUNCE BACK OFF IT AT 16 M/S.	РЫВОК ЛОБОМ В СТЕНУ: ОТСКАКИВАЕШЬ НА 16 М/С.
 DASH IN THE AIR TO CROSS THE LAVA	РЫВОК В ВОЗДУХЕ НАД ЛАВОЙ
+DASH INTO A STEEP SLOPE: THE DASH CARRIES ON UP ITS FACE. WALKING, IT IS A WALL.	РЫВОК В КРУТОЙ СКЛОН: РЫВОК ИДЁТ ВВЕРХ ПО НЕМУ. ПЕШКОМ ЭТО СТЕНА.
 DASH INTO IT	РЫВОК В НЕЁ
+DASH INTO IT FROM A FEW METRES AWAY	РЫВОК В НЕЁ С НЕСКОЛЬКИХ МЕТРОВ
 DASH JUMP WINDOW	ОКНО ПРЫЖКА С РЫВКА
 DASH JUST BEFORE YOU LAND, AND DON'T JUMP	РЫВОК ПЕРЕД САМЫМ ПРИЗЕМЛЕНИЕМ, БЕЗ ПРЫЖКА
 DASH LEFT	РЫВОК ВЛЕВО
@@ -852,6 +864,7 @@ FACING (Q E)	НАПРАВЛ. (Q E)
 FADE DISTANCE	ДИСТ. ЗАТУХАНИЯ
 FADE LENGTH	ДЛИНА ЗАТУХАНИЯ
 FAIRNESS: DEFAULT MODEL, HUD, CONTROLS, 10 MS INTERP	ЧЕСТНОСТЬ: МОДЕЛЬ, HUD, УПРАВЛЕНИЕ ПО УМОЛЧ., ИНТЕРП. 10 МС
+FALL BOUNCE	ОТСКОК С ПАДЕНИЯ
 FAR SCENERY	ДАЛЬН. ДЕКОР
 FAST FLY	БЫСТ. ПОЛЁТ
 FASTER MOVES TURN FURTHER (AT MOST X4)	БЫСТРЫЕ ДВИЖЕНИЯ ПОВОРАЧИВАЮТ СИЛЬНЕЕ (МАКС. X4)
@@ -925,6 +938,7 @@ FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next 
 FRIENDS JOIN WITH YOUR PUBLIC IP (STREAMER MODE)	ДРУЗЬЯ ЗАХОДЯТ ПО ВАШЕМУ ВНЕШНЕМУ IP (РЕЖИМ СТРИМЕРА)
 FRIENDS JOIN WITH YOUR PUBLIC IP:	ДРУЗЬЯ ЗАХОДЯТ ПО ВАШЕМУ ВНЕШНЕМУ IP:
 FROM	ИЗ
+FROM 11.7 M UP OR MORE THE HOP IS THE BIGGEST, 15.7 M/S	С 11.7 М И ВЫШЕ ОТСКОК МАКСИМАЛЕН: 15.7 М/С
 FROM: APEX LEGENDS	ИЗ: APEX LEGENDS
 FROM: CALL OF DUTY	ИЗ: CALL OF DUTY
 FROM: CS2 / CS:GO	ИЗ: CS2 / CS:GO
@@ -1011,6 +1025,7 @@ GRAPPLE RANGE	ДАЛЬНОСТЬ КРЮКА
 GRAPPLE RELEASE DISTANCE	ДИСТАНЦИЯ ОТЦЕПА КРЮКА
 GRAPPLE TO 24 M/S, THEN A ROCKET AND A HYPER STRAIGHT DOWN: YOU FLY, CHEAP AND FAST.	КРЮКОМ ДО 24 М/С, ПОТОМ РАКЕТА И ГИПЕР ПРЯМО ВНИЗ: ТЫ ЛЕТИШЬ, ДЁШЕВО И БЫСТРО.
 GRAPPLE TOP SPEED	МАКС. СКОРОСТЬ КРЮКА
+GRAPPLE WALK TO 24 M/S, LET GO, THEN HYPER EVERY LANDING: 29, 34, 35 M/S IN ABOUT 2 S.	НА КРЮКЕ ДО 24 М/С, ОТПУСТИ, ЗАТЕМ ГИПЕР ПРИ КАЖДОМ ПРИЗЕМЛЕНИИ: 29, 34, 35 М/С ЗА 2 С.
 GRAPPLE WALK UP TO 24 M/S	ТЯНИСЬ КРЮКОМ ПО ПОЛУ ДО 24 М/С
 GRAPPLE WALKING	ХОДЬБА НА КРЮКЕ
 GRAPPLE WALKING AT 24 M/S, FIRE A ROCKET STRAIGHT DOWN WHILE STILL HOOKED: ABOUT 40 M/S ALONG.	НА КРЮКЕ ПО ПОЛУ НА 24 М/С, НЕ ОТПУСКАЯ, РАКЕТА ПРЯМО ВНИЗ: ОКОЛО 40 М/С ВПЕРЁД.
@@ -1049,10 +1064,12 @@ HANA	HANA
 HAND	РУКА
 HAND: LEFT	РУКА: ЛЕВАЯ
 HAND: RIGHT	РУКА: ПРАВАЯ
+HANG FOR 1.5 S	ВИСИ 1.5 С
 HARD BOTS	СЛОЖНЫЕ БОТЫ
 HARD TO TELL APART WITH	ТРУДНО РАЗЛИЧИТЬ ПРИ
 HAS NO BINDS	НЕТ НАЗНАЧЕНИЙ
 HAS NO WIDGETS	НЕТ ВИДЖЕТОВ
+HEAD ON: THE DASH RUNS ON UP THE FACE AT ITS FULL 24 M/S	В ЛОБ: РЫВОК ИДЁТ ВВЕРХ ПО СКЛОНУ НА ПОЛНЫХ 24 М/С
 HEADSHOT	ХЕДШОТ
 HEADSHOT HIT	ПОПАДАНИЕ В ГОЛОВУ
 HEADSHOTS STAY RED, BIG HITS GOLD	ХЕДШОТЫ КРАСНЫЕ, МОЩНЫЕ ПОПАДАНИЯ ЗОЛОТЫЕ
@@ -1116,15 +1133,19 @@ HOLD IT	ДЕРЖИ
 HOLD IT TO HOP ON AND KEEP THE SPEED	ДЕРЖИ, ЧТОБЫ ПРЫГАТЬ ДАЛЬШЕ И СОХРАНИТЬ СКОРОСТЬ
 HOLD IT. IT PULLS YOU TO THE WALL AND UP	ДЕРЖИ. ОН ТЯНЕТ ТЕБЯ К СТЕНЕ И ВВЕРХ
 HOLD IT. YOU HOP AGAIN EVERY TIME YOU LAND	ДЕРЖИ. ПРЫГАЕШЬ СНОВА ПРИ КАЖДОМ ПРИЗЕМЛЕНИИ
+HOLD JUMP AS YOU LAND FROM A BIG FALL: YOU HOP UP AT 15.7 M/S AND GET A DASH CHARGE BACK.	ДЕРЖИ ПРЫЖОК ПРИ ПРИЗЕМЛЕНИИ С БОЛЬШОЙ ВЫСОТЫ: ОТСКОК НА 15.7 М/С И ЗАРЯД РЫВКА НАЗАД.
 HOLDING THE HILL	УДЕРЖАНИЕ ХОЛМА
 HOME	HOME
 HOOK	КРЮК
 HOOK BOOST	РАЗГОН С КРЮКА
 HOOK CAPTION	ПОДПИСЬ КРЮКА
+HOOK THE CEILING A LITTLE AHEAD OF YOU AND HOLD: YOU HANG UNDER IT AND SWING.	ЗАЦЕПИ ПОТОЛОК ЧУТЬ ВПЕРЕДИ И ДЕРЖИ: ПОВИСНЕШЬ ПОД НИМ И БУДЕШЬ КАЧАТЬСЯ.
 HOOK THE FLOOR FAR AHEAD: IT DRAGS YOU ALONG WITH NO FRICTION, UP TO 24 M/S.	ЗАЦЕПИ ПОЛ ДАЛЕКО ВПЕРЕДИ: ОН ТЯНЕТ ТЕБЯ БЕЗ ТРЕНИЯ, ДО 24 М/С.
 HOOK THE PARTNER	ЗАЦЕПИ PARTNER
+HOOK-START CHAIN	ЦЕПОЧКА С КРЮКА
 HOOKED	ЗАЦЕПЛЕН
 HOOKING SOMETHING YOURSELF BREAKS FREE TOO	СВОЙ КРЮК ВО ЧТО-НИБУДЬ ТОЖЕ ОСВОБОЖДАЕТ
+HOP 15 M/S UP OFF A LANDING	ОТСКОК 15 М/С ПРИ ПРИЗЕМЛЕНИИ
 HOST	ХОСТ
 HOST EDIT SESSION	СЕССИЯ ПРАВКИ (ХОСТ)
 HOST EDIT SESSION: friends join and build with you; everyone's camera shows in the view.	СЕССИЯ ПРАВКИ (ХОСТ): друзья заходят и строят с вами; камеры всех видны на экране.
@@ -1241,6 +1262,7 @@ JUNE	JUNE
 KAI	KAI
 KB; OFF: A SERVER'S	КБ; ВЫКЛ: СЕРВЕРНЫЙ
 KEEP	ОСТ.
+KEEP HOLDING IT ALL THE WAY DOWN	ДЕРЖИ ВСЁ ПАДЕНИЕ
 KEEP HOLDING IT TO RIDE	ДЕРЖИ, ЧТОБЫ ЛЕТЕТЬ НА НЕЙ
 KEEP THESE DISPLAY SETTINGS? REVERTING IN	ОСТАВИТЬ ЭТИ НАСТРОЙКИ ЭКРАНА? ОТКАТ ЧЕРЕЗ
 KEEP YOUR EDITS AS A NEW MAP?	СОХРАНИТЬ ПРАВКИ КАК НОВУЮ КАРТУ?
@@ -1333,7 +1355,9 @@ LESSON DONE	УРОК ПРОЙДЕН
 LESSONS	УРОКИ
 LET	ПУСК
 LET GO 40 TO 80 MS LATER: HELD ON, THE HOOK PULLS YOU BACK	ОТПУСТИ ЧЕРЕЗ 40-80 МС: ЕСЛИ ДЕРЖАТЬ, КРЮК ТЯНЕТ НАЗАД
+LET GO AS YOU PASS IT: HELD ON, THE HOOK BRAKES YOU (24 TO 15 M/S)	ОТПУСТИ, ПРОЛЕТАЯ МИМО: ЕСЛИ ДЕРЖАТЬ, КРЮК ТОРМОЗИТ (С 24 ДО 15 М/С)
 LET GO BEFORE YOU REACH THE HOOK	ОТПУСТИ ДО ТОГО, КАК ДОЛЕТИШЬ ДО КРЮКА
+LET GO OF THE GRAPPLE AND HOLD ALL THREE	ОТПУСТИ КРЮК И ДЕРЖИ ВСЕ ТРИ
 LG	LG
 LIBREQUAKE 8X8	LIBREQUAKE 8X8
 LIGHT	СВЕТ
@@ -2421,6 +2445,7 @@ RADAR RANGE	ДАЛЬНОСТЬ РАДАРА
 RADAR: TEAMMATES AND OBJECTIVES, NEVER ENEMIES	РАДАР: СОЮЗНИКИ И ЦЕЛИ, НИКОГДА ВРАГИ
 RADIUS	РАДИУС
 RAILYARD / DAM / EXPRESS / MONORAIL - neutral payload (Railyard: payload too).   WAR / CONVOY - multi point.	RAILYARD / DAM / EXPRESS / MONORAIL - нейтральная вагонетка (Railyard: и вагонетка).   WAR / CONVOY - мультиточка.
+RAMP DASH	РЫВОК ПО РАМПЕ
 RAMPAGE	БУЙСТВО
 RANKED	РЕЙТИНГ
 RANKED - CHOOSE A LADDER	РЕЙТИНГ - ВЫБЕРИТЕ ТАБЛИЦУ
@@ -2448,6 +2473,7 @@ RAW INPUT	RAW INPUT
 RD	RD
 REACH 12 M/S WITH NO DASH OR GRAPPLE	РАЗГОНИСЬ ДО 12 М/С БЕЗ РЫВКА И КРЮКА
 REACH 27 M/S	РАЗГОНИСЬ ДО 27 М/С
+REACH 34 M/S	РАЗГОНИСЬ ДО 34 М/С
 REACH 37 M/S	РАЗГОНИСЬ ДО 37 М/С
 REACH THE GLOWING LINE	ДОБЕРИСЬ ДО СВЕТЯЩЕЙСЯ ЛИНИИ
 READ INPUT	ЧТЕНИЕ ВВОДА
@@ -2566,6 +2592,7 @@ RUN	БЕГ
 RUN - DON'T BE THE TAGGER WHEN TIME RUNS OUT	БЕГИТЕ - НЕ БУДЬТЕ ВОДЯЩИМ К КОНЦУ ВРЕМЕНИ
 RUN AGAIN	ЕЩЁ РАЗ
 RUN AT THE GAP	БЕГИ К ПРОВАЛУ
+RUN AT THE RAMP	БЕГИ К РАМПЕ
 RUN BENCHMARK	ЗАПУСТИТЬ БЕНЧМАРК
 RUN FORWARD	БЕГИ ВПЕРЁД
 RUN NAME	ИМЯ ЗАПУСКА
@@ -2824,6 +2851,7 @@ STOP RECORDING	ОСТАНОВИТЬ ЗАПИСЬ
 STOP THE PAYLOAD	ОСТАНОВИТЕ ВАГОНЕТКУ
 STOPPING SPEED	СКОРОСТЬ ОСТАНОВКИ
 STRAFE BOOST (AT SPEED)	БУСТ СТРЕЙФА (НА СКОРОСТИ)
+STRAIGHT ABOVE YOU IT PULLS YOU IN AND LETS GO: HOOK MORE THAN 1 M TO THE SIDE	ПРЯМО НАД ТОБОЙ ОН ПРИТЯНЕТ И ОТПУСТИТ: ЦЕПЛЯЙ БОЛЬШЕ ЧЕМ В 1 М В СТОРОНУ
 STREAK	СЕРИЯ
 STREAK CALLOUTS	ОБЪЯВЛЕНИЯ СЕРИЙ
 STREAK CALLOUTS: ALL	ОБЪЯВЛЕНИЯ СЕРИЙ: ВСЕ
@@ -2858,6 +2886,7 @@ SURFACES	ПОВЕРХНОСТИ
 SW	SW
 SWAP	СМЕНА
 SWAP FIRE	СМЕНА ОГНЯ
+SWING TURN	РАЗВОРОТ НА КАЧЕЛЯХ
 SYRINGE	ШПРИЦ
 SYSTEM DEFAULT	СИСТЕМНЫЙ
 SYSTEM LINE COLOR	ЦВЕТ СИСТЕМНЫХ СТРОК
@@ -3064,6 +3093,7 @@ TRAINER MENU	МЕНЮ ТРЕНАЖЁРА
 TRIAL MAP	КАРТА ЗАЕЗДА
 TRY IT NOW	ПОПРОБОВАТЬ
 TT	TT
+TURN 35 DEGREES AT 20 M/S OR MORE	ПОВЕРНИ НА 35 ГРАДУСОВ НА 20 М/С ИЛИ БЫСТРЕЕ
 TURNING LEFT	ПОВОРОТ ВЛЕВО
 TURNING RIGHT	ПОВОРОТ ВПРАВО
 TUTORIAL	ОБУЧЕНИЕ
