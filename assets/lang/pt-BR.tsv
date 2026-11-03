@@ -2681,7 +2681,7 @@ RMB	RMB
 ROBOT	ROBÔ
 ROCK	PEDRA
 ROCKET	ROCKET
-ROCKET (splash; rocket jump off the floor for 10% damage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 5 hp, once a second; alt throws it: +15 hp and reset cooldowns for a teammate).	ROCKET (dano em área; rocket jump do chão por 10# de dano), RIFLE (automático; mira no alt), LASER (um feixe; alt puxa), SHOTGUN (alt: ricochete), SNIPER (mira no alt), STICKY (alt detona), BESTA (headshots), BOLHA (alt: um jato de bolhas), FACA (alt: arremessa), SERINGA (atirar te cura 5 hp, uma vez por segundo; alt arremessa: +15 hp e zera as recargas de um aliado).
+ROCKET (splash; rocket jump off the floor for 10% damage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 5 hp, once a second; alt throws it: +15 hp and reset cooldowns for a teammate).	ROCKET (dano em área; rocket jump do chão por 10% de dano), RIFLE (automático; mira no alt), LASER (um feixe; alt puxa), SHOTGUN (alt: ricochete), SNIPER (mira no alt), STICKY (alt detona), BESTA (headshots), BOLHA (alt: um jato de bolhas), FACA (alt: arremessa), SERINGA (atirar te cura 5 hp, uma vez por segundo; alt arremessa: +15 hp e zera as recargas de um aliado).
 ROCKET GRAPPLE	GANCHO NO FOGUETE
 ROCKET JUMP	ROCKET JUMP
 ROCKET JUMPERS	ROCKET JUMPERS
