@@ -850,6 +850,7 @@ void Renderer::syncWorldFast() {
     glUseProgram(worldFastProg_);
     if (!worldFastDirty_) return;
     worldFastDirty_ = false;
+    QZONE("world fast: full copy");
     for (const UniformCopy& u : worldFastCopy_) {
         float f[16]; GLint i[4];
         switch (u.type) {
@@ -1908,8 +1909,8 @@ void Renderer::prepareScene(bool shadows) {
         glUniform1f(L.time, liquidFlow ? (float)std::fmod(timeNow(), 3600.0) : 0.0f);   // (MORE 2: LIQUIDS STILL: time stands)
         setVec3(L.sunDir, sunDir_);
     };
-    if (worldFastProg_ && worldFastFor_ == worldProg_) frameUniforms(worldFastProg_, uWorldFast_);
-    frameUniforms(worldProg_, uWorld_);
+    if (worldFastProg_ && worldFastFor_ == worldProg_) { QZONE("world fast: frame uniforms"); frameUniforms(worldFastProg_, uWorldFast_); }
+    { QZONE("world: frame uniforms"); frameUniforms(worldProg_, uWorld_); }
     if (look_.clean || look_.fadeAt > 0.0f) buildCleanMeans(std::array<float, 14>{(float)worldProg_, baseColor.x, baseColor.y, baseColor.z, accentColor.x, accentColor.y, accentColor.z,
                                       metalColor.x, metalColor.y, metalColor.z, glowColor.x, glowColor.y, glowColor.z, highContrast ? 1.0f : 0.0f});
     glUseProgram(skyProg_);
@@ -1968,12 +1969,13 @@ void Renderer::drawScene(bool shadows) {
         glBindVertexArray(worldVao_);
         const bool fast = worldFastProg_ && worldFastFor_ == worldProg_ && holeCount_ == 0;
         if (fast) {   // (no holes: the program without discard, same uniforms)
+            QZONE("world fast: bind + sync");
             syncWorldFast();
             setMat(uWorldFast_.viewProj, viewProj_);
             glUniform1i(uWorldFast_.latchUse, latchUse_ ? 1 : 0);
         }
-        drawWorldChunks();
-        if (fast) glUseProgram(worldProg_);
+        { QZONE("world chunks"); drawWorldChunks(); }
+        if (fast) { QZONE("world fast: back to main"); glUseProgram(worldProg_); }
         if (blockVerts_) {   // the breakable blocks: their looks, lit by full sun and sky (uAlphaPass 2: opaque)
             glUniform1f(uWorld_.alphaPass, 2.0f);
             glDisable(GL_CULL_FACE);
