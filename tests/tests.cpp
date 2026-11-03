@@ -9425,6 +9425,7 @@ static FfaRun ffaVsExperts(uint16_t port, uint32_t seed, uint64_t* hash = nullpt
     cfg.autoStart = true;
     cfg.map = "clockwork"; cfg.mode = MODE_FFA; cfg.port = port;   // (a compact map: bastion is a big team map now)
     cfg.vsBots = true; cfg.botsEnemy = 3; cfg.botSkill = BOT_EXPERT; cfg.timeLimit = 60;
+    if (const char* lp = getenv("QUARK_SIMHASH_LOG")) { cfg.logLevel = LOG_EXTREME; cfg.logFile = lp + std::to_string(seed); }   // (the game log of a seeded match: two builds write the same bytes)
     s.setLog([](const std::string&) {});
     { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return r; } }
     CHECK(s.playerCount() == 3);
@@ -9625,6 +9626,7 @@ static void serverBench(uint16_t port, int bots, int humans, double seconds, con
     ServerConfig cfg;
     cfg.map = map; cfg.mode = mode; cfg.port = port; cfg.autoStart = true; cfg.maxPlayers = kMaxPlayers;
     if (rate) cfg.maxTickRate = rate;
+    if (const char* lp = getenv("QUARK_BENCH_LOG")) { cfg.logLevel = LOG_EXTREME; cfg.logFile = lp; }   // (the game log's cost in the tick: extreme, every tick)
     s.setLog([](const std::string&) {});
     if (!START_SERVER(s, cfg)) return;
     std::vector<std::unique_ptr<NetClient>> owned;
