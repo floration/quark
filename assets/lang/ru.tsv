@@ -154,7 +154,6 @@
 10-BIT: ON (A 10-BIT WINDOW)	10 БИТ: ВКЛ (10-БИТНОЕ ОКНО)
 12 H CLOCK	12-Ч ЧАСЫ
 12 M UP, OUT OF A HYPER FROM 20 M/S	12 М ВВЕРХ ПОСЛЕ ГИПЕРА С 20 М/С
-144 FPS	144 FPS
 16 M UP, OUT OF A HYPER FROM 20 M/S	16 М ВВЕРХ ПОСЛЕ ГИПЕРА С 20 М/С
 16 M/S ALONG THE FLOOR	16 М/С ВДОЛЬ ПОЛА
 1V1 - rounds on one ruleset (vanilla, laser vampire, instagib...). First to 5. Ranked 1v1 rates you on its own ladder.	1V1 - раунды по одним правилам (ванилла, лазерный вампир, инстагиб...). До 5 побед. Рейтинговый 1v1 считается в отдельной таблице.
@@ -162,7 +161,6 @@
 2 BOUNCES	2 ОТСКОКА
 2 HYPERS	2 ГИПЕРА
 2 SUPERS	2 СУПЕРА
-240 FPS	240 FPS
 2:00  -  1ST OF 6	2:00  -  1-Й ИЗ 6
 2D: THE VIEW STAYS STILL, YOUR MOUSE MOVES THE CROSSHAIR	2D: ВИД НЕПОДВИЖЕН, МЫШЬ ДВИГАЕТ ПРИЦЕЛ
 3 TIMES: THE GRAPH; 4 TIMES: THE GAME'S PART ONLY	3 РАЗА: ГРАФИК; 4 РАЗА: ТОЛЬКО ДОЛЯ ИГРЫ
@@ -175,7 +173,6 @@
 3D VAMP	3D ВАМП
 5 M UP THE RAMP	5 М ВВЕРХ ПО РАМПЕ
 5 MORE MINUTES	ЕЩЁ 5 МИНУТ
-60 FPS	60 FPS
 A BURST OF 24 M/S THE WAY YOU MOVE. TWO CHARGES, EACH BACK IN 1.2 S.	РЫВОК 24 М/С ТУДА, КУДА ТЫ ДВИЖЕШЬСЯ. ДВА ЗАРЯДА, КАЖДЫЙ ВОССТАНАВЛИВАЕТСЯ ЗА 1.2 С.
 A DASH GOES THE WAY YOU MOVE, NOT THE WAY YOU LOOK.	РЫВОК ИДЁТ ТУДА, КУДА ТЫ ДВИЖЕШЬСЯ, А НЕ КУДА СМОТРИШЬ.
 A DASH PRESSED THIS SOON BEFORE IT'S READY	РЫВОК, НАЖАТЫЙ ЗА СТОЛЬКО ДО ГОТОВНОСТИ
@@ -347,6 +344,7 @@ AUTO: YOUR SYSTEM'S LANGUAGE	АВТО: ЯЗЫК СИСТЕМЫ
 AVERAGE	СРЕДНЕЕ
 AVERAGE, LAST	СРЕДНЕЕ, ПОСЛЕДНЕЕ
 AVG #  1% LOW #  0.1% LOW #	СРЕДН. #  1% LOW #  0.1% LOW #
+AVG # US	СРЕДН. # МКС
 AVG FPS	СРЕДН. FPS
 AVG FRAME	СРЕДН. КАДР
 AVX2	AVX2
@@ -1015,7 +1013,7 @@ FPS	FPS
 FPS LIMIT	ЛИМИТ FPS
 FPS MIN (1S)	МИН. FPS (1С)
 FRAME CAP WAIT	ОЖИД. ЛИМИТА КАДРОВ
-FRAME TIME (MS) OVER THE RUN	ВРЕМЯ КАДРА (МС) ЗА ЗАПУСК
+FRAME TIME OVER THE RUN	ВРЕМЯ КАДРА ЗА ЗАПУСК
 FRAMES	КАДРЫ
 FREE FOR ALL	КАЖДЫЙ ЗА СЕБЯ
 FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next kill wins).	КАЖДЫЙ САМ ЗА СЕБЯ - побеждает больше убийств к концу времени (при ничьей овертайм: следующее убийство побеждает).
@@ -2165,6 +2163,7 @@ MATERIAL: WOODEN CRATE	МАТЕРИАЛ: ДЕРЕВЯННЫЙ ЯЩИК
 MATERIAL: WROUGHT IRON	МАТЕРИАЛ: КОВАНОЕ ЖЕЛЕЗО
 MATERIAL: ZEBRA CROSSING	МАТЕРИАЛ: ЗЕБРА
 MATERIAL: ZINC	МАТЕРИАЛ: ЦИНК
+MAX # US	МАКС. # МКС
 MAX (0=AUTO)	МАКС. (0=АВТО)
 MAX PING	МАКС. PING
 MAX PLAYERS	МАКС. ИГРОКОВ
@@ -2181,6 +2180,7 @@ MENUS	МЕНЮ
 METER SCALE	МАСШТАБ ШКАЛЫ
 METER TICKS	ДЕЛЕНИЯ ШКАЛЫ
 MILO	MILO
+MIN # US	МИН. # МКС
 MIN FPS (WORST FRAME)	МИН. FPS (ХУДШИЙ КАДР)
 MINE	МОЙ
 MINIMIZE ON ALT-TAB	СВОРАЧИВАТЬ ПРИ ALT-TAB

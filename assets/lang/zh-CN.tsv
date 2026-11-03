@@ -154,7 +154,6 @@
 10-BIT: ON (A 10-BIT WINDOW)	10 位: 开 (10 位窗口)
 12 H CLOCK	12 小时制
 12 M UP, OUT OF A HYPER FROM 20 M/S	以 20 M/S 的 HYPER 升高 12 M
-144 FPS	144 FPS
 16 M UP, OUT OF A HYPER FROM 20 M/S	以 20 M/S 的 HYPER 升高 16 M
 16 M/S ALONG THE FLOOR	沿地面 16 M/S
 1V1 - rounds on one ruleset (vanilla, laser vampire, instagib...). First to 5. Ranked 1v1 rates you on its own ladder.	1V1 - 在同一规则下进行多回合 (原版、激光吸血、一击必杀...)。先赢 5 回合者胜。排位 1v1 有独立天梯评分。
@@ -162,7 +161,6 @@
 2 BOUNCES	反弹 2 次
 2 HYPERS	HYPER 2 次
 2 SUPERS	SUPER 2 次
-240 FPS	240 FPS
 2:00  -  1ST OF 6	2:00  -  6 局中第 1 局
 2D: THE VIEW STAYS STILL, YOUR MOUSE MOVES THE CROSSHAIR	2D: 视角固定, 鼠标移动准星
 3 TIMES: THE GRAPH; 4 TIMES: THE GAME'S PART ONLY	3 次: 图表; 4 次: 仅游戏部分
@@ -175,7 +173,6 @@
 3D VAMP	3D 吸血
 5 M UP THE RAMP	冲上斜坡 5 M
 5 MORE MINUTES	再加 5 分钟
-60 FPS	60 FPS
 A BURST OF 24 M/S THE WAY YOU MOVE. TWO CHARGES, EACH BACK IN 1.2 S.	朝移动方向冲出 24 M/S。两次充能，每次 1.2 S 恢复。
 A DASH GOES THE WAY YOU MOVE, NOT THE WAY YOU LOOK.	冲刺朝移动方向，而不是视线方向。
 A DASH PRESSED THIS SOON BEFORE IT'S READY	冲刺就绪前多早按下仍生效
@@ -347,6 +344,7 @@ AUTO: YOUR SYSTEM'S LANGUAGE	自动: 系统语言
 AVERAGE	平均
 AVERAGE, LAST	平均, 最近
 AVG #  1% LOW #  0.1% LOW #	平均 #  1% 低帧 #  0.1% 低帧 #
+AVG # US	平均 # US
 AVG FPS	平均 FPS
 AVG FRAME	平均帧时间
 AVX2	AVX2
@@ -1015,7 +1013,7 @@ FPS	FPS
 FPS LIMIT	FPS 上限
 FPS MIN (1S)	FPS 最低 (1 秒)
 FRAME CAP WAIT	帧率上限等待
-FRAME TIME (MS) OVER THE RUN	运行期间帧时间 (MS)
+FRAME TIME OVER THE RUN	运行期间帧时间
 FRAMES	帧
 FREE FOR ALL	自由混战
 FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next kill wins).	自由混战 - 时间结束时击杀最多者胜 (平局进入加时: 下一个击杀者胜)。
@@ -2165,6 +2163,7 @@ MATERIAL: WOODEN CRATE	材质: 木箱
 MATERIAL: WROUGHT IRON	材质: 熟铁
 MATERIAL: ZEBRA CROSSING	材质: 斑马线
 MATERIAL: ZINC	材质: 锌
+MAX # US	最大 # US
 MAX (0=AUTO)	最大 (0=自动)
 MAX PING	最大 PING
 MAX PLAYERS	最大玩家数
@@ -2181,6 +2180,7 @@ MENUS	菜单
 METER SCALE	速度表比例
 METER TICKS	速度表刻度
 MILO	MILO
+MIN # US	最小 # US
 MIN FPS (WORST FRAME)	最低 FPS (最差帧)
 MINE	我的
 MINIMIZE ON ALT-TAB	切出时最小化

@@ -154,7 +154,6 @@
 10-BIT: ON (A 10-BIT WINDOW)	10ビット: オン (10ビットウィンドウ)
 12 H CLOCK	12時間表示
 12 M UP, OUT OF A HYPER FROM 20 M/S	20 M/S からのハイパーで 12 M 上昇
-144 FPS	144 FPS
 16 M UP, OUT OF A HYPER FROM 20 M/S	20 M/S からのハイパーで 16 M 上昇
 16 M/S ALONG THE FLOOR	床に沿って16 M/S
 1V1 - rounds on one ruleset (vanilla, laser vampire, instagib...). First to 5. Ranked 1v1 rates you on its own ladder.	1V1 - 1つのルール (バニラ、レーザーヴァンパイア、インスタギブ...) でラウンド制。5本先取。ランク1v1は専用ラダーでレート計算。
@@ -162,7 +161,6 @@
 2 BOUNCES	バウンド 2 回
 2 HYPERS	ハイパー 2 回
 2 SUPERS	スーパー 2 回
-240 FPS	240 FPS
 2:00  -  1ST OF 6	2:00  -  6人中1位
 2D: THE VIEW STAYS STILL, YOUR MOUSE MOVES THE CROSSHAIR	2D: 視点固定、マウスでクロスヘアを移動
 3 TIMES: THE GRAPH; 4 TIMES: THE GAME'S PART ONLY	3 回: グラフ; 4 回: ゲームの分だけ
@@ -175,7 +173,6 @@
 3D VAMP	3D ヴァンプ
 5 M UP THE RAMP	坂を 5 M 上がる
 5 MORE MINUTES	あと5分
-60 FPS	60 FPS
 A BURST OF 24 M/S THE WAY YOU MOVE. TWO CHARGES, EACH BACK IN 1.2 S.	移動方向へ 24 M/S の加速。チャージは 2 つ、それぞれ 1.2 S で回復。
 A DASH GOES THE WAY YOU MOVE, NOT THE WAY YOU LOOK.	ダッシュは視線ではなく移動方向へ進む。
 A DASH PRESSED THIS SOON BEFORE IT'S READY	使用可能になる直前に押したダッシュの受付時間
@@ -347,6 +344,7 @@ AUTO: YOUR SYSTEM'S LANGUAGE	自動: システムの言語
 AVERAGE	平均
 AVERAGE, LAST	平均、直近
 AVG #  1% LOW #  0.1% LOW #	平均 #  1% LOW #  0.1% LOW #
+AVG # US	平均 # US
 AVG FPS	平均 FPS
 AVG FRAME	平均フレーム
 AVX2	AVX2
@@ -1015,7 +1013,7 @@ FPS	FPS
 FPS LIMIT	FPS制限
 FPS MIN (1S)	FPS 最小 (1秒)
 FRAME CAP WAIT	フレーム上限待機
-FRAME TIME (MS) OVER THE RUN	ラン中のフレームタイム (MS)
+FRAME TIME OVER THE RUN	ラン中のフレームタイム
 FRAMES	フレーム
 FREE FOR ALL	個人戦
 FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next kill wins).	個人戦 - 時間切れ時に最多キルで勝利 (同点は延長戦: 次のキルで勝利)。
@@ -2165,6 +2163,7 @@ MATERIAL: WOODEN CRATE	素材: 木箱
 MATERIAL: WROUGHT IRON	素材: 錬鉄
 MATERIAL: ZEBRA CROSSING	素材: 横断歩道
 MATERIAL: ZINC	素材: 亜鉛
+MAX # US	最大 # US
 MAX (0=AUTO)	最大 (0=自動)
 MAX PING	最大PING
 MAX PLAYERS	最大人数
@@ -2181,6 +2180,7 @@ MENUS	メニュー
 METER SCALE	メーターの目盛り
 METER TICKS	メーターの刻み
 MILO	MILO
+MIN # US	最小 # US
 MIN FPS (WORST FRAME)	最小FPS (最悪フレーム)
 MINE	自分
 MINIMIZE ON ALT-TAB	ALT-TABで最小化

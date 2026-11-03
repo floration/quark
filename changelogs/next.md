@@ -28,6 +28,7 @@
 - **Slightly faster HUD, menus and server ticks:** rounding and square roots no longer call the C maths library.
 
 ## Latency
+- BENCHMARK results: the frame-time graph is now a line, zoomed so the run's fastest and slowest frames are its edges, with MIN, MAX and AVG shown in µs. Each frame's spread shows faintly behind the line.
 - FPS LIMIT holds its rate much more evenly: the limiter used to wake up late now and then (a 1000 cap's 0.1% low was 589). It now learns how late your PC's timer wakes and spins the rest, so capped frames come out on time.
 - F3's graph: the gap between SWAP and the GPU no longer creeps up for 10 seconds and then snaps back. That was the measurement, not your frames. The graph also updates 10 times a second now, not twice.
 - **New LATENCY settings tab**, with every latency tweak on its own switch so you can try each combination and compare them in F3 (which now names the tweaks it was taken with):

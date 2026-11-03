@@ -31,7 +31,7 @@ const Color kGrey = {0.7f, 0.72f, 0.75f, 1};
 const Color kRed = {1, 0.35f, 0.3f, 1};
 constexpr float kBandTop = 166, kBandH = 522, kMRow = 40;   // (the menus' band and row height, as game.cpp's)
 float bandTop(float kH) { return kBandTop + std::max(0.0f, (kBandH - (kH + 32)) * 0.5f) + 16; }
-constexpr size_t kGraphCols = 464;   // (the graph is 928 wide at 720p: a column every 2 px)
+constexpr size_t kGraphCols = 928;   // (the graph is 928 wide at 720p: a column a px)
 
 std::string upperStr(std::string t) { for (auto& c : t) c = (char)toupper((unsigned char)c); return t; }
 std::string fmt(const char* f, double v) { char b[48]; snprintf(b, sizeof b, f, v); return b; }
@@ -317,14 +317,16 @@ bool Game::benchWrite(const BenchFile& f) {
 bool Game::benchOpen(const std::string& path) {
     BenchResult& R = benchRes_;
     if (!benchLoad(path, R.run, true)) return false;
-    std::vector<float> scratch;
-    bench::Stats st;
-    st.p999Ms = 0;
+    R.colMax.clear(); R.colMean.clear(); R.colMin.clear();
+    R.loMs = 0; R.hiMs = 1; R.avgMs = 0;
     if (!R.run.times.empty()) {
-        st = bench::compute(R.run.times.data(), R.run.times.size(), scratch);
-        bench::graphColumns(R.run.times.data(), R.run.times.size(), kGraphCols, R.colMax, R.colMean);
-    } else { R.colMax.clear(); R.colMean.clear(); }
-    R.topMs = bench::graphTopMs(st);
+        const auto& t = R.run.times;
+        bench::graphColumns(t.data(), t.size(), kGraphCols, R.colMax, R.colMean, &R.colMin);
+        double sum = 0;
+        float lo = t[0], hi = t[0];
+        for (float v : t) { sum += v; lo = std::min(lo, v); hi = std::max(hi, v); }
+        R.loMs = lo * 1000.0f; R.hiMs = hi * 1000.0f; R.avgMs = (float)(sum / t.size() * 1000.0);
+    }
     R.nameDirty = false;
     R.havePrev = false;
     benchDemoFound_ = benchDemoPath();   // (RUN AGAIN: only with the demo there)
@@ -435,8 +437,8 @@ void Game::drawBenchList(const SetLayout& L) {
     }
 }
 
-// The result page: the frame-time graph over the whole run (each column the mean frame of its share, its slowest frame
-// a tick above), lines at 60 / 144 / 240 fps; the numbers beside the previous run's; the setup; the run's name;
+// The result page: the frame-time graph over the whole run (a line, scaled from the run's fastest to its slowest frame,
+// with those bounds and the average in us); the numbers beside the previous run's; the setup; the run's name;
 // EXPORT CSV / PNG; BACK, DELETE, OPEN FOLDER (the exports), RUN AGAIN.
 void Game::drawBenchResults(const SetLayout& L) {
     BenchResult& R = benchRes_;
@@ -447,29 +449,46 @@ void Game::drawBenchResults(const SetLayout& L) {
     // the graph: x 176..1104, y 206..370 at 720p
     const float gx = 176, gw = 928, gy = 206, gh = 164;
     r_.rect(L.X(gx), L.Y(gy), L.L(gw), L.L(gh), {0, 0, 0, 0.35f});
-    const float top = R.topMs;
-    auto yOf = [&](float ms) { return gy + gh * (1 - std::min(ms, top) / top); };
+    // (owner, 2026-11-03: "it should be a line not a fill from the bottom graph, kind of like capframex has, and scale in
+    // so the highest and lowest frametimes make the bounds, show in us the bounds and average"): the run's slowest frame
+    // is the top edge, its fastest the bottom. The line goes through each column's mean frame, joined to the column
+    // before; behind it, faint, each column's fastest to slowest frame, so a spike shows even where the mean hides it
+    float lo = R.loMs, hi = R.hiMs;
+    if (hi - lo < 0.002f) { lo -= 0.001f; hi += 0.001f; }   // (every frame the same: a flat line in the middle)
+    const float pad = 3;   // (px: the line's top and bottom frames aren't drawn on the box's edge)
+    auto yOf = [&](float ms) { return gy + pad + (gh - 2 * pad) * (1 - (ms - lo) / (hi - lo)); };
     const size_t cols = R.colMean.size();
     const float cw = cols ? gw / cols : gw;
+    const Color lc = {ui_.accent.r, ui_.accent.g, ui_.accent.b, 1.0f}, bc = {ui_.accent.r, ui_.accent.g, ui_.accent.b, 0.35f};
+    const float lw = 1.5f;   // (the line's thickness, 720p px)
+    for (size_t c = 0; c < cols && !R.colMin.empty(); c++) {
+        const float yt = yOf(R.colMax[c]), yb = yOf(R.colMin[c]);
+        r_.rect(L.X(gx + c * cw), L.Y(yt), std::max(1.0f, L.L(cw)), std::max(1.0f, L.L(yb - yt)), bc);
+    }
+    float prev = 0;
     for (size_t c = 0; c < cols; c++) {
-        const float x = gx + c * cw, ym = yOf(R.colMean[c]), yx = yOf(R.colMax[c]);
-        r_.rect(L.X(x), L.Y(ym), std::max(1.0f, L.L(cw)), L.L(gy + gh - ym), {ui_.accent.r, ui_.accent.g, ui_.accent.b, 0.55f});
-        if (R.colMax[c] > top) r_.rect(L.X(x), L.Y(gy), std::max(1.0f, L.L(cw)), L.L(3), kRed);   // (off the top)
-        else if (yx < ym - 0.5f) r_.rect(L.X(x), L.Y(yx), std::max(1.0f, L.L(cw)), std::max(1.0f, L.L(1.5f)), {1.0f, 0.8f, 0.3f, 0.9f});
+        const float y = yOf(R.colMean[c]);
+        float yt = y, yb = y;
+        if (c > 0) { yt = std::min(yt, prev); yb = std::max(yb, prev); }   // (joined to the column before)
+        prev = y;
+        r_.rect(L.X(gx + c * cw), L.Y(yt - 0.5f * lw), std::max(1.0f, L.L(cw)), std::max(1.0f, L.L(yb - yt + lw)), lc);
     }
-    static const struct { int fps; const char* name; } refs[] = {{60, "60 FPS"}, {144, "144 FPS"}, {240, "240 FPS"}};
-    float lastLabel = -100;
-    for (auto& rf : refs) {
-        const float ms = 1000.0f / rf.fps;
-        if (ms > top) continue;
-        const float y = yOf(ms);
-        r_.rect(L.X(gx), L.Y(y), L.L(gw), std::max(1.0f, L.L(1)), {1, 1, 1, 0.35f});
-        const float ly = y - lastLabel < 28 ? y + 3 : y - 14;   // (a line close under the last: its label under it)
-        ui_.hint(L.X(gx + gw) - r_.textWidth(rf.name, hs) - L.L(4), L.Y(ly), rf.name, kWhite, L.L(80));
-        lastLabel = y;
+    // the bounds and the average, in microseconds: the average as a dashed line across
+    if (cols) {
+        const float ya = yOf(R.avgMs);
+        for (float x = gx; x < gx + gw; x += 12) r_.rect(L.X(x), L.Y(ya), L.L(std::min(6.0f, gx + gw - x)), std::max(1.0f, L.L(1)), {1, 1, 1, 0.6f});
+        // (each on a dark tab, so the line under it doesn't hide it)
+        auto tag = [&](float x, float y, const std::string& t, Color c, bool right) {
+            const float w = r_.textWidth(t, hs), px = right ? x - w - L.L(4) : x;
+            r_.rect(px - L.L(3), y - L.L(1), w + L.L(6), r_.textHeight(hs) + L.L(3), {0, 0, 0, 0.75f});
+            ui_.hint(px, y, t, c, w + 1);
+        };
+        tag(L.X(gx + gw), L.Y(ya < gy + 18 ? ya + 3 : ya - 14), fmt("AVG %.0f US", R.avgMs * 1000.0f), kWhite, true);
+        tag(L.X(gx + 4), L.Y(gy + 2), fmt("MAX %.0f US", R.hiMs * 1000.0f), kWhite, false);
+        tag(L.X(gx + 4), L.Y(gy + gh - 14), fmt("MIN %.0f US", R.loMs * 1000.0f), kWhite, false);
+        const std::string t = "FRAME TIME OVER THE RUN";
+        tag(L.X(gx + gw * 0.5f) - r_.textWidth(t, hs) * 0.5f, L.Y(gy + 2), t, kGrey, false);
     }
-    ui_.hint(L.X(gx + 4), L.Y(gy + 2), fmt("%.0f MS", top), kGrey, L.L(80));
-    ui_.hint(L.X(gx + 4), L.Y(gy + gh - 14), "FRAME TIME (MS) OVER THE RUN", kGrey, L.L(300));
     if (cols == 0) ui_.labelCentered(L.X(640), L.Y(gy + gh * 0.5f - 8), "NO FRAMES MEASURED", kRed, 1.0f, L.L(600));
     // the numbers (x 176..576) and the previous run's (right-aligned at 676); the setup (x 704..1104)
     const float rowH = 18;

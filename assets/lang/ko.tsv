@@ -154,7 +154,6 @@
 10-BIT: ON (A 10-BIT WINDOW)	10비트: 켜짐 (10비트 창)
 12 H CLOCK	12시간제
 12 M UP, OUT OF A HYPER FROM 20 M/S	20 M/S 하이퍼로 12 M 상승
-144 FPS	144 FPS
 16 M UP, OUT OF A HYPER FROM 20 M/S	20 M/S 하이퍼로 16 M 위로
 16 M/S ALONG THE FLOOR	바닥을 따라 16 M/S
 1V1 - rounds on one ruleset (vanilla, laser vampire, instagib...). First to 5. Ranked 1v1 rates you on its own ladder.	1V1 - 한 가지 규칙(바닐라, 레이저 뱀파이어, 인스타깁...)으로 라운드 진행. 5선승. 랭크 1v1은 별도 래더로 레이팅됩니다.
@@ -162,7 +161,6 @@
 2 BOUNCES	튕기기 2회
 2 HYPERS	하이퍼 2회
 2 SUPERS	슈퍼 2회
-240 FPS	240 FPS
 2:00  -  1ST OF 6	2:00  -  6명 중 1위
 2D: THE VIEW STAYS STILL, YOUR MOUSE MOVES THE CROSSHAIR	2D: 시점 고정, 마우스로 조준점 이동
 3 TIMES: THE GRAPH; 4 TIMES: THE GAME'S PART ONLY	3번: 그래프; 4번: 게임 부분만
@@ -175,7 +173,6 @@
 3D VAMP	3D 뱀프
 5 M UP THE RAMP	경사로 5 M 오르기
 5 MORE MINUTES	5분 더
-60 FPS	60 FPS
 A BURST OF 24 M/S THE WAY YOU MOVE. TWO CHARGES, EACH BACK IN 1.2 S.	이동 방향으로 24 M/S 돌진. 충전 2회, 각각 1.2 S 후 회복.
 A DASH GOES THE WAY YOU MOVE, NOT THE WAY YOU LOOK.	대시는 보는 방향이 아니라 움직이는 방향으로 나간다.
 A DASH PRESSED THIS SOON BEFORE IT'S READY	준비되기 이만큼 전에 누른 대시 입력 인정
@@ -347,6 +344,7 @@ AUTO: YOUR SYSTEM'S LANGUAGE	자동: 시스템 언어
 AVERAGE	평균
 AVERAGE, LAST	평균, 최근
 AVG #  1% LOW #  0.1% LOW #	평균 #  1% LOW #  0.1% LOW #
+AVG # US	평균 # US
 AVG FPS	평균 FPS
 AVG FRAME	평균 프레임
 AVX2	AVX2
@@ -1015,7 +1013,7 @@ FPS	FPS
 FPS LIMIT	FPS 제한
 FPS MIN (1S)	FPS 최저 (1초)
 FRAME CAP WAIT	프레임 제한 대기
-FRAME TIME (MS) OVER THE RUN	실행 중 프레임 시간 (MS)
+FRAME TIME OVER THE RUN	실행 중 프레임 시간
 FRAMES	프레임
 FREE FOR ALL	개인전
 FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next kill wins).	개인전 - 시간이 끝났을 때 킬이 가장 많은 플레이어 승리 (동점이면 연장전: 다음 킬 승리).
@@ -2165,6 +2163,7 @@ MATERIAL: WOODEN CRATE	재질: 나무 상자
 MATERIAL: WROUGHT IRON	재질: 연철
 MATERIAL: ZEBRA CROSSING	재질: 횡단보도
 MATERIAL: ZINC	재질: 아연
+MAX # US	최대 # US
 MAX (0=AUTO)	최대 (0=자동)
 MAX PING	최대 핑
 MAX PLAYERS	최대 인원
@@ -2181,6 +2180,7 @@ MENUS	메뉴
 METER SCALE	계기 배율
 METER TICKS	계기 눈금
 MILO	MILO
+MIN # US	최소 # US
 MIN FPS (WORST FRAME)	최저 FPS (최악 프레임)
 MINE	내 것
 MINIMIZE ON ALT-TAB	ALT-TAB 시 최소화

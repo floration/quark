@@ -380,8 +380,8 @@ private:
     struct BenchResult {             // the run the result page shows, and the one saved before it (to compare)
         BenchFile run, prev;
         bool havePrev = false, nameDirty = false;
-        float topMs = 20;
-        std::vector<float> colMax, colMean;   // the graph (bench::graphColumns)
+        float loMs = 0, hiMs = 1, avgMs = 0;   // the graph's bounds: the run's fastest and slowest frame, and its mean
+        std::vector<float> colMax, colMean, colMin;   // the graph (bench::graphColumns)
     } benchRes_;
     std::vector<BenchFile> benchList_;   // the BENCHMARKS page's runs, newest first (headers only)
     double benchListAt_ = 0;             // (rescanned every 2 s while it's open, as the demos list)
