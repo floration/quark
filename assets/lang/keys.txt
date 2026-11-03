@@ -80,6 +80,7 @@
 (REFUSED 0X#)
 (TEAM MODES NEED A + B SPAWNS)
 (TEAM)
+(UNTIL A HOLE IS BLOWN IN A WALL)
 (already in use?)
 (and copied it) - rename it there
 (edited)
@@ -770,6 +771,8 @@ E-GIRL
 EACH INPUT SENT IN THIS MANY PACKETS
 EACH OF THE ANNOUNCER'S LINES ON OR OFF
 EACH SLIDER SHOWS THE VALUE IN THIS MODE (STANDARD x MULTIPLIER)
+EARLY DEPTH
+EARLY DEPTH TEST
 EARLY FLUSH
 EASY
 EASY BOTS
@@ -2955,6 +2958,7 @@ THE FRAME
 THE GAME RUNS ON YOUR INTEGRATED GPU
 THE GAME'S PART ONLY: NO MOUSE POLLING, NO DISPLAY; ONE TIME LINE
 THE GPU READS YOUR AIM AS IT STARTS DRAWING;
+THE GPU SKIPS THE WORLD'S HIDDEN PIXELS
 THE GUN'S KICK ON A SHOT (0: NONE)
 THE HAZE OVER DISTANT WALLS (0: NONE)
 THE LANGUAGE OF THE MENUS AND THE HUD
@@ -3807,6 +3811,7 @@ tourney seed #: {} (#)
 tourney started -
 trying the next rate up: busy #%, upload # kbps
 ui verts
+ultra: pace the input read
 ungrouped into
 unknown mode
 unknown mode '
@@ -3850,6 +3855,10 @@ wins the race
 wins the round
 wins the tourney!
 world chunks
+world fast: back to main
+world fast: bind + sync
+world fast: frame uniforms
+world fast: full copy
 world pass
 world shader
 world shader (no discard):
@@ -3858,6 +3867,7 @@ world shader (no discard): {} not in the main program
 world shader:
 world shader: {}
 world upload
+world: frame uniforms
 wraith: nice shot
 you already called a vote on
 you left the line - join a team to get back in it

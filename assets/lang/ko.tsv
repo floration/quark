@@ -80,6 +80,7 @@
 (REFUSED 0X#)	(거부됨 0X#)
 (TEAM MODES NEED A + B SPAWNS)	(팀 모드는 A + B 스폰 필요)
 (TEAM)	(팀)
+(UNTIL A HOLE IS BLOWN IN A WALL)	(벽에 구멍이 뚫리기 전까지)
 (already in use?)	(이미 사용 중?)
 (and copied it) - rename it there	(복사됨) - 그곳에서 이름 변경
 (edited)	(수정됨)
@@ -770,6 +771,8 @@ E-GIRL	E-GIRL
 EACH INPUT SENT IN THIS MANY PACKETS	각 입력을 이 개수의 패킷으로 전송
 EACH OF THE ANNOUNCER'S LINES ON OR OFF	아나운서 대사별 켜기 / 끄기
 EACH SLIDER SHOWS THE VALUE IN THIS MODE (STANDARD x MULTIPLIER)	각 슬라이더는 이 모드의 값을 표시 (표준 x 배율)
+EARLY DEPTH	조기 깊이
+EARLY DEPTH TEST	조기 깊이 테스트
 EARLY FLUSH	조기 전송
 EASY	쉬움
 EASY BOTS	쉬움 봇
@@ -2955,6 +2958,7 @@ THE FRAME	프레임
 THE GAME RUNS ON YOUR INTEGRATED GPU	게임이 내장 GPU에서 실행 중
 THE GAME'S PART ONLY: NO MOUSE POLLING, NO DISPLAY; ONE TIME LINE	게임만: 마우스 폴링과 디스플레이 제외; 하나의 시간선
 THE GPU READS YOUR AIM AS IT STARTS DRAWING;	GPU가 그리기 시작할 때 조준을 읽음;
+THE GPU SKIPS THE WORLD'S HIDDEN PIXELS	GPU가 가려진 월드 픽셀을 건너뜀
 THE GUN'S KICK ON A SHOT (0: NONE)	사격 시 총기 반동 (0: 없음)
 THE HAZE OVER DISTANT WALLS (0: NONE)	먼 벽 위의 연무 (0: 없음)
 THE LANGUAGE OF THE MENUS AND THE HUD	메뉴와 HUD의 언어
@@ -3807,6 +3811,7 @@ tourney seed #: {} (#)	tourney seed #: {} (#)
 tourney started -	토너먼트 시작 -
 trying the next rate up: busy #%, upload # kbps	다음 빈도로 상향 시도: 사용 #%, 업로드 # kbps
 ui verts	ui verts
+ultra: pace the input read	ultra: pace the input read
 ungrouped into	그룹 해제됨:
 unknown mode	알 수 없는 모드
 unknown mode '	알 수 없는 모드 '
@@ -3850,6 +3855,10 @@ wins the race	레이스 승리
 wins the round	라운드 승리
 wins the tourney!	토너먼트 우승!
 world chunks	world chunks
+world fast: back to main	world fast: back to main
+world fast: bind + sync	world fast: bind + sync
+world fast: frame uniforms	world fast: frame uniforms
+world fast: full copy	world fast: full copy
 world pass	world pass
 world shader	world shader
 world shader (no discard):	world shader (no discard):
@@ -3858,6 +3867,7 @@ world shader (no discard): {} not in the main program	world shader (no discard):
 world shader:	월드 셰이더:
 world shader: {}	world shader: {}
 world upload	world upload
+world: frame uniforms	world: frame uniforms
 wraith: nice shot	wraith: 나이스 샷
 you already called a vote on	이미 투표를 시작했습니다:
 you left the line - join a team to get back in it	줄에서 나갔습니다 - 다시 들어가려면 팀에 참가하세요

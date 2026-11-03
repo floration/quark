@@ -1967,7 +1967,7 @@ void Renderer::drawScene(bool shadows) {
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, lightmapNearest ? GL_NEAREST : GL_LINEAR);
         }
         glBindVertexArray(worldVao_);
-        const bool fast = worldFastProg_ && worldFastFor_ == worldProg_ && holeCount_ == 0;
+        const bool fast = fastWorld && worldFastProg_ && worldFastFor_ == worldProg_ && holeCount_ == 0;
         if (fast) {   // (no holes: the program without discard, same uniforms)
             QZONE("world fast: bind + sync");
             syncWorldFast();

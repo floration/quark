@@ -232,6 +232,7 @@ public:
     };
     void setLook(const Look& l);
     bool farScenery = true;     // distant scenery's chunks drawn
+    bool fastWorld = true;      // LATENCY > EARLY DEPTH TEST: the no-discard world program while no hole is blown
     float farPlane = 400.0f;    // DRAW DISTANCE: metres to the far plane (the next setCamera)
     float shadowRange = 32.0f;  // SHADOW DISTANCE: the shadow map's half-width around its focus (metres)
     bool shadowWorld = true, shadowPlayers = true;   // dynamic shadows onto the map / onto players

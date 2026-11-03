@@ -80,6 +80,7 @@
 (REFUSED 0X#)	(RECHAZADO 0X#)
 (TEAM MODES NEED A + B SPAWNS)	(LOS MODOS POR EQUIPOS NECESITAN SPAWNS A + B)
 (TEAM)	(EQUIPO)
+(UNTIL A HOLE IS BLOWN IN A WALL)	(HASTA QUE SE ABRA UN AGUJERO EN UNA PARED)
 (already in use?)	(¿ya en uso?)
 (and copied it) - rename it there	(y lo copió) - cámbiale el nombre allí
 (edited)	(editado)
@@ -770,6 +771,8 @@ E-GIRL	E-GIRL
 EACH INPUT SENT IN THIS MANY PACKETS	CADA INPUT SE ENVÍA EN TANTOS PAQUETES
 EACH OF THE ANNOUNCER'S LINES ON OR OFF	CADA FRASE DEL LOCUTOR, ACTIVADA O DESACTIVADA
 EACH SLIDER SHOWS THE VALUE IN THIS MODE (STANDARD x MULTIPLIER)	CADA DESLIZADOR MUESTRA EL VALOR EN ESTE MODO (ESTÁNDAR x MULTIPLICADOR)
+EARLY DEPTH	PROF. TEMPRANA
+EARLY DEPTH TEST	PRUEBA DE PROF. TEMPRANA
 EARLY FLUSH	ENVÍO TEMPRANO
 EASY	FÁCIL
 EASY BOTS	BOTS FÁCILES
@@ -2955,6 +2958,7 @@ THE FRAME	EL FRAME
 THE GAME RUNS ON YOUR INTEGRATED GPU	EL JUEGO USA TU GPU INTEGRADA
 THE GAME'S PART ONLY: NO MOUSE POLLING, NO DISPLAY; ONE TIME LINE	SOLO EL JUEGO: SIN SONDEO DEL RATÓN NI PANTALLA; UNA LÍNEA DE TIEMPO
 THE GPU READS YOUR AIM AS IT STARTS DRAWING;	LA GPU LEE TU PUNTERÍA AL EMPEZAR A DIBUJAR;
+THE GPU SKIPS THE WORLD'S HIDDEN PIXELS	LA GPU SE SALTA LOS PÍXELES OCULTOS DEL MUNDO
 THE GUN'S KICK ON A SHOT (0: NONE)	EL RETROCESO DEL ARMA AL DISPARAR (0: NINGUNO)
 THE HAZE OVER DISTANT WALLS (0: NONE)	LA NEBLINA SOBRE LAS PAREDES LEJANAS (0: NINGUNA)
 THE LANGUAGE OF THE MENUS AND THE HUD	EL IDIOMA DE LOS MENÚS Y EL HUD
@@ -3807,6 +3811,7 @@ tourney seed #: {} (#)	tourney seed #: {} (#)
 tourney started -	torneo iniciado -
 trying the next rate up: busy #%, upload # kbps	probando la siguiente tasa superior: ocupado #%, subida # kbps
 ui verts	ui verts
+ultra: pace the input read	ultra: pace the input read
 ungrouped into	desagrupado en
 unknown mode	modo desconocido
 unknown mode '	modo desconocido '
@@ -3850,6 +3855,10 @@ wins the race	gana la carrera
 wins the round	gana la ronda
 wins the tourney!	¡gana el torneo!
 world chunks	world chunks
+world fast: back to main	world fast: back to main
+world fast: bind + sync	world fast: bind + sync
+world fast: frame uniforms	world fast: frame uniforms
+world fast: full copy	world fast: full copy
 world pass	world pass
 world shader	world shader
 world shader (no discard):	world shader (no discard):
@@ -3858,6 +3867,7 @@ world shader (no discard): {} not in the main program	world shader (no discard):
 world shader:	world shader:
 world shader: {}	world shader: {}
 world upload	world upload
+world: frame uniforms	world: frame uniforms
 wraith: nice shot	wraith: buen tiro
 you already called a vote on	ya iniciaste una votación sobre
 you left the line - join a team to get back in it	saliste de la cola - únete a un equipo para volver a ella
