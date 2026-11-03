@@ -850,7 +850,7 @@ private:
     static_assert((kFrameTimes & (kFrameTimes - 1)) == 0, "kFrameTimes must be a power of two");
     std::vector<float> frameTimes_ = std::vector<float>(kFrameTimes, 0.0f);
     size_t frameIdx_ = 0, frameCount_ = 0;
-    double perfNextUpdate_ = 0;
+    double perfNextUpdate_ = 0, pipeNextUpdate_ = 0;
     std::string perfText_, perfText2_;   // F3's first two lines: the frame rates, then the worst frame and the ping
     void drawPerf();
 
@@ -1016,12 +1016,16 @@ private:
     LatQuery latQ_[16] = {};
     int latNext_ = 0;
     double gpuClockOffset_ = 0, gpuCalibAt_ = -10;
-    // the GPU clock's drift against the CPU's (seconds per second), from the last two calibrations, and the GPU time
-    // (s) of the last one: GPU times are placed with offset + drift * (t - gpuCalibGpu_), so they don't slide between
+    // the GPU clock's drift against the CPU's (seconds per second), fitted over the last calibrations, and the fit's mean
+    // GPU time (s): GPU times are placed with offset + drift * (t - gpuCalibGpu_), so they don't slide between
     // calibrations (F3's swap-to-GPU gap grew over 10 s, then snapped back)
     double gpuDrift_ = 0, gpuCalibGpu_ = 0;
-    bool gpuCalibHave_ = false;
-    double gpuToCpu(GLint64 t) const { const double g = t * 1e-9; return g + gpuClockOffset_ + gpuDrift_ * (g - gpuCalibGpu_); }
+    static constexpr int kGpuCalib = 8;   // (samples in the fit: 8 x 2 s = the last 16 s)
+    double gpuCalibS_[kGpuCalib][2] = {};   // (GPU time s, offset s)
+    int gpuCalibN_ = 0;
+    double gpuCalibPeriod_ = 2.0;   // (s between calibrations; QUARK_GPU_CALIB overrides, for testing)
+    double gpuToCpuSec(double g) const { return g + gpuClockOffset_ + gpuDrift_ * (g - gpuCalibGpu_); }
+    double gpuToCpu(GLint64 t) const { return gpuToCpuSec(t * 1e-9); }
     std::vector<float> latSamples_;      // ms, last second
     std::string latText_;
     double latNextUpdate_ = 0;
