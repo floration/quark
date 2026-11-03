@@ -319,6 +319,10 @@ private:
     unsigned cleanTex_ = 0, cleanVao_ = 0, cleanVbo_ = 0;   // CLEAN SURFACES' averages (buildCleanMeans), texture unit 5
     std::vector<bool> cleanUsed_;   // the looks in the map (12 on, the large ones as their base)
     std::array<float, 14> cleanKey_ = {};   // what the averages were made with (program, palette); cleared: make them again
+    double cleanAt_ = -1e9;   // (when they were last made: a palette changing every frame makes them 10 times a second)
+    std::vector<int> cleanMats_;   // (the materials in cleanVbo_'s squares)
+    unsigned cleanOutFbo_ = 0, cleanPatchTex_ = 0, cleanPatchFbo_ = 0;   // (uCleanTex as a target; the patches, mipmapped)
+    int cleanPatchW_ = 0, cleanPatchH_ = 0;
     unsigned swatchTex_ = 0, swatchFbo_ = 0, swatchLm_ = 0, swatchVao_ = 0, swatchVbo_ = 0, imgProg_ = 0, imgVao_ = 0, imgVbo_ = 0;
     GLint uImgScreen_ = -1;
     float swatchKey_[13] = {};
