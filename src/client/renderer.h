@@ -66,6 +66,11 @@ public:
     void setHoles(const std::vector<Map::Hole>& holes);   // holes blown in thin brick / cobblestone (the world shader cuts them)
     void loadWorld(const Map& map, const std::function<void(float)>& progress);
     void warmup(const Map& map); // compile every shader / state now, not on the first match frame
+    // The next map's world program, started from its brushes as its bake starts (compiled in the driver's threads when
+    // it has parallel shader compile; else nothing starts and uploadWorld compiles it, as before); worldLooksPending:
+    // still compiling (the loading screen waits for it, so the upload doesn't block on it).
+    void beginWorldLooks(const Map& map);
+    bool worldLooksPending() const;
     bool worldLoaded() const { return worldVerts_ > 0; }
     void unloadWorld(const Vec3& sunDir) { worldVerts_ = 0; sunDir_ = sunDir; } // editor: draw only dynamic boxes
 
@@ -296,6 +301,19 @@ private:
     float holeGrid_[4] = {};   // (the hole grid's uniforms as last set: a new world program gets them too)
     int holeGridH_ = 0;
     std::vector<bool> worldUsed_ = std::vector<bool>((size_t)kMapMaterials, false);   // the looks in worldProg_ (setWorldLooks)
+    // One program being built (beginProgram, programReady, finishProgram, renderer.cpp)
+    struct ProgramBuild { unsigned prog = 0, vs = 0, fs = 0; std::string key; bool fromCache = false; };
+    void beginProgram(ProgramBuild& b, const char* vs, const char* fs, bool cache);
+    bool programReady(const ProgramBuild& b) const;
+    unsigned finishProgram(ProgramBuild& b, std::string* err);
+    void dropProgram(ProgramBuild& b);
+    bool parallelCompile_ = false, binaryCache_ = false;   // (the driver has KHR / ARB_parallel_shader_compile; program binaries)
+    std::string glId_;   // (GL_VENDOR, GL_RENDERER, GL_VERSION: in the binary cache's key)
+    // beginWorldLooks' builds, one per world program variant: the main one and the no-discard one (buildWorldFast)
+    struct { ProgramBuild prog, fast; std::vector<bool> used; bool active = false; } worldBuild_;
+    void dropWorldBuild();
+    static bool worldDiscardOnly();   // (QUARK_WORLD_DISCARD: no no-discard program, the A/B's old single program)
+    static std::string worldSource(const std::vector<bool>* used, bool noDiscard, std::string* err);
     unsigned compileWorld(const std::vector<bool>* used, std::string* err, bool noDiscard = false);
     // The world's opaque pass without discard (its hole and see-through discards cost the GPU its early depth test:
     // -27% GPU world pass on a 3090 Ti, 2026-11-03): built beside worldProg_, used while no holes are blown, its uniforms
@@ -306,9 +324,9 @@ private:
     unsigned worldFastProg_ = 0, worldFastFor_ = 0;
     bool worldFastDirty_ = true;
     std::vector<UniformCopy> worldFastCopy_;
-    void buildWorldFast();
+    void buildWorldFast(const unsigned* prebuilt = nullptr);
     void syncWorldFast();
-    void setWorldLooks(const BakedWorld& bw);
+    void setWorldLooks(const Map& map, const BakedWorld& bw);
     void uploadSeeThrough(const Map& map);
 public:
     void uploadBlocks(const Map& map);   // the breakable blocks still standing (again when one breaks / they're back)
@@ -325,6 +343,10 @@ private:
     unsigned cleanTex_ = 0, cleanVao_ = 0, cleanVbo_ = 0;   // CLEAN SURFACES' averages (buildCleanMeans), texture unit 5
     std::vector<bool> cleanUsed_;   // the looks in the map (12 on, the large ones as their base)
     std::array<float, 14> cleanKey_ = {};   // what the averages were made with (program, palette); cleared: make them again
+    double cleanAt_ = -1e9;   // (when they were last made: a palette changing every frame makes them 10 times a second)
+    std::vector<int> cleanMats_;   // (the materials in cleanVbo_'s squares)
+    unsigned cleanOutFbo_ = 0, cleanPatchTex_ = 0, cleanPatchFbo_ = 0;   // (uCleanTex as a target; the patches, mipmapped)
+    int cleanPatchW_ = 0, cleanPatchH_ = 0;
     unsigned swatchTex_ = 0, swatchFbo_ = 0, swatchLm_ = 0, swatchVao_ = 0, swatchVbo_ = 0, imgProg_ = 0, imgVao_ = 0, imgVbo_ = 0;
     GLint uImgScreen_ = -1;
     float swatchKey_[13] = {};

@@ -39,6 +39,9 @@ typedef struct __GLsync* GLsync;
 #define GL_LINES 0x0001
 #define GL_DEPTH_BUFFER_BIT 0x00000100
 #define GL_COLOR_BUFFER_BIT 0x00004000
+#define GL_COLOR 0x1800
+#define GL_TEXTURE_BASE_LEVEL 0x813C
+#define GL_TEXTURE_MAX_LEVEL 0x813D
 #define GL_DEPTH_TEST 0x0B71
 #define GL_CULL_FACE 0x0B44
 #define GL_BLEND 0x0BE2
@@ -142,6 +145,7 @@ typedef struct __GLsync* GLsync;
     X(void, glUniformBlockBinding, (GLuint, GLuint, GLuint)) \
     X(void, glClear, (GLbitfield)) \
     X(void, glClearColor, (GLfloat, GLfloat, GLfloat, GLfloat)) \
+    X(void, glClearBufferfv, (GLenum, GLint, const GLfloat*)) \
     X(void, glEnable, (GLenum)) \
     X(void, glDisable, (GLenum)) \
     X(void, glViewport, (GLint, GLint, GLsizei, GLsizei)) \
@@ -243,6 +247,27 @@ QGL_FUNCS(QGL_DECLARE)
 // (GL 4.4 / ARB_buffer_storage, not in 3.3: null when the driver lacks it; the GPU late latch needs it)
 typedef void(QGLAPI* PFN_glBufferStorage)(GLenum, GLsizeiptr, const void*, GLbitfield);
 extern PFN_glBufferStorage glBufferStorageOpt;
+
+// Optional too (null when missing; a non-null pointer alone doesn't mean the driver has the extension: Renderer::init
+// checks glGetStringiOpt's list): the program binary cache (GL 4.1 / ARB_get_program_binary) and the world shader's
+// compile in the driver's threads (KHR / ARB_parallel_shader_compile)
+#define GL_VENDOR 0x1F00
+#define GL_EXTENSIONS 0x1F03
+#define GL_NUM_EXTENSIONS 0x821D
+#define GL_PROGRAM_BINARY_RETRIEVABLE_HINT 0x8257
+#define GL_PROGRAM_BINARY_LENGTH 0x8741
+#define GL_NUM_PROGRAM_BINARY_FORMATS 0x87FE
+#define GL_COMPLETION_STATUS_KHR 0x91B1
+typedef const GLubyte*(QGLAPI* PFN_glGetStringi)(GLenum, GLuint);
+typedef void(QGLAPI* PFN_glGetProgramBinary)(GLuint, GLsizei, GLsizei*, GLenum*, void*);
+typedef void(QGLAPI* PFN_glProgramBinary)(GLuint, GLenum, const void*, GLsizei);
+typedef void(QGLAPI* PFN_glProgramParameteri)(GLuint, GLenum, GLint);
+typedef void(QGLAPI* PFN_glMaxShaderCompilerThreads)(GLuint);
+extern PFN_glGetStringi glGetStringiOpt;
+extern PFN_glGetProgramBinary glGetProgramBinaryOpt;
+extern PFN_glProgramBinary glProgramBinaryOpt;
+extern PFN_glProgramParameteri glProgramParameteriOpt;
+extern PFN_glMaxShaderCompilerThreads glMaxShaderCompilerThreadsKHROpt, glMaxShaderCompilerThreadsARBOpt;
 
 typedef void* (*QGLGetProc)(const char*);
 // Returns the name of the first missing function, or nullptr on success.

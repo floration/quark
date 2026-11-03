@@ -1,5 +1,6 @@
 #include "renderer.h"
 #include "../common/u8file.h"
+#include "../common/sha256.h"
 #include "../common/profile.h"
 #include "gpuprofile.h"
 #include "../common/net.h"
@@ -16,6 +17,8 @@
 #include "textfit.h"
 #include "surface_looks.h"
 #include <memory>
+#include <thread>
+#include <filesystem>
 
 namespace {
 
@@ -773,13 +776,15 @@ static std::string worldLooks(const std::vector<bool>* used) {
     return s + "}\n";
 }
 
-unsigned Renderer::compileWorld(const std::vector<bool>* used, std::string* err, bool noDiscard) {
+// The world fragment shader with the looks of the materials marked in `used` (null: all of them); noDiscard: without
+// its discards ("" and err if one isn't there)
+std::string Renderer::worldSource(const std::vector<bool>* used, bool noDiscard, std::string* err) {
     std::string fs = std::string("#version 330 core\n") + kShadowFn + kWorldFS;
     if (noDiscard)   // (the opaque pass with no holes: neither discard can happen there, and without them the GPU tests depth first)
         for (const char* d : {"if (uHoleCount > 0 && (mat == 20 || mat == 24) && vMat - float(mat) > 0.1 && inHole()) discard;",
                               "if (blended && alpha < 0.01) discard;"}) {
             const size_t at = fs.find(d);
-            if (at == std::string::npos) { if (err) *err += std::string("no-discard world shader: missing ") + d; return 0; }
+            if (at == std::string::npos) { if (err) *err += std::string("no-discard world shader: missing ") + d; return std::string(); }
             fs.erase(at, strlen(d));
         }
     const size_t at = fs.find("// @LOOKS@");
@@ -791,18 +796,72 @@ unsigned Renderer::compileWorld(const std::vector<bool>* used, std::string* err,
     const size_t lat = fs.find("// @LARGE@");
     fs.replace(lat, fs.find('\n', lat) - lat, "if (mat >= " + std::to_string(kMatLarge) + " && mat < " + std::to_string(kMatSemi) + ") { const int lb[" + n + "] = int[" + n + "](" + lb + "); const float ls[" + n + "] = float[" + n + "](" + ls +
                "); int li = min(mat - " + std::to_string(kMatLarge) + ", " + std::to_string(kLargeCount - 1) + "); mat = lb[li]; q /= ls[li]; }");
-    return compile(kWorldVS, fs.c_str(), err);
+    return fs;
 }
 
-// A new map's world: its world shader gets the looks of the materials in it (only when they changed: a compile is a
-// hitch, here while the map loads anyway)
-void Renderer::setWorldLooks(const BakedWorld& bw) {
+// A world program with those looks, here and now (the program binary cache first)
+unsigned Renderer::compileWorld(const std::vector<bool>* used, std::string* err, bool noDiscard) {
+    const std::string fs = worldSource(used, noDiscard, err);
+    if (fs.empty()) return 0;
+    ProgramBuild b;
+    beginProgram(b, kWorldVS, fs.c_str(), true);
+    return finishProgram(b, err);
+}
+
+// The looks a map's world program needs, from its brushes, so they're known before its bake: each baked brush's look
+// (a large one's as its base's) and the see-through and breakable ones' (drawn by the world program each frame). The
+// mesh may leave a brush out (every face buried): its look is in the program anyway, never drawn.
+static std::vector<bool> worldLookSet(const Map& map) {
     std::vector<bool> used((size_t)kMapMaterials, false);
-    for (const WorldVertex& v : bw.verts) {
-        const int m = (int)(v.material + 0.5f);
-        if (m >= kMatBlocks && m < kMapMaterials) used[(size_t)(m >= kMatLarge && m < kMatSemi ? kLarge[m - kMatLarge].base : m)] = true;
+    for (const Brush& b : map.brushes) {
+        if (b.material < 0 || b.material >= kMapMaterials) continue;
+        if (bakedMaterial(b.material)) {
+            const int m = lookMaterial(b.material);
+            if (m >= kMatBlocks && m < kMapMaterials) used[(size_t)(m >= kMatLarge && m < kMatSemi ? kLarge[m - kMatLarge].base : m)] = true;
+        }
+        if (blockDrawn(b.material) || seeThroughDrawn(b.material)) used[(size_t)b.material] = true;
     }
-    for (size_t m = 0; m < seeUsed_.size(); m++) if (seeUsed_[m]) used[m] = true;
+    return used;
+}
+
+// The next map's world program, started as its bake starts: with parallel shader compile it builds in the driver's
+// threads while the light bakes, and setWorldLooks takes it when the world is uploaded (Riverside's compile, 1.6 s on
+// the main thread on the owner's PC, was a frozen loading screen). Without the extension nothing starts here: a compile
+// would block this frame just as it blocks the upload's, so setWorldLooks compiles it as before (from the binary cache
+// when it can).
+void Renderer::beginWorldLooks(const Map& map) {
+    if (!parallelCompile_) return;
+    std::vector<bool> used = worldLookSet(map);
+    if (worldBuild_.active && worldBuild_.used == used) return;
+    dropWorldBuild();
+    if (used == worldUsed_ && worldProg_) return;   // (the same looks: the programs stay)
+    QZONE("world shader start");
+    // both variants: the main program and the no-discard one (buildWorldFast)
+    beginProgram(worldBuild_.prog, kWorldVS, worldSource(&used, false, nullptr).c_str(), true);
+    if (!worldDiscardOnly()) {
+        const std::string fast = worldSource(&used, true, nullptr);
+        if (!fast.empty()) beginProgram(worldBuild_.fast, kWorldVS, fast.c_str(), true);
+    }
+    worldBuild_.used = std::move(used);
+    worldBuild_.active = true;
+}
+
+bool Renderer::worldLooksPending() const {
+    return worldBuild_.active && (!programReady(worldBuild_.prog) || !programReady(worldBuild_.fast));
+}
+
+void Renderer::dropWorldBuild() {
+    dropProgram(worldBuild_.prog);
+    dropProgram(worldBuild_.fast);
+    worldBuild_.active = false;
+}
+
+bool Renderer::worldDiscardOnly() { return getenv("QUARK_WORLD_DISCARD") != nullptr; }
+
+// A new map's world: its world shader gets the looks of the materials in it (only when they changed: a compile is a
+// hitch, here while the map loads anyway; beginWorldLooks may have it ready)
+void Renderer::setWorldLooks(const Map& map, const BakedWorld& bw) {
+    std::vector<bool> used = worldLookSet(map);
     cleanUsed_.assign((size_t)kMapMaterials, false);   // (every look in the map, 12 on: CLEAN SURFACES' averages)
     for (const WorldVertex& v : bw.verts) {
         const int m = (int)(v.material + 0.5f);
@@ -810,26 +869,39 @@ void Renderer::setWorldLooks(const BakedWorld& bw) {
     }
     for (size_t m = 0; m < seeUsed_.size(); m++) if (seeUsed_[m]) cleanUsed_[m] = true;
     cleanKey_ = {};
+    const bool started = worldBuild_.active && worldBuild_.used == used;
+    if (!started) dropWorldBuild();   // (another map's, or none)
     if (used == worldUsed_ && worldProg_) return;
     QZONE("world shader");
     std::string err;
-    const unsigned p = compileWorld(&used, &err);
-    if (!p) { fprintf(stderr, "world shader: %s\n", err.c_str()); return; }   // (keeps the last one: some looks missing)
+    unsigned p = 0, f = 0;
+    if (started) {   // (done in the driver's threads, or the rest of it now)
+        p = finishProgram(worldBuild_.prog, &err);
+        if (worldBuild_.fast.prog) {
+            std::string ferr;
+            f = finishProgram(worldBuild_.fast, &ferr);
+            if (!f) fprintf(stderr, "world shader (no discard): %s\n", ferr.c_str());
+        }
+        dropWorldBuild();
+    } else p = compileWorld(&used, &err);
+    if (!p) { if (f) glDeleteProgram(f); fprintf(stderr, "world shader: %s\n", err.c_str()); return; }   // (keeps the last one: some looks missing)
     glDeleteProgram(worldProg_);
     worldProg_ = p;
     worldUsed_ = used;
-    initWorldUniforms();
-    buildWorldFast();
+    initWorldUniforms();   // (every uniform location and value: after the link, a cached binary's too)
+    buildWorldFast(started ? &f : nullptr);
     glUseProgram(0);
 }
 
-void Renderer::buildWorldFast() {
+// The no-discard program for worldProg_: `prebuilt` when setWorldLooks has it (beginWorldLooks started it; 0: it failed,
+// its error printed), else compiled here (the binary cache first)
+void Renderer::buildWorldFast(const unsigned* prebuilt) {
     if (worldFastProg_) glDeleteProgram(worldFastProg_);
     worldFastProg_ = 0; worldFastFor_ = 0; worldFastCopy_.clear();
-    if (getenv("QUARK_WORLD_DISCARD")) return;   // (A/B: the old single program)
+    if (worldDiscardOnly()) { if (prebuilt && *prebuilt) glDeleteProgram(*prebuilt); return; }   // (A/B: the old single program)
     std::string err;
-    const unsigned f = compileWorld(&worldUsed_, &err, true);
-    if (!f) { fprintf(stderr, "world shader (no discard): %s\n", err.c_str()); return; }
+    const unsigned f = prebuilt ? *prebuilt : compileWorld(&worldUsed_, &err, true);
+    if (!f) { if (!prebuilt) fprintf(stderr, "world shader (no discard): %s\n", err.c_str()); return; }
     // every active uniform outside a block, each array element on its own: where it is in each program
     GLint n = 0;
     glGetProgramiv(f, GL_ACTIVE_UNIFORMS, &n);
@@ -875,38 +947,174 @@ void Renderer::syncWorldFast() {
         }
     }
 }
-unsigned Renderer::compile(const char* vs, const char* fs, std::string* err) {
-    auto sh = [&](GLenum type, const char* src) -> unsigned {
-        unsigned s = glCreateShader(type);
+
+namespace {
+// The program binary cache (<user data>/cache/shaders/<key>.qsb): a world program as this driver built it, keyed by
+// sha256 of its source and GL_VENDOR, GL_RENDERER and GL_VERSION, so a map's second load (or any map with the same
+// looks) skips the compile. A file: "QSB1", the binary's format, its length, its sha256 (a truncated or damaged file is
+// never handed to the driver), the binary. A driver that turns it down (updated under the same version string) gets
+// the source compiled, and the new binary replaces the file. The newest kShaderCacheFiles / kShaderCacheBytes are kept
+// (a hit marks a file used).
+constexpr uint32_t kShaderCacheMagic = 0x31425351u;   // "QSB1"
+constexpr size_t kShaderCacheFiles = 48;
+constexpr uintmax_t kShaderCacheBytes = 256ull << 20;
+std::string shaderCacheDir() { return userDataPath("cache") + "/shaders"; }
+
+std::string programKey(const char* vs, const char* fs, const std::string& glId) {
+    Sha256 h;
+    const char sep = 0;
+    h.update(vs, strlen(vs)); h.update(&sep, 1);
+    h.update(fs, strlen(fs)); h.update(&sep, 1);
+    h.update(glId.data(), glId.size());
+    return h.hex();
+}
+
+bool loadProgramBinary(const std::string& key, unsigned prog) {
+    const std::string path = shaderCacheDir() + "/" + key + ".qsb";
+    std::ifstream f(utf8Path(path), std::ios::binary | std::ios::ate);
+    if (!f) return false;
+    const std::streamoff n = f.tellg();
+    constexpr size_t kHead = 12 + 32;
+    if (n <= (std::streamoff)kHead || n > (256 << 20)) return false;
+    std::vector<uint8_t> d((size_t)n);
+    f.seekg(0);
+    if (!f.read((char*)d.data(), n)) return false;
+    uint32_t hdr[3];
+    memcpy(hdr, d.data(), 12);
+    if (hdr[0] != kShaderCacheMagic || (size_t)hdr[2] != (size_t)n - kHead) return false;
+    uint8_t sum[32];
+    Sha256 h;
+    h.update(d.data() + kHead, hdr[2]);
+    h.digest(sum);
+    std::error_code ec;
+    if (memcmp(sum, d.data() + 12, 32) != 0) { std::filesystem::remove(utf8Path(path), ec); return false; }
+    glProgramBinaryOpt(prog, (GLenum)hdr[1], d.data() + kHead, (GLsizei)hdr[2]);
+    GLint ok = 0;
+    glGetProgramiv(prog, GL_LINK_STATUS, &ok);
+    if (!ok) { std::filesystem::remove(utf8Path(path), ec); return false; }
+    std::filesystem::last_write_time(utf8Path(path), std::filesystem::file_time_type::clock::now(), ec);
+    return true;
+}
+
+// written on a thread of its own (a few MB: no disk wait in the frame), to a temporary file renamed over the entry
+void saveProgramBinary(const std::string& key, unsigned prog) {
+    GLint len = 0;
+    glGetProgramiv(prog, GL_PROGRAM_BINARY_LENGTH, &len);
+    if (len <= 0 || len > (128 << 20)) return;
+    std::vector<uint8_t> d(12 + 32 + (size_t)len);
+    GLenum fmt = 0;
+    GLsizei got = 0;
+    glGetProgramBinaryOpt(prog, len, &got, &fmt, d.data() + 44);
+    if (got <= 0 || got > len) return;
+    d.resize(44 + (size_t)got);
+    const uint32_t hdr[3] = {kShaderCacheMagic, (uint32_t)fmt, (uint32_t)got};
+    memcpy(d.data(), hdr, 12);
+    Sha256 h;
+    h.update(d.data() + 44, (size_t)got);
+    h.digest(d.data() + 12);
+    std::thread([dir = shaderCacheDir(), key, d = std::move(d)] {
+        namespace fs = std::filesystem;
+        std::error_code ec;
+        fs::create_directories(utf8Path(dir), ec);
+        const std::string path = dir + "/" + key + ".qsb", tmp = path + ".tmp";
+        {
+            std::ofstream f(utf8Path(tmp), std::ios::binary | std::ios::trunc);
+            if (!f) return;
+            f.write((const char*)d.data(), (std::streamsize)d.size());
+            f.flush();
+            if (!f) { f.close(); fs::remove(utf8Path(tmp), ec); return; }
+        }
+        fs::rename(utf8Path(tmp), utf8Path(path), ec);
+        if (ec) { fs::remove(utf8Path(tmp), ec); return; }
+        std::vector<std::pair<fs::file_time_type, fs::path>> all;
+        for (auto& e : fs::directory_iterator(utf8Path(dir), ec))
+            if (e.path().extension() == ".qsb") all.push_back({e.last_write_time(ec), e.path()});
+        std::sort(all.begin(), all.end(), [](auto& a, auto& b) { return a.first > b.first; });
+        uintmax_t bytes = 0;
+        for (size_t i = 0; i < all.size(); i++) {
+            const uintmax_t n = fs::file_size(all[i].second, ec);
+            if (!ec) bytes += n;
+            if (i >= kShaderCacheFiles || bytes > kShaderCacheBytes) fs::remove(all[i].second, ec);
+        }
+    }).detach();
+}
+} // namespace
+
+// One program being built: from the binary cache (`cache`, when the driver has program binaries), else compiled and
+// linked: in the driver's threads with parallel shader compile (programReady polls it), else here. finishProgram
+// waits for it if it must, checks it, puts a new binary in the cache and returns it (0 and err on failure).
+void Renderer::beginProgram(ProgramBuild& b, const char* vs, const char* fs, bool cache) {
+    dropProgram(b);
+    b.prog = glCreateProgram();
+    if (cache && binaryCache_) {
+        b.key = programKey(vs, fs, glId_);
+        if (loadProgramBinary(b.key, b.prog)) { b.fromCache = true; return; }
+        glDeleteProgram(b.prog);   // (a refused binary may leave the program in any state: a new one)
+        b.prog = glCreateProgram();
+        glProgramParameteriOpt(b.prog, GL_PROGRAM_BINARY_RETRIEVABLE_HINT, GL_TRUE);
+    }
+    auto sh = [](GLenum type, const char* src) {
+        const unsigned s = glCreateShader(type);
         glShaderSource(s, 1, &src, nullptr);
         glCompileShader(s);
-        GLint ok = 0;
-        glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
-        if (!ok) {
+        return s;
+    };
+    b.vs = sh(GL_VERTEX_SHADER, vs);
+    b.fs = sh(GL_FRAGMENT_SHADER, fs);
+    glAttachShader(b.prog, b.vs);
+    glAttachShader(b.prog, b.fs);
+    glLinkProgram(b.prog);   // (with parallel compile: returns at once)
+}
+
+bool Renderer::programReady(const ProgramBuild& b) const {
+    if (!b.prog || b.fromCache || !parallelCompile_) return true;
+    GLint done = 0;
+    glGetProgramiv(b.prog, GL_COMPLETION_STATUS_KHR, &done);
+    return done != 0;
+}
+
+unsigned Renderer::finishProgram(ProgramBuild& b, std::string* err) {
+    const unsigned p = b.prog;
+    bool ok = p != 0;
+    for (unsigned s : {b.vs, b.fs}) {
+        if (!s) continue;
+        GLint c = 0;
+        glGetShaderiv(s, GL_COMPILE_STATUS, &c);
+        if (!c) {
             char log[2048];
             glGetShaderInfoLog(s, sizeof log, nullptr, log);
             if (err) *err += std::string("shader: ") + log;
-            return 0;
+            ok = false;
         }
-        return s;
-    };
-    unsigned v = sh(GL_VERTEX_SHADER, vs), f = sh(GL_FRAGMENT_SHADER, fs);
-    if (!v || !f) return 0;
-    unsigned p = glCreateProgram();
-    glAttachShader(p, v);
-    glAttachShader(p, f);
-    glLinkProgram(p);
-    GLint ok = 0;
-    glGetProgramiv(p, GL_LINK_STATUS, &ok);
-    glDeleteShader(v);
-    glDeleteShader(f);
-    if (!ok) {
-        char log[2048];
-        glGetProgramInfoLog(p, sizeof log, nullptr, log);
-        if (err) *err += std::string("link: ") + log;
-        return 0;
     }
-    return p;
+    if (ok && !b.fromCache) {
+        GLint l = 0;
+        glGetProgramiv(p, GL_LINK_STATUS, &l);
+        if (!l) {
+            char log[2048];
+            glGetProgramInfoLog(p, sizeof log, nullptr, log);
+            if (err) *err += std::string("link: ") + log;
+            ok = false;
+        }
+    }
+    if (ok && !b.fromCache && !b.key.empty()) saveProgramBinary(b.key, p);
+    b.prog = 0;   // (the caller's now, or deleted)
+    dropProgram(b);
+    if (!ok && p) glDeleteProgram(p);
+    return ok ? p : 0;
+}
+
+void Renderer::dropProgram(ProgramBuild& b) {
+    if (b.vs) glDeleteShader(b.vs);
+    if (b.fs) glDeleteShader(b.fs);
+    if (b.prog) glDeleteProgram(b.prog);
+    b = ProgramBuild();
+}
+
+unsigned Renderer::compile(const char* vs, const char* fs, std::string* err) {
+    ProgramBuild b;
+    beginProgram(b, vs, fs, false);
+    return finishProgram(b, err);
 }
 
 // The world program's uniform locations, and the values that never change (init; again after setWorldLooks builds a new
@@ -978,6 +1186,32 @@ bool Renderer::init(int shadowRes, std::string* err) {
         glGetInteger64v(GL_MAX_TEXTURE_SIZE, &maxTex);
         if (maxTex > 0) setLightmapMaxTextureSize((int)std::min<GLint64>(maxTex, 1 << 15));
         if (maxTex > 0 && shadowRes > maxTex) shadowRes = (int)maxTex;
+    }
+    {   // the driver's extras: the world program compiled in its threads (beginWorldLooks), program binaries (the cache)
+        auto str = [](GLenum e) { const GLubyte* g = glGetString(e); return std::string(g ? (const char*)g : ""); };
+        const std::string version = str(GL_VERSION);
+        glId_ = str(GL_VENDOR) + "\n" + gpuName_ + "\n" + version;
+        GLint64 n = 0;
+        glGetInteger64v(GL_NUM_EXTENSIONS, &n);
+        bool khr = false, arb = false, bin = false;
+        for (GLint64 i = 0; glGetStringiOpt && i < n; i++) {
+            const GLubyte* e = glGetStringiOpt(GL_EXTENSIONS, (GLuint)i);
+            if (!e) continue;
+            const char* x = (const char*)e;
+            khr = khr || !strcmp(x, "GL_KHR_parallel_shader_compile");
+            arb = arb || !strcmp(x, "GL_ARB_parallel_shader_compile");
+            bin = bin || !strcmp(x, "GL_ARB_get_program_binary");
+        }
+        int major = 0, minor = 0;
+        if (sscanf(version.c_str(), "%d.%d", &major, &minor) == 2 && (major > 4 || (major == 4 && minor >= 1))) bin = true;
+        if (khr && glMaxShaderCompilerThreadsKHROpt) glMaxShaderCompilerThreadsKHROpt(0xFFFFFFFFu);
+        else if (arb && glMaxShaderCompilerThreadsARBOpt) glMaxShaderCompilerThreadsARBOpt(0xFFFFFFFFu);
+        else khr = arb = false;
+        parallelCompile_ = khr || arb;
+        GLint64 formats = 0;
+        if (bin) glGetInteger64v(GL_NUM_PROGRAM_BINARY_FORMATS, &formats);
+        binaryCache_ = bin && formats > 0 && glGetProgramBinaryOpt && glProgramBinaryOpt && glProgramParameteriOpt;
+        printf("GL shaders: parallel compile %s, program binary cache %s\n", parallelCompile_ ? "on" : "off", binaryCache_ ? "on" : "off");
     }
     std::string dynFS = std::string("#version 330 core\n") + kShadowFn + kDynFS;
     worldProg_ = compileWorld(&worldUsed_, err);   // (no looks yet: a map's world brings its own, setWorldLooks)
@@ -1266,7 +1500,7 @@ void Renderer::uploadWorld(const Map& map, PreparedWorld& w) {
     QZONE("world upload");
     BakedWorld& bw = w.bw;
     uploadSeeThrough(map);   // (first: their looks go in the world shader too)
-    setWorldLooks(bw);
+    setWorldLooks(map, bw);
     chunks_.swap(w.chunks);
     drawFirst_.reserve(chunks_.size());
     drawCount_.reserve(chunks_.size());
@@ -2778,88 +3012,114 @@ void Renderer::buildSwatches() {
 // 4 m square on a top and on a side (64 px: 6 cm a pixel, the fine patterns fading to their average as they do far off),
 // and its pixels averaged into uCleanTex (unit 5). With it on the world draws those averages flat: no look runs at all.
 // Again only when the program, the palette or high contrast change (key); called from prepareScene, worldProg_ bound.
+// All on the GPU: the patches sit on a 64 px grid of one RGBA32F texture, so its mip level 6 (glGenerateMipmap: exact
+// halvings, 2x2 box each) is one texel per patch, its mean, and blits put those texels into uCleanTex. It used to read
+// the patches back and average them on the CPU: glReadPixels waited for the GPU, 4.5-6 ms at every map load and again
+// on every frame the key changed (a GLOW STRENGTH drag, HIGH CONTRAST, the sky / glow overrides).
 void Renderer::buildCleanMeans(const std::array<float, 14>& key) {   // (an array: no heap allocation a frame)
     if (key == cleanKey_ || !worldProg_) return;   // (called every frame with PATTERN FADE / CLEAN SURFACES on)
+    // a palette that changes every frame (a slider being dragged) is followed 10 times a second, the last one too (the
+    // key stays different until it's built); a new program (a map) at once
+    const double now = timeNow();
+    if (key[0] == cleanKey_[0] && now - cleanAt_ < 0.1) return;
     worldFastDirty_ = true;   // (worldProg_'s uniforms change: the no-discard program copies them)
     cleanKey_ = key;
+    cleanAt_ = now;
     QZONE("clean surfaces");
     std::vector<int> mats;
     for (int m = 12; m < kMapMaterials && m < (int)cleanUsed_.size(); m++) if (cleanUsed_[(size_t)m]) mats.push_back(m);
-    std::vector<float> texels((size_t)kMapMaterials * 3 * 4, 0.0f);
-    constexpr int P = 64;
-    if (!mats.empty()) {
-        if (!cleanVao_) { glGenVertexArrays(1, &cleanVao_); glGenBuffers(1, &cleanVbo_); }
-        std::vector<WorldVertex> vs;   // (per material: the top square, x z 0-4 facing +y, then the side, x y 0-4 facing +z)
-        for (int m : mats) {
-            const float c[6][2] = {{0, 0}, {4, 0}, {4, 4}, {0, 0}, {4, 4}, {0, 4}};
-            for (int side = 0; side < 2; side++)
-                for (auto& p : c) {
-                    WorldVertex v = {};
-                    if (side) { v.pos[0] = p[0]; v.pos[1] = p[1]; v.normal[2] = 1; }
-                    else { v.pos[0] = p[0]; v.pos[2] = p[1]; v.normal[1] = 1; }
-                    v.uv[0] = v.uv[1] = 0.5f;
-                    v.material = (float)m;
-                    v.edge[0] = p[0]; v.edge[1] = p[1]; v.edge[2] = v.edge[3] = 4;
-                    vs.push_back(v);
-                }
-        }
-        glBindVertexArray(cleanVao_);
-        glBindBuffer(GL_ARRAY_BUFFER, cleanVbo_);
-        glBufferData(GL_ARRAY_BUFFER, vs.size() * sizeof(WorldVertex), vs.data(), GL_STREAM_DRAW);
-        glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)0);
-        glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)12);
-        glEnableVertexAttribArray(2); glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)24);
-        glEnableVertexAttribArray(3); glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)32);
-        glEnableVertexAttribArray(4); glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)36);
-        // the target: 3 patches across (top albedo, side albedo, side glow), a row per material
-        const int W = 3 * P, H = P * (int)mats.size();
-        unsigned tex = 0, fbo = 0;
-        glGenTextures(1, &tex);
-        glBindTexture(GL_TEXTURE_2D, tex);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, W, H, 0, GL_RGBA, GL_FLOAT, nullptr);
-        glGenFramebuffers(1, &fbo);
-        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
-        glDisable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glDisable(GL_BLEND);
-        Mat4 top;   // (x z 0-4 onto the patch: clip x = x / 2 - 1, clip y = z / 2 - 1)
-        top.m[0] = 0.5f; top.m[5] = 0.0f; top.m[9] = 0.5f; top.m[10] = 0.0f; top.m[12] = -1.0f; top.m[13] = -1.0f;
-        const Mat4 side = Mat4::ortho(0, 4, 0, 4, -1, 1);
-        const GLint pass = U(worldProg_, "uMeanPass");
-        for (size_t i = 0; i < mats.size(); i++)
-            for (int k = 0; k < 3; k++) {
-                glViewport(k * P, (int)i * P, P, P);
-                setMat(uWorld_.viewProj, k == 0 ? top : side);
-                glUniform1i(uWorld_.latchUse, 0);
-                glUniform1i(pass, k == 2 ? 2 : 1);
-                glDrawArrays(GL_TRIANGLES, (GLint)(i * 12 + (k == 0 ? 0 : 6)), 6);
-            }
-        glUniform1i(pass, 0);
-        std::vector<float> px((size_t)W * H * 4);
-        glReadPixels(0, 0, W, H, GL_RGBA, GL_FLOAT, px.data());
-        for (size_t i = 0; i < mats.size(); i++)
-            for (int k = 0; k < 3; k++) {
-                double sum[4] = {};
-                for (int y = 0; y < P; y++)
-                    for (int x = 0; x < P; x++) {
-                        const float* t = &px[(((size_t)i * P + y) * W + (size_t)k * P + x) * 4];
-                        for (int c = 0; c < 4; c++) sum[c] += t[c];
-                    }
-                float* o = &texels[(((size_t)k * kMapMaterials) + (size_t)mats[i]) * 4];
-                for (int c = 0; c < 4; c++) o[c] = (float)(sum[c] / (P * P));
-            }
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glDeleteFramebuffers(1, &fbo);
-        glDeleteTextures(1, &tex);
-        glEnable(GL_DEPTH_TEST); glEnable(GL_CULL_FACE);
-    }
-    glActiveTexture(GL_TEXTURE0 + 5);
-    if (!cleanTex_) {
+    constexpr int P = 64, kLevel = 6;   // (P = 1 << kLevel)
+    // (blocks of at most 32 columns, as square as that allows: 40 looks are 2 rows of 20, 1280 x 384 px)
+    const int n = (int)mats.size(), rows = (n + 31) / 32, cols = rows ? (n + rows - 1) / rows : 0;
+    if (!cleanTex_) {   // the averages: x the material, y 0 top albedo + alpha, 1 side albedo + alpha, 2 side glow
+        glActiveTexture(GL_TEXTURE0 + 5);
         glGenTextures(1, &cleanTex_);
         glBindTexture(GL_TEXTURE_2D, cleanTex_);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    } else glBindTexture(GL_TEXTURE_2D, cleanTex_);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, kMapMaterials, 3, 0, GL_RGBA, GL_FLOAT, texels.data());
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, kMapMaterials, 3, 0, GL_RGBA, GL_FLOAT, nullptr);
+        glGenFramebuffers(1, &cleanOutFbo_);
+        glBindFramebuffer(GL_FRAMEBUFFER, cleanOutFbo_);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, cleanTex_, 0);
+    }
+    glDisable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glDisable(GL_BLEND);
+    glBindFramebuffer(GL_FRAMEBUFFER, cleanOutFbo_);   // (a material not in the map: 0, as it always was)
+    const float zero[4] = {0, 0, 0, 0};
+    glClearBufferfv(GL_COLOR, 0, zero);   // (not glClear: the clear colour stays the frame's)
+    if (n) {
+        if (!cleanVao_) { glGenVertexArrays(1, &cleanVao_); glGenBuffers(1, &cleanVbo_); }
+        glBindVertexArray(cleanVao_);
+        if (mats != cleanMats_) {   // (the squares only change with the map's looks)
+            cleanMats_ = mats;
+            std::vector<WorldVertex> vs;   // (per material: the top square, x z 0-4 facing +y, then the side, x y 0-4 facing +z)
+            for (int m : mats) {
+                const float c[6][2] = {{0, 0}, {4, 0}, {4, 4}, {0, 0}, {4, 4}, {0, 4}};
+                for (int side = 0; side < 2; side++)
+                    for (auto& p : c) {
+                        WorldVertex v = {};
+                        if (side) { v.pos[0] = p[0]; v.pos[1] = p[1]; v.normal[2] = 1; }
+                        else { v.pos[0] = p[0]; v.pos[2] = p[1]; v.normal[1] = 1; }
+                        v.uv[0] = v.uv[1] = 0.5f;
+                        v.material = (float)m;
+                        v.edge[0] = p[0]; v.edge[1] = p[1]; v.edge[2] = v.edge[3] = 4;
+                        vs.push_back(v);
+                    }
+            }
+            glBindBuffer(GL_ARRAY_BUFFER, cleanVbo_);
+            glBufferData(GL_ARRAY_BUFFER, vs.size() * sizeof(WorldVertex), vs.data(), GL_STATIC_DRAW);
+            glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)0);
+            glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)12);
+            glEnableVertexAttribArray(2); glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)24);
+            glEnableVertexAttribArray(3); glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)32);
+            glEnableVertexAttribArray(4); glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)36);
+        }
+        // the patches: material i in column i % cols, its block of rows i / cols holding its 3 patches (top albedo,
+        // side albedo, side glow) one above the other; every size a multiple of 64, so each mip halves it exactly
+        const int W = P * cols, H = 3 * P * rows;
+        if (!cleanPatchTex_ || cleanPatchW_ != W || cleanPatchH_ != H) {
+            if (!cleanPatchTex_) { glGenTextures(1, &cleanPatchTex_); glGenFramebuffers(1, &cleanPatchFbo_); }
+            glActiveTexture(GL_TEXTURE0 + 5);
+            glBindTexture(GL_TEXTURE_2D, cleanPatchTex_);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, W, H, 0, GL_RGBA, GL_FLOAT, nullptr);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, kLevel);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glBindTexture(GL_TEXTURE_2D, cleanTex_);   // (unit 5 is uCleanTex's)
+            cleanPatchW_ = W; cleanPatchH_ = H;
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, cleanPatchFbo_);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, cleanPatchTex_, 0);
+        Mat4 top;   // (x z 0-4 onto the patch: clip x = x / 2 - 1, clip y = z / 2 - 1)
+        top.m[0] = 0.5f; top.m[5] = 0.0f; top.m[9] = 0.5f; top.m[10] = 0.0f; top.m[12] = -1.0f; top.m[13] = -1.0f;
+        const Mat4 side = Mat4::ortho(0, 4, 0, 4, -1, 1);
+        const GLint pass = U(worldProg_, "uMeanPass");
+        glUniform1i(uWorld_.latchUse, 0);
+        for (int i = 0; i < n; i++)
+            for (int k = 0; k < 3; k++) {
+                glViewport((i % cols) * P, ((i / cols) * 3 + k) * P, P, P);
+                setMat(uWorld_.viewProj, k == 0 ? top : side);
+                glUniform1i(pass, k == 2 ? 2 : 1);
+                glDrawArrays(GL_TRIANGLES, (GLint)(i * 12 + (k == 0 ? 0 : 6)), 6);
+            }
+        glUniform1i(pass, 0);
+        // each patch's mean: mip level 6 (bound only now: never sampled while drawn into)
+        glActiveTexture(GL_TEXTURE0 + 5);
+        glBindTexture(GL_TEXTURE_2D, cleanPatchTex_);
+        glGenerateMipmap(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, cleanTex_);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, cleanPatchTex_, kLevel);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, cleanPatchFbo_);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, cleanOutFbo_);
+        for (int i = 0; i < n; i++) {   // (its 3 texels, one above the other, to its column of uCleanTex)
+            const int x = i % cols, y = (i / cols) * 3;
+            glBlitFramebuffer(x, y, x + 1, y + 3, mats[(size_t)i], 0, mats[(size_t)i] + 1, 3, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        }
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glEnable(GL_DEPTH_TEST); glEnable(GL_CULL_FACE);
+    glActiveTexture(GL_TEXTURE0 + 5);
+    glBindTexture(GL_TEXTURE_2D, cleanTex_);
     glActiveTexture(GL_TEXTURE0);
 }
 
