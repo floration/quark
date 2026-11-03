@@ -24,6 +24,8 @@ static uint8_t looksByte(const ServerPlayer& p) { return (uint8_t)((p.model & 15
 
 namespace {
 constexpr double kTimeout = 10.0;
+constexpr size_t kGlogHandBytes = 256 * 1024;  // the game log goes to its writer thread at this much (glogPump)...
+constexpr uint64_t kGlogHandMs = 1000;         // ...or this long after the last time, whichever comes first
 constexpr uint32_t kMaxRewindMs = 500; // lag compensation window (hard ceiling)
 constexpr uint32_t kRewindToleranceMs = 30; // over ping + interpolation (ping smoothing, jitter)
 constexpr float kRewindTeleport = 4.0f;     // two history records further apart than this: a respawn or teleport, not lerped
@@ -398,7 +400,7 @@ void Server::stop() {
     if (publicIp_) { publicIp_->quit = true; publicIp_.reset(); }
     running_ = false;
     log("stopped");
-    if (glog_) { glog(LOG_SIMPLE, "server stopped"); fclose(glog_); glog_ = nullptr; }
+    if (glog_.isOpen()) { glog(LOG_SIMPLE, "server stopped"); glog_.close(); }   // (everything reaches the file, then it's closed)
 }
 
 void Server::run(std::atomic<bool>& quit) {
@@ -761,6 +763,7 @@ double Server::frame() {
         QZONE("server tick");
         { QZONE("server simulate"); simulate(); }
         logTick();
+        glogPump();
         tick_++;
         timeMs_ += 1000 / tickRate();
         if (tick_ % snapEvery() == 0) { QZONE("server snapshots"); sendSnapshots(); } // input still runs every tick
@@ -4497,7 +4500,7 @@ AABB Server::hitBox(const Vec3& feet, bool crouched) const {
 }
 
 void Server::openGameLog() {
-    if (cfg_.logLevel <= LOG_OFF || glog_) return;
+    if (cfg_.logLevel <= LOG_OFF || glog_.isOpen()) return;
     std::string path = cfg_.logFile;
     if (path.empty()) {
         std::string dir = userDataPath("logs");
@@ -4508,28 +4511,36 @@ void Server::openGameLog() {
         strftime(buf, sizeof buf, "/quark-%Y%m%d-%H%M%S.log", localtime(&t));
         path = dir + buf;
     }
-    glog_ = u8fopen(path, "w");
-    if (!glog_) { log("could not open log file " + path); return; }
-    // A big buffer keeps 1000 Hz logging to a handful of writes per second, off the tick's critical path.
-    setvbuf(glog_, nullptr, _IOFBF, 1 << 20);
+    if (!glog_.open(path, "w")) { log("could not open log file " + path); return; }   // ("w": text, as before)
+    glogHandAt_ = timeMs_ + kGlogHandMs;
     static const char* names[] = {"off", "simple", "verbose", "extreme"};
     log(std::string("logging (") + names[cfg_.logLevel] + ") to " + path);
     glog(LOG_SIMPLE, "quark server log, level %s, version %s", names[cfg_.logLevel], QUARK_VERSION);
 }
 
 void Server::glog(int level, const char* fmt, ...) {
-    if (!glog_ || cfg_.logLevel < level) return;
-    fprintf(glog_, "%llu.%03u ", (unsigned long long)(timeMs_ / 1000), (unsigned)(timeMs_ % 1000));
+    if (!glog_.isOpen() || cfg_.logLevel < level) return;
+    glog_.format("%llu.%03u ", (unsigned long long)(timeMs_ / 1000), (unsigned)(timeMs_ % 1000));
     va_list ap;
     va_start(ap, fmt);
-    vfprintf(glog_, fmt, ap);
+    glog_.vformat(fmt, ap);
     va_end(ap);
-    fputc('\n', glog_);
+    glog_.write("\n", 1);
+}
+
+// After each tick: the lines so far go to the writer thread once there are kGlogHandBytes of them or kGlogHandMs has
+// passed (a lock and a buffer swap here; the fwrite and fflush happen on the writer's thread). The file is never more
+// than a second behind, where the old 1 MB stdio buffer could hold minutes of a simple log.
+void Server::glogPump() {
+    if (!glog_.isOpen()) return;
+    if (glog_.pendingBytes() < kGlogHandBytes && timeMs_ < glogHandAt_) return;
+    glog_.flush();
+    glogHandAt_ = timeMs_ + kGlogHandMs;
 }
 
 // verbose: a gameplay sample at 125 Hz; extreme: every tick, with inputs and projectiles.
 void Server::logTick() {
-    if (!glog_ || cfg_.logLevel < LOG_VERBOSE) return;
+    if (!glog_.isOpen() || cfg_.logLevel < LOG_VERBOSE) return;
     bool extreme = cfg_.logLevel >= LOG_EXTREME;
     uint64_t next = timeMs_ + 1000 / tickRate();
     if (!extreme && next / 8 == timeMs_ / 8) return; // only when this tick crosses an 8 ms boundary
@@ -4540,17 +4551,17 @@ void Server::logTick() {
         const Vec3& o = p.move.pos;
         const Vec3& v = p.move.vel;
         if (extreme)
-            fprintf(glog_, "  p%d pos %.3f %.3f %.3f vel %.3f %.3f %.3f yaw %.4f pitch %.4f hp %.1f wpn %d btn %04x flags %02x dash %d cd %d hook %.3f\n",
+            glog_.format("  p%d pos %.3f %.3f %.3f vel %.3f %.3f %.3f yaw %.4f pitch %.4f hp %.1f wpn %d btn %04x flags %02x dash %d cd %d hook %.3f\n",
                     i, o.x, o.y, o.z, v.x, v.y, v.z, p.yaw, p.pitch, p.health, p.weapon, p.buttons, p.move.flags,
                     (int)p.move.dashCharges, (int)p.move.dashCooldownMs, p.move.hookCooldown);
         else
-            fprintf(glog_, "  p%d pos %.2f %.2f %.2f vel %.2f %.2f %.2f yaw %.3f pitch %.3f hp %.0f wpn %d\n",
+            glog_.format("  p%d pos %.2f %.2f %.2f vel %.2f %.2f %.2f yaw %.3f pitch %.3f hp %.0f wpn %d\n",
                     i, o.x, o.y, o.z, v.x, v.y, v.z, p.yaw, p.pitch, p.health, p.weapon);
     }
     if (!extreme) return;
     for (const auto& pr : projectiles_)
         if (pr.active)
-            fprintf(glog_, "  proj %u type %d owner %d pos %.3f %.3f %.3f vel %.3f %.3f %.3f%s\n", pr.id, pr.type, pr.owner,
+            glog_.format("  proj %u type %d owner %d pos %.3f %.3f %.3f vel %.3f %.3f %.3f%s\n", pr.id, pr.type, pr.owner,
                     pr.pos.x, pr.pos.y, pr.pos.z, pr.vel.x, pr.vel.y, pr.vel.z, pr.stuck ? " stuck" : "");
 }
 

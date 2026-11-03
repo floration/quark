@@ -3,6 +3,7 @@
 // recording wrote and flushed every recorded snapshot, 62.5 times a second, from the frame loop).
 #pragma once
 #include <condition_variable>
+#include <cstdarg>
 #include <cstdint>
 #include <cstdio>
 #include <mutex>
@@ -14,9 +15,11 @@
 class AsyncFileWriter {
 public:
     ~AsyncFileWriter() { close(); }
-    bool open(const std::string& path) {   // (UTF-8 path) truncates / creates it
+    // (UTF-8 path) truncates / creates it. mode "w": a text file (Windows writes each \n as \r\n, as fprintf to a
+    // "w" FILE did: the server's game log keeps its bytes)
+    bool open(const std::string& path, const char* mode = "wb") {
         close();
-        f_ = u8fopen(path, "wb");
+        f_ = u8fopen(path, mode);
         if (!f_) return false;
         quit_ = false;
         th_ = std::thread([this] { run(); });
@@ -24,9 +27,29 @@ public:
     }
     bool isOpen() const { return f_ != nullptr; }
     void write(const void* p, size_t n) { const uint8_t* b = (const uint8_t*)p; pending_.insert(pending_.end(), b, b + n); }
+    // printf-style, formatted by vsnprintf into a reused buffer (no allocation per call once the buffers have grown):
+    // the same bytes fprintf would write
+    void vformat(const char* fmt, va_list ap) {
+        if (fmt_.empty()) fmt_.resize(1024);
+        va_list again;
+        va_copy(again, ap);
+        int n = vsnprintf(fmt_.data(), fmt_.size(), fmt, ap);
+        if (n >= 0 && (size_t)n >= fmt_.size()) { fmt_.resize((size_t)n + 1); n = vsnprintf(fmt_.data(), fmt_.size(), fmt, again); }
+        va_end(again);
+        if (n > 0) write(fmt_.data(), (size_t)n);
+    }
+#if defined(__GNUC__)
+    __attribute__((format(printf, 2, 3)))
+#endif
+    void format(const char* fmt, ...) { va_list ap; va_start(ap, fmt); vformat(fmt, ap); va_end(ap); }
+    size_t pendingBytes() const { return pending_.size(); }   // written since the last flush
     void flush() {   // hand what's been written so far to the writer thread (it writes and flushes it to the file)
         if (pending_.empty() || !f_) return;
-        { std::lock_guard<std::mutex> l(mu_); queue_.insert(queue_.end(), pending_.begin(), pending_.end()); }
+        {
+            std::lock_guard<std::mutex> l(mu_);
+            if (queue_.empty()) queue_.swap(pending_);   // (the usual case: no copy, and pending_ gets the writer's spent buffer back)
+            else queue_.insert(queue_.end(), pending_.begin(), pending_.end());
+        }
         pending_.clear();
         cv_.notify_one();
     }
@@ -62,5 +85,6 @@ private:
     std::mutex mu_;
     std::condition_variable cv_;
     std::vector<uint8_t> pending_, queue_;   // pending_: the caller's (no lock); queue_: handed over, under mu_
+    std::vector<char> fmt_;                  // the caller's: vformat's line
     bool quit_ = false;
 };
