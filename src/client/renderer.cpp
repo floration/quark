@@ -6,6 +6,9 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#if defined(__SSE2__) || defined(_M_X64)
+#include <emmintrin.h>
+#endif
 #include "font_ui.h"
 #include "logo_data.h"
 #include "overrides.h"
@@ -46,6 +49,10 @@ TextMetrics& uiMetrics() {
     }();
     return m;
 }
+
+#ifndef GL_HALF_FLOAT
+#define GL_HALF_FLOAT 0x140B   // (GL 3.0 core: DynVertex's half-float attributes)
+#endif
 
 const char* kWorldVS = R"(#version 330 core
 layout(location=0) in vec3 aPos;
@@ -561,9 +568,9 @@ void main() {
 
 const char* kDynVS = R"(#version 330 core
 layout(location=0) in vec3 aPos;
-layout(location=1) in vec3 aNormal;
-layout(location=2) in vec4 aColor;
-layout(location=3) in vec4 aEdge;
+layout(location=1) in vec3 aNormal;  // x 32767 (16-bit integers, not normalized by GL: 0 and +-1 exact on every driver)
+layout(location=2) in vec4 aColor;   // (half floats, as aEdge and aOutline)
+layout(location=3) in vec4 aEdge;    // the distances to edges 0 and 1, then to 2 and 3
 layout(location=4) in vec4 aOutline; // rgb: the edge colour, a: its width (pixels)
 uniform mat4 uViewProj;
 layout(std140) uniform Latch { mat4 uLatchVP; };
@@ -571,8 +578,9 @@ uniform int uLatchUse;
 uniform mat4 uShadowMat;
 out vec3 vPos; out vec3 vN; out vec4 vColor; out vec4 vShadow; out vec4 vEdge; out vec3 vOutline; flat out float vOutlineW;
 void main() {
-    vPos = aPos; vN = aNormal; vColor = aColor; vEdge = aEdge; vOutline = aOutline.rgb; vOutlineW = aOutline.a;
-    vShadow = uShadowMat * vec4(aPos + aNormal * 0.03, 1.0);
+    vPos = aPos; vN = aNormal / 32767.0; vColor = aColor; vOutline = aOutline.rgb; vOutlineW = aOutline.a;
+    vEdge = vec4(aEdge.xy, aEdge.xy + aEdge.zw);   // (outline() takes edges 2 and 3 as zw - xy)
+    vShadow = uShadowMat * vec4(aPos + vN * 0.03, 1.0);
     gl_Position = (uLatchUse != 0 ? uLatchVP : uViewProj) * vec4(aPos, 1.0);
 })";
 
@@ -1062,7 +1070,7 @@ bool Renderer::init(int shadowRes, std::string* err) {
     uiScreen_[0] = uiScreen_[1] = edgeRcp_[0] = edgeRcp_[1] = sharpRcp_[0] = sharpRcp_[1] = 0;   // (set on first use)
 
     // the frame's vertex lists sized for a busy frame up front, so one never grows them mid-frame
-    dyn_.reserve(16384); dynShadowOnly_.reserve(16384);
+    dyn_.reserve(16384); dynShadowOnly_.reserve(16384); casters_.reserve(1024);
     dynNoCast_.reserve(2048); view_.reserve(2048);
     flat_.reserve(4096); viewFlat_.reserve(4096);
     return true;
@@ -1464,24 +1472,86 @@ bool Renderer::project(const Vec3& p, float& sx, float& sy) const {
     return true;
 }
 
-void Renderer::addQuad(std::vector<DynVertex>& out, const Vec3* c, const Vec3& n, const Vec3& col, float sv) {
-    float w = length(c[1] - c[0]), h = length(c[3] - c[0]);
-    const float eu[4] = {0, w, w, 0}, ev[4] = {0, 0, h, h};
-    const size_t at = out.size();
-    out.resize(at + 6);   // (written in place: six push_backs, each checking capacity, per face of every box)
-    DynVertex* q = out.data() + at;
-    const int corner[4] = {0, 1, 2, 5};   // corners 0 1 2 land in slots 0 1 2, corner 3 in slot 5 (triangles 0 1 2, 0 2 3)
-    for (int i = 0; i < 4; i++) {
-        DynVertex& v = q[corner[i]];
-        memcpy(v.pos, &c[i].x, 12);
-        memcpy(v.normal, &n.x, 12);
-        v.color[0] = col.x; v.color[1] = col.y; v.color[2] = col.z; v.color[3] = sv;
-        v.edge[0] = eu[i]; v.edge[1] = ev[i]; v.edge[2] = w; v.edge[3] = h;
-        memcpy(v.outline, &outlineColor.x, 12);
-        v.outline[3] = outlineWidth;
+// float -> half (IEEE binary16), rounded to nearest even; too big: inf (F. Giesen's float_to_half_fast3_rtne: a few
+// integer ops, no F16C needed on the v2 build)
+static inline uint16_t halfOf(float f) {
+    uint32_t x;
+    memcpy(&x, &f, 4);
+    const uint32_t sign = x & 0x80000000u;
+    x ^= sign;
+    uint16_t o;
+    if (x >= 0x47800000u) o = x > 0x7f800000u ? 0x7e00 : 0x7c00;   // (inf, or NaN)
+    else if (x < 0x38800000u) {   // (a half denormal or zero: the FPU rounds it, added to 0.5)
+        float t;
+        memcpy(&t, &x, 4);
+        t += 0.5f;
+        uint32_t u;
+        memcpy(&u, &t, 4);
+        o = (uint16_t)(u - 0x3f000000u);
+    } else {
+        const uint32_t odd = (x >> 13) & 1;
+        x += ((uint32_t)(15 - 127) << 23) + 0xfff;   // (rebias the exponent, round the mantissa)
+        x += odd;
+        o = (uint16_t)(x >> 13);
     }
-    q[3] = q[0];
-    q[4] = q[2];
+    return (uint16_t)(o | (sign >> 16));
+}
+static inline uint64_t pack4(uint16_t a, uint16_t b, uint16_t c, uint16_t d) { return a | (uint64_t)b << 16 | (uint64_t)c << 32 | (uint64_t)d << 48; }
+#if defined(__SSE2__) || defined(_M_X64)
+#define QUARK_DYN_SSE 1
+// halfOf for 4 floats at once, bit for bit the same, packed 4 x 16 bits (a mesh converts every vertex's colour: one
+// at a time, its emission took 50% longer than with the 72-byte vertex)
+static inline uint64_t halfOf4(__m128 f) {
+    const __m128i sign = _mm_and_si128(_mm_castps_si128(f), _mm_set1_epi32((int)0x80000000u));
+    const __m128i x = _mm_xor_si128(_mm_castps_si128(f), sign);   // |f|
+    const __m128i infNan = _mm_or_si128(_mm_and_si128(_mm_cmpgt_epi32(x, _mm_set1_epi32(0x7f800000)), _mm_set1_epi32(0x200)), _mm_set1_epi32(0x7c00));
+    const __m128i regular = _mm_cmpgt_epi32(_mm_set1_epi32(0x47800000), x);
+    const __m128i sub = _mm_cmpgt_epi32(_mm_set1_epi32(0x38800000), x);
+    const __m128i half05 = _mm_set1_epi32(0x3f000000);
+    const __m128i subRes = _mm_sub_epi32(_mm_castps_si128(_mm_add_ps(_mm_castsi128_ps(x), _mm_castsi128_ps(half05))), half05);
+    const __m128i odd = _mm_and_si128(_mm_srli_epi32(x, 13), _mm_set1_epi32(1));
+    const __m128i normRes = _mm_srli_epi32(_mm_add_epi32(_mm_add_epi32(x, _mm_set1_epi32((int)(((uint32_t)(15 - 127) << 23) + 0xfff))), odd), 13);
+    const __m128i fin = _mm_or_si128(_mm_and_si128(sub, subRes), _mm_andnot_si128(sub, normRes));
+    __m128i h = _mm_or_si128(_mm_or_si128(_mm_and_si128(regular, fin), _mm_andnot_si128(regular, infNan)), _mm_srli_epi32(sign, 16));
+    h = _mm_srai_epi32(_mm_slli_epi32(h, 16), 16);   // (sign-extended: the saturating pack keeps the 16 bits as they are)
+    h = _mm_packs_epi32(h, h);
+    uint64_t r;
+    _mm_storel_epi64((__m128i*)&r, h);
+    return r;
+}
+// a unit normal, x 32767 (rounded) as 4 x 16 bits (w 0)
+static inline uint64_t packNormal4(__m128 n) {
+    __m128i i = _mm_cvtps_epi32(_mm_mul_ps(n, _mm_set1_ps(32767.0f)));
+    i = _mm_packs_epi32(i, i);
+    uint64_t r;
+    _mm_storel_epi64((__m128i*)&r, i);
+    return r;
+}
+static inline uint64_t packNormal(const Vec3& n) { return packNormal4(_mm_set_ps(0.0f, n.z, n.y, n.x)); }
+static inline uint64_t packColor(const Vec3& c, float a) { return halfOf4(_mm_set_ps(a, c.z, c.y, c.x)); }
+#else
+static inline uint64_t packNormal(const Vec3& n) {
+    auto q = [](float v) { return (uint16_t)(int16_t)(v * 32767.0f + (v >= 0 ? 0.5f : -0.5f)); };
+    return pack4(q(n.x), q(n.y), q(n.z), 0);
+}
+static inline uint64_t packColor(const Vec3& c, float a) { return pack4(halfOf(c.x), halfOf(c.y), halfOf(c.z), halfOf(a)); }
+#endif
+static inline void putVertex(DynVertex& v, const Vec3& p, uint64_t nrm, uint64_t col, uint64_t edge, uint64_t outl) {
+    memcpy(v.pos, &p.x, 12);
+    memcpy(v.normal, &nrm, 8);
+    memcpy(v.color, &col, 8);
+    memcpy(v.edge, &edge, 8);
+    memcpy(v.outline, &outl, 8);
+}
+
+// One box face, two triangles (corners 0 1 2, 0 2 3), w x h (as halfs). Each vertex written in place, 8 bytes at a
+// time: building one on the stack and copying it, or copying one just written (the old q[3] = q[0]), stalls on store
+// forwarding.
+static inline void putFace(DynVertex* q, const Vec3* c, uint64_t nrm, uint64_t col, uint64_t outl, uint16_t hw, uint16_t hh) {
+    // the distances to edges 0, 1 / 2, 3: corner 0 (0, 0 / w, h), 1 (w, 0 / 0, h), 2 (w, h / 0, 0), 3 (0, h / w, 0)
+    const uint64_t ed[4] = {pack4(0, 0, hw, hh), pack4(hw, 0, 0, hh), pack4(hw, hh, 0, 0), pack4(0, hh, hw, 0)};
+    const int idx[6] = {0, 1, 2, 0, 2, 3};
+    for (int k = 0; k < 6; k++) putVertex(q[k], c[idx[k]], nrm, col, ed[idx[k]], outl);
 }
 
 void Renderer::emitBox(std::vector<DynVertex>& out, const Mat4& xf, const Vec3& h, const Vec3& color, float sunVis) {
@@ -1493,20 +1563,29 @@ void Renderer::emitBox(std::vector<DynVertex>& out, const Mat4& xf, const Vec3& 
         const float* m = xf.m;
         return normalize(Vec3(m[0] * x + m[4] * y + m[8] * z, m[1] * x + m[5] * y + m[9] * z, m[2] * x + m[6] * y + m[10] * z));
     };
-    // the 8 corners once (each face used to transform its own 4: 24) and 3 normals (a face's opposite is the negation)
+    // the 8 corners once (each face used to transform its own 4: 24) and 3 normals (a face's opposite is the negation);
+    // the box's 3 edge lengths (each face is two of them: it measured its own two), the 4 face shades and the outline
+    // packed once a box, not once a face
     const Vec3 ppp = tp(h.x, h.y, h.z), ppm = tp(h.x, h.y, -h.z), pmp = tp(h.x, -h.y, h.z), pmm = tp(h.x, -h.y, -h.z);
     const Vec3 mpp = tp(-h.x, h.y, h.z), mpm = tp(-h.x, h.y, -h.z), mmp = tp(-h.x, -h.y, h.z), mmm = tp(-h.x, -h.y, -h.z);
     const Vec3 nx = tn(1, 0, 0), ny = tn(0, 1, 0), nz = tn(0, 0, 1);
+    const uint16_t lx = halfOf(length(ppp - mpp)), ly = halfOf(length(ppp - pmp)), lz = halfOf(length(ppp - ppm));
     auto neg = [](const Vec3& v) { return Vec3(-v.x, -v.y, -v.z); };
     const Vec3 xPos[4] = {pmp, pmm, ppm, ppp}, xNeg[4] = {mmm, mmp, mpp, mpm};   // (each face's corners in the old order)
     const Vec3 yPos[4] = {mpp, ppp, ppm, mpm}, yNeg[4] = {mmm, pmm, pmp, mmp};
     const Vec3 zPos[4] = {mmp, pmp, ppp, mpp}, zNeg[4] = {pmm, mmm, mpm, ppm};
-    addQuad(out, xPos, nx, color, sunVis);
-    addQuad(out, xNeg, neg(nx), color * 0.92f, sunVis);
-    addQuad(out, yPos, ny, color, sunVis);
-    addQuad(out, yNeg, neg(ny), color * 0.8f, sunVis);
-    addQuad(out, zPos, nz, color * 0.96f, sunVis);
-    addQuad(out, zNeg, neg(nz), color * 0.96f, sunVis);
+    const float sv = sunVis;
+    const uint64_t outl = pack4(halfOf(outlineColor.x), halfOf(outlineColor.y), halfOf(outlineColor.z), halfOf(outlineWidth));
+    const uint64_t c1 = packColor(color, sv), c96 = packColor(color * 0.96f, sv);
+    const size_t at = out.size();
+    out.resize(at + 36);   // (DynVertex's constructor does nothing: no zero fill)
+    DynVertex* q = out.data() + at;
+    putFace(q, xPos, packNormal(nx), c1, outl, lz, ly);
+    putFace(q + 6, xNeg, packNormal(neg(nx)), packColor(color * 0.92f, sv), outl, lz, ly);
+    putFace(q + 12, yPos, packNormal(ny), c1, outl, lx, lz);
+    putFace(q + 18, yNeg, packNormal(neg(ny)), packColor(color * 0.8f, sv), outl, lx, lz);
+    putFace(q + 24, zPos, packNormal(nz), c96, outl, lx, ly);
+    putFace(q + 30, zNeg, packNormal(neg(nz)), c96, outl, lx, ly);
 }
 
 // Is a sphere (center, radius) at least partly inside the view frustum?
@@ -1520,10 +1599,10 @@ void Renderer::setupDynVao(unsigned vao, unsigned vbo) {
     glBindVertexArray(vao);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)0);
-    glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)12);
-    glEnableVertexAttribArray(2); glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)24);
-    glEnableVertexAttribArray(3); glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)40);
-    glEnableVertexAttribArray(4); glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)56);   // outline rgb + width
+    glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_SHORT, GL_FALSE, sizeof(DynVertex), (void*)12);   // (x 32767: the shader divides)
+    glEnableVertexAttribArray(2); glVertexAttribPointer(2, 4, GL_HALF_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)20);
+    glEnableVertexAttribArray(3); glVertexAttribPointer(3, 4, GL_HALF_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)28);
+    glEnableVertexAttribArray(4); glVertexAttribPointer(4, 4, GL_HALF_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)36);   // outline rgb + width
 }
 
 void Renderer::setStaticBoxes(const std::function<void()>& emit) {
@@ -1547,10 +1626,11 @@ void Renderer::box(const Vec3& center, const Vec3& half, float yaw, const Vec3& 
         staticItems_.push_back({center, length(half), first, (int)staticVerts_.size() - first});
         return;
     }
-    if (visible && !inView(center, length(half))) { visible = false; if (!castShadow) return; } // off screen: only its shadow can show
-    Mat4 xf = Mat4::translate(center) * Mat4::rotY(yaw);
-    if (visible) emitBox(dyn_, xf, half, color, sunVis);
-    else if (castShadow && shadowCasters) emitBox(dynShadowOnly_, xf, half, color, sunVis);
+    const float r = length(half);
+    if (visible && !inView(center, r)) { visible = false; if (!castShadow) return; } // off screen: only its shadow can show
+    if (!visible && !(castShadow && shadowCasters)) return;
+    emitBox(visible ? dyn_ : dynShadowOnly_, Mat4::translate(center) * Mat4::rotY(yaw), half, color, sunVis);
+    casters_.push_back({center, r});   // (both lists cast: the lit one is drawn in the shadow pass too)
 }
 
 void Renderer::slope(const Brush& b, const Vec3& color) {
@@ -1574,15 +1654,12 @@ void Renderer::slope(const Brush& b, const Vec3& color) {
             return s * dot(q - a, inward) / l;
         };
         DynVertex v[4];
+        const uint64_t nrm = packNormal(n);
+        const uint64_t col = packColor(n.y < -0.5f || n.x < -0.5f ? color * 0.92f : color, 1.0f);
+        const uint64_t outl = pack4(halfOf(outlineColor.x), halfOf(outlineColor.y), halfOf(outlineColor.z), halfOf(outlineWidth));
         for (int k = 0; k < np; k++) {
-            memcpy(v[k].pos, &p[k].x, 12);
-            memcpy(v[k].normal, &n.x, 12);
-            const Vec3 col = n.y < -0.5f || n.x < -0.5f ? color * 0.92f : color;
-            v[k].color[0] = col.x; v[k].color[1] = col.y; v[k].color[2] = col.z; v[k].color[3] = 1.0f;
             const float d0 = dist(0, p[k]), d1 = dist(1, p[k]), d2 = dist(2, p[k]), d3 = np > 3 ? dist(3, p[k]) : 1000.0f;
-            v[k].edge[0] = d0; v[k].edge[1] = d1; v[k].edge[2] = d0 + d2; v[k].edge[3] = d1 + d3;
-            memcpy(v[k].outline, &outlineColor.x, 12);
-            v[k].outline[3] = outlineWidth;
+            putVertex(v[k], p[k], nrm, col, pack4(halfOf(d0), halfOf(d1), halfOf(d2), halfOf(d3)), outl);
         }
         const bool ccw = dot(cross(p[1] - p[0], p[2] - p[0]), n) > 0;
         const DynVertex &a = v[0], &b1 = ccw ? v[1] : v[2], &c1 = ccw ? v[2] : v[1];
@@ -1592,11 +1669,13 @@ void Renderer::slope(const Brush& b, const Vec3& color) {
       }
     });
     if (buildingStatic_) staticItems_.push_back({b.box.center(), length(b.box.mx - b.box.mn) * 0.5f, first, (int)out.size() - first});
+    else casters_.push_back({b.box.center(), length(b.box.mx - b.box.mn) * 0.5f});   // (the shape lies within its box)
 }
 
 void Renderer::boxPitched(const Vec3& pivot, const Vec3& offset, const Vec3& half, float yaw, float pitch, const Vec3& color, float sunVis, bool castShadow) {
     Mat4 xf = Mat4::translate(pivot) * Mat4::rotY(yaw) * Mat4::rotX(pitch) * Mat4::translate(offset);
     emitBox(castShadow ? dyn_ : dynNoCast_, xf, half, color, sunVis);   // (no shadow: small things scattered over the map, stuck props, would spread the shadow pass's caster rect over all of it)
+    if (castShadow) casters_.push_back({Vec3(xf.m[12], xf.m[13], xf.m[14]), length(half)});   // (the box's centre: xf's origin)
 }
 
 void Renderer::viewBox(const Vec3& offset, const Vec3& half, const Vec3& color) {
@@ -1615,21 +1694,46 @@ void Renderer::emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const M
     // (grow geometrically: reserving exactly what this mesh needs made every mesh past the high-water mark copy the
     // whole list again)
     if (out.size() + m.opaque.size() > out.capacity()) out.reserve(std::max(out.size() + m.opaque.size(), out.capacity() * 2));
+    const size_t at = out.size();
+    out.resize(at + m.opaque.size());   // (no zero fill: every field written below)
+    DynVertex* q = out.data() + at;
+    const uint16_t h05 = halfOf(0.5f);
+    const uint64_t edge = pack4(h05, h05, h05, h05);   // (mid-face: 0.5 from every edge)
+    // (no edge: width 0; was left unset once, so the shader read whatever was on the stack as the width)
+    const uint64_t outl = pack4(halfOf(outlineColor.x), halfOf(outlineColor.y), halfOf(outlineColor.z), 0);
+#ifdef QUARK_DYN_SSE
+    // 4 lanes at a time; the same products and sums in the same order as the scalar code below (no FMA), so the
+    // positions are the same bit for bit. (One at a time, the 16-bit packing cost more than the bytes it saves.)
+    const __m128 c0 = _mm_loadu_ps(x), c1 = _mm_loadu_ps(x + 4), c2 = _mm_loadu_ps(x + 8), c3 = _mm_loadu_ps(x + 12);
+    const __m128 xyz = _mm_castsi128_ps(_mm_set_epi32(0, -1, -1, -1));
+    const __m128 svw = _mm_set_ps(sunVis, 0, 0, 0);
+    __m128 t4[TINT_COUNT];
+    for (int k = 0; k < TINT_COUNT; k++) t4[k] = _mm_set_ps(0, tint[k].z, tint[k].y, tint[k].x);
     for (const ModelMesh::V& v : m.opaque) {
-        DynVertex d;
-        const float* p = v.pos; const float* n = v.nrm;
-        d.pos[0] = x[0] * p[0] + x[4] * p[1] + x[8] * p[2] + x[12];
-        d.pos[1] = x[1] * p[0] + x[5] * p[1] + x[9] * p[2] + x[13];
-        d.pos[2] = x[2] * p[0] + x[6] * p[1] + x[10] * p[2] + x[14];
-        Vec3 nn = normalize(Vec3(x[0] * n[0] + x[4] * n[1] + x[8] * n[2], x[1] * n[0] + x[5] * n[1] + x[9] * n[2], x[2] * n[0] + x[6] * n[1] + x[10] * n[2]));
-        d.normal[0] = nn.x; d.normal[1] = nn.y; d.normal[2] = nn.z;
-        const Vec3& t = tint[v.slot < TINT_COUNT ? v.slot : 0];
-        d.color[0] = v.col[0] * t.x; d.color[1] = v.col[1] * t.y; d.color[2] = v.col[2] * t.z; d.color[3] = sunVis;
-        d.edge[0] = d.edge[1] = 0.5f; d.edge[2] = d.edge[3] = 1.0f;
-        memcpy(d.outline, &outlineColor.x, 12);
-        d.outline[3] = 0.0f;   // (no edge: was left unset, so the shader read whatever was on the stack as the width)
-        out.push_back(d);
+        DynVertex& d = *q++;
+        const __m128 p = _mm_add_ps(_mm_add_ps(_mm_add_ps(_mm_mul_ps(c0, _mm_set1_ps(v.pos[0])), _mm_mul_ps(c1, _mm_set1_ps(v.pos[1]))), _mm_mul_ps(c2, _mm_set1_ps(v.pos[2]))), c3);
+        __m128 n = _mm_and_ps(_mm_add_ps(_mm_add_ps(_mm_mul_ps(c0, _mm_set1_ps(v.nrm[0])), _mm_mul_ps(c1, _mm_set1_ps(v.nrm[1]))), _mm_mul_ps(c2, _mm_set1_ps(v.nrm[2]))), xyz);
+        __m128 l2 = _mm_mul_ps(n, n);
+        l2 = _mm_add_ss(_mm_add_ss(l2, _mm_shuffle_ps(l2, l2, 1)), _mm_shuffle_ps(l2, l2, 2));
+        const float l = _mm_cvtss_f32(_mm_sqrt_ss(l2));
+        n = l > 1e-8f ? _mm_div_ps(n, _mm_set1_ps(l)) : _mm_setzero_ps();   // (normalize)
+        _mm_storeu_ps(d.pos, p);   // (16 bytes: the 4th lands on normal, written next)
+        const uint64_t nrm = packNormal4(n);
+        const uint64_t col = halfOf4(_mm_or_ps(_mm_and_ps(_mm_mul_ps(_mm_loadu_ps(v.col), t4[v.slot < TINT_COUNT ? v.slot : 0]), xyz), svw));
+        memcpy(d.normal, &nrm, 8);
+        memcpy(d.color, &col, 8);
+        memcpy(d.edge, &edge, 8);
+        memcpy(d.outline, &outl, 8);
     }
+#else
+    for (const ModelMesh::V& v : m.opaque) {
+        const float* p = v.pos; const float* n = v.nrm;
+        const Vec3 pos(x[0] * p[0] + x[4] * p[1] + x[8] * p[2] + x[12], x[1] * p[0] + x[5] * p[1] + x[9] * p[2] + x[13], x[2] * p[0] + x[6] * p[1] + x[10] * p[2] + x[14]);
+        Vec3 nn = normalize(Vec3(x[0] * n[0] + x[4] * n[1] + x[8] * n[2], x[1] * n[0] + x[5] * n[1] + x[9] * n[2], x[2] * n[0] + x[6] * n[1] + x[10] * n[2]));
+        const Vec3& t = tint[v.slot < TINT_COUNT ? v.slot : 0];
+        putVertex(*q++, pos, packNormal(nn), packColor(Vec3(v.col[0] * t.x, v.col[1] * t.y, v.col[2] * t.z), sunVis), edge, outl);
+    }
+#endif
     if (!flatOut) return;
     for (const ModelMesh::V& v : m.translucent) {
         FlatVertex f;
@@ -1651,6 +1755,10 @@ void Renderer::mesh(const ModelMesh& m, const Mat4& xf, const Vec3* tint, float 
     if (visible && !inView(c, m.radius * sc)) { visible = false; if (!castShadow) return; } // off screen: only its shadow can show
     if (visible) emitMesh(dyn_, m, xf, tint, sunVis, &flat_);
     else if (castShadow && shadowCasters) emitMesh(dynShadowOnly_, m, xf, tint, sunVis, nullptr);
+    else return;
+    // (radius * the longest axis bounds it for every caller's xf: a rotation times a scale, whose axes stay
+    // perpendicular, so no direction stretches more than the longest one)
+    casters_.push_back({c, m.radius * sc});
 }
 
 void Renderer::viewMesh(const ModelMesh& m, const Vec3& offset, float scale, const Vec3* tint) {
@@ -1736,8 +1844,10 @@ void Renderer::prepareScene(bool shadows) {
 #ifdef QUARK_TRACY
         g_uploadBytes += total; g_uploads++;
 #endif
-        if (total > dynCap_) dynCap_ = total * 2;
-        glBufferData(GL_ARRAY_BUFFER, dynCap_, nullptr, GL_STREAM_DRAW);   // (orphan: no stall on last frame's draws)
+        // Orphaned (no stall on last frame's draws) at the bytes written, rounded up to 64 KB: it was the whole buffer,
+        // grown to twice the busiest frame so far, so every later frame allocated that much again. (Sized at init for a
+        // full match and orphaned whole, it was slower still on llvmpipe: the allocation is what costs.)
+        glBufferData(GL_ARRAY_BUFFER, std::max<size_t>((total + 0xffff) & ~(size_t)0xffff, 0x10000), nullptr, GL_STREAM_DRAW);
         size_t at = 0;
         auto put = [&](const std::vector<DynVertex>& v, size_t n) {
             if (n) glBufferSubData(GL_ARRAY_BUFFER, at, n * sizeof(DynVertex), v.data());
@@ -1771,33 +1881,41 @@ void Renderer::prepareScene(bool shadows) {
         QZONE("shadow pass");
         QGPUZONE("GPU shadow pass");
         // Where in the shadow map the casters land (plus a 2 texel margin for the filter): every other pixel of the
-        // world and of players skips the 4 shadow taps. Per triangle, clipped to the map: one that falls wholly outside
+        // world and of players skips the 4 shadow taps. Per caster, clipped to the map: one that falls wholly outside
         // the 64 m box draws nothing (a far player used to stretch the rect over the whole map, and with it the taps).
+        // Each caster is its bounding sphere: the light is orthographic, so a sphere lands as a circle of radius r times
+        // the row's length (it was every triangle of both lists through the matrix, ~80 ns a box: 13 us a frame at 8
+        // players). The rect can only be as large or a little larger (a box's corners lie on its sphere), never
+        // smaller; the radius gets 1e-4 (relative and in metres) so float rounding can't shave a corner off.
         float x0 = 1, y0 = 1, x1 = 0, y1 = 0;
         const float* sm = shadowMat.m;
-        auto cover = [&](const std::vector<DynVertex>& vs) {
-            for (size_t i = 0; i + 2 < vs.size(); i += 3) {
-                float tx[3], ty[3];
-                for (int k = 0; k < 3; k++) {
-                    const float* p = vs[i + k].pos;
-                    tx[k] = (sm[0] * p[0] + sm[4] * p[1] + sm[8] * p[2] + sm[12]) * 0.5f + 0.5f;
-                    ty[k] = (sm[1] * p[0] + sm[5] * p[1] + sm[9] * p[2] + sm[13]) * 0.5f + 0.5f;
-                }
-                float ax = std::min({tx[0], tx[1], tx[2]}), bx = std::max({tx[0], tx[1], tx[2]});
-                float ay = std::min({ty[0], ty[1], ty[2]}), by = std::max({ty[0], ty[1], ty[2]});
-                if (bx < 0 || ax > 1 || by < 0 || ay > 1) continue;
-                x0 = std::min(x0, std::max(ax, 0.0f)); x1 = std::max(x1, std::min(bx, 1.0f));
-                y0 = std::min(y0, std::max(ay, 0.0f)); y1 = std::max(y1, std::min(by, 1.0f));
-            }
-        };
-        cover(dynShadowOnly_);
-        cover(dyn_);
+        const float lx = 0.5f * std::sqrt(sm[0] * sm[0] + sm[4] * sm[4] + sm[8] * sm[8]);
+        const float ly = 0.5f * std::sqrt(sm[1] * sm[1] + sm[5] * sm[5] + sm[9] * sm[9]);
+        for (const CasterBound& b : casters_) {
+            const float tx = (sm[0] * b.c.x + sm[4] * b.c.y + sm[8] * b.c.z + sm[12]) * 0.5f + 0.5f;
+            const float ty = (sm[1] * b.c.x + sm[5] * b.c.y + sm[9] * b.c.z + sm[13]) * 0.5f + 0.5f;
+            const float r = b.r * 1.0001f + 1e-4f, rx = r * lx, ry = r * ly;
+            const float ax = tx - rx, bx = tx + rx, ay = ty - ry, by = ty + ry;
+            if (bx < 0 || ax > 1 || by < 0 || ay > 1) continue;
+            x0 = std::min(x0, std::max(ax, 0.0f)); x1 = std::max(x1, std::min(bx, 1.0f));
+            y0 = std::min(y0, std::max(ay, 0.0f)); y1 = std::max(y1, std::min(by, 1.0f));
+        }
         float margin = 2.0f / shadowRes_;
         casterRect_[0] = x0 - margin; casterRect_[1] = y0 - margin; casterRect_[2] = x1 + margin; casterRect_[3] = y1 + margin;
         // nothing lands in the map: no pass (the empty rect means no pixel reads it, so last frame's depth can stay)
         if (x0 <= x1 && y0 <= y1) {
             glBindFramebuffer(GL_FRAMEBUFFER, shadowFbo_);
             glViewport(0, 0, shadowRes_, shadowRes_);
+            {   // The clear and the casters only within the rect (it was the whole map: a 2048 x 2048 depth clear every
+                // frame, however few casters). Nothing outside it is ever read: a point outside the rect isn't shadowed
+                // (shadowAt), and the softest filter's taps from a point inside reach 1.5 texels further, each a 2 x 2
+                // texel lookup: 2.5 texels past the rect at most. 3 more texels each side; outside, last frames' depth stays.
+                const float res = (float)shadowRes_;
+                const int sx0 = std::max(0, (int)std::floor(casterRect_[0] * res) - 3), sy0 = std::max(0, (int)std::floor(casterRect_[1] * res) - 3);
+                const int sx1 = std::min(shadowRes_, (int)std::ceil(casterRect_[2] * res) + 3), sy1 = std::min(shadowRes_, (int)std::ceil(casterRect_[3] * res) + 3);
+                glEnable(GL_SCISSOR_TEST);
+                glScissor(sx0, sy0, sx1 - sx0, sy1 - sy0);
+            }
             glClear(GL_DEPTH_BUFFER_BIT);
             glEnable(GL_DEPTH_TEST);
             glDepthFunc(GL_LEQUAL);
@@ -1806,6 +1924,7 @@ void Renderer::prepareScene(bool shadows) {
             setMat(uShadowViewProj_, shadowMat);
             glBindVertexArray(dynVao_);
             glDrawArrays(GL_TRIANGLES, 0, (GLsizei)(nShadow + nDyn));   // (shadow-only, then the lit ones: both cast)
+            glDisable(GL_SCISSOR_TEST);
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
         }
     }
@@ -2042,6 +2161,7 @@ void Renderer::drawScene(bool shadows) {
     }
     dyn_.clear();
     dynShadowOnly_.clear();
+    casters_.clear();
     dynNoCast_.clear();
     view_.clear();
     flat_.clear();
