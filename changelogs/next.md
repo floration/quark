@@ -11,6 +11,7 @@
 - Ball: running or dashing into the ball no longer hurts you. The ball only does damage when it's moving over 20 m/s itself and over 25 m/s relative to you.
 
 ## Maps
+- **Cobblestone is now an FFA map:** 16 new spawns spread over its streets, bridges and roofs (it had 4), plus two more per team for team vs. It's offered for FFA, 1v1, duel, team vs and tourney.
 - **Payload has its own default map:** payload now picks Railyard (it still plays neutral payload and ball). The ranked ladders are unchanged.
 - **Black Hole** can now be played in duel and team vs too.
 - Small geometry fixes: walls that were drawn twice on Mine, QK6, Cruise Ship and Railyard (two door sills on Mine flickered between two materials), a doubled floodlight mast pair on Railyard, two invisible boxes on Black Hole.
