@@ -10871,7 +10871,6 @@ void Game::drawPerf() {
         snprintf(b, sizeof b, "WORST %.1fMS  PING %d  3D %dX%d", st.worstMs, net_.findPlayer(net_.clientId()) ? net_.findPlayer(net_.clientId())->ping : 0,
                  r_.sceneWidth(), r_.sceneHeight());   // (the world's own resolution: RENDER SCALE)
         perfText2_ = b;
-        pipeAverages();
         perfTick_ = std::string("QUARK V") + QUARK_VERSION;   // (with the numbers, not every frame)
         if (net_.hasSnapshot()) perfTick_ += "  SERVER " + std::to_string(net_.tickRate()) + " HZ  LOSS " + std::to_string(net_.snapshotLoss()) + "%";
         // PRIORITIZE GAME: what Windows actually gave (and the focus state is checked again here, twice a second: a
@@ -10896,6 +10895,10 @@ void Game::drawPerf() {
         if (lw[i] <= maxW) r_.text(x + 8 * s, y + 4 * s + lh * i, ts, *lines[i], yc);
         else ui_.label(x + 8 * s, y + 4 * s + lh * i, *lines[i], yc, ts / ui_.textScale(), maxW);
     }
+    if (time_ >= pipeNextUpdate_) {   // (the graph: 10 times a second, so it moves with what's happening; the text above stays twice a second, readable)
+        pipeNextUpdate_ = time_ + 0.1;
+        pipeAverages();
+    }
     if (perfStage_ >= 3 && (screen_ == Screen::InGame || screen_ == Screen::TrainerRun)) drawPipeline(x, y + lh * nl + 16 * s, std::max(1.0f, ts * 0.85f));
 }
 
@@ -10919,7 +10922,7 @@ void Game::drawPerfMini() {
 
 // ---- F3 pipeline graph -------------------------------------------------------------------------------------------
 
-void Game::pipeAverages() {   // (twice a second, F3 or F4)
+void Game::pipeAverages() {   // (F3: 10 times a second; F4: twice)
     if (pipeN_ > 0) {   // the pipeline graph's averages
         for (int k = 0; k < PM_COUNT + 3; k++) { pipeAvg_[k] = pipeSum_[k] / pipeN_; pipeSum_[k] = 0; }
         pipeN_ = 0;

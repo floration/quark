@@ -850,7 +850,7 @@ private:
     static_assert((kFrameTimes & (kFrameTimes - 1)) == 0, "kFrameTimes must be a power of two");
     std::vector<float> frameTimes_ = std::vector<float>(kFrameTimes, 0.0f);
     size_t frameIdx_ = 0, frameCount_ = 0;
-    double perfNextUpdate_ = 0;
+    double perfNextUpdate_ = 0, pipeNextUpdate_ = 0;
     std::string perfText_, perfText2_;   // F3's first two lines: the frame rates, then the worst frame and the ping
     void drawPerf();
 
