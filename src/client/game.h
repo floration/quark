@@ -801,6 +801,13 @@ private:
     bool laserHead_[kMaxPlayers] = {}, laserAlt_ = false, laserPending_ = false;
     double laserSince_ = 0;
     void sendHits(int weapon, bool alt, const std::vector<HitReport>& hits);
+    // Your hit's feedback (flash, hitsound, damage number) the moment you land it (owner, 2026-11-04: on-screen damage
+    // mustn't wait for the server). What was shown is kept per victim, and the server's EV_HIT for it is matched against
+    // that, so it isn't shown twice; only damage the server adds on its own (stickies, bots' rules...) shows from EV_HIT.
+    void hitFeedback(int victim, float dmg, bool head);
+    float shownDmg_[kMaxPlayers] = {};
+    double shownAt_[kMaxPlayers] = {};
+    double pingSec() const;   // (your round trip, from the snapshot; 0 offline)
     void reportShotHits(int w, const UserCmd& c);
     void flushLaserHits(bool force);
     void reportBlast(int type, bool alt, const Vec3& at, int direct);

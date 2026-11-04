@@ -1891,27 +1891,16 @@ void Game::handleEvents() {
                 if (e.a == net_.clientId()) {
                     float dmg = e.c / 100.0f; // hundredths of a point
                     bool head = e.text == "h"; // a headshot: its own red number
-                    hitUntil_ = time_ + cfg_.hitFlashTime;
-                    hitHead_ = head;
-                    matchHits_++; matchDmg_ += dmg;
-                    // four tiers by this hit's damage, each heavier and louder (hitSoundFor); hits landing together make one
-                    if (cfg_.hitsounds) {
-                        int snd = cfg_.hitTiers ? hitSoundFor(dmg) : SND_HIT_MED;   // (MORE 5: HITSOUND TIERS off: one sound)
-                        if (hitGate_.pass(time_, snd)) audio_.play(snd, 0.9f * cfg_.hitVolume, 1.0f, cfg_.hitPack);
-                        if (head && cfg_.headshotSound) audio_.play(SND_HIT, 0.7f * cfg_.hitVolume, 1.7f, cfg_.hitPack);   // (a higher ding over it)
+                    matchHits_++; matchDmg_ += dmg;   // (the match summary: the server's count)
+                    // already shown when you landed it (sendHits): only what the server added past that shows now
+                    if (e.b < kMaxPlayers) {
+                        float& shown = shownDmg_[e.b];
+                        if (time_ - shownAt_[e.b] > std::max(1.0, pingSec() * 2.0 + 0.5)) shown = 0;   // (stale: a hit the server refused)
+                        const float took = std::min(shown, dmg);
+                        shown -= took; dmg -= took;
+                        if (dmg < 0.5f) break;
                     }
-                    // hits on the same target in quick succession add up into one number
-                    bool merged = false;
-                    // (GAMEPLAY > MORE 2: STACKING: quick hits add up, a number a hit, or one running total while it shows)
-                    if (cfg_.dmgNumStack != 1)
-                        for (auto& d : dmgNums_)
-                            if (d.victim == e.b && (d.head == head || cfg_.dmgNumStack == 2) && time_ - d.start < (cfg_.dmgNumStack == 2 ? cfg_.dmgNumTime : 0.35)) {
-                                d.amount += dmg; d.start = time_; d.head = d.head || head; merged = true; break;
-                            }
-                    if (!merged) {
-                        const PlayerSnap* v = net_.findPlayer(e.b);
-                        dmgNums_.push_back({e.b, dmg, time_, v ? v->pos : Vec3(), head});
-                    }
+                    hitFeedback(e.b, dmg, head);
                 }
                 break;
             case EV_SPAWN:
@@ -3039,10 +3028,16 @@ void Game::drawWorld(float alpha) {
     // along as the copy was)
     auto projGravity = [](int type, bool lob) { return projectileFlight(type, lob ? kRocketLobGravity : 1.0f); };   // (the drop and the primary rocket's thrust)
     if (!alive) for (auto& q : predProj_) q.live = false;
+    // how long a copy waits for the server's, and how far ahead of it the server's is drawn: a round trip and more
+    // (owner, 2026-11-04: at a high ping your rocket sat on the wall, waiting for the server's explosion: the copy
+    // gave up at 0.6 s and the lead stopped at 0.4 s, so it was drawn from the server's spot, a round trip behind)
+    const double rtt = pingSec();
+    const double predLife = clampf((float)(rtt * 1.5 + 0.3), 0.6f, 3.0f);
+    const float maxLead = clampf((float)(rtt * 1.5 + 0.1), 0.4f, 2.5f);
     for (auto& q : predProj_) {   // the copies, where they'd be now (stopped at the first wall: the server's word follows)
         if (!q.live) continue;
         const double age = time_ - q.born;
-        if (age > 0.6) { q.live = false; continue; }   // (no copy came: a shot the server refused)
+        if (age > predLife) { q.live = false; continue; }   // (no copy came: a shot the server refused)
         if (q.atWall) continue;
         Vec3 p = q.pos0, v = q.vel0;
         net_.map().flyProjectile(p, v, projGravity(q.type, q.lob), (float)age);
@@ -3086,7 +3081,7 @@ void Game::drawWorld(float alpha) {
                 for (auto& q : predProj_) if (q.live && q.type == pr.type && (!copy || q.born < copy->born)) copy = &q;
             if (copy) {
                 const float sp = length(pr.vel);
-                if (sp > 0.1f) st.lead = clampf(dot(copy->pos - pr.pos, pr.vel / sp) / sp, 0.0f, 0.4f);
+                if (sp > 0.1f) st.lead = clampf(dot(copy->pos - pr.pos, pr.vel / sp) / sp, 0.0f, maxLead);
                 Vec3 p = pr.pos, v = pr.vel;
                 net_.map().flyProjectile(p, v, projGravity(pr.type, (pr.flags & PROJ_LOB) != 0), st.lead);
                 st.offset = copy->pos - p;   // (what's left: blended out like the muzzle start)
@@ -12960,8 +12955,40 @@ bool Game::enemyOnSegment(const Vec3& a, const Vec3& b, float* t, int* who, bool
 // there by the time they arrive. These mirror the server's own hit tests (Server::hitscan, explode, stepProjectile)
 // against the players as drawn (framePlayers).
 
+double Game::pingSec() const {
+    const PlayerSnap* me = net_.findPlayer(net_.clientId());
+    return me ? me->ping * 0.001 : 0.0;
+}
+
+void Game::hitFeedback(int victim, float dmg, bool head) {
+    hitUntil_ = time_ + cfg_.hitFlashTime;
+    hitHead_ = head;
+    // four tiers by this hit's damage, each heavier and louder (hitSoundFor); hits landing together make one
+    if (cfg_.hitsounds) {
+        int snd = cfg_.hitTiers ? hitSoundFor(dmg) : SND_HIT_MED;   // (MORE 5: HITSOUND TIERS off: one sound)
+        if (hitGate_.pass(time_, snd)) audio_.play(snd, 0.9f * cfg_.hitVolume, 1.0f, cfg_.hitPack);
+        if (head && cfg_.headshotSound) audio_.play(SND_HIT, 0.7f * cfg_.hitVolume, 1.7f, cfg_.hitPack);   // (a higher ding over it)
+    }
+    // hits on the same target in quick succession add up into one number
+    // (GAMEPLAY > MORE 2: STACKING: quick hits add up, a number a hit, or one running total while it shows)
+    if (cfg_.dmgNumStack != 1)
+        for (auto& d : dmgNums_)
+            if (d.victim == victim && (d.head == head || cfg_.dmgNumStack == 2) && time_ - d.start < (cfg_.dmgNumStack == 2 ? cfg_.dmgNumTime : 0.35)) {
+                d.amount += dmg; d.start = time_; d.head = d.head || head; return;
+            }
+    const PlayerSnap* v = net_.findPlayer(victim);
+    dmgNums_.push_back({victim, dmg, time_, v ? v->pos : Vec3(), head});
+}
+
 void Game::sendHits(int weapon, bool alt, const std::vector<HitReport>& hits) {
     if (hits.empty() || net_.playback()) return;
+    for (const HitReport& h : hits) {   // shown now, as you landed it (the server's EV_HIT is matched against it)
+        if (h.victim < 0 || h.victim >= kMaxPlayers || h.dmg <= 0) continue;
+        if (time_ - shownAt_[h.victim] > std::max(1.0, pingSec() * 2.0 + 0.5)) shownDmg_[h.victim] = 0;
+        shownDmg_[h.victim] += h.dmg;
+        shownAt_[h.victim] = time_;
+        hitFeedback(h.victim, h.dmg, h.head);
+    }
     std::string s = "hit " + std::to_string(weapon) + (alt ? " 1 " : " 0 ") + std::to_string(hits.size());
     char buf[160];
     for (const HitReport& h : hits) {
