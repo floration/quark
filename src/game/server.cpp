@@ -3655,8 +3655,7 @@ void Server::tickShards() {
         int hit = -1;
         for (int i = 0; i < kMaxPlayers; i++) {
             if (!in[i] || i == s.spare) continue;
-            const Vec3 grow(s.size, s.size, s.size);   // (a big shard hits what it brushes)
-            const float t = rayAABB(s.pos, inv, {box[i].mn - grow, box[i].mx + grow}, best);
+            const float t = rayHitbox(s.pos, inv, box[i], best, nullptr, s.size);   // (body and head, as shots; a big shard hits what it brushes)
             if (t >= 0 && t < best) { best = t; hit = i; }
         }
         if (hit >= 0) {   // (q: a shard 10, a shattered piece 1; one pane's at most kGlassPaneMaxDamage to each player)
