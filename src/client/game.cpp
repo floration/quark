@@ -2195,7 +2195,7 @@ void Game::frame(double dt) {
                 recoil_ = w == WPN_LASER ? 0.15 : w == WPN_SNIPER ? 1.6 : 1.0;
                 matchShots_++;
                 if (w != WPN_KNIFE && w != WPN_SYRINGE && w != WPN_LOCATOR) muzzleUntil_ = time_ + (w == WPN_SNIPER ? 0.07 : 0.05);
-                if (w == WPN_ROCKET || w == WPN_CROSSBOW || (w == WPN_KNIFE && alt)) spawnPredictedProjectile(w, alt, c);   // X5
+                if (w == WPN_ROCKET || w == WPN_CROSSBOW || (w == WPN_STICKY && !alt) || isThrow(w, alt)) spawnPredictedProjectile(w, alt, c);   // X5
                 if (!weaponDef(w).projectile && w != WPN_KNIFE && w != WPN_SYRINGE && w != WPN_LOCATOR && !(w == WPN_SHOTGUN && alt) &&
                     (w != WPN_LASER || time_ >= nextLocalSpark_) && cfg_.impactSparks)
                     localImpactSparks(w, c);   // X4: a spark on an enemy you hit, at once (the sound and number: the server's)
@@ -2295,7 +2295,7 @@ void Game::frame(double dt) {
                 if (shown) continue;
                 bool mine = false;   // (one that blew up on your screen far from here: its hits went from there)
                 for (auto& st : projStarts_) mine |= st.id == old.id && st.boomed;
-                if (!mine && (old.type == WPN_ROCKET || old.type == WPN_CROSSBOW)) {
+                if (!mine && (old.type == WPN_ROCKET || old.type == WPN_CROSSBOW || old.type == WPN_KNIFE)) {
                     // the server's copy landed before yours did on your screen: its hits as you see them, from where it was
                     const float sp = length(old.vel);
                     const Vec3 dir = sp > 0.01f ? old.vel / sp : Vec3(0, 0, -1);
@@ -2327,12 +2327,13 @@ void Game::frame(double dt) {
         // server.cpp; armed: seen for the arm time, so never one the server would still hold back)
         if (heldWeapon_ == WPN_STICKY && altKey() && !localFireLocked_ && net_.selfAlive() && !paused_ && !chatting_)
             for (auto& st : projStarts_) {
-                if (st.boomed || time_ - st.seen < weaponAlt().stickyArmTime) continue;
+                if (st.boomed || time_ - st.seen + pingSec() * 0.5 < weaponAlt().stickyArmTime) continue;   // (seen half a round trip after the server launched it)
                 for (auto& p : lastProjectiles_)
                     if (p.id == st.id && p.type == WPN_STICKY) {
                         Vec3 at = p.pos;
                         if ((p.flags & PROJ_ON_PLAYER) && p.onPlayer == net_.clientId()) net_.attachedPos(p, 1.0f, &at);
                         localBoom(p.id, WPN_STICKY, at); st.boomed = true;
+                        reportBlast(WPN_STICKY, false, at, -1);   // (its hits as you see them, now)
                     }
             }
 
@@ -3050,7 +3051,7 @@ void Game::drawWorld(float alpha) {
         bool vHead = false;
         if (q.type != WPN_KNIFE && len > 1e-4f && enemyOnSegment(q.pos, p, &et, &victim, &vHead) && (hit < 0 || et * len < hit)) { hit = et * len; hm = -1; }
         else victim = -1;
-        if (hit >= 0 && hm == kMatRubber && q.type == WPN_ROCKET && dot(v, hn) < 0) {   // (off rubber: on from there, as the server's does)
+        if (hit >= 0 && hm == kMatRubber && (q.type == WPN_ROCKET || q.type == WPN_STICKY) && dot(v, hn) < 0) {   // (off rubber: on from there, as the server's does)
             q.pos0 = q.pos + d / len * std::max(0.0f, hit - 0.05f);
             q.vel0 = v - hn * (dot(v, hn) * (1.0f + kProjRubberBounce));
             q.born = time_;
@@ -3059,9 +3060,15 @@ void Game::drawWorld(float alpha) {
         }
         if (hit >= 0) {   // (hidden; the server's copy still takes over from it, and isn't drawn once this one blew up)
             q.atWall = true;
-            if (q.type != WPN_KNIFE) {
+            if (q.type == WPN_ROCKET || q.type == WPN_CROSSBOW) {
                 localBoom(0xFFFF, q.type, q.pos + d / len * hit); q.boomed = true;
                 reportImpact(q.type, q.lob, q.pos, q.pos + d / len * hit, victim, vHead);
+            } else if (q.type == WPN_KNIFE && victim >= 0) {   // a thrown knife in someone: your hit, now
+                q.boomed = true;
+                reportImpact(q.type, true, q.pos, q.pos + d / len * hit, victim, vHead);
+            } else if (q.type == WPN_STICKY && victim < 0) {   // stuck on the wall, drawn there until the server's comes
+                q.pos = q.pos + d / len * std::max(0.0f, hit - 0.05f);
+                q.stuck = true;
             }
             continue;
         }
@@ -3157,10 +3164,11 @@ void Game::drawWorld(float alpha) {
                 Vec3 hn;
                 int hm = -1;
                 float hit = len > 1e-4f ? map.raycast(pr.pos, d / len, len, &hn, &hm) : -1.0f, et;
-                const bool blows = pr.type == WPN_ROCKET || pr.type == WPN_CROSSBOW;   // (stickies stick; knives: the server's word)
+                const bool blows = pr.type == WPN_ROCKET || pr.type == WPN_CROSSBOW;   // (stickies stick)
+                const bool knife = pr.type == WPN_KNIFE;   // (a thrown knife: its hit on a player is yours too)
                 int victim = -1;
                 bool vHead = false;
-                if (blows && len > 1e-4f && enemyOnSegment(pr.pos, p, &et, &victim, &vHead) && (hit < 0 || et * len < hit)) { hit = et * len; hm = -1; }
+                if ((blows || knife) && len > 1e-4f && enemyOnSegment(pr.pos, p, &et, &victim, &vHead) && (hit < 0 || et * len < hit)) { hit = et * len; hm = -1; }
                 else victim = -1;
                 if (hit >= 0 && hm == kMatRubber && pr.type == WPN_ROCKET && dot(v, hn) < 0) {
                     // off rubber (as the server's does): drawn on along the bounce, not blown up there (it vanished)
@@ -3175,6 +3183,9 @@ void Game::drawWorld(float alpha) {
                 if (blows && hit >= 0) {   // where it lands, as you see it (and its hits: yours)
                     localBoom(pr.id, pr.type, pr.pos + d / len * hit); st.boomed = true;
                     reportImpact(pr.type, (pr.flags & PROJ_LOB) != 0, pr.pos, pr.pos + d / len * hit, victim, vHead);
+                } else if (knife && hit >= 0 && victim >= 0) {
+                    st.boomed = true;
+                    reportImpact(pr.type, true, pr.pos, pr.pos + d / len * hit, victim, vHead);
                 }
                 pr.pos = hit >= 0 ? pr.pos + d / len * std::max(0.0f, hit - 0.05f) : p;
                 pr.vel = v;
@@ -3183,7 +3194,13 @@ void Game::drawWorld(float alpha) {
         if (!boomed) drawProj(pr, false);
     }
     for (auto& q : predProj_) {
-        if (!q.live || q.atWall) continue;
+        if (!q.live || (q.atWall && !q.stuck)) continue;
+        if (q.stuck) {   // a sticky copy stuck on a wall: still there
+            ProjectileSnap pr;
+            pr.type = q.type; pr.owner = (uint8_t)me; pr.id = 0xFFFF; pr.pos = q.pos; pr.flags = PROJ_STUCK;
+            drawProj(pr, true);
+            continue;
+        }
         ProjectileSnap pr;
         pr.type = q.type; pr.owner = (uint8_t)me; pr.id = 0xFFFF;
         Vec3 v = q.vel0, p = q.pos0;
@@ -12699,7 +12716,8 @@ void Game::spawnPredictedProjectile(int w, bool alt, const UserCmd& c) {
     q.type = (uint8_t)w;
     q.live = true;
     q.pos0 = q.pos = eye + aim * 0.3f;
-    if (w == WPN_KNIFE) q.vel0 = aim * kKnifeThrowSpeed;
+    if (w == WPN_KNIFE) q.vel0 = aim * weaponAlt().knifeThrowSpeed;   // (thrown: the server's speeds, fireWeapon)
+    else if (w == WPN_SYRINGE) q.vel0 = aim * weaponAlt().syringeThrowSpeed;
     else {
         const float spread = (wd.scopedSpread >= 0 && (c.buttons & BTN_ALTFIRE)) ? wd.scopedSpread : wd.spread;
         q.vel0 = spreadAim(aim, spread, 0, 1, localBurst_) * wd.projSpeed;
@@ -13194,6 +13212,20 @@ void Game::reportImpact(int type, bool alt, const Vec3& from, const Vec3& to, in
         const Vec3 d = to - from;
         const float len = length(d);
         reportBolt(to, len > 1e-4f ? d / len : Vec3(0, 0, -1), victim, head);
+    }
+    else if (type == WPN_KNIFE) {   // thrown (the server's stepProjectile: knife damage, 3x its knock, no headshot)
+        if (victim < 0) return;
+        const Vec3 d = to - from;
+        const float len = length(d);
+        const Vec3 dir = len > 1e-4f ? d / len : Vec3(0, 0, -1);
+        const WeaponExtra& ex = weaponExtra(WPN_KNIFE);
+        float dmg = (float)weaponDef(WPN_KNIFE).damage;
+        const MoveState& m = net_.predicted();
+        const float dist = length(to - (m.pos + Vec3(0, ((m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0)));
+        if (ex.falloff) dmg *= weaponFalloff(ex, dist);
+        hitScratch_.clear();
+        hitScratch_.push_back({victim, dmg, false, true, 1.0f, dist, dir * (3.0f * ex.knock)});
+        sendHits(WPN_KNIFE, true, hitScratch_);
     }
 }
 

@@ -191,6 +191,7 @@ struct ServerPlayer {
     // doesn't hit-test those itself. Set by the "clienthits" command (the game sends it; a bot or a bare test client
     // doesn't, and keeps the server's hit tests).
     bool clientHits = false;
+    bool clientHitsMore = false;   // ("clienthits 2": thrown knives and sticky blasts too, owner 2026-11-04)
     double typingAt = 0, quipAt = 0, locateAt = 0;   // next "typing" relay allowed (and quip pings, the locator ready)
     Vec3 locatedPos;            // the locator's last find (bots head there)
     double locatedAt = -1e9;
@@ -740,13 +741,14 @@ public:
     uint16_t weaponMask() const;
     bool headHit_[kMaxPlayers] = {};   // this shot hit that player in the head (for the kill event)
     float hitDist_[kMaxPlayers] = {};  // ...and how far from the shooter's eye (hitscan; the weapon set logic's `dist`)
+    bool ownerDetonate_ = false;       // explode(): this sticky was set off by its owner's detonate (its hits: reported)
     WsTracker wsTrack_;                // the weapon set logic's streak / kills-this-life counts
     // a shot or projectile whose damage the shooter's game reports (ServerPlayer::clientHits)
     bool reportsHits(int owner, int weapon) const {
         // (a shooter dead by now: its rocket or bolt still lands, the server's hit; your own blast on you: the server's
         // too, so rocket jumps feel as they did)
         return owner >= 0 && owner < kMaxPlayers && players_[owner].clientHits && players_[owner].alive &&
-               (weapon == WPN_ROCKET || weapon == WPN_CROSSBOW);
+               (weapon == WPN_ROCKET || weapon == WPN_CROSSBOW || (players_[owner].clientHitsMore && (weapon == WPN_KNIFE || weapon == WPN_STICKY)));
     }
     void clientHitReport(int id, const std::string& rest);
     bool shotHit(int id) { bool h = players_[id].hitSinceShot; players_[id].hitSinceShot = false; return h; } // and reset for the next shot

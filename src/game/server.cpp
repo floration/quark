@@ -1613,7 +1613,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
         rulesRpsPick(*this, id, shape);
         return;
     }
-    if (cmd == "clienthits") { p.clientHits = true; return; }   // (this game reports its own hits: "hit")
+    if (cmd == "clienthits") { p.clientHits = true; p.clientHitsMore = rest == "2"; return; }   // (this game reports its own hits: "hit"; "2": thrown knives and sticky blasts too)
     if (cmd == "hit") { clientHitReport(id, rest); return; }
     if (cmd == "quip") { // a random quip (each listener's voice's set), heard from where they stand; one every 1.5 s at most
         if (time() < p.quipAt) return;
@@ -2637,7 +2637,9 @@ void Server::runPlayerCmd(int id, const UserCmd& cmdIn) {
             if (pr.active && pr.owner == id && pr.type == WPN_STICKY && time() >= pr.armAt) {
                 if (pr.onPlayer >= 0) followVictim(pr);   // (where the one it's on is now: they may have moved this tick)
                 pr.active = false;
+                ownerDetonate_ = true;   // (its hits: the owner's game reports them, as it set them off on its screen)
                 explode(pr.pos, id, WPN_STICKY);
+                ownerDetonate_ = false;
             }
     // The locator (hide and seek / tag, "it" only): fire shows one random hider / runner, every kLocatorCooldown.
     if (p.weapon == WPN_LOCATOR) {
@@ -3700,7 +3702,10 @@ void Server::explode(const Vec3& at, int owner, int weapon, int direct, bool alt
     ballBlast(*this, at, wd.splashRadius, ex.knock * (weapon == WPN_BUBBLE ? kBubbleKnock : 1.0f), owner);   // (ball mode)
     const bool wantDist = ex.falloff || activeWeaponLogic();   // (falloff and the logic's dist: only a weapon set needs it)
     const float ownerDist = wantDist && owner >= 0 && owner < kMaxPlayers ? length(at - shooterEye(owner)) : 0.0f;
-    const bool reported = reportsHits(owner, weapon);   // (the owner's game reports this blast's hits, as its screen had them)
+    // (the owner's game reports this blast's hits, as its screen had them; a sticky only when its owner set it off:
+    // one set off by another blast or anything else stays the server's, the game never saw it go)
+    const bool reported = reportsHits(owner, weapon) && (weapon != WPN_STICKY || ownerDetonate_);
+    ownerDetonate_ = false;   // (a chain this blast sets off below is the server's)
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = players_[i];
         if (!p.connected || !p.alive || (reported && i != owner)) continue;

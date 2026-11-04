@@ -638,7 +638,7 @@ void NetClient::tick(UserCmd cmd) {
     // a fixed interpolation delay goes to the server, whose lag compensation then rewinds that far (FINAL_REVIEW 2.5)
     int interpMs = interpFixed_ >= 0 ? std::min((int)std::lround(interpFixed_ * 1000.0f), kMaxInterpMs) : 0;
     if (interpMs != interpSent_) { interpSent_ = interpMs; sendCommand("interp " + std::to_string(interpMs)); }
-    if (reportHits_ && !hitsSent_) { hitsSent_ = true; sendCommand("clienthits"); }
+    if (reportHits_ && !hitsSent_) { hitsSent_ = true; sendCommand("clienthits 2"); }
     cmds_[cmd.seq % kCmdRing] = cmd;
     predPrev_ = pred_;
     if (selfAlive()) {

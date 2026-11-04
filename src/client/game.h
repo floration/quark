@@ -821,7 +821,7 @@ private:
     struct ProjStart { uint16_t id; double seen; Vec3 offset; float lead = 0; bool boomed = false; };   // boomed: exploded on your screen already (localBoom)   // lead: X5, drawn this far ahead (s)
     // X5: your own rockets, bolts and thrown knives, flying from the click until the server's copy arrives (a round trip
     // later), which then takes over drawn as far ahead as the copy was (lead), so nothing jumps back
-    struct PredProj { uint8_t type = 0; bool live = false, lob = false, started = false, atWall = false, boomed = false; Vec3 pos0, vel0, pos, offset; double born = 0; };
+    struct PredProj { uint8_t type = 0; bool live = false, lob = false, started = false, atWall = false, boomed = false, stuck = false; Vec3 pos0, vel0, pos, offset; double born = 0; };
     PredProj predProj_[8];
     void spawnPredictedProjectile(int w, bool alt, const UserCmd& c);
     bool projectileDissolved(const ProjectileSnap& p, Vec3* at) const;
