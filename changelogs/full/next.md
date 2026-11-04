@@ -2,6 +2,17 @@
 
 Every change since 1.19.7, with what changed and why.
 
+## Hit registration (owner, 2026-11-04: "why are the hitboxes cubes and not capsules")
+
+- **Hits test a capsule body and a head sphere instead of two boxes** (`hitShape`, `rayBodyY`, `raySphere` in pmove.h; protocol 69). The two axis-aligned boxes never turned with the player, so a standing player was 0.8 m wide face-on but 1.13 m across the corners (+41%) from 45 degrees, and the corners stuck out past the model. Now:
+  - The body is an upright cylinder the hull's full width (radius 0.4 m standing), from a round bottom at the feet (a half sphere of that radius) up to a flat top at the head's bottom. The top is flat on purpose: the shoulders stay square, and the owner's 2026-10-27 rule holds (nothing beside the head over the shoulders; just under the head's bottom is a body hit).
+  - The head is a sphere, head-wide (radius 0.18 m standing, `kHeadWidthFraction`), touching the hull's top. A shot straight down onto it 5 cm off its centre meets it 7 mm lower than the box's top did.
+  - Size modifiers (giant, tiny) and the knife's wider swing (`grow`) scale both, as before.
+  - The movement hull is unchanged (a box), and so is the network traffic.
+- **Cost:** the same as before. A shot first tests the old box around both (the cheap reject), and the hit-or-miss test is the shot's squared distance from the axis or the head's centre against the radius squared. The one square root is taken only when it hits, for where it went in.
+- **Everything that tests a player uses it:** hitscan on the server (with lag compensation), projectiles, glass shards, the knife, the grapple's catch (pmove: the client's prediction too), the client's own hit reports and sparks, and blasts (`hitboxClosest`: the nearest point on the body or the head). quark_maptool's pellet stats (`wpn_stats.cpp`) test the same shapes seen from the front.
+- **Tests (rules head):** every size still passes the head, beside-the-head, shoulder-corner, under-the-chin, from-above and knife checks, plus a new one: a level shot 2% inside the radius hits and 2% outside misses from 0, 23, 45 and 69 degrees (a box failed this at 45).
+
 ## Build and release (CI)
 
 - **The macOS build goes to an Intel Mac first, with arm64 as the fallback.** On 2026-11-02, from 13:39 to 23:08 UTC, GitHub's macOS arm64 pool was full. Every `macos-latest` job sat queued about 15 minutes, then ended with "The job was not acquired by Runner of type hosted even after multiple attempts". That turned every macos run red (runs 187-205), and those testing builds and releases 1.19.5 and 1.19.6 went out without macOS files. A probe at 22:55 UTC showed the split: `macos-14` got a runner in 3 s, `macos-15-intel` in 19 s, `macos-latest` and `macos-26` only after 13 min, and `macos-15` never did. The build steps moved to `.github/actions/macos-build`. The `macos` job now runs them on `macos-15-intel`, and the new `macos-arm` job (`macos-latest`) runs them only when the Intel job didn't build. Both make the same universal (arm64 + x86_64, macOS 10.15+) files, and `publish` takes whichever one built. The trade-off: when no Intel Mac picks the job up, the arm64 fallback starts about 15 min later and the run still shows that first job as failed. GitHub plans to retire `macos-15-intel` in August 2027; switch the order back before then.

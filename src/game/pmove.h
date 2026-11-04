@@ -123,11 +123,14 @@ constexpr float kHookCooldown = 1.0f;   // after the hook is released
 // The hull: kPlayerHalfWidth each side, kPlayerHeight tall (crouched: kPlayerCrouchHeight), times scale (size modifiers).
 AABB playerBox(const Vec3& feet, bool crouched, float scale = 1.0f);
 inline AABB playerBox(const MoveState& m) { return playerBox(m.pos, (m.flags & MF_CROUCHED) != 0, moveScale(m.mods)); }
-// What hits test, inside a player's hitbox (the hull above): two boxes. The head is a head-sized box on top, centred
-// (owner 5.5: shoulders aren't headshots); the body is the full width from the feet up to the head's bottom (owner
-// 2026-10-27: nothing above that line but the head, so a shot past the head over the shoulders misses). Crouching and
-// size modifiers scale both with the hull. Movement and zones still use the whole hull.
-// (inline: hitscan tests every player for every pellet)
+// What hits test, inside a player's hitbox (the hull above): a capsule for the body and a sphere for the head (owner,
+// 2026-11-04: boxes are as wide again across their corners, 1.13 m of a 0.8 m player from 45 degrees, and stick out
+// past the model). The body is an upright capsule, the hull's full width (radius = half width), from its round bottom
+// at the feet up to a flat top at the head's bottom (owner 2026-10-27: nothing above that line but the head, so a shot past the head over the
+// shoulders misses). The head is a sphere, head-wide (kHeadWidthFraction, owner 5.5: shoulders aren't headshots),
+// touching the hull's top. Both look the same from every side. Crouching and size modifiers scale both with the hull.
+// Movement and zones still use the whole hull (a box). headBox / bodyBox stay as the boxes around the two (stuck
+// props, tools).
 inline AABB headBox(const AABB& b) {
     Vec3 c = b.center();
     float hx = (b.mx.x - b.mn.x) * 0.5f * kHeadWidthFraction, hz = (b.mx.z - b.mn.z) * 0.5f * kHeadWidthFraction;
@@ -136,24 +139,83 @@ inline AABB headBox(const AABB& b) {
 inline AABB bodyBox(const AABB& b) {   // (its top is the same expression as the head's bottom: no gap, no overlap)
     return {b.mn, {b.mx.x, b.mx.y - (b.mx.y - b.mn.y) * kHeadFraction, b.mx.z}};
 }
-// A ray o + dir * t (inv = safeInv(dir)) against a player as hits see them: the entry into the nearer of body and head
-// in [0, maxT], else -1 (two slab tests, nothing else). *head: the head was hit first (a tie is the body's). grow: both
-// boxes this much wider each side (the knife swing).
-inline float rayHitbox(const Vec3& o, const Vec3& inv, const AABB& hitbox, float maxT, bool* head = nullptr, float grow = 0.0f) {
-    AABB body = bodyBox(hitbox), hd = headBox(hitbox);
-    if (grow != 0.0f) {
-        body.mn.x -= grow; body.mn.z -= grow; body.mx.x += grow; body.mx.z += grow;
-        hd.mn.x -= grow; hd.mn.z -= grow; hd.mx.x += grow; hd.mx.z += grow;
+struct HitShape {        // a hitbox as hits see it: the body (axis x, z; round bottom centred at y0, flat top y1; radius r), the head sphere
+    float x, z, y0, y1, r;
+    Vec3 head; float hr;
+};
+inline HitShape hitShape(const AABB& b, float grow = 0.0f) {
+    HitShape h;
+    const float hw = (b.mx.x - b.mn.x) * 0.5f, top = b.mx.y, bodyTop = top - (top - b.mn.y) * kHeadFraction;
+    h.x = (b.mn.x + b.mx.x) * 0.5f; h.z = (b.mn.z + b.mx.z) * 0.5f;
+    h.r = hw + grow;
+    h.y0 = std::min(b.mn.y + hw, bodyTop); h.y1 = bodyTop;   // the round bottom touches the feet; the top is flat
+    const float hr = hw * kHeadWidthFraction;
+    h.head = {h.x, top - hr, h.z}; h.hr = hr + grow;
+    return h;
+}
+// A ray o + d * t (d unit) against a sphere: the entry in [0, maxT] (0 starting inside), else -1. Hit or miss is the
+// ray's squared distance from the centre against r^2; the one square root is taken only on a hit, for where it went in.
+inline float raySphere(const Vec3& o, const Vec3& d, const Vec3& c, float r, float maxT) {
+    const Vec3 m = o - c;
+    const float b = dot(m, d), cc = dot(m, m) - r * r;
+    if (cc > 0 && b > 0) return -1;                    // outside and going away
+    const float disc = b * b - cc;                     // r^2 - (squared distance of the line from c)
+    if (disc < 0) return -1;
+    const float t = cc <= 0 ? 0.0f : -b - std::sqrt(disc);
+    return t <= maxT ? t : -1;
+}
+// ...against the body: an upright cylinder of radius r around (cx, cz) from y0 up to its flat top yTop, with a round
+// bottom (a half sphere at y0). The top is flat so the shoulders stay square up to the head's bottom.
+inline float rayBodyY(const Vec3& o, const Vec3& d, float cx, float cz, float y0, float yTop, float r, float maxT) {
+    const float mx = o.x - cx, mz = o.z - cz;
+    const float a = d.x * d.x + d.z * d.z, b = mx * d.x + mz * d.z, c = mx * mx + mz * mz - r * r;
+    float best = -1;
+    auto take = [&](float t) { if (t >= 0 && t <= maxT && (best < 0 || t < best)) best = t; };
+    if (a > 1e-12f) {                                  // the side
+        const float disc = b * b - a * c;              // < 0: the line passes further than r from the axis
+        if (disc < 0) return -1;                       // (and so misses the top and the round bottom too)
+        const float t = c <= 0 ? 0.0f : (-b - std::sqrt(disc)) / a;
+        const float y = o.y + d.y * t;
+        if (y >= y0 && y <= yTop) take(t);
+    } else if (c > 0) return -1;                       // straight up or down, beside the axis
+    if (o.y > yTop && d.y < 0) {                       // the flat top, from above
+        const float t = (yTop - o.y) / d.y, x = mx + d.x * t, z = mz + d.z * t;
+        if (x * x + z * z <= r * r) take(t);
     }
-    const float tb = rayAABB(o, inv, body, maxT), th = rayAABB(o, inv, hd, maxT);
+    take(raySphere(o, d, {cx, y0, cz}, r, maxT));     // the round bottom (its top half is inside the side anyway)
+    return best;
+}
+// A ray o + dir * t (inv = safeInv(dir), dir unit) against a player as hits see them: the entry into the nearer of
+// body and head in [0, maxT], else -1. *head: the head was hit first (a tie is the body's). grow: both this much
+// wider (the knife swing).
+inline float rayHitbox(const Vec3& o, const Vec3& inv, const AABB& hitbox, float maxT, bool* head = nullptr, float grow = 0.0f) {
+    // cheap reject first: the box around both (the hull, grown), as before
+    AABB bb = hitbox;
+    if (grow != 0.0f) { bb.mn.x -= grow; bb.mn.z -= grow; bb.mx.x += grow; bb.mx.z += grow; }
+    if (rayAABB(o, inv, bb, maxT) < 0) { if (head) *head = false; return -1; }
+    auto rcp = [](float v) { return std::fabs(v) >= 1e29f ? 0.0f : 1.0f / v; };   // (safeInv's huge value = 0)
+    const Vec3 d(rcp(inv.x), rcp(inv.y), rcp(inv.z));
+    const HitShape s = hitShape(hitbox, grow);
+    const float tb = rayBodyY(o, d, s.x, s.z, s.y0, s.y1, s.r, maxT), th = raySphere(o, d, s.head, s.hr, maxT);
     const bool h = th >= 0 && (tb < 0 || th < tb);
     if (head) *head = h;
     return h ? th : tb;
 }
-// The point of the two boxes nearest p (blast distances)
+// The point of body and head nearest p (blast distances)
 inline Vec3 hitboxClosest(const AABB& hitbox, const Vec3& p) {
-    const AABB body = bodyBox(hitbox), hd = headBox(hitbox);
-    const Vec3 a = vmax(body.mn, vmin(p, body.mx)), b = vmax(hd.mn, vmin(p, hd.mx));
+    const HitShape s = hitShape(hitbox);
+    auto onSphere = [&](const Vec3& c, float r) {
+        const Vec3 v = p - c;
+        const float l2 = dot(v, v);
+        return l2 <= r * r ? p : c + v * (r / std::sqrt(l2));
+    };
+    Vec3 a;
+    if (p.y < s.y0) a = onSphere({s.x, s.y0, s.z}, s.r);   // under the round bottom's centre
+    else {                                                  // beside or over the cylinder: clamp height, then radius
+        const float vx = p.x - s.x, vz = p.z - s.z, l2 = vx * vx + vz * vz, k = l2 <= s.r * s.r ? 1.0f : s.r / std::sqrt(l2);
+        a = {s.x + vx * k, std::min(p.y, s.y1), s.z + vz * k};
+    }
+    const Vec3 b = onSphere(s.head, s.hr);
     return dot(a - p, a - p) <= dot(b - p, b - p) ? a : b;
 }
 // Where a projectile that met a wall, the floor or a player `hit` metres along its step from `from` (unit `dir`) goes

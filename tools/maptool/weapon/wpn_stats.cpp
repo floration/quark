@@ -47,8 +47,12 @@ PH pelletHits(int pellets, float spread, double d, bool aimHead) {
         pelletOffset(k, pellets, spread, a, rr);
         double off = std::tan(rr) * std::max(0.0, d);
         double x = std::cos(a) * off, y = aimY + std::sin(a) * off;
-        bool inHead = std::fabs(x) <= headHW && y >= H - headH && y <= H;
-        bool inBody = std::fabs(x) <= hw && y >= 0 && y <= H - headH;   // (the body ends at the head's bottom: bodyBox)
+        // seen from the front (pmove.h hitShape): the head a circle touching the top, the body as wide as the hull up
+        // to the head's bottom with a round bottom (a half circle of the hull's half width at the feet)
+        const double hy = y - (H - headHW);
+        bool inHead = x * x + hy * hy <= headHW * headHW;
+        const double by = std::min(y, hw) - hw;
+        bool inBody = std::fabs(x) <= hw && y >= 0 && y <= H - headH && x * x + by * by <= hw * hw;
         if (aimHead && inHead) r.head++;
         else if (inBody || inHead) r.body++;   // (aimed at the body: a stray head pellet counts with the body, as before)
     }

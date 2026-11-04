@@ -3470,7 +3470,7 @@ static void testFixedSpread(uint16_t port) {
         for (int k = 0; k < sg.pellets; k++) {
             Vec3 pd = spreadAim(aim, sg.spread, k, sg.pellets, 0);
             float bang, wall = s.map_.raycastBullet(eye, pd, sg.range, &bang);
-            float t = rayAABB(eye, safeInv(pd), s.hitBox(sb.move.pos, false), wall >= 0 ? wall : sg.range);
+            float t = rayHitbox(eye, safeInv(pd), s.hitBox(sb.move.pos, false), wall >= 0 ? wall : sg.range);
             if (t >= 0) { predicted++; CHECK((eye + pd * t).y < sb.move.pos.y + 1.4f); }
         }
         float first = -1;

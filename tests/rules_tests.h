@@ -628,7 +628,7 @@ static void testGrappleLagComp(uint16_t port) {
             if (got) {
                 UserCmd u = input(0);
                 Vec3 eye = shooterPos + Vec3(0, kEyeHeight, 0);
-                if (rayAABB(eye, safeInv(angleForward(u.yaw, u.pitch)), s.hitBox(sb.move.pos, false), 100.0f) < 0) missedIfNow++;
+                if (rayHitbox(eye, safeInv(angleForward(u.yaw, u.pitch)), s.hitBox(sb.move.pos, false), 100.0f) < 0) missedIfNow++;
             }
         }
         caught += got;
@@ -638,7 +638,7 @@ static void testGrappleLagComp(uint16_t port) {
     s.stop();
 }
 
-// 5.5: the head is a head-sized box on top, not the full-width top 20%. Owner 2026-10-27: the head hitbox is just the
+// 5.5: the head is a head-sized sphere on top (a box until 2026-11-04, then capsules: owner), not the full-width top 20%. Owner 2026-10-27: the head hitbox is just the
 // head and the body ends at its bottom: a shot beside the head over the shoulders misses (it was a body hit). The
 // sniper does 40 on the body, 50 on the head (owner 1.18; 1.17 a flat 50).
 static void testHeadBox(uint16_t port) {
@@ -676,7 +676,18 @@ static void testHeadBox(uint16_t port) {
         t = shot(side, 0, Vec3(0, -1, 0), &head);
         CHECK(t > 0 && !head && std::fabs((hb.mx.y + 5 - t) - seam) < 1e-3f); // straight down past the head: the shoulder's top
         t = shot(0.05f * sz.scale, 0, Vec3(0, -1, 0), &head);
-        CHECK(t > 0 && head && std::fabs((hb.mx.y + 5 - t) - hb.mx.y) < 1e-3f); // ...or onto the head
+        {   // ...or onto the head: a sphere touching the top, so 5 cm off its centre it's met a little lower
+            const float hr = W * 0.5f * kHeadWidthFraction, dx = 0.05f * sz.scale, drop = hr - std::sqrt(hr * hr - dx * dx);
+            CHECK(t > 0 && head && std::fabs((hb.mx.y + 5 - t) - (hb.mx.y - drop)) < 1e-3f);
+        }
+        // the shapes are round: the same width from every side (a box was 41% wider across its corners)
+        for (float ang : {0.0f, 0.4f, 0.785398f, 1.2f}) {
+            const Vec3 dir(-std::sin(ang), 0, -std::cos(ang)), across(std::cos(ang), 0, -std::sin(ang));
+            const float y = hb.mn.y + H * 0.4f, R = W * 0.5f;
+            const Vec3 base = Vec3(feet.x, y, feet.z) - dir * 10.0f;
+            CHECK(rayHitbox(base + across * (R * 0.98f), safeInv(dir), hb, 100.0f) > 0);
+            CHECK(rayHitbox(base + across * (R * 1.02f), safeInv(dir), hb, 100.0f) < 0);
+        }
         // from below, straight up through the body toward the head: the body is hit first (it was a headshot)
         CHECK(rayHitbox(feet - Vec3(0, 2, 0), safeInv(Vec3(0, 1, 0)), hb, 100.0f, &head) > 0 && !head);
         // the knife's wider swing: both boxes grow, the gap beside the head stays
