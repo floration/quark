@@ -19,6 +19,7 @@
 - Map editor (Quarkology): its checks now agree with the game's tests. Greenhouse and Spire no longer fail the ranked check (ranked maps must be fair, not mirror images), Solar no longer fails its routes, and Tutorial no longer shows 46,000 m² out of bounds.
 
 ## Performance
+- **Cobblestone draws much faster:** the stone pattern does about 45% less work per pixel up close and almost none far away (it fades to the stones' average colour where a stone is under ~2 pixels, as other patterns already did). On an all-cobblestone test room: +40% average FPS and +38% on the 1% lows (software renderer); it looks the same.
 - **Higher frame rates and lows when the GPU is the limit:** the world draws with the GPU's early depth test while no holes have been blown in breakable walls. On a 3090 Ti at 1440p that's +3.8% average FPS, +9.4% on the 1% lows and +11.3% on the 0.1% lows, with identical pictures. It's a switch on the LATENCY tab, **EARLY DEPTH TEST** (on by default), so you can compare it yourself.
 - **Higher frame rates from a leaner renderer:** players, props and effects upload 40% less data each frame, the shadow pass only touches the part of its map that's used, and stuck knives and bolts skip per-frame maths. On a 3090 Ti at 1440p: +6.9% average FPS, +4.0% on the 1% and 0.1% lows (before the early depth test above, which stacks on top).
 - **Faster collision and line-of-sight checks** (14-32% per ray, server ticks ~4% faster) with identical results.
