@@ -12,21 +12,25 @@
 # DEG	# 도
 # DUELS	# 1대1 대결
 # EVERYONE FOR THEMSELVES	# 개인전
-# HOST A GAME (main menu > HOST GAME)	# 게임 호스트 (메인 메뉴 > 게임 호스트)
+# FPS	# FPS
+# HOST A GAME (PLAY > HOST)	# 게임 호스트 (플레이 > 호스트)
 # HP	# HP
 # HUD LAYOUT (Settings > HUD LAYOUT)	# HUD 레이아웃 (설정 > HUD 레이아웃)
 # HZ (AVG)	# HZ (평균)
 # IN GAME (ESC as host)	# 게임 중 (호스트는 ESC)
-# JOIN A GAME (main menu > JOIN GAME)	# 게임 참가 (메인 메뉴 > 게임 참가)
+# JOIN A GAME (PLAY > SERVERS)	# 게임 참가 (플레이 > 서버)
+# MAP OF YOUR OWN	내 맵 #개
 # MAPS AND MODES	# 맵과 모드
+# MAPS OF YOUR OWN	내 맵 #개
 # MB	# MB
+# MORE	#개 더
 # MOVEMENT	# 이동
 # MS	# MS
-# PLAY VS BOTS	# 봇과 대전
+# PLAY VS BOTS (PLAY > BOTS)	# 봇과 대전 (플레이 > 봇)
 # RANKED	# 랭크
 # SETTINGS (main menu, or ESC in game)	# 설정 (메인 메뉴 또는 게임 중 ESC)
 # TEAM MODES	# 팀 모드
-# THE MAP EDITOR (main menu > MAP EDITOR)	# 맵 에디터 (메인 메뉴 > 맵 에디터)
+# THE MAP EDITOR (CREATE > OPEN EDITOR)	# 맵 에디터 (만들기 > 에디터 열기)
 # THE MAPS AND WHAT THEY'RE BUILT FOR	# 맵과 각 맵의 용도
 # US	# US
 # VOTES (ESC > VOTE, then F1 yes / F2 no)	# 투표 (ESC > 투표, F1 찬성 / F2 반대)
@@ -52,6 +56,8 @@
 #% of ticks over # ms late	틱의 #%가 # ms 이상 지연
 #-# OF # - WHEEL TO SCROLL	#-# / # - 휠로 스크롤
 #-# OF # - WHEEL TO SCROLL - RIGHT-CLICK: FAVORITE	#-# / # - 휠로 스크롤 - 우클릭: 즐겨찾기
+#/# PLAYERS	#/# 플레이어
+#/# · # MS	#/# · # MS
 #:# LEFT	#:# 남음
 #MS	#MS
 #X# # HZ	#X# # HZ
@@ -165,6 +171,7 @@
 2D: THE VIEW STAYS STILL, YOUR MOUSE MOVES THE CROSSHAIR	2D: 시점 고정, 마우스로 조준점 이동
 3 TIMES: THE GRAPH; 4 TIMES: THE GAME'S PART ONLY	3번: 그래프; 4번: 게임 부분만
 30 M UP, OUT OF A HYPER FROM 20 M/S	20 M/S 하이퍼로 30 M 상승
+30 SECOND DRILLS: CLICKING, TRACKING, SWITCHING	30초 훈련: 클릭, 트래킹, 타겟 전환
 30 SECONDS LEFT	30초 남음
 32-bit float	32비트 float
 3D FLYING	3D 비행
@@ -260,6 +267,8 @@ AIR STRAFE CAP	공중 스트레이프 한도
 ALL	전체
 ALL MODES	모든 모드
 ALL OFF	모두 끄기
+ALL SCENARIOS >	모든 시나리오 >
+ALL SERVERS	모든 서버
 ALL SETTINGS	전체 설정
 ALONG A 3 X 3 GRID'S LINES	3 X 3 격자 선을 따라
 ALT	ALT
@@ -406,6 +415,7 @@ BENCHMARK: no demo ({})	벤치마크: 데모 없음 ({})
 BENCHMARK: {}	벤치마크: {}
 BENCHMARKS	벤치마크
 BEST	최고
+BEST #	최고 #
 BEST OF 3 - FIRST TO 2 WINS THE MATCH	3판 2선승 - 먼저 2승하면 경기 승리
 BEST POSSIBLE (SEGMENTS)	이론상 최고 (구간)
 BEST RUN	최고 기록
@@ -477,6 +487,7 @@ BRITISH	영국식
 BRUNO	BRUNO
 BUBBLE	버블
 BUBBLE LAUNCH	버블 런치
+BUILD YOUR OWN MAPS	나만의 맵 만들기
 BUILDINGS	건물
 BUILT FOR	제작 모드
 BUILT FOR sets the mode the map is made for; the MODES grid sets what it's offered for. PLAYABLE AS shows what it has the pieces for (team modes need A and B spawns).	제작 모드는 맵이 만들어진 모드를 정하고, 모드 그리드는 어떤 모드에 제공될지 정합니다. 플레이 가능 모드는 맵에 필요한 요소가 있는 모드를 보여줍니다 (팀 모드는 A, B 스폰 필요).
@@ -593,6 +604,7 @@ COLUMN: PING	열: PING
 COLUMN: TOTAL K / D	열: 총 K / D
 COMBINE	합치기
 COMET	COMET
+COMMUNITY	커뮤니티
 COMPASS	나침반
 COMPASS + RADAR	나침반 + 레이더
 COMPETITIVE: NO FOG OR SHADOWS, FEWER EFFECTS;	경쟁: 안개·그림자 없음, 효과 감소;
@@ -654,6 +666,7 @@ CPU PRIORITY	CPU 우선순위
 CPU PRIORITY: ABOVE NORMAL	CPU 우선순위: 보통 이상
 CPU PRIORITY: HIGH	CPU 우선순위: 높음
 CRAZY BALL	CRAZY BALL
+CREATE	만들기
 CROSSBOW	석궁
 CROSSBOW, STICKY AND RIFLE	석궁, 점착탄, 소총
 CROSSBOWS ONLY	석궁만
@@ -780,7 +793,7 @@ DEMO - ESC TO STOP	데모 - ESC로 중지
 DEMO RATE	데모 빈도
 DEMO RATE: 62.5 HZ	데모 빈도: 62.5 HZ
 DEMO RATE: FULL	데모 빈도: 전체
-DEMO SAVED - MAIN MENU > DEMOS	데모 저장됨 - 메인 메뉴 > 데모
+DEMO SAVED - CREATE > DEMOS	데모 저장됨 - 만들기 > 데모
 DEMOS	데모
 DEPTH	깊이
 DESC	내림차순
@@ -965,6 +978,7 @@ FILE NAME	파일 이름
 FILE: NAME / TITLE	파일: 이름 / 제목
 FILL THE UNEVEN TEAMS WITH BOTS?	인원이 맞지 않는 팀을 봇으로 채울까요?
 FINAL	결승
+FIND A SERVER	서버 찾기
 FIND CLIP BOXES	클립 박스 찾기
 FIND INVISIBLE WALLS:	보이지 않는 벽 찾기:
 FINISH	완주
@@ -1012,6 +1026,7 @@ FOV: HORIZONTAL	FOV: 수평
 FOV: HORIZONTAL AT 4:3	FOV: 4:3 기준 수평
 FOV: VERTICAL	FOV: 수직
 FPS	FPS
+FPS AND 1% LOWS	FPS 및 1% LOW
 FPS LIMIT	FPS 제한
 FPS LIMIT: WAKES THIS EARLY, THEN WAITS EXACTLY TO THE	FPS 제한: 이만큼 일찍 깨어나 프레임 시작까지
 FPS MIN (1S)	FPS 최저 (1초)
@@ -1250,7 +1265,6 @@ HOP 15 M/S UP OFF A LANDING	착지에서 15 M/S로 튀어 오르기
 HOST	호스트
 HOST EDIT SESSION	편집 세션 호스트
 HOST EDIT SESSION: friends join and build with you; everyone's camera shows in the view.	편집 세션 호스트: 친구가 참가해 함께 제작합니다; 모두의 카메라가 화면에 표시됩니다.
-HOST GAME	게임 호스트
 HOSTING	호스트 중
 HOSTING ON UDP PORT	UDP 포트에서 호스트 중
 HOW	방법
@@ -1349,7 +1363,7 @@ IS ON A KILLING SPREE	연속 처치 중
 IS ON A RAMPAGE	광란 중
 IS UNSTOPPABLE	아무도 못 막습니다
 IT IN MY PALETTE	내 팔레트에서
-IT IS ALWAYS IN THE MAIN MENU: TUTORIAL	언제든 메인 메뉴: 튜토리얼
+IT IS ALWAYS IN THE MAIN MENU: PRACTICE > TUTORIAL	언제든 메인 메뉴: 연습 > 튜토리얼
 ITS COLOURS ARE ON THE CROSSHAIR TAB	색상은 조준점 탭에 있음
 ITS STYLE	스타일
 ITS STYLE: CIRCLE	스타일: 원
@@ -1360,6 +1374,7 @@ ITS STYLE: SAME AS ABOVE	스타일: 위와 동일
 ITS STYLE: T	스타일: T
 IVO	IVO
 Input	입력
+JOIN A SERVER, PLAY BOTS OR HOST YOUR OWN	서버에 참가하거나, 봇과 대전하거나, 직접 호스트하세요
 JOIN A TEAM FROM THE MENU (ESC)	메뉴(ESC)에서 팀에 참가하세요
 JOIN GAME	게임 참가
 JOIN TEAM	팀 참가
@@ -1446,7 +1461,9 @@ LASER. SCORE: KILLS X 100 X ACCURACY	레이저. 점수: 킬 X 100 X 정확도
 LASERS ONLY	레이저만
 LASERS ONLY - DAMAGE YOU DEAL HEALS YOU	레이저만 - 입힌 피해만큼 회복
 LAST	최근
+LAST PLAYED	최근 플레이
 LAST RUN	최근 기록
+LAST RUN #	최근 기록 #
 LAST TEAM STANDING WINS	마지막까지 살아남은 팀 승리
 LAST WEAPON	이전 무기
 LATE FRAME	지연 프레임
@@ -1462,7 +1479,6 @@ LATEST ({})	최신 ({})
 LAUNCH OPTIONS (PASSED TO THE GAME)	실행 옵션 (게임에 전달)
 LAUNCHER ON THE RIGHT	런처를 오른쪽에
 LAY A STICKY BOMB, STAND ON IT, SET IT OFF AS YOU JUMP.	점착 폭탄을 깔고 그 위에 서서 점프하며 터뜨리기.
-LEADERBOARD	리더보드
 LEADERBOARD: SOON	리더보드: 곧 공개
 LEAVE	나가기
 LEAVE ALL	모두 나가기
@@ -1560,6 +1576,7 @@ MAPS	맵
 MAPS FOLDER	맵 폴더
 MAPS KEPT	맵 유지됨
 MAPS MARKED "NOT FOR THIS MODE" MAY NOT WORK IN IT	"이 모드용 아님" 표시된 맵은 해당 모드에서 작동하지 않을 수 있음
+MAPS YOU SAVE IN THE EDITOR SHOW HERE	에디터에서 저장한 맵이 여기에 표시됩니다
 MARK COLOR	표시 색상
 MARK TIME	표시 시간
 MARKER OPACITY	마커 불투명도
@@ -2215,6 +2232,7 @@ MOON SHOTGUN	달 샷건
 MOON SHOTGUNS	달 샷건
 MORE	더 보기
 MORE KEYS	추가 키
+MORE WAYS TO PLAY	더 많은 플레이 방식
 MOUSE	마우스
 MOUSE 1	MOUSE 1
 MOUSE 2	MOUSE 2
@@ -2233,6 +2251,7 @@ MOVE DOWN	아래로 이동
 MOVE TO SPECTATOR	관전자로 이동
 MOVE UP	위로 이동
 MOVEMENT	이동
+MOVEMENT TECH	이동 테크닉
 MS	MS
 MULTI POINT	멀티 포인트
 MULTI POINT - attackers take the points in order (A, B, C...). Only they capture; a defender on the point holds it. Each point taken adds 90 s and moves both teams' spawns forward. Each team attacks once.	멀티 포인트 - 공격팀은 순서대로(A, B, C...) 지점을 점령합니다. 공격팀만 점령할 수 있고, 수비가 지점 위에 있으면 점령이 멈춥니다. 지점 하나를 점령할 때마다 90초가 추가되고 양 팀의 스폰이 앞으로 이동합니다. 각 팀이 한 번씩 공격합니다.
@@ -2260,6 +2279,7 @@ N/A HERE: LINUX (X11) ONLY	여기선 N/A: LINUX (X11) 전용
 N/A HERE: WINDOWS + NVIDIA ONLY	여기선 사용 불가: WINDOWS + NVIDIA 전용
 N/A: THE DRIVER LACKS GL 4.4 BUFFER STORAGE	N/A: 드라이버에 GL 4.4 BUFFER STORAGE 없음
 NAME	이름
+NAME CHIP	이름
 NAME COLOR	이름 색상
 NAME COLORS	이름 색상
 NAME TAGS	이름표
@@ -2276,6 +2296,7 @@ NEW	새로 만들기
 NEW BEST	신기록
 NEW HERE? THE TUTORIAL SHOWS EVERY MOVEMENT TECH: A GHOST DOES IT, THEN YOU DO.	처음이신가요? 튜토리얼이 모든 이동 테크를 보여 줍니다: 고스트가 시범을 보이고, 다음은 당신 차례.
 NEW LEADER	새 선두
+NEW MAPS AND COPIES OF THE BUILT-IN ONES	새 맵과 기본 맵의 사본
 NEW NAME	새 이름
 NEW ONES:	새 항목:
 NEW PERSONAL BEST	개인 신기록
@@ -2297,11 +2318,14 @@ NO FILES IN CONTROLS/ - USE FOLDER	CONTROLS/에 파일 없음 - 폴더 사용
 NO FRAMES MEASURED	측정된 프레임 없음
 NO FULLSCREEN OPT.	전체 화면 최적화 끄기
 NO FULLSCREEN OPT.: TRUE EXCLUSIVE FULLSCREEN (NEXT START)	전체 화면 최적화 끄기: 진짜 독점 전체 화면 (다음 실행)
+NO GAME YET	아직 플레이 기록 없음
 NO GAMES FOUND	게임 없음
 NO GAMES MATCH THE FILTERS	필터에 맞는 게임 없음
 NO MAP IS BUILT FOR THIS MODE YET	아직 이 모드용 맵 없음
 NO MATERIAL NAMED THAT	해당 이름의 재질 없음
+NO OFFICIAL SERVER LISTED	공식 서버 없음
 NO RACE MAPS	레이스 맵 없음
+NO RESPONSE	응답 없음
 NO RESPONSE - CLICK TO TRY	응답 없음 - 클릭하여 재시도
 NO RUNS SAVED YET	저장된 기록 없음
 NO RUNS YET - FINISH	아직 기록 없음 - 완주하세요
@@ -2371,6 +2395,8 @@ OFF: FROM THE NEXT START	끄기: 다음 실행부터
 OFF: THE BAR IS FULL AT 100 IN EVERY MODE	끄기: 모든 모드에서 100일 때 바가 가득 참
 OFF: THE VIEW STEPS UP STAIRS AT ONCE	끄기: 계단에서 시점이 한 번에 올라감
 OFFICIAL	공식
+OFFICIAL SERVER	공식 서버
+OFFICIAL SERVERS	공식 서버
 OLD MAN	노인
 ON	켜기
 ON HIT	적중 시
@@ -2399,6 +2425,7 @@ OPACITY	불투명도
 OPACITY %	불투명도 %
 OPEN	열기
 OPEN DATA FOLDER	데이터 폴더 열기
+OPEN EDITOR	에디터 열기
 OPEN FOLDER	폴더 열기
 OPEN SCREENSHOTS	스크린샷 열기
 OPENS THE UDP PORT ON YOUR ROUTER (UPNP)	라우터의 UDP 포트 개방 (UPNP)
@@ -2482,6 +2509,7 @@ PHYSICS	물리
 PIA	PIA
 PICK A FILE TO IMPORT	가져올 파일 선택
 PICK A KEY NO ACTION IS BOUND TO	동작이 지정되지 않은 키를 선택하세요
+PICK A SCENARIO	시나리오 선택
 PICK IT IN WINDOWS' GRAPHICS SETTINGS	WINDOWS 그래픽 설정에서 선택
 PICK VSYNC: LATENT SYNC (VIDEO + AUDIO) FIRST;	수직 동기화 선택: LATENT SYNC (비디오 + 오디오) 우선;
 PICTURE	사진
@@ -2497,6 +2525,7 @@ PING: ANY	PING: 전체
 PIRATE	해적
 PITCH	피치
 PLAY	플레이
+PLAY A RUN TO SEE YOUR BESTS HERE	플레이하면 여기에 최고 기록이 표시됩니다
 PLAY IT	플레이하기
 PLAY MODE	플레이 모드
 PLAY TIME TRIAL	타임 트라이얼 플레이
@@ -2551,6 +2580,7 @@ PREVIOUS PAGE	이전 페이지
 PREVIOUS:	이전:
 PRIMARY MONITOR	기본 모니터
 PRIORITIZE GAME	게임 우선
+PROD	정식
 PROFILE	프로필
 PROFILE:	프로필:
 PROFILE: MY CONTROLS	프로필: 내 조작
@@ -2606,11 +2636,12 @@ R SHIFT	R SHIFT
 R: ROTATE 90 (SHIFT: ABOUT X, CTRL: ABOUT Z)    F: MIRROR LEFT / RIGHT (SHIFT: FRONT / BACK, CTRL: UPSIDE DOWN)	R: 90도 회전 (SHIFT: X축 기준, CTRL: Z축 기준)    F: 좌우 대칭 (SHIFT: 앞뒤, CTRL: 상하 반전)
 RACE	레이스
 RACE + FLYING	레이스 + 비행
-RACE - the course's checkpoints in order. It starts as untimed practice; vote start (F4) to race. TIME TRIAL (main menu, or PLAY TIME TRIAL on the leaderboard) is the ranked race on each race map; the leaderboard's RACE TOTAL adds your best on every one, a map you haven't run counting at its default time.	레이스 - 코스의 체크포인트를 순서대로 통과. 시간 제한 없는 연습으로 시작하며, 시작 투표(F4)로 레이스를 시작합니다. 타임 트라이얼(메인 메뉴 또는 리더보드의 타임 트라이얼 플레이)은 각 레이스 맵의 랭크 레이스입니다; 리더보드의 레이스 합계는 모든 맵의 최고 기록을 더하며, 달리지 않은 맵은 기본 시간으로 계산됩니다.
+RACE - the course's checkpoints in order. It starts as untimed practice; vote start (F4) to race. TIME TRIAL (PRACTICE > TIME TRIAL, or PLAY TIME TRIAL on the leaderboard) is the ranked race on each race map; the leaderboard's RACE TOTAL adds your best on every one, a map you haven't run counting at its default time.	레이스 - 코스의 체크포인트를 순서대로 통과. 시간 제한 없는 연습으로 시작하며, 시작 투표(F4)로 레이스를 시작합니다. 타임 트라이얼(연습 > 타임 트라이얼 또는 리더보드의 타임 트라이얼 플레이)은 각 레이스 맵의 랭크 레이스입니다; 리더보드의 레이스 합계는 모든 맵의 최고 기록을 더하며, 달리지 않은 맵은 기본 시간으로 계산됩니다.
 RACE GHOST	레이스 고스트
 RACE MAP	레이스 맵
 RACE RESET	레이스 리셋
 RACE TOTAL	레이스 합계
+RACE YOUR BEST LAP	최고 랩에 도전
 RADAR	레이더
 RADAR RANGE	레이더 범위
 RADAR: TEAMMATES AND OBJECTIVES, NEVER ENEMIES	레이더: 팀원과 목표만, 적은 표시 안 함
@@ -2641,6 +2672,7 @@ RANKED QUEUES	랭크 대기열
 RANKED VANILLA	랭크 바닐라
 RANKED: DEFAULT MODEL, HUD, CONTROLS AND 10 MS INTERP FOR FAIRNESS	랭크: 공정성을 위해 기본 모델, HUD, 조작, 10 MS 보간 사용
 RANKED: NO HEALTH BARS	랭크: 체력 바 없음
+RANKS	랭크
 RATE	빈도
 RATING	레이팅
 RAW INPUT	RAW INPUT
@@ -2657,6 +2689,8 @@ READY	준비
 REALTIME	실시간
 REC	REC
 RECENT	최근
+RECENT MAP	최근 맵
+RECENT MAPS	최근 맵
 RECENT RUNS	최근 기록
 RECHARGING	재충전 중
 RECONNECT	재접속
@@ -2851,6 +2885,7 @@ SERVER LOG: OFF	서버 로그: 끄기
 SERVER LOG: SIMPLE	서버 로그: 간단
 SERVER LOG: VERBOSE (125 HZ)	서버 로그: 상세 (125 HZ)
 SERVER NAME	서버 이름
+SERVERS	서버
 SERVERS (LAN + INTERNET)	서버 (LAN + 인터넷)
 SETTINGS	설정
 SETTINGS COPIED: PASTE THEM ANYWHERE	설정 복사됨: 어디든 붙여넣기
@@ -3161,6 +3196,7 @@ TEST MODE	테스트 모드
 TEST MODE:	테스트 모드:
 TEST MODE: THE MAP'S	테스트 모드: 맵 기본
 TEST plays the map right away; BAKE LIGHT previews the real lighting.	테스트는 맵을 바로 플레이합니다; 조명 굽기는 실제 조명을 미리 보여줍니다.
+TESTING	테스트
 TESTING BUILD - RANKED NOT RATED (PLAYED, NEVER COUNTED)	테스트 빌드 - 랭크 레이팅 미반영 (플레이되지만 집계 안 됨)
 TESTING VERSIONS	테스트 버전
 TEXT	텍스트
@@ -3563,6 +3599,7 @@ YOU'RE SEEKING - FACE THE WALL AND COUNT	술래입니다 - 벽을 보고 숫자�
 YOU'RE THE TAGGER - TAG SOMEONE BEFORE TIME RUNS OUT	술래입니다 - 시간이 끝나기 전에 누군가를 태그하세요
 YOU:	나:
 YOU: NO TIME TRIALS YET	나: 아직 타임 트라이얼 없음
+YOUR BESTS	최고 기록
 YOUR BOTS: ALL STANDARD	내 봇: 모두 표준
 YOUR BOTS: MIXED MODELS	내 봇: 다양한 모델
 YOUR GOAL	우리 골대
@@ -3574,6 +3611,7 @@ YOUR OWN MODEL FILE: NO PREVIEW HERE	내 모델 파일: 여기서는 미리보�
 YOUR OWN ROCKET THROWS YOU. HERE IT DOES NO DAMAGE.	자신의 로켓이 너를 날린다. 여기선 피해 없음.
 YOUR OWN: PUT .TTF / .OTF FILES IN MODS/FONTS,	직접 추가: .TTF / .OTF 파일을 MODS/FONTS에 넣고,
 YOUR QUEUE FOR	내 대기열:
+YOUR RECORDED GAMES	녹화한 게임
 YOUR SHOTS	내 총탄
 YOUR SHOTS: ALWAYS	내 총탄: 항상
 YOUR SHOTS: NEVER	내 총탄: 안 함

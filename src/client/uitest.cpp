@@ -75,7 +75,7 @@ std::string Game::uiScreenPath() const {
     static const char* info[] = {"modes", "controls", "hud", "hosting", "editor", "maps"};
     static const char* custom[] = {"general", "weapons", "maps", "movement", "dash"};
     switch (screen_) {
-        case Screen::Main: return edPrompt_ ? "main/save-copy" : "main";   // (after someone else's session: keep a copy?)
+        case Screen::Main: return edPrompt_ ? "main/save-copy" : mainTab_ == MAIN_PRACTICE ? "main/practice" : mainTab_ == MAIN_CREATE ? "main/create" : "main";   // (after someone else's session: keep a copy?)
         case Screen::Join: return "join";
         case Screen::Host: return hostAdvanced_ && pick.empty() ? "host/advanced" : "host" + pick;
         case Screen::VsBots: return "vsbots" + pick;
@@ -160,6 +160,7 @@ std::string Game::uiObserve(const std::string& w) {
     if (w == "lookmsg") return cfg_.toText() + "|" + lookMsg_ + "@" + std::to_string(lookMsgUntil_);
     if (w == "chcode") return cfg_.toText() + "|" + chCodeMsg_ + "@" + std::to_string(chCodeUntil_);
     if (w == "groups") return listDir(userDataPath("groups"));
+    if (w == "nameedit") return b(nameEdit_);
     if (w == "trainer") return std::to_string(trMode_) + std::to_string(trCat_) + std::to_string(trDiff_);
     if (w == "bench") return listDir(userDataPath("benchmarks")) + "|" + listDir(userDataPath("benchmarks/exports"));
     if (w == "usermaps") return listDir(userMapsDir());
@@ -633,6 +634,47 @@ private:
         leaveAll();
     }
 
+    // ---- every place the old one-column main menu led to is still one click from the main menu (design "Y": the strip,
+    // and the PLAY / PRACTICE / CREATE tabs' pages): each found by its id and what it declares
+    void mainMenuCheck() {
+        leaveAll();
+        hardReset();
+        struct Want { const char* old; const char* id; const char* exp; };
+        static const Want want[] = {
+            {"PLAY VS BOTS", "BOTS", "NAV vsbots"}, {"TIME TRIAL", "TIME TRIAL", "STATE hosting = 1"}, {"JOIN GAME", "SERVERS", "NAV join"},
+            {"RECONNECT", "RECONNECT", "NAV connecting"}, {"HOST GAME", "HOST", "NAV host"}, {"TUTORIAL", "TUTORIAL", "STATE hosting = 1"},
+            {"MAP EDITOR", "MAP EDITOR", "NAV editor"}, {"LEADERBOARD", "RANKS", "NAV leaderboard"}, {"SETTINGS", "SETTINGS", "NAV settings"},
+            {"INFO", "INFO", "NAV info/*"}, {"DISCORD", "DISCORD", "URL"}, {"DEMOS", "DEMOS", "NAV demos"}, {"AIM TRAINER", "AIM TRAINER", "NAV trainer"},
+            {"BENCHMARK", "BENCHMARK", "NAV benchmarks"}, {"QUIT", "QUIT", "QUIT|STATE confirm = quit"}, {"YOUR NAME", "NAME", "CFG name"},
+            {"(ranked)", "RANKED", "NAV host/picker:ladders"}, {"(custom mode)", "CUSTOM MODE", "NAV custom/general"}};
+        std::set<std::string> seen;   // "id|expectation" of every widget on the three tabs (and the name chip opened)
+        for (int t = 0; t < Game::MAIN_TABS; t++) {
+            g_.openMainTab(t);
+            step(2);
+            for (size_t i = 0; i < cur_.size(); i++) seen.insert(ids_[i] + "|" + expText(cur_[i].exp));
+            if (t == Game::MAIN_PLAY) {   // the name: the chip opens the field
+                int c = find("NAME CHIP");
+                if (c >= 0) { act(cur_[c], false); step(2); for (size_t i = 0; i < cur_.size(); i++) seen.insert(ids_[i] + "|" + expText(cur_[i].exp)); }
+                g_.ui_.clearFocus();
+                step(2);
+            }
+        }
+        int ok = 0;
+        for (const Want& w : want) {
+            bool found = false;   // (exp: alternatives split by '|': QUIT asks first when CONFIRM LEAVING is on)
+            for (size_t a = 0, b; a <= strlen(w.exp); a = b + 1) {
+                b = std::string(w.exp).find('|', a);
+                if (b == std::string::npos) b = strlen(w.exp);
+                found |= seen.count(std::string(w.id) + "|" + std::string(w.exp + a, b - a)) > 0;
+            }
+            if (found) ok++;
+            else setupFails_.push_back(std::string("main menu: ") + w.old + " isn't reachable (no " + w.id + " declaring " + w.exp + " on PLAY, PRACTICE or CREATE)");
+        }
+        printf("uitest: main menu: %d of %zu destinations reachable from its tabs\n", ok, sizeof want / sizeof want[0]);
+        fflush(stdout);
+        leaveAll();
+    }
+
     // ---- getting around
     void hardReset() {
         Game& g = g_;
@@ -672,6 +714,8 @@ private:
         g.hudSel_ = 0;
         g.ruleMode_ = MODE_FFA;
         g.edPrompt_ = false;
+        g.mainTab_ = Game::MAIN_PLAY;   // (the main menu's root: PLAY)
+        g.nameEdit_ = false;
         g.error_.clear();
         g.testHeld_ = 0;
         g.perfStage_ = 0; g.perfMini_ = false;
@@ -1310,6 +1354,7 @@ private:
         if (g_.screen_ == Game::Screen::Editor && !g_.edOnline_) { g_.edLook_ = false; g_.r_.clearStaticBoxes(); g_.edMeshDirty_ = true; }
         g_.leaveGame();
         g_.edPrompt_ = false;
+        g_.mainTab_ = Game::MAIN_PLAY;   // (every scenario starts on the main menu's PLAY tab: "main")
         g_.setScreen(Game::Screen::Main);
         stopServer();
         step(2);
@@ -1634,7 +1679,7 @@ int UiTest::run() {
     std::vector<Scenario> all = scenarios();
     auto wanted = [&](const std::string& n) { return o_.uiTestOnly.empty() || ("," + o_.uiTestOnly + ",").find("," + n + ",") != std::string::npos; };
     for (auto& sc : all) if (wanted(sc.name)) runScenario(sc);
-    if (wanted("menus")) searchCheck();
+    if (wanted("menus")) { searchCheck(); mainMenuCheck(); }
     // the other resolutions: the same screens, layout only (16:9 large, 4:3)
     for (auto res : {std::make_pair(1920, 1080), std::make_pair(1024, 768)}) {
         setResolution(res.first, res.second);
@@ -1667,6 +1712,8 @@ void uiTestPrepare(LaunchOptions& o) {
     setUserDataDir(dir.u8string(), false);
     Settings s;
     s.lastAddress = "127.0.0.1:9";        // JOIN connects nowhere
+    s.lastMode = "FREE FOR ALL"; s.lastMap = "SEWER"; s.lastServer = "uitest";   // (the main menu's LAST PLAYED: RECONNECT shows)
+    s.lastTrainer = std::string(trainer::scenarios().front().id) + ":0";          // (PRACTICE: START plays it, ALL SCENARIOS opens the menu)
     s.hostPort = 27600 + (int)(tag % 300);   // (a port of its own: other games on this machine don't collide)
     s.hostProber = "127.0.0.1:9";         // the reachability check answers "not reachable" (and CHECK AGAIN shows)
     s.hostUpnp = false;

@@ -12,21 +12,25 @@
 # DEG	# 度
 # DUELS	# 场决斗
 # EVERYONE FOR THEMSELVES	# 各自为战
-# HOST A GAME (main menu > HOST GAME)	# 创建游戏 (主菜单 > 创建游戏)
+# FPS	# FPS
+# HOST A GAME (PLAY > HOST)	# 创建游戏 (开始游戏 > 主机)
 # HP	# HP
 # HUD LAYOUT (Settings > HUD LAYOUT)	# HUD 布局 (设置 > HUD 布局)
 # HZ (AVG)	# HZ (平均)
 # IN GAME (ESC as host)	# 游戏中 (房主按 ESC)
-# JOIN A GAME (main menu > JOIN GAME)	# 加入游戏 (主菜单 > 加入游戏)
+# JOIN A GAME (PLAY > SERVERS)	# 加入游戏 (开始游戏 > 服务器)
+# MAP OF YOUR OWN	# 张自制地图
 # MAPS AND MODES	# 地图与模式
+# MAPS OF YOUR OWN	# 张自制地图
 # MB	# MB
+# MORE	还有 # 个
 # MOVEMENT	# 移动
 # MS	# MS
-# PLAY VS BOTS	# 人机对战
+# PLAY VS BOTS (PLAY > BOTS)	# 人机对战 (开始游戏 > 机器人)
 # RANKED	# 排位
 # SETTINGS (main menu, or ESC in game)	# 设置 (主菜单, 或游戏中按 ESC)
 # TEAM MODES	# 团队模式
-# THE MAP EDITOR (main menu > MAP EDITOR)	# 地图编辑器 (主菜单 > 地图编辑器)
+# THE MAP EDITOR (CREATE > OPEN EDITOR)	# 地图编辑器 (创作 > 打开编辑器)
 # THE MAPS AND WHAT THEY'RE BUILT FOR	# 地图及其适用模式
 # US	# US
 # VOTES (ESC > VOTE, then F1 yes / F2 no)	# 投票 (ESC > 投票, 然后 F1 赞成 / F2 反对)
@@ -52,6 +56,8 @@
 #% of ticks over # ms late	#% 的 tick 延迟超过 # ms
 #-# OF # - WHEEL TO SCROLL	#-# / 共 # - 滚轮滚动
 #-# OF # - WHEEL TO SCROLL - RIGHT-CLICK: FAVORITE	#-# / 共 # - 滚轮滚动 - 右键: 收藏
+#/# PLAYERS	#/# 名玩家
+#/# · # MS	#/# · # MS
 #:# LEFT	剩余 #:#
 #MS	#MS
 #X# # HZ	#X# # HZ
@@ -165,6 +171,7 @@
 2D: THE VIEW STAYS STILL, YOUR MOUSE MOVES THE CROSSHAIR	2D: 视角固定, 鼠标移动准星
 3 TIMES: THE GRAPH; 4 TIMES: THE GAME'S PART ONLY	3 次: 图表; 4 次: 仅游戏部分
 30 M UP, OUT OF A HYPER FROM 20 M/S	以 20 M/S 的 HYPER 升高 30 M
+30 SECOND DRILLS: CLICKING, TRACKING, SWITCHING	30 秒练习: 点击、跟枪、切换目标
 30 SECONDS LEFT	剩余 30 秒
 32-bit float	32 位浮点
 3D FLYING	3D 飞行
@@ -260,6 +267,8 @@ AIR STRAFE CAP	空中侧移上限
 ALL	全部
 ALL MODES	全部模式
 ALL OFF	全部关闭
+ALL SCENARIOS >	全部场景 >
+ALL SERVERS	全部服务器
 ALL SETTINGS	全部设置
 ALONG A 3 X 3 GRID'S LINES	沿着 3 X 3 网格的线
 ALT	ALT
@@ -406,6 +415,7 @@ BENCHMARK: no demo ({})	基准测试: 无录像 ({})
 BENCHMARK: {}	基准测试: {}
 BENCHMARKS	基准测试
 BEST	最佳
+BEST #	最佳 #
 BEST OF 3 - FIRST TO 2 WINS THE MATCH	三局两胜 - 先赢 2 局者胜
 BEST POSSIBLE (SEGMENTS)	理论最佳 (分段)
 BEST RUN	最佳成绩
@@ -477,6 +487,7 @@ BRITISH	英式
 BRUNO	BRUNO
 BUBBLE	气泡
 BUBBLE LAUNCH	泡泡升空
+BUILD YOUR OWN MAPS	打造你自己的地图
 BUILDINGS	建筑
 BUILT FOR	适用模式
 BUILT FOR sets the mode the map is made for; the MODES grid sets what it's offered for. PLAYABLE AS shows what it has the pieces for (team modes need A and B spawns).	"适用模式" 设定地图为哪种模式而做; 模式网格设定它在哪些模式中提供。"可玩模式" 显示它具备哪些模式所需的元素 (团队模式需要 A 和 B 出生点)。
@@ -593,6 +604,7 @@ COLUMN: PING	列: PING
 COLUMN: TOTAL K / D	列: 总 K / D
 COMBINE	合并
 COMET	COMET
+COMMUNITY	社区
 COMPASS	指南针
 COMPASS + RADAR	指南针 + 雷达
 COMPETITIVE: NO FOG OR SHADOWS, FEWER EFFECTS;	竞技: 无雾无阴影, 特效更少;
@@ -654,6 +666,7 @@ CPU PRIORITY	CPU 优先级
 CPU PRIORITY: ABOVE NORMAL	CPU 优先级: 高于正常
 CPU PRIORITY: HIGH	CPU 优先级: 高
 CRAZY BALL	CRAZY BALL
+CREATE	创作
 CROSSBOW	弩
 CROSSBOW, STICKY AND RIFLE	弩、粘弹和步枪
 CROSSBOWS ONLY	仅限弩
@@ -780,7 +793,7 @@ DEMO - ESC TO STOP	录像 - ESC 停止
 DEMO RATE	录像频率
 DEMO RATE: 62.5 HZ	录像频率: 62.5 HZ
 DEMO RATE: FULL	录像频率: 完整
-DEMO SAVED - MAIN MENU > DEMOS	录像已保存 - 主菜单 > 录像
+DEMO SAVED - CREATE > DEMOS	录像已保存 - 创作 > 录像
 DEMOS	录像
 DEPTH	深度
 DESC	降序
@@ -965,6 +978,7 @@ FILE NAME	文件名
 FILE: NAME / TITLE	文件: 名称 / 标题
 FILL THE UNEVEN TEAMS WITH BOTS?	用机器人补齐人数不均的队伍?
 FINAL	决赛
+FIND A SERVER	寻找服务器
 FIND CLIP BOXES	查找碰撞盒
 FIND INVISIBLE WALLS:	查找隐形墙:
 FINISH	终点
@@ -1012,6 +1026,7 @@ FOV: HORIZONTAL	FOV: 水平
 FOV: HORIZONTAL AT 4:3	FOV: 4:3 水平
 FOV: VERTICAL	FOV: 垂直
 FPS	FPS
+FPS AND 1% LOWS	FPS 与 1% 低帧
 FPS LIMIT	FPS 上限
 FPS LIMIT: WAKES THIS EARLY, THEN WAITS EXACTLY TO THE	FPS 上限: 提前这么多唤醒, 然后精确等到
 FPS MIN (1S)	FPS 最低 (1 秒)
@@ -1250,7 +1265,6 @@ HOP 15 M/S UP OFF A LANDING	落地弹起 15 M/S
 HOST	主机
 HOST EDIT SESSION	主持编辑会话
 HOST EDIT SESSION: friends join and build with you; everyone's camera shows in the view.	主持编辑会话: 好友加入与你一起建造; 视野中会显示每个人的镜头。
-HOST GAME	创建游戏
 HOSTING	主持中
 HOSTING ON UDP PORT	主持于 UDP 端口
 HOW	做法
@@ -1349,7 +1363,7 @@ IS ON A KILLING SPREE	正在大杀特杀
 IS ON A RAMPAGE	正在暴走
 IS UNSTOPPABLE	已经无人能挡
 IT IN MY PALETTE	将其加入我的调色板
-IT IS ALWAYS IN THE MAIN MENU: TUTORIAL	随时在主菜单: 教程
+IT IS ALWAYS IN THE MAIN MENU: PRACTICE > TUTORIAL	随时在主菜单: 练习 > 教程
 ITS COLOURS ARE ON THE CROSSHAIR TAB	其颜色在准星标签页中
 ITS STYLE	其样式
 ITS STYLE: CIRCLE	其样式: 圆圈
@@ -1360,6 +1374,7 @@ ITS STYLE: SAME AS ABOVE	其样式: 同上
 ITS STYLE: T	其样式: T
 IVO	IVO
 Input	输入
+JOIN A SERVER, PLAY BOTS OR HOST YOUR OWN	加入服务器、人机对战或自己创建
 JOIN A TEAM FROM THE MENU (ESC)	从菜单 (ESC) 加入队伍
 JOIN GAME	加入游戏
 JOIN TEAM	加入队伍
@@ -1446,7 +1461,9 @@ LASER. SCORE: KILLS X 100 X ACCURACY	激光。得分: 击杀 X 100 X 命中率
 LASERS ONLY	仅激光
 LASERS ONLY - DAMAGE YOU DEAL HEALS YOU	仅激光 - 造成的伤害为你回血
 LAST	最后
+LAST PLAYED	最近游玩
 LAST RUN	上次成绩
+LAST RUN #	上次 #
 LAST TEAM STANDING WINS	最后存活的队伍获胜
 LAST WEAPON	上一把武器
 LATE FRAME	迟到帧
@@ -1462,7 +1479,6 @@ LATEST ({})	最新（{}）
 LAUNCH OPTIONS (PASSED TO THE GAME)	启动参数（传给游戏）
 LAUNCHER ON THE RIGHT	启动器在右侧
 LAY A STICKY BOMB, STAND ON IT, SET IT OFF AS YOU JUMP.	放一颗粘弹，站在上面，跳起时引爆。
-LEADERBOARD	排行榜
 LEADERBOARD: SOON	排行榜: 即将推出
 LEAVE	离开
 LEAVE ALL	全部离开
@@ -1560,6 +1576,7 @@ MAPS	地图
 MAPS FOLDER	地图文件夹
 MAPS KEPT	地图已保留
 MAPS MARKED "NOT FOR THIS MODE" MAY NOT WORK IN IT	标记为 "不适用此模式" 的地图可能无法正常运行
+MAPS YOU SAVE IN THE EDITOR SHOW HERE	在编辑器中保存的地图会显示在这里
 MARK COLOR	标记颜色
 MARK TIME	标记时长
 MARKER OPACITY	标记不透明度
@@ -2215,6 +2232,7 @@ MOON SHOTGUN	月球霰弹枪
 MOON SHOTGUNS	月球霰弹枪
 MORE	更多
 MORE KEYS	更多按键
+MORE WAYS TO PLAY	更多玩法
 MOUSE	鼠标
 MOUSE 1	MOUSE 1
 MOUSE 2	MOUSE 2
@@ -2233,6 +2251,7 @@ MOVE DOWN	向下移动
 MOVE TO SPECTATOR	移至观众
 MOVE UP	向上移动
 MOVEMENT	移动
+MOVEMENT TECH	移动技巧
 MS	MS
 MULTI POINT	多点占领
 MULTI POINT - attackers take the points in order (A, B, C...). Only they capture; a defender on the point holds it. Each point taken adds 90 s and moves both teams' spawns forward. Each team attacks once.	多点占领 - 进攻方按顺序占领据点 (A, B, C...)。只有进攻方能占领; 防守方站在据点上即可守住。每占领一个据点加 90 秒, 双方出生点前移。每队各进攻一次。
@@ -2260,6 +2279,7 @@ N/A HERE: LINUX (X11) ONLY	此处不可用: 仅 LINUX (X11)
 N/A HERE: WINDOWS + NVIDIA ONLY	此处不可用: 仅限 WINDOWS + NVIDIA
 N/A: THE DRIVER LACKS GL 4.4 BUFFER STORAGE	N/A: 驱动缺少 GL 4.4 BUFFER STORAGE
 NAME	名字
+NAME CHIP	名字
 NAME COLOR	名字颜色
 NAME COLORS	名字颜色
 NAME TAGS	名字标签
@@ -2276,6 +2296,7 @@ NEW	新建
 NEW BEST	新纪录
 NEW HERE? THE TUTORIAL SHOWS EVERY MOVEMENT TECH: A GHOST DOES IT, THEN YOU DO.	新来的? 教程会演示每种移动技巧: 先由幽灵示范，再轮到你。
 NEW LEADER	新领先者
+NEW MAPS AND COPIES OF THE BUILT-IN ONES	新地图和内置地图的副本
 NEW NAME	新名字
 NEW ONES:	新的:
 NEW PERSONAL BEST	新个人最佳
@@ -2297,11 +2318,14 @@ NO FILES IN CONTROLS/ - USE FOLDER	CONTROLS/ 中没有文件 - 使用文件夹
 NO FRAMES MEASURED	未测量到帧
 NO FULLSCREEN OPT.	关闭全屏优化
 NO FULLSCREEN OPT.: TRUE EXCLUSIVE FULLSCREEN (NEXT START)	关闭全屏优化: 真正的独占全屏 (下次启动)
+NO GAME YET	尚无游戏记录
 NO GAMES FOUND	未找到游戏
 NO GAMES MATCH THE FILTERS	没有符合筛选条件的游戏
 NO MAP IS BUILT FOR THIS MODE YET	暂无为此模式打造的地图
 NO MATERIAL NAMED THAT	没有该名称的材质
+NO OFFICIAL SERVER LISTED	未列出官方服务器
 NO RACE MAPS	没有竞速地图
+NO RESPONSE	无响应
 NO RESPONSE - CLICK TO TRY	无响应 - 点击重试
 NO RUNS SAVED YET	尚未保存成绩
 NO RUNS YET - FINISH	尚无成绩 - 完成
@@ -2371,6 +2395,8 @@ OFF: FROM THE NEXT START	关: 下次启动生效
 OFF: THE BAR IS FULL AT 100 IN EVERY MODE	关: 在所有模式中条在 100 时为满
 OFF: THE VIEW STEPS UP STAIRS AT ONCE	关: 视角上楼梯时立即升高
 OFFICIAL	官方
+OFFICIAL SERVER	官方服务器
+OFFICIAL SERVERS	官方服务器
 OLD MAN	老人
 ON	开
 ON HIT	命中时
@@ -2399,6 +2425,7 @@ OPACITY	不透明度
 OPACITY %	不透明度 %
 OPEN	打开
 OPEN DATA FOLDER	打开数据文件夹
+OPEN EDITOR	打开编辑器
 OPEN FOLDER	打开文件夹
 OPEN SCREENSHOTS	打开截图
 OPENS THE UDP PORT ON YOUR ROUTER (UPNP)	在路由器上开放 UDP 端口 (UPNP)
@@ -2482,6 +2509,7 @@ PHYSICS	物理
 PIA	PIA
 PICK A FILE TO IMPORT	选择要导入的文件
 PICK A KEY NO ACTION IS BOUND TO	选择一个未绑定动作的按键
+PICK A SCENARIO	选择一个场景
 PICK IT IN WINDOWS' GRAPHICS SETTINGS	在 WINDOWS 图形设置中选择
 PICK VSYNC: LATENT SYNC (VIDEO + AUDIO) FIRST;	垂直同步优先选: LATENT SYNC (视频 + 音频);
 PICTURE	图片
@@ -2497,6 +2525,7 @@ PING: ANY	PING: 任意
 PIRATE	海盗
 PITCH	俯仰
 PLAY	开始游戏
+PLAY A RUN TO SEE YOUR BESTS HERE	完成一次挑战即可在此查看你的最佳成绩
 PLAY IT	播放
 PLAY MODE	游玩模式
 PLAY TIME TRIAL	进行计时赛
@@ -2551,6 +2580,7 @@ PREVIOUS PAGE	上一页
 PREVIOUS:	上一个:
 PRIMARY MONITOR	主显示器
 PRIORITIZE GAME	优先游戏
+PROD	正式
 PROFILE	配置
 PROFILE:	配置:
 PROFILE: MY CONTROLS	配置: 我的操作
@@ -2606,11 +2636,12 @@ R SHIFT	R SHIFT
 R: ROTATE 90 (SHIFT: ABOUT X, CTRL: ABOUT Z)    F: MIRROR LEFT / RIGHT (SHIFT: FRONT / BACK, CTRL: UPSIDE DOWN)	R: 旋转 90 (SHIFT: 绕 X, CTRL: 绕 Z)    F: 左右镜像 (SHIFT: 前后, CTRL: 上下翻转)
 RACE	竞速
 RACE + FLYING	竞速 + 飞行
-RACE - the course's checkpoints in order. It starts as untimed practice; vote start (F4) to race. TIME TRIAL (main menu, or PLAY TIME TRIAL on the leaderboard) is the ranked race on each race map; the leaderboard's RACE TOTAL adds your best on every one, a map you haven't run counting at its default time.	竞速 - 按顺序通过赛道检查点。开始时为不计时练习; 投票开始 (F4) 即可比赛。计时赛 (主菜单, 或排行榜上的进行计时赛) 是每张竞速地图的排位赛; 排行榜的竞速总分将你在每张地图的最佳成绩相加, 未跑过的地图按默认时间计算。
+RACE - the course's checkpoints in order. It starts as untimed practice; vote start (F4) to race. TIME TRIAL (PRACTICE > TIME TRIAL, or PLAY TIME TRIAL on the leaderboard) is the ranked race on each race map; the leaderboard's RACE TOTAL adds your best on every one, a map you haven't run counting at its default time.	竞速 - 按顺序通过赛道检查点。开始时为不计时练习; 投票开始 (F4) 即可比赛。计时赛 (练习 > 计时赛, 或排行榜上的进行计时赛) 是每张竞速地图的排位赛; 排行榜的竞速总分将你在每张地图的最佳成绩相加, 未跑过的地图按默认时间计算。
 RACE GHOST	竞速幽灵
 RACE MAP	竞速地图
 RACE RESET	竞速重置
 RACE TOTAL	竞速总分
+RACE YOUR BEST LAP	挑战你的最佳圈速
 RADAR	雷达
 RADAR RANGE	雷达范围
 RADAR: TEAMMATES AND OBJECTIVES, NEVER ENEMIES	雷达: 队友和目标, 从不显示敌人
@@ -2641,6 +2672,7 @@ RANKED QUEUES	排位队列
 RANKED VANILLA	排位原版
 RANKED: DEFAULT MODEL, HUD, CONTROLS AND 10 MS INTERP FOR FAIRNESS	排位: 为公平起见使用默认模型、HUD、操作和 10 MS 插值
 RANKED: NO HEALTH BARS	排位: 无生命条
+RANKS	排名
 RATE	速率
 RATING	评分
 RAW INPUT	原始输入
@@ -2657,6 +2689,8 @@ READY	准备
 REALTIME	实时
 REC	REC
 RECENT	最近
+RECENT MAP	最近的地图
+RECENT MAPS	最近的地图
 RECENT RUNS	最近成绩
 RECHARGING	充能中
 RECONNECT	重新连接
@@ -2851,6 +2885,7 @@ SERVER LOG: OFF	服务器日志: 关
 SERVER LOG: SIMPLE	服务器日志: 简单
 SERVER LOG: VERBOSE (125 HZ)	服务器日志: 详细 (125 HZ)
 SERVER NAME	服务器名称
+SERVERS	服务器
 SERVERS (LAN + INTERNET)	服务器 (局域网 + 互联网)
 SETTINGS	设置
 SETTINGS COPIED: PASTE THEM ANYWHERE	设置已复制: 可粘贴到任意处
@@ -3161,6 +3196,7 @@ TEST MODE	测试模式
 TEST MODE:	测试模式:
 TEST MODE: THE MAP'S	测试模式: 地图的
 TEST plays the map right away; BAKE LIGHT previews the real lighting.	测试 会立即游玩地图; 烘焙光照 可预览真实光照。
+TESTING	测试
 TESTING BUILD - RANKED NOT RATED (PLAYED, NEVER COUNTED)	测试版 - 排位不计分 (可玩, 不计入)
 TESTING VERSIONS	测试版本
 TEXT	文本
@@ -3563,6 +3599,7 @@ YOU'RE SEEKING - FACE THE WALL AND COUNT	你是寻找者 - 面对墙壁倒数
 YOU'RE THE TAGGER - TAG SOMEONE BEFORE TIME RUNS OUT	你是抓人者 - 在时间结束前抓到别人
 YOU:	你:
 YOU: NO TIME TRIALS YET	你: 尚无计时赛成绩
+YOUR BESTS	你的最佳成绩
 YOUR BOTS: ALL STANDARD	你的机器人: 全部标准
 YOUR BOTS: MIXED MODELS	你的机器人: 混合模型
 YOUR GOAL	我方球门
@@ -3574,6 +3611,7 @@ YOUR OWN MODEL FILE: NO PREVIEW HERE	你自己的模型文件: 此处无预览
 YOUR OWN ROCKET THROWS YOU. HERE IT DOES NO DAMAGE.	自己的火箭把你炸飞。这里不会受伤。
 YOUR OWN: PUT .TTF / .OTF FILES IN MODS/FONTS,	你自己的: 将 .TTF / .OTF 文件放入 MODS/FONTS,
 YOUR QUEUE FOR	你的队列:
+YOUR RECORDED GAMES	你录制的对局
 YOUR SHOTS	你的射击
 YOUR SHOTS: ALWAYS	你的射击: 始终
 YOUR SHOTS: NEVER	你的射击: 从不

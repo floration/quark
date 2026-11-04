@@ -12,21 +12,25 @@
 # DEG	# 度
 # DUELS	# デュエル
 # EVERYONE FOR THEMSELVES	# 個人戦
-# HOST A GAME (main menu > HOST GAME)	# ゲームをホスト (メインメニュー > ゲームをホスト)
+# FPS	# FPS
+# HOST A GAME (PLAY > HOST)	# ゲームをホスト (プレイ > ホスト)
 # HP	# HP
 # HUD LAYOUT (Settings > HUD LAYOUT)	# HUDレイアウト (設定 > HUDレイアウト)
 # HZ (AVG)	# HZ (平均)
 # IN GAME (ESC as host)	# ゲーム中 (ホストはESC)
-# JOIN A GAME (main menu > JOIN GAME)	# ゲームに参加 (メインメニュー > ゲームに参加)
+# JOIN A GAME (PLAY > SERVERS)	# ゲームに参加 (プレイ > サーバー)
+# MAP OF YOUR OWN	自作マップ # 個
 # MAPS AND MODES	# マップとモード
+# MAPS OF YOUR OWN	自作マップ # 個
 # MB	# MB
+# MORE	他 # 件
 # MOVEMENT	# 移動
 # MS	# MS
-# PLAY VS BOTS	# ボット戦
+# PLAY VS BOTS (PLAY > BOTS)	# ボット戦 (プレイ > ボット)
 # RANKED	# ランク
 # SETTINGS (main menu, or ESC in game)	# 設定 (メインメニュー、またはゲーム中にESC)
 # TEAM MODES	# チームモード
-# THE MAP EDITOR (main menu > MAP EDITOR)	# マップエディター (メインメニュー > マップエディター)
+# THE MAP EDITOR (CREATE > OPEN EDITOR)	# マップエディター (作成 > エディターを開く)
 # THE MAPS AND WHAT THEY'RE BUILT FOR	# マップと対応モード
 # US	# US
 # VOTES (ESC > VOTE, then F1 yes / F2 no)	# 投票 (ESC > 投票、F1 賛成 / F2 反対)
@@ -52,6 +56,8 @@
 #% of ticks over # ms late	#% のティックが # ms 以上遅延
 #-# OF # - WHEEL TO SCROLL	#-# / # - ホイールでスクロール
 #-# OF # - WHEEL TO SCROLL - RIGHT-CLICK: FAVORITE	#-# / # - ホイールでスクロール - 右クリック: お気に入り
+#/# PLAYERS	#/# プレイヤー
+#/# · # MS	#/# · # MS
 #:# LEFT	残り #:#
 #MS	#MS
 #X# # HZ	#X# # HZ
@@ -165,6 +171,7 @@
 2D: THE VIEW STAYS STILL, YOUR MOUSE MOVES THE CROSSHAIR	2D: 視点固定、マウスでクロスヘアを移動
 3 TIMES: THE GRAPH; 4 TIMES: THE GAME'S PART ONLY	3 回: グラフ; 4 回: ゲームの分だけ
 30 M UP, OUT OF A HYPER FROM 20 M/S	20 M/S からのハイパーで 30 M 上昇
+30 SECOND DRILLS: CLICKING, TRACKING, SWITCHING	30秒ドリル: クリック、トラッキング、ターゲット切替
 30 SECONDS LEFT	残り30秒
 32-bit float	32-bit float
 3D FLYING	3D 飛行
@@ -260,6 +267,8 @@ AIR STRAFE CAP	空中ストレイフ上限
 ALL	すべて
 ALL MODES	全モード
 ALL OFF	すべてオフ
+ALL SCENARIOS >	全シナリオ >
+ALL SERVERS	すべてのサーバー
 ALL SETTINGS	全設定
 ALONG A 3 X 3 GRID'S LINES	3 X 3 のグリッドの線に沿って
 ALT	ALT
@@ -406,6 +415,7 @@ BENCHMARK: no demo ({})	ベンチマーク: デモがありません ({})
 BENCHMARK: {}	ベンチマーク: {}
 BENCHMARKS	ベンチマーク
 BEST	ベスト
+BEST #	ベスト #
 BEST OF 3 - FIRST TO 2 WINS THE MATCH	3本勝負 - 2本先取で勝利
 BEST POSSIBLE (SEGMENTS)	理論ベスト (区間)
 BEST RUN	ベストラン
@@ -477,6 +487,7 @@ BRITISH	イギリス英語
 BRUNO	BRUNO
 BUBBLE	バブル
 BUBBLE LAUNCH	バブルランチ
+BUILD YOUR OWN MAPS	自分のマップを作ろう
 BUILDINGS	建物
 BUILT FOR	対応モード
 BUILT FOR sets the mode the map is made for; the MODES grid sets what it's offered for. PLAYABLE AS shows what it has the pieces for (team modes need A and B spawns).	対応モードはマップの想定モードを設定; モード表は提供先を設定します。プレイ可能は必要な要素が揃っているモードを表示 (チームモードにはAとBのスポーンが必要)。
@@ -593,6 +604,7 @@ COLUMN: PING	列: PING
 COLUMN: TOTAL K / D	列: 合計 K / D
 COMBINE	結合
 COMET	COMET
+COMMUNITY	コミュニティ
 COMPASS	コンパス
 COMPASS + RADAR	コンパス + レーダー
 COMPETITIVE: NO FOG OR SHADOWS, FEWER EFFECTS;	競技: 霧と影なし、エフェクト削減;
@@ -654,6 +666,7 @@ CPU PRIORITY	CPU優先度
 CPU PRIORITY: ABOVE NORMAL	CPU優先度: 通常以上
 CPU PRIORITY: HIGH	CPU優先度: 高
 CRAZY BALL	CRAZY BALL
+CREATE	作成
 CROSSBOW	クロスボウ
 CROSSBOW, STICKY AND RIFLE	クロスボウ、スティッキー、ライフル
 CROSSBOWS ONLY	クロスボウのみ
@@ -780,7 +793,7 @@ DEMO - ESC TO STOP	デモ - ESCで停止
 DEMO RATE	デモレート
 DEMO RATE: 62.5 HZ	デモレート: 62.5 HZ
 DEMO RATE: FULL	デモレート: フル
-DEMO SAVED - MAIN MENU > DEMOS	デモを保存しました - メインメニュー > デモ
+DEMO SAVED - CREATE > DEMOS	デモを保存しました - 作成 > デモ
 DEMOS	デモ
 DEPTH	奥行き
 DESC	降順
@@ -965,6 +978,7 @@ FILE NAME	ファイル名
 FILE: NAME / TITLE	ファイル: 名前 / タイトル
 FILL THE UNEVEN TEAMS WITH BOTS?	人数差をボットで埋めますか?
 FINAL	決勝
+FIND A SERVER	サーバーを探す
 FIND CLIP BOXES	クリップボックスを検索
 FIND INVISIBLE WALLS:	見えない壁を検索:
 FINISH	ゴール
@@ -1012,6 +1026,7 @@ FOV: HORIZONTAL	FOV: 水平
 FOV: HORIZONTAL AT 4:3	FOV: 4:3で水平
 FOV: VERTICAL	FOV: 垂直
 FPS	FPS
+FPS AND 1% LOWS	FPS と 1% LOW
 FPS LIMIT	FPS制限
 FPS LIMIT: WAKES THIS EARLY, THEN WAITS EXACTLY TO THE	FPS制限: この分早く起き、フレーム開始まで
 FPS MIN (1S)	FPS 最小 (1秒)
@@ -1250,7 +1265,6 @@ HOP 15 M/S UP OFF A LANDING	着地から 15 M/S で跳ねる
 HOST	ホスト
 HOST EDIT SESSION	編集セッションをホスト
 HOST EDIT SESSION: friends join and build with you; everyone's camera shows in the view.	編集セッションをホスト: フレンドが参加して一緒に制作; 全員のカメラが画面に表示されます。
-HOST GAME	ゲームをホスト
 HOSTING	ホスト中
 HOSTING ON UDP PORT	ホスト中 UDPポート:
 HOW	やり方
@@ -1349,7 +1363,7 @@ IS ON A KILLING SPREE	キリングスプリー!
 IS ON A RAMPAGE	ランペイジ!
 IS UNSTOPPABLE	アンストッパブル!
 IT IN MY PALETTE	鬼を自分のパレットで
-IT IS ALWAYS IN THE MAIN MENU: TUTORIAL	いつでもメインメニュー: チュートリアル
+IT IS ALWAYS IN THE MAIN MENU: PRACTICE > TUTORIAL	いつでもメインメニュー: 練習 > チュートリアル
 ITS COLOURS ARE ON THE CROSSHAIR TAB	色はクロスヘアタブで設定
 ITS STYLE	スタイル
 ITS STYLE: CIRCLE	スタイル: 円
@@ -1360,6 +1374,7 @@ ITS STYLE: SAME AS ABOVE	スタイル: 上と同じ
 ITS STYLE: T	スタイル: T
 IVO	IVO
 Input	入力
+JOIN A SERVER, PLAY BOTS OR HOST YOUR OWN	サーバーに参加、ボット戦、または自分でホスト
 JOIN A TEAM FROM THE MENU (ESC)	メニュー (ESC) からチームに参加
 JOIN GAME	ゲームに参加
 JOIN TEAM	チームに参加
@@ -1446,7 +1461,9 @@ LASER. SCORE: KILLS X 100 X ACCURACY	レーザー。スコア: キル X 100 X �
 LASERS ONLY	レーザーのみ
 LASERS ONLY - DAMAGE YOU DEAL HEALS YOU	レーザーのみ - 与えたダメージで回復
 LAST	直近
+LAST PLAYED	前回のプレイ
 LAST RUN	前回のラン
+LAST RUN #	前回 #
 LAST TEAM STANDING WINS	最後まで残ったチームの勝利
 LAST WEAPON	前の武器
 LATE FRAME	遅延フレーム
@@ -1462,7 +1479,6 @@ LATEST ({})	最新（{}）
 LAUNCH OPTIONS (PASSED TO THE GAME)	起動オプション（ゲームに渡す）
 LAUNCHER ON THE RIGHT	ランチャーを右に
 LAY A STICKY BOMB, STAND ON IT, SET IT OFF AS YOU JUMP.	スティッキーボムを置き、その上に立ち、ジャンプと同時に起爆。
-LEADERBOARD	リーダーボード
 LEADERBOARD: SOON	リーダーボード: 近日公開
 LEAVE	退出
 LEAVE ALL	すべて退出
@@ -1560,6 +1576,7 @@ MAPS	マップ
 MAPS FOLDER	mapsフォルダ
 MAPS KEPT	マップを保持
 MAPS MARKED "NOT FOR THIS MODE" MAY NOT WORK IN IT	「このモード非対応」のマップは動作しない場合があります
+MAPS YOU SAVE IN THE EDITOR SHOW HERE	エディターで保存したマップがここに表示されます
 MARK COLOR	マークの色
 MARK TIME	マーク表示時間
 MARKER OPACITY	マーカー不透明度
@@ -2215,6 +2232,7 @@ MOON SHOTGUN	月面ショットガン
 MOON SHOTGUNS	月面ショットガン
 MORE	詳細
 MORE KEYS	その他のキー
+MORE WAYS TO PLAY	その他の遊び方
 MOUSE	マウス
 MOUSE 1	MOUSE 1
 MOUSE 2	MOUSE 2
@@ -2233,6 +2251,7 @@ MOVE DOWN	下降
 MOVE TO SPECTATOR	観戦に移動
 MOVE UP	上昇
 MOVEMENT	移動
+MOVEMENT TECH	移動テクニック
 MS	MS
 MULTI POINT	マルチポイント
 MULTI POINT - attackers take the points in order (A, B, C...). Only they capture; a defender on the point holds it. Each point taken adds 90 s and moves both teams' spawns forward. Each team attacks once.	マルチポイント - 攻撃側は順番にポイント (A, B, C...) を占拠。占拠できるのは攻撃側のみ; 防衛側がポイント上にいると阻止。1つ占拠ごとに90秒追加、両チームのスポーンが前進。各チーム1回ずつ攻撃。
@@ -2260,6 +2279,7 @@ N/A HERE: LINUX (X11) ONLY	ここでは N/A: LINUX (X11) のみ
 N/A HERE: WINDOWS + NVIDIA ONLY	ここでは使用不可: WINDOWS + NVIDIA のみ
 N/A: THE DRIVER LACKS GL 4.4 BUFFER STORAGE	N/A: ドライバーに GL 4.4 BUFFER STORAGE がない
 NAME	名前
+NAME CHIP	名前
 NAME COLOR	名前の色
 NAME COLORS	名前の色
 NAME TAGS	ネームタグ
@@ -2276,6 +2296,7 @@ NEW	新規
 NEW BEST	新記録
 NEW HERE? THE TUTORIAL SHOWS EVERY MOVEMENT TECH: A GHOST DOES IT, THEN YOU DO.	はじめて? チュートリアルで全移動テクを紹介: ゴーストが手本を見せ、次にあなたが挑戦。
 NEW LEADER	新しいリーダー
+NEW MAPS AND COPIES OF THE BUILT-IN ONES	新規マップと内蔵マップのコピー
 NEW NAME	新しい名前
 NEW ONES:	新着:
 NEW PERSONAL BEST	自己ベスト更新
@@ -2297,11 +2318,14 @@ NO FILES IN CONTROLS/ - USE FOLDER	CONTROLS/ にファイルがありません -
 NO FRAMES MEASURED	計測フレームなし
 NO FULLSCREEN OPT.	フルスクリーン最適化 オフ
 NO FULLSCREEN OPT.: TRUE EXCLUSIVE FULLSCREEN (NEXT START)	フルスクリーン最適化 オフ: 真の排他フルスクリーン (次回起動)
+NO GAME YET	まだプレイなし
 NO GAMES FOUND	ゲームが見つかりません
 NO GAMES MATCH THE FILTERS	フィルターに一致するゲームがありません
 NO MAP IS BUILT FOR THIS MODE YET	このモード用のマップはまだありません
 NO MATERIAL NAMED THAT	その名前の素材はありません
+NO OFFICIAL SERVER LISTED	公式サーバーがありません
 NO RACE MAPS	レースマップなし
+NO RESPONSE	応答なし
 NO RESPONSE - CLICK TO TRY	応答なし - クリックで再試行
 NO RUNS SAVED YET	保存されたランはまだありません
 NO RUNS YET - FINISH	ランなし - ゴールしてください
@@ -2371,6 +2395,8 @@ OFF: FROM THE NEXT START	オフ: 次回起動から
 OFF: THE BAR IS FULL AT 100 IN EVERY MODE	オフ: 全モードで100で満タン
 OFF: THE VIEW STEPS UP STAIRS AT ONCE	オフ: 階段で視点が一気に上がる
 OFFICIAL	公式
+OFFICIAL SERVER	公式サーバー
+OFFICIAL SERVERS	公式サーバー
 OLD MAN	老人
 ON	オン
 ON HIT	ヒット時
@@ -2399,6 +2425,7 @@ OPACITY	不透明度
 OPACITY %	不透明度 %
 OPEN	開く
 OPEN DATA FOLDER	データフォルダを開く
+OPEN EDITOR	エディターを開く
 OPEN FOLDER	フォルダを開く
 OPEN SCREENSHOTS	スクリーンショットを開く
 OPENS THE UDP PORT ON YOUR ROUTER (UPNP)	ルーターのUDPポートを開放 (UPNP)
@@ -2482,6 +2509,7 @@ PHYSICS	物理
 PIA	PIA
 PICK A FILE TO IMPORT	インポートするファイルを選択
 PICK A KEY NO ACTION IS BOUND TO	未割り当てのキーを選択
+PICK A SCENARIO	シナリオを選択
 PICK IT IN WINDOWS' GRAPHICS SETTINGS	WINDOWSのグラフィック設定で選択
 PICK VSYNC: LATENT SYNC (VIDEO + AUDIO) FIRST;	垂直同期を選択: まずレイテントシンク (ビデオ + オーディオ);
 PICTURE	画像
@@ -2497,6 +2525,7 @@ PING: ANY	PING: 指定なし
 PIRATE	海賊
 PITCH	ピッチ
 PLAY	プレイ
+PLAY A RUN TO SEE YOUR BESTS HERE	プレイするとここにベスト記録が表示されます
 PLAY IT	プレイする
 PLAY MODE	プレイモード
 PLAY TIME TRIAL	タイムアタックをプレイ
@@ -2551,6 +2580,7 @@ PREVIOUS PAGE	前のページ
 PREVIOUS:	前回:
 PRIMARY MONITOR	プライマリモニター
 PRIORITIZE GAME	ゲームを優先
+PROD	本番
 PROFILE	プロファイル
 PROFILE:	プロファイル:
 PROFILE: MY CONTROLS	プロファイル: 自分の操作設定
@@ -2606,11 +2636,12 @@ R SHIFT	R SHIFT
 R: ROTATE 90 (SHIFT: ABOUT X, CTRL: ABOUT Z)    F: MIRROR LEFT / RIGHT (SHIFT: FRONT / BACK, CTRL: UPSIDE DOWN)	R: 90度回転 (SHIFT: X軸、CTRL: Z軸)    F: 左右反転 (SHIFT: 前後、CTRL: 上下)
 RACE	レース
 RACE + FLYING	レース + 飛行
-RACE - the course's checkpoints in order. It starts as untimed practice; vote start (F4) to race. TIME TRIAL (main menu, or PLAY TIME TRIAL on the leaderboard) is the ranked race on each race map; the leaderboard's RACE TOTAL adds your best on every one, a map you haven't run counting at its default time.	レース - コースのチェックポイントを順に通過。最初は時間無制限の練習; 開始投票 (F4) でレース開始。タイムアタック (メインメニュー、またはリーダーボードの「タイムアタックをプレイ」) は各レースマップのランクレース; リーダーボードのレース合計は全マップのベストを合算し、未走行のマップはデフォルトタイムで計算。
+RACE - the course's checkpoints in order. It starts as untimed practice; vote start (F4) to race. TIME TRIAL (PRACTICE > TIME TRIAL, or PLAY TIME TRIAL on the leaderboard) is the ranked race on each race map; the leaderboard's RACE TOTAL adds your best on every one, a map you haven't run counting at its default time.	レース - コースのチェックポイントを順に通過。最初は時間無制限の練習; 開始投票 (F4) でレース開始。タイムアタック (練習 > タイムアタック、またはリーダーボードの「タイムアタックをプレイ」) は各レースマップのランクレース; リーダーボードのレース合計は全マップのベストを合算し、未走行のマップはデフォルトタイムで計算。
 RACE GHOST	レースゴースト
 RACE MAP	レースマップ
 RACE RESET	レースリセット
 RACE TOTAL	レース合計
+RACE YOUR BEST LAP	ベストラップに挑戦
 RADAR	レーダー
 RADAR RANGE	レーダー範囲
 RADAR: TEAMMATES AND OBJECTIVES, NEVER ENEMIES	レーダー: 味方と目標のみ、敵は表示しない
@@ -2641,6 +2672,7 @@ RANKED QUEUES	ランクキュー
 RANKED VANILLA	ランク バニラ
 RANKED: DEFAULT MODEL, HUD, CONTROLS AND 10 MS INTERP FOR FAIRNESS	ランク: 公平のためデフォルトのモデル、HUD、操作、10 MS補間
 RANKED: NO HEALTH BARS	ランク: 体力バーなし
+RANKS	ランク
 RATE	レート
 RATING	レート
 RAW INPUT	RAW入力
@@ -2657,6 +2689,8 @@ READY	準備完了
 REALTIME	リアルタイム
 REC	REC
 RECENT	最近
+RECENT MAP	最近のマップ
+RECENT MAPS	最近のマップ
 RECENT RUNS	最近のラン
 RECHARGING	チャージ中
 RECONNECT	再接続
@@ -2851,6 +2885,7 @@ SERVER LOG: OFF	サーバーログ: オフ
 SERVER LOG: SIMPLE	サーバーログ: 簡易
 SERVER LOG: VERBOSE (125 HZ)	サーバーログ: 詳細 (125 HZ)
 SERVER NAME	サーバー名
+SERVERS	サーバー
 SERVERS (LAN + INTERNET)	サーバー (LAN + インターネット)
 SETTINGS	設定
 SETTINGS COPIED: PASTE THEM ANYWHERE	設定をコピー: どこにでも貼り付け可
@@ -3161,6 +3196,7 @@ TEST MODE	テストモード
 TEST MODE:	テストモード:
 TEST MODE: THE MAP'S	テストモード: マップの設定
 TEST plays the map right away; BAKE LIGHT previews the real lighting.	テストですぐにマップをプレイ; ライトをベイクで実際のライティングをプレビュー。
+TESTING	テスト
 TESTING BUILD - RANKED NOT RATED (PLAYED, NEVER COUNTED)	テストビルド - ランクはレート対象外 (プレイ可、記録なし)
 TESTING VERSIONS	テスト版
 TEXT	テキスト
@@ -3563,6 +3599,7 @@ YOU'RE SEEKING - FACE THE WALL AND COUNT	あなたは鬼 - 壁を向いてカウ
 YOU'RE THE TAGGER - TAG SOMEONE BEFORE TIME RUNS OUT	あなたが鬼 - 時間切れまでに誰かをタッチせよ
 YOU:	あなた:
 YOU: NO TIME TRIALS YET	あなた: タイムアタック記録なし
+YOUR BESTS	ベスト記録
 YOUR BOTS: ALL STANDARD	自分のボット: 全員標準
 YOUR BOTS: MIXED MODELS	自分のボット: モデル混合
 YOUR GOAL	自陣ゴール
@@ -3574,6 +3611,7 @@ YOUR OWN MODEL FILE: NO PREVIEW HERE	自分のモデルファイル: ここで�
 YOUR OWN ROCKET THROWS YOU. HERE IT DOES NO DAMAGE.	自分のロケットで吹き飛ぶ。ここではダメージなし。
 YOUR OWN: PUT .TTF / .OTF FILES IN MODS/FONTS,	独自: .TTF / .OTF ファイルを MODS/FONTS に置き、
 YOUR QUEUE FOR	キュー:
+YOUR RECORDED GAMES	録画したゲーム
 YOUR SHOTS	自分の弾
 YOUR SHOTS: ALWAYS	自分の弾: 常に
 YOUR SHOTS: NEVER	自分の弾: 表示しない

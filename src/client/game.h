@@ -224,7 +224,29 @@ private:
     // in game: the pause menu's pages between the notice list and the weapon bar (y 148..638 at 720p)
     SetLayout ingameLayout(float designW) const;
     float ingameTop(const SetLayout& L, float kH) const;   // where content kH design px tall starts there (its panel centred)
-    void drawMainMenu(const SetLayout& L);
+    // The main menu (1.19.x, design "Y"): an icon strip on the left (PLAY, PRACTICE, CREATE tabs; RANKS and SETTINGS open
+    // their screens; DISCORD, INFO, QUIT at its foot), the tab's page on a see-through rail beside it, its panels on the
+    // right, the name chip top right. Nothing here runs in a match (drawMenu returns first).
+    enum MainTab { MAIN_PLAY = 0, MAIN_PRACTICE, MAIN_CREATE, MAIN_TABS };
+    int mainTab_ = MAIN_PLAY;          // the tab shown (kept while a page under it is open: BACK returns to it)
+    bool nameEdit_ = false;            // the name chip is open as its text field
+    double browserAt_ = -1e9;          // the server list's last refresh (JOIN, or the PLAY tab opening)
+    void openMainTab(int tab);         // shows a tab, and reads what it shows (bests, recent maps) once
+    void drawMainMenu();
+    void drawMainStrip(float s, float H);
+    void drawMainPlay(float s, float px, float pw, float rx, float rw, float ry);
+    void drawMainPractice(float s, float px, float pw, float rx, float rw, float ry);
+    void drawMainCreate(float s, float px, float pw, float rx, float rw, float ry);
+    void drawNameChip(float s, float W);
+    // what the PRACTICE and CREATE tabs show, read from the files when the tab opens (never a scan per frame)
+    struct MainBest { std::string what, name, value, pre; };   // "AIM TRAINER" / the scenario, the score (pre: drawn before it)
+    struct MainCache {
+        const void* trainer = nullptr;   // the last scenario (trainer::Scenario), null: none
+        int trainerDiff = 0, trainerLast = 0, trainerBest = 0, trainerPlays = 0;
+        std::vector<MainBest> bests;
+        std::vector<std::string> recentMaps, recentDates;   // your maps folder, newest first (at most 5)
+        int ownMaps = 0;
+    } mainCache_;
     void drawJoin(const SetLayout& L);
     void drawHost(const SetLayout& L);
     void drawHostAdvanced(const SetLayout& L);
@@ -431,6 +453,7 @@ private:
     // custom modes: the one being edited, its tab, and the rules arriving from a server in pieces
     CustomRules editRules_;
     std::string editOrigName_;
+    bool customFromMain_ = false;   // the custom mode editor was opened from the main menu (PLAY > CUSTOM MODE): BACK / Esc return there
     int customTab_ = 0;
     std::vector<std::string> rulesParts_;
     void drawCustomModeEditor(const SetLayout& L);

@@ -1,6 +1,7 @@
 # next
 
 ## New
+- **A new main menu.** An icon strip on the left (PLAY, PRACTICE, CREATE, RANKS, SETTINGS, with DISCORD, INFO and QUIT at its foot) and each tab's page beside it. PLAY shows your last game (mode, map, server, live players and ping) with a big RECONNECT, SERVERS / BOTS / HOST, the official servers live (click one to join), and RANKED and CUSTOM MODE. PRACTICE has the aim trainer's last scenario with START, TIME TRIAL, TUTORIAL and BENCHMARK, and YOUR BESTS from your own saved runs. CREATE opens the map editor, your demos and your recent maps. Your name is a chip top right: click it to change it. Everything the old menu had is still there, and the menu costs nothing in a match.
 - Voting: Pause > VOTE now has the GAMEMODE / MODIFIERS / MAP toggles right on it, one click to start, and BACK steps back through the vote. New vote modifiers: FIRE RATE and PROJECTILE SPEED.
 - Acid: standing in it tints your screen green, pulses your health bar and sizzles. Shots and stickies that go into lava or acid are destroyed with a hiss.
 - **Player saturation** (VIDEO > MORE 4 > PLAYERS > SATURATION, next to BRIGHTNESS): makes players' colours more vivid (up to 2x) or greyer, without touching the map, so enemies stand out like with digital vibrance but only on them.
@@ -55,7 +56,7 @@
 - Fixed wrong words: Russian VOTES, Turkish ADVANCED, and the spectator FOV's MINE ("my own", not the explosive).
 
 ## Tutorial
-- **MAIN MENU > TUTORIAL:** every movement tech, one lesson each. A ghost bot shows the tech first while the camera follows it, with the keys it presses lit under your own key names. Then it's your turn in a lane beside it while it keeps repeating the move. Each lesson has short steps, a goal and a bar that fills as you do it.
+- **MAIN MENU > PRACTICE > TUTORIAL:** every movement tech, one lesson each. A ghost bot shows the tech first while the camera follows it, with the keys it presses lit under your own key names. Then it's your turn in a lane beside it while it keeps repeating the move. Each lesson has short steps, a goal and a bar that fills as you do it.
 - 28 lessons, ten of them marked **KEY TECH** and listed first. Each lesson's numbers are what the game really does, measured in the tests:
   - **The launch**: grapple along the floor to 24 m/s, then look straight down and jump, dash and fire a rocket together. You fly about 50 m up.
   - **Pop**: a super, then a hyper straight down as you land: about 14 m up. **Rocket pop**: the same with a rocket fired the moment the dash goes: about 47 m up, no grapple needed.
@@ -69,7 +70,6 @@
 - JUMP (or a click) skips the demo, R starts the lesson over and ENTER skips to the next lesson. Esc opens LESSONS (pick any lesson; the ones you've done get a green mark), WATCH AGAIN and SETTINGS. Falling in the lava puts you back at the lesson's start, and nothing does damage in the tutorial.
 - The first time you start the game it offers the tutorial once (START TUTORIAL or NOT NOW).
 - `quark --tutorial [LESSON]` starts it straight away, for example `quark --tutorial launch`.
-- The main menu's HOST GAME button is now half width, with TUTORIAL beside it.
 
 ## Info
 - INFO > CONTROLS fixed where it was out of date: there is no air drift (a standing jump drifts 2.3 m/s at most), an air dash adds about a third of what you are below 32 m/s, and the syringe heals 5 hp (a throw: 15 hp).

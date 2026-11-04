@@ -269,6 +269,10 @@ struct Settings {
     Vec3 colorFriendly = {0.25f, 0.85f, 1.0f};
     Vec3 colorEnemy = {1.0f, 0.3f, 0.25f};
     std::string lastAddress = "127.0.0.1";
+    // the main menu's LAST PLAYED card (1.19.x): the last server's mode title, map title and name as they were when you
+    // last joined it (lastAddress); empty before the first game, so the card says NO GAME YET
+    std::string lastMode, lastMap, lastServer;
+    std::string lastTrainer;    // PRACTICE's AIM TRAINER card: the scenario last started, "<id>:<difficulty>" (empty: none yet)
     // JOIN's server list (1.19.4): sort (0 ping, 1 players, 2 name), hide full / empty, a ping cap (0 = any), and your
     // favourite and recent servers ("host:port" lists, ';'-separated; recent: the last 8 joined, newest first)
     int browserSort = 0;

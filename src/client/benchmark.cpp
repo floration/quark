@@ -429,7 +429,7 @@ void Game::drawBenchList(const SetLayout& L) {
         ui_.hintCentered(L.X(640), L.Y(y), more, kGrey, lw);
     }
     y += scrollH;
-    if (ui_.button(lx, L.Y(y), L.L(276), L.L(kMRow), "BACK", UiExp::nav("main"))) setScreen(Screen::Main);
+    if (ui_.button(lx, L.Y(y), L.L(276), L.L(kMRow), "BACK", UiExp::nav("main*"))) setScreen(Screen::Main);
     if (ui_.button(L.X(644), L.Y(y), L.L(276), L.L(kMRow), "OPEN FOLDER", UiExp::url())) {
         std::error_code ec;
         std::filesystem::create_directories(std::filesystem::u8path(benchDir()), ec);
