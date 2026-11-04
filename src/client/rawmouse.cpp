@@ -6,6 +6,8 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <vector>
+#include <algorithm>
 #include <GLFW/glfw3.h>
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
@@ -45,11 +47,49 @@ struct RawMouseProc {
     }
 };
 
-bool RawMouse::start() {
+// The logical processor for the mouse's thread: the last one (group 0) of the fastest efficiency class, so on a
+// hybrid CPU it's a performance core, never an efficiency one; -1 when there are fewer than 4 (nothing to spare)
+static int pickMouseCore() {
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    const int n = (int)std::min<DWORD>(si.dwNumberOfProcessors, 64);
+    if (n < 4) return -1;
+    int best = n - 1, bestClass = -1;
+    typedef BOOL(WINAPI * GetSets)(PSYSTEM_CPU_SET_INFORMATION, ULONG, PULONG, HANDLE, ULONG);
+    auto get = (GetSets)(void*)GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "GetSystemCpuSetInformation");
+    ULONG len = 0;
+    if (get && !get(nullptr, 0, &len, GetCurrentProcess(), 0) && len) {   // (Windows 10+: the efficiency classes)
+        std::vector<unsigned char> buf(len);
+        if (get((PSYSTEM_CPU_SET_INFORMATION)buf.data(), len, &len, GetCurrentProcess(), 0)) {
+            for (ULONG at = 0; at < len;) {
+                const SYSTEM_CPU_SET_INFORMATION* c = (const SYSTEM_CPU_SET_INFORMATION*)(buf.data() + at);
+                if (!c->Size) break;
+                if (c->Type == CpuSetInformation && c->CpuSet.Group == 0 && c->CpuSet.LogicalProcessorIndex < n && !c->CpuSet.Parked) {
+                    const int cls = c->CpuSet.EfficiencyClass, idx = c->CpuSet.LogicalProcessorIndex;
+                    if (cls > bestClass || (cls == bestClass && idx > best)) { bestClass = cls; best = idx; }
+                }
+                at += c->Size;
+            }
+        }
+    }
+    return best;
+}
+
+bool RawMouse::start(bool ownCore) {
     if (active_) return true;
     std::atomic<int> ok{0};
-    thread_ = std::thread([this, &ok] {
-        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
+    const int core = ownCore ? pickMouseCore() : -1;
+    thread_ = std::thread([this, &ok, core] {
+        // OWN CORE: time-critical (above the game's HIGHEST) on its own core, never power-throttled; off: as before
+        SetThreadPriority(GetCurrentThread(), core >= 0 ? THREAD_PRIORITY_TIME_CRITICAL : THREAD_PRIORITY_HIGHEST);
+        if (core >= 0) {
+            SetThreadAffinityMask(GetCurrentThread(), (DWORD_PTR)1 << core);
+            typedef BOOL(WINAPI * SetInfo)(HANDLE, int, LPVOID, DWORD);
+            if (auto set = (SetInfo)(void*)GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "SetThreadInformation")) {
+                struct { ULONG version, mask, state; } t = {1, 1, 0};   // (THREAD_POWER_THROTTLING_STATE: execution speed, not throttled)
+                set(GetCurrentThread(), 3 /*ThreadPowerThrottling*/, &t, sizeof t);
+            }
+        }
         WNDCLASSW wc{};
         wc.lpfnWndProc = RawMouseProc::proc;
         wc.hInstance = GetModuleHandleW(nullptr);
@@ -73,6 +113,14 @@ bool RawMouse::start() {
     });
     while (ok == 0) Sleep(1);
     if (ok < 0) { thread_.join(); return false; }
+    core_ = core;
+    if (core >= 0) {   // the game's thread off that core (any other thread of ours may still go there)
+        DWORD_PTR proc = 0, sys = 0;
+        if (GetProcessAffinityMask(GetCurrentProcess(), &proc, &sys) && (proc & ~((DWORD_PTR)1 << core))) {
+            const DWORD_PTR prev = SetThreadAffinityMask(GetCurrentThread(), proc & ~((DWORD_PTR)1 << core));
+            mainMask_ = prev ? prev : proc;
+        }
+    }
     return true;
 }
 
@@ -82,6 +130,8 @@ void RawMouse::stop() {
     thread_.join();
     hwnd_ = nullptr;
     active_ = false;
+    if (mainMask_) { SetThreadAffinityMask(GetCurrentThread(), (DWORD_PTR)mainMask_); mainMask_ = 0; }
+    core_ = -1;
 }
 
 void RawMouse::hold(GLFWwindow* w, bool on) {
@@ -103,7 +153,7 @@ void RawMouse::hold(GLFWwindow* w, bool on) {
 }
 
 #else
-bool RawMouse::start() { return false; }
+bool RawMouse::start(bool) { return false; }
 void RawMouse::stop() {}
 void RawMouse::hold(GLFWwindow*, bool) {}
 #endif

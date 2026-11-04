@@ -177,7 +177,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     r_.latchClock = &timeNow;
     rawMouse_.onMotionCtx = &r_;
     rawMouse_.onMotion.store([](void* r, long long dx, long long dy) { static_cast<Renderer*>(r)->latchMouse((double)dx, (double)dy); });
-    if (!opts_.uiTest && cfg_.rawInput) rawMouse_.start();   // (the UI test drives the mouse through GLFW; RAW INPUT off: the OS's motion)
+    if (!opts_.uiTest && cfg_.rawInput) rawMouse_.start(cfg_.mouseOwnCore);   // (the UI test drives the mouse through GLFW; RAW INPUT off: the OS's motion)
     if (!audio_.start()) printf("audio: no output device - running without sound\n");
     audio_.setMasterVolume(cfg_.volume);
     audio_.setEffectsVolume(cfg_.volumeEffects);
@@ -1237,7 +1237,8 @@ void Game::applyRawInput() {
     if (opts_.uiTest) return;
     const bool cap = mouseCaptured_;
     captureMouse(false);
-    if (cfg_.rawInput && !rawMouse_.active()) rawMouse_.start(); else if (!cfg_.rawInput) rawMouse_.stop();
+    if (cfg_.rawInput && rawMouse_.active() && (rawMouse_.core() >= 0) != cfg_.mouseOwnCore) rawMouse_.stop();   // (OWN CORE changed: again)
+    if (cfg_.rawInput && !rawMouse_.active()) rawMouse_.start(cfg_.mouseOwnCore); else if (!cfg_.rawInput) rawMouse_.stop();
     captureMouse(cap);
 }
 
@@ -8366,6 +8367,15 @@ void Game::drawMoreSettings(const SetLayout& L) {
             cfg_.capOffsetUs = std::min(std::max(-1, (int)std::lround(v)), 5000);
             g.next();
             g.hint("FPS LIMIT: WAKES THIS EARLY, THEN WAITS EXACTLY TO THE", "FRAME'S START: EVEN FRAMES; AUTO 5% OF THE FRAME");
+        }
+        {
+            static const std::vector<std::string> mn = {"MOUSE THREAD: SHARED", "MOUSE THREAD: OWN CORE"};
+            int mi = cfg_.mouseOwnCore ? 1 : 0;
+            if (ui_.cycle(g.x(), g.top(), w, h, "MOUSE THREAD", mi, 2, mn, UiExp::cfg("mouse_own_core"))) { cfg_.mouseOwnCore = mi == 1; applyRawInput(); }
+            g.next();
+            char cs[64];
+            if (rawMouse_.core() >= 0) snprintf(cs, sizeof cs, "NOW ON CORE %d; THE GAME STAYS OFF IT", rawMouse_.core()); else snprintf(cs, sizeof cs, "%s", "RAW INPUT, WINDOWS, 4+ CORES ONLY");
+            g.hint("OWN CORE: RAW INPUT READ AT TOP PRIORITY ON ONE FAST CORE;", cs);
         }
         if (ui_.toggle(g.x(), g.top(), hw, h, "NV THREADED OFF", cfg_.nvThreaded, UiExp::cfg("nv_threaded"))) {
             std::string msg = "NOT CHANGED IN THE UI TEST";

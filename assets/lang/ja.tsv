@@ -1155,6 +1155,7 @@ GUN: TEAM	武器: チーム
 GUNFIRE	銃声
 GUS	GUS
 Game::frame	Game::frame
+GetSystemCpuSetInformation	GetSystemCpuSetInformation
 HALFTIME - SIDES SWITCHED	ハーフタイム - 攻守交代
 HALFTIME - SIDES SWITCHED: YOU ATTACK NOW	ハーフタイム - 攻守交代: 攻撃側へ
 HALFTIME - SIDES SWITCHED: YOU DEFEND NOW	ハーフタイム - 攻守交代: 防衛側へ
@@ -2219,6 +2220,9 @@ MOUSE 1	MOUSE 1
 MOUSE 2	MOUSE 2
 MOUSE 3	MOUSE 3
 MOUSE ACCELERATION	マウス加速
+MOUSE THREAD	マウススレッド
+MOUSE THREAD: OWN CORE	マウススレッド: 専用コア
+MOUSE THREAD: SHARED	マウススレッド: 共有
 MOUSE TO PHOTON ~	マウスから光まで ~
 MOUSE TO PHOTON ~{} NS  (# HZ DISPLAY, {}, {})	マウスから光まで ~{} NS  (# HZ ディスプレイ, {}, {})
 MOUSE TO PHOTON: IN GAME ONLY	マウスから表示まで: ゲーム中のみ
@@ -2328,6 +2332,7 @@ NOTHING YET (NEEDS SPAWNS)	まだなし (スポーンが必要)
 NOTICE LINES	通知行数
 NOTICE TIME	通知表示時間
 NOTICES	通知
+NOW ON CORE #; THE GAME STAYS OFF IT	現在コア #; ゲームはこのコアを使わない
 NS	NS
 NS  (MOUSE REPORT IN TO GPU DONE; F3: NEXT VIEW)	NS  (マウスから GPU 完了まで; F3: 次の表示)
 NS (# HZ)	NS (# HZ)
@@ -2423,6 +2428,7 @@ OVERTIME - NEXT KILL WINS	延長戦 - 次のキルで勝利
 OWN ACCENT	独自アクセント
 OWN ACCENT: NOT THE TEAM COLOR	独自アクセント: チームカラー以外
 OWN COLOR	独自の色
+OWN CORE: RAW INPUT READ AT TOP PRIORITY ON ONE FAST CORE;	専用コア: RAW入力を高速コア1つで最優先で読む;
 OWN EFFECTS	独自エフェクト
 OWN SHADOW	自分の影
 OggS	OggS
@@ -2638,6 +2644,7 @@ RANKED: NO HEALTH BARS	ランク: 体力バーなし
 RATE	レート
 RATING	レート
 RAW INPUT	RAW入力
+RAW INPUT, WINDOWS, 4+ CORES ONLY	RAW入力・WINDOWS・4コア以上のみ
 RD	RD
 REACH 12 M/S WITH NO DASH OR GRAPPLE	ダッシュもグラップルも使わず 12 M/S に到達
 REACH 27 M/S	27 M/S に到達
