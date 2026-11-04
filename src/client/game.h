@@ -1035,7 +1035,18 @@ private:
     void pipeGpuEnd();
     void pipeCollect();
     void pipeReset();   // (F3 / F4 turned on: nothing from the last time they were on)
-    void drawPipeline(float x, float y, float ts, double* totalOnly = nullptr);
+    float drawPipeline(float x, float y, float ts, double* totalOnly = nullptr);   // (returns the box's bottom)
+    void drawFrameGraph(float x, float y, float ts);   // F3: the last 5 s of frame times, for frame pacing
+    void frameGraphFeed(double dt);                    // (one frame into it; only while F3 shows the graph)
+    // F3's frame pacing graph: 5 s in 500 columns of 10 ms, each its fastest and slowest frame (owner, 2026-11-04).
+    // Filled only while F3's graph is on screen and emptied when it's opened, so nothing is measured with F3 off.
+    struct FtCol { float lo = 0, hi = 0; float sum = 0; int n = 0; bool used = false; };
+    static constexpr int kFtCols = 500;
+    static constexpr double kFtColSec = 5.0 / kFtCols;
+    std::vector<FtCol> ftCols_ = std::vector<FtCol>(kFtCols);
+    int ftHead_ = 0;            // (the column being filled; the oldest is the one after it)
+    double ftClock_ = 0;        // (time into the column being filled)
+    bool ftOn_ = false;         // (the graph was fed last frame: off -> on empties it)
     void pipeAverages();
     void drawPerfMini();
     double pendingInput_ = -1, frameInput_ = -1;

@@ -2056,6 +2056,7 @@ void Game::frame(double dt) {
     frameTimes_[frameIdx_] = (float)dt;
     frameIdx_ = (frameIdx_ + 1) & (kFrameTimes - 1);   // (a mask, not a 64-bit divide)
     frameCount_ = std::min(frameCount_ + 1, frameTimes_.size());
+    if (perfStage_ >= 3) frameGraphFeed(dt); else ftOn_ = false;   // (F3's pacing graph: fed only while it's shown)
     if (!polledEarly_) {   // (normally done by preInput, before this frame's input was read)
         if (bake_ && net_.playback()) net_.holdPlaybackClock();   // a demo waits for its map's bake
         QZONE("net poll"); net_.poll();
@@ -11571,7 +11572,12 @@ void Game::drawPerf() {
         pipeNextUpdate_ = time_ + 0.1;
         pipeAverages();
     }
-    if (perfStage_ >= 3 && (screen_ == Screen::InGame || screen_ == Screen::TrainerRun)) drawPipeline(x, y + lh * nl + 16 * s, std::max(1.0f, ts * 0.85f));
+    if (perfStage_ >= 3) {   // (stages 3 and 4: the latency graph in a game, then the frame pacing graph under it)
+        const float gts = std::max(1.0f, ts * 0.85f), gy = y + lh * nl + 16 * s;
+        float bottom = gy;
+        if (screen_ == Screen::InGame || screen_ == Screen::TrainerRun) bottom = drawPipeline(x, gy, gts);
+        drawFrameGraph(x, bottom + (bottom > gy ? 8 * s : 0), gts);
+    }
 }
 
 // F4: only the pipeline graph's mouse to photon number, worked out twice a second. The same measuring as F3 runs
@@ -11695,8 +11701,8 @@ void Game::pipeCollect() {    // afterSwap: this frame's marks into its slot; fi
 // measured on this PC (CPU marks, GPU timestamps) and, for what the game can't see, worked out from the mouse's report
 // rate, the frame rate and the monitor's refresh rate (marked EST). Averages over the last half second.
 // totalOnly: just the mouse to photon time into it, nothing drawn (F4).
-void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
-    if (!pipeHave_) return;
+float Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
+    if (!pipeHave_) return y;
     const double* a = pipeAvg_;
     double sumDt = 0;
     for (size_t k = 0; k < frameCount_; k++) sumDt += frameTimes_[k];
@@ -11738,7 +11744,7 @@ void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
     span("HUD DRAW", PM_SCENE1, PM_HUD, cCpu);
     if (cfg_.presentMode == 3) span("LATENT SYNC: HOLD FOR THE BLANK", PM_HUD, PM_SWAP0, cWait);
     span("SWAP", PM_SWAP0, PM_SWAP1, cCpu);
-    if (ultraPaced()) span("GPU WAIT (ULTRA)", PM_SWAP1, PM_AFTER, cWait);
+    if (ultraPaced()) span(cfg_.lowLatency == 2 ? "GPU WAIT (ULTRA)" : "GPU WAIT (LATENT SYNC)", PM_SWAP1, PM_AFTER, cWait);
     rows.push_back({"GPU", a[PM_COUNT], a[PM_COUNT + 1], cGpu});
     const size_t hwFrom = rows.size();   // (from here on: the display's part; row 0, the mouse's report, is hardware too)
     // after the GPU: how the frame reaches the screen (EST): the compositor in a window, vsync's vblank, then the
@@ -11758,7 +11764,7 @@ void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
     rows.push_back({"SCANOUT TO THE CROSSHAIR (EST)", t, t + refresh * 0.5, cEst});
     t += refresh * 0.5;
     const double total = t - rows.front().t0;   // (from the mouse to the photon)
-    if (totalOnly) { *totalOnly = total; return; }
+    if (totalOnly) { *totalOnly = total; return y; }
     // Split (owner, 2026-11-02): the game's own part (from the mouse report's arrival to the GPU done) and the hardware's
     // (the mouse's polling, the display's sync and scanout). F3's fifth stage (GAME ONLY) leaves the hardware rows out.
     double hwMouse = rows.front().t1 - rows.front().t0, hwDisplay = 0;
@@ -11816,6 +11822,67 @@ void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
         yy += lh;
     }
     r_.text(x + 6, yy, ts, gameOnly ? "THE GAME'S PART ONLY: NO MOUSE POLLING, NO DISPLAY; ONE TIME LINE" : "ONE TIME LINE; EST = WORKED OUT, NOT MEASURED; MONITOR PROCESSING NOT INCLUDED", {0.7f, 0.7f, 0.75f, 1});
+    return y + h;
+}
+
+// F3's frame pacing graph (owner, 2026-11-04): the last 5 seconds, oldest on the left, one column per 10 ms drawn from
+// its fastest to its slowest frame, so one late frame shows as a spike however many frames share the column. The
+// bounds are the average frame time +-50%; a frame outside them widens them for as long as it's on the graph.
+void Game::frameGraphFeed(double dt) {
+    if (!ftOn_) {   // (just opened: start empty, so nothing from before F3 was on is shown)
+        for (FtCol& c : ftCols_) c = FtCol{};
+        ftHead_ = 0; ftClock_ = 0; ftOn_ = true;
+    }
+    // a frame longer than a column covers the columns it spanned (drawn as its time, not counted twice)
+    ftClock_ += dt;
+    const float f = (float)dt;
+    while (ftClock_ >= kFtColSec) {
+        ftClock_ -= kFtColSec;
+        ftHead_ = (ftHead_ + 1) % kFtCols;
+        FtCol& c = ftCols_[ftHead_];
+        c = FtCol{};
+        if (ftClock_ >= kFtColSec) { c.lo = c.hi = f; c.used = true; }   // (inside the long frame)
+    }
+    FtCol& c = ftCols_[ftHead_];
+    if (!c.used) { c.lo = c.hi = f; c.used = true; }
+    else { c.lo = std::min(c.lo, f); c.hi = std::max(c.hi, f); }
+    c.sum += f; c.n++;
+}
+
+void Game::drawFrameGraph(float x, float y, float ts) {
+    double sum = 0, worst = 0, best = 1e9;
+    long n = 0;
+    for (const FtCol& c : ftCols_) {
+        if (!c.used) continue;
+        sum += c.sum; n += c.n;
+        worst = std::max(worst, (double)c.hi); best = std::min(best, (double)c.lo);
+    }
+    if (n < 2 || sum <= 0) return;
+    const double avg = sum / n;
+    const double top = std::max(avg * 1.5, worst), bot = std::min(avg * 0.5, best);   // (+-50%, or what escaped it)
+    const float lh = r_.textHeight(ts) + 4;
+    // (narrow enough to stay left of the HUD's centre bars, which start at about 43% of the screen's width)
+    const float W = std::max(200.0f, (float)r_.width() * 0.40f - x - 12), H = std::round(lh * 3.0f);
+    char head[160];
+    snprintf(head, sizeof head, "FRAME TIMES 5 S: AVG %.0f  BEST %.0f  WORST %.0f US", avg * 1e6, best * 1e6, worst * 1e6);
+    char foot[128];
+    snprintf(foot, sizeof foot, "TOP %.0f  BOTTOM %.0f US (AVG +-50%% OR WIDER)", top * 1e6, bot * 1e6);
+    const float boxW = std::max({W, r_.textWidth(head, ts), r_.textWidth(foot, ts)}) + 12;
+    r_.rect(x, y, boxW, H + lh * 2 + 8, {0, 0, 0, 0.6f});
+    r_.text(x + 6, y + 4, ts, head, {1, 1, 0.4f, 1});
+    const float gx = x + 6, gy = y + 4 + lh, gb = gy + H;
+    r_.rect(gx, gy, W, H, {1, 1, 1, 0.06f});
+    const Color cLine = cfg_.f3Safe ? Color{0.34f, 0.71f, 0.91f, 1} : Color{0.45f, 0.95f, 0.5f, 1};
+    auto yOf = [&](double dt) { return gb - (float)clampf((float)((dt - bot) / (top - bot)), 0, 1) * H; };
+    const float cw = W / kFtCols;
+    for (int i = 0; i < kFtCols; i++) {   // oldest (after the head) to newest (the head)
+        const FtCol& c = ftCols_[(ftHead_ + 1 + i) % kFtCols];
+        if (!c.used) continue;
+        const float y0 = yOf(c.hi), y1 = yOf(c.lo);
+        r_.rect(gx + i * cw, y0, std::max(1.0f, cw), std::max(1.5f, y1 - y0), cLine);
+    }
+    for (float dx = 0; dx < W; dx += 8) r_.rect(gx + dx, yOf(avg), 4, 1, {1, 1, 1, 0.5f});   // the average, dashed
+    r_.text(x + 6, gb + 4, ts, foot, {0.7f, 0.7f, 0.75f, 1});
 }
 
 
