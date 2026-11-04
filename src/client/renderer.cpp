@@ -6,6 +6,9 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#if defined(__SSE2__) || defined(_M_X64)
+#include <emmintrin.h>
+#endif
 #include "font_ui.h"
 #include "logo_data.h"
 #include "overrides.h"
@@ -47,6 +50,10 @@ TextMetrics& uiMetrics() {
     return m;
 }
 
+#ifndef GL_HALF_FLOAT
+#define GL_HALF_FLOAT 0x140B   // (GL 3.0 core: DynVertex's half-float attributes)
+#endif
+
 const char* kWorldVS = R"(#version 330 core
 layout(location=0) in vec3 aPos;
 layout(location=1) in vec3 aNormal;
@@ -54,12 +61,14 @@ layout(location=2) in vec2 aUV;
 layout(location=3) in float aMat;
 layout(location=4) in vec4 aEdge;
 uniform mat4 uViewProj;
+layout(std140) uniform Latch { mat4 uLatchVP; };
+uniform int uLatchUse;   // (GPU LATE LATCH: the view from the latch buffer, written until the GPU starts the frame)
 uniform mat4 uShadowMat;
 out vec3 vPos; out vec3 vN; out vec2 vUV; out float vMat; out vec4 vShadow; out vec4 vEdge;
 void main() {
     vPos = aPos; vN = aNormal; vUV = aUV; vMat = aMat; vEdge = aEdge;
     vShadow = uShadowMat * vec4(aPos + aNormal * 0.04, 1.0);
-    gl_Position = uViewProj * vec4(aPos, 1.0);
+    gl_Position = (uLatchUse != 0 ? uLatchVP : uViewProj) * vec4(aPos, 1.0);
 })";
 
 const char* kShadowFn = R"(
@@ -179,8 +188,12 @@ vec2 stones(vec2 p) {
         float d = dot(r, r);
         if (d < md) { md = d; mr = r; mg = g; }
     }
+    // (the border pass over the 3 x 3 around the nearest cell, not 5 x 5: 9 cells instead of 25. A bisector that
+    // could be nearer lies two cells out only where a point sits in a far corner; such a miss shifts a joint by a
+    // fraction of a centimetre, below a pixel: cobblestone's 0.1% low on q's all-cobblestone benchmark map was 800 FPS
+    // against 2800 for the old materials, 2026-10-29)
     md = 8.0;
-    for (int y = -2; y <= 2; y++) for (int x = -2; x <= 2; x++) {
+    for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
         vec2 g = mg + vec2(x, y), r = g + hash22(i + g) - f, e = r - mr;
         if (dot(e, e) > 1e-5) md = min(md, dot(0.5 * (mr + r), normalize(e)));
     }
@@ -350,8 +363,16 @@ void main() {
         albedo = lin(mix(vec3(0.32, 0.22, 0.13), vec3(0.18, 0.12, 0.07), pud)) * (0.85 + 0.25 * fbm(q * 4.0));
         spec = 0.7 * pud; gloss = 80.0;
     } else if (mat == 24) {   // cobblestone: rounded grey stones in dark joints
-        vec2 w = stones(q * 3.0);
-        albedo = lin(mix(vec3(0.25, 0.24, 0.22), vec3(0.55, 0.53, 0.5) * (0.8 + 0.3 * w.y), smoothstep(0.015, 0.06, w.x))) * (0.9 + 0.15 * fbm(q * 8.0));
+        // far / grazing (a stone under ~2.5 pixels): the stones' average colour, without the cells at all, faded in
+        // over the same footprint the noise fades over (no pop); the grain is one octave of noise, not three
+        float far = noiseFade(footprint(q * 3.0) * 0.5);
+        vec3 avg = mix(vec3(0.25, 0.24, 0.22), vec3(0.55, 0.53, 0.5) * 0.95, 0.85);
+        vec3 c = avg;
+        if (far > 0.0) {
+            vec2 w = stones(q * 3.0);
+            c = mix(avg, mix(vec3(0.25, 0.24, 0.22), vec3(0.55, 0.53, 0.5) * (0.8 + 0.3 * w.y), smoothstep(0.015, 0.06, w.x)), far);
+        }
+        albedo = lin(c) * (0.9 + 0.15 * (0.5 * vnoiseAA(q * 8.0) + 0.5 * vnoiseAA(q * 16.1 + 17.1)));
     } else if (mat == 25) {   // concrete: cast slabs 1.2 x 0.6 m with form-tie holes
         vec2 c = fract(q / vec2(1.2, 0.6));
         float seam = min(min(c.x, 1.0 - c.x) * 1.2, min(c.y, 1.0 - c.y) * 0.6), tie = length((fract(q / vec2(0.6, 0.3)) - 0.5) * vec2(0.6, 0.3));
@@ -495,6 +516,20 @@ void main() {
     fragColor = vec4(clamp((c + (n + s + w + e) * k) / (1.0 + 4.0 * k), 0.0, 1.0), 1.0);
 })";
 
+// HUD BEFORE WORLD (LATENCY tab, ULTRA): the HUD drawn into its own layer before the late read, laid over the world
+// after it with one triangle (premultiplied: the layer was drawn with its alpha accumulated)
+const char* kLayerVS = R"(#version 330 core
+out vec2 vUV;
+void main() {
+    vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+    vUV = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+})";
+const char* kLayerFS = R"(#version 330 core
+in vec2 vUV;
+uniform sampler2D uLayer;
+out vec4 fragColor;
+void main() { fragColor = texture(uLayer, vUV); })";
+
 // sky: one full-screen triangle at the far plane, drawn after the world so only uncovered pixels shade
 const char* kSkyVS = R"(#version 330 core
 out vec2 vNdc;
@@ -545,21 +580,24 @@ void main() {
 
 const char* kDynVS = R"(#version 330 core
 layout(location=0) in vec3 aPos;
-layout(location=1) in vec3 aNormal;
-layout(location=2) in vec4 aColor;
-layout(location=3) in vec4 aEdge;
+layout(location=1) in vec4 aNormal;  // x 32767 (16-bit integers, not normalized by GL: 0 and +-1 exact on every driver); w: PLAYER SATURATION (0: none, else 1 + sat x 16383)
+layout(location=2) in vec4 aColor;   // (half floats, as aEdge and aOutline)
+layout(location=3) in vec4 aEdge;    // the distances to edges 0 and 1, then to 2 and 3
 layout(location=4) in vec4 aOutline; // rgb: the edge colour, a: its width (pixels)
 uniform mat4 uViewProj;
+layout(std140) uniform Latch { mat4 uLatchVP; };
+uniform int uLatchUse;
 uniform mat4 uShadowMat;
-out vec3 vPos; out vec3 vN; out vec4 vColor; out vec4 vShadow; out vec4 vEdge; out vec3 vOutline; flat out float vOutlineW;
+out vec3 vPos; out vec3 vN; out vec4 vColor; out vec4 vShadow; out vec4 vEdge; out vec3 vOutline; flat out float vOutlineW; flat out float vSat;
 void main() {
-    vPos = aPos; vN = aNormal; vColor = aColor; vEdge = aEdge; vOutline = aOutline.rgb; vOutlineW = aOutline.a;
-    vShadow = uShadowMat * vec4(aPos + aNormal * 0.03, 1.0);
-    gl_Position = uViewProj * vec4(aPos, 1.0);
+    vPos = aPos; vN = aNormal.xyz / 32767.0; vSat = aNormal.w == 0.0 ? 1.0 : (aNormal.w - 1.0) / 16383.0; vColor = aColor; vOutline = aOutline.rgb; vOutlineW = aOutline.a;
+    vEdge = vec4(aEdge.xy, aEdge.xy + aEdge.zw);   // (outline() takes edges 2 and 3 as zw - xy)
+    vShadow = uShadowMat * vec4(aPos + vN * 0.03, 1.0);
+    gl_Position = (uLatchUse != 0 ? uLatchVP : uViewProj) * vec4(aPos, 1.0);
 })";
 
 const char* kDynFS = R"(
-in vec3 vPos; in vec3 vN; in vec4 vColor; in vec4 vShadow; in vec4 vEdge; in vec3 vOutline; flat in float vOutlineW;
+in vec3 vPos; in vec3 vN; in vec4 vColor; in vec4 vShadow; in vec4 vEdge; in vec3 vOutline; flat in float vOutlineW; flat in float vSat;
 uniform vec3 uSunColor, uSkyColor, uSunDir, uFogColor, uCamPos;
 uniform float uFogDensity;
 uniform int uReceiveShadow;
@@ -581,6 +619,7 @@ void main() {
     vec3 light = uSkyColor * (0.6 + 0.25 * vN.y) + uSunColor * ndl * vColor.a * sh;
     float e = 0.3 + uEmitAdd;
     vec3 body = vColor.rgb * (light * (1.0 - e) + e);
+    if (vSat != 1.0) body = max(mix(vec3(dot(body, vec3(0.2126, 0.7152, 0.0722))), body, vSat), 0.0);   // VIDEO > MORE 4: PLAYER SATURATION (players' bodies, not their outlines)
     vec3 c = mix(mix(vOutline, body, uOutlineFade), body, outline(vEdge, vOutlineW)); // partly emissive so team colors stay readable; edges in the outline colour
     float d = length(vPos - uCamPos);
     c = mix(c, uFogColor, 1.0 - exp(-d * uFogDensity)) * uBright;
@@ -591,8 +630,10 @@ const char* kFlatVS = R"(#version 330 core
 layout(location=0) in vec3 aPos;
 layout(location=1) in vec4 aColor;
 uniform mat4 uViewProj;
+layout(std140) uniform Latch { mat4 uLatchVP; };
+uniform int uLatchUse;
 out vec4 vColor;
-void main() { vColor = aColor; gl_Position = uViewProj * vec4(aPos, 1.0); })";
+void main() { vColor = aColor; gl_Position = (uLatchUse != 0 ? uLatchVP : uViewProj) * vec4(aPos, 1.0); })";
 const char* kFlatFS = R"(#version 330 core
 in vec4 vColor;
 uniform float uFade;   // (as the dynamic shader's: the view model's translucent parts)
@@ -745,8 +786,15 @@ static std::string worldLooks(const std::vector<bool>* used) {
     return s + "}\n";
 }
 
-unsigned Renderer::compileWorld(const std::vector<bool>* used, std::string* err) {
+unsigned Renderer::compileWorld(const std::vector<bool>* used, std::string* err, bool noDiscard) {
     std::string fs = std::string("#version 330 core\n") + kShadowFn + kWorldFS;
+    if (noDiscard)   // (the opaque pass with no holes: neither discard can happen there, and without them the GPU tests depth first)
+        for (const char* d : {"if (uHoleCount > 0 && (mat == 20 || mat == 24) && vMat - float(mat) > 0.1 && inHole()) discard;",
+                              "if (blended && alpha < 0.01) discard;"}) {
+            const size_t at = fs.find(d);
+            if (at == std::string::npos) { if (err) *err += std::string("no-discard world shader: missing ") + d; return 0; }
+            fs.erase(at, strlen(d));
+        }
     const size_t at = fs.find("// @LOOKS@");
     fs.replace(at, fs.find('\n', at) - at, worldLooks(used));
     // the large patterns: material kMatLarge + i draws kLarge[i].base's look with the face's plane divided by its scale
@@ -774,7 +822,7 @@ void Renderer::setWorldLooks(const BakedWorld& bw) {
         if (m >= 12 && m < kMapMaterials) cleanUsed_[(size_t)(m >= kMatLarge && m < kMatSemi ? kLarge[m - kMatLarge].base : m)] = true;
     }
     for (size_t m = 0; m < seeUsed_.size(); m++) if (seeUsed_[m]) cleanUsed_[m] = true;
-    cleanKey_.clear();
+    cleanKey_ = {};
     if (used == worldUsed_ && worldProg_) return;
     QZONE("world shader");
     std::string err;
@@ -784,7 +832,61 @@ void Renderer::setWorldLooks(const BakedWorld& bw) {
     worldProg_ = p;
     worldUsed_ = used;
     initWorldUniforms();
+    buildWorldFast();
     glUseProgram(0);
+}
+
+void Renderer::buildWorldFast() {
+    if (worldFastProg_) glDeleteProgram(worldFastProg_);
+    worldFastProg_ = 0; worldFastFor_ = 0; worldFastCopy_.clear();
+    if (getenv("QUARK_WORLD_DISCARD")) return;   // (A/B: the old single program)
+    std::string err;
+    const unsigned f = compileWorld(&worldUsed_, &err, true);
+    if (!f) { fprintf(stderr, "world shader (no discard): %s\n", err.c_str()); return; }
+    // every active uniform outside a block, each array element on its own: where it is in each program
+    GLint n = 0;
+    glGetProgramiv(f, GL_ACTIVE_UNIFORMS, &n);
+    for (GLint i = 0; i < n; i++) {
+        char name[256]; GLsizei len = 0; GLint size = 0; GLenum type = 0;
+        glGetActiveUniform(f, (GLuint)i, sizeof name, &len, &size, &type, name);
+        std::string base(name, (size_t)len);
+        if (size > 1 && base.size() > 3 && base.compare(base.size() - 3, 3, "[0]") == 0) base.resize(base.size() - 3);
+        for (GLint e = 0; e < size; e++) {
+            const std::string nm = size > 1 ? base + "[" + std::to_string(e) + "]" : base;
+            const GLint to = glGetUniformLocation(f, nm.c_str()), from = glGetUniformLocation(worldProg_, nm.c_str());
+            if (to < 0) continue;   // (in a block: the latch's, bound below)
+            if (from < 0) { fprintf(stderr, "world shader (no discard): %s not in the main program\n", nm.c_str()); glDeleteProgram(f); worldFastCopy_.clear(); return; }
+            worldFastCopy_.push_back({from, to, type});
+        }
+    }
+    latchBlock(f);
+    worldFastProg_ = f;
+    worldFastFor_ = worldProg_;
+    uWorldFast_ = worldLocs(f);
+    worldFastDirty_ = true;
+}
+
+// worldProg_'s uniform values into the no-discard program after a setting changed them (not every frame); leaves it bound
+void Renderer::syncWorldFast() {
+    glUseProgram(worldFastProg_);
+    if (!worldFastDirty_) return;
+    worldFastDirty_ = false;
+    QZONE("world fast: full copy");
+    for (const UniformCopy& u : worldFastCopy_) {
+        float f[16]; GLint i[4];
+        switch (u.type) {
+            case GL_FLOAT: glGetUniformfv(worldProg_, u.from, f); glUniform1fv(u.to, 1, f); break;
+            case GL_FLOAT_VEC2: glGetUniformfv(worldProg_, u.from, f); glUniform2fv(u.to, 1, f); break;
+            case GL_FLOAT_VEC3: glGetUniformfv(worldProg_, u.from, f); glUniform3fv(u.to, 1, f); break;
+            case GL_FLOAT_VEC4: glGetUniformfv(worldProg_, u.from, f); glUniform4fv(u.to, 1, f); break;
+            case GL_FLOAT_MAT3: glGetUniformfv(worldProg_, u.from, f); glUniformMatrix3fv(u.to, 1, GL_FALSE, f); break;
+            case GL_FLOAT_MAT4: glGetUniformfv(worldProg_, u.from, f); glUniformMatrix4fv(u.to, 1, GL_FALSE, f); break;
+            case GL_INT_VEC2: glGetUniformiv(worldProg_, u.from, i); glUniform2iv(u.to, 1, i); break;
+            case GL_INT_VEC3: glGetUniformiv(worldProg_, u.from, i); glUniform3iv(u.to, 1, i); break;
+            case GL_INT_VEC4: glGetUniformiv(worldProg_, u.from, i); glUniform4iv(u.to, 1, i); break;
+            default: glGetUniformiv(worldProg_, u.from, i); glUniform1i(u.to, i[0]); break;   // (int, bool, samplers)
+        }
+    }
 }
 unsigned Renderer::compile(const char* vs, const char* fs, std::string* err) {
     auto sh = [&](GLenum type, const char* src) -> unsigned {
@@ -822,14 +924,21 @@ unsigned Renderer::compile(const char* vs, const char* fs, std::string* err) {
 
 // The world program's uniform locations, and the values that never change (init; again after setWorldLooks builds a new
 // one: the per-frame ones are set again by the next frame, the holes' here)
+Renderer::WorldLocs Renderer::worldLocs(unsigned prog) {
+    return {U(prog, "uViewProj"), U(prog, "uShadowMat"), U(prog, "uShadowOn"), U(prog, "uCasterRect"),
+               U(prog, "uCamPos"), U(prog, "uFogColor"), U(prog, "uBright"), U(prog, "uBaseL"),
+               U(prog, "uAccentL"), U(prog, "uWallbangL"), U(prog, "uMetalL"), U(prog, "uFloorL"),
+               U(prog, "uMetal"), U(prog, "uGlow"), U(prog, "uFull"), U(prog, "uFullColor"), U(prog, "uOutlineW"),
+               U(prog, "uTime"), U(prog, "uSunDir"), U(prog, "uAlphaPass"), U(prog, "uLatchUse"),
+               U(prog, "uWorldEdge")};
+}
+
 void Renderer::initWorldUniforms() {
+    worldFastDirty_ = true;
     glUseProgram(worldProg_);
-    uWorld_ = {U(worldProg_, "uViewProj"), U(worldProg_, "uShadowMat"), U(worldProg_, "uShadowOn"), U(worldProg_, "uCasterRect"),
-               U(worldProg_, "uCamPos"), U(worldProg_, "uFogColor"), U(worldProg_, "uBright"), U(worldProg_, "uBaseL"),
-               U(worldProg_, "uAccentL"), U(worldProg_, "uWallbangL"), U(worldProg_, "uMetalL"), U(worldProg_, "uFloorL"),
-               U(worldProg_, "uMetal"), U(worldProg_, "uGlow"), U(worldProg_, "uFull"), U(worldProg_, "uFullColor"), U(worldProg_, "uOutlineW"),
-               U(worldProg_, "uTime"), U(worldProg_, "uSunDir"), U(worldProg_, "uAlphaPass")};
+    uWorld_ = worldLocs(worldProg_);
     glUniform1f(uWorld_.alphaPass, 0.0f);
+    latchBlock(worldProg_);
     uHoleCount_ = U(worldProg_, "uHoleCount");
     uHoleGrid_ = U(worldProg_, "uHoleGrid"); uHoleGridH_ = U(worldProg_, "uHoleGridH");
     glUniform1i(U(worldProg_, "uHoles"), 2);
@@ -839,7 +948,7 @@ void Renderer::initWorldUniforms() {
     glUniform1i(U(worldProg_, "uLightmap"), 0);
     glUniform1i(U(worldProg_, "uShadow"), 1);
     glUniform1i(U(worldProg_, "uCleanTex"), 5);
-    cleanKey_.clear();   // (a new program: its averages again)
+    cleanKey_ = {};   // (a new program: its averages again)
     glUniform1f(U(worldProg_, "uShadowTexel"), 1.0f / shadowRes_);
     setVec3(U(worldProg_, "uSunColor"), Vec3(0.78f, 0.75f, 0.70f));
     setVec3(U(worldProg_, "uSkyColor"), Vec3(0.42f, 0.45f, 0.52f));
@@ -861,6 +970,7 @@ int Renderer::setShadowRes(int res) {
     if (maxTex > 0 && res > maxTex) res = (int)maxTex;
     res = res < 256 ? 256 : res;
     if (res == shadowRes_ || !shadowTex_) return shadowRes_;
+    worldFastDirty_ = true;   // (worldProg_'s uniforms change: the no-discard program copies them)
     shadowRes_ = res;
     glBindTexture(GL_TEXTURE_2D, shadowTex_);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, shadowRes_, shadowRes_, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
@@ -888,6 +998,7 @@ bool Renderer::init(int shadowRes, std::string* err) {
     flatProg_ = compile(kFlatVS, kFlatFS, err);
     shadowProg_ = compile(kShadowVS, kShadowFS, err);
     uiProg_ = compile(kUiVS, kUiFS, err);
+    layerProg_ = compile(kLayerVS, kLayerFS, err);
     skyProg_ = compile(kSkyVS, kSkyFS, err);
     edgeProg_ = compile(kEdgeVS, kEdgeFS, err);
     sharpProg_ = compile(kEdgeVS, kSharpFS, err);
@@ -987,9 +1098,12 @@ bool Renderer::init(int shadowRes, std::string* err) {
     const Vec3 skyLight = {0.42f, 0.45f, 0.52f};
     const float fog = kFogDensity * fogMul_;
     initWorldUniforms();
+    buildWorldFast();
     glUseProgram(dynProg_);
     uDyn_ = {U(dynProg_, "uViewProj"), U(dynProg_, "uShadowMat"), U(dynProg_, "uShadowOn"), U(dynProg_, "uCasterRect"),
-             U(dynProg_, "uCamPos"), U(dynProg_, "uFogColor"), U(dynProg_, "uBright"), U(dynProg_, "uReceiveShadow"), U(dynProg_, "uSunDir")};
+             U(dynProg_, "uCamPos"), U(dynProg_, "uFogColor"), U(dynProg_, "uBright"), U(dynProg_, "uReceiveShadow"), U(dynProg_, "uSunDir"),
+             U(dynProg_, "uLatchUse")};
+    latchBlock(dynProg_);
     glUniform1i(U(dynProg_, "uShadow"), 1);
     glUniform1f(U(dynProg_, "uShadowTexel"), 1.0f / shadowRes_);
     setVec3(U(dynProg_, "uSunColor"), sunColor);
@@ -1005,6 +1119,8 @@ bool Renderer::init(int shadowRes, std::string* err) {
     glUniform3f(U(skyProg_, "uGrade"), grade_.x, grade_.y, grade_.z);
     lookUniforms(dynProg_); lookUniforms(skyProg_);
     uFlatViewProj_ = U(flatProg_, "uViewProj");
+    uFlatLatch_ = U(flatProg_, "uLatchUse");
+    latchBlock(flatProg_);
     uDynFade_ = U(dynProg_, "uFade"); uFlatFade_ = U(flatProg_, "uFade");
     uShadowViewProj_ = U(shadowProg_, "uViewProj");
     glUseProgram(uiProg_);
@@ -1035,7 +1151,7 @@ bool Renderer::init(int shadowRes, std::string* err) {
     uiScreen_[0] = uiScreen_[1] = edgeRcp_[0] = edgeRcp_[1] = sharpRcp_[0] = sharpRcp_[1] = 0;   // (set on first use)
 
     // the frame's vertex lists sized for a busy frame up front, so one never grows them mid-frame
-    dyn_.reserve(16384); dynShadowOnly_.reserve(16384);
+    dyn_.reserve(16384); dynShadowOnly_.reserve(16384); casters_.reserve(1024);
     dynNoCast_.reserve(2048); view_.reserve(2048);
     flat_.reserve(4096); viewFlat_.reserve(4096);
     return true;
@@ -1089,6 +1205,7 @@ void Renderer::prepareWorld(const Map& map, PreparedWorld& w, const std::functio
 // The holes blown in thin brick / cobblestone (Map::holes): two RGBA32F texels each on texture unit 2, which nothing
 // else uses. Sent when they change (Map::destructSerial), not every frame.
 void Renderer::setHoles(const std::vector<Map::Hole>& holes) {
+    worldFastDirty_ = true;   // (worldProg_'s uniforms change: the no-discard program copies them)
     const int n = (int)std::min<size_t>(holes.size(), kMaxHoles);
     glUseProgram(worldProg_);
     glUniform1i(uHoleCount_, n);
@@ -1288,23 +1405,118 @@ void Renderer::uploadBlocks(const Map& map) {
 }
 
 // Drivers compile shader variants and pipeline states lazily, on the first draw that uses them, which
-// is a 30-60 ms hitch on the first frame of a match (and on the first explosion, beam, ...). Draw one
-// throwaway frame that touches every program and state while the loading screen is up, and wait for it.
+// is a 30-60 ms hitch on the first frame of a match (and on the first explosion, beam, ...). Draw throwaway
+// frames that touch every program and state while the loading screen is up, and wait for them.
+// Two frames, as a match draws them (drawScene: the MSAA / RENDER SCALE target and its resolve, the world and its
+// breakable blocks, the sky, the see-through pass, shadows), and between them what a match can turn on later: the
+// GPU late latch's buffer and its read (latchInit used to run on the first frame in play), the view model's fade
+// (WEAPON MODEL OPACITY below 100%: a depth-only draw, then a blended one) and its translucent parts. The second also
+// re-sends the stream buffers while the first frame may still use them (the driver's orphan path), and faces the
+// other way, so more of the world is drawn. Never shown: the bake screen draws over it, glClear after.
 void Renderer::warmup(const Map& map) {
     QZONE("renderer warmup");
-    Vec3 c = map.bounds.center();
-    setCamera(c + Vec3(0, 2, 0), 0, 0, 90);
-    box(c, {0.3f, 0.3f, 0.3f}, 0, {0.5f, 0.5f, 0.5f}, 1.0f, true, true);   // dynamic + shadow caster
-    box(c, {0.3f, 0.3f, 0.3f}, 0, {0.5f, 0.5f, 0.5f}, 1.0f, true, false);  // shadow-only caster
-    translucentBox({c, c + Vec3(0.5f, 0.5f, 0.5f)}, {1, 1, 1, 0.3f});       // blended pass
-    line(c, c + Vec3(0, 1, 0), 0.05f, {1, 1, 1, 0.5f});
-    viewBox({0.2f, -0.2f, -0.5f}, {0.02f, 0.02f, 0.1f}, {0.5f, 0.5f, 0.5f}); // first-person pass
-    drawScene(true);
-    rect(0, 0, 4, 4, {1, 1, 1, 0.5f});
-    text(0, 0, 2, "A", {1, 1, 1, 1});
-    flush2D();
+    if (!latchUbo_) latchInit();
+    const Vec3 c = map.bounds.center();
+    for (int pass = 0; pass < 2; pass++) {
+        setCamera(c + Vec3(0, 2, 0), pass ? PI : 0.0f, pass ? -0.3f : 0.0f, 90);
+        box(c, {0.3f, 0.3f, 0.3f}, 0, {0.5f, 0.5f, 0.5f}, 1.0f, true, true);   // dynamic + shadow caster
+        box(c, {0.3f, 0.3f, 0.3f}, 0, {0.5f, 0.5f, 0.5f}, 1.0f, true, false);  // shadow-only caster
+        translucentBox({c, c + Vec3(0.5f, 0.5f, 0.5f)}, {1, 1, 1, 0.3f});       // blended pass
+        line(c, c + Vec3(0, 1, 0), 0.05f, {1, 1, 1, 0.5f});
+        viewBox({0.2f, -0.2f, -0.5f}, {0.02f, 0.02f, 0.1f}, {0.5f, 0.5f, 0.5f}); // first-person pass
+        if (pass) {   // the view model's translucent parts (an override model's glass), and its fade
+            const Vec3 v = viewPoint({0.2f, -0.2f, -0.5f});
+            for (const Vec3& q : {v, v + Vec3(0.02f, 0, 0), v + Vec3(0, 0.02f, 0)}) {
+                FlatVertex fv;
+                memcpy(fv.pos, &q.x, 12);
+                fv.color[0] = fv.color[1] = fv.color[2] = 1; fv.color[3] = 0.5f;
+                viewFlat_.push_back(fv);
+            }
+            viewOpacity = 0.5f;   // (drawScene puts it back to 1)
+        }
+        latchArm(pass == 0, 0, 0);   // (the first with the late latch's read, where the driver has it; the second without)
+        drawScene(true);
+        rect(0, 0, 4, 4, {1, 1, 1, 0.5f});
+        text(0, 0, 2, "A", {1, 1, 1, 1});
+        flush2D();
+    }
+    latchArm(false, 0, 0);
     glFinish();
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+}
+
+// ---- GPU LATE LATCH (LATENCY tab; owner, 2026-11-02) -------------------------------------------------------------------
+// The main view's matrix also lives in a small ring of uniform-buffer slots, persistently mapped and coherent, so a write
+// from the CPU reaches the GPU without a GL call. The game arms the frame's slot at its late read (latchArm: the eye,
+// the projection, the aim then); the raw mouse thread then writes each newer aim into it (latchMouse) until the next
+// frame's read disarms it. Whatever the GPU reads when it starts the world is the newest aim. A ring of 3: the GPU may
+// still read the last frame's slot while this one is written (LOW LATENCY keeps at most one frame queued).
+
+void Renderer::latchBlock(GLuint prog) {
+    const GLuint i = glGetUniformBlockIndex(prog, "Latch");
+    if (i != GL_INVALID_INDEX) glUniformBlockBinding(prog, i, 0);
+}
+
+bool Renderer::latchInit() {
+    if (latchUbo_) return latchMap_ != nullptr;
+    GLint64 align = 256;
+    glGetInteger64v(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, &align);
+    latchStride_ = (int)std::max<GLint64>(64, ((64 + align - 1) / align) * align);
+    glGenBuffers(1, &latchUbo_);
+    glBindBuffer(GL_UNIFORM_BUFFER, latchUbo_);
+    const GLsizeiptr size = (GLsizeiptr)latchStride_ * kLatchSlots;
+    if (glBufferStorageOpt && latchSupported) {
+        glBufferStorageOpt(GL_UNIFORM_BUFFER, size, nullptr, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
+        latchMap_ = (uint8_t*)glMapBufferRange(GL_UNIFORM_BUFFER, 0, size, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
+    }
+    if (!latchMap_) {   // (no buffer storage: a plain buffer, so the shaders' block is bound to something; never latched)
+        std::vector<uint8_t> zero((size_t)size, 0);
+        glBufferData(GL_UNIFORM_BUFFER, size, zero.data(), GL_DYNAMIC_DRAW);
+    }
+    glBindBufferRange(GL_UNIFORM_BUFFER, 0, latchUbo_, 0, 64);
+    glBindBuffer(GL_UNIFORM_BUFFER, 0);
+    return latchMap_ != nullptr;
+}
+
+void Renderer::latchWriteLocked(float yaw, float pitch) {
+    const Vec3 fwd = angleForward(yaw, pitch);
+    const Mat4 vp = latchProj_ * Mat4::lookAt(latchEye_, latchEye_ + fwd, {0, 1, 0});
+    std::memcpy(latchMap_ + (size_t)latchSlot_ * latchStride_, vp.m, 64);
+    latchWrites_.fetch_add(1, std::memory_order_relaxed);
+    latchLastWrite_.store(latchClock ? latchClock() : 0.0, std::memory_order_relaxed);
+}
+
+void Renderer::latchArm(bool on, float kYaw, float kPitch) {
+    if (!latchUbo_) latchInit();
+    while (latchLock_.test_and_set(std::memory_order_acquire)) {}
+    latchArmed_ = false;
+    latchUse_ = on && latchMap_;
+    if (latchUse_) {
+        latchSlot_ = (latchSlot_ + 1) % kLatchSlots;
+        latchEye_ = camPos_; latchProj_ = proj_;
+        latchYaw_ = camYaw_; latchPitch_ = camPitch_;
+        latchKYaw_ = kYaw; latchKPitch_ = kPitch;
+        latchWriteLocked(latchYaw_, latchPitch_);   // (the aim now: as the CPU's view, until the mouse moves)
+        latchArmed_ = true;
+        glBindBufferRange(GL_UNIFORM_BUFFER, 0, latchUbo_, (GLintptr)latchSlot_ * latchStride_, 64);
+    }
+    latchLock_.clear(std::memory_order_release);
+}
+
+void Renderer::latchDisarm() {
+    while (latchLock_.test_and_set(std::memory_order_acquire)) {}
+    latchArmed_ = false;
+    latchLock_.clear(std::memory_order_release);
+}
+
+void Renderer::latchMouse(double dx, double dy) {   // (the raw mouse thread: the counts since the game's last read)
+    if (latchLock_.test_and_set(std::memory_order_acquire)) return;   // (the game is arming / disarming: skip this report)
+    if (latchArmed_) {
+        const float yaw = std::remainder(latchYaw_ - (float)dx * latchKYaw_, 2 * PI);
+        const float pitch = clampf(latchPitch_ - (float)dy * latchKPitch_, -1.55f, 1.55f);
+        latchWriteLocked(yaw, pitch);
+    }
+    latchLock_.clear(std::memory_order_release);
 }
 
 void Renderer::relatch(float yaw, float pitch) {
@@ -1363,24 +1575,86 @@ bool Renderer::project(const Vec3& p, float& sx, float& sy) const {
     return true;
 }
 
-void Renderer::addQuad(std::vector<DynVertex>& out, const Vec3* c, const Vec3& n, const Vec3& col, float sv) {
-    float w = length(c[1] - c[0]), h = length(c[3] - c[0]);
-    const float eu[4] = {0, w, w, 0}, ev[4] = {0, 0, h, h};
-    const size_t at = out.size();
-    out.resize(at + 6);   // (written in place: six push_backs, each checking capacity, per face of every box)
-    DynVertex* q = out.data() + at;
-    const int corner[4] = {0, 1, 2, 5};   // corners 0 1 2 land in slots 0 1 2, corner 3 in slot 5 (triangles 0 1 2, 0 2 3)
-    for (int i = 0; i < 4; i++) {
-        DynVertex& v = q[corner[i]];
-        memcpy(v.pos, &c[i].x, 12);
-        memcpy(v.normal, &n.x, 12);
-        v.color[0] = col.x; v.color[1] = col.y; v.color[2] = col.z; v.color[3] = sv;
-        v.edge[0] = eu[i]; v.edge[1] = ev[i]; v.edge[2] = w; v.edge[3] = h;
-        memcpy(v.outline, &outlineColor.x, 12);
-        v.outline[3] = outlineWidth;
+// float -> half (IEEE binary16), rounded to nearest even; too big: inf (F. Giesen's float_to_half_fast3_rtne: a few
+// integer ops, no F16C needed on the v2 build)
+static inline uint16_t halfOf(float f) {
+    uint32_t x;
+    memcpy(&x, &f, 4);
+    const uint32_t sign = x & 0x80000000u;
+    x ^= sign;
+    uint16_t o;
+    if (x >= 0x47800000u) o = x > 0x7f800000u ? 0x7e00 : 0x7c00;   // (inf, or NaN)
+    else if (x < 0x38800000u) {   // (a half denormal or zero: the FPU rounds it, added to 0.5)
+        float t;
+        memcpy(&t, &x, 4);
+        t += 0.5f;
+        uint32_t u;
+        memcpy(&u, &t, 4);
+        o = (uint16_t)(u - 0x3f000000u);
+    } else {
+        const uint32_t odd = (x >> 13) & 1;
+        x += ((uint32_t)(15 - 127) << 23) + 0xfff;   // (rebias the exponent, round the mantissa)
+        x += odd;
+        o = (uint16_t)(x >> 13);
     }
-    q[3] = q[0];
-    q[4] = q[2];
+    return (uint16_t)(o | (sign >> 16));
+}
+static inline uint64_t pack4(uint16_t a, uint16_t b, uint16_t c, uint16_t d) { return a | (uint64_t)b << 16 | (uint64_t)c << 32 | (uint64_t)d << 48; }
+#if defined(__SSE2__) || defined(_M_X64)
+#define QUARK_DYN_SSE 1
+// halfOf for 4 floats at once, bit for bit the same, packed 4 x 16 bits (a mesh converts every vertex's colour: one
+// at a time, its emission took 50% longer than with the 72-byte vertex)
+static inline uint64_t halfOf4(__m128 f) {
+    const __m128i sign = _mm_and_si128(_mm_castps_si128(f), _mm_set1_epi32((int)0x80000000u));
+    const __m128i x = _mm_xor_si128(_mm_castps_si128(f), sign);   // |f|
+    const __m128i infNan = _mm_or_si128(_mm_and_si128(_mm_cmpgt_epi32(x, _mm_set1_epi32(0x7f800000)), _mm_set1_epi32(0x200)), _mm_set1_epi32(0x7c00));
+    const __m128i regular = _mm_cmpgt_epi32(_mm_set1_epi32(0x47800000), x);
+    const __m128i sub = _mm_cmpgt_epi32(_mm_set1_epi32(0x38800000), x);
+    const __m128i half05 = _mm_set1_epi32(0x3f000000);
+    const __m128i subRes = _mm_sub_epi32(_mm_castps_si128(_mm_add_ps(_mm_castsi128_ps(x), _mm_castsi128_ps(half05))), half05);
+    const __m128i odd = _mm_and_si128(_mm_srli_epi32(x, 13), _mm_set1_epi32(1));
+    const __m128i normRes = _mm_srli_epi32(_mm_add_epi32(_mm_add_epi32(x, _mm_set1_epi32((int)(((uint32_t)(15 - 127) << 23) + 0xfff))), odd), 13);
+    const __m128i fin = _mm_or_si128(_mm_and_si128(sub, subRes), _mm_andnot_si128(sub, normRes));
+    __m128i h = _mm_or_si128(_mm_or_si128(_mm_and_si128(regular, fin), _mm_andnot_si128(regular, infNan)), _mm_srli_epi32(sign, 16));
+    h = _mm_srai_epi32(_mm_slli_epi32(h, 16), 16);   // (sign-extended: the saturating pack keeps the 16 bits as they are)
+    h = _mm_packs_epi32(h, h);
+    uint64_t r;
+    _mm_storel_epi64((__m128i*)&r, h);
+    return r;
+}
+// a unit normal, x 32767 (rounded) as 4 x 16 bits (w 0)
+static inline uint64_t packNormal4(__m128 n) {
+    __m128i i = _mm_cvtps_epi32(_mm_mul_ps(n, _mm_set1_ps(32767.0f)));
+    i = _mm_packs_epi32(i, i);
+    uint64_t r;
+    _mm_storel_epi64((__m128i*)&r, i);
+    return r;
+}
+static inline uint64_t packNormal(const Vec3& n) { return packNormal4(_mm_set_ps(0.0f, n.z, n.y, n.x)); }
+static inline uint64_t packColor(const Vec3& c, float a) { return halfOf4(_mm_set_ps(a, c.z, c.y, c.x)); }
+#else
+static inline uint64_t packNormal(const Vec3& n) {
+    auto q = [](float v) { return (uint16_t)(int16_t)(v * 32767.0f + (v >= 0 ? 0.5f : -0.5f)); };
+    return pack4(q(n.x), q(n.y), q(n.z), 0);
+}
+static inline uint64_t packColor(const Vec3& c, float a) { return pack4(halfOf(c.x), halfOf(c.y), halfOf(c.z), halfOf(a)); }
+#endif
+static inline void putVertex(DynVertex& v, const Vec3& p, uint64_t nrm, uint64_t col, uint64_t edge, uint64_t outl) {
+    memcpy(v.pos, &p.x, 12);
+    memcpy(v.normal, &nrm, 8);
+    memcpy(v.color, &col, 8);
+    memcpy(v.edge, &edge, 8);
+    memcpy(v.outline, &outl, 8);
+}
+
+// One box face, two triangles (corners 0 1 2, 0 2 3), w x h (as halfs). Each vertex written in place, 8 bytes at a
+// time: building one on the stack and copying it, or copying one just written (the old q[3] = q[0]), stalls on store
+// forwarding.
+static inline void putFace(DynVertex* q, const Vec3* c, uint64_t nrm, uint64_t col, uint64_t outl, uint16_t hw, uint16_t hh) {
+    // the distances to edges 0, 1 / 2, 3: corner 0 (0, 0 / w, h), 1 (w, 0 / 0, h), 2 (w, h / 0, 0), 3 (0, h / w, 0)
+    const uint64_t ed[4] = {pack4(0, 0, hw, hh), pack4(hw, 0, 0, hh), pack4(hw, hh, 0, 0), pack4(0, hh, hw, 0)};
+    const int idx[6] = {0, 1, 2, 0, 2, 3};
+    for (int k = 0; k < 6; k++) putVertex(q[k], c[idx[k]], nrm, col, ed[idx[k]], outl);
 }
 
 void Renderer::emitBox(std::vector<DynVertex>& out, const Mat4& xf, const Vec3& h, const Vec3& color, float sunVis) {
@@ -1392,20 +1666,30 @@ void Renderer::emitBox(std::vector<DynVertex>& out, const Mat4& xf, const Vec3& 
         const float* m = xf.m;
         return normalize(Vec3(m[0] * x + m[4] * y + m[8] * z, m[1] * x + m[5] * y + m[9] * z, m[2] * x + m[6] * y + m[10] * z));
     };
-    // the 8 corners once (each face used to transform its own 4: 24) and 3 normals (a face's opposite is the negation)
+    // the 8 corners once (each face used to transform its own 4: 24) and 3 normals (a face's opposite is the negation);
+    // the box's 3 edge lengths (each face is two of them: it measured its own two), the 4 face shades and the outline
+    // packed once a box, not once a face
     const Vec3 ppp = tp(h.x, h.y, h.z), ppm = tp(h.x, h.y, -h.z), pmp = tp(h.x, -h.y, h.z), pmm = tp(h.x, -h.y, -h.z);
     const Vec3 mpp = tp(-h.x, h.y, h.z), mpm = tp(-h.x, h.y, -h.z), mmp = tp(-h.x, -h.y, h.z), mmm = tp(-h.x, -h.y, -h.z);
     const Vec3 nx = tn(1, 0, 0), ny = tn(0, 1, 0), nz = tn(0, 0, 1);
+    const uint16_t lx = halfOf(length(ppp - mpp)), ly = halfOf(length(ppp - pmp)), lz = halfOf(length(ppp - ppm));
     auto neg = [](const Vec3& v) { return Vec3(-v.x, -v.y, -v.z); };
     const Vec3 xPos[4] = {pmp, pmm, ppm, ppp}, xNeg[4] = {mmm, mmp, mpp, mpm};   // (each face's corners in the old order)
     const Vec3 yPos[4] = {mpp, ppp, ppm, mpm}, yNeg[4] = {mmm, pmm, pmp, mmp};
     const Vec3 zPos[4] = {mmp, pmp, ppp, mpp}, zNeg[4] = {pmm, mmm, mpm, ppm};
-    addQuad(out, xPos, nx, color, sunVis);
-    addQuad(out, xNeg, neg(nx), color * 0.92f, sunVis);
-    addQuad(out, yPos, ny, color, sunVis);
-    addQuad(out, yNeg, neg(ny), color * 0.8f, sunVis);
-    addQuad(out, zPos, nz, color * 0.96f, sunVis);
-    addQuad(out, zNeg, neg(nz), color * 0.96f, sunVis);
+    const float sv = sunVis;
+    const uint64_t outl = pack4(halfOf(outlineColor.x), halfOf(outlineColor.y), halfOf(outlineColor.z), halfOf(outlineWidth));
+    const uint64_t c1 = packColor(color, sv), c96 = packColor(color * 0.96f, sv);
+    const uint64_t nw = satW();
+    const size_t at = out.size();
+    out.resize(at + 36);   // (DynVertex's constructor does nothing: no zero fill)
+    DynVertex* q = out.data() + at;
+    putFace(q, xPos, (packNormal(nx) | nw), c1, outl, lz, ly);
+    putFace(q + 6, xNeg, (packNormal(neg(nx)) | nw), packColor(color * 0.92f, sv), outl, lz, ly);
+    putFace(q + 12, yPos, (packNormal(ny) | nw), c1, outl, lx, lz);
+    putFace(q + 18, yNeg, (packNormal(neg(ny)) | nw), packColor(color * 0.8f, sv), outl, lx, lz);
+    putFace(q + 24, zPos, (packNormal(nz) | nw), c96, outl, lx, ly);
+    putFace(q + 30, zNeg, (packNormal(neg(nz)) | nw), c96, outl, lx, ly);
 }
 
 // Is a sphere (center, radius) at least partly inside the view frustum?
@@ -1419,10 +1703,10 @@ void Renderer::setupDynVao(unsigned vao, unsigned vbo) {
     glBindVertexArray(vao);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)0);
-    glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)12);
-    glEnableVertexAttribArray(2); glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)24);
-    glEnableVertexAttribArray(3); glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)40);
-    glEnableVertexAttribArray(4); glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)56);   // outline rgb + width
+    glEnableVertexAttribArray(1); glVertexAttribPointer(1, 4, GL_SHORT, GL_FALSE, sizeof(DynVertex), (void*)12);   // (x 32767: the shader divides; w: PLAYER SATURATION)
+    glEnableVertexAttribArray(2); glVertexAttribPointer(2, 4, GL_HALF_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)20);
+    glEnableVertexAttribArray(3); glVertexAttribPointer(3, 4, GL_HALF_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)28);
+    glEnableVertexAttribArray(4); glVertexAttribPointer(4, 4, GL_HALF_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)36);   // outline rgb + width
 }
 
 void Renderer::setStaticBoxes(const std::function<void()>& emit) {
@@ -1446,10 +1730,27 @@ void Renderer::box(const Vec3& center, const Vec3& half, float yaw, const Vec3& 
         staticItems_.push_back({center, length(half), first, (int)staticVerts_.size() - first});
         return;
     }
-    if (visible && !inView(center, length(half))) { visible = false; if (!castShadow) return; } // off screen: only its shadow can show
-    Mat4 xf = Mat4::translate(center) * Mat4::rotY(yaw);
-    if (visible) emitBox(dyn_, xf, half, color, sunVis);
-    else if (castShadow && shadowCasters) emitBox(dynShadowOnly_, xf, half, color, sunVis);
+    const float r = length(half);
+    if (visible && !inView(center, r)) { visible = false; if (!castShadow) return; } // off screen: only its shadow can show
+    if (!visible && !(castShadow && shadowCasters)) return;
+    emitBox(visible ? dyn_ : dynShadowOnly_, Mat4::translate(center) * Mat4::rotY(yaw), half, color, sunVis);
+    casters_.push_back({center, r});   // (both lists cast: the lit one is drawn in the shadow pass too)
+}
+
+// box() with any turn (a posed player's part): the same culling, shadow lists and caster bookkeeping
+void Renderer::boxXf(const Mat4& xf, const Vec3& half, const Vec3& color, float sunVis, bool castShadow, bool visible) {
+    const Vec3 center = {xf.m[12], xf.m[13], xf.m[14]};
+    const float r = length(half);
+    if (buildingStatic_) {
+        int first = (int)staticVerts_.size();
+        emitBox(staticVerts_, xf, half, color, sunVis);
+        staticItems_.push_back({center, r, first, (int)staticVerts_.size() - first});
+        return;
+    }
+    if (visible && !inView(center, r)) { visible = false; if (!castShadow) return; }
+    if (!visible && !(castShadow && shadowCasters)) return;
+    emitBox(visible ? dyn_ : dynShadowOnly_, xf, half, color, sunVis);
+    casters_.push_back({center, r});
 }
 
 void Renderer::slope(const Brush& b, const Vec3& color) {
@@ -1473,15 +1774,12 @@ void Renderer::slope(const Brush& b, const Vec3& color) {
             return s * dot(q - a, inward) / l;
         };
         DynVertex v[4];
+        const uint64_t nrm = packNormal(n) | satW();
+        const uint64_t col = packColor(n.y < -0.5f || n.x < -0.5f ? color * 0.92f : color, 1.0f);
+        const uint64_t outl = pack4(halfOf(outlineColor.x), halfOf(outlineColor.y), halfOf(outlineColor.z), halfOf(outlineWidth));
         for (int k = 0; k < np; k++) {
-            memcpy(v[k].pos, &p[k].x, 12);
-            memcpy(v[k].normal, &n.x, 12);
-            const Vec3 col = n.y < -0.5f || n.x < -0.5f ? color * 0.92f : color;
-            v[k].color[0] = col.x; v[k].color[1] = col.y; v[k].color[2] = col.z; v[k].color[3] = 1.0f;
             const float d0 = dist(0, p[k]), d1 = dist(1, p[k]), d2 = dist(2, p[k]), d3 = np > 3 ? dist(3, p[k]) : 1000.0f;
-            v[k].edge[0] = d0; v[k].edge[1] = d1; v[k].edge[2] = d0 + d2; v[k].edge[3] = d1 + d3;
-            memcpy(v[k].outline, &outlineColor.x, 12);
-            v[k].outline[3] = outlineWidth;
+            putVertex(v[k], p[k], nrm, col, pack4(halfOf(d0), halfOf(d1), halfOf(d2), halfOf(d3)), outl);
         }
         const bool ccw = dot(cross(p[1] - p[0], p[2] - p[0]), n) > 0;
         const DynVertex &a = v[0], &b1 = ccw ? v[1] : v[2], &c1 = ccw ? v[2] : v[1];
@@ -1491,11 +1789,13 @@ void Renderer::slope(const Brush& b, const Vec3& color) {
       }
     });
     if (buildingStatic_) staticItems_.push_back({b.box.center(), length(b.box.mx - b.box.mn) * 0.5f, first, (int)out.size() - first});
+    else casters_.push_back({b.box.center(), length(b.box.mx - b.box.mn) * 0.5f});   // (the shape lies within its box)
 }
 
 void Renderer::boxPitched(const Vec3& pivot, const Vec3& offset, const Vec3& half, float yaw, float pitch, const Vec3& color, float sunVis, bool castShadow) {
     Mat4 xf = Mat4::translate(pivot) * Mat4::rotY(yaw) * Mat4::rotX(pitch) * Mat4::translate(offset);
     emitBox(castShadow ? dyn_ : dynNoCast_, xf, half, color, sunVis);   // (no shadow: small things scattered over the map, stuck props, would spread the shadow pass's caster rect over all of it)
+    if (castShadow) casters_.push_back({Vec3(xf.m[12], xf.m[13], xf.m[14]), length(half)});   // (the box's centre: xf's origin)
 }
 
 void Renderer::viewBox(const Vec3& offset, const Vec3& half, const Vec3& color) {
@@ -1514,21 +1814,47 @@ void Renderer::emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const M
     // (grow geometrically: reserving exactly what this mesh needs made every mesh past the high-water mark copy the
     // whole list again)
     if (out.size() + m.opaque.size() > out.capacity()) out.reserve(std::max(out.size() + m.opaque.size(), out.capacity() * 2));
+    const size_t at = out.size();
+    out.resize(at + m.opaque.size());   // (no zero fill: every field written below)
+    DynVertex* q = out.data() + at;
+    const uint16_t h05 = halfOf(0.5f);
+    const uint64_t edge = pack4(h05, h05, h05, h05);   // (mid-face: 0.5 from every edge)
+    // (no edge: width 0; was left unset once, so the shader read whatever was on the stack as the width)
+    const uint64_t outl = pack4(halfOf(outlineColor.x), halfOf(outlineColor.y), halfOf(outlineColor.z), 0);
+    const uint64_t nw = satW();
+#ifdef QUARK_DYN_SSE
+    // 4 lanes at a time; the same products and sums in the same order as the scalar code below (no FMA), so the
+    // positions are the same bit for bit. (One at a time, the 16-bit packing cost more than the bytes it saves.)
+    const __m128 c0 = _mm_loadu_ps(x), c1 = _mm_loadu_ps(x + 4), c2 = _mm_loadu_ps(x + 8), c3 = _mm_loadu_ps(x + 12);
+    const __m128 xyz = _mm_castsi128_ps(_mm_set_epi32(0, -1, -1, -1));
+    const __m128 svw = _mm_set_ps(sunVis, 0, 0, 0);
+    __m128 t4[TINT_COUNT];
+    for (int k = 0; k < TINT_COUNT; k++) t4[k] = _mm_set_ps(0, tint[k].z, tint[k].y, tint[k].x);
     for (const ModelMesh::V& v : m.opaque) {
-        DynVertex d;
-        const float* p = v.pos; const float* n = v.nrm;
-        d.pos[0] = x[0] * p[0] + x[4] * p[1] + x[8] * p[2] + x[12];
-        d.pos[1] = x[1] * p[0] + x[5] * p[1] + x[9] * p[2] + x[13];
-        d.pos[2] = x[2] * p[0] + x[6] * p[1] + x[10] * p[2] + x[14];
-        Vec3 nn = normalize(Vec3(x[0] * n[0] + x[4] * n[1] + x[8] * n[2], x[1] * n[0] + x[5] * n[1] + x[9] * n[2], x[2] * n[0] + x[6] * n[1] + x[10] * n[2]));
-        d.normal[0] = nn.x; d.normal[1] = nn.y; d.normal[2] = nn.z;
-        const Vec3& t = tint[v.slot < TINT_COUNT ? v.slot : 0];
-        d.color[0] = v.col[0] * t.x; d.color[1] = v.col[1] * t.y; d.color[2] = v.col[2] * t.z; d.color[3] = sunVis;
-        d.edge[0] = d.edge[1] = 0.5f; d.edge[2] = d.edge[3] = 1.0f;
-        memcpy(d.outline, &outlineColor.x, 12);
-        d.outline[3] = 0.0f;   // (no edge: was left unset, so the shader read whatever was on the stack as the width)
-        out.push_back(d);
+        DynVertex& d = *q++;
+        const __m128 p = _mm_add_ps(_mm_add_ps(_mm_add_ps(_mm_mul_ps(c0, _mm_set1_ps(v.pos[0])), _mm_mul_ps(c1, _mm_set1_ps(v.pos[1]))), _mm_mul_ps(c2, _mm_set1_ps(v.pos[2]))), c3);
+        __m128 n = _mm_and_ps(_mm_add_ps(_mm_add_ps(_mm_mul_ps(c0, _mm_set1_ps(v.nrm[0])), _mm_mul_ps(c1, _mm_set1_ps(v.nrm[1]))), _mm_mul_ps(c2, _mm_set1_ps(v.nrm[2]))), xyz);
+        __m128 l2 = _mm_mul_ps(n, n);
+        l2 = _mm_add_ss(_mm_add_ss(l2, _mm_shuffle_ps(l2, l2, 1)), _mm_shuffle_ps(l2, l2, 2));
+        const float l = _mm_cvtss_f32(_mm_sqrt_ss(l2));
+        n = l > 1e-8f ? _mm_div_ps(n, _mm_set1_ps(l)) : _mm_setzero_ps();   // (normalize)
+        _mm_storeu_ps(d.pos, p);   // (16 bytes: the 4th lands on normal, written next)
+        const uint64_t nrm = packNormal4(n) | nw;
+        const uint64_t col = halfOf4(_mm_or_ps(_mm_and_ps(_mm_mul_ps(_mm_loadu_ps(v.col), t4[v.slot < TINT_COUNT ? v.slot : 0]), xyz), svw));
+        memcpy(d.normal, &nrm, 8);
+        memcpy(d.color, &col, 8);
+        memcpy(d.edge, &edge, 8);
+        memcpy(d.outline, &outl, 8);
     }
+#else
+    for (const ModelMesh::V& v : m.opaque) {
+        const float* p = v.pos; const float* n = v.nrm;
+        const Vec3 pos(x[0] * p[0] + x[4] * p[1] + x[8] * p[2] + x[12], x[1] * p[0] + x[5] * p[1] + x[9] * p[2] + x[13], x[2] * p[0] + x[6] * p[1] + x[10] * p[2] + x[14]);
+        Vec3 nn = normalize(Vec3(x[0] * n[0] + x[4] * n[1] + x[8] * n[2], x[1] * n[0] + x[5] * n[1] + x[9] * n[2], x[2] * n[0] + x[6] * n[1] + x[10] * n[2]));
+        const Vec3& t = tint[v.slot < TINT_COUNT ? v.slot : 0];
+        putVertex(*q++, pos, packNormal(nn) | nw, packColor(Vec3(v.col[0] * t.x, v.col[1] * t.y, v.col[2] * t.z), sunVis), edge, outl);
+    }
+#endif
     if (!flatOut) return;
     for (const ModelMesh::V& v : m.translucent) {
         FlatVertex f;
@@ -1550,6 +1876,10 @@ void Renderer::mesh(const ModelMesh& m, const Mat4& xf, const Vec3* tint, float 
     if (visible && !inView(c, m.radius * sc)) { visible = false; if (!castShadow) return; } // off screen: only its shadow can show
     if (visible) emitMesh(dyn_, m, xf, tint, sunVis, &flat_);
     else if (castShadow && shadowCasters) emitMesh(dynShadowOnly_, m, xf, tint, sunVis, nullptr);
+    else return;
+    // (radius * the longest axis bounds it for every caller's xf: a rotation times a scale, whose axes stay
+    // perpendicular, so no direction stretches more than the longest one)
+    casters_.push_back({c, m.radius * sc});
 }
 
 void Renderer::viewMesh(const ModelMesh& m, const Vec3& offset, float scale, const Vec3* tint) {
@@ -1635,8 +1965,10 @@ void Renderer::prepareScene(bool shadows) {
 #ifdef QUARK_TRACY
         g_uploadBytes += total; g_uploads++;
 #endif
-        if (total > dynCap_) dynCap_ = total * 2;
-        glBufferData(GL_ARRAY_BUFFER, dynCap_, nullptr, GL_STREAM_DRAW);   // (orphan: no stall on last frame's draws)
+        // Orphaned (no stall on last frame's draws) at the bytes written, rounded up to 64 KB: it was the whole buffer,
+        // grown to twice the busiest frame so far, so every later frame allocated that much again. (Sized at init for a
+        // full match and orphaned whole, it was slower still on llvmpipe: the allocation is what costs.)
+        glBufferData(GL_ARRAY_BUFFER, std::max<size_t>((total + 0xffff) & ~(size_t)0xffff, 0x10000), nullptr, GL_STREAM_DRAW);
         size_t at = 0;
         auto put = [&](const std::vector<DynVertex>& v, size_t n) {
             if (n) glBufferSubData(GL_ARRAY_BUFFER, at, n * sizeof(DynVertex), v.data());
@@ -1670,33 +2002,41 @@ void Renderer::prepareScene(bool shadows) {
         QZONE("shadow pass");
         QGPUZONE("GPU shadow pass");
         // Where in the shadow map the casters land (plus a 2 texel margin for the filter): every other pixel of the
-        // world and of players skips the 4 shadow taps. Per triangle, clipped to the map: one that falls wholly outside
+        // world and of players skips the 4 shadow taps. Per caster, clipped to the map: one that falls wholly outside
         // the 64 m box draws nothing (a far player used to stretch the rect over the whole map, and with it the taps).
+        // Each caster is its bounding sphere: the light is orthographic, so a sphere lands as a circle of radius r times
+        // the row's length (it was every triangle of both lists through the matrix, ~80 ns a box: 13 us a frame at 8
+        // players). The rect can only be as large or a little larger (a box's corners lie on its sphere), never
+        // smaller; the radius gets 1e-4 (relative and in metres) so float rounding can't shave a corner off.
         float x0 = 1, y0 = 1, x1 = 0, y1 = 0;
         const float* sm = shadowMat.m;
-        auto cover = [&](const std::vector<DynVertex>& vs) {
-            for (size_t i = 0; i + 2 < vs.size(); i += 3) {
-                float tx[3], ty[3];
-                for (int k = 0; k < 3; k++) {
-                    const float* p = vs[i + k].pos;
-                    tx[k] = (sm[0] * p[0] + sm[4] * p[1] + sm[8] * p[2] + sm[12]) * 0.5f + 0.5f;
-                    ty[k] = (sm[1] * p[0] + sm[5] * p[1] + sm[9] * p[2] + sm[13]) * 0.5f + 0.5f;
-                }
-                float ax = std::min({tx[0], tx[1], tx[2]}), bx = std::max({tx[0], tx[1], tx[2]});
-                float ay = std::min({ty[0], ty[1], ty[2]}), by = std::max({ty[0], ty[1], ty[2]});
-                if (bx < 0 || ax > 1 || by < 0 || ay > 1) continue;
-                x0 = std::min(x0, std::max(ax, 0.0f)); x1 = std::max(x1, std::min(bx, 1.0f));
-                y0 = std::min(y0, std::max(ay, 0.0f)); y1 = std::max(y1, std::min(by, 1.0f));
-            }
-        };
-        cover(dynShadowOnly_);
-        cover(dyn_);
+        const float lx = 0.5f * std::sqrt(sm[0] * sm[0] + sm[4] * sm[4] + sm[8] * sm[8]);
+        const float ly = 0.5f * std::sqrt(sm[1] * sm[1] + sm[5] * sm[5] + sm[9] * sm[9]);
+        for (const CasterBound& b : casters_) {
+            const float tx = (sm[0] * b.c.x + sm[4] * b.c.y + sm[8] * b.c.z + sm[12]) * 0.5f + 0.5f;
+            const float ty = (sm[1] * b.c.x + sm[5] * b.c.y + sm[9] * b.c.z + sm[13]) * 0.5f + 0.5f;
+            const float r = b.r * 1.0001f + 1e-4f, rx = r * lx, ry = r * ly;
+            const float ax = tx - rx, bx = tx + rx, ay = ty - ry, by = ty + ry;
+            if (bx < 0 || ax > 1 || by < 0 || ay > 1) continue;
+            x0 = std::min(x0, std::max(ax, 0.0f)); x1 = std::max(x1, std::min(bx, 1.0f));
+            y0 = std::min(y0, std::max(ay, 0.0f)); y1 = std::max(y1, std::min(by, 1.0f));
+        }
         float margin = 2.0f / shadowRes_;
         casterRect_[0] = x0 - margin; casterRect_[1] = y0 - margin; casterRect_[2] = x1 + margin; casterRect_[3] = y1 + margin;
         // nothing lands in the map: no pass (the empty rect means no pixel reads it, so last frame's depth can stay)
         if (x0 <= x1 && y0 <= y1) {
             glBindFramebuffer(GL_FRAMEBUFFER, shadowFbo_);
             glViewport(0, 0, shadowRes_, shadowRes_);
+            {   // The clear and the casters only within the rect (it was the whole map: a 2048 x 2048 depth clear every
+                // frame, however few casters). Nothing outside it is ever read: a point outside the rect isn't shadowed
+                // (shadowAt), and the softest filter's taps from a point inside reach 1.5 texels further, each a 2 x 2
+                // texel lookup: 2.5 texels past the rect at most. 3 more texels each side; outside, last frames' depth stays.
+                const float res = (float)shadowRes_;
+                const int sx0 = std::max(0, (int)std::floor(casterRect_[0] * res) - 3), sy0 = std::max(0, (int)std::floor(casterRect_[1] * res) - 3);
+                const int sx1 = std::min(shadowRes_, (int)std::ceil(casterRect_[2] * res) + 3), sy1 = std::min(shadowRes_, (int)std::ceil(casterRect_[3] * res) + 3);
+                glEnable(GL_SCISSOR_TEST);
+                glScissor(sx0, sy0, sx1 - sx0, sy1 - sy0);
+            }
             glClear(GL_DEPTH_BUFFER_BIT);
             glEnable(GL_DEPTH_TEST);
             glDepthFunc(GL_LEQUAL);
@@ -1705,6 +2045,7 @@ void Renderer::prepareScene(bool shadows) {
             setMat(uShadowViewProj_, shadowMat);
             glBindVertexArray(dynVao_);
             glDrawArrays(GL_TRIANGLES, 0, (GLsizei)(nShadow + nDyn));   // (shadow-only, then the lit ones: both cast)
+            glDisable(GL_SCISSOR_TEST);
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
         }
     }
@@ -1716,28 +2057,32 @@ void Renderer::prepareScene(bool shadows) {
     const Vec3 glowColor = (glowOverride.x >= 0 ? glowOverride : this->glowColor) * glowMul;
     const float hiBase = highContrast ? 1.45f : 1.5f, hiAccent = highContrast ? 0.75f : 1.5f;
     clear_[0] = std::pow(skyColor.x, 1 / 2.2f); clear_[1] = std::pow(skyColor.y, 1 / 2.2f); clear_[2] = std::pow(skyColor.z, 1 / 2.2f);
-    glUseProgram(worldProg_);
-    setMat(uWorld_.shadowMat, shadowMat);
-    glUniform1i(uWorld_.shadowOn, useShadows && shadowWorld ? 1 : 0);
-    glUniform4fv(uWorld_.casterRect, 1, casterRect_);
     auto lin = [](const Vec3& c, float k) { return Vec3(std::pow(c.x, 2.2f), std::pow(c.y, 2.2f), std::pow(c.z, 2.2f)) * k; };
-    setVec3(uWorld_.baseL, highContrast ? lin(vmin(baseColor * 1.3f + Vec3(0.12f, 0.12f, 0.12f), Vec3(1, 1, 1)), hiBase) : lin(baseColor, 1.5f));
-    setVec3(uWorld_.accentL, lin(accentColor, hiAccent));
-    setVec3(uWorld_.wallbangL, wallbangTint.x >= 0 ? lin(wallbangTint, 1.5f) : lin(baseColor * 0.42f, 1.5f));   // (MORE 4: WALLBANG TINT)
-    setVec3(U(worldProg_, "uWorldEdge"), lin(worldEdge, 1.0f));
-    setVec3(uWorld_.metalL, lin(metalColor, 1.5f));
-    setVec3(uWorld_.floorL, lin(metalColor, 2.0f));
-    setVec3(uWorld_.metal, metalColor);
-    setVec3(uWorld_.glow, glowColor);
-    setVec3(uWorld_.fogColor, skyColor);
-    setVec3(uWorld_.camPos, camPos_);   // (a late latch turns the view, it doesn't move it)
-    glUniform1f(uWorld_.bright, brightness);
-    glUniform1f(uWorld_.full, fullbright ? 1.0f : 0.0f);
-    setVec3(uWorld_.fullColor, fullbrightColor);
-    glUniform1f(uWorld_.outlineW, worldOutline);
-    glUniform1f(uWorld_.time, liquidFlow ? (float)std::fmod(timeNow(), 3600.0) : 0.0f);   // (MORE 2: LIQUIDS STILL: time stands)
-    setVec3(uWorld_.sunDir, sunDir_);
-    if (look_.clean || look_.fadeAt > 0.0f) buildCleanMeans({(float)worldProg_, baseColor.x, baseColor.y, baseColor.z, accentColor.x, accentColor.y, accentColor.z,
+    auto frameUniforms = [&](unsigned prog, const WorldLocs& L) {   // (both world programs get the frame's own values)
+        glUseProgram(prog);
+        setMat(L.shadowMat, shadowMat);
+        glUniform1i(L.shadowOn, useShadows && shadowWorld ? 1 : 0);
+        glUniform4fv(L.casterRect, 1, casterRect_);
+        setVec3(L.baseL, highContrast ? lin(vmin(baseColor * 1.3f + Vec3(0.12f, 0.12f, 0.12f), Vec3(1, 1, 1)), hiBase) : lin(baseColor, 1.5f));
+        setVec3(L.accentL, lin(accentColor, hiAccent));
+        setVec3(L.wallbangL, wallbangTint.x >= 0 ? lin(wallbangTint, 1.5f) : lin(baseColor * 0.42f, 1.5f));   // (MORE 4: WALLBANG TINT)
+        setVec3(L.worldEdge, lin(worldEdge, 1.0f));   // (location cached: no string lookup a frame)
+        setVec3(L.metalL, lin(metalColor, 1.5f));
+        setVec3(L.floorL, lin(metalColor, 2.0f));
+        setVec3(L.metal, metalColor);
+        setVec3(L.glow, glowColor);
+        setVec3(L.fogColor, skyColor);
+        setVec3(L.camPos, camPos_);   // (a late latch turns the view, it doesn't move it)
+        glUniform1f(L.bright, brightness);
+        glUniform1f(L.full, fullbright ? 1.0f : 0.0f);
+        setVec3(L.fullColor, fullbrightColor);
+        glUniform1f(L.outlineW, worldOutline);
+        glUniform1f(L.time, liquidFlow ? (float)std::fmod(timeNow(), 3600.0) : 0.0f);   // (MORE 2: LIQUIDS STILL: time stands)
+        setVec3(L.sunDir, sunDir_);
+    };
+    if (worldFastProg_ && worldFastFor_ == worldProg_) { QZONE("world fast: frame uniforms"); frameUniforms(worldFastProg_, uWorldFast_); }
+    { QZONE("world: frame uniforms"); frameUniforms(worldProg_, uWorld_); }
+    if (look_.clean || look_.fadeAt > 0.0f) buildCleanMeans(std::array<float, 14>{(float)worldProg_, baseColor.x, baseColor.y, baseColor.z, accentColor.x, accentColor.y, accentColor.z,
                                       metalColor.x, metalColor.y, metalColor.z, glowColor.x, glowColor.y, glowColor.z, highContrast ? 1.0f : 0.0f});
     glUseProgram(skyProg_);
     setVec3(uSky_.sky, skyColor); setVec3(uSky_.sunDir, sunDir_);
@@ -1764,7 +2109,7 @@ void Renderer::drawScene(bool shadows) {
     const float px = (float)sceneW_ / (float)std::max(1, width_);
     if (px != pxScale_) {   // (only when the render scale or the size changes: the outlines' width in window pixels)
         pxScale_ = px;
-        glUseProgram(worldProg_); glUniform1f(uWorldPx_, px);
+        glUseProgram(worldProg_); glUniform1f(uWorldPx_, px); worldFastDirty_ = true;
         glUseProgram(dynProg_); glUniform1f(uDynPx_, px);
     }
     glClearColor(clear_[0], clear_[1], clear_[2], 1);
@@ -1785,6 +2130,7 @@ void Renderer::drawScene(bool shadows) {
         QGPUZONE("GPU world pass");
         glUseProgram(worldProg_);
         setMat(uWorld_.viewProj, viewProj_);
+        glUniform1i(uWorld_.latchUse, latchUse_ ? 1 : 0);
         glBindTexture(GL_TEXTURE_2D, lightmapTex_);
         if (lightmapNearest != lmFilterSet_) {   // (changed in the settings: once)
             lmFilterSet_ = lightmapNearest;
@@ -1792,7 +2138,15 @@ void Renderer::drawScene(bool shadows) {
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, lightmapNearest ? GL_NEAREST : GL_LINEAR);
         }
         glBindVertexArray(worldVao_);
-        drawWorldChunks();
+        const bool fast = fastWorld && worldFastProg_ && worldFastFor_ == worldProg_ && holeCount_ == 0;
+        if (fast) {   // (no holes: the program without discard, same uniforms)
+            QZONE("world fast: bind + sync");
+            syncWorldFast();
+            setMat(uWorldFast_.viewProj, viewProj_);
+            glUniform1i(uWorldFast_.latchUse, latchUse_ ? 1 : 0);
+        }
+        { QZONE("world chunks"); drawWorldChunks(); }
+        if (fast) { QZONE("world fast: back to main"); glUseProgram(worldProg_); }
         if (blockVerts_) {   // the breakable blocks: their looks, lit by full sun and sky (uAlphaPass 2: opaque)
             glUniform1f(uWorld_.alphaPass, 2.0f);
             glDisable(GL_CULL_FACE);
@@ -1814,6 +2168,7 @@ void Renderer::drawScene(bool shadows) {
         if (!count && !staticOn_) return;
         glUseProgram(dynProg_);
         setMat(uDyn_.viewProj, vp);
+        glUniform1i(uDyn_.latchUse, latchUse_ && &vp == &viewProj_ ? 1 : 0);   // (the view model's pass: its own fix, never the latch)
         glUniform1i(uDyn_.receive, receive ? 1 : 0);
         glBindVertexArray(dynVao_);
         if (count) glDrawArrays(GL_TRIANGLES, (GLint)first, (GLsizei)count);
@@ -1844,6 +2199,7 @@ void Renderer::drawScene(bool shadows) {
         glDisable(GL_CULL_FACE);
         glUseProgram(flatProg_);
         setMat(uFlatViewProj_, vp);
+        glUniform1i(uFlatLatch_, latchUse_ && &vp == &viewProj_ ? 1 : 0);
         glBindVertexArray(flatVao_);
         glDrawArrays(GL_TRIANGLES, (GLint)first, (GLsizei)count);
         glDepthMask(GL_TRUE);
@@ -1858,6 +2214,7 @@ void Renderer::drawScene(bool shadows) {
         glDisable(GL_CULL_FACE);
         glUseProgram(worldProg_);
         setMat(uWorld_.viewProj, viewProj_);
+        glUniform1i(uWorld_.latchUse, latchUse_ ? 1 : 0);
         glUniform1f(uWorld_.alphaPass, 1.0f);
         glBindVertexArray(seeVao_);
         glDrawArrays(GL_TRIANGLES, 0, seeVerts_);
@@ -1937,6 +2294,7 @@ void Renderer::drawScene(bool shadows) {
     }
     dyn_.clear();
     dynShadowOnly_.clear();
+    casters_.clear();
     dynNoCast_.clear();
     view_.clear();
     flat_.clear();
@@ -2028,7 +2386,7 @@ void Renderer::uiTransform(size_t from, float px, float py, float k, float dx, f
         } else if (v.scaleInt || v.scaleFrac) {   // a glyph: its text scale (the outline's width follows it)
             const float sc = clampf((v.scaleInt + v.scaleFrac / 256.0f) * k, 1.0f / 256, 255);
             v.scaleInt = (uint8_t)sc;
-            v.scaleFrac = (uint8_t)std::min(255L, std::lround((sc - (float)v.scaleInt) * 256));
+            v.scaleFrac = (uint8_t)std::min(255.0f, uiRound((sc - (float)v.scaleInt) * 256));
         }
     }
 }
@@ -2121,6 +2479,37 @@ void Renderer::logo(float cx, float y, float ts, const Color& friendly, const Co
 }
 
 
+// The title's Q alone (the main menu's icon strip): the baked logo's first 134 texel columns (the Q and its outline end
+// at 130, the U's start at 137), centred on cx; in another UI font the Q in it, split as logo() splits it.
+void Renderer::logoQ(float cx, float y, float ts, const Color& friendly, const Color& enemy) {
+    if (alpha_ <= 0 || ts <= 0) return;
+    logoA_ = friendly; logoB_ = enemy;
+    constexpr int kQW = 134;
+    if (!g_uiFont && logoTex_) {
+        const float k = 7.5f * ts * kLogoEmK / kLogoEm;
+        const float x0 = std::round(cx - kQW * k * 0.5f), y0 = std::round(y + 5.7f * ts - kLogoOY * k);
+        uiQuad(ui_, x0, y0, x0 + kQW * k, y0 + kLogoH * k, u16uv(0), u16uv(0), u16uv(kQW), u16uv(kLogoH), rgba8({1, 1, 1, friendly.a}, alpha_), 255, 255);
+        logoDrawn_ = true;
+        return;
+    }
+    const TextMetrics& m = uiMetrics();
+    const float sc = ts * kLogoEmK, sk = sc * m.fitScale;
+    const float w = textWidth("Q", sc), x0 = std::round(cx - w * 0.5f);
+    const float top = y + 5.7f * ts - (6.0f * m.fitScale + m.fitShift) * sc;
+    const size_t n0 = ui_.size();
+    text(x0, top, sc, "Q", friendly);
+    for (size_t i = n0; i < ui_.size(); i++) ui_[i].pad[0] = 1;   // (the split Q)
+    const int q = 'Q' - 32;
+    const GlyphInk& ink = m.ink[q];
+    const float qx = x0 + m.adv[q] * sk * 0.5f;
+    const float qy = std::round(top) + (ink.empty() ? 3.0f * m.fitScale : (ink.y0 + ink.y1) * 0.5f * m.fitScale) * sc + m.fitShift * sc;
+    const float nl = std::sqrt(1 + kLogoTilt * kLogoTilt);
+    splitP_[0] = qx; splitP_[1] = (float)height_ - qy;
+    splitN_[0] = 1 / nl; splitN_[1] = -kLogoTilt / nl;
+    splitSeam_ = 0.5f * kLogoSeam * 7.5f * ts * kLogoEmK;
+    splitDrawn_ = true;
+}
+
 void Renderer::text(float x, float y, float s, const std::string& in, const Color& c, float level) {
     const std::string& str = translated(in);
     if (alpha_ <= 0) return;   // (fully transparent: nothing to draw)
@@ -2130,7 +2519,7 @@ void Renderer::text(float x, float y, float s, const std::string& in, const Colo
     const float k = uiMetrics().fitScale, sk = s * k;
     float cx = x, cy = uiRound(y);
     float sc = clampf(sk, 1.0f / 256, 255);
-    uint8_t si = (uint8_t)sc, sf = (uint8_t)std::lround((sc - si) * 256 > 255 ? 255 : (sc - si) * 256);
+    uint8_t si = (uint8_t)sc, sf = (uint8_t)std::min(255.0f, uiRound((sc - si) * 256));   // (= lround, without the libm call)
     const float pad = kUiPad * sk, box = 8.0f * sk, top = cy + uiMetrics().fitShift * s, o = outlineUnits(sk);
     const TextMetrics& m = uiMetrics();
     const Rgba8 col = rgba8(c, alpha_);
@@ -2170,7 +2559,7 @@ void Renderer::textMono(float x, float y, float s, const std::string& str, const
     if (s < minScale_) s = minScale_;
     const float k = uiMetrics().fitScale;   // (the line-box fit, as text())
     float sc = clampf(s * k, 1.0f / 256, 255);
-    uint8_t si = (uint8_t)sc, sf = (uint8_t)std::lround((sc - si) * 256 > 255 ? 255 : (sc - si) * 256);
+    uint8_t si = (uint8_t)sc, sf = (uint8_t)std::min(255.0f, uiRound((sc - si) * 256));   // (= lround, without the libm call)
     const float pad = kUiPad * s * k, cy = uiRound(y) + uiMetrics().fitShift * s;
     const Rgba8 col = rgba8(c, alpha_);
     for (size_t i = 0; i < str.size(); i++) {
@@ -2430,6 +2819,7 @@ void Renderer::buildSwatches() {
     glUniform1i(uHoleCount_, 0);
     setVec3(uWorld_.camPos, Vec3(1, 2, 3));
     setMat(uWorld_.viewProj, Mat4::ortho(0, 2, 1, 3, -1, 1));
+    glUniform1i(uWorld_.latchUse, 0);
     glUniform1f(uWorldPx_, 1.0f);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, swatchLm_);
@@ -2450,100 +2840,169 @@ void Renderer::buildSwatches() {
 // 4 m square on a top and on a side (64 px: 6 cm a pixel, the fine patterns fading to their average as they do far off),
 // and its pixels averaged into uCleanTex (unit 5). With it on the world draws those averages flat: no look runs at all.
 // Again only when the program, the palette or high contrast change (key); called from prepareScene, worldProg_ bound.
-void Renderer::buildCleanMeans(const std::vector<float>& key) {
-    if (key == cleanKey_ || !worldProg_) return;
+// All on the GPU: the patches sit on a 64 px grid of one RGBA32F texture, so its mip level 6 (glGenerateMipmap: exact
+// halvings, 2x2 box each) is one texel per patch, its mean, and blits put those texels into uCleanTex. It used to read
+// the patches back and average them on the CPU: glReadPixels waited for the GPU, 4.5-6 ms at every map load and again
+// on every frame the key changed (a GLOW STRENGTH drag, HIGH CONTRAST, the sky / glow overrides).
+void Renderer::buildCleanMeans(const std::array<float, 14>& key) {   // (an array: no heap allocation a frame)
+    if (key == cleanKey_ || !worldProg_) return;   // (called every frame with PATTERN FADE / CLEAN SURFACES on)
+    // a palette that changes every frame (a slider being dragged) is followed 10 times a second, the last one too (the
+    // key stays different until it's built); a new program (a map) at once
+    const double now = timeNow();
+    if (key[0] == cleanKey_[0] && now - cleanAt_ < 0.1) return;
+    worldFastDirty_ = true;   // (worldProg_'s uniforms change: the no-discard program copies them)
     cleanKey_ = key;
+    cleanAt_ = now;
     QZONE("clean surfaces");
     std::vector<int> mats;
     for (int m = 12; m < kMapMaterials && m < (int)cleanUsed_.size(); m++) if (cleanUsed_[(size_t)m]) mats.push_back(m);
-    std::vector<float> texels((size_t)kMapMaterials * 3 * 4, 0.0f);
-    constexpr int P = 64;
-    if (!mats.empty()) {
+    constexpr int P = 64, kLevel = 6;   // (P = 1 << kLevel)
+    // (blocks of at most 32 columns, as square as that allows: 40 looks are 2 rows of 20, 1280 x 384 px)
+    const int n = (int)mats.size(), rows = (n + 31) / 32, cols = rows ? (n + rows - 1) / rows : 0;
+    if (!cleanTex_) {   // the averages: x the material, y 0 top albedo + alpha, 1 side albedo + alpha, 2 side glow
+        glActiveTexture(GL_TEXTURE0 + 5);
+        glGenTextures(1, &cleanTex_);
+        glBindTexture(GL_TEXTURE_2D, cleanTex_);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, kMapMaterials, 3, 0, GL_RGBA, GL_FLOAT, nullptr);
+        glGenFramebuffers(1, &cleanOutFbo_);
+        glBindFramebuffer(GL_FRAMEBUFFER, cleanOutFbo_);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, cleanTex_, 0);
+    }
+    glDisable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glDisable(GL_BLEND);
+    glBindFramebuffer(GL_FRAMEBUFFER, cleanOutFbo_);   // (a material not in the map: 0, as it always was)
+    const float zero[4] = {0, 0, 0, 0};
+    glClearBufferfv(GL_COLOR, 0, zero);   // (not glClear: the clear colour stays the frame's)
+    if (n) {
         if (!cleanVao_) { glGenVertexArrays(1, &cleanVao_); glGenBuffers(1, &cleanVbo_); }
-        std::vector<WorldVertex> vs;   // (per material: the top square, x z 0-4 facing +y, then the side, x y 0-4 facing +z)
-        for (int m : mats) {
-            const float c[6][2] = {{0, 0}, {4, 0}, {4, 4}, {0, 0}, {4, 4}, {0, 4}};
-            for (int side = 0; side < 2; side++)
-                for (auto& p : c) {
-                    WorldVertex v = {};
-                    if (side) { v.pos[0] = p[0]; v.pos[1] = p[1]; v.normal[2] = 1; }
-                    else { v.pos[0] = p[0]; v.pos[2] = p[1]; v.normal[1] = 1; }
-                    v.uv[0] = v.uv[1] = 0.5f;
-                    v.material = (float)m;
-                    v.edge[0] = p[0]; v.edge[1] = p[1]; v.edge[2] = v.edge[3] = 4;
-                    vs.push_back(v);
-                }
-        }
         glBindVertexArray(cleanVao_);
-        glBindBuffer(GL_ARRAY_BUFFER, cleanVbo_);
-        glBufferData(GL_ARRAY_BUFFER, vs.size() * sizeof(WorldVertex), vs.data(), GL_STREAM_DRAW);
-        glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)0);
-        glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)12);
-        glEnableVertexAttribArray(2); glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)24);
-        glEnableVertexAttribArray(3); glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)32);
-        glEnableVertexAttribArray(4); glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)36);
-        // the target: 3 patches across (top albedo, side albedo, side glow), a row per material
-        const int W = 3 * P, H = P * (int)mats.size();
-        unsigned tex = 0, fbo = 0;
-        glGenTextures(1, &tex);
-        glBindTexture(GL_TEXTURE_2D, tex);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, W, H, 0, GL_RGBA, GL_FLOAT, nullptr);
-        glGenFramebuffers(1, &fbo);
-        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
-        glDisable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glDisable(GL_BLEND);
+        if (mats != cleanMats_) {   // (the squares only change with the map's looks)
+            cleanMats_ = mats;
+            std::vector<WorldVertex> vs;   // (per material: the top square, x z 0-4 facing +y, then the side, x y 0-4 facing +z)
+            for (int m : mats) {
+                const float c[6][2] = {{0, 0}, {4, 0}, {4, 4}, {0, 0}, {4, 4}, {0, 4}};
+                for (int side = 0; side < 2; side++)
+                    for (auto& p : c) {
+                        WorldVertex v = {};
+                        if (side) { v.pos[0] = p[0]; v.pos[1] = p[1]; v.normal[2] = 1; }
+                        else { v.pos[0] = p[0]; v.pos[2] = p[1]; v.normal[1] = 1; }
+                        v.uv[0] = v.uv[1] = 0.5f;
+                        v.material = (float)m;
+                        v.edge[0] = p[0]; v.edge[1] = p[1]; v.edge[2] = v.edge[3] = 4;
+                        vs.push_back(v);
+                    }
+            }
+            glBindBuffer(GL_ARRAY_BUFFER, cleanVbo_);
+            glBufferData(GL_ARRAY_BUFFER, vs.size() * sizeof(WorldVertex), vs.data(), GL_STATIC_DRAW);
+            glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)0);
+            glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)12);
+            glEnableVertexAttribArray(2); glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)24);
+            glEnableVertexAttribArray(3); glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)32);
+            glEnableVertexAttribArray(4); glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)36);
+        }
+        // the patches: material i in column i % cols, its block of rows i / cols holding its 3 patches (top albedo,
+        // side albedo, side glow) one above the other; every size a multiple of 64, so each mip halves it exactly
+        const int W = P * cols, H = 3 * P * rows;
+        if (!cleanPatchTex_ || cleanPatchW_ != W || cleanPatchH_ != H) {
+            if (!cleanPatchTex_) { glGenTextures(1, &cleanPatchTex_); glGenFramebuffers(1, &cleanPatchFbo_); }
+            glActiveTexture(GL_TEXTURE0 + 5);
+            glBindTexture(GL_TEXTURE_2D, cleanPatchTex_);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, W, H, 0, GL_RGBA, GL_FLOAT, nullptr);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, kLevel);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glBindTexture(GL_TEXTURE_2D, cleanTex_);   // (unit 5 is uCleanTex's)
+            cleanPatchW_ = W; cleanPatchH_ = H;
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, cleanPatchFbo_);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, cleanPatchTex_, 0);
         Mat4 top;   // (x z 0-4 onto the patch: clip x = x / 2 - 1, clip y = z / 2 - 1)
         top.m[0] = 0.5f; top.m[5] = 0.0f; top.m[9] = 0.5f; top.m[10] = 0.0f; top.m[12] = -1.0f; top.m[13] = -1.0f;
         const Mat4 side = Mat4::ortho(0, 4, 0, 4, -1, 1);
         const GLint pass = U(worldProg_, "uMeanPass");
-        for (size_t i = 0; i < mats.size(); i++)
+        glUniform1i(uWorld_.latchUse, 0);
+        for (int i = 0; i < n; i++)
             for (int k = 0; k < 3; k++) {
-                glViewport(k * P, (int)i * P, P, P);
+                glViewport((i % cols) * P, ((i / cols) * 3 + k) * P, P, P);
                 setMat(uWorld_.viewProj, k == 0 ? top : side);
                 glUniform1i(pass, k == 2 ? 2 : 1);
                 glDrawArrays(GL_TRIANGLES, (GLint)(i * 12 + (k == 0 ? 0 : 6)), 6);
             }
         glUniform1i(pass, 0);
-        std::vector<float> px((size_t)W * H * 4);
-        glReadPixels(0, 0, W, H, GL_RGBA, GL_FLOAT, px.data());
-        for (size_t i = 0; i < mats.size(); i++)
-            for (int k = 0; k < 3; k++) {
-                double sum[4] = {};
-                for (int y = 0; y < P; y++)
-                    for (int x = 0; x < P; x++) {
-                        const float* t = &px[(((size_t)i * P + y) * W + (size_t)k * P + x) * 4];
-                        for (int c = 0; c < 4; c++) sum[c] += t[c];
-                    }
-                float* o = &texels[(((size_t)k * kMapMaterials) + (size_t)mats[i]) * 4];
-                for (int c = 0; c < 4; c++) o[c] = (float)(sum[c] / (P * P));
-            }
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glDeleteFramebuffers(1, &fbo);
-        glDeleteTextures(1, &tex);
-        glEnable(GL_DEPTH_TEST); glEnable(GL_CULL_FACE);
-    }
-    glActiveTexture(GL_TEXTURE0 + 5);
-    if (!cleanTex_) {
-        glGenTextures(1, &cleanTex_);
+        // each patch's mean: mip level 6 (bound only now: never sampled while drawn into)
+        glActiveTexture(GL_TEXTURE0 + 5);
+        glBindTexture(GL_TEXTURE_2D, cleanPatchTex_);
+        glGenerateMipmap(GL_TEXTURE_2D);
         glBindTexture(GL_TEXTURE_2D, cleanTex_);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, cleanPatchTex_, kLevel);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, cleanPatchFbo_);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, cleanOutFbo_);
+        for (int i = 0; i < n; i++) {   // (its 3 texels, one above the other, to its column of uCleanTex)
+            const int x = i % cols, y = (i / cols) * 3;
+            glBlitFramebuffer(x, y, x + 1, y + 3, mats[(size_t)i], 0, mats[(size_t)i] + 1, 3, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        }
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glEnable(GL_DEPTH_TEST); glEnable(GL_CULL_FACE);
+    glActiveTexture(GL_TEXTURE0 + 5);
+    glBindTexture(GL_TEXTURE_2D, cleanTex_);
+    glActiveTexture(GL_TEXTURE0);
+}
+
+bool Renderer::hudLayerDraw() {
+    if (ui_.empty() || !layerProg_) return false;
+    if (!layerFbo_ || layerW_ != width_ || layerH_ != height_) {
+        if (!layerTex_) glGenTextures(1, &layerTex_);
+        glBindTexture(GL_TEXTURE_2D, layerTex_);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width_, height_, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    } else glBindTexture(GL_TEXTURE_2D, cleanTex_);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, kMapMaterials, 3, 0, GL_RGBA, GL_FLOAT, texels.data());
+        if (!layerFbo_) glGenFramebuffers(1, &layerFbo_);
+        glBindFramebuffer(GL_FRAMEBUFFER, layerFbo_);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, layerTex_, 0);
+        const bool ok = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        if (!ok) return false;
+        layerW_ = width_; layerH_ = height_;
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, layerFbo_);
+    glClearColor(0, 0, 0, 0);
+    glClear(GL_COLOR_BUFFER_BIT);
+    layerPass_ = true;   // (flush2D: alpha accumulated, for the premultiplied lay-over)
+    flush2D();
+    layerPass_ = false;
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    layerReady_ = true;
+    return true;
+}
+
+void Renderer::hudLayerComposite() {
+    if (!layerReady_) return;
+    layerReady_ = false;
+    glViewport(0, 0, width_, height_);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    glUseProgram(layerProg_);
     glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, layerTex_);
+    glBindVertexArray(fsVao_);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glDisable(GL_BLEND);
 }
 
 void Renderer::flush2D() {
     if (ui_.empty()) { uiUploaded_ = 0; return; }
     QPLOT("ui verts", ui_.size());
-#ifdef QUARK_TRACY
-    static size_t uiTotal = 0; uiTotal += ui_.size();
-#endif
     glViewport(0, 0, width_, height_);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
     glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    if (layerPass_) glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    else glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     if (uiUploaded_ != ui_.size()) upload(uiVbo_, uiCap_, ui_);   // (prepare2D did it, unless more was added since)
     uiUploaded_ = 0;
     glUseProgram(uiProg_);
@@ -2602,20 +3061,16 @@ void Renderer::flush2D() {
         previewQuads_.clear();
     }
 #ifdef QUARK_TRACY
-    // profiling builds: per-frame averages to stderr every 5 s (and to Tracy plots)
-    static double t0 = timeNow(); static int frames = 0; static size_t bytes = 0, ups = 0, dyn = 0, shadow = 0;
-    QPLOT("upload bytes", g_uploadBytes);
-    frames++; bytes += g_uploadBytes; ups += g_uploads; dyn += g_dynVerts; shadow += g_shadowVerts;
+    // profiling builds: the frame's totals as Tracy plots (the profiler shows their averages). There was also a
+    // 5-second average line to stderr, from here: its fprintf made a 450-520 us frame every 5 s in every capture.
+    QPLOT("upload bytes", g_uploadBytes); QPLOT("uploads", g_uploads);
+    QPLOT("dyn + view + flat verts", g_dynVerts); QPLOT("shadow verts", g_shadowVerts);
     g_uploadBytes = g_uploads = g_dynVerts = g_shadowVerts = 0;
-    if (timeNow() - t0 > 5) {
-        fprintf(stderr, "[stats] %d frames, per frame: %.1f KB uploaded in %.1f uploads, %zu ui verts, %zu dynamic verts, %zu shadow verts\n",
-                frames, bytes / 1024.0 / frames, (double)ups / frames, uiTotal / frames, dyn / frames, shadow / frames);
-        t0 = timeNow(); frames = 0; bytes = ups = dyn = shadow = uiTotal = 0;
-    }
 #endif
 }
 
 void Renderer::setGrade(float gamma, float contrast, float saturation) {
+    worldFastDirty_ = true;   // (worldProg_'s uniforms change: the no-discard program copies them)
     grade_ = {std::max(0.2f, gamma), std::max(0.0f, contrast), std::max(0.0f, saturation)};
     for (unsigned prog : {worldProg_, dynProg_, skyProg_}) {
         if (!prog) continue;
@@ -2626,6 +3081,7 @@ void Renderer::setGrade(float gamma, float contrast, float saturation) {
 }
 
 void Renderer::setFog(float mul) {
+    worldFastDirty_ = true;   // (worldProg_'s uniforms change: the no-discard program copies them)
     fogMul_ = std::max(0.0f, mul);
     for (unsigned prog : {worldProg_, dynProg_}) {   // (each pass binds its program before it draws)
         if (!prog) continue;
@@ -2638,6 +3094,7 @@ void Renderer::setFog(float mul) {
 // VIDEO + AUDIO > MORE 2 / 4: the look's switches as uniforms, each 0 at its default (so a program that never got them,
 // the swatches', draws as before). Set when they change and on a new world program: nothing per frame.
 void Renderer::lookUniforms(unsigned prog) {
+    worldFastDirty_ = true;   // (worldProg_'s uniforms change: the no-discard program copies them)
     if (!prog) return;
     glUseProgram(prog);
     glUniform1f(U(prog, "uNoTone"), look_.tone ? 0.0f : 1.0f);

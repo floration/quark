@@ -46,9 +46,85 @@ struct ModelPart {
     // builders below don't fill these: they compute `color` themselves.
     Vec3 mul = {1, 1, 1}, add = {0, 0, 0}, teamMul = {0, 0, 0};
     bool crouch = false;
+    // players: the joint the box hangs from (PlayerBone below; its `c` is where it sits in the standing pose). Every
+    // other model, and a box model file without "bone", is all BONE_ROOT: drawn still.
+    uint8_t bone = 0;
 };
 using ModelParts = std::vector<ModelPart>;
 constexpr size_t kMaxDefaultParts = 32;   // the most boxes in one default model (the tests check): the game reserves it
+
+// ---- player animation (pure, no GL: the game, the preview and the tests share it) ----------------------------------
+// A player model's boxes hang from these joints. Thighs turn at the hip (the top of the thigh boxes), shins at the
+// knee (the bottom of the thigh boxes), feet at the ankle (the top of the foot boxes: kept level with the floor), the
+// pelvis carries both legs (turned toward where you move), the torso and head follow the aim (a little of its pitch).
+// ROOT: never moves.
+enum PlayerBone : uint8_t { BONE_ROOT = 0, BONE_PELVIS, BONE_TORSO, BONE_HEAD, BONE_THIGH_L, BONE_SHIN_L, BONE_THIGH_R, BONE_SHIN_R, BONE_FOOT_L, BONE_FOOT_R, BONE_COUNT };
+const char* boneName(int bone);                   // "root", "pelvis", "torso", "head", "thigh_l", "shin_l", "thigh_r", "shin_r", "foot_l", "foot_r"
+int boneFromName(const std::string& name);        // -1: unknown
+// Where a model's joints are, measured from its boxes (in model space, standing): the hips at the top of the thighs,
+// the knees at the top of the shins, the neck at the bottom of the head. A model without leg bones: animated = false.
+struct PlayerRig {
+    float hipX = 0.14f, hipY = 0.88f, kneeY = 0.46f, ankleY = 0, neckY = 1.44f, waistY = 0.88f;
+    float footHalf = 0;   // a shin box down on the floor (no foot bone): how far it reaches forward / back (its toe / heel)
+    bool animated = false;
+};
+void playerRig(const ModelParts& parts, PlayerRig& out);
+// What a pose is made from (the game keeps one a player: AnimTrack): the gait's phase (cycles: 0 and 0.5 have the legs
+// together, the left leg forward at 0.25), how fast they move over the ground (m/s: walk -> run), the legs' turn from
+// the aim (radians, + = toward the left like a yaw), how far into the jump pose (0 ground, 1 air) and the aim's pitch.
+struct AnimState { float phase = 0, speed = 0, legYaw = 0, air = 0, pitch = 0; };
+// One matrix a bone, model space to model space (identity: the standing pose)
+struct PlayerPose { Mat4 bone[BONE_COUNT]; };
+void playerPose(const AnimState& s, const PlayerRig& rig, PlayerPose& out);
+// The client's per-player tracking (one a player slot, fixed: no allocation). animStep moves it on by dt from where the
+// player is drawn now: velocity from the drawn movement, the phase by distance over the stride, the legs' turn, the air.
+struct AnimTrack {
+    Vec3 lastPos = {0, 0, 0}, vel = {0, 0, 0};
+    float legWorldYaw = 0;   // the legs' facing in the world (radians)
+    bool init = false, back = false, turning = false;
+    AnimState s;
+};
+// ground: on the floor (own player: the prediction's flag; others: a short ray down from the feet)
+void animStep(AnimTrack& t, const Vec3& pos, float aimYaw, float aimPitch, bool ground, float dt);
+// The tuning, in one place (retime the animations here): metres, radians, seconds
+struct AnimTuning {
+    float walkStride, runStride;          // ground covered by one full cycle (two steps) walking / running
+    float walkSpeed, runSpeed;            // m/s: the blend from the walk to the run cycle
+    float maxCycleRate;                   // cycles a second at most (strafe-hopping speeds: the stride grows instead)
+    float startSpeed;                     // m/s: slower than this is standing (the legs ease to still)
+    float walkSwing, runSwing;            // thigh swing either way of straight down
+    float walkKnee, runKnee;              // knee bend at mid-swing
+    float stanceKnee;                     // the planted leg's slight bend
+    float runLean;                        // torso lean forward at run speed
+    float legTurnMax;                     // the legs' turn from the aim at most (either way)
+    float legTurnRate;                    // how quickly the legs turn (1 / s, exponential)
+    float idleTurnStart, idleTurnStop;    // standing: the legs follow the aim once it is this far off, until this close
+    float backEnter, backLeave;           // back-pedal once the move is this far from forward, until it's this close
+    float airThighL, airThighR, airKneeL, airKneeR, airLean;   // the tucked jump pose
+    float airRate;                        // blend in / out of the air pose (1 / s)
+    float headPitch, torsoPitch, pitchMax;   // how much of the aim's pitch the head / torso take, and at most
+    float velSmooth;                      // the measured velocity's time constant (s)
+    float teleport;                       // a move this far (m) in one frame: a respawn or teleport (reset)
+};
+extern const AnimTuning kAnim;
+// a * b for matrices with no projection (last row 0 0 0 1): 36 multiplies, not 64 (posing runs per player a frame)
+inline Mat4 mulAffine(const Mat4& a, const Mat4& b) {
+    Mat4 r;
+    for (int c = 0; c < 4; c++) {
+        const float x = b.m[c * 4], y = b.m[c * 4 + 1], z = b.m[c * 4 + 2];
+        for (int k = 0; k < 3; k++) r.m[c * 4 + k] = a.m[k] * x + a.m[4 + k] * y + a.m[8 + k] * z + (c == 3 ? a.m[12 + k] : 0.0f);
+    }
+    return r;
+}
+// A posed box's matrix: its bone's (from playerPose) with the box's centre c (model space, standing) carried through it
+inline Mat4 posedPart(const PlayerPose& pose, uint8_t bone, const Vec3& c) {
+    const Mat4& b = pose.bone[bone < BONE_COUNT ? bone : 0];
+    Mat4 r = b;
+    r.m[12] = b.m[0] * c.x + b.m[4] * c.y + b.m[8] * c.z + b.m[12];
+    r.m[13] = b.m[1] * c.x + b.m[5] * c.y + b.m[9] * c.z + b.m[13];
+    r.m[14] = b.m[2] * c.x + b.m[6] * c.y + b.m[10] * c.z + b.m[14];
+    return r;
+}
 
 // The colour of each slot (index TintSlot; TINT_NONE unused).
 struct ModelPalette { Vec3 c[TINT_COUNT] = {{1, 1, 1}, {1, 1, 1}, {1, 1, 1}, {1, 1, 1}, {1, 1, 1}, {1, 1, 1}}; };

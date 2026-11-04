@@ -154,18 +154,38 @@ const std::vector<std::string>& Ui::wrap(const std::string& in, float ts, float 
     auto fits = [&](size_t a, size_t n) {
         return (maxChars <= 0 || (int)n <= maxChars) && r_->textWidth(t.substr(a, n), ts) <= maxW;
     };
+    // where a line may end: before a space, and between two Chinese / Japanese characters (they're written without
+    // spaces: breaking only at spaces wrapped their lines far too early). Not before closing punctuation.
+    auto cp = [&](size_t i) {
+        const unsigned char c = (unsigned char)t[i];
+        if (c < 0x80 || i + 2 >= t.size() + 0) return (unsigned)c;
+        if ((c & 0xF0) == 0xE0 && i + 2 < t.size()) return (unsigned)(((c & 0x0F) << 12) | (((unsigned char)t[i + 1] & 0x3F) << 6) | ((unsigned char)t[i + 2] & 0x3F));
+        return 0x80u;
+    };
+    auto cjk = [](unsigned u) { return (u >= 0x3040 && u <= 0x30FF) || (u >= 0x3400 && u <= 0x9FFF) || (u >= 0xF900 && u <= 0xFAFF); };
+    auto nextBreak = [&](size_t i) {   // the first place after i where the line may end
+        while (i < t.size()) {
+            if (t[i] == ' ') return i;
+            const size_t n = step(i);
+            if (n < t.size() && cjk(cp(i)) && t[n] != ' ' && t[n] != ':' && t[n] != ',' && t[n] != ')' && t[n] != '.' && t[n] != ';' &&
+                (cjk(cp(n)) || (unsigned char)t[n] < 0x80)) return n;
+            if (n < t.size() && (unsigned char)t[i] < 0x80 && t[i] != '(' && cjk(cp(n))) return n;
+            i = n;
+        }
+        return std::string::npos;
+    };
     size_t a = 0;
     while (a < t.size()) {
         while (a < t.size() && t[a] == ' ') a++;
         if (a >= t.size()) break;
-        size_t end = a, sp = t.find(' ', a);
+        size_t end = a, sp = nextBreak(a);
         // as many whole words as fit
         while (true) {
             size_t next = sp == std::string::npos ? t.size() : sp;
             if (end > a && !fits(a, next - a)) break;
             end = next;
             if (sp == std::string::npos || !fits(a, end - a)) break;
-            sp = t.find(' ', sp + 1);
+            sp = nextBreak(t[sp] == ' ' ? sp + 1 : sp);
         }
         if (!fits(a, end - a)) {   // one word wider than the line: cut it where it fits (at least one character)
             size_t n = step(a) - a;

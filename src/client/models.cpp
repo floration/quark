@@ -100,24 +100,45 @@ struct Emit {
 
 // Every model stands in the same hitbox (kPlayerHalfWidth x kPlayerHeight, the head its top kHeadFraction): models are
 // cosmetic. Heights are given standing; a crouch (hs < 1) squashes the legs and body, the head keeps its size.
+// Each box hangs from a joint (PlayerBone): leg() splits a leg into a thigh and a shin at the knee, shin guards hang
+// from the shin, boots and shoes from the foot, the head's boxes from the head, everything else from the torso (SIMPLE: all still).
 void playerModelParts(int model, float hs, const ModelPalette& pal, ModelParts& out) {
     out.clear();
     Emit e{out};
     const Vec3 col = pal.c[TINT_TEAM];
     const Vec3 grey = col * 0.6f + Vec3(0.06f, 0.06f, 0.07f), dark = {0.05f, 0.05f, 0.06f};
     const uint8_t T = TINT_TEAM, N = TINT_NONE;
+    uint8_t cb = BONE_TORSO;   // the bone b() hangs its boxes from
     // b(x, y, z, hx, hy, hz): a body box (y and hy follow the crouch); h(...): a head box (its centre follows, not its size)
     auto b = [&](float x, float y, float z, float hx, float hy, float hz, const Vec3& c, uint8_t s, bool sh = true, bool vis = false) {
-        e(Vec3(x, y * hs, z), Vec3(hx, hy * hs, hz), c, s, sh, vis); };
+        e(Vec3(x, y * hs, z), Vec3(hx, hy * hs, hz), c, s, sh, vis); out.back().bone = cb; };
     auto h = [&](float x, float y, float z, float hx, float hy, float hz, const Vec3& c, uint8_t s, bool sh = true, bool vis = false) {
-        e(Vec3(x, y * hs, z), Vec3(hx, hy, hz), c, s, sh, vis); };
+        e(Vec3(x, y * hs, z), Vec3(hx, hy, hz), c, s, sh, vis); out.back().bone = BONE_HEAD; };
+    // the side's bones (sd -1: the left leg, +X is the right)
+    auto thigh = [](float sd) { return (uint8_t)(sd < 0 ? BONE_THIGH_L : BONE_THIGH_R); };
+    auto shin = [](float sd) { return (uint8_t)(sd < 0 ? BONE_SHIN_L : BONE_SHIN_R); };
+    // a box down the leg from y0 to y1, cut at the knee kn: the thigh part reaches 2 cm under the knee (a bent knee
+    // shows no gap), the shin part is 5 mm slimmer (no flicker where they overlap); y0 inside the boot (the ankle)
+    auto leg = [&](float sd, float x, float z, float y0, float y1, float kn, float hx, float hz, const Vec3& c, uint8_t s, bool sh = true, bool vis = false) {
+        const float ov = 0.02f;
+        cb = thigh(sd); b(x, (kn - ov + y1) * 0.5f, z, hx, (y1 - kn + ov) * 0.5f, hz, c, s, sh, vis);
+        cb = shin(sd);  b(x, (y0 + kn) * 0.5f, z, hx - 0.005f, (kn - y0) * 0.5f, hz - 0.005f, c, s, sh, vis);
+        cb = BONE_TORSO;
+    };
+    auto foot = [](float sd) { return (uint8_t)(sd < 0 ? BONE_FOOT_L : BONE_FOOT_R); };
+    auto onFoot = [&](float sd, float x, float y, float z, float hx, float hy, float hz, const Vec3& c, uint8_t s, bool sh = true, bool vis = false) {
+        cb = foot(sd); b(x, y, z, hx, hy, hz, c, s, sh, vis); cb = BONE_TORSO; };
+    auto onShin = [&](float sd, float x, float y, float z, float hx, float hy, float hz, const Vec3& c, uint8_t s, bool sh = true, bool vis = false) {
+        cb = shin(sd); b(x, y, z, hx, hy, hz, c, s, sh, vis); cb = BONE_TORSO; };
+    auto onThigh = [&](float sd, float x, float y, float z, float hx, float hy, float hz, const Vec3& c, uint8_t s, bool sh = true, bool vis = false) {
+        cb = thigh(sd); b(x, y, z, hx, hy, hz, c, s, sh, vis); cb = BONE_TORSO; };
     const Vec3 skin = {0.72f, 0.52f, 0.4f}, rot = {0.36f, 0.5f, 0.3f}, eyeW = {1.6f, 1.6f, 1.5f};
     switch (model) {
         case 1: // HEAVY: wide armoured legs and boots, a big chest plate with a belt, shoulder pads, a small helmet
             for (float sd : {-1.0f, 1.0f}) {
-                b(sd * 0.15f, 0.42f, 0, 0.14f, 0.42f, 0.2f, col * 0.45f, T);
-                b(sd * 0.15f, 0.08f, -0.03f, 0.16f, 0.08f, 0.24f, dark, N);
-                b(sd * 0.15f, 0.5f, -0.2f, 0.11f, 0.08f, 0.02f, grey, T, false, true);
+                leg(sd, sd * 0.15f, 0, 0.12f, 0.84f, 0.42f, 0.14f, 0.2f, col * 0.45f, T);
+                onFoot(sd, sd * 0.15f, 0.08f, -0.03f, 0.16f, 0.08f, 0.24f, dark, N);
+                onThigh(sd, sd * 0.15f, 0.5f, -0.2f, 0.11f, 0.08f, 0.02f, grey, T, false, true);
                 b(sd * 0.42f, 1.38f, 0, 0.14f, 0.1f, 0.22f, grey, T);
                 b(sd * 0.42f, 1.24f, 0, 0.1f, 0.06f, 0.16f, col * 0.45f, T);
             }
@@ -130,15 +151,16 @@ void playerModelParts(int model, float hs, const ModelPalette& pal, ModelParts& 
             h(0, 1.6f, -0.18f, 0.15f, 0.04f, 0.02f, dark, N, false, true);
             h(0, 1.77f, 0, 0.12f, 0.02f, 0.14f, grey, T, false);
             break;
-        case 2: // SIMPLE: just the hitbox: the body box and the head box, nothing else
+        case 2: // SIMPLE: just the hitbox: the body box and the head box, nothing else (still: no joints)
             b(0, 0.72f, 0, kPlayerHalfWidth, 0.72f, kPlayerHalfWidth, col, T);
             h(0, 1.62f, 0, kPlayerHalfWidth * kHeadWidthFraction, 0.18f, kPlayerHalfWidth * kHeadWidthFraction, col * 1.25f, T);
+            for (ModelPart& q : out) q.bone = BONE_ROOT;
             break;
         case 3: // ROBOT: grey frame on piston legs, team chest with a glowing core, cube head, eye bar, antenna
             for (float sd : {-1.0f, 1.0f}) {
-                b(sd * 0.14f, 0.5f, 0, 0.1f, 0.3f, 0.12f, grey * 0.8f, T);
-                b(sd * 0.14f, 0.12f, -0.03f, 0.13f, 0.12f, 0.19f, grey * 0.6f, T);
-                b(sd * 0.14f, 0.5f, -0.12f, 0.04f, 0.2f, 0.01f, dark, N, false, true);
+                leg(sd, sd * 0.14f, 0, 0.2f, 0.8f, 0.5f, 0.1f, 0.12f, grey * 0.8f, T);
+                onFoot(sd, sd * 0.14f, 0.12f, -0.03f, 0.13f, 0.12f, 0.19f, grey * 0.6f, T);
+                leg(sd, sd * 0.14f, -0.12f, 0.3f, 0.7f, 0.5f, 0.04f, 0.01f, dark, N, false, true);
                 b(sd * 0.41f, 1.33f, 0, 0.08f, 0.12f, 0.16f, dark, N);
             }
             b(0, 0.83f, 0, 0.3f, 0.05f, 0.2f, dark, N);
@@ -155,9 +177,9 @@ void playerModelParts(int model, float hs, const ModelPalette& pal, ModelParts& 
             break;
         case 4: // KNIGHT: plate legs and sabatons, breastplate, team tabard, pauldrons, belt, helmet with a visor and crest
             for (float sd : {-1.0f, 1.0f}) {
-                b(sd * 0.14f, 0.44f, 0, 0.12f, 0.44f, 0.16f, grey * 0.85f, T);
-                b(sd * 0.14f, 0.06f, -0.04f, 0.13f, 0.06f, 0.2f, grey * 0.6f, T);
-                b(sd * 0.14f, 0.52f, -0.16f, 0.09f, 0.06f, 0.02f, grey * 1.1f, T, false, true);
+                leg(sd, sd * 0.14f, 0, 0.08f, 0.88f, 0.44f, 0.12f, 0.16f, grey * 0.85f, T);
+                onFoot(sd, sd * 0.14f, 0.06f, -0.04f, 0.13f, 0.06f, 0.2f, grey * 0.6f, T);
+                onThigh(sd, sd * 0.14f, 0.52f, -0.16f, 0.09f, 0.06f, 0.02f, grey * 1.1f, T, false, true);
                 b(sd * 0.38f, 1.38f, 0, 0.13f, 0.09f, 0.2f, grey * 1.1f, T);
                 b(sd * 0.38f, 1.27f, 0, 0.11f, 0.05f, 0.18f, grey * 0.8f, T);
             }
@@ -171,11 +193,22 @@ void playerModelParts(int model, float hs, const ModelPalette& pal, ModelParts& 
             h(0, 1.52f, -0.19f, 0.1f, 0.05f, 0.01f, grey * 1.3f, T, false, true);
             h(0, 1.84f, 0, 0.025f, 0.07f, 0.18f, col * 1.1f, T, false);
             break;
-        case 5: // WIZARD: a long team robe flaring at the hem, a sash, a beard, a tall pointed hat with a band and a star
+        case 5: // WIZARD: a long team robe flaring at the hem, a sash, a beard, a tall pointed hat with a band and a star;
+                // under the robe, legs (hidden, no shadow) whose shoes peek out at the front as they step
+            for (float sd : {-1.0f, 1.0f}) {
+                onThigh(sd, sd * 0.12f, 0.61f, 0, 0.07f, 0.25f, 0.08f, col * 0.45f, T, false);
+                onShin(sd, sd * 0.12f, 0.22f, 0, 0.06f, 0.16f, 0.07f, col * 0.45f, T, false);
+                onFoot(sd, sd * 0.12f, 0.04f, -0.12f, 0.07f, 0.04f, 0.12f, Vec3(0.12f, 0.08f, 0.05f), N);
+            }
+            cb = BONE_ROOT;     // (the hem stays on the floor as the body bobs; the robe above it turns with the legs)
             b(0, 0.18f, 0, 0.32f, 0.18f, 0.28f, col * 0.55f, T);
+            cb = BONE_PELVIS;
             b(0, 0.6f, 0, 0.27f, 0.26f, 0.23f, col * 0.65f, T);
+            cb = BONE_TORSO;
             b(0, 1.1f, 0, 0.3f, 0.26f, 0.22f, col * 0.8f, T);
+            cb = BONE_PELVIS;
             b(0, 0.6f, -0.235f, 0.04f, 0.42f, 0.01f, col * 1.4f + Vec3(0.2f, 0.2f, 0.2f), T, false, true);
+            cb = BONE_TORSO;
             b(0, 0.88f, 0, 0.31f, 0.035f, 0.23f, Vec3(0.75f, 0.6f, 0.2f), N);
             for (float sd : {-1.0f, 1.0f}) {
                 b(sd * 0.36f, 1.15f, -0.02f, 0.1f, 0.2f, 0.12f, col * 0.75f, T);
@@ -193,10 +226,10 @@ void playerModelParts(int model, float hs, const ModelPalette& pal, ModelParts& 
             h(0, 1.81f, -0.155f, 0.03f, 0.03f, 0.005f, Vec3(1.6f, 1.4f, 0.5f), N, false, true);
             break;
         case 6: // ZOMBIE: torn team clothes over green skin, uneven legs, a hunched head with glowing eyes, arms reaching out
-            b(-0.14f, 0.42f, 0, 0.12f, 0.42f, 0.15f, col * 0.4f, T);
-            b(0.14f, 0.4f, 0.03f, 0.12f, 0.4f, 0.15f, col * 0.35f, T);
-            b(0.14f, 0.2f, -0.13f, 0.08f, 0.1f, 0.02f, rot, N, false, true);
-            for (float sd : {-1.0f, 1.0f}) b(sd * 0.14f, 0.05f, -0.03f, 0.12f, 0.05f, 0.18f, Vec3(0.18f, 0.14f, 0.1f), N);
+            leg(-1, -0.14f, 0, 0.06f, 0.84f, 0.42f, 0.12f, 0.15f, col * 0.4f, T);
+            leg(1, 0.14f, 0.03f, 0.06f, 0.8f, 0.4f, 0.12f, 0.15f, col * 0.35f, T);
+            onShin(1, 0.14f, 0.2f, -0.13f, 0.08f, 0.1f, 0.02f, rot, N, false, true);
+            for (float sd : {-1.0f, 1.0f}) onFoot(sd, sd * 0.14f, 0.05f, -0.03f, 0.12f, 0.05f, 0.18f, Vec3(0.18f, 0.14f, 0.1f), N);
             b(0, 1.1f, 0.03f, 0.33f, 0.28f, 0.22f, col * 0.7f, T);
             b(0.12f, 0.95f, -0.2f, 0.12f, 0.12f, 0.02f, rot, N, false, true);
             b(-0.2f, 1.25f, -0.2f, 0.06f, 0.05f, 0.01f, Vec3(0.4f, 0.08f, 0.06f), N, false, true);
@@ -211,10 +244,11 @@ void playerModelParts(int model, float hs, const ModelPalette& pal, ModelParts& 
             h(-0.08f, 1.73f, -0.1f, 0.08f, 0.02f, 0.1f, Vec3(0.2f, 0.25f, 0.15f), N, false);
             break;
         case 7: // FIGHTER: shorts and wrapped legs, bare arms and a team belt, a vest, gloves up in a guard, a headband
+                // (the legs reach up inside the shorts to the hips)
             for (float sd : {-1.0f, 1.0f}) {
-                b(sd * 0.14f, 0.3f, 0, 0.1f, 0.3f, 0.12f, skin, N);
-                b(sd * 0.14f, 0.04f, -0.03f, 0.11f, 0.04f, 0.16f, Vec3(0.9f, 0.9f, 0.9f), N);
-                b(sd * 0.14f, 0.12f, 0, 0.11f, 0.06f, 0.13f, Vec3(0.85f, 0.85f, 0.82f), N);
+                leg(sd, sd * 0.14f, 0, 0.05f, 0.8f, 0.34f, 0.1f, 0.12f, skin, N);
+                onFoot(sd, sd * 0.14f, 0.04f, -0.03f, 0.11f, 0.04f, 0.16f, Vec3(0.9f, 0.9f, 0.9f), N);
+                onShin(sd, sd * 0.14f, 0.12f, 0, 0.11f, 0.06f, 0.13f, Vec3(0.85f, 0.85f, 0.82f), N);
                 b(sd * 0.36f, 1.22f, -0.12f, 0.07f, 0.07f, 0.16f, skin, N);
                 b(sd * 0.3f, 1.4f, -0.3f, 0.09f, 0.09f, 0.09f, col * 1.2f, T, true, true);
             }
@@ -234,9 +268,10 @@ void playerModelParts(int model, float hs, const ModelPalette& pal, ModelParts& 
         case 8: // PIRATE: boots and striped trousers, a team coat with a sash, a belt buckle, a beard, an eye patch,
                 // a tricorn hat with a skull badge
             for (float sd : {-1.0f, 1.0f}) {
-                b(sd * 0.14f, 0.44f, 0, 0.12f, 0.44f, 0.15f, Vec3(0.85f, 0.85f, 0.8f), N);
-                b(sd * 0.14f, 0.2f, -0.01f, 0.13f, 0.2f, 0.17f, Vec3(0.12f, 0.08f, 0.05f), N);
-                b(sd * 0.14f, 0.55f, -0.155f, 0.12f, 0.03f, 0.01f, col * 0.6f, T, false, true);
+                leg(sd, sd * 0.14f, 0, 0.06f, 0.88f, 0.44f, 0.12f, 0.15f, Vec3(0.85f, 0.85f, 0.8f), N);
+                onShin(sd, sd * 0.14f, 0.25f, -0.01f, 0.13f, 0.15f, 0.17f, Vec3(0.12f, 0.08f, 0.05f), N);   // (the boot's shaft, its foot)
+                onFoot(sd, sd * 0.14f, 0.05f, -0.01f, 0.13f, 0.05f, 0.17f, Vec3(0.12f, 0.08f, 0.05f), N);
+                onThigh(sd, sd * 0.14f, 0.55f, -0.155f, 0.12f, 0.03f, 0.01f, col * 0.6f, T, false, true);
                 b(sd * 0.35f, 1.3f, 0, 0.1f, 0.12f, 0.18f, col * 0.8f, T);
             }
             b(0, 1.08f, 0, 0.32f, 0.3f, 0.22f, col, T);
@@ -255,9 +290,9 @@ void playerModelParts(int model, float hs, const ModelPalette& pal, ModelParts& 
         case 9: // NINJA: dark wrapped suit, tabi boots, a team sash and belt knot, arm guards, a hood with an eye slit and
                 // the headband tails flying behind
             for (float sd : {-1.0f, 1.0f}) {
-                b(sd * 0.13f, 0.44f, 0, 0.11f, 0.44f, 0.14f, dark * 2.0f, N);
-                b(sd * 0.13f, 0.05f, -0.03f, 0.115f, 0.05f, 0.17f, dark, N);
-                b(sd * 0.13f, 0.3f, 0, 0.115f, 0.03f, 0.145f, dark * 3.0f, N);
+                leg(sd, sd * 0.13f, 0, 0.06f, 0.88f, 0.44f, 0.11f, 0.14f, dark * 2.0f, N);
+                onFoot(sd, sd * 0.13f, 0.05f, -0.03f, 0.115f, 0.05f, 0.17f, dark, N);
+                onShin(sd, sd * 0.13f, 0.3f, 0, 0.115f, 0.03f, 0.145f, dark * 3.0f, N);
                 b(sd * 0.35f, 1.28f, 0, 0.09f, 0.11f, 0.15f, dark * 2.4f, N);
                 b(sd * 0.35f, 1.12f, 0, 0.095f, 0.04f, 0.155f, col * 0.8f, T);
             }
@@ -275,9 +310,9 @@ void playerModelParts(int model, float hs, const ModelPalette& pal, ModelParts& 
         case 10: // BANDIT: boots and chaps, a team shirt under a dark vest, a gun belt with a holster, a bandana over the
                  // face, a wide-brimmed hat with a team band
             for (float sd : {-1.0f, 1.0f}) {
-                b(sd * 0.14f, 0.44f, 0, 0.12f, 0.44f, 0.15f, Vec3(0.3f, 0.22f, 0.15f), N);
-                b(sd * 0.14f, 0.12f, -0.02f, 0.13f, 0.12f, 0.17f, Vec3(0.18f, 0.12f, 0.07f), N);
-                b(sd * 0.14f, 0.5f, -0.155f, 0.1f, 0.3f, 0.01f, Vec3(0.4f, 0.3f, 0.2f), N, false, true);
+                leg(sd, sd * 0.14f, 0, 0.18f, 0.88f, 0.44f, 0.12f, 0.15f, Vec3(0.3f, 0.22f, 0.15f), N);
+                onFoot(sd, sd * 0.14f, 0.12f, -0.02f, 0.13f, 0.12f, 0.17f, Vec3(0.18f, 0.12f, 0.07f), N);
+                leg(sd, sd * 0.14f, -0.155f, 0.2f, 0.8f, 0.44f, 0.1f, 0.01f, Vec3(0.4f, 0.3f, 0.2f), N, false, true);
                 b(sd * 0.35f, 1.3f, 0, 0.09f, 0.11f, 0.16f, col * 0.85f, T);
             }
             b(0, 1.1f, 0, 0.31f, 0.28f, 0.21f, col * 0.85f, T);
@@ -294,9 +329,9 @@ void playerModelParts(int model, float hs, const ModelPalette& pal, ModelParts& 
             break;
         default: // STANDARD: two legs with boots and knee pads, a jacket with a team chest, a belt, shoulders, a visor
             for (float sd : {-1.0f, 1.0f}) {
-                b(sd * 0.14f, 0.44f, 0, 0.12f, 0.44f, 0.16f, col * 0.55f, T);
-                b(sd * 0.14f, 0.06f, -0.03f, 0.13f, 0.06f, 0.19f, dark, N);
-                b(sd * 0.14f, 0.5f, -0.16f, 0.09f, 0.07f, 0.02f, col * 0.35f, T, false, true);
+                leg(sd, sd * 0.14f, 0, 0.08f, 0.88f, 0.44f, 0.12f, 0.16f, col * 0.55f, T);
+                onFoot(sd, sd * 0.14f, 0.06f, -0.03f, 0.13f, 0.06f, 0.19f, dark, N);
+                onThigh(sd, sd * 0.14f, 0.5f, -0.16f, 0.09f, 0.07f, 0.02f, col * 0.35f, T, false, true);
                 b(sd * 0.36f, 1.33f, 0, 0.1f, 0.1f, 0.2f, col * 0.8f, T);
             }
             b(0, 0.87f, 0, 0.3f, 0.04f, 0.2f, dark, N);
@@ -311,6 +346,191 @@ void playerModelParts(int model, float hs, const ModelPalette& pal, ModelParts& 
     }
 }
 
+
+// ---- player animation -----------------------------------------------------------------------------------------------
+// Quake Live-style legs: a gait cycle driven by the ground covered (the feet don't slide at walking speeds), the legs
+// turned toward the move (back-pedalling plays the cycle backwards with the legs forward), a tucked pose in the air, the
+// torso and head on the aim. Visual only: the hitbox, the netcode and the movement don't know about any of it.
+const AnimTuning kAnim = {
+    /*walkStride*/ 1.7f, /*runStride*/ 3.4f,
+    /*walkSpeed*/ 2.5f, /*runSpeed*/ 7.0f,          // (the ground speed is 9.5 m/s, pmove.cpp kGroundSpeed; crouch 4)
+    /*maxCycleRate*/ 2.2f,                           // (9.5 m/s would be 2.8 a second: strafe-hopping 15+ blurs the legs)
+    /*startSpeed*/ 0.6f,
+    /*walkSwing*/ 0.38f, /*runSwing*/ 0.52f,         // (22 / 30 degrees)
+    /*walkKnee*/ 0.55f, /*runKnee*/ 1.25f,
+    /*stanceKnee*/ 0.08f,
+    /*runLean*/ 0.12f,
+    /*legTurnMax*/ 1.05f,                            // (60 degrees)
+    /*legTurnRate*/ 12.0f,
+    /*idleTurnStart*/ 0.9f, /*idleTurnStop*/ 0.06f,
+    /*backEnter*/ 1.92f, /*backLeave*/ 1.48f,        // (110 / 85 degrees: a pure strafe stays forward-facing)
+    /*airThighL*/ 0.75f, /*airThighR*/ 0.35f, /*airKneeL*/ 1.45f, /*airKneeR*/ 0.95f, /*airLean*/ 0.1f,
+    /*airRate*/ 12.0f,
+    /*headPitch*/ 0.3f, /*torsoPitch*/ 0.1f, /*pitchMax*/ 0.35f,
+    /*velSmooth*/ 0.05f,
+    /*teleport*/ 3.0f,
+};
+
+const char* boneName(int b) {
+    static const char* n[BONE_COUNT] = {"root", "pelvis", "torso", "head", "thigh_l", "shin_l", "thigh_r", "shin_r", "foot_l", "foot_r"};
+    return b >= 0 && b < BONE_COUNT ? n[b] : "root";
+}
+int boneFromName(const std::string& s) {
+    for (int b = 0; b < BONE_COUNT; b++) if (s == boneName(b)) return b;
+    return -1;
+}
+
+void playerRig(const ModelParts& parts, PlayerRig& r) {
+    r = PlayerRig{};
+    float thighTop = -1e9f, thighBot = 1e9f, headBot = 1e9f, hx = 0;
+    int nThigh = 0;
+    unsigned have = 0;
+    for (const ModelPart& q : parts) {
+        if (q.bone >= BONE_COUNT) continue;
+        have |= 1u << q.bone;
+        const float top = q.c.y + q.h.y, bot = q.c.y - q.h.y;
+        if (q.bone == BONE_THIGH_L || q.bone == BONE_THIGH_R) {
+            thighTop = std::max(thighTop, top);
+            thighBot = std::min(thighBot, bot);
+            hx += std::fabs(q.c.x);
+            nThigh++;
+        } else if (q.bone == BONE_HEAD) headBot = std::min(headBot, bot);
+    }
+    const unsigned legs = 1u << BONE_THIGH_L | 1u << BONE_SHIN_L | 1u << BONE_THIGH_R | 1u << BONE_SHIN_R;
+    r.animated = (have & legs) == legs && nThigh > 0 && thighTop > thighBot;
+    if (!r.animated) return;
+    r.hipY = r.waistY = thighTop;
+    r.kneeY = thighBot;   // (the thigh's bottom: inside the overlap with the shin, so a bend shows no gap)
+    r.hipX = hx / (float)nThigh;
+    if (headBot < 1e8f) r.neckY = headBot;
+    r.footHalf = r.ankleY = 0;
+    for (const ModelPart& q : parts) {
+        if ((q.bone == BONE_SHIN_L || q.bone == BONE_SHIN_R) && q.c.y - q.h.y < 0.05f) r.footHalf = std::max(r.footHalf, std::fabs(q.c.z) + q.h.z);
+        if (q.bone == BONE_FOOT_L || q.bone == BONE_FOOT_R) r.ankleY = std::max(r.ankleY, q.c.y + q.h.y);
+    }
+    r.ankleY = std::min(r.ankleY, r.kneeY);
+}
+
+namespace {
+// a turn about the X axis through (y, z = 0) by the angle whose cosine and sine are c, s: positive takes a part below
+// the pivot forward (-Z)
+inline Mat4 pivotX(float y, float c, float s) {
+    Mat4 m;
+    m.m[5] = c; m.m[6] = s; m.m[9] = -s; m.m[10] = c;
+    m.m[13] = y - c * y;
+    m.m[14] = -s * y;
+    return m;
+}
+inline float wrapPi(float a) {
+    if (!(std::fabs(a) < 1e4f)) return 0;
+    while (a > 3.14159265f) a -= 6.28318531f;
+    while (a < -3.14159265f) a += 6.28318531f;
+    return a;
+}
+}
+
+void playerPose(const AnimState& s, const PlayerRig& rig, PlayerPose& out) {
+    for (Mat4& m : out.bone) m = Mat4();
+    if (!rig.animated) return;
+    const AnimTuning& k = kAnim;
+    const float sp = std::isfinite(s.speed) ? std::max(0.0f, s.speed) : 0.0f;
+    const float air = std::isfinite(s.air) ? clampf(s.air, 0, 1) : 0.0f, gnd = 1 - air;
+    const float run = clampf((sp - k.walkSpeed) / (k.runSpeed - k.walkSpeed), 0, 1);
+    const float amt = clampf(sp / k.walkSpeed, 0, 1);   // (slower than walking: smaller steps)
+    const float ph = (std::isfinite(s.phase) ? s.phase : 0.0f) * 6.28318531f;
+    const float sw = lerpf(k.walkSwing, k.runSwing, run) * amt, kn = lerpf(k.walkKnee, k.runKnee, run) * amt;
+    const float sn = std::sin(ph), cs = std::cos(ph);
+    // the gait: the left thigh forward at phase 0.25, the right at 0.75; a knee bends most as its leg swings through
+    float thL = sw * sn, thR = -sw * sn;
+    float knL = kn * std::max(0.0f, cs) + k.stanceKnee * amt, knR = kn * std::max(0.0f, -cs) + k.stanceKnee * amt;
+    // the air: tucked (one knee higher)
+    thL = lerpf(thL, k.airThighL, air); thR = lerpf(thR, k.airThighR, air);
+    knL = lerpf(knL, k.airKneeL, air); knR = lerpf(knR, k.airKneeR, air);
+    // each joint's turn once (its cosine and sine serve the matrix and the feet's height)
+    const float cTL = std::cos(thL), sTL = std::sin(thL), cTR = std::cos(thR), sTR = std::sin(thR);
+    const float cKL = std::cos(knL), sKL = std::sin(knL), cKR = std::cos(knR), sKR = std::sin(knR);
+    const float cSL = cTL * cKL + sTL * sKL, sSL = sTL * cKL - cTL * sKL;   // (the shins' angle to the floor: thigh - knee)
+    const float cSR = cTR * cKR + sTR * sKR, sSR = sTR * cKR - cTR * sKR;
+    // on the ground the lower foot stays on it: the body drops by as much as the legs' spread raises the feet (the
+    // lowest point of a foot: the ankle's height straight down from the shin's end, less the toe or heel of a shin box
+    // that reaches the floor as it tilts)
+    const float lt = rig.hipY - rig.kneeY, ls = rig.kneeY - rig.ankleY;
+    const float lowL = rig.hipY - lt * cTL - ls * cSL - rig.ankleY - rig.footHalf * std::fabs(sSL);
+    const float lowR = rig.hipY - lt * cTR - ls * cSR - rig.ankleY - rig.footHalf * std::fabs(sSR);
+    const float drop = std::max(std::min(lowL, lowR), -0.15f) * gnd;   // (a heel that would dip under the floor lifts the body)
+    const float lean = k.runLean * run * amt * gnd + k.airLean * air;
+    const float pitch = std::isfinite(s.pitch) ? s.pitch : 0.0f;
+    const float tp = clampf(pitch * k.torsoPitch, -k.pitchMax, k.pitchMax);
+    const float hp = clampf(pitch * k.headPitch, -k.pitchMax, k.pitchMax) - tp * 0.5f;
+    const float ly = std::isfinite(s.legYaw) ? clampf(s.legYaw, -k.legTurnMax, k.legTurnMax) : 0.0f;
+    Mat4 pelvis = Mat4::rotY(ly);
+    pelvis.m[13] = -drop;
+    out.bone[BONE_PELVIS] = pelvis;
+    out.bone[BONE_THIGH_L] = mulAffine(pelvis, pivotX(rig.hipY, cTL, sTL));
+    out.bone[BONE_THIGH_R] = mulAffine(pelvis, pivotX(rig.hipY, cTR, sTR));
+    out.bone[BONE_SHIN_L] = mulAffine(out.bone[BONE_THIGH_L], pivotX(rig.kneeY, cKL, -sKL));
+    out.bone[BONE_SHIN_R] = mulAffine(out.bone[BONE_THIGH_R], pivotX(rig.kneeY, cKR, -sKR));
+    out.bone[BONE_FOOT_L] = mulAffine(out.bone[BONE_SHIN_L], pivotX(rig.ankleY, cSL, -sSL));   // (back level with the floor)
+    out.bone[BONE_FOOT_R] = mulAffine(out.bone[BONE_SHIN_R], pivotX(rig.ankleY, cSR, -sSR));
+    out.bone[BONE_TORSO] = pivotX(rig.waistY, std::cos(tp - lean), std::sin(tp - lean));   // (+ tips a part above the pivot back)
+    out.bone[BONE_TORSO].m[13] -= drop;
+    out.bone[BONE_HEAD] = mulAffine(out.bone[BONE_TORSO], pivotX(rig.neckY, std::cos(hp), std::sin(hp)));
+}
+
+void animStep(AnimTrack& t, const Vec3& pos, float aimYaw, float aimPitch, bool ground, float dt) {
+    const AnimTuning& k = kAnim;
+    t.s.pitch = std::isfinite(aimPitch) ? aimPitch : 0.0f;
+    if (!std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z) || !std::isfinite(aimYaw)) return;
+    const Vec3 d = pos - t.lastPos;
+    if (!t.init || length(d) > k.teleport) {   // first sight, a respawn or a teleport: start standing where they are
+        t.lastPos = pos;
+        t.vel = {0, 0, 0};
+        t.legWorldYaw = aimYaw;
+        t.back = t.turning = false;
+        t.s.phase = 0; t.s.speed = 0; t.s.legYaw = 0;
+        t.s.air = ground ? 0.0f : 1.0f;
+        t.init = true;
+        return;
+    }
+    if (!(dt > 0)) return;
+    dt = std::min(dt, 0.1f);
+    t.lastPos = pos;
+    const float a = 1 - std::exp(-dt / k.velSmooth);
+    t.vel = t.vel + (d * (1.0f / dt) - t.vel) * a;
+    const float hs = std::sqrt(t.vel.x * t.vel.x + t.vel.z * t.vel.z);
+    t.s.speed = hs;
+    // the legs' facing
+    float target = t.legWorldYaw;
+    if (hs > k.startSpeed) {
+        float rel = wrapPi(std::atan2(-t.vel.x, -t.vel.z) - aimYaw);
+        if (std::fabs(rel) > k.backEnter) t.back = true;
+        else if (std::fabs(rel) < k.backLeave) t.back = false;
+        if (t.back) rel = wrapPi(rel + 3.14159265f);
+        target = aimYaw + clampf(rel, -k.legTurnMax, k.legTurnMax);
+        t.turning = false;
+    } else {   // standing: the legs stay put until the aim is far enough round, then follow it
+        const float off = wrapPi(t.legWorldYaw - aimYaw);
+        if (std::fabs(off) > k.idleTurnStart) t.turning = true;
+        if (t.turning) { target = aimYaw; if (std::fabs(off) < k.idleTurnStop) t.turning = false; }
+        t.back = false;
+    }
+    t.legWorldYaw = wrapPi(t.legWorldYaw + wrapPi(target - t.legWorldYaw) * (1 - std::exp(-dt * k.legTurnRate)));
+    float off = wrapPi(t.legWorldYaw - aimYaw);
+    if (std::fabs(off) > k.legTurnMax) { off = off > 0 ? k.legTurnMax : -k.legTurnMax; t.legWorldYaw = wrapPi(aimYaw + off); }
+    t.s.legYaw = off;
+    // the cycle: by the ground covered (capped), frozen in the air; standing, the feet come together
+    if (hs > k.startSpeed && t.s.air < 0.5f) {
+        const float run = clampf((hs - k.walkSpeed) / (k.runSpeed - k.walkSpeed), 0, 1);
+        const float rate = std::min(hs / lerpf(k.walkStride, k.runStride, run), k.maxCycleRate);
+        t.s.phase += (t.back ? -1.0f : 1.0f) * rate * dt;
+    } else if (hs <= k.startSpeed) {
+        const float near = std::round(t.s.phase * 2) * 0.5f;
+        t.s.phase += (near - t.s.phase) * (1 - std::exp(-dt * 8));
+    }
+    t.s.phase -= std::floor(t.s.phase);
+    if (!std::isfinite(t.s.phase)) t.s.phase = 0;
+    t.s.air += ((ground ? 0.0f : 1.0f) - t.s.air) * (1 - std::exp(-dt * k.airRate));
+}
 
 void viewmodelParts(int w, const ModelPalette& pal, ModelParts& out) {
     out.clear();

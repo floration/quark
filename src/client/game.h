@@ -9,6 +9,7 @@
 #include <string>
 #include <chrono>
 #include <thread>
+#include <future>
 #include <vector>
 #include "hudwidgets.h"
 #include "layout.h"
@@ -19,8 +20,10 @@
 #include "../game/server.h"
 #include "../game/ranked.h"
 #include "../game/trainer.h"
+#include "../game/tutorial.h"
 #include "audio.h"
 #include "clientfeel.h"
+#include "ultramargin.h"
 #include "modecalls.h"
 #include "rawmouse.h"
 #include "gpuprefs.h"
@@ -43,6 +46,7 @@ struct SetLayout {
 
 struct LaunchOptions {
     std::string connect;        // --connect addr
+    std::string language;       // --language code: LANGUAGE for this start, kept (the launcher's pick before a quark.cfg)
     int hostMode = -1;          // --host mode
     int vsBotsMode = -1;        // --vsbots mode (uses the saved bot settings)
     std::string hostMap;        // --map name
@@ -66,6 +70,7 @@ struct LaunchOptions {
     bool debugWidgets = false;
     bool debugHudLayout = false; // --hudlayout: open HUD layout settings in game
     bool debugModels = false;
+    bool debugWalk = false;    // (--walk: the --models lineup turned side-on)
     int debugRps = 0;           // --rpsshot: the hide and seek tiebreak panel with made-up players (1 picking, 2 reveal, 3 three-way reveal)
     bool camSet = false;         // --cam: fixed backdrop camera (map analysis shots); in a match, the view's camera
     Vec3 camPos;
@@ -94,6 +99,9 @@ struct LaunchOptions {
     std::string benchmarkDemo;  // ...on this demo instead of the shipped one
     double benchmarkSeconds = 0;
     std::string trainer;        // --trainer ID[:DIFF]: start that AIM TRAINER scenario (difficulty 0-2) at once (screenshots)   // ...measuring at most this long (0: to the demo's end)
+    bool tutorial = false;      // --tutorial [LESSON[:PHASE]]: start the TUTORIAL at once, at that lesson (an id or 0-based number;
+    std::string tutorialAt;     // PHASE try / done / finish / lessons: straight to it, for screenshots)
+    bool tutorialOffer = false; // --tutorial-offer: the first launch's tutorial offer on the main menu (screenshots)
     bool uiTest = false;        // --uitest [report.json]: click every widget and check it does what it says (uitest.cpp)
     std::string uiTestReport;   // where the report goes (default uitest-report.json)
     std::string uiTestOnly;     // --uitest-only a,b: just these scenarios (development)
@@ -111,6 +119,11 @@ public:
     void shutdown();
     void frame(double dt);
     bool quitRequested() const { return quit_; }
+    // the frame cap's head start (s) for a cap of `period` s: LATENCY > FRAME CAP OFFSET (AUTO: 5% of the period)
+    double capOffset(double period) const {
+        const double o = cfg_.capOffsetUs < 0 ? period * 0.05 : cfg_.capOffsetUs * 1e-6;
+        return std::min(o, period * 0.5);   // (never more than half the frame: the rest is the frame's own)
+    }
     int maxFps() const {   // (VIDEO > MORE: WHEN UNFOCUSED caps it while the window is in the background or minimized)
         int cap = cfg_.maxFps;
         if (cfg_.vrr && vrrHz_ > 3) cap = cap > 0 ? std::min(cap, vrrHz_ - 3) : vrrHz_ - 3;   // (VRR: under the refresh, never at it)
@@ -174,6 +187,7 @@ private:
         std::atomic<float> progress{0};
         std::atomic<bool> done{false}, cancel{false};
         uint32_t gen = 0;                  // net_.mapGeneration() it was started for
+        double due = 0;                    // the loading screen's next frame (timeNow; ~30 fps)
     };
     std::unique_ptr<BakeJob> bake_;
     void stopBake();                       // cancel a running bake and wait for its worker (leaving, shutdown)
@@ -211,7 +225,29 @@ private:
     // in game: the pause menu's pages between the notice list and the weapon bar (y 148..638 at 720p)
     SetLayout ingameLayout(float designW) const;
     float ingameTop(const SetLayout& L, float kH) const;   // where content kH design px tall starts there (its panel centred)
-    void drawMainMenu(const SetLayout& L);
+    // The main menu (1.19.x, design "Y"): an icon strip on the left (PLAY, PRACTICE, CREATE tabs; RANKS and SETTINGS open
+    // their screens; DISCORD, INFO, QUIT at its foot), the tab's page on a see-through rail beside it, its panels on the
+    // right, the name chip top right. Nothing here runs in a match (drawMenu returns first).
+    enum MainTab { MAIN_PLAY = 0, MAIN_PRACTICE, MAIN_CREATE, MAIN_TABS };
+    int mainTab_ = MAIN_PLAY;          // the tab shown (kept while a page under it is open: BACK returns to it)
+    bool nameEdit_ = false;            // the name chip is open as its text field
+    double browserAt_ = -1e9;          // the server list's last refresh (JOIN, or the PLAY tab opening)
+    void openMainTab(int tab);         // shows a tab, and reads what it shows (bests, recent maps) once
+    void drawMainMenu();
+    void drawMainStrip(float s, float H);
+    void drawMainPlay(float s, float px, float pw, float rx, float rw, float ry);
+    void drawMainPractice(float s, float px, float pw, float rx, float rw, float ry);
+    void drawMainCreate(float s, float px, float pw, float rx, float rw, float ry);
+    void drawNameChip(float s, float W);
+    // what the PRACTICE and CREATE tabs show, read from the files when the tab opens (never a scan per frame)
+    struct MainBest { std::string what, name, value, pre; };   // "AIM TRAINER" / the scenario, the score (pre: drawn before it)
+    struct MainCache {
+        const void* trainer = nullptr;   // the last scenario (trainer::Scenario), null: none
+        int trainerDiff = 0, trainerLast = 0, trainerBest = 0, trainerPlays = 0;
+        std::vector<MainBest> bests;
+        std::vector<std::string> recentMaps, recentDates;   // your maps folder, newest first (at most 5)
+        int ownMaps = 0;
+    } mainCache_;
     void drawJoin(const SetLayout& L);
     void drawHost(const SetLayout& L);
     void drawHostAdvanced(const SetLayout& L);
@@ -225,7 +261,7 @@ private:
     void checkHostBrain();                  // compile the chosen brain (loadBrain: cached while the file is unchanged)
     void drawPauseMenu(float cx, float y);
     // Settings: one shell, six tabs (drawSettings: the menus and the pause menu; game.cpp "Settings")
-    enum { TAB_PLAYER, TAB_GAMEPLAY, TAB_CONTROLS, TAB_VIDEO, TAB_CROSSHAIR, TAB_HUD, TAB_SEARCH };   // (SEARCH: every setting in one list)
+    enum { TAB_PLAYER, TAB_GAMEPLAY, TAB_CONTROLS, TAB_VIDEO, TAB_CROSSHAIR, TAB_HUD, TAB_LATENCY, TAB_SEARCH };   // (SEARCH: every setting in one list)
     int setTab_ = TAB_PLAYER;
     int controlsSub_ = 0;    // CONTROLS: 0 general + interface keys, 1 move + weapon keys
     void drawSettings();
@@ -255,6 +291,11 @@ private:
     // models (models.h): the box list being drawn (reused every frame), and the owner's glTF overrides (null: none)
     ModelParts parts_;
     ModelOverrides modelOv_;
+    // PLAYER ANIMATIONS (models.h): each player slot's gait, legs' turn and air pose, moved on once a frame from where
+    // they are drawn (fixed: nothing allocated); animT_: the time each was last moved on (a second draw in a frame: 0 s)
+    AnimTrack anim_[kMaxPlayers];
+    double animT_[kMaxPlayers] = {};
+    float previewPhase_ = 0;   // the PLAYER tab's preview: walking in place
     bool fairModels_ = false;   // this frame: ranked / time trial (rankedPlayer), only the shipped overrides are drawn
     // the override drawn for a model: a mesh (drawn as triangles), or a box model (its boxes go through the box path
     // in place of the built-in ones: overrideBoxParts); null: none of that kind
@@ -307,6 +348,49 @@ private:
     bool trainerKey(int key, int action);
     void trainerFrame(double dt);
     void drawTrainerMenu(const SetLayout& L);
+    // ---- TUTORIAL (tutorial.cpp; 1.19.9): the movement tech lessons on the map `tutorial`, a local game whose server
+    // runs the GHOST (tutorial_server.cpp). Each lesson: DEMO (the camera on the ghost doing the tech, its keys shown
+    // with your binds), then TRY (you, the ghost looping beside you, the steps and the lesson's check on your own
+    // predicted movement), DONE, the next one. Off (tut_.on false): one bool tested where it hooks in.
+    struct TutState {
+        enum Phase : uint8_t { DEMO, TRY, DONE, FINISH };
+        bool on = false;            // in the tutorial's game
+        bool begun = false;         // this lesson's command went to the server
+        bool menu = false;          // pause > LESSONS
+        bool camSnap = true;        // the demo camera starts where it should be (no swing in from the last lesson)
+        bool wasAlive = false, wasPaused = false;
+        Phase phase = DEMO;
+        int lesson = 0;
+        int ghost = -1;             // the ghost's player id (found by name)
+        int partner = -1;           // the PARTNER's (the lessons with another player; found by name)
+        double phaseAt = 0;         // time_ the phase began
+        double demoEnd = 0;         // time_ the demo hands over
+        int64_t epochMs = 0;        // the ghost's loop starts (server ms): the keys shown are its script's at the view time
+        uint8_t ev = 0;             // your ME_* events since the last frame (updateSounds takes them)
+        uint8_t ghostEv = 0;        // the ghost's last callout (ME_SUPER / ME_HYPER / ...) and when
+        double ghostEvAt = -10;
+        uint16_t lastGhostKeys = 0;
+        double keyLit[9] = {};      // the ghost's keys, each lit at least a moment (a 30 ms tap would be invisible)
+        tut::Check check;
+        Vec3 camPos;
+        float prevGhostYaw = 0, turn = 0;
+        // (text formatted once a lesson, and again when the binds may have changed: nothing built per frame)
+        std::string title, what, steps[4], goal, keyName[9], keysHint, skipHint, demoHint, readout, scoreLine;
+        int nSteps = 0;
+    };
+    TutState tut_;
+    bool tutorialStart_ = false;   // (startHost: the next host is the tutorial's)
+    bool tutOffer_ = false;        // the first launch's offer is up (main menu)
+    void startTutorial(int lesson);
+    void tutorialBegin(int lesson);
+    void tutorialTexts();
+    void tutorialFrame();
+    bool tutorialKey(int key);
+    void tutorialCamera(const NetClient::PlayerArray& players, Vec3& eye, float& yaw, float& pitch);
+    bool tutorialDemoView() const { return tut_.on && tut_.phase == TutState::DEMO && tut_.begun; }
+    void drawTutorialHud(float W, float H, float s);
+    void drawTutorialPause(float cx, float y);
+    void drawTutorialOffer();
     // ---- BENCHMARK (main menu; --benchmark): a fixed bot match on Hamlet watched from a fixed camera path, then its
     // frame times (benchmark.cpp; the match and the maths: src/game/benchmark.h)
     struct BenchRun {
@@ -329,8 +413,8 @@ private:
     struct BenchResult {             // the run the result page shows, and the one saved before it (to compare)
         BenchFile run, prev;
         bool havePrev = false, nameDirty = false;
-        float topMs = 20;
-        std::vector<float> colMax, colMean;   // the graph (bench::graphColumns)
+        float loMs = 0, hiMs = 1, avgMs = 0;   // the graph's bounds: the run's fastest and slowest frame, and its mean
+        std::vector<float> colMax, colMean, colMin;   // the graph (bench::graphColumns)
     } benchRes_;
     std::vector<BenchFile> benchList_;   // the BENCHMARKS page's runs, newest first (headers only)
     double benchListAt_ = 0;             // (rescanned every 2 s while it's open, as the demos list)
@@ -375,6 +459,7 @@ private:
     // custom modes: the one being edited, its tab, and the rules arriving from a server in pieces
     CustomRules editRules_;
     std::string editOrigName_;
+    bool customFromMain_ = false;   // the custom mode editor was opened from the main menu (PLAY > CUSTOM MODE): BACK / Esc return there
     int customTab_ = 0;
     std::vector<std::string> rulesParts_;
     void drawCustomModeEditor(const SetLayout& L);
@@ -409,7 +494,7 @@ private:
     bool voteMenu_ = false;
     bool specPick_ = false;     // the vote menu's player list: who to move to spectator (callvote spec)
     void drawVoteMenu(float cx, float y);
-    // The vote builder (owner, 2026-11-01): one VOTE screen; toggles for what the vote changes (GAMEMODE, MODIFIERS,
+    // The vote builder (owner, 2026-11-01): the VOTE page's toggles for what the vote changes (GAMEMODE, MODIFIERS,
     // MAP), then each part in order: the mode (OBJECTIVE or PLAYER first), its modifiers (the ruleset, then the numbers
     // and rules), the map; one vote for all of it ("callvote map <map> <mode> <ruleset> [mods k=v ...]").
     enum VoteStage { VS_TOGGLES = 0, VS_GROUP, VS_MODE, VS_RULESET, VS_MODS, VS_MAP, VS_SUMMARY };
@@ -417,10 +502,11 @@ private:
     int voteStage_ = VS_TOGGLES;
     bool vsMode_ = true, vsMods_ = true, vsMap_ = true;
     int modeGroup_ = 0;                 // 0 all, 1 objective, 2 player (the mode picker's filter in the builder)
-    struct VoteMods { float gravity = 1, speed = 1, jump = 1, knockback = 1, damage = 1; float health = 100;
+    struct VoteMods { float gravity = 1, speed = 1, jump = 1, knockback = 1, damage = 1, fireRate = 1, projSpeed = 1; float health = 100;
                       bool vampire = false, regen = false, selfDamage = true, dash = true, grapple = true, instagib = false, fly = false; } voteMods_;
     void openVoteSetup();
     void voteAdvance();                 // on to the next part the toggles ask for (a picker, or the builder's own page)
+    void voteBack();                    // back to the part before (the last one toggled on before this one), or the VOTE page
     std::string voteModsWords() const;  // " mods k=v ..." (the non-standard ones)
     std::string voteModsText() const;   // the same as k=v lines (votedModsTitle)
     void drawVoteSetup();
@@ -731,6 +817,10 @@ private:
     struct PredProj { uint8_t type = 0; bool live = false, lob = false, started = false, atWall = false, boomed = false; Vec3 pos0, vel0, pos, offset; double born = 0; };
     PredProj predProj_[8];
     void spawnPredictedProjectile(int w, bool alt, const UserCmd& c);
+    bool projectileDissolved(const ProjectileSnap& p, Vec3* at) const;
+    bool inAcid_ = false, acidBurns_ = false;   // your hull in acid now (the HUD's tint), and it's hurting you (pulse, sizzle)
+    double acidSince_ = 0, nextSizzle_ = 0;   // gone into lava or acid (no blast: a hiss)
+    void dissolveOwnCopies();
     std::vector<ProjStart> projStarts_, projStartsKeep_;
     // Your projectiles' impacts shown at once, on your screen (rockets / bolts on a wall or an enemy, stickies on your
     // detonate): the server's own explosion of that one (its id; 0xFFFF: a predicted copy's, not handed over yet) is then
@@ -779,14 +869,22 @@ private:
     // F3 performance overlay: frame-time percentiles (lows matter, averages hide stutter)
     // F3 cycles (owner 2026-10-29): 1 the FPS line, 2 + ping / 3D size / server, 3 everything with the pipeline graph, 0 off.
     // Only 3 runs the graph's and input-to-frame measuring (GPU timestamps): 1 and 2 cost just their text.
+    void turnGain(float* kYaw, float* kPitch) const;
+    void drawLatencySettings(const struct SetLayout& L);
+    std::vector<struct PerfFinding> perfFindings_;
+    std::future<std::vector<struct PerfFinding>> perfFuture_;   // (the check runs on its own thread)
+    bool perfChecked_ = false;
+    bool gpuLatchOn_ = false, hudLayerOn_ = false;   // (this frame's LATENCY tweaks that took: F3 lists them)
     int perfStage_ = 0;
     bool hudBuilt_ = false;            // drawWorld built the HUD (and F3 / F4) before its late read this frame
     bool perfMini_ = false;            // F4: only the mouse to photon number (drawPerfMini)
     bool perfOn() const { return perfStage_ >= 3 || perfMini_; }   // (the pipeline graph's measuring runs)
     std::string perfMiniText_;
-    std::vector<float> frameTimes_ = std::vector<float>(2048, 0.0f);
+    static constexpr size_t kFrameTimes = 2048;   // (a power of two: the ring index wraps with a mask)
+    static_assert((kFrameTimes & (kFrameTimes - 1)) == 0, "kFrameTimes must be a power of two");
+    std::vector<float> frameTimes_ = std::vector<float>(kFrameTimes, 0.0f);
     size_t frameIdx_ = 0, frameCount_ = 0;
-    double perfNextUpdate_ = 0;
+    double perfNextUpdate_ = 0, pipeNextUpdate_ = 0;
     std::string perfText_, perfText2_;   // F3's first two lines: the frame rates, then the worst frame and the ping
     void drawPerf();
 
@@ -946,10 +1044,22 @@ private:
     void* ultraFence_ = nullptr;               // ULTRA: the last frame's fence (beforeInput paces the next frame by it)
     double ultraSwapAt_ = 0, ultraReadAt_ = 0;
     double ultraGpu_ = 0.0005, ultraCpu_ = 0.0003;   // learnt: swap to GPU done, input read to swap (seconds)
+    UltraMargin ultraMargin_;                  // ULTRA SAFETY: AUTO's learnt margin (ultramargin.h)
+    bool ultraHeld_ = false;                   // this frame's input read was held back by the pacing (so a bubble is the margin's)
     struct LatQuery { unsigned q; double input; bool used; };
     LatQuery latQ_[16] = {};
     int latNext_ = 0;
     double gpuClockOffset_ = 0, gpuCalibAt_ = -10;
+    // the GPU clock's drift against the CPU's (seconds per second), fitted over the last calibrations, and the fit's mean
+    // GPU time (s): GPU times are placed with offset + drift * (t - gpuCalibGpu_), so they don't slide between
+    // calibrations (F3's swap-to-GPU gap grew over 10 s, then snapped back)
+    double gpuDrift_ = 0, gpuCalibGpu_ = 0;
+    static constexpr int kGpuCalib = 8;   // (samples in the fit: 8 x 2 s = the last 16 s)
+    double gpuCalibS_[kGpuCalib][2] = {};   // (GPU time s, offset s)
+    int gpuCalibN_ = 0;
+    double gpuCalibPeriod_ = 2.0;   // (s between calibrations; QUARK_GPU_CALIB overrides, for testing)
+    double gpuToCpuSec(double g) const { return g + gpuClockOffset_ + gpuDrift_ * (g - gpuCalibGpu_); }
+    double gpuToCpu(GLint64 t) const { return gpuToCpuSec(t * 1e-9); }
     std::vector<float> latSamples_;      // ms, last second
     std::string latText_;
     double latNextUpdate_ = 0;

@@ -106,9 +106,20 @@ if(QUARK_LTO AND NOT QUARK_SANITIZE AND NOT QUARK_FUZZ)
 endif()
 
 # precise FP everywhere: client prediction (pmove / map / collision) must match a server built by another
-# toolchain bit for bit, so no fast-math and no FMA contraction
-add_compile_options(-Wall -Wextra -Wno-unused-parameter -fno-fast-math -ffp-contract=off "$<$<CONFIG:Release>:-O3>")
-add_link_options(-fno-fast-math -ffp-contract=off)   # (with LTO the code is generated at link time: the same rules there)
+# toolchain bit for bit, so no fast-math and no FMA contraction.
+# -fno-math-errno and -fno-trapping-math are on: the two parts of fast-math that don't change a computed value (at
+# most the sign of a NaN the compiler folds from constants, e.g. 0.0 / 0.0). The first only stops math functions
+# setting errno (nothing here reads errno after one: the errno checks follow strtod / strtol and system calls), the
+# second only lets the compiler assume an FP operation raises no trap (nothing here unmasks FP exceptions or reads the
+# FP status flags). With them GCC inlines round / lround / lrint / sqrt to SSE4.1 instructions instead of calling
+# libm: the client had 238 roundf and 113 lround call sites (most in the HUD, the menus and snapshot encoding), and
+# every sqrt had a branch to a libm call for errno. Checked: each inlined form against libm on all 2^32 floats (bit
+# for bit, NaN included; SSE4.1 and AVX2), quark_tests simhash and tools/isa_check.sh unchanged. Never
+# -ffinite-math-only, -fno-signed-zeros, -fassociative-math or -freciprocal-math: those do change results.
+# (clang, the macOS build, already has both of these by default.)
+add_compile_options(-Wall -Wextra -Wno-unused-parameter -fno-fast-math -ffp-contract=off -fno-math-errno -fno-trapping-math
+                    "$<$<CONFIG:Release>:-O3>")
+add_link_options(-fno-fast-math -ffp-contract=off -fno-math-errno -fno-trapping-math)   # (with LTO the code is generated at link time: the same rules there)
 
 # Instruction set (x86-64 only; arm64 and macOS's universal build keep the compiler's default). The packages ship two
 # game clients: quark (QUARK_ISA v2: SSE4.2 + POPCNT, every x86-64 CPU since about 2009) and quark_avx2 (v3: AVX2,
@@ -138,6 +149,62 @@ elseif(NOT QUARK_ISA STREQUAL "none" AND NOT QUARK_ISA STREQUAL "v2" AND NOT QUA
 endif()
 if(WIN32)
   add_compile_definitions(_WIN32_WINNT=0x0601 NOMINMAX)   # Windows 7; no min / max macros from windows.h
+endif()
+
+# Profile-guided optimisation: OFF (default, changes nothing) | GEN | USE. The Linux release job builds the shipped
+# quark_server this way (tools/pgo_server.sh, with a simhash check); the clients don't use it.
+#   GEN: instrumented binaries; running them writes the profile into QUARK_PGO_DIR (tools/pgo_train.sh does the runs)
+#   USE: optimised with that profile (branch layout, inlining, hot / cold splitting, loop choices). It only moves
+#        code: FP rules above are unchanged, so results stay bit for bit (quark_tests simhash checks it).
+#   GCC: one .gcda per object file, named after the object's path relative to the build folder
+#        (-fprofile-prefix-path), so a GEN build folder's profile fits a USE build folder of the same sources and
+#        flags (same ISA, ZONESTATS, LTO). -fprofile-update=atomic: the game's threads share the counters.
+#        -fprofile-partial-training: code the training didn't run stays optimised normally, not "for size".
+#   clang: GEN writes .profraw files; tools/pgo_train.sh merges them into QUARK_PGO_DIR/quark.profdata for USE
+#        (checked on a small program only, not the game).
+#   Measured (4-core VM, GCC 13, LTO, v2, 10 interleaved serverbench pairs): server tick avg -3.7%, bot think -6%,
+#   p99 -1.5% (noise), p99.9 / worst within the noise; client CPU zones on software GL unchanged. A v2 profile used
+#   for a v3 build mismatches ~116 functions (they lose the profile): each ISA needs its own training run.
+set(QUARK_PGO "OFF" CACHE STRING "Profile-guided optimisation: OFF, GEN (instrument) or USE (optimise with the profile)")
+set_property(CACHE QUARK_PGO PROPERTY STRINGS OFF GEN USE)
+set(QUARK_PGO_DIR "${CMAKE_SOURCE_DIR}/pgo-profile" CACHE PATH "Where GEN writes and USE reads the profile")
+if(QUARK_PGO STREQUAL "GEN" OR QUARK_PGO STREQUAL "USE")
+  if(QUARK_SANITIZE OR QUARK_FUZZ)
+    message(FATAL_ERROR "QUARK_PGO is for release-type builds, not with QUARK_SANITIZE / QUARK_FUZZ")
+  endif()
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set(QUARK_PGO_FLAGS -fprofile-prefix-path=${CMAKE_BINARY_DIR})
+    if(QUARK_PGO STREQUAL "GEN")
+      list(APPEND QUARK_PGO_FLAGS -fprofile-generate=${QUARK_PGO_DIR} -fprofile-update=atomic)
+    else()
+      if(NOT EXISTS "${QUARK_PGO_DIR}")
+        message(FATAL_ERROR "QUARK_PGO=USE: no profile in ${QUARK_PGO_DIR} (make one: tools/pgo_train.sh)")
+      endif()
+      # -fprofile-correction: counters of threaded code can be a little inconsistent even with atomic updates.
+      # -Wno-error=coverage-mismatch: a function edited since the training (or built for another target) has a
+      # different control flow than its profile; GCC makes that an error by default. As a warning, that function is
+      # just optimised without its profile.
+      list(APPEND QUARK_PGO_FLAGS -fprofile-use=${QUARK_PGO_DIR} -fprofile-partial-training -fprofile-correction
+                                  -Wno-missing-profile -Wno-error=coverage-mismatch)
+    endif()
+  elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    if(QUARK_PGO STREQUAL "GEN")
+      set(QUARK_PGO_FLAGS -fprofile-generate=${QUARK_PGO_DIR})
+    else()
+      if(NOT EXISTS "${QUARK_PGO_DIR}/quark.profdata")
+        message(FATAL_ERROR "QUARK_PGO=USE: no ${QUARK_PGO_DIR}/quark.profdata (llvm-profdata merge the .profraw files)")
+      endif()
+      set(QUARK_PGO_FLAGS -fprofile-use=${QUARK_PGO_DIR}/quark.profdata -Wno-profile-instr-unprofiled
+                          -Wno-profile-instr-out-of-date)
+    endif()
+  else()
+    message(FATAL_ERROR "QUARK_PGO needs GCC or clang")
+  endif()
+  add_compile_options(${QUARK_PGO_FLAGS})
+  add_link_options(${QUARK_PGO_FLAGS})   # (GEN: links the profiling runtime; LTO: the link-time code generation sees them)
+  message(STATUS "PGO ${QUARK_PGO}: ${QUARK_PGO_DIR}")
+elseif(NOT QUARK_PGO STREQUAL "OFF")
+  message(FATAL_ERROR "QUARK_PGO must be OFF, GEN or USE (not ${QUARK_PGO})")
 endif()
 if(QUARK_FUZZ)
   if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -193,6 +260,8 @@ add_library(quark_core STATIC
   src/game/moveexpr.cpp
   src/game/demo.cpp
   src/game/trainer.cpp
+  src/game/tutorial.cpp
+  src/game/tutorial_server.cpp
   ${CMAKE_BINARY_DIR}/generated/version.cpp
   ${CMAKE_BINARY_DIR}/generated/default_brain.h
   ${CMAKE_BINARY_DIR}/generated/default_modes.h
@@ -360,7 +429,7 @@ target_include_directories(quark_assets PUBLIC third_party ${CMAKE_BINARY_DIR}/g
 target_link_libraries(quark_assets PUBLIC quark_core)
 
 # The languages (src/client/lang.h): assets/lang's tables and glyph atlases, embedded at build time (tools/lang/embed.py,
-# python3 only). The game and the tests link it; the launcher doesn't (its text is English).
+# python3 only). The game, the launcher (its LANGUAGE is the game's setting) and the tests link it.
 file(GLOB QUARK_LANG_FILES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/assets/lang/*.tsv ${CMAKE_SOURCE_DIR}/assets/lang/keys.txt
   ${CMAKE_SOURCE_DIR}/assets/lang/atlas/*.png ${CMAKE_SOURCE_DIR}/assets/lang/atlas/*.glyphs)
 add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/generated/lang_data.h
@@ -369,6 +438,9 @@ add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/generated/lang_data.h
   COMMENT "Embedding the languages (assets/lang/)" VERBATIM)
 add_library(quark_lang STATIC src/client/lang.cpp ${CMAKE_BINARY_DIR}/generated/lang_data.h)
 target_link_libraries(quark_lang PUBLIC quark_assets)
+if(APPLE)
+  target_link_libraries(quark_lang PUBLIC "-framework CoreFoundation")   # (the system's preferred languages)
+endif()
 
 # The recorded announcer lines (20 MB of samples) are generated from assets/voice/ at build time, not committed
 # (tools/import_voice.py, python3 standard library only).
@@ -408,6 +480,7 @@ if(QUARK_BUILD_CLIENT)
     src/client/editor.cpp
     src/client/benchmark.cpp
     src/client/trainer.cpp
+    src/client/tutorial.cpp
     src/client/isa.cpp
     src/client/openurl.cpp
     src/client/gl.cpp
@@ -435,7 +508,7 @@ if(QUARK_BUILD_CLIENT)
     src/client/lightmap.cpp
     src/client/ui.cpp
   )
-  target_link_libraries(quark_launcher quark_core quark_launcher_core quark_assets glfw)
+  target_link_libraries(quark_launcher quark_core quark_launcher_core quark_assets quark_lang glfw)
   foreach(t quark quark_launcher)
     if(APPLE)
       target_link_libraries(${t} "-framework OpenGL" "-framework AudioToolbox" "-framework CoreFoundation")
@@ -480,7 +553,8 @@ if(QUARK_BUILD_TESTS)
   # weapons editors' (tools/maptool/<part>/). The editors themselves live in floration/quarkology; the helper stays
   # here because it links the game's code and has to change with it.
   file(GLOB QUARK_MAPTOOL_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/maptool/*/*.cpp)
-  add_executable(quark_maptool ${QUARK_MAPTOOL_SOURCES})
+  # (tests/mapbounds.cpp: the out-of-bounds check, the one quark_tests runs)
+  add_executable(quark_maptool ${QUARK_MAPTOOL_SOURCES} tests/mapbounds.cpp)
   target_include_directories(quark_maptool PRIVATE tests tools/maptool/map tools/maptool/mode)
   target_link_libraries(quark_maptool quark_core)
   if(WIN32)

@@ -1576,6 +1576,24 @@ struct Map {
     std::vector<AABB> lava;   // lava brushes (touch one and you die), from rebuild()
     bool inAcid(const AABB& box) const { for (auto& l : acid) if (box.mn.x < l.mx.x && box.mx.x > l.mn.x && box.mn.y < l.mx.y && box.mx.y > l.mn.y && box.mn.z < l.mx.z && box.mx.z > l.mn.z) return true; return false; }
     std::vector<AABB> acid;   // acid brushes (pmove counts the damage while you touch one), from rebuild()
+    // Lava (and the liquids that kill) and acid destroy a projectile that goes into them, a sticky too (q, 2026-10-27:
+    // "it should destroy, so should lava"): no blast, no hit, nothing left. The server's projectiles and the client's
+    // copies of its own shots ask the same boxes. dissolveAlong: how far along o + dir * t (t up to maxT) the first one
+    // starts (0: o is in one), else -1; maps without either answer at once.
+    bool hasDissolvers() const { return !lava.empty() || !acid.empty(); }
+    bool dissolves(const Vec3& p) const {
+        for (auto& l : lava) if (l.contains(p)) return true;
+        for (auto& l : acid) if (l.contains(p)) return true;
+        return false;
+    }
+    float dissolveAlong(const Vec3& o, const Vec3& dir, float maxT) const {
+        if (!hasDissolvers()) return -1.0f;
+        const Vec3 inv = safeInv(dir);
+        float best = -1.0f;
+        for (const auto* list : {&lava, &acid})
+            for (auto& l : *list) { const float t = rayAABB(o, inv, l, best >= 0 ? best : maxT); if (t >= 0 && (best < 0 || t < best)) best = t; }
+        return best;
+    }
     // the feature fields (FIELD_*): low gravity and slow-mo boxes, the gravity flip tiles' columns (kGravFlipHeight up
     // from the top), from rebuild(); pmove and the projectiles ask them only when there are any
     enum : uint8_t { FIELD_LOWGRAV = 1, FIELD_SLOW = 2, FIELD_FLIP = 4 };
@@ -1671,13 +1689,39 @@ struct Map {
     struct GridCell { uint32_t start = 0, end = 0; };
     std::vector<GridCell> cells;       // gridW*gridH
     std::vector<uint16_t> cellBrushes;
+    // PERF: what the collision and ray loops test of brushes[cellBrushes[k]], copied into cellRefs[k] (parallel to
+    // cellBrushes, kept in step by buildGrid and changeBrush, the only writers of the grid): its box, shape and what it
+    // stops, 28 bytes in a row instead of a load from a 148-byte Brush elsewhere for every reference a sweep or a ray
+    // passes. The loops read the Brush only for a slope's planes or a hit's material. Same boxes, same tests, same
+    // order: every answer is bit for bit what it was. Spare slots (an edit's room) hold stale refs, never read.
+    enum : uint8_t {
+        kRefPlayers = 1,     // stopsPlayers(material)
+        kRefShots = 2,       // stopsShots(material)
+        kRefSight = 4,       // stops sight and light: not clip, and stopsSight(material)
+        kRefClip = 8,        // clip (material 9): players only, and what asks for it (hitClip)
+        kRefWallbang = 16,   // wallbangBrush: hitscan goes through it
+        kRefGlassBreak = 32, // breakable glass (sweepAxis notes the pane a move passes)
+    };
+    struct GridRef { AABB box; uint8_t stops = 0, shape = 0; uint16_t brush = 0; };
+    static GridRef gridRef(const Brush& b, size_t i) {
+        GridRef r;
+        r.box = b.box;
+        r.shape = b.shape;
+        r.brush = (uint16_t)i;
+        r.stops = (uint8_t)((stopsPlayers(b.material) ? kRefPlayers : 0) | (stopsShots(b.material) ? kRefShots : 0) |
+                            (b.material != 9 && stopsSight(b.material) ? kRefSight : 0) | (b.material == 9 ? kRefClip : 0) |
+                            (wallbangBrush(b) ? kRefWallbang : 0) | (b.material == kMatGlassBreak ? kRefGlassBreak : 0));
+        return r;
+    }
+    std::vector<GridRef> cellRefs;
+    bool gridRefsInStep() const;       // (tests) every used slot's ref is what its brush gives now
     size_t gridRefs = 0;               // brush references in use (spare room not counted)
     // Lowest bottom / highest top of the brushes in the grid (empty: lo > hi). Rays stop walking cells once they have
     // left this slab (walkCells): a sun or sky ray otherwise walks every column to the grid's edge. Edits only widen it.
     float gridYLo = 1e30f, gridYHi = -1e30f;
     bool buildGrid();                  // false: more grid references than kMaxMapGridRefs
     static bool gridSolid(const Brush& b) { return !b.gone && (solidMaterial(b.material) || b.material == 9); } // in the grid: far scenery, water, lava aren't
-    template <class F> void forBox(const AABB& b, F f) const; // calls f(brush) for brushes in overlapped cells (may repeat)
+    template <class F> void forBox(const AABB& b, F f) const; // calls f(ref) for the refs that stop players in overlapped cells (may repeat)
 
     // Moving solids that aren't part of the static geometry (the payload cart). Collision and
     // raycasts include them; kept tiny so checking them all is free.
@@ -1720,6 +1764,9 @@ int migrateUserData(const std::string& oldRoot, const std::string& newRoot); // 
 void setExecutableDir(const char* argv0);
 const std::string& executableDir();       // empty if unknown
 std::vector<std::string> listMaps();
+// A map only its own feature loads (the TUTORIAL's, src/game/tutorial.h): listMaps() still has it (the map checks run on
+// it), but the pickers, votes, the editor's list and a server's map rotation leave it out
+inline bool mapHiddenFromLists(const std::string& name) { return name == "tutorial"; }
 // The file Map::load reads for a map name (old names mapped to the new ones): your maps folder first, then the
 // shipped one. Empty for a name that isn't valid.
 std::string mapFilePath(const std::string& name);

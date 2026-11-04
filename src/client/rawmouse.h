@@ -11,7 +11,11 @@ struct GLFWwindow;
 class RawMouse {
 public:
     ~RawMouse() { stop(); }
-    bool start();   // false: not available (then use GLFW_RAW_MOUSE_MOTION)
+    // false: not available (then use GLFW_RAW_MOUSE_MOTION). ownCore (LATENCY > MOUSE THREAD: OWN CORE): the thread is
+    // time-critical and pinned to one logical core of the fastest class (the last of them), and the calling (game)
+    // thread is kept off that core, so a report is never queued behind the game's frame or another thread's slice.
+    bool start(bool ownCore = true);
+    int core() const { return core_; }   // the core it's pinned to; -1: not pinned (off, Linux / macOS, < 4 cores)
     void stop();
     bool active() const { return active_; }
     // The motion (counts) and number of reports since the last take, and when the first of them arrived (timeNow());
@@ -21,6 +25,9 @@ public:
     // messages at all. GLFW's own captured mode re-centred the cursor after every frame's motion (SetCursorPos) and
     // handled a legacy mouse-move message: ~50 us a frame on the owner's PC with an 8 kHz mouse. Off: let it go.
     void hold(GLFWwindow* w, bool on);
+    // Called on the mouse's thread after each report with the counts since the last take (GPU LATE LATCH); null: none.
+    std::atomic<void (*)(void*, long long, long long)> onMotion{nullptr};
+    void* onMotionCtx = nullptr;
 
 private:
     void run();
@@ -30,6 +37,8 @@ private:
     std::atomic<int> reports_{0};
     std::atomic<double> firstAt_{0};
     void* hwnd_ = nullptr;
+    int core_ = -1;
+    unsigned long long mainMask_ = 0;   // (the game thread's affinity before start: given back by stop)
     long lastAbsX_ = 0, lastAbsY_ = 0;
     bool haveAbs_ = false;
     friend struct RawMouseProc;

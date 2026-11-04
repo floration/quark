@@ -64,6 +64,7 @@ int main(int argc, char** argv) {
         if (a == "--data-dir") setUserDataDir(next()); // settings, key, demos, your maps (default: per-user folder)
         else if (a == "--bake-maps") return bakeOfficialMaps(next());   // the official maps' light into DIR (packages: maps/lightcache); no window
         else if (a == "--connect") opts.connect = next();
+        else if (a == "--language") opts.language = next();   // LANGUAGE: "auto" or a code (lang.h); the launcher's pick
         else if (a == "--host") opts.hostMode = modeFromName(next().c_str());
         else if (a == "--vsbots") opts.vsBotsMode = modeFromName(next().c_str());
         else if (a == "--map") opts.hostMap = next();
@@ -90,8 +91,14 @@ int main(int argc, char** argv) {
         else if (a == "--crosshair") { opts.debugSettings = true; opts.debugCrosshair = true; }
         else if (a == "--hudlayout") { opts.debugSettings = true; opts.debugHudLayout = true; }
         else if (a == "--models") opts.debugModels = true;
+        else if (a == "--walk") { opts.debugModels = true; opts.debugWalk = true; }   // the lineup side-on, mid-stride (PLAYER ANIMATIONS screenshots)
         else if (a == "--rpsshot") opts.debugRps = atoi(next().c_str());   // the tiebreak panel (screenshots)
         else if (a == "--timetrial") opts.timeTrial = true;
+        else if (a == "--tutorial") {   // the TUTORIAL at once: [LESSON[:PHASE]] (an id or 0-based number; PHASE try / done / finish / lessons)
+            opts.tutorial = true;
+            if (i + 1 < argc && argv[i + 1][0] != '-') opts.tutorialAt = next();
+        }
+        else if (a == "--tutorial-offer") opts.tutorialOffer = true;   // the first launch's tutorial offer (screenshots)
         else if (a == "--racestats") { opts.debugLeaderboard = true; opts.debugRaceStats = true; }
         else if (a == "--widgets") { opts.debugSettings = true; opts.debugWidgets = true; }
         else if (a == "--controls") { opts.debugSettings = true; opts.debugControls = true; }
@@ -213,14 +220,21 @@ int main(int argc, char** argv) {
     }
     double last = timeNow();
     double frameStart = timeNow();
+    CapWait capWait;   // (the frame cap's sleep-then-spin, learnt from this PC's timer)
     while (!glfwWindowShouldClose(win) && !game.quitRequested()) {
         game.pipeMark(Game::PM_FRAME);   // (F3's pipeline graph: the frame's parts)
         // Frame cap: wait *before* reading input, so the frame shows the freshest input possible.
+        // FRAME CAP OFFSET (owner, 2026-11-03): it wakes that much before the deadline, does the parts that take a varying
+        // time (the low-latency GPU wait, the network), then spins to the deadline and reads the mouse there: one of them
+        // running 20-50 us long no longer makes that frame late and the next short (the 0.1% low at a 1000 cap).
+        bool capped = false;
         if (game.maxFps() > 0) {
             double period = 1.0 / game.maxFps();
             double target = frameStart + period;
-            waitUntil(target);
-            frameStart = std::max(target, timeNow() - period); // keep the cadence (no slow drift below the cap), but don't try to catch up after a hitch
+            const double off = game.capOffset(period);
+            capWait.wait(target - off);
+            frameStart = std::max(target, timeNow() + off - period); // keep the cadence (no slow drift below the cap), but don't try to catch up after a hitch
+            capped = off > 0;
         } else {
             frameStart = timeNow();
         }
@@ -228,6 +242,7 @@ int main(int argc, char** argv) {
         game.beforeInput();
         game.pipeMark(Game::PM_FENCE);
         game.preInput();   // (the network: before the mouse is read)
+        if (capped) while (timeNow() < frameStart) cpuRelax();   // (the head start's rest: the mouse is read on the deadline)
         game.pipeMark(Game::PM_NET);
         game.readMouse();   // (raw mouse reports in one read; GLFW's poll gets the rest)
         { QZONE("poll events"); glfwPollEvents(); }

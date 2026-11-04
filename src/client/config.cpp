@@ -27,8 +27,11 @@ static std::string colorHex(const Vec3& c) {
 
 void Settings::load() {
     std::ifstream f(utf8Path(cfgPath()));
+    newConfig = !f.is_open();
+    displayMigrated = newConfig;   // (an existing file without display_default: see finishLoad)
     std::string line;
     bindVersion = 0;   // (a file from before bind_version: its binds get the migrations)
+    ultraMarginMigrated = false;   // (likewise ultra_margin_us: see set())
     while (std::getline(f, line)) {
         size_t eq = line.find('=');
         if (eq == std::string::npos) continue;
@@ -79,7 +82,7 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "scroll_skip") scrollSkip = iv;
         else if (k == "auto_iconify") autoIconify = iv != 0;
         else if (k == "remember_tab") rememberTab = iv != 0;
-        else if (k == "last_tab") lastTab = std::min(std::max(iv, 0), 6);   // (6: SEARCH)
+        else if (k == "last_tab") lastTab = std::min(std::max(iv, 0), 7);   // (6: LATENCY, 7: SEARCH)
         else if (k == "confirm_leave") confirmLeave = iv != 0;
         else if (k == "vrr") vrr = iv != 0;
         else if (k == "captions") captions = iv != 0;
@@ -90,6 +93,7 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "vol_weapons") { if (std::isfinite(fv)) volWeapons = clampf(fv, 0, 1); }
         else if (k == "enemy_model") enemyModel = iv >= 0 && iv < kPlayerModels ? iv : -1;
         else if (k == "team_model") teamModel = iv >= 0 && iv < kPlayerModels ? iv : -1;
+        else if (k == "player_anims") playerAnims = iv != 0;
         else if (k == "grapple_toggle") grappleToggle = iv != 0;
         else if (k == "left_handed") leftHanded = iv != 0;
         else if (k == "auto_reconnect") autoReconnect = iv != 0;
@@ -146,7 +150,16 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "lightmap_nearest") lightmapNearest = iv != 0;
         else if (k == "wallbang_tint") wallbangTint = iv != 0;
         else if (k == "wallbang_color") wallbangColor = parseColor(v, wallbangColor);
-        else if (k == "ultra_margin_us") ultraMarginUs = std::min(std::max(iv, 0), 2000);
+        else if (k == "ultra_margin_us") {
+            ultraMarginUs = std::min(std::max(iv, 0), 2000);
+            // ULTRA SAFETY AUTO (0) became the default after 1.19.7. A file from before it (no ultra_margin_auto, which
+            // save() writes BEFORE this key) on the old default, 150, was never moved (a dragged slider lands elsewhere):
+            // AUTO. Any other value was picked and stays; 0, the lowest it had, is 1 us now (0 is AUTO; the same in practice).
+            if (!ultraMarginMigrated) ultraMarginUs = ultraMarginUs == 150 ? 0 : ultraMarginUs == 0 ? 1 : ultraMarginUs;
+        }
+        else if (k == "cap_offset_us") capOffsetUs = std::min(std::max(iv, -1), 5000);
+        else if (k == "ultra_margin_auto") ultraMarginMigrated = iv != 0;
+        else if (k == "display_default") displayMigrated = iv != 0;
         else if (k == "nv_threaded") nvThreaded = iv != 0;
         else if (k == "nv_dxgi") nvDxgi = iv != 0;
         else if (k == "quip_captions") quipCaptions = iv != 0;
@@ -168,6 +181,7 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "shadow_players") shadowPlayers = iv != 0;
         else if (k == "own_shadow") ownShadow = iv != 0;
         else if (k == "player_emit") { if (std::isfinite(fv)) playerEmit = clampf(fv, 0, 1); }
+        else if (k == "player_saturation") { if (std::isfinite(fv)) playerSat = clampf(fv, 0, 2.0f); }
         else if (k == "players_lit") playersLit = iv != 0;
         else if (k == "outline_friendly_color") outlineFriendlyColor = parseColor(v, outlineFriendlyColor);
         else if (k == "outline_enemy_color") outlineEnemyColor = parseColor(v, outlineEnemyColor);
@@ -243,6 +257,11 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "latent_offset_us") latentOffsetUs = std::min(std::max(iv, -4000), 4000);
         else if (k == "gpu_max_clocks") gpuMaxClocks = iv != 0;
         else if (k == "disable_fso") disableFso = iv != 0;
+        else if (k == "early_flush") earlyFlush = iv != 0;
+        else if (k == "cpu_latch") cpuLatch = iv != 0;
+        else if (k == "gpu_latch") gpuLatch = iv != 0;
+        else if (k == "hud_first") hudFirst = iv != 0;
+        else if (k == "fast_world") fastWorld = iv != 0;
         else if (k == "prioritize") prioritize = iv != 0;
         else if (k == "low_latency") lowLatency = std::min(std::max(iv, 0), 2);
         else if (k == "maxfps") maxFps = iv;
@@ -324,6 +343,10 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "ch_hit_color") chHitColor = parseColor(v, chHitColor);
         else if (k == "ch_head_color") chHeadColor = parseColor(v, chHeadColor);
         else if (k == "last_address") lastAddress = v;
+        else if (k == "last_mode") lastMode = v;
+        else if (k == "last_map") lastMap = v;
+        else if (k == "last_server") lastServer = v;
+        else if (k == "last_trainer") lastTrainer = v;
         else if (k == "rank_hello") rankHello = v;
         else if (k == "host_name") hostName = v;
         else if (k == "host_prober") hostProber = v;
@@ -370,6 +393,10 @@ void Settings::set(const std::string& k, const std::string& v) {
 }
 
 void Settings::finishLoad() {
+    // BORDERLESS became the default after 1.19.7 (owner, 2026-11-03: it gets far more performance than a window, which
+    // the desktop compositor composes). A config from before it on WINDOWED, the old default, moves to it once; set back
+    // to WINDOWED afterwards, it stays (display_default is written from then on).
+    if (!displayMigrated) { if (displayMode == 0) displayMode = 1; displayMigrated = true; }
     if (bindVersion < 2) {   // binds from an older config (see bindVersion); from now on they're this version's
         // slots 9 and 10 (knife, syringe) came later: unbound in an older config, they get keys 9 and 0
         if (!binds.code[A_WEAPON9][0] && !binds.code[A_WEAPON9][1]) binds.code[A_WEAPON9][0] = 57;    // (GLFW 9)
@@ -398,6 +425,7 @@ void Settings::finishLoad() {
         for (int k = 0; k < kBindSlots; k++) { binds.code[A_FLYUP][k] = binds.code[A_JUMP][k]; binds.code[A_FLYDOWN][k] = binds.code[A_DASH][k]; }
         bindVersion = 5;
     }
+    ultraMarginMigrated = true;   // (from here on a value set is as meant: the console's "ultra_margin_us 0" is AUTO)
     if (!hbMigrated) { healthBars = true; hbMigrated = true; }   // 1.17 turned health bars on by default: on once for everyone (owner), off again stays off
     if (width < 320) width = 1280;
     if (height < 240) height = 720;
@@ -411,9 +439,9 @@ std::string Settings::toText() const {
     std::ostringstream f;
     f << "name=" << name << "\nsensitivity=" << sensitivity << "\ndpi=" << dpi << "\nsens_y=" << sensY << "\ninvert_y=" << invertY << "\nzoom_sens=" << zoomSens << "\nscore_toggle=" << scoreToggle << "\nhit_volume=" << hitVolume << "\nhit_pack=" << hitPack << "\nheadshot_sound=" << headshotSound << "\nkill_sound=" << killSound << "\nhud_size=" << hudSize << "\nfeed_time=" << feedTime << "\nfeed_lines=" << feedLines << "\nfeed_mine=" << feedMine << "\nchat_time=" << chatTime << "\nchat_lines=" << chatLines << "\nchat_opacity=" << chatOpacity
       << "\nshow_fps=" << showFps << "\nshow_ping=" << showPing << "\nhide_hud_crosshair=" << hideHudCrosshair << "\nfog=" << fog << "\ngamma=" << gamma << "\ncontrast=" << contrast << "\nsaturation=" << saturation << "\ncpu_priority=" << cpuPriority << "\nscroll_wrap=" << scrollWrap << "\nscroll_skip=" << scrollSkip
-      << "\nauto_iconify=" << autoIconify << "\nremember_tab=" << rememberTab << "\nlast_tab=" << lastTab << "\nconfirm_leave=" << confirmLeave << "\nvrr=" << vrr << "\ncaptions=" << captions << "\nhp_scaled=" << hpScaled << "\nvol_steps=" << volSteps << "\nvol_others_steps=" << volOthersSteps << "\nvol_weapons=" << volWeapons << "\nvol_objective=" << volObjective << "\nenemy_model=" << enemyModel << "\nteam_model=" << teamModel << "\ngrapple_toggle=" << grappleToggle << "\nleft_handed=" << leftHanded << "\nauto_reconnect=" << autoReconnect << "\nqueue_flash=" << queueFlash << "\nghost=" << ghost << "\nteam_panel=" << teamPanel << "\nmatch_summary=" << matchSummary;
+      << "\nauto_iconify=" << autoIconify << "\nremember_tab=" << rememberTab << "\nlast_tab=" << lastTab << "\nconfirm_leave=" << confirmLeave << "\nvrr=" << vrr << "\ncaptions=" << captions << "\nhp_scaled=" << hpScaled << "\nvol_steps=" << volSteps << "\nvol_others_steps=" << volOthersSteps << "\nvol_weapons=" << volWeapons << "\nvol_objective=" << volObjective << "\nenemy_model=" << enemyModel << "\nteam_model=" << teamModel << "\nplayer_anims=" << playerAnims << "\ngrapple_toggle=" << grappleToggle << "\nleft_handed=" << leftHanded << "\nauto_reconnect=" << autoReconnect << "\nqueue_flash=" << queueFlash << "\nghost=" << ghost << "\nteam_panel=" << teamPanel << "\nmatch_summary=" << matchSummary;
     f << "\ntone_curve=" << toneCurve << "\ndither=" << dither << "\nout10=" << out10 << "\nclean_surfaces=" << cleanSurfaces << "\npattern_fade=" << patternFade << "\nfade_dist=" << fadeDist << "\nfade_len=" << fadeLen << "\nflat_light=" << flatLight << "\nsimple_sky=" << simpleSky << "\nfar_scenery=" << farScenery << "\ndraw_dist=" << drawDist
-      << "\nshadow_filter=" << shadowFilter << "\nshadow_dist=" << shadowDist << "\nshadow_world=" << shadowWorld << "\nshadow_players=" << shadowPlayers << "\nown_shadow=" << ownShadow << "\nplayer_emit=" << playerEmit << "\nplayers_lit=" << playersLit
+      << "\nshadow_filter=" << shadowFilter << "\nshadow_dist=" << shadowDist << "\nshadow_world=" << shadowWorld << "\nshadow_players=" << shadowPlayers << "\nown_shadow=" << ownShadow << "\nplayer_emit=" << playerEmit << "\nplayer_saturation=" << playerSat << "\nplayers_lit=" << playersLit
       << "\noutline_friendly_color=" << colorHex(outlineFriendlyColor) << "\noutline_enemy_color=" << colorHex(outlineEnemyColor) << "\noutline_alpha=" << outlineAlpha << "\noutline_team_width=" << outlineTeamW << "\noutline_enemy_width=" << outlineEnemyW
       << "\nfixed_teams=" << fixedTeams << "\nteam_a_color=" << colorHex(teamAColor) << "\nteam_b_color=" << colorHex(teamBColor) << "\ntracer_mode=" << tracerMode << "\ntracer_color=" << colorHex(tracerColor) << "\nrope_color=" << colorHex(ropeColor)
       << "\ntrails=" << trails << "\ntrail_opacity=" << trailOpacity << "\nreduce_flash=" << reduceFlash << "\nsafe_colors=" << safeColors << "\nit_palette=" << itPalette << "\nsplit_palette=" << splitPalette << "\nsplit_words=" << splitWords
@@ -428,14 +456,14 @@ std::string Settings::toText() const {
       << "\nfx_color_mode=" << fxColorMode << "\nfx_color=" << colorHex(fxColor) << "\nobj_palette=" << objPalette << "\nsky_override=" << skyOverride << "\nglow_override=" << glowOverride
       << "\nsky_color=" << colorHex(skyColor) << "\nglow_color=" << colorHex(glowColor) << "\nhigh_contrast=" << highContrast << "\nf3_safe=" << f3Safe << "\non_top=" << onTop << "\ngun_color=" << gunColor
       << "\ngun_custom=" << colorHex(gunCustom) << "\nobj_opacity=" << objOpacity << "\nobj_pulse=" << objPulse << "\ndash_buffer=" << dashBuffer << "\nsmooth_amt=" << smoothAmt << "\nlightmap_nearest=" << lightmapNearest
-      << "\nwallbang_tint=" << wallbangTint << "\nwallbang_color=" << colorHex(wallbangColor) << "\nultra_margin_us=" << ultraMarginUs << "\nnv_threaded=" << nvThreaded << "\nnv_dxgi=" << nvDxgi
+      << "\nwallbang_tint=" << wallbangTint << "\nwallbang_color=" << colorHex(wallbangColor) << "\nultra_margin_auto=1" << "\nultra_margin_us=" << ultraMarginUs << "\ncap_offset_us=" << capOffsetUs << "\nnv_threaded=" << nvThreaded << "\nnv_dxgi=" << nvDxgi
       << "\nquip_captions=" << quipCaptions << "\nann_duck=" << annDuck;
     for (int i = 0; i < 3; i++) if (!colorPreset[i].empty()) f << "\ncolor_preset_" << i + 1 << "=" << colorPreset[i];
     for (auto& b : cmdBinds) f << "\ncbind_" << b.first << "=" << b.second;
     for (auto& a : aliases) f << "\nalias_" << a.first << "=" << a.second;
     f << "\nfs_width=" << fsWidth << "\nfs_height=" << fsHeight << "\nauto_record=" << autoRecord << "\ndemo_keep=" << demoKeep << "\ndemo_sort=" << demoSort << "\nvideo_preset=" << videoPreset << "\nfx_opacity=" << fxOpacity << "\nkill_bursts=" << killBursts << "\ntracers=" << tracers << "\nview_recoil=" << viewRecoil
-       << "\nfov=" << fov << "\nbrightness=" << brightness << "\ndisplay_mode=" << displayMode
-      << "\npresent_mode=" << presentMode << "\nlatent_offset_us=" << latentOffsetUs << "\ngpu_max_clocks=" << gpuMaxClocks << "\ndisable_fso=" << disableFso << "\nprioritize=" << prioritize << "\nlow_latency=" << lowLatency << "\ninterp_ms=" << interpMs
+       << "\nfov=" << fov << "\nbrightness=" << brightness << "\ndisplay_default=1" << "\ndisplay_mode=" << displayMode
+      << "\npresent_mode=" << presentMode << "\nlatent_offset_us=" << latentOffsetUs << "\ngpu_max_clocks=" << gpuMaxClocks << "\ndisable_fso=" << disableFso << "\nearly_flush=" << earlyFlush << "\ncpu_latch=" << cpuLatch << "\ngpu_latch=" << gpuLatch << "\nhud_first=" << hudFirst << "\nfast_world=" << fastWorld << "\nprioritize=" << prioritize << "\nlow_latency=" << lowLatency << "\ninterp_ms=" << interpMs
       << "\nmaxfps=" << maxFps << "\nwidth=" << width << "\nheight=" << height << "\nwin_x=" << winX << "\nwin_y=" << winY << "\nbg_fps=" << bgFps << "\nbg_mute=" << bgMute << "\nbg_draw=" << bgDraw
       << "\nshadows=" << shadows << "\nmsaa=" << msaa << "\nrender_scale=" << renderScale << "\nrender_sharpen=" << renderSharpen << "\nmodel=" << model << "\nsoundpack=" << soundPack << "\nname_color=" << nameColorText() << "\nhealth_bars_117=1" << "\nsocd=" << socd << "\nalt_toggle=" << altToggle
       << "\nhud_verbose=" << hudVerbose << "\nhud_widgets=" << hudWidgets << "\nshadowres=" << shadowRes << "\nvolume=" << volume << "\nvolume_effects=" << volumeEffects << "\nvolume_announcer=" << volumeAnnouncer << "\nquips=" << quips << "\nvolume_quips=" << volumeQuips << "\nhitsounds=" << hitsounds << "\nexclusive_audio=" << exclusiveAudio
@@ -445,7 +473,7 @@ std::string Settings::toText() const {
       << "\nch_style=" << chStyle << "\nch_length=" << chLength << "\nch_thickness=" << chThickness << "\nch_gap=" << chGap
       << "\nch_outline=" << chOutline << "\nch_team_color=" << chTeamColor << "\nch_color=" << colorHex(chColor)
       << "\nch_hit_flash=" << chHitFlash << "\nch_hit_color=" << colorHex(chHitColor) << "\nch_head_color=" << colorHex(chHeadColor) << "\nch_dot=" << chDot << "\nch_opacity=" << chOpacity << "\nch_outline_w=" << chOutlineW << "\nch_outline_a=" << chOutlineA
-      << "\nlast_address=" << lastAddress << "\nbrowser_sort=" << browserSort << "\nbrowser_hide_full=" << browserHideFull << "\nbrowser_hide_empty=" << browserHideEmpty << "\nbrowser_max_ping=" << browserMaxPing << "\nfav_servers=" << favServers << "\nrecent_servers=" << recentServers << "\nrank_hello=" << rankHello << "\nhost_name=" << hostName << "\nhost_prober=" << hostProber << "\nhost_map=" << hostMap
+      << "\nlast_address=" << lastAddress << "\nlast_mode=" << lastMode << "\nlast_map=" << lastMap << "\nlast_server=" << lastServer << "\nlast_trainer=" << lastTrainer << "\nbrowser_sort=" << browserSort << "\nbrowser_hide_full=" << browserHideFull << "\nbrowser_hide_empty=" << browserHideEmpty << "\nbrowser_max_ping=" << browserMaxPing << "\nfav_servers=" << favServers << "\nrecent_servers=" << recentServers << "\nrank_hello=" << rankHello << "\nhost_name=" << hostName << "\nhost_prober=" << hostProber << "\nhost_map=" << hostMap
       << "\nhost_mode=" << hostMode << "\nhost_port=" << hostPort << "\nhost_max=" << hostMaxPlayers
       << "\nhost_upnp=" << hostUpnp << "\nhost_balance_bots=" << hostBalanceBots << "\nhost_log=" << hostLog << "\nhost_duel_size=" << hostDuelSize << "\nhost_public=" << hostPublic << "\nhost_ranked=" << hostRanked << "\nhost_custom=" << hostCustom << "\nhost_bot_brain=" << hostBotBrain << "\nhost_variant=" << hostArenaVariant << "\nbot_variant=" << botArenaVariant << "\nbot_skill=" << botSkill
       << "\nbot_enemies=" << botEnemies << "\nbot_allies=" << botAllies << "\nbot_mode=" << botMode << "\n";
@@ -527,7 +555,8 @@ static std::vector<B3> b3Keys(Settings& s) {
         {T::I, "death_cam", &s.deathCam, 0, 2}, {T::F, "kill_cam_time", &s.killCamTime, 0, kKillCamTime}, {T::F, "recoil_amount", &s.recoilAmount, 0, 2},
         {T::F, "spec_fov", &s.specFov, 0, 140}, {T::B, "spec_third", &s.specThird, 0, 1}, {T::S, "quip_block", &s.quipBlock, 0, 0},
         {T::I, "quip_pick", &s.quipPick, -1, 255}, {T::B, "use_overrides", &s.useOverrides, 0, 1}, {T::B, "legacy_maps", &s.legacyMaps, 0, 1},
-        {T::F, "mouse_accel", &s.mouseAccel, 0, 1}, {T::B, "raw_input", &s.rawInput, 0, 1}, {T::I, "alt_toggle_weapons", &s.altToggleWpns, -1, 0xFFFF},
+        {T::B, "tutorial_offered", &s.tutorialOffered, 0, 1}, {T::I, "tutorial_done", &s.tutorialDone, 0, (float)(1 << 30)},
+        {T::F, "mouse_accel", &s.mouseAccel, 0, 1}, {T::B, "raw_input", &s.rawInput, 0, 1}, {T::B, "mouse_own_core", &s.mouseOwnCore, 0, 1}, {T::I, "alt_toggle_weapons", &s.altToggleWpns, -1, 0xFFFF},
         {T::I, "swap_fire", &s.swapFire, 0, 0xFFFF}, {T::B, "auto_hop", &s.autoHop, 0, 1}, {T::I, "vertical_keys", &s.verticalKeys, 0, 1}, {T::I, "console_key", &s.consoleKey, 0, 999},
         {T::B, "console_menus", &s.consoleMenus, 0, 1}, {T::B, "ranked_alt_toggle", &s.rankedAltToggle, 0, 1},
         {T::I, "menu_bg", &s.menuBg, 0, 2}, {T::S, "menu_bg_map", &s.menuBgMap, 0, 0}, {T::C, "menu_bg_color", &s.menuBgColor, 0, 0},

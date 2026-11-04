@@ -30,3 +30,4 @@ race_times.log
 !/maps/reactors.qmap
 !/maps/riverside.qmap
 __pycache__/
+/pgo-profile/

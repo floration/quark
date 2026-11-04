@@ -30,21 +30,21 @@ Owner, 2026-10-30: "make sure all future updates get cobblestone map and surfy m
 
 ## The 1.19.6 pool
 
-Every map before 1.19.6 was replaced (q: "every current map goes except q's two hand-made ones, surfy and cobblestone"). The new maps' plans, and why each structure is there, are in the 1.19.6 maps plan and its reviews; each module's docstring (`tools/maps/<name>.py`) describes its layout. In short:
+Every map before 1.19.6 was replaced (q: "every current map goes except q's two hand-made ones, surfy and cobblestone"). Each generated map's layout, and why each structure is there, is in its module's docstring (`tools/maps/<name>.py`); the hand-made ones (Particle Accelerator, Amphitheatre Ruin, Museum, Twin Reactors, Riverside) are q's, edited in the map editor. "Also offered" is the map's `modes` line. In short:
 
 | Map | Built for | Also offered | Ranked | Setting |
 |---|---|---|---|---|
 | Particle Accelerator | race | bomb | - | particle physics lab |
-| Amphitheatre Ruin | king of the hill | team vs, power, free for all | - | a ruined Greek theatre on a hillside above the sea, late in the afternoon |
-| Suspension Bridge | power | team vs, free for all | - | suspension bridge in fog |
-| Black Hole | 1v1 (3D VAMP) | tourney, winner stays, free for all | - | a lone asteroid drifting toward a black hole |
+| Amphitheatre Ruin | king of the hill | team vs, free for all, power | - | a ruined Greek theatre on a hillside above the sea, late in the afternoon |
+| Suspension Bridge | power | team vs, ball, neutral payload, free for all | - | suspension bridge in fog |
+| Black Hole | 1v1 (3D VAMP) | duel, team vs, tourney, free for all | - | a lone asteroid drifting toward a black hole |
 | Castle | king of the hill | power, free for all | - | a medieval concentric castle |
 | Desert Convoy | multi point | free for all | - | desert highway convoy |
 | Cruise Ship | hide and seek | tag, free for all | - | a cruise liner at sea at dusk |
 | Dam | neutral payload | king of the hill, power, free for all | - | hydroelectric dam in a pine valley, morning |
 | Datacenter | bomb | free for all | - | hyperscale data centre at night |
-| Dojo | 1v1 | duel, team vs, free for all | ranked vampire | a martial arts dojo in a walled garden |
-| Express | neutral payload | king of the hill, power, free for all | - | desert railway town, hot afternoon |
+| Dojo | 1v1 | duel, team vs, tourney, free for all | ranked vampire | a martial arts dojo in a walled garden |
+| Express | neutral payload | king of the hill, power, ball, free for all | - | desert railway town, hot afternoon |
 | Fairground | tag | hide and seek, free for all | - | a funfair at night |
 | Glacier Summit | king of the hill | team vs, power, free for all | - | an observatory on a snowy peak, a cable car station and a climbers' hut |
 | Greenhouse | 1v1 | duel, team vs, tourney, free for all | ranked vanilla | victorian glasshouse |
@@ -52,7 +52,7 @@ Every map before 1.19.6 was replaced (q: "every current map goes except q's two 
 | Lighthouse | team vs | power, free for all | - | a rocky headland with a lighthouse, at night in a storm |
 | Mine | bomb | king of the hill, free for all | - | a deep mine |
 | Monorail | neutral payload | king of the hill, power, free for all | - | futuristic city monorail at dusk |
-| Museum | hide and seek | tag, free for all | - | a natural history museum at night |
+| Museum | hide and seek | free for all, tag, bomb | - | a natural history museum at night |
 | Orbit | 1v1 | duel, team vs, tourney | - | space station centrifuge |
 | QK1 Ring | 1v1 | duel, team vs, tourney, free for all | ranked vanilla vampire instagib | a ring of corridors round a pit, box and accent |
 | QK2 Stack | 1v1 | duel, team vs, tourney, free for all | ranked vanilla vampire instagib | a stacked tower of open floors, box and accent |
@@ -61,21 +61,53 @@ Every map before 1.19.6 was replaced (q: "every current map goes except q's two 
 | QK5 Islands | 1v1 | duel, team vs, tourney, free for all | ranked vanilla vampire instagib | floating islands over the void |
 | QK6 Crossroads | 1v1 | duel, team vs, tourney, free for all | ranked vanilla vampire instagib | crossroads of halls |
 | QK7 Spiral | 1v1 | duel, team vs, tourney, free for all | ranked vanilla vampire instagib | a spiral tower court |
-| QK8 Canyon | 1v1 | duel, team vs, tourney, free for all | ranked vanilla vampire instagib | a desert canyon |
-| Railyard | neutral payload | payload, free for all | - | freight rail yard |
+| QK8 Canyon | 1v1 | duel, team vs, tourney, ball, free for all | ranked vanilla vampire instagib | a desert canyon |
+| Railyard | payload | neutral payload, ball, free for all | - | freight rail yard |
 | Twin Reactors | power | team vs, free for all | - | nuclear power plant |
-| Riverside | tag | hide and seek, power, 1v1, duel, team vs, free for all | - | riverside technology facility |
+| Riverside | tag | team vs, free for all, duel, 1v1, hide and seek, power | - | riverside technology facility |
 | Rooftop Run | race | - | - | night city rooftops |
 | Rooftops | tag | hide and seek, free for all | - | city rooftops at night, in the rain |
-| Sewer | free for all | power, 1v1, duel, team vs | - | giant sewer pipes |
+| Sewer | free for all | power, 1v1, duel, team vs, tourney | - | giant sewer pipes |
 | Solar System | surf | - | - | the solar system |
 | Spire | free for all | 1v1, duel, team vs, tourney | ranked instagib | the open top floors of a skyscraper going up above the clouds at sunset |
+| Stadium | ball | free for all | - | a football stadium under floodlights |
 | Rice Terraces | team vs | power, king of the hill, free for all | - | a sunny hillside of flooded rice terraces, a farm, a mill and a temple |
 | War | multi point | bomb, free for all | - | active warzone |
 
 **Black Hole** is built for the 3D VAMP ruleset (zero-g flight, lasers): a flat 40 x 20 m asteroid top with no cover at all (the fight is in the air round it, so cover would only be something to orbit), the rock tapering away under it in layers so its underside has no ledges to stand on. Everything else is scenery: the black hole (far boxes), its lensed ring and accretion disc (lava: bright and not solid, so the map's bounds, and with them the flyers' 40 m kill box, stay round the rock). `void -50`; `holdfire 3`: the spawns face each other across the bare floor, so nobody fires for the first 3 s.
 
+**Stadium** (owner, 2026-11-02: "ball needs a soccer field map") is built for ball: a 120 x 76 m astroturf pitch with a 14 m goal in the middle of each goal line (the ball's centre inside the frame scores; A defends the west goal), ringed 4 m outside its lines by 40 m ball walls open to the sky (an invisible block only the ball bounces off, so it stays in play while players walk through to the stands). Four tiers of walkable seating round it, a dugout either side of the halfway line (cover) and floodlight masts in the corners. Mirrored west to east; `holdfire 3`: the teams line up facing each other at kickoff.
+
+Map cleanup (2026-11-03): Railyard is built for one-way payload (neutral payload keeps Dam, Express and Monorail); Black Hole offers duel and team vs like every map that offers 1v1. Duel and tourney are 1v1 variants and play every 1v1 map, so they have no maps of their own. Ball stays on Stadium until a new ball map is built.
+
 Each ranked ladder has the map it's designed for (q, 2026-10-31), which going ranked and the ranked pickers choose first: vanilla 1v1 **Greenhouse**, laser vampire 1v1 **Dojo** (`holdfire 5`), instagib free for all **Spire**. qk1-qk8 are ranked on all three.
+
+## Tutorial (1.19.9): the movement tutorial's own map
+
+**Tutorial** (`tools/maps/tutorial.py`, `for ffa`) is never in a map list, vote or picker (hidden by name: `mapHiddenFromLists`, map.h); only MAIN MENU > PRACTICE > TUTORIAL hosts it (src/client/tutorial.cpp, src/game/tutorial.h). It's a **training hall**, not an arena: a sealed 24 m-wide bay per lesson, side by side along z in the lessons' order. Every bay starts at x -90 and runs along +x, so the whole map stays inside the snapshots' +-512 m. A row along x ran to 1137 m, and the ghost was drawn stuck at x 512. Each bay has two lanes: the ghost's 6 m left of the middle and yours 6 m right, both starting 3 m in on a trim pad and facing +x, with a trim strip between the lanes and a line across every 10 m to read distance by. Nothing joins the bays: the tutorial moves you, so a lesson can't be skipped by walking, and nobody wanders into another tech's room.
+
+Why each bay is the shape it is (the bay lengths and heights are `kLessons` in src/game/tutorial.h; `quark_tests tutorial` runs every lesson's ghost on this map and fails if the map stops working for it):
+- **Walking** (50 x 12): two metal hurdles (0.8 m: a jump, not a step) and a glowing finish line at 44 m.
+- **AD strafing** (150 m) and **super chaining** (180 m, 16 m tall: hypers rise 2-3 m): long and empty. Strafing needs room to build speed by turning, and the chain gets to 35 m/s.
+- **Hook-start chain** (120 x 16), **rocket super** (110 x 16) and **hook boost** (120 x 16): long and empty, 16 m tall for the hops. Each reaches 33-40 m/s and needs the room to show it.
+- **Pop** (70 x 20): a pop rises 14 m, so the ceiling sits 20 m up.
+- **Rocket pop** (100 x 60, KEY TECH): 48 m up and on, so 60 m tall.
+- **Ramp dash** (40 x 20): a 60 degree ramp (a wedge) 18 m in, 10.4 m tall onto a shelf, its foot striped. Walking, the face is a wall. A dash into it runs on up the face at 24 m/s, about 9 m up.
+- **Ceiling hang** (40 x 16): flat, its ceiling low enough (16 m) for the hook's 45 m reach from anywhere in the bay.
+- **Swing turn** (70 x 16): a metal pillar 32 m in, 1 m left of the middle, floor to ceiling. The ghost passes it at 24 m/s off a super and hooks it (its aim point: `LessonDef::aimPoint`), and you do the same on the other side of it.
+- **Fall bounce** (30 x 28): short and tall. A rocket jump straight up takes you 17 m, above the 11.7 m that gives the biggest hop.
+- **Sticky stack** (30 x 64, KEY TECH) and **bubble launch** (30 x 80, KEY TECH): short and tall, for launches straight up (53 m and 73 m).
+- **Dash** (50): a 9 m lava pit (16-25 m in, hazard-striped edges, its bottom 6 m down). A running jump falls short and a jump with an air dash clears it. Touching the lava puts you back at the start.
+- **Sideways dashes** (30), **super** and **hyper** (60), **dash slide** (60), **grapple walking** (80): flat and long enough for the tech and its landing.
+- **Wall bounce** (12): short, its end wall hazard-striped. That's the wall to dash into, 9 m from the start.
+- **Grapple** (40 x 18): a 10 m ledge 18 m in with a flat face (a 5 cm overhang caught the rope) and a striped edge. The hook takes the ceiling over it.
+- **Rocket jump** and **sticky jump** (40 x 24): an 8 m ledge 14 m in. A jump plus a blast reaches it and a plain jump doesn't.
+- **The launch** (160 x 72, KEY TECH): the tall hall. The launch goes 50 m up and 65 m along, so it needs the height and the run-up for the grapple walk. Rows of lights and glow bands every 16 m up its walls keep it lit to the top.
+- **Grapple a player** (50 x 14, KEY TECH): flat and empty, a glowing pad 30 m in where the PARTNER starts; it runs across the middle of the bay, so you track a moving target over open floor and the two of you meet in the middle.
+- **Dash out of a grapple** (50 x 12, KEY TECH): the PARTNER's pad 34 m in, inside the grapple's 45 m reach of your start, far enough that the pull lasts most of a second before you'd meet it.
+- **The rocket grapple** (110 x 16, KEY TECH): long, for the ride along the lane.
+
+It has 8 "any" spawns at the first bay's start (a match on it, from the console, still works). `quark_tests` checks it like every map: spawns, walk routes, nothing out of bounds.
 
 ## Legacy maps (the pool before 1.19.6)
 

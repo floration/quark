@@ -21,7 +21,10 @@ struct Settings {
     bool scoreToggle = false;   // the scoreboard key: hold (off) or press to show / hide
     float fov = 100.0f;         // horizontal degrees
     float brightness = 1.0f;    // scales the lit scene (0.6 - 1.8)
-    int displayMode = 0;        // 0 windowed, 1 borderless fullscreen, 2 exclusive fullscreen (legacy)
+    // 0 windowed, 1 borderless fullscreen, 2 exclusive fullscreen (legacy). Borderless is the default for a new config
+    // (owner, 2026-11-03: "borderless gets more perf than windowed already massively"): a window is composed by the
+    // desktop compositor (DWM), a borderless one covering the monitor gets the driver's direct flip.
+    int displayMode = 1;
     int interpMs = 0;           // other players' interpolation delay: 0 = adaptive, else fixed ms (ranked: always 10)
 #ifdef _WIN32
     int presentMode = 3;        // (the default: latent sync; a typical PC runs many times the refresh rate)
@@ -31,11 +34,18 @@ struct Settings {
                                 // 0 immediate (vsync off, tearing), 1 vsync, 2 adaptive vsync (tears only when late),
                                 // 3 latent sync (Windows: a frame a refresh, flipped as the blank begins; Game::latentWait)
     int latentOffsetUs = 0;     // latent sync: the flip this much later (+) or sooner (-), moving the tear line
-    bool disableFso = false;    // Windows: "Disable fullscreen optimizations" for quark.exe (per user, gpuprefs.h); from the next start
+    bool disableFso = false;
+    // LATENCY tab (owner, 2026-11-02: each tweak its own toggle): the frame's tweaks between the mouse and the GPU
+    bool earlyFlush = true;     // the shadow pass and the world sent to the GPU as soon as they're drawn (glFlush)
+    bool cpuLatch = true;       // the mouse read again just before the world is drawn
+    bool gpuLatch = false;      // the GPU reads the view from a buffer the mouse thread keeps writing (Windows raw input)
+    bool fastWorld = true;      // the world drawn by its program without discard while no hole is blown (EARLY DEPTH TEST)
+    bool hudFirst = false;      // ULTRA: the HUD drawn into its own layer before the late read, laid over after    // Windows: "Disable fullscreen optimizations" for quark.exe (per user, gpuprefs.h); from the next start
     bool gpuMaxClocks = false;  // Windows, NVIDIA: "Prefer maximum performance" in quark's driver profile (gpuprefs.h)
     bool prioritize = true;     // Windows: GPU + CPU priority raised while the game has focus (setGamePriority)
     int lowLatency = 1;         // 0 off, 1 on (max 1 frame queued), 2 ultra (0 queued, just-in-time input)
     int maxFps = 0;             // 0 = unlimited
+    int capOffsetUs = -1;       // LATENCY > FRAME CAP OFFSET: the cap wakes this early, runs the GPU wait / network, then spins to the deadline before the mouse read; -1 AUTO (5% of the cap's frame), 0 off
     int width = 1280, height = 720;
     int winX = -100000, winY = -100000;   // the window's last position when windowed (-100000: never moved; 100 px in)
     int bgFps = 60;             // VIDEO > MORE: the frame cap while the window isn't focused or is minimized (0 = FPS LIMIT as usual)
@@ -107,6 +117,7 @@ struct Settings {
     bool grappleToggle = false;        // CONTROLS > MORE: GRAPPLE press to hook, press again to let go (not held)
     int enemyModel = -1;               // GAMEPLAY > MORE: every enemy drawn as this player model (-1: their own)
     int teamModel = -1;                // GAMEPLAY > MORE: every teammate drawn as this player model (-1: their own)
+    bool playerAnims = true;           // GAMEPLAY > MORE: PLAYER ANIMATIONS (walking legs, jump pose; off: standing still)
     bool hpScaled = true;              // health bars against the mode's max health (not 100)
     bool exclusiveAudio = false;   // Windows: the sound device to the game alone (lower latency; other programs silent)
     // Settings > VIDEO + AUDIO > DEVICES (devices.h): stable ids, "" = the default; one that's gone falls back to it
@@ -135,6 +146,7 @@ struct Settings {
     bool shadowWorld = true, shadowPlayers = true;   // ...cast onto the map, onto players
     bool ownShadow = true;         // ...your own body's shadow (first person)
     float playerEmit = 0.3f;       // ...models' own light (their colour's share that shadow and shade don't touch)
+    float playerSat = 1.0f;        // ...PLAYER SATURATION: players' colour, 0 grey to 2 (1: as drawn; the map untouched)
     bool playersLit = false;       // ...players never darkened by the map's shade (full sun on them)
     Vec3 outlineFriendlyColor = {0, 0, 0}, outlineEnemyColor = {0, 0, 0};   // ...the CUSTOM outline colours
     float outlineAlpha = 1.0f;     // ...the player outline's opacity
@@ -218,7 +230,10 @@ struct Settings {
     bool lightmapNearest = false;  // ...LIGHTMAP FILTER: nearest (blocky light)
     bool wallbangTint = false;     // MORE 4: wallbang walls in WALLBANG COLOR (not dark grey)
     Vec3 wallbangColor = {0.55f, 0.25f, 0.6f};
-    int ultraMarginUs = 150;       // MORE 6: LOW LATENCY ULTRA: the frame starts this much early
+    int ultraMarginUs = 0;         // MORE 8: LOW LATENCY ULTRA's safety: the frame starts this many us early; 0 AUTO (learnt: ultramargin.h)
+    bool newConfig = false;             // (load() found no config file: the defaults were used)
+    bool displayMigrated = true;        // (display_default; false while load() reads a file from before BORDERLESS was the default: WINDOWED moves to it once)
+    bool ultraMarginMigrated = true;    // (ultra_margin_auto; false while load() reads a file from before AUTO came: its 150 moves to AUTO)
     bool nvThreaded = false;       // ...Windows NVIDIA: threaded optimization off (driver profile)
     bool nvDxgi = false;           // ...Windows NVIDIA: present through DXGI (driver profile)
     bool quipCaptions = false;     // MORE 5: quips shown as captions
@@ -255,6 +270,10 @@ struct Settings {
     Vec3 colorFriendly = {0.25f, 0.85f, 1.0f};
     Vec3 colorEnemy = {1.0f, 0.3f, 0.25f};
     std::string lastAddress = "127.0.0.1";
+    // the main menu's LAST PLAYED card (1.19.x): the last server's mode title, map title and name as they were when you
+    // last joined it (lastAddress); empty before the first game, so the card says NO GAME YET
+    std::string lastMode, lastMap, lastServer;
+    std::string lastTrainer;    // PRACTICE's AIM TRAINER card: the scenario last started, "<id>:<difficulty>" (empty: none yet)
     // JOIN's server list (1.19.4): sort (0 ping, 1 players, 2 name), hide full / empty, a ping cap (0 = any), and your
     // favourite and recent servers ("host:port" lists, ';'-separated; recent: the last 8 joined, newest first)
     int browserSort = 0;
@@ -375,6 +394,8 @@ struct Settings {
     std::string quipBlock;
     int quipPick = -1;                 // PLAYER > MORE: MY QUIP: the QUIP key says this one (-1: a random one)
     bool legacyMaps = false;           // GAMEPLAY: MAPS: LEGACY MAPS: the old map pool (maps/legacy/) listed in the pickers (1.19.6)
+    bool tutorialOffered = false;      // the first launch's TUTORIAL offer was shown (main menu; 1.19.9): never again
+    int tutorialDone = 0;              // TUTORIAL: a bit per lesson finished (tut::Lesson), the lesson list's ticks
     bool useOverrides = true;          // PLAYER > MORE: MODS: your overrides folder used (next start)             // players whose quips you don't hear (names, ';'-separated)
     // CONTROLS > MORE 2
     float wpnSens[WPN_COUNT];          // per weapon: x SENSITIVITY (1 = the same)
@@ -382,6 +403,7 @@ struct Settings {
     float wpnVmOff[WPN_COUNT][3] = {}; // per weapon: added to the WEAPON MODEL element's x / y (720p units) / depth (mm)
     float mouseAccel = 0;              // sensitivity x (1 + accel x counts per ms), at most x4 (0 = off)
     bool rawInput = true;              // raw mouse input (off: the OS's pointer motion, with its acceleration)
+    bool mouseOwnCore = true;          // LATENCY > MOUSE THREAD: OWN CORE (Windows raw input thread time-critical on its own core; rawmouse.h)
     int altToggleWpns = -1;            // ALT-FIRE: TOGGLE applies to these weapons (bits; -1: the ones that zoom)
     int swapFire = 0;                  // these weapons swap FIRE and ALT FIRE (bits)
     bool autoHop = true;               // holding jump jumps again on landing (off: a press a jump)

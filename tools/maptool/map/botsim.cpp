@@ -751,6 +751,7 @@ Json BotSim::summary() const {
     o.set("timeLeft", ms.timeLeft);
     if (s.map_.payloadPath.size() >= 2) { o.set("payloadDist", ms.payloadDist); o.set("payloadLen", ms.payloadLen); }
     if (!s.map_.points.empty()) o.set("pointsTaken", (int)ms.point);
+    if (ms.mode == MODE_POWER) { Json pw = Json::array(); pw.push(powerPool(ms, TEAM_A)); pw.push(powerPool(ms, TEAM_B)); o.set("powerPools", std::move(pw)); }
     if (s.map_.hasHill) o.set("hillOwner", ms.hillOwner == TEAM_A ? Json("a") : ms.hillOwner == TEAM_B ? Json("b") : Json());
     Json pl = Json::array();
     for (int i = 0; i < kMaxPlayers; i++) {

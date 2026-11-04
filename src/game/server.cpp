@@ -24,6 +24,8 @@ static uint8_t looksByte(const ServerPlayer& p) { return (uint8_t)((p.model & 15
 
 namespace {
 constexpr double kTimeout = 10.0;
+constexpr size_t kGlogHandBytes = 256 * 1024;  // the game log goes to its writer thread at this much (glogPump)...
+constexpr uint64_t kGlogHandMs = 1000;         // ...or this long after the last time, whichever comes first
 constexpr uint32_t kMaxRewindMs = 500; // lag compensation window (hard ceiling)
 constexpr uint32_t kRewindToleranceMs = 30; // over ping + interpolation (ping smoothing, jitter)
 constexpr float kRewindTeleport = 4.0f;     // two history records further apart than this: a respawn or teleport, not lerped
@@ -75,7 +77,6 @@ constexpr double kUploadShort = 0.9, kUploadRoom = 0.8;
 constexpr float kPingRiseMs = 25, kPingBaseCreepMs = 1;   // (the uncongested ping follows a lasting change: +1 ms a window)
 constexpr int kSnapSteps[] = {500, 333, 250, 125};       // snapshots per second (125: the floor)
 constexpr int kUdpHeaderBytes = 28;                      // IPv4 + UDP, counted with each datagram
-constexpr float kRocketLife = 5.0f;
 // Visibility (PERF-9): each viewer's line to each player is re-checked every kVisInterval, spread over the ticks in
 // between (round robin over the pairs that are due) instead of all at once 20 times a second, which on Midtown with
 // 32 players was a ~10 ms tick. A tick casts at most kVisRaysPerSecond / tick rate rays; past that the rest wait for
@@ -104,7 +105,6 @@ bool isLoopback(const NetAddr& a) { return (a.ip >> 24) == 127; }
 constexpr double kProbeTimeout = 3.0;     // no PKT_PROBE_REPLY on the game port by then: not reachable
 constexpr double kProbeRecheck = 300.0;   // re-check every 5 minutes (and on the menu button)
 constexpr double kCookieBucket = 10.0;     // connect cookies are good for 10-20 s
-constexpr size_t kMaxVoteListItems = 8;    // callvote tmaps / tmodes
 constexpr size_t kMaxMapInfo = 1024;       // map facts cached (only maps whose file exists; past this it starts over)
 constexpr size_t kMaxUnackedEvents = 256;
 }
@@ -265,6 +265,7 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
         for (int i = 0; i < 16; i += 4) { uint32_t v = rd(); memcpy(cookieKey_ + i, &v, 4); }
     }
     mapList_ = listMaps();
+    mapList_.erase(std::remove_if(mapList_.begin(), mapList_.end(), [](const std::string& n) { return mapHiddenFromLists(n); }), mapList_.end());
     std::string e;
     if (!map_.load(cfg_.map, &e)) { if (err) *err = e; return false; }
     for (auto& w : map_.warnings) log(cfg_.map + ": " + w);   // (parts of a newer map format it skipped)
@@ -334,6 +335,7 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
         for (int k = 0; k < cfg_.botsEnemy; k++) addBot(teams ? TEAM_B : TEAM_A, cfg_.botSkill);
         for (int k = 0; k < cfg_.botsAlly && teams; k++) addBot(TEAM_A, cfg_.botSkill);
     }
+    if (cfg_.tutorial) tutorialStart();   // (the ghost; warmup forever: tutorial_server.cpp)
     log("listening on UDP " + std::to_string(port()) + " - map " + cfg_.map + ", mode " + modeName(cfg_.mode));
     openGameLog();
     ownAddrs_.clear();
@@ -400,7 +402,7 @@ void Server::stop() {
     if (publicIp_) { publicIp_->quit = true; publicIp_.reset(); }
     running_ = false;
     log("stopped");
-    if (glog_) { glog(LOG_SIMPLE, "server stopped"); fclose(glog_); glog_ = nullptr; }
+    if (glog_.isOpen()) { glog(LOG_SIMPLE, "server stopped"); glog_.close(); }   // (everything reaches the file, then it's closed)
 }
 
 void Server::run(std::atomic<bool>& quit) {
@@ -763,6 +765,7 @@ double Server::frame() {
         QZONE("server tick");
         { QZONE("server simulate"); simulate(); }
         logTick();
+        glogPump();
         tick_++;
         timeMs_ += 1000 / tickRate();
         if (tick_ % snapEvery() == 0) { QZONE("server snapshots"); sendSnapshots(); } // input still runs every tick
@@ -1282,17 +1285,24 @@ void Server::sendRules(int id) {
     }
 }
 
-// The voted modifiers as a custom mode (kVotedRules), sent to everyone; "" goes back to the standard rules. `damage`
-// is every weapon's damage multiplier.
+// The voted modifiers as a custom mode (kVotedRules), sent to everyone; "" goes back to the standard rules. `damage`,
+// `firerate` and `projspeed` are every weapon's multipliers.
 void Server::applyVotedRules(const std::string& mods, int mode) {
     CustomRules r;
     if (!mods.empty()) {
         std::string t = std::string("custommode=") + kVotedRules + "\nmode=" + modeName(mode) + "\n";
+        // damage / firerate / projspeed: every weapon's multipliers, one weapon= line each (fire rate, damage, speed)
+        std::string wpn[3] = {"1", "1", "1"};
+        bool anyWpn = false;
         std::istringstream ls(mods);
         for (std::string line; std::getline(ls, line);) {
-            if (line.rfind("damage=", 0) == 0) { for (int w = 0; w < WPN_COUNT; w++) t += "weapon=" + std::to_string(w) + ",1," + line.substr(7) + ",1\n"; }
+            if (line.rfind("firerate=", 0) == 0) { wpn[0] = line.substr(9); anyWpn = true; }
+            else if (line.rfind("damage=", 0) == 0) { wpn[1] = line.substr(7); anyWpn = true; }
+            else if (line.rfind("projspeed=", 0) == 0) { wpn[2] = line.substr(10); anyWpn = true; }
             else t += line + "\n";
         }
+        if (anyWpn)
+            for (int w = 0; w < WPN_COUNT; w++) t += "weapon=" + std::to_string(w) + "," + wpn[0] + "," + wpn[1] + "," + wpn[2] + "\n";
         r.fromText(t);
     }
     cfg_.custom = r;
@@ -1719,6 +1729,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
         GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = looksByte(p); e.c = (int16_t)p.nameColor; e.text = p.name;
         broadcastEvent(e);
     } else if (cmd == "callvote") {
+        if (cfg_.tutorial) { GameEvent e; e.type = EV_MESSAGE; e.text = "not in the tutorial"; sendEvent(id, e); return; }
         if (rankedLive()) { GameEvent e; e.type = EV_MESSAGE; e.text = "a ranked match is being played - no votes until it's over"; sendEvent(id, e); return; }
         if (time() < p.voteAt) { GameEvent e; e.type = EV_MESSAGE; e.text = "your last vote failed: wait a few seconds"; sendEvent(id, e); return; }
         std::istringstream vs(rest);
@@ -1813,7 +1824,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
                 if (w == "mods") { setMods = true; continue; }
                 const size_t eq = w.find('=');
                 const std::string k = eq == std::string::npos ? w : w.substr(0, eq), v = eq == std::string::npos ? "" : w.substr(eq + 1);
-                static const char* const kNum[] = {"gravity", "speed", "jump", "knockback", "damage", "health"};
+                static const char* const kNum[] = {"gravity", "speed", "jump", "knockback", "damage", "firerate", "projspeed", "health"};
                 static const char* const kBool[] = {"vampire", "regen", "selfdamage", "dash", "grapple", "instagib", "fly"};
                 bool known = false, num = false;
                 for (const char* n : kNum) if (k == n) known = num = true;
@@ -1888,6 +1899,13 @@ void Server::command(const std::string& line, int fromPlayer) {
         if (blocked) { reply("a ranked match is being played: '" + cmd + "' has to wait until it's over"); return; }
     }
     if (cmd == "editmode" && cfg_.ranked) { reply("no map editing on a ranked server (vote ranked off first)"); return; }
+    if (cfg_.tutorial && (cmd == "map" || cmd == "mode" || cmd == "reload" || cmd == "ranked" || cmd == "restart" || cmd == "editmode" ||
+                          cmd == "forcestart" || cmd == "addbot")) { reply("not in the tutorial"); return; }   // (its map, its ghost, warmup for good)
+    if (cmd == "tutorial") {   // tutorial <lesson> [epoch ms] | reset: the TUTORIAL's game only (tutorial_server.cpp)
+        const std::string r = tutorialCommand(fromPlayer, arg, ss);
+        if (!r.empty()) reply(r);
+        return;
+    }
     if (cmd == "practice") {   // practice savepos|loadpos|god|passive|reset: the host alone with bots (no other human: no unfair edge)
         int humans = 0;
         for (auto& o : players_) humans += o.connected && !o.isBot;
@@ -2104,7 +2122,8 @@ void Server::spawnPlayer(int id) {
     float yaw = 0;
     const float scale = bodyScale();
     bool crouch = false, fits = true;
-    if (isRaceMode(ms_.mode) && p.checkpoint > 0 && p.checkpoint <= (int)map_.raceCheckpoints.size() && (ms_.phase == PHASE_LIVE || ms_.phase == PHASE_WARMUP)) { // (practice too)
+    if (cfg_.tutorial && tutorialSpawnAt(id, pos, yaw)) {   // (the tutorial: your lesson's start; the ghost's)
+    } else if (isRaceMode(ms_.mode) && p.checkpoint > 0 && p.checkpoint <= (int)map_.raceCheckpoints.size() && (ms_.phase == PHASE_LIVE || ms_.phase == PHASE_WARMUP)) { // (practice too)
         const AABB& c = map_.raceCheckpoints[p.checkpoint - 1];
         pos = {(c.mn.x + c.mx.x) * 0.5f, c.mn.y + 0.05f, (c.mn.z + c.mx.z) * 0.5f};
         yaw = p.yaw;
@@ -2286,7 +2305,8 @@ void Server::killPlayer(int victim, int killer, int weapon) {
 void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const Vec3& knock) {
     ServerPlayer& v = players_[victim];
     if (!v.alive) return;
-    bool canHurt = rulesCanDamage(*this, attacker, victim, weapon) && !v.practiceGod;   // (practice: TAKE NO DAMAGE)
+    if (cfg_.tutorial && attacker >= 0 && attacker != victim) return;   // (the tutorial: nobody touches the ghost or you)
+    bool canHurt = rulesCanDamage(*this, attacker, victim, weapon) && !v.practiceGod && !cfg_.tutorial;   // (practice: TAKE NO DAMAGE; the tutorial: none)
     bool friendly = attacker >= 0 && attacker != victim && modeIsTeamBased(cfg_.mode) && players_[attacker].team == v.team;
     // Race: you can only affect yourself (rocket jumps etc.); hide and seek / tag: only "it" touches anyone (the rules)
     if (!rulesCanHit(*this, attacker, victim, weapon)) return;
@@ -2873,7 +2893,7 @@ void Server::grappleTargets(int id, const UserCmd& cmd, HookProbe& probe) {
     // Rocket riding: the rockets in reach, anyone's. Your own are tested where they are now (the client draws them that
     // far ahead: X5), anyone else's rewound along their path to where you saw them (the view time plus the
     // interpolation delay the client draws projectiles ahead by: rocketSeenMs). Bots don't ride rockets.
-    if (!moveTuning().rocketRide || p.isBot) return;
+    if (!moveTuning().rocketRide || (p.isBot && id != tutGhost_)) return;   // (the tutorial's ghost rides its own)
     const Vec3 eye = p.move.pos + Vec3(0, kEyeHeight * moveScale(p.move.mods), 0);
     const float reach = kGrappleRange * moveValue(p.move, MV_HOOK_RANGE, &map_) + 2 * kRocketCatchHalf;
     uint64_t seen = 0;   // (the time anyone else's rocket is tested at: worked out at the first)
@@ -3053,7 +3073,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
             if (pr.active) continue;
             pr = Projectile();
             pr.active = true;
-            pr.id = nextProjId_++;
+            pr.id = newProjId();
             pr.type = WPN_KNIFE;
             pr.owner = id;
             pr.pos = eye + aim * 0.3f;
@@ -3070,7 +3090,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
             if (pr.active) continue;
             pr = Projectile();
             pr.active = true;
-            pr.id = nextProjId_++;
+            pr.id = newProjId();
             pr.type = WPN_SYRINGE;
             pr.owner = id;
             pr.pos = eye + aim * 0.3f;
@@ -3096,7 +3116,8 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
             // the nearest enemy in sight (F15: counting through walls told you someone was within 5 m): a ray or two
             // per enemy inside the count's range, once a stream (1.8 s)
             float nearest = 1e9f;
-            for (int i = 0; i < kMaxPlayers; i++) {
+            // (the tutorial: nobody is an enemy, or the ghost 12 m off in the next lane would cut your stream)
+            for (int i = 0; i < kMaxPlayers && !cfg_.tutorial; i++) {
                 const auto& o = players_[i];
                 if (i == id || !o.connected || !o.alive || (modeIsTeamBased(cfg_.mode) && o.team == p.team)) continue;
                 const float dist = length(o.move.pos - p.move.pos);
@@ -3116,7 +3137,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
                 if (pr.active) continue;
                 pr = Projectile();
                 pr.active = true;
-                pr.id = nextProjId_++;
+                pr.id = newProjId();
                 pr.type = WPN_BUBBLE;
                 pr.owner = id;
                 pr.pos = eye + aim * 0.3f;
@@ -3133,7 +3154,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
             if (pr.active) continue;
             pr = Projectile();
             pr.active = true;
-            pr.id = nextProjId_++;
+            pr.id = newProjId();
             pr.type = p.weapon;
             pr.owner = id;
             if (p.weapon != WPN_SYRINGE) p.addShot(p.weapon);   // accuracy: a hit is counted when it lands
@@ -3199,7 +3220,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
 void Server::tickProjectiles() {
     const int steps = std::max(1, 1000 / tickRate());
     projTargets_ = 0;   // the players a projectile can hit, boxed once a tick rather than once a step
-    for (int i = 0; i < kMaxPlayers; i++) {
+    for (int i = 0; i < kMaxPlayers && !cfg_.tutorial; i++) {   // (the tutorial: shots fly through the ghost and you)
         const auto& p = players_[i];
         if (!p.connected || !p.alive) continue;
         projTargetId_[projTargets_] = (uint8_t)i;
@@ -3245,6 +3266,11 @@ void Server::stepProjectile(Projectile& pr) {
             if (t >= 0 && t <= best) { best = t; hitPlayer = i; hitHead = inHead; hitBb = projTargetBox_[k]; }
         }
         if (hitPlayer >= 0) hitBb = hitHead ? headBox(hitBb) : bodyBox(hitBb);
+        // into lava or acid first: gone, nothing hit (a player past its surface: the liquid took it before them)
+        if (map_.hasDissolvers()) {
+            const float d = map_.dissolveAlong(pr.pos, dir, best);
+            if (d >= 0) { pr.pos += dir * d; pr.active = false; pr.dissolved = true; return; }
+        }
         // ball mode: projectiles hit the ball (owner, 2026-11-01: "projectiles should interact with it"). A blast goes off
         // on it (and pushes it as any blast does), a sticky drops off it; anything else gives it a quarter of its speed
         if (ms_.mode == MODE_BALL && ballSet_ && ballRespawnAt_ <= 0) {
@@ -3448,7 +3474,11 @@ bool Server::breakGlass(int brush, int how, const Vec3& at, const Vec3& dir, int
     d.kind = DESTRUCT_GLASS; d.how = (uint8_t)how; d.by = by; d.brush = (uint32_t)brush; d.at = at; d.dir = dir;
     d.seed = glassRand(glassSeed_);
     broadcastEvent(destructEvent(d));
-    static thread_local std::vector<GlassShard> sh;
+    // (the shards' scratch, reused between breaks: on the heap, never freed. A thread_local object with a destructor
+    // crashed at thread exit under MinGW, its emutls block freed before the destructor ran; see customrules.cpp)
+    static thread_local std::vector<GlassShard>* shp = nullptr;
+    if (__builtin_expect(shp == nullptr, 0)) shp = new std::vector<GlassShard>();
+    std::vector<GlassShard>& sh = *shp;
     glassShards(pane, how, at, dir, d.seed, sh, &map_.brushes[(size_t)brush]);
     const int8_t spare = glassSparesBreaker(how) ? (int8_t)by : (int8_t)-1;
     for (const GlassShard& g : sh)
@@ -3625,8 +3655,7 @@ void Server::tickShards() {
         int hit = -1;
         for (int i = 0; i < kMaxPlayers; i++) {
             if (!in[i] || i == s.spare) continue;
-            const Vec3 grow(s.size, s.size, s.size);   // (a big shard hits what it brushes)
-            const float t = rayAABB(s.pos, inv, {box[i].mn - grow, box[i].mx + grow}, best);
+            const float t = rayHitbox(s.pos, inv, box[i], best, nullptr, s.size);   // (body and head, as shots; a big shard hits what it brushes)
             if (t >= 0 && t < best) { best = t; hit = i; }
         }
         if (hit >= 0) {   // (q: a shard 10, a shattered piece 1; one pane's at most kGlassPaneMaxDamage to each player)
@@ -3850,12 +3879,14 @@ void Server::updatePlayerVisibility(uint32_t need, int viewers, int targets, int
         // and both shoulders, where they are and where they'll be in 0.25 s (and where you'll be).
         Vec3 eye = pv.move.pos + Vec3(0, eyeH, 0);
         Vec3 lead = pt.move.vel * 0.25f, mine = pv.move.vel * 0.15f;
-        Vec3 side = normalize(Vec3(-d.z, 0, d.x)) * 0.45f;
+        // (the target's points at its size: a giant's head is twice as high, MOVE_BIG / MOVE_TINY; the eye: eyeH)
+        const float ts = moveScale(pt.move.mods);
+        Vec3 side = normalize(Vec3(-d.z, 0, d.x)) * 0.45f, tside = side * ts;
         bool seen = false;
         int rays = 0;
         for (const Vec3& from : {eye, eye + side * 0.7f, eye - side * 0.7f, eye + mine})
-            if (!seen) for (const Vec3& off : {Vec3(0, 1.75f, 0), Vec3(0, 1.0f, 0), Vec3(0, 0.25f, 0), side + Vec3(0, 1.3f, 0), Vec3() - side + Vec3(0, 1.3f, 0),
-                                    lead + Vec3(0, 1.0f, 0), lead + side + Vec3(0, 1.3f, 0), lead - side + Vec3(0, 1.3f, 0)}) {
+            if (!seen) for (const Vec3& off : {Vec3(0, 1.75f * ts, 0), Vec3(0, 1.0f * ts, 0), Vec3(0, 0.25f * ts, 0), tside + Vec3(0, 1.3f * ts, 0), Vec3() - tside + Vec3(0, 1.3f * ts, 0),
+                                    lead + Vec3(0, 1.0f * ts, 0), lead + tside + Vec3(0, 1.3f * ts, 0), lead - tside + Vec3(0, 1.3f * ts, 0)}) {
                 Vec3 to = pt.move.pos + off - from;
                 float len = length(to);
                 rays++;
@@ -3943,7 +3974,7 @@ void Server::sendSnapshots() {
         for (int k = 0; k < kMaxProjectiles; k++) {
             ProjSlotPrev& o = projPrev_[k];
             const Projectile& pr = projectiles_[k];
-            if (o.active && (!pr.active || pr.id != o.id) && projHidden_[k] && projDeathCount_ < kMaxProjectiles &&
+            if (o.active && (!pr.active || pr.id != o.id) && !(pr.id == o.id && pr.dissolved) && projHidden_[k] && projDeathCount_ < kMaxProjectiles &&
                 (weaponDef(o.type).splashRadius > 0 || o.type == WPN_BUBBLE || o.type == WPN_CROSSBOW)) {   // (what the client shows going off)
                 ProjDeath& d = projDeaths_[projDeathCount_++];
                 d.snap = ProjectileSnap{o.id, o.type, o.owner, o.pos, Vec3()};
@@ -4481,7 +4512,7 @@ AABB Server::hitBox(const Vec3& feet, bool crouched) const {
 }
 
 void Server::openGameLog() {
-    if (cfg_.logLevel <= LOG_OFF || glog_) return;
+    if (cfg_.logLevel <= LOG_OFF || glog_.isOpen()) return;
     std::string path = cfg_.logFile;
     if (path.empty()) {
         std::string dir = userDataPath("logs");
@@ -4492,28 +4523,36 @@ void Server::openGameLog() {
         strftime(buf, sizeof buf, "/quark-%Y%m%d-%H%M%S.log", localtime(&t));
         path = dir + buf;
     }
-    glog_ = u8fopen(path, "w");
-    if (!glog_) { log("could not open log file " + path); return; }
-    // A big buffer keeps 1000 Hz logging to a handful of writes per second, off the tick's critical path.
-    setvbuf(glog_, nullptr, _IOFBF, 1 << 20);
+    if (!glog_.open(path, "w")) { log("could not open log file " + path); return; }   // ("w": text, as before)
+    glogHandAt_ = timeMs_ + kGlogHandMs;
     static const char* names[] = {"off", "simple", "verbose", "extreme"};
     log(std::string("logging (") + names[cfg_.logLevel] + ") to " + path);
     glog(LOG_SIMPLE, "quark server log, level %s, version %s", names[cfg_.logLevel], QUARK_VERSION);
 }
 
 void Server::glog(int level, const char* fmt, ...) {
-    if (!glog_ || cfg_.logLevel < level) return;
-    fprintf(glog_, "%llu.%03u ", (unsigned long long)(timeMs_ / 1000), (unsigned)(timeMs_ % 1000));
+    if (!glog_.isOpen() || cfg_.logLevel < level) return;
+    glog_.format("%llu.%03u ", (unsigned long long)(timeMs_ / 1000), (unsigned)(timeMs_ % 1000));
     va_list ap;
     va_start(ap, fmt);
-    vfprintf(glog_, fmt, ap);
+    glog_.vformat(fmt, ap);
     va_end(ap);
-    fputc('\n', glog_);
+    glog_.write("\n", 1);
+}
+
+// After each tick: the lines so far go to the writer thread once there are kGlogHandBytes of them or kGlogHandMs has
+// passed (a lock and a buffer swap here; the fwrite and fflush happen on the writer's thread). The file is never more
+// than a second behind, where the old 1 MB stdio buffer could hold minutes of a simple log.
+void Server::glogPump() {
+    if (!glog_.isOpen()) return;
+    if (glog_.pendingBytes() < kGlogHandBytes && timeMs_ < glogHandAt_) return;
+    glog_.flush();
+    glogHandAt_ = timeMs_ + kGlogHandMs;
 }
 
 // verbose: a gameplay sample at 125 Hz; extreme: every tick, with inputs and projectiles.
 void Server::logTick() {
-    if (!glog_ || cfg_.logLevel < LOG_VERBOSE) return;
+    if (!glog_.isOpen() || cfg_.logLevel < LOG_VERBOSE) return;
     bool extreme = cfg_.logLevel >= LOG_EXTREME;
     uint64_t next = timeMs_ + 1000 / tickRate();
     if (!extreme && next / 8 == timeMs_ / 8) return; // only when this tick crosses an 8 ms boundary
@@ -4524,17 +4563,17 @@ void Server::logTick() {
         const Vec3& o = p.move.pos;
         const Vec3& v = p.move.vel;
         if (extreme)
-            fprintf(glog_, "  p%d pos %.3f %.3f %.3f vel %.3f %.3f %.3f yaw %.4f pitch %.4f hp %.1f wpn %d btn %04x flags %02x dash %d cd %d hook %.3f\n",
+            glog_.format("  p%d pos %.3f %.3f %.3f vel %.3f %.3f %.3f yaw %.4f pitch %.4f hp %.1f wpn %d btn %04x flags %02x dash %d cd %d hook %.3f\n",
                     i, o.x, o.y, o.z, v.x, v.y, v.z, p.yaw, p.pitch, p.health, p.weapon, p.buttons, p.move.flags,
                     (int)p.move.dashCharges, (int)p.move.dashCooldownMs, p.move.hookCooldown);
         else
-            fprintf(glog_, "  p%d pos %.2f %.2f %.2f vel %.2f %.2f %.2f yaw %.3f pitch %.3f hp %.0f wpn %d\n",
+            glog_.format("  p%d pos %.2f %.2f %.2f vel %.2f %.2f %.2f yaw %.3f pitch %.3f hp %.0f wpn %d\n",
                     i, o.x, o.y, o.z, v.x, v.y, v.z, p.yaw, p.pitch, p.health, p.weapon);
     }
     if (!extreme) return;
     for (const auto& pr : projectiles_)
         if (pr.active)
-            fprintf(glog_, "  proj %u type %d owner %d pos %.3f %.3f %.3f vel %.3f %.3f %.3f%s\n", pr.id, pr.type, pr.owner,
+            glog_.format("  proj %u type %d owner %d pos %.3f %.3f %.3f vel %.3f %.3f %.3f%s\n", pr.id, pr.type, pr.owner,
                     pr.pos.x, pr.pos.y, pr.pos.z, pr.vel.x, pr.vel.y, pr.vel.z, pr.stuck ? " stuck" : "");
 }
 

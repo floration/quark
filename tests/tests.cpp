@@ -30,6 +30,7 @@
 #include "../src/client/modecalls.h"
 #include "../src/client/weaponpredict.h"
 #include "../src/client/clientfeel.h"
+#include "../src/client/ultramargin.h"
 #include <filesystem>
 #include <sstream>
 #include <fstream>
@@ -52,6 +53,7 @@
 #include "game/bots.h"
 #include "game/benchmark.h"
 #include "walkgrid.h"
+#include "mapbounds.h"
 #include "common/proc.h"
 #include "groupproc.h"
 #ifndef _WIN32
@@ -90,6 +92,16 @@ static double testTimeScale() {
 }
 static const double kTestTimeScale = testTimeScale();
 #define CHECK(c) do { if (!(c)) { printf("  FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); g_fail++; } } while (0)
+// Starts a test's server; when it can't (its port taken by another program, a map that won't load), prints a FAIL
+// line with the reason and counts the failure, so a run never fails without saying where.
+static bool startServerAt(Server& s, const ServerConfig& cfg, const char* file, int line) {
+    std::string e;
+    if (s.start(cfg, &e)) return true;
+    printf("  FAIL %s:%d: server start on port %u: %s\n", file, line, (unsigned)cfg.port, e.c_str());
+    g_fail++;
+    return false;
+}
+#define START_SERVER(s, cfg) startServerAt((s), (cfg), __FILE__, __LINE__)
 
 // Human-made maps (the owner's rule, docs/JUDGMENT_CALLS.md): the owner will hand-make the maps; those don't have to
 // pass the automated map checks, but they're still checked and their numbers reported, for balancing. A map is
@@ -121,20 +133,24 @@ struct HumanMadeGrace {
 // times a minute and up to 21 ms late (a spin: 51 ms; steal time rising), and one 20 ms pause is 16 ticks over 4 ms,
 // 1.6% of a 1 s window. That isn't the code under test. So the harness measures its own waits (the time asleep, or spinning, past what it asked for: nothing
 // the server's code does can lengthen it), and an attempt of a timing test that failed while the host paused past the
-// stall threshold is set aside and run again (timingTest). Every check is the same; the third attempt always counts.
+// stall threshold is set aside and run again (timingTest). Every check is the same; the last attempt always counts.
 static double g_hostPause = 0;   // the longest host pause in this attempt (real seconds)
 static double wallNow() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 static void hostWaited(double t0, double asked) { g_hostPause = std::max(g_hostPause, wallNow() - t0 - std::max(asked, 0.0)); }
 static void hostSleepMs(int ms) { double t0 = wallNow(); sleepMs(ms); hostWaited(t0, ms * 1e-3); }
 constexpr double kHostPauseVoid = 0.004;   // (the server's stall threshold at 1000 Hz, 500/s: kStallSnaps x 2 ms)
+// Attempts of a timing test. Only an attempt that failed while the host paused past kHostPauseVoid is run again, so a
+// real regression (which fails on a host that runs the test when asked) fails the first unpaused attempt; 5, not 3,
+// because on a host shared with other builds (4 cores, 3 other jobs) the first 3 attempts were all paused now and then.
+constexpr int kTimingTries = 5;
 static void timingTest(const char* name, const std::function<void()>& run) {
     for (int attempt = 1;; attempt++) {
         int before = g_fail;
         g_hostPause = 0;
         run();
-        if (g_fail == before || attempt == 3 || g_hostPause <= kHostPauseVoid) return;
+        if (g_fail == before || attempt == kTimingTries || g_hostPause <= kHostPauseVoid) return;
         printf("  %s: the host paused this thread %.1f ms (over the %.0f ms stall threshold) in this attempt: its %d failure(s) "
-               "are set aside, attempt %d of 3\n", name, g_hostPause * 1e3, kHostPauseVoid * 1e3, g_fail - before, attempt + 1);
+               "are set aside, attempt %d of %d\n", name, g_hostPause * 1e3, kHostPauseVoid * 1e3, g_fail - before, attempt + 1, kTimingTries);
         g_fail = before;
     }
 }
@@ -154,6 +170,19 @@ static double offCpu() {
 #endif
 }
 
+// The host pause in a test loop's own work (frames, polls, ticks) since `off` (an offCpu() reading), less `asked`
+// seconds of sleep: kept in g_hostPause, as hostSleepMs keeps a sleep's. A thread the host doesn't run mid-frame
+// delays ticks the same as one that oversleeps. (Windows: offCpu() is wall time, so only the sleeps count there.)
+static void hostOffCpu(double& off, double asked) {
+#ifdef _WIN32
+    (void)asked;
+#else
+    double o = offCpu();
+    g_hostPause = std::max(g_hostPause, o - off - asked);
+    off = o;
+#endif
+}
+
 // Pump a server and some clients for `seconds` of real time, feeding each client an input. With `stalled`, it keeps the
 // longest the machine left the loop unrun in real seconds (beyond its 1 ms sleep; see offCpu): where a check's premise
 // is a machine that runs the test when it asks, a run that this breaks is the machine's, not the game's.
@@ -161,7 +190,7 @@ template <class F>
 static void pump(Server& s, std::vector<NetClient*>& cls, double seconds, F input, double* stalled = nullptr) {
     double end = timeNow() + seconds;
     double nextTick = timeNow();
-    double off = stalled ? offCpu() : 0;
+    double off = offCpu();
     while (timeNow() < end) {
         s.frame();
         for (auto* c : cls) c->poll();
@@ -170,7 +199,8 @@ static void pump(Server& s, std::vector<NetClient*>& cls, double seconds, F inpu
             nextTick += cls.empty() ? 0.001 : cls[0]->tickPeriod();
         }
         hostSleepMs(1);
-        if (stalled) { double o = offCpu(); *stalled = std::max(*stalled, o - off - 0.001); off = o; }
+        if (stalled) *stalled = std::max(*stalled, offCpu() - off - 0.001);
+        hostOffCpu(off, 0.001);
     }
 }
 
@@ -1008,6 +1038,51 @@ static void testAcid() {
     }
 }
 
+// Lava and acid destroy projectiles (q, 2026-10-27): a rocket or a sticky into either is gone where it went in, no
+// blast, nobody hurt; the same rocket at the bare floor blows up (the control). Map::dissolveAlong is the test the
+// client's copies use too. And a new projectile's id skips 0 and any id still flying (NET-14: the u16 wraps).
+static void testProjectilesDissolve() {
+    printf("projectiles: gone in lava and acid, no blast; ids skip live ones\n");
+    const char* text = "box -20 -1 -20 20 0 20\nacid -3 0 -3 3 0.25 3\nlava 7 0 -3 13 0.25 3\nspawn any 0 0 -10\n";
+    Map m;
+    CHECK(m.parse(text) && m.acid.size() == 1 && m.lava.size() == 1 && m.hasDissolvers());
+    CHECK(m.dissolves({0, 0.1f, 0}) && m.dissolves({10, 0.1f, 0}) && !m.dissolves({5, 0.1f, 0}));
+    CHECK(std::fabs(m.dissolveAlong({0, 3, 0}, {0, -1, 0}, 10) - 2.75f) < 1e-4f && m.dissolveAlong({5, 3, 0}, {0, -1, 0}, 10) < 0);
+    CHECK(m.dissolveAlong({0, 3, 0}, {0, -1, 0}, 2.0f) < 0);   // (not reached within maxT)
+    for (int c = 0; c < 4; c++) {   // into acid, into lava, a sticky into acid, the control: a rocket at the bare floor
+        Server s;
+        s.setLog([](const std::string&) {});
+        CHECK(s.map_.parse(text));
+        s.cfg_.mode = s.ms_.mode = MODE_FFA;
+        s.ms_.phase = PHASE_LIVE;
+        s.timeMs_ = 10000;
+        const float x = c == 1 ? 10.0f : c == 3 ? -8.0f : 0.0f;
+        for (int i = 0; i < 2; i++) {
+            auto& p = s.players_[i];
+            p.connected = true; p.alive = true; p.health = s.lifeMaxHealth(); p.team = TEAM_A;
+            p.move = MoveState(); p.move.flags = MF_ONGROUND; p.move.pos = i == 0 ? Vec3(0, 0, -15) : Vec3(x + 2.5f, 0, 0);
+        }
+        Projectile& pr = s.projectiles_[0];
+        pr = Projectile();
+        pr.active = true; pr.id = s.newProjId(); pr.type = c == 2 ? WPN_STICKY : WPN_ROCKET; pr.owner = 0;
+        pr.pos = {x, 3, 0}; pr.vel = {0, -30, 0}; pr.dieAt = s.time() + 5;
+        for (int t = 0; t < 2000 && pr.active; t++) { s.timeMs_ += (uint64_t)std::max(1, 1000 / s.tickRate()); s.tickProjectilesForTest(); }
+        const float hp = s.players_[1].health;
+        printf("  %s: active %d, dissolved %d at y %.2f, the one 2.5 m off: %.0f hp\n", c == 0 ? "rocket into acid" : c == 1 ? "rocket into lava" : c == 2 ? "sticky into acid" : "rocket at the floor",
+               pr.active, pr.dissolved, pr.pos.y, hp);
+        if (c < 3) CHECK(!pr.active && pr.dissolved && std::fabs(pr.pos.y - 0.25f) < 0.05f && hp == s.lifeMaxHealth());
+        else CHECK(!pr.active && !pr.dissolved && hp < s.lifeMaxHealth());
+    }
+    {   // ids: never 0, never one still flying, through the wrap
+        Server s;
+        s.projectiles_[3].active = true; s.projectiles_[3].id = 1;
+        s.projectiles_[4].active = true; s.projectiles_[4].id = 2;
+        s.nextProjId_ = 65535;
+        const uint16_t a = s.newProjId(), b = s.newProjId();
+        CHECK(a == 65535 && b == 3);
+    }
+}
+
 // 3D FLYING's zero-g flight (MoveState::fly; owner, 2026-11-01 / 11-02): no gravity and no drift with no keys, MOVE UP /
 // MOVE DOWN straight up and down, the ground's acceleration and friction every way (full speed as fast as a run, a stop
 // as quick as one), the run speed's cap, walls slide you, and no jump, dash or grapple.
@@ -1254,7 +1329,9 @@ static void testMovementTuning() {
             CHECK(std::fabs(q.vel.x - n.x) < 1e-4f && std::fabs(q.vel.z - n.z) < 1e-4f && std::fabs(hs(q) - v) < 1e-3f);
         }
     }
-    { // drift: a standing jump holding W drifts to ~7 m/s by landing (2.3 of strafe push plus 8 m/s2), never past 9.5
+    { // drift: a standing jump holding W drifts to ~7 m/s by landing (2.3 of strafe push plus 8 m/s2), never past 9.5.
+      // Air drift is 0 since protocol 63 (owner, 2026-11-01: "change air drift to 0"): then only the 2.3 m/s strafe push.
+        const bool drift = moveParamBase(MV_AIR_DRIFT) > 0;
         MoveState q = standing();
         UserCmd j; j.forward = 127; j.buttons = BTN_JUMP;
         step(q, j, open);
@@ -1263,19 +1340,20 @@ static void testMovementTuning() {
         int air = 1;
         for (; air < 2000 && !(q.flags & MF_ONGROUND); air++) { step(q, j, open); top = std::max(top, hs(q)); }
         printf("  standing jump + W: %.2f m/s by landing (%d ms in the air)\n", top, air);
-        CHECK(top > 6.8f && top < 7.5f && air > 610 && air < 660);
+        CHECK((drift ? top > 6.8f && top < 7.5f : std::fabs(top - 2.3f) < 0.02f) && air > 610 && air < 660);
         // a long fall holding W: up to run speed and no further
         MoveState f; f.pos = {0, 30, 0};
         UserCmd w; w.forward = 127;
         float most = 0;
         for (int i = 0; i < 2000 && !(f.flags & MF_ONGROUND); i++) { step(f, w, open); most = std::max(most, hs(f)); }
         printf("  falling 30 m holding W: %.4f m/s at most\n", most);
-        CHECK(most <= 9.5f + 1e-4f && most > 9.49f);
+        CHECK(most <= 9.5f + 1e-4f && (drift ? most > 9.49f : std::fabs(most - 2.3f) < 0.02f));
         // sideways to your momentum under run speed: it pushes along the wish, the total held to 9.5
         MoveState g; g.pos = {0, 30, 0}; g.vel = {0, 0, -9.0f};
         UserCmd sd; sd.side = 127;   // (right: +x)
         for (int i = 0; i < 400; i++) { step(g, sd, open); CHECK(hs(g) <= 9.5f + 1e-4f); }
-        CHECK(g.vel.x > 3.0f);
+        printf("  sideways at 9 m/s, 0.4 s of D: %.3f m/s across\n", g.vel.x);
+        CHECK(drift ? g.vel.x > 3.0f : std::fabs(g.vel.x - 2.53f) < 0.02f);   // (no drift: the A/D strafe push alone, its 2.53 cap)
         // over run speed: no drift at all (only the strafe push)
         MoveState o; o.pos = {0, 30, 0}; o.vel = {0, 0, -9.6f};
         UserCmd b; b.forward = -127;   // S: straight against momentum
@@ -1879,42 +1957,11 @@ static void testMaps() {
         CHECK(isRankedMap(m, 0) || isRankedMap(m, 1) || isRankedMap(m, 5));
         for (int v : {0, 1, 5}) if (m.rankedLadders >> v & 1) CHECK(m.supportsMode(rankedMode(v)));   // (instagib: free for all)
         for (int v : {0, 1, 5}) if (m.rankedLadders >> v & 1) perLadder[v == 0 ? 0 : v == 1 ? 1 : 2]++;
-        int a = 0, b = 0;
-        for (auto& sp : m.spawns) { a += sp.team == SPAWN_A; b += sp.team == SPAWN_B; }
-        bool duel = (m.rankedLadders & 3) != 0;   // a ladder played 1v1 (vanilla, vampire): a spawn for each side
-        CHECK(a == b && (a >= 1 || !duel));
-        if (!duel || !a) continue;
-        WalkGrid w;
-        w.build(m);
-        std::vector<int> sa, sb;
-        Vec3 mid{0, 0, 0};
-        for (auto& sp : m.spawns) if (sp.team == SPAWN_A || sp.team == SPAWN_B) {
-            int n = w.nodeAt(sp.pos);
-            (sp.team == SPAWN_A ? sa : sb).push_back(n);
-            mid = mid + sp.pos * (1.0f / (2 * a));
-        }
-        // each spawn's runs, once; the middle: every spot within r of the spawns' centre (across), r growing from
-        // 4 m until every spawn reaches one (a void or a pillar in the very middle: the nearest floor round it)
-        std::vector<std::vector<float>> ta, tb;
-        for (int n : sa) ta.push_back(walkSeconds(w, n));
-        for (int n : sb) tb.push_back(walkSeconds(w, n));
-        auto meanTo = [](const std::vector<std::vector<float>>& own, const std::vector<int>& goals) {
-            float sum = 0;
-            for (auto& t : own) { float f = INFINITY; for (int g : goals) if (g >= 0) f = std::min(f, t[g]); sum += f; }
-            return sum / own.size();
-        };
-        float aFoe = meanTo(ta, sb), bFoe = meanTo(tb, sa), aMid = INFINITY, bMid = INFINITY;
-        for (float r = 4; r <= 32 && !(std::isfinite(aMid) && std::isfinite(bMid)); r += 4) {
-            std::vector<int> mids;
-            for (size_t n = 0; n + w.ladderHubs < w.nodes.size(); n++) {
-                const Vec3& p = w.nodes[n].p;
-                if ((p.x - mid.x) * (p.x - mid.x) + (p.z - mid.z) * (p.z - mid.z) <= r * r) mids.push_back((int)n);
-            }
-            aMid = meanTo(ta, mids); bMid = meanTo(tb, mids);
-        }
-        bool fair = std::isfinite(aFoe + aMid + bFoe + bMid) && std::fabs(aFoe - bFoe) <= 1.0f && std::fabs(aMid - bMid) <= 1.0f;
-        if (!fair) printf("  %s: not fair: to the enemy A %.1f s / B %.1f s, to the middle A %.1f s / B %.1f s\n", name.c_str(), aFoe, bFoe, aMid, bMid);
-        CHECK(fair);
+        const RankedFairness f = rankedFairness(m);   // (tests/walkgrid.h: quark_maptool's ranked check judges the same way)
+        CHECK(f.spawnsOk);
+        if (!f.timed) continue;
+        if (!f.fair) printf("  %s: not fair: to the enemy A %.1f s / B %.1f s, to the middle A %.1f s / B %.1f s\n", name.c_str(), f.aFoe, f.bFoe, f.aMid, f.bMid);
+        CHECK(f.fair);
     }
     CHECK(perLadder[0] >= 2 && perLadder[1] >= 2 && perLadder[2] >= 2);
     for (int v : {0, 1, 5}) {
@@ -2796,8 +2843,7 @@ static void testSession(int mode, const char* mapName, uint16_t port) {
     cfg.timeLimit = 3;
     cfg.scoreLimit = 3;
     s.setLog([](const std::string&) {});
-    std::string err;
-    if (!s.start(cfg, &err)) { printf("  server start failed: %s\n", err.c_str()); g_fail++; return; }
+    if (!START_SERVER(s, cfg)) return;
     NetClient a, b;
     a.connect("127.0.0.1:" + std::to_string(port), "alpha");
     b.connect("127.0.0.1:" + std::to_string(port), "bravo");
@@ -3250,7 +3296,7 @@ static void testWeapons(uint16_t port) {
         cfg.autoStart = true;
         cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port++;
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { g_fail++; continue; }
+        if (!START_SERVER(s, cfg)) { continue; }
         if (uptime) s.timeMs_ += 5u * 86400u * 1000u;
         NetClient a, b;
         a.connect("127.0.0.1:" + std::to_string(cfg.port), "shooter");
@@ -3424,7 +3470,7 @@ static void testFixedSpread(uint16_t port) {
         for (int k = 0; k < sg.pellets; k++) {
             Vec3 pd = spreadAim(aim, sg.spread, k, sg.pellets, 0);
             float bang, wall = s.map_.raycastBullet(eye, pd, sg.range, &bang);
-            float t = rayAABB(eye, safeInv(pd), s.hitBox(sb.move.pos, false), wall >= 0 ? wall : sg.range);
+            float t = rayHitbox(eye, safeInv(pd), s.hitBox(sb.move.pos, false), wall >= 0 ? wall : sg.range);
             if (t >= 0) { predicted++; CHECK((eye + pd * t).y < sb.move.pos.y + 1.4f); }
         }
         float first = -1;
@@ -4177,7 +4223,7 @@ static void testIncrementalEdits() {
     auto same = [&](const Map& a, const Map& b) {
         if (a.brushes.size() != b.brushes.size() || a.gridW != b.gridW || a.gridH != b.gridH || a.gridX0 != b.gridX0 || a.gridZ0 != b.gridZ0 ||
             a.gridRefs != b.gridRefs || a.hasWallbang != b.hasWallbang || a.lava.size() != b.lava.size() || a.acid.size() != b.acid.size() || a.cells.size() != b.cells.size() ||
-            memcmp(&a.bounds, &b.bounds, sizeof a.bounds) != 0)
+            memcmp(&a.bounds, &b.bounds, sizeof a.bounds) != 0 || !a.gridRefsInStep() || !b.gridRefsInStep())   // (the refs the loops test: as the brushes say)
             return false;
         for (size_t k = 0; k < a.brushes.size(); k++)
             if (memcmp(&a.brushes[k].box, &b.brushes[k].box, sizeof(AABB)) || a.brushes[k].material != b.brushes[k].material || a.brushes[k].generated != b.brushes[k].generated) return false;
@@ -4793,7 +4839,7 @@ static void testBotNavBlockers(uint16_t port) {
         ServerConfig cfg;
         cfg.autoStart = false; cfg.map = c.map; cfg.mode = c.mode; cfg.port = port++;
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { printf("  %s: server didn't start\n", c.what); g_fail++; continue; }
+        if (!START_SERVER(s, cfg)) { printf("  (%s)\n", c.what); continue; }
         int bot = s.addBot(TEAM_A, BOT_ADVANCED);
         std::vector<NetClient*> none;
         for (int k = 0; k < 100 && (!s.nav_.ready(s.map_) || !s.players_[bot].alive); k++) pump(s, none, 0.05, idle);
@@ -5039,7 +5085,33 @@ static void testBotAim(uint16_t& port) {
 // scoped rifle fires at half rate.
 // Every ladder on every map gets you to the top: stand at its foot, hold forward (into the wall) and you
 // end up standing on whatever it leads to.
-int outOfBoundsTests(int part = 0, int parts = 1);   // tests/mapbounds.cpp (returns the failures)
+// Every map (but the zz_ ones other tests write): with every move a good player has, from the first spawn, no floor
+// outside the playable floor's footprint (the floor you can walk to from a spawn) is reachable (measureOutOfBounds,
+// tests/mapbounds.cpp: quark_maptool's out_of_bounds check runs the same code). Returns the failures; a human-made
+// map's are printed and reported, not counted. part / parts: every parts-th map from the part-th (the suite runs it as
+// two groups, ~12 s of CPU each: one was the longest of all the groups). OOB_TRACE=<map> lists the spots.
+static int outOfBoundsTests(int part = 0, int parts = 1) {
+    printf("out of bounds: nothing outside the playable floor reachable with every move\n");
+    int fails = 0, index = -1;
+    for (const std::string& name : listMaps()) {
+        if (name.rfind("zz_", 0) == 0) continue;
+        if (++index % parts != part) continue;
+        auto t0 = std::chrono::steady_clock::now();
+        Map m;
+        if (!m.load(name)) continue;   // (testAllMaps fails a map that doesn't load)
+        const bool human = isHumanMadeMap(name, m);
+        const OutOfBoundsMeasure o = measureOutOfBounds(m);
+        if (!o.measured) continue;   // (no spawn, no floor to walk to: testAllMaps fails those)
+        if (std::getenv("OOB_TRACE") && name == std::getenv("OOB_TRACE"))
+            for (const Vec3& q : o.spots) printf("    out of bounds: %.1f %.1f %.1f (floor spans x %.1f..%.1f z %.1f..%.1f)\n", q.x, q.y, q.z, o.x0, o.x1, o.z0, o.z1);
+        printf("  %-10s %6.0f m2 only movement tech reaches, %.0f m2 of it out of bounds (%.0f ms)\n", name.c_str(), o.techExtra, o.outside,
+               std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+        if (o.spots.empty()) continue;
+        if (human) printf("  %s is HUMAN-MADE: %.0f m2 out of bounds - reported, not failing the run\n", name.c_str(), o.outside);
+        else { printf("  FAIL %s: %.0f m2 outside the playable floor is reachable (OOB_TRACE=%s lists it)\n", name.c_str(), o.outside, name.c_str()); fails++; }
+    }
+    return fails;
+}
 int brainTests(uint16_t port);     // tests/brain_tests.cpp (returns the failure count)
 int brainTool(const std::string& cmd, const char* arg); // tests/brain_tests.cpp: exportbrain / checkbrain / brainast / printbrain
 int brainBench(uint16_t port);   // tests/brain_tests.cpp: native vs interpreted bot think cost
@@ -5089,7 +5161,7 @@ static void testRejoin(uint16_t port) {
         ServerConfig cfg;
         cfg.autoStart = true; cfg.map = mode == MODE_DUEL ? "clockwork" : "bastion"; cfg.mode = mode; cfg.port = port++;
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { g_fail++; continue; }
+        if (!START_SERVER(s, cfg)) { continue; }
         NetClient a, b, c;
         a.connect("127.0.0.1:" + std::to_string(cfg.port), "ann");
         b.connect("127.0.0.1:" + std::to_string(cfg.port), "bob");
@@ -5253,7 +5325,7 @@ static void testCrossLanguageConstants(uint16_t port) {
     // the info reply layout quarkdata.parse_info_reply reads: u32 magic, u8 type, str name, str map, u8 mode, u8 players, u8 max, u16 port
     Server s; ServerConfig cfg; cfg.map = "bastion"; cfg.mode = MODE_KOTH; cfg.port = port; cfg.maxPlayers = 7;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { printf("  FAIL: server start\n"); g_fail++; return; }
+    if (!START_SERVER(s, cfg)) return;
     UdpSocket q; CHECK(q.open(0));
     uint8_t req[kInfoRequestBytes] = {};
     uint32_t mg = kProtocolMagic; memcpy(req, &mg, 4); req[4] = (uint8_t)pyInt("PKT_INFO_REQUEST");   // little endian, as struct.pack("<IB")
@@ -5678,7 +5750,7 @@ static void testMaterials() {
         std::string t = "version " + std::to_string(kMapFormatVersion) + "\nbox -20 -1 -20 20 0 20\nspawn any 0 0 0\n";
         for (int k = 12; k < kMapMaterials; k++) { char b[96]; snprintf(b, sizeof b, "%s %d 0 30 %d 1 31\n", kMapMaterialWords[k], k * 2, k * 2 + 1); t += b; }
         CHECK(m.parse(t) && m.brushes.size() == 1 + (size_t)(kMapMaterials - 12));
-        for (int k = 12; k < kMapMaterials; k++) CHECK(m.brushes[k - 11].material == k && (semiMaterial(k) || solidMaterial(k) == !(liquidMaterial(k) || fieldMaterial(k))));   // (a see-through one: when it stops anything, testSeeThrough)   // (the liquids: you wade in)
+        for (int k = 12; k < kMapMaterials; k++) CHECK(m.brushes[k - 11].material == k && (semiMaterial(k) || k == kMatBallWall || solidMaterial(k) == !(liquidMaterial(k) || fieldMaterial(k))));   // (the ball wall: only the ball bounces off it)   // (a see-through one: when it stops anything, testSeeThrough)   // (the liquids: you wade in)
         const std::string out = m.serialize();
         CHECK(out.find("brick 40 0 30 41 1 31") != std::string::npos && out.find("diamondplate 38 0 30 39 1 31") != std::string::npos && out.find("ice 24 0 30 25 1 31") != std::string::npos);
     }
@@ -5807,6 +5879,7 @@ static void testDestruction(uint16_t port) {
         CHECK(std::fabs(m.raycast({0, 2.97f, 0}, fwd, 50) - 10.0f) < 0.01f || std::fabs(m.raycast({0, 0.03f, 0}, fwd, 50) - 10.0f) > -1);
         CHECK(m.punchHole({0, 1.5f, 15.0f - 0.05f}) == 0);                                // too thick: nothing
         CHECK(m.punchHole({0, 1.5f, 20.0f - 1.6f}) == 1 && m.holes.size() == 2 && m.holes[1].r < 0.7f);   // 1.5 m off: a smaller one
+        CHECK(m.gridRefsInStep());   // (the grid's refs follow the broken glass and the holes)
         {   // blown away past 80%: the rest of the wall comes down too (owner, 2026-10-29)
             Map c;
             CHECK(c.parse("box -20 -1 -20 20 0 20\nbrick -3 0 10 3 3 10.1\nspawn any 0 0 0\n"));
@@ -5818,11 +5891,12 @@ static void testDestruction(uint16_t port) {
             CHECK(fell.size() == 1 && blasts >= 2 && c.brushes[1].gone && c.holes.back().r < 0);
             for (const Brush& q : c.brushes) CHECK(q.origin != 1 || q.gone);
             CHECK(c.raycast({2.8f, 1.5f, 0}, {0, 0, 1}, 50) < 0);   // (its end too: gone)
+            CHECK(c.gridRefsInStep());
             c.resetDestruction();
-            CHECK(!c.brushes[1].gone && c.holes.empty());
+            CHECK(!c.brushes[1].gone && c.holes.empty() && c.gridRefsInStep());
         }
         m.resetDestruction();
-        CHECK(m.holes.empty() && m.brushes.size() == before && !m.brushes[1].gone && !m.brushes[2].gone);
+        CHECK(m.holes.empty() && m.brushes.size() == before && !m.brushes[1].gone && !m.brushes[2].gone && m.gridRefsInStep());
         CHECK(std::fabs(m.raycast(eye, fwd, 50) - 5.0f) < 0.01f);
         // dashing through a pane: the move isn't stopped, and the pane is named for the server to break
         MoveState st; st.pos = {0, 0, 3.2f}; st.flags = MF_ONGROUND;
@@ -5886,7 +5960,7 @@ static void testDestruction(uint16_t port) {
     s.explodeForTest({0, 1.0f, -5.5f}, -1, WPN_ROCKET);
     CHECK(s.map_.brushes[2].gone);
     s.explodeForTest({0, 1.5f, 9.95f}, -1, WPN_ROCKET);
-    CHECK(s.map_.brushes[3].gone && s.map_.holes.size() == 1);
+    CHECK(s.map_.brushes[3].gone && s.map_.holes.size() == 1 && s.map_.gridRefsInStep());
     s.resetDestruction();
     CHECK(!s.map_.brushes[1].gone && !s.map_.brushes[2].gone && !s.map_.brushes[3].gone && s.map_.holes.empty() && s.shardsFlyingForTest() == 0);
     {   // breakable blocks (562-585, owner 2026-10-29): hp from shots (x bullet) and blasts (x blast), or on contact
@@ -5937,7 +6011,7 @@ static void testDestruction(uint16_t port) {
         p.move.pos = {0, 0, 0};
         s.timeMs_ += 2100;
         s.tickCrumbles();
-        CHECK(!s.map_.brushes[1].gone && s.map_.boxSolid({{-9, 0.1f, 11}, {-7, 0.4f, 13}}));
+        CHECK(!s.map_.brushes[1].gone && s.map_.boxSolid({{-9, 0.1f, 11}, {-7, 0.4f, 13}}) && s.map_.gridRefsInStep());   // (back: its refs too)
         s.resetDestruction();
     }
     s.stop();
@@ -6134,7 +6208,7 @@ static void testBotGoalsAfterMapChange(uint16_t port) {
     ServerConfig cfg;
     cfg.autoStart = false; cfg.map = "hamlet"; cfg.mode = MODE_HIDE; cfg.port = port;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    if (!START_SERVER(s, cfg)) { return; }
     int bot = s.addBot(TEAM_A, BOT_ADVANCED);
     std::vector<NetClient*> none;
     for (int k = 0; k < 50 && !s.nav_.ready(s.map_); k++) pump(s, none, 0.1, idle);
@@ -6169,7 +6243,7 @@ static void testTagLateJoin(uint16_t port) {
     ServerConfig cfg;
     cfg.autoStart = false; cfg.map = "hamlet"; cfg.mode = MODE_TAG; cfg.port = port;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    if (!START_SERVER(s, cfg)) { return; }
     NetClient c[4];
     std::vector<NetClient*> cls;
     for (int i = 0; i < 3; i++) { c[i].connect("127.0.0.1:" + std::to_string(port), "p" + std::to_string(i)); cls.push_back(&c[i]); }
@@ -6216,7 +6290,7 @@ static void testItModes(uint16_t port) {
         ServerConfig cfg;
         cfg.autoStart = false; cfg.map = "hamlet"; cfg.mode = mode; cfg.port = port++;
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { g_fail++; continue; }
+        if (!START_SERVER(s, cfg)) { continue; }
         NetClient c[3];
         std::vector<NetClient*> cls;
         for (int i = 0; i < 3; i++) { c[i].connect("127.0.0.1:" + std::to_string(cfg.port), "p" + std::to_string(i)); cls.push_back(&c[i]); }
@@ -6576,6 +6650,10 @@ static void testStuckProps(uint16_t port) {
         StuckProp g;
         CHECK(readPropEvent(propEvent(w), &g) && g.type == WPN_KNIFE && g.owner == 3 && g.player == PROP_WORLD &&
               length(g.pos - w.pos) < 1e-6f && length(g.dir - w.dir) < 1e-3f);
+        {   // the model's turn, worked out once: the same floats drawStuckProps worked out every frame
+            const float yaw = std::atan2(-g.dir.x, -g.dir.z), pitch = std::asin(clampf(g.dir.y, -1, 1));
+            CHECK(std::memcmp(&g.yaw, &yaw, 4) == 0 && std::memcmp(&g.pitch, &pitch, 4) == 0);
+        }
         StuckProp b = w; b.type = WPN_CROSSBOW; b.player = 7; b.pos = {0.21f, 1.33f, -0.1f};
         const GameEvent be = propEvent(b);
         CHECK(be.text.size() == 7 && readPropEvent(be, &g) && g.player == 7 && length(g.pos - quantizeAttachOffset(b.pos)) < 1e-5f);
@@ -6881,7 +6959,7 @@ static void testAltFires(uint16_t port) {
         cfg.autoStart = false; // stay in warmup: a match start would move everyone back to spawns
         cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = (uint16_t)(port + kase);
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { g_fail++; continue; }
+        if (!START_SERVER(s, cfg)) { continue; }
         NetClient a, b;
         a.connect("127.0.0.1:" + std::to_string(cfg.port), "shooter");
         b.connect("127.0.0.1:" + std::to_string(cfg.port), "target");
@@ -7032,15 +7110,20 @@ static void testVoteModifiers(uint16_t port) {
     refused("callvote map glacier ffa classic mods damage=abc");
     refused("callvote map glacier ffa classic damage=2");   // (no "mods" word)
     refused("callvote map dojo tourney classic mods damage=2");
-    b.sendCommand("callvote map glacier ffa classic mods damage=2 vampire=1 health=150 dash=0");
+    refused("callvote map glacier ffa classic mods firerate=x");
+    b.sendCommand("callvote map glacier ffa classic mods damage=2 firerate=1.5 projspeed=0.75 vampire=1 health=150 dash=0");
     pump(s, cls, 0.3, idle);
     CHECK(s.vote_.kind == Server::VOTE_MAP && s.vote_.text.find("DAMAGE X2") != std::string::npos && s.vote_.text.find("VAMPIRE") != std::string::npos &&
-          s.vote_.text.find("NO DASH") != std::string::npos);
+          s.vote_.text.find("NO DASH") != std::string::npos && s.vote_.text.find("FIRE RATE X1.5") != std::string::npos &&
+          s.vote_.text.find("PROJECTILE SPEED X0.75") != std::string::npos);
     a.sendCommand("vote yes");
     pump(s, cls, 1.0, idle);
     const CustomRules& r = s.config().custom;
     CHECK(r.active() && r.name == Server::kVotedRules && r.baseMode == MODE_FFA && r.vampire && !r.dash && r.health == 150 &&
           std::fabs(r.damage[WPN_ROCKET] - 2) < 1e-4f && std::fabs(r.damage[0] - 2) < 1e-4f);
+    // (fire rate and projectile speed: every weapon, the damage line's other two numbers)
+    CHECK(std::fabs(r.fireRate[WPN_ROCKET] - 1.5f) < 1e-4f && std::fabs(r.fireRate[WPN_COUNT - 1] - 1.5f) < 1e-4f &&
+          std::fabs(r.projSpeed[WPN_ROCKET] - 0.75f) < 1e-4f && std::fabs(r.damage[WPN_COUNT - 1] - 2) < 1e-4f);
     CHECK(activeRules().active() && activeRules().vampire);
     printf("  passed: %s\n", votedModsTitle("damage=2\nvampire=1\nhealth=150\ndash=0\n").c_str());
     pass("callvote map glacier koth classic");   // a mode vote without modifiers keeps them
@@ -7394,7 +7477,7 @@ static void testRanked(uint16_t port) {
         ServerConfig cfg;
         cfg.map = "qk1"; cfg.mode = MODE_FFA; cfg.port = (uint16_t)(port + variant); cfg.ranked = true; cfg.arenaVariant = variant;
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { g_fail++; continue; }
+        if (!START_SERVER(s, cfg)) { continue; }
         std::vector<std::unique_ptr<NetClient>> owned;
         std::vector<NetClient*> cls;
         std::vector<RankKey> keys;
@@ -8213,7 +8296,7 @@ static void testEditSession(uint16_t port) {
     ServerConfig cfg;
     cfg.map = name; cfg.mode = MODE_FFA; cfg.port = port; cfg.editMode = true;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; std::remove(path.c_str()); return; }
+    if (!START_SERVER(s, cfg)) { std::remove(path.c_str()); return; }
     NetClient a, b;
     a.connect("127.0.0.1:" + std::to_string(port), "a");
     b.connect("127.0.0.1:" + std::to_string(port), "b");
@@ -8795,6 +8878,12 @@ static void testDemoUpgrade() {
     demo::noteVersion(vf.string(), "9.8.1", 200);
     CHECK(demo::versionForProtocol(200) == "9.8.0-9.8.1" && demo::versionForProtocol(201) == "protocol 201");
     CHECK(rd(vf) == "200 9.8.0\n200 9.8.1\n");
+    // a file an older Windows build wrote in text mode (\r\n) reads the same, and a note adds a plain \n line
+    std::ofstream(vf, std::ios::binary | std::ios::trunc) << "200 9.8.0\r\n200 9.8.1\r\n";
+    demo::noteVersion(vf.string(), "9.8.1", 200);
+    demo::noteVersion(vf.string(), "9.8.2", 200);
+    CHECK(demo::versionForProtocol(200) == "9.8.0-9.8.2");
+    CHECK(rd(vf) == "200 9.8.0\r\n200 9.8.1\r\n200 9.8.2\n");
     fs::remove_all(d, ec);
 }
 
@@ -8857,7 +8946,7 @@ static void testBuiltInMapEditSession(uint16_t port) {
     ServerConfig cfg;
     cfg.map = "castle"; cfg.mode = MODE_FFA; cfg.port = port; cfg.editMode = true;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    if (!START_SERVER(s, cfg)) { return; }
     NetClient a;
     a.connect("127.0.0.1:" + std::to_string(port), "a");
     std::vector<NetClient*> cls = {&a};
@@ -9339,6 +9428,7 @@ static FfaRun ffaVsExperts(uint16_t port, uint32_t seed, uint64_t* hash = nullpt
     cfg.autoStart = true;
     cfg.map = "clockwork"; cfg.mode = MODE_FFA; cfg.port = port;   // (a compact map: bastion is a big team map now)
     cfg.vsBots = true; cfg.botsEnemy = 3; cfg.botSkill = BOT_EXPERT; cfg.timeLimit = 60;
+    if (const char* lp = getenv("QUARK_SIMHASH_LOG")) { cfg.logLevel = LOG_EXTREME; cfg.logFile = lp + std::to_string(seed); }   // (the game log of a seeded match: two builds write the same bytes)
     s.setLog([](const std::string&) {});
     { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return r; } }
     CHECK(s.playerCount() == 3);
@@ -9494,7 +9584,7 @@ static void testBots(uint16_t& port) {
         cfg.map = maps[mode]; cfg.mode = mode; cfg.port = port++;
         cfg.vsBots = true; cfg.botsEnemy = 3; cfg.botsAlly = 2; cfg.botSkill = BOT_ADVANCED;
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { g_fail++; continue; }
+        if (!START_SERVER(s, cfg)) { continue; }
         if (isOneVsOneMode(mode) || mode == MODE_DUEL) {
             // 1v1 and duel are the player and their team size of bots (F7: no ally in 1v1): the player joins, a NetClient,
             // so these two run on the real clock (pump) as before; the other modes are bots only
@@ -9539,8 +9629,9 @@ static void serverBench(uint16_t port, int bots, int humans, double seconds, con
     ServerConfig cfg;
     cfg.map = map; cfg.mode = mode; cfg.port = port; cfg.autoStart = true; cfg.maxPlayers = kMaxPlayers;
     if (rate) cfg.maxTickRate = rate;
+    if (const char* lp = getenv("QUARK_BENCH_LOG")) { cfg.logLevel = LOG_EXTREME; cfg.logFile = lp; }   // (the game log's cost in the tick: extreme, every tick)
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { printf("  start failed\n"); return; }
+    if (!START_SERVER(s, cfg)) return;
     std::vector<std::unique_ptr<NetClient>> owned;
     std::vector<NetClient*> cls;
     for (int i = 0; i < humans; i++) {
@@ -10200,6 +10291,7 @@ static void testReachProbe(uint16_t port) {
 }
 
 #include "trainer_tests.h"   // the aim trainer's scenarios (src/game/trainer.h)
+#include "tutorial_tests.h"   // the movement tutorial's lessons and their ghosts (src/game/tutorial.h)
 #include "rules_tests.h"   // game rule tests (owner answers 5.x, REVIEW batch 2)
 #include "weapon_tests.h"  // weapon sets (.qweapons: the weapons editor's) + the exportweapons / checkweapons tools
 #include "server_tests.h"  // server / netcode tests (FINAL_REVIEW 2.8-2.11, 6.4, 6.5, clock, PERF-8 / 9, ENG-2)
@@ -10207,6 +10299,126 @@ static void testReachProbe(uint16_t port) {
 #include "governor_tests.h" // two servers on one machine: the load governor, ranked never rated on testing
 #include "moveexpr_tests.h" // movement equations (custom modes' expr.<key>= lines): parser, resolver, determinism, pmove, network
 
+
+// ---- LOW LATENCY ULTRA's learnt safety margin (src/client/ultramargin.h) against a simulated CPU and GPU: Game::
+// beforeInput's pacing (target = swap + learnt GPU - learnt CPU - margin, the fence polled every 10 us) and afterSwap's
+// wait, with their EMAs, frame by frame. The GPU gets a frame's work only at its swap (the worst case: no draw calls
+// flushed early), so every GPU idle is counted; the driver wakes a blocked wait 10 us late. Deterministic (own RNG).
+struct UltraSimFrame { double gpu, cpu; };
+struct UltraSimResult { double wait = 0, idle = 0, period = 0, readToDone = 0, mMean = 0, mMin = 1, mMax = 0, winSpread = 0; int bubbles = 0, n = 0; };
+static UltraSimResult ultraSim(int fixedUs, const std::function<UltraSimFrame(int, uint64_t&)>& gen, int frames, int from, UltraMargin* keep = nullptr) {
+    uint64_t rng = 0x9E3779B97F4A7C15ull;
+    UltraMargin um;
+    double S = 0, gpu = 500e-6, cpu = 300e-6, F = 0, t0 = 0, sumM = 0, winSum = 0, winMin = 1, winMax = 0;
+    bool pending = false;
+    UltraSimResult o;
+    for (int n = 0; n < frames; n++) {
+        const UltraSimFrame fr = gen(n, rng);
+        double t = S + 3e-6;   // (afterSwap's end to beforeInput)
+        bool held = false;
+        const double m = fixedUs > 0 ? fixedUs * 1e-6 : um.margin;
+        if (pending) {
+            const double target = S + gpu - cpu - m;
+            if (F <= t) pending = false;   // done at the first poll: CPU-bound, nothing to learn
+            else if (t < target) {
+                for (;;) {
+                    t = std::min(target, t + 10e-6) + 0.3e-6;   // (a spin step, then the poll's cost)
+                    held = true;
+                    if (F <= t) { gpu += (t - S - gpu) * 0.1; pending = false; if (fixedUs <= 0) um.bubble(); break; }
+                    if (t >= target) break;
+                }
+            }
+        }
+        const double R = t, swap = R + fr.cpu;
+        const double idle = std::max(0.0, swap - F);
+        const double done = std::max(F, swap) + fr.gpu;
+        double now = swap + 2e-6, W = 0;
+        if (pending) {
+            if (F <= now) { gpu += (now - S - gpu) * 0.1; if (held && fixedUs <= 0) um.bubble(); }
+            else { W = F + 10e-6 - now; now = F + 10e-6; gpu += (now - S - gpu) * 0.1; if (fixedUs <= 0) um.waited(W); }
+        }
+        cpu += (swap - R - cpu) * 0.1;
+        if (n == from) t0 = done;
+        if (n >= from) {
+            o.n++; o.wait += W; o.idle += idle; o.bubbles += idle > 1e-6; o.readToDone += done - R;
+            const double mm = fixedUs > 0 ? m : um.margin;
+            sumM += mm; o.mMin = std::min(o.mMin, mm); o.mMax = std::max(o.mMax, mm);
+            winSum += mm;
+            if ((n - from) % 2000 == 1999) { winMin = std::min(winMin, winSum / 2000); winMax = std::max(winMax, winSum / 2000); winSum = 0; }
+        }
+        if (n == frames - 1) o.period = (done - t0) / (o.n - 1);
+        F = done; pending = true; S = now + 1e-6;
+    }
+    o.wait /= o.n; o.idle /= o.n; o.readToDone /= o.n; o.mMean = sumM / o.n; o.winSpread = winMax - winMin;
+    if (keep) *keep = um;
+    return o;
+}
+static double ultraGauss(uint64_t& s) {   // (Box-Muller on an LCG: the same numbers on every platform)
+    auto u = [&] { s = s * 6364136223846793005ull + 1442695040888963407ull; return ((s >> 11) + 0.5) / 9007199254740992.0; };
+    const double a = u(), b = u();
+    return std::sqrt(-2 * std::log(a)) * std::cos(6.283185307179586 * b);
+}
+static void testUltraMargin() {
+    printf("ultra: the learnt safety margin (AUTO) against a simulated GPU: steady, jittery, a step up and down, CPU-bound\n");
+    {   // the clamps
+        UltraMargin u;
+        for (int k = 0; k < 2000; k++) u.waited(1e-3);
+        CHECK(u.margin == UltraMargin::kFloor);
+        for (int k = 0; k < 100; k++) u.bubble();
+        CHECK(u.margin == UltraMargin::kMax);
+        u.waited(0);   // (a wait under kAim nudges it up, still clamped)
+        CHECK(u.margin == UltraMargin::kMax);
+    }
+    auto show = [](const char* name, const char* how, const UltraSimResult& r) {
+        printf("  %-8s %-5s after-swap wait %6.1f us  bubbles %5.2f %%  GPU idle %5.2f us/frame  frame %6.1f us  read->GPU done %6.1f us  margin %5.1f [%5.1f..%5.1f]\n",
+               name, how, r.wait * 1e6, 100.0 * r.bubbles / r.n, r.idle * 1e6, r.period * 1e6, r.readToDone * 1e6, r.mMean * 1e6, r.mMin * 1e6, r.mMax * 1e6);
+    };
+    auto both = [&](const char* name, const std::function<UltraSimFrame(int, uint64_t&)>& g, int frames, int from) {
+        std::pair<UltraSimResult, UltraSimResult> r{ultraSim(0, g, frames, from), ultraSim(150, g, frames, from)};
+        show(name, "AUTO", r.first); show(name, "150", r.second);
+        return r;
+    };
+    {   // steady: down to the floor, no bubbles, and the ~90 us of early read the fixed 150 had is gone
+        auto r = both("steady", [](int, uint64_t& s) { return UltraSimFrame{250e-6 + 2e-6 * ultraGauss(s), 130e-6 + 2e-6 * ultraGauss(s)}; }, 30000, 10000);
+        CHECK(r.first.mMax < 45e-6 && r.first.mMin >= UltraMargin::kFloor);
+        CHECK(r.first.bubbles * 100 < r.first.n);           // under 1 %
+        CHECK(r.first.wait < r.second.wait - 60e-6);        // (150: ~114 us)
+        CHECK(r.first.period < r.second.period * 1.001);   // no frame rate lost
+        CHECK(r.first.winSpread < 5e-6);                    // settled: no slow swing
+    }
+    {   // jittery: GPU +-20 us, CPU +-10 us, a 100 us GPU spike in 1 % of frames
+        auto r = both("jitter", [](int, uint64_t& s) {
+            UltraSimFrame f{250e-6 + 20e-6 * ultraGauss(s), 130e-6 + 10e-6 * ultraGauss(s)};
+            if (ultraGauss(s) > 2.326) f.gpu += 100e-6;
+            return f; }, 60000, 20000);
+        CHECK(r.first.bubbles * 100 < r.first.n * 2);       // under 2 %, each small
+        CHECK(r.first.period < r.second.period * 1.003);
+        CHECK(r.first.wait < r.second.wait - 30e-6);
+        CHECK(r.first.winSpread < 0.25 * r.first.mMean);    // the 2000-frame means hold still: no oscillation
+    }
+    {   // jittery x2: GPU +-40 us, CPU +-20 us: a bigger margin, bubbles still rare
+        auto r = both("jitter40", [](int, uint64_t& s) { return UltraSimFrame{250e-6 + 40e-6 * ultraGauss(s), 130e-6 + 20e-6 * ultraGauss(s)}; }, 60000, 20000);
+        CHECK(r.first.bubbles * 100 < r.first.n * 3);
+        CHECK(r.first.period < r.second.period * 1.003);
+        CHECK(r.first.wait < r.second.wait);
+        CHECK(r.first.mMean > 60e-6);                       // (grew to cover the jitter)
+        CHECK(r.first.winSpread < 0.25 * r.first.mMean);
+    }
+    for (int dir = 0; dir < 2; dir++) {   // a step in the GPU's time (a heavier / lighter view): settled again in 2000 frames
+        const double before = dir ? 400e-6 : 250e-6, after = dir ? 180e-6 : 400e-6;
+        auto g = [=](int n, uint64_t& s) { return UltraSimFrame{(n < 20000 ? before : after) + 10e-6 * ultraGauss(s), 130e-6 + 5e-6 * ultraGauss(s)}; };
+        auto step = both(dir ? "stepdown" : "stepup", g, 22000, 20000);           // (the 2000 frames from the step)
+        auto later = ultraSim(0, g, 40000, 22000);                                // (and once settled)
+        CHECK(step.first.bubbles * 100 < step.first.n * 3);
+        CHECK(later.mMean < 70e-6 && later.bubbles * 100 < later.n * 2);
+        CHECK(later.winSpread < 15e-6);
+    }
+    {   // CPU-bound (the GPU idles every frame whatever the margin): the margin doesn't move
+        auto g = [](int, uint64_t& s) { return UltraSimFrame{250e-6 + 10e-6 * ultraGauss(s), 400e-6 + 10e-6 * ultraGauss(s)}; };
+        UltraSimResult r = ultraSim(0, g, 20000, 2000);
+        CHECK(r.mMax - r.mMin < 1e-9);
+    }
+}
 
 // ---- BENCHMARK (src/game/benchmark.h): the frame-time statistics on arrays whose answers are known, and a demo like
 // the shipped one (Hamlet, free for all, 31 bots, recorded by a spectator) made and played back to its end.
@@ -10445,6 +10657,7 @@ int main(int argc, char** argv) {
         {"maps", [] { testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders(); }},
         {"slopes", [] { testSlopes(); }},
         {"trainer", [] { testTrainer(); }},
+        {"tutorial", [] { testTutorial(); testTutorialGhosts(TP(29210)); testTutorialPartner(TP(29211)); testTutorialCombos(TP(29212)); }},
         {"surf", [] { testSurf(); }},
         {"groupslopes", [] { testGroupSlopes(); }},
         {"materials", [] { testMaterials(); testProjectileMaterials(TP(28931)); testDestruction(TP(28932)); testClientHits(); }},
@@ -10461,7 +10674,7 @@ int main(int argc, char** argv) {
         {"brains", [] { g_fail += brainTests(TP(29150)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); testWinnerStays(TP(28522)); testWinnerStaysMode(TP(28523)); testRotateEveryRound(TP(28524)); testAccuracyPerWeapon(); }},
-        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testFlyMove(); testGrappleAgainstWall(); testAcid(); testLiquids(); testFeatureBlocks(); testStrafeEase(); testSeeThrough(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testModeSpawnSets(); testMapFix(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testFlyMove(); testGrappleAgainstWall(); testAcid(); testProjectilesDissolve(); testLiquids(); testFeatureBlocks(); testStrafeEase(); testSeeThrough(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testModeSpawnSets(); testMapFix(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"bombsites", [] { testBombSites(TP(29090)); testPlantKnockback(TP(29091)); }},
@@ -10475,7 +10688,7 @@ int main(int argc, char** argv) {
         {"resetmaps", [] { testResetMaps(); testLegacyMaps(); }},   // (each forked group has its own user data dir: these write only there)
         {"userdata", [] { testUserData(); }},
         {"layout", [] { testLayoutCases(); testLayoutCache(); testHudTheme(); }},
-        {"benchmark", [] { testBenchStats(); testBenchDemo(TP(29160)); }},
+        {"benchmark", [] { testUltraMargin(); testBenchStats(); testBenchDemo(TP(29160)); }},
     };
     std::vector<T> alone = {   // timing-sensitive: after the others, on an otherwise idle machine
         {"tickrate", [] {   // (real-time: timingTest re-runs an attempt the host paused in)
@@ -10492,12 +10705,15 @@ int main(int argc, char** argv) {
         //  full run of 3 with 12 groups on 4 cores, and in 10 of 20 runs beside 8 busy loops; ~1 in 30 even idle)
         {"weaponpredict", [] { timingTest("weapon prediction", [] { testGameRules("weaponpredict"); }); }},
     };
-    // `groups` lists the groups (tools/release_check.sh runs each); `group NAME`, or just `NAME`, runs exactly that one
+    // `groups` lists the groups (tools/release_check.sh runs each; `groups alone`: only the timing-sensitive ones it runs
+    // alone, after the others); `group NAME`, or just `NAME`, runs exactly that one
     // group in this process (`group NAME --child`: as one of the run's processes on Windows, below: no summary, and the
     // exit code is the failure count, at most 100, as a forked group's)
     if (argc >= 2 && std::string(argv[1]) == "groups") {
+        const bool aloneOnly = argc >= 3 && std::string(argv[2]) == "alone";
         for (auto* list : {&par, &alone})
-            for (auto& g : *list) printf("%s\n", g.name);
+            if (!aloneOnly || list == &alone)
+                for (auto& g : *list) printf("%s\n", g.name);
         return 0;
     }
     if (argc >= 2 && std::string(argv[1]) != "serial") {

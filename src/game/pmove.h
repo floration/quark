@@ -123,11 +123,14 @@ constexpr float kHookCooldown = 1.0f;   // after the hook is released
 // The hull: kPlayerHalfWidth each side, kPlayerHeight tall (crouched: kPlayerCrouchHeight), times scale (size modifiers).
 AABB playerBox(const Vec3& feet, bool crouched, float scale = 1.0f);
 inline AABB playerBox(const MoveState& m) { return playerBox(m.pos, (m.flags & MF_CROUCHED) != 0, moveScale(m.mods)); }
-// What hits test, inside a player's hitbox (the hull above): two boxes. The head is a head-sized box on top, centred
-// (owner 5.5: shoulders aren't headshots); the body is the full width from the feet up to the head's bottom (owner
-// 2026-10-27: nothing above that line but the head, so a shot past the head over the shoulders misses). Crouching and
-// size modifiers scale both with the hull. Movement and zones still use the whole hull.
-// (inline: hitscan tests every player for every pellet)
+// What hits test, inside a player's hitbox (the hull above): two upright cylinders with flat ends (owner, 2026-11-04:
+// boxes are as wide again across their corners, 1.13 m of a 0.8 m player from 45 degrees, and stick out past the
+// model; "the bottom can be flat too ... same with head it can be a cylinder"). The body is the hull's full width
+// (radius = half width) from the feet up to the head's bottom (owner 2026-10-27: nothing above that line but the head,
+// so a shot past the head over the shoulders misses). The head is head-wide (kHeadWidthFraction, owner 5.5: shoulders
+// aren't headshots) from there to the hull's top. Both look the same from every side. Crouching and size modifiers
+// scale both with the hull. Movement and zones still use the whole hull (a box). headBox / bodyBox stay as the boxes
+// around the two (stuck props, tools).
 inline AABB headBox(const AABB& b) {
     Vec3 c = b.center();
     float hx = (b.mx.x - b.mn.x) * 0.5f * kHeadWidthFraction, hz = (b.mx.z - b.mn.z) * 0.5f * kHeadWidthFraction;
@@ -136,24 +139,66 @@ inline AABB headBox(const AABB& b) {
 inline AABB bodyBox(const AABB& b) {   // (its top is the same expression as the head's bottom: no gap, no overlap)
     return {b.mn, {b.mx.x, b.mx.y - (b.mx.y - b.mn.y) * kHeadFraction, b.mx.z}};
 }
-// A ray o + dir * t (inv = safeInv(dir)) against a player as hits see them: the entry into the nearer of body and head
-// in [0, maxT], else -1 (two slab tests, nothing else). *head: the head was hit first (a tie is the body's). grow: both
-// boxes this much wider each side (the knife swing).
+struct HitShape {        // a hitbox as hits see it: two cylinders on one axis (x, z): body y0..y1 radius r, head y1..y2 radius hr
+    float x, z, y0, y1, y2, r, hr;
+};
+inline HitShape hitShape(const AABB& b, float grow = 0.0f) {
+    HitShape h;
+    const float hw = (b.mx.x - b.mn.x) * 0.5f;
+    h.x = (b.mn.x + b.mx.x) * 0.5f; h.z = (b.mn.z + b.mx.z) * 0.5f;
+    h.y0 = b.mn.y; h.y2 = b.mx.y; h.y1 = b.mx.y - (b.mx.y - b.mn.y) * kHeadFraction;   // (bodyBox's top: the same line)
+    h.r = hw + grow; h.hr = hw * kHeadWidthFraction + grow;
+    return h;
+}
+// A ray o + d * t (d unit) against an upright cylinder around (cx, cz), radius r, from yb to yt with flat ends: the
+// entry in [0, maxT] (0 starting inside), else -1. Hit or miss on the side is the line's squared distance from the
+// axis against r^2; the one square root is taken only when it passes within r. The ends are a plane and a squared
+// distance, no root.
+inline float rayCylinderY(const Vec3& o, const Vec3& d, float cx, float cz, float yb, float yt, float r, float maxT) {
+    const float mx = o.x - cx, mz = o.z - cz;
+    const float a = d.x * d.x + d.z * d.z, b = mx * d.x + mz * d.z, c = mx * mx + mz * mz - r * r;
+    if (c <= 0 && o.y >= yb && o.y <= yt) return 0.0f;    // starting inside
+    float best = -1;
+    auto take = [&](float t) { if (t >= 0 && t <= maxT && (best < 0 || t < best)) best = t; };
+    if (a > 1e-12f && c > 0) {                            // the side, from outside its circle
+        const float disc = b * b - a * c;                  // < 0: the line passes further than r from the axis
+        if (disc < 0) return -1;                           // (and so misses the ends too)
+        const float t = (-b - std::sqrt(disc)) / a, y = o.y + d.y * t;
+        if (y >= yb && y <= yt) take(t);
+    } else if (c > 0) return -1;                           // straight up or down, beside the axis
+    auto end = [&](float y) {                              // a flat end: where the ray crosses its plane, inside the circle
+        if (d.y == 0) return;
+        const float t = (y - o.y) / d.y, x = mx + d.x * t, z = mz + d.z * t;
+        if (x * x + z * z <= r * r) take(t);
+    };
+    if (o.y > yt) end(yt); else if (o.y < yb) end(yb);    // (only the end facing the start can be the way in)
+    return best;
+}
+// A ray o + dir * t (inv = safeInv(dir), dir unit) against a player as hits see them: the entry into the nearer of
+// body and head in [0, maxT], else -1. *head: the head was hit first (a tie is the body's). grow: both this much
+// wider (the knife swing).
 inline float rayHitbox(const Vec3& o, const Vec3& inv, const AABB& hitbox, float maxT, bool* head = nullptr, float grow = 0.0f) {
-    AABB body = bodyBox(hitbox), hd = headBox(hitbox);
-    if (grow != 0.0f) {
-        body.mn.x -= grow; body.mn.z -= grow; body.mx.x += grow; body.mx.z += grow;
-        hd.mn.x -= grow; hd.mn.z -= grow; hd.mx.x += grow; hd.mx.z += grow;
-    }
-    const float tb = rayAABB(o, inv, body, maxT), th = rayAABB(o, inv, hd, maxT);
+    // cheap reject first: the box around both (the hull, grown), as before
+    AABB bb = hitbox;
+    if (grow != 0.0f) { bb.mn.x -= grow; bb.mn.z -= grow; bb.mx.x += grow; bb.mx.z += grow; }
+    if (rayAABB(o, inv, bb, maxT) < 0) { if (head) *head = false; return -1; }
+    auto rcp = [](float v) { return std::fabs(v) >= 1e29f ? 0.0f : 1.0f / v; };   // (safeInv's huge value = 0)
+    const Vec3 d(rcp(inv.x), rcp(inv.y), rcp(inv.z));
+    const HitShape s = hitShape(hitbox, grow);
+    const float tb = rayCylinderY(o, d, s.x, s.z, s.y0, s.y1, s.r, maxT), th = rayCylinderY(o, d, s.x, s.z, s.y1, s.y2, s.hr, maxT);
     const bool h = th >= 0 && (tb < 0 || th < tb);
     if (head) *head = h;
     return h ? th : tb;
 }
-// The point of the two boxes nearest p (blast distances)
+// The point of body and head nearest p (blast distances): clamp the height, then the distance from the axis
 inline Vec3 hitboxClosest(const AABB& hitbox, const Vec3& p) {
-    const AABB body = bodyBox(hitbox), hd = headBox(hitbox);
-    const Vec3 a = vmax(body.mn, vmin(p, body.mx)), b = vmax(hd.mn, vmin(p, hd.mx));
+    const HitShape s = hitShape(hitbox);
+    const float vx = p.x - s.x, vz = p.z - s.z, l2 = vx * vx + vz * vz;
+    auto onCyl = [&](float yb, float yt, float r) {
+        const float k = l2 <= r * r ? 1.0f : r / std::sqrt(l2);
+        return Vec3(s.x + vx * k, std::clamp(p.y, yb, yt), s.z + vz * k);
+    };
+    const Vec3 a = onCyl(s.y0, s.y1, s.r), b = onCyl(s.y1, s.y2, s.hr);
     return dot(a - p, a - p) <= dot(b - p, b - p) ? a : b;
 }
 // Where a projectile that met a wall, the floor or a player `hit` metres along its step from `from` (unit `dir`) goes

@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <cctype>
 #include <cstring>
 #include <memory>
 #ifdef __GNUC__
@@ -206,6 +207,34 @@ void setGamePriority(int level) {
     // thousands of frames a second can starve the rest of the desktop (input, the launcher, voice chat). VIDEO > MORE:
     // CPU PRIORITY HIGH asks for it anyway (level 2).
     SetPriorityClass(self, level >= 2 ? HIGH_PRIORITY_CLASS : high ? ABOVE_NORMAL_PRIORITY_CLASS : NORMAL_PRIORITY_CLASS);
+    // The game's own thread (every call is on it: init, focus, settings): HIGHEST while it has priority, so another
+    // program's thread waking doesn't take its core for a slice mid-frame (owner, 2026-11-03, 1000 FPS cap: the 0.1%
+    // low's frames were 20-50 us late, each paired with a short one: the frame started on time, then got held up).
+    SetThreadPriority(GetCurrentThread(), high ? THREAD_PRIORITY_HIGHEST : THREAD_PRIORITY_NORMAL);
+    // Never "EcoQoS" (Windows 11 may run a throttled thread slower or on an efficiency core, and stretch its timers):
+    // the process and this thread opt out of execution-speed throttling, and the process of timer-resolution
+    // throttling (Windows 11 ignores a hidden or minimized process's 1 ms timer request otherwise). Once; older
+    // Windows lacks the calls (looked up, so nothing fails to load).
+    static bool qosDone = false;
+    if (!qosDone) {
+        qosDone = true;
+        struct Throttle { ULONG version, controlMask, stateMask; };   // (PROCESS/THREAD_POWER_THROTTLING_STATE, version 1)
+        constexpr ULONG kExecSpeed = 0x1, kIgnoreTimerRes = 0x4;
+        HMODULE k32 = GetModuleHandleW(L"kernel32.dll");
+        using SetProcInfoFn = BOOL(WINAPI*)(HANDLE, int, void*, DWORD);
+        using SetThreadInfoFn = BOOL(WINAPI*)(HANDLE, int, void*, DWORD);
+        if (auto f = k32 ? (SetProcInfoFn)(void*)GetProcAddress(k32, "SetProcessInformation") : nullptr) {
+            Throttle t{1, kExecSpeed | kIgnoreTimerRes, 0};   // (controlled, and off)
+            if (!f(self, 4 /*ProcessPowerThrottling*/, &t, sizeof t)) {
+                t.controlMask = kExecSpeed;   // (Windows 10: no timer-resolution flag)
+                f(self, 4, &t, sizeof t);
+            }
+        }
+        if (auto f = k32 ? (SetThreadInfoFn)(void*)GetProcAddress(k32, "SetThreadInformation") : nullptr) {
+            Throttle t{1, kExecSpeed, 0};
+            f(GetCurrentThread(), 3 /*ThreadPowerThrottling*/, &t, sizeof t);
+        }
+    }
 }
 
 std::string gamePriorityStatus() {
@@ -224,6 +253,247 @@ std::string gamePriorityStatus() {
     const DWORD cpu = GetPriorityClass(GetCurrentProcess());
     out += cpu == ABOVE_NORMAL_PRIORITY_CLASS ? "  CPU ABOVE NORMAL" : cpu == HIGH_PRIORITY_CLASS ? "  CPU HIGH" : cpu == NORMAL_PRIORITY_CLASS ? "  CPU NORMAL" : "  CPU OTHER";
     return out;
+}
+
+// ---- PERFORMANCE CHECK: the driver profile's values (read only) -------------------------------------------------------
+
+// The NVIDIA settings that apply to this executable: its profile's value, else the global profile's. ids -> values; a
+// missing id: the driver's default. false: no NVIDIA driver.
+static bool nvReadSettings(const std::vector<NvU32>& ids, std::vector<long long>* out) {
+    out->assign(ids.size(), -1);
+    HMODULE dll = LoadLibraryW(L"nvapi64.dll");
+    if (!dll) return false;
+    using Query = void*(__cdecl*)(NvU32);
+    const auto q = (Query)GetProcAddress(dll, "nvapi_QueryInterface");
+    if (!q) return false;
+    const auto init = (int(__cdecl*)())q(0x0150e828);
+    const auto createSession = (int(__cdecl*)(void**))q(0x0694d52e);
+    const auto destroySession = (int(__cdecl*)(void*))q(0xdad9cff8);
+    const auto load = (int(__cdecl*)(void*))q(0x375dbd6b);
+    const auto findApp = (int(__cdecl*)(void*, NvU16*, void**, NvApp*))q(0xeee566b2);
+    const auto globalProfile = (int(__cdecl*)(void*, void**))q(0x617bff9f);
+    const auto getSetting = (int(__cdecl*)(void*, void*, NvU32, NvSetting*))q(0x73bba1fa);
+    if (!init || !createSession || !destroySession || !load || !findApp || !globalProfile || !getSetting || init() != 0) return false;
+    void* s = nullptr;
+    if (createSession(&s) != 0 || !s) return false;
+    if (load(s) == 0) {
+        wchar_t path[MAX_PATH] = {};
+        GetModuleFileNameW(nullptr, path, MAX_PATH);
+        const wchar_t* exe = path;
+        for (const wchar_t* p = path; *p; p++) if (*p == L'\\' || *p == L'/') exe = p + 1;
+        auto name = std::make_unique<NvName>();
+        copyStr(name->s, exe);
+        auto app = std::make_unique<NvApp>();
+        app->version = (NvU32)(sizeof(NvApp) | (4u << 16));
+        void* appProf = nullptr; void* glob = nullptr;
+        if (findApp(s, name->s, &appProf, app.get()) != 0) appProf = nullptr;
+        if (globalProfile(s, &glob) != 0) glob = nullptr;
+        auto set = std::make_unique<NvSetting>();
+        for (size_t i = 0; i < ids.size(); i++)
+            for (void* prof : {appProf, glob}) {
+                if (!prof) continue;
+                *set = NvSetting{};
+                set->version = (NvU32)(sizeof(NvSetting) | (1u << 16));
+                if (getSetting(s, prof, ids[i], set.get()) == 0) { (*out)[i] = set->current.u32; break; }
+            }
+    }
+    destroySession(s);
+    return true;
+}
+
+static bool guidIs(const GUID& g, unsigned long d1, unsigned short d2, unsigned short d3) { return g.Data1 == d1 && g.Data2 == d2 && g.Data3 == d3; }
+
+// ---- AMD: ADLX (amdadlx64.dll, installed with the Adrenalin driver; also AMD's integrated Radeon Graphics) -----------
+// Read only. ADLX is a set of COM-like interfaces; only the few calls below are used, each by its slot in the interface's
+// table as AMD's ADLX SDK lays it out (ADLX 1.0's IADLXSystem, IADLXGPUList, IADLX3DSettingsServices and the 3D setting
+// interfaces: slots 0-2 of the last three are Acquire / Release / QueryInterface). No AMD driver: the DLL isn't there.
+namespace {
+using AdlxRes = int;
+using AdlxSlot = void*;
+template <class F> F adlxFn(void* obj, int slot) { return (F)(*(AdlxSlot**)obj)[slot]; }
+void adlxRelease(void* obj) { if (obj) adlxFn<long(__stdcall*)(void*)>(obj, 1)(obj); }
+// IADLX3DSettingsServices: 3 GetAntiLag, 4 GetChill, 5 GetBoost, 7 GetEnhancedSync, 8 GetWaitForVerticalRefresh,
+// 9 GetFrameRateTargetControl; each (this, IADLXGPU*, IADLX3D...**)
+void* adlxSetting(void* svc, int slot, void* gpu) {
+    void* out = nullptr;
+    if (adlxFn<AdlxRes(__stdcall*)(void*, void*, void**)>(svc, slot)(svc, gpu, &out) != 0) return nullptr;
+    return out;
+}
+bool adlxBool(void* obj, int slot) {   // IsSupported (3) / IsEnabled (4): adlx_bool is a C++ bool
+    bool b = false;
+    return obj && adlxFn<AdlxRes(__stdcall*)(void*, bool*)>(obj, slot)(obj, &b) == 0 && b;
+}
+}  // namespace
+
+static bool amdReadSettings(std::vector<PerfFinding>* f) {
+    HMODULE dll = LoadLibraryExW(L"amdadlx64.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (!dll) return false;
+    using Init = AdlxRes(__cdecl*)(unsigned long long, void**);
+    using Term = AdlxRes(__cdecl*)();
+    auto init = (Init)GetProcAddress(dll, "ADLXInitialize");
+    auto initAny = (Init)GetProcAddress(dll, "ADLXInitializeWithIncompatibleDriver");
+    auto term = (Term)GetProcAddress(dll, "ADLXTerminate");
+    void* sys = nullptr;
+    const unsigned long long ver = (1ull << 48);   // (ADLX 1.0: the interfaces used here)
+    if (!(init && init(ver, &sys) == 0 && sys) && !(initAny && initAny(ver, &sys) == 0 && sys)) { FreeLibrary(dll); return false; }
+    bool read = false;
+    void *gpus = nullptr, *svc = nullptr;
+    // IADLXSystem (no Acquire / Release of its own): 1 GetGPUs, 7 Get3DSettingsServices
+    if (adlxFn<AdlxRes(__stdcall*)(void*, void**)>(sys, 1)(sys, &gpus) == 0 && gpus &&
+        adlxFn<AdlxRes(__stdcall*)(void*, void**)>(sys, 7)(sys, &svc) == 0 && svc) {
+        // IADLXGPUList: 3 Size, 11 At_GPUList(index, IADLXGPU**)
+        const unsigned n = adlxFn<unsigned(__stdcall*)(void*)>(gpus, 3)(gpus);
+        bool antiLagOff = false, chill = false, boost = false, esync = false, vsync = false, frtc = false;
+        const unsigned first = adlxFn<unsigned(__stdcall*)(void*)>(gpus, 5)(gpus);   // (5 Begin)
+        for (unsigned i = first; i < first + n && i < first + 8; i++) {
+            void* gpu = nullptr;
+            if (adlxFn<AdlxRes(__stdcall*)(void*, unsigned, void**)>(gpus, 11)(gpus, i, &gpu) != 0 || !gpu) continue;
+            read = true;
+            if (void* s = adlxSetting(svc, 3, gpu)) { antiLagOff |= adlxBool(s, 3) && !adlxBool(s, 4); adlxRelease(s); }
+            if (void* s = adlxSetting(svc, 4, gpu)) { chill |= adlxBool(s, 3) && adlxBool(s, 4); adlxRelease(s); }
+            if (void* s = adlxSetting(svc, 5, gpu)) { boost |= adlxBool(s, 3) && adlxBool(s, 4); adlxRelease(s); }
+            if (void* s = adlxSetting(svc, 7, gpu)) { esync |= adlxBool(s, 3) && adlxBool(s, 4); adlxRelease(s); }
+            if (void* s = adlxSetting(svc, 8, gpu)) {   // 5 GetMode: 3 = always on
+                int mode = 0;
+                if (adlxBool(s, 3) && adlxFn<AdlxRes(__stdcall*)(void*, int*)>(s, 5)(s, &mode) == 0) vsync |= mode == 3;
+                adlxRelease(s);
+            }
+            if (void* s = adlxSetting(svc, 9, gpu)) { frtc |= adlxBool(s, 3) && adlxBool(s, 4); adlxRelease(s); }
+            adlxRelease(gpu);
+        }
+        if (antiLagOff) f->push_back({"AMD RADEON ANTI-LAG IS OFF", "ADRENALIN > GAMING > GRAPHICS: RADEON ANTI-LAG ON"});
+        if (chill) f->push_back({"AMD RADEON CHILL CAPS YOUR FRAME RATE", "ADRENALIN > GAMING > GRAPHICS: RADEON CHILL OFF"});
+        if (boost) f->push_back({"AMD RADEON BOOST LOWERS THE RESOLUTION IN MOTION", "ADRENALIN > GAMING > GRAPHICS: RADEON BOOST OFF"});
+        if (esync) f->push_back({"AMD ENHANCED SYNC IS ON", "ADRENALIN > GAMING > GRAPHICS: ENHANCED SYNC OFF"});
+        if (vsync) f->push_back({"AMD WAIT FOR VERTICAL REFRESH IS ALWAYS ON", "ADRENALIN > GAMING > GRAPHICS: WAIT FOR VERTICAL REFRESH: OFF, UNLESS APPLICATION SPECIFIES"});
+        if (frtc) f->push_back({"AMD FRAME RATE TARGET CONTROL CAPS YOUR FRAME RATE", "ADRENALIN > GAMING > GRAPHICS: FRAME RATE TARGET CONTROL OFF"});
+    }
+    adlxRelease(svc);
+    adlxRelease(gpus);
+    if (term) term();
+    FreeLibrary(dll);
+    return read;
+}
+
+// ---- Intel: the Graphics Control Library (ControlLib.dll, installed with the driver; integrated and Arc GPUs) ---------
+// Read only. The few calls and structures below are laid out as Intel's IGCL API 1.1 declares them (igcl_api.h).
+namespace {
+struct CtlInitArgs { uint32_t size; uint8_t version; uint32_t appVersion; uint32_t flags; uint32_t supportedVersion; uint8_t uid[16]; };
+union CtlProp { struct { bool enable; } b; struct { bool enable; float value; } fl; struct { bool enable; int32_t value; } i; struct { uint32_t type; } e; struct { bool enable; uint32_t value; } u; };
+struct Ctl3D { uint32_t size; uint8_t version; uint32_t feature; char* app; int8_t appLen; bool set; uint32_t valueType; CtlProp value; int32_t customSize; void* custom; };
+struct CtlEndurance { uint32_t control, mode; };
+enum { kCtlFrameLimit = 2, kCtlEndurance = 1, kCtlFlip = 9, kCtlLowLatency = 16 };
+enum { kCtlInt32 = 2, kCtlEnum = 4, kCtlCustom = 5 };
+}  // namespace
+
+static bool intelReadSettings(std::vector<PerfFinding>* f) {
+    HMODULE dll = LoadLibraryExW(L"ControlLib.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (!dll) return false;
+    using Init = uint32_t(__cdecl*)(CtlInitArgs*, void**);
+    using Enum = uint32_t(__cdecl*)(void*, uint32_t*, void**);
+    using Get3D = uint32_t(__cdecl*)(void*, Ctl3D*);
+    using Close = uint32_t(__cdecl*)(void*);
+    auto init = (Init)GetProcAddress(dll, "ctlInit");
+    auto enumDev = (Enum)GetProcAddress(dll, "ctlEnumerateDevices");
+    auto get3d = (Get3D)GetProcAddress(dll, "ctlGetSet3DFeature");
+    auto close = (Close)GetProcAddress(dll, "ctlClose");
+    bool read = false;
+    void* api = nullptr;
+    CtlInitArgs ia{};
+    ia.size = sizeof ia;
+    ia.appVersion = (1u << 16) | 1u;   // (CTL_MAKE_VERSION(1, 1))
+    if (init && enumDev && get3d && init(&ia, &api) == 0 && api) {
+        uint32_t n = 0;
+        void* dev[8] = {};
+        if (enumDev(api, &n, nullptr) == 0 && n > 0) {
+            n = std::min<uint32_t>(n, 8);
+            if (enumDev(api, &n, dev) != 0) n = 0;
+        }
+        bool endurance = false, flip = false, lowLatOff = false, cap = false;
+        char app[] = "quark.exe";
+        for (uint32_t d = 0; d < n; d++) {
+            if (!dev[d]) continue;
+            auto get = [&](uint32_t feature, uint32_t type, void* custom, int32_t customSize, Ctl3D* out) {
+                for (int pass = 0; pass < 2; pass++) {   // (the game's own profile, then the global one)
+                    Ctl3D q{};
+                    q.size = sizeof q; q.feature = feature; q.valueType = type; q.custom = custom; q.customSize = customSize;
+                    if (pass == 0) { q.app = app; q.appLen = (int8_t)strlen(app); }
+                    if (get3d(dev[d], &q) == 0) { *out = q; return true; }
+                }
+                return false;
+            };
+            Ctl3D q{};
+            CtlEndurance eg{};
+            if (get(kCtlEndurance, kCtlCustom, &eg, sizeof eg, &q)) { read = true; endurance |= eg.control != 0 && eg.mode != 0; }
+            if (get(kCtlFlip, kCtlEnum, nullptr, 0, &q)) { read = true; flip |= q.value.e.type != 0 && !(q.value.e.type & (1u | 2u | 64u)); }   // (not the app's choice, nor off)
+            if (get(kCtlLowLatency, kCtlEnum, nullptr, 0, &q)) { read = true; lowLatOff |= q.value.e.type == 0; }
+            if (get(kCtlFrameLimit, kCtlInt32, nullptr, 0, &q)) { read = true; cap |= q.value.i.enable && q.value.i.value > 0; }
+        }
+        if (endurance) f->push_back({"INTEL ENDURANCE GAMING SAVES POWER OVER FRAMES", "INTEL GRAPHICS SOFTWARE > GRAPHICS: ENDURANCE GAMING OFF"});
+        if (flip) f->push_back({"INTEL FORCES ITS OWN VSYNC MODE", "INTEL GRAPHICS SOFTWARE > GRAPHICS: VERTICAL SYNC: APPLICATION CHOICE"});
+        if (lowLatOff) f->push_back({"INTEL LOW LATENCY IS OFF", "INTEL GRAPHICS SOFTWARE > GRAPHICS: LOW LATENCY ON"});
+        if (cap) f->push_back({"INTEL FRAME RATE LIMITER CAPS YOUR FRAME RATE", "INTEL GRAPHICS SOFTWARE > GRAPHICS: FRAME RATE LIMITER OFF"});
+        if (close) close(api);
+    }
+    FreeLibrary(dll);
+    return read;
+}
+
+std::vector<PerfFinding> perfCheck(const std::string& glRenderer) {
+    std::vector<PerfFinding> f;
+    std::string ren = glRenderer;
+    for (char& c : ren) c = (char)toupper((unsigned char)c);
+    const bool nvidia = ren.find("NVIDIA") != std::string::npos || ren.find("GEFORCE") != std::string::npos || ren.find("RTX") != std::string::npos;
+    const bool amd = ren.find("AMD") != std::string::npos || ren.find("RADEON") != std::string::npos;
+    const bool intel = ren.find("INTEL") != std::string::npos;
+    // a laptop on its integrated GPU while a dedicated one is there
+    if (intel || ren.find("RADEON(TM) GRAPHICS") != std::string::npos || ren.find("VEGA") != std::string::npos) {
+        DISPLAY_DEVICEW dd{}; dd.cb = sizeof dd;
+        bool dedicated = false;
+        for (DWORD i = 0; EnumDisplayDevicesW(nullptr, i, &dd, 0); i++) {
+            std::wstring n = dd.DeviceString;
+            if (n.find(L"NVIDIA") != std::wstring::npos || n.find(L"Radeon RX") != std::wstring::npos || n.find(L"Arc") != std::wstring::npos) dedicated = true;
+            dd = DISPLAY_DEVICEW{}; dd.cb = sizeof dd;
+        }
+        if (dedicated) f.push_back({"THE GAME RUNS ON YOUR INTEGRATED GPU", "WINDOWS SETTINGS > SYSTEM > DISPLAY > GRAPHICS > QUARK: HIGH PERFORMANCE"});
+    }
+    if (nvidia) {
+        enum { kPState = 0x1057EB71, kTriple = 0x20FDD1F9, kVsync = 0x00A879CF, kPrerender = 0x007BA09E, kThreaded = 0x20C1221E, kFrl = 0x10835002 };
+        std::vector<long long> v;
+        if (nvReadSettings({kPState, kTriple, kVsync, kPrerender, kThreaded, kFrl}, &v)) {
+            if (v[0] != 1) f.push_back({"NVIDIA POWER MANAGEMENT ISN'T MAXIMUM PERFORMANCE", "NVIDIA CONTROL PANEL > MANAGE 3D SETTINGS > POWER MANAGEMENT MODE (OR GPU MAX CLOCKS)"});
+            if (v[1] == 1) f.push_back({"NVIDIA TRIPLE BUFFERING IS ON", "NVIDIA CONTROL PANEL > MANAGE 3D SETTINGS > TRIPLE BUFFERING: OFF"});
+            if (v[2] == 0x47814940) f.push_back({"NVIDIA VERTICAL SYNC IS FORCED ON", "NVIDIA CONTROL PANEL > MANAGE 3D SETTINGS > VERTICAL SYNC: USE THE 3D APPLICATION SETTING"});
+            if (v[3] > 1) f.push_back({"NVIDIA LETS FRAMES QUEUE UP (MAX PRE-RENDERED FRAMES)", "NVIDIA CONTROL PANEL > MANAGE 3D SETTINGS > LOW LATENCY MODE: ON"});
+            if (v[4] == 1) f.push_back({"NVIDIA THREADED OPTIMIZATION IS ON", "VIDEO + AUDIO > MORE: NV THREADED OFF (OR THE NVIDIA CONTROL PANEL)"});
+            if (v[5] > 0) f.push_back({"NVIDIA CAPS YOUR FRAME RATE (MAX FRAME RATE)", "NVIDIA CONTROL PANEL > MANAGE 3D SETTINGS > MAX FRAME RATE: OFF"});
+        }
+    }
+    if (amd && !amdReadSettings(&f)) f.push_back({"AMD DRIVER SETTINGS COULDN'T BE READ", "ADRENALIN: ANTI-LAG ON; CHILL, BOOST, ENHANCED SYNC, WAIT FOR VERTICAL REFRESH OFF"});
+    if (intel && !intelReadSettings(&f)) f.push_back({"INTEL DRIVER SETTINGS COULDN'T BE READ", "INTEL GRAPHICS SOFTWARE: ENDURANCE GAMING OFF, LOW LATENCY ON, VSYNC: APPLICATION CHOICE"});
+    // Windows: the power plan and Windows 11's power mode, battery, GPU scheduling, Game Mode
+    if (HMODULE pp = LoadLibraryW(L"powrprof.dll")) {
+        using Active = DWORD(WINAPI*)(HKEY, GUID**);
+        using Overlay = DWORD(WINAPI*)(GUID*);
+        if (auto active = (Active)GetProcAddress(pp, "PowerGetActiveScheme")) {
+            GUID* g = nullptr;
+            if (active(nullptr, &g) == 0 && g) {
+                if (guidIs(*g, 0xa1841308, 0x3541, 0x4fab)) f.push_back({"WINDOWS IS ON THE POWER SAVER PLAN", "CONTROL PANEL > POWER OPTIONS: HIGH PERFORMANCE"});
+                LocalFree(g);
+            }
+        }
+        if (auto overlay = (Overlay)GetProcAddress(pp, "PowerGetEffectiveOverlayScheme")) {
+            GUID g{};
+            if (overlay(&g) == 0 && guidIs(g, 0x961cc777, 0x2547, 0x4f9d)) f.push_back({"WINDOWS POWER MODE IS BEST POWER EFFICIENCY", "WINDOWS SETTINGS > SYSTEM > POWER: POWER MODE BEST PERFORMANCE"});
+        }
+    }
+    SYSTEM_POWER_STATUS ps{};
+    if (GetSystemPowerStatus(&ps) && ps.ACLineStatus == 0) f.push_back({"THIS PC IS RUNNING ON BATTERY", "PLUG IT IN: ON BATTERY THE GPU AND CPU CLOCK DOWN"});
+    if (hwSchedState() == 0) f.push_back({"HARDWARE GPU SCHEDULING IS OFF", "LATENCY: GPU SCHED: TURN ON (THEN RESTART)"});
+    DWORD gm = 1, n = sizeof gm;
+    if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\GameBar", L"AutoGameModeEnabled", RRF_RT_REG_DWORD, nullptr, &gm, &n) == ERROR_SUCCESS && gm == 0)
+        f.push_back({"WINDOWS GAME MODE IS OFF", "WINDOWS SETTINGS > GAMING > GAME MODE: ON"});
+    return f;
 }
 
 // ---- hardware-accelerated GPU scheduling -----------------------------------------------------------------------------
@@ -288,6 +558,7 @@ bool fsoDisable(bool on, std::string* msg) {
 }
 
 #else
+std::vector<PerfFinding> perfCheck(const std::string&) { return {}; }
 bool fsoDisable(bool, std::string* msg) { *msg = "FULLSCREEN OPTIMIZATIONS: WINDOWS ONLY"; return false; }
 int hwSchedState() { return -1; }
 bool hwSchedEnable(std::string* msg) { *msg = "GPU SCHEDULING: WINDOWS ONLY"; return false; }

@@ -61,16 +61,19 @@ inline Stats compute(const float* t, size_t n, std::vector<float>& scratch) {
 
 // The graph's columns: each the slowest and the mean frame of its share of the run (frame order), `cols` of them
 // (fewer when there are fewer frames). Worked out once when the run ends.
-inline void graphColumns(const float* t, size_t n, size_t cols, std::vector<float>& maxMs, std::vector<float>& meanMs) {
+inline void graphColumns(const float* t, size_t n, size_t cols, std::vector<float>& maxMs, std::vector<float>& meanMs,
+                         std::vector<float>* minMs = nullptr) {   // (minMs: each column's fastest frame too)
     cols = std::min(cols, n);
     maxMs.assign(cols, 0.0f);
     meanMs.assign(cols, 0.0f);
+    if (minMs) minMs->assign(cols, 0.0f);
     for (size_t c = 0; c < cols; c++) {
         const size_t a = n * c / cols, b = std::max(a + 1, n * (c + 1) / cols);
         double sum = 0;
-        float mx = 0;
-        for (size_t i = a; i < b; i++) { sum += t[i]; mx = std::max(mx, t[i]); }
+        float mx = 0, mn = 1e30f;
+        for (size_t i = a; i < b; i++) { sum += t[i]; mx = std::max(mx, t[i]); mn = std::min(mn, t[i]); }
         maxMs[c] = mx * 1000.0f;
+        if (minMs) (*minMs)[c] = mn * 1000.0f;
         meanMs[c] = (float)(sum / (b - a) * 1000.0);
     }
 }

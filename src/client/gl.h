@@ -25,11 +25,23 @@ typedef int64_t GLint64;
 typedef struct __GLsync* GLsync;
 
 #define GL_FALSE 0
+#define GL_ACTIVE_UNIFORMS 0x8B86
+#define GL_FLOAT_VEC2 0x8B50
+#define GL_FLOAT_VEC3 0x8B51
+#define GL_FLOAT_VEC4 0x8B52
+#define GL_INT_VEC2 0x8B53
+#define GL_INT_VEC3 0x8B54
+#define GL_INT_VEC4 0x8B55
+#define GL_FLOAT_MAT3 0x8B5B
+#define GL_FLOAT_MAT4 0x8B5C
 #define GL_TRUE 1
 #define GL_TRIANGLES 0x0004
 #define GL_LINES 0x0001
 #define GL_DEPTH_BUFFER_BIT 0x00000100
 #define GL_COLOR_BUFFER_BIT 0x00004000
+#define GL_COLOR 0x1800
+#define GL_TEXTURE_BASE_LEVEL 0x813C
+#define GL_TEXTURE_MAX_LEVEL 0x813D
 #define GL_DEPTH_TEST 0x0B71
 #define GL_CULL_FACE 0x0B44
 #define GL_BLEND 0x0BE2
@@ -118,9 +130,22 @@ typedef struct __GLsync* GLsync;
 #define GL_QUERY_RESULT 0x8866
 #define GL_QUERY_RESULT_AVAILABLE 0x8867
 
+#define GL_UNIFORM_BUFFER 0x8A11
+#define GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT 0x8A34
+#define GL_MAP_WRITE_BIT 0x0002
+#define GL_MAP_PERSISTENT_BIT 0x0040
+#define GL_MAP_COHERENT_BIT 0x0080
+#define GL_INVALID_INDEX 0xFFFFFFFFu
+
 #define QGL_FUNCS(X) \
+    X(void, glBlendFuncSeparate, (GLenum, GLenum, GLenum, GLenum)) \
+    X(void, glBindBufferRange, (GLenum, GLuint, GLuint, GLintptr, GLsizeiptr)) \
+    X(void*, glMapBufferRange, (GLenum, GLintptr, GLsizeiptr, GLbitfield)) \
+    X(GLuint, glGetUniformBlockIndex, (GLuint, const GLchar*)) \
+    X(void, glUniformBlockBinding, (GLuint, GLuint, GLuint)) \
     X(void, glClear, (GLbitfield)) \
     X(void, glClearColor, (GLfloat, GLfloat, GLfloat, GLfloat)) \
+    X(void, glClearBufferfv, (GLenum, GLint, const GLfloat*)) \
     X(void, glEnable, (GLenum)) \
     X(void, glDisable, (GLenum)) \
     X(void, glViewport, (GLint, GLint, GLsizei, GLsizei)) \
@@ -171,6 +196,16 @@ typedef struct __GLsync* GLsync;
     X(void, glUseProgram, (GLuint)) \
     X(GLint, glGetUniformLocation, (GLuint, const GLchar*)) \
     X(void, glUniform1i, (GLint, GLint)) \
+    X(void, glGetActiveUniform, (GLuint, GLuint, GLsizei, GLsizei*, GLint*, GLenum*, GLchar*)) \
+    X(void, glGetUniformfv, (GLuint, GLint, GLfloat*)) \
+    X(void, glGetUniformiv, (GLuint, GLint, GLint*)) \
+    X(void, glUniform1fv, (GLint, GLsizei, const GLfloat*)) \
+    X(void, glUniform2fv, (GLint, GLsizei, const GLfloat*)) \
+    X(void, glUniform3fv, (GLint, GLsizei, const GLfloat*)) \
+    X(void, glUniform2iv, (GLint, GLsizei, const GLint*)) \
+    X(void, glUniform3iv, (GLint, GLsizei, const GLint*)) \
+    X(void, glUniform4iv, (GLint, GLsizei, const GLint*)) \
+    X(void, glUniformMatrix3fv, (GLint, GLsizei, GLboolean, const GLfloat*)) \
     X(void, glUniform1f, (GLint, GLfloat)) \
     X(void, glUniform2f, (GLint, GLfloat, GLfloat)) \
     X(void, glUniform3f, (GLint, GLfloat, GLfloat, GLfloat)) \
@@ -208,6 +243,10 @@ typedef struct __GLsync* GLsync;
 #define QGL_DECLARE(ret, name, args) typedef ret(QGLAPI* PFN_##name) args; extern PFN_##name name;
 QGL_FUNCS(QGL_DECLARE)
 #undef QGL_DECLARE
+
+// (GL 4.4 / ARB_buffer_storage, not in 3.3: null when the driver lacks it; the GPU late latch needs it)
+typedef void(QGLAPI* PFN_glBufferStorage)(GLenum, GLsizeiptr, const void*, GLbitfield);
+extern PFN_glBufferStorage glBufferStorageOpt;
 
 typedef void* (*QGLGetProc)(const char*);
 // Returns the name of the first missing function, or nullptr on success.

@@ -390,6 +390,7 @@ Config parseConfig(const std::string& text) {
         else if (line.rfind("args=", 0) == 0) c.args = line.substr(5, 200);
         else if (line.rfind("updates=", 0) == 0) c.updates = std::min(std::max(atoi(line.c_str() + 8), 0), 2);
         else if (line.rfind("next_version=", 0) == 0) c.nextVersion = line.substr(13, 64);
+        else if (line.rfind("language=", 0) == 0) c.language = line.substr(9, 16);
         i = j + 1;
     }
     return c;
@@ -397,7 +398,41 @@ Config parseConfig(const std::string& text) {
 
 std::string formatConfig(const Config& c) {
     return std::string("channel=") + channelName(c.channel) + "\npin=" + (c.pin.empty() ? "latest" : c.pin) + "\nauto_start=" + (c.autoStart ? "1" : "0") +
-           "\nkeep_open=" + (c.keepOpen ? "1" : "0") + "\nargs=" + c.args + "\nupdates=" + std::to_string(c.updates) + "\nnext_version=" + c.nextVersion + "\n";
+           "\nkeep_open=" + (c.keepOpen ? "1" : "0") + "\nargs=" + c.args + "\nupdates=" + std::to_string(c.updates) + "\nnext_version=" + c.nextVersion +
+           (c.language.empty() ? "" : "\nlanguage=" + c.language) + "\n";
+}
+
+std::string cfgLanguage(const std::string& gameCfg) {
+    std::string v = "auto";
+    size_t i = 0;
+    while (i < gameCfg.size()) {
+        size_t j = gameCfg.find('\n', i);
+        if (j == std::string::npos) j = gameCfg.size();
+        if (gameCfg.compare(i, 9, "language=") == 0) {
+            v = gameCfg.substr(i + 9, j - i - 9);
+            while (!v.empty() && (v.back() == '\r' || v.back() == ' ')) v.pop_back();
+            if (v.empty()) v = "auto";
+        }
+        i = j + 1;
+    }
+    return v;
+}
+
+std::string withCfgLanguage(const std::string& gameCfg, const std::string& code) {
+    std::string out;
+    bool done = false;
+    size_t i = 0;
+    while (i < gameCfg.size()) {
+        size_t j = gameCfg.find('\n', i);
+        if (j == std::string::npos) j = gameCfg.size();
+        if (gameCfg.compare(i, 9, "language=") == 0) {
+            if (!done) out += "language=" + code + "\n";   // (a second one: dropped, as the game keeps the last)
+            done = true;
+        } else out += gameCfg.substr(i, j - i) + "\n";
+        i = j + 1;
+    }
+    if (!done) out += "language=" + code + "\n";
+    return out;
 }
 
 int selectIndex(const std::vector<Release>& list, const Config& c) {

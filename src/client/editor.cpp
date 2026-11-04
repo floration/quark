@@ -2217,7 +2217,7 @@ void Game::drawEditorSavePrompt() {
         if (ui_.textField(42, x, L.Y(y), bw, L.L(36), edPromptName_, 40, UiExp::local().withId("COPY NAME"))) edPromptName_ = typedMapName(edPromptName_);
         y += 48;
         if (ui_.probing()) ui_.scope = "after a session";   // (as the editor's prompt: each "then" leads elsewhere)
-        if (ui_.button(x, L.Y(y), L.L(260), L.L(36), edPromptOfficial_ && !edOnline_ ? "DROP MY EDITS" : "DON'T SAVE", UiExp::nav("main").withId("NO"))) edPromptAnswer(0);
+        if (ui_.button(x, L.Y(y), L.L(260), L.L(36), edPromptOfficial_ && !edOnline_ ? "DROP MY EDITS" : "DON'T SAVE", UiExp::nav("main*").withId("NO"))) edPromptAnswer(0);
         else if (ui_.button(L.X(644), L.Y(y), L.L(260), L.L(36), edPromptOfficial_ ? "SAVE AS NEW MAP" : "SAVE", UiExp::state("usermaps").withId("YES"))) edPromptAnswer(1);
         if (time_ < edMsgUntil_) ui_.hint(L.X(640) - r_.textWidth(edMsg_, ui_.hintScale()) * 0.5f, L.Y(y + 36 + 24), edMsg_, kGrey, L.L(560));
         return;
@@ -2246,7 +2246,7 @@ void Game::drawEditorSavePrompt() {
     static const char* kThen[] = {"after a session", "save", "leave", "test", "host", "open"};
     if (ui_.probing()) ui_.scope = kThen[std::min(std::max(edPromptThen_, 0), 5)];   // (the UI test: each "then" leads elsewhere)
     const UiExp yes = then == ED_THEN_SAVE && edOnline_ && host_ ? UiExp::cmd("editmode saveas") : UiExp::state("usermaps");
-    const UiExp no = then == ED_THEN_LEAVE ? UiExp::nav("main") : then == ED_THEN_TEST || then == ED_THEN_HOST ? UiExp::state("hosting", "1")
+    const UiExp no = then == ED_THEN_LEAVE ? UiExp::nav("main*") : then == ED_THEN_TEST || then == ED_THEN_HOST ? UiExp::state("hosting", "1")
                    : then == ED_THEN_OPEN ? UiExp::state("edopen") : UiExp::nav(edPath());
     float bx = x;
     if (cancel) {
@@ -3175,7 +3175,7 @@ void Game::editorFrame(double dt) {
         } else if (ui_.button(x, y, w2, h, "VOTE: PLAY IT", UiExp::cmd("callvote edit off"))) net_.sendCommand("callvote edit off");
         // leaving: the host goes back to the editor it started the session from; a guest is asked about keeping a copy
         if (ui_.button(x + w2 + gap, y, w2, h, host_ && !temp ? "END SESSION" : "LEAVE",
-                       UiExp::nav(host_ ? (testMap_.empty() ? "main" : "editor") : "main*").withId("LEAVE"))) { closeEditor(); return; }
+                       UiExp::nav(host_ ? (testMap_.empty() ? "main*" : "editor") : "main*").withId("LEAVE"))) { closeEditor(); return; }
         row();
         if (temp || !host_) {
             if (ui_.button(x, y, w, h, "SAVE A COPY AS " + edName_, (edOfficial() ? UiExp::nav(edKeepPath()) : UiExp::state("usermaps")).withId("SAVE A COPY"))) { if (edOfficial()) edAskKeep(ED_THEN_SAVE); else edSaveCopy(ed_, edName_); }
@@ -3205,7 +3205,7 @@ void Game::editorFrame(double dt) {
         if (ui_.button(x, y, w4, h, "NEW", ask ? UiExp::nav(edKeepPath()) : UiExp::state("edopen"))) { if (ask) edAskKeep(ED_THEN_OPEN, ""); else { openEditor(""); return; } }
         if (ui_.button(x + w4 + gap, y, w4, h, "SAVE", builtin ? (edDirty_ ? UiExp::nav(edKeepPath()) : UiExp::state("ednotice")) : UiExp::state("usermaps"))) edSave();
         if (ui_.button(x + 2 * (w4 + gap), y, w4, h, "EXIT", ask ? UiExp::nav(edKeepPath())
-                                                                : edDirty_ && time_ > edLeaveArmed_ ? UiExp::state("ednotice") : UiExp::nav("main"))) {
+                                                                : edDirty_ && time_ > edLeaveArmed_ ? UiExp::state("ednotice") : UiExp::nav("main*"))) {
             if (ask) { edAskKeep(ED_THEN_LEAVE); }   // (B3)
             else if (edDirty_ && time_ > edLeaveArmed_) { edLeaveArmed_ = time_ + 2; edNotify("unsaved changes - click EXIT again to leave"); }
             else { closeEditor(); return; }

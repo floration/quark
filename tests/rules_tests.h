@@ -628,7 +628,7 @@ static void testGrappleLagComp(uint16_t port) {
             if (got) {
                 UserCmd u = input(0);
                 Vec3 eye = shooterPos + Vec3(0, kEyeHeight, 0);
-                if (rayAABB(eye, safeInv(angleForward(u.yaw, u.pitch)), s.hitBox(sb.move.pos, false), 100.0f) < 0) missedIfNow++;
+                if (rayHitbox(eye, safeInv(angleForward(u.yaw, u.pitch)), s.hitBox(sb.move.pos, false), 100.0f) < 0) missedIfNow++;
             }
         }
         caught += got;
@@ -638,7 +638,7 @@ static void testGrappleLagComp(uint16_t port) {
     s.stop();
 }
 
-// 5.5: the head is a head-sized box on top, not the full-width top 20%. Owner 2026-10-27: the head hitbox is just the
+// 5.5: the head is a head-sized cylinder on top (a box until 2026-11-04, then a cylinder: owner), not the full-width top 20%. Owner 2026-10-27: the head hitbox is just the
 // head and the body ends at its bottom: a shot beside the head over the shoulders misses (it was a body hit). The
 // sniper does 40 on the body, 50 on the head (owner 1.18; 1.17 a flat 50).
 static void testHeadBox(uint16_t port) {
@@ -676,7 +676,15 @@ static void testHeadBox(uint16_t port) {
         t = shot(side, 0, Vec3(0, -1, 0), &head);
         CHECK(t > 0 && !head && std::fabs((hb.mx.y + 5 - t) - seam) < 1e-3f); // straight down past the head: the shoulder's top
         t = shot(0.05f * sz.scale, 0, Vec3(0, -1, 0), &head);
-        CHECK(t > 0 && head && std::fabs((hb.mx.y + 5 - t) - hb.mx.y) < 1e-3f); // ...or onto the head
+        CHECK(t > 0 && head && std::fabs((hb.mx.y + 5 - t) - hb.mx.y) < 1e-3f); // ...or onto the head's flat top
+        // the shapes are round: the same width from every side (a box was 41% wider across its corners)
+        for (float ang : {0.0f, 0.4f, 0.785398f, 1.2f}) {
+            const Vec3 dir(-std::sin(ang), 0, -std::cos(ang)), across(std::cos(ang), 0, -std::sin(ang));
+            const float y = hb.mn.y + H * 0.4f, R = W * 0.5f;
+            const Vec3 base = Vec3(feet.x, y, feet.z) - dir * 10.0f;
+            CHECK(rayHitbox(base + across * (R * 0.98f), safeInv(dir), hb, 100.0f) > 0);
+            CHECK(rayHitbox(base + across * (R * 1.02f), safeInv(dir), hb, 100.0f) < 0);
+        }
         // from below, straight up through the body toward the head: the body is hit first (it was a headshot)
         CHECK(rayHitbox(feet - Vec3(0, 2, 0), safeInv(Vec3(0, 1, 0)), hb, 100.0f, &head) > 0 && !head);
         // the knife's wider swing: both boxes grow, the gap beside the head stays
@@ -1400,7 +1408,7 @@ static void testSpawnTypes(uint16_t port) {
     ServerConfig cfg;
     cfg.map = "colosseum"; cfg.mode = MODE_TOURNEY; cfg.port = port;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    if (!START_SERVER(s, cfg)) { return; }
     CHECK(!s.map_.supportsMode(MODE_VS) && s.map_.canSupportMode(MODE_VS));   // (the case: a/b spawns, no "vs")
     s.tourney_.running = true;
     s.players_[0].connected = s.players_[1].connected = true;
@@ -1447,7 +1455,7 @@ static void rateFreshWindow(Server& s, std::vector<NetClient*>& cls, double wind
 template <class F>
 static void ratePump(Server& s, std::vector<NetClient*>& cls, double seconds, F input, double* worst) {
     double end = timeNow() + seconds;
-    double nextTick = timeNow();
+    double nextTick = timeNow(), off = offCpu();
     while (timeNow() < end) {
         *worst = std::max(*worst, timeNow() - s.nextTickForTest());
         s.frame();
@@ -1456,7 +1464,8 @@ static void ratePump(Server& s, std::vector<NetClient*>& cls, double seconds, F 
             for (size_t i = 0; i < cls.size(); i++) cls[i]->tick(input((int)i));
             nextTick += cls.empty() ? 0.001 : cls[0]->tickPeriod();
         }
-        sleepMs(1);
+        hostSleepMs(1);   // (the host's pauses, here and in the loop's work, are kept for timingTest: as pump does)
+        hostOffCpu(off, 0.001);
     }
 }
 static constexpr int kRateTries = 3;
@@ -2136,7 +2145,7 @@ static void testVsBotsDuo(uint16_t port) {
         cfg.map = mode == MODE_ARENA ? "temple" : "clockwork"; cfg.mode = mode; cfg.port = port++;
         cfg.vsBots = true; cfg.botsEnemy = 3; cfg.botsAlly = 2; cfg.duelTeamSize = 2;
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { CHECK(false); continue; }
+        if (!START_SERVER(s, cfg)) { continue; }
         int a = 0, b = 0;
         for (auto& p : s.players_) if (p.connected && p.isBot) (p.team == TEAM_A ? a : b)++;
         printf("  %s: %d allies, %d enemies\n", modeName(mode), a, b);
@@ -2873,7 +2882,8 @@ static void testVamp3D(uint16_t port) {
     const int ia = c[0].clientId(), ib = c[1].clientId();
     auto& pa = s.players_[ia];
     auto& pb = s.players_[ib];
-    pump(s, cls, 0.1, idle);
+    pumpServerTime(s, cls, 0.1, idle);
+    for (int k = 0; k < 50 && !c[0].predicted().fly; k++) pumpServerTime(s, cls, 0.1, idle);   // (the flag's snapshot, under load)
     CHECK(s.vampireFade() == 30.0f && pa.move.fly && pb.move.fly && c[0].predicted().fly);   // (the flag reaches prediction)
     CHECK(s.weaponAllowed(WPN_LASER) && !s.weaponAllowed(WPN_ROCKET));
     auto heal = [&](double into) {   // pa hits pb for 20, `into` s into the round: what pa healed
@@ -2897,7 +2907,7 @@ static void testVamp3D(uint16_t port) {
     // flown out into space: a fall (the round ends), and the next round's ramp starts again
     const int round = s.ms_.round;
     pb.move.pos = {s.map_.bounds.mx.x + Server::kFlyKillMargin + 5, 0, 0};
-    pump(s, cls, 0.1, idle);
+    pumpServerTime(s, cls, 0.1, idle);   // (server time: under load the test clock runs ahead of it)
     CHECK(!pb.alive);
     for (int k = 0; k < 200 && !(s.ms_.phase == PHASE_LIVE && s.ms_.round != round); k++) {
         if (s.ms_.phase == PHASE_FREEZE || s.ms_.phase == PHASE_ROUND_END) s.phaseEnd_ = s.time();
@@ -2927,13 +2937,16 @@ static void testFlyModifier(uint16_t port) {
     NetClient c[2];
     std::vector<NetClient*> cls;
     if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); return; }
-    pump(s, cls, 0.2, idle);
     auto& pa = s.players_[c[0].clientId()];
+    // (server time, not the test clock: under load the server falls behind it, and a bot spawns some ticks after
+    // it joins; up to 5 s of game time for both)
+    for (int k = 0; k < 50 && !(pa.alive && pa.move.fly && c[0].predicted().fly); k++) pumpServerTime(s, cls, 0.1, idle);
     CHECK(pa.alive && pa.move.fly && c[0].predicted().fly);
     // a bot flies up and down too: to its target's height (and not through the floor)
     const int bot = s.addBot(TEAM_A, BOT_ADVANCED);
-    pump(s, cls, 0.5, idle);
     ServerPlayer& bp = s.players_[bot];
+    pumpServerTime(s, cls, 0.5, idle);
+    for (int k = 0; k < 45 && !(bp.alive && bp.move.fly); k++) pumpServerTime(s, cls, 0.1, idle);
     CHECK(bp.alive && bp.move.fly);
     int up = 0;
     for (int k = 0; k < 20 && bp.alive && pa.alive; k++) {
@@ -2959,7 +2972,7 @@ static void testGameRules(const std::string& only, int half = 0) {
         {"throws", 1, [] { testThrowCooldown(TP(29240)); }},
         {"hull", 1, [] { testSizeHull(TP(29242)); }},
         {"grapple", 2, [] { testGrappleNoBrake(); testGrapplePmove(); }},
-        {"grapplep", 2, [] { testGrapplePlayers(TP(29270)); testGrappleTeammate(TP(29271)); testGrappleLagComp(TP(29272)); testGrappleBots(TP(29273)); }},
+        {"grapplep", 2, [] { timingTest("grapple latch", [] { testGrapplePlayers(TP(29270)); }); testGrappleTeammate(TP(29271)); testGrappleLagComp(TP(29272)); testGrappleBots(TP(29273)); }},
         {"head", 1, [] { testHeadBox(TP(29246)); }},
         {"rocketride", 1, [] { testRocketRide(TP(29278)); }},
         {"hide", 2, [] { testHideScoring(TP(29247)); testSeekerRespawn(TP(29287)); }},

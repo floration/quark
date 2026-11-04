@@ -67,17 +67,26 @@ environment secret on those two environments with a deployment rule (production:
 The release jobs **fail if the `QUARK_SIGNING_KEY` secret is missing**, or if the
 secret doesn't match the public key in the source, so no unsigned release goes out.
 
-## Owner: one-time setup
+## Owner: the release key's secret
 
-A keypair has already been generated for you and its public key is in `src/common/sign.cpp`. The private key was
-written (outside the repo, never committed) to the session scratchpad file `quark_signing_key.txt`.
+This is done: the release key's public half is `kReleasePublicKey` in `src/common/sign.cpp`, and its private half (64
+hex digits) is kept only by the owner (a password manager) and in the `QUARK_SIGNING_KEY` secret. The file it was
+first written to (a one-off session scratch file, outside the repo, never committed) is gone; nothing in the repo or
+the docs holds the private key, and nothing ever should.
 
-1. Copy the private key (the 64 hex digits in `quark_signing_key.txt`) somewhere safe, e.g. a password manager.
-   Then delete that file.
-2. On GitHub open **floration/quark → Settings → Secrets and variables → Actions → New repository secret**.
-3. Name: `QUARK_SIGNING_KEY`. Secret: the 64 hex digits (nothing else). Click **Add secret**.
-4. Push as usual. The release job's "sign update packages" step should print `signed ...` and `signature OK` for each
-   platform, and the release should list a `.qpak.sig` next to each `.qpak`.
+To set the secret again (a new environment, a moved repository, a replaced secret):
+
+1. On GitHub open **floration/quark → Settings → Environments → `production` / `testing` → Add environment secret**
+   (or **Settings → Secrets and variables → Actions → New repository secret**).
+2. Name: `QUARK_SIGNING_KEY`. Secret: the 64 hex digits from the password manager (nothing else). Save.
+3. Push as usual. The release job's "sign update packages" step should print `signed ...` and `signature OK` for each
+   platform, and the release should list a `.qpak.sig` next to each `.qpak`. The job fails if the secret is missing or
+   doesn't match `kReleasePublicKey`.
+
+`quark_sign pubkey < key.txt` (the key in a file you delete right after) prints the public key of a private key: it
+must equal `kReleasePublicKey`. If the private key were ever lost or leaked, a new pair (`quark_sign keygen`) needs a
+new `kReleasePublicKey` and a release that installed launchers still trust (one signed with the old key), so ask before
+replacing it.
 
 ## Moving the ranking / server-list Worker (signed master.txt)
 

@@ -241,7 +241,9 @@ static int slideMove(MoveState& s, const Map& map, Vec3 delta, bool crouched, Ve
 }
 
 // The parts of a step that only depend on the command (the same for each of its up to 8 steps).
+namespace {   // (internal: maptool.h has a CmdCtx of its own, and two global ones would break the one-definition rule)
 struct CmdCtx { const MoveTuning& mt; Vec3 fwd, right; };
+}
 
 static int maxChargesFor(const MoveTuning& mt, uint8_t) {   // (quick dash: no extra charge since 1.18)
     return std::min(kMaxDashCharges, std::max(1, (int)std::lround(kDashCharges * mt.m[MV_DASH_CHARGES])));

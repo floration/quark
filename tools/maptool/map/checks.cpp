@@ -1,8 +1,8 @@
 // check: the map safety checks quark_tests runs on every map, on one map, as data.
 // COPIED (and adapted to report instead of CHECK) from tests/tests.cpp at 07ef254 - DEDUPE LATER, each marked below:
 //   testAllMaps (preferred mode, spawns in walls, walk routes, bot nav routes), testLadders, testStairs,
-//   testSpawnPools, testSpawnSanity, testCartSweep, the ranked symmetry part of testMaps; and the map report's
-//   out of bounds (measure.cpp outOfBounds).
+//   testSpawnPools, testSpawnSanity, testCartSweep. Shared with the tests, not copied: the ranked part of testMaps
+//   (rankedFairness, tests/walkgrid.h) and the out-of-bounds check (measureOutOfBounds, tests/mapbounds.cpp).
 #include <algorithm>
 #include <cmath>
 #include <cstdarg>
@@ -104,7 +104,7 @@ static void checkNavRoutes(Analysis& a, Check& c) {
     }
     for (auto& s : m.bombSites) goals.push_back(s.center());
     if (m.payloadPath.size() >= 2) { goals.push_back(m.payloadPath.front()); goals.push_back(m.payloadPath.back()); }
-    for (auto& ck : m.checkpoints) goals.push_back(ck.center());
+    if (m.preferredMode != MODE_SURF) for (auto& ck : m.checkpoints) goals.push_back(ck.center());   // (surf: ridden, not walked, as quark_tests)
     for (auto& p : m.points) goals.push_back({p.center().x, p.mn.y, p.center().z});
     if (m.preferredMode == MODE_HIDE || m.preferredMode == MODE_TAG) for (auto& sp2 : m.spawns) goals.push_back(sp2.pos);
     std::vector<int> goalNode;
@@ -361,48 +361,17 @@ static void checkCartSweep(Analysis& a, Check& c) {
     }
     c.summary = fmt("%.1f m of track", len);
 }
-// testMaps: a ranked map is point-symmetric (solids, spawns, ladders, lights, objectives) with the sun overhead
+// testMaps: a ranked map is fair, not necessarily symmetric (q, 2026-10-30): the same rankedFairness
+// (tests/walkgrid.h) quark_tests judges with. (The id stays ranked_mirror for the editors: Quarkology's mirror tools
+// still make a map point-symmetric, which is one way to be fair.)
 static void checkRankedMirror(Analysis& a, Check& c) {
     const Map& m = a.m;
     if (!m.rankedLadders) { c.skipped = true; c.summary = "not a ranked map"; return; }
-    auto mirrored = [](const AABB& b) { return AABB{{-b.mx.x, b.mn.y, -b.mx.z}, {-b.mn.x, b.mx.y, -b.mn.z}}; };
-    int lonely = 0;
-    for (auto& br : m.brushes) {
-        AABB mb = mirrored(br.box);
-        bool found = false;
-        for (auto& o : m.brushes)
-            if (o.material == br.material && length(o.box.mn - mb.mn) < 0.01f && length(o.box.mx - mb.mx) < 0.01f) { found = true; break; }
-        if (!found) { lonely++; if (lonely <= 50) { Vec3 at = br.box.center(); c.where.push_back(at); } }
-    }
-    if (lonely) c.fail(fmt("%d solids without a mirrored twin", lonely));
-    int na = 0, nb = 0;
-    for (auto& sp : m.spawns) { na += sp.team == SPAWN_A; nb += sp.team == SPAWN_B; }
-    bool duel = (m.rankedLadders & 3) != 0;
-    if (!(na == nb && (na >= 1 || !duel))) c.fail(fmt("%d team A spawns, %d team B", na, nb));
-    auto same = [](const Vec3& p, const Vec3& q) { return length(p - q) < 0.01f; };
-    auto flip = [](const Vec3& p) { return Vec3(-p.x, p.y, -p.z); };
-    auto boxTwin = [&](const std::vector<AABB>& list, const AABB& x) {
-        AABB mx = mirrored(x);
-        for (auto& o : list) if (same(o.mn, mx.mn) && same(o.mx, mx.mx)) return true;
-        return false;
-    };
-    for (auto& sp : m.spawns) {
-        int twinTeam = sp.team == SPAWN_A ? SPAWN_B : sp.team == SPAWN_B ? SPAWN_A : isModeSpawn(sp.team) && spawnSide(sp.team) != SPAWN_ANY ? modeSpawn(spawnSetMode(sp.team), 1 - spawnSide(sp.team)) : sp.team;
-        bool found = false;
-        for (auto& o : m.spawns)
-            if (o.team == twinTeam && same(o.pos, flip(sp.pos)) && std::fabs(std::remainder(o.yaw - sp.yaw - PI, 2 * PI)) < 0.01f) found = true;
-        if (!found) c.fail(fmt("spawn %.1f %.1f %.1f (yaw %.0f) has no mirrored twin", sp.pos.x, sp.pos.y, sp.pos.z, sp.yaw * 180 / PI), &sp.pos);
-    }
-    for (auto& l : m.ladders) if (!boxTwin(m.ladders, l)) { Vec3 at = l.center(); c.fail(fmt("a ladder at %.1f %.1f has no twin", at.x, at.z), &at); }
-    for (auto& l : m.lights) {
-        bool found = false;
-        for (auto& o : m.lights) found |= same(o.pos, flip(l.pos)) && o.radius == l.radius && o.intensity == l.intensity;
-        if (!found) c.fail(fmt("a light at %.1f %.1f %.1f has no twin", l.pos.x, l.pos.y, l.pos.z), &l.pos);
-    }
-    for (auto* list : {&m.bombSites, &m.points, &m.checkpoints}) for (auto& z : *list) if (!boxTwin(*list, z)) { Vec3 at = z.center(); c.fail("an objective has no twin", &at); }
-    if (m.hasHill && !boxTwin({m.hill}, m.hill)) c.fail("the hill isn't centred");
-    if (std::fabs(m.sunDir.x) > 1e-6f || std::fabs(m.sunDir.z) > 1e-6f) c.fail(fmt("the sun (%.2f %.2f %.2f) isn't overhead", m.sunDir.x, m.sunDir.y, m.sunDir.z));
-    c.summary = "ranked: point-symmetric through the centre";
+    const RankedFairness f = rankedFairness(m, &a.walk());
+    if (!f.spawnsOk) c.fail(fmt("%d team A spawns, %d team B", f.a, f.b));
+    if (f.timed && !f.fair) c.fail(fmt("not fair: to the enemy A %.1f s / B %.1f s, to the middle A %.1f s / B %.1f s (within 1 s needed)", f.aFoe, f.bFoe, f.aMid, f.bMid));
+    c.summary = f.timed ? fmt("ranked: fair, to the enemy A %.1f s / B %.1f s, to the middle A %.1f s / B %.1f s", f.aFoe, f.bFoe, f.aMid, f.bMid)
+                        : std::string("ranked: as many spawns a side");
 }
 // the map report: nothing outside the playable floor reachable with every move a good player has
 static void checkOutOfBounds(Analysis& a, Check& c) {
@@ -456,7 +425,7 @@ Json checksJson(Analysis& a, const Json& req) {
         for (Check* c : {&f, &p, &s}) if (want(c->id.c_str())) checks.push_back(*c);
     }
     run("cart_sweep", "the payload cart's whole track clear of the map", [&](Check& c) { checkCartSweep(a, c); });
-    run("ranked_mirror", "ranked maps are point-symmetric", [&](Check& c) { checkRankedMirror(a, c); });
+    run("ranked_mirror", "ranked maps are fair (each side as far from the enemy and the middle)", [&](Check& c) { checkRankedMirror(a, c); });
     run("out_of_bounds", "nothing out of bounds is reachable with movement tech", [&](Check& c) { checkOutOfBounds(a, c); });
     Json out = Json::object();
     out.set("map", a.m.name);

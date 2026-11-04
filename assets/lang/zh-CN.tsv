@@ -3,6 +3,7 @@
 "IT" IN YOUR ENEMY COLOUR, THE REST YOUR TEAM'S	"鬼" 显示为敌方颜色, 其余为本队颜色
 "path"	"path"
 # # # TO # # #	# # # 至 # # #
+# / # DEG	# / # 度
 # BOXES  # SPAWNS  # LIGHTS	# 个方块  # 个出生点  # 个灯光
 # CONTROL PROFILES	# 个操作配置
 # CUSTOM MODES	# 个自定义模式
@@ -11,21 +12,25 @@
 # DEG	# 度
 # DUELS	# 场决斗
 # EVERYONE FOR THEMSELVES	# 各自为战
-# HOST A GAME (main menu > HOST GAME)	# 创建游戏 (主菜单 > 创建游戏)
+# FPS	# FPS
+# HOST A GAME (PLAY > HOST)	# 创建游戏 (开始游戏 > 主机)
 # HP	# HP
 # HUD LAYOUT (Settings > HUD LAYOUT)	# HUD 布局 (设置 > HUD 布局)
 # HZ (AVG)	# HZ (平均)
 # IN GAME (ESC as host)	# 游戏中 (房主按 ESC)
-# JOIN A GAME (main menu > JOIN GAME)	# 加入游戏 (主菜单 > 加入游戏)
+# JOIN A GAME (PLAY > SERVERS)	# 加入游戏 (开始游戏 > 服务器)
+# MAP OF YOUR OWN	# 张自制地图
 # MAPS AND MODES	# 地图与模式
+# MAPS OF YOUR OWN	# 张自制地图
 # MB	# MB
+# MORE	还有 # 个
 # MOVEMENT	# 移动
 # MS	# MS
-# PLAY VS BOTS	# 人机对战
+# PLAY VS BOTS (PLAY > BOTS)	# 人机对战 (开始游戏 > 机器人)
 # RANKED	# 排位
 # SETTINGS (main menu, or ESC in game)	# 设置 (主菜单, 或游戏中按 ESC)
 # TEAM MODES	# 团队模式
-# THE MAP EDITOR (main menu > MAP EDITOR)	# 地图编辑器 (主菜单 > 地图编辑器)
+# THE MAP EDITOR (CREATE > OPEN EDITOR)	# 地图编辑器 (创作 > 打开编辑器)
 # THE MAPS AND WHAT THEY'RE BUILT FOR	# 地图及其适用模式
 # US	# US
 # VOTES (ESC > VOTE, then F1 yes / F2 no)	# 投票 (ESC > 投票, 然后 F1 赞成 / F2 反对)
@@ -51,6 +56,8 @@
 #% of ticks over # ms late	#% 的 tick 延迟超过 # ms
 #-# OF # - WHEEL TO SCROLL	#-# / 共 # - 滚轮滚动
 #-# OF # - WHEEL TO SCROLL - RIGHT-CLICK: FAVORITE	#-# / 共 # - 滚轮滚动 - 右键: 收藏
+#/# PLAYERS	#/# 名玩家
+#/# · # MS	#/# · # MS
 #:# LEFT	剩余 #:#
 #MS	#MS
 #X# # HZ	#X# # HZ
@@ -61,7 +68,7 @@
 ' (names as CONTROLS shows them: R, F5, MOUSE 4, WHEEL UP)	' (名称同操作设置中的显示: R, F5, MOUSE 4, WHEEL UP)
 ' - try: list	' - 试试: list
 ' has to wait until it's over	' 须等到结束
-(# MS)	(# MS)
+(# US)	(# US)
 (# glyphs) in # ms	(# glyphs) in # ms
 (BROWSER VIDEOS, ELECTRON APPS WAIT)	(浏览器视频、ELECTRON 应用会等待)
 (BY DEFAULT ONLY THE SCOPES)	(默认仅瞄准镜)
@@ -71,6 +78,7 @@
 (FINISH)	(终点)
 (HIDDEN: STREAMER MODE)	(已隐藏: 主播模式)
 (HS)	(爆头)
+(INSTALLED)	(INSTALLED)
 (IT AFFECTS GAMEPLAY)	(影响游戏玩法)
 (LEAVE)	(离开)
 (MISSING)	(缺失)
@@ -80,19 +88,23 @@
 (REFUSED 0X#)	(被拒绝 0X#)
 (TEAM MODES NEED A + B SPAWNS)	(团队模式需要 A + B 出生点)
 (TEAM)	(队伍)
+(UNTIL A HOLE IS BLOWN IN A WALL)	(直到墙上被炸出洞)
 (already in use?)	(已被占用?)
 (and copied it) - rename it there	(并已复制) - 请在那里重命名
 (edited)	(已编辑)
 (exclusive: no format the device takes)	(独占: 设备不支持任何格式)
 (exclusive: the device is busy)	(独占: 设备忙)
 (first: takes the loss)	(先离开者: 判负)
+(is the game running?)	(游戏正在运行吗？)
 (its CONTROLS action too, if it has one)	(以及其操作设置动作, 如有)
 (legacy)	(旧版)
 (lowered)	(已降低)
 (own goal)	(乌龙球)
+(pinned)	(pinned)
 (playing the built-in brain)	(使用内置 AI)
 (score #-#)	(比分 #-#)
 (team):	(队伍):
+(unknown)	(未知)
 (vote ranked off first)	(请先投票关闭排位)
 (winner stays)	(胜者留场)
 + (BIGGER)	+ (更大)
@@ -117,21 +129,28 @@
 - WHEEL TO SCROLL	- 滚轮滚动
 - beats	- 胜过
 - best of 3 between the last two	- 最后两人三局两胜
+- installed:	- installed:
 - it may not work	- 可能无法正常运行
 - it moves and stretches as one	- 整体移动和拉伸
 - level with	- 持平
 - map	- 地图
 - match started	- 比赛开始
 - not played: the server plays	- 不参与: 由服务器进行
+- pick a version and press INSTALL	- pick a version and press INSTALL
+- pick a version to change	- pick a version to change
 - playing mode logic	- 运行模式逻辑
 - plays the next match	- 参加下一场比赛
 - rock paper scissors decides it	- 由石头剪刀布决定
+- see below	- see below
 - short of	- 差
+- the download may have been tampered with	- the download may have been tampered with
 - their place is kept for	- 其位置保留
 -INF DB	-INF DB
 -Wcast-function-type	-Wcast-function-type
 -Y (under)	-Y (下方)
+-fsSL	-fsSL
 0.1% LOW	0.1% 低帧
+00,000,000 NS	00,000,000 NS
 1 HP	1 HP
 1 HP KNIVES	1 HP 飞刀
 1 SETTING	1 项设置
@@ -140,26 +159,50 @@
 10-BIT: AT THE NEXT START, WHERE SUPPORTED	10 位: 下次启动时生效 (如支持)
 10-BIT: ON (A 10-BIT WINDOW)	10 位: 开 (10 位窗口)
 12 H CLOCK	12 小时制
-144 FPS	144 FPS
+12 M UP, OUT OF A HYPER FROM 20 M/S	以 20 M/S 的 HYPER 升高 12 M
+16 M UP, OUT OF A HYPER FROM 20 M/S	以 20 M/S 的 HYPER 升高 16 M
+16 M/S ALONG THE FLOOR	沿地面 16 M/S
 1V1 - rounds on one ruleset (vanilla, laser vampire, instagib...). First to 5. Ranked 1v1 rates you on its own ladder.	1V1 - 在同一规则下进行多回合 (原版、激光吸血、一击必杀...)。先赢 5 回合者胜。排位 1v1 有独立天梯评分。
-240 FPS	240 FPS
+2 BALL	2 BALL
+2 BOUNCES	反弹 2 次
+2 HYPERS	HYPER 2 次
+2 SUPERS	SUPER 2 次
 2:00  -  1ST OF 6	2:00  -  6 局中第 1 局
 2D: THE VIEW STAYS STILL, YOUR MOUSE MOVES THE CROSSHAIR	2D: 视角固定, 鼠标移动准星
+3 TIMES: THE GRAPH; 4 TIMES: THE GAME'S PART ONLY	3 次: 图表; 4 次: 仅游戏部分
+30 M UP, OUT OF A HYPER FROM 20 M/S	以 20 M/S 的 HYPER 升高 30 M
+30 SECOND DRILLS: CLICKING, TRACKING, SWITCHING	30 秒练习: 点击、跟枪、切换目标
 30 SECONDS LEFT	剩余 30 秒
 32-bit float	32 位浮点
 3D FLYING	3D 飞行
+3D STATIC	3D 静态
 3D STATIC: YOU CAN'T MOVE - LOOK AND SHOOT	3D 静止: 无法移动 - 只能瞄准射击
 3D VAMP	3D 吸血
+5 M UP THE RAMP	冲上斜坡 5 M
 5 MORE MINUTES	再加 5 分钟
-60 FPS	60 FPS
+A BURST OF 24 M/S THE WAY YOU MOVE. TWO CHARGES, EACH BACK IN 1.2 S.	朝移动方向冲出 24 M/S。两次充能，每次 1.2 S 恢复。
+A DASH GOES THE WAY YOU MOVE, NOT THE WAY YOU LOOK.	冲刺朝移动方向，而不是视线方向。
 A DASH PRESSED THIS SOON BEFORE IT'S READY	冲刺就绪前多早按下仍生效
 A DROPPED CONNECTION TRIES AGAIN (3 TIMES)	断线后自动重试 (3 次)
+A HYPER ABOVE 36 M/S CAPS YOU DOWN: 35 IS THE TOP	超过 36 M/S 时 HYPER 会限速: 35 就是顶
+A MOMENT LATER, AIM STRAIGHT DOWN AND FIRE	片刻后瞄准正下方开火
 A NEW CODE FROM /link RELINKS IT - unlink REMOVES IT	用 /link 获取新代码可重新绑定 - unlink 可解除
+A NEW DIAGONAL EVERY 0.3 S	每 0.3 秒一条新对角线
+A NEW DIAGONAL EVERY 0.3 S, 10 HP	每 0.3 秒一条新对角线, 10 HP
+A NEW VERSION INSTALLS WHEN THE LAUNCHER NEXT STARTS.	新版本会在启动器下次启动时安装。
 A PLAYER JOINED VIA	一名玩家加入, 通过
+A ROCKET JUMP STRAIGHT UP	笔直向上的火箭跳
 A SERVER	一台服务器
+A SUPER	一次 SUPER
+A SUPER FOR SPEED	先用 SUPER 加速
+A SUPER, AND KEEP HOPPING	先 SUPER，然后继续连跳
+A SUPER, THEN A HYPER STRAIGHT DOWN AS YOU LAND: THE SUPER'S SPEED GOES UP, ABOUT 14 M.	先 SUPER，落地时朝正下方 HYPER: SUPER 的速度转为向上，约 14 M。
+A SUPER, THEN A ROCKET STRAIGHT DOWN: ABOUT 33 M/S, PAST THE DASH'S 32 M/S CAP.	先 SUPER，再朝正下方发射火箭: 约 33 M/S，超过冲刺 32 M/S 的上限。
+A SUPER, THEN AIM STRAIGHT DOWN	先 SUPER，再瞄准正下方
 A VARIABLE FONT IS DRAWN AT ITS DEFAULT WEIGHT	可变字体按默认字重绘制
 A private game with bots at your chosen level (beginner, intermediate, advanced, expert), on any mode and map.	与所选难度 (新手、中级、高级、专家) 的机器人进行私人游戏, 可选任意模式和地图。
 A thrown knife or syringe is gone for 4 s (greyed out in the weapon list, with its timer).	投出的飞刀或针筒 4 秒内不可用 (在武器列表中变灰并显示计时)。
+AA / SHADOWS	AA / 阴影
 ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/	ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/
 ABILITIES	技能
 ABOVE NORMAL	高于正常
@@ -170,6 +213,9 @@ ACCENT COLOR	强调色
 ACCESSIBILITY	辅助功能
 ACCURACY	命中率
 ACE	ACE
+ACROSS THE WALL, 10 HP	整面墙上, 10 HP
+ACROSS THE WALL, SIDE TO SIDE	整面墙上, 左右移动
+AD STRAFING	AD 侧移加速
 ADAPTIVE	自适应
 ADD (AT THE SCREEN CENTER)	添加 (屏幕中心)
 ADD BOT	添加机器人
@@ -177,13 +223,43 @@ ADD WIDGET	添加组件
 ADD: boxes (base / accent / wallbang: bullets go through wallbangs for half damage), spawns, lights, payload path points, bomb sites, the hill, race checkpoints, and LADDERS (one object: stretch it and the rungs follow).	添加: 方块 (基础 / 强调 / 穿透墙: 子弹可穿过穿透墙, 伤害减半)、出生点、灯光、运载路径点、炸弹点、山头、竞速检查点, 以及梯子 (单个物体: 拉伸后横档随之变化)。
 ADDRESS	地址
 ADDRESS (IP:PORT)	地址 (IP:端口)
+ADLXInitialize	ADLXInitialize
+ADLXInitializeWithIncompatibleDriver	ADLXInitializeWithIncompatibleDriver
+ADLXTerminate	ADLXTerminate
+ADRENALIN > GAMING > GRAPHICS: ENHANCED SYNC OFF	ADRENALIN > 游戏 > 显卡: ENHANCED SYNC 关
+ADRENALIN > GAMING > GRAPHICS: FRAME RATE TARGET CONTROL OFF	ADRENALIN > 游戏 > 显卡: FRAME RATE TARGET CONTROL 关
+ADRENALIN > GAMING > GRAPHICS: RADEON ANTI-LAG ON	ADRENALIN > 游戏 > 显卡: RADEON ANTI-LAG 开
+ADRENALIN > GAMING > GRAPHICS: RADEON BOOST OFF	ADRENALIN > 游戏 > 显卡: RADEON BOOST 关
+ADRENALIN > GAMING > GRAPHICS: RADEON CHILL OFF	ADRENALIN > 游戏 > 显卡: RADEON CHILL 关
+ADRENALIN > GAMING > GRAPHICS: WAIT FOR VERTICAL REFRESH: OFF, UNLESS APPLICATION SPECIFIES	ADRENALIN > 游戏 > 显卡: 等待垂直刷新: 关 (除非应用程序指定)
+ADRENALIN: ANTI-LAG ON; CHILL, BOOST, ENHANCED SYNC, WAIT FOR VERTICAL REFRESH OFF	ADRENALIN: ANTI-LAG 开; CHILL, BOOST, ENHANCED SYNC, 等待垂直刷新 关
 ADVANCED	高级
+ADVANCED  >	高级  >
 ADVANCED > BOT BRAIN: what your bots play: the built-in brain, or a .qbrain file from the bots folder in your data folder. A file that doesn't compile shows its error line and the bots play the built-in brain. Never in ranked.	高级 > 机器人 AI: 机器人的玩法: 内置 AI, 或数据文件夹中 bots 文件夹里的 .qbrain 文件. 无法编译的文件会显示出错行, 机器人改用内置 AI. 排位中从不使用.
 AGAIN (R)	重来 (R)
 AHEAD	领先
+AIM 15 DEGREES DOWN: EVERY LANDING IS A HYPER	向下瞄 15 度: 每次落地都是 HYPER
+AIM A LITTLE DOWN	稍微向下瞄准
+AIM A LITTLE DOWN THE WHOLE WAY	全程稍微向下瞄准
+AIM AT THE FLOOR A FEW METRES AHEAD (15 DEGREES DOWN IS ENOUGH)	瞄准前方几米的地面 (向下 15 度就够)
+AIM JUST UNDER LEVEL, AT THE FLOOR FAR AHEAD	瞄准略低于水平、远处的地面
+AIM STRAIGHT AHEAD	瞄准正前方
+AIM STRAIGHT DOWN	瞄准正下方
+AIM STRAIGHT DOWN AND FIRE A STICKY	瞄准正下方并发射粘弹
+AIM STRAIGHT DOWN AND FIRE THREE STICKIES	瞄准正下方发射三颗粘弹
+AIM STRAIGHT DOWN WHILE YOU FLY	飞行时瞄准正下方
 AIM TRAINER	瞄准训练
+AIM UP AT THE CEILING, A FEW METRES AHEAD	瞄准前方几米处的天花板
+AIM UP, OVER THE EDGE OF THE LEDGE	向上瞄准，越过平台边缘
+AIM: A LITTLE DOWN	瞄准: 稍微向下
+AIM: AT THE PARTNER	瞄准: PARTNER
+AIM: AT THE PILLAR	瞄准: 柱子
+AIM: LEVEL	瞄准: 水平
+AIM: STRAIGHT DOWN	瞄准: 正下方
+AIM: UP	瞄准: 向上
 AIR	空中
 AIR ACCELERATION	空中加速
+AIR BALL	AIR BALL
 AIR CONTROL	空中控制
 AIR DRIFT (UNDER RUN SPEED)	空中漂移 (低于跑速时)
 AIR ROCKET	空中火箭
@@ -191,7 +267,10 @@ AIR STRAFE CAP	空中侧移上限
 ALL	全部
 ALL MODES	全部模式
 ALL OFF	全部关闭
+ALL SCENARIOS >	全部场景 >
+ALL SERVERS	全部服务器
 ALL SETTINGS	全部设置
+ALONG A 3 X 3 GRID'S LINES	沿着 3 X 3 网格的线
 ALT	ALT
 ALT FIRE	辅助开火
 ALT-FIRE TOGGLE IN RANKED	排位中辅助开火切换
@@ -202,6 +281,14 @@ ALT-FIRE: TOGGLE	辅助开火: 切换
 ALT-TABBED OR MINIMIZED: LESS POWER AND HEAT	切出或最小化时: 降低功耗与发热
 ALWAYS LIT	常亮
 ALWAYS ON TOP	窗口置顶
+AMD	AMD
+AMD DRIVER SETTINGS COULDN'T BE READ	无法读取 AMD 驱动设置
+AMD ENHANCED SYNC IS ON	AMD ENHANCED SYNC 已开启
+AMD FRAME RATE TARGET CONTROL CAPS YOUR FRAME RATE	AMD FRAME RATE TARGET CONTROL 限制了帧率
+AMD RADEON ANTI-LAG IS OFF	AMD RADEON ANTI-LAG 已关闭
+AMD RADEON BOOST LOWERS THE RESOLUTION IN MOTION	AMD RADEON BOOST 在移动时降低分辨率
+AMD RADEON CHILL CAPS YOUR FRAME RATE	AMD RADEON CHILL 限制了帧率
+AMD WAIT FOR VERTICAL REFRESH IS ALWAYS ON	AMD 等待垂直刷新始终开启
 ANNA	ANNA
 ANNOUNCER	播报员
 ANNOUNCER CALLS	播报语音
@@ -217,6 +304,7 @@ ANTI-ALIASING: MSAA 4X (N/A HERE)	抗锯齿: MSAA 4X (此处不可用)
 ANTI-ALIASING: MSAA 8X	抗锯齿: MSAA 8X
 ANTI-ALIASING: OFF	抗锯齿: 关
 ANTI-ALIASING: SMOOTH (CHEAP)	抗锯齿: 平滑 (低开销)
+ANYWHERE AROUND YOU, 12-24 M AWAY	你周围任意位置, 12-24 M 远
 APEX LEGENDS	APEX LEGENDS
 APPLY IN:	应用于:
 ARC COLOR	弧线颜色
@@ -225,12 +313,16 @@ ARC TIME	弧线时长
 ARM	启动
 ARROW (NUDGE)	方向键 (微调)
 ARROWS / PGUP / PGDN: MOVE BY GRID (ALONG YOUR VIEW)	方向键 / PGUP / PGDN: 按网格移动 (沿视角)
+AS THE PILLAR COMES UP BESIDE YOU, HOOK IT	柱子来到身旁时勾住它
+AS THEY ARRIVE, SHOTGUN OR KNIFE THEM. YOUR DASH DOESN'T BREAK IT: THE PULL FOLLOWS YOU	对方飞到时用霰弹枪或刀。你自己冲刺不会断开: 拉力会跟着你
+AS THEY'RE DRAWN, NOT AT THE SWAP	画完即送出, 不等 SWAP
 AS THICK	同等粗细
 ASIDE: A FRAME LESS LAG IN A WINDOW	另: 窗口模式下少一帧延迟
 ASK "SURE?" FIRST: CLICK AGAIN	先询问 "确定?": 再次点击
 ASSUMED	假定
 AT # # #	位于 # # #
 AT CAMERA	在镜头处
+AT SPEED, HOOK A PILLAR BESIDE YOU: THE HOOK TURNS YOU ROUND IT AND YOU KEEP YOUR SPEED.	高速时勾住身旁的柱子: 钩索带你绕柱转向，速度不减。
 ATTACK + RACE	进攻 + 竞速
 ATTACK - PLANT THE BOMB	进攻 - 安放炸弹
 ATTACK: CARRY THE BOMB TO A SITE AND PLANT IT	进攻: 将炸弹带到炸弹点并安放
@@ -241,6 +333,8 @@ AUDIO LATENCY: NORMAL	音频延迟: 正常
 AUDIO LATENCY: SAFE	音频延迟: 安全
 AUDIO OUTPUT	音频输出
 AUTO	自动
+AUTO (# US)	自动 (# US)
+AUTO LEARNS IT; MORE: FEWER GPU BUBBLES, MORE LAG	自动: 运行中调整; 更多: GPU 空泡更少, 延迟更高
 AUTO PORT FORWARD	自动端口转发
 AUTO RECONNECT	自动重连
 AUTO RECORD	自动录制
@@ -254,10 +348,13 @@ AUTO-HIDE HEALTH	自动隐藏生命值
 AUTO-HIDE WEAPON LIST	自动隐藏武器列表
 AUTO-HOP	自动连跳
 AUTO-HOP OFF: HELD JUMP JUMPS ONCE	自动连跳关: 按住跳跃只跳一次
+AUTO-START GAME	自动启动游戏
+AUTO-START: PLAYS ONCE UP TO DATE. AT NEXT LAUNCH:	自动启动：更新完成后开始游戏。下次启动时：
 AUTO: YOUR SYSTEM'S LANGUAGE	自动: 系统语言
 AVERAGE	平均
 AVERAGE, LAST	平均, 最近
 AVG #  1% LOW #  0.1% LOW #	平均 #  1% 低帧 #  0.1% 低帧 #
+AVG # US	平均 # US
 AVG FPS	平均 FPS
 AVG FRAME	平均帧时间
 AVX2	AVX2
@@ -285,6 +382,11 @@ BALANCE BOTS	平衡机器人
 BALANCE BOTS evens out uneven teams with bots. MODE > RANKED runs rated 1v1 on the ranked maps (no bots). SERVER LOG keeps a log of the match.	平衡机器人 用机器人补齐人数不均的队伍. 模式 > 排位 在排位地图上进行计分 1v1 (无机器人). 服务器日志 记录比赛日志.
 BALL	球赛
 BALL - SHOOT, BLAST OR RUN THE BALL INTO THE ENEMY GOAL - MOST GOALS WINS	球赛 - 射击、轰击或带球进入敌方球门 - 进球最多者胜
+BALLS ANYWHERE IN A 24 M ROOM	24 M 房间内任意位置的球
+BALLS ANYWHERE ON A WIDE WALL	宽墙上任意位置的球
+BALLS DRIFTING IN THE ROOM, 10 HP	在房间里漂浮的球, 10 HP
+BALLS DRIFTING SIDE TO SIDE, 10 HP	左右漂移的球, 10 HP
+BALLS ON THE WALL, BACK AT ONCE	墙上的球, 立刻重现
 BANDIT	强盗
 BAR	条
 BAR CAPTIONS	条标题
@@ -313,6 +415,7 @@ BENCHMARK: no demo ({})	基准测试: 无录像 ({})
 BENCHMARK: {}	基准测试: {}
 BENCHMARKS	基准测试
 BEST	最佳
+BEST #	最佳 #
 BEST OF 3 - FIRST TO 2 WINS THE MATCH	三局两胜 - 先赢 2 局者胜
 BEST POSSIBLE (SEGMENTS)	理论最佳 (分段)
 BEST RUN	最佳成绩
@@ -366,20 +469,33 @@ BOTS: EXPERT	机器人: 专家
 BOTS: HARD	机器人: 困难
 BOTS: MEDIUM	机器人: 中等
 BOTS: OFF (RANKED)	机器人: 关 (排位)
+BOUNCING ROUND A 24 M CIRCLE	沿 24 M 圆周弹跳
+BOUNCING ROUND A 24 M CIRCLE, 20 HP	沿 24 M 圆周弹跳, 20 HP
+BOUNCING ROUND THE WALL	在墙上弹跳
+BOUNCY BALL	BOUNCY BALL
+BOUNCY BALLS	BOUNCY BALLS
 BOX	方块
 BOX OPACITY	方块不透明度
 BOXES, STRETCHED AS ONE - UNGROUP TO EDIT THEM	方块整体拉伸 - 取消编组以编辑
+BRACKET OF 1V1S - RULESETS >	1V1 淘汰赛 - 规则 >
+BREAK FREE WITH A DASH	用冲刺挣脱
 BREAKABLE	可破坏
 BRICK	砖块
 BRIGHTNESS	亮度
+BRIGHTNESS: THEIR OWN LIGHT, 1 = FULL COLOUR IN ANY SHADE;	亮度: 自身光照，1 = 任何阴影下都是完整颜色;
 BRITISH	英式
 BRUNO	BRUNO
 BUBBLE	气泡
+BUBBLE LAUNCH	泡泡升空
+BUILD YOUR OWN MAPS	打造你自己的地图
 BUILDINGS	建筑
 BUILT FOR	适用模式
 BUILT FOR sets the mode the map is made for; the MODES grid sets what it's offered for. PLAYABLE AS shows what it has the pieces for (team modes need A and B spawns).	"适用模式" 设定地图为哪种模式而做; 模式网格设定它在哪些模式中提供。"可玩模式" 显示它具备哪些模式所需的元素 (团队模式需要 A 和 B 出生点)。
 BUILT FOR:	适用模式:
 BUILT FOR: ANY	适用模式: 任意
+BUNNY HOP WITH ONE STRAFE KEY AT A TIME, TURNING WITH IT: SPEED WITH NO DASH.	每次按一个侧移键连跳，并朝该方向转动: 不用冲刺也能加速。
+BURSTS UP TO 24 M/S ON A 180 WALL	在 180 墙上最高 24 M/S 的冲刺
+BURSTS UP TO 24 M/S ON THE WALL	在墙上最高 24 M/S 的冲刺
 BY NAME	按名称
 BY PING	按 PING
 BY PLAYERS	按玩家数
@@ -402,10 +518,14 @@ CAPTIONS: THE ANNOUNCER AS TEXT TOO	字幕: 同时以文字显示播报
 CAPTURE	占领
 CAPTURE THE HILL	占领山头
 CART	运载车
+CEILING HANG	悬挂天花板
 CHAMPION	冠军
 CHANGE ANYTHING AFTER (IT STAYS)	之后可随意修改 (会保留)
 CHANGE MAP / MODE	更换地图 / 模式
 CHANGE MAP / MODE (pick the mode, then the map), FORCE START, RELOAD MAP, EDIT MODE (everyone edits the map together).	更换地图 / 模式 (先选模式, 再选地图)、强制开始、重新加载地图、编辑模式 (所有人一起编辑地图)。
+CHANGELOG	更新日志
+CHANNEL: PRODUCTION	频道：正式版
+CHANNEL: TESTING	频道：测试版
 CHANNELS	声道
 CHANNELS: MONO	声道: 单声道
 CHANNELS: STEREO	声道: 立体声
@@ -419,11 +539,17 @@ CHAT ON	聊天开
 CHAT OPACITY	聊天不透明度
 CHAT SECONDS	聊天显示秒数
 CHECK AGAIN	再次检查
+CHECK FILES	检查文件
+CHECKING...	检查中...
 CHECKPOINT	检查点
 CHECKPT	检查点
+CHOOSE	选择
 CHOOSE -	选择 -
 CHOOSE A MAP FOR	选择地图用于
 CHOOSE A MODE	选择模式
+CHOOSE THE GAMEMODE	选择游戏模式
+CHOOSE THE MAP	选择地图
+CHOOSE THE MODIFIERS	选择修改器
 CHOOSING...	选择中...
 CLASSIC	经典
 CLEAN SURFACES	干净表面
@@ -439,6 +565,7 @@ CLICK ON SOMETHING TO SELECT IT	点击物体以选中
 CLICK TO CONFIRM	点击确认
 CLICK anything to select it. New things go where the crosshair (the middle of the view) points.	点击任意物体选中。新物体放在准星 (视野中心) 所指处。
 CLICK: SELECT (AGAIN: THE ONE BEHIND, SHIFT: ADD MORE, THEN GROUP)	点击: 选择 (再点: 后方物体, SHIFT: 多选, 然后编组)
+CLICKING	点击
 CLIP BOX COLOR	碰撞盒颜色
 CLOCK	时钟
 CLOSE	关闭
@@ -477,6 +604,7 @@ COLUMN: PING	列: PING
 COLUMN: TOTAL K / D	列: 总 K / D
 COMBINE	合并
 COMET	COMET
+COMMUNITY	社区
 COMPASS	指南针
 COMPASS + RADAR	指南针 + 雷达
 COMPETITIVE: NO FOG OR SHADOWS, FEWER EFFECTS;	竞技: 无雾无阴影, 特效更少;
@@ -500,6 +628,7 @@ CONSOLE KEY: HOME	控制台按键: HOME
 CONSOLE KEY: INSERT	控制台按键: INSERT
 CONTESTED	争夺中
 CONTRAST	对比度
+CONTROL PANEL > POWER OPTIONS: HIGH PERFORMANCE	控制面板 > 电源选项: 高性能
 CONTROL SCRIPTS ARE OFF IN RANKED	排位中禁用操作脚本
 CONTROLS	操作
 CONTROLS 2	操作 2
@@ -529,11 +658,15 @@ CP	CP
 CPU	CPU
 CPU ABOVE NORMAL	CPU 高于正常
 CPU HIGH	CPU 高
+CPU LATCH	CPU LATCH
+CPU LATE LATCH	CPU 延迟读取
 CPU NORMAL	CPU 正常
 CPU OTHER	CPU 其他
 CPU PRIORITY	CPU 优先级
 CPU PRIORITY: ABOVE NORMAL	CPU 优先级: 高于正常
 CPU PRIORITY: HIGH	CPU 优先级: 高
+CRAZY BALL	CRAZY BALL
+CREATE	创作
 CROSSBOW	弩
 CROSSBOW, STICKY AND RIFLE	弩、粘弹和步枪
 CROSSBOWS ONLY	仅限弩
@@ -542,6 +675,7 @@ CROSSHAIR CODE COPIED	准星代码已复制
 CROSSHAIR COLOR	准星颜色
 CROSSHAIR PASTED	准星已粘贴
 CROSSHAIR, TOWARD WHERE THEY CAME FROM	准星处, 指向来源方向
+CROSSING GUARD	CROSSING GUARD
 CROUCH	蹲下
 CROUCH SPEED	蹲伏速度
 CROWN	王冠
@@ -597,6 +731,8 @@ DAMAGE NUMBER SIZE	伤害数字大小
 DAMAGE NUMBERS	伤害数字
 DASH	冲刺
 DASH + GRAPPLE	冲刺 + 钩索
+DASH AND JUMP TOGETHER	同时冲刺和跳跃
+DASH ANY WAY: THE PULL LETS GO	向任意方向冲刺: 拉扯就会松开
 DASH BUFFER	冲刺缓冲
 DASH BUFFER: 0.05 S	冲刺缓冲: 0.05 秒
 DASH BUFFER: 0.1 S	冲刺缓冲: 0.1 秒
@@ -605,14 +741,28 @@ DASH BUFFER: OFF	冲刺缓冲: 关
 DASH CAPTION	冲刺标题
 DASH CHARGES	冲刺次数
 DASH COOLDOWN	冲刺冷却
+DASH DOWN INTO THE FLOOR WHILE YOU JUMP: YOUR SPEED + 5 M/S, UP AND AHEAD.	跳跃时向下冲刺撞向地面: 速度 + 5 M/S，向上并向前。
+DASH DOWN INTO THE FLOOR WITHOUT A JUMP: YOU SLIDE AS ON ICE AND KEEP YOUR SPEED.	不跳跃，向下冲刺撞向地面: 像在冰上一样滑行并保持速度。
 DASH EXIT SPEED (MAX)	冲刺结束速度 (最大)
 DASH EXIT SPEED (MIN)	冲刺结束速度 (最小)
+DASH HEAD ON INTO A WALL: YOU BOUNCE BACK OFF IT AT 16 M/S.	正面冲刺撞墙: 以 16 M/S 反弹回来。
+DASH IN THE AIR TO CROSS THE LAVA	在空中冲刺越过熔岩
+DASH INTO A STEEP SLOPE: THE DASH CARRIES ON UP ITS FACE. WALKING, IT IS A WALL.	朝陡坡冲刺: 冲刺会沿坡面冲上去。走路的话它就是墙。
+DASH INTO IT	朝它冲刺
+DASH INTO IT FROM A FEW METRES AWAY	离它几米时冲刺撞上去
 DASH JUMP WINDOW	冲刺跳窗口
+DASH JUST BEFORE YOU LAND, AND DON'T JUMP	落地前一刻冲刺，不要跳
+DASH LEFT	向左冲刺
+DASH LEFT AND DASH RIGHT	向左和向右各冲刺一次
 DASH LENGTH	冲刺距离
+DASH OUT OF A GRAPPLE	冲刺脱离钩索
+DASH RIGHT	向右冲刺
+DASH SLIDE	冲刺滑行
 DASH SPEED	冲刺速度
 DASH SPEED KEPT	冲刺速度保留
 DASH VERTICAL	冲刺垂直
 DASH WALL BOUNCE ANGLE	冲刺撞墙反弹角度
+DASH, AND JUMP A MOMENT LATER	冲刺，片刻后跳跃
 DASHING BLADES	冲刺刀刃
 DATA FOLDER	数据文件夹
 DATE FORMAT	日期格式
@@ -643,11 +793,12 @@ DEMO - ESC TO STOP	录像 - ESC 停止
 DEMO RATE	录像频率
 DEMO RATE: 62.5 HZ	录像频率: 62.5 HZ
 DEMO RATE: FULL	录像频率: 完整
-DEMO SAVED - MAIN MENU > DEMOS	录像已保存 - 主菜单 > 录像
+DEMO SAVED - CREATE > DEMOS	录像已保存 - 创作 > 录像
 DEMOS	录像
 DEPTH	深度
 DESC	降序
 DEVICES	设备
+DEVICES  >	设备  >
 DIFFICULTY	难度
 DIFFICULTY: ADVANCED	难度: 高级
 DIFFICULTY: BEGINNER	难度: 新手
@@ -670,6 +821,9 @@ DISPLAY: WINDOWED	显示: 窗口化
 DISTANCE	距离
 DMG	伤害
 DMITRI	DMITRI
+DON'T DASH NOW: A DASH ABOVE 32 M/S CAPS YOU DOWN (A HYPER ABOVE 36)	现在别冲刺: 超过 32 M/S 时冲刺会把你限速 (HYPER 超过 36 时)
+DON'T HOLD IT WHILE YOU STRAFE	侧移时不要按住
+DON'T HOLD IT, OR THE DASH GOES FORWARD TOO	不要按住，否则冲刺也会向前
 DON'T SAVE	不保存
 DONE	完成
 DOT	点
@@ -706,7 +860,6 @@ DYNAMIC RANGE: NIGHT	动态范围: 夜间
 DYNAMIC RANGE: NORMAL	动态范围: 正常
 Dash into a wall head-on (under 45 degrees) and you bounce off it at 16 m/s (it leaves you 1 dash).	正面冲刺撞墙 (小于 45 度) 会以 16 m/s 弹开 (剩余 1 次冲刺).
 Dash jump: jump while dashing along the floor to keep the dash's full speed through the jump (it leaves you both dashes).	冲刺跳: 贴地冲刺时跳跃, 跳起后保持冲刺全速 (两次冲刺都保留)。
-Decl: no padding (its words are hashed)	Decl: no padding (its words are hashed)
 Display: window mode, vsync, low latency mode, frame cap, player shadows, brightness, anti-aliasing and interpolation. Lower latency settings cost smoothness: the notes under them say how.	显示: 窗口模式、垂直同步、低延迟模式、帧率上限、玩家阴影、亮度、抗锯齿和插值。低延迟设置会牺牲流畅度: 下方说明会解释。
 Drag the squares on a selected box's faces to resize it; drag the arrows to move it. The keyboard works too: ARROWS / PGUP / PGDN move it by the grid, SHIFT + ARROWS grow a side, CTRL + ARROWS shrink it.	拖动选中方块表面的方块可调整大小; 拖动箭头可移动。也可用键盘: 方向键 / PGUP / PGDN 按网格移动, SHIFT + 方向键扩展一侧, CTRL + 方向键缩小。
 E - use (plant / defuse the bomb).   1-9, 0 - weapons.   MOUSE WHEEL - next / previous weapon.	E - 使用 (安放 / 拆除炸弹)。   1-9, 0 - 武器。   鼠标滚轮 - 下一把 / 上一把武器。
@@ -714,6 +867,10 @@ E-GIRL	E-GIRL
 EACH INPUT SENT IN THIS MANY PACKETS	每个输入分成这么多个包发送
 EACH OF THE ANNOUNCER'S LINES ON OR OFF	单独开关播报员的每条语音
 EACH SLIDER SHOWS THE VALUE IN THIS MODE (STANDARD x MULTIPLIER)	每个滑块显示此模式下的数值 (标准 x 倍数)
+EARLY DEPTH	提前深度
+EARLY DEPTH TEST	提前深度测试
+EARLY FLUSH	提前提交
+EASY	简单
 EASY BOTS	简单机器人
 EDGE ARROWS	边缘箭头
 EDIT	编辑
@@ -761,7 +918,9 @@ ERROR ON LINE	错误位于行
 ESC	ESC
 ESC (CLEAR SEARCH)	ESC (清除搜索)
 ESC TO CANCEL	ESC 取消
+ESC: LESSONS	ESC: 课程
 ESC: PAUSE / SETTINGS   R: RESTART	ESC: 暂停 / 设置   R: 重来
+EVERY LANDING HYPERS AGAIN AS SOON AS A DASH CHARGE IS BACK	冲刺充能一恢复，每次落地都会再次 HYPER
 EVERY SETTING IS BACK TO ITS DEFAULT	所有设置已恢复默认
 EVERY WEAPON, ALL MOVEMENT - NO GIMMICKS	所有武器, 全部移动 - 无花招
 EVERYONE THROWS - THE LOSING SHAPE IS OUT	所有人出拳 - 输的手势出局
@@ -792,14 +951,16 @@ EXPORT CSV	导出 CSV
 EXPORT GROUP	导出分组
 EXPORT PNG	导出 PNG
 EZRA	EZRA
-Each dash leaves you 1 m/s faster than you went in (at least 11, at most 32 m/s).	每次冲刺结束时比进入时快 1 m/s (最低 11, 最高 32 m/s).
+Each dash leaves you faster than you went in: on the floor by 1 m/s, in the air by about a third of what you are below 32 m/s (from 10 m/s you leave at 17.7). At least 11, at most 32 m/s: a dash above 32 slows you to 32.	每次冲刺出来都比进去时快: 地面上快 1 m/s，空中快距 32 m/s 差值的约三分之一 (从 10 m/s 冲刺出来是 17.7)。最低 11，最高 32 m/s: 超过 32 时冲刺会降到 32。
 Each map is built for one mode, plus free for all and any others it lists. You can still start any map in any mode: the menus warn when it isn't built for it (it may be missing spawns or objectives).	每张地图为一种模式打造, 外加自由混战及其列出的其他模式。你仍可在任意模式下启动任意地图: 若不适配, 菜单会提示 (可能缺少出生点或目标)。
 F3 - performance overlay (average, 1% and 0.1% low FPS, input latency).   F12 - screenshot.   ESC - menu, votes, settings.	F3 - 性能面板 (平均、1% 和 0.1% 低帧 FPS, 输入延迟)。   F12 - 截图。   ESC - 菜单、投票、设置。
 F3 COLORBLIND COLORS	F3 色盲配色
+FACE IT (WITHIN 45 DEGREES)	面向墙壁 (45 度以内)
 FACING (Q E)	朝向 (Q E)
 FADE DISTANCE	淡出距离
 FADE LENGTH	淡出长度
 FAIRNESS: DEFAULT MODEL, HUD, CONTROLS, 10 MS INTERP	公平性: 默认模型、HUD、操作, 10 MS 插值
+FALL BOUNCE	落地弹跳
 FAR SCENERY	远景
 FAST FLY	快速飞行
 FASTER MOVES TURN FURTHER (AT MOST X4)	移动越快转得越多 (最多 X4)
@@ -817,12 +978,17 @@ FILE NAME	文件名
 FILE: NAME / TITLE	文件: 名称 / 标题
 FILL THE UNEVEN TEAMS WITH BOTS?	用机器人补齐人数不均的队伍?
 FINAL	决赛
+FIND A SERVER	寻找服务器
 FIND CLIP BOXES	查找碰撞盒
 FIND INVISIBLE WALLS:	查找隐形墙:
 FINISH	终点
 FINISHED	已完成
 FIRE	开火
+FIRE A ROCKET AND HOOK IT AS IT LEAVES: IT CARRIES YOU ALONG.	发射火箭并在它飞出时用钩索勾住: 它会带着你飞。
+FIRE AFTER A DASH, NEVER JUST BEFORE ONE: A DASH ERASES A BLAST'S PUSH	冲刺之后再开火，别在冲刺前一刻: 冲刺会抹掉爆炸的推力
+FIRE AND GRAPPLE TOGETHER	同时开火和钩索
 FIRE RATE	射速
+FIRE THE MOMENT THE DASH GOES, NEVER BEFORE: A DASH ERASES A BLAST'S PUSH	冲刺出手的瞬间开火，绝不提前: 冲刺会抹掉爆炸的推力
 FIRES THE MOMENT IT IS	就绪瞬间开火
 FIRST TO #	先达到 #
 FIX GAPS	修复缝隙
@@ -833,6 +999,7 @@ FIXED TEAMS: SPECTATING AND DEMOS SHOW	固定队伍: 观战和录像中显示
 FLAT LIGHTING	平面光照
 FLAT MAP	平面地图
 FLAT MAP, NO LIGHTING	平面地图, 无光照
+FLUSH	FLUSH
 FLYING, ONE KEY: MOVE UP HELD UP, LET GO DOWN	飞行, 单键: 按住上升, 松开下降
 FOG	雾
 FOLDER	文件夹
@@ -859,16 +1026,23 @@ FOV: HORIZONTAL	FOV: 水平
 FOV: HORIZONTAL AT 4:3	FOV: 4:3 水平
 FOV: VERTICAL	FOV: 垂直
 FPS	FPS
+FPS AND 1% LOWS	FPS 与 1% 低帧
 FPS LIMIT	FPS 上限
+FPS LIMIT: WAKES THIS EARLY, THEN WAITS EXACTLY TO THE	FPS 上限: 提前这么多唤醒, 然后精确等到
 FPS MIN (1S)	FPS 最低 (1 秒)
+FRAME CAP OFFSET	帧率上限提前量
 FRAME CAP WAIT	帧率上限等待
-FRAME TIME (MS) OVER THE RUN	运行期间帧时间 (MS)
+FRAME TIME OVER THE RUN	运行期间帧时间
+FRAME'S START: EVEN FRAMES; AUTO 5% OF THE FRAME	帧开始: 帧时间均匀; 自动为一帧的 5%
 FRAMES	帧
 FREE FOR ALL	自由混战
 FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next kill wins).	自由混战 - 时间结束时击杀最多者胜 (平局进入加时: 下一个击杀者胜)。
+FRENZY	FRENZY
 FRIENDS JOIN WITH YOUR PUBLIC IP (STREAMER MODE)	好友通过你的公网 IP 加入 (主播模式)
 FRIENDS JOIN WITH YOUR PUBLIC IP:	好友通过你的公网 IP 加入:
 FROM	来自
+FROM 11.7 M UP OR MORE THE HOP IS THE BIGGEST, 15.7 M/S	从 11.7 M 以上落下，弹跳最大: 15.7 M/S
+FROM STANDING OR A SLOW RISE ONLY: RISING FAST, THE BUBBLES CAN'T CATCH YOU	只能站着或缓慢上升时: 上升太快，泡泡追不上你
 FROM: APEX LEGENDS	来自: APEX LEGENDS
 FROM: CALL OF DUTY	来自: CALL OF DUTY
 FROM: CS2 / CS:GO	来自: CS2 / CS:GO
@@ -893,7 +1067,10 @@ FULLSCREEN SIZE: DESKTOP	全屏分辨率: 桌面
 FULLSCREEN: OFF KEEPS IT ON SCREEN	全屏: 关闭时保持在屏幕上
 G-SYNC / FREESYNC	G-SYNC / FREESYNC
 GAME	游戏
+GAME FILE(S) MISSING OR CHANGED	GAME FILE(S) MISSING OR CHANGED
 GAME FONTS: YOUR OWN COPY OF THE REAL FONT IF FOUND	游戏字体: 若找到则使用你本机的原版字体
+GAME LATENCY ~	游戏延迟 ~
+GAME LATENCY ~{} NS  (MOUSE REPORT IN TO GPU DONE; F3: NEXT VIEW)	游戏延迟 ~{} NS  (从鼠标报告到 GPU 完成; F3: 下一视图)
 GAME {} NS + MOUSE POLLING {} NS (# HZ) + DISPLAY {} NS (# HZ)	游戏 {} NS + 鼠标轮询 {} NS (# HZ) + 显示 {} NS (# HZ)
 GAMEMODE	游戏模式
 GAMEPLAY	游戏玩法
@@ -904,21 +1081,31 @@ GAMEPLAY 5	游戏玩法 5
 GAMMA	GAMMA
 GAP	间隙
 GATE	大门
+GEFORCE	GEFORCE
 GENERAL	常规
 GENERAL + INTERFACE	常规 + 界面
+GET 40 M UP	升高 40 M
+GET 55 M UP	升到 55 M
+GET 7 M UP	升高 7 M
 GET IT WITH /link - THE CODE IS PUBLIC	用 /link 获取 - 代码是公开的
+GHOST	GHOST
+GHOST'S KEYS	幽灵的按键
 GIANT SNIPERS	巨人狙击
 GIBS	碎尸
 GL	GL
+GL {} / {}	GL {} / {}
 GLASS CANNONS	玻璃大炮
 GLOW	发光
 GLOW STRENGTH	发光强度
 GO	GO
 GO!	GO!
+GOAL	目标
 GODLIKE	超神
 GPU	GPU
 GPU + CPU GO TO THE GAME FIRST WHILE FOCUSED	聚焦时 GPU + CPU 优先分配给游戏
 GPU HUD	GPU HUD
+GPU LATCH	GPU LATCH
+GPU LATE LATCH	GPU 延迟读取
 GPU MAX CLOCKS	GPU 最高频率
 GPU MAX CLOCKS: NOT CHANGED IN THE UI TEST	GPU 最高频率: UI 测试中不更改
 GPU MAX CLOCKS: WINDOWS ONLY	GPU 最高频率: 仅限 WINDOWS
@@ -926,6 +1113,7 @@ GPU PRIORITY	GPU 优先级
 GPU SCHED: N/A	GPU 调度: 不可用
 GPU SCHED: ON	GPU 调度: 开
 GPU SCHED: TURN ON	GPU 调度: 开启
+GPU SCHED: WINDOWS' HARDWARE GPU SCHEDULING;	GPU 调度: WINDOWS 硬件 GPU 调度;
 GPU SCHEDULING	GPU 调度
 GPU SCHEDULING ON: RESTART YOUR PC FOR IT TO TAKE EFFECT	GPU 调度已开启: 重启电脑后生效
 GPU SCHEDULING: NOT CHANGED (THE ADMIN PROMPT WAS DECLINED)	GPU 调度: 未更改 (已拒绝管理员提示)
@@ -940,6 +1128,7 @@ GPU world pass	GPU world pass
 GRADE FROM LOW COLOR	从低值颜色渐变
 GRAPPLE	钩索
 GRAPPLE + HAND	钩索 + 手
+GRAPPLE A PLAYER	钩住玩家
 GRAPPLE COOLDOWN	钩索冷却
 GRAPPLE GRAVITY	钩索重力
 GRAPPLE MODEL	钩索模型
@@ -947,13 +1136,19 @@ GRAPPLE MOVEMENT ONLY	仅钩索移动
 GRAPPLE PULL	钩索拉力
 GRAPPLE RANGE	钩索射程
 GRAPPLE RELEASE DISTANCE	钩索释放距离
+GRAPPLE TO 24 M/S, THEN A ROCKET AND A HYPER STRAIGHT DOWN: YOU FLY, CHEAP AND FAST.	用钩索加速到 24 M/S，再朝正下方火箭加 HYPER: 轻松快速地飞起来。
 GRAPPLE TOP SPEED	钩索最高速度
+GRAPPLE WALK TO 24 M/S, LET GO, THEN HYPER EVERY LANDING: 29, 34, 35 M/S IN ABOUT 1.3 S.	钩索行走到 24 M/S，松开，然后每次落地 HYPER: 约 1.3 S 内 29、34、35 M/S。
+GRAPPLE WALK UP TO 24 M/S	钩索拖行到 24 M/S
+GRAPPLE WALKING	钩索拖行
+GRAPPLE WALKING AT 24 M/S, FIRE A ROCKET STRAIGHT DOWN WHILE STILL HOOKED: ABOUT 40 M/S ALONG.	以 24 M/S 钩索行走时，不松钩朝正下方发射火箭: 向前约 40 M/S。
 GRAPPLE: HOLD	钩索: 按住
 GRAPPLE: TOGGLE	钩索: 切换
 GRAVITY	重力
 GREEN	绿色
 GREEN / MAGENTA	绿 / 品红
 GREENHOUSE - ranked vanilla 1v1.   DOJO - ranked laser vampire 1v1.   SPIRE - ranked instagib free for all (5 minutes).   ORBIT - 1v1, duel.	GREENHOUSE - 排位原版 1v1。   DOJO - 排位激光吸血 1v1。   SPIRE - 排位一击必杀自由混战 (5 分钟)。   ORBIT - 1v1, 决斗。
+GRID	GRID
 GRID: # M (CUSTOM)	网格: # 米 (自定义)
 GRID: 1 M	网格: 1 米
 GRID: 1/2 M	网格: 1/2 米
@@ -975,7 +1170,7 @@ GUN: TEAM	枪械: 队伍
 GUNFIRE	枪声
 GUS	GUS
 Game::frame	Game::frame
-Game::testHeld_ holds a bit per action	Game::testHeld_ holds a bit per action
+GetSystemCpuSetInformation	GetSystemCpuSetInformation
 HALFTIME - SIDES SWITCHED	半场 - 交换攻守
 HALFTIME - SIDES SWITCHED: YOU ATTACK NOW	半场 - 交换攻守: 你现在进攻
 HALFTIME - SIDES SWITCHED: YOU DEFEND NOW	半场 - 交换攻守: 你现在防守
@@ -983,10 +1178,14 @@ HANA	HANA
 HAND	手
 HAND: LEFT	手: 左
 HAND: RIGHT	手: 右
+HANG FOR 1.5 S	悬挂 1.5 S
+HARD	困难
 HARD BOTS	困难机器人
 HARD TO TELL APART WITH	难以区分, 搭配
+HARDWARE GPU SCHEDULING IS OFF	硬件 GPU 调度已关闭
 HAS NO BINDS	没有绑定
 HAS NO WIDGETS	没有组件
+HEAD ON: THE DASH RUNS ON UP THE FACE AT ITS FULL 24 M/S	正对着: 冲刺以完整的 24 M/S 冲上坡面
 HEADSHOT	爆头
 HEADSHOT HIT	爆头命中
 HEADSHOTS STAY RED, BIG HITS GOLD	爆头保持红色, 重击为金色
@@ -1041,32 +1240,52 @@ HITSOUND: MOUTH	命中音效: 嘴巴
 HITSOUND: MY SOUND PACK	命中音效: 我的音效包
 HITSOUND: RETRO	命中音效: 复古
 HITSOUNDS	命中音效
+HOLD ALL THREE	三个都按住
+HOLD BOTH	两个都按住
+HOLD BOTH AS YOU COME DOWN	下落时两键一起按住
+HOLD BOTH AS YOU COME DOWN: THE DASH GOES AS SOON AS IT IS BACK	下落时两键一起按住: 冲刺一恢复就会发出
 HOLD FIRE	按住开火
+HOLD IT	按住
+HOLD IT TO HOP ON AND KEEP THE SPEED	按住继续连跳，保持速度
+HOLD IT. IT PULLS YOU TO THE WALL AND UP	按住。它会把你拉到墙边再往上
+HOLD IT. YOU HOP AGAIN EVERY TIME YOU LAND	按住。每次落地都会再跳
+HOLD JUMP AS YOU LAND FROM A BIG FALL: YOU HOP UP AT 15.7 M/S AND GET A DASH CHARGE BACK.	从高处落地时按住跳跃: 以 15.7 M/S 弹起，并返还一次冲刺。
 HOLDING THE HILL	正在占据山头
 HOME	HOME
 HOOK	钩子
+HOOK BOOST	钩索加速
 HOOK CAPTION	钩子标题
+HOOK THE CEILING A LITTLE AHEAD OF YOU AND HOLD: YOU HANG UNDER IT AND SWING.	勾住前方不远处的天花板并按住: 你会吊在下面摆荡。
+HOOK THE FLOOR FAR AHEAD: IT DRAGS YOU ALONG WITH NO FRICTION, UP TO 24 M/S.	把钩索勾在远处地面: 它无摩擦地拖着你走，最高 24 M/S。
+HOOK THE PARTNER	钩住 PARTNER
+HOOK-START CHAIN	钩索起步连跳
 HOOKED	已钩住
+HOOKING SOMETHING YOURSELF BREAKS FREE TOO	自己钩住别的东西也能挣脱
+HOP 15 M/S UP OFF A LANDING	落地弹起 15 M/S
 HOST	主机
 HOST EDIT SESSION	主持编辑会话
 HOST EDIT SESSION: friends join and build with you; everyone's camera shows in the view.	主持编辑会话: 好友加入与你一起建造; 视野中会显示每个人的镜头。
-HOST GAME	创建游戏
 HOSTING	主持中
 HOSTING ON UDP PORT	主持于 UDP 端口
+HOW	做法
 HOW OTHER PLAYERS' MOVES ARE SMOOTHED	其他玩家动作的平滑方式
 HP	HP
+HTTP	HTTP
 HUD	HUD
 HUD & SETTINGS	HUD 与设置
 HUD 2	HUD 2
 HUD > VERBOSE INFO TURNS THE BLOCK ON	HUD > 详细信息 开启此区块
+HUD BEFORE WORLD	先画 HUD
 HUD COLORS	HUD 颜色
 HUD DRAW	HUD 绘制
 HUD EDIT ELEMENT	HUD 编辑元素
 HUD ELEMENT	HUD 元素
+HUD FIRST	HUD FIRST
 HUD SIZE	HUD 大小
 HUD.CFG LINE	HUD.CFG 行
 HURT	受伤
 HYPER	HYPER
+HYPER AGAIN EVERY TIME YOU LAND: EACH ONE ADDS 5 M/S, UP TO 36.	每次落地再 HYPER 一次: 每次加 5 M/S，最高 36。
 HZ	HZ
 HZ  LOSS	HZ  丢失
 HZ (NOT ON THIS MONITOR)	HZ (此显示器不支持)
@@ -1103,6 +1322,7 @@ IN (TEAMS GO UNEVEN)	加入 (队伍人数不均)
 IN A TIME TRIAL OR A RACE	在计时赛或竞速中
 IN GAME, ESC SHOWS IF THE PORT CAN BE REACHED	游戏中按 ESC 可查看端口是否可达
 IN MY PALETTE	在我的调色板中
+IN THE AIR, HOLD ONLY THIS AND TURN THE MOUSE RIGHT, SMOOTHLY	空中只按这个键，并平滑地把鼠标向右转
 IN THIS MAP	在此地图中
 INDIA	INDIA
 INDUSTRIAL	工业
@@ -1115,7 +1335,19 @@ INSERT	INSERT
 INSTAGIB	一击必杀
 INSTAGIB CROSSBOWS	一击必杀弩
 INSTAGIB SNIPERS	一击必杀狙击
+INSTALL	INSTALL
+INSTALL {}	安装 {}
 INTEL	INTEL
+INTEL DRIVER SETTINGS COULDN'T BE READ	无法读取 INTEL 驱动设置
+INTEL ENDURANCE GAMING SAVES POWER OVER FRAMES	INTEL ENDURANCE GAMING 以帧率换节能
+INTEL FORCES ITS OWN VSYNC MODE	INTEL 强制使用自己的 VSYNC 模式
+INTEL FRAME RATE LIMITER CAPS YOUR FRAME RATE	INTEL 帧率限制器限制了帧率
+INTEL GRAPHICS SOFTWARE > GRAPHICS: ENDURANCE GAMING OFF	INTEL GRAPHICS SOFTWARE > 显卡: ENDURANCE GAMING 关
+INTEL GRAPHICS SOFTWARE > GRAPHICS: FRAME RATE LIMITER OFF	INTEL GRAPHICS SOFTWARE > 显卡: 帧率限制器 关
+INTEL GRAPHICS SOFTWARE > GRAPHICS: LOW LATENCY ON	INTEL GRAPHICS SOFTWARE > 显卡: 低延迟 开
+INTEL GRAPHICS SOFTWARE > GRAPHICS: VERTICAL SYNC: APPLICATION CHOICE	INTEL GRAPHICS SOFTWARE > 显卡: 垂直同步: 应用程序选择
+INTEL GRAPHICS SOFTWARE: ENDURANCE GAMING OFF, LOW LATENCY ON, VSYNC: APPLICATION CHOICE	INTEL GRAPHICS SOFTWARE: ENDURANCE GAMING 关, 低延迟 开, VSYNC: 应用程序
+INTEL LOW LATENCY IS OFF	INTEL 低延迟已关闭
 INTERFACE	界面
 INTERMEDIATE	中级
 INTERP	插值
@@ -1124,11 +1356,14 @@ INVERT Y	反转 Y 轴
 IOID	IOID
 IRIS	IRIS
 IS A BUILT-IN MAP: IT STAYS AS IT IS. SAVE YOUR EDITS AS YOUR OWN MAP (IN YOUR MAPS FOLDER, UNDER THIS NAME) OR DROP THEM.	是内置地图: 保持原样。把你的修改另存为你自己的地图 (在你的 maps 文件夹中, 使用此名称) 或放弃修改。
+IS BLOCKED	IS BLOCKED
 IS GODLIKE	已经超神
+IS MISSING	IS MISSING
 IS ON A KILLING SPREE	正在大杀特杀
 IS ON A RAMPAGE	正在暴走
 IS UNSTOPPABLE	已经无人能挡
 IT IN MY PALETTE	将其加入我的调色板
+IT IS ALWAYS IN THE MAIN MENU: PRACTICE > TUTORIAL	随时在主菜单: 练习 > 教程
 ITS COLOURS ARE ON THE CROSSHAIR TAB	其颜色在准星标签页中
 ITS STYLE	其样式
 ITS STYLE: CIRCLE	其样式: 圆圈
@@ -1139,6 +1374,7 @@ ITS STYLE: SAME AS ABOVE	其样式: 同上
 ITS STYLE: T	其样式: T
 IVO	IVO
 Input	输入
+JOIN A SERVER, PLAY BOTS OR HOST YOUR OWN	加入服务器、人机对战或自己创建
 JOIN A TEAM FROM THE MENU (ESC)	从菜单 (ESC) 加入队伍
 JOIN GAME	加入游戏
 JOIN TEAM	加入队伍
@@ -1148,10 +1384,20 @@ JOIN THE GAME FROM THE MENU (ESC)	从菜单 (ESC) 加入游戏
 JOINING + PRIVACY	加入 + 隐私
 JOST	JOST
 JUMP	跳跃
+JUMP AND FIRE TOGETHER	同时跳跃和开火
+JUMP AND SET IT OFF TOGETHER	同时跳跃和引爆
+JUMP AND SET THEM ALL OFF TOGETHER	跳起同时全部引爆
+JUMP AT THE EDGE	在边缘起跳
+JUMP THE HURDLES. YOU KEEP YOUR SPEED IN THE AIR	跳过栏杆。空中会保持速度
+JUMP WHILE YOU DASH ALONG THE FLOOR: 24 M/S, UP AND AHEAD.	在地面冲刺时跳跃: 24 M/S，向上并向前。
+JUMP, DASH AND FIRE TOGETHER	同时跳跃、冲刺和开火
 JUNE	JUNE
 KAI	KAI
 KB; OFF: A SERVER'S	KB; 关: 服务器的
 KEEP	保留
+KEEP HOLDING IT ALL THE WAY DOWN	下落全程按住
+KEEP HOLDING IT TO RIDE	一直按住来乘坐
+KEEP LAUNCHER OPEN	保持启动器开启
 KEEP THESE DISPLAY SETTINGS? REVERTING IN	保留这些显示设置? 还原倒计时
 KEEP YOUR EDITS AS A NEW MAP?	将你的修改保存为新地图?
 KEEP: ALL	保留: 全部
@@ -1165,6 +1411,7 @@ KEY 2	按键 2
 KEY 3	按键 3
 KEY OVERLAY	按键显示
 KEY OVERLAY (VERBOSE)	按键显示 (详细)
+KEY TECH	核心技巧
 KEYS	按键
 KICK	踢出
 KICK A PLAYER	踢出玩家
@@ -1200,8 +1447,12 @@ LADDER	梯子
 LADDER CLIMB SPEED	梯子攀爬速度
 LADDER SIDE SPEED	梯子横移速度
 LADDERS (1V1, INSTAGIB FFA) - DEFAULT MODEL, HUD, CONTROLS >	天梯 (1V1, 瞬杀 FFA) - 默认模型, HUD, 操作 >
+LAID OVER THE WORLD AFTER IT	之后叠加在世界之上
 LAND	着陆
+LAND ON THE FAR SIDE OF THE LAVA	落在熔岩对面
 LANGUAGE	语言
+LANGUAGE:	LANGUAGE:
+LANGUAGE: AUTO	语言：自动
 LARGE	大
 LASER	激光
 LASER VAMPIRE	激光吸血
@@ -1210,23 +1461,31 @@ LASER. SCORE: KILLS X 100 X ACCURACY	激光。得分: 击杀 X 100 X 命中率
 LASERS ONLY	仅激光
 LASERS ONLY - DAMAGE YOU DEAL HEALS YOU	仅激光 - 造成的伤害为你回血
 LAST	最后
+LAST PLAYED	最近游玩
 LAST RUN	上次成绩
+LAST RUN #	上次 #
 LAST TEAM STANDING WINS	最后存活的队伍获胜
 LAST WEAPON	上一把武器
 LATE FRAME	迟到帧
 LATE: TEAR	迟到: 撕裂
 LATE: WAIT	迟到: 等待
 LATENCY	延迟
+LATENCY: GPU SCHED: TURN ON (THEN RESTART)	延迟: GPU 调度: 开启 (然后重启)
 LATENT SAFETY	LATENT 安全余量
 LATENT SYNC	LATENT SYNC
 LATENT SYNC: HOLD FOR THE BLANK	LATENT SYNC: 等待消隐
 LATENT SYNC: WAIT FOR THE RASTER	LATENT SYNC: 等待扫描线
+LATEST ({})	最新（{}）
+LAUNCH OPTIONS (PASSED TO THE GAME)	启动参数（传给游戏）
 LAUNCHER ON THE RIGHT	启动器在右侧
-LEADERBOARD	排行榜
+LAY A STICKY BOMB, STAND ON IT, SET IT OFF AS YOU JUMP.	放一颗粘弹，站在上面，跳起时引爆。
 LEADERBOARD: SOON	排行榜: 即将推出
 LEAVE	离开
 LEAVE ALL	全部离开
+LEAVE TUTORIAL	退出教程
 LEFT	左
+LEFT + RIGHT HELD: LAST WINS = SNAP TAP (FLYING UP + DOWN TOO)	同时按住左 + 右: 后按的生效 = SNAP TAP (飞行时上 + 下也是)
+LEFT AND RIGHT, CHANGING SPEED	左右移动, 速度变化
 LEFT ARROW (PREVIOUS PAGE)	左方向键 (上一页)
 LEFT MOUSE - fire.   RIGHT MOUSE - alt-fire (scope, knife throw, rocket lob, bubble stream, syringe throw...).	鼠标左键 - 开火。   鼠标右键 - 辅助开火 (开镜、投掷飞刀、火箭抛射、气泡流、投掷针筒...)。
 LEFT: THE GUN ON THE LEFT, THE GRAPPLE	左: 枪在左手, 钩索
@@ -1234,7 +1493,14 @@ LEGACY MAPS	旧版地图
 LEGACY MAPS (settings > GAMEPLAY) lists the old maps from before 1.19.6 too. They are never ranked.	旧版地图 (设置 > 游戏玩法) 也会列出 1.19.6 之前的旧地图. 它们永远不计排位.
 LENA	LENA
 LENGTH	长度
+LESSON # OF #	第 # 课，共 # 课
+LESSON DONE	课程完成
+LESSONS	课程
 LET	放行
+LET GO 40 TO 80 MS LATER: HELD ON, THE HOOK PULLS YOU BACK	40 到 80 MS 后松开: 一直按住钩索会把你拉回去
+LET GO AS YOU PASS IT: HELD ON, THE HOOK BRAKES YOU (24 TO 15 M/S)	经过时松开: 一直按住钩索会让你减速 (24 降到 15 M/S)
+LET GO BEFORE YOU REACH THE HOOK	到达钩点前松开
+LET GO OF THE GRAPPLE AND HOLD ALL THREE	松开钩索，三个键一起按住
 LG	LG
 LIBREQUAKE 8X8	LIBREQUAKE 8X8
 LIGHT	光照
@@ -1285,22 +1551,24 @@ LOW HEALTH	低血量
 LOW HEALTH BELOW	低血量阈值
 LOW HEALTH COLOR	低血量颜色
 LOW LATENCY	低延迟
+LOW LATENCY {}, TWEAKS: {}	低延迟 {}, 调整: {}
 LOW LATENCY: OFF	低延迟: 关
 LOW LATENCY: ON	低延迟: 开
 LOW LATENCY: ULTRA	低延迟: 超低
 LOW LATENCY: ULTRA STARTS EACH FRAME THIS EARLY;	低延迟: 超低模式下每帧提前这么多开始;
 LOWER RATES: LESS CPU AND UPLOAD	更低频率: 更少 CPU 和上传
 LOWER: SLOWER WHILE SCOPED	更低: 开镜时更慢
+Latch	Latch
 MAGENTA	品红
 MAKE	制作
 MALE	男性
 MAP	地图
-MAP / MODE / MODIFIERS	地图 / 模式 / 修改器
 MAP COLOR	地图颜色
 MAP COLORS	地图颜色
 MAP DOWNLOADS	地图下载
 MAP EDITOR	地图编辑器
 MAP EDITOR *	地图编辑器 *
+MAP POOL (ROTATES EACH MATCH; NONE = THE HOST'S MAP)	地图池 (每场比赛轮换; 无 = 主机的地图)
 MAP YOU DON'T HAVE ENDS THE CONNECTION	没有的地图会断开连接
 MAP:	地图:
 MAP: NONE	地图: 无
@@ -1308,6 +1576,7 @@ MAPS	地图
 MAPS FOLDER	地图文件夹
 MAPS KEPT	地图已保留
 MAPS MARKED "NOT FOR THIS MODE" MAY NOT WORK IN IT	标记为 "不适用此模式" 的地图可能无法正常运行
+MAPS YOU SAVE IN THE EDITOR SHOW HERE	在编辑器中保存的地图会显示在这里
 MARK COLOR	标记颜色
 MARK TIME	标记时长
 MARKER OPACITY	标记不透明度
@@ -1917,9 +2186,12 @@ MATERIAL: WOODEN CRATE	材质: 木箱
 MATERIAL: WROUGHT IRON	材质: 熟铁
 MATERIAL: ZEBRA CROSSING	材质: 斑马线
 MATERIAL: ZINC	材质: 锌
+MAX # US	最大 # US
+MAX (0=AUTO)	最大 (0=自动)
 MAX PING	最大 PING
 MAX PLAYERS	最大玩家数
 MB (OFFICIAL MAPS SHIP BAKED)	MB (官方地图已预烘焙)
+MEDIUM	中等
 MEDIUM BOTS	中等机器人
 MENU (ESC)	菜单 (ESC)
 MENU BACKGROUND	菜单背景
@@ -1931,8 +2203,9 @@ MENUS	菜单
 METER SCALE	速度表比例
 METER TICKS	速度表刻度
 MILO	MILO
+MIN # US	最小 # US
 MIN FPS (WORST FRAME)	最低 FPS (最差帧)
-MINE	地雷
+MINE	我的
 MINIMIZE ON ALT-TAB	切出时最小化
 MIRROR	镜像
 MIRROR X	镜像 X
@@ -1945,6 +2218,7 @@ MODEL	模型
 MODEL OF	模型属于
 MODES	模式
 MODES (CLICK: ALLOW / BLOCK)	模式 (点击: 允许 / 禁止)
+MODES GUIDE	模式指南
 MODES:	模式:
 MODIFIERS	修改器
 MODIFIERS:	修改器:
@@ -1958,12 +2232,17 @@ MOON SHOTGUN	月球霰弹枪
 MOON SHOTGUNS	月球霰弹枪
 MORE	更多
 MORE KEYS	更多按键
-MORE: FEWER GPU BUBBLES, A LITTLE MORE LAG	更多: GPU 空泡更少, 延迟稍高
+MORE WAYS TO PLAY	更多玩法
 MOUSE	鼠标
 MOUSE 1	MOUSE 1
 MOUSE 2	MOUSE 2
 MOUSE 3	MOUSE 3
 MOUSE ACCELERATION	鼠标加速
+MOUSE THREAD	鼠标线程
+MOUSE THREAD: OWN CORE	鼠标线程: 独占核心
+MOUSE THREAD: SHARED	鼠标线程: 共享
+MOUSE TO PHOTON ~	鼠标到光子 ~
+MOUSE TO PHOTON ~{} NS  (# HZ DISPLAY, {}, {})	鼠标到光子 ~{} NS  (# HZ 显示器, {}, {})
 MOUSE TO PHOTON: IN GAME ONLY	鼠标到光子: 仅游戏中
 MOUSE {} # HZ (AVG)	鼠标 {} # HZ (平均)
 MOVE	移动
@@ -1972,6 +2251,7 @@ MOVE DOWN	向下移动
 MOVE TO SPECTATOR	移至观众
 MOVE UP	向上移动
 MOVEMENT	移动
+MOVEMENT TECH	移动技巧
 MS	MS
 MULTI POINT	多点占领
 MULTI POINT - attackers take the points in order (A, B, C...). Only they capture; a defender on the point holds it. Each point taken adds 90 s and moves both teams' spawns forward. Each team attacks once.	多点占领 - 进攻方按顺序占领据点 (A, B, C...)。只有进攻方能占领; 防守方站在据点上即可守住。每占领一个据点加 90 秒, 双方出生点前移。每队各进攻一次。
@@ -1992,11 +2272,14 @@ MY RACE STATS	我的竞速数据
 MY SKY	我的天空
 MY SKY / GLOW: THESE IN PLACE OF EVERY MAP'S;	我的天空 / 发光: 替换所有地图的;
 MY TRACER	我的弹道
+Maps are saved to the maps folder (MAPS FOLDER opens it) as .qmap text files. RESET MAPS puts the built-in maps back.	地图以 .qmap 文本文件保存在 maps 文件夹 (MAPS FOLDER 可打开). RESET MAPS 会恢复内置地图.
 Model	模型
-ModelOverrides holds kMaxModelsPerKind models of a kind	ModelOverrides holds kMaxModelsPerKind models of a kind
 N/A HERE: LATENT SYNC IS WINDOWS ONLY	此处不可用: LATENT SYNC 仅限 WINDOWS
+N/A HERE: LINUX (X11) ONLY	此处不可用: 仅 LINUX (X11)
 N/A HERE: WINDOWS + NVIDIA ONLY	此处不可用: 仅限 WINDOWS + NVIDIA
+N/A: THE DRIVER LACKS GL 4.4 BUFFER STORAGE	N/A: 驱动缺少 GL 4.4 BUFFER STORAGE
 NAME	名字
+NAME CHIP	名字
 NAME COLOR	名字颜色
 NAME COLORS	名字颜色
 NAME TAGS	名字标签
@@ -2011,14 +2294,19 @@ NEUTRAL PAYLOAD	中立运载
 NEUTRAL PAYLOAD - either team pushes the cart toward the other team's end. The team whose side it's on when time runs out wins.	中立运载 - 双方都把运载车推向对方终点。时间结束时运载车位于哪方半场, 哪方获胜。
 NEW	新建
 NEW BEST	新纪录
+NEW HERE? THE TUTORIAL SHOWS EVERY MOVEMENT TECH: A GHOST DOES IT, THEN YOU DO.	新来的? 教程会演示每种移动技巧: 先由幽灵示范，再轮到你。
 NEW LEADER	新领先者
+NEW MAPS AND COPIES OF THE BUILT-IN ONES	新地图和内置地图的副本
 NEW NAME	新名字
 NEW ONES:	新的:
 NEW PERSONAL BEST	新个人最佳
 NEXT	下一个
+NEXT HOP, HOLD ONLY THIS AND TURN LEFT	下一跳只按这个键并向左转
 NEXT PAGE	下一页
 NEXT WEAP	下一把
 NEXT WEAPON	下一把武器
+NEXT:	下一课:
+NEXT: {}	下一课: {}
 NIGHT: QUIET UP, LOUD DOWN; LOW: AS NORMAL	夜间: 小声放大, 大声压低; 低: 同正常
 NIGHT: QUIET UP, LOUD DOWN; SAFE: MORE	夜间: 小声放大, 大声压低; 安全: 更多
 NINJA	忍者
@@ -2029,11 +2317,15 @@ NO FILES IN	没有文件在
 NO FILES IN CONTROLS/ - USE FOLDER	CONTROLS/ 中没有文件 - 使用文件夹
 NO FRAMES MEASURED	未测量到帧
 NO FULLSCREEN OPT.	关闭全屏优化
+NO FULLSCREEN OPT.: TRUE EXCLUSIVE FULLSCREEN (NEXT START)	关闭全屏优化: 真正的独占全屏 (下次启动)
+NO GAME YET	尚无游戏记录
 NO GAMES FOUND	未找到游戏
 NO GAMES MATCH THE FILTERS	没有符合筛选条件的游戏
 NO MAP IS BUILT FOR THIS MODE YET	暂无为此模式打造的地图
 NO MATERIAL NAMED THAT	没有该名称的材质
+NO OFFICIAL SERVER LISTED	未列出官方服务器
 NO RACE MAPS	没有竞速地图
+NO RESPONSE	无响应
 NO RESPONSE - CLICK TO TRY	无响应 - 点击重试
 NO RUNS SAVED YET	尚未保存成绩
 NO RUNS YET - FINISH	尚无成绩 - 完成
@@ -2052,9 +2344,11 @@ NOT BUILT FOR THIS MODE - IT MAY NOT WORK	不适用此模式 - 可能无法正�
 NOT CHANGED IN THE UI TEST	UI 测试中不更改
 NOT FOR THIS MODE	不适用此模式
 NOT FOUND: USING THE PRIMARY	未找到: 使用主显示器
+NOT NOW	以后再说
 NOT PLAYED YET	尚未玩过
 NOT REPORTED - NOT A RANKED MAP FOR THIS LADDER	未上报 - 不是此天梯的排位地图
 NOT USABLE	不可用
+NOTHING FOUND: YOUR DRIVER AND WINDOWS SETTINGS LOOK RIGHT	未发现问题: 驱动和 WINDOWS 设置正常
 NOTHING IN THE GAME RECORDS YET: THIS IS	游戏记录中尚无内容: 这是
 NOTHING MATCHES "	没有匹配 "
 NOTHING SELECTED	未选中任何物体
@@ -2062,6 +2356,7 @@ NOTHING YET (NEEDS SPAWNS)	暂无 (需要出生点)
 NOTICE LINES	通知行数
 NOTICE TIME	通知时长
 NOTICES	通知
+NOW ON CORE #; THE GAME STAYS OFF IT	当前在核心 #; 游戏不使用该核心
 NS	NS
 NS  (MOUSE REPORT IN TO GPU DONE; F3: NEXT VIEW)	NS  (鼠标报告到 GPU 完成; F3: 下一视图)
 NS (# HZ)	NS (# HZ)
@@ -2071,7 +2366,19 @@ NUM	NUM
 NUMBER TIME	数字时长
 NV DXGI PRESENT	NV DXGI PRESENT
 NV THREADED OFF	NV 线程优化关
+NVIDIA	NVIDIA
+NVIDIA CAPS YOUR FRAME RATE (MAX FRAME RATE)	NVIDIA 限制了帧率 (MAX FRAME RATE)
+NVIDIA CONTROL PANEL > MANAGE 3D SETTINGS > LOW LATENCY MODE: ON	NVIDIA 控制面板 > 3D 设置 > 低延迟模式: 开
+NVIDIA CONTROL PANEL > MANAGE 3D SETTINGS > MAX FRAME RATE: OFF	NVIDIA 控制面板 > 3D 设置 > 最大帧速率: 关
+NVIDIA CONTROL PANEL > MANAGE 3D SETTINGS > POWER MANAGEMENT MODE (OR GPU MAX CLOCKS)	NVIDIA 控制面板 > 3D 设置 > 电源管理模式 (或 GPU MAX CLOCKS)
+NVIDIA CONTROL PANEL > MANAGE 3D SETTINGS > TRIPLE BUFFERING: OFF	NVIDIA 控制面板 > 3D 设置 > 三重缓冲: 关
+NVIDIA CONTROL PANEL > MANAGE 3D SETTINGS > VERTICAL SYNC: USE THE 3D APPLICATION SETTING	NVIDIA 控制面板 > 3D 设置 > 垂直同步: 使用 3D 应用程序设置
 NVIDIA DRIVER PROFILE, FROM THE NEXT START:	NVIDIA 驱动配置, 下次启动生效:
+NVIDIA LETS FRAMES QUEUE UP (MAX PRE-RENDERED FRAMES)	NVIDIA 让帧排队 (MAX PRE-RENDERED FRAMES)
+NVIDIA POWER MANAGEMENT ISN'T MAXIMUM PERFORMANCE	NVIDIA 电源管理不是最高性能
+NVIDIA THREADED OPTIMIZATION IS ON	NVIDIA 线程优化已开启
+NVIDIA TRIPLE BUFFERING IS ON	NVIDIA 三重缓冲已开启
+NVIDIA VERTICAL SYNC IS FORCED ON	NVIDIA 强制开启垂直同步
 NW	NW
 Name, mouse sensitivity (or cm/360 with your DPI), field of view, team and enemy colours, volume, hit sounds, the announcer (off / countdown / all calls; male or female voice), player model and sound pack.	名字、鼠标灵敏度 (或结合 DPI 的 cm/360)、视野、队伍和敌人颜色、音量、命中音效、播报员 (关 / 倒计时 / 全部; 男声或女声)、玩家模型和音效包。
 New map	新地图
@@ -2083,10 +2390,13 @@ OBJECTIVES	目标
 OF	/
 OF #	/ #
 OFF	关
+OFF = LOWEST LATENCY, MAY TEAR	关 = 最低延迟, 可能撕裂
 OFF: FROM THE NEXT START	关: 下次启动生效
 OFF: THE BAR IS FULL AT 100 IN EVERY MODE	关: 在所有模式中条在 100 时为满
 OFF: THE VIEW STEPS UP STAIRS AT ONCE	关: 视角上楼梯时立即升高
 OFFICIAL	官方
+OFFICIAL SERVER	官方服务器
+OFFICIAL SERVERS	官方服务器
 OLD MAN	老人
 ON	开
 ON HIT	命中时
@@ -2103,21 +2413,26 @@ ON WINDOWS (ALREADY ITS SHORTEST); SAFE: X2	在 WINDOWS 上 (已是最短); 安�
 ON: AT MOST 1 FRAME QUEUED	开: 最多排队 1 帧
 ON: FROM THE NEXT START	开: 下次启动生效
 ON: USES YOUR TEAM COLOR, NOT THE ONE BELOW	开: 使用你的队伍颜色, 而非下方颜色
+ONCE ABOVE THE EDGE, LET GO OF THE GRAPPLE AND MOVE ONTO THE LEDGE	越过边缘后松开钩索并走上平台
 ONE	一
+ONE BIG BALL, BACK AFTER 1 S	一个大球, 1 秒后重现
 ONE CHAT COLOR	统一聊天颜色
 ONE MINUTE	一分钟
 ONE MINUTE LEFT	剩余一分钟
+ONE TIME LINE; EST = WORKED OUT, NOT MEASURED; MONITOR PROCESSING NOT INCLUDED	一条时间线; EST = 推算, 非实测; 不含显示器处理
 ONLY KILLS I'M IN	仅显示与我相关的击杀
 OPACITY	不透明度
 OPACITY %	不透明度 %
 OPEN	打开
 OPEN DATA FOLDER	打开数据文件夹
+OPEN EDITOR	打开编辑器
 OPEN FOLDER	打开文件夹
 OPEN SCREENSHOTS	打开截图
 OPENS THE UDP PORT ON YOUR ROUTER (UPNP)	在路由器上开放 UDP 端口 (UPNP)
 OPPOSITE KEYS: CANCEL	相反按键: 抵消
 OPPOSITE KEYS: FIRST WINS	相反按键: 先按优先
 OPPOSITE KEYS: LAST WINS	相反按键: 后按优先
+OPTIONS	选项
 OR RESTART: IT'S ASKED FOR AT START	或重启: 启动时会询问
 ORB	光球
 OTHER PLAYERS	其他玩家
@@ -2140,11 +2455,15 @@ OVERTIME - NEXT KILL WINS	加时 - 下一个击杀者胜
 OWN ACCENT	自己的强调色
 OWN ACCENT: NOT THE TEAM COLOR	自己的强调色: 非队伍颜色
 OWN COLOR	自己的颜色
+OWN CORE: RAW INPUT READ AT TOP PRIORITY ON ONE FAST CORE;	独占核心: 在一个快速核心上以最高优先级读取原始输入;
 OWN EFFECTS	自己的特效
 OWN SHADOW	自己的阴影
 OggS	OggS
 OpenGL function missing:	缺少 OpenGL 函数:
 OpenGL function missing: {}	OpenGL function missing: {}
+Or press REPAIR to download the game again, check it and put it back (your settings and files stay).	或者按「修复」重新下载游戏，检查后放回（你的设置和文件会保留）。
+Or press REPAIR to download version	Or press REPAIR to download version
+Or press REPAIR to download version {} again, check it and put it back (your settings and files stay).	或者按「修复」重新下载 {} 版本，检查后放回（你的设置和文件会保留）。
 Output	输出
 PACING WAIT (ULTRA)	节奏等待 (超低)
 PACK	包
@@ -2169,6 +2488,8 @@ PALETTE: THE BOMB'S BLINK AND CHECKPOINTS NOT	调色板: 炸弹闪烁和检查�
 PANEL DARKNESS	面板暗度
 PANEL SEAMS; FLAT: NO BAKED LIGHT OR SHADOW	面板接缝; 平面: 无烘焙光影
 PAPER	布
+PARTNER	PARTNER
+PAST 32 M/S, THROWN BY YOUR ROCKET	被自己的火箭推到 32 M/S 以上
 PASTE CODE	粘贴代码
 PASTE COLORS	粘贴颜色
 PATH PT	路径点
@@ -2183,10 +2504,12 @@ PER WEAPON	按武器
 PERCEPTUAL	感知
 PERF STATS	性能统计
 PERFORMANCE	性能
+PERFORMANCE CHECK	性能检查
 PHYSICS	物理
 PIA	PIA
 PICK A FILE TO IMPORT	选择要导入的文件
 PICK A KEY NO ACTION IS BOUND TO	选择一个未绑定动作的按键
+PICK A SCENARIO	选择一个场景
 PICK IT IN WINDOWS' GRAPHICS SETTINGS	在 WINDOWS 图形设置中选择
 PICK VSYNC: LATENT SYNC (VIDEO + AUDIO) FIRST;	垂直同步优先选: LATENT SYNC (视频 + 音频);
 PICTURE	图片
@@ -2195,10 +2518,14 @@ PING	PING
 PING #	PING #
 PING # MS  LOSS #%	PING # MS  丢包 #%
 PING / LOSS GRAPH AND RATES (APART FROM F3)	PING / 丢包图表与速率 (F3 之外)
+PING: < 100	PING: < 100
+PING: < 150	PING: < 150
+PING: < 50	PING: < 50
 PING: ANY	PING: 任意
 PIRATE	海盗
 PITCH	俯仰
 PLAY	开始游戏
+PLAY A RUN TO SEE YOUR BESTS HERE	完成一次挑战即可在此查看你的最佳成绩
 PLAY IT	播放
 PLAY MODE	游玩模式
 PLAY TIME TRIAL	进行计时赛
@@ -2207,8 +2534,8 @@ PLAYABLE AS:	可玩模式:
 PLAYER	玩家
 PLAYER 2	玩家 2
 PLAYER > MORE SETS THE MENU ACCENT	玩家 > 更多 设置菜单强调色
+PLAYER ANIMATIONS	玩家动画
 PLAYER BASED	玩家类
-PLAYER BRIGHTNESS	玩家亮度
 PLAYER JOINS	玩家加入
 PLAYER MODEL:	玩家模型:
 PLAYER OUTLINE WIDTH	玩家描边宽度
@@ -2221,10 +2548,12 @@ PLAYS	场次
 PLAYS AS	扮演
 PLAYS AS:	扮演:
 PLAYS THE BENCHMARK DEMO (HAMLET, FREE FOR ALL, FULL OF BOTS) AND MEASURES EVERY FRAME	播放基准测试录像 (HAMLET, 自由混战, 满员机器人) 并测量每一帧
+PLUG IT IN: ON BATTERY THE GPU AND CPU CLOCK DOWN	接上电源: 用电池时 GPU 和 CPU 会降频
 POINT	据点
 POINT LOST	据点失守
 POINT TAKEN	已占领据点
 POLLS AT	轮询频率
+POP	POP
 POSITION	位置
 POSITION must be VEC3	POSITION must be VEC3
 POWER	能量
@@ -2243,6 +2572,7 @@ PRESET: LOW	预设: 低
 PRESET: MEDIUM	预设: 中
 PRESETS SET BOTH COLORS BELOW	预设会同时设定下方两种颜色
 PRESS A KEY, MOUSE BUTTON OR SCROLL - ESC CANCELS, DEL CLEARS	按下按键、鼠标键或滚轮 - ESC 取消, DEL 清除
+PRESS IT. THE HOOK LATCHES ON	按下。钩索会勾住
 PRESS...	请按键...
 PREV WEAP	上一把
 PREV WEAPON	上一把武器
@@ -2251,21 +2581,28 @@ PREVIOUS PAGE	上一页
 PREVIOUS:	上一个:
 PRIMARY MONITOR	主显示器
 PRIORITIZE GAME	优先游戏
+PROD	正式
 PROFILE	配置
 PROFILE:	配置:
 PROFILE: MY CONTROLS	配置: 我的操作
 PROFILE: MY HUD	配置: 我的 HUD
 PROFILES	配置
+PROJECTILE SPEED	弹速
 PUBLIC	公开
 PUBLIC lists the server on the internet server list (off: friends join with your IP, shown on the host screen). Games on your network show up for everyone on it.	公开会将服务器列入互联网服务器列表 (关闭: 好友通过你的 IP 加入, 显示在主机界面)。局域网内的游戏对网络内所有人可见。
 PULSE	脉冲
 PUSH THE PAYLOAD	推进运载车
 PUSH THE PAYLOAD TO THE ENEMY END	将运载车推到敌方终点
 PUT .QBRAIN FILES IN THE BOTS FOLDER TO PICK ONE	将 .QBRAIN 文件放入 bots 文件夹即可选择
+PUT YOUR CROSSHAIR ON THE PARTNER AS IT RUNS	在 PARTNER 跑动时把准星对准它
 Pick a server from the list (internet and LAN), or type its address as IP:PORT.	从列表中选择服务器 (互联网和局域网), 或以 IP:端口 格式输入地址。
 Pick an element in the dropdown (health, weapon name, cooldown bars, speed meter, weapon list) and move it, resize it, recolour it or hide it.	在下拉菜单中选择元素 (生命值、武器名称、冷却条、速度表、武器列表), 然后移动、调整大小、改色或隐藏。
 Pick the mode and map, a server name and the max players. The game picks the map built for the mode; any other map works with a warning.	选择模式和地图、服务器名称和最大玩家数。游戏会选择为该模式打造的地图; 其他地图也能用, 但会有提示。
 Player	玩家
+PowerGetActiveScheme	PowerGetActiveScheme
+PowerGetEffectiveOverlayScheme	PowerGetEffectiveOverlayScheme
+Press REPAIR to download version	Press REPAIR to download version
+Press REPAIR to download version {} again and put them back (your settings and files stay).	按「修复」重新下载 {} 版本并放回这些文件（你的设置和文件会保留）。
 Q - grapple: hold to hook what you're aiming at and pull toward it; release to let go.	Q - 钩索: 按住钩住你瞄准的位置并拉向它; 松开即脱离。
 QK1 - QK8 - ranked arenas for all three ladders (vanilla and laser vampire 1v1, instagib free for all), also duel and tourney.	QK1 - QK8 - 三个天梯的排位竞技场 (原版和激光吸血 1v1, 一击必杀自由混战), 也可用于决斗和锦标赛。
 QUAKE	QUAKE
@@ -2300,17 +2637,22 @@ R SHIFT	R SHIFT
 R: ROTATE 90 (SHIFT: ABOUT X, CTRL: ABOUT Z)    F: MIRROR LEFT / RIGHT (SHIFT: FRONT / BACK, CTRL: UPSIDE DOWN)	R: 旋转 90 (SHIFT: 绕 X, CTRL: 绕 Z)    F: 左右镜像 (SHIFT: 前后, CTRL: 上下翻转)
 RACE	竞速
 RACE + FLYING	竞速 + 飞行
-RACE - the course's checkpoints in order. It starts as untimed practice; vote start (F4) to race. TIME TRIAL (main menu, or PLAY TIME TRIAL on the leaderboard) is the ranked race on each race map; the leaderboard's RACE TOTAL adds your best on every one, a map you haven't run counting at its default time.	竞速 - 按顺序通过赛道检查点。开始时为不计时练习; 投票开始 (F4) 即可比赛。计时赛 (主菜单, 或排行榜上的进行计时赛) 是每张竞速地图的排位赛; 排行榜的竞速总分将你在每张地图的最佳成绩相加, 未跑过的地图按默认时间计算。
+RACE - the course's checkpoints in order. It starts as untimed practice; vote start (F4) to race. TIME TRIAL (PRACTICE > TIME TRIAL, or PLAY TIME TRIAL on the leaderboard) is the ranked race on each race map; the leaderboard's RACE TOTAL adds your best on every one, a map you haven't run counting at its default time.	竞速 - 按顺序通过赛道检查点。开始时为不计时练习; 投票开始 (F4) 即可比赛。计时赛 (练习 > 计时赛, 或排行榜上的进行计时赛) 是每张竞速地图的排位赛; 排行榜的竞速总分将你在每张地图的最佳成绩相加, 未跑过的地图按默认时间计算。
 RACE GHOST	竞速幽灵
 RACE MAP	竞速地图
 RACE RESET	竞速重置
 RACE TOTAL	竞速总分
+RACE YOUR BEST LAP	挑战你的最佳圈速
 RADAR	雷达
 RADAR RANGE	雷达范围
 RADAR: TEAMMATES AND OBJECTIVES, NEVER ENEMIES	雷达: 队友和目标, 从不显示敌人
+RADEON	RADEON
+RADEON(TM) GRAPHICS	RADEON(TM) GRAPHICS
 RADIUS	半径
 RAILYARD / DAM / EXPRESS / MONORAIL - neutral payload (Railyard: payload too).   WAR / CONVOY - multi point.	RAILYARD / DAM / EXPRESS / MONORAIL - 中立运载 (Railyard 也可用于运载)。   WAR / CONVOY - 多点占领。
+RAMP DASH	斜坡冲刺
 RAMPAGE	暴走
+RANDOM TURNS ON THE WALL	墙上随机转向
 RANKED	排位
 RANKED - CHOOSE A LADDER	排位 - 选择天梯
 RANKED - NOT RATED	排位 - 不计分
@@ -2331,15 +2673,25 @@ RANKED QUEUES	排位队列
 RANKED VANILLA	排位原版
 RANKED: DEFAULT MODEL, HUD, CONTROLS AND 10 MS INTERP FOR FAIRNESS	排位: 为公平起见使用默认模型、HUD、操作和 10 MS 插值
 RANKED: NO HEALTH BARS	排位: 无生命条
+RANKS	排名
 RATE	速率
 RATING	评分
 RAW INPUT	原始输入
+RAW INPUT, WINDOWS, 4+ CORES ONLY	原始输入、WINDOWS、4 核以上
 RD	RD
+REACH 12 M/S WITH NO DASH OR GRAPPLE	不用冲刺或钩索达到 12 M/S
+REACH 27 M/S	达到 27 M/S
+REACH 34 M/S	达到 34 M/S
+REACH 37 M/S	达到 37 M/S
+REACH THE GLOWING LINE	到达发光线
+REACTOR	REACTOR
 READ INPUT	读取输入
 READY	准备
 REALTIME	实时
 REC	REC
 RECENT	最近
+RECENT MAP	最近的地图
+RECENT MAPS	最近的地图
 RECENT RUNS	最近成绩
 RECHARGING	充能中
 RECONNECT	重新连接
@@ -2366,6 +2718,9 @@ REMEMBER LAST TAB	记住上次标签页
 REMEMBER MY QUEUES	记住我的队列
 RENAME	重命名
 RENDER SCALE	渲染比例
+REPAIR	修复
+REPAIR needs the internet:	REPAIR needs the internet:
+REPAIR needs the internet: {}	修复需要联网：{}
 RESET ALL	全部重置
 RESET ALL KEYS	重置所有按键
 RESET CROSSHAIR	重置准星
@@ -2386,7 +2741,9 @@ RESUME	继续
 RESUME (ESC)	继续 (ESC)
 RETICLE COLOR	准心颜色
 RETICLE WIDTH	准心宽度
+RETRY	重试
 REVERT	还原
+RIDE FOR 0.4 S	乘坐 0.4 S
 RIFF	RIFF
 RIFLE	步枪
 RIFLE ZOOM FOV	步枪开镜 FOV
@@ -2398,6 +2755,7 @@ RIGHT ARROW (NEXT PAGE)	右方向键 (下一页)
 RIGHT MOUSE + MOVE: LOOK    WASD: FLY    SPACE / C: UP / DOWN    SHIFT: FAST    WHEEL: SPEED	鼠标右键 + 移动: 环视    WASD: 飞行    空格 / C: 上 / 下    SHIFT: 加速    滚轮: 速度
 RIGHT-CLICK A SERVER: FAVORITE (LISTED FIRST)	右键服务器: 收藏 (置顶)
 RIGHT-CLICK: RESET	右键: 重置
+RING	RING
 RISING TOWARD	朝向上升
 RISING TOWARD: +X	朝向上升: +X
 RISING TOWARD: +Z	朝向上升: +Z
@@ -2407,9 +2765,13 @@ RMB	RMB
 ROBOT	机器人
 ROCK	石头
 ROCKET	火箭
-ROCKET (splash; rocket jump off the floor for 10#amage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 10 hp, once a second; alt throws it: +30 hp and reset cooldowns for a teammate).	火箭 (溅射; 对地火箭跳造成 10# 伤害)、步枪 (全自动; 辅助开火开镜)、激光 (光束; 辅助开火牵引)、霰弹枪 (辅助: 跳弹)、狙击 (辅助开火开镜)、粘弹 (辅助开火引爆)、弩 (爆头)、气泡 (辅助: 气泡流)、刀 (辅助: 投掷)、针筒 (开火为自己回 10 hp, 每秒一次; 辅助开火投掷: 为队友 +30 hp 并重置冷却)。
+ROCKET (splash; rocket jump off the floor for 10% damage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 5 hp, once a second; alt throws it: +15 hp and reset cooldowns for a teammate).	火箭 (溅射; 对地火箭跳造成 10% 伤害)、步枪 (全自动; 辅助开火开镜)、激光 (光束; 辅助开火牵引)、霰弹枪 (辅助: 跳弹)、狙击 (辅助开火开镜)、粘弹 (辅助开火引爆)、弩 (爆头)、气泡 (辅助: 气泡流)、刀 (辅助: 投掷)、针筒 (开火为自己回 5 hp, 每秒一次; 辅助开火投掷: 为队友 +15 hp 并重置冷却)。
+ROCKET GRAPPLE	火箭钩索
+ROCKET JUMP	火箭跳
 ROCKET JUMPERS	火箭跳跃者
+ROCKET POP	火箭 POP
 ROCKET RIDE	火箭骑乘
+ROCKET SUPER	火箭 SUPER
 ROCKET, LASER AND KNIFE	火箭、激光和刀
 ROCKETS AND STICKIES - NO SELF DAMAGE	火箭和粘弹 - 无自伤
 ROCKETS ONLY	仅火箭
@@ -2435,21 +2797,30 @@ ROUND OVER	回合结束
 ROUND START	回合开始
 ROUND WINS -	回合胜利数 -
 ROUND WON	回合胜利
+ROUND YOU AT ONE HEIGHT, CHANGING SPEED	在同一高度绕着你, 速度变化
 ROUNDS	回合
 ROWS #-# OF # (WHEEL)	第 #-# 行 / 共 # (滚轮)
 ROWS #-# OF # - WHEEL TO SCROLL	第 #-# 行 / 共 # - 滚轮滚动
 RPS BY MOUSE	鼠标石头剪刀布
 RPS BY MOUSE: CLICK A TIEBREAK CARD TO THROW IT	鼠标石头剪刀布: 点击决胜卡牌出拳
+RTX	RTX
 RUBIK	RUBIK
 RULES	规则
+RULESETS >	规则 >
 RUN	跑
 RUN - DON'T BE THE TAGGER WHEN TIME RUNS OUT	逃跑 - 时间结束时别当抓人者
 RUN AGAIN	再跑一次
+RUN AT THE GAP	冲向缺口
+RUN AT THE RAMP	朝斜坡跑去
 RUN BENCHMARK	运行基准测试
+RUN FORWARD	向前跑
 RUN NAME	成绩名称
 RUN SPEED	跑速
+RUN, JUMP THE HURDLES, REACH THE GLOWING LINE.	奔跑、跳过栏杆、到达发光线。
 RUNS	成绩
 Ranked games use the default model, HUD and controls and 10 ms interpolation, so everyone plays the same game.	排位游戏使用默认模型、HUD 和操作以及 10 ms 插值, 让所有人玩同样的游戏。
+Restore	Restore
+Restore {} from that tool's quarantine, and add an exclusion for the quark folder:	从该工具的隔离区恢复 {}，并为 quark 文件夹添加排除项：
 SAFE OK / ERROR	安全 OK / 错误
 SAFE: OK BLUE, ERRORS ORANGE; IT: TAG / HIDE'S	安全: OK 蓝色, 错误橙色; 鬼: 抓人 / 躲猫猫的
 SAME	相同
@@ -2457,6 +2828,7 @@ SAME AS FPS LIMIT	同 FPS 上限
 SAME DPI: THE SAME TURN PER INCH OF MOUSE	相同 DPI: 每英寸鼠标移动转动相同
 SATURATION	饱和度
 SATURATION 0: BLACK AND WHITE	饱和度 0: 黑白
+SATURATION: THEIR COLOUR ONLY, 0 GREY TO 2 VIVID	饱和度: 仅玩家颜色，0 灰色到 2 鲜艳
 SAVE	保存
 SAVE + DONE	保存 + 完成
 SAVE A COPY	保存副本
@@ -2487,6 +2859,7 @@ SCOREBOARD: HOLD	计分板: 按住
 SCOREBOARD: TOGGLE	计分板: 切换
 SCORES	得分
 SCREEN	屏幕
+SCREEN EDGES FLASH WHEN HIT. 0 = OFF	受击时屏幕边缘闪烁. 0 = 关
 SCREENSHOT	截图
 SCREENSHOT FOLDER	截图文件夹
 SCREENSHOT FORMAT	截图格式
@@ -2513,6 +2886,7 @@ SERVER LOG: OFF	服务器日志: 关
 SERVER LOG: SIMPLE	服务器日志: 简单
 SERVER LOG: VERBOSE (125 HZ)	服务器日志: 详细 (125 HZ)
 SERVER NAME	服务器名称
+SERVERS	服务器
 SERVERS (LAN + INTERNET)	服务器 (局域网 + 互联网)
 SETTINGS	设置
 SETTINGS COPIED: PASTE THEM ANYWHERE	设置已复制: 可粘贴到任意处
@@ -2556,6 +2930,7 @@ SHOWN WITH VERBOSE INFO ON. DRAG TO MOVE, CORNER / WHEEL TO SIZE, ARROWS NUDGE, 
 SHOWS INPUT->FRAME LATENCY	显示 INPUT->FRAME 延迟
 SHUFFLE TEAMS	随机分队
 SHUFFLE THE TEAMS (THE MATCH RESTARTS)	随机分队 (比赛重新开始)
+SIDEWAYS DASHES	侧向冲刺
 SIMPLE	简单
 SIMPLE SKY	简单天空
 SITE	炸弹点
@@ -2568,9 +2943,13 @@ SIZE: X2	大小: X2
 SIZING	尺寸
 SIZING: EXACT PIXELS	尺寸: 精确像素
 SIZING: SCALE WITH RESOLUTION	尺寸: 随分辨率缩放
+SIZZLE	腐蚀声
+SKIP	跳过
 SKIP IT	跳过
+SKIP LESSON	跳过本课
 SKIP WARMUP	跳过热身
 SKY	天空
+SLIDE FOR 0.8 S	滑行 0.8 S
 SLOT	栏位
 SLOT 1	栏位 1
 SLOT 2	栏位 2
@@ -2585,6 +2964,7 @@ SNAPS: 125	快照: 125
 SNAPS: 250	快照: 250
 SNAPS: 500	快照: 500
 SNAPS: 62.5	快照: 62.5
+SNAPS: = TICK	快照: = TICK
 SNAPSHOT RATE	快照频率
 SNIPER	狙击枪
 SNIPER SCOPE	狙击镜
@@ -2660,16 +3040,23 @@ STALEMATE - HEALTH DRAINING	僵持 - 生命流失中
 STALEMATE - HEALTH DRAINS IN	僵持 - 生命将在以下时间后流失
 STALEMATE WARNING	僵持警告
 STALLED #S	停滞 #S
+STAND ON THE 10 M LEDGE	站上 10 M 高的平台
+STAND STILL AND AIM STRAIGHT DOWN	站着别动，瞄准正下方
+STAND STILL, AIM STRAIGHT DOWN AND ALT-FIRE THE BUBBLE GUN: 58 M/S UP, ABOUT 73 M, FOR ABOUT 12 HP.	站着瞄准正下方，用泡泡枪辅助开火: 58 M/S 向上，约 73 M，代价约 12 HP。
 STANDARD	标准
 STANDARD RULES	标准规则
 STANDARD: SNIPER	标准: 狙击
 START	开始
+START OVER	重新开始
 START THE MATCH	开始比赛
+START TUTORIAL	开始教程
 STARTING IN #	# 秒后开始
 STAY HIDDEN -	保持隐藏 -
 STDEV	标准差
+STEER ONTO THE LEDGE	调整方向落到平台上
 STEP	步
 STEP HEIGHT	台阶高度
+STEP LEFT, BACK AND RIGHT	向左、后、右移动
 STEPS	台阶
 STEPS, SHOTS, BOOMS... AS WORDS ROUND THE	脚步、射击、爆炸... 以文字环绕
 STEREO WIDTH	立体声宽度
@@ -2679,8 +3066,11 @@ STICKIES ON YOU	你身上的粘弹
 STICKIES ONLY	仅粘弹
 STICKY	粘弹
 STICKY COUNTER	粘弹计数
+STICKY JUMP	粘弹跳
 STICKY ON YOU	粘弹在你身上
+STICKY STACK	粘弹叠加
 STILL HIDDEN	仍未被发现
+STILL HOOKED, AIM STRAIGHT DOWN AND FIRE	不松钩，瞄准正下方开火
 STONE	石头
 STOP DEMO	停止录像
 STOP EDITING AND PLAY THE MAP	停止编辑并游玩地图
@@ -2688,7 +3078,9 @@ STOP HOSTING	停止主持
 STOP RECORDING	停止录制
 STOP THE PAYLOAD	阻止运载车
 STOPPING SPEED	停止速度
+STRAFE	STRAFE
 STRAFE BOOST (AT SPEED)	侧移加速 (高速时)
+STRAIGHT ABOVE YOU IT PULLS YOU IN AND LETS GO: HOOK MORE THAN 1 M TO THE SIDE	正上方会把你拉过去然后松开: 勾在侧面 1 M 以外
 STREAK	连杀
 STREAK CALLOUTS	连杀播报
 STREAK CALLOUTS: ALL	连杀播报: 全部
@@ -2711,6 +3103,7 @@ STYLE: NUMBER	样式: 数字
 STYLE: T	样式: T
 SUBTRACT	减去
 SUPER	SUPER
+SUPER CHAINING	SUPER 连跳
 SUPER DASH	超级冲刺
 SUPER DASH BOOST	超级冲刺加速
 SUPER DASH JUMP	超级冲刺跳
@@ -2722,6 +3115,8 @@ SURFACES	表面
 SW	SW
 SWAP	交换
 SWAP FIRE	交换开火
+SWING TURN	摆荡转向
+SWITCHING	切换
 SYRINGE	针筒
 SYSTEM DEFAULT	系统默认
 SYSTEM LINE COLOR	系统消息颜色
@@ -2730,8 +3125,12 @@ SYSTEM MESSAGES: ALL	系统消息: 全部
 SYSTEM MESSAGES: IMPORTANT	系统消息: 重要
 SYSTEM MESSAGES: OFF	系统消息: 关
 SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)	系统: 系统箭头光标 (颜色: 仅限我们的)
+SetDefaultDllDirectories	SetDefaultDllDirectories
+SetProcessInformation	SetProcessInformation
+SetThreadInformation	SetThreadInformation
 Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).	设置 > 操作 可以导出你的绑定并导入他人的 (复制 / 粘贴文本)。
 Start the match, change map / mode, ranked on / off, edit the map together, bots on. A majority of the human players decides.	开始比赛, 更换地图 / 模式, 开关排位, 一起编辑地图, 开启机器人. 由多数真人玩家决定.
+Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping. Above ~13 m/s A / D turns you faster than W alone.	侧跳 (strafe-jumping) 可以加速: 按住侧移键, 同向转动鼠标, 并持续跳跃. 超过 ~13 m/s 时 A / D 比只按 W 转得更快.
 Style, length, thickness, gap, colour and outline, with a live preview.	样式、长度、粗细、间隙、颜色和描边, 带实时预览。
 Super dash: look down and dash into the floor while holding jump: you leave 5 m/s faster than you went into the dash (at least 11, at most 36 m/s), with a hop that gets higher the further down you look (it leaves you 1 dash).	超级冲刺: 按住跳跃时向下看并冲刺撞向地面: 离开时比进入冲刺时快 5 m/s (最低 11, 最高 36 m/s), 并带有一次小跳, 看得越低跳得越高 (剩余 1 次冲刺).
 Switching weapons with fire held doesn't fire the new one: let go and press again.	按住开火时切换武器不会让新武器开火: 松开再按。
@@ -2798,7 +3197,9 @@ TEST MODE	测试模式
 TEST MODE:	测试模式:
 TEST MODE: THE MAP'S	测试模式: 地图的
 TEST plays the map right away; BAKE LIGHT previews the real lighting.	测试 会立即游玩地图; 烘焙光照 可预览真实光照。
+TESTING	测试
 TESTING BUILD - RANKED NOT RATED (PLAYED, NEVER COUNTED)	测试版 - 排位不计分 (可玩, 不计入)
+TESTING VERSIONS	测试版本
 TEXT	文本
 TEXT AFTER THE LAST RULE	最后一条规则后的文本
 TEXT ALIGN	文本对齐
@@ -2811,6 +3212,7 @@ TEXT: RIGHT	文本: 右
 TF2 BUILD	TF2 BUILD
 TF2 SECONDARY	TF2 副武器
 TH	TH
+THAT IS EVERY MOVEMENT TECH. THE MODES GUIDE SAYS WHAT EACH GAME MODE IS ABOUT.	这就是全部移动技巧。模式指南会介绍每种游戏模式。
 THE 3D SCENE (THE HUD STAYS AS IT IS);	3D 场景 (HUD 保持不变);
 THE BOMB IS CARRIED AGAIN	炸弹再次被携带
 THE BOMB IS DOWN	炸弹已落地
@@ -2819,25 +3221,39 @@ THE DARK EDGE ROUND ALL TEXT, MENUS TOO	所有文字周围的暗边, 菜单也�
 THE DEFAULT	默认
 THE FONT COCAINE DIESEL USES	COCAINE DIESEL 使用的字体
 THE FONT OF THE MENUS AND THE HUD	菜单和 HUD 的字体
+THE FRAME	帧
+THE GAME RUNS ON YOUR INTEGRATED GPU	游戏在集成 GPU 上运行
 THE GAME'S PART ONLY: NO MOUSE POLLING, NO DISPLAY; ONE TIME LINE	仅游戏部分: 无鼠标轮询, 无显示; 一条时间线
+THE GPU READS YOUR AIM AS IT STARTS DRAWING;	GPU 开始绘制时读取你的瞄准;
+THE GPU SKIPS THE WORLD'S HIDDEN PIXELS	GPU 跳过被遮挡的世界像素
 THE GUN'S KICK ON A SHOT (0: NONE)	射击时的枪械后坐 (0: 无)
 THE HAZE OVER DISTANT WALLS (0: NONE)	远处墙面的雾霭 (0: 无)
+THE HOOK PULLS YOU TO WHERE IT CATCHES. LET GO AND YOU KEEP THE SPEED.	钩索会把你拉向勾住的位置。松开后速度保留。
+THE HYPER LIFTS YOU, THE ROCKET ADDS 20 M/S MORE	HYPER 把你抬起，火箭再加 20 M/S
+THE JUMP MUST COME WHILE THE DASH STILL RUNS (0.12 S)	必须在冲刺持续时跳跃 (0.12 S)
 THE LANGUAGE OF THE MENUS AND THE HUD	菜单和 HUD 的语言
+THE LAUNCH	弹射起飞
 THE MAP ISN'T BUILT FOR THIS MODE: IT MAY NOT WORK	此地图不适用此模式: 可能无法正常运行
 THE MESSAGES UNDER THE SCORE BOX	比分框下方的消息
+THE MOUSE READ AGAIN JUST BEFORE THE WORLD IS DRAWN	绘制世界前再读一次鼠标
 THE OLD MAPS (BEFORE 1.19.6) IN THE MAP LISTS. NEVER RANKED	地图列表中的旧地图 (1.19.6 之前)。永不排位
 THE ORIGINAL PIXEL FONT	原版像素字体
 THE OTHER CONTROL SCRIPTS STAY OFF IN RANKED	其他操作脚本在排位中保持关闭
+THE POP WITH A ROCKET FIRED WITH THE HYPER'S DASH: ABOUT 47 M UP, NO GRAPPLE NEEDED.	在 HYPER 冲刺的同时发射火箭的 POP: 约 47 M 高，无需钩索。
 THE QUEUES YOU'RE IN, JOINED AGAIN NEXT START	你所在的队列, 下次启动时重新加入
 THE SAVED DEVICE IS GONE: THE DEFAULT PLAYS	保存的设备已断开: 使用默认设备
 THE SAVED MICROPHONE IS GONE: THE DEFAULT	保存的麦克风已断开: 使用默认
 THE SAVED MONITOR IS GONE: THE PRIMARY	保存的显示器已断开: 使用主显示器
 THE SCROLL WHEEL PASSES OVER SKIPPED	滚轮跳过已跳过项
+THE SHADOWS AND THE WORLD GO TO THE GPU AS SOON	阴影和世界送往 GPU,
 THE SHARE OF THE MODE'S MAX HEALTH	占模式最大生命值的比例
 THE TASKBAR BUTTON FLASHES	任务栏按钮闪烁
+THE WHOLE STREAM POPS UNDER YOU. HOLD IT: ANOTHER EVERY 1.8 S	整串泡泡在你脚下爆开。按住: 每 1.8 S 再来一次
 THE WINDOW'S SIZE AND PLACE ARE KEPT	保留窗口大小和位置
 THEIRS	他们的
 THEME.CFG LINE	THEME.CFG 行
+THEN	然后
+THEN ALL AT ONCE: LET GO, AIM STRAIGHT DOWN AND...	然后一气呵成: 松开，瞄准正下方，然后...
 THEN REFRESH	然后刷新
 THESE ONLY APPLY TO IT	这些仅对其生效
 THEY DROPPED THE BOMB	他们掉落了炸弹
@@ -2847,11 +3263,15 @@ THICKNESS	粗细
 THIRD PERSON	第三人称
 THIRTY SECONDS	三十秒
 THIS LIFE:	本条命:
+THIS PC IS RUNNING ON BATTERY	此电脑正在使用电池
 THIS RUN	本次
 THREADED OPTIMIZATION OFF	线程优化关
 THREADED OPTIMIZATION OFF; PRESENT VIA DXGI	线程优化关; 通过 DXGI 呈现
 THREADED OPTIMIZATION: WINDOWS ONLY	线程优化: 仅限 WINDOWS
 THREE	三
+THREE HUGE BALLS, AS FAST AS YOU CAN	三个巨大的球, 越快越好
+THREE HUGE BALLS, JUST HOLD FIRE, 10 HP	三个巨大的球, 按住开火即可, 10 HP
+THREE STICKIES AT YOUR FEET, SET OFF AT ONCE AS YOU JUMP: 50 M/S UP (ONE: 22, TWO: 36).	脚下三颗粘弹，起跳时一起引爆: 向上 50 M/S (一颗: 22，两颗: 36)。
 THROW	投掷
 TICK / SNAP	TICK / 快照
 TICK RATE	TICK 频率
@@ -2909,6 +3329,7 @@ TRACERS + TRAILS	弹道 + 尾迹
 TRACERS: CLASSIC	弹道: 经典
 TRACERS: CUSTOM	弹道: 自定义
 TRACERS: TEAM	弹道: 队伍
+TRACKING	跟枪
 TRAIL OPACITY	尾迹不透明度
 TRAILS	尾迹
 TRAILS: FULL	尾迹: 完整
@@ -2917,25 +3338,55 @@ TRAILS: SHORT	尾迹: 短
 TRAILS: THE STREAKS BEHIND ROCKETS, BOLTS,	尾迹: 火箭、弩箭等后方的拖尾,
 TRAINER MENU	训练菜单
 TRIAL MAP	计时赛地图
+TRY IT NOW	现在试试
 TT	TT
+TURN 35 DEGREES AT 20 M/S OR MORE	以 20 M/S 以上转 35 度
+TURNING LEFT	正在向左转
+TURNING RIGHT	正在向右转
+TUTORIAL	教程
+TUTORIAL -	教程 -
+TUTORIAL - {}	教程 - {}
+TUTORIAL COMPLETE	教程完成
 TWO	二
+TWO BALLS ON 9 SPOTS, 20 HP	9 个位置上的两个球, 20 HP
+TWO TINY BALLS	两个小球
+TWO TINY DRIFTING BALLS, 10 HP	两个漂浮的小球, 10 HP
 TYPE TO SEARCH: A NAME OR WHAT IT DOES (CTRL+F)	输入搜索: 名称或功能 (CTRL+F)
 TYPING	输入中
 TYPING SOUNDS	打字音效
+The game can still start, but may miss maps or sounds. If you didn't change them yourself, an antivirus may have removed them.	游戏仍可启动，但可能缺少地图或声音。如果不是你自己改动的，可能是杀毒软件删除了它们。
+The game can't start:	The game can't start:
+The game can't start: {} can't be opened (Windows refuses to run a file its antivirus flagged).	游戏无法启动：{} 无法打开（Windows 拒绝运行被杀毒软件标记的文件）。
+The game can't start: {} is gone from the game folder.	游戏无法启动：{} 已从游戏文件夹中消失。
+The game can't start: {} isn't the file that was installed (something changed or replaced it).	游戏无法启动：{} 不是当初安装的文件（被改动或替换了）。
 The server listens on UDP port 27500 (change it under UDP PORT). Quark asks your router to forward it automatically (UPnP); if friends can't connect, forward that UDP port on your router by hand.	服务器监听 UDP 端口 27500 (可在 UDP 端口 中更改)。QUARK 会请求路由器自动转发 (UPnP); 如果好友无法连接, 请在路由器上手动转发该 UDP 端口。
+The update stopped:	The update stopped:
+The update stopped: {}. Nothing was changed: version {} is still installed and playable.	更新已停止：{}。没有任何改动：{} 版本仍已安装且可以游玩。
+The update stopped: {}. Nothing was installed.	更新已停止：{}。没有安装任何内容。
+Then press RETRY.	然后按「重试」。
+This is almost always an antivirus false positive: quark isn't code-signed, so Windows Defender (or another antivirus) sometimes quarantines a new build. The launcher never deletes game files.	这几乎总是杀毒软件误报：quark 没有代码签名，所以 Windows Defender（或其他杀毒软件）有时会隔离新版本。启动器从不删除游戏文件。
+This is most likely an antivirus or cleanup tool removing it as a false positive (quark isn't code-signed). The launcher never deletes game files.	这很可能是杀毒或清理工具误报并删除了它（quark 没有代码签名）。启动器从不删除游戏文件。
+To get it back: Windows Security > Virus & threat protection > Protection history, open the entry for	To get it back: Windows Security > Virus & threat protection > Protection history, open the entry for
+To get it back: Windows Security > Virus & threat protection > Protection history, open the entry for {}, then Actions > Restore (or Allow on device).	恢复方法：Windows 安全中心 > 病毒和威胁防护 > 保护历史记录，打开 {} 的条目，然后选择 操作 > 还原（或在设备上允许）。
+To stop it happening again: Windows Security > Virus & threat protection > Manage settings > Exclusions > Add an exclusion > Folder:	防止再次发生：Windows 安全中心 > 病毒和威胁防护 > 管理设置 > 排除项 > 添加排除项 > 文件夹：
 UARK	UARK
 UDP	UDP
 UDP PORT	UDP 端口
 UHD	UHD
 UI FONT	界面字体
 ULTRA	超低
+ULTRA (AUTO SAFETY # US)	超低 (自动安全余量 # US)
+ULTRA (SAFETY # US)	超低 (安全余量 # US)
+ULTRA ONLY: THE HUD DRAWN BEFORE THE LATE READ,	仅 ULTRA: 在延迟读取前绘制 HUD,
 ULTRA SAFETY	超低安全余量
+ULTRA: 0 QUEUED + EACH FRAME STARTED LATE	ULTRA: 队列 0 + 每帧延后开始
 ULTRA: 0 QUEUED + LATE INPUT SAMPLING	超低: 0 帧排队 + 延后采样输入
 UNBAKE	取消烘焙
 UNBOUND	未绑定
 UNCHANGED	未更改
 UNDO	撤销
 UNGROUP	取消编组
+UNINSTALL	卸载
 UNKNOWN	未知
 UNKNOWN SELECTOR '	未知选择器 '
 UNLIMITED	无限制
@@ -2943,6 +3394,10 @@ UNPLAYED MAPS COUNT AT THEIR DEFAULT TIME	未跑过的地图按默认时间计�
 UNSTOPPABLE	无人能挡
 UP	上
 UP / DOWN AS A MULTIPLE OF SENSITIVITY	上 / 下 按灵敏度的倍数
+UPDATES	更新
+UPDATES: ASK FIRST	更新：先询问
+UPDATES: AT NEXT LAUNCH	更新：下次启动时
+UPDATES: AUTOMATIC	更新：自动
 UPLOAD CAP (MBIT/S)	上传上限 (MBIT/S)
 USE	使用
 USE #	使用 #
@@ -2963,16 +3418,22 @@ VANILLA	原版
 VEC2	VEC2
 VEC3	VEC3
 VEC4	VEC4
+VEGA	VEGA
 VERBOSE INFO	详细信息
 VERBOSE INFO LINES	详细信息行
 VERDANA BOLD	VERDANA BOLD
 VERSION	版本
+VERSION {}	版本 {}
+VERSION {} (INSTALLED)	版本 {}（已安装）
+VERSION {} WAS NOT INSTALLED	版本 {} 未安装
+VERSIONS	版本
 VERTICAL KEYS	垂直按键
 VERTICAL SENSITIVITY	垂直灵敏度
 VERTICAL: ONE KEY	垂直: 单键
 VERTICAL: TWO KEYS	垂直: 双键
 VIDEO	视频
 VIDEO + AUDIO	视频 + 音频
+VIDEO + AUDIO > MORE: NV THREADED OFF (OR THE NVIDIA CONTROL PANEL)	视频 + 音频 > 更多: NV THREADED 关 (或 NVIDIA 控制面板)
 VIDEO 2	视频 2
 VIDEO 3	视频 3
 VIDEO 4	视频 4
@@ -3020,19 +3481,30 @@ VSYNC: OFF	垂直同步: 关
 VSYNC: ON	垂直同步: 开
 W A S D - move.   SPACE - jump (hold it as you land to bounce: bunny hop).	W A S D - 移动。   空格 - 跳跃 (落地时按住可弹跳: 连跳)。
 WAD2	WAD2
+WAIT FOR THE PARTNER'S HOOK TO CATCH YOU	等 PARTNER 的钩索勾住你
+WAIT FOR THEM TO ARM (0.35 S EACH)	等它们待发 (每颗 0.35 S)
 WAITING FOR THE LATE READ (AVG)	等待延后读取 (平均)
-WAITING FOR THE LATE READ (AVG)  00,000,000 NS	等待延后读取 (平均)  00,000,000 NS
 WAITING FOR THE NEXT READ (AVG)	等待下次读取 (平均)
+WALK TO THE STRIPED WALL	走到条纹墙前
+WALKING	行走
+WALL BALL	WALL BALL
+WALL BOUNCE	撞墙反弹
+WALL WANDER	WALL WANDER
 WALLBANG	穿透墙
 WALLBANG TINT	穿透墙着色
+WANDERING, SWELLING AND SHRINKING	游走, 忽大忽小
 WARMING UP	热身中
 WARMUP -	热身 -
 WARMUP - {} TO VOTE START	热身 - {} 以投票开始
 WARNING BEEP	警告提示音
 WARNING: DON'T TOUCH THIS UNLESS YOU KNOW WHAT YOU'RE DOING	警告: 除非你清楚自己在做什么, 否则不要修改
 WARNINGS	警告
+WAS CHANGED	WAS CHANGED
+WAS NOT INSTALLED	WAS NOT INSTALLED
 WAS ON	曾开启
 WASTELAND	荒原
+WATCH AGAIN	再看一遍
+WATCH THE GHOST	看幽灵示范
 WAVE	挥手
 WEAPON	武器
 WEAPON CAPTION	武器标题
@@ -3049,11 +3521,12 @@ WEAPON SENSITIVITY	武器灵敏度
 WEAPON:	武器:
 WEAPONS	武器
 WEAPONS (THEIR NUMBER KEYS STILL WORK)	武器 (数字键仍可用)
+WELCOME TO QUARK	欢迎来到 QUARK
 WHAT THE BOTS PLAY: .QBRAIN FILES IN THE BOTS FOLDER	机器人使用的 AI: bots 文件夹中的 .QBRAIN 文件
-WHAT THE VOTE CHANGES	投票更改的内容
 WHEEL DN	WHEEL DN
 WHEEL UP	WHEEL UP
 WHEN ONE FILLS, EVERYONE IN IT IS TOLD (HERE AND ON DISCORD)	队列满员时会通知其中所有人 (此处及 DISCORD)
+WHEN SOMEONE HOOKS YOU, YOU ARE PULLED TO THEM. A DASH BREAKS FREE AT ONCE.	被人钩住时，你会被拉向对方。冲刺立刻挣脱。
 WHEN UNFOCUSED	失去焦点时
 WHEN UNFOCUSED, FLASH ON	失去焦点时闪烁
 WHERE THE HITS YOU TAKE COME FROM	你受到攻击的方向
@@ -3064,6 +3537,7 @@ WHOLE HUD	整个 HUD
 WIDGET EDITOR	组件编辑器
 WIDGETS	组件
 WIDGETS FROM CLIPBOARD	从剪贴板导入组件
+WIDTH 0 = NO OUTLINE	宽度 0 = 无描边
 WIDTH; CUSTOM (GLTF) PLAYER MODELS HAVE NO OUTLINE	宽度; 自定义 (GLTF) 玩家模型无描边
 WINDIR	WINDIR
 WINDOW	窗口
@@ -3071,6 +3545,15 @@ WINDOW + INPUT	窗口 + 输入
 WINDOW SIZE	窗口大小
 WINDOW SIZE:	窗口大小:
 WINDOWED	窗口化
+WINDOWS	WINDOWS
+WINDOWS GAME MODE IS OFF	WINDOWS 游戏模式已关闭
+WINDOWS IS ON THE POWER SAVER PLAN	WINDOWS 处于节能方案
+WINDOWS ONLY	仅 WINDOWS
+WINDOWS POWER MODE IS BEST POWER EFFICIENCY	WINDOWS 电源模式是最佳能效
+WINDOWS RAW INPUT, NO MOUSE ACCEL	WINDOWS RAW INPUT, 无鼠标加速
+WINDOWS SETTINGS > GAMING > GAME MODE: ON	WINDOWS 设置 > 游戏 > 游戏模式: 开
+WINDOWS SETTINGS > SYSTEM > DISPLAY > GRAPHICS > QUARK: HIGH PERFORMANCE	WINDOWS 设置 > 系统 > 屏幕 > 显示卡 > QUARK: 高性能
+WINDOWS SETTINGS > SYSTEM > POWER: POWER MODE BEST PERFORMANCE	WINDOWS 设置 > 系统 > 电源: 最佳性能
 WINDOWS, WITH PRIORITIZE GAME ON;	WINDOWS, 开启优先游戏时;
 WINNER STAYS	胜者留场
 WINNER STAYS - 1v1 rounds on one ruleset while everyone else waits in line. Each round's winner stays; the loser goes to the back of the line and the next in line plays the winner. Every round you win counts: first to 10 wins.	胜者留场 - 在同一规则下进行 1v1 回合, 其他人排队等候。每回合胜者留场; 败者排到队尾, 下一位挑战胜者。每赢一回合都计分: 先赢 10 回合者胜。
@@ -3078,15 +3561,21 @@ WINNER STAYS - FIRST TO	胜者留场 - 先达到
 WINNERS CROWN	胜者王冠
 WINS	胜场
 WINS THE MATCH	赢得比赛
+WITH AN ENEMY WITHIN 5 M THE STREAM IS ONLY 5 BUBBLES: 17 M/S UP	5 M 内有敌人时只有 5 个泡泡: 只升 17 M/S
+WITHIN 1.3 M OF THE FLOOR. 10 MS LATE LOSES 3 M/S	离地 1.3 M 以内。晚 10 MS 就少 3 M/S
 WIZARD	巫师
 WORD FILTER	屏蔽词过滤
 WORK SANS	WORK SANS
+WORKING...	处理中...
 WORLD	世界
 WORLD + HUD + SHADOW MAP BUILD	世界 + HUD + 阴影贴图构建
 WORLD OUTLINE	世界描边
 WORLD OUTLINE WIDTH	世界描边宽度
 WORST #MS  PING #  3D #X#	最差 #MS  PING #  3D #X#
 WRAP AROUND	循环
+WinHttpOpen failed	WinHttpOpen failed
+Windows refused to start	Windows refused to start
+Windows refused to start {} (error {})	Windows 拒绝启动 {}（错误 {}）
 X MSAA	X MSAA
 X OFFSET	X 偏移
 X SENSITIVITY WHILE THIS WEAPON IS HELD	持有此武器时的灵敏度倍数
@@ -3099,6 +3588,7 @@ YES	是
 YES #  NO #  OF #   F1 YES / F2 NO   #s	赞成 #  反对 #  共 #   F1 赞成 / F2 反对   #s
 YET REACHED IN YOUR ENEMY COLOUR	尚未到达的显示为敌方颜色
 YOU DIED	你阵亡了
+YOU FLY AT EACH OTHER, UP TO 24 M/S, FOR UP TO 3 S	你们互相飞向对方，最高 24 M/S，最多 3 S
 YOU HAVE THE BOMB - PLANT AT A SITE	你拿到了炸弹 - 去炸弹点安放
 YOU HEALED	你治疗了
 YOU LOSE	你输了
@@ -3110,21 +3600,26 @@ YOU'RE SEEKING - FACE THE WALL AND COUNT	你是寻找者 - 面对墙壁倒数
 YOU'RE THE TAGGER - TAG SOMEONE BEFORE TIME RUNS OUT	你是抓人者 - 在时间结束前抓到别人
 YOU:	你:
 YOU: NO TIME TRIALS YET	你: 尚无计时赛成绩
+YOUR BESTS	你的最佳成绩
 YOUR BOTS: ALL STANDARD	你的机器人: 全部标准
 YOUR BOTS: MIXED MODELS	你的机器人: 混合模型
 YOUR GOAL	我方球门
+YOUR HOOK CATCHES PLAYERS TOO: IT PULLS YOU BOTH TOGETHER. CATCH THEM, OR DRAG THEM IN.	钩索也能勾住玩家: 把你们俩拉到一起。追上对方，或把对方拉过来。
 YOUR KILLS	你的击杀
 YOUR MATCH:  # SHOTS  # HITS  #% ACCURACY  # DAMAGE  BEST STREAK #	你的比赛:  # 次射击  # 次命中  #% 命中率  # 伤害  最佳连杀 #
 YOUR NAME (CHAT AND SCOREBOARD)	你的名字 (聊天和计分板)
 YOUR OWN MODEL FILE: NO PREVIEW HERE	你自己的模型文件: 此处无预览
+YOUR OWN ROCKET THROWS YOU. HERE IT DOES NO DAMAGE.	自己的火箭把你炸飞。这里不会受伤。
 YOUR OWN: PUT .TTF / .OTF FILES IN MODS/FONTS,	你自己的: 将 .TTF / .OTF 文件放入 MODS/FONTS,
 YOUR QUEUE FOR	你的队列:
+YOUR RECORDED GAMES	你录制的对局
 YOUR SHOTS	你的射击
 YOUR SHOTS: ALWAYS	你的射击: 始终
 YOUR SHOTS: NEVER	你的射击: 从不
 YOUR SHOTS: WITH WEAPON MODEL	你的射击: 随武器模型
 YOUR TEAM IS PUSHING	我方正在推进
-You run at 9.5 m/s. In the air, holding a direction drifts you up to run speed (a standing jump moves too).	跑动速度为 9.5 m/s. 空中按住方向会把你推到跑动速度 (原地起跳也能移动).
+YOUR TURN	轮到你了
+You run at 9.5 m/s. In the air you keep your speed: holding a direction steers it, and a standing jump drifts 2.3 m/s at most.	跑速 9.5 m/s。空中保持速度: 按住方向键可以转向，原地起跳最多漂移 2.3 m/s。
 You step up anything 0.55 m high, including stairs mid-jump. Ladders: walk into them, look up or down to climb (6.75 m/s).	可直接迈上 0.55 m 高的任何东西, 包括跳跃中的台阶. 梯子: 走进梯子, 向上或向下看即可攀爬 (6.75 m/s).
 ZERO-G FLIGHT, LASERS - HEAL 100% TO 50% OVER 30 S, NO KNOCKBACK	零重力飞行, 激光 - 30 秒内从 100% 治疗降至 50%, 无击退
 ZOMBIE	僵尸
@@ -3132,25 +3627,18 @@ ZONE OPACITY	区域不透明度
 ZONE PULSE	区域脉冲
 ZOOM	缩放
 ZOOM SENSITIVITY	开镜灵敏度
-a caption for every announcer line	为每条播报语音显示字幕
-a colour per material from ice on (a large one: its base's), then the see-through, breakable and feature ones	从冰开始每种材质一个颜色 (大号: 用其基础材质的), 然后是透视、可破坏和特殊材质
 a damaged PAK	损坏的 PAK
 a damaged WAD	损坏的 WAD
 a damaged built-in atlas	损坏的内置图集
-a label per material (the cycles below index it by material)	每种材质一个标签 (下方循环按材质索引)
-a look per material from kMatBlocks on (the large ones: their base's), then the see-through, breakable and feature ones	从 kMatBlocks 开始每种材质一个外观 (大号: 用其基础材质的), 然后是透视、可破坏和特殊材质
 a map keeps at least one box outside groups - add another box first	地图需保留至少一个不在分组中的方块 - 请先再添加一个方块
 a map needs at least one box	地图至少需要一个方块
 a map needs at least one mode	地图至少需要一种模式
 a map needs at least one spawn	地图至少需要一个出生点
-a picker tab for every material (kMatTabs)	每种材质一个选择器标签页 (kMatTabs)
 a ranked match is being played - no votes until it's over	正在进行排位比赛 - 结束前不能投票
 a ranked match is being played - teams stay as they are until it's over	正在进行排位比赛 - 结束前队伍保持不变
 a ranked match is being played: '	正在进行排位比赛: '
-a reference palette per prop	每个道具一个参考调色板
 a spectate vote needs at least	观战投票至少需要
 a tag match is being played - you can join the next one	正在进行抓人比赛 - 你可以加入下一场
-a theme style per HUD element	每个 HUD 元素一个主题样式
 a tourney is running - you can join the next one	正在进行锦标赛 - 你可以加入下一场
 a vote is already in progress	已有投票正在进行
 accessor out of range	accessor 越界
@@ -3158,6 +3646,8 @@ add must be 3 numbers from 0 to 16	add 必须是 3 个 0 到 16 之间的数字
 advances (walkover)	晋级 (对手弃权)
 after a session	会话结束后
 after swap (low latency wait)	交换后 (低延迟等待)
+again and put them back (your settings and files stay).	again and put them back (your settings and files stay).
+again, check it and put it back (your settings and files stay).	again, check it and put it back (your settings and files stay).
 ahead of you (winner stays)	在你前面 (胜者留场)
 alpha must be over 0 and at most 1	alpha 必须大于 0 且不超过 1
 an update is ready - the server restarts after this match	更新已就绪 - 服务器将在本场比赛后重启
@@ -3188,6 +3678,7 @@ bad mesh	无效 mesh
 bad modifier '	无效修改器 '
 bad node	无效 node
 bad request	无效请求
+bad url	bad url
 bench:	bench:
 big noodle*	big noodle*
 bignoodletitling*	bignoodletitling*
@@ -3207,6 +3698,10 @@ box model:	方块模型:
 boxes into	个方块合并为
 boxes into one	个方块合并为一个
 buffer without data	buffer 没有数据
+builds from 1.17 on in the	builds from 1.17 on in the
+builds from 1.17 on yet - pick a version to install it	builds from 1.17 on yet - pick a version to install it
+builds in the	builds in the
+builds published yet	builds published yet
 built in # ms	构建耗时 # ms
 built-in maps reset to the original version	内置地图已重置为原始版本
 busy #%, late #%	繁忙 #%, 迟到 #%
@@ -3230,6 +3725,7 @@ callvote start	callvote start
 callvote tmaps	callvote tmaps
 callvote tmodes	callvote tmodes
 can't	无法
+can't be opened (Windows refuses to run a file its antivirus flagged).	can't be opened (Windows refuses to run a file its antivirus flagged).
 can't do that	无法执行
 can't go ranked: no ranked map for that ladder installed	无法进入排位: 未安装该天梯的排位地图
 can't read	无法读取
@@ -3237,24 +3733,46 @@ can't save:	无法保存:
 can't turn that	无法开启/关闭
 can't vote for that list	无法为该列表投票
 can't vote:	无法投票:
+cannot copy	无法复制
+cannot read	无法读取
+cannot repair: version	cannot repair: version
+cannot repair: version {} isn't published for {} - pick a version and press INSTALL	无法修复：版本 {} 没有为 {} 发布 - 选择一个版本并按「安装」
+cannot replace	无法替换
+cannot write	无法写入
 capture of every point in	占领所有据点用时
+channel - latest	channel - latest
+channel - offline	channel - offline
+channel yet	channel yet
+channel yet - pick a version to install it	channel yet - pick a version to install it
 chat # "	聊天 # "
 chat # "{}": {}	chat # "{}": {}
 chat: slow down	聊天: 请慢一点
+checked {} game files of version {}: all fine	已检查 {} 个游戏文件（版本 {}）：全部正常
+checked {} game files: {}	已检查 {} 个游戏文件：{}
+checking for updates...	正在检查更新...
+checking game files...	正在检查游戏文件...
 checking if UDP	正在检查 UDP
 clean surfaces	干净表面
 closed by the load governor	已被负载调控器关闭
 color must be 3 numbers from 0 to 16	color 必须是 3 个 0 到 16 之间的数字
 connect from	连接自
 connected from	已连接, 来自
+connection failed (error {})	连接失败（错误 {}）
 connection to server lost	与服务器的连接已断开
+could not be written (a full disk, or blocked as it was written)	无法写入（磁盘已满，或写入时被拦截）
 could not bind UDP port	无法绑定 UDP 端口
 could not create an OpenGL 3.3 window - update your graphics driver	无法创建 OpenGL 3.3 窗口 - 请更新显卡驱动
+could not download its release manifest ({})	无法下载其发布清单（{}）
+could not download its signature ({})	无法下载其签名（{}）
 could not host:	无法主持:
 could not open	无法打开
 could not open log file	无法打开日志文件
+could not read the download	无法读取下载的文件
+could not run curl	无法运行 curl
 could not save maps/	无法保存 maps/
 could not save the map	无法保存地图
+could not start the game in	could not start the game in
+could not start the game in {} (error {})	无法在 {} 中启动游戏（错误 {}）
 could not write maps/	无法写入 maps/
 could not write to the groups folder	无法写入分组文件夹
 couldn't check reachability:	无法检查可达性:
@@ -3266,9 +3784,14 @@ delivered the payload in	送达运载车用时
 delivery in	送达用时
 demo finished	录像播放完毕
 demo:	录像:
+download failed:	download failed:
+download failed: {}	下载失败：{}
+download interrupted	下载中断
+downloading version	downloading version
+downloading version {}...	正在下载版本 {}...
 draw - the payload is in the middle	平局 - 运载车在中间
 dropped:	已掉线:
-duelUsed_ is a 32-bit mask	duelUsed_ is a 32-bit mask
+dyn + view + flat verts	dyn + view + flat verts
 dyn verts	dyn verts
 dynamic pass	dynamic pass
 e.g.  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5	例如  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5
@@ -3285,7 +3808,6 @@ edits dropped	修改已丢弃
 else if	else if
 ember: gg	ember: gg
 enough players again - the match goes on	玩家人数再次足够 - 比赛继续
-every HUD element in the dropdown	下拉菜单中的所有 HUD 元素
 every point taken	每个已占领的据点
 everyone left - back to warmup	所有人都离开了 - 回到热身
 exec: a file name in your data folder (no folders)	exec: 数据文件夹中的文件名 (不含文件夹)
@@ -3300,9 +3822,13 @@ flush2D	flush2D
 font {}: {}	font {}: {}
 font:	字体:
 font: {} built in # ms	font: {} built in # ms
+found - it installs at the next launch (or press INSTALL)	found - it installs at the next launch (or press INSTALL)
 found everyone	找到了所有人
+from that tool's quarantine, and add an exclusion for the quark folder:	from that tool's quarantine, and add an exclusion for the quark folder:
 g del	g del
 g part # # # # # # # #	g part # # # # # # # #
+game files of version	game files of version
+game files:	game files:
 glass shards	玻璃碎片
 glfwInit failed	glfwInit failed
 go to the back of the line	排到队尾
@@ -3314,12 +3840,20 @@ has no ranked id	没有排位 ID
 hdmi:	hdmi:
 high at	高于
 human cmds	human cmds
+if (blended && alpha < 0.01) discard;	if (blended && alpha < 0.01) discard;
 if players reach it there, start the server with --own-addr	如果玩家通过那里连接, 请用 --own-addr 启动服务器
 in your data folder	在你的数据文件夹中
 index out of range	索引越界
 init failed:	初始化失败:
 init failed: {}	init failed: {}
 input + prediction ticks	输入 + 预测 tick
+install failed:	install failed:
+install failed: {}	安装失败：{}
+installed version	installed version
+installed version {}	已安装版本 {}
+installed {} is newer than the latest {} release {} - pick a version to change	已安装的 {} 比最新的{}发布版 {} 更新 - 选择一个版本来更换
+installing version	installing version
+installing version {}...	正在安装版本 {}...
 into others, removed	并入其他方块, 已移除
 is a built-in map - nothing changed to save	是内置地图 - 没有可保存的修改
 is a built-in map - pick a new name for yours	是内置地图 - 请为你的地图取个新名字
@@ -3328,19 +3862,28 @@ is a built-in map: pick a new name	是内置地图: 请取个新名字
 is a legacy map (never ranked): ranked plays	是旧版地图 (永不排位): 排位游玩
 is a legacy map (this server doesn't list the old maps)	是旧版地图 (此服务器不列出旧地图)
 is already spectating	已在观战
+is blocked (it can't be read)	is blocked (it can't be read)
+is gone from the game folder.	is gone from the game folder.
 is it	是鬼
 is it - run!	是鬼 - 快跑!
+is missing	is missing
+is newer than the latest	is newer than the latest
 is not reachable from the internet - forward UDP	无法从互联网访问 - 请转发 UDP
 is now	现在是
 is reachable from the internet - friends can join	可从互联网访问 - 好友可以加入
 is spectating	正在观战
+is still installed and playable.	is still installed and playable.
 isn't a ranked ruleset	不是排位规则
 isn't built for	不适用于
 isn't in this custom mode's map pool	不在此自定义模式的地图池中
+isn't published for	isn't published for
+isn't the file that was installed (something changed or replaced it).	isn't the file that was installed (something changed or replaced it).
+it has no signed release manifest	它没有已签名的发布清单
+it is not signed	它没有签名
+its signature does not verify	其签名验证失败
 joined team A	加入了 A 队
 joined team B	加入了 B 队
 joined the game	加入了游戏
-kElemNames follows Settings::HUD_*	kElemNames follows Settings::HUD_*
 kbps (# packets/s), download # kbps (#/s)	kbps (# 包/秒), 下载 # kbps (#/秒)
 kick whom? a name or an id (status lists them)	踢谁? 名字或 ID (status 会列出)
 kicked by a vote	被投票踢出
@@ -3357,6 +3900,8 @@ listening on UDP	正在监听 UDP
 live (testing server: not rated)	在线 (测试服务器: 不计分)
 load governor:	负载调控器:
 look at a side of the selected box	看向所选方块的一个面
+looking up version	looking up version
+looking up version {}...	正在查找版本 {}...
 lost connection	连接丢失
 low latency: wait for the GPU	低延迟: 等待 GPU
 mac:	mac:
@@ -3408,6 +3953,11 @@ no points	没有据点
 no response	无响应
 no small gaps to close	没有需要闭合的小缝隙
 no triangles	没有三角形
+no {} builds from 1.17 on in the {} channel yet - pick a version to install it	{} 平台在{}频道还没有 1.17 及以后的版本 - 选择一个版本来安装
+no {} builds from 1.17 on yet - pick a version to install it	{} 还没有 1.17 及以后的版本 - 选择一个版本来安装
+no {} builds in the {} channel yet	{} 平台在{}频道还没有版本
+no {} builds published yet	{} 还没有发布版本
+no-discard world shader: missing	no-discard world shader: missing
 nobody finished	无人完成
 nobody is out - throw again	无人出局 - 再出一次
 nobody left	没人了
@@ -3426,6 +3976,9 @@ not enough players	玩家不足
 not enough players - back to warmup	玩家不足 - 回到热身
 not enough players - the match ends in	玩家不足 - 比赛将结束于
 not enough players for a tourney	玩家不足, 无法举行锦标赛
+not found (release list incomplete) - installed:	not found (release list incomplete) - installed:
+not in the main program	not in the main program
+not in the tutorial	教程中不可用
 not in this build	此版本中没有
 not rated:	不计分:
 not the ladder's mode	不是该天梯的模式
@@ -3440,10 +3993,13 @@ nothing to undo	没有可撤销的
 now playing	正在游玩
 odd sample rate	异常的采样率
 of #	/ #
+of version	of version
 off for this match	本场比赛关闭
+offline -	offline -
+offline - playing installed version	offline - playing installed version
+offline - playing installed version {}	离线 - 玩已安装的版本 {}
+offline - {}	离线 - {}
 on your router to this PC	在你的路由器上转发到这台电脑
-one folder per sound kit	每个音效包一个文件夹
-one name per sound, in SoundId order	每个声音一个名称, 按 SoundId 顺序
 only a timed round can be extended	只有计时回合才能延长
 over 64 MB	超过 64 MB
 override {} ({}): # triangles (at most #)	override {} ({}): # triangles (at most #)
@@ -3462,6 +4018,9 @@ paused: no humans (bots wait)	已暂停: 没有真人玩家 (机器人等待)
 payload delivered	运载车已送达
 pick a new name for your copy	为你的副本取个新名字
 ping up on # of # players	# / # 名玩家 ping 升高
+pinned version	pinned version
+pinned version {} (installed: {}) - press INSTALL to switch to it	固定版本 {}（已安装：{}）- 按「安装」切换过去
+pinned version {} not found (release list incomplete) - installed: {}	未找到固定版本 {}（发布列表不完整）- 已安装：{}
 placed the group from the clipboard	已从剪贴板放置分组
 point # taken by team #	据点 # 被 # 队占领
 poll events	poll events
@@ -3487,6 +4046,9 @@ proj # type # owner # pos # # # vel # # #{}	proj # type # owner # pos # # # vel 
 properties background, color, opacity, border, radius, padding, margin, gap, font-size,	属性 background, color, opacity, border, radius, padding, margin, gap, font-size,
 puts every built-in map back to its original version and removes retired ones (your own maps are kept) - click again	将所有内置地图恢复为原始版本并移除已退役地图 (你自己的地图保留) - 再次点击
 quark --bake-maps <dir>	quark --bake-maps <dir>
+quark installed files 1	quark installed files 1
+quark installed files 2	quark installed files 2
+quark launcher	quark launcher
 quark server	quark server
 quark server log, level	quark server log, level
 quark server log, level {}, version {}	quark server log, level {}, version {}
@@ -3523,12 +4085,15 @@ rate limited	请求过于频繁
 reachability:	可达性:
 reached checkpoint	到达检查点
 reconnected from	重新连接, 来自
+refused version	refused version
+refused version {}: {} - the download may have been tampered with	拒绝了版本 {}：{} - 下载的文件可能被篡改
 renderer warmup	渲染器预热
 reopened by the load governor	已被负载调控器重新开启
 reopened by the load governor at	已被负载调控器重新开启, 于
 restarting for an update	正在重启以更新
 restarting for an update - rejoin in a few seconds	正在重启以更新 - 几秒后重新加入
 restored the autosave of	已恢复自动保存:
+right after it was written	刚写入后
 rock paper scissors:	石头剪刀布:
 rotated about X	绕 X 旋转
 rotated about Y	绕 Y 旋转
@@ -3574,6 +4139,7 @@ setup:	setup:
 shader:	shader:
 shadow / visOnly / crouch must be true or false	shadow / visOnly / crouch 必须为 true 或 false
 shadow pass	shadow pass
+shadow verts	shadow verts
 shipped:	已发布:
 short-handed: # playing	人数不足: # 人在场
 size # # #	size # # #
@@ -3608,7 +4174,6 @@ the PAK has no gfx.wad	PAK 中没有 gfx.wad
 the WAD has no CONCHARS	WAD 中没有 CONCHARS
 the autosave can't be read	无法读取自动保存
 the bomb went back to	炸弹回到了
-the cursor wraps with uint32	光标以 uint32 循环
 the cutter (the first box selected) doesn't touch the others	切割体 (第一个选中的方块) 未接触其他方块
 the cutter (the first box selected) has to be a plain box	切割体 (第一个选中的方块) 必须是普通方块
 the driver has no shorter period	驱动没有更短的周期
@@ -3656,8 +4221,14 @@ tourney seed #:	锦标赛种子 #:
 tourney seed #: {} (#)	tourney seed #: {} (#)
 tourney started -	锦标赛已开始 -
 trying the next rate up: busy #%, upload # kbps	尝试提高速率: 繁忙 #%, 上传 # kbps
+tutorial reset	tutorial reset
+tutorial try	tutorial try
 ui verts	ui verts
+ultra: after swap wait (us)	ultra: after swap wait (us)
+ultra: margin (us)	ultra: margin (us)
+ultra: pace the input read	ultra: pace the input read
 ungrouped into	已取消编组为
+unknown bone "	未知关节 "
 unknown mode	未知模式
 unknown mode '	未知模式 '
 unknown ruleset	未知规则集
@@ -3669,10 +4240,21 @@ unsaved changes - click EXIT again to leave	有未保存的修改 - 再次点击
 unsaved changes - press ESC again to leave	有未保存的修改 - 再按一次 ESC 离开
 unsupported WAV (PCM 8 / 16 / 24 / 32-bit or float)	不支持的 WAV (PCM 8 / 16 / 24 / 32 位或浮点)
 unsupported accessor	不支持的 accessor
+up to date -	up to date -
+up to date - {} {}	已是最新 - {} {}
 update ready: waiting for the match to end	更新已就绪: 等待比赛结束
+update {} available - press INSTALL (installed: {})	有更新 {} - 按「安装」（已安装：{}）
+update {} found - it installs at the next launch (or press INSTALL)	发现更新 {} - 下次启动时安装（或按「安装」）
+update: removed retired game file	update: removed retired game file
+update: removed retired game file {}	update: removed retired game file {}
 upload # of # kbps	上传 # / # kbps
 upload bytes	upload bytes
 user:	用户:
+verifying version	verifying version
+verifying version {}...	正在验证版本 {}...
+version {} (pinned)	版本 {}（已固定）
+version {} was not installed: {}	版本 {} 未安装：{}
+vote builder	vote builder
 vote cancelled: the ranked match is live	投票取消: 排位比赛进行中
 vote failed:	投票失败:
 vote no	投反对
@@ -3683,8 +4265,12 @@ voted rules:	已投票规则:
 voted rules: {}	voted rules: {}
 vs bots	人机对战
 warning:	警告:
+was blocked	被拦截了
+was changed	was changed
 was it -	曾是鬼 -
 was moved to spectator until the next map	已被移至观众直到下一张地图
+was not installed:	was not installed:
+was removed	被删除了
 wedge rising toward	楔形朝向上升
 will fill the uneven teams	将补齐人数不均的队伍
 win:	胜利:
@@ -3699,11 +4285,19 @@ wins the race	赢得竞速
 wins the round	赢得回合
 wins the tourney!	赢得锦标赛!
 world chunks	world chunks
+world fast: back to main	world fast: back to main
+world fast: bind + sync	world fast: bind + sync
+world fast: frame uniforms	world fast: frame uniforms
+world fast: full copy	world fast: full copy
 world pass	world pass
 world shader	world shader
+world shader (no discard):	world shader (no discard):
+world shader (no discard): {}	world shader (no discard): {}
+world shader (no discard): {} not in the main program	world shader (no discard): {} not in the main program
 world shader:	world shader:
 world shader: {}	world shader: {}
 world upload	world upload
+world: frame uniforms	world: frame uniforms
 wraith: nice shot	wraith: 好枪法
 you already called a vote on	你已经发起过投票:
 you left the line - join a team to get back in it	你离开了队列 - 加入队伍即可重新排队
@@ -3714,3 +4308,20 @@ you're next in line: you play the winner of this	你是下一位: 你将挑战�
 your last vote failed: wait a few seconds	你上次的投票失败了: 请等几秒
 your map is autosaved	你的地图已自动保存
 {} # us (last 1000 ticks)	{} # us (last 1000 ticks)
+{} (launcher update failed: {})	{}（启动器更新失败：{}）
+{} (launcher update skipped: {})	{}（已跳过启动器更新：{}）
+{} - installed: {}	{} - 已安装：{}
+{} - see below	{} - 见下方
+{} - {} game file(s) missing or changed ({}): CHECK FILES	{} - {} 个游戏文件缺失或被改动（{}）：检查文件
+{} GAME FILE(S) MISSING OR CHANGED	{} 个游戏文件缺失或被改动
+{} IS BLOCKED	{} 被拦截
+{} IS MISSING	{} 缺失
+{} THEN {}	{} 然后 {}
+{} WAS CHANGED	{} 被改动
+{} channel - latest {}	{}频道 - 最新 {}
+{} channel - latest {}, installed {}	{}频道 - 最新 {}，已安装 {}
+{} channel - offline	{}频道 - 离线
+{} is blocked (it can't be read)	{} 被拦截（无法读取）
+{} is missing	{} 缺失
+{} of version {}	{}（版本 {}）
+{} was changed	{} 被改动

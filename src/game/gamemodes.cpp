@@ -1070,11 +1070,14 @@ void ballStep(Server& s) {
         if (len < 1e-3f) continue;
         n = n / len;
         // a fast ball hurts (owner, 2026-11-01: "if the ball hits somebody moving more than 20m/s relative to them it should
-        // damage them and knock them back"): 1 damage per m/s of its speed relative to them (21 m/s: 21), a knock along its path, and it bounces
+        // damage them and knock them back"; 25 / 20 m/s since 2026-11-03, below): 1 damage per m/s of its speed relative to them (26 m/s: 26), a knock along its path, and it bounces
         // off them at half its speed; the kill is whoever touched it last. Once per player per 0.3 s
         const Vec3 relV = s.ballVel_ - p.move.vel;
         const float relSp = length(relV);
-        if (relSp > 20.0f && s.time() - s.ballHurtAt_[i] > 0.3) {
+        // (owner, 2026-11-03: "make ball not do damage if you are dashing into it ... 25m/s to you and 20m/s to the ground"):
+        // it hurts only when it's over 25 m/s relative to you AND over 20 m/s itself, so running or dashing into a slow
+        // ball never does: the ball has to be moving fast on its own
+        if (relSp > 25.0f && length(s.ballVel_) > 20.0f && s.time() - s.ballHurtAt_[i] > 0.3) {
             s.ballHurtAt_[i] = s.time();
             Vec3 kb = relV * 0.5f;
             kb.y = std::max(kb.y, 4.0f);
@@ -1705,6 +1708,7 @@ bool nativeCanDamage(const Server& s, int attacker, int victim) {
     if (s.ms_.mode == MODE_SURF) return false;   // surf: nobody hurts anybody, warmup too (owner, 2026-10-28; surf.qlogic)
     if (isRaceMode(s.ms_.mode) && s.ms_.phase != PHASE_WARMUP) return false; // race: knockback only
     if (attacker < 0 || attacker == victim) return true;
+    if (s.cfg_.tutorial) return s.tutorialHookAllowed(attacker, victim);   // (the tutorial: nobody touches anybody but the PARTNER's grapple lessons' hooks: this decides only grapples there, damagePlayer stops the rest)
     if (modeIsTeamBased(s.ms_.mode) && s.players_[attacker].team == s.players_[victim].team) return false;
     return true;
 }
@@ -1713,6 +1717,7 @@ bool nativeCanHit(const Server& s, int attacker, int victim, int weapon) {
     if (attacker < 0 || attacker == victim) return true;
     // Race: you can only affect yourself (rocket jumps etc.), never other racers. Surf: never, warmup too (owner 2026-10-28).
     if (s.ms_.mode == MODE_SURF) return false;
+    if (s.cfg_.tutorial) return false;   // (the tutorial: the ghost's shots fly through you, and yours through it)
     if (isRaceMode(s.ms_.mode) && s.ms_.phase != PHASE_WARMUP) return false;
     // hide and seek / tag: only "it" can touch anyone, with the knife, once the round is live.
     if (isItMode(s.ms_.mode)) return s.ms_.phase == PHASE_LIVE && s.players_[attacker].it && !s.players_[victim].it && weapon == WPN_KNIFE;

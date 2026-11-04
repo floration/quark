@@ -2,10 +2,14 @@
 // translucent markers, first-person viewmodel and a 2D layer for HUD/menus.
 // Everything dynamic is streamed into one vertex buffer per layer each frame (few draw calls).
 #pragma once
+#include <array>
+#include <cstdint>
+#include <atomic>
 #include <memory>
 #include "fontatlas.h"
 #include "textfit.h"
 #include <string>
+#include <algorithm>
 #include <vector>
 #include "../common/qmath.h"
 #include "../game/map.h"
@@ -13,7 +17,13 @@
 #include "lightmap.h"
 #include "models.h"
 
-struct DynVertex { float pos[3]; float normal[3]; float color[4]; float edge[4]; float outline[4]; }; // color.a = sun visibility; outline = edge colour (black unless set) + width (pixels)
+// A lit vertex (players, props, the view model, the editor's boxes): 44 bytes, it was 72 (all floats). pos as floats
+// (the same pixels); the normal as 16-bit integers x 32767 (w unused); colour (a = sun visibility), edge and outline
+// (rgb = the edge colour, black unless set; a = its width in pixels) as half floats. edge: the distances to the face's
+// edges 0 and 1 (xy) and to 2 and 3 (zw); the shader rebuilds the old (xy, xy + zw) form. The default constructor
+// does nothing: the lists grow with resize and every field is written after (no zero fill first).
+struct DynVertex { DynVertex() {} float pos[3]; int16_t normal[4]; uint16_t color[4]; uint16_t edge[4]; uint16_t outline[4]; };
+static_assert(sizeof(DynVertex) == 44, "DynVertex: setupDynVao's offsets");
 struct FlatVertex { float pos[3]; float color[4]; };
 // 16 bytes: screen pixels, font atlas texel coords (u16 fixed point: (texel + 1) * 32), color (RGBA8), and for text
 // the text scale (integer part + 1/256ths; 0 = plain rect), which sets the distance-field edge and outline width
@@ -64,6 +74,21 @@ public:
     // Late latch: a newer aim just before drawScene (the world and players are in world space, so only the view moves).
     // The view model was already built for the old aim: drawScene carries it over (it never lags the world).
     void relatch(float yaw, float pitch);
+    // GPU LATE LATCH (renderer.cpp): latchArm at the late read (after relatch: this frame's view; on false: off this
+    // frame), the yaw / pitch per mouse count given; latchMouse from the raw mouse thread with the counts since the
+    // game's last read; latchDisarm before the game takes them. latchSupported: the driver has ARB_buffer_storage.
+    bool latchSupported = false;
+    // HUD BEFORE WORLD: the 2D batch so far drawn into its own layer now (false: nothing to draw / no layer), then laid
+    // over the frame by hudLayerComposite (after the world)
+    bool hudLayerDraw();
+    void hudLayerComposite();
+    double (*latchClock)() = nullptr;   // (timeNow, for F3: when the aim was last written)
+    void latchArm(bool on, float kYaw, float kPitch);
+    void latchDisarm();
+    void latchMouse(double dx, double dy);
+    bool latchActive() const { return latchUse_; }
+    long long latchWrites() const { return latchWrites_.load(std::memory_order_relaxed); }
+    double latchLastWrite() const { return latchLastWrite_.load(std::memory_order_relaxed); }
     // Extra culling margin while the aim may still move before drawing (relatch): a sphere counts as on screen this
     // many radians (roughly) outside the frustum, so nothing at the edge pops in a frame late on a flick.
     float cullPad = 0;
@@ -77,6 +102,8 @@ public:
 
     // Dynamic geometry (cleared every frame)
     void box(const Vec3& center, const Vec3& half, float yaw, const Vec3& color, float sunVis, bool castShadow = true, bool visible = true);
+    // box() turned by any matrix (its centre: xf's origin), e.g. a posed player's part; culled and cast like box()
+    void boxXf(const Mat4& xf, const Vec3& half, const Vec3& color, float sunVis, bool castShadow = true, bool visible = true);
     void slope(const Brush& b, const Vec3& color);   // a wedge / corner (map.h), like box(): into the static batch or the frame's
     void boxPitched(const Vec3& pivot, const Vec3& offset, const Vec3& half, float yaw, float pitch, const Vec3& color, float sunVis, bool castShadow = true);
     void viewBox(const Vec3& offset, const Vec3& half, const Vec3& color); // camera-relative (viewmodel)
@@ -132,6 +159,8 @@ public:
     // (tools/make_logo.py, logo_data.h), one mipmapped quad; in another UI font: the word in that font, the same size,
     // its Q split by the text shader. Either way in the 2D batch: no extra pass or draw call.
     void logo(float cx, float y, float ts, const Color& friendly, const Color& enemy);
+    // the title's Q alone, as logo() draws it at ts (the main menu's icon strip)
+    void logoQ(float cx, float y, float ts, const Color& friendly, const Color& enemy);
     // level: how far its letters are closed up (font units, each pair as far as its ink allows: textfit.h; Ui's fitting)
     void text(float x, float y, float scale, const std::string& s, const Color& c, float level = 0);
     // proportional UI font (Rubik Bold, or the one picked in Settings > FONT): widths come from per-glyph advances
@@ -215,6 +244,7 @@ public:
     };
     void setLook(const Look& l);
     bool farScenery = true;     // distant scenery's chunks drawn
+    bool fastWorld = true;      // LATENCY > EARLY DEPTH TEST: the no-discard world program while no hole is blown
     float farPlane = 400.0f;    // DRAW DISTANCE: metres to the far plane (the next setCamera)
     float shadowRange = 32.0f;  // SHADOW DISTANCE: the shadow map's half-width around its focus (metres)
     bool shadowWorld = true, shadowPlayers = true;   // dynamic shadows onto the map / onto players
@@ -237,12 +267,14 @@ private:
     Vec3 grade_ = {1, 1, 1};
     unsigned compile(const char* vs, const char* fs, std::string* err);
     void aim(float yaw, float pitch);   // (setCamera's view half: the view, its vectors, viewProj_ and the frustum planes)
-    void addQuad(std::vector<DynVertex>& out, const Vec3* c, const Vec3& n, const Vec3& col, float sv);
     void emitBox(std::vector<DynVertex>& out, const Mat4& xf, const Vec3& half, const Vec3& color, float sunVis);
     void emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, std::vector<FlatVertex>* flatOut);
 public:
     Vec3 outlineColor;   // the edge colour for the boxes drawn while it's set (players' outline setting); black by default
     float outlineWidth = 1.0f;   // ...and the edge width in pixels (players' / the editor's boxes: settings); 0 = none
+    float modelSat = 1.0f;       // VIDEO > MORE 4: PLAYER SATURATION for the boxes / models drawn while it's set (1: as drawn)
+    // (the normal's spare 16 bits: 0 = as drawn, else 1 + sat x 16383, sat 0..2; one OR a vertex, no new attribute)
+    uint64_t satW() const { return modelSat == 1.0f ? 0 : (uint64_t)(1 + (int)(std::clamp(modelSat, 0.0f, 2.0f) * 16383.0f + 0.5f)) << 48; }
 private:
 
     int width_ = 1280, height_ = 720;
@@ -250,8 +282,10 @@ private:
     // Uniform locations, looked up once after linking (init): no lookups in the frame loop. Values that never change are
     // set there too, the per-frame ones that don't depend on the aim in prepareScene, the rest in drawScene (GL keeps
     // each program's values).
-    struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, baseL, accentL, wallbangL, metalL, floorL, metal, glow, full, fullColor, outlineW, time, sunDir, alphaPass; } uWorld_ = {};
-    struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, receive, sunDir; } uDyn_ = {};
+    struct WorldLocs { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, baseL, accentL, wallbangL, metalL, floorL, metal, glow, full, fullColor, outlineW, time, sunDir, alphaPass, latchUse, worldEdge; };
+    WorldLocs uWorld_ = {}, uWorldFast_ = {};   // (uWorldFast_: worldFastProg_'s)
+    static WorldLocs worldLocs(unsigned prog);
+    struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, receive, sunDir, latchUse; } uDyn_ = {};
     struct { GLint fwd, right, up, tan, sky, sunDir, bright; } uSky_ = {};
     GLint uDynFade_ = -1, uFlatFade_ = -1;   // (the view pass's see-through amount: WEAPON MODEL OPACITY)
     GLint uFlatViewProj_ = -1, uShadowViewProj_ = -1, uUiScreen_ = -1, uEdgeRcp_ = -1, uSharpRcp_ = -1, uWorldPx_ = -1, uDynPx_ = -1;
@@ -270,7 +304,18 @@ private:
     float holeGrid_[4] = {};   // (the hole grid's uniforms as last set: a new world program gets them too)
     int holeGridH_ = 0;
     std::vector<bool> worldUsed_ = std::vector<bool>((size_t)kMapMaterials, false);   // the looks in worldProg_ (setWorldLooks)
-    unsigned compileWorld(const std::vector<bool>* used, std::string* err);
+    unsigned compileWorld(const std::vector<bool>* used, std::string* err, bool noDiscard = false);
+    // The world's opaque pass without discard (its hole and see-through discards cost the GPU its early depth test:
+    // -27% GPU world pass on a 3090 Ti, 2026-11-03): built beside worldProg_, used while no holes are blown, its uniforms
+    // set alongside worldProg_'s each frame (prepareScene, drawScene); the rest, which change only with a setting, are
+    // copied from worldProg_ when worldFastDirty_ says one did (reading uniforms back every frame stalled the driver:
+    // +30 us CPU a frame on the desktop).
+    struct UniformCopy { GLint from, to; GLenum type; };
+    unsigned worldFastProg_ = 0, worldFastFor_ = 0;
+    bool worldFastDirty_ = true;
+    std::vector<UniformCopy> worldFastCopy_;
+    void buildWorldFast();
+    void syncWorldFast();
     void setWorldLooks(const BakedWorld& bw);
     void uploadSeeThrough(const Map& map);
 public:
@@ -287,7 +332,11 @@ private:
     unsigned swatchProg_ = 0;   // (the world program with every look: compileWorld(nullptr))
     unsigned cleanTex_ = 0, cleanVao_ = 0, cleanVbo_ = 0;   // CLEAN SURFACES' averages (buildCleanMeans), texture unit 5
     std::vector<bool> cleanUsed_;   // the looks in the map (12 on, the large ones as their base)
-    std::vector<float> cleanKey_;   // what the averages were made with (program, palette); cleared: make them again
+    std::array<float, 14> cleanKey_ = {};   // what the averages were made with (program, palette); cleared: make them again
+    double cleanAt_ = -1e9;   // (when they were last made: a palette changing every frame makes them 10 times a second)
+    std::vector<int> cleanMats_;   // (the materials in cleanVbo_'s squares)
+    unsigned cleanOutFbo_ = 0, cleanPatchTex_ = 0, cleanPatchFbo_ = 0;   // (uCleanTex as a target; the patches, mipmapped)
+    int cleanPatchW_ = 0, cleanPatchH_ = 0;
     unsigned swatchTex_ = 0, swatchFbo_ = 0, swatchLm_ = 0, swatchVao_ = 0, swatchVbo_ = 0, imgProg_ = 0, imgVao_ = 0, imgVbo_ = 0;
     GLint uImgScreen_ = -1;
     float swatchKey_[13] = {};
@@ -296,7 +345,7 @@ private:
     std::vector<unsigned> swatchSlotUsed_;            // (the frame each slot was last drawn)
     unsigned swatchFrame_ = 0;
     void buildSwatches();
-    void buildCleanMeans(const std::vector<float>& key);   // CLEAN SURFACES: each look's average (uCleanTex)
+    void buildCleanMeans(const std::array<float, 14>& key);   // CLEAN SURFACES: each look's average (uCleanTex)
     std::vector<std::vector<uint8_t>> previewImgs_;   // (setPreviews': uploaded into previewTex_ when previewDirty_)
     int previewW_ = 0, previewH_ = 0, previewCols_ = 1, previewRows_ = 1;
     bool previewDirty_ = false;
@@ -340,7 +389,7 @@ private:
     float splitP_[2] = {}, splitN_[2] = {1, 0}, splitSeam_ = 0;
     float minScale_ = kMinTextScale;   // (the UI font's smallest scale: setUiFont)
     int fontGen_ = 0;
-    size_t dynCap_ = 0, flatCap_ = 0, uiCap_ = 0;
+    size_t flatCap_ = 0, uiCap_ = 0;
     float alpha_ = 1;         // (setAlpha)
     void uiIndices(size_t quads);   // (the 2D batch's index buffer covers at least this many quads)
     unsigned uiEbo_ = 0;      // the 2D batch's indices: 4 vertices a quad, drawn as 0 1 2 / 0 3 2 (fixed; grown when needed)
@@ -349,6 +398,10 @@ private:
 
     std::vector<DynVertex> dyn_, dynShadowOnly_, view_;
     std::vector<DynVertex> dynNoCast_;   // drawn with dyn_, but no shadow (and not in the shadow pass's caster rect)
+    // Each caster's bounding sphere, recorded as it goes into dyn_ / dynShadowOnly_ (cleared with them): the shadow
+    // pass's caster rect covers these, not every triangle (one projection a box, not 108 a frame per box).
+    struct CasterBound { Vec3 c; float r; };
+    std::vector<CasterBound> casters_;
     struct StaticItem { Vec3 c; float r; int first, count; };
     std::vector<StaticItem> staticItems_;
     std::vector<DynVertex> staticVerts_;          // (only while setStaticBoxes builds it; its memory kept until clearStaticBoxes)
@@ -368,6 +421,24 @@ private:
     Vec3 camPos_, sunDir_ = {0, 1, 0};
     float camYaw_ = 0, camPitch_ = 0, camFov_ = 90, camAspect_ = 0;
     Mat4 viewFix_;   // (relatch: the old view to the new one, for the view model built for the old)
+    GLuint layerProg_ = 0, layerFbo_ = 0, layerTex_ = 0;
+    int layerW_ = 0, layerH_ = 0;
+    bool layerPass_ = false, layerReady_ = false;
+    static constexpr int kLatchSlots = 3;
+    bool latchInit();
+    void latchBlock(GLuint prog);
+    void latchWriteLocked(float yaw, float pitch);
+    GLuint latchUbo_ = 0;
+    uint8_t* latchMap_ = nullptr;
+    int latchStride_ = 256, latchSlot_ = 0;
+    bool latchUse_ = false, latchArmed_ = false;
+    std::atomic_flag latchLock_ = ATOMIC_FLAG_INIT;
+    Vec3 latchEye_;
+    Mat4 latchProj_;
+    float latchYaw_ = 0, latchPitch_ = 0, latchKYaw_ = 0, latchKPitch_ = 0;
+    std::atomic<long long> latchWrites_{0};
+    std::atomic<double> latchLastWrite_{0};
+    GLint uFlatLatch_ = -1;
     Mat4 viewProjFix_;   // (viewProj_ * viewFix_: the view model's pass)
     Mat4 view_m_, proj_, viewProj_;
 };

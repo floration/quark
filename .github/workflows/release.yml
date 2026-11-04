@@ -263,7 +263,10 @@ jobs:
           python3 tools/studio/build.py build/assets_export
           python3 tools/site_assets.py --studio build/studio --out site-assets
           sh tools/launcher_build.sh -DCMAKE_BUILD_TYPE=Release
-          mkdir -p pkg && cp build/quark build/quark_server build-launcher/quark_launcher pkg/ && cp -r maps mods pkg/
+          # the dedicated server, built with a profile of its own ticks (PGO: ~4% faster ticks); fails if it simulates
+          # differently from build/ (tools/pgo_server.sh)
+          sh tools/pgo_server.sh build build-pgo -DQUARK_VERSION_SUFFIX="$QUARK_VERSION_SUFFIX"
+          mkdir -p pkg && cp build/quark build-pgo-use/quark_server build-launcher/quark_launcher pkg/ && cp -r maps mods pkg/
           cp build-avx2/quark pkg/quark_avx2
           cp -r lightcache pkg/maps/lightcache && sh tools/check_lightcache.sh build pkg/maps/lightcache
           python3 tools/pack.py pkg quark-linux.qpak

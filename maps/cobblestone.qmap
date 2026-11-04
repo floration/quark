@@ -2,6 +2,9 @@
 version 14
 handmade
 title Cobblestone
+setting a cobbled old town of brick, timber and tin roofs
+for ffa
+modes ffa 1v1 duel vs tourney
 sun 0.4352665 0.85821706 0.27204153
 
 palette base 0.62 0.62 0.64 accent 0.4 0.4 0.43 metal 0.3 0.33 0.37 glow 0.271 0.765 0.133 sky 0.62 0.66 0.72
@@ -896,6 +899,26 @@ spawn b 7 0.5 16 90
 spawn a -42 0.5 -35.5 180.00002
 spawn b 5.3 0.5 12.5 90
 spawn a -40.8 0.5 -38.5 180.00002
+spawn a -36.1 0 -40.1 180
+spawn a -44.1 0 -32.1 180
+spawn b 11.9 0 7.9 90
+spawn b 3.9 0 7.9 90
+spawn any -60.1 21.5 15.3 -64
+spawn any -52.1 8 -8.1 -97
+spawn any -52.7 13.5 23.9 -50
+spawn any -44.1 0 -16.1 -117
+spawn any -36.1 8 15.9 -39
+spawn any -28.1 0 -0.1 -64
+spawn any -28.7 13.5 -32.1 -163
+spawn any -20.1 8 -24.1 -180
+spawn any -20.7 21.5 31.9 -1
+spawn any -12.1 0 -32.1 164
+spawn any -11.3 13.5 7.9 36
+spawn any -4.1 8 -8.1 104
+spawn any 3.9 8 -32.1 140
+spawn any 12.7 13.5 -16.1 110
+spawn any 12.7 13.5 23.9 50
+spawn any 19.9 0 15.9 63
 group custom 0 0 -8 0 4 0 51 12
 part 31 0.5 0.9411765 0.5 0.6294125 1 0.5335 cut 4 0.034076054 1 0.0011612695 1 0 0 -1 -0 -1 0 0.96605563 -0 1 0 0.034078754 0.9999448
 part 31 0.625 0.9411765 0.5 0.75 0.9979961 0.5647 cut 5 0.107205525 1 0.007305342 1.003774 0 0 -1 -0 -0.5176762 0 1 0.5176762 1 0 0.06814333 1 -1 0 -0.06814333 -0.035276182
