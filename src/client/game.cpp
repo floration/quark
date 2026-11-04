@@ -10023,6 +10023,7 @@ void Game::openMainTab(int tab) {
 
 void Game::drawMainMenu() {
     const float W = (float)r_.width(), H = (float)r_.height(), s = H / 720.0f, Wd = W / s;
+    const size_t ss0 = r_.uiMark();   // (all of it supersampled, 4 x 4 a pixel: owner 2026-11-04, "always render at 400%")
     drawMainStrip(s, H);
     // the page beside the strip; the panels on the right, or under the page when the screen is too narrow for both
     const float px = kPageX, pw = kPageW;
@@ -10036,6 +10037,7 @@ void Game::drawMainMenu() {
     else drawMainCreate(s, px, pw, rx, rw, stacked ? 330 : kPanelTop);
     drawNameChip(s, W);
     if (!error_.empty()) ui_.labelCentered((kStripW * s + W) * 0.5f, H - 48 * s, error_, kRed, 1.0f, W - (kStripW + 48) * s);
+    r_.uiSupersample(ss0);
 }
 
 // The strip: the Q, the five tabs (icon over a label; the current one an accent bar on its left and a lighter fill),

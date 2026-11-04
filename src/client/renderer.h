@@ -28,7 +28,7 @@ struct FlatVertex { float pos[3]; float color[4]; };
 // 16 bytes: screen pixels, font atlas texel coords (u16 fixed point: (texel + 1) * 32), color (RGBA8), and for text
 // the text scale (integer part + 1/256ths; 0 = plain rect), which sets the distance-field edge and outline width
 // in the shader, so each character is one quad. pad[0]: the title's split Q; pad[1]: 1 a rounded rect (roundRect: uv its
-// own pixel position * 4, scaleInt its corner radius, scaleFrac its ring width * 4), 2 an icon (icon: uv as roundRect's,
+// own pixel position * 4, scaleInt its corner radius, scaleFrac its ring width * 4; pad[0] + 4: text supersampled), 2 an icon (icon: uv as roundRect's,
 // scaleInt which UiIcon).
 struct Vertex2D { int16_t pos[2]; uint16_t uv[2]; uint8_t color[4]; uint8_t scaleInt, scaleFrac, pad[2]; };
 // The 2D batch's allocator: growing the batch leaves the new vertices unset (every writer sets all of a vertex's
@@ -156,6 +156,8 @@ public:
     void quad2D(const float xy[8], const Color& c);
     // a line icon (UiIcon), size px square centred on (cx, cy), drawn as shapes in the UI shader (smooth at any size)
     void icon(int id, float cx, float cy, float size, const Color& c);
+    // the text among the UI quads from `from` on drawn supersampled, 4 x 4 a pixel (as smooth as at 400%)
+    void uiSupersample(size_t from);
     void setTextOutline(float k) { textOutline_ = k < 0 ? 0 : k > 1.5f ? 1.5f : k; }   // the text outline's width, x (0: none)
     void uiTransform(size_t from, float px, float py, float k, float dx, float dy);
     // The QUARK title (the menus'): centred on cx, its line top at y (as text() takes it), at text scale ts (fractional

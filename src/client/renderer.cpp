@@ -657,22 +657,24 @@ uniform vec2 uScreen;
 uniform vec2 uFontSize;
 uniform vec2 uLogoSize;
 uniform vec2 uExtSize;   // (the language glyph atlas: its quads' z is 2, texel coords (texel + 1) * 8)
-out vec2 vUV; out vec4 vColor; flat out float vScale; flat out float vSplit;
+out vec2 vUV; out vec4 vColor; flat out float vScale; flat out float vSplit; flat out float vSS;
 // a rounded rect (aText.w 1, Renderer::roundRect): its pixel position in it, its size (the last corner's: both
 // triangles end on it), corner radius and ring width
 out vec2 vLocal; flat out vec2 vSize; flat out vec3 vShape;
 void main() {
     vScale = aText.x + aText.y / 256.0;   // (255 + 255/256: a logo texel, Renderer::logo)
-    vSplit = aText.z;
+    vSS = aText.z > 3.5 ? 1.0 : 0.0;   // (+4: supersampled 4 x 4, Renderer::uiSupersample)
+    float z = aText.z - 4.0 * vSS;
+    vSplit = z;
     vShape = vec3(aText.w, aText.x, aText.y * 0.25);
     vLocal = aUV * 0.25; vSize = aUV * 0.25;
-    vUV = aText.z > 1.5 ? (aUV / 8.0 - 1.0) / uExtSize : (aUV / 32.0 - 1.0) / (vScale > 255.5 ? uLogoSize : uFontSize); vColor = aColor;
+    vUV = z > 1.5 ? (aUV / 8.0 - 1.0) / uExtSize : (aUV / 32.0 - 1.0) / (vScale > 255.5 ? uLogoSize : uFontSize); vColor = aColor;
     gl_Position = vec4(aPos.x / uScreen.x * 2.0 - 1.0, 1.0 - aPos.y / uScreen.y * 2.0, 0.0, 1.0);
 })";
 // Text: one distance-field sample per pixel. The glyph edge (0.5) is smoothed over one screen pixel; a band
 // outside it (1 px, wider on big text) is the black outline, coverage-blended under the fill.
 const char* kUiFS = R"(#version 330 core
-in vec2 vUV; in vec4 vColor; flat in float vScale; flat in float vSplit;
+in vec2 vUV; in vec4 vColor; flat in float vScale; flat in float vSplit; flat in float vSS;
 in vec2 vLocal; flat in vec2 vSize; flat in vec3 vShape;
 uniform sampler2D uFont;
 uniform sampler2D uExt;
@@ -726,9 +728,13 @@ float icon(int id, vec2 p, float h) {
 }
 void main() {
     if (vShape.x > 1.5) {   // an icon: its shape's coverage (the grid scaled to the quad; at least a 1 px stroke)
-        float u = vSize.x / 24.0;
-        float d = icon(int(vShape.y + 0.5), vLocal / u, max(1.0, 0.5 / u));
-        float a = clamp(0.5 - d * u, 0.0, 1.0);
+        // (4 x 4 samples a pixel, each smoothed over its own quarter pixel: as if drawn at 400% and scaled down)
+        float u = vSize.x / 24.0, h = max(1.0, 0.5 / u), a = 0.0;
+        int id = int(vShape.y + 0.5);
+        for (int i = 0; i < 4; i++)
+            for (int j = 0; j < 4; j++)
+                a += clamp(0.5 - icon(id, (vLocal + (vec2(i, j) - 1.5) * 0.25) / u, h) * u * 4.0, 0.0, 1.0);
+        a *= 1.0 / 16.0;
         if (a <= 0.004) discard;
         fragColor = vec4(vColor.rgb, vColor.a * a);
         return;
@@ -751,14 +757,29 @@ void main() {
         fragColor = vec4(a > 0.0 ? c / a : c, a * vColor.a);
         return;
     }
+    vec2 ddx = dFdx(vUV), ddy = dFdy(vUV);   // (before any branch: one screen pixel in the atlas)
     float d = vSplit > 1.5 ? texture(uExt, vUV).r : texture(uFont, vUV).r;
     if (vScale <= 0.0) { fragColor = vec4(vColor.rgb, vColor.a * d); return; }
     float px = uK / vScale;                       // one screen pixel in distance-field units
     float w = 0.5 * px;
     float od = max(0.12, 0.5 - max(1.0, vScale * 0.15) * px * uOutline); // outline edge
-    float o = smoothstep(od - w, od + w, d);
+    float o, fill;
+    if (vSS > 0.5) {   // the main menu's text: 4 x 4 samples a pixel, each edge a quarter pixel wide (as if drawn at 400%)
+        o = 0.0; fill = 0.0;
+        float w4 = 0.25 * w;
+        for (int i = 0; i < 4; i++)
+            for (int j = 0; j < 4; j++) {
+                vec2 uv = vUV + ddx * ((float(i) - 1.5) * 0.25) + ddy * ((float(j) - 1.5) * 0.25);
+                float e = vSplit > 1.5 ? textureLod(uExt, uv, 0.0).r : textureLod(uFont, uv, 0.0).r;
+                o += smoothstep(od - w4, od + w4, e);
+                fill += smoothstep(0.5 - w4, 0.5 + w4, e);
+            }
+        o *= 1.0 / 16.0; fill *= 1.0 / 16.0;
+    } else {
+        o = smoothstep(od - w, od + w, d);
+        fill = smoothstep(0.5 - w, 0.5 + w, d);
+    }
     if (o <= 0.004) discard;
-    float fill = smoothstep(0.5 - w, 0.5 + w, d);
     vec3 col = vColor.rgb;
     if (vSplit > 0.5 && vSplit < 1.5) {   // the title's Q in another font: the second colour past the slanted line, a black seam on it
         float s = dot(gl_FragCoord.xy - uSplitP, uSplitN);
@@ -2508,6 +2529,15 @@ void Renderer::icon(int id, float cx, float cy, float size, const Color& c) {
         v.scaleInt = (uint8_t)id; v.scaleFrac = 0; v.pad[0] = 0; v.pad[1] = 2;
     };
     put(d[0], X0, Y0, 0, 0); put(d[1], X1, Y0, U1, 0); put(d[2], X1, Y1, U1, V1); put(d[3], X0, Y1, 0, V1);
+}
+
+// The UI quads from `from` on: their text drawn supersampled (4 x 4 samples a pixel in the UI shader, as smooth as drawing
+// it at 400% and scaling it down; owner 2026-11-04: the main menu's icons and text). Icons always are.
+void Renderer::uiSupersample(size_t from) {
+    for (size_t i = from; i < ui_.size(); i++) {
+        Vertex2D& v = ui_[i];
+        if (v.pad[1] == 0 && (v.scaleInt || v.scaleFrac) && (v.scaleInt & v.scaleFrac) != 255 && v.pad[0] < 4) v.pad[0] += 4;   // (glyphs only: not rects or the logo)
+    }
 }
 
 // The logo's size: the em of the game's text at ts (7.5 units) times Rubik's cap height matched to the old UI font's
