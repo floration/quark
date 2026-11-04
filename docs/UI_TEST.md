@@ -93,14 +93,18 @@ click-to-watch-next, the editor's 3D view (click to select), the selection's dra
 | `hide-rps` | hosting hide and seek, at the tiebreak | rock / paper / scissors (slot keys 1 / 2 / 3) |
 | `editor-builtin` | the offline editor, a built-in map with edits | the "keep your edits as a new map?" prompt from each way out (save, leave, test, host, open); only that prompt's buttons |
 | `benchmark` | BENCHMARKS with three saved runs (made up, saved as a run is) | the runs list (RUN BENCHMARK, a row per run), a run's result page: NAME, EXPORT CSV / PNG, DELETE, OPEN FOLDER, RUN AGAIN |
-| `menus` | the main menu, offline | everything else: join, host (custom modes: every tab), vs bots, settings (every page, FONT too: each font is picked and the layout checked in it), leaderboard, info, demos, the offline map editor (every tool, material, selection kind, handle) |
+| `menus` | the main menu, offline | the main menu's three tabs, its strip and name chip, then everything else: join, host (custom modes: every tab), vs bots, settings (every page, FONT too: each font is picked and the layout checked in it), leaderboard, info, demos, the offline map editor (every tool, material, selection kind, handle) |
+
+After the menus scenario, `mainMenuCheck` checks that every destination of the old one-column main menu (and the name, RANKED,
+CUSTOM MODE) is on one of the main menu's tabs with its expectation; a missing one is a SETUP failure. A page left with
+BACK returns to the tab it came from, so BACK declares `main*`.
 
 The same widget is tested once per scenario and screen (`<scenario> :: <screen> [<what it acts on>] > <id>`); the
 editor's selection tools are tested once per selection kind (box, spawn, light, site, hill, checkpoint, path, ladder,
 group / room / stairs).
 
-The menus' pages and their paths: `main` (`main/save-copy`: the "keep your copy?" dialog after someone else's edit
-session), `join`, `connecting`, `host` (`host/advanced`: UDP PORT, AUTO PORT FORWARD, SERVER LOG, BOT BRAIN (the test's data folder has two brains, one that doesn't compile); `host/picker:maps`,
+The menus' pages and their paths: `main` (the main menu's PLAY tab; `main/practice` and `main/create` its other tabs;
+`main/save-copy`: the "keep your copy?" dialog after someone else's edit session), `join`, `connecting`, `host` (`host/advanced`: UDP PORT, AUTO PORT FORWARD, SERVER LOG, BOT BRAIN (the test's data folder has two brains, one that doesn't compile); `host/picker:maps`,
 `:modes`, `:variants`, `:ladders`), `vsbots` (+ the same pickers), `custom/general`, `custom/weapons`, `custom/maps`,
 `custom/movement`, `custom/dash` (DASH + GRAPPLE), `info/modes`, `info/controls`, `info/hud`, `info/hosting`,
 `info/editor`, `info/maps` (scrolling isn't a screen: the wheel), `leaderboard` (`leaderboard/race-stats`), `demos`,

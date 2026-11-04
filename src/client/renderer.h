@@ -157,6 +157,8 @@ public:
     // (tools/make_logo.py, logo_data.h), one mipmapped quad; in another UI font: the word in that font, the same size,
     // its Q split by the text shader. Either way in the 2D batch: no extra pass or draw call.
     void logo(float cx, float y, float ts, const Color& friendly, const Color& enemy);
+    // the title's Q alone, as logo() draws it at ts (the main menu's icon strip)
+    void logoQ(float cx, float y, float ts, const Color& friendly, const Color& enemy);
     // level: how far its letters are closed up (font units, each pair as far as its ink allows: textfit.h; Ui's fitting)
     void text(float x, float y, float scale, const std::string& s, const Color& c, float level = 0);
     // proportional UI font (Rubik Bold, or the one picked in Settings > FONT): widths come from per-glyph advances

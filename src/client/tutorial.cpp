@@ -485,8 +485,8 @@ void Game::drawTutorialOffer() {
     y += nl * 20 - 4 + 12;
     const float hw = L.L(258);
     auto close = [&] { tutOffer_ = false; cfg_.tutorialOffered = true; cfg_.save(); };
-    if (ui_.button(x, L.Y(y), hw, L.L(40), "NOT NOW", UiExp::nav("main").withId("NOT NOW")) || uiIn_.escape) close();
+    if (ui_.button(x, L.Y(y), hw, L.L(40), "NOT NOW", UiExp::nav("main*").withId("NOT NOW")) || uiIn_.escape) close();
     else if (ui_.button(x + bw - hw, L.Y(y), hw, L.L(40), "START TUTORIAL", UiExp::state("hosting", "1").withId("START TUTORIAL"))) { close(); startTutorial(0); return; }
     y += 40 + 12;
-    ui_.hintCentered(L.X(640), L.Y(y), "IT IS ALWAYS IN THE MAIN MENU: TUTORIAL", kGrey, bw);
+    ui_.hintCentered(L.X(640), L.Y(y), "IT IS ALWAYS IN THE MAIN MENU: PRACTICE > TUTORIAL", kGrey, bw);
 }

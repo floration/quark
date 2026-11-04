@@ -2463,6 +2463,37 @@ void Renderer::logo(float cx, float y, float ts, const Color& friendly, const Co
 }
 
 
+// The title's Q alone (the main menu's icon strip): the baked logo's first 134 texel columns (the Q and its outline end
+// at 130, the U's start at 137), centred on cx; in another UI font the Q in it, split as logo() splits it.
+void Renderer::logoQ(float cx, float y, float ts, const Color& friendly, const Color& enemy) {
+    if (alpha_ <= 0 || ts <= 0) return;
+    logoA_ = friendly; logoB_ = enemy;
+    constexpr int kQW = 134;
+    if (!g_uiFont && logoTex_) {
+        const float k = 7.5f * ts * kLogoEmK / kLogoEm;
+        const float x0 = std::round(cx - kQW * k * 0.5f), y0 = std::round(y + 5.7f * ts - kLogoOY * k);
+        uiQuad(ui_, x0, y0, x0 + kQW * k, y0 + kLogoH * k, u16uv(0), u16uv(0), u16uv(kQW), u16uv(kLogoH), rgba8({1, 1, 1, friendly.a}, alpha_), 255, 255);
+        logoDrawn_ = true;
+        return;
+    }
+    const TextMetrics& m = uiMetrics();
+    const float sc = ts * kLogoEmK, sk = sc * m.fitScale;
+    const float w = textWidth("Q", sc), x0 = std::round(cx - w * 0.5f);
+    const float top = y + 5.7f * ts - (6.0f * m.fitScale + m.fitShift) * sc;
+    const size_t n0 = ui_.size();
+    text(x0, top, sc, "Q", friendly);
+    for (size_t i = n0; i < ui_.size(); i++) ui_[i].pad[0] = 1;   // (the split Q)
+    const int q = 'Q' - 32;
+    const GlyphInk& ink = m.ink[q];
+    const float qx = x0 + m.adv[q] * sk * 0.5f;
+    const float qy = std::round(top) + (ink.empty() ? 3.0f * m.fitScale : (ink.y0 + ink.y1) * 0.5f * m.fitScale) * sc + m.fitShift * sc;
+    const float nl = std::sqrt(1 + kLogoTilt * kLogoTilt);
+    splitP_[0] = qx; splitP_[1] = (float)height_ - qy;
+    splitN_[0] = 1 / nl; splitN_[1] = -kLogoTilt / nl;
+    splitSeam_ = 0.5f * kLogoSeam * 7.5f * ts * kLogoEmK;
+    splitDrawn_ = true;
+}
+
 void Renderer::text(float x, float y, float s, const std::string& in, const Color& c, float level) {
     const std::string& str = translated(in);
     if (alpha_ <= 0) return;   // (fully transparent: nothing to draw)

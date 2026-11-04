@@ -97,6 +97,10 @@ void Game::trainerStart(const trainer::Scenario* sc) {
     if (!sc) return;
     if (!trScoresLoaded_) trainerLoadScores();
     trSc_ = sc;
+    {   // the main menu's PRACTICE card: this scenario, at this difficulty
+        const std::string last = std::string(sc->id) + ":" + std::to_string(trDiff_);
+        if (cfg_.lastTrainer != last) { cfg_.lastTrainer = last; cfg_.save(); }
+    }
     trMode_ = sc->mode;
     trCat_ = sc->cat;
     trRun_.start(*sc, trDiff_, (uint32_t)(timeNow() * 1000.0) ^ 0x51ED5EEDu);
@@ -414,5 +418,5 @@ void Game::drawTrainerMenu(const SetLayout& L) {
              kGrey, L.L(600));
     ui_.hint(L.X(176), L.Y(638), trCat_ == CAT_CLICK ? "RIFLE, ONE SHOT A CLICK. SCORE: KILLS X 100 X ACCURACY" : trCat_ == CAT_SWITCH ? "LASER. SCORE: KILLS X 100 X ACCURACY" : "LASER. SCORE: DAMAGE X 10 X ACCURACY",
              kGrey, L.L(600));
-    if (ui_.button(L.X(944), L.Y(632), L.L(176), L.L(40), "BACK", UiExp::nav("main"))) setScreen(Screen::Main);
+    if (ui_.button(L.X(944), L.Y(632), L.L(176), L.L(40), "BACK", UiExp::nav("main*"))) setScreen(Screen::Main);
 }
