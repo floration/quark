@@ -117,6 +117,7 @@ logged and the default is kept. Parsed once at startup; drawing costs what the b
    "alpha": 1,                                  // (optional) < 1: see-through (projectiles)
    "shadow": true, "visOnly": false,            // casts a shadow; drawn only seen from outside (face plates)
    "crouch": false,                             // players: a crouch also squashes the half height
+   "bone": "thigh_l",                           // (optional, players) the joint it moves with (below; default root)
    "name": "legs"}                              // (optional, ignored by the game)
 ]}}
 ```
@@ -128,6 +129,15 @@ logged and the default is kept. Parsed once at startup; drawing costs what the b
 - Checks: 1 to 256 boxes; every number finite; `c` within 64 m; `h` over 0 and at most 32 m; `color`, `mul`, `add`,
   `teamMul` 0 to 16; `alpha` over 0, at most 1; known slot names; booleans true / false. Numbers are written with 9
   significant digits, so floats come back exactly.
+- **Players' joints** (`bone`, PLAYER ANIMATIONS): `root` (never moves), `pelvis` (turns toward where the player
+  moves), `torso` and `head` (follow the aim, a little of its pitch; the torso bobs and leans), `thigh_l` / `thigh_r`
+  (turn at the hip: the top of the thigh boxes), `shin_l` / `shin_r` (turn at the knee: the bottom of the thigh boxes),
+  `foot_l` / `foot_r` (kept level with the floor; the ankle is the top of the foot boxes). `_l` is the model's left
+  (-X). A box sits where its `c` puts it standing; the game moves it with its joint. The joints are measured from the
+  boxes, so a model with longer legs walks with longer legs. A file with no `bone` at all (every older one), or without
+  a thigh and a shin on both sides, is drawn standing still, as before. The default SIMPLE is all `root`. The tuning
+  (stride lengths, swing, knee bend, the jump pose, turn limits) is `kAnim` in src/client/models.cpp. A mesh override
+  (no box list) isn't animated.
 - Not animated in a box override: the rocket's flame flicker, the sticky's core blink and the bubble's wobble (the
   game spins and turns it as usual).
 
