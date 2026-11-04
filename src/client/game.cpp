@@ -1891,27 +1891,16 @@ void Game::handleEvents() {
                 if (e.a == net_.clientId()) {
                     float dmg = e.c / 100.0f; // hundredths of a point
                     bool head = e.text == "h"; // a headshot: its own red number
-                    hitUntil_ = time_ + cfg_.hitFlashTime;
-                    hitHead_ = head;
-                    matchHits_++; matchDmg_ += dmg;
-                    // four tiers by this hit's damage, each heavier and louder (hitSoundFor); hits landing together make one
-                    if (cfg_.hitsounds) {
-                        int snd = cfg_.hitTiers ? hitSoundFor(dmg) : SND_HIT_MED;   // (MORE 5: HITSOUND TIERS off: one sound)
-                        if (hitGate_.pass(time_, snd)) audio_.play(snd, 0.9f * cfg_.hitVolume, 1.0f, cfg_.hitPack);
-                        if (head && cfg_.headshotSound) audio_.play(SND_HIT, 0.7f * cfg_.hitVolume, 1.7f, cfg_.hitPack);   // (a higher ding over it)
+                    matchHits_++; matchDmg_ += dmg;   // (the match summary: the server's count)
+                    // already shown when you landed it (sendHits): only what the server added past that shows now
+                    if (e.b < kMaxPlayers) {
+                        float& shown = shownDmg_[e.b];
+                        if (time_ - shownAt_[e.b] > std::max(1.0, pingSec() * 2.0 + 0.5)) shown = 0;   // (stale: a hit the server refused)
+                        const float took = std::min(shown, dmg);
+                        shown -= took; dmg -= took;
+                        if (dmg < 0.5f) break;
                     }
-                    // hits on the same target in quick succession add up into one number
-                    bool merged = false;
-                    // (GAMEPLAY > MORE 2: STACKING: quick hits add up, a number a hit, or one running total while it shows)
-                    if (cfg_.dmgNumStack != 1)
-                        for (auto& d : dmgNums_)
-                            if (d.victim == e.b && (d.head == head || cfg_.dmgNumStack == 2) && time_ - d.start < (cfg_.dmgNumStack == 2 ? cfg_.dmgNumTime : 0.35)) {
-                                d.amount += dmg; d.start = time_; d.head = d.head || head; merged = true; break;
-                            }
-                    if (!merged) {
-                        const PlayerSnap* v = net_.findPlayer(e.b);
-                        dmgNums_.push_back({e.b, dmg, time_, v ? v->pos : Vec3(), head});
-                    }
+                    hitFeedback(e.b, dmg, head);
                 }
                 break;
             case EV_SPAWN:
@@ -2056,6 +2045,7 @@ void Game::frame(double dt) {
     frameTimes_[frameIdx_] = (float)dt;
     frameIdx_ = (frameIdx_ + 1) & (kFrameTimes - 1);   // (a mask, not a 64-bit divide)
     frameCount_ = std::min(frameCount_ + 1, frameTimes_.size());
+    if (perfStage_ >= 3) frameGraphFeed(dt); else ftOn_ = false;   // (F3's pacing graph: fed only while it's shown)
     if (!polledEarly_) {   // (normally done by preInput, before this frame's input was read)
         if (bake_ && net_.playback()) net_.holdPlaybackClock();   // a demo waits for its map's bake
         QZONE("net poll"); net_.poll();
@@ -2205,7 +2195,7 @@ void Game::frame(double dt) {
                 recoil_ = w == WPN_LASER ? 0.15 : w == WPN_SNIPER ? 1.6 : 1.0;
                 matchShots_++;
                 if (w != WPN_KNIFE && w != WPN_SYRINGE && w != WPN_LOCATOR) muzzleUntil_ = time_ + (w == WPN_SNIPER ? 0.07 : 0.05);
-                if (w == WPN_ROCKET || w == WPN_CROSSBOW || (w == WPN_KNIFE && alt)) spawnPredictedProjectile(w, alt, c);   // X5
+                if (w == WPN_ROCKET || w == WPN_CROSSBOW || (w == WPN_STICKY && !alt) || isThrow(w, alt)) spawnPredictedProjectile(w, alt, c);   // X5
                 if (!weaponDef(w).projectile && w != WPN_KNIFE && w != WPN_SYRINGE && w != WPN_LOCATOR && !(w == WPN_SHOTGUN && alt) &&
                     (w != WPN_LASER || time_ >= nextLocalSpark_) && cfg_.impactSparks)
                     localImpactSparks(w, c);   // X4: a spark on an enemy you hit, at once (the sound and number: the server's)
@@ -2305,7 +2295,7 @@ void Game::frame(double dt) {
                 if (shown) continue;
                 bool mine = false;   // (one that blew up on your screen far from here: its hits went from there)
                 for (auto& st : projStarts_) mine |= st.id == old.id && st.boomed;
-                if (!mine && (old.type == WPN_ROCKET || old.type == WPN_CROSSBOW)) {
+                if (!mine && (old.type == WPN_ROCKET || old.type == WPN_CROSSBOW || old.type == WPN_KNIFE)) {
                     // the server's copy landed before yours did on your screen: its hits as you see them, from where it was
                     const float sp = length(old.vel);
                     const Vec3 dir = sp > 0.01f ? old.vel / sp : Vec3(0, 0, -1);
@@ -2337,12 +2327,13 @@ void Game::frame(double dt) {
         // server.cpp; armed: seen for the arm time, so never one the server would still hold back)
         if (heldWeapon_ == WPN_STICKY && altKey() && !localFireLocked_ && net_.selfAlive() && !paused_ && !chatting_)
             for (auto& st : projStarts_) {
-                if (st.boomed || time_ - st.seen < weaponAlt().stickyArmTime) continue;
+                if (st.boomed || time_ - st.seen + pingSec() * 0.5 < weaponAlt().stickyArmTime) continue;   // (seen half a round trip after the server launched it)
                 for (auto& p : lastProjectiles_)
                     if (p.id == st.id && p.type == WPN_STICKY) {
                         Vec3 at = p.pos;
                         if ((p.flags & PROJ_ON_PLAYER) && p.onPlayer == net_.clientId()) net_.attachedPos(p, 1.0f, &at);
                         localBoom(p.id, WPN_STICKY, at); st.boomed = true;
+                        reportBlast(WPN_STICKY, false, at, -1);   // (its hits as you see them, now)
                     }
             }
 
@@ -3038,10 +3029,16 @@ void Game::drawWorld(float alpha) {
     // along as the copy was)
     auto projGravity = [](int type, bool lob) { return projectileFlight(type, lob ? kRocketLobGravity : 1.0f); };   // (the drop and the primary rocket's thrust)
     if (!alive) for (auto& q : predProj_) q.live = false;
+    // how long a copy waits for the server's, and how far ahead of it the server's is drawn: a round trip and more
+    // (owner, 2026-11-04: at a high ping your rocket sat on the wall, waiting for the server's explosion: the copy
+    // gave up at 0.6 s and the lead stopped at 0.4 s, so it was drawn from the server's spot, a round trip behind)
+    const double rtt = pingSec();
+    const double predLife = clampf((float)(rtt * 1.5 + 0.3), 0.6f, 3.0f);
+    const float maxLead = clampf((float)(rtt * 1.5 + 0.1), 0.4f, 2.5f);
     for (auto& q : predProj_) {   // the copies, where they'd be now (stopped at the first wall: the server's word follows)
         if (!q.live) continue;
         const double age = time_ - q.born;
-        if (age > 0.6) { q.live = false; continue; }   // (no copy came: a shot the server refused)
+        if (age > predLife) { q.live = false; continue; }   // (no copy came: a shot the server refused)
         if (q.atWall) continue;
         Vec3 p = q.pos0, v = q.vel0;
         net_.map().flyProjectile(p, v, projGravity(q.type, q.lob), (float)age);
@@ -3054,7 +3051,7 @@ void Game::drawWorld(float alpha) {
         bool vHead = false;
         if (q.type != WPN_KNIFE && len > 1e-4f && enemyOnSegment(q.pos, p, &et, &victim, &vHead) && (hit < 0 || et * len < hit)) { hit = et * len; hm = -1; }
         else victim = -1;
-        if (hit >= 0 && hm == kMatRubber && q.type == WPN_ROCKET && dot(v, hn) < 0) {   // (off rubber: on from there, as the server's does)
+        if (hit >= 0 && hm == kMatRubber && (q.type == WPN_ROCKET || q.type == WPN_STICKY) && dot(v, hn) < 0) {   // (off rubber: on from there, as the server's does)
             q.pos0 = q.pos + d / len * std::max(0.0f, hit - 0.05f);
             q.vel0 = v - hn * (dot(v, hn) * (1.0f + kProjRubberBounce));
             q.born = time_;
@@ -3063,9 +3060,15 @@ void Game::drawWorld(float alpha) {
         }
         if (hit >= 0) {   // (hidden; the server's copy still takes over from it, and isn't drawn once this one blew up)
             q.atWall = true;
-            if (q.type != WPN_KNIFE) {
+            if (q.type == WPN_ROCKET || q.type == WPN_CROSSBOW) {
                 localBoom(0xFFFF, q.type, q.pos + d / len * hit); q.boomed = true;
                 reportImpact(q.type, q.lob, q.pos, q.pos + d / len * hit, victim, vHead);
+            } else if (q.type == WPN_KNIFE && victim >= 0) {   // a thrown knife in someone: your hit, now
+                q.boomed = true;
+                reportImpact(q.type, true, q.pos, q.pos + d / len * hit, victim, vHead);
+            } else if (q.type == WPN_STICKY && victim < 0) {   // stuck on the wall, drawn there until the server's comes
+                q.pos = q.pos + d / len * std::max(0.0f, hit - 0.05f);
+                q.stuck = true;
             }
             continue;
         }
@@ -3085,7 +3088,7 @@ void Game::drawWorld(float alpha) {
                 for (auto& q : predProj_) if (q.live && q.type == pr.type && (!copy || q.born < copy->born)) copy = &q;
             if (copy) {
                 const float sp = length(pr.vel);
-                if (sp > 0.1f) st.lead = clampf(dot(copy->pos - pr.pos, pr.vel / sp) / sp, 0.0f, 0.4f);
+                if (sp > 0.1f) st.lead = clampf(dot(copy->pos - pr.pos, pr.vel / sp) / sp, 0.0f, maxLead);
                 Vec3 p = pr.pos, v = pr.vel;
                 net_.map().flyProjectile(p, v, projGravity(pr.type, (pr.flags & PROJ_LOB) != 0), st.lead);
                 st.offset = copy->pos - p;   // (what's left: blended out like the muzzle start)
@@ -3161,10 +3164,11 @@ void Game::drawWorld(float alpha) {
                 Vec3 hn;
                 int hm = -1;
                 float hit = len > 1e-4f ? map.raycast(pr.pos, d / len, len, &hn, &hm) : -1.0f, et;
-                const bool blows = pr.type == WPN_ROCKET || pr.type == WPN_CROSSBOW;   // (stickies stick; knives: the server's word)
+                const bool blows = pr.type == WPN_ROCKET || pr.type == WPN_CROSSBOW;   // (stickies stick)
+                const bool knife = pr.type == WPN_KNIFE;   // (a thrown knife: its hit on a player is yours too)
                 int victim = -1;
                 bool vHead = false;
-                if (blows && len > 1e-4f && enemyOnSegment(pr.pos, p, &et, &victim, &vHead) && (hit < 0 || et * len < hit)) { hit = et * len; hm = -1; }
+                if ((blows || knife) && len > 1e-4f && enemyOnSegment(pr.pos, p, &et, &victim, &vHead) && (hit < 0 || et * len < hit)) { hit = et * len; hm = -1; }
                 else victim = -1;
                 if (hit >= 0 && hm == kMatRubber && pr.type == WPN_ROCKET && dot(v, hn) < 0) {
                     // off rubber (as the server's does): drawn on along the bounce, not blown up there (it vanished)
@@ -3179,6 +3183,9 @@ void Game::drawWorld(float alpha) {
                 if (blows && hit >= 0) {   // where it lands, as you see it (and its hits: yours)
                     localBoom(pr.id, pr.type, pr.pos + d / len * hit); st.boomed = true;
                     reportImpact(pr.type, (pr.flags & PROJ_LOB) != 0, pr.pos, pr.pos + d / len * hit, victim, vHead);
+                } else if (knife && hit >= 0 && victim >= 0) {
+                    st.boomed = true;
+                    reportImpact(pr.type, true, pr.pos, pr.pos + d / len * hit, victim, vHead);
                 }
                 pr.pos = hit >= 0 ? pr.pos + d / len * std::max(0.0f, hit - 0.05f) : p;
                 pr.vel = v;
@@ -3187,7 +3194,13 @@ void Game::drawWorld(float alpha) {
         if (!boomed) drawProj(pr, false);
     }
     for (auto& q : predProj_) {
-        if (!q.live || q.atWall) continue;
+        if (!q.live || (q.atWall && !q.stuck)) continue;
+        if (q.stuck) {   // a sticky copy stuck on a wall: still there
+            ProjectileSnap pr;
+            pr.type = q.type; pr.owner = (uint8_t)me; pr.id = 0xFFFF; pr.pos = q.pos; pr.flags = PROJ_STUCK;
+            drawProj(pr, true);
+            continue;
+        }
         ProjectileSnap pr;
         pr.type = q.type; pr.owner = (uint8_t)me; pr.id = 0xFFFF;
         Vec3 v = q.vel0, p = q.pos0;
@@ -9857,7 +9870,7 @@ void Game::drawMenu() {
     // nor over the main menu's page (its strip has the Q)
     if (screen_ != Screen::Settings && !mainPage) r_.logo(cx, H * 0.12f, 8 * s, rgba(cfg_.fixedLogo ? defaultSettings().colorFriendly : cfg_.colorFriendly),
                                              rgba(cfg_.fixedLogo ? defaultSettings().colorEnemy : cfg_.colorEnemy));   // (the Q in both team colours; FIXED LOGO COLORS: the defaults)
-    if (!mainPage) r_.text(8 * s, H - 20 * s, std::max(1.0f, std::round(s)), std::string("V") + QUARK_VERSION, kGrey);   // (the main page: beside its strip)
+    if (!mainPage) r_.text(8 * s, H - 20 * s, std::max(1.0f, std::round(s)), kQuarkBuildId, kGrey);   // (the main page: beside its strip; the full build, owner 2026-11-04)
 
     if (picker_ != PICK_NONE && (screen_ == Screen::Host || screen_ == Screen::VsBots)) { drawPicker(cx, H * 0.12f + 80 * s); return; }
     if (edPrompt_ && screen_ == Screen::Main) { drawEditorSavePrompt(); return; }
@@ -10149,7 +10162,7 @@ void Game::drawMainStrip(float s, float H) {
         else if (confirmed("quit")) quit_ = true;
         uiIn_.pressed = false;
     }
-    r_.text(sw + 8 * s, H - 20 * s, std::max(1.0f, std::round(s)), std::string("V") + QUARK_VERSION, kGrey);
+    r_.text(sw + 8 * s, H - 20 * s, std::max(1.0f, std::round(s)), kQuarkBuildId, kGrey);   // (the full build, owner 2026-11-04)
 }
 
 namespace {
@@ -11543,7 +11556,7 @@ void Game::drawPerf() {
         snprintf(b, sizeof b, "WORST %.1fMS  PING %d  3D %dX%d", st.worstMs, net_.findPlayer(net_.clientId()) ? net_.findPlayer(net_.clientId())->ping : 0,
                  r_.sceneWidth(), r_.sceneHeight());   // (the world's own resolution: RENDER SCALE)
         perfText2_ = b;
-        perfTick_ = std::string("QUARK V") + QUARK_VERSION;   // (with the numbers, not every frame)
+        perfTick_ = kQuarkBuildId;   // (with the numbers, not every frame)
         if (net_.hasSnapshot()) perfTick_ += "  SERVER " + std::to_string(net_.tickRate()) + " HZ  LOSS " + std::to_string(net_.snapshotLoss()) + "%";
         // PRIORITIZE GAME: what Windows actually gave (and the focus state is checked again here, twice a second: a
         // window focused before its focus callback was set never got the call)
@@ -11571,7 +11584,12 @@ void Game::drawPerf() {
         pipeNextUpdate_ = time_ + 0.1;
         pipeAverages();
     }
-    if (perfStage_ >= 3 && (screen_ == Screen::InGame || screen_ == Screen::TrainerRun)) drawPipeline(x, y + lh * nl + 16 * s, std::max(1.0f, ts * 0.85f));
+    if (perfStage_ >= 3) {   // (stages 3 and 4: the latency graph in a game, then the frame pacing graph under it)
+        const float gts = std::max(1.0f, ts * 0.85f), gy = y + lh * nl + 16 * s;
+        float bottom = gy;
+        if (screen_ == Screen::InGame || screen_ == Screen::TrainerRun) bottom = drawPipeline(x, gy, gts);
+        drawFrameGraph(x, bottom + (bottom > gy ? 8 * s : 0), gts);
+    }
 }
 
 // F4: only the pipeline graph's mouse to photon number, worked out twice a second. The same measuring as F3 runs
@@ -11695,8 +11713,8 @@ void Game::pipeCollect() {    // afterSwap: this frame's marks into its slot; fi
 // measured on this PC (CPU marks, GPU timestamps) and, for what the game can't see, worked out from the mouse's report
 // rate, the frame rate and the monitor's refresh rate (marked EST). Averages over the last half second.
 // totalOnly: just the mouse to photon time into it, nothing drawn (F4).
-void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
-    if (!pipeHave_) return;
+float Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
+    if (!pipeHave_) return y;
     const double* a = pipeAvg_;
     double sumDt = 0;
     for (size_t k = 0; k < frameCount_; k++) sumDt += frameTimes_[k];
@@ -11738,7 +11756,7 @@ void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
     span("HUD DRAW", PM_SCENE1, PM_HUD, cCpu);
     if (cfg_.presentMode == 3) span("LATENT SYNC: HOLD FOR THE BLANK", PM_HUD, PM_SWAP0, cWait);
     span("SWAP", PM_SWAP0, PM_SWAP1, cCpu);
-    if (ultraPaced()) span("GPU WAIT (ULTRA)", PM_SWAP1, PM_AFTER, cWait);
+    if (ultraPaced()) span(cfg_.lowLatency == 2 ? "GPU WAIT (ULTRA)" : "GPU WAIT (LATENT SYNC)", PM_SWAP1, PM_AFTER, cWait);
     rows.push_back({"GPU", a[PM_COUNT], a[PM_COUNT + 1], cGpu});
     const size_t hwFrom = rows.size();   // (from here on: the display's part; row 0, the mouse's report, is hardware too)
     // after the GPU: how the frame reaches the screen (EST): the compositor in a window, vsync's vblank, then the
@@ -11758,7 +11776,7 @@ void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
     rows.push_back({"SCANOUT TO THE CROSSHAIR (EST)", t, t + refresh * 0.5, cEst});
     t += refresh * 0.5;
     const double total = t - rows.front().t0;   // (from the mouse to the photon)
-    if (totalOnly) { *totalOnly = total; return; }
+    if (totalOnly) { *totalOnly = total; return y; }
     // Split (owner, 2026-11-02): the game's own part (from the mouse report's arrival to the GPU done) and the hardware's
     // (the mouse's polling, the display's sync and scanout). F3's fifth stage (GAME ONLY) leaves the hardware rows out.
     double hwMouse = rows.front().t1 - rows.front().t0, hwDisplay = 0;
@@ -11816,6 +11834,67 @@ void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
         yy += lh;
     }
     r_.text(x + 6, yy, ts, gameOnly ? "THE GAME'S PART ONLY: NO MOUSE POLLING, NO DISPLAY; ONE TIME LINE" : "ONE TIME LINE; EST = WORKED OUT, NOT MEASURED; MONITOR PROCESSING NOT INCLUDED", {0.7f, 0.7f, 0.75f, 1});
+    return y + h;
+}
+
+// F3's frame pacing graph (owner, 2026-11-04): the last 5 seconds, oldest on the left, one column per 10 ms drawn from
+// its fastest to its slowest frame, so one late frame shows as a spike however many frames share the column. The
+// bounds are the average frame time +-50%; a frame outside them widens them for as long as it's on the graph.
+void Game::frameGraphFeed(double dt) {
+    if (!ftOn_) {   // (just opened: start empty, so nothing from before F3 was on is shown)
+        for (FtCol& c : ftCols_) c = FtCol{};
+        ftHead_ = 0; ftClock_ = 0; ftOn_ = true;
+    }
+    // a frame longer than a column covers the columns it spanned (drawn as its time, not counted twice)
+    ftClock_ += dt;
+    const float f = (float)dt;
+    while (ftClock_ >= kFtColSec) {
+        ftClock_ -= kFtColSec;
+        ftHead_ = (ftHead_ + 1) % kFtCols;
+        FtCol& c = ftCols_[ftHead_];
+        c = FtCol{};
+        if (ftClock_ >= kFtColSec) { c.lo = c.hi = f; c.used = true; }   // (inside the long frame)
+    }
+    FtCol& c = ftCols_[ftHead_];
+    if (!c.used) { c.lo = c.hi = f; c.used = true; }
+    else { c.lo = std::min(c.lo, f); c.hi = std::max(c.hi, f); }
+    c.sum += f; c.n++;
+}
+
+void Game::drawFrameGraph(float x, float y, float ts) {
+    double sum = 0, worst = 0, best = 1e9;
+    long n = 0;
+    for (const FtCol& c : ftCols_) {
+        if (!c.used) continue;
+        sum += c.sum; n += c.n;
+        worst = std::max(worst, (double)c.hi); best = std::min(best, (double)c.lo);
+    }
+    if (n < 2 || sum <= 0) return;
+    const double avg = sum / n;
+    const double top = std::max(avg * 1.5, worst), bot = std::min(avg * 0.5, best);   // (+-50%, or what escaped it)
+    const float lh = r_.textHeight(ts) + 4;
+    // (narrow enough to stay left of the HUD's centre bars, which start at about 43% of the screen's width)
+    const float W = std::max(200.0f, (float)r_.width() * 0.40f - x - 12), H = std::round(lh * 3.0f);
+    char head[160];
+    snprintf(head, sizeof head, "FRAME TIMES 5 S: AVG %.0f  BEST %.0f  WORST %.0f US", avg * 1e6, best * 1e6, worst * 1e6);
+    char foot[128];
+    snprintf(foot, sizeof foot, "TOP %.0f  BOTTOM %.0f US (AVG +-50%% OR WIDER)", top * 1e6, bot * 1e6);
+    const float boxW = std::max({W, r_.textWidth(head, ts), r_.textWidth(foot, ts)}) + 12;
+    r_.rect(x, y, boxW, H + lh * 2 + 8, {0, 0, 0, 0.6f});
+    r_.text(x + 6, y + 4, ts, head, {1, 1, 0.4f, 1});
+    const float gx = x + 6, gy = y + 4 + lh, gb = gy + H;
+    r_.rect(gx, gy, W, H, {1, 1, 1, 0.06f});
+    const Color cLine = cfg_.f3Safe ? Color{0.34f, 0.71f, 0.91f, 1} : Color{0.45f, 0.95f, 0.5f, 1};
+    auto yOf = [&](double dt) { return gb - (float)clampf((float)((dt - bot) / (top - bot)), 0, 1) * H; };
+    const float cw = W / kFtCols;
+    for (int i = 0; i < kFtCols; i++) {   // oldest (after the head) to newest (the head)
+        const FtCol& c = ftCols_[(ftHead_ + 1 + i) % kFtCols];
+        if (!c.used) continue;
+        const float y0 = yOf(c.hi), y1 = yOf(c.lo);
+        r_.rect(gx + i * cw, y0, std::max(1.0f, cw), std::max(1.5f, y1 - y0), cLine);
+    }
+    for (float dx = 0; dx < W; dx += 8) r_.rect(gx + dx, yOf(avg), 4, 1, {1, 1, 1, 0.5f});   // the average, dashed
+    r_.text(x + 6, gb + 4, ts, foot, {0.7f, 0.7f, 0.75f, 1});
 }
 
 
@@ -12637,7 +12716,8 @@ void Game::spawnPredictedProjectile(int w, bool alt, const UserCmd& c) {
     q.type = (uint8_t)w;
     q.live = true;
     q.pos0 = q.pos = eye + aim * 0.3f;
-    if (w == WPN_KNIFE) q.vel0 = aim * kKnifeThrowSpeed;
+    if (w == WPN_KNIFE) q.vel0 = aim * weaponAlt().knifeThrowSpeed;   // (thrown: the server's speeds, fireWeapon)
+    else if (w == WPN_SYRINGE) q.vel0 = aim * weaponAlt().syringeThrowSpeed;
     else {
         const float spread = (wd.scopedSpread >= 0 && (c.buttons & BTN_ALTFIRE)) ? wd.scopedSpread : wd.spread;
         q.vel0 = spreadAim(aim, spread, 0, 1, localBurst_) * wd.projSpeed;
@@ -12893,8 +12973,40 @@ bool Game::enemyOnSegment(const Vec3& a, const Vec3& b, float* t, int* who, bool
 // there by the time they arrive. These mirror the server's own hit tests (Server::hitscan, explode, stepProjectile)
 // against the players as drawn (framePlayers).
 
+double Game::pingSec() const {
+    const PlayerSnap* me = net_.findPlayer(net_.clientId());
+    return me ? me->ping * 0.001 : 0.0;
+}
+
+void Game::hitFeedback(int victim, float dmg, bool head) {
+    hitUntil_ = time_ + cfg_.hitFlashTime;
+    hitHead_ = head;
+    // four tiers by this hit's damage, each heavier and louder (hitSoundFor); hits landing together make one
+    if (cfg_.hitsounds) {
+        int snd = cfg_.hitTiers ? hitSoundFor(dmg) : SND_HIT_MED;   // (MORE 5: HITSOUND TIERS off: one sound)
+        if (hitGate_.pass(time_, snd)) audio_.play(snd, 0.9f * cfg_.hitVolume, 1.0f, cfg_.hitPack);
+        if (head && cfg_.headshotSound) audio_.play(SND_HIT, 0.7f * cfg_.hitVolume, 1.7f, cfg_.hitPack);   // (a higher ding over it)
+    }
+    // hits on the same target in quick succession add up into one number
+    // (GAMEPLAY > MORE 2: STACKING: quick hits add up, a number a hit, or one running total while it shows)
+    if (cfg_.dmgNumStack != 1)
+        for (auto& d : dmgNums_)
+            if (d.victim == victim && (d.head == head || cfg_.dmgNumStack == 2) && time_ - d.start < (cfg_.dmgNumStack == 2 ? cfg_.dmgNumTime : 0.35)) {
+                d.amount += dmg; d.start = time_; d.head = d.head || head; return;
+            }
+    const PlayerSnap* v = net_.findPlayer(victim);
+    dmgNums_.push_back({victim, dmg, time_, v ? v->pos : Vec3(), head});
+}
+
 void Game::sendHits(int weapon, bool alt, const std::vector<HitReport>& hits) {
     if (hits.empty() || net_.playback()) return;
+    for (const HitReport& h : hits) {   // shown now, as you landed it (the server's EV_HIT is matched against it)
+        if (h.victim < 0 || h.victim >= kMaxPlayers || h.dmg <= 0) continue;
+        if (time_ - shownAt_[h.victim] > std::max(1.0, pingSec() * 2.0 + 0.5)) shownDmg_[h.victim] = 0;
+        shownDmg_[h.victim] += h.dmg;
+        shownAt_[h.victim] = time_;
+        hitFeedback(h.victim, h.dmg, h.head);
+    }
     std::string s = "hit " + std::to_string(weapon) + (alt ? " 1 " : " 0 ") + std::to_string(hits.size());
     char buf[160];
     for (const HitReport& h : hits) {
@@ -13100,6 +13212,20 @@ void Game::reportImpact(int type, bool alt, const Vec3& from, const Vec3& to, in
         const Vec3 d = to - from;
         const float len = length(d);
         reportBolt(to, len > 1e-4f ? d / len : Vec3(0, 0, -1), victim, head);
+    }
+    else if (type == WPN_KNIFE) {   // thrown (the server's stepProjectile: knife damage, 3x its knock, no headshot)
+        if (victim < 0) return;
+        const Vec3 d = to - from;
+        const float len = length(d);
+        const Vec3 dir = len > 1e-4f ? d / len : Vec3(0, 0, -1);
+        const WeaponExtra& ex = weaponExtra(WPN_KNIFE);
+        float dmg = (float)weaponDef(WPN_KNIFE).damage;
+        const MoveState& m = net_.predicted();
+        const float dist = length(to - (m.pos + Vec3(0, ((m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0)));
+        if (ex.falloff) dmg *= weaponFalloff(ex, dist);
+        hitScratch_.clear();
+        hitScratch_.push_back({victim, dmg, false, true, 1.0f, dist, dir * (3.0f * ex.knock)});
+        sendHits(WPN_KNIFE, true, hitScratch_);
     }
 }
 

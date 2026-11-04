@@ -801,6 +801,13 @@ private:
     bool laserHead_[kMaxPlayers] = {}, laserAlt_ = false, laserPending_ = false;
     double laserSince_ = 0;
     void sendHits(int weapon, bool alt, const std::vector<HitReport>& hits);
+    // Your hit's feedback (flash, hitsound, damage number) the moment you land it (owner, 2026-11-04: on-screen damage
+    // mustn't wait for the server). What was shown is kept per victim, and the server's EV_HIT for it is matched against
+    // that, so it isn't shown twice; only damage the server adds on its own (stickies, bots' rules...) shows from EV_HIT.
+    void hitFeedback(int victim, float dmg, bool head);
+    float shownDmg_[kMaxPlayers] = {};
+    double shownAt_[kMaxPlayers] = {};
+    double pingSec() const;   // (your round trip, from the snapshot; 0 offline)
     void reportShotHits(int w, const UserCmd& c);
     void flushLaserHits(bool force);
     void reportBlast(int type, bool alt, const Vec3& at, int direct);
@@ -814,7 +821,7 @@ private:
     struct ProjStart { uint16_t id; double seen; Vec3 offset; float lead = 0; bool boomed = false; };   // boomed: exploded on your screen already (localBoom)   // lead: X5, drawn this far ahead (s)
     // X5: your own rockets, bolts and thrown knives, flying from the click until the server's copy arrives (a round trip
     // later), which then takes over drawn as far ahead as the copy was (lead), so nothing jumps back
-    struct PredProj { uint8_t type = 0; bool live = false, lob = false, started = false, atWall = false, boomed = false; Vec3 pos0, vel0, pos, offset; double born = 0; };
+    struct PredProj { uint8_t type = 0; bool live = false, lob = false, started = false, atWall = false, boomed = false, stuck = false; Vec3 pos0, vel0, pos, offset; double born = 0; };
     PredProj predProj_[8];
     void spawnPredictedProjectile(int w, bool alt, const UserCmd& c);
     bool projectileDissolved(const ProjectileSnap& p, Vec3* at) const;
@@ -1035,7 +1042,18 @@ private:
     void pipeGpuEnd();
     void pipeCollect();
     void pipeReset();   // (F3 / F4 turned on: nothing from the last time they were on)
-    void drawPipeline(float x, float y, float ts, double* totalOnly = nullptr);
+    float drawPipeline(float x, float y, float ts, double* totalOnly = nullptr);   // (returns the box's bottom)
+    void drawFrameGraph(float x, float y, float ts);   // F3: the last 5 s of frame times, for frame pacing
+    void frameGraphFeed(double dt);                    // (one frame into it; only while F3 shows the graph)
+    // F3's frame pacing graph: 5 s in 500 columns of 10 ms, each its fastest and slowest frame (owner, 2026-11-04).
+    // Filled only while F3's graph is on screen and emptied when it's opened, so nothing is measured with F3 off.
+    struct FtCol { float lo = 0, hi = 0; float sum = 0; int n = 0; bool used = false; };
+    static constexpr int kFtCols = 500;
+    static constexpr double kFtColSec = 5.0 / kFtCols;
+    std::vector<FtCol> ftCols_ = std::vector<FtCol>(kFtCols);
+    int ftHead_ = 0;            // (the column being filled; the oldest is the one after it)
+    double ftClock_ = 0;        // (time into the column being filled)
+    bool ftOn_ = false;         // (the graph was fed last frame: off -> on empties it)
     void pipeAverages();
     void drawPerfMini();
     double pendingInput_ = -1, frameInput_ = -1;
