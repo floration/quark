@@ -2534,6 +2534,7 @@ PLAYABLE AS:	プレイ可能:
 PLAYER	プレイヤー
 PLAYER 2	プレイヤー 2
 PLAYER > MORE SETS THE MENU ACCENT	プレイヤー > 詳細 でメニューのアクセントを設定
+PLAYER ANIMATIONS	プレイヤーアニメーション
 PLAYER BASED	プレイヤーベース
 PLAYER JOINS	プレイヤー参加
 PLAYER MODEL:	プレイヤーモデル:
@@ -4227,6 +4228,7 @@ ultra: after swap wait (us)	ultra: after swap wait (us)
 ultra: margin (us)	ultra: margin (us)
 ultra: pace the input read	ultra: pace the input read
 ungrouped into	グループ解除:
+unknown bone "	不明なボーン "
 unknown mode	不明なモード
 unknown mode '	不明なモード '
 unknown ruleset	不明なルール

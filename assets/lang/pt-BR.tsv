@@ -2534,6 +2534,7 @@ PLAYABLE AS:	JOGÁVEL COMO:
 PLAYER	JOGADOR
 PLAYER 2	JOGADOR 2
 PLAYER > MORE SETS THE MENU ACCENT	JOGADOR > MAIS DEFINE O DESTAQUE DO MENU
+PLAYER ANIMATIONS	ANIMAÇÕES DOS JOGADORES
 PLAYER BASED	BASEADO EM JOGADOR
 PLAYER JOINS	JOGADOR ENTRA
 PLAYER MODEL:	MODELO DO JOGADOR:
@@ -4227,6 +4228,7 @@ ultra: after swap wait (us)	ultra: after swap wait (us)
 ultra: margin (us)	ultra: margin (us)
 ultra: pace the input read	ultra: pace the input read
 ungrouped into	desagrupado em
+unknown bone "	osso desconhecido "
 unknown mode	modo desconhecido
 unknown mode '	modo desconhecido '
 unknown ruleset	conjunto de regras desconhecido

@@ -2534,6 +2534,7 @@ PLAYABLE AS:	플레이 가능 모드:
 PLAYER	플레이어
 PLAYER 2	플레이어 2
 PLAYER > MORE SETS THE MENU ACCENT	플레이어 > 더 보기에서 메뉴 강조색 설정
+PLAYER ANIMATIONS	플레이어 애니메이션
 PLAYER BASED	플레이어 기반
 PLAYER JOINS	플레이어 참가
 PLAYER MODEL:	플레이어 모델:
@@ -4227,6 +4228,7 @@ ultra: after swap wait (us)	ultra: after swap wait (us)
 ultra: margin (us)	ultra: margin (us)
 ultra: pace the input read	ultra: pace the input read
 ungrouped into	그룹 해제됨:
+unknown bone "	알 수 없는 본 "
 unknown mode	알 수 없는 모드
 unknown mode '	알 수 없는 모드 '
 unknown ruleset	알 수 없는 규칙

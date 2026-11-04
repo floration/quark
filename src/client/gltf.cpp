@@ -371,6 +371,11 @@ bool boxesFrom(const J& q, ModelParts& out, std::string& err) {
         p.visOnly = flag(b, "visOnly", false, ok);
         p.crouch = flag(b, "crouch", false, ok);
         if (!ok) { err = where + "shadow / visOnly / crouch must be true or false"; return false; }
+        if (b.get("bone")) {   // (players' joints; optional: an older file without it is all root, drawn still)
+            const int bn = b.get("bone")->t == J::STR ? boneFromName(b.str("bone")) : -1;
+            if (bn < 0) { err = where + "unknown bone \"" + b.str("bone") + "\""; return false; }
+            p.bone = (uint8_t)bn;
+        }
         out.push_back(p);
     }
     return true;
@@ -387,6 +392,7 @@ std::string boxModelJson(const ModelParts& boxes) {
         if (p.slot != TINT_NONE) j += ",\"mul\":" + v3(p.mul) + ",\"add\":" + v3(p.add);
         if (p.slot != TINT_NONE && (p.teamMul.x != 0 || p.teamMul.y != 0 || p.teamMul.z != 0)) j += ",\"teamMul\":" + v3(p.teamMul);
         if (p.alpha != 1) j += ",\"alpha\":" + fmt9(p.alpha);
+        if (p.bone != BONE_ROOT) j += std::string(",\"bone\":\"") + boneName(p.bone) + "\"";
         j += std::string(",\"shadow\":") + (p.shadow ? "true" : "false") + ",\"visOnly\":" + (p.visOnly ? "true" : "false") + ",\"crouch\":" + (p.crouch ? "true" : "false") + "}";
     }
     return j + "]}";

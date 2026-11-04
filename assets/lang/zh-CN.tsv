@@ -2534,6 +2534,7 @@ PLAYABLE AS:	可玩模式:
 PLAYER	玩家
 PLAYER 2	玩家 2
 PLAYER > MORE SETS THE MENU ACCENT	玩家 > 更多 设置菜单强调色
+PLAYER ANIMATIONS	玩家动画
 PLAYER BASED	玩家类
 PLAYER JOINS	玩家加入
 PLAYER MODEL:	玩家模型:
@@ -4227,6 +4228,7 @@ ultra: after swap wait (us)	ultra: after swap wait (us)
 ultra: margin (us)	ultra: margin (us)
 ultra: pace the input read	ultra: pace the input read
 ungrouped into	已取消编组为
+unknown bone "	未知关节 "
 unknown mode	未知模式
 unknown mode '	未知模式 '
 unknown ruleset	未知规则集

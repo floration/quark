@@ -2634,7 +2634,9 @@ void Game::drawWorld(float alpha) {
             ip.snap.id = (uint8_t)(kMaxPlayers - kPlayerModels + k);
             ip.snap.flags = PS_ALIVE | (k % 2 ? PS_TEAM_B : 0);
             ip.snap.pos = net_.smoothedPos(alpha) + f * 5.0f + rt * ((k - 2) * 1.5f);
+            if (opts_.debugWalk) ip.snap.pos = net_.smoothedPos(alpha) + f * 7.0f + rt * ((k - 5) * 1.15f);   // (all 11 in view)
             ip.snap.yaw = yaw_ + 3.14159265f;
+            if (opts_.debugWalk) ip.snap.yaw = yaw_ - 1.5707963f;   // (side-on: the strides show)
             if (dbgBomb) { ip.snap.flags |= PS_HASBOMB; ip.snap.yaw -= 2.3f; }   // (turned away: the backpack shows)
             if (opts_.debugHook) {   // --hook: turned side-on (the launcher arm toward you); every other one hangs on a
                                      // rope to a point up behind them, the rest have the claw in the barrel
@@ -2666,6 +2668,25 @@ void Game::drawWorld(float alpha) {
         float pitch = self && alive ? pitch_ : p.pitch;
         bool crouch = self && alive ? (net_.predicted().flags & MF_CROUCHED) : (p.flags & PS_CROUCHED);
         float hs = crouch ? kPlayerCrouchHeight / kPlayerHeight : 1.0f;
+        if (cfg_.playerAnims) {   // (GAMEPLAY > MORE: PLAYER ANIMATIONS) the gait from how they move as drawn
+            AnimTrack& at = anim_[i];
+            // on the floor: your own from the prediction; anyone else by a short ray down from their feet, cast only
+            // while they're on screen (off it, the last answer stands) and not while rising fast (a jump's first frames)
+            bool ground = at.s.air < 0.5f;
+            if (self && alive) ground = (net_.predicted().flags & MF_ONGROUND) != 0;
+            else if (r_.inView(pos + Vec3(0, 1.0f * bs, 0), 2.5f * bs))
+                ground = at.vel.y < 2.5f && map.raycastAny(pos + Vec3(0, 0.25f * bs, 0), Vec3(0, -1, 0), 0.5f * bs);
+            const float adt = at.init ? (float)(time_ - animT_[i]) : 0.0f;
+            animT_[i] = time_;
+            animStep(at, pos / bs, yaw, pitch, ground, adt);   // (in model metres: a double-size body steps as far)
+            if (opts_.debugModels && i >= kMaxPlayers - kPlayerModels) {   // (--models: the lineup runs in place, each a step apart)
+                const int k = i - (kMaxPlayers - kPlayerModels);
+                at.s.speed = k % 3 == 2 ? 3.0f : 7.0f;
+                at.s.phase = (float)std::fmod(time_ * 1.6 + k * 0.09, 1.0);
+                at.s.legYaw = k % 4 == 1 ? 0.6f : 0.0f;
+                at.s.air = k == kPlayerModels - 1 ? 1.0f : 0.0f;
+            }
+        }
         if (self && alive && !cfg_.ownShadow) continue;   // (MORE 4: OWN SHADOW off: your unseen body isn't drawn at all)
         Vec3 col = teamColor(i);
         r_.outlineColor = outlineColor(i);
@@ -2700,11 +2721,24 @@ void Game::drawWorld(float alpha) {
         } else {
             if (const ModelParts* bx = boxOverride(MODEL_PLAYER, pm)) overrideBoxParts(MODEL_PLAYER, pm, *bx, pal, hs, parts_);
             else playerModelParts(pm, hs, pal, parts_);
-            const float cy = std::cos(yaw), sy = std::sin(yaw);
-            for (const ModelPart& q : parts_) {
-                if (q.visOnly && !vis) continue;
-                Vec3 c = q.c * bs;
-                r_.box(pos + Vec3(cy * c.x + sy * c.z, c.y, -sy * c.x + cy * c.z), q.h * bs, yaw, q.color, sv, q.shadow, vis);
+            PlayerRig rig;
+            if (cfg_.playerAnims) playerRig(parts_, rig);   // (a model without leg bones, SIMPLE or an older box file: still)
+            if (rig.animated) {   // posed: each joint's matrix once, then a box per part through it
+                PlayerPose pose;
+                playerPose(anim_[i].s, rig, pose);
+                const Mat4 w = Mat4::translate(pos) * Mat4::rotY(yaw);
+                for (Mat4& b : pose.bone) { b.m[12] *= bs; b.m[13] *= bs; b.m[14] *= bs; b = mulAffine(w, b); }   // (in metres: a double-size body)
+                for (const ModelPart& q : parts_) {
+                    if (q.visOnly && !vis) continue;
+                    r_.boxXf(posedPart(pose, q.bone, q.c * bs), q.h * bs, q.color, sv, q.shadow, vis);
+                }
+            } else {
+                const float cy = std::cos(yaw), sy = std::sin(yaw);
+                for (const ModelPart& q : parts_) {
+                    if (q.visOnly && !vis) continue;
+                    Vec3 c = q.c * bs;
+                    r_.box(pos + Vec3(cy * c.x + sy * c.z, c.y, -sy * c.x + cy * c.z), q.h * bs, yaw, q.color, sv, q.shadow, vis);
+                }
             }
         }
         if (vis && isItMode(net_.mode().mode)) {   // hide and seek / tag: only "it" holds anything - their weapon's own model
@@ -7044,17 +7078,33 @@ void Game::drawModelPreview(float x, float y, float w, float h) {
         return Vec3{r.x, cp * r.y - sp * r.z, sp * r.y + cp * r.z};
     };
     const Vec3 light = normalize(Vec3{-0.4f, 0.7f, 0.6f});
+    // PLAYER ANIMATIONS: walking in place, slowly (off, or a model without leg bones: standing)
+    PlayerRig rig;
+    if (cfg_.playerAnims) playerRig(previewParts_, rig);
+    PlayerPose pose;
+    if (rig.animated) {
+        AnimState as;
+        as.speed = 2.2f;
+        previewPhase_ = (float)std::fmod(previewPhase_ + frameDt_ * as.speed / kAnim.walkStride, 1.0);
+        as.phase = previewPhase_;
+        playerPose(as, rig, pose);
+    }
+    auto xform = [](const Mat4& m, const Vec3& p, float w) {   // (w 1: a point, 0: a direction)
+        return Vec3(m.m[0] * p.x + m.m[4] * p.y + m.m[8] * p.z + m.m[12] * w, m.m[1] * p.x + m.m[5] * p.y + m.m[9] * p.z + m.m[13] * w,
+                    m.m[2] * p.x + m.m[6] * p.y + m.m[10] * p.z + m.m[14] * w);
+    };
     previewFaces_.clear();
     static const int kFace[6][4] = {{1, 3, 7, 5}, {0, 4, 6, 2}, {2, 6, 7, 3}, {0, 1, 5, 4}, {4, 5, 7, 6}, {0, 2, 3, 1}};   // +x -x +y -y +z -z
     static const Vec3 kN[6] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
     for (const ModelPart& q : previewParts_) {
+        const Mat4 m = posedPart(pose, rig.animated ? q.bone : (uint8_t)BONE_ROOT, q.c);
         Vec3 v[8];
         for (int i = 0; i < 8; i++) {
-            const Vec3 c = {q.c.x + (i & 1 ? q.h.x : -q.h.x), q.c.y + (i & 2 ? q.h.y : -q.h.y), q.c.z + (i & 4 ? q.h.z : -q.h.z)};
-            v[i] = view(c);
+            const Vec3 c = {i & 1 ? q.h.x : -q.h.x, i & 2 ? q.h.y : -q.h.y, i & 4 ? q.h.z : -q.h.z};
+            v[i] = view(xform(m, c, 1));
         }
         for (int f = 0; f < 6; f++) {
-            const Vec3 n = view(kN[f]);
+            const Vec3 n = view(xform(m, kN[f], 0));
             if (n.z <= 0.001f) continue;   // (facing away)
             const float lit = 0.5f + 0.5f * std::max(0.0f, dot(n, light));
             auto disp = [&](float c) { return clampf(c * lit, 0, 1); };   // (the parts' colours are as the 3D pass takes them)
@@ -7739,8 +7789,15 @@ void Game::drawMoreSettings(const SetLayout& L) {
         ui_.toggle(f.x(), f.top(), w, h, "ONLY KILLS I'M IN", cfg_.feedMine, UiExp::cfg("feed_mine"));
         f.next();
         f.section("CHAT");
-        intSlider(f, "CHAT SECONDS", cfg_.chatTime, 1, 60, "%.0f S", "chat_time", d.chatTime);
-        intSlider(f, "CHAT LINES", cfg_.chatLines, 1, 16, "%.0f", "chat_lines", d.chatLines);
+        {   // (one row, two halves: the column's room for PLAYER ANIMATIONS below)
+            const float hw = L.L(kHalfW), xl = L.X(kColL + kColW - kHalfW);
+            float ct = (float)cfg_.chatTime, cl = (float)cfg_.chatLines;
+            ui_.slider(f.x(), f.top(), hw, h, "CHAT SECONDS", ct, 1, 60, "%.0f S", UiExp::cfg("chat_time"), (float)d.chatTime);
+            ui_.slider(xl, f.top(), hw, h, "CHAT LINES", cl, 1, 16, "%.0f", UiExp::cfg("chat_lines"), (float)d.chatLines);
+            cfg_.chatTime = std::min(std::max(1, (int)std::lround(ct)), 60);
+            cfg_.chatLines = std::min(std::max(1, (int)std::lround(cl)), 16);
+            f.next();
+        }
         while ((int)chatFeed_.size() > cfg_.chatLines) chatFeed_.pop_front();
         ui_.slider(f.x(), f.top(), w, h, "CHAT OPACITY", cfg_.chatOpacity, 0.1f, 1.0f, "%.2f", UiExp::cfg("chat_opacity"), d.chatOpacity);
         cfg_.chatOpacity = clampf(cfg_.chatOpacity, 0.1f, 1.0f);
@@ -7759,6 +7816,8 @@ void Game::drawMoreSettings(const SetLayout& L) {
             if (ui_.cycle(f.x(), f.top(), w, h, "TEAM MODEL", ti, kPlayerModels + 1, tm, UiExp::cfg("team_model"))) cfg_.teamModel = ti - 1;
             f.next();
             f.hint("EVERY ENEMY / TEAMMATE AS ONE MODEL (NOT IN", "RANKED, WHERE EVERYONE IS STANDARD)");
+            ui_.toggle(f.x(), f.top(), w, h, "PLAYER ANIMATIONS", cfg_.playerAnims, UiExp::cfg("player_anims"));
+            f.next();
         }
         f.section("ALL SETTINGS");   // every setting as text on the clipboard (your name, Discord and servers stay yours)
         {

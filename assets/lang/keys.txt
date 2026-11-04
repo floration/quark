@@ -2534,6 +2534,7 @@ PLAYABLE AS:
 PLAYER
 PLAYER 2
 PLAYER > MORE SETS THE MENU ACCENT
+PLAYER ANIMATIONS
 PLAYER BASED
 PLAYER JOINS
 PLAYER MODEL:
@@ -4227,6 +4228,7 @@ ultra: after swap wait (us)
 ultra: margin (us)
 ultra: pace the input read
 ungrouped into
+unknown bone "
 unknown mode
 unknown mode '
 unknown ruleset

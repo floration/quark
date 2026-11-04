@@ -102,6 +102,8 @@ public:
 
     // Dynamic geometry (cleared every frame)
     void box(const Vec3& center, const Vec3& half, float yaw, const Vec3& color, float sunVis, bool castShadow = true, bool visible = true);
+    // box() turned by any matrix (its centre: xf's origin), e.g. a posed player's part; culled and cast like box()
+    void boxXf(const Mat4& xf, const Vec3& half, const Vec3& color, float sunVis, bool castShadow = true, bool visible = true);
     void slope(const Brush& b, const Vec3& color);   // a wedge / corner (map.h), like box(): into the static batch or the frame's
     void boxPitched(const Vec3& pivot, const Vec3& offset, const Vec3& half, float yaw, float pitch, const Vec3& color, float sunVis, bool castShadow = true);
     void viewBox(const Vec3& offset, const Vec3& half, const Vec3& color); // camera-relative (viewmodel)

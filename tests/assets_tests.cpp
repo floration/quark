@@ -296,7 +296,7 @@ static void testModelExport() {
             for (size_t k = 0; k < boxes.size() && k < parts.size(); k++) {
                 const ModelPart &p = parts[k], &q = boxes[k];
                 bool same = !memcmp(&p.c, &q.c, sizeof p.c) && !memcmp(&p.h, &q.h, sizeof p.h) && !memcmp(&p.color, &q.color, sizeof p.color) &&
-                            p.slot == q.slot && p.alpha == q.alpha && p.shadow == q.shadow && p.visOnly == q.visOnly && p.crouch == q.crouch &&
+                            p.slot == q.slot && p.alpha == q.alpha && p.shadow == q.shadow && p.visOnly == q.visOnly && p.crouch == q.crouch && p.bone == q.bone &&
                             (p.slot == TINT_NONE || (!memcmp(&p.mul, &q.mul, sizeof p.mul) && !memcmp(&p.add, &q.add, sizeof p.add) && !memcmp(&p.teamMul, &q.teamMul, sizeof p.teamMul)));
                 if (!same) printf("  %s box %zu differs after the round trip\n", modelPath(kind, i).c_str(), k);
                 ACHECK(same);
@@ -312,7 +312,7 @@ static void testModelExport() {
                 ACHECK(want.size() == got.size());
                 for (size_t k = 0; k < want.size() && k < got.size(); k++) {
                     const ModelPart &w = want[k], &o = got[k];
-                    bool geo = !memcmp(&w.c, &o.c, sizeof w.c) && !memcmp(&w.h, &o.h, sizeof w.h) && w.visOnly == o.visOnly && w.shadow == o.shadow && w.alpha == o.alpha;
+                    bool geo = !memcmp(&w.c, &o.c, sizeof w.c) && !memcmp(&w.h, &o.h, sizeof w.h) && w.visOnly == o.visOnly && w.shadow == o.shadow && w.alpha == o.alpha && w.bone == o.bone;
                     bool col = length(w.color - o.color) < 1e-5f * std::max(1.0f, length(w.color));   // (within float rounding)
                     if (!geo || !col) printf("  %s box %zu drawn differently (palette %d)\n", modelPath(kind, i).c_str(), k, v);
                     ACHECK(geo && col);
@@ -344,7 +344,7 @@ static void testModelExport() {
     ModelPalette pal;
     pal.c[TINT_TEAM] = {0.2f, 0.4f, 0.8f};
     playerModelParts(0, 1.0f, pal, parts);
-    ACHECK(parts.size() == 16 && std::fabs(parts[9].c.y - 1.13f) < 1e-6f && length(parts[9].color - pal.c[TINT_TEAM]) < 1e-6f && parts[14].visOnly);
+    ACHECK(parts.size() == 18 && std::fabs(parts[11].c.y - 1.13f) < 1e-6f && length(parts[11].color - pal.c[TINT_TEAM]) < 1e-6f && parts[16].visOnly);
     ACHECK(tintSlotFromName("Team_Armour.001") == TINT_TEAM && tintSlotFromName("GLOW") == TINT_GLOW && tintSlotFromName("skin") == TINT_NONE);
 }
 
@@ -364,7 +364,12 @@ static void testBoxModels() {
     ModelParts drawn;
     overrideBoxParts(MODEL_PLAYER, 0, p, team, 0.5f, drawn);
     ACHECK(drawn.size() == 1 && std::fabs(drawn[0].color.z - 0.4f) < 1e-6f && std::fabs(drawn[0].c.y - 0.5f) < 1e-6f && drawn[0].h.y == 0.3f);
+    // a joint (players): optional, by name; none is the root (an older file: drawn still)
+    ACHECK(parseBoxModel("{\"version\":2,\"boxes\":[" + box + ",\"bone\":\"shin_r\"}]}", p, &err) && p.size() == 1 && p[0].bone == BONE_SHIN_R);
+    ACHECK(parseBoxModel("{\"version\":2,\"boxes\":[" + box + "}]}", p, &err) && p.size() == 1 && p[0].bone == BONE_ROOT);
     const char* bad[] = {
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,1,1],\"bone\":\"tail\"}]}",   // unknown bone
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,1,1],\"bone\":3}]}",        // bone by number
         "{\"version\":2,\"boxes\":[]}",                                                              // no boxes
         "{\"version\":2,\"boxes\":[{\"c\":[0,1],\"h\":[1,1,1],\"color\":[1,1,1]}]}",                   // c: 2 numbers
         "{\"version\":2,\"boxes\":[{\"c\":[0,1e999,0],\"h\":[1,1,1],\"color\":[1,1,1]}]}",             // not finite
@@ -1199,11 +1204,134 @@ static void testLanguages() {
     }
 }
 
+// PLAYER ANIMATIONS (models.h): every animated model has both legs' joints, stands exactly as before with no motion,
+// stays near its hitbox in any pose, and never makes a NaN; the tracking steps by distance, caps the stride rate,
+// back-pedals, turns the legs and resets on a teleport
+static void testPlayerAnimation() {
+    ModelParts parts;
+    const ModelPalette& ref = referencePalette(MODEL_PLAYER);
+    float worstOut = 0;
+    for (int m = 0; m < kPlayerModels; m++) {
+        playerModelParts(m, 1.0f, ref, parts);
+        PlayerRig rig;
+        playerRig(parts, rig);
+        unsigned bones = 0;
+        for (const ModelPart& q : parts) bones |= 1u << q.bone;
+        const unsigned legs = 1u << BONE_THIGH_L | 1u << BONE_SHIN_L | 1u << BONE_THIGH_R | 1u << BONE_SHIN_R;
+        if (m == 2) { ACHECK(bones == 1u && !rig.animated); continue; }   // (SIMPLE: the hitbox, still)
+        if ((bones & legs) != legs || !rig.animated) printf("  %s: no leg joints\n", playerModelName(m));
+        ACHECK((bones & legs) == legs && rig.animated && (bones & 1u << BONE_HEAD) && (bones & 1u << BONE_TORSO));
+        ACHECK(rig.hipY > rig.kneeY && rig.kneeY > 0.15f && rig.hipY < 1.0f && rig.neckY > rig.hipY);
+        // the rest's extent (some models already reach past the hitbox: a hat brim, boots' toes)
+        float restR = 0, restTop = 0;
+        for (const ModelPart& q : parts) {
+            restR = std::max(restR, std::hypot(std::fabs(q.c.x) + q.h.x, std::fabs(q.c.z) + q.h.z));   // (from the axis: hits test a cylinder)
+            restTop = std::max(restTop, q.c.y + q.h.y);
+        }
+        // standing still: the old layout exactly
+        PlayerPose pose;
+        playerPose(AnimState{}, rig, pose);
+        for (const ModelPart& q : parts) {
+            const Mat4 x = posedPart(pose, q.bone, q.c);
+            bool same = std::fabs(x.m[12] - q.c.x) < 1e-5f && std::fabs(x.m[13] - q.c.y) < 1e-5f && std::fabs(x.m[14] - q.c.z) < 1e-5f &&
+                        std::fabs(x.m[0] - 1) < 1e-6f && std::fabs(x.m[5] - 1) < 1e-6f && std::fabs(x.m[10] - 1) < 1e-6f;
+            ACHECK(same);
+        }
+        // every pose: finite, above the floor, not much over the model's top (the head's tilt), near the hitbox
+        const float margin = 0.3f;   // (a long stride's front foot, past the body cylinder's radius or the standing model's own reach)
+        bool finite = true, inside = true;
+        for (float sp : {0.0f, 1.0f, 2.5f, 5.0f, 9.5f, 25.0f, NAN})
+            for (float air : {0.0f, 0.5f, 1.0f})
+                for (float ly : {-1.05f, 0.0f, 0.7f, 1.05f, 9.0f})
+                    for (float pitch : {-1.55f, 0.0f, 1.55f})
+                        for (int ph = 0; ph < 20; ph++) {
+                            AnimState s;
+                            s.speed = sp; s.air = air; s.legYaw = ly; s.pitch = pitch; s.phase = ph / 20.0f;
+                            playerPose(s, rig, pose);
+                            for (const ModelPart& q : parts) {
+                                const Mat4 x = posedPart(pose, q.bone, q.c);
+                                for (int c = 0; c < 8; c++) {
+                                    const Vec3 l = {c & 1 ? q.h.x : -q.h.x, c & 2 ? q.h.y : -q.h.y, c & 4 ? q.h.z : -q.h.z};
+                                    const Vec3 p = {x.m[0] * l.x + x.m[4] * l.y + x.m[8] * l.z + x.m[12], x.m[1] * l.x + x.m[5] * l.y + x.m[9] * l.z + x.m[13],
+                                                    x.m[2] * l.x + x.m[6] * l.y + x.m[10] * l.z + x.m[14]};
+                                    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) finite = false;
+                                    const float out = std::max(std::hypot(p.x, p.z) - std::max(kPlayerHalfWidth, restR), 0.0f);   // (kPlayerHalfWidth: the body cylinder's radius)
+                                    worstOut = std::max(worstOut, out);
+                                    if (out > margin || p.y < (air > 0 ? -0.1f : -0.02f) || p.y > restTop + 0.1f) {   // (in the air: off the floor anyway)
+                                        if (inside) printf("  %s bone %d at speed %g air %g legs %g pitch %g phase %d: (%.3f %.3f %.3f) top %.2f\n", playerModelName(m), q.bone, sp, air, ly, pitch, ph, p.x, p.y, p.z, restTop);
+                                        inside = false;
+                                    }
+                                }
+                            }
+                        }
+        if (!inside) printf("  %s: a pose reaches out of its hitbox\n", playerModelName(m));
+        ACHECK(finite && inside);
+    }
+    printf("  player animation: the farthest a posed box reaches past the hitbox: %.3f m\n", worstOut);
+    // the tracking: walking forward (aim yaw 0 faces -Z) at 2.5 m/s for 2 s covers 5 m: 5 / walkStride cycles
+    auto run = [](AnimTrack& t, Vec3& pos, const Vec3& v, float yaw, float secs, bool ground, float* cycles) {
+        const float dt = 1.0f / 144;
+        for (int k = 0; k < (int)(secs / dt); k++) {
+            const float before = t.s.phase;
+            pos = pos + v * dt;
+            animStep(t, pos, yaw, 0.1f, ground, dt);
+            float d = t.s.phase - before;
+            if (d > 0.5f) d -= 1; else if (d < -0.5f) d += 1;
+            if (cycles) *cycles += d;
+        }
+    };
+    {
+        AnimTrack t;
+        Vec3 pos = {3, 1, 4};
+        animStep(t, pos, 0, 0, true, 0);
+        ACHECK(t.init && t.s.speed == 0 && t.s.air == 0);
+        float cyc = 0;
+        run(t, pos, Vec3(0, 0, -2.5f), 0, 2.0f, true, &cyc);
+        ACHECK(std::fabs(t.s.speed - 2.5f) < 0.05f && std::fabs(t.s.legYaw) < 0.01f && !t.back);
+        ACHECK(cyc > 5.0f / kAnim.walkStride * 0.9f && cyc < 5.0f / kAnim.walkStride * 1.02f);
+        // strafe-hopping speed: the cycle rate is capped
+        cyc = 0;
+        run(t, pos, Vec3(0, 0, -25.0f), 0, 1.0f, true, &cyc);
+        ACHECK(cyc > 0 && cyc <= kAnim.maxCycleRate + 0.01f);
+        // straight backwards: back-pedal, the legs forward, the cycle backwards
+        cyc = 0;
+        run(t, pos, Vec3(0, 0, 4.0f), 0, 1.0f, true, &cyc);
+        ACHECK(t.back && std::fabs(t.s.legYaw) < 0.05f && cyc < -0.5f);
+        // a strafe to the right (after running forward: straight from a back-pedal it stays one, QL's way): the legs
+        // turn right, at most legTurnMax
+        run(t, pos, Vec3(0, 0, -4.0f), 0, 0.5f, true, nullptr);
+        run(t, pos, Vec3(4.0f, 0, 0), 0, 1.0f, true, nullptr);
+        ACHECK(!t.back && t.s.legYaw < -kAnim.legTurnMax + 0.05f && t.s.legYaw >= -kAnim.legTurnMax - 1e-4f);
+        // in the air: into the jump pose
+        run(t, pos, Vec3(0, 3.0f, -6.0f), 0, 0.5f, false, nullptr);
+        ACHECK(t.s.air > 0.95f);
+        // standing, turning the aim: the legs stay until it's past idleTurnStart, then follow
+        run(t, pos, Vec3(0, 0, 0), 0, 1.0f, true, nullptr);
+        ACHECK(t.s.air < 0.05f && t.s.speed < 0.1f && std::fabs(t.s.phase - std::round(t.s.phase * 2) * 0.5f) < 0.02f);
+        run(t, pos, Vec3(0, 0, 0), 0.5f, 0.5f, true, nullptr);
+        ACHECK(std::fabs(t.s.legYaw) > 0.3f);   // (still where they were)
+        run(t, pos, Vec3(0, 0, 0), 1.5f, 1.0f, true, nullptr);
+        ACHECK(std::fabs(t.s.legYaw) < kAnim.idleTurnStop + 0.02f);
+        // a teleport / respawn: standing again where they landed
+        pos = pos + Vec3(40, 0, 0);
+        animStep(t, pos, 1.5f, 0, true, 1.0f / 144);
+        ACHECK(t.s.speed == 0 && t.s.phase == 0 && t.s.legYaw == 0);
+        // garbage in: nothing goes NaN
+        animStep(t, Vec3(NAN, 0, 0), 0, 0, true, 0.01f);
+        animStep(t, pos, NAN, NAN, false, 0.01f);
+        animStep(t, pos, 0, 0, false, NAN);
+        animStep(t, pos, 0, 0, false, -1);
+        animStep(t, pos + Vec3(0.01f, 0, 0), 0, 0, false, 1e-9f);
+        ACHECK(std::isfinite(t.s.phase) && std::isfinite(t.s.speed) && std::isfinite(t.s.legYaw) && std::isfinite(t.s.air) && std::isfinite(t.legWorldYaw));
+    }
+}
+
 int assetTests() {
     g_afail = 0;
     testModelExport();
     testGltfLoader();
     testBoxModels();
+    testPlayerAnimation();
     testDecoders();
     testFontAtlas();
     testUiFonts();

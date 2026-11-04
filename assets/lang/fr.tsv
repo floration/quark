@@ -2534,6 +2534,7 @@ PLAYABLE AS:	JOUABLE EN :
 PLAYER	JOUEUR
 PLAYER 2	JOUEUR 2
 PLAYER > MORE SETS THE MENU ACCENT	JOUEUR > PLUS RÈGLE L'ACCENT DU MENU
+PLAYER ANIMATIONS	ANIMATIONS DES JOUEURS
 PLAYER BASED	CENTRÉ JOUEURS
 PLAYER JOINS	ARRIVÉES DE JOUEURS
 PLAYER MODEL:	MODÈLE DE JOUEUR :
@@ -4227,6 +4228,7 @@ ultra: after swap wait (us)	ultra: after swap wait (us)
 ultra: margin (us)	ultra: margin (us)
 ultra: pace the input read	ultra: pace the input read
 ungrouped into	dégroupé en
+unknown bone "	os inconnu "
 unknown mode	mode inconnu
 unknown mode '	mode inconnu '
 unknown ruleset	règle inconnue

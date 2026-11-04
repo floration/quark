@@ -70,6 +70,7 @@ struct LaunchOptions {
     bool debugWidgets = false;
     bool debugHudLayout = false; // --hudlayout: open HUD layout settings in game
     bool debugModels = false;
+    bool debugWalk = false;    // (--walk: the --models lineup turned side-on)
     int debugRps = 0;           // --rpsshot: the hide and seek tiebreak panel with made-up players (1 picking, 2 reveal, 3 three-way reveal)
     bool camSet = false;         // --cam: fixed backdrop camera (map analysis shots); in a match, the view's camera
     Vec3 camPos;
@@ -290,6 +291,11 @@ private:
     // models (models.h): the box list being drawn (reused every frame), and the owner's glTF overrides (null: none)
     ModelParts parts_;
     ModelOverrides modelOv_;
+    // PLAYER ANIMATIONS (models.h): each player slot's gait, legs' turn and air pose, moved on once a frame from where
+    // they are drawn (fixed: nothing allocated); animT_: the time each was last moved on (a second draw in a frame: 0 s)
+    AnimTrack anim_[kMaxPlayers];
+    double animT_[kMaxPlayers] = {};
+    float previewPhase_ = 0;   // the PLAYER tab's preview: walking in place
     bool fairModels_ = false;   // this frame: ranked / time trial (rankedPlayer), only the shipped overrides are drawn
     // the override drawn for a model: a mesh (drawn as triangles), or a box model (its boxes go through the box path
     // in place of the built-in ones: overrideBoxParts); null: none of that kind

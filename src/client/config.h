@@ -117,6 +117,7 @@ struct Settings {
     bool grappleToggle = false;        // CONTROLS > MORE: GRAPPLE press to hook, press again to let go (not held)
     int enemyModel = -1;               // GAMEPLAY > MORE: every enemy drawn as this player model (-1: their own)
     int teamModel = -1;                // GAMEPLAY > MORE: every teammate drawn as this player model (-1: their own)
+    bool playerAnims = true;           // GAMEPLAY > MORE: PLAYER ANIMATIONS (walking legs, jump pose; off: standing still)
     bool hpScaled = true;              // health bars against the mode's max health (not 100)
     bool exclusiveAudio = false;   // Windows: the sound device to the game alone (lower latency; other programs silent)
     // Settings > VIDEO + AUDIO > DEVICES (devices.h): stable ids, "" = the default; one that's gone falls back to it

@@ -1737,6 +1737,22 @@ void Renderer::box(const Vec3& center, const Vec3& half, float yaw, const Vec3& 
     casters_.push_back({center, r});   // (both lists cast: the lit one is drawn in the shadow pass too)
 }
 
+// box() with any turn (a posed player's part): the same culling, shadow lists and caster bookkeeping
+void Renderer::boxXf(const Mat4& xf, const Vec3& half, const Vec3& color, float sunVis, bool castShadow, bool visible) {
+    const Vec3 center = {xf.m[12], xf.m[13], xf.m[14]};
+    const float r = length(half);
+    if (buildingStatic_) {
+        int first = (int)staticVerts_.size();
+        emitBox(staticVerts_, xf, half, color, sunVis);
+        staticItems_.push_back({center, r, first, (int)staticVerts_.size() - first});
+        return;
+    }
+    if (visible && !inView(center, r)) { visible = false; if (!castShadow) return; }
+    if (!visible && !(castShadow && shadowCasters)) return;
+    emitBox(visible ? dyn_ : dynShadowOnly_, xf, half, color, sunVis);
+    casters_.push_back({center, r});
+}
+
 void Renderer::slope(const Brush& b, const Vec3& color) {
     std::vector<DynVertex>& out = buildingStatic_ ? staticVerts_ : dyn_;
     const int first = (int)out.size();
