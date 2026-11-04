@@ -188,8 +188,12 @@ vec2 stones(vec2 p) {
         float d = dot(r, r);
         if (d < md) { md = d; mr = r; mg = g; }
     }
+    // (the border pass over the 3 x 3 around the nearest cell, not 5 x 5: 9 cells instead of 25. A bisector that
+    // could be nearer lies two cells out only where a point sits in a far corner; such a miss shifts a joint by a
+    // fraction of a centimetre, below a pixel: cobblestone's 0.1% low on q's all-cobblestone benchmark map was 800 FPS
+    // against 2800 for the old materials, 2026-10-29)
     md = 8.0;
-    for (int y = -2; y <= 2; y++) for (int x = -2; x <= 2; x++) {
+    for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
         vec2 g = mg + vec2(x, y), r = g + hash22(i + g) - f, e = r - mr;
         if (dot(e, e) > 1e-5) md = min(md, dot(0.5 * (mr + r), normalize(e)));
     }
@@ -359,8 +363,16 @@ void main() {
         albedo = lin(mix(vec3(0.32, 0.22, 0.13), vec3(0.18, 0.12, 0.07), pud)) * (0.85 + 0.25 * fbm(q * 4.0));
         spec = 0.7 * pud; gloss = 80.0;
     } else if (mat == 24) {   // cobblestone: rounded grey stones in dark joints
-        vec2 w = stones(q * 3.0);
-        albedo = lin(mix(vec3(0.25, 0.24, 0.22), vec3(0.55, 0.53, 0.5) * (0.8 + 0.3 * w.y), smoothstep(0.015, 0.06, w.x))) * (0.9 + 0.15 * fbm(q * 8.0));
+        // far / grazing (a stone under ~2.5 pixels): the stones' average colour, without the cells at all, faded in
+        // over the same footprint the noise fades over (no pop); the grain is one octave of noise, not three
+        float far = noiseFade(footprint(q * 3.0) * 0.5);
+        vec3 avg = mix(vec3(0.25, 0.24, 0.22), vec3(0.55, 0.53, 0.5) * 0.95, 0.85);
+        vec3 c = avg;
+        if (far > 0.0) {
+            vec2 w = stones(q * 3.0);
+            c = mix(avg, mix(vec3(0.25, 0.24, 0.22), vec3(0.55, 0.53, 0.5) * (0.8 + 0.3 * w.y), smoothstep(0.015, 0.06, w.x)), far);
+        }
+        albedo = lin(c) * (0.9 + 0.15 * (0.5 * vnoiseAA(q * 8.0) + 0.5 * vnoiseAA(q * 16.1 + 17.1)));
     } else if (mat == 25) {   // concrete: cast slabs 1.2 x 0.6 m with form-tie holes
         vec2 c = fract(q / vec2(1.2, 0.6));
         float seam = min(min(c.x, 1.0 - c.x) * 1.2, min(c.y, 1.0 - c.y) * 0.6), tie = length((fract(q / vec2(0.6, 0.3)) - 0.5) * vec2(0.6, 0.3));
@@ -568,7 +580,7 @@ void main() {
 
 const char* kDynVS = R"(#version 330 core
 layout(location=0) in vec3 aPos;
-layout(location=1) in vec3 aNormal;  // x 32767 (16-bit integers, not normalized by GL: 0 and +-1 exact on every driver)
+layout(location=1) in vec4 aNormal;  // x 32767 (16-bit integers, not normalized by GL: 0 and +-1 exact on every driver); w: PLAYER SATURATION (0: none, else 1 + sat x 16383)
 layout(location=2) in vec4 aColor;   // (half floats, as aEdge and aOutline)
 layout(location=3) in vec4 aEdge;    // the distances to edges 0 and 1, then to 2 and 3
 layout(location=4) in vec4 aOutline; // rgb: the edge colour, a: its width (pixels)
@@ -576,16 +588,16 @@ uniform mat4 uViewProj;
 layout(std140) uniform Latch { mat4 uLatchVP; };
 uniform int uLatchUse;
 uniform mat4 uShadowMat;
-out vec3 vPos; out vec3 vN; out vec4 vColor; out vec4 vShadow; out vec4 vEdge; out vec3 vOutline; flat out float vOutlineW;
+out vec3 vPos; out vec3 vN; out vec4 vColor; out vec4 vShadow; out vec4 vEdge; out vec3 vOutline; flat out float vOutlineW; flat out float vSat;
 void main() {
-    vPos = aPos; vN = aNormal / 32767.0; vColor = aColor; vOutline = aOutline.rgb; vOutlineW = aOutline.a;
+    vPos = aPos; vN = aNormal.xyz / 32767.0; vSat = aNormal.w == 0.0 ? 1.0 : (aNormal.w - 1.0) / 16383.0; vColor = aColor; vOutline = aOutline.rgb; vOutlineW = aOutline.a;
     vEdge = vec4(aEdge.xy, aEdge.xy + aEdge.zw);   // (outline() takes edges 2 and 3 as zw - xy)
     vShadow = uShadowMat * vec4(aPos + vN * 0.03, 1.0);
     gl_Position = (uLatchUse != 0 ? uLatchVP : uViewProj) * vec4(aPos, 1.0);
 })";
 
 const char* kDynFS = R"(
-in vec3 vPos; in vec3 vN; in vec4 vColor; in vec4 vShadow; in vec4 vEdge; in vec3 vOutline; flat in float vOutlineW;
+in vec3 vPos; in vec3 vN; in vec4 vColor; in vec4 vShadow; in vec4 vEdge; in vec3 vOutline; flat in float vOutlineW; flat in float vSat;
 uniform vec3 uSunColor, uSkyColor, uSunDir, uFogColor, uCamPos;
 uniform float uFogDensity;
 uniform int uReceiveShadow;
@@ -607,6 +619,7 @@ void main() {
     vec3 light = uSkyColor * (0.6 + 0.25 * vN.y) + uSunColor * ndl * vColor.a * sh;
     float e = 0.3 + uEmitAdd;
     vec3 body = vColor.rgb * (light * (1.0 - e) + e);
+    if (vSat != 1.0) body = max(mix(vec3(dot(body, vec3(0.2126, 0.7152, 0.0722))), body, vSat), 0.0);   // VIDEO > MORE 4: PLAYER SATURATION (players' bodies, not their outlines)
     vec3 c = mix(mix(vOutline, body, uOutlineFade), body, outline(vEdge, vOutlineW)); // partly emissive so team colors stay readable; edges in the outline colour
     float d = length(vPos - uCamPos);
     c = mix(c, uFogColor, 1.0 - exp(-d * uFogDensity)) * uBright;
@@ -1667,15 +1680,16 @@ void Renderer::emitBox(std::vector<DynVertex>& out, const Mat4& xf, const Vec3& 
     const float sv = sunVis;
     const uint64_t outl = pack4(halfOf(outlineColor.x), halfOf(outlineColor.y), halfOf(outlineColor.z), halfOf(outlineWidth));
     const uint64_t c1 = packColor(color, sv), c96 = packColor(color * 0.96f, sv);
+    const uint64_t nw = satW();
     const size_t at = out.size();
     out.resize(at + 36);   // (DynVertex's constructor does nothing: no zero fill)
     DynVertex* q = out.data() + at;
-    putFace(q, xPos, packNormal(nx), c1, outl, lz, ly);
-    putFace(q + 6, xNeg, packNormal(neg(nx)), packColor(color * 0.92f, sv), outl, lz, ly);
-    putFace(q + 12, yPos, packNormal(ny), c1, outl, lx, lz);
-    putFace(q + 18, yNeg, packNormal(neg(ny)), packColor(color * 0.8f, sv), outl, lx, lz);
-    putFace(q + 24, zPos, packNormal(nz), c96, outl, lx, ly);
-    putFace(q + 30, zNeg, packNormal(neg(nz)), c96, outl, lx, ly);
+    putFace(q, xPos, (packNormal(nx) | nw), c1, outl, lz, ly);
+    putFace(q + 6, xNeg, (packNormal(neg(nx)) | nw), packColor(color * 0.92f, sv), outl, lz, ly);
+    putFace(q + 12, yPos, (packNormal(ny) | nw), c1, outl, lx, lz);
+    putFace(q + 18, yNeg, (packNormal(neg(ny)) | nw), packColor(color * 0.8f, sv), outl, lx, lz);
+    putFace(q + 24, zPos, (packNormal(nz) | nw), c96, outl, lx, ly);
+    putFace(q + 30, zNeg, (packNormal(neg(nz)) | nw), c96, outl, lx, ly);
 }
 
 // Is a sphere (center, radius) at least partly inside the view frustum?
@@ -1689,7 +1703,7 @@ void Renderer::setupDynVao(unsigned vao, unsigned vbo) {
     glBindVertexArray(vao);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)0);
-    glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_SHORT, GL_FALSE, sizeof(DynVertex), (void*)12);   // (x 32767: the shader divides)
+    glEnableVertexAttribArray(1); glVertexAttribPointer(1, 4, GL_SHORT, GL_FALSE, sizeof(DynVertex), (void*)12);   // (x 32767: the shader divides; w: PLAYER SATURATION)
     glEnableVertexAttribArray(2); glVertexAttribPointer(2, 4, GL_HALF_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)20);
     glEnableVertexAttribArray(3); glVertexAttribPointer(3, 4, GL_HALF_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)28);
     glEnableVertexAttribArray(4); glVertexAttribPointer(4, 4, GL_HALF_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)36);   // outline rgb + width
@@ -1744,7 +1758,7 @@ void Renderer::slope(const Brush& b, const Vec3& color) {
             return s * dot(q - a, inward) / l;
         };
         DynVertex v[4];
-        const uint64_t nrm = packNormal(n);
+        const uint64_t nrm = packNormal(n) | satW();
         const uint64_t col = packColor(n.y < -0.5f || n.x < -0.5f ? color * 0.92f : color, 1.0f);
         const uint64_t outl = pack4(halfOf(outlineColor.x), halfOf(outlineColor.y), halfOf(outlineColor.z), halfOf(outlineWidth));
         for (int k = 0; k < np; k++) {
@@ -1791,6 +1805,7 @@ void Renderer::emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const M
     const uint64_t edge = pack4(h05, h05, h05, h05);   // (mid-face: 0.5 from every edge)
     // (no edge: width 0; was left unset once, so the shader read whatever was on the stack as the width)
     const uint64_t outl = pack4(halfOf(outlineColor.x), halfOf(outlineColor.y), halfOf(outlineColor.z), 0);
+    const uint64_t nw = satW();
 #ifdef QUARK_DYN_SSE
     // 4 lanes at a time; the same products and sums in the same order as the scalar code below (no FMA), so the
     // positions are the same bit for bit. (One at a time, the 16-bit packing cost more than the bytes it saves.)
@@ -1808,7 +1823,7 @@ void Renderer::emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const M
         const float l = _mm_cvtss_f32(_mm_sqrt_ss(l2));
         n = l > 1e-8f ? _mm_div_ps(n, _mm_set1_ps(l)) : _mm_setzero_ps();   // (normalize)
         _mm_storeu_ps(d.pos, p);   // (16 bytes: the 4th lands on normal, written next)
-        const uint64_t nrm = packNormal4(n);
+        const uint64_t nrm = packNormal4(n) | nw;
         const uint64_t col = halfOf4(_mm_or_ps(_mm_and_ps(_mm_mul_ps(_mm_loadu_ps(v.col), t4[v.slot < TINT_COUNT ? v.slot : 0]), xyz), svw));
         memcpy(d.normal, &nrm, 8);
         memcpy(d.color, &col, 8);
@@ -1821,7 +1836,7 @@ void Renderer::emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const M
         const Vec3 pos(x[0] * p[0] + x[4] * p[1] + x[8] * p[2] + x[12], x[1] * p[0] + x[5] * p[1] + x[9] * p[2] + x[13], x[2] * p[0] + x[6] * p[1] + x[10] * p[2] + x[14]);
         Vec3 nn = normalize(Vec3(x[0] * n[0] + x[4] * n[1] + x[8] * n[2], x[1] * n[0] + x[5] * n[1] + x[9] * n[2], x[2] * n[0] + x[6] * n[1] + x[10] * n[2]));
         const Vec3& t = tint[v.slot < TINT_COUNT ? v.slot : 0];
-        putVertex(*q++, pos, packNormal(nn), packColor(Vec3(v.col[0] * t.x, v.col[1] * t.y, v.col[2] * t.z), sunVis), edge, outl);
+        putVertex(*q++, pos, packNormal(nn) | nw, packColor(Vec3(v.col[0] * t.x, v.col[1] * t.y, v.col[2] * t.z), sunVis), edge, outl);
     }
 #endif
     if (!flatOut) return;

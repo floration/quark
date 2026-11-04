@@ -472,6 +472,7 @@ BREAK FREE WITH A DASH	대시로 풀려나기
 BREAKABLE	파괴 가능
 BRICK	벽돌
 BRIGHTNESS	밝기
+BRIGHTNESS: THEIR OWN LIGHT, 1 = FULL COLOUR IN ANY SHADE;	밝기: 자체 조명, 1 = 어떤 그늘에서도 원래 색;
 BRITISH	영국식
 BRUNO	BRUNO
 BUBBLE	버블
@@ -1154,6 +1155,7 @@ GUN: TEAM	총기: 팀
 GUNFIRE	총성
 GUS	GUS
 Game::frame	Game::frame
+GetSystemCpuSetInformation	GetSystemCpuSetInformation
 HALFTIME - SIDES SWITCHED	하프타임 - 진영 교체
 HALFTIME - SIDES SWITCHED: YOU ATTACK NOW	하프타임 - 진영 교체: 이제 공격
 HALFTIME - SIDES SWITCHED: YOU DEFEND NOW	하프타임 - 진영 교체: 이제 수비
@@ -2218,6 +2220,9 @@ MOUSE 1	MOUSE 1
 MOUSE 2	MOUSE 2
 MOUSE 3	MOUSE 3
 MOUSE ACCELERATION	마우스 가속
+MOUSE THREAD	마우스 스레드
+MOUSE THREAD: OWN CORE	마우스 스레드: 전용 코어
+MOUSE THREAD: SHARED	마우스 스레드: 공유
 MOUSE TO PHOTON ~	마우스에서 광자까지 ~
 MOUSE TO PHOTON ~{} NS  (# HZ DISPLAY, {}, {})	마우스에서 광자까지 ~{} NS  (# HZ 디스플레이, {}, {})
 MOUSE TO PHOTON: IN GAME ONLY	마우스-화면 지연: 게임 중에만
@@ -2327,6 +2332,7 @@ NOTHING YET (NEEDS SPAWNS)	아직 없음 (스폰 필요)
 NOTICE LINES	알림 줄 수
 NOTICE TIME	알림 시간
 NOTICES	알림
+NOW ON CORE #; THE GAME STAYS OFF IT	현재 코어 #; 게임은 이 코어를 쓰지 않음
 NS	NS
 NS  (MOUSE REPORT IN TO GPU DONE; F3: NEXT VIEW)	NS  (마우스에서 GPU 완료까지; F3: 다음 보기)
 NS (# HZ)	NS (# HZ)
@@ -2422,6 +2428,7 @@ OVERTIME - NEXT KILL WINS	연장전 - 다음 킬 승리
 OWN ACCENT	개인 강조색
 OWN ACCENT: NOT THE TEAM COLOR	개인 강조색: 팀 색상 아님
 OWN COLOR	개인 색상
+OWN CORE: RAW INPUT READ AT TOP PRIORITY ON ONE FAST CORE;	전용 코어: RAW 입력을 빠른 코어 하나에서 최우선으로 읽음;
 OWN EFFECTS	개인 효과
 OWN SHADOW	내 그림자
 OggS	OggS
@@ -2499,7 +2506,6 @@ PLAYER	플레이어
 PLAYER 2	플레이어 2
 PLAYER > MORE SETS THE MENU ACCENT	플레이어 > 더 보기에서 메뉴 강조색 설정
 PLAYER BASED	플레이어 기반
-PLAYER BRIGHTNESS	플레이어 밝기
 PLAYER JOINS	플레이어 참가
 PLAYER MODEL:	플레이어 모델:
 PLAYER OUTLINE WIDTH	플레이어 외곽선 두께
@@ -2638,6 +2644,7 @@ RANKED: NO HEALTH BARS	랭크: 체력 바 없음
 RATE	빈도
 RATING	레이팅
 RAW INPUT	RAW INPUT
+RAW INPUT, WINDOWS, 4+ CORES ONLY	RAW 입력, WINDOWS, 4코어 이상만
 RD	RD
 REACH 12 M/S WITH NO DASH OR GRAPPLE	대시나 그래플 없이 12 M/S 달성
 REACH 27 M/S	27 M/S 달성
@@ -2786,6 +2793,7 @@ SAME AS FPS LIMIT	FPS 제한과 동일
 SAME DPI: THE SAME TURN PER INCH OF MOUSE	같은 DPI: 마우스 1인치당 같은 회전
 SATURATION	채도
 SATURATION 0: BLACK AND WHITE	채도 0: 흑백
+SATURATION: THEIR COLOUR ONLY, 0 GREY TO 2 VIVID	채도: 플레이어 색만, 0 회색 ~ 2 선명
 SAVE	저장
 SAVE + DONE	저장 + 완료
 SAVE A COPY	사본 저장
@@ -3205,7 +3213,6 @@ THE SHARE OF THE MODE'S MAX HEALTH	모드 최대 체력 대비 비율
 THE TASKBAR BUTTON FLASHES	작업 표시줄 버튼 깜빡임
 THE WHOLE STREAM POPS UNDER YOU. HOLD IT: ANOTHER EVERY 1.8 S	거품 줄기가 전부 발밑에서 터진다. 누르고 있으면 1.8 S마다 한 번 더
 THE WINDOW'S SIZE AND PLACE ARE KEPT	창 크기와 위치 유지
-THEIR OWN LIGHT: 1 = THEIR FULL COLOUR IN ANY SHADE	자체 조명: 1 = 어떤 그늘에서도 원래 색
 THEIRS	상대 것
 THEME.CFG LINE	THEME.CFG 줄
 THEN	그다음

@@ -145,6 +145,7 @@ struct Settings {
     bool shadowWorld = true, shadowPlayers = true;   // ...cast onto the map, onto players
     bool ownShadow = true;         // ...your own body's shadow (first person)
     float playerEmit = 0.3f;       // ...models' own light (their colour's share that shadow and shade don't touch)
+    float playerSat = 1.0f;        // ...PLAYER SATURATION: players' colour, 0 grey to 2 (1: as drawn; the map untouched)
     bool playersLit = false;       // ...players never darkened by the map's shade (full sun on them)
     Vec3 outlineFriendlyColor = {0, 0, 0}, outlineEnemyColor = {0, 0, 0};   // ...the CUSTOM outline colours
     float outlineAlpha = 1.0f;     // ...the player outline's opacity
@@ -397,6 +398,7 @@ struct Settings {
     float wpnVmOff[WPN_COUNT][3] = {}; // per weapon: added to the WEAPON MODEL element's x / y (720p units) / depth (mm)
     float mouseAccel = 0;              // sensitivity x (1 + accel x counts per ms), at most x4 (0 = off)
     bool rawInput = true;              // raw mouse input (off: the OS's pointer motion, with its acceleration)
+    bool mouseOwnCore = true;          // LATENCY > MOUSE THREAD: OWN CORE (Windows raw input thread time-critical on its own core; rawmouse.h)
     int altToggleWpns = -1;            // ALT-FIRE: TOGGLE applies to these weapons (bits; -1: the ones that zoom)
     int swapFire = 0;                  // these weapons swap FIRE and ALT FIRE (bits)
     bool autoHop = true;               // holding jump jumps again on landing (off: a press a jump)

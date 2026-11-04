@@ -3,6 +3,10 @@
 ## New
 - Voting: Pause > VOTE now has the GAMEMODE / MODIFIERS / MAP toggles right on it, one click to start, and BACK steps back through the vote. New vote modifiers: FIRE RATE and PROJECTILE SPEED.
 - Acid: standing in it tints your screen green, pulses your health bar and sizzles. Shots and stickies that go into lava or acid are destroyed with a hiss.
+- **Player saturation** (VIDEO > MORE 4 > PLAYERS > SATURATION, next to BRIGHTNESS): makes players' colours more vivid (up to 2x) or greyer, without touching the map, so enemies stand out like with digital vibrance but only on them.
+
+## Hit registration
+- **Round hitboxes:** players are now hit as two upright cylinders, the body and the head, instead of two boxes. A box was 41% wider across its corners, so from a diagonal you could hit the air beside someone; now a player is the same width from every side. The rules are the same: the head is a headshot, the body goes up to the bottom of the head, and a shot over the shoulders beside the head still misses. Older game versions can't join newer servers (protocol 69).
 
 ## Fixes
 - Fixed a rare wrong trail or missing explosion after very long matches, players drawn up to a second in the past after a server clock reset, and giants hidden behind cover their head stuck out over.
@@ -11,12 +15,14 @@
 - Ball: running or dashing into the ball no longer hurts you. The ball only does damage when it's moving over 20 m/s itself and over 25 m/s relative to you.
 
 ## Maps
+- **Cobblestone is now an FFA map:** 16 new spawns spread over its streets, bridges and roofs (it had 4), plus two more per team for team vs. It's offered for FFA, 1v1, duel, team vs and tourney.
 - **Payload has its own default map:** payload now picks Railyard (it still plays neutral payload and ball). The ranked ladders are unchanged.
 - **Black Hole** can now be played in duel and team vs too.
 - Small geometry fixes: walls that were drawn twice on Mine, QK6, Cruise Ship and Railyard (two door sills on Mine flickered between two materials), a doubled floodlight mast pair on Railyard, two invisible boxes on Black Hole.
 - Map editor (Quarkology): its checks now agree with the game's tests. Greenhouse and Spire no longer fail the ranked check (ranked maps must be fair, not mirror images), Solar no longer fails its routes, and Tutorial no longer shows 46,000 m² out of bounds.
 
 ## Performance
+- **Cobblestone draws much faster:** the stone pattern does about 45% less work per pixel up close and almost none far away (it fades to the stones' average colour where a stone is under ~2 pixels, as other patterns already did). On an all-cobblestone test room: +40% average FPS and +38% on the 1% lows (software renderer); it looks the same.
 - **Higher frame rates and lows when the GPU is the limit:** the world draws with the GPU's early depth test while no holes have been blown in breakable walls. On a 3090 Ti at 1440p that's +3.8% average FPS, +9.4% on the 1% lows and +11.3% on the 0.1% lows, with identical pictures. It's a switch on the LATENCY tab, **EARLY DEPTH TEST** (on by default), so you can compare it yourself.
 - **Higher frame rates from a leaner renderer:** players, props and effects upload 40% less data each frame, the shadow pass only touches the part of its map that's used, and stuck knives and bolts skip per-frame maths. On a 3090 Ti at 1440p: +6.9% average FPS, +4.0% on the 1% and 0.1% lows (before the early depth test above, which stacks on top).
 - **Faster collision and line-of-sight checks** (14-32% per ray, server ticks ~4% faster) with identical results.
@@ -28,6 +34,7 @@
 - **Slightly faster HUD, menus and server ticks:** rounding and square roots no longer call the C maths library.
 
 ## Latency
+- **MOUSE THREAD: OWN CORE** (VIDEO + AUDIO > MORE 9, on by default, Windows): the raw mouse input thread now runs at top priority on its own fast core, and the game's thread stays off that core, so a mouse report is never stuck waiting behind the game's frame. Set it to SHARED to compare.
 - BENCHMARK results: the frame-time graph is now a line, zoomed so the run's fastest and slowest frames are its edges, with MIN, MAX and AVG shown in µs. Each frame's spread shows faintly behind the line. STDEV, AVG FRAME and the worst frame are in µs too.
 - FPS LIMIT holds its rate much more evenly: the limiter used to wake up late now and then (a 1000 cap's 0.1% low was 589). It now learns how late your PC's timer wakes and spins the rest, so capped frames come out on time. While the game has focus, its main thread also runs at the highest priority, and Windows 11 can no longer throttle it onto an efficiency core.
 - New LATENCY setting, FRAME CAP OFFSET: with an FPS limit on, the game wakes this much early, does its network and GPU check, and then reads your mouse exactly on the beat, so small hold-ups no longer make a frame late. AUTO is 5% of a frame (50 µs at 1000). You can set it in µs or turn it OFF.

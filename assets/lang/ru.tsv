@@ -472,6 +472,7 @@ BREAK FREE WITH A DASH	ВЫРВИСЬ РЫВКОМ
 BREAKABLE	РАЗРУШАЕМЫЙ
 BRICK	КИРПИЧ
 BRIGHTNESS	ЯРКОСТЬ
+BRIGHTNESS: THEIR OWN LIGHT, 1 = FULL COLOUR IN ANY SHADE;	ЯРКОСТЬ: СОБСТВЕННЫЙ СВЕТ, 1 = ПОЛНЫЙ ЦВЕТ В ЛЮБОЙ ТЕНИ;
 BRITISH	БРИТАН.
 BRUNO	BRUNO
 BUBBLE	ПУЗЫРЬ
@@ -1154,6 +1155,7 @@ GUN: TEAM	ОРУЖ.: КОМАНД.
 GUNFIRE	СТРЕЛЬБА
 GUS	GUS
 Game::frame	Game::frame
+GetSystemCpuSetInformation	GetSystemCpuSetInformation
 HALFTIME - SIDES SWITCHED	ПЕРЕРЫВ - СМЕНА СТОРОН
 HALFTIME - SIDES SWITCHED: YOU ATTACK NOW	ПЕРЕРЫВ - СМЕНА СТОРОН: ТЕПЕРЬ ВЫ АТАКУЕТЕ
 HALFTIME - SIDES SWITCHED: YOU DEFEND NOW	ПЕРЕРЫВ - СМЕНА СТОРОН: ТЕПЕРЬ ВЫ ЗАЩИЩАЕТЕСЬ
@@ -2218,6 +2220,9 @@ MOUSE 1	MOUSE 1
 MOUSE 2	MOUSE 2
 MOUSE 3	MOUSE 3
 MOUSE ACCELERATION	УСКОРЕНИЕ МЫШИ
+MOUSE THREAD	ПОТОК МЫШИ
+MOUSE THREAD: OWN CORE	ПОТОК МЫШИ: СВОЁ ЯДРО
+MOUSE THREAD: SHARED	ПОТОК МЫШИ: ОБЩИЙ
 MOUSE TO PHOTON ~	ОТ МЫШИ ДО ФОТОНА ~
 MOUSE TO PHOTON ~{} NS  (# HZ DISPLAY, {}, {})	ОТ МЫШИ ДО ФОТОНА ~{} НС  (ЭКРАН # ГЦ, {}, {})
 MOUSE TO PHOTON: IN GAME ONLY	ОТ МЫШИ ДО ФОТОНА: ТОЛЬКО В ИГРЕ
@@ -2327,6 +2332,7 @@ NOTHING YET (NEEDS SPAWNS)	ПОКА НИЧЕГО (НУЖНЫ СПАВНЫ)
 NOTICE LINES	СТРОК УВЕДОМЛ.
 NOTICE TIME	ВРЕМЯ УВЕДОМЛ.
 NOTICES	УВЕДОМЛ.
+NOW ON CORE #; THE GAME STAYS OFF IT	СЕЙЧАС НА ЯДРЕ #; ИГРА ЕГО НЕ ЗАНИМАЕТ
 NS	NS
 NS  (MOUSE REPORT IN TO GPU DONE; F3: NEXT VIEW)	NS  (ОТ МЫШИ ДО ГОТОВНОСТИ GPU; F3: ДАЛЕЕ)
 NS (# HZ)	NS (# HZ)
@@ -2422,6 +2428,7 @@ OVERTIME - NEXT KILL WINS	ОВЕРТАЙМ - ДО ПЕРВОГО УБИЙСТВ�
 OWN ACCENT	СВОЙ АКЦЕНТ
 OWN ACCENT: NOT THE TEAM COLOR	СВОЙ АКЦЕНТ: НЕ ЦВЕТ КОМАНДЫ
 OWN COLOR	СВОЙ ЦВЕТ
+OWN CORE: RAW INPUT READ AT TOP PRIORITY ON ONE FAST CORE;	СВОЁ ЯДРО: RAW INPUT С ВЫСШИМ ПРИОРИТЕТОМ НА БЫСТРОМ ЯДРЕ;
 OWN EFFECTS	СВОИ ЭФФЕКТЫ
 OWN SHADOW	СВОЯ ТЕНЬ
 OggS	OggS
@@ -2499,7 +2506,6 @@ PLAYER	ИГРОК
 PLAYER 2	ИГРОК 2
 PLAYER > MORE SETS THE MENU ACCENT	ИГРОК > ЕЩЁ ЗАДАЁТ АКЦЕНТ МЕНЮ
 PLAYER BASED	НА ИГРОКАХ
-PLAYER BRIGHTNESS	ЯРКОСТЬ ИГРОКОВ
 PLAYER JOINS	ИГРОК ЗАШЁЛ
 PLAYER MODEL:	МОДЕЛЬ ИГРОКА:
 PLAYER OUTLINE WIDTH	ТОЛЩИНА КОНТУРА ИГРОКА
@@ -2638,6 +2644,7 @@ RANKED: NO HEALTH BARS	РЕЙТИНГ: БЕЗ ПОЛОС ЗДОРОВЬЯ
 RATE	ЧАСТ.
 RATING	РЕЙТИНГ
 RAW INPUT	RAW INPUT
+RAW INPUT, WINDOWS, 4+ CORES ONLY	RAW INPUT, WINDOWS, ОТ 4 ЯДЕР
 RD	RD
 REACH 12 M/S WITH NO DASH OR GRAPPLE	РАЗГОНИСЬ ДО 12 М/С БЕЗ РЫВКА И КРЮКА
 REACH 27 M/S	РАЗГОНИСЬ ДО 27 М/С
@@ -2786,6 +2793,7 @@ SAME AS FPS LIMIT	КАК ЛИМИТ FPS
 SAME DPI: THE SAME TURN PER INCH OF MOUSE	ТОТ ЖЕ DPI: ТОТ ЖЕ ПОВОРОТ НА ДЮЙМ МЫШИ
 SATURATION	НАСЫЩЕННОСТЬ
 SATURATION 0: BLACK AND WHITE	НАСЫЩЕННОСТЬ 0: ЧЁРНО-БЕЛОЕ
+SATURATION: THEIR COLOUR ONLY, 0 GREY TO 2 VIVID	НАСЫЩЕННОСТЬ: ТОЛЬКО ИХ ЦВЕТ, 0 СЕРЫЙ – 2 ЯРКИЙ
 SAVE	СОХР.
 SAVE + DONE	СОХР. + ГОТОВО
 SAVE A COPY	СОХРАНИТЬ КОПИЮ
@@ -3205,7 +3213,6 @@ THE SHARE OF THE MODE'S MAX HEALTH	ДОЛЯ МАКС. ЗДОРОВЬЯ РЕЖИ�
 THE TASKBAR BUTTON FLASHES	КНОПКА НА ПАНЕЛИ ЗАДАЧ МИГАЕТ
 THE WHOLE STREAM POPS UNDER YOU. HOLD IT: ANOTHER EVERY 1.8 S	ВЕСЬ ПОТОК ЛОПАЕТСЯ ПОД ТОБОЙ. ДЕРЖИ: ЕЩЁ ОДИН КАЖДЫЕ 1.8 С
 THE WINDOW'S SIZE AND PLACE ARE KEPT	РАЗМЕР И ПОЛОЖЕНИЕ ОКНА СОХРАНЯЮТСЯ
-THEIR OWN LIGHT: 1 = THEIR FULL COLOUR IN ANY SHADE	СОБСТВЕННЫЙ СВЕТ: 1 = ПОЛНЫЙ ЦВЕТ В ЛЮБОЙ ТЕНИ
 THEIRS	ИХ
 THEME.CFG LINE	СТРОКА THEME.CFG
 THEN	ПОТОМ

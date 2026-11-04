@@ -177,7 +177,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     r_.latchClock = &timeNow;
     rawMouse_.onMotionCtx = &r_;
     rawMouse_.onMotion.store([](void* r, long long dx, long long dy) { static_cast<Renderer*>(r)->latchMouse((double)dx, (double)dy); });
-    if (!opts_.uiTest && cfg_.rawInput) rawMouse_.start();   // (the UI test drives the mouse through GLFW; RAW INPUT off: the OS's motion)
+    if (!opts_.uiTest && cfg_.rawInput) rawMouse_.start(cfg_.mouseOwnCore);   // (the UI test drives the mouse through GLFW; RAW INPUT off: the OS's motion)
     if (!audio_.start()) printf("audio: no output device - running without sound\n");
     audio_.setMasterVolume(cfg_.volume);
     audio_.setEffectsVolume(cfg_.volumeEffects);
@@ -1237,7 +1237,8 @@ void Game::applyRawInput() {
     if (opts_.uiTest) return;
     const bool cap = mouseCaptured_;
     captureMouse(false);
-    if (cfg_.rawInput && !rawMouse_.active()) rawMouse_.start(); else if (!cfg_.rawInput) rawMouse_.stop();
+    if (cfg_.rawInput && rawMouse_.active() && (rawMouse_.core() >= 0) != cfg_.mouseOwnCore) rawMouse_.stop();   // (OWN CORE changed: again)
+    if (cfg_.rawInput && !rawMouse_.active()) rawMouse_.start(cfg_.mouseOwnCore); else if (!cfg_.rawInput) rawMouse_.stop();
     captureMouse(cap);
 }
 
@@ -2659,6 +2660,7 @@ void Game::drawWorld(float alpha) {
         if (self && alive && !cfg_.ownShadow) continue;   // (MORE 4: OWN SHADOW off: your unseen body isn't drawn at all)
         Vec3 col = teamColor(i);
         r_.outlineColor = outlineColor(i);
+        r_.modelSat = cfg_.playerSat;   // (MORE 4: PLAYER SATURATION, the bodies drawn from here to the reset below)
         {   // MORE 4: OUTLINE WIDTH for your team / enemies (unset: PLAYER OUTLINE WIDTH)
             const float ow = isFriendly(i) ? cfg_.outlineTeamW : cfg_.outlineEnemyW;
             r_.outlineWidth = ow >= 0 ? ow : cfg_.outlinePlayer;
@@ -2837,6 +2839,7 @@ void Game::drawWorld(float alpha) {
 
     r_.outlineColor = {0, 0, 0};
     r_.outlineWidth = 1.0f;
+    r_.modelSat = 1.0f;
     // grapple ropes
     // (a hook latched onto a player ends on their body as drawn here: their interpolated position, or our own)
     auto ropeEnd = [&](int target, const Vec3& anchor, uint16_t rocket = 0) {
@@ -7951,10 +7954,13 @@ void Game::drawMoreSettings(const SetLayout& L) {
             f.hint("PLAYER SHADOWS (VIDEO + AUDIO); ALWAYS LIT:", "PLAYERS NEVER DARKENED BY THE MAP'S SHADE");
         }
         f.section("PLAYERS");
-        ui_.slider(f.x(), f.top(), w, h, "PLAYER BRIGHTNESS", cfg_.playerEmit, 0, 1, "%.2f", UiExp::cfg("player_emit"), d.playerEmit);
+        // (one row, two halves: a full row more and the column ran into BACK)
+        ui_.slider(f.x(), f.top(), hw, h, "BRIGHTNESS", cfg_.playerEmit, 0, 1, "%.2f", UiExp::cfg("player_emit"), d.playerEmit);
+        ui_.slider(xl, f.top(), hw, h, "SATURATION", cfg_.playerSat, 0, 2.0f, "%.2f", UiExp::cfg("player_saturation"), d.playerSat);
         cfg_.playerEmit = clampf(cfg_.playerEmit, 0, 1);
+        cfg_.playerSat = clampf(cfg_.playerSat, 0, 2.0f);
         f.next();
-        f.hint("THEIR OWN LIGHT: 1 = THEIR FULL COLOUR IN ANY SHADE");
+        f.hint("BRIGHTNESS: THEIR OWN LIGHT, 1 = FULL COLOUR IN ANY SHADE;", "SATURATION: THEIR COLOUR ONLY, 0 GREY TO 2 VIVID");
         f.section("OUTLINES");
         ui_.colorPicker(f.x(), f.top(), hw, h, "CUSTOM TEAM", cfg_.outlineFriendlyColor, UiExp::cfg("outline_friendly_color"), d.outlineFriendlyColor);
         ui_.colorPicker(xl, f.top(), hw, h, "CUSTOM ENEMY", cfg_.outlineEnemyColor, UiExp::cfg("outline_enemy_color"), d.outlineEnemyColor);
@@ -8361,6 +8367,15 @@ void Game::drawMoreSettings(const SetLayout& L) {
             cfg_.capOffsetUs = std::min(std::max(-1, (int)std::lround(v)), 5000);
             g.next();
             g.hint("FPS LIMIT: WAKES THIS EARLY, THEN WAITS EXACTLY TO THE", "FRAME'S START: EVEN FRAMES; AUTO 5% OF THE FRAME");
+        }
+        {
+            static const std::vector<std::string> mn = {"MOUSE THREAD: SHARED", "MOUSE THREAD: OWN CORE"};
+            int mi = cfg_.mouseOwnCore ? 1 : 0;
+            if (ui_.cycle(g.x(), g.top(), w, h, "MOUSE THREAD", mi, 2, mn, UiExp::cfg("mouse_own_core"))) { cfg_.mouseOwnCore = mi == 1; applyRawInput(); }
+            g.next();
+            char cs[64];
+            if (rawMouse_.core() >= 0) snprintf(cs, sizeof cs, "NOW ON CORE %d; THE GAME STAYS OFF IT", rawMouse_.core()); else snprintf(cs, sizeof cs, "%s", "RAW INPUT, WINDOWS, 4+ CORES ONLY");
+            g.hint("OWN CORE: RAW INPUT READ AT TOP PRIORITY ON ONE FAST CORE;", cs);
         }
         if (ui_.toggle(g.x(), g.top(), hw, h, "NV THREADED OFF", cfg_.nvThreaded, UiExp::cfg("nv_threaded"))) {
             std::string msg = "NOT CHANGED IN THE UI TEST";
