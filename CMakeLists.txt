@@ -26,6 +26,12 @@ file(WRITE ${CMAKE_BINARY_DIR}/generated/version.cpp.tmp
   "const char kQuarkVersion[] = \"${QUARK_VERSION}\";\n"
   "const char kQuarkLauncherMarker[] = \"QUARK-LAUNCHER-VERSION:${QUARK_VERSION}\";\n")
 configure_file(${CMAKE_BINARY_DIR}/generated/version.cpp.tmp ${CMAKE_BINARY_DIR}/generated/version.cpp COPYONLY)
+# the full build name (quark-<version>-<commit>[-dirty]), worked out at every build, not just at configure
+add_custom_target(quark_build_id
+  COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_SOURCE_DIR} -DVER=${QUARK_VERSION} -DOUT=${CMAKE_BINARY_DIR}/generated/build_id.cpp
+          -P ${CMAKE_SOURCE_DIR}/cmake/build_id.cmake
+  BYPRODUCTS ${CMAKE_BINARY_DIR}/generated/build_id.cpp
+  COMMENT "build id")
 
 # Windows resources for every shipped exe (src/win/app.rc.in, app.manifest.in): the icon, a VERSIONINFO (product quark,
 # company floration, a description, the version incl. a .testing.N (or -test.N) suffix: FILEVERSION x.y.z.N, flagged prerelease) and an
@@ -263,10 +269,12 @@ add_library(quark_core STATIC
   src/game/tutorial.cpp
   src/game/tutorial_server.cpp
   ${CMAKE_BINARY_DIR}/generated/version.cpp
+  ${CMAKE_BINARY_DIR}/generated/build_id.cpp
   ${CMAKE_BINARY_DIR}/generated/default_brain.h
   ${CMAKE_BINARY_DIR}/generated/default_modes.h
 )
 target_include_directories(quark_core PUBLIC src ${CMAKE_BINARY_DIR}/generated)
+add_dependencies(quark_core quark_build_id)
 # ---- maps (a build artifact) ---------------------------------------------------------------------------
 # tools/make_maps.py generates the shipped maps at build time (python3, nothing else) into maps/, which .gitignore
 # (the generator: tools/maps/prefabs.py, the shared builder, and tools/maps/<name>.py, one module per map)

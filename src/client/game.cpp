@@ -9870,7 +9870,7 @@ void Game::drawMenu() {
     // nor over the main menu's page (its strip has the Q)
     if (screen_ != Screen::Settings && !mainPage) r_.logo(cx, H * 0.12f, 8 * s, rgba(cfg_.fixedLogo ? defaultSettings().colorFriendly : cfg_.colorFriendly),
                                              rgba(cfg_.fixedLogo ? defaultSettings().colorEnemy : cfg_.colorEnemy));   // (the Q in both team colours; FIXED LOGO COLORS: the defaults)
-    if (!mainPage) r_.text(8 * s, H - 20 * s, std::max(1.0f, std::round(s)), std::string("V") + QUARK_VERSION, kGrey);   // (the main page: beside its strip)
+    if (!mainPage) r_.text(8 * s, H - 20 * s, std::max(1.0f, std::round(s)), kQuarkBuildId, kGrey);   // (the main page: beside its strip; the full build, owner 2026-11-04)
 
     if (picker_ != PICK_NONE && (screen_ == Screen::Host || screen_ == Screen::VsBots)) { drawPicker(cx, H * 0.12f + 80 * s); return; }
     if (edPrompt_ && screen_ == Screen::Main) { drawEditorSavePrompt(); return; }
@@ -10162,7 +10162,7 @@ void Game::drawMainStrip(float s, float H) {
         else if (confirmed("quit")) quit_ = true;
         uiIn_.pressed = false;
     }
-    r_.text(sw + 8 * s, H - 20 * s, std::max(1.0f, std::round(s)), std::string("V") + QUARK_VERSION, kGrey);
+    r_.text(sw + 8 * s, H - 20 * s, std::max(1.0f, std::round(s)), kQuarkBuildId, kGrey);   // (the full build, owner 2026-11-04)
 }
 
 namespace {
@@ -11556,7 +11556,7 @@ void Game::drawPerf() {
         snprintf(b, sizeof b, "WORST %.1fMS  PING %d  3D %dX%d", st.worstMs, net_.findPlayer(net_.clientId()) ? net_.findPlayer(net_.clientId())->ping : 0,
                  r_.sceneWidth(), r_.sceneHeight());   // (the world's own resolution: RENDER SCALE)
         perfText2_ = b;
-        perfTick_ = std::string("QUARK V") + QUARK_VERSION;   // (with the numbers, not every frame)
+        perfTick_ = kQuarkBuildId;   // (with the numbers, not every frame)
         if (net_.hasSnapshot()) perfTick_ += "  SERVER " + std::to_string(net_.tickRate()) + " HZ  LOSS " + std::to_string(net_.snapshotLoss()) + "%";
         // PRIORITIZE GAME: what Windows actually gave (and the focus state is checked again here, twice a second: a
         // window focused before its focus callback was set never got the call)

@@ -14,3 +14,7 @@
   - Fed only while F3 shows the graph (`perfStage_ >= 3`), emptied each time it's opened: nothing extra runs with F3 off (the pipeline marks and GPU timestamps were already gated by `perfOn()`).
   - Width: up to 40% of the screen, so it stays left of the HUD's centre bars.
 - F3's GPU WAIT row was labelled (ULTRA) under Latent Sync with LOW LATENCY OFF (Latent Sync paces like ULTRA, `ultraPaced()`); it now says (LATENT SYNC) there.
+
+## Menus: the full build name
+- The menus' bottom-left version and F3's first line show `quark-<version>-<commit>[-dirty]` instead of `V<version>` (owner, 2026-11-04: "the version number in the bottom left of the main menu should have the FULL version number"), the same name `tools/build_windows.ps1` gives its folders, so a screenshot says exactly which build it is.
+- How: `cmake/build_id.cmake` runs at every build (target `quark_build_id`, a dependency of `quark_core`), asks git for the short commit and whether the tree has changes, and writes `generated/build_id.cpp` (`kQuarkBuildId`) only when that changes, so an unchanged checkout recompiles nothing. Without git (a source download) it's `quark-<version>`. `QUARK_VERSION` itself is unchanged: protocol checks, the updater, the launcher and the benchmark files still read it.
