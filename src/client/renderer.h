@@ -27,8 +27,9 @@ static_assert(sizeof(DynVertex) == 44, "DynVertex: setupDynVao's offsets");
 struct FlatVertex { float pos[3]; float color[4]; };
 // 16 bytes: screen pixels, font atlas texel coords (u16 fixed point: (texel + 1) * 32), color (RGBA8), and for text
 // the text scale (integer part + 1/256ths; 0 = plain rect), which sets the distance-field edge and outline width
-// in the shader, so each character is one quad. pad[0]: the title's split Q; pad[1]: a rounded rect (roundRect: uv its
-// own pixel position * 4, scaleInt its corner radius, scaleFrac its ring width * 4).
+// in the shader, so each character is one quad. pad[0]: the title's split Q; pad[1]: 1 a rounded rect (roundRect: uv its
+// own pixel position * 4, scaleInt its corner radius, scaleFrac its ring width * 4), 2 an icon (icon: uv as roundRect's,
+// scaleInt which UiIcon).
 struct Vertex2D { int16_t pos[2]; uint16_t uv[2]; uint8_t color[4]; uint8_t scaleInt, scaleFrac, pad[2]; };
 // The 2D batch's allocator: growing the batch leaves the new vertices unset (every writer sets all of a vertex's
 // fields), so text and rects don't zero a vertex just before writing it.
@@ -42,6 +43,8 @@ template <class T> struct NoInitAlloc : std::allocator<T> {
 using Vertex2DList = std::vector<Vertex2D, NoInitAlloc<Vertex2D>>;
 
 struct Color { float r, g, b, a; };
+// The UI's line icons (Renderer::icon; their shapes are in the UI shader, kUiFS's icon()): the main menu's strip
+enum UiIcon { ICON_PLAY = 0, ICON_GAUGE, ICON_GRID, ICON_TROPHY, ICON_GEAR, ICON_CHAT, ICON_INFO, ICON_POWER, ICON_COUNT };
 constexpr Color kGlassTint = {0.86f, 0.90f, 0.93f, 0.26f};   // glass panes (map material 21): very light grey, see-through
 inline Color rgba(const Vec3& c, float a = 1) { return {c.x, c.y, c.z, a}; }
 
@@ -151,6 +154,8 @@ public:
     float uiInkBottom(size_t from, float skipTop, float skipBottom) const;
     // one solid quad with free corners (xy: 4 points, clockwise or not; convex): the PLAYER tab's model preview's faces
     void quad2D(const float xy[8], const Color& c);
+    // a line icon (UiIcon), size px square centred on (cx, cy), drawn as shapes in the UI shader (smooth at any size)
+    void icon(int id, float cx, float cy, float size, const Color& c);
     void setTextOutline(float k) { textOutline_ = k < 0 ? 0 : k > 1.5f ? 1.5f : k; }   // the text outline's width, x (0: none)
     void uiTransform(size_t from, float px, float py, float k, float dx, float dy);
     // The QUARK title (the menus'): centred on cx, its line top at y (as text() takes it), at text scale ts (fractional

@@ -9916,71 +9916,6 @@ const std::string& sbuf(int slot, const char* s) {
     static std::string b[16];
     return b[slot & 15].assign(s);
 }
-// a thick 2D line (square ends, w past each end by w / 2 so joined segments close up)
-void seg2D(Renderer& r, float x0, float y0, float x1, float y1, float w, const Color& c) {
-    float dx = x1 - x0, dy = y1 - y0;
-    const float l = std::sqrt(dx * dx + dy * dy);
-    if (l < 1e-3f) return;
-    dx *= w * 0.5f / l; dy *= w * 0.5f / l;
-    const float q[8] = {x0 - dx - dy, y0 - dy + dx, x1 + dx - dy, y1 + dy + dx, x1 + dx + dy, y1 + dy - dx, x0 - dx + dy, y0 - dy - dx};
-    r.quad2D(q, c);
-}
-// an arc around (cx, cy) from angle a0 to a1 (radians, y down), in n segments
-void arc2D(Renderer& r, float cx, float cy, float rad, float a0, float a1, float w, const Color& c, int n = 14) {
-    for (int i = 0; i < n; i++) {
-        const float t0 = a0 + (a1 - a0) * i / n, t1 = a0 + (a1 - a0) * (i + 1) / n;
-        seg2D(r, cx + rad * std::cos(t0), cy + rad * std::sin(t0), cx + rad * std::cos(t1), cy + rad * std::sin(t1), w, c);
-    }
-}
-// The strip's icons, drawn on a 24 x 24 grid (the mockup's line icons) centred on (cx, cy), `size` pixels across
-enum MainIcon { ICON_PLAY, ICON_GAUGE, ICON_GRID, ICON_TROPHY, ICON_GEAR, ICON_CHAT, ICON_INFO, ICON_POWER };
-void mainIcon(Renderer& r, int icon, float cx, float cy, float size, const Color& c) {
-    const float u = size / 24, w = std::max(1.0f, 2 * u);
-    auto X = [&](float x) { return cx + (x - 12) * u; };
-    auto Y = [&](float y) { return cy + (y - 12) * u; };
-    auto L = [&](float a, float b, float c2, float d) { seg2D(r, X(a), Y(b), X(c2), Y(d), w, c); };
-    const float pi = 3.14159265f;
-    switch (icon) {
-        case ICON_PLAY: { const float q[8] = {X(7), Y(4), X(20), Y(12), X(7), Y(20), X(7), Y(20)}; r.quad2D(q, c); break; }
-        case ICON_GAUGE:   // a dial, its needle up and right
-            arc2D(r, X(12), Y(14), 10 * u, pi * 0.83f, pi * 2.17f, w, c, 16);
-            L(12, 14, 16, 10);
-            break;
-        case ICON_GRID:    // a framed grid (CREATE: the map editor's)
-            r.roundRect(X(2), Y(4), 20 * u, 16 * u, 2 * u, c, w);
-            L(7, 4, 7, 20); L(17, 4, 17, 20); L(2, 12, 22, 12);
-            break;
-        case ICON_TROPHY:
-            L(7, 4, 17, 4); L(7, 4, 7, 9); L(17, 4, 17, 9);
-            arc2D(r, X(12), Y(9), 5 * u, 0, pi, w, c, 10);
-            L(17, 5, 20, 5); L(20, 5, 20, 7); L(7, 5, 4, 5); L(4, 5, 4, 7);
-            arc2D(r, X(17), Y(7), 3 * u, 0, pi * 0.5f, w, c, 5); arc2D(r, X(7), Y(7), 3 * u, pi * 0.5f, pi, w, c, 5);
-            L(12, 14, 12, 21); L(8, 21, 16, 21);
-            break;
-        case ICON_GEAR: {
-            r.roundRect(X(12) - 3 * u, Y(12) - 3 * u, 6 * u, 6 * u, 3 * u, c, w);
-            r.roundRect(X(12) - 7.5f * u, Y(12) - 7.5f * u, 15 * u, 15 * u, 7.5f * u, c, w);
-            for (int k = 0; k < 8; k++) {
-                const float a = pi * 0.25f * k, ca = std::cos(a), sa = std::sin(a);
-                seg2D(r, X(12 + 7 * ca), Y(12 + 7 * sa), X(12 + 9.5f * ca), Y(12 + 9.5f * sa), 3.6f * u, c);
-            }
-            break;
-        }
-        case ICON_CHAT:
-            r.roundRect(X(3) - u, Y(3) - u, 20 * u, 16 * u, 2.5f * u, c, w);
-            L(3, 17, 3, 21); L(3, 21, 7, 17);
-            break;
-        case ICON_INFO:
-            r.roundRect(X(2), Y(2), 20 * u, 20 * u, 10 * u, c, w);
-            L(12, 11, 12, 16);
-            r.roundRect(X(12) - 1.3f * u, Y(7.5f) - 1.3f * u, 2.6f * u, 2.6f * u, 1.3f * u, c);
-            break;
-        case ICON_POWER:
-            arc2D(r, X(12), Y(12.93f), 9 * u, -0.78f, 3.92f, w, c, 18);   // (open at the top, from 1:30 round to 10:30)
-            L(12, 2, 12, 12);
-            break;
-    }
-}
 // a line of pieces one after the other (" · " between them; each looked up in the language on its own), shrunk to fit
 // maxW, the last piece that doesn't fit at the smallest size cut ("...")
 void drawPieces(Renderer& r, float x, float y, float ts, float maxW, std::initializer_list<const std::string*> parts, const Color& c) {
@@ -10129,7 +10064,7 @@ void Game::drawMainStrip(float s, float H) {
             r_.rect(0, y, 3 * s, h, ui_.accent);
         } else if (hv) r_.rect(0, y, sw, h, {1, 1, 1, 0.06f});
         const Color c = cur || hv ? white : kMutedC;
-        mainIcon(r_, kIcons[i], sw * 0.5f, y + 21 * s, 22 * s, c);
+        r_.icon(kIcons[i], sw * 0.5f, y + 21 * s, 22 * s, c);
         const TextFit f = r_.fitText(kLabels[i], lts, sw - 4 * s);   // (TRAINING, ТРЕНИРОВКА: the whole strip)
         if (f.keep >= 0) { const std::string t = r_.textClip(kLabels[i], f.scale, sw - 4 * s); r_.text((sw - r_.textWidth(t, f.scale)) * 0.5f, y + 38 * s, f.scale, t, c); }
         else r_.text((sw - r_.textWidth(kLabels[i], f.scale, f.level)) * 0.5f, y + 38 * s + (r_.textHeight(lts) - r_.textHeight(f.scale)) * 0.5f, f.scale, kLabels[i], c, f.level);
@@ -10150,7 +10085,7 @@ void Game::drawMainStrip(float s, float H) {
         if (armed) r_.rect(0, y, sw, h, {kRed.r * 0.35f, kRed.g * 0.35f, kRed.b * 0.35f, 0.9f});
         else if (hv) r_.rect(0, y, sw, h, {1, 1, 1, 0.06f});
         const Color quitC = {1.0f, 0.54f, 0.5f, 1};
-        mainIcon(r_, i == 0 ? ICON_CHAT : i == 1 ? ICON_INFO : ICON_POWER, sw * 0.5f, y + h * 0.5f, 22 * s, i == 2 ? (hv || armed ? kRed : quitC) : hv ? white : kMutedC);
+        r_.icon(i == 0 ? ICON_CHAT : i == 1 ? ICON_INFO : ICON_POWER, sw * 0.5f, y + h * 0.5f, 22 * s, i == 2 ? (hv || armed ? kRed : quitC) : hv ? white : kMutedC);
         const std::string& name = i == 0 ? kDiscord : i == 1 ? kInfo : armed ? kSure : kQuit;
         if (hv || armed) tooltip(y, h, name, i == 2 ? kRed : white);
         const UiExp e = i == 0 ? UiExp::url().withId("DISCORD") : i == 1 ? UiExp::nav("info/*").withId("INFO")
