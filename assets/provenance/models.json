@@ -29,16 +29,16 @@
   "models/prop/GUN_ARM.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
   "models/prop/HOOK.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
   "models/prop/HOOK_ARM.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
-  "models/weapon/BUBBLE.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
-  "models/weapon/CROSSBOW.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
-  "models/weapon/KNIFE.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
-  "models/weapon/LASER.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
-  "models/weapon/LOCATOR.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
-  "models/weapon/RIFLE.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
-  "models/weapon/ROCKET.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
-  "models/weapon/SHOTGUN.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
-  "models/weapon/SNIPER.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
-  "models/weapon/STICKY.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
-  "models/weapon/SYRINGE.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"}
+  "models/weapon/BUBBLE.gltf": {"origin": "ai", "source": "outlined box model by Claude (gen_outlined.py), shipped in assets/overrides/ as the default; AI-made placeholder", "by": "Claude", "date": "2026-11-05", "note": "q picked the outlined look 2026-11-05; not human-made, so it does not count toward the human-made goal"},
+  "models/weapon/CROSSBOW.gltf": {"origin": "ai", "source": "outlined box model by Claude (gen_outlined.py), shipped in assets/overrides/ as the default; AI-made placeholder", "by": "Claude", "date": "2026-11-05", "note": "q picked the outlined look 2026-11-05; not human-made, so it does not count toward the human-made goal"},
+  "models/weapon/KNIFE.gltf": {"origin": "ai", "source": "outlined box model by Claude (gen_outlined.py), shipped in assets/overrides/ as the default; AI-made placeholder", "by": "Claude", "date": "2026-11-05", "note": "q picked the outlined look 2026-11-05; not human-made, so it does not count toward the human-made goal"},
+  "models/weapon/LASER.gltf": {"origin": "ai", "source": "outlined box model by Claude (gen_outlined.py), shipped in assets/overrides/ as the default; AI-made placeholder", "by": "Claude", "date": "2026-11-05", "note": "q picked the outlined look 2026-11-05; not human-made, so it does not count toward the human-made goal"},
+  "models/weapon/LOCATOR.gltf": {"origin": "ai", "source": "outlined box model by Claude (gen_outlined.py), shipped in assets/overrides/ as the default; AI-made placeholder", "by": "Claude", "date": "2026-11-05", "note": "q picked the outlined look 2026-11-05; not human-made, so it does not count toward the human-made goal"},
+  "models/weapon/RIFLE.gltf": {"origin": "ai", "source": "outlined box model by Claude (gen_outlined.py), shipped in assets/overrides/ as the default; AI-made placeholder", "by": "Claude", "date": "2026-11-05", "note": "q picked the outlined look 2026-11-05; not human-made, so it does not count toward the human-made goal"},
+  "models/weapon/ROCKET.gltf": {"origin": "ai", "source": "outlined box model by Claude (gen_outlined.py), shipped in assets/overrides/ as the default; AI-made placeholder", "by": "Claude", "date": "2026-11-05", "note": "q picked the outlined look 2026-11-05; not human-made, so it does not count toward the human-made goal"},
+  "models/weapon/SHOTGUN.gltf": {"origin": "ai", "source": "outlined box model by Claude (gen_outlined.py), shipped in assets/overrides/ as the default; AI-made placeholder", "by": "Claude", "date": "2026-11-05", "note": "q picked the outlined look 2026-11-05; not human-made, so it does not count toward the human-made goal"},
+  "models/weapon/SNIPER.gltf": {"origin": "ai", "source": "outlined box model by Claude (gen_outlined.py), shipped in assets/overrides/ as the default; AI-made placeholder", "by": "Claude", "date": "2026-11-05", "note": "q picked the outlined look 2026-11-05; not human-made, so it does not count toward the human-made goal"},
+  "models/weapon/STICKY.gltf": {"origin": "ai", "source": "outlined box model by Claude (gen_outlined.py), shipped in assets/overrides/ as the default; AI-made placeholder", "by": "Claude", "date": "2026-11-05", "note": "q picked the outlined look 2026-11-05; not human-made, so it does not count toward the human-made goal"},
+  "models/weapon/SYRINGE.gltf": {"origin": "ai", "source": "outlined box model by Claude (gen_outlined.py), shipped in assets/overrides/ as the default; AI-made placeholder", "by": "Claude", "date": "2026-11-05", "note": "q picked the outlined look 2026-11-05; not human-made, so it does not count toward the human-made goal"}
  }
 }

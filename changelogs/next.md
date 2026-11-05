@@ -13,4 +13,5 @@
 - The version in the menus' bottom left (and F3) shows the full build, e.g. `quark-1.19.8-a4bfca60`, with `-dirty` on a build of uncommitted changes.
 
 ## Weapon models
+- **New weapon models:** all 11 weapons have new outlined models with more shape (stepped receivers, toothed rails, ported brakes, round tubes, big team-colour panels), in the same clean style as the maps and menus. Their moving parts animate too. They're AI-made placeholders until human-made ones replace them.
 - **Weapon animations:** weapon models can now have moving parts: the shotgun racks after a shot, the sticky launcher turns its drum, the sniper's bolt cycles, the rifle's bolt kicks, the laser's coil spins while you fire, and more (each weapon its own). They move the moment you click, at any ping. VIDEO > EFFECTS: WEAPON ANIMATIONS turns them off. Other players' weapons show the parts still.
