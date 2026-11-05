@@ -11,4 +11,11 @@
 
 ## Menus
 - **Sharp main menu icons:** the icons down the main menu's left strip are drawn as smooth shapes now, so they stay crisp at any resolution instead of looking pixelated; they and the main menu's text are drawn supersampled (as smooth as rendering at 400%). The main screen shows the QUARK wordmark at the top, and the Q in the strip's corner sits centred. The QUARK logo has a glossy arcade look: a lit top half and a drop shadow.
+- **Menu fixes from a three-player review** (a total beginner, an FPS player new to Quark, a regular):
+  - With no last game, the main menu's big button is **QUICK PLAY**: straight into the official server (the server list is still SERVERS).
+  - HOST shows the address your friends join with, and a **COPY** button.
+  - Settings opens on CONTROLS (sensitivity) unless REMEMBER LAST TAB is on.
+  - Bots in free for all start on Sewer, the map built for it, instead of Cobblestone.
+  - DISCORD, INFO and QUIT at the strip's foot have labels.
+  - The page title lines up with the top bar; the aim trainer's difficulty row and BACK no longer stick out of the panel, and its "LEADERBOARD: SOON" lines are gone.
 - The version in the menus' bottom left (and F3) shows the full build, e.g. `quark-1.19.8-a4bfca60`, with `-dirty` on a build of uncommitted changes.

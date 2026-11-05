@@ -784,6 +784,7 @@ int Game::bestRankedMap(int ladder) const {
 // A mode's default map where several are built for it (owner, 2026-10-30: "surfy map is default surf gamemode map").
 static const char* defaultMapName(int mode) {
     switch (mode) {
+    case MODE_FFA: return "sewer";   // (built for it, HOST's default; cobblestone, the benchmark map, supports FFA too: review 2026-11-04)
     case MODE_SURF: return "surfy";
     case MODE_BALL: return "qk8";   // (owner, 2026-11-01: qk8 and the bridge)
     default: return nullptr;
@@ -10031,7 +10032,7 @@ void Game::drawMainMenu() {
     const bool stacked = rw < 280;
     if (stacked) { rx = px; rw = pw; }
     static const std::string kTitles[MAIN_TABS] = {"PLAY", "PRACTICE", "CREATE"};
-    ui_.label(px * s, 38 * s, kTitles[mainTab_], ui_.textC(), 2.25f, std::min(pw, Wd - kRightPad - 284 - px) * s);   // (clear of the name chip)
+    ui_.label(px * s, 29 * s, kTitles[mainTab_], ui_.textC(), 2.25f, std::min(pw, Wd - kRightPad - 284 - px) * s);   // (clear of the name chip)
     if (mainTab_ == MAIN_PLAY) drawMainPlay(s, px, pw, rx, rw, stacked ? 304 : kPanelTop);
     else if (mainTab_ == MAIN_PRACTICE) drawMainPractice(s, px, pw, rx, rw, stacked ? 420 : kPanelTop);
     else drawMainCreate(s, px, pw, rx, rw, stacked ? 330 : kPanelTop);
@@ -10091,20 +10092,25 @@ void Game::drawMainStrip(float s, float H) {
         else { openSettingsTab(settingsStartTab()); setScreen(Screen::Settings); }
         uiIn_.pressed = false;
     }
-    // the foot: DISCORD, INFO, QUIT (44 high, from 14 above the bottom)
+    // the foot: DISCORD, INFO, QUIT, each an icon over its label like the tabs (review 2026-11-04: icons alone, named
+    // only under the mouse, read as "chat" and a mystery); 54 high, from 14 above the bottom
     static const std::string kDiscord = "DISCORD", kInfo = "INFO", kQuit = "QUIT", kSure = "SURE? QUIT";
     for (int i = 0; i < 3; i++) {
-        const float h = 44 * s, y = H - (14 + 44 * (3 - i)) * s;
+        const float h = 54 * s, y = H - (14 + 54 * (3 - i)) * s;
         const bool hv = ui_.over(0, y, sw, h), armed = i == 2 && confirmArmed("quit");
         if (armed) r_.rect(0, y, sw, h, {kRed.r * 0.35f, kRed.g * 0.35f, kRed.b * 0.35f, 0.9f});
         else if (hv) r_.rect(0, y, sw, h, {1, 1, 1, 0.06f});
         const Color quitC = {1.0f, 0.54f, 0.5f, 1};
-        r_.icon(i == 0 ? ICON_CHAT : i == 1 ? ICON_INFO : ICON_POWER, sw * 0.5f, y + h * 0.5f, 22 * s, i == 2 ? (hv || armed ? kRed : quitC) : hv ? white : kMutedC);
-        const std::string& name = i == 0 ? kDiscord : i == 1 ? kInfo : armed ? kSure : kQuit;
-        if (hv || armed) tooltip(y, h, name, i == 2 ? kRed : white);
+        const Color c = i == 2 ? (hv || armed ? kRed : quitC) : hv ? white : kMutedC;
+        r_.icon(i == 0 ? ICON_CHAT : i == 1 ? ICON_INFO : ICON_POWER, sw * 0.5f, y + 19 * s, 20 * s, c);
+        const std::string& name = i == 0 ? kDiscord : i == 1 ? kInfo : kQuit;
+        const TextFit f = r_.fitText(name, lts, sw - 4 * s);
+        if (f.keep >= 0) { const std::string t = r_.textClip(name, f.scale, sw - 4 * s); r_.text((sw - r_.textWidth(t, f.scale)) * 0.5f, y + 34 * s, f.scale, t, c); }
+        else r_.text((sw - r_.textWidth(name, f.scale, f.level)) * 0.5f, y + 34 * s + (r_.textHeight(lts) - r_.textHeight(f.scale)) * 0.5f, f.scale, name, c, f.level);
+        if (armed) tooltip(y, h, kSure, kRed);   // (armed: SURE? QUIT beside the strip)
         const UiExp e = i == 0 ? UiExp::url().withId("DISCORD") : i == 1 ? UiExp::nav("info/*").withId("INFO")
                       : (cfg_.confirmLeave && !armed ? UiExp::state("confirm", "quit") : UiExp::quit()).withId("QUIT");
-        if (ui_.probing()) ui_.custom(0, y, sw, h, name, e);
+        if (ui_.probing()) ui_.custom(0, y, sw, h, armed ? kSure : name, e);
         if (!(hv && uiIn_.pressed)) continue;
         if (i == 0) openUrl(kDiscordUrl);
         else if (i == 1) setScreen(Screen::Info);   // how everything works
@@ -10178,7 +10184,7 @@ void Game::drawMainPlay(float s, float px, float pw, float rx, float rw, float r
     {   // LAST PLAYED
         const float x = px, y = 90, w = pw;
         d.card(x, y, w, kCardH);
-        static const std::string kLast = "LAST PLAYED", kNoGame = "NO GAME YET", kNoGameLine = "JOIN A SERVER, PLAY BOTS OR HOST YOUR OWN";
+        static const std::string kLast = "LAST PLAYED", kNoGame = "NO GAME YET", kNoGameLine = "JOIN A SERVER, PLAY BOTS OR HOST YOUR OWN", kQuickLine = "QUICK PLAY JOINS THE OFFICIAL SERVER";
         d.caption(x + 16, y + 15, kLast, ui_.accent, w - 32);
         if (hasLast) {
             static const std::string kServerAt = "SERVER";
@@ -10198,9 +10204,15 @@ void Game::drawMainPlay(float s, float px, float pw, float rx, float rw, float r
             if (d.bigButton(x + 16, y + 84, w - 32, 42, kReconnect, UiExp::nav("connecting").withId("RECONNECT"))) { reconnectAt_ = 0; reconnectTries_ = 0; connectTo(cfg_.lastAddress); }
         } else {
             drawPieces(r_, d.X(x + 16), d.X(y + 33), std::round(ts * 1.25f), d.X(w - 32), {&kNoGame}, ui_.textC());
-            drawPieces(r_, d.X(x + 16), d.X(y + 62), hs, d.X(w - 32), {&kNoGameLine}, kMutedC);
-            static const std::string kFind = "FIND A SERVER";
-            if (d.bigButton(x + 16, y + 84, w - 32, 42, kFind, UiExp::nav("join").withId("FIND A SERVER"))) setScreen(Screen::Join);
+            static const bool quickOk = kOfficialServerCount > 0 && !([] { const char* e = getenv("QUARK_MASTER"); return e && std::string(e).find("http") != 0; }());
+            drawPieces(r_, d.X(x + 16), d.X(y + 62), hs, d.X(w - 32), {quickOk ? &kQuickLine : &kNoGameLine}, kMutedC);
+            // QUICK PLAY: straight into the official (production) server; SERVERS below is the list (review 2026-11-04:
+            // FIND A SERVER, SERVERS and ALL SERVERS were three ways to one screen). No official server: the list.
+            static const std::string kQuick = "QUICK PLAY", kFind = "FIND A SERVER";
+            if (quickOk) {
+                static const std::string quickAddr = NetAddr{kOfficialServers[0].ip, kOfficialServers[0].port}.toString();
+                if (d.bigButton(x + 16, y + 84, w - 32, 42, kQuick, UiExp::nav("connecting").withId("QUICK PLAY"))) { joinAddr_ = quickAddr; connectTo(quickAddr); return; }
+            } else if (d.bigButton(x + 16, y + 84, w - 32, 42, kFind, UiExp::nav("join").withId("FIND A SERVER"))) setScreen(Screen::Join);
         }
     }
     {   // SERVERS / BOTS / HOST
@@ -10639,8 +10651,29 @@ void Game::drawHost(const SetLayout& L) {
     else ui_.toggle(x, L.Y(y), hw, h, "BALANCE BOTS", cfg_.hostBalanceBots, UiExp::cfg("host_balance_bots"));
     ui_.toggle(x2, L.Y(y), hw, h, "PUBLIC", cfg_.hostPublic, UiExp::cfg("host_public"));
     y += 44;
-    ui_.hint(x, L.Y(y), cfg_.streamer ? std::string("FRIENDS JOIN WITH YOUR PUBLIC IP (STREAMER MODE)") : "FRIENDS JOIN WITH YOUR PUBLIC IP:" + hostPortStr_, kGrey, w);
-    y += 20;
+    if (cfg_.streamer) ui_.hint(x, L.Y(y), "FRIENDS JOIN WITH YOUR PUBLIC IP (STREAMER MODE)", kGrey, w);
+    else {   // the address itself, and COPY (the IP looked up once, on its own thread: never a stall here)
+        if (!pubIpAsked_) { pubIpAsked_ = true; pubIpFuture_ = std::async(std::launch::async, [] { return publicIpv4(); }); }
+        if (pubIpFuture_.valid() && pubIpFuture_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) pubIp_ = pubIpFuture_.get();
+        static std::string addr;
+        const std::string want = pubIp_.empty() ? std::string() : pubIp_ + ":" + hostPortStr_;
+        if (addr != want) addr = want;
+        const float cw = 92;
+        static const std::string kWith = "FRIENDS JOIN WITH:", kFinding = "FINDING YOUR ADDRESS...";
+        if (!addr.empty()) {   // (the label looked up in the language, the address drawn after it as it is)
+            const float lw = r_.textWidth(kWith, ui_.hintScale()) + L.L(6);
+            ui_.hint(x, L.Y(y), kWith, kGrey, w - L.L(cw + 8));
+            ui_.hint(x + lw, L.Y(y), addr, ui_.textC(), w - L.L(cw + 8) - lw);
+        } else if (pubIpFuture_.valid()) ui_.hint(x, L.Y(y), kFinding, kGrey, w - L.L(cw + 8));
+        else ui_.hint(x, L.Y(y), "FRIENDS JOIN WITH YOUR PUBLIC IP:" + hostPortStr_, kGrey, w - L.L(cw + 8));
+        static const std::string kCopy = "COPY", kCopied = "COPIED";
+        const bool can = !addr.empty();
+        if (ui_.button(x + w - L.L(cw), L.Y(y - 4), L.L(cw), L.L(24), time_ - pubIpCopiedAt_ < 2 ? kCopied : kCopy, UiExp::inert().withId("COPY ADDRESS"), can) && can) {
+            glfwSetClipboardString(win_, addr.c_str());
+            pubIpCopiedAt_ = time_;
+        }
+    }
+     y += 26;
     if (ui_.button(x, L.Y(y), w, h, "ADVANCED  >", UiExp::nav("host/advanced"))) { hostAdvanced_ = true; refreshHostBrains(); }
     y += 60;
     if (ui_.button(x, L.Y(y), hw, h, "BACK", UiExp::nav("main*"))) { cfg_.save(); setScreen(Screen::Main); }

@@ -254,6 +254,12 @@ private:
     void drawVsBots(const SetLayout& L);
     void drawConnecting(const SetLayout& L);
     void debugMenuPage();     // --menupage PATH: that menu page open (screenshots)
+    // HOST's address for friends (review 2026-11-04: "FRIENDS JOIN WITH YOUR PUBLIC IP" left players looking it up):
+    // this machine's public IPv4, looked up once on its own thread when HOST first opens; COPY puts ip:port on the clipboard
+    std::future<std::string> pubIpFuture_;
+    std::string pubIp_;
+    bool pubIpAsked_ = false;
+    double pubIpCopiedAt_ = -1e9;
     bool hostAdvanced_ = false;   // HOST > ADVANCED (UDP port, port forward, server log, bot brain) open
     std::vector<std::string> hostBrains_;   // ADVANCED's BOT BRAIN choices after BUILT-IN: bots/*.qbrain, listed when HOST opens
     std::string hostBrainNote_;             // the chosen brain's problem, short ("" none): it doesn't compile
@@ -1006,7 +1012,7 @@ private:
     std::string confirmWhat_; double confirmUntil_ = 0;   // CONFIRM LEAVE: the button armed by a first click
     bool confirmed(const std::string& what);   // (true: do it; false: armed, click again)
     bool confirmArmed(const std::string& what) const { return cfg_.confirmLeave && confirmWhat_ == what && time_ < confirmUntil_; }
-    int settingsStartTab() const { return cfg_.rememberTab ? cfg_.lastTab : TAB_PLAYER; }
+    int settingsStartTab() const { return cfg_.rememberTab ? cfg_.lastTab : TAB_CONTROLS; }   // (CONTROLS: sensitivity, what players open settings for most; review 2026-11-04)
     int prioLevel(bool focused) const { return cfg_.prioritize && focused ? cfg_.cpuPriority : 0; }
     // a display change waiting for KEEP (VIDEO > MORE: RESOLUTION, VIDEO: DISPLAY): reverted at keepUntil_ unless kept
     double keepUntil_ = 0;
