@@ -49,6 +49,11 @@ struct ModelPart {
     // players: the joint the box hangs from (PlayerBone below; its `c` is where it sits in the standing pose). Every
     // other model, and a box model file without "bone", is all BONE_ROOT: drawn still.
     uint8_t bone = 0;
+    // weapons: the moving part the box belongs to (WeaponPart below, "part" in the file; 0: the still body) and the
+    // point it turns about or slides from ("pivot", model space). The first-person weapon draws it at pivot * its
+    // motion (weaponPartMotion), like a mesh override's anim_ nodes.
+    uint8_t wpart = 0;
+    Vec3 pivot = {0, 0, 0};
 };
 using ModelParts = std::vector<ModelPart>;
 constexpr size_t kMaxDefaultParts = 32;   // the most boxes in one default model (the tests check): the game reserves it

@@ -769,6 +769,7 @@ private:
     unsigned vmShots_[WPN_COUNT] = {};
     float vmSpinRate_ = 0, vmSpin_ = 0, vmWobble_ = 0, vmWobbleVel_ = 0, vmLastYaw_ = 0, vmLastPitch_ = 0;
     void drawViewParts(const ModelMesh& ov, int w, const Mat4& base, const Vec3* tint, bool animate);
+    WeaponAnimState viewAnimState(int w, bool animate);   // (the shot clock, the laser's spin, the antenna's spring)
     // the first-person grapple arm: how far it has turned toward the hook (camera space yaw / pitch, radians) and raised
     // (0..1), eased each frame; and each player's launcher muzzle as drawn this frame (their rope starts there)
     float hookAimYaw_ = -0.06f, hookAimPitch_ = 0, hookRaise_ = 0;

@@ -3453,9 +3453,23 @@ void Game::drawWorld(float alpha) {
             else viewmodelParts(w, vpal, parts_);
             // the locator's screen: dim while it recharges, pulsing when it's ready
             float glow = w != WPN_LOCATOR || specGun ? 1.0f : time_ >= locatorReady_ ? 0.85f + 0.35f * (float)std::sin(time_ * 6.0) : 0.3f;
+            // a box model's moving parts ("part" boxes): each at its pivot times its motion, like the anim_ nodes
+            bool moving = false;
+            for (const ModelPart& q : parts_) moving |= q.wpart != 0;
+            WeaponAnimState st;
+            if (moving) st = viewAnimState(w, !specGun && cfg_.weaponAnims);
+            const bool animate = moving && !specGun && cfg_.weaponAnims;
             for (const ModelPart& q : parts_) {
                 const Vec3 c = q.slot == TINT_GLOW ? q.color * glow : q.color;
-                if (tilt) r_.viewBoxXf(wf * Mat4::translate(q.c * k), q.h * k, c);
+                if (q.wpart) {
+                    Mat4 m;
+                    if (animate && !weaponPartMotion(w, q.wpart, st, m)) continue;   // (hidden: being reloaded)
+                    Mat4 sc;
+                    sc.m[0] = sc.m[5] = sc.m[10] = k;
+                    Mat4 xf = mulAffine(mulAffine(wf, sc), Mat4::translate(q.pivot));
+                    if (animate) xf = mulAffine(xf, m);
+                    r_.viewBoxXf(mulAffine(xf, Mat4::translate(q.c - q.pivot)), q.h, c);
+                } else if (tilt) r_.viewBoxXf(wf * Mat4::translate(q.c * k), q.h * k, c);
                 else r_.viewBox(at + q.c * k, q.h * k, c);
             }
         }
@@ -12699,7 +12713,7 @@ void Game::drawHookClaw(const Vec3& pivot, const Vec3& offset, float yaw, float 
 // pivot times its motion (models.cpp weaponPartMotion) from your own predicted shots, on top of the weapon's frame (its
 // kick included). animate false (spectating someone, WEAPON ANIMATIONS off): still at their pivots. A handful of
 // matrices and one viewMeshXf a part; no allocation.
-void Game::drawViewParts(const ModelMesh& ov, int w, const Mat4& base, const Vec3* tint, bool animate) {
+WeaponAnimState Game::viewAnimState(int w, bool animate) {
     const float dt = std::min((float)frameDt_, 0.05f);
     WeaponAnimState st;
     if (animate && w >= 0 && w < WPN_COUNT) {
@@ -12722,6 +12736,11 @@ void Game::drawViewParts(const ModelMesh& ov, int w, const Mat4& base, const Vec
         }
     }
     vmLastYaw_ = yaw_; vmLastPitch_ = pitch_;
+    return st;
+}
+
+void Game::drawViewParts(const ModelMesh& ov, int w, const Mat4& base, const Vec3* tint, bool animate) {
+    const WeaponAnimState st = viewAnimState(w, animate);
     for (const ModelMesh& p : ov.parts) {
         Mat4 m;
         if (animate && !weaponPartMotion(w, p.tag, st, m)) continue;   // (hidden: being reloaded)

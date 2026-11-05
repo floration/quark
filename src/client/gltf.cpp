@@ -393,6 +393,12 @@ bool boxesFrom(const J& q, ModelParts& out, std::string& err) {
             if (bn < 0) { err = where + "unknown bone \"" + b.str("bone") + "\""; return false; }
             p.bone = (uint8_t)bn;
         }
+        if (b.get("part")) {   // (weapons' moving parts, with the pivot they move about)
+            const int wp = b.get("part")->t == J::STR ? weaponPartFromName(b.str("part")) : -1;
+            if (wp <= 0) { err = where + "unknown part \"" + b.str("part") + "\""; return false; }
+            p.wpart = (uint8_t)wp;
+            if (!vec(b, "pivot", p.pivot, -64, 64, false)) { err = where + "pivot must be 3 numbers within 64 m"; return false; }
+        } else if (b.get("pivot")) { err = where + "pivot without a part"; return false; }
         out.push_back(p);
     }
     return true;
@@ -410,6 +416,7 @@ std::string boxModelJson(const ModelParts& boxes) {
         if (p.slot != TINT_NONE && (p.teamMul.x != 0 || p.teamMul.y != 0 || p.teamMul.z != 0)) j += ",\"teamMul\":" + v3(p.teamMul);
         if (p.alpha != 1) j += ",\"alpha\":" + fmt9(p.alpha);
         if (p.bone != BONE_ROOT) j += std::string(",\"bone\":\"") + boneName(p.bone) + "\"";
+        if (p.wpart) j += std::string(",\"part\":\"") + weaponPartName(p.wpart) + "\",\"pivot\":" + v3(p.pivot);
         j += std::string(",\"shadow\":") + (p.shadow ? "true" : "false") + ",\"visOnly\":" + (p.visOnly ? "true" : "false") + ",\"crouch\":" + (p.crouch ? "true" : "false") + "}";
     }
     return j + "]}";

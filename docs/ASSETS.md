@@ -118,6 +118,7 @@ logged and the default is kept. Parsed once at startup; drawing costs what the b
    "shadow": true, "visOnly": false,            // casts a shadow; drawn only seen from outside (face plates)
    "crouch": false,                             // players: a crouch also squashes the half height
    "bone": "thigh_l",                           // (optional, players) the joint it moves with (below; default root)
+   "part": "pump", "pivot": [x, y, z],          // (optional, weapons) a moving part and its pivot (Animated parts)
    "name": "legs"}                              // (optional, ignored by the game)
 ]}}
 ```
@@ -150,6 +151,10 @@ logged and the default is kept. Parsed once at startup; drawing costs what the b
   drawn still. Cost: the body and parts go into the same vertex stream as any mesh (no extra draw call), one cull test
   and one shadow caster per player, one 3x4 matrix product per part a frame, no allocation. `tools/models/gen_players_realistic_dark.py` writes all 11 players this
   way (the "D2 realistic dark" set: at most 1000 triangles each, every vertex inside the hitbox; not shipped).
+- **Weapons' moving parts** (`part`, WEAPON ANIMATIONS): a box with `part` (a name from the Animated parts table
+  below: `bolt`, `pump`, `drum`, ...) moves with that part in first person, about its `pivot` (model space; default
+  the origin), exactly like an anim_ node. Boxes without it are the still body. Held by other players they're drawn
+  still. `pivot` without `part` fails the checks.
 - Not animated in a box override: the rocket's flame flicker, the sticky's core blink and the bubble's wobble (the
   game spins and turns it as usual).
 
