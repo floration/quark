@@ -212,6 +212,14 @@ public:
     // next frame after they change; preview() draws image `slot` like a swatch (over this frame's 2D batch).
     void setPreviews(std::vector<std::vector<uint8_t>> images, int w, int h);
     void preview(float x, float y, float w, float h, int slot);
+    // Thumbnails (Settings > PLAYER MODEL's picker): one atlas of `count` cells w x h px, each drawn ONCE from solid
+    // quads (thumbQuad: cell-local pixels, y down; the first should fill the cell: it's shown opaque) into the atlas by
+    // the next flush2D, then shown by thumb() like a preview (an image over this frame's 2D batch). thumbAtlas with
+    // another size or count starts over (every cell empty). So the picker's 64 models cost a textured quad each a
+    // frame, not ~1000 posed faces each; redrawing a cell is just thumbQuads to it again (it's cleared first).
+    void thumbAtlas(int w, int h, int count);
+    void thumbQuad(int cell, const float xy[8], const Color& c);
+    void thumb(float x, float y, float w, float h, int cell);
     // The 2D batch so far uploaded now (the HUD before the late latch): flush2D then only draws it, unless more was added.
     void prepare2D();
 
@@ -366,6 +374,15 @@ private:
     unsigned previewTex_ = 0;
     std::vector<float> previewQuads_;   // (this frame's: x0 y0 x1 y1 slot per quad)
     void drawImageQuads(std::vector<float>& quads, unsigned tex, int cols, int rows, const std::vector<int>* slotOf);
+    std::vector<float> imgVerts_;      // (drawImageQuads' vertices: kept, no allocation a frame)
+    // the thumbnail atlas (thumbAtlas): cells thumbW_ x thumbH_, thumbCols_ x thumbRows_ of them, thumbN_ in use
+    int thumbW_ = 0, thumbH_ = 0, thumbN_ = 0, thumbCols_ = 1, thumbRows_ = 1;
+    bool thumbAlloc_ = false;          // (the texture is (re)made, cleared, at the next flush2D)
+    unsigned thumbTex_ = 0, thumbFbo_ = 0;
+    Vertex2DList thumbVerts_;          // (quads waiting to be drawn into the atlas)
+    std::vector<uint8_t> thumbTouched_;   // (the cells they're in: cleared before)
+    std::vector<float> thumbDraw_;     // (this frame's thumb() quads: x0 y0 x1 y1 cell)
+    void buildThumbs();
     int worldVerts_ = 0;
     std::vector<WorldChunk> chunks_;
     std::vector<int> drawFirst_, drawCount_;

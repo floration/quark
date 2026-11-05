@@ -29,3 +29,5 @@
 
 ## Player models
 - **New outlined player models:** all 11 characters are redrawn as clean blocky models with outlines, matching the outlined weapons. All 11 walk, SIMPLE included (it used to stand still). The hitbox is unchanged, and ranked and time trials show these models to everyone.
+- **64 player models:** 53 new characters join the 11, from an astronaut, a samurai and a viking to a yeti, a penguin and a goalie. All are outlined, all walk, and every one has the same hitbox. Ranked still shows everyone as STANDARD. Network protocol 71.
+- **Character picker:** Settings > PLAYER > PLAYER MODEL now opens a grid that shows every model in your team colour, with its name under it and your current one framed. Hover a model (or move to it with the arrow keys) and it turns and walks. Click it or press Enter to pick it. ENEMY MODEL and TEAM MODEL (GAMEPLAY > MORE) open the same picker, in the enemy or team colour, with THEIR OWN first.

@@ -968,6 +968,22 @@ private:
     ModelParts previewParts_;
     struct PreviewFace { float xy[8]; float z; Color c; };
     std::vector<PreviewFace> previewFaces_;
+    bool modelFaces(int pm, const Vec3& team, float yaw, float phase, float x, float y, float w, float h, bool tight = false);   // (into previewFaces_)
+    template <class Quad> static void drawPreviewFaces(const std::vector<PreviewFace>& faces, float edge, Quad&& quad);
+    // The model picker (settings/models; owner, 2026-11-05: "a menu that renders them all so you can see them all when
+    // selecting"): every player model in a grid, in the team colour, the current one framed, click (or arrows + Enter)
+    // to pick. 1: PLAYER MODEL (yours), 2: ENEMY MODEL, 3: TEAM MODEL (GAMEPLAY > MORE: THEIR OWN first); 0 closed.
+    // Each model is drawn once into a thumbnail atlas (Renderer::thumbAtlas) when the picker opens or its colour, size
+    // or theme changes (pickKey_); only the hovered / selected one is drawn live, turning and walking.
+    int modelPick_ = 0;
+    int modelScroll_ = 0;          // the first row shown (the wheel)
+    int modelCursor_ = -1;         // the keyboard's choice (-1: the current one); the mouse over a card moves it
+    float pickYaw_ = 0, pickPhase_ = 0;
+    int pickAnimOf_ = -1;          // (the card pickYaw_ belongs to: a new one starts from the thumbnails' angle)
+    uint64_t pickKey_ = 0;         // (what the atlas holds: the colour, cell size, theme, models)
+    void openModelPicker(int which);
+    void drawModelPicker(const SetLayout& L);
+    bool modelPickerKey(int key);  // arrows / Home / End / Page keys / Enter in the picker (true: taken)
     std::string chCodeMsg_; double chCodeUntil_ = 0;   // (CROSSHAIR > COPY / PASTE CODE's answer)
     void drawMoreSettings(const SetLayout& L);
     const char* moreNav(int n) const;

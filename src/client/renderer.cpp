@@ -2835,6 +2835,91 @@ void Renderer::preview(float x, float y, float w, float h, int slot) {
     previewQuads_.insert(previewQuads_.end(), q, q + 5);
 }
 
+void Renderer::thumbAtlas(int w, int h, int count) {
+    w = std::max(1, std::min(w, 1024)); h = std::max(1, std::min(h, 1024)); count = std::max(0, count);
+    if (w == thumbW_ && h == thumbH_ && count == thumbN_ && thumbTex_) return;
+    thumbW_ = w; thumbH_ = h; thumbN_ = count;
+    // (as square as it goes, at most 8192 px a side: 64 cells of 172 x 200, 1440p's, are 8 x 8 = 1376 x 1600, 8.8 MB)
+    thumbCols_ = std::max(1, std::min((int)std::ceil(std::sqrt((double)std::max(1, count))), 8192 / w));
+    thumbRows_ = std::max(1, (count + thumbCols_ - 1) / thumbCols_);
+    thumbAlloc_ = true;
+    thumbVerts_.clear();
+    thumbTouched_.assign((size_t)count, 0);
+}
+
+void Renderer::thumbQuad(int cell, const float xy[8], const Color& c) {
+    if (cell < 0 || cell >= thumbN_) return;
+    // the cell's top-left in the atlas as the 2D shader draws it (y down): drawImageQuads takes row r from texture
+    // rows r h .. (r + 1) h, its top the higher, so in y-down pixels row r starts at (rows - 1 - r) h
+    const float ox = (float)((cell % thumbCols_) * thumbW_), oy = (float)((thumbRows_ - 1 - cell / thumbCols_) * thumbH_);
+    constexpr uint16_t u = (uint16_t)((kUiCell * 0.5f + 1) * 32.0f), v = (uint16_t)((kUiCell * 6.5f + 1) * 32.0f);
+    const size_t n = thumbVerts_.size();
+    thumbVerts_.resize(n + 4);
+    uiQuadAt(thumbVerts_.data() + n, 0, 0, 0, 0, u, v, u, v, rgba8(c, 1.0f), 0, 0);
+    for (int i = 0; i < 4; i++) {
+        thumbVerts_[n + i].pos[0] = px(ox + clampf(xy[2 * i], 0, (float)thumbW_));
+        thumbVerts_[n + i].pos[1] = px(oy + clampf(xy[2 * i + 1], 0, (float)thumbH_));
+    }
+    thumbTouched_[(size_t)cell] = 1;
+}
+
+void Renderer::thumb(float x, float y, float w, float h, int cell) {
+    if (cell < 0 || cell >= thumbN_) return;
+    const float q[5] = {x, y, x + w, y + h, (float)cell};
+    thumbDraw_.insert(thumbDraw_.end(), q, q + 5);
+}
+
+// the thumbnails' waiting quads into their cells (each cell touched cleared first), by the 2D program into the atlas:
+// the batch's own buffer, swapped in for the draw (the batch is empty by now), and its uScreen the atlas's size
+void Renderer::buildThumbs() {
+    const int W = thumbW_ * thumbCols_, H = thumbH_ * thumbRows_;
+    glDisable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE);
+    if (thumbAlloc_) {
+        thumbAlloc_ = false;
+        if (!thumbTex_) { glGenTextures(1, &thumbTex_); glGenFramebuffers(1, &thumbFbo_); }
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, thumbTex_);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, W, H, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glBindFramebuffer(GL_FRAMEBUFFER, thumbFbo_);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, thumbTex_, 0);
+        const float zero[4] = {0, 0, 0, 1};
+        glClearBufferfv(GL_COLOR, 0, zero);   // (not glClear: the clear colour stays the frame's)
+    }
+    if (thumbVerts_.empty()) { glBindFramebuffer(GL_FRAMEBUFFER, 0); return; }
+    glBindFramebuffer(GL_FRAMEBUFFER, thumbFbo_);
+    glViewport(0, 0, W, H);
+    glEnable(GL_SCISSOR_TEST);
+    const float bg[4] = {0, 0, 0, 1};
+    for (int k = 0; k < thumbN_; k++)
+        if (thumbTouched_[(size_t)k]) {
+            thumbTouched_[(size_t)k] = 0;
+            glScissor((k % thumbCols_) * thumbW_, (k / thumbCols_) * thumbH_, thumbW_, thumbH_);
+            glClearBufferfv(GL_COLOR, 0, bg);
+        }
+    glDisable(GL_SCISSOR_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    ui_.swap(thumbVerts_);
+    upload(uiVbo_, uiCap_, ui_);
+    glUseProgram(uiProg_);
+    glUniform2f(uUiScreen_, (float)W, (float)H);
+    uiScreen_[0] = uiScreen_[1] = -1;   // (the next flush2D sets the window's again)
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, fontTex_);
+    glBindVertexArray(uiVao_);
+    if (ui_.size() / 4 > uiIdxQuads_) uiIndices(ui_.size() / 4 * 2);
+    glDrawElements(GL_TRIANGLES, (GLsizei)(ui_.size() / 4 * 6), GL_UNSIGNED_INT, nullptr);
+    glDisable(GL_BLEND);
+    ui_.clear();
+    ui_.swap(thumbVerts_);   // (both buffers keep their capacity)
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, width_, height_);
+}
+
 // Textured quads in window pixels (x0 y0 x1 y1 slot each) from an atlas of cols x rows slots, over the 2D batch; slotOf
 // maps a quad's number to its slot (-1: not drawn), or the number is the slot. The quads are cleared.
 void Renderer::drawImageQuads(std::vector<float>& quads, unsigned tex, int cols, int rows, const std::vector<int>* slotOf) {
@@ -2847,8 +2932,8 @@ void Renderer::drawImageQuads(std::vector<float>& quads, unsigned tex, int cols,
         glEnableVertexAttribArray(0); glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 16, (void*)0);
         glEnableVertexAttribArray(1); glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, (void*)8);
     }
-    std::vector<float> v;
-    v.reserve(quads.size() / 5 * 24);
+    std::vector<float>& v = imgVerts_;   // (kept between frames: no allocation)
+    v.clear();
     for (size_t i = 0; i + 5 <= quads.size(); i += 5) {
         const float* r = &quads[i];
         const int k = !slotOf ? (int)r[4] : slotOf->empty() ? -1 : (*slotOf)[(int)r[4]];
@@ -3185,6 +3270,11 @@ void Renderer::flush2D() {
     if (!swatchQuads_.empty()) {   // (the editor's material picker: over the batch)
         buildSwatches();
         drawImageQuads(swatchQuads_, swatchTex_, kSwatchCols, kSwatchRows, &swatchSlotOf_);
+    }
+    if (thumbAlloc_ || !thumbVerts_.empty()) buildThumbs();   // (the model picker's thumbnails: drawn once into their atlas)
+    if (!thumbDraw_.empty()) {   // (...and shown over the batch)
+        if (thumbTex_) drawImageQuads(thumbDraw_, thumbTex_, thumbCols_, thumbRows_, nullptr);
+        thumbDraw_.clear();
     }
     if (!previewQuads_.empty()) {   // (the map picker's previews: over the batch)
         if (previewDirty_ && previewW_ > 0) {
