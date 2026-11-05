@@ -485,6 +485,7 @@ void Game::leaveGame(const std::string& error) {
 
 void Game::setScreen(Screen s) {
     if (s == Screen::CustomMode && screen_ != Screen::CustomMode) customFromMain_ = screen_ == Screen::Main;
+    if (screen_ == Screen::Main && s != Screen::Main) stripFromTab_ = mainTab_;   // (the strip keeps that tab lit there)
     screen_ = s;
     uiIn_.pressed = uiIn_.rpressed = false; // the click that changed screens doesn't also press whatever is under it on the new one
     ui_.clearFocus();
@@ -9926,7 +9927,8 @@ void Game::drawMenu() {
     } else if (cfg_.menuBg != 2) r_.rect(0, 0, W, H, {0.03f, 0.035f, 0.05f, r_.worldLoaded() ? 0.6f : 1.0f});   // (a plain MENU BACKGROUND: as it is)
     // every top-level menu screen keeps the main menu's strip on its left (review 2026-11-04: off the main menu
     // there was no way to PLAY / SETTINGS / QUIT but BACK); the page is centred right of it (menuLayout)
-    const bool full = screen_ == Screen::Settings && (settingsInGame_ || widgetEdit_ || hudEdit_);   // (the HUD editors: the whole screen)
+    // (the HUD editors, and the HUD tab's preview, which shows the HUD where it really sits: the whole screen)
+    const bool full = screen_ == Screen::Settings && (settingsInGame_ || widgetEdit_ || hudEdit_ || hudPreviewOn());
     const bool strip = !mainPage && !full && !edPrompt_ && !tutOffer_ && screen_ != Screen::Connecting && screen_ != Screen::Main;
     menuStripPx_ = strip ? std::round(kMenuStripW * s) : 0;
     drawNotices(12 * s, ui_.textScale(), s); // e.g. "SAVED <mode>": the strip above the title, clear of the buttons
@@ -10135,9 +10137,9 @@ void Game::drawMainStrip(float s, float H) {
         r_.text(bx + 8 * s, by + 5 * s, hs, t, c);
     };
     // the lit tab: the main menu's tab, or the screen's (RANKS, SETTINGS; the play screens PLAY, the trainer PRACTICE)
+    // (any other screen: the tab it was opened from - DEMOS from CREATE, CUSTOM MODE from PLAY; review round 2)
     const int stripCur = screen_ == Screen::Main ? mainTab_ : screen_ == Screen::Leaderboard ? 3 : screen_ == Screen::Settings ? 4
-                       : screen_ == Screen::Trainer || screen_ == Screen::Benchmarks || screen_ == Screen::BenchmarkResult ? (int)MAIN_PRACTICE
-                       : screen_ == Screen::CustomMode && customFromMain_ ? (int)MAIN_CREATE : screen_ == Screen::Info ? -1 : (int)MAIN_PLAY;
+                       : screen_ == Screen::Info ? -1 : stripFromTab_;
     static const std::string kLabels[5] = {"PLAY", "PRACTICE", "CREATE", "RANKS", "SETTINGS"};
     static const int kIcons[5] = {ICON_PLAY, ICON_GAUGE, ICON_GRID, ICON_TROPHY, ICON_GEAR};
     for (int i = 0; i < 5; i++) {

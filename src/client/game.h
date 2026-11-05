@@ -238,6 +238,7 @@ private:
     void drawMainMenu();
     void drawMainStrip(float s, float H);
     void leaveForStrip();        // (a strip click off the main menu: leave the screen as its BACK does)
+    int stripFromTab_ = 0;       // the main menu tab the current screen was opened from (the strip lights it)
     float menuStripPx_ = 0;      // the main menu's strip beside this frame's menu screen (px; 0: none), menuLayout centres right of it
     void drawMainPlay(float s, float px, float pw, float rx, float rw, float ry);
     void drawMainPractice(float s, float px, float pw, float rx, float rw, float ry);
