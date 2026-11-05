@@ -727,6 +727,7 @@ float icon(int id, vec2 p, float h) {
     return d - h;
 }
 void main() {
+    vec2 ddx = dFdx(vUV), ddy = dFdy(vUV);   // (before any branch: one screen pixel in the atlas; supersampling)
     if (vShape.x > 1.5) {   // an icon: its shape's coverage (the grid scaled to the quad; at least a 1 px stroke)
         // (4 x 4 samples a pixel, each smoothed over its own quarter pixel: as if drawn at 400% and scaled down)
         float u = vSize.x / 24.0, h = max(1.0, 0.5 / u), a = 0.0;
@@ -752,12 +753,17 @@ void main() {
     }
     if (vScale > 255.5) {   // the baked title: masks, R the friendly half, G the enemy half, A the black outline
         vec4 t = texture(uLogo, vUV);
+        if (vSS > 0.5) {   // (the main menu: 4 x 4 samples a pixel, as if drawn at 400%)
+            t = vec4(0.0);
+            for (int i = 0; i < 4; i++)
+                for (int j = 0; j < 4; j++) t += textureLod(uLogo, vUV + ddx * ((float(i) - 1.5) * 0.25) + ddy * ((float(j) - 1.5) * 0.25), 0.0);
+            t *= 1.0 / 16.0;
+        }
         float a = max(t.a, max(t.r, t.g));
         vec3 c = uLogoA * t.r + uLogoB * t.g;   // (over black: premultiplied)
         fragColor = vec4(a > 0.0 ? c / a : c, a * vColor.a);
         return;
     }
-    vec2 ddx = dFdx(vUV), ddy = dFdy(vUV);   // (before any branch: one screen pixel in the atlas)
     float d = vSplit > 1.5 ? texture(uExt, vUV).r : texture(uFont, vUV).r;
     if (vScale <= 0.0) { fragColor = vec4(vColor.rgb, vColor.a * d); return; }
     float px = uK / vScale;                       // one screen pixel in distance-field units
@@ -2532,17 +2538,22 @@ void Renderer::icon(int id, float cx, float cy, float size, const Color& c) {
 }
 
 // The UI quads from `from` on: their text drawn supersampled (4 x 4 samples a pixel in the UI shader, as smooth as drawing
-// it at 400% and scaling it down; owner 2026-11-04: the main menu's icons and text). Icons always are.
+// it at 400% and scaling it down; owner 2026-11-04: the main menu's icons and text), and the baked logo. Icons always are.
 void Renderer::uiSupersample(size_t from) {
     for (size_t i = from; i < ui_.size(); i++) {
         Vertex2D& v = ui_[i];
-        if (v.pad[1] == 0 && (v.scaleInt || v.scaleFrac) && (v.scaleInt & v.scaleFrac) != 255 && v.pad[0] < 4) v.pad[0] += 4;   // (glyphs only: not rects or the logo)
+        if (v.pad[1] == 0 && (v.scaleInt || v.scaleFrac) && v.pad[0] < 4) v.pad[0] += 4;   // (glyphs and the logo: not rects)
     }
 }
 
 // The logo's size: the em of the game's text at ts (7.5 units) times Rubik's cap height matched to the old UI font's
 // (0.66 / 0.70), as it was designed (ui-redesign-spec, "Title logo"); its baseline 5.7 units below the line top.
 static constexpr float kLogoEmK = 0.66f / 0.70f, kLogoTilt = 0.16f, kLogoSeam = 12.0f / 844.0f;
+
+float Renderer::logoWidth(float ts) const {
+    if (!g_uiFont && logoTex_) return kLogoAdv * 7.5f * ts * kLogoEmK / kLogoEm;
+    return textWidth("QUARK", ts * kLogoEmK);
+}
 
 void Renderer::logo(float cx, float y, float ts, const Color& friendly, const Color& enemy) {
     if (alpha_ <= 0) return;   // (fully transparent: nothing to draw)

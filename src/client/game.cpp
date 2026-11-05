@@ -10035,6 +10035,14 @@ void Game::drawMainMenu() {
     if (mainTab_ == MAIN_PLAY) drawMainPlay(s, px, pw, rx, rw, stacked ? 304 : kPanelTop);
     else if (mainTab_ == MAIN_PRACTICE) drawMainPractice(s, px, pw, rx, rw, stacked ? 420 : kPanelTop);
     else drawMainCreate(s, px, pw, rx, rw, stacked ? 330 : kPanelTop);
+    // the QUARK wordmark (owner 2026-11-04: "it doesnt say quark anywhere on the main screen"), 40 high, in the top bar
+    // half way between the page and the name chip's widest (284); left out where that gap is too narrow for it
+    {
+        const float lts = 6.5f, lw = r_.logoWidth(lts * s) / s, gapL = px + pw + 24, gapR = Wd - kRightPad - 284 - 24;
+        if (!stacked && gapR - gapL >= lw)
+            r_.logo((gapL + gapR) * 0.5f * s, 22 * s, lts * s, rgba(cfg_.fixedLogo ? defaultSettings().colorFriendly : cfg_.colorFriendly),
+                    rgba(cfg_.fixedLogo ? defaultSettings().colorEnemy : cfg_.colorEnemy));
+    }
     drawNameChip(s, W);
     if (!error_.empty()) ui_.labelCentered((kStripW * s + W) * 0.5f, H - 48 * s, error_, kRed, 1.0f, W - (kStripW + 48) * s);
     r_.uiSupersample(ss0);
@@ -10046,7 +10054,9 @@ void Game::drawMainStrip(float s, float H) {
     const float sw = kStripW * s;
     r_.rect(0, 0, sw, H, kStripC);
     r_.rect(sw, 0, std::max(1.0f, std::round(s)), H, {1, 1, 1, 0.07f});
-    r_.logoQ(sw * 0.5f, 16 * s, 4.8f * s, rgba(cfg_.fixedLogo ? defaultSettings().colorFriendly : cfg_.colorFriendly),
+    // the Q centred in the strip's head (0 - 88): its bowl on the strip's middle (the tail hangs right of it), its ink
+    // half way down (owner 2026-11-04: "the Q in the top left is weirdly slightly off"; it sat 12 px high)
+    r_.logoQ(sw * 0.5f + 0.75f * s, 27.5f * s, 4.8f * s, rgba(cfg_.fixedLogo ? defaultSettings().colorFriendly : cfg_.colorFriendly),
              rgba(cfg_.fixedLogo ? defaultSettings().colorEnemy : cfg_.colorEnemy));
     const Color white = ui_.textC();
     const float lts = std::max(r_.minTextScale(), 1.3f * s);

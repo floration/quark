@@ -168,6 +168,7 @@ public:
     void logo(float cx, float y, float ts, const Color& friendly, const Color& enemy);
     // the title's Q alone, as logo() draws it at ts (the main menu's icon strip)
     void logoQ(float cx, float y, float ts, const Color& friendly, const Color& enemy);
+    float logoWidth(float ts) const;   // logo()'s width at ts (px)
     // level: how far its letters are closed up (font units, each pair as far as its ink allows: textfit.h; Ui's fitting)
     void text(float x, float y, float scale, const std::string& s, const Color& c, float level = 0);
     // proportional UI font (Rubik Bold, or the one picked in Settings > FONT): widths come from per-glyph advances
