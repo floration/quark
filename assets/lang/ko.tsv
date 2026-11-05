@@ -3507,6 +3507,7 @@ WATCH AGAIN	다시 보기
 WATCH THE GHOST	고스트를 보세요
 WAVE	웨이브
 WEAPON	무기
+WEAPON ANIMATIONS	무기 애니메이션
 WEAPON CAPTION	무기 설명
 WEAPON KICK	무기 반동
 WEAPON LIST	무기 목록
@@ -4007,6 +4008,7 @@ override {} ({}): {}	override {} ({}): {}
 override {}: {}	override {}: {}
 override:	오버라이드:
 override: {} ({})	override: {} ({})
+override: {} ({}, # animated parts)	override: {} ({}, # animated parts)
 override: {} ({}, a box model: # boxes)	override: {} ({}, a box model: # boxes)
 overtime!	연장전!
 p# pos # # # vel # # # yaw # pitch # hp # wpn #	p# pos # # # vel # # # yaw # pitch # hp # wpn #

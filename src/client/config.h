@@ -103,6 +103,7 @@ struct Settings {
     bool killBursts = true;            // ...the red burst where someone dies
     bool tracers = true;               // ...the bullet tracers (beams are YOUR / ENEMY SHOTS)
     bool viewRecoil = true;            // ...the gun model's kick on a shot
+    bool weaponAnims = true;           // ...the gun model's moving parts (a pump racking, a drum turning: docs/ASSETS.md)
     std::map<int, std::string> cmdBinds;   // the console's "bind <key> <commands>": a key that runs console lines (cbind_<code>)
     std::map<std::string, std::string> aliases;   // "alias <name> <commands>": a word that runs them (alias_<name>)
     bool matchSummary = true;          // GAMEPLAY > MORE: the match's end: your shots, hits, accuracy, damage and best streak

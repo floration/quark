@@ -1003,20 +1003,21 @@ void partsToMesh(const ModelParts& parts, MeshData& out) {
     }
 }
 
-void meshToModel(const MeshData& mesh, ModelMesh& out) {
+// the triangles of the prims in anim node `anim` (-1: the body), less `off`, into out (bounds from them too)
+static void meshTriangles(const MeshData& mesh, int anim, const Vec3& off, ModelMesh& out) {
     out.opaque.clear(); out.translucent.clear();
-    Vec3 mn, mx;
-    if (!mesh.bounds(mn, mx)) { out.center = {}; out.radius = 0; return; }
-    out.center = (mn + mx) * 0.5f;
-    out.radius = length(mx - mn) * 0.5f;
+    Vec3 mn(1e30f, 1e30f, 1e30f), mx(-1e30f, -1e30f, -1e30f);
+    bool any = false;
     for (const MeshPrim& p : mesh.prims) {
+        if (p.anim != anim) continue;
         auto& dst = p.alpha < 0.999f ? out.translucent : out.opaque;
         size_t nv = p.pos.size() / 3;
+        for (size_t i = 0; i < nv; i++) { Vec3 v(p.pos[i * 3], p.pos[i * 3 + 1], p.pos[i * 3 + 2]); v = v - off; mn = vmin(mn, v); mx = vmax(mx, v); any = true; }
         for (uint32_t i : p.idx) {
             if (i >= nv) continue;
             ModelMesh::V v;
             for (int k = 0; k < 3; k++) {
-                v.pos[k] = p.pos[i * 3 + k];
+                v.pos[k] = p.pos[i * 3 + k] - (k == 0 ? off.x : k == 1 ? off.y : off.z);
                 v.nrm[k] = i * 3 + k < p.nrm.size() ? p.nrm[i * 3 + k] : (k == 1 ? 1.0f : 0.0f);
                 v.col[k] = i * 3 + k < p.col.size() ? p.col[i * 3 + k] : 1.0f;
             }
@@ -1025,5 +1026,108 @@ void meshToModel(const MeshData& mesh, ModelMesh& out) {
             dst.push_back(v);
         }
         while (dst.size() % 3) dst.pop_back();   // (whole triangles only)
+    }
+    if (any) { out.center = (mn + mx) * 0.5f; out.radius = length(mx - mn) * 0.5f; }
+    else { out.center = {}; out.radius = 0; }
+}
+
+void meshToModel(const MeshData& mesh, ModelMesh& out) {
+    out.parts.clear();
+    meshTriangles(mesh, -1, {0, 0, 0}, out);   // (no anim nodes: every prim, exactly as before)
+    for (size_t a = 0; a < mesh.anims.size(); a++) {
+        ModelMesh part;
+        meshTriangles(mesh, (int)a, mesh.anims[a].pivot, part);
+        if (part.opaque.empty() && part.translucent.empty()) continue;   // (an anim node with no triangles)
+        part.name = mesh.anims[a].name;
+        part.pivot = mesh.anims[a].pivot;
+        out.parts.push_back(std::move(part));
+    }
+}
+
+// ---- first-person weapon part motions ------------------------------------------------------------------------------
+
+static const char* const kWeaponPartNames[WPART_COUNT] = {"", "bolt", "mag", "round", "spin", "pump", "drum", "string", "lever", "plunger", "sweep", "antenna"};
+const char* weaponPartName(int part) { return part > 0 && part < WPART_COUNT ? kWeaponPartNames[part] : ""; }
+int weaponPartFromName(const std::string& name) {
+    for (int k = 1; k < WPART_COUNT; k++) if (name == kWeaponPartNames[k]) return k;
+    return WPART_NONE;
+}
+
+namespace {
+float clamp01(float x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
+float smooth(float x) { x = clamp01(x); return x * x * (3 - 2 * x); }
+// 0 -> 1 -> 0 across [a, b] (as a fraction u): out over the first `split` of it, back over the rest, eased
+float outBack(float u, float a, float b, float split) {
+    if (u <= a || u >= b) return 0;
+    float t = (u - a) / (b - a);
+    return t < split ? smooth(t / split) : 1 - smooth((t - split) / (1 - split));
+}
+Mat4 slideZ(float z) { return Mat4::translate({0, 0, z}); }
+Mat4 rotZ(float a) { Mat4 r; float c = std::cos(a), s = std::sin(a); r.m[0] = c; r.m[1] = s; r.m[4] = -s; r.m[5] = c; return r; }
+constexpr float kDeg = 3.14159265f / 180.0f;
+}
+
+// Every weapon's parts (the table in docs/ASSETS.md "Animated parts"): u is the time since the shot over its refire.
+// The tuning is here: distances in metres (model space, before the HUD's viewmodel size), angles in degrees.
+bool weaponPartMotion(int weapon, int part, const WeaponAnimState& s, Mat4& out) {
+    out = Mat4();
+    const float t = s.since, r = s.refire > 1e-4f ? s.refire : 1e-4f, u = t / r;
+    switch (weapon) {
+        case WPN_RIFLE:
+            if (part == WPART_BOLT) out = slideZ(0.025f * outBack(t, 0, std::min(0.055f, r * 0.9f), 0.35f));   // the charging handle, each shot
+            return true;
+        case WPN_ROCKET:
+            if (part == WPART_ROUND) {   // fired: gone, then the next one slides up the tube from behind
+                if (u < 0.3f) return false;
+                out = slideZ(0.15f * (1 - smooth((u - 0.3f) / 0.6f)));
+            }
+            return true;
+        case WPN_SNIPER:
+            if (part == WPART_BOLT) {   // up, back, forward, down: across the refire, done before the next shot (the
+                                        // handle on the left wall, its pivot at the stem's root: up is -Z rotation)
+                const float a = 0.12f, b = 0.8f, q = (u - a) / (b - a);
+                if (q > 0 && q < 1) {
+                    float lift = q < 0.2f ? smooth(q / 0.2f) : q > 0.8f ? 1 - smooth((q - 0.8f) / 0.2f) : 1;
+                    float back = q < 0.2f || q > 0.8f ? 0 : q < 0.5f ? smooth((q - 0.2f) / 0.3f) : 1 - smooth((q - 0.5f) / 0.3f);
+                    out = mulAffine(slideZ(0.015f * back), rotZ(-70 * kDeg * lift));   // (1.5 cm: the slot's length)
+                }
+            }
+            return true;
+        case WPN_LASER:
+            if (part == WPART_SPIN) out = rotZ(s.spin);
+            return true;
+        case WPN_SHOTGUN:
+            if (part == WPART_PUMP) out = slideZ(0.06f * outBack(u, 0.1f, 0.7f, 0.5f));   // racks after each shot
+            return true;
+        case WPN_STICKY:
+            if (part == WPART_DRUM && s.shots) {   // one chamber (60 degrees) a shot, turned just after it; the angle
+                                                   // adds up (shots x 60, mod 360), never turning back
+                float step = smooth((t - 0.04f) / 0.16f);
+                out = rotZ(60 * kDeg * ((float)((s.shots - 1) % 6) + step));
+            }
+            return true;
+        case WPN_CROSSBOW:
+            if (part == WPART_STRING) {   // snaps forward on the shot, drawn back over the reload
+                float fwd = t < 0.03f ? smooth(t / 0.03f) : u < 0.2f ? 1 : 1 - smooth((u - 0.2f) / 0.4f);
+                if (u < 1) out = slideZ(-0.01f * fwd);   // (1 cm: further, its ends pass the cams)
+            } else if (part == WPART_BOLT) {   // the loaded bolt: gone, then slides in once the string is back
+                if (u < 0.6f) return false;
+                out = slideZ(0.15f * (1 - smooth((u - 0.6f) / 0.3f)));
+            }
+            return true;
+        case WPN_BUBBLE:
+            if (part == WPART_LEVER) out = Mat4::rotX(-25 * kDeg * outBack(t, 0, std::min(0.16f, r), 0.3f));
+            return true;
+        case WPN_SYRINGE:
+            if (part == WPART_PLUNGER) {   // pushed in on the shot, pulled back over the cooldown
+                float in = t < 0.06f ? smooth(t / 0.06f) : 1 - smooth((u - 0.06f / r) / 0.8f);
+                if (u < 1) out = slideZ(-0.03f * in);
+            }
+            return true;
+        case WPN_LOCATOR:
+            if (part == WPART_SWEEP) out = Mat4::rotY(-s.clock * 3.14159265f);   // one turn every 2 s (clockwise from above)
+            else if (part == WPART_ANTENNA) out = Mat4::rotX(s.wobble);
+            return true;
+        default: return true;
     }
 }

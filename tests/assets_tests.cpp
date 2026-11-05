@@ -463,6 +463,89 @@ static void testGltfLoader() {
     ACHECK(!loadGltf((const uint8_t*)"glTF\2\0\0\0\xff\xff\0\0", 12, nullptr, m, &err));
 }
 
+static void testGltfAnimParts() {
+    // a weapon file with a static body and one anim_pump node (docs/ASSETS.md "Animated parts"): the body as before,
+    // the pump apart with its pivot (the node's translation through its parent; its own rotation ignored) and its
+    // triangles relative to it
+    const float pos[9] = {0, 0, 0, 1, 0, 0, 0, 1, 0};
+    const uint16_t idx[3] = {0, 1, 2};
+    std::vector<uint8_t> bin(sizeof pos + 8);
+    memcpy(bin.data(), pos, sizeof pos);
+    memcpy(bin.data() + sizeof pos, idx, sizeof idx);
+    auto resolve = [&](const std::string& uri, std::vector<uint8_t>& out) { out = bin; return uri == "tri.bin"; };
+    const std::string tail =
+        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"},{\"bufferView\":1,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"}],"
+        "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},{\"buffer\":0,\"byteOffset\":36,\"byteLength\":6}],"
+        "\"buffers\":[{\"byteLength\":44,\"uri\":\"tri.bin\"}]}";
+    const std::string meshes = "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"indices\":1,\"material\":0}]},"
+                               "{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"indices\":1,\"material\":1}]}],"
+                               "\"materials\":[{\"name\":\"metal\"},{\"name\":\"base\"}],";
+    std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+        "\"nodes\":[{\"children\":[1,2],\"translation\":[0,0.1,0]},{\"name\":\"body\",\"mesh\":0},"
+        "{\"name\":\"anim_pump\",\"mesh\":1,\"translation\":[0,-0.05,-0.3],\"rotation\":[0,0.7071068,0,0.7071068]}]," + meshes + tail;
+    MeshData m;
+    std::string err;
+    bool ok = loadGltf((const uint8_t*)json.data(), json.size(), resolve, m, &err);
+    if (!ok) printf("  anim: %s\n", err.c_str());
+    ACHECK(ok && m.prims.size() == 2 && m.anims.size() == 1);
+    if (!ok || m.prims.size() != 2 || m.anims.size() != 1) return;
+    ACHECK(m.anims[0].name == "pump" && length(m.anims[0].pivot - Vec3(0, 0.05f, -0.3f)) < 1e-6f);
+    ACHECK(m.prims[0].anim == -1 && m.prims[1].anim == 0 && m.prims[1].slot == TINT_BASE);
+    // (in MeshData the part sits assembled at its pivot, model space: the export, bounds and editors see it whole)
+    ACHECK(std::fabs(m.prims[1].pos[3] - 1) < 1e-6f && std::fabs(m.prims[1].pos[4] - 0.05f) < 1e-6f && std::fabs(m.prims[1].pos[5] + 0.3f) < 1e-6f);
+    ModelMesh mm;
+    meshToModel(m, mm);
+    ACHECK(mm.opaque.size() == 3 && mm.parts.size() == 1);
+    if (mm.parts.size() == 1) {
+        const ModelMesh& p = mm.parts[0];
+        ACHECK(p.name == "pump" && length(p.pivot - Vec3(0, 0.05f, -0.3f)) < 1e-6f && p.opaque.size() == 3 && p.parts.empty());
+        ACHECK(std::fabs(p.opaque[1].pos[0] - 1) < 1e-6f && std::fabs(p.opaque[1].pos[1]) < 1e-6f && std::fabs(p.opaque[1].pos[2]) < 1e-6f);   // (relative to the pivot)
+        ACHECK(std::fabs(mm.opaque[1].pos[1] - 0.1f) < 1e-6f);   // the body: the parent's translation, as before
+        ACHECK(weaponPartFromName(p.name) == WPART_PUMP && std::string(weaponPartName(WPART_PUMP)) == "pump" && weaponPartFromName("nope") == WPART_NONE);
+    }
+    // Blender's copy suffix and capitals: the same part
+    std::string dup = json;
+    dup.replace(dup.find("anim_pump"), 9, "anim_Pump.001");
+    ACHECK(loadGltf((const uint8_t*)dup.data(), dup.size(), resolve, m, &err) && m.anims.size() == 1 && m.anims[0].name == "pump");
+    // the same file without the anim_ name: loads exactly as before (one body, no anims, no parts; the node's rotation
+    // applied as any node's)
+    std::string plain = json;
+    plain.replace(plain.find("anim_pump"), 9, "pump");
+    ok = loadGltf((const uint8_t*)plain.data(), plain.size(), resolve, m, &err);
+    ACHECK(ok && m.anims.empty() && m.prims.size() == 2 && m.prims[1].anim == -1);
+    meshToModel(m, mm);
+    ACHECK(mm.parts.empty() && mm.opaque.size() == 6);
+    Vec3 mn, mx;
+    if (ok && m.bounds(mn, mx)) ACHECK(length(mm.center - (mn + mx) * 0.5f) < 1e-6f && std::fabs(mm.radius - length(mx - mn) * 0.5f) < 1e-6f);
+    // past kMaxAnimParts anim nodes, the rest stay in the body
+    std::string many = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[";
+    std::string nodes;
+    for (size_t i = 0; i <= kMaxAnimParts; i++) {
+        many += (i ? "," : "") + std::to_string(i);
+        nodes += std::string(i ? "," : "") + "{\"name\":\"anim_p" + std::to_string(i) + "\",\"mesh\":1,\"translation\":[" + std::to_string(i) + ",0,0]}";
+    }
+    many += "]}],\"nodes\":[" + nodes + "]," + meshes + tail;
+    ok = loadGltf((const uint8_t*)many.data(), many.size(), resolve, m, &err);
+    ACHECK(ok && m.anims.size() == kMaxAnimParts && m.prims.size() == kMaxAnimParts + 1 && m.prims.back().anim == -1);
+    // the motions: still with no shot yet; the shotgun's pump back mid-rack and home after; the rocket's round gone
+    // just after a shot and back by the next; a part a weapon doesn't move stays still
+    WeaponAnimState st;
+    Mat4 x;
+    ACHECK(weaponPartMotion(WPN_SHOTGUN, WPART_PUMP, st, x) && std::fabs(x.m[14]) < 1e-6f);
+    st.since = 0.3f; st.refire = weaponDef(WPN_SHOTGUN).refire; st.shots = 1;
+    ACHECK(weaponPartMotion(WPN_SHOTGUN, WPART_PUMP, st, x) && x.m[14] > 0.05f);
+    st.since = st.refire;
+    ACHECK(weaponPartMotion(WPN_SHOTGUN, WPART_PUMP, st, x) && std::fabs(x.m[14]) < 1e-6f);
+    st.since = 0.05f; st.refire = weaponDef(WPN_ROCKET).refire;
+    ACHECK(!weaponPartMotion(WPN_ROCKET, WPART_ROUND, st, x));
+    st.since = st.refire;
+    ACHECK(weaponPartMotion(WPN_ROCKET, WPART_ROUND, st, x) && std::fabs(x.m[14]) < 1e-6f);
+    st.since = 0.3f;
+    ACHECK(weaponPartMotion(WPN_RIFLE, WPART_PUMP, st, x) && std::fabs(x.m[14]) < 1e-9f && x.m[0] == 1);
+    st.since = 1; st.shots = 2;   // the sticky's drum: one chamber a shot (two shots: 120 degrees round)
+    ACHECK(weaponPartMotion(WPN_STICKY, WPART_DRUM, st, x) && std::fabs(x.m[0] - std::cos(120 * 3.14159265f / 180)) < 1e-5f);
+}
+
 static void testDecoders() {
     const fs::path data = testData();
     for (const char* f : {"tone.ogg", "tone.flac", "tone.mp3"}) {
@@ -1330,6 +1413,7 @@ int assetTests() {
     g_afail = 0;
     testModelExport();
     testGltfLoader();
+    testGltfAnimParts();
     testBoxModels();
     testPlayerAnimation();
     testDecoders();

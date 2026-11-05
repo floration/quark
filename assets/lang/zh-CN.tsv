@@ -3507,6 +3507,7 @@ WATCH AGAIN	再看一遍
 WATCH THE GHOST	看幽灵示范
 WAVE	挥手
 WEAPON	武器
+WEAPON ANIMATIONS	武器动画
 WEAPON CAPTION	武器标题
 WEAPON KICK	武器后坐
 WEAPON LIST	武器列表
@@ -4007,6 +4008,7 @@ override {} ({}): {}	override {} ({}): {}
 override {}: {}	override {}: {}
 override:	替换:
 override: {} ({})	override: {} ({})
+override: {} ({}, # animated parts)	override: {} ({}, # animated parts)
 override: {} ({}, a box model: # boxes)	override: {} ({}, a box model: # boxes)
 overtime!	加时!
 p# pos # # # vel # # # yaw # pitch # hp # wpn #	p# pos # # # vel # # # yaw # pitch # hp # wpn #

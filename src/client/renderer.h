@@ -112,7 +112,8 @@ public:
     // colour times tint[its slot]; viewMesh: camera-relative like viewBox (offset, then uniform scale)
     void mesh(const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, bool castShadow = true, bool visible = true);
     void viewMesh(const ModelMesh& m, const Vec3& offset, float scale, const Vec3* tint);
-    void viewMeshXf(const ModelMesh& m, const Mat4& local, const Vec3* tint);   // (local: model -> camera space)
+    // (local: model -> camera space; parts false: the body alone, the caller draws its animated parts itself)
+    void viewMeshXf(const ModelMesh& m, const Mat4& local, const Vec3* tint, bool parts = true);
     void overlayBox(const Vec3& center, const Vec3& half, const Vec3& color); // world space, drawn over everything (editor handles)
     Vec3 viewPoint(const Vec3& offset) const;  // where a camera-relative point (as viewBox takes) is in the world
     void translucentBox(const AABB& b, const Color& c);
@@ -268,6 +269,7 @@ private:
     unsigned compile(const char* vs, const char* fs, std::string* err);
     void aim(float yaw, float pitch);   // (setCamera's view half: the view, its vectors, viewProj_ and the frustum planes)
     void emitBox(std::vector<DynVertex>& out, const Mat4& xf, const Vec3& half, const Vec3& color, float sunVis);
+    void meshOne(const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, bool castShadow, bool visible);
     void emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, std::vector<FlatVertex>* flatOut);
 public:
     Vec3 outlineColor;   // the edge colour for the boxes drawn while it's set (players' outline setting); black by default

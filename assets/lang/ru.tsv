@@ -3507,6 +3507,7 @@ WATCH AGAIN	СМОТРЕТЬ СНОВА
 WATCH THE GHOST	СМОТРИ НА ПРИЗРАКА
 WAVE	ВОЛНА
 WEAPON	ОРУЖИЕ
+WEAPON ANIMATIONS	АНИМАЦИИ ОРУЖИЯ
 WEAPON CAPTION	ПОДПИСЬ ОРУЖИЯ
 WEAPON KICK	ОТДАЧА ОРУЖИЯ
 WEAPON LIST	СПИСОК ОРУЖИЯ
@@ -4007,6 +4008,7 @@ override {} ({}): {}	override {} ({}): {}
 override {}: {}	override {}: {}
 override:	замена:
 override: {} ({})	override: {} ({})
+override: {} ({}, # animated parts)	override: {} ({}, # animated parts)
 override: {} ({}, a box model: # boxes)	override: {} ({}, a box model: # boxes)
 overtime!	овертайм!
 p# pos # # # vel # # # yaw # pitch # hp # wpn #	p# pos # # # vel # # # yaw # pitch # hp # wpn #

@@ -1868,7 +1868,13 @@ void Renderer::emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const M
     }
 }
 
+// (a model's animated parts, models.h ModelMesh::parts: each still at its pivot; none: one empty check)
 void Renderer::mesh(const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, bool castShadow, bool visible) {
+    meshOne(m, xf, tint, sunVis, castShadow, visible);
+    for (const ModelMesh& p : m.parts) meshOne(p, mulAffine(xf, Mat4::translate(p.pivot)), tint, sunVis, castShadow, visible);
+}
+
+void Renderer::meshOne(const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, bool castShadow, bool visible) {
     const float* x = xf.m;
     Vec3 c = {x[0] * m.center.x + x[4] * m.center.y + x[8] * m.center.z + x[12], x[1] * m.center.x + x[5] * m.center.y + x[9] * m.center.z + x[13],
               x[2] * m.center.x + x[6] * m.center.y + x[10] * m.center.z + x[14]};
@@ -1887,10 +1893,13 @@ void Renderer::viewMesh(const ModelMesh& m, const Vec3& offset, float scale, con
     s.m[0] = s.m[5] = s.m[10] = scale;
     Mat4 xf = Mat4::translate(camPos_) * Mat4::rotY(camYaw_) * Mat4::rotX(camPitch_) * Mat4::translate(offset) * s;
     emitMesh(view_, m, xf, tint, 1.0f, &viewFlat_);   // (translucent parts: drawn over the view model, in its pass)
+    for (const ModelMesh& p : m.parts) emitMesh(view_, p, mulAffine(xf, Mat4::translate(p.pivot)), tint, 1.0f, &viewFlat_);
 }
 
-void Renderer::viewMeshXf(const ModelMesh& m, const Mat4& local, const Vec3* tint) {
-    emitMesh(view_, m, Mat4::translate(camPos_) * Mat4::rotY(camYaw_) * Mat4::rotX(camPitch_) * local, tint, 1.0f, &viewFlat_);
+void Renderer::viewMeshXf(const ModelMesh& m, const Mat4& local, const Vec3* tint, bool parts) {
+    const Mat4 xf = Mat4::translate(camPos_) * Mat4::rotY(camYaw_) * Mat4::rotX(camPitch_) * local;
+    emitMesh(view_, m, xf, tint, 1.0f, &viewFlat_);
+    if (parts) for (const ModelMesh& p : m.parts) emitMesh(view_, p, mulAffine(xf, Mat4::translate(p.pivot)), tint, 1.0f, &viewFlat_);
 }
 
 void Renderer::overlayBox(const Vec3& center, const Vec3& half, const Vec3& color) {

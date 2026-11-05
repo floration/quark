@@ -2193,6 +2193,7 @@ void Game::frame(double dt) {
                 if (w == WPN_KNIFE && !alt) knifeSlash_[net_.clientId() % kMaxPlayers] = time_;
                 if (isThrow(w, alt)) { localFireLocked_ = true; heldWeapon_ = wp_.thrown(weaponView()); }   // (and out comes the next weapon)
                 recoil_ = w == WPN_LASER ? 0.15 : w == WPN_SNIPER ? 1.6 : 1.0;
+                vmShotAt_[w] = time_; vmShotRefire_[w] = localRefire_; vmShots_[w]++;   // (the model's moving parts: drawViewParts)
                 matchShots_++;
                 if (w != WPN_KNIFE && w != WPN_SYRINGE && w != WPN_LOCATOR) muzzleUntil_ = time_ + (w == WPN_SNIPER ? 0.07 : 0.05);
                 if (w == WPN_ROCKET || w == WPN_CROSSBOW || (w == WPN_STICKY && !alt) || isThrow(w, alt)) spawnPredictedProjectile(w, alt, c);   // X5
@@ -3402,7 +3403,13 @@ void Game::drawWorld(float alpha) {
         if (const ModelMesh* ov = modelOverride(MODEL_WEAPON, w)) {   // the owner's model (docs/ASSETS.md)
             Vec3 tint[TINT_COUNT];
             overrideTints(MODEL_WEAPON, w, vpal, tint);
-            if (tilt) {
+            if (!ov->parts.empty()) {   // (anim_ nodes: the body, then each part at its pivot times its motion)
+                Mat4 sc;
+                sc.m[0] = sc.m[5] = sc.m[10] = k;
+                const Mat4 base = mulAffine(wf, sc);
+                r_.viewMeshXf(*ov, base, tint, false);
+                drawViewParts(*ov, w, base, tint, !specGun && cfg_.weaponAnims);
+            } else if (tilt) {
                 Mat4 sc;
                 sc.m[0] = sc.m[5] = sc.m[10] = k;
                 r_.viewMeshXf(*ov, wf * sc, tint);
@@ -7987,8 +7994,12 @@ void Game::drawMoreSettings(const SetLayout& L) {
             ui_.toggle(x2, g.top(), hw, h, "TRACERS", cfg_.tracers, UiExp::cfg("tracers"));
             g.next();
         }
-        ui_.toggle(g.x(), g.top(), w, h, "GUN RECOIL KICK", cfg_.viewRecoil, UiExp::cfg("view_recoil"));
-        g.next();
+        {   // WEAPON ANIMATIONS: a model's moving parts (docs/ASSETS.md "Animated parts"; off: they stay still)
+            const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
+            ui_.toggle(g.x(), g.top(), hw, h, "GUN RECOIL KICK", cfg_.viewRecoil, UiExp::cfg("view_recoil"));
+            ui_.toggle(x2, g.top(), hw, h, "WEAPON ANIMATIONS", cfg_.weaponAnims, UiExp::cfg("weapon_anims"));
+            g.next();
+        }
         {
             const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
             g.section("TRACERS + TRAILS");
@@ -12635,6 +12646,42 @@ void Game::drawHookClaw(const Vec3& pivot, const Vec3& offset, float yaw, float 
     if (const ModelParts* bx = boxOverride(MODEL_PROP, PROP_HOOK)) overrideBoxParts(MODEL_PROP, PROP_HOOK, *bx, pal, 1.0f, parts_);
     else propParts(PROP_HOOK, pal, parts_);
     for (const ModelPart& q : parts_) r_.boxPitched(pivot, offset + q.c * bs, q.h * bs, yaw, pitch, q.color, sv, q.shadow);
+}
+
+// The first-person weapon's animated parts (an override's anim_ nodes, docs/ASSETS.md "Animated parts"): each at its
+// pivot times its motion (models.cpp weaponPartMotion) from your own predicted shots, on top of the weapon's frame (its
+// kick included). animate false (spectating someone, WEAPON ANIMATIONS off): still at their pivots. A handful of
+// matrices and one viewMeshXf a part; no allocation.
+void Game::drawViewParts(const ModelMesh& ov, int w, const Mat4& base, const Vec3* tint, bool animate) {
+    const float dt = std::min((float)frameDt_, 0.05f);
+    WeaponAnimState st;
+    if (animate && w >= 0 && w < WPN_COUNT) {
+        if (vmShots_[w]) { st.since = (float)std::min(time_ - vmShotAt_[w], 1e6); st.refire = vmShotRefire_[w]; st.shots = vmShots_[w]; }
+        if (w == WPN_LASER) {   // the coil spins up over 0.3 s while you fire (a shot every 1 ms), down over 0.6 s after
+            const bool firing = vmShots_[w] && time_ - vmShotAt_[w] < 0.03;
+            vmSpinRate_ = firing ? std::min(1.0f, vmSpinRate_ + dt / 0.3f) : std::max(0.0f, vmSpinRate_ - dt / 0.6f);
+            vmSpin_ = std::fmod(vmSpin_ + vmSpinRate_ * 3.0f * 6.2831853f * dt, 6.2831853f);   // (3 turns a second at full)
+            st.spin = vmSpin_;
+        }
+        if (w == WPN_LOCATOR) {
+            st.clock = (float)std::fmod(time_, 2.0);
+            // the antenna: a damped spring (2.8 Hz) kicked by your turning
+            float dy = yaw_ - vmLastYaw_, dp = pitch_ - vmLastPitch_;
+            dy = std::remainder(dy, 6.2831853f);
+            if (std::fabs(dy) > 0.5f || std::fabs(dp) > 0.5f) dy = dp = 0;   // (a respawn / teleport: no fling)
+            vmWobbleVel_ += (-300.0f * vmWobble_ - 8.7f * vmWobbleVel_) * dt + dp * 6.0f + std::fabs(dy) * 2.0f;
+            vmWobble_ = std::clamp(vmWobble_ + vmWobbleVel_ * dt, -0.35f, 0.35f);
+            st.wobble = vmWobble_;
+        }
+    }
+    vmLastYaw_ = yaw_; vmLastPitch_ = pitch_;
+    for (const ModelMesh& p : ov.parts) {
+        Mat4 m;
+        if (animate && !weaponPartMotion(w, p.tag, st, m)) continue;   // (hidden: being reloaded)
+        Mat4 xf = mulAffine(base, Mat4::translate(p.pivot));
+        if (animate) xf = mulAffine(xf, m);
+        r_.viewMeshXf(p, xf, tint, false);
+    }
 }
 
 void Game::drawHeldWeapon(int i, int w, const Vec3& shoulder, float yaw, float pitch, float bs, const Vec3& accent, float sv) {

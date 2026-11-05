@@ -174,6 +174,47 @@ Matching ignores case, and the extension may be any the asset accepts (an upload
 | maps | `maps/<name>.qmap` | Shipped: tools/make_maps.py writes the override instead of generating that map and tools/embed_maps.py embeds it (an official map: ranked uses its sha256). It counts as human-made: quark_tests runs every map check on it and reports what it misses, labelled HUMAN-MADE, without failing on it ([MAP_STRUCTURES.md](MAP_STRUCTURES.md)). Yours: loaded in place of the shipped map (a copy of it in your `maps/` folder from an older version still comes first; the editor no longer writes one, it asks to save your edits under a new name); ranked won't accept it. |
 | website | `website/<file>` (.jpg / .png, the same name and type) | The release workflow copies it over `site/img/<file>` when it deploys the site. The pictures: `hero.jpg` (the home page's big in-game shot, 1920x1080), `<map>.jpg` for each of the 21 maps (960x540), `hud.jpg` and `models.jpg`. |
 
+### Animated parts (anim_ nodes)
+
+A mesh override (not a box model) may split moving parts into nodes of their own; everything else is the static body,
+drawn as before. The contract:
+
+- A node named `anim_<part>` (lower case; capitals and a Blender copy's `.001` are ignored) with a `mesh`, and a
+  `translation`: the part's **pivot** in model space (through its parent nodes), what it turns about or slides from.
+  Its mesh's vertices are relative to the pivot. The node's own rotation / scale are ignored. Child nodes go with it.
+- At most 12 anim nodes a model (`kMaxAnimParts`); more stay in the body, drawn still. An unknown part name is drawn
+  still at its pivot.
+- The loader (`loadGltf`) keeps them apart as `MeshData::anims` with the triangles assembled in model space, so the
+  export, bounds and editors see the whole model; `meshToModel` splits them into `ModelMesh::parts` (name, pivot,
+  triangles relative to the pivot). Any model kind may have them: `Renderer::mesh` / `viewMesh` / `viewMeshXf` draw
+  every part still at its pivot, so a model only animates where a draw path moves it. A file without anim nodes loads
+  exactly as before (no parts, nothing extra drawn).
+- Today only the first-person weapon moves them (`Game::drawViewParts`, the motions in `weaponPartMotion`,
+  models.cpp: the timings are there, tunable without re-exporting): driven by your own predicted shots (time since the
+  last shot or alt shot, its refire, the shot count), so they're as instant as the muzzle flash, on top of the weapon's
+  frame (GUN RECOIL KICK and the HUD placement apply as before). Other players' held weapons and a spectated
+  player's first-person gun draw the parts still. VIDEO > EFFECTS: WEAPON ANIMATIONS off (`weapon_anims=0`) keeps them
+  still too.
+
+| Weapon | Part | Motion (model-space axes through the pivot) |
+|---|---|---|
+| RIFLE | `anim_bolt` | slides +Z 2.5 cm and back each shot (55 ms) |
+| RIFLE | `anim_mag` | none yet (reserved) |
+| ROCKET | `anim_round` | hidden for the first 30% of the refire, then slides from +Z 15 cm into place by 90% |
+| SNIPER | `anim_bolt` | from 12% to 80% of the refire: rotates -70 deg about Z (a handle on the left wall goes up), slides +Z 1.5 cm, forward, down |
+| LASER | `anim_spin` | spins about Z while firing (up to 3 turns/s over 0.3 s, down over 0.6 s) |
+| SHOTGUN | `anim_pump` | slides +Z 6 cm and back from 10% to 70% of the refire |
+| STICKY | `anim_drum` | turns 60 deg about Z (one chamber) a shot, 40-200 ms after it; the angle adds up (shots x 60, mod 360) |
+| CROSSBOW | `anim_string` | snaps -Z 1 cm in 30 ms, held to 20% of the refire, drawn back by 60% |
+| CROSSBOW | `anim_bolt` | hidden to 60% of the refire, then slides from +Z 15 cm into place by 90% |
+| BUBBLE | `anim_lever` | rotates -25 deg about X and springs back (160 ms, or the refire if shorter) |
+| SYRINGE | `anim_plunger` | pushes -Z 3 cm in 60 ms, pulled back over the rest of the cooldown |
+| LOCATOR | `anim_sweep` | turns about Y continuously, 1 turn / 2 s |
+| LOCATOR | `anim_antenna` | a damped spring wobble about X when you turn |
+
+Cost: none for a model without parts (one empty check). With parts, the first-person weapon is one body draw plus one
+`viewMeshXf` a part (a few matrix products, no allocation); a third-person held weapon one `mesh` a part.
+
 **Cost when there are none**: nothing. With no shipped overrides the embedded table is empty, and the user folder is
 one directory check at startup; every loader returns at once (`overrides::any()`). Drawing a model checks one null
 pointer. The decoders (third_party/stb, third_party/dr_libs) only ever run on override files.
