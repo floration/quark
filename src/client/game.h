@@ -492,7 +492,7 @@ private:
     std::string previewSig_;    // (the maps the renderer's previews are of: names, file times and sizes)
     std::vector<MapInfo> mapInfo_;
     enum { PICK_NONE = 0, PICK_HOST_MAP, PICK_HOST_MODE, PICK_BOT_MAP, PICK_BOT_MODE, PICK_LIVE_MAP, PICK_LIVE_MODE, PICK_VARIANT, PICK_TMAPS, PICK_TMODES, PICK_RANKED };
-    int variantCtx_ = 0, liveVariant_ = 0; // ruleset step: 0 host, 1 vs bots, 2 in game
+    int variantCtx_ = 0, liveVariant_ = 0; // ruleset step: 0 host, 1 vs bots, 2 in game, 3 RANKED's queue (main menu)
     std::vector<bool> multiSel_;
     int liveMode_ = 0, liveMap_ = 0;  // in-game map/mode change (host) or vote (anyone)
     bool livePickVote_ = false;
@@ -1199,6 +1199,8 @@ private:
     void drawConsole(float W, float H, float s, float ts);
     int bestMapFor(int mode) const;
     int bestRankedMap(int ladder) const; // the ladder's own ranked map, else any ranked map for it
+    void findRankedMatch(int ladder);    // RANKED's queue: join a waiting ranked game on the ladder, else host one
+    bool rankedQueue_ = false;           // (startHost from the queue: listed publicly)
     bool pressInput(int code);
     void drawControls(const SetLayout& L);
     void drawHudSettings(const SetLayout& L);

@@ -260,7 +260,7 @@ void Game::startHost(bool vsBots) {
     sc.logLevel = cfg_.hostLog;
     sc.duelTeamSize = cfg_.hostDuelSize;
     sc.arenaVariant = cfg_.hostArenaVariant;
-    sc.publicList = cfg_.hostPublic;
+    sc.publicList = cfg_.hostPublic || rankedQueue_;   // (RANKED's queue: always listed, so the next player finds it)
     sc.ranked = cfg_.hostRanked;
     if (!vsBots && !sc.ranked && !cfg_.hostCustom.empty()) { // a custom mode: its rules, its mode, a map from its pool
         if (loadCustomMode(cfg_.hostCustom, sc.custom)) {
@@ -780,6 +780,24 @@ int Game::bestRankedMap(int ladder) const {
     return any < 0 ? 0 : any;
 }
 
+// RANKED's queue (the main menu's RANKED, a ladder picked): join the ranked game on that ladder with someone waiting
+// in it (lowest ping; servers 1.19.9+ say their ladder in the info reply), else host one on its own map, listed so
+// the next player to queue finds it. Uses the list the main menu keeps fresh (every 10 s).
+void Game::findRankedMatch(int ladder) {
+    picker_ = PICK_NONE;
+    variantCtx_ = 0;
+    cfg_.save();
+    const ServerInfo* best = nullptr;
+    for (const ServerInfo& sv : browser_.servers())
+        if (!sv.noReply && sv.rankedLadder == ladder && sv.players > 0 && sv.players < sv.maxPlayers && (!best || sv.ping < best->ping)) best = &sv;
+    if (best) { joinAddr_ = best->addr.toString(); connectTo(joinAddr_); return; }
+    hostMapIdx_ = bestRankedMap(ladder);
+    hostModeIdx_ = rankedMode(ladder);
+    rankedQueue_ = true;   // (startHost: on the server list whatever HOST's PUBLIC says)
+    startHost();
+    rankedQueue_ = false;
+}
+
 // The map built for this mode if there is one, else the first map that supports it.
 // A mode's default map where several are built for it (owner, 2026-10-30: "surfy map is default surf gamemode map").
 static const char* defaultMapName(int mode) {
@@ -1136,7 +1154,7 @@ void Game::onKey(int key, int action, int mods) {
         if (devicesOpen_) { devicesOpen_ = false; cfg_.save(); return; }   // (DEVICES: back to VIDEO + AUDIO)
         if (moreOpen_) { moreOpen_ = false; cfg_.save(); return; }   // (MORE: back to its tab)
         if (screen_ == Screen::Settings) { leaveSettings(); return; }   // (any tab: as BACK)
-        if (picker_ != PICK_NONE) { picker_ = PICK_NONE; return; }
+        if (picker_ != PICK_NONE) { if (picker_ == PICK_RANKED && variantCtx_ == 3 && screen_ == Screen::Host) setScreen(Screen::Main); picker_ = PICK_NONE; return; }
         if (screen_ == Screen::Leaderboard && raceStatsView_) { raceStatsView_ = false; return; } // race stats: back to the board
         if (screen_ == Screen::CustomMode) { setScreen(customFromMain_ ? Screen::Main : Screen::Host); return; }   // same as its BACK (unsaved changes dropped)
         if (screen_ == Screen::Host && hostAdvanced_) { hostAdvanced_ = false; cfg_.save(); return; }   // ADVANCED: back to HOST, as its BACK
@@ -10283,8 +10301,8 @@ void Game::drawMainPlay(float s, float px, float pw, float rx, float rw, float r
     d.caption(rx + 16, y + 12, kMoreWays, kCapsC, rw - 32);
     const float hw = (rw - 32 - 8) / 2;
     if (ui_.button(d.X(rx + 16), d.X(y + 32), d.X(hw), d.X(40), kRanked, UiExp::nav("host/picker:ladders"))) {
-        setScreen(Screen::Host);   // (HOST with its ranked ladders open: pick one, then START)
-        variantCtx_ = 0;
+        setScreen(Screen::Host);   // (a queue: pick a ladder, then it finds a ranked game on it or hosts one; BACK: here)
+        variantCtx_ = 3;
         picker_ = PICK_RANKED;
     }
     if (ui_.button(d.X(rx + 24 + hw), d.X(y + 32), d.X(hw), d.X(40), kCustom, UiExp::nav("custom/general"))) {
@@ -12345,9 +12363,11 @@ void Game::drawPicker(float cx, float y) {
     }
     // where a choice / BACK leaves you (the UI test checks it): the host / vs bots menu, or the pause menu (or its votes)
     const char* done = host ? "host" : "vsbots";
-    const char* back = screen_ == Screen::InGame ? (builder ? "ingame/pause/vote*" : voteMenu_ ? "ingame/pause/vote" : "ingame/pause") : done;
+    const bool queue = ladders && variantCtx_ == 3;   // RANKED from the main menu: picking a ladder finds a game (BACK: the main menu)
+    const char* back = screen_ == Screen::InGame ? (builder ? "ingame/pause/vote*" : voteMenu_ ? "ingame/pause/vote" : "ingame/pause") : queue ? "main" : done;
     if ((int)multiSel_.size() != n) multiSel_.assign(n, false);
     std::string title = picker_ == PICK_TMAPS ? "TOURNEY MAPS (PICK ANY, THEY ROTATE)" : picker_ == PICK_TMODES ? "TOURNEY RULESETS (PICK ANY, THEY ROTATE)"
+                      : queue ? "RANKED - PICK A LADDER TO FIND A MATCH"
                       : ladders ? "RANKED - CHOOSE A LADDER"
                       : variants ? std::string(modeTitle(mode)) + " - CHOOSE A RULESET" : modes ? "CHOOSE A MODE"
                       : std::string("CHOOSE A MAP FOR ") + (rankedNow ? "RANKED" : modeTitle(mode));
@@ -12401,6 +12421,7 @@ void Game::drawPicker(float cx, float y) {
         }
         it.pe = multi ? UiExp::state("multisel")
               : ladders && live ? UiExp::cmd(livePickVote_ ? "callvote ranked on" : "ranked on")
+              : queue ? UiExp::state("hosting", "1").optional()   // (finds a waiting game, else hosts one)
               : ladders ? UiExp::nav("host")
               : variants ? (live ? UiExp::nav("ingame/pause/picker:livemap") : UiExp::nav(done))
               : modes && i == MODE_COUNT ? UiExp::nav(live ? "ingame/pause/picker:ladders" : "host/picker:ladders")
@@ -12432,6 +12453,7 @@ void Game::drawPicker(float cx, float y) {
             variant = kLadders[i];
             mode = MODE_ARENA;
             if (!(mapInfo_[mapIdx].ranked >> variant & 1)) mapIdx = bestRankedMap(variant);
+            if (variantCtx_ == 3) { findRankedMatch(variant); return; }   // (RANKED from the main menu: the queue)
             finish();
         }
         else if (variants) { variant = i; if (live) picker_ = PICK_LIVE_MAP; else finish(); }   // in game: then the map
@@ -12503,7 +12525,7 @@ void Game::drawPicker(float cx, float y) {
                     return;
                 }
             }
-            if (ui_.button(L.X(176), L.Y(ry), L.L(fw), L.L(40), "BACK", UiExp::nav(back))) picker_ = PICK_NONE;
+            if (ui_.button(L.X(176), L.Y(ry), L.L(fw), L.L(40), "BACK", UiExp::nav(back))) { if (queue) setScreen(Screen::Main); picker_ = PICK_NONE; }
             return;
         }
         // every card once a frame (labels, tags: what it shows; the buffers are reused)
@@ -12571,7 +12593,7 @@ void Game::drawPicker(float cx, float y) {
                 return;
             }
         }
-        if (ui_.button(L.X(176), L.Y(ry), L.L(fw), L.L(40), "BACK", UiExp::nav(back))) picker_ = PICK_NONE;
+        if (ui_.button(L.X(176), L.Y(ry), L.L(fw), L.L(40), "BACK", UiExp::nav(back))) { if (queue) setScreen(Screen::Main); picker_ = PICK_NONE; }
     }
 }
 

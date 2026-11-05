@@ -25,7 +25,7 @@ enum PacketType : uint8_t {
     PKT_ACCEPT = 64,     // u32 nonce, u8 clientId, str map, 32 bytes map id (MapId: sha256), u8 mode, u32 token lo, u32 token hi (reconnect token)
     PKT_REJECT,          // str reason
     PKT_SNAPSHOT,        // u32 nonce, see Snapshot
-    PKT_INFO_REPLY,      // str serverName, str map, u8 mode, u8 players, u8 maxPlayers, u16 port
+    PKT_INFO_REPLY,      // str serverName, str map, u8 mode, u8 players, u8 maxPlayers, u16 port, then (1.19.9+; older servers stop at port) u8 flags (INFO_RANKED: a ranked ladder is played), u8 its ladder (arenaVariant)
     PKT_KICKED,          // u32 nonce, str reason
     PKT_MAP_DATA,        // u32 nonce, 32 bytes map id (edits chain it), 32 bytes the text's sha256 (mapContentId), u32 totalBytes, u32 offset, u16 n, n bytes
     PKT_CHALLENGE,       // u32 nonce, u32 cookie: echo the cookie in PKT_CONNECT to prove you own your address
@@ -36,7 +36,8 @@ constexpr int kInfoRequestBytes = 160;      // PKT_INFO_REQUEST size; the reply 
 // A testing server (or testing build) plays ranked but never rates it (Server::rated): every notice about that starts
 // with this (the client's HUD tags the match NOT RATED when it sees it).
 constexpr const char* kUnratedNotice = "TESTING SERVER - RANKED NOT RATED";
-constexpr int kInfoNameMax = 96, kInfoMapMax = 40; // 5 + 97 + 41 + 5 <= kInfoRequestBytes
+constexpr int kInfoNameMax = 96, kInfoMapMax = 40; // 5 + 97 + 41 + 5 + 2 <= kInfoRequestBytes
+enum : uint8_t { INFO_RANKED = 1 };   // PKT_INFO_REPLY flags
 constexpr int kRejectHeaderBytes = 5;       // PKT_REJECT before its reason (u32 magic, u8 type)
 constexpr int kProbeRequestBytes = 32;      // PKT_PROBE_REQUEST size (the 9 byte reply is smaller: no amplification)
 constexpr int kMapChunk = 1200;              // map file bytes per PKT_MAP_DATA
