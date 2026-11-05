@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""The OUTLINED player set (owner, 2026-11-05, of three clean directions: "outlined for sure not even close"): all 11
-player models as box model files (docs/ASSETS.md "Box models": meshes[0].extras.quark version 2), so the game's own
+"""The OUTLINED player set (owner, 2026-11-05, of three clean directions: "outlined for sure not even close"): all 64
+player models (the 11, then the 20 and the 33 extras the owner approved the same day) as box model files (docs/ASSETS.md "Box models": meshes[0].extras.quark version 2), so the game's own
 box path draws them with its outlines, face shading, crouch and walk, the same way as the outlined weapon set.
 
     python3 tools/models/gen_players_outlined.py [--out DIR] [--scratch DIR] [--no-preview] [--only NAME,...]
@@ -11,7 +11,9 @@ and copied over (a network mount). Shipped (owner, 2026-11-05): the files in ass
 script's output, byte for byte: `--out assets/overrides --no-preview` rewrites them. They are AI-made: curated `ai` entries
 (by Claude) in assets/provenance/models.json, which tools/provenance.py sync keeps.
 
-The designs are characters_outlined.py. Shared palette (the outlined weapons' rules): a 5 mm grid, a few big blocks,
+The designs are characters_outlined.py (the 11) and characters_outlined_extra.py (the 20), characters_outlined_extra2.py (the 33); NAMES is their order, the
+game's (kPlayerModelNames, src/game/gamedefs.h). A new model: its builder in a characters file, its name in that file's
+NAMES and in kPlayerModelNames (the same place). Shared palette (the outlined weapons' rules): a 5 mm grid, a few big blocks,
 no chamfers; dark = the metal slot x 0.55, mid = the metal slot, light = the base slot, bore / recess = metal x 0.25,
 team panels and bands, a glow piece or two (visor, eyes); plus a few fixed colours a character needs (skin, the
 zombie's green, the wizard's robe). On players the game drives only the team slot (models.cpp drivenSlots): metal and
@@ -37,9 +39,13 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import gen_players_realistic_dark as G  # noqa: E402
-from characters_outlined import BUILDERS  # noqa: E402
+from characters_outlined import BUILDERS as BUILDERS_11  # noqa: E402
+import characters_outlined_extra as X  # noqa: E402
+import characters_outlined_extra2 as X2  # noqa: E402
 
-NAMES = G.NAMES
+# the 11, then the 20 extras, then the 33 more (2026-11-05): the order of kPlayerModelNames (src/game/gamedefs.h)
+NAMES = G.NAMES + X.NAMES + X2.NAMES
+BUILDERS = dict(BUILDERS_11, **X.BUILDERS, **X2.BUILDERS)
 MAX_TRIS, MAX_BOXES = G.MAX_TRIS, 256
 LUM = np.array((0.2126, 0.7152, 0.0722))
 FLOOR = 0.18 ** 2.2
@@ -67,6 +73,55 @@ TONES = {
     "leather": (None, lin((0.58, 0.38, 0.22)), False), "glove": (None, lin((0.86, 0.17, 0.12)), False),
     "denim": (None, lin((0.33, 0.43, 0.64)), False),
     "hat": (None, lin((0.74, 0.56, 0.36)), False), "hat_dk": (None, lin((0.56, 0.41, 0.26)), False),
+    # the 20 extras' fixed colours (characters_outlined_extra.py)
+    "white": (None, lin((0.94, 0.94, 0.92)), False),
+    "amber": (None, lin((0.88, 0.62, 0.18)), False),       # the astronaut's gold visor (not lit)
+    "lacquer": (None, lin((0.70, 0.18, 0.15)), False),     # the samurai's red lacquer
+    "fur": (None, lin((0.55, 0.40, 0.27)), False),
+    "straw": (None, lin((0.96, 0.80, 0.40)), False),       # the viking's beard
+    "ivory": (None, lin((0.94, 0.90, 0.78)), False),
+    "khaki": (None, lin((0.80, 0.68, 0.40)), False),       # the firefighter's turnout coat
+    "hivis": (None, lin((0.97, 0.88, 0.18)), False),
+    "brass": (None, lin((0.84, 0.64, 0.30)), False), "brass_dk": (None, lin((0.62, 0.45, 0.22)), False),
+    "glass": (None, lin((0.36, 0.56, 0.62)), True),
+    "canvas": (None, lin((0.70, 0.67, 0.58)), False),
+    "alien": (None, lin((0.38, 0.82, 0.74)), False),
+    "bandage": (None, lin((0.86, 0.80, 0.62)), False), "bandage_dk": (None, lin((0.66, 0.58, 0.42)), False),
+    "bone": (None, lin((0.95, 0.93, 0.86)), False),
+    "redeye": (None, (1.60, 0.22, 0.15), True),             # glowing red (over 1: it reads as lit)
+    "pink": (None, lin((0.96, 0.48, 0.74)), False),
+    "canary": (None, lin((0.98, 0.86, 0.34)), False),
+    "lime": (None, lin((0.48, 0.84, 0.22)), False),
+    "pale": (None, lin((0.86, 0.86, 0.84)), False),
+    "tan": (None, lin((0.74, 0.52, 0.35)), False),          # the pharaoh's skin
+    "hairblk": (None, lin((0.22, 0.21, 0.23)), False),
+    "plum": (None, lin((0.50, 0.15, 0.38)), False),         # the king's cape
+    "olive": (None, lin((0.46, 0.49, 0.32)), False),
+    "lamp": (None, (1.70, 1.60, 1.00), True),               # the miner's lamp (lit)
+    # the 33 more (characters_outlined_extra2.py)
+    "frost": (None, lin((0.80, 0.86, 0.92)), False),        # the yeti's fur
+    "slate": (None, lin((0.38, 0.42, 0.52)), False),        # the yeti's face
+    "carrot": (None, lin((0.95, 0.50, 0.15)), False),
+    "burlap": (None, lin((0.74, 0.62, 0.44)), False),
+    "wolf": (None, lin((0.50, 0.46, 0.44)), False), "wolf_lt": (None, lin((0.74, 0.70, 0.64)), False),
+    "forest": (None, lin((0.38, 0.64, 0.30)), False),       # the dinosaur costume
+    "pumpkin": (None, lin((0.93, 0.54, 0.14)), False), "pumpkin_dk": (None, lin((0.72, 0.38, 0.10)), False),
+    "stem": (None, lin((0.38, 0.52, 0.22)), False),
+    "candle": (None, (1.80, 1.20, 0.25), True),             # the pumpkin's carved face (lit)
+    "capred": (None, lin((0.86, 0.17, 0.15)), False),       # the mushroom cap
+    "stone": (None, lin((0.56, 0.52, 0.47)), False), "stone_dk": (None, lin((0.42, 0.39, 0.35)), False),
+    "moss": (None, lin((0.46, 0.60, 0.28)), False),
+    "crt": (None, lin((0.78, 0.72, 0.60)), False),          # the TV casing
+    "screen": (None, (0.35, 1.30, 0.70), True),             # the TV's lit screen
+    "tights": (None, lin((0.97, 0.82, 0.80)), False),
+    "marine": (None, lin((0.36, 0.45, 0.41)), False), "marine_dk": (None, lin((0.27, 0.33, 0.31)), False),
+    "ember": (None, (1.70, 0.75, 0.15), True),              # the marine's visor (lit)
+    "sage": (None, lin((0.58, 0.64, 0.54)), False),         # the engineer's coveralls
+    "ghillie": (None, lin((0.42, 0.50, 0.30)), False), "ghillie_dk": (None, lin((0.33, 0.38, 0.24)), False),
+    "sand": (None, lin((0.74, 0.66, 0.50)), False),         # the bomb suit
+    "hazmat": (None, lin((0.95, 0.82, 0.22)), False),
+    "cream": (None, lin((0.96, 0.92, 0.80)), False),
+    "honey": (None, lin((0.98, 0.78, 0.18)), False),        # the bee's stripes
 }
 GROUP = {"dark": "dark", "mid_dk": "dark", "bore": "dark", "mid": "mid", "light": "light", "team": "team", "team_dk": "team"}
 
@@ -391,6 +446,8 @@ def sheet(cells, title, ncol, cw, ch, labels, sub=None):
     if sub:
         d.text((pad + 4, 38), sub, fill=(190, 195, 205), font=G.font(14))
     for k, (c, t) in enumerate(zip(cells, labels)):
+        if c is None:
+            continue   # (a padding cell)
         x = pad + (k % ncol) * (cw + pad)
         y = head + (k // ncol) * (ch + lab + pad)
         d.text((x + 2, y + 2), t, fill=(225, 228, 235), font=G.font(13, True))
@@ -408,31 +465,38 @@ def previews(models, scratch, out):
             shutil.copyfile(p, os.path.join(out, name))
         saved.append(os.path.join(out or scratch, name))
 
+    ncol = min(len(models), 11)   # (rows of 11: each group's front row, then its back row)
+    groups = [models[k:k + ncol] for k in range(0, len(models), ncol)]
     for team, fname, tname in ((ORANGE, "lineup-outlined.png", "orange"), (BLUE, "lineup-outlined-blue.png", "blue")):
         cells, labels = [], []
-        for view in (G.FRONT, G.BACK):
-            for m in models:
-                img, cov = render(m, view, team)
-                cells.append(img)
-                labels.append("%s  %d boxes" % (m.name, len(m.boxes)) if view is G.FRONT else m.name + " (back)")
-                if tname == "orange":
-                    acc = cover.setdefault(m.name, {g: 0.0 for g in GROUPS})
-                    for g in GROUPS:
-                        acc[g] += cov[g]
-        save(sheet(cells, "OUTLINED: the 11 player models (front 3/4, back 3/4), %s team" % tname, len(models), 230, 440, labels,
+        for grp in groups:
+            for view in (G.FRONT, G.BACK):
+                for m in grp:
+                    img, cov = render(m, view, team)
+                    cells.append(img)
+                    labels.append("%s  %d boxes" % (m.name, len(m.boxes)) if view is G.FRONT else m.name + " (back)")
+                    if tname == "orange":
+                        acc = cover.setdefault(m.name, {g: 0.0 for g in GROUPS})
+                        for g in GROUPS:
+                            acc[g] += cov[g]
+                if len(grp) < ncol:   # (a short last group: its row padded, so its back row starts a row)
+                    for _ in range(ncol - len(grp)):
+                        cells.append(None)
+                        labels.append("")
+        save(sheet(cells, "OUTLINED: the %d player models (front 3/4, back 3/4), %s team" % (len(models), tname), ncol, 230, 440, labels,
                    "box model files, drawn as the game draws boxes: its face shading and 1 px box outlines; every box inside the hitbox"), fname)
     cells, labels = [], []
-    for m in models:
-        cells.append(render(m, G.SIDE, ORANGE, pz=G.pose(m.rig, phase=0.25, speed=7.0))[0])
-        labels.append(m.name + " run")
-    for m in models:
-        cells.append(render(m, G.FRONT, BLUE, pz=G.pose(m.rig, phase=0.75, speed=2.6))[0])
-        labels.append(m.name + " walk")
-    for m in models:
-        cells.append(render(m, G.SIDE, BLUE, pz=G.pose(m.rig, air=1.0))[0])
-        labels.append(m.name + " jump")
-    save(sheet(cells, "OUTLINED: walking on the game's gait (models.cpp playerPose, joints measured from the boxes)", len(models), 230, 440, labels,
-               "row 1: running 7 m/s (side 3/4, orange); row 2: walking 2.6 m/s (front 3/4, blue); row 3: the jump pose"), "walk-outlined.png")
+    for grp in groups:
+        for kind in ("run", "walk", "jump"):
+            for m in grp:
+                pz = G.pose(m.rig, phase=0.25, speed=7.0) if kind == "run" else G.pose(m.rig, phase=0.75, speed=2.6) if kind == "walk" else G.pose(m.rig, air=1.0)
+                cells.append(render(m, G.FRONT if kind == "walk" else G.SIDE, ORANGE if kind == "run" else BLUE, pz=pz)[0])
+                labels.append(m.name + " " + kind)
+            for _ in range(ncol - len(grp)):
+                cells.append(None)
+                labels.append("")
+    save(sheet(cells, "OUTLINED: walking on the game's gait (models.cpp playerPose, joints measured from the boxes)", ncol, 230, 440, labels,
+               "each group of rows: running 7 m/s (side 3/4, orange); walking 2.6 m/s (front 3/4, blue); the jump pose"), "walk-outlined.png")
     return saved, cover
 
 
@@ -465,7 +529,7 @@ def main():
         if mdir:
             shutil.copyfile(sp, os.path.join(mdir, name + ".gltf"))
         r = m.rig
-        print("%-8s %3d boxes %4d triangles %3d KB  hip %.3f knee %.3f ankle %.3f neck %.3f hipX %.3f" % (
+        print("%-11s %3d boxes %4d triangles %3d KB  hip %.3f knee %.3f ankle %.3f neck %.3f hipX %.3f" % (
             name, len(m.boxes), m.tris(), size // 1024, r.hipY, r.kneeY, r.ankleY, r.neckY, r.hipX))
         for e in errs:
             print("   ERROR: " + e)
@@ -478,7 +542,7 @@ def main():
         print("visible surface (front + back 3/4, outlines left out): dark / mid / light / team / fixed colours")
         for name, c in cover.items():
             t = sum(c.values()) or 1
-            print("   %-8s " % name + "  ".join("%s %2.0f%%" % (g, 100 * c[g] / t) for g in GROUPS))
+            print("   %-11s " % name + "  ".join("%s %2.0f%%" % (g, 100 * c[g] / t) for g in GROUPS))
         for p in saved:
             print("wrote " + p)
     return 0 if ok else 1

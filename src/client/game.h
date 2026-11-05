@@ -73,6 +73,7 @@ struct LaunchOptions {
     bool debugHudLayout = false; // --hudlayout: open HUD layout settings in game
     bool debugModels = false;
     bool debugWalk = false;    // (--walk: the --models lineup turned side-on)
+    int debugModelPage = 0;    // (--modelpage N: the --models lineup shows models 11 N .. 11 N + 10: kLineup a batch)
     int debugRps = 0;           // --rpsshot: the hide and seek tiebreak panel with made-up players (1 picking, 2 reveal, 3 three-way reveal)
     bool camSet = false;         // --cam: fixed backdrop camera (map analysis shots); in a match, the view's camera
     Vec3 camPos;

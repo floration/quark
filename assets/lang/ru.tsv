@@ -1,5 +1,6 @@
 " matches more than one player: use the id (status lists them)	" подходит нескольким игрокам: укажите id (список в status)
 ","color":	","color":
+","pivot":	","pivot":
 "IT" IN YOUR ENEMY COLOUR, THE REST YOUR TEAM'S	«IT» — ЦВЕТОМ ВРАГА, ОСТАЛЬНЫЕ — ЦВЕТОМ ВАШЕЙ КОМАНДЫ
 "path"	"path"
 # # # TO # # #	# # # ДО # # #
@@ -237,6 +238,7 @@ ADVANCED	ПРОДВИНУТЫЙ
 ADVANCED  >	ПРОДВИНУТЫЙ  >
 ADVANCED > BOT BRAIN: what your bots play: the built-in brain, or a .qbrain file from the bots folder in your data folder. A file that doesn't compile shows its error line and the bots play the built-in brain. Never in ranked.	ПРОДВИНУТЫЙ > ИИ БОТА: как играют ваши боты: встроенный ИИ или файл .qbrain из папки bots в папке данных. Если файл не компилируется, показывается строка с ошибкой, а боты играют со встроенным ИИ. Никогда в рейтинге.
 AGAIN (R)	ЕЩЁ РАЗ (R)
+AGENT	АГЕНТ
 AHEAD	ВПЕРЕДИ
 AIM 15 DEGREES DOWN: EVERY LANDING IS A HYPER	ЦЕЛЬСЯ НА 15 ГРАДУСОВ ВНИЗ: КАЖДОЕ ПРИЗЕМЛЕНИЕ — ГИПЕР
 AIM A LITTLE DOWN	ЦЕЛЬСЯ ЧУТЬ ВНИЗ
@@ -264,6 +266,7 @@ AIR CONTROL	КОНТР. В ВОЗД.
 AIR DRIFT (UNDER RUN SPEED)	ДРЕЙФ В ВОЗДУХЕ (НИЖЕ СКОРОСТИ БЕГА)
 AIR ROCKET	РАКЕТА В ВОЗД.
 AIR STRAFE CAP	ЛИМИТ СТРЕЙФА
+ALIEN	ПРИШЕЛЕЦ
 ALL	ВСЕ
 ALL MODES	ВСЕ РЕЖИМЫ
 ALL OFF	ВСЁ ВЫКЛ
@@ -320,6 +323,7 @@ AS THICK	ТА ЖЕ ТОЛЩ.
 ASIDE: A FRAME LESS LAG IN A WINDOW	ПОПУТНО: НА КАДР МЕНЬШЕ ЗАДЕРЖКИ В ОКНЕ
 ASK "SURE?" FIRST: CLICK AGAIN	СПРАШИВАТЬ «ТОЧНО?»: КЛИКНИТЕ ЕЩЁ РАЗ
 ASSUMED	ПРЕДПОЛ.
+ASTRONAUT	КОСМОНАВТ
 AT # # #	В # # #
 AT CAMERA	У КАМЕРЫ
 AT SPEED, HOOK A PILLAR BESIDE YOU: THE HOOK TURNS YOU ROUND IT AND YOU KEEP YOUR SPEED.	НА СКОРОСТИ ЗАЦЕПИ КОЛОННУ СБОКУ: КРЮК РАЗВЕРНЁТ ТЕБЯ ВОКРУГ НЕЁ, СКОРОСТЬ ОСТАНЕТСЯ.
@@ -396,6 +400,7 @@ BAR W	ШИР.
 BARLOW CONDENSED	BARLOW CONDENSED
 BASIC	БАЗОВ.
 BEBAS NEUE	BEBAS NEUE
+BEE	ПЧЕЛА
 BEGINNER	НОВИЧОК
 BEHIND	ПОЗАДИ
 BEHIND (0: AS IN FRONT)	ПОЗАДИ (0: КАК СПЕРЕДИ)
@@ -493,6 +498,7 @@ BUILT FOR	СДЕЛАНА ДЛЯ
 BUILT FOR sets the mode the map is made for; the MODES grid sets what it's offered for. PLAYABLE AS shows what it has the pieces for (team modes need A and B spawns).	СДЕЛАНА ДЛЯ задаёт режим, под который сделана карта; сетка РЕЖИМЫ - для каких режимов она предлагается. ИГРАБЕЛЬНА КАК показывает, для чего на ней есть всё нужное (командным режимам нужны спавны A и B).
 BUILT FOR:	СДЕЛАНА ДЛЯ:
 BUILT FOR: ANY	СДЕЛАНА ДЛЯ: ЛЮБОГО
+BUNNY	КРОЛИК
 BUNNY HOP WITH ONE STRAFE KEY AT A TIME, TURNING WITH IT: SPEED WITH NO DASH.	БАННИХОП С ОДНОЙ КЛАВИШЕЙ СТРЕЙФА ЗА РАЗ, ПОВОРАЧИВАЯ ВМЕСТЕ С НЕЙ: СКОРОСТЬ БЕЗ РЫВКА.
 BURSTS UP TO 24 M/S ON A 180 WALL	РЫВКИ ДО 24 М/С НА СТЕНЕ 180
 BURSTS UP TO 24 M/S ON THE WALL	РЫВКИ ДО 24 М/С НА СТЕНЕ
@@ -518,6 +524,8 @@ CAPTIONS: THE ANNOUNCER AS TEXT TOO	СУБТИТРЫ: КОММЕНТАТОР Т�
 CAPTURE	ЗАХВАТ
 CAPTURE THE HILL	ЗАХВАТИТЕ ХОЛМ
 CART	ВАГОН
+CAT	КОТ
+CAVEMAN	ПЕЩЕРНЫЙ ЧЕЛОВЕК
 CEILING HANG	ВИС НА ПОТОЛКЕ
 CHAMPION	ЧЕМПИОН
 CHANGE ANYTHING AFTER (IT STAYS)	МЕНЯЙТЕ ЧТО УГОДНО ПОТОМ (СОХРАНИТСЯ)
@@ -543,6 +551,7 @@ CHECK FILES	ПРОВЕРИТЬ ФАЙЛЫ
 CHECKING...	ПРОВЕРКА...
 CHECKPOINT	ЧЕКПОИНТ
 CHECKPT	ЧЕКП.
+CHEF	ШЕФ-ПОВАР
 CHOOSE	ВЫБРАТЬ
 CHOOSE -	ВЫБОР -
 CHOOSE A MAP FOR	ВЫБЕРИТЕ КАРТУ ДЛЯ
@@ -577,6 +586,7 @@ CLOSEST FREE MATCH: OVERWATCH	БЛИЖАЙШЕЕ БЕСПЛ. СООТВЕТСТ�
 CLOSEST FREE MATCH: QUAKE	БЛИЖАЙШЕЕ БЕСПЛ. СООТВЕТСТВИЕ: QUAKE
 CLOSEST FREE MATCH: TF2	БЛИЖАЙШЕЕ БЕСПЛ. СООТВЕТСТВИЕ: TF2
 CLOSEST FREE MATCH: TF2 SECONDARY	БЛИЖАЙШЕЕ БЕСПЛ. СООТВЕТСТВИЕ: TF2 SECONDARY
+CLOWN	КЛОУН
 CM PER 360	СМ НА 360
 CM PER 360: MOUSE TRAVEL FOR ONE FULL TURN	СМ НА 360: ХОД МЫШИ НА ПОЛНЫЙ ОБОРОТ
 COLOR	ЦВЕТ
@@ -721,6 +731,7 @@ CUSTOM WIDGETS: build your own HUD pieces (number, bar, icon) from any value, dr
 CUSTOM: PICK OUTLINE "CUSTOM" ON PLAYER; SAME: ITS	СВОЙ: ВЫБЕРИТЕ КОНТУР «СВОЙ» НА ИГРОКЕ; ТАКОЙ ЖЕ: ЕГО
 CYAN	ГОЛУБ.
 CYAN / RED	ГОЛУБ. / КРАСН.
+CYBORG	КИБОРГ
 D3DKMTCloseAdapter	D3DKMTCloseAdapter
 D3DKMTGetProcessSchedulingPriorityClass	D3DKMTGetProcessSchedulingPriorityClass
 D3DKMTGetScanLine	D3DKMTGetScanLine
@@ -732,6 +743,7 @@ DAMAGE FLASH	ВСПЫШКА УРОНА
 DAMAGE NUMBER COLOR	ЦВЕТ ЦИФР УРОНА
 DAMAGE NUMBER SIZE	РАЗМЕР ЦИФР УРОНА
 DAMAGE NUMBERS	ЦИФРЫ УРОНА
+DANCER	ТАНЦОВЩИЦА
 DASH	РЫВОК
 DASH + GRAPPLE	РЫВОК + КРЮК
 DASH AND JUMP TOGETHER	РЫВОК И ПРЫЖОК ВМЕСТЕ
@@ -797,6 +809,7 @@ DEMO RATE	ЧАСТОТА ДЕМО
 DEMO RATE: 62.5 HZ	ЧАСТОТА ДЕМО: 62.5 ГЦ
 DEMO RATE: FULL	ЧАСТОТА ДЕМО: ПОЛНАЯ
 DEMO SAVED - CREATE > DEMOS	ДЕМО СОХРАНЕНО - СОЗДАТЬ > ДЕМО
+DEMOLITION	ПОДРЫВНИК
 DEMOS	ДЕМО
 DEPTH	ГЛУБИНА
 DESC	ОПИС.
@@ -807,6 +820,7 @@ DIFFICULTY: ADVANCED	СЛОЖНОСТЬ: ПРОДВИНУТЫЙ
 DIFFICULTY: BEGINNER	СЛОЖНОСТЬ: НОВИЧОК
 DIFFICULTY: EXPERT	СЛОЖНОСТЬ: ЭКСПЕРТ
 DIFFICULTY: INTERMEDIATE	СЛОЖНОСТЬ: СРЕДНИЙ
+DINO	ДИНО
 DISABLE CHAT	ОТКЛЮЧИТЬ ЧАТ
 DISCONNECT	ОТКЛЮЧИТЬСЯ
 DISCORD	DISCORD
@@ -822,6 +836,7 @@ DISPLAY: BORDERLESS FULLSCREEN	ЭКРАН: ОКНО БЕЗ РАМКИ
 DISPLAY: EXCLUSIVE FULLSCREEN	ЭКРАН: ЭКСКЛЮЗИВНЫЙ ПОЛНЫЙ ЭКРАН
 DISPLAY: WINDOWED	ЭКРАН: В ОКНЕ
 DISTANCE	ДИСТАНЦИЯ
+DIVER	ВОДОЛАЗ
 DMG	УРОН
 DMITRI	DMITRI
 DON'T DASH NOW: A DASH ABOVE 32 M/S CAPS YOU DOWN (A HYPER ABOVE 36)	НЕ ДЕЛАЙ РЫВОК: РЫВОК ВЫШЕ 32 М/С СРЕЗАЕТ СКОРОСТЬ (ГИПЕР ВЫШЕ 36)
@@ -912,10 +927,10 @@ ENEMY HOLDS THE HILL	ХОЛМ У ВРАГА
 ENEMY IS PUSHING	ВРАГ ТОЛКАЕТ
 ENEMY MODEL	МОДЕЛЬ ВРАГА
 ENEMY MODEL:	МОДЕЛЬ ВРАГА:
-ENEMY MODEL: THEIR OWN	МОДЕЛЬ ВРАГА: ИХ СОБСТВЕННАЯ
 ENEMY OUTLINE	КОНТУР ВРАГА
 ENEMY OUTLINE:	КОНТУР ВРАГА:
 ENEMY WIDTH	ШИРИНА ВРАГА
+ENGINEER	ИНЖЕНЕР
 ENTER	ENTER
 ERROR ON LINE	ОШИБКА В СТРОКЕ
 ESC	ESC
@@ -923,7 +938,9 @@ ESC (CLEAR SEARCH)	ESC (ОЧИСТИТЬ ПОИСК)
 ESC TO CANCEL	ESC ДЛЯ ОТМЕНЫ
 ESC: LESSONS	ESC: УРОКИ
 ESC: PAUSE / SETTINGS   R: RESTART	ESC: ПАУЗА / НАСТРОЙКИ   R: ЗАНОВО
+EVERY ENEMY / TEAMMATE AS ONE MODEL (NOT IN RANKED)	ВСЕ ВРАГИ / СОЮЗНИКИ ОДНОЙ МОДЕЛЬЮ (НЕ В РЕЙТИНГЕ)
 EVERY LANDING HYPERS AGAIN AS SOON AS A DASH CHARGE IS BACK	КАЖДОЕ ПРИЗЕМЛЕНИЕ — СНОВА ГИПЕР, КАК ТОЛЬКО ВЕРНЁТСЯ ЗАРЯД РЫВКА
+EVERY MODEL HAS THE SAME HITBOX - RANKED: EVERYONE IS STANDARD	У ВСЕХ МОДЕЛЕЙ ОДИН ХИТБОКС - РЕЙТИНГ: У ВСЕХ СТАНДАРТ
 EVERY SETTING IS BACK TO ITS DEFAULT	ВСЕ НАСТРОЙКИ СБРОШЕНЫ ПО УМОЛЧАНИЮ
 EVERY WEAPON, ALL MOVEMENT - NO GIMMICKS	ВСЁ ОРУЖИЕ, ВСЁ ПЕРЕДВИЖЕНИЕ - БЕЗ ФОКУСОВ
 EVERYONE THROWS - THE LOSING SHAPE IS OUT	ВСЕ ВЫБРАСЫВАЮТ - ПРОИГРАВШАЯ ФИГУРА ВЫБЫВАЕТ
@@ -993,6 +1010,7 @@ FIRE AFTER A DASH, NEVER JUST BEFORE ONE: A DASH ERASES A BLAST'S PUSH	СТРЕ�
 FIRE AND GRAPPLE TOGETHER	ВЫСТРЕЛ И КРЮК ВМЕСТЕ
 FIRE RATE	СКОРОСТР.
 FIRE THE MOMENT THE DASH GOES, NEVER BEFORE: A DASH ERASES A BLAST'S PUSH	СТРЕЛЯЙ В МИГ РЫВКА, НЕ РАНЬШЕ: РЫВОК СТИРАЕТ ТОЛЧОК ВЗРЫВА
+FIREFIGHTER	ПОЖАРНЫЙ
 FIRES THE MOMENT IT IS	СТРЕЛЯЕТ В ТОТ ЖЕ МИГ, КАК
 FIRST TO #	ДО #
 FIX GAPS	ЗАКР. ЩЕЛИ
@@ -1000,6 +1018,7 @@ FIX MAP	ПОЧИНИТЬ
 FIXED LOGO COLORS	ФИКС. ЦВЕТА ЛОГОТИПА
 FIXED TEAMS	ФИКС. КОМАНДЫ
 FIXED TEAMS: SPECTATING AND DEMOS SHOW	ФИКС. КОМАНДЫ: НАБЛЮДЕНИЕ И ДЕМО ПОКАЗЫВАЮТ
+FLAMER	ОГНЕМЁТЧИК
 FLAT LIGHTING	ПЛОСКОЕ ОСВЕЩЕНИЕ
 FLAT MAP	ПЛОСК. КАРТА
 FLAT MAP, NO LIGHTING	ПЛОСКАЯ КАРТА, БЕЗ ОСВЕЩЕНИЯ
@@ -1046,6 +1065,7 @@ FRENZY	FRENZY
 FRIENDS JOIN WITH YOUR PUBLIC IP (STREAMER MODE)	ДРУЗЬЯ ЗАХОДЯТ ПО ВАШЕМУ ВНЕШНЕМУ IP (РЕЖИМ СТРИМЕРА)
 FRIENDS JOIN WITH YOUR PUBLIC IP:	ДРУЗЬЯ ЗАХОДЯТ ПО ВАШЕМУ ВНЕШНЕМУ IP:
 FRIENDS JOIN WITH:	ДРУЗЬЯ ПОДКЛЮЧАЮТСЯ ПО:
+FROG	ЛЯГУШКА
 FROM	ИЗ
 FROM 11.7 M UP OR MORE THE HOP IS THE BIGGEST, 15.7 M/S	С 11.7 М И ВЫШЕ ОТСКОК МАКСИМАЛЕН: 15.7 М/С
 FROM STANDING OR A SLOW RISE ONLY: RISING FAST, THE BUBBLES CAN'T CATCH YOU	ТОЛЬКО СТОЯ ИЛИ МЕДЛЕННО ПОДНИМАЯСЬ: ЕСЛИ ВЗЛЕТАЕШЬ БЫСТРО, ПУЗЫРИ ТЕБЯ НЕ ДОГОНЯТ
@@ -1094,19 +1114,22 @@ GET 40 M UP	ПОДНИМИСЬ НА 40 М
 GET 55 M UP	ПОДНИМИСЬ НА 55 М
 GET 7 M UP	ПОДНИМИСЬ НА 7 М
 GET IT WITH /link - THE CODE IS PUBLIC	ПОЛУЧИТЕ ЧЕРЕЗ /link - КОД ПУБЛИЧНЫЙ
-GHOST	GHOST
+GHOST	ПРИЗРАК
 GHOST'S KEYS	КЛАВИШИ ПРИЗРАКА
 GIANT SNIPERS	ГИГАНТ. СНАЙПЕРЫ
 GIBS	ГИБЫ
 GL	GL
 GL {} / {}	GL {} / {}
+GLADIATOR	ГЛАДИАТОР
 GLASS CANNONS	СТЕКЛЯННЫЕ ПУШКИ
 GLOW	СВЕЧ.
 GLOW STRENGTH	СИЛА СВЕЧЕНИЯ
 GO	ИДИ
 GO!	ИДИ!
 GOAL	ЦЕЛЬ
+GOALIE	ВРАТАРЬ
 GODLIKE	БОЖЕСТВ.
+GOLEM	ГОЛЕМ
 GPU	GPU
 GPU + CPU GO TO THE GAME FIRST WHILE FOCUSED	GPU + ЦП В ПРИОРИТЕТЕ У ИГРЫ, ПОКА ОНА В ФОКУСЕ
 GPU HUD	HUD GPU
@@ -1169,6 +1192,7 @@ GROUND FRICTION	ТРЕНИЕ О ЗЕМЛЮ
 GROUP	ГРУППА
 GROUP FILE	ФАЙЛ ГРУППЫ
 GROUPS	ГРУППЫ
+GUARD	СТРАЖ
 GUN COLOR	ЦВЕТ ОРУЖИЯ
 GUN RECOIL KICK	ОТДАЧА ОРУЖИЯ
 GUN: CUSTOM	ОРУЖИЕ: СВОЁ
@@ -1381,6 +1405,7 @@ ITS STYLE: SAME AS ABOVE	ЕГО СТИЛЬ: КАК ВЫШЕ
 ITS STYLE: T	ЕГО СТИЛЬ: T
 IVO	IVO
 Input	Ввод
+JESTER	ШУТ
 JOIN A SERVER, PLAY BOTS OR HOST YOUR OWN	ЗАЙДИТЕ НА СЕРВЕР, СЫГРАЙТЕ С БОТАМИ ИЛИ СОЗДАЙТЕ СВОЙ
 JOIN A TEAM FROM THE MENU (ESC)	ВСТУПИТЕ В КОМАНДУ ЧЕРЕЗ МЕНЮ (ESC)
 JOIN GAME	ВОЙТИ В ИГРУ
@@ -1437,6 +1462,7 @@ KILLED	УБИТ
 KILLED BY	УБИТ ИГРОКОМ
 KILLING SPREE	СЕРИЯ УБИЙСТВ
 KILLS	УБИЙ.
+KING	КОРОЛЬ
 KING OF THE HILL	ЦАРЬ ГОРЫ
 KING OF THE HILL - stand on the hill with no enemy on it to score a point a second. First to 100.	ЦАРЬ ГОРЫ - стойте на холме без врагов, чтобы получать очко в секунду. До 100.
 KNIFE	НОЖ
@@ -1564,6 +1590,7 @@ LOW LATENCY: ULTRA	НИЗКАЯ ЗАДЕРЖКА: УЛЬТРА
 LOW LATENCY: ULTRA STARTS EACH FRAME THIS EARLY;	НИЗКАЯ ЗАДЕРЖКА: УЛЬТРА НАЧИНАЕТ КАЖДЫЙ КАДР НАСТОЛЬКО РАНЬШЕ;
 LOWER RATES: LESS CPU AND UPLOAD	НИЖЕ ЧАСТОТА: МЕНЬШЕ ЦП И ОТДАЧИ
 LOWER: SLOWER WHILE SCOPED	НИЖЕ: МЕДЛЕННЕЕ В ПРИЦЕЛЕ
+LUMBERJACK	ЛЕСОРУБ
 Latch	Latch
 MAGENTA	ПУРПУРНЫЙ
 MAKE	СОЗД.
@@ -1583,10 +1610,12 @@ MAPS FOLDER	ПАПКА КАРТ
 MAPS KEPT	КАРТЫ ЦЕЛЫ
 MAPS MARKED "NOT FOR THIS MODE" MAY NOT WORK IN IT	КАРТЫ С ПОМЕТКОЙ «НЕ ДЛЯ ЭТОГО РЕЖИМА» МОГУТ НЕ РАБОТАТЬ В НЁМ
 MAPS YOU SAVE IN THE EDITOR SHOW HERE	КАРТЫ, СОХРАНЁННЫЕ В РЕДАКТОРЕ, ПОЯВЯТСЯ ЗДЕСЬ
+MARINE	МОРПЕХ
 MARK COLOR	ЦВЕТ МЕТКИ
 MARK TIME	ВРЕМЯ МЕТКИ
 MARKER OPACITY	ПРОЗРАЧН. МАРКЕРА
 MARKER SIZE	РАЗМЕР МАРКЕРА
+MARKSMAN	СТРЕЛОК
 MAT4	MAT4
 MATCH	МАТЧ
 MATCH OVER	МАТЧ ОКОНЧЕН
@@ -2197,6 +2226,7 @@ MAX (0=AUTO)	МАКС. (0=АВТО)
 MAX PING	МАКС. PING
 MAX PLAYERS	МАКС. ИГРОКОВ
 MB (OFFICIAL MAPS SHIP BAKED)	МБ (ОФИЦИАЛЬНЫЕ КАРТЫ УЖЕ ЗАПЕЧЕНЫ)
+MEDIC	МЕДИК
 MEDIUM	СРЕДНЕ
 MEDIUM BOTS	СРЕДНИЕ БОТЫ
 MENU (ESC)	МЕНЮ (ESC)
@@ -2209,9 +2239,11 @@ MENUS	МЕНЮ
 METER SCALE	МАСШТАБ ШКАЛЫ
 METER TICKS	ДЕЛЕНИЯ ШКАЛЫ
 MILO	MILO
+MIME	МИМ
 MIN # US	МИН. # МКС
 MIN FPS (WORST FRAME)	МИН. FPS (ХУДШИЙ КАДР)
 MINE	МОЙ
+MINER	ШАХТЁР
 MINIMIZE ON ALT-TAB	СВОРАЧИВАТЬ ПРИ ALT-TAB
 MIRROR	ОТРАЗИТЬ
 MIRROR X	ОТРАЗИТЬ X
@@ -2261,6 +2293,8 @@ MOVEMENT TECH	ТЕХНИКА ПЕРЕДВИЖЕНИЯ
 MS	МС
 MULTI POINT	МУЛЬТИТОЧКА
 MULTI POINT - attackers take the points in order (A, B, C...). Only they capture; a defender on the point holds it. Each point taken adds 90 s and moves both teams' spawns forward. Each team attacks once.	МУЛЬТИТОЧКА - атакующие берут точки по порядку (A, B, C...). Захватывают только они; защитник на точке удерживает её. Каждая взятая точка добавляет 90 с и сдвигает спавны обеих команд вперёд. Каждая команда атакует по разу.
+MUMMY	МУМИЯ
+MUSHROOM	ГРИБ
 MUTE	ЗАГЛ.
 MUTE IN BACKGROUND	БЕЗ ЗВУКА В ФОНЕ
 MUTED	ЗАГЛУШ.
@@ -2505,12 +2539,14 @@ PAYLOAD	ВАГОНЕТКА
 PAYLOAD - attackers push the cart along its track by standing next to it; defenders stop it. Checkpoints along the track add time and stop it rolling back. Each team attacks once.	ВАГОНЕТКА - атакующие толкают вагонетку по пути, стоя рядом; защитники её останавливают. Чекпоинты на пути добавляют время и не дают ей откатиться. Каждая команда атакует по разу.
 PAYLOAD CONTESTED	ВАГОНЕТКА ОСПАРИВАЕТСЯ
 PAYLOAD PATH POINT	ТОЧКА ПУТИ ВАГОНЕТКИ
+PENGUIN	ПИНГВИН
 PER MODE	ПО РЕЖИМАМ
 PER WEAPON	ПО ОРУЖИЮ
 PERCEPTUAL	ПЕРЦЕПТИВНЫЙ
 PERF STATS	СТАТ. ПРОИЗВ.
 PERFORMANCE	ПРОИЗВОДИТ.
 PERFORMANCE CHECK	ПРОВЕРКА ПРОИЗВОДИТЕЛЬНОСТИ
+PHARAOH	ФАРАОН
 PHYSICS	ФИЗИКА
 PIA	PIA
 PICK A FILE TO IMPORT	ВЫБЕРИТЕ ФАЙЛ ДЛЯ ИМПОРТА
@@ -2520,6 +2556,7 @@ PICK IT IN WINDOWS' GRAPHICS SETTINGS	ВЫБЕРИТЕ ЕЁ В НАСТРОЙК�
 PICK VSYNC: LATENT SYNC (VIDEO + AUDIO) FIRST;	ВЫБОР VSYNC: СНАЧАЛА LATENT SYNC (ВИДЕО + ЗВУК);
 PICTURE	ИЗОБР.
 PICTURES: PICTURES/QUARK IN YOUR HOME FOLDER	ИЗОБРАЖЕНИЯ: PICTURES/QUARK В ДОМАШНЕЙ ПАПКЕ
+PIMP	СУТЕНЁР
 PING	PING
 PING #	PING #
 PING # MS  LOSS #%	PING # МС  ПОТЕРИ #%
@@ -2530,6 +2567,7 @@ PING: < 50	PING: < 50
 PING: ANY	PING: ЛЮБОЙ
 PIRATE	ПИРАТ
 PITCH	ТАНГАЖ
+PLAGUEDOC	ЧУМНОЙ ДОКТОР
 PLAY	ИГРАТЬ
 PLAY A RUN TO SEE YOUR BESTS HERE	СЫГРАЙТЕ, ЧТОБЫ УВИДЕТЬ ЗДЕСЬ СВОИ РЕКОРДЫ
 PLAY IT	СЫГРАТЬ
@@ -2543,6 +2581,7 @@ PLAYER > MORE SETS THE MENU ACCENT	ИГРОК > ЕЩЁ ЗАДАЁТ АКЦЕНТ
 PLAYER ANIMATIONS	АНИМАЦИИ ИГРОКОВ
 PLAYER BASED	НА ИГРОКАХ
 PLAYER JOINS	ИГРОК ЗАШЁЛ
+PLAYER MODEL	МОДЕЛЬ ИГРОКА
 PLAYER MODEL:	МОДЕЛЬ ИГРОКА:
 PLAYER OUTLINE WIDTH	ТОЛЩИНА КОНТУРА ИГРОКА
 PLAYER SHADOWS	ТЕНИ ИГРОКОВ
@@ -2597,6 +2636,8 @@ PROJECTILE SPEED	СКОР. СНАРЯДА
 PUBLIC	ОТКРЫТ.
 PUBLIC lists the server on the internet server list (off: friends join with your IP, shown on the host screen). Games on your network show up for everyone on it.	ПУБЛИЧНЫЙ показывает сервер в интернет-списке (выкл: друзья заходят по вашему IP, он на экране хоста). Игры в вашей сети видны всем в ней.
 PULSE	ПУЛЬС
+PUMPKIN	ТЫКВА
+PUNK	ПАНК
 PUSH THE PAYLOAD	ТОЛКАЙТЕ ВАГОНЕТКУ
 PUSH THE PAYLOAD TO THE ENEMY END	ДОТОЛКАЙТЕ ВАГОНЕТКУ ДО КОНЦА ВРАГА
 PUT .QBRAIN FILES IN THE BOTS FOLDER TO PICK ONE	ПОЛОЖИТЕ ФАЙЛЫ .QBRAIN В ПАПКУ BOTS, ЧТОБЫ ВЫБРАТЬ
@@ -2783,6 +2824,7 @@ ROCKET SUPER	РАКЕТНЫЙ СУПЕР
 ROCKET, LASER AND KNIFE	РАКЕТА, ЛАЗЕР И НОЖ
 ROCKETS AND STICKIES - NO SELF DAMAGE	РАКЕТЫ И ЛИПУЧКИ - БЕЗ УРОНА СЕБЕ
 ROCKETS ONLY	ТОЛЬКО РАКЕТЫ
+ROCKSTAR	РОК-ЗВЕЗДА
 ROLL	КРЕН
 ROOM	КОМН.
 ROPE COLOR	ЦВЕТ ТРОСА
@@ -2808,6 +2850,7 @@ ROUND WON	РАУНД ВЫИГРАН
 ROUND YOU AT ONE HEIGHT, CHANGING SPEED	ВОКРУГ ВАС НА ОДНОЙ ВЫСОТЕ, С МЕНЯЮЩЕЙСЯ СКОРОСТЬЮ
 ROUNDS	РАУНДЫ
 ROWS #-# OF # (WHEEL)	СТРОКИ #-# ИЗ # (КОЛЕСО)
+ROWS #-# OF # - WHEEL OR ARROWS TO SCROLL	СТРОКИ #-# ИЗ # - КОЛЕСО ИЛИ СТРЕЛКИ ДЛЯ ПРОКРУТКИ
 ROWS #-# OF # - WHEEL TO SCROLL	СТРОКИ #-# ИЗ # - КОЛЕСО ДЛЯ ПРОКРУТКИ
 RPS BY MOUSE	КНБ МЫШЬЮ
 RPS BY MOUSE: CLICK A TIEBREAK CARD TO THROW IT	КНБ МЫШЬЮ: КЛИКНИТЕ ПО КАРТЕ ТАЙБРЕЙКА, ЧТОБЫ ВЫБРОСИТЬ
@@ -2825,6 +2868,7 @@ RUN FORWARD	БЕГИ ВПЕРЁД
 RUN NAME	ИМЯ ЗАПУСКА
 RUN SPEED	СКОРОСТЬ БЕГА
 RUN, JUMP THE HURDLES, REACH THE GLOWING LINE.	БЕГИ, ПЕРЕПРЫГИВАЙ БАРЬЕРЫ, ДОБЕРИСЬ ДО СВЕТЯЩЕЙСЯ ЛИНИИ.
+RUNNER	БЕГУН
 RUNS	ЗАПУСК.
 Ranked games use the default model, HUD and controls and 10 ms interpolation, so everyone plays the same game.	В рейтинговых играх модель, HUD и управление по умолчанию и интерполяция 10 мс, чтобы все играли в одну и ту же игру.
 Restore	Restore
@@ -2834,6 +2878,7 @@ SAFE: OK BLUE, ERRORS ORANGE; IT: TAG / HIDE'S	НАДЁЖНО: ОК СИНИЙ, 
 SAME	ТОТ ЖЕ
 SAME AS FPS LIMIT	КАК ЛИМИТ FPS
 SAME DPI: THE SAME TURN PER INCH OF MOUSE	ТОТ ЖЕ DPI: ТОТ ЖЕ ПОВОРОТ НА ДЮЙМ МЫШИ
+SAMURAI	САМУРАЙ
 SATURATION	НАСЫЩЕННОСТЬ
 SATURATION 0: BLACK AND WHITE	НАСЫЩЕННОСТЬ 0: ЧЁРНО-БЕЛОЕ
 SATURATION: THEIR COLOUR ONLY, 0 GREY TO 2 VIVID	НАСЫЩЕННОСТЬ: ТОЛЬКО ИХ ЦВЕТ, 0 СЕРЫЙ – 2 ЯРКИЙ
@@ -2855,6 +2900,7 @@ SAY:	ЧАТ:
 SCALAR	СКАЛЯР
 SCALE: X2 TAKES TWICE THE SPEED TO FILL	МАСШТАБ: X2 - НУЖНА ВДВОЕ БОЛЬШАЯ СКОРОСТЬ
 SCANOUT TO THE CROSSHAIR (EST)	ВЫВОД ДО ПРИЦЕЛА (ОЦЕНКА)
+SCARECROW	ПУГАЛО
 SCI-FI / DECOR	SCI-FI / ДЕКОР
 SCISSORS	НОЖНИЦЫ
 SCOPE OVERLAY	ОВЕРЛЕЙ ПРИЦЕЛА
@@ -2952,6 +2998,7 @@ SIZING	МАСШТ.
 SIZING: EXACT PIXELS	МАСШТ.: ТОЧНЫЕ ПИКСЕЛИ
 SIZING: SCALE WITH RESOLUTION	МАСШТАБИРОВАНИЕ: ПО РАЗРЕШЕНИЮ
 SIZZLE	ШИПЕНИЕ
+SKELETON	СКЕЛЕТ
 SKIP	ПРОПУСТИТЬ
 SKIP IT	ПРОПУСК
 SKIP LESSON	ПРОПУСТИТЬ УРОК
@@ -2979,6 +3026,7 @@ SNIPER SCOPE	СНАЙП. ПРИЦЕЛ
 SNIPER ZOOM FOV	FOV ЗУМА СНАЙПЕРКИ
 SNIPERS - ANY HIT KILLS	СНАЙПЕРЫ - УБИВАЕТ ЛЮБОЕ ПОП.
 SNIPERS ONLY	ТОЛЬКО СНАЙПЕРКИ
+SNOWMAN	СНЕГОВИК
 SOCD	SOCD
 SORT	СОРТ.
 SORT BY	СОРТ. ПО
@@ -3110,6 +3158,7 @@ STYLE: ICON + BAR	СТИЛЬ: ЗНАЧОК + ПОЛОСА
 STYLE: NUMBER	СТИЛЬ: ЧИСЛО
 STYLE: T	СТИЛЬ: T
 SUBTRACT	ВЫЧЕСТЬ
+SUMO	СУМОИСТ
 SUPER	СУПЕР
 SUPER CHAINING	ЦЕПОЧКА СУПЕРОВ
 SUPER DASH	СУПЕРРЫВОК
@@ -3120,6 +3169,7 @@ SURE?	ТОЧНО?
 SURE? QUIT	ТОЧНО? ВЫЙТИ
 SURF	СЁРФ
 SURFACES	ПОВЕРХНОСТИ
+SURFER	СЁРФЕР
 SW	SW
 SWAP	СМЕНА
 SWAP FIRE	СМЕНА ОГНЯ
@@ -3177,7 +3227,6 @@ TEAM COLORS:	ЦВЕТА КОМАНД:
 TEAM COLORS: CUSTOM	ЦВЕТА КОМАНД: СВОИ
 TEAM MODEL	МОДЕЛЬ КОМАНДЫ
 TEAM MODEL:	МОДЕЛЬ КОМАНДЫ:
-TEAM MODEL: THEIR OWN	МОДЕЛЬ КОМАНДЫ: ИХ СОБСТВЕННАЯ
 TEAM OUTLINE	КОНТУР КОМАНДЫ
 TEAM OUTLINE:	КОНТУР КОМАНДЫ:
 TEAM PANEL	ПАНЕЛЬ КОМАНДЫ
@@ -3258,6 +3307,7 @@ THE SHARE OF THE MODE'S MAX HEALTH	ДОЛЯ МАКС. ЗДОРОВЬЯ РЕЖИ�
 THE TASKBAR BUTTON FLASHES	КНОПКА НА ПАНЕЛИ ЗАДАЧ МИГАЕТ
 THE WHOLE STREAM POPS UNDER YOU. HOLD IT: ANOTHER EVERY 1.8 S	ВЕСЬ ПОТОК ЛОПАЕТСЯ ПОД ТОБОЙ. ДЕРЖИ: ЕЩЁ ОДИН КАЖДЫЕ 1.8 С
 THE WINDOW'S SIZE AND PLACE ARE KEPT	РАЗМЕР И ПОЛОЖЕНИЕ ОКНА СОХРАНЯЮТСЯ
+THEIR OWN	ИХ СОБСТВЕННАЯ
 THEIRS	ИХ
 THEME.CFG LINE	СТРОКА THEME.CFG
 THEN	ПОТОМ
@@ -3319,6 +3369,7 @@ TONE CURVE OFF: FLAT, LINEAR COLOUR; CLEAN: NO	ТОНОВАЯ КРИВАЯ ВЫ�
 TOP #  BOTTOM # US (AVG +-50% OR WIDER)	ВЕРХ #  НИЗ # US (СРЕД. +-50% ИЛИ ШИРЕ)
 TOP RIGHT, WITHOUT A WIDGET (F3 HAS MORE)	СПРАВА СВЕРХУ, БЕЗ ВИДЖЕТА (В F3 БОЛЬШЕ)
 TOTAL K / D	ВСЕГО У / С
+TOURIST	ТУРИСТ
 TOURNEY	ТУРНИР
 TOURNEY - a single-elimination bracket of 1v1s; everyone else spectates the match in progress.	ТУРНИР - сетка 1v1 на выбывание; остальные наблюдают за текущим матчем.
 TOURNEY BRACKET	ТУРНИРНАЯ СЕТКА
@@ -3356,6 +3407,7 @@ TUTORIAL	ОБУЧЕНИЕ
 TUTORIAL -	ОБУЧЕНИЕ -
 TUTORIAL - {}	ОБУЧЕНИЕ - {}
 TUTORIAL COMPLETE	ОБУЧЕНИЕ ПРОЙДЕНО
+TVHEAD	ТЕЛЕГОЛОВА
 TWO	ДВА
 TWO BALLS ON 9 SPOTS, 20 HP	ДВА ШАРА НА 9 ТОЧКАХ, 20 HP
 TWO TINY BALLS	ДВА КРОШЕЧНЫХ ШАРА
@@ -3453,6 +3505,7 @@ VIDEO 8	ВИДЕО 8
 VIDEO 9	ВИДЕО 9
 VIDEO: DEVICES	ВИДЕО: УСТРОЙСТВА
 VIEW	ВИД
+VIKING	ВИКИНГ
 VISUALIZE SOUNDS	ВИЗУАЛИЗАЦИЯ ЗВУКОВ
 VOICE	ГОЛОС
 VOICE:	ГОЛОС:
@@ -3532,6 +3585,7 @@ WEAPON:	ОРУЖИЕ:
 WEAPONS	ОРУЖИЕ
 WEAPONS (THEIR NUMBER KEYS STILL WORK)	ОРУЖИЕ (КЛАВИШИ С ЦИФРАМИ РАБОТАЮТ)
 WELCOME TO QUARK	ДОБРО ПОЖАЛОВАТЬ В QUARK
+WEREWOLF	ОБОРОТЕНЬ
 WHAT THE BOTS PLAY: .QBRAIN FILES IN THE BOTS FOLDER	ЧЕМ ИГРАЮТ БОТЫ: ФАЙЛЫ .QBRAIN В ПАПКЕ BOTS
 WHEEL DN	WHEEL DN
 WHEEL UP	WHEEL UP
@@ -3597,6 +3651,7 @@ YELLOW	ЖЁЛТЫЙ
 YES	ДА
 YES #  NO #  OF #   F1 YES / F2 NO   #s	ЗА #  ПРОТИВ #  ИЗ #   F1 ЗА / F2 ПРОТИВ   #с
 YET REACHED IN YOUR ENEMY COLOUR	ЕЩЁ НЕ ДОСТИГНУТЫ - ЦВЕТОМ ВРАГА
+YETI	ЙЕТИ
 YOU DIED	ВЫ ПОГИБЛИ
 YOU FLY AT EACH OTHER, UP TO 24 M/S, FOR UP TO 3 S	ВЫ ЛЕТИТЕ ДРУГ К ДРУГУ, ДО 24 М/С, ДО 3 С
 YOU HAVE THE BOMB - PLANT AT A SITE	БОМБА У ВАС - ЗАЛОЖИТЕ НА ТОЧКЕ
@@ -3618,6 +3673,7 @@ YOUR HOOK CATCHES PLAYERS TOO: IT PULLS YOU BOTH TOGETHER. CATCH THEM, OR DRAG T
 YOUR KILLS	ВАШИ УБИЙСТВА
 YOUR MATCH:  # SHOTS  # HITS  #% ACCURACY  # DAMAGE  BEST STREAK #	ВАШ МАТЧ:  # ВЫСТРЕЛОВ  # ПОПАДАНИЙ  #% ТОЧНОСТЬ  # УРОНА  ЛУЧШАЯ СЕРИЯ #
 YOUR NAME (CHAT AND SCOREBOARD)	ВАШЕ ИМЯ (ЧАТ И ТАБЛИЦА СЧЁТА)
+YOUR OWN FILE	ВАШ ФАЙЛ
 YOUR OWN MODEL FILE: NO PREVIEW HERE	ВАШ ФАЙЛ МОДЕЛИ: ПРЕВЬЮ НЕТ
 YOUR OWN ROCKET THROWS YOU. HERE IT DOES NO DAMAGE.	ТВОЯ РАКЕТА ПОДБРАСЫВАЕТ ТЕБЯ. ЗДЕСЬ БЕЗ УРОНА.
 YOUR OWN: PUT .TTF / .OTF FILES IN MODS/FONTS,	СВОИ: КЛАДИТЕ ФАЙЛЫ .TTF / .OTF В MODS/FONTS,
@@ -4032,6 +4088,8 @@ ping up on # of # players	ping вырос у # из # игроков
 pinned version	pinned version
 pinned version {} (installed: {}) - press INSTALL to switch to it	закреплённая версия {} (установлена: {}) - нажмите УСТАНОВИТЬ, чтобы перейти на неё
 pinned version {} not found (release list incomplete) - installed: {}	закреплённая версия {} не найдена (список выпусков неполный) - установлена: {}
+pivot must be 3 numbers within 64 m	pivot - это 3 числа в пределах 64 м
+pivot without a part	pivot без part
 placed the group from the clipboard	группа вставлена из буфера
 point # taken by team #	точка # взята командой #
 poll events	опрос событий
@@ -4242,6 +4300,7 @@ ungrouped into	разгруппировано в
 unknown bone "	неизвестная кость "
 unknown mode	неизвестный режим
 unknown mode '	неизвестный режим '
+unknown part "	неизвестная часть "
 unknown ruleset	неизвестный набор правил
 unknown setting '	неизвестная настройка '
 unknown slot "	неизвестный слот "

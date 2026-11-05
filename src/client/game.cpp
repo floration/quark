@@ -2643,17 +2643,23 @@ void Game::drawWorld(float alpha) {
 
     Vec3 dbgBombPos;   // (--models in bomb mode: a dropped bomb in front of the lineup, which carries it)
     const bool dbgBomb = opts_.debugModels && alive && ms.mode == MODE_BOMB;
+    // (--models: the lineup is a batch of kLineup models in the last kLineup player slots, --modelpage N the Nth batch:
+    // more models than player slots, 64 planned, never need more slots)
+    constexpr int kLineup = 11;
+    static_assert(kLineup < kMaxPlayers, "the lineup's slots are the last player slots");
+    const int lineupFirst = std::min(opts_.debugModelPage, (kPlayerModels - 1) / kLineup) * kLineup;
+    const int lineupN = std::min(kLineup, kPlayerModels - lineupFirst);
     if (opts_.debugModels && alive) { // model lineup for screenshots: the last slots, 5 m ahead, facing you
         Vec3 f = {-std::sin(yaw_), 0, -std::cos(yaw_)}, rt = {std::cos(yaw_), 0, -std::sin(yaw_)};
         dbgBombPos = net_.smoothedPos(alpha) + f * 3.0f;
-        for (int k = 0; k < kPlayerModels; k++) {
-            auto& ip = players[kMaxPlayers - kPlayerModels + k];
+        for (int k = 0; k < lineupN; k++) {
+            auto& ip = players[kMaxPlayers - kLineup + k];
             ip.valid = true;
             ip.snap = PlayerSnap{};
-            ip.snap.id = (uint8_t)(kMaxPlayers - kPlayerModels + k);
+            ip.snap.id = (uint8_t)(kMaxPlayers - kLineup + k);
             ip.snap.flags = PS_ALIVE | (k % 2 ? PS_TEAM_B : 0);
             ip.snap.pos = net_.smoothedPos(alpha) + f * 5.0f + rt * ((k - 2) * 1.5f);
-            if (opts_.debugWalk) ip.snap.pos = net_.smoothedPos(alpha) + f * 7.0f + rt * ((k - 5) * 1.15f);   // (all 11 in view)
+            if (opts_.debugWalk) ip.snap.pos = net_.smoothedPos(alpha) + f * 7.0f + rt * ((k - 5) * 1.15f);   // (all 11 of the batch in view)
             ip.snap.yaw = yaw_ + 3.14159265f;
             if (opts_.debugWalk) ip.snap.yaw = yaw_ - 1.5707963f;   // (side-on: the strides show)
             if (dbgBomb) { ip.snap.flags |= PS_HASBOMB; ip.snap.yaw -= 2.3f; }   // (turned away: the backpack shows)
@@ -2698,12 +2704,12 @@ void Game::drawWorld(float alpha) {
             const float adt = at.init ? (float)(time_ - animT_[i]) : 0.0f;
             animT_[i] = time_;
             animStep(at, pos / bs, yaw, pitch, ground, adt);   // (in model metres: a double-size body steps as far)
-            if (opts_.debugModels && i >= kMaxPlayers - kPlayerModels) {   // (--models: the lineup runs in place, each a step apart)
-                const int k = i - (kMaxPlayers - kPlayerModels);
+            if (opts_.debugModels && i >= kMaxPlayers - kLineup) {   // (--models: the lineup runs in place, each a step apart)
+                const int k = i - (kMaxPlayers - kLineup);
                 at.s.speed = k % 3 == 2 ? 3.0f : 7.0f;
                 at.s.phase = (float)std::fmod(time_ * 1.6 + k * 0.09, 1.0);
                 at.s.legYaw = k % 4 == 1 ? 0.6f : 0.0f;
-                at.s.air = k == kPlayerModels - 1 ? 1.0f : 0.0f;
+                at.s.air = k == kLineup - 1 ? 1.0f : 0.0f;
             }
         }
         if (self && alive && !cfg_.ownShadow) continue;   // (MORE 4: OWN SHADOW off: your unseen body isn't drawn at all)
@@ -2720,7 +2726,7 @@ void Game::drawWorld(float alpha) {
         // the player model (cosmetic: every model fits the same hitbox); ranked / time trial: the default for everyone
         // (GAMEPLAY > MORE: ENEMY MODEL / TEAM MODEL draw every enemy / teammate as one model)
         const bool friendly = !self && isFriendly(i);
-        const int pm = ranked ? 0 : opts_.debugModels && i >= kMaxPlayers - kPlayerModels ? i - (kMaxPlayers - kPlayerModels)
+        const int pm = ranked ? 0 : opts_.debugModels && i >= kMaxPlayers - kLineup ? lineupFirst + i - (kMaxPlayers - kLineup)
                      : cfg_.enemyModel >= 0 && !self && !friendly ? cfg_.enemyModel
                      : cfg_.teamModel >= 0 && friendly ? cfg_.teamModel : net_.playerModel(i);
         const ModelMesh* ov = modelOverride(MODEL_PLAYER, pm);

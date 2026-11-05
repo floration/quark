@@ -273,7 +273,10 @@ constexpr size_t kMaxOverrideBoxes = 256;         // per box model: more is refu
 // The owner's glTF overrides of every model (loadModelOverrides, gltf.h), loaded once at startup: the shipped ones
 // (assets/overrides/, every player has them) and yours (the per-user overrides folder). Ranked and time trials draw
 // the shipped ones only: your own could make enemies bigger or brighter for you alone. Nothing loaded: all null.
-constexpr int kMaxModelsPerKind = kProjectileModels;   // (the most models of one kind)
+// (the most models of one kind: the 64 players; ModelOverrides keeps two pointers a slot. More players: raise it)
+constexpr int kMaxModelsPerKind = 64;
+static_assert(kPlayerModels <= kMaxModelsPerKind && kProjectileModels <= kMaxModelsPerKind && WPN_COUNT <= kMaxModelsPerKind,
+              "ModelOverrides holds kMaxModelsPerKind models of a kind");
 struct ModelOverrides {
     std::unique_ptr<ModelMesh> shipped[MODEL_KINDS][kMaxModelsPerKind], user[MODEL_KINDS][kMaxModelsPerKind];
     // what to draw for a model (null: its box model); shippedOnly: ranked (fairRules)

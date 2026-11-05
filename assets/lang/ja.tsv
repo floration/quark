@@ -1,5 +1,6 @@
 " matches more than one player: use the id (status lists them)	" は複数のプレイヤーに一致します: IDを使用してください (statusで一覧表示)
 ","color":	","color":
+","pivot":	","pivot":
 "IT" IN YOUR ENEMY COLOUR, THE REST YOUR TEAM'S	「鬼」は敵カラー、他は味方カラー
 "path"	"path"
 # # # TO # # #	# # # から # # #
@@ -237,6 +238,7 @@ ADVANCED	上級
 ADVANCED  >	上級  >
 ADVANCED > BOT BRAIN: what your bots play: the built-in brain, or a .qbrain file from the bots folder in your data folder. A file that doesn't compile shows its error line and the bots play the built-in brain. Never in ranked.	上級 > ボットAI: ボットの戦い方: 内蔵AI、またはデータフォルダ内の bots フォルダにある .qbrain ファイル。コンパイルできないファイルはエラー行を表示し、ボットは内蔵AIで戦います。ランクでは使われません。
 AGAIN (R)	もう一度 (R)
+AGENT	エージェント
 AHEAD	リード
 AIM 15 DEGREES DOWN: EVERY LANDING IS A HYPER	15 度下を狙う: 着地のたびにハイパー
 AIM A LITTLE DOWN	少し下を狙う
@@ -264,6 +266,7 @@ AIR CONTROL	空中制御
 AIR DRIFT (UNDER RUN SPEED)	空中ドリフト (走行速度以下)
 AIR ROCKET	エアロケット
 AIR STRAFE CAP	空中ストレイフ上限
+ALIEN	エイリアン
 ALL	すべて
 ALL MODES	全モード
 ALL OFF	すべてオフ
@@ -320,6 +323,7 @@ AS THICK	同じ太さ
 ASIDE: A FRAME LESS LAG IN A WINDOW	補足: ウィンドウで1フレーム遅延減
 ASK "SURE?" FIRST: CLICK AGAIN	先に確認: もう一度クリック
 ASSUMED	推定
+ASTRONAUT	宇宙飛行士
 AT # # #	位置 # # #
 AT CAMERA	カメラ位置
 AT SPEED, HOOK A PILLAR BESIDE YOU: THE HOOK TURNS YOU ROUND IT AND YOU KEEP YOUR SPEED.	速度に乗って横の柱にフック: 柱を回るように曲がり、速度は保たれる。
@@ -396,6 +400,7 @@ BAR W	バー 幅
 BARLOW CONDENSED	BARLOW CONDENSED
 BASIC	基本
 BEBAS NEUE	BEBAS NEUE
+BEE	ハチ
 BEGINNER	初級
 BEHIND	ビハインド
 BEHIND (0: AS IN FRONT)	背後 (0: 前方と同じ)
@@ -493,6 +498,7 @@ BUILT FOR	対応モード
 BUILT FOR sets the mode the map is made for; the MODES grid sets what it's offered for. PLAYABLE AS shows what it has the pieces for (team modes need A and B spawns).	対応モードはマップの想定モードを設定; モード表は提供先を設定します。プレイ可能は必要な要素が揃っているモードを表示 (チームモードにはAとBのスポーンが必要)。
 BUILT FOR:	対応モード:
 BUILT FOR: ANY	対応モード: すべて
+BUNNY	ウサギ
 BUNNY HOP WITH ONE STRAFE KEY AT A TIME, TURNING WITH IT: SPEED WITH NO DASH.	横移動キーを 1 つずつ押してバニーホップし、その方向へ回る: ダッシュなしで加速。
 BURSTS UP TO 24 M/S ON A 180 WALL	180 の壁で最大 24 M/S のダッシュ
 BURSTS UP TO 24 M/S ON THE WALL	壁で最大 24 M/S のダッシュ
@@ -518,6 +524,8 @@ CAPTIONS: THE ANNOUNCER AS TEXT TOO	字幕: アナウンサーをテキストで
 CAPTURE	占拠
 CAPTURE THE HILL	ヒルを占拠
 CART	カート
+CAT	ネコ
+CAVEMAN	原始人
 CEILING HANG	天井ぶら下がり
 CHAMPION	チャンピオン
 CHANGE ANYTHING AFTER (IT STAYS)	後から自由に変更可 (保持されます)
@@ -543,6 +551,7 @@ CHECK FILES	ファイルを確認
 CHECKING...	確認中...
 CHECKPOINT	チェックポイント
 CHECKPT	CP
+CHEF	シェフ
 CHOOSE	選択
 CHOOSE -	選択 -
 CHOOSE A MAP FOR	マップを選択:
@@ -577,6 +586,7 @@ CLOSEST FREE MATCH: OVERWATCH	最も近い一致: OVERWATCH
 CLOSEST FREE MATCH: QUAKE	最も近い一致: QUAKE
 CLOSEST FREE MATCH: TF2	最も近い一致: TF2
 CLOSEST FREE MATCH: TF2 SECONDARY	最も近い一致: TF2 セカンダリ
+CLOWN	ピエロ
 CM PER 360	CM/360
 CM PER 360: MOUSE TRAVEL FOR ONE FULL TURN	CM/360: 1回転に必要なマウス移動距離
 COLOR	色
@@ -721,6 +731,7 @@ CUSTOM WIDGETS: build your own HUD pieces (number, bar, icon) from any value, dr
 CUSTOM: PICK OUTLINE "CUSTOM" ON PLAYER; SAME: ITS	カスタム: プレイヤーで輪郭「カスタム」を選択; 同じ: その
 CYAN	シアン
 CYAN / RED	シアン / 赤
+CYBORG	サイボーグ
 D3DKMTCloseAdapter	D3DKMTCloseAdapter
 D3DKMTGetProcessSchedulingPriorityClass	D3DKMTGetProcessSchedulingPriorityClass
 D3DKMTGetScanLine	D3DKMTGetScanLine
@@ -732,6 +743,7 @@ DAMAGE FLASH	ダメージフラッシュ
 DAMAGE NUMBER COLOR	ダメージ数値の色
 DAMAGE NUMBER SIZE	ダメージ数値のサイズ
 DAMAGE NUMBERS	ダメージ数値
+DANCER	ダンサー
 DASH	ダッシュ
 DASH + GRAPPLE	ダッシュ + グラップル
 DASH AND JUMP TOGETHER	ダッシュとジャンプを同時に
@@ -797,6 +809,7 @@ DEMO RATE	デモレート
 DEMO RATE: 62.5 HZ	デモレート: 62.5 HZ
 DEMO RATE: FULL	デモレート: フル
 DEMO SAVED - CREATE > DEMOS	デモを保存しました - 作成 > デモ
+DEMOLITION	爆破兵
 DEMOS	デモ
 DEPTH	奥行き
 DESC	降順
@@ -807,6 +820,7 @@ DIFFICULTY: ADVANCED	難易度: 上級
 DIFFICULTY: BEGINNER	難易度: 初級
 DIFFICULTY: EXPERT	難易度: エキスパート
 DIFFICULTY: INTERMEDIATE	難易度: 中級
+DINO	恐竜
 DISABLE CHAT	チャット無効
 DISCONNECT	切断
 DISCORD	DISCORD
@@ -822,6 +836,7 @@ DISPLAY: BORDERLESS FULLSCREEN	ディスプレイ: ボーダーレスフルス�
 DISPLAY: EXCLUSIVE FULLSCREEN	ディスプレイ: 排他フルスクリーン
 DISPLAY: WINDOWED	ディスプレイ: ウィンドウ
 DISTANCE	距離
+DIVER	ダイバー
 DMG	DMG
 DMITRI	DMITRI
 DON'T DASH NOW: A DASH ABOVE 32 M/S CAPS YOU DOWN (A HYPER ABOVE 36)	ここでダッシュしない: 32 M/S 超のダッシュは速度を抑える (ハイパーは 36 超)
@@ -912,10 +927,10 @@ ENEMY HOLDS THE HILL	敵がヒルを確保中
 ENEMY IS PUSHING	敵が押し進めている
 ENEMY MODEL	敵モデル
 ENEMY MODEL:	敵モデル:
-ENEMY MODEL: THEIR OWN	敵モデル: 本人の設定
 ENEMY OUTLINE	敵の輪郭
 ENEMY OUTLINE:	敵の輪郭:
 ENEMY WIDTH	敵の幅
+ENGINEER	エンジニア
 ENTER	ENTER
 ERROR ON LINE	エラー 行:
 ESC	ESC
@@ -923,7 +938,9 @@ ESC (CLEAR SEARCH)	ESC (検索をクリア)
 ESC TO CANCEL	ESCでキャンセル
 ESC: LESSONS	ESC: レッスン
 ESC: PAUSE / SETTINGS   R: RESTART	ESC: 一時停止 / 設定   R: リスタート
+EVERY ENEMY / TEAMMATE AS ONE MODEL (NOT IN RANKED)	全ての敵 / 味方を1つのモデルで表示 (ランク以外)
 EVERY LANDING HYPERS AGAIN AS SOON AS A DASH CHARGE IS BACK	ダッシュのチャージが戻ればすぐ、着地ごとに再びハイパー
+EVERY MODEL HAS THE SAME HITBOX - RANKED: EVERYONE IS STANDARD	全モデル同じ当たり判定 - ランク: 全員が標準
 EVERY SETTING IS BACK TO ITS DEFAULT	全設定をデフォルトに戻しました
 EVERY WEAPON, ALL MOVEMENT - NO GIMMICKS	全武器・全移動 - ギミックなし
 EVERYONE THROWS - THE LOSING SHAPE IS OUT	全員が出す - 負けた手は脱落
@@ -993,6 +1010,7 @@ FIRE AFTER A DASH, NEVER JUST BEFORE ONE: A DASH ERASES A BLAST'S PUSH	撃つの
 FIRE AND GRAPPLE TOGETHER	射撃とグラップルを同時に
 FIRE RATE	連射速度
 FIRE THE MOMENT THE DASH GOES, NEVER BEFORE: A DASH ERASES A BLAST'S PUSH	ダッシュが出た瞬間に撃つ、前は不可: ダッシュは爆風の押しを消す
+FIREFIGHTER	消防士
 FIRES THE MOMENT IT IS	準備でき次第即発射
 FIRST TO #	# 本先取
 FIX GAPS	隙間を修正
@@ -1000,6 +1018,7 @@ FIX MAP	マップを修正
 FIXED LOGO COLORS	ロゴの色を固定
 FIXED TEAMS	チーム色固定
 FIXED TEAMS: SPECTATING AND DEMOS SHOW	チーム色固定: 観戦とデモでの表示
+FLAMER	火炎兵
 FLAT LIGHTING	フラットライティング
 FLAT MAP	フラットマップ
 FLAT MAP, NO LIGHTING	フラットマップ、ライティングなし
@@ -1046,6 +1065,7 @@ FRENZY	FRENZY
 FRIENDS JOIN WITH YOUR PUBLIC IP (STREAMER MODE)	フレンドはグローバルIPで参加 (配信者モード)
 FRIENDS JOIN WITH YOUR PUBLIC IP:	フレンドはグローバルIPで参加:
 FRIENDS JOIN WITH:	フレンドの接続先:
+FROG	カエル
 FROM	から
 FROM 11.7 M UP OR MORE THE HOP IS THE BIGGEST, 15.7 M/S	11.7 M 以上からなら最大の 15.7 M/S
 FROM STANDING OR A SLOW RISE ONLY: RISING FAST, THE BUBBLES CAN'T CATCH YOU	立ち止まりかゆっくり上昇中のみ: 速く上昇中だと泡が追いつかない
@@ -1094,19 +1114,22 @@ GET 40 M UP	40 M 上がる
 GET 55 M UP	55 M 上がる
 GET 7 M UP	7 M 上がる
 GET IT WITH /link - THE CODE IS PUBLIC	/link で取得 - コードは公開されます
-GHOST	GHOST
+GHOST	ゴースト
 GHOST'S KEYS	ゴーストのキー
 GIANT SNIPERS	巨人スナイパー
 GIBS	肉片
 GL	GL
 GL {} / {}	GL {} / {}
+GLADIATOR	剣闘士
 GLASS CANNONS	グラスキャノン
 GLOW	グロー
 GLOW STRENGTH	グローの強さ
 GO	GO
 GO!	GO!
 GOAL	目標
+GOALIE	ゴールキーパー
 GODLIKE	ゴッドライク
+GOLEM	ゴーレム
 GPU	GPU
 GPU + CPU GO TO THE GAME FIRST WHILE FOCUSED	フォーカス中はGPU + CPUをゲーム優先
 GPU HUD	GPU HUD
@@ -1169,6 +1192,7 @@ GROUND FRICTION	地面摩擦
 GROUP	グループ
 GROUP FILE	グループファイル
 GROUPS	グループ
+GUARD	衛兵
 GUN COLOR	武器の色
 GUN RECOIL KICK	武器のリコイル
 GUN: CUSTOM	武器: カスタム
@@ -1381,6 +1405,7 @@ ITS STYLE: SAME AS ABOVE	スタイル: 上と同じ
 ITS STYLE: T	スタイル: T
 IVO	IVO
 Input	入力
+JESTER	道化師
 JOIN A SERVER, PLAY BOTS OR HOST YOUR OWN	サーバーに参加、ボット戦、または自分でホスト
 JOIN A TEAM FROM THE MENU (ESC)	メニュー (ESC) からチームに参加
 JOIN GAME	ゲームに参加
@@ -1437,6 +1462,7 @@ KILLED	キル
 KILLED BY	キルされた相手:
 KILLING SPREE	キリングスプリー
 KILLS	キル
+KING	王様
 KING OF THE HILL	キングオブザヒル
 KING OF THE HILL - stand on the hill with no enemy on it to score a point a second. First to 100.	キングオブザヒル - 敵のいないヒルに立つと毎秒1点。100点先取。
 KNIFE	ナイフ
@@ -1564,6 +1590,7 @@ LOW LATENCY: ULTRA	低遅延: ウルトラ
 LOW LATENCY: ULTRA STARTS EACH FRAME THIS EARLY;	低遅延: ウルトラは各フレームをこれだけ早く開始;
 LOWER RATES: LESS CPU AND UPLOAD	低レート: CPUとアップロードを削減
 LOWER: SLOWER WHILE SCOPED	低くするとスコープ中に遅く
+LUMBERJACK	きこり
 Latch	Latch
 MAGENTA	マゼンタ
 MAKE	作成
@@ -1583,10 +1610,12 @@ MAPS FOLDER	mapsフォルダ
 MAPS KEPT	マップを保持
 MAPS MARKED "NOT FOR THIS MODE" MAY NOT WORK IN IT	「このモード非対応」のマップは動作しない場合があります
 MAPS YOU SAVE IN THE EDITOR SHOW HERE	エディターで保存したマップがここに表示されます
+MARINE	海兵隊員
 MARK COLOR	マークの色
 MARK TIME	マーク表示時間
 MARKER OPACITY	マーカー不透明度
 MARKER SIZE	マーカーサイズ
+MARKSMAN	狙撃手
 MAT4	MAT4
 MATCH	試合
 MATCH OVER	試合終了
@@ -2197,6 +2226,7 @@ MAX (0=AUTO)	最大 (0=自動)
 MAX PING	最大PING
 MAX PLAYERS	最大人数
 MB (OFFICIAL MAPS SHIP BAKED)	MB (公式マップはベイク済み)
+MEDIC	衛生兵
 MEDIUM	ふつう
 MEDIUM BOTS	ノーマルボット
 MENU (ESC)	メニュー (ESC)
@@ -2209,9 +2239,11 @@ MENUS	メニュー
 METER SCALE	メーターの目盛り
 METER TICKS	メーターの刻み
 MILO	MILO
+MIME	パントマイム
 MIN # US	最小 # US
 MIN FPS (WORST FRAME)	最小FPS (最悪フレーム)
 MINE	自分
+MINER	鉱夫
 MINIMIZE ON ALT-TAB	ALT-TABで最小化
 MIRROR	反転
 MIRROR X	X反転
@@ -2261,6 +2293,8 @@ MOVEMENT TECH	移動テクニック
 MS	MS
 MULTI POINT	マルチポイント
 MULTI POINT - attackers take the points in order (A, B, C...). Only they capture; a defender on the point holds it. Each point taken adds 90 s and moves both teams' spawns forward. Each team attacks once.	マルチポイント - 攻撃側は順番にポイント (A, B, C...) を占拠。占拠できるのは攻撃側のみ; 防衛側がポイント上にいると阻止。1つ占拠ごとに90秒追加、両チームのスポーンが前進。各チーム1回ずつ攻撃。
+MUMMY	ミイラ
+MUSHROOM	キノコ
 MUTE	ミュート
 MUTE IN BACKGROUND	バックグラウンドでミュート
 MUTED	ミュート中
@@ -2505,12 +2539,14 @@ PAYLOAD	ペイロード
 PAYLOAD - attackers push the cart along its track by standing next to it; defenders stop it. Checkpoints along the track add time and stop it rolling back. Each team attacks once.	ペイロード - 攻撃側はカートの横に立って線路に沿って押す; 防衛側は阻止する。線路上のチェックポイントで時間が加算され、後退も止まる。各チーム1回ずつ攻撃。
 PAYLOAD CONTESTED	ペイロード争奪中
 PAYLOAD PATH POINT	ペイロード経路点
+PENGUIN	ペンギン
 PER MODE	モード別
 PER WEAPON	武器別
 PERCEPTUAL	知覚
 PERF STATS	パフォーマンス統計
 PERFORMANCE	パフォーマンス
 PERFORMANCE CHECK	パフォーマンスチェック
+PHARAOH	ファラオ
 PHYSICS	物理
 PIA	PIA
 PICK A FILE TO IMPORT	インポートするファイルを選択
@@ -2520,6 +2556,7 @@ PICK IT IN WINDOWS' GRAPHICS SETTINGS	WINDOWSのグラフィック設定で選�
 PICK VSYNC: LATENT SYNC (VIDEO + AUDIO) FIRST;	垂直同期を選択: まずレイテントシンク (ビデオ + オーディオ);
 PICTURE	画像
 PICTURES: PICTURES/QUARK IN YOUR HOME FOLDER	ピクチャ: ホームフォルダの PICTURES/QUARK
+PIMP	ポン引き
 PING	PING
 PING #	PING #
 PING # MS  LOSS #%	PING # MS  ロス #%
@@ -2530,6 +2567,7 @@ PING: < 50	PING: < 50
 PING: ANY	PING: 指定なし
 PIRATE	海賊
 PITCH	ピッチ
+PLAGUEDOC	ペスト医師
 PLAY	プレイ
 PLAY A RUN TO SEE YOUR BESTS HERE	プレイするとここにベスト記録が表示されます
 PLAY IT	プレイする
@@ -2543,6 +2581,7 @@ PLAYER > MORE SETS THE MENU ACCENT	プレイヤー > 詳細 でメニューの�
 PLAYER ANIMATIONS	プレイヤーアニメーション
 PLAYER BASED	プレイヤーベース
 PLAYER JOINS	プレイヤー参加
+PLAYER MODEL	プレイヤーモデル
 PLAYER MODEL:	プレイヤーモデル:
 PLAYER OUTLINE WIDTH	プレイヤー輪郭の幅
 PLAYER SHADOWS	プレイヤーの影
@@ -2597,6 +2636,8 @@ PROJECTILE SPEED	弾速
 PUBLIC	公開
 PUBLIC lists the server on the internet server list (off: friends join with your IP, shown on the host screen). Games on your network show up for everyone on it.	公開にするとインターネットのサーバーリストに掲載 (オフ: フレンドはホスト画面に表示されるIPで参加)。ネットワーク内のゲームは同じネットワークの全員に表示されます。
 PULSE	パルス
+PUMPKIN	カボチャ
+PUNK	パンク
 PUSH THE PAYLOAD	ペイロードを押せ
 PUSH THE PAYLOAD TO THE ENEMY END	ペイロードを敵陣まで押せ
 PUT .QBRAIN FILES IN THE BOTS FOLDER TO PICK ONE	.QBRAIN ファイルをbotsフォルダに置くと選択可能
@@ -2783,6 +2824,7 @@ ROCKET SUPER	ロケットスーパー
 ROCKET, LASER AND KNIFE	ロケット、レーザー、ナイフ
 ROCKETS AND STICKIES - NO SELF DAMAGE	ロケットとスティッキー - 自爆ダメージなし
 ROCKETS ONLY	ロケットのみ
+ROCKSTAR	ロックスター
 ROLL	ロール
 ROOM	部屋
 ROPE COLOR	ロープの色
@@ -2808,6 +2850,7 @@ ROUND WON	ラウンド勝利
 ROUND YOU AT ONE HEIGHT, CHANGING SPEED	同じ高さで周囲を, 速さが変わる
 ROUNDS	ラウンド
 ROWS #-# OF # (WHEEL)	行 #-# / # (ホイール)
+ROWS #-# OF # - WHEEL OR ARROWS TO SCROLL	行 #-# / # - ホイールか矢印キーでスクロール
 ROWS #-# OF # - WHEEL TO SCROLL	行 #-# / # - ホイールでスクロール
 RPS BY MOUSE	マウスでじゃんけん
 RPS BY MOUSE: CLICK A TIEBREAK CARD TO THROW IT	マウスでじゃんけん: タイブレークのカードをクリックで出す
@@ -2825,6 +2868,7 @@ RUN FORWARD	前へ走る
 RUN NAME	ラン名
 RUN SPEED	走行速度
 RUN, JUMP THE HURDLES, REACH THE GLOWING LINE.	走って、ハードルを跳び、光るラインへ。
+RUNNER	ランナー
 RUNS	ラン
 Ranked games use the default model, HUD and controls and 10 ms interpolation, so everyone plays the same game.	ランクではデフォルトのモデル、HUD、操作と10 msの補間を使用し、全員が同条件でプレイします。
 Restore	Restore
@@ -2834,6 +2878,7 @@ SAFE: OK BLUE, ERRORS ORANGE; IT: TAG / HIDE'S	安全: OKは青、エラーは�
 SAME	同じ
 SAME AS FPS LIMIT	FPS制限と同じ
 SAME DPI: THE SAME TURN PER INCH OF MOUSE	同じDPI: マウス1インチあたり同じ回転量
+SAMURAI	侍
 SATURATION	彩度
 SATURATION 0: BLACK AND WHITE	彩度 0: 白黒
 SATURATION: THEIR COLOUR ONLY, 0 GREY TO 2 VIVID	彩度: プレイヤーの色のみ、0 グレー〜2 鮮やか
@@ -2855,6 +2900,7 @@ SAY:	発言:
 SCALAR	スカラー
 SCALE: X2 TAKES TWICE THE SPEED TO FILL	スケール: X2で満タンに2倍の速度が必要
 SCANOUT TO THE CROSSHAIR (EST)	クロスヘアまでのスキャンアウト (推定)
+SCARECROW	かかし
 SCI-FI / DECOR	SF / 装飾
 SCISSORS	チョキ
 SCOPE OVERLAY	スコープオーバーレイ
@@ -2952,6 +2998,7 @@ SIZING	サイズ調整
 SIZING: EXACT PIXELS	サイズ調整: ピクセル指定
 SIZING: SCALE WITH RESOLUTION	サイズ調整: 解像度に合わせる
 SIZZLE	ジュージュー
+SKELETON	スケルトン
 SKIP	スキップ
 SKIP IT	スキップ
 SKIP LESSON	レッスンをスキップ
@@ -2979,6 +3026,7 @@ SNIPER SCOPE	スナイパースコープ
 SNIPER ZOOM FOV	スナイパーズームFOV
 SNIPERS - ANY HIT KILLS	スナイパー - 1発で即死
 SNIPERS ONLY	スナイパーのみ
+SNOWMAN	雪だるま
 SOCD	SOCD
 SORT	並べ替え
 SORT BY	並べ替え
@@ -3110,6 +3158,7 @@ STYLE: ICON + BAR	スタイル: アイコン + バー
 STYLE: NUMBER	スタイル: 数値
 STYLE: T	スタイル: T
 SUBTRACT	減算
+SUMO	力士
 SUPER	スーパー
 SUPER CHAINING	スーパーチェイン
 SUPER DASH	スーパーダッシュ
@@ -3120,6 +3169,7 @@ SURE?	本当に?
 SURE? QUIT	本当に終了?
 SURF	サーフ
 SURFACES	表面
+SURFER	サーファー
 SW	SW
 SWAP	入れ替え
 SWAP FIRE	射撃ボタン入れ替え
@@ -3177,7 +3227,6 @@ TEAM COLORS:	チームカラー:
 TEAM COLORS: CUSTOM	チームカラー: カスタム
 TEAM MODEL	味方モデル
 TEAM MODEL:	味方モデル:
-TEAM MODEL: THEIR OWN	味方モデル: 本人の設定
 TEAM OUTLINE	味方の輪郭
 TEAM OUTLINE:	味方の輪郭:
 TEAM PANEL	チームパネル
@@ -3258,6 +3307,7 @@ THE SHARE OF THE MODE'S MAX HEALTH	モードの最大体力に対する割合
 THE TASKBAR BUTTON FLASHES	タスクバーのボタンが点滅
 THE WHOLE STREAM POPS UNDER YOU. HOLD IT: ANOTHER EVERY 1.8 S	泡がまとめて足元で弾ける。押し続ければ 1.8 S ごとにもう一回
 THE WINDOW'S SIZE AND PLACE ARE KEPT	ウィンドウのサイズと位置を保持
+THEIR OWN	本人の設定
 THEIRS	相手
 THEME.CFG LINE	THEME.CFG 行
 THEN	次に
@@ -3319,6 +3369,7 @@ TONE CURVE OFF: FLAT, LINEAR COLOUR; CLEAN: NO	トーンカーブ オフ: フラ
 TOP #  BOTTOM # US (AVG +-50% OR WIDER)	上 #  下 # US (平均 +-50% 以上)
 TOP RIGHT, WITHOUT A WIDGET (F3 HAS MORE)	右上、ウィジェットなし (F3でさらに詳細)
 TOTAL K / D	合計 K / D
+TOURIST	観光客
 TOURNEY	トーナメント
 TOURNEY - a single-elimination bracket of 1v1s; everyone else spectates the match in progress.	トーナメント - 1v1のシングルエリミネーション; 他の全員は進行中の試合を観戦。
 TOURNEY BRACKET	トーナメント表
@@ -3356,6 +3407,7 @@ TUTORIAL	チュートリアル
 TUTORIAL -	チュートリアル -
 TUTORIAL - {}	チュートリアル - {}
 TUTORIAL COMPLETE	チュートリアル完了
+TVHEAD	テレビ頭
 TWO	2つ
 TWO BALLS ON 9 SPOTS, 20 HP	9 か所に 2 つのボール, 20 HP
 TWO TINY BALLS	小さなボール 2 つ
@@ -3453,6 +3505,7 @@ VIDEO 8	ビデオ 8
 VIDEO 9	ビデオ 9
 VIDEO: DEVICES	ビデオ: デバイス
 VIEW	視点
+VIKING	ヴァイキング
 VISUALIZE SOUNDS	音を可視化
 VOICE	音声
 VOICE:	音声:
@@ -3532,6 +3585,7 @@ WEAPON:	武器:
 WEAPONS	武器
 WEAPONS (THEIR NUMBER KEYS STILL WORK)	武器 (数字キーは引き続き有効)
 WELCOME TO QUARK	QUARK へようこそ
+WEREWOLF	狼男
 WHAT THE BOTS PLAY: .QBRAIN FILES IN THE BOTS FOLDER	ボットのAI: botsフォルダの .QBRAIN ファイル
 WHEEL DN	WHEEL DN
 WHEEL UP	WHEEL UP
@@ -3597,6 +3651,7 @@ YELLOW	黄
 YES	はい
 YES #  NO #  OF #   F1 YES / F2 NO   #s	賛成 #  反対 #  / #   F1 賛成 / F2 反対   #秒
 YET REACHED IN YOUR ENEMY COLOUR	未到達を敵カラーで
+YETI	イエティ
 YOU DIED	死亡した
 YOU FLY AT EACH OTHER, UP TO 24 M/S, FOR UP TO 3 S	互いに向かって飛ぶ。最大 24 M/S、最長 3 S
 YOU HAVE THE BOMB - PLANT AT A SITE	爆弾を所持中 - サイトに設置せよ
@@ -3618,6 +3673,7 @@ YOUR HOOK CATCHES PLAYERS TOO: IT PULLS YOU BOTH TOGETHER. CATCH THEM, OR DRAG T
 YOUR KILLS	自分のキル
 YOUR MATCH:  # SHOTS  # HITS  #% ACCURACY  # DAMAGE  BEST STREAK #	あなたの試合:  # 発  # ヒット  命中率 #%  # ダメージ  最高連続キル #
 YOUR NAME (CHAT AND SCOREBOARD)	名前 (チャットとスコアボード)
+YOUR OWN FILE	自分のファイル
 YOUR OWN MODEL FILE: NO PREVIEW HERE	自分のモデルファイル: ここではプレビュー不可
 YOUR OWN ROCKET THROWS YOU. HERE IT DOES NO DAMAGE.	自分のロケットで吹き飛ぶ。ここではダメージなし。
 YOUR OWN: PUT .TTF / .OTF FILES IN MODS/FONTS,	独自: .TTF / .OTF ファイルを MODS/FONTS に置き、
@@ -4032,6 +4088,8 @@ ping up on # of # players	#/# 人のPINGが上昇
 pinned version	pinned version
 pinned version {} (installed: {}) - press INSTALL to switch to it	固定バージョン {}（インストール済み：{}）- 切り替えるには「インストール」を押してください
 pinned version {} not found (release list incomplete) - installed: {}	固定バージョン {} が見つかりません（リリース一覧が不完全）- インストール済み：{}
+pivot must be 3 numbers within 64 m	pivot は64 m以内の数値3つである必要があります
+pivot without a part	part のない pivot
 placed the group from the clipboard	クリップボードからグループを配置しました
 point # taken by team #	ポイント # をチーム # が占拠
 poll events	poll events
@@ -4242,6 +4300,7 @@ ungrouped into	グループ解除:
 unknown bone "	不明なボーン "
 unknown mode	不明なモード
 unknown mode '	不明なモード '
+unknown part "	不明なパーツ "
 unknown ruleset	不明なルール
 unknown setting '	不明な設定 '
 unknown slot "	不明なスロット "

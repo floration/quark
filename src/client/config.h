@@ -54,7 +54,7 @@ struct Settings {
                                 // network and a hosted server running as normal (owner, 2026-10-31: "you shouldnt pause the
                                 // server when hosting if you alt tab it should only pause the frame generation")
     bool shadows = true;
-    int model = 0;              // player model (cosmetic): STANDARD, HEAVY, SIMPLE, ROBOT, KNIGHT, WIZARD, ZOMBIE, FIGHTER, PIRATE, NINJA, BANDIT
+    int model = 0;              // player model (cosmetic): an index into kPlayerModelNames (gamedefs.h: STANDARD .. GOALIE, 64), picked in the PLAYER MODEL picker
     int soundPack = 0;          // DEFAULT, HEAVY METAL, MAGICAL, RETRO, WOODEN
     int nameColor = -1;         // your name's colour as others see it (0xRRGGBB; -1 = the default)
     bool hbMigrated = false;    // (1.17: health bars were switched on once for every existing config)
@@ -116,8 +116,8 @@ struct Settings {
     bool autoReconnect = true;         // GAMEPLAY > MORE: a lost connection (not a kick) tries the server again, 3 times
     bool leftHanded = false;           // CONTROLS > MORE: HAND: the gun on the left, the grapple launcher on the right
     bool grappleToggle = false;        // CONTROLS > MORE: GRAPPLE press to hook, press again to let go (not held)
-    int enemyModel = -1;               // GAMEPLAY > MORE: every enemy drawn as this player model (-1: their own)
-    int teamModel = -1;                // GAMEPLAY > MORE: every teammate drawn as this player model (-1: their own)
+    int enemyModel = -1;               // GAMEPLAY > MORE: every enemy drawn as this player model (-1: their own; the model picker)
+    int teamModel = -1;                // GAMEPLAY > MORE: every teammate drawn as this player model (-1: their own; the model picker)
     bool playerAnims = true;           // GAMEPLAY > MORE: PLAYER ANIMATIONS (walking legs, jump pose; off: standing still)
     bool hpScaled = true;              // health bars against the mode's max health (not 100)
     bool exclusiveAudio = false;   // Windows: the sound device to the game alone (lower latency; other programs silent)

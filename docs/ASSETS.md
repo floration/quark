@@ -22,7 +22,7 @@ python3 tools/studio/build.py build/assets_export     # -> build/studio/ (+ mani
 | Sounds | 34 sounds x 5 kits = 170 WAV (48 kHz mono) | `sounds/<kit>/<SOUND>.wav`, kit = `default` `heavy_metal` `magical` `retro` `mouth` |
 | Voices | 27 announcer lines x 7 voices = 189 WAV | `voices/<voice>/<LINE>.wav`, voice = `male` `female` `british` `old_man` `e_girl` `india` `spy` |
 | Quips | each voice's quip set (today the default: 8 x 7 = 56 WAV) | `voices/<voice>/quips/<NAME>.wav` |
-| Models | 5 players, 11 weapon viewmodels, 7 projectiles, the crown, 8 props = 32 glTF | `models/player/<NAME>.gltf`, `models/weapon/<NAME>.gltf`, `models/projectile/<NAME>.gltf`, `models/crown/CROWN.gltf`, `models/prop/<NAME>.gltf` |
+| Models | 64 players, 11 weapon viewmodels, 7 projectiles, the crown, 8 props = 91 glTF | `models/player/<NAME>.gltf`, `models/weapon/<NAME>.gltf`, `models/projectile/<NAME>.gltf`, `models/crown/CROWN.gltf`, `models/prop/<NAME>.gltf` |
 | Maps | every shipped map (.qmap) | `maps/<name>.qmap` |
 | Fonts | the default UI font (Rubik), WORK SANS and the game-font look-alikes of Settings > FONT | `fonts/Rubik.ttf`, `fonts/WorkSans.ttf`, `fonts/<file in assets/fonts>` (`BebasNeue-Regular.ttf`, `LibreQuake-CONCHARS.png`, ...) |
 | Images | the game icon | `images/icon.png` |
@@ -55,6 +55,14 @@ everything but the map, explosions, tracers / beams and the zone volumes), one g
 model's own space (metres, +Y up, front at -Z):
 
 - **player**: feet on the ground at the origin, 2 m tall, facing -Z. Every model shares one hitbox: stay inside it.
+  **Adding a player model** is data only: its name at the end of `kPlayerModelNames` (src/game/gamedefs.h; the order
+  is the index on the wire and in quark.cfg, so never reorder or remove one), its box model file
+  `assets/overrides/models/player/<NAME>.gltf` (shipped and embedded; the first 11 also have built-in boxes in
+  models.cpp, later ones draw as STANDARD without the file, and `quark_tests assets` fails a model with no shipped box
+  file), the name's translations (`tools/lang/extract.py`, then a line in each `assets/lang/<code>.tsv`; `make_atlas.py`
+  for new CJK characters) and a provenance entry. Up to 64 (`kMaxModelsPerKind`, models.h: raise it for more) and 256
+  on the wire (EV_PLAYERINFO's model byte). The picker, the bots and the menus pick the new one up by themselves. The
+  OUTLINED set's generator (tools/models/gen_players_outlined.py) writes all 64 byte for byte.
 - **weapon**: the first-person viewmodel. Origin at the weapon's pivot (the HUD's viewmodel x / y / depth put it
   there and its size scales it), barrel along -Z.
 - **projectile**: origin at the projectile, flying toward -Z (ROCKET, KNIFE, STICKY, CROSSBOW, BUBBLE, SYRINGE, ORB =

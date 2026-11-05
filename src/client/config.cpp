@@ -271,7 +271,7 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "height") height = iv;
         else if (k == "shadows") shadows = iv != 0;
         else if (k == "model") model = (iv >= 0 && iv < kPlayerModels) ? iv : 0;
-        else if (k == "soundpack") soundPack = (iv >= 0 && iv < 5) ? iv : 0;
+        else if (k == "soundpack") soundPack = (iv >= 0 && iv < kSoundPacks) ? iv : 0;
         else if (k == "name_color") { char* e = nullptr; long c = strtol(v.c_str(), &e, 16); nameColor = !v.empty() && v != "-1" && e && !*e && c >= 0 && c <= 0xFFFFFF ? (int)c : -1; }
         else if (k == "health_bars_117") hbMigrated = iv != 0;
         else if (k == "socd") socd = (iv >= 0 && iv <= 2) ? iv : 0;
