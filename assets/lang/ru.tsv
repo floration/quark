@@ -2335,6 +2335,7 @@ NO RESPONSE	НЕТ ОТВЕТА
 NO RESPONSE - CLICK TO TRY	НЕТ ОТВЕТА - КЛИК ДЛЯ ПОВТОРА
 NO RUNS SAVED YET	ЗАПУСКОВ ПОКА НЕТ
 NO RUNS YET - FINISH	ЗАЕЗДОВ НЕТ - ФИНИШИРУЙТЕ
+NO SERVER ANSWERED - PLAYING BOTS	НИ ОДИН СЕРВЕР НЕ ОТВЕТИЛ - ИГРА С БОТАМИ
 NO SETTINGS ON THE CLIPBOARD (EXPORT MAKES THEM)	НЕТ НАСТРОЕК В БУФЕРЕ (ИХ СОЗДАЁТ ЭКСПОРТ)
 NO TIMES YET	ВРЕМЁН ПОКА НЕТ
 NO VSYNC	БЕЗ VSYNC
@@ -2627,7 +2628,7 @@ QUEUES - SHARED WITH DISCORD	ОЧЕРЕДИ - ОБЩИЕ С DISCORD
 QUEUES NEED A RANKED KEY (quark.key) - COULDN'T MAKE ONE	ДЛЯ ОЧЕРЕДЕЙ НУЖЕН РЕЙТИНГОВЫЙ КЛЮЧ (quark.key) - НЕ УДАЛОСЬ СОЗДАТЬ
 QUICK DASH	БЫСТРЫЙ РЫВОК
 QUICK PLAY	БЫСТРАЯ ИГРА
-QUICK PLAY JOINS THE OFFICIAL SERVER	БЫСТРАЯ ИГРА: ОФИЦИАЛЬНЫЙ СЕРВЕР
+QUICK PLAY JOINS THE BUSIEST OFFICIAL SERVER	БЫСТРАЯ ИГРА: САМЫЙ ЖИВОЙ ОФИЦИАЛЬНЫЙ СЕРВЕР
 QUIP	ФРАЗА
 QUIP CAPTIONS	СУБТИТРЫ ФРАЗ
 QUIPS	ФРАЗЫ

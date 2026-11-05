@@ -22,3 +22,4 @@
 - **Exclusive fullscreen at a custom FULLSCREEN SIZE:** the picture fills the screen again (it sat cut off in the bottom-left corner), alt-tabbing out gives the desktop its own resolution back (the game minimizes), and closing the game restores it straight away.
 - RANKED on the main menu is now a queue: pick a ladder and it joins a ranked game where someone is waiting, or hosts one (listed publicly) so the next player finds you.
 - The main menu's side strip (PLAY, PRACTICE, CREATE, RANKS, SETTINGS, DISCORD, INFO, QUIT) now stays on every menu screen, so you can jump anywhere without backing out first.
+- QUICK PLAY stays on the PLAY card after your first game (beside RECONNECT) and joins the busiest official server with room; if no official server answers, it starts a game against bots.

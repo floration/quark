@@ -2335,6 +2335,7 @@ NO RESPONSE	응답 없음
 NO RESPONSE - CLICK TO TRY	응답 없음 - 클릭하여 재시도
 NO RUNS SAVED YET	저장된 기록 없음
 NO RUNS YET - FINISH	아직 기록 없음 - 완주하세요
+NO SERVER ANSWERED - PLAYING BOTS	응답하는 서버 없음 - 봇과 플레이
 NO SETTINGS ON THE CLIPBOARD (EXPORT MAKES THEM)	클립보드에 설정 없음 (내보내기로 생성)
 NO TIMES YET	아직 기록 없음
 NO VSYNC	수직 동기화 없음
@@ -2627,7 +2628,7 @@ QUEUES - SHARED WITH DISCORD	대기열 - DISCORD와 공유
 QUEUES NEED A RANKED KEY (quark.key) - COULDN'T MAKE ONE	대기열에는 랭크 키가 필요합니다 (quark.key) - 생성 실패
 QUICK DASH	빠른 대시
 QUICK PLAY	빠른 플레이
-QUICK PLAY JOINS THE OFFICIAL SERVER	빠른 플레이로 공식 서버에 참가
+QUICK PLAY JOINS THE BUSIEST OFFICIAL SERVER	빠른 플레이로 사람이 가장 많은 공식 서버에 참가
 QUIP	한마디
 QUIP CAPTIONS	한마디 자막
 QUIPS	한마디

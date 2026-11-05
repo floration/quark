@@ -781,6 +781,30 @@ int Game::bestRankedMap(int ladder) const {
     return any < 0 ? 0 : any;
 }
 
+// QUICK PLAY (review round 2: it always joined official server 1, up or not): the official server that answers
+// and has room, the busiest first (then the lowest ping); every official one full: any server with players and room;
+// every official one silent (the list heard nothing back): bots, saying so; the list still waiting: the first one
+void Game::quickPlay() {
+    const ServerInfo* best = nullptr;
+    bool anyAnswer = false, allSilent = kOfficialServerCount > 0;
+    for (size_t i = 0; i < kOfficialServerCount; i++) {
+        const ServerInfo* sv = nullptr;
+        for (const ServerInfo& c : browser_.servers()) if (c.addr.ip == kOfficialServers[i].ip && c.addr.port == kOfficialServers[i].port) sv = &c;
+        if (!sv || !sv->noReply) allSilent = false;
+        if (!sv || sv->noReply) continue;
+        anyAnswer = true;
+        if (sv->players >= sv->maxPlayers) continue;
+        if (!best || sv->players > best->players || (sv->players == best->players && sv->ping < best->ping)) best = sv;
+    }
+    if (!best && anyAnswer)
+        for (const ServerInfo& sv : browser_.servers())
+            if (!sv.noReply && sv.players > 0 && sv.players < sv.maxPlayers && (!best || sv.ping < best->ping)) best = &sv;
+    if (best) { joinAddr_ = best->addr.toString(); connectTo(joinAddr_); return; }
+    if (allSilent) { notify("NO SERVER ANSWERED - PLAYING BOTS", 6); startHost(true); return; }
+    joinAddr_ = NetAddr{kOfficialServers[0].ip, kOfficialServers[0].port}.toString();
+    connectTo(joinAddr_);
+}
+
 // RANKED's queue (the main menu's RANKED, a ladder picked): join the ranked game on that ladder with someone waiting
 // in it (lowest ping; servers 1.19.9+ say their ladder in the info reply), else host one on its own map, listed so
 // the next player to queue finds it. Uses the list the main menu keeps fresh (every 10 s).
@@ -10221,6 +10245,7 @@ void Game::drawMainPlay(float s, float px, float pw, float rx, float rw, float r
     const MainDraw d{r_, ui_, uiIn_, s};
     const float ts = ui_.textScale(), hs = ui_.hintScale();
     const bool hasLast = !cfg_.lastAddress.empty() && (!cfg_.lastMap.empty() || !cfg_.recentServers.empty());
+    static const bool quickOk = kOfficialServerCount > 0 && !([] { const char* e = getenv("QUARK_MASTER"); return e && std::string(e).find("http") != 0; }());
     // the last server in the list (matched by its address: a host name isn't looked up here)
     static std::string lastKey;
     static NetAddr lastAddr;
@@ -10235,7 +10260,7 @@ void Game::drawMainPlay(float s, float px, float pw, float rx, float rw, float r
     {   // LAST PLAYED
         const float x = px, y = 90, w = pw;
         d.card(x, y, w, kCardH);
-        static const std::string kLast = "LAST PLAYED", kNoGame = "NO GAME YET", kNoGameLine = "JOIN A SERVER, PLAY BOTS OR HOST YOUR OWN", kQuickLine = "QUICK PLAY JOINS THE OFFICIAL SERVER";
+        static const std::string kLast = "LAST PLAYED", kNoGame = "NO GAME YET", kNoGameLine = "JOIN A SERVER, PLAY BOTS OR HOST YOUR OWN", kQuickLine = "QUICK PLAY JOINS THE BUSIEST OFFICIAL SERVER";
         d.caption(x + 16, y + 15, kLast, ui_.accent, w - 32);
         if (hasLast) {
             static const std::string kServerAt = "SERVER";
@@ -10251,18 +10276,20 @@ void Game::drawMainPlay(float s, float px, float pw, float rx, float rw, float r
                 snprintf(b, sizeof b, "%d MS", (int)live->ping);
                 drawPieces(r_, d.X(x + 16), d.X(y + 62), hs, d.X(w - 32), {&name, &pl, &sbuf(1, b)}, kMutedC);
             } else drawPieces(r_, d.X(x + 16), d.X(y + 62), hs, d.X(w - 32), {&name}, kMutedC);
-            static const std::string kReconnect = "RECONNECT";
-            if (d.bigButton(x + 16, y + 84, w - 32, 42, kReconnect, UiExp::nav("connecting").withId("RECONNECT"))) { reconnectAt_ = 0; reconnectTries_ = 0; connectTo(cfg_.lastAddress); }
+            // RECONNECT beside QUICK PLAY (review round 2: QUICK PLAY used to vanish after the first game), both one click
+            static const std::string kReconnect = "RECONNECT", kQuick2 = "QUICK PLAY";
+            const float qw = std::round((w - 32 - 8) * 0.55f);
+            if (quickOk && d.bigButton(x + 16, y + 84, qw, 42, kQuick2, UiExp::nav("connecting").optional().withId("QUICK PLAY"))) { quickPlay(); return; }
+            if (quickOk ? ui_.button(d.X(x + 16 + qw + 8), d.X(y + 84), d.X(w - 32 - qw - 8), d.X(42), kReconnect, UiExp::nav("connecting").withId("RECONNECT"))
+                        : d.bigButton(x + 16, y + 84, w - 32, 42, kReconnect, UiExp::nav("connecting").withId("RECONNECT"))) { reconnectAt_ = 0; reconnectTries_ = 0; connectTo(cfg_.lastAddress); }
         } else {
             drawPieces(r_, d.X(x + 16), d.X(y + 33), std::round(ts * 1.25f), d.X(w - 32), {&kNoGame}, ui_.textC());
-            static const bool quickOk = kOfficialServerCount > 0 && !([] { const char* e = getenv("QUARK_MASTER"); return e && std::string(e).find("http") != 0; }());
             drawPieces(r_, d.X(x + 16), d.X(y + 62), hs, d.X(w - 32), {quickOk ? &kQuickLine : &kNoGameLine}, kMutedC);
             // QUICK PLAY: straight into the official (production) server; SERVERS below is the list (review 2026-11-04:
             // FIND A SERVER, SERVERS and ALL SERVERS were three ways to one screen). No official server: the list.
             static const std::string kQuick = "QUICK PLAY", kFind = "FIND A SERVER";
             if (quickOk) {
-                static const std::string quickAddr = NetAddr{kOfficialServers[0].ip, kOfficialServers[0].port}.toString();
-                if (d.bigButton(x + 16, y + 84, w - 32, 42, kQuick, UiExp::nav("connecting").withId("QUICK PLAY"))) { joinAddr_ = quickAddr; connectTo(quickAddr); return; }
+                if (d.bigButton(x + 16, y + 84, w - 32, 42, kQuick, UiExp::nav("connecting").optional().withId("QUICK PLAY"))) { quickPlay(); return; }
             } else if (d.bigButton(x + 16, y + 84, w - 32, 42, kFind, UiExp::nav("join").withId("FIND A SERVER"))) setScreen(Screen::Join);
         }
     }

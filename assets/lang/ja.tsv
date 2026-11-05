@@ -2335,6 +2335,7 @@ NO RESPONSE	応答なし
 NO RESPONSE - CLICK TO TRY	応答なし - クリックで再試行
 NO RUNS SAVED YET	保存されたランはまだありません
 NO RUNS YET - FINISH	ランなし - ゴールしてください
+NO SERVER ANSWERED - PLAYING BOTS	応答するサーバーなし - BOT戦を開始
 NO SETTINGS ON THE CLIPBOARD (EXPORT MAKES THEM)	クリップボードに設定がありません (エクスポートで作成)
 NO TIMES YET	記録なし
 NO VSYNC	垂直同期なし
@@ -2627,7 +2628,7 @@ QUEUES - SHARED WITH DISCORD	キュー - DISCORDと共有
 QUEUES NEED A RANKED KEY (quark.key) - COULDN'T MAKE ONE	キューにはランクキーが必要 (quark.key) - 作成できませんでした
 QUICK DASH	クイックダッシュ
 QUICK PLAY	クイックプレイ
-QUICK PLAY JOINS THE OFFICIAL SERVER	クイックプレイで公式サーバーに参加
+QUICK PLAY JOINS THE BUSIEST OFFICIAL SERVER	クイックプレイで一番にぎわう公式サーバーに参加
 QUIP	一言
 QUIP CAPTIONS	一言の字幕
 QUIPS	一言

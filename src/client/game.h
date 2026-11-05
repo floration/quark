@@ -1204,7 +1204,8 @@ private:
     void drawConsole(float W, float H, float s, float ts);
     int bestMapFor(int mode) const;
     int bestRankedMap(int ladder) const; // the ladder's own ranked map, else any ranked map for it
-    void findRankedMatch(int ladder);    // RANKED's queue: join a waiting ranked game on the ladder, else host one
+    void findRankedMatch(int ladder);
+    void quickPlay();                    // QUICK PLAY: the best official server that answers (bots when none does)    // RANKED's queue: join a waiting ranked game on the ladder, else host one
     bool rankedQueue_ = false;           // (startHost from the queue: listed publicly)
     bool pressInput(int code);
     void drawControls(const SetLayout& L);
