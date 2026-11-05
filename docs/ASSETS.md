@@ -137,17 +137,18 @@ logged and the default is kept. Parsed once at startup; drawing costs what the b
   boxes, so a model with longer legs walks with longer legs. A file with no `bone` at all (every older one), or without
   a thigh and a shin on both sides, is drawn standing still, as before. The default SIMPLE is all `root`. The tuning
   (stride lengths, swing, knee bend, the jump pose, turn limits) is `kAnim` in src/client/models.cpp. A mesh override
-  (no box list) isn't animated yet; see "Player mesh parts" below for the file layout that will walk.
-- **Player mesh parts** (the file contract; the game's part loader comes with the weapon part animations,
-  `anim_<part>` nodes): a player mesh override splits its moving parts into glTF nodes named `anim_<bone>` (lower
+  (no box list) walks only with its parts split as in "Player mesh parts" below; otherwise it stands still.
+- **Player mesh parts** (on the same `anim_<part>` loader as the weapons' "Animated parts"): a player mesh override splits its moving parts into glTF nodes named `anim_<bone>` (lower
   case, a joint name above: `anim_pelvis`, `anim_torso`, `anim_head`, `anim_thigh_l`, `anim_shin_l`, `anim_thigh_r`,
   `anim_shin_r`, `anim_foot_l`, `anim_foot_r`), each with a `mesh` and a `translation` = that joint's pivot in model
   space (thighs: the hip, x = the leg's offset; shins: the knee; feet: the ankle; head: the neck; torso: the waist;
   pelvis: the hips' centre), its vertices relative to the pivot, no rotation or scale. Everything else (a node without
   an `anim_` name) is the root: it never moves. The joints are taken from the pivots the way playerRig measures a box
   model's (both thighs and shins needed, or the model stands still), and each part is drawn through its joint's
-  playerPose matrix, so it walks like the box models; a crouch squashes the posed body. A game without the part
-  loader draws every node where it stands. `tools/models/gen_players_realistic_dark.py` writes all 11 players this
+  playerPose matrix (`w * bone * T(pivot)`, the box path's posedPart), so it walks like the box models; a crouch
+  squashes the posed body. A name that isn't a joint (`anim_bolt`) is a part that never moves. PLAYER ANIMATIONS off:
+  drawn still. Cost: the body and parts go into the same vertex stream as any mesh (no extra draw call), one cull test
+  and one shadow caster per player, one 3x4 matrix product per part a frame, no allocation. `tools/models/gen_players_realistic_dark.py` writes all 11 players this
   way (the "D2 realistic dark" set: at most 1000 triangles each, every vertex inside the hitbox; not shipped).
 - Not animated in a box override: the rocket's flame flicker, the sticky's core blink and the bubble's wobble (the
   game spins and turns it as usual).

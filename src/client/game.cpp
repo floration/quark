@@ -2709,7 +2709,15 @@ void Game::drawWorld(float alpha) {
             overrideTints(MODEL_PLAYER, pm, pal, tint);
             Mat4 sc;
             sc.m[0] = bs; sc.m[5] = bs * hs; sc.m[10] = bs;
-            r_.mesh(*ov, Mat4::translate(pos) * Mat4::rotY(yaw) * sc, tint, sv, true, vis);
+            const Mat4 w = Mat4::translate(pos) * Mat4::rotY(yaw) * sc;
+            if (cfg_.playerAnims && ov->rig.animated) {   // parts on joints (anim_<bone> nodes): posed like the box models
+                PlayerPose pose;
+                playerPose(anim_[i].s, ov->rig, pose);
+                Mat4 px[kMaxAnimParts];   // (a part: w * its bone * T(its pivot); the crouch squashes the posed body, as sc did)
+                const size_t n = std::min(ov->parts.size(), kMaxAnimParts);
+                for (size_t k = 0; k < n; k++) px[k] = mulAffine(w, posedPart(pose, ov->parts[k].tag, ov->parts[k].pivot));
+                r_.meshPosed(*ov, w, px, tint, sv, true, vis);
+            } else r_.mesh(*ov, w, tint, sv, true, vis);
         } else {
             if (const ModelParts* bx = boxOverride(MODEL_PLAYER, pm)) overrideBoxParts(MODEL_PLAYER, pm, *bx, pal, hs, parts_);
             else playerModelParts(pm, hs, pal, parts_);

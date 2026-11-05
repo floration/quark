@@ -556,6 +556,7 @@ void loadModelOverrides(ModelOverrides& out) {
                     meshToModel(mesh, *m);
                     if (kind == MODEL_WEAPON)   // (what the viewmodel moves each part as: weaponPartMotion)
                         for (ModelMesh& part : m->parts) part.tag = (uint8_t)weaponPartFromName(part.name);
+                    else if (kind == MODEL_PLAYER) playerMeshRig(*m);   // (parts on joints: walks like the box models)
                 }
                 if (m->boxes.empty() && !m->parts.empty()) printf("override: %s (%s, %zu animated parts)\n", matched.c_str(), where, m->parts.size());
                 else if (m->boxes.empty()) printf("override: %s (%s)\n", matched.c_str(), where);

@@ -1888,6 +1888,23 @@ void Renderer::meshOne(const ModelMesh& m, const Mat4& xf, const Vec3* tint, flo
     casters_.push_back({c, m.radius * sc});
 }
 
+void Renderer::meshPosed(const ModelMesh& m, const Mat4& xf, const Mat4* partXf, const Vec3* tint, float sunVis, bool castShadow, bool visible) {
+    const float* x = xf.m;
+    const Vec3& a = m.allCenter;
+    Vec3 c = {x[0] * a.x + x[4] * a.y + x[8] * a.z + x[12], x[1] * a.x + x[5] * a.y + x[9] * a.z + x[13], x[2] * a.x + x[6] * a.y + x[10] * a.z + x[14]};
+    // (posed: a stride or the tucked jump reaches past the standing sphere)
+    const float rad = m.allRadius * 1.25f * std::max({length(Vec3(x[0], x[1], x[2])), length(Vec3(x[4], x[5], x[6])), length(Vec3(x[8], x[9], x[10]))});
+    if (visible && !inView(c, rad)) { visible = false; if (!castShadow) return; }
+    std::vector<DynVertex>* out;
+    std::vector<FlatVertex>* flat;
+    if (visible) { out = &dyn_; flat = &flat_; }
+    else if (castShadow && shadowCasters) { out = &dynShadowOnly_; flat = nullptr; }
+    else return;
+    emitMesh(*out, m, xf, tint, sunVis, flat);
+    for (size_t k = 0; k < m.parts.size(); k++) emitMesh(*out, m.parts[k], partXf[k], tint, sunVis, flat);
+    casters_.push_back({c, rad});
+}
+
 void Renderer::viewMesh(const ModelMesh& m, const Vec3& offset, float scale, const Vec3* tint) {
     Mat4 s;
     s.m[0] = s.m[5] = s.m[10] = scale;

@@ -111,6 +111,10 @@ public:
     // an override model (models.h, docs/ASSETS.md) in place of a model's boxes: model space through xf, each vertex's
     // colour times tint[its slot]; viewMesh: camera-relative like viewBox (offset, then uniform scale)
     void mesh(const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, bool castShadow = true, bool visible = true);
+    // a posed model: the body through xf, part k through partXf[k] (one a part, model -> world, its pivot included).
+    // Culled once by the whole model's sphere (allCenter / allRadius, widened for a stride); same vertex stream as
+    // mesh(), so no extra draw call.
+    void meshPosed(const ModelMesh& m, const Mat4& xf, const Mat4* partXf, const Vec3* tint, float sunVis, bool castShadow = true, bool visible = true);
     void viewMesh(const ModelMesh& m, const Vec3& offset, float scale, const Vec3* tint);
     // (local: model -> camera space; parts false: the body alone, the caller draws its animated parts itself)
     void viewMeshXf(const ModelMesh& m, const Mat4& local, const Vec3* tint, bool parts = true);

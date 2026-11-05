@@ -230,9 +230,19 @@ struct ModelMesh {
     std::vector<ModelMesh> parts;
     std::string name;                     // a part's name ("pump"); its pivot, and what the game moves it as
     Vec3 pivot = {0, 0, 0};
-    uint8_t tag = 0;                      // (a weapon's part: WeaponPart, set by loadModelOverrides; 0: none)
+    uint8_t tag = 0;                      // (a part: a weapon's WeaponPart / a player's PlayerBone, set by loadModelOverrides; 0: none / root)
+    // the whole model's bounding sphere, body and parts at rest (model space): what a posed player is culled by
+    Vec3 allCenter = {0, 0, 0};
+    float allRadius = 0;
+    // a player mesh whose parts are joints (anim_<bone> nodes, docs/ASSETS.md "Player mesh parts"): the joints from
+    // their pivots (playerMeshRig). rig.animated false: drawn still, as before.
+    PlayerRig rig;
 };
 void meshToModel(const MeshData& mesh, ModelMesh& out);
+// A player mesh: tags each part with its PlayerBone (anim_pelvis -> BONE_PELVIS; an unknown name: BONE_ROOT, still) and
+// measures the rig from the pivots: hips at the thighs' (x: the legs' spacing), knees at the shins', ankles at the
+// feet's, the neck at the head's, the waist at the torso's (else the hips). Needs both thighs and shins, else still.
+void playerMeshRig(ModelMesh& m);
 
 // ---- first-person weapon part motions (pure, no GL: the game and the tests share it) ------------------------------
 // The parts a weapon model may name (anim_<name>, docs/ASSETS.md); each weapon moves its own ones from your predicted
