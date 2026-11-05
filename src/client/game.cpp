@@ -9967,7 +9967,22 @@ void Game::drawMenu() {
     float cx = menuStripPx_ + (W - menuStripPx_) * 0.5f;
     // the title, drawn like the app icon (a baked texture: Renderer::logo); not over the settings shell (it covered it),
     // nor over the main menu's page (its strip has the Q)
-    if (screen_ != Screen::Settings && !mainPage) r_.logo(cx, H * 0.12f, 8 * s, rgba(cfg_.fixedLogo ? defaultSettings().colorFriendly : cfg_.colorFriendly),
+    // a strip screen: the main menu's top bar - its title top-left beside the strip, the small wordmark centred
+    // (review round 2: the big logo sat in a different place and size on every screen, and pages had no title)
+    if (strip && screen_ != Screen::Settings) {
+        const char* title = screen_ == Screen::Join ? "SERVERS" : screen_ == Screen::Host ? "HOST" : screen_ == Screen::VsBots ? "BOTS"
+                          : screen_ == Screen::Leaderboard ? "RANKS" : screen_ == Screen::Trainer ? "AIM TRAINER" : screen_ == Screen::Demos ? "DEMOS"
+                          : screen_ == Screen::Benchmarks || screen_ == Screen::BenchmarkResult ? "BENCHMARKS" : screen_ == Screen::Info ? "INFO"
+                          : screen_ == Screen::CustomMode ? "CUSTOM MODE" : "";
+        const float Wd = W / s, lts = 6.5f, lw = r_.logoWidth(lts * s) / s, tx = 104;
+        const float tw = std::min(Wd * 0.5f - tx - 24 - lw * 0.5f, 420.0f);
+        ui_.label(tx * s, 29 * s, title, ui_.textC(), 2.25f, std::max(120.0f, tw) * s);
+        const float twd = r_.textWidth(title, ui_.textScale() * 2.25f) / s;
+        const float cxd = std::max(Wd * 0.5f, tx + twd + 24 + lw * 0.5f);
+        if (cxd + lw * 0.5f <= Wd - 16)
+            r_.logo(cxd * s, 22 * s, lts * s, rgba(cfg_.fixedLogo ? defaultSettings().colorFriendly : cfg_.colorFriendly),
+                    rgba(cfg_.fixedLogo ? defaultSettings().colorEnemy : cfg_.colorEnemy));
+    } else if (screen_ != Screen::Settings && !mainPage) r_.logo(cx, H * 0.12f, 8 * s, rgba(cfg_.fixedLogo ? defaultSettings().colorFriendly : cfg_.colorFriendly),
                                              rgba(cfg_.fixedLogo ? defaultSettings().colorEnemy : cfg_.colorEnemy));   // (the Q in both team colours; FIXED LOGO COLORS: the defaults)
     if (!mainPage && !strip) r_.text(8 * s, H - 20 * s, std::max(1.0f, std::round(s)), kQuarkBuildId, kGrey);   // (with the strip: beside it; the full build, owner 2026-11-04)
     if (strip) { const size_t ss0 = r_.uiMark(); drawMainStrip(s, H); r_.uiSupersample(ss0); }   // (before the page: its clicks first)
@@ -10805,7 +10820,7 @@ void Game::drawHost(const SetLayout& L) {
     if (ui_.button(x, L.Y(y), w, h, "ADVANCED  >", UiExp::nav("host/advanced"))) { hostAdvanced_ = true; refreshHostBrains(); }
     y += 60;
     if (ui_.button(x, L.Y(y), hw, h, "BACK", UiExp::nav("main*"))) { cfg_.save(); setScreen(Screen::Main); }
-    if (ui_.button(x2, L.Y(y), hw, h, "START", UiExp::state("hosting", "1"))) startHost();
+    if (MainDraw{r_, ui_, uiIn_, 1.0f}.bigButton(x2, L.Y(y), hw, h, "START", UiExp::state("hosting", "1"))) { uiIn_.pressed = false; startHost(); }   // (the accent: review round 2, START was as grey as BACK)
     if (!error_.empty()) ui_.labelCentered(L.X(640), L.Y(y + 64), error_, kRed, 1.0f, L.L(960));
 }
 
@@ -10902,7 +10917,7 @@ void Game::drawVsBots(const SetLayout& L) {
     }
     y += 12;   // (20 px over the footer)
     if (ui_.button(x, L.Y(y), hw, h, "BACK", UiExp::nav("main*"))) { cfg_.save(); setScreen(Screen::Main); }
-    if (ui_.button(x2, L.Y(y), hw, h, "START", UiExp::state("hosting", "1"))) startHost(true);
+    if (MainDraw{r_, ui_, uiIn_, 1.0f}.bigButton(x2, L.Y(y), hw, h, "START", UiExp::state("hosting", "1"))) { uiIn_.pressed = false; startHost(true); }   // (the accent, as HOST's)
     if (!error_.empty()) ui_.labelCentered(L.X(640), L.Y(y + 64), error_, kRed, 1.0f, L.L(960));
 }
 
