@@ -367,7 +367,18 @@ static void testBoxModels() {
     // a joint (players): optional, by name; none is the root (an older file: drawn still)
     ACHECK(parseBoxModel("{\"version\":2,\"boxes\":[" + box + ",\"bone\":\"shin_r\"}]}", p, &err) && p.size() == 1 && p[0].bone == BONE_SHIN_R);
     ACHECK(parseBoxModel("{\"version\":2,\"boxes\":[" + box + "}]}", p, &err) && p.size() == 1 && p[0].bone == BONE_ROOT);
+    // a weapon's moving part: by name, with its pivot; written back the same (boxModelJson)
+    ACHECK(parseBoxModel("{\"version\":2,\"boxes\":[" + box + ",\"part\":\"pump\",\"pivot\":[0,0.01,-0.2]}]}", p, &err) && p.size() == 1 && p[0].wpart == WPART_PUMP && p[0].pivot.z == -0.2f);
+    {
+        ModelParts back;
+        finishBoxModel(MODEL_WEAPON, 0, p);   // (the mul a slot box gets on load)
+        ACHECK(parseBoxModel(boxModelJson(p), back, &err) && back.size() == 1 && back[0].wpart == WPART_PUMP && back[0].pivot.y == 0.01f && back[0].pivot.z == -0.2f);
+    }
+    ACHECK(parseBoxModel("{\"version\":2,\"boxes\":[" + box + "}]}", p, &err) && p.size() == 1 && p[0].wpart == WPART_NONE);
     const char* bad[] = {
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,1,1],\"part\":\"wing\"}]}",   // unknown part
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,1,1],\"pivot\":[0,0,0]}]}",   // pivot, no part
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,1,1],\"part\":\"bolt\",\"pivot\":[0,99,0]}]}",
         "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,1,1],\"bone\":\"tail\"}]}",   // unknown bone
         "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,1,1],\"bone\":3}]}",        // bone by number
         "{\"version\":2,\"boxes\":[]}",                                                              // no boxes

@@ -118,6 +118,7 @@ logged and the default is kept. Parsed once at startup; drawing costs what the b
    "shadow": true, "visOnly": false,            // casts a shadow; drawn only seen from outside (face plates)
    "crouch": false,                             // players: a crouch also squashes the half height
    "bone": "thigh_l",                           // (optional, players) the joint it moves with (below; default root)
+   "part": "pump", "pivot": [x, y, z],          // (optional, weapons) a moving part and its pivot (Animated parts)
    "name": "legs"}                              // (optional, ignored by the game)
 ]}}
 ```
@@ -138,6 +139,10 @@ logged and the default is kept. Parsed once at startup; drawing costs what the b
   a thigh and a shin on both sides, is drawn standing still, as before. The default SIMPLE is all `root`. The tuning
   (stride lengths, swing, knee bend, the jump pose, turn limits) is `kAnim` in src/client/models.cpp. A mesh override
   (no box list) isn't animated.
+- **Weapons' moving parts** (`part`, WEAPON ANIMATIONS): a box with `part` (a name from the Animated parts table
+  below: `bolt`, `pump`, `drum`, ...) moves with that part in first person, about its `pivot` (model space; default
+  the origin), exactly like an anim_ node. Boxes without it are the still body. Held by other players they're drawn
+  still. `pivot` without `part` fails the checks.
 - Not animated in a box override: the rocket's flame flicker, the sticky's core blink and the bubble's wobble (the
   game spins and turns it as usual).
 
