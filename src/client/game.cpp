@@ -6835,7 +6835,7 @@ void Game::debugSettingsTab() {
 void Game::drawSettings() {
     if (setTab_ == TAB_HUD && widgetEdit_) { drawWidgetEditor(); return; }   // (the HUD's widget editor: the whole screen)
     if (setTab_ == TAB_HUD && hudEdit_) { drawHudEditor(); return; }        // (EDIT ON SCREEN: the whole screen)
-    const SetLayout L{ui_.s(), r_.width() * 0.5f};
+    const SetLayout L{ui_.s(), menuStripPx_ + (r_.width() - menuStripPx_) * 0.5f};   // (right of the strip when it's up)
     const bool modal = setTab_ == TAB_CONTROLS && filePick_ == 2;   // the import list: the page under it takes nothing
     ui_.muted = modal;
     // HUD tab: the HUD under a see-through panel (in game drawHud drew the live one; the main menu's: sample values)
@@ -9781,9 +9781,10 @@ float bandTop(float kH) { return kBandTop + std::max(0.0f, (kBandH - (kH + 32)) 
 }
 
 SetLayout Game::menuLayout(float designW) const {
-    const float s = ui_.s(), W = (float)r_.width();
+    // (beside the main menu's strip when it's up: the page centred in what's right of it)
+    const float s = ui_.s(), W = (float)r_.width() - menuStripPx_;
     const float k = std::min(s, W / (designW + 40));   // (a page designW wide keeps 20 px each side; its top stays at y 166)
-    return {k, W * 0.5f, kBandTop * (s - k)};
+    return {k, menuStripPx_ + W * 0.5f, kBandTop * (s - k)};
 }
 
 // In game (the pause menu and its pages: votes, queues, the live pickers): the band between the notice list (y 80..144)
@@ -9890,13 +9891,19 @@ void Game::drawMenu() {
         r_.rectGradient(x2, 0, x3 - x2, H, c2, c3, c3, c2);
         r_.rectGradient(x3, 0, W - x3, H, c3, c4, c4, c3);
     } else if (cfg_.menuBg != 2) r_.rect(0, 0, W, H, {0.03f, 0.035f, 0.05f, r_.worldLoaded() ? 0.6f : 1.0f});   // (a plain MENU BACKGROUND: as it is)
+    // every top-level menu screen keeps the main menu's strip on its left (review 2026-11-04: off the main menu
+    // there was no way to PLAY / SETTINGS / QUIT but BACK); the page is centred right of it (menuLayout)
+    const bool full = screen_ == Screen::Settings && (settingsInGame_ || widgetEdit_ || hudEdit_);   // (the HUD editors: the whole screen)
+    const bool strip = !mainPage && !full && !edPrompt_ && !tutOffer_ && screen_ != Screen::Connecting && screen_ != Screen::Main;
+    menuStripPx_ = strip ? std::round(kMenuStripW * s) : 0;
     drawNotices(12 * s, ui_.textScale(), s); // e.g. "SAVED <mode>": the strip above the title, clear of the buttons
-    float cx = W * 0.5f;
+    float cx = menuStripPx_ + (W - menuStripPx_) * 0.5f;
     // the title, drawn like the app icon (a baked texture: Renderer::logo); not over the settings shell (it covered it),
     // nor over the main menu's page (its strip has the Q)
     if (screen_ != Screen::Settings && !mainPage) r_.logo(cx, H * 0.12f, 8 * s, rgba(cfg_.fixedLogo ? defaultSettings().colorFriendly : cfg_.colorFriendly),
                                              rgba(cfg_.fixedLogo ? defaultSettings().colorEnemy : cfg_.colorEnemy));   // (the Q in both team colours; FIXED LOGO COLORS: the defaults)
-    if (!mainPage) r_.text(8 * s, H - 20 * s, std::max(1.0f, std::round(s)), kQuarkBuildId, kGrey);   // (the main page: beside its strip; the full build, owner 2026-11-04)
+    if (!mainPage && !strip) r_.text(8 * s, H - 20 * s, std::max(1.0f, std::round(s)), kQuarkBuildId, kGrey);   // (with the strip: beside it; the full build, owner 2026-11-04)
+    if (strip) { const size_t ss0 = r_.uiMark(); drawMainStrip(s, H); r_.uiSupersample(ss0); }   // (before the page: its clicks first)
 
     if (picker_ != PICK_NONE && (screen_ == Screen::Host || screen_ == Screen::VsBots)) { drawPicker(cx, H * 0.12f + 80 * s); return; }
     if (edPrompt_ && screen_ == Screen::Main) { drawEditorSavePrompt(); return; }
@@ -9929,7 +9936,7 @@ void Game::drawMenu() {
 // panels beside the page puts them under it. What a tab shows from files (bests, your maps) is read when it opens
 // (openMainTab), the server list only while PLAY is up; nothing allocates per frame beyond a widget's own label.
 namespace {
-constexpr float kStripW = 72, kPageX = 104, kPageW = 350, kPanelTop = 90, kRightPad = 32, kCardH = 140, kListRowH = 33;
+constexpr float kStripW = kMenuStripW, kPageX = 104, kPageW = 350, kPanelTop = 90, kRightPad = 32, kCardH = 140, kListRowH = 33;
 const Color kStripC = {0.031f, 0.039f, 0.055f, 0.97f};
 const Color kMutedC = {0.60f, 0.65f, 0.71f, 1};     // the strip's labels, values, hints
 const Color kCapsC = {0.50f, 0.55f, 0.60f, 1};      // a panel's caption (OFFICIAL SERVERS)
@@ -10094,11 +10101,15 @@ void Game::drawMainStrip(float s, float H) {
         r_.rect(bx, by, tw + 16 * s, th + 10 * s, {0.05f, 0.06f, 0.08f, 0.95f});
         r_.text(bx + 8 * s, by + 5 * s, hs, t, c);
     };
+    // the lit tab: the main menu's tab, or the screen's (RANKS, SETTINGS; the play screens PLAY, the trainer PRACTICE)
+    const int stripCur = screen_ == Screen::Main ? mainTab_ : screen_ == Screen::Leaderboard ? 3 : screen_ == Screen::Settings ? 4
+                       : screen_ == Screen::Trainer || screen_ == Screen::Benchmarks || screen_ == Screen::BenchmarkResult ? (int)MAIN_PRACTICE
+                       : screen_ == Screen::CustomMode && customFromMain_ ? (int)MAIN_CREATE : screen_ == Screen::Info ? -1 : (int)MAIN_PLAY;
     static const std::string kLabels[5] = {"PLAY", "PRACTICE", "CREATE", "RANKS", "SETTINGS"};
     static const int kIcons[5] = {ICON_PLAY, ICON_GAUGE, ICON_GRID, ICON_TROPHY, ICON_GEAR};
     for (int i = 0; i < 5; i++) {
         const float y = (88 + 64 * i) * s, h = 60 * s;
-        const bool cur = i < MAIN_TABS && mainTab_ == i, hv = ui_.over(0, y, sw, h);
+        const bool cur = i == stripCur, hv = ui_.over(0, y, sw, h);
         if (cur) {
             r_.rect(0, y, sw, h, {ui_.accent.r, ui_.accent.g, ui_.accent.b, 0.12f});
             r_.rect(0, y, 3 * s, h, ui_.accent);
@@ -10112,6 +10123,7 @@ void Game::drawMainStrip(float s, float H) {
         static const char* const kIds[5] = {"PLAY", "PRACTICE", "CREATE", "RANKS", "SETTINGS"};
         if (ui_.probing()) ui_.custom(0, y, sw, h, kLabels[i], (cur ? UiExp::inert() : kNav[i]).withId(kIds[i]));
         if (!(hv && uiIn_.pressed) || cur) continue;
+        leaveForStrip();
         if (i < MAIN_TABS) openMainTab(i);
         else if (i == 3) { nextBoardFetch_ = 0; raceStatsView_ = false; setScreen(Screen::Leaderboard); }   // RANKS: the leaderboard
         else { openSettingsTab(settingsStartTab()); setScreen(Screen::Settings); }
@@ -10122,27 +10134,39 @@ void Game::drawMainStrip(float s, float H) {
     static const std::string kDiscord = "DISCORD", kInfo = "INFO", kQuit = "QUIT", kSure = "SURE? QUIT";
     for (int i = 0; i < 3; i++) {
         const float h = 54 * s, y = H - (14 + 54 * (3 - i)) * s;
-        const bool hv = ui_.over(0, y, sw, h), armed = i == 2 && confirmArmed("quit");
+        const bool hv = ui_.over(0, y, sw, h), armed = i == 2 && confirmArmed("quit"), lit = i == 1 && screen_ == Screen::Info;
         if (armed) r_.rect(0, y, sw, h, {kRed.r * 0.35f, kRed.g * 0.35f, kRed.b * 0.35f, 0.9f});
+        else if (lit) { r_.rect(0, y, sw, h, {ui_.accent.r, ui_.accent.g, ui_.accent.b, 0.12f}); r_.rect(0, y, 3 * s, h, ui_.accent); }
         else if (hv) r_.rect(0, y, sw, h, {1, 1, 1, 0.06f});
         const Color quitC = {1.0f, 0.54f, 0.5f, 1};
-        const Color c = i == 2 ? (hv || armed ? kRed : quitC) : hv ? white : kMutedC;
+        const Color c = i == 2 ? (hv || armed ? kRed : quitC) : hv || lit ? white : kMutedC;
         r_.icon(i == 0 ? ICON_CHAT : i == 1 ? ICON_INFO : ICON_POWER, sw * 0.5f, y + 19 * s, 20 * s, c);
         const std::string& name = i == 0 ? kDiscord : i == 1 ? kInfo : kQuit;
         const TextFit f = r_.fitText(name, lts, sw - 4 * s);
         if (f.keep >= 0) { const std::string t = r_.textClip(name, f.scale, sw - 4 * s); r_.text((sw - r_.textWidth(t, f.scale)) * 0.5f, y + 34 * s, f.scale, t, c); }
         else r_.text((sw - r_.textWidth(name, f.scale, f.level)) * 0.5f, y + 34 * s + (r_.textHeight(lts) - r_.textHeight(f.scale)) * 0.5f, f.scale, name, c, f.level);
         if (armed) tooltip(y, h, kSure, kRed);   // (armed: SURE? QUIT beside the strip)
-        const UiExp e = i == 0 ? UiExp::url().withId("DISCORD") : i == 1 ? UiExp::nav("info/*").withId("INFO")
+        const UiExp e = i == 0 ? UiExp::url().withId("DISCORD") : i == 1 ? (lit ? UiExp::inert() : UiExp::nav("info/*")).withId("INFO")
                       : (cfg_.confirmLeave && !armed ? UiExp::state("confirm", "quit") : UiExp::quit()).withId("QUIT");
         if (ui_.probing()) ui_.custom(0, y, sw, h, armed ? kSure : name, e);
         if (!(hv && uiIn_.pressed)) continue;
         if (i == 0) openUrl(kDiscordUrl);
-        else if (i == 1) setScreen(Screen::Info);   // how everything works
+        else if (i == 1) { if (screen_ != Screen::Info) { leaveForStrip(); setScreen(Screen::Info); } }   // how everything works
         else if (confirmed("quit")) quit_ = true;
         uiIn_.pressed = false;
     }
     r_.text(sw + 8 * s, H - 20 * s, std::max(1.0f, std::round(s)), kQuarkBuildId, kGrey);   // (the full build, owner 2026-11-04)
+}
+
+// a strip tab / INFO clicked off the main menu: leave the screen as its BACK does (settings applied, HOST's choices
+// saved, an unsaved custom mode dropped), then the strip opens where it goes
+void Game::leaveForStrip() {
+    if (screen_ == Screen::Main) return;
+    picker_ = PICK_NONE;
+    hostAdvanced_ = false;
+    if (screen_ == Screen::Settings) { leaveSettings(); return; }
+    cfg_.save();
+    setScreen(Screen::Main);
 }
 
 namespace {

@@ -37,6 +37,8 @@ struct GLFWwindow;
 
 // The redesign's coordinates (720p, a 1280 frame) on this screen: x centred on W / 2, everything times s, y from oy
 // (Game::menuLayout: the menus' pages, narrowed on a squarer screen with their top kept under the title)
+constexpr float kMenuStripW = 72;   // the main menu's icon strip (720p design px), on every top-level menu screen
+
 struct SetLayout {
     float s = 1, cx = 640, oy = 0;
     float X(float px) const { return cx + (px - 640) * s; }
@@ -235,6 +237,8 @@ private:
     void openMainTab(int tab);         // shows a tab, and reads what it shows (bests, recent maps) once
     void drawMainMenu();
     void drawMainStrip(float s, float H);
+    void leaveForStrip();        // (a strip click off the main menu: leave the screen as its BACK does)
+    float menuStripPx_ = 0;      // the main menu's strip beside this frame's menu screen (px; 0: none), menuLayout centres right of it
     void drawMainPlay(float s, float px, float pw, float rx, float rw, float ry);
     void drawMainPractice(float s, float px, float pw, float rx, float rw, float ry);
     void drawMainCreate(float s, float px, float pw, float rx, float rw, float ry);

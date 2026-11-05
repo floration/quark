@@ -21,3 +21,4 @@
 - The version in the menus' bottom left (and F3) shows the full build, e.g. `quark-1.19.8-a4bfca60`, with `-dirty` on a build of uncommitted changes.
 - **Exclusive fullscreen at a custom FULLSCREEN SIZE:** the picture fills the screen again (it sat cut off in the bottom-left corner), alt-tabbing out gives the desktop its own resolution back (the game minimizes), and closing the game restores it straight away.
 - RANKED on the main menu is now a queue: pick a ladder and it joins a ranked game where someone is waiting, or hosts one (listed publicly) so the next player finds you.
+- The main menu's side strip (PLAY, PRACTICE, CREATE, RANKS, SETTINGS, DISCORD, INFO, QUIT) now stays on every menu screen, so you can jump anywhere without backing out first.
