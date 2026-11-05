@@ -25,3 +25,6 @@
 
 ## Weapon models
 - **Weapon animations:** weapon models can now have moving parts: the shotgun racks after a shot, the sticky launcher turns its drum, the sniper's bolt cycles, the rifle's bolt kicks, the laser's coil spins while you fire, and more (each weapon its own). They move the moment you click, at any ping. VIDEO > EFFECTS: WEAPON ANIMATIONS turns them off. Other players' weapons show the parts still.
+
+## Player models
+- **New outlined player models:** all 11 characters are redrawn as clean blocky models with outlines, matching the outlined weapons. All 11 walk, SIMPLE included (it used to stand still). The hitbox is unchanged, and ranked and time trials show these models to everyone.

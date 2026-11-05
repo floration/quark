@@ -7,7 +7,9 @@ box path draws them with its outlines, face shading, crouch and walk, the same w
 
 Writes <out>/models/player/<NAME>.gltf (default out: /mnt/project-files/player-models/outlined) and the previews
 lineup-outlined.png (orange team), lineup-outlined-blue.png and walk-outlined.png, each rendered in --scratch first
-and copied over (a network mount). Not shipped: nothing in assets/overrides/ changes.
+and copied over (a network mount). Shipped (owner, 2026-11-05): the files in assets/overrides/models/player/ are this
+script's output, byte for byte: `--out assets/overrides --no-preview` rewrites them. They are AI-made: curated `ai` entries
+(by Claude) in assets/provenance/models.json, which tools/provenance.py sync keeps.
 
 The designs are characters_outlined.py. Shared palette (the outlined weapons' rules): a 5 mm grid, a few big blocks,
 no chamfers; dark = the metal slot x 0.55, mid = the metal slot, light = the base slot, bore / recess = metal x 0.25,

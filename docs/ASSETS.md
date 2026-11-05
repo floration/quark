@@ -150,7 +150,9 @@ logged and the default is kept. Parsed once at startup; drawing costs what the b
   squashes the posed body. A name that isn't a joint (`anim_bolt`) is a part that never moves. PLAYER ANIMATIONS off:
   drawn still. Cost: the body and parts go into the same vertex stream as any mesh (no extra draw call), one cull test
   and one shadow caster per player, one 3x4 matrix product per part a frame, no allocation. `tools/models/gen_players_realistic_dark.py` writes all 11 players this
-  way (the "D2 realistic dark" set: at most 1000 triangles each, every vertex inside the hitbox; not shipped).
+  way (the "D2 realistic dark" set: at most 1000 triangles each, every vertex inside the hitbox; not shipped). The
+  shipped players are the OUTLINED set (owner, 2026-11-05): box model files in `assets/overrides/models/player/`,
+  written by `tools/models/gen_players_outlined.py --out assets/overrides --no-preview` (it checks the hitbox).
 - **Weapons' moving parts** (`part`, WEAPON ANIMATIONS): a box with `part` (a name from the Animated parts table
   below: `bolt`, `pump`, `drum`, ...) moves with that part in first person, about its `pivot` (model space; default
   the origin), exactly like an anim_ node. Boxes without it are the still body. Held by other players they're drawn
