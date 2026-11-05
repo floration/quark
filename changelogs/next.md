@@ -10,5 +10,5 @@
 - F3's latency graph says GPU WAIT (LATENT SYNC) instead of GPU WAIT (ULTRA) when Latent Sync is on and LOW LATENCY isn't ULTRA.
 
 ## Menus
-- **Sharp main menu icons:** the icons down the main menu's left strip are drawn as smooth shapes now, so they stay crisp at any resolution instead of looking pixelated; they and the main menu's text are drawn supersampled (as smooth as rendering at 400%). The main screen shows the QUARK wordmark at the top, and the Q in the strip's corner sits centred. The QUARK logo is livelier: slanted, with a shine and a glow in your team colours.
+- **Sharp main menu icons:** the icons down the main menu's left strip are drawn as smooth shapes now, so they stay crisp at any resolution instead of looking pixelated; they and the main menu's text are drawn supersampled (as smooth as rendering at 400%). The main screen shows the QUARK wordmark at the top, and the Q in the strip's corner sits centred. The QUARK logo has a glossy arcade look: a lit top half and a drop shadow.
 - The version in the menus' bottom left (and F3) shows the full build, e.g. `quark-1.19.8-a4bfca60`, with `-dirty` on a build of uncommitted changes.
