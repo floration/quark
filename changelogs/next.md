@@ -27,3 +27,4 @@
 - RANKED's queue now shows a FINDING A RANKED MATCH card with a timer and CANCEL, and tells you when nobody is waiting and it hosts a ranked game for you. The ladder cards say which is 1v1 and which is free for all.
 - Every menu screen now has the main menu's top bar: its name top-left (SERVERS, HOST, BOTS, RANKS...) and the QUARK wordmark in the same place, and START is highlighted on HOST and BOTS.
 - VIDEO + AUDIO: the graphics PRESET (LOW / MEDIUM / HIGH / COMPETITIVE) is now on page 1, and hovering a page number shows what's on that page.
+- Menu keys: 1-5 switch between PLAY, PRACTICE, CREATE, RANKS and SETTINGS, and Enter presses QUICK PLAY on the main menu and START on HOST and BOTS.

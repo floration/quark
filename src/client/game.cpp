@@ -9967,6 +9967,7 @@ void Game::drawMenu() {
     const float W = (float)r_.width(), H = (float)r_.height();
     float s = H / 720.0f;
     ui_.begin(&r_, uiIn_, s);
+    typingAtFrame_ = ui_.typing();   // (a field Enter just closed: that Enter isn't a menu key - menuKeysFree)
     // the main menu's own page (no question over it): its rail fades into the backdrop instead of the veil (mock4's
     // gradient: dark behind the strip and the page, clear by two thirds across, a little darker at the right edge)
     const bool mainPage = screen_ == Screen::Main && !edPrompt_ && !tutOffer_ && queueLadder_ < 0;
@@ -10210,6 +10211,9 @@ void Game::drawMainStrip(float s, float H) {
     // (any other screen: the tab it was opened from - DEMOS from CREATE, CUSTOM MODE from PLAY; review round 2)
     const int stripCur = screen_ == Screen::Main ? mainTab_ : screen_ == Screen::Leaderboard ? 3 : screen_ == Screen::Settings ? 4
                        : screen_ == Screen::Info ? -1 : stripFromTab_;
+    // keys 1-5 open the strip's tabs while nothing is being typed (review round 2: no keyboard way around the menus)
+    int keyTab = -1;
+    if (menuKeysFree() && uiIn_.chars.size() == 1 && uiIn_.chars[0] >= '1' && uiIn_.chars[0] <= '5') keyTab = uiIn_.chars[0] - '1';
     static const std::string kLabels[5] = {"PLAY", "PRACTICE", "CREATE", "RANKS", "SETTINGS"};
     static const int kIcons[5] = {ICON_PLAY, ICON_GAUGE, ICON_GRID, ICON_TROPHY, ICON_GEAR};
     for (int i = 0; i < 5; i++) {
@@ -10227,7 +10231,7 @@ void Game::drawMainStrip(float s, float H) {
         static const UiExp kNav[5] = {UiExp::nav("main"), UiExp::nav("main/practice"), UiExp::nav("main/create"), UiExp::nav("leaderboard"), UiExp::nav("settings")};
         static const char* const kIds[5] = {"PLAY", "PRACTICE", "CREATE", "RANKS", "SETTINGS"};
         if (ui_.probing()) ui_.custom(0, y, sw, h, kLabels[i], (cur ? UiExp::inert() : kNav[i]).withId(kIds[i]));
-        if (!(hv && uiIn_.pressed) || cur) continue;
+        if (!((hv && uiIn_.pressed) || keyTab == i) || cur) continue;
         leaveForStrip();
         if (i < MAIN_TABS) openMainTab(i);
         else if (i == 3) { nextBoardFetch_ = 0; raceStatsView_ = false; setScreen(Screen::Leaderboard); }   // RANKS: the leaderboard
@@ -10261,6 +10265,13 @@ void Game::drawMainStrip(float s, float H) {
         uiIn_.pressed = false;
     }
     r_.text(sw + 8 * s, H - 20 * s, std::max(1.0f, std::round(s)), kQuarkBuildId, kGrey);   // (the full build, owner 2026-11-04)
+}
+
+// menu keys (1-5: the strip's tabs; Enter: the page's big button) only while no text field, popup, key capture,
+// picker or card wants the keyboard
+bool Game::menuKeysFree() const {
+    return !ui_.typing() && !typingAtFrame_ && !ui_.popupOpen() && !nameEdit_ && captureAction_ < 0 && picker_ == PICK_NONE && !edPrompt_ && !tutOffer_ &&
+           queueLadder_ < 0 && !chatting_ && !console_ && !hostAdvanced_;
 }
 
 // a strip tab / INFO clicked off the main menu: leave the screen as its BACK does (settings applied, HOST's choices
@@ -10358,7 +10369,7 @@ void Game::drawMainPlay(float s, float px, float pw, float rx, float rw, float r
             // RECONNECT beside QUICK PLAY (review round 2: QUICK PLAY used to vanish after the first game), both one click
             static const std::string kReconnect = "RECONNECT", kQuick2 = "QUICK PLAY";
             const float qw = std::round((w - 32 - 8) * 0.55f);
-            if (quickOk && d.bigButton(x + 16, y + 84, qw, 42, kQuick2, UiExp::nav("connecting").optional().withId("QUICK PLAY"))) { quickPlay(); return; }
+            if (quickOk && (d.bigButton(x + 16, y + 84, qw, 42, kQuick2, UiExp::nav("connecting").optional().withId("QUICK PLAY")) || (uiIn_.enter && menuKeysFree()))) { quickPlay(); return; }   // (Enter: the big button)
             if (quickOk ? ui_.button(d.X(x + 16 + qw + 8), d.X(y + 84), d.X(w - 32 - qw - 8), d.X(42), kReconnect, UiExp::nav("connecting").withId("RECONNECT"))
                         : d.bigButton(x + 16, y + 84, w - 32, 42, kReconnect, UiExp::nav("connecting").withId("RECONNECT"))) { reconnectAt_ = 0; reconnectTries_ = 0; connectTo(cfg_.lastAddress); }
         } else {
@@ -10368,7 +10379,7 @@ void Game::drawMainPlay(float s, float px, float pw, float rx, float rw, float r
             // FIND A SERVER, SERVERS and ALL SERVERS were three ways to one screen). No official server: the list.
             static const std::string kQuick = "QUICK PLAY", kFind = "FIND A SERVER";
             if (quickOk) {
-                if (d.bigButton(x + 16, y + 84, w - 32, 42, kQuick, UiExp::nav("connecting").optional().withId("QUICK PLAY"))) { quickPlay(); return; }
+                if (d.bigButton(x + 16, y + 84, w - 32, 42, kQuick, UiExp::nav("connecting").optional().withId("QUICK PLAY")) || (uiIn_.enter && menuKeysFree())) { quickPlay(); return; }   // (Enter: the big button)
             } else if (d.bigButton(x + 16, y + 84, w - 32, 42, kFind, UiExp::nav("join").withId("FIND A SERVER"))) setScreen(Screen::Join);
         }
     }
@@ -10842,7 +10853,7 @@ void Game::drawHost(const SetLayout& L) {
     if (ui_.button(x, L.Y(y), w, h, "ADVANCED  >", UiExp::nav("host/advanced"))) { hostAdvanced_ = true; refreshHostBrains(); }
     y += 60;
     if (ui_.button(x, L.Y(y), hw, h, "BACK", UiExp::nav("main*"))) { cfg_.save(); setScreen(Screen::Main); }
-    if (MainDraw{r_, ui_, uiIn_, 1.0f}.bigButton(x2, L.Y(y), hw, h, "START", UiExp::state("hosting", "1"))) { uiIn_.pressed = false; startHost(); }   // (the accent: review round 2, START was as grey as BACK)
+    if (MainDraw{r_, ui_, uiIn_, 1.0f}.bigButton(x2, L.Y(y), hw, h, "START", UiExp::state("hosting", "1")) || (uiIn_.enter && menuKeysFree())) { uiIn_.pressed = false; startHost(); }   // (the accent: review round 2, START was as grey as BACK)
     if (!error_.empty()) ui_.labelCentered(L.X(640), L.Y(y + 64), error_, kRed, 1.0f, L.L(960));
 }
 
@@ -10939,7 +10950,7 @@ void Game::drawVsBots(const SetLayout& L) {
     }
     y += 12;   // (20 px over the footer)
     if (ui_.button(x, L.Y(y), hw, h, "BACK", UiExp::nav("main*"))) { cfg_.save(); setScreen(Screen::Main); }
-    if (MainDraw{r_, ui_, uiIn_, 1.0f}.bigButton(x2, L.Y(y), hw, h, "START", UiExp::state("hosting", "1"))) { uiIn_.pressed = false; startHost(true); }   // (the accent, as HOST's)
+    if (MainDraw{r_, ui_, uiIn_, 1.0f}.bigButton(x2, L.Y(y), hw, h, "START", UiExp::state("hosting", "1")) || (uiIn_.enter && menuKeysFree())) { uiIn_.pressed = false; startHost(true); }   // (the accent, as HOST's)
     if (!error_.empty()) ui_.labelCentered(L.X(640), L.Y(y + 64), error_, kRed, 1.0f, L.L(960));
 }
 

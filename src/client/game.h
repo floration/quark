@@ -237,6 +237,8 @@ private:
     void openMainTab(int tab);         // shows a tab, and reads what it shows (bests, recent maps) once
     void drawMainMenu();
     void drawMainStrip(float s, float H);
+    bool typingAtFrame_ = false;
+    bool menuKeysFree() const;   // (1-5 / Enter in the menus: nothing else wants the keyboard)
     void leaveForStrip();        // (a strip click off the main menu: leave the screen as its BACK does)
     int stripFromTab_ = 0;       // the main menu tab the current screen was opened from (the strip lights it)
     float menuStripPx_ = 0;      // the main menu's strip beside this frame's menu screen (px; 0: none), menuLayout centres right of it
