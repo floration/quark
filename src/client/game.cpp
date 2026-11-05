@@ -1153,6 +1153,13 @@ void Game::onFocus(bool focused) {
     if (focused) focusGained_ = true; else swallowedBtn_ = 0;   // (let go while away: no release comes)
     if (!opts_.uiTest) setGamePriority(prioLevel(focused));   // (alt-tabbed: the other programs get their share back)
     focused_ = focused;
+    // Exclusive fullscreen at its own FULLSCREEN SIZE, alt-tabbed: the desktop goes back to its own resolution (owner,
+    // 2026-11-05), which only a minimized window gives back (GLFW lets the display mode go then, and takes it again
+    // when the game is brought back). MINIMIZE ON ALT-TAB on does that already for every size.
+    if (!focused && !opts_.uiTest && cfg_.displayMode == 2 && !cfg_.autoIconify && glfwGetWindowMonitor(win_) && cfg_.fsWidth > 0 && cfg_.fsHeight > 0) {
+        const DeskMode d = desktopMode(glfwGetWindowMonitor(win_));
+        if (d.w != cfg_.fsWidth || d.h != cfg_.fsHeight) glfwIconifyWindow(win_);
+    }
     applyBackground();
 }
 
@@ -11983,7 +11990,11 @@ void Game::applyDisplayMode() {
     // Render at the new size right away (don't wait for a resize event that may arrive late).
     int fw = 0, fh = 0;
     glfwGetFramebufferSize(win_, &fw, &fh);
-    if (cfg_.displayMode != 0) { fw = std::max(fw, vm.w); fh = std::max(fh, vm.h); }
+    // (borderless: at least the desktop's size, the window may not have grown yet. Exclusive: its own size, which
+    // FULLSCREEN SIZE may make smaller than the desktop: drawn at the desktop's size, the picture sat in the bottom-left
+    // corner of a smaller screen, cut off (owner, 2026-11-05: "it should center the game and it isnt"))
+    if (cfg_.displayMode == 2) { if (cfg_.fsWidth > 0 && cfg_.fsHeight > 0) { fw = cfg_.fsWidth; fh = cfg_.fsHeight; } else { fw = std::max(fw, vm.w); fh = std::max(fh, vm.h); } }
+    else if (cfg_.displayMode == 1) { fw = std::max(fw, vm.w); fh = std::max(fh, vm.h); }
     if (fw > 0 && fh > 0) r_.resize(fw, fh);
 }
 
