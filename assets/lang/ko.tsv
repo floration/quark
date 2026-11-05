@@ -987,6 +987,7 @@ FINAL	결승
 FIND A SERVER	서버 찾기
 FIND CLIP BOXES	클립 박스 찾기
 FIND INVISIBLE WALLS:	보이지 않는 벽 찾기:
+FINDING A RANKED MATCH	랭크 매치 찾는 중
 FINDING YOUR ADDRESS...	주소 확인 중...
 FINISH	완주
 FINISHED	완료
@@ -1551,6 +1552,7 @@ LOCATOR READY	탐지기 준비됨
 LOGIC:	로직:
 LOGO + YOUR BOTS	로고 + 내 봇
 LOOK	외형
+LOOKING FOR SOMEONE WAITING ON THIS LADDER	이 래더에서 기다리는 상대를 찾는 중
 LOOKS INTEGRATED: IF THERE'S A DEDICATED GPU,	내장 그래픽으로 보임: 외장 GPU가 있다면,
 LOSS	손실
 LOSS #%	손실 #%
@@ -2345,6 +2347,7 @@ NO SETTINGS ON THE CLIPBOARD (EXPORT MAKES THEM)	클립보드에 설정 없음 (
 NO TIMES YET	아직 기록 없음
 NO VSYNC	수직 동기화 없음
 NOBODY RANKED YET (3 GAMES)	아직 랭크된 사람 없음 (3게임)
+NOBODY WAITING - HOSTING A RANKED GAME, AN OPPONENT WILL JOIN YOU	기다리는 상대 없음 - 랭크 게임을 호스팅합니다, 상대가 참가합니다
 NONE	없음
 NONE YET	아직 없음
 NONE YET - EXPORT ONE, OR COPY A GROUP AND IMPORT	아직 없음 - 하나를 내보내거나 그룹을 복사해 가져오기

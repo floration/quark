@@ -809,13 +809,47 @@ void Game::quickPlay() {
 // in it (lowest ping; servers 1.19.9+ say their ladder in the info reply), else host one on its own map, listed so
 // the next player to queue finds it. Uses the list the main menu keeps fresh (every 10 s).
 void Game::findRankedMatch(int ladder) {
+    // (review round 2: it decided at once from a list up to 10 s old and hosted without a word) - now a FINDING A
+    // RANKED MATCH card over the main menu: a fresh list, CANCEL, and it says so when it hosts (drawRankedQueue)
     picker_ = PICK_NONE;
     variantCtx_ = 0;
     cfg_.save();
+    queueLadder_ = ladder;
+    queueAt_ = time_;
+    browser_.refresh();
+    browserAt_ = time_;
+    setScreen(Screen::Main);
+}
+
+// the queue's card: joins a ranked server on the ladder with someone waiting as soon as one answers; after 3 s with
+// none, hosts one on the ladder's own map, listed publicly so the next player to queue finds it
+void Game::drawRankedQueue() {
+    const SetLayout L = menuLayout(560);
+    const float bw = L.L(528);
+    float y = 360 - 90;
+    ui_.panel(L.X(360), L.Y(y - 16), L.L(560), L.L(180), 0.94f);
+    ui_.labelCentered(L.X(640), L.Y(y), "FINDING A RANKED MATCH", kWhite, 1.25f, bw);
+    y += 32;
+    ui_.labelCentered(L.X(640), L.Y(y), arenaVariant(queueLadder_).title, ui_.accent, 1.0f, bw);
+    y += 26;
+    const int secs = (int)std::max(0.0, time_ - queueAt_);
+    char b[16];
+    snprintf(b, sizeof b, "%d:%02d", secs / 60, secs % 60);
+    ui_.hintCentered(L.X(640), L.Y(y), "LOOKING FOR SOMEONE WAITING ON THIS LADDER", kGrey, bw);
+    ui_.hintCentered(L.X(640), L.Y(y + 18), b, kGrey, bw);
+    y += 50;
+    if (ui_.button(L.X(640 - 90), L.Y(y), L.L(180), L.L(40), "CANCEL", UiExp::nav("main*").withId("CANCEL")) || uiIn_.escape) { queueLadder_ = -1; return; }
+    if (ui_.probing()) return;   // (the UI test: the card, not a game)
     const ServerInfo* best = nullptr;
     for (const ServerInfo& sv : browser_.servers())
-        if (!sv.noReply && sv.rankedLadder == ladder && sv.players > 0 && sv.players < sv.maxPlayers && (!best || sv.ping < best->ping)) best = &sv;
-    if (best) { joinAddr_ = best->addr.toString(); connectTo(joinAddr_); return; }
+        if (!sv.noReply && sv.rankedLadder == queueLadder_ && sv.players > 0 && sv.players < sv.maxPlayers && (!best || sv.ping < best->ping)) best = &sv;
+    const int ladder = queueLadder_;
+    if (best) { queueLadder_ = -1; joinAddr_ = best->addr.toString(); connectTo(joinAddr_); return; }
+    if (time_ - queueAt_ < 3) return;
+    queueLadder_ = -1;
+    notify("NOBODY WAITING - HOSTING A RANKED GAME, AN OPPONENT WILL JOIN YOU", 8);
+    cfg_.hostRanked = true;
+    cfg_.hostArenaVariant = ladder;
     hostMapIdx_ = bestRankedMap(ladder);
     hostModeIdx_ = rankedMode(ladder);
     rankedQueue_ = true;   // (startHost: on the server list whatever HOST's PUBLIC says)
@@ -9900,6 +9934,7 @@ void Game::debugMenuPage() {
         infoScroll_ = scroll;
     } else if (under("leaderboard")) { setScreen(Screen::Leaderboard); raceStatsView_ = p == "leaderboard/race-stats"; }
     else if (p == "demos") setScreen(Screen::Demos);
+    else if (p == "main/ranked-queue") { setScreen(Screen::Main); queueLadder_ = 1; queueAt_ = time_; }   // (RANKED's FINDING A RANKED MATCH card)
     else if (p == "connecting") connectTo("127.0.0.1:9");
     else setScreen(Screen::Main);
 }
@@ -9912,7 +9947,7 @@ void Game::drawMenu() {
     ui_.begin(&r_, uiIn_, s);
     // the main menu's own page (no question over it): its rail fades into the backdrop instead of the veil (mock4's
     // gradient: dark behind the strip and the page, clear by two thirds across, a little darker at the right edge)
-    const bool mainPage = screen_ == Screen::Main && !edPrompt_ && !tutOffer_;
+    const bool mainPage = screen_ == Screen::Main && !edPrompt_ && !tutOffer_ && queueLadder_ < 0;
     if (mainPage) {
         if (!r_.worldLoaded()) r_.rect(0, 0, W, H, {0.03f, 0.035f, 0.05f, 1});
         const float x0 = 72 * s, x1 = 440 * s, x2 = 640 * s, x3 = std::max(x2 + 1, W * 0.68f);
@@ -9940,6 +9975,7 @@ void Game::drawMenu() {
     if (picker_ != PICK_NONE && (screen_ == Screen::Host || screen_ == Screen::VsBots)) { drawPicker(cx, H * 0.12f + 80 * s); return; }
     if (edPrompt_ && screen_ == Screen::Main) { drawEditorSavePrompt(); return; }
     if (tutOffer_ && screen_ == Screen::Main) { drawTutorialOffer(); return; }   // (the first launch: the TUTORIAL, once)
+    if (queueLadder_ >= 0 && screen_ == Screen::Main) { drawRankedQueue(); return; }   // (RANKED's queue: FINDING A RANKED MATCH)
     const SetLayout L = menuLayout(kMW + 32);   // (the column pages: 392 wide)
     switch (screen_) {
         case Screen::Main: drawMainMenu(); break;
@@ -12458,7 +12494,8 @@ void Game::drawPicker(float cx, float y) {
         Item it;
         if (ladders) {
             it.label = arenaVariant(kLadders[i]).title;
-            it.sub = std::string(arenaVariant(kLadders[i]).desc) + " - OWN RATING";
+            // (the mode first: review round 2 found nothing said which ladder is 1v1 and which free for all)
+            it.sub = std::string(modeTitle(rankedMode(kLadders[i]))) + " - " + arenaVariant(kLadders[i]).desc + " - OWN RATING";
             it.cur = rankedNow && kLadders[i] == (live ? net_.mode().arenaVariant : variant);
         } else if (variants) {
             it.label = arenaVariant(i).title;

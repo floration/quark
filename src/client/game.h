@@ -1205,7 +1205,10 @@ private:
     int bestMapFor(int mode) const;
     int bestRankedMap(int ladder) const; // the ladder's own ranked map, else any ranked map for it
     void findRankedMatch(int ladder);
-    void quickPlay();                    // QUICK PLAY: the best official server that answers (bots when none does)    // RANKED's queue: join a waiting ranked game on the ladder, else host one
+    void quickPlay();
+    void drawRankedQueue();              // RANKED's FINDING A RANKED MATCH card (CANCEL; hosts after 3 s with nobody waiting)
+    int queueLadder_ = -1;               // the ladder being queued for (-1: not queueing)
+    double queueAt_ = 0;                    // QUICK PLAY: the best official server that answers (bots when none does)    // RANKED's queue: join a waiting ranked game on the ladder, else host one
     bool rankedQueue_ = false;           // (startHost from the queue: listed publicly)
     bool pressInput(int code);
     void drawControls(const SetLayout& L);
