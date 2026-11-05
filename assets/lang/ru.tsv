@@ -821,6 +821,8 @@ DISCORD:	DISCORD:
 DISCORD:  (PUBLIC)	DISCORD:  (ПУБЛИЧНО)
 DISCORD: TYPE THE 6-DIGIT CODE FROM /link IN DISCORD	DISCORD: ВВЕДИТЕ 6-ЗНАЧНЫЙ КОД ИЗ /link В DISCORD
 DISPLAY	ЭКРАН
+DISPLAY / LATENCY / IMAGE / SOUND	ЭКРАН / ЗАДЕРЖКА / ИЗОБР. / ЗВУК
+DISPLAY / SOUND GROUPS / PERFORMANCE / PRESET	ЭКРАН / ГРУППЫ ЗВУКОВ / ПРОИЗВОДИТ. / ПРЕСЕТ
 DISPLAY: BORDERLESS FULLSCREEN	ЭКРАН: ОКНО БЕЗ РАМКИ
 DISPLAY: EXCLUSIVE FULLSCREEN	ЭКРАН: ЭКСКЛЮЗИВНЫЙ ПОЛНЫЙ ЭКРАН
 DISPLAY: WINDOWED	ЭКРАН: В ОКНЕ
@@ -1577,6 +1579,7 @@ MALE	МУЖ.
 MAP	КАРТА
 MAP COLOR	ЦВЕТ КАРТЫ
 MAP COLORS	ЦВЕТА КАРТЫ
+MAP COLORS / PLAYERS / HEALTH BARS / NAME TAGS	ЦВЕТА КАРТЫ / ИГРОКИ / ПОЛОСЫ ЗДОРОВЬЯ / ТАБЛИЧКИ ИМЁН
 MAP DOWNLOADS	ЗАГРУЗКА КАРТ
 MAP EDITOR	РЕДАКТОР КАРТ
 MAP EDITOR *	РЕДАКТОР КАРТ *
@@ -2300,6 +2303,7 @@ ND	ND
 NE	NE
 NET GRAPH	ГРАФИК СЕТИ
 NETWORK	СЕТЬ
+NETWORK / LIGHT CACHE / MENU CURSOR	СЕТЬ / КЭШ ОСВЕЩЕНИЯ / КУРСОР МЕНЮ
 NETWORK READ	ЧТЕНИЕ СЕТИ
 NETWORK WARNINGS	ПРЕДУПР. СЕТИ
 NEUTRAL PAYLOAD	НЕЙТРАЛЬНАЯ ВАГОНЕТКА
@@ -2461,6 +2465,7 @@ OUTLINE OPACITY	ПРОЗРАЧН. КОНТУРА
 OUTLINE PX	КОНТУР PX
 OUTLINES	КОНТУРЫ
 OUTPUT	ВЫВОД
+OUTPUT / VOLUME / CALLOUTS	ВЫВОД / ГРОМКОСТЬ / КОЛЛАУТЫ
 OVER 1: LOUDER, TO HEAR THEM COMING	БОЛЬШЕ 1: ГРОМЧЕ, ЧТОБЫ СЛЫШАТЬ ИХ ЗАРАНЕЕ
 OVERRIDES FOLDER	ПАПКА OVERRIDES
 OVERRIDES OF YOURS - ON / OFF AT THE NEXT START	ВАШИ ЗАМЕНЫ - ВКЛ / ВЫКЛ ПРИ СЛЕДУЮЩЕМ ЗАПУСКЕ
@@ -2884,6 +2889,7 @@ SCREENSHOT FORMAT	ФОРМАТ СКРИНШОТОВ
 SCREENSHOT SAVED (NO HUD):	СКРИНШОТ СОХРАНЁН (БЕЗ HUD):
 SCREENSHOT SAVED:	СКРИНШОТ СОХРАНЁН:
 SCREENSHOTS	СКРИНШОТЫ
+SCREENSHOTS / DEMOS / LATENCY	СКРИНШОТЫ / ДЕМО / ЗАДЕРЖКА
 SCROLLBAR	ПРОКРУТКА
 SE	SE
 SEARCH	ПОИСК
@@ -2924,6 +2930,7 @@ SHADOW QUALITY: HIGH	КАЧЕСТВО ТЕНЕЙ: ВЫСОКОЕ
 SHADOW QUALITY: LOW	КАЧЕСТВО ТЕНЕЙ: НИЗКОЕ
 SHADOW QUALITY: MEDIUM	КАЧЕСТВО ТЕНЕЙ: СРЕДНЕЕ
 SHADOWS	ТЕНИ
+SHADOWS / PLAYERS / OUTLINES / COLORS	ТЕНИ / ИГРОКИ / КОНТУРЫ / ЦВЕТА
 SHAPE	ФОРМА
 SHARPEN	РЕЗКОСТЬ
 SHIFT + ARROWS: GROW THAT SIDE    CTRL + ARROWS: SHRINK IT    M: MATERIAL / TEAM    N: SHAPE    K: COAT THE SIDE YOU LOOK AT	SHIFT + СТРЕЛКИ: РАСТИТЬ СТОРОНУ    CTRL + СТРЕЛКИ: УМЕНЬШИТЬ    M: МАТЕРИАЛ / КОМАНДА    N: ФОРМА    K: ПОКРЫТЬ СТОРОНУ ПОД ВЗГЛЯДОМ
@@ -3561,6 +3568,7 @@ WIDTH; CUSTOM (GLTF) PLAYER MODELS HAVE NO OUTLINE	ТОЛЩИНА; У СВОИХ
 WINDIR	WINDIR
 WINDOW	ОКНО
 WINDOW + INPUT	ОКНО + ВВОД
+WINDOW / SHADOWS / GPU / HITSOUNDS / FLAT MAP	ОКНО / ТЕНИ / GPU / ХИТСАУНДЫ / ПЛОСК. КАРТА
 WINDOW SIZE	РАЗМЕР ОКНА
 WINDOW SIZE:	РАЗМЕР ОКНА:
 WINDOWED	В ОКНЕ
@@ -3588,6 +3596,7 @@ WORK SANS	WORK SANS
 WORKING...	РАБОТАЮ...
 WORLD	МИР
 WORLD + HUD + SHADOW MAP BUILD	МИР + HUD + КАРТА ТЕНЕЙ
+WORLD / PICTURE / EFFECTS	МИР / ИЗОБР. / ЭФФЕКТЫ
 WORLD OUTLINE	КОНТУР МИРА
 WORLD OUTLINE WIDTH	ТОЛЩИНА КОНТУРА МИРА
 WORST #MS  PING #  3D #X#	ХУДШИЙ #МС  PING #  3D #X#

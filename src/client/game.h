@@ -1206,6 +1206,7 @@ private:
     int bestRankedMap(int ladder) const; // the ladder's own ranked map, else any ranked map for it
     void findRankedMatch(int ladder);
     void quickPlay();
+    void videoPresetCycle(float x, float y, float w, float h);   // VIDEO + AUDIO's PRESET row (page 1 and MORE 3)
     void drawRankedQueue();              // RANKED's FINDING A RANKED MATCH card (CANCEL; hosts after 3 s with nobody waiting)
     int queueLadder_ = -1;               // the ladder being queued for (-1: not queueing)
     double queueAt_ = 0;                    // QUICK PLAY: the best official server that answers (bots when none does)    // RANKED's queue: join a waiting ranked game on the ladder, else host one

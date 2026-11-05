@@ -7315,6 +7315,22 @@ void Game::drawGameplaySettings(const SetLayout& L) {
     g.hint("HIDES ALL PLAYERS' CHAT MESSAGES");
 }
 
+// VIDEO + AUDIO's PRESET (page 1, review round 2: on page 4 nobody found it; and MORE 3): a starting point - shadows,
+// anti-aliasing, render scale, fog and effects at once
+void Game::videoPresetCycle(float x, float y, float w, float h) {
+    static const std::vector<std::string> vn = {"PRESET: CUSTOM", "PRESET: LOW", "PRESET: MEDIUM", "PRESET: HIGH", "PRESET: COMPETITIVE"};
+    if (ui_.cycle(x, y, w, h, "PRESET", cfg_.videoPreset, 5, vn, UiExp::cfg("video_preset")) && cfg_.videoPreset > 0) {
+        struct P { bool shadows; int shadowRes, msaa, scale; float fog, fx; bool bursts, recoil; };
+        static const P ps[] = {{false, 1024, 0, 75, 1.0f, 0.6f, true, true}, {true, 2048, 1, 100, 1.0f, 1.0f, true, true},
+                               {true, 4096, 4, 100, 1.0f, 1.0f, true, true}, {false, 1024, 0, 100, 0.0f, 0.5f, false, false}};
+        const P& p = ps[cfg_.videoPreset - 1];
+        cfg_.shadows = p.shadows; cfg_.msaa = p.msaa; cfg_.renderScale = p.scale; cfg_.fxOpacity = p.fx;
+        cfg_.killBursts = p.bursts; cfg_.viewRecoil = p.recoil;
+        if (cfg_.shadowRes != p.shadowRes) r_.setShadowRes(cfg_.shadowRes = p.shadowRes);
+        r_.setFog(cfg_.fog = p.fog);
+    }
+}
+
 void Game::drawVideoSettings(const SetLayout& L) {
     SetFlow f{ui_, L, kColL, 90};
     const float w = f.w(), h = f.h(), hw = L.L(kHalfW);
@@ -7334,6 +7350,8 @@ void Game::drawVideoSettings(const SetLayout& L) {
         cfg_.maxFps = std::min(std::max(0, (int)std::lround(v)), 100000);
         f.next();
     }
+    videoPresetCycle(f.x(), f.top(), w, h);   // (the quality preset first: review round 2)
+    f.next();
     f.section("LATENCY");
 #ifdef _WIN32
     static const std::vector<std::string> presNames = {"VSYNC: OFF", "VSYNC: ON", "VSYNC: ADAPTIVE", "VSYNC: LATENT SYNC"};
@@ -7742,8 +7760,22 @@ void Game::drawSettingsPages(const SetLayout& L, float footY) {
     int go = -1;
     if (ui_.button(L.X(x), y, L.L(cw), h, "<", cur > 0 ? UiExp::nav(moreNav(cur - 1)).withId("PREVIOUS PAGE") : UiExp::inert().withId("PREVIOUS PAGE"), cur > 0)) go = cur - 1;
     x += cw + gap;
-    for (int i = 0; i < n; i++, x += cw + gap)
+    // VIDEO + AUDIO's nine pages say what's on them under the mouse (review round 2: "9 unnamed pages")
+    static const char* const kVideoPages[9] = {"DISPLAY / LATENCY / IMAGE / SOUND", "WINDOW / SHADOWS / GPU / HITSOUNDS / FLAT MAP", "WORLD / PICTURE / EFFECTS",
+                                               "DISPLAY / SOUND GROUPS / PERFORMANCE / PRESET", "SHADOWS / PLAYERS / OUTLINES / COLORS", "OUTPUT / VOLUME / CALLOUTS",
+                                               "NETWORK / LIGHT CACHE / MENU CURSOR", "MAP COLORS / PLAYERS / HEALTH BARS / NAME TAGS", "SCREENSHOTS / DEMOS / LATENCY"};
+    int hoverPage = -1;
+    for (int i = 0; i < n; i++, x += cw + gap) {
+        if (ui_.over(L.X(x), y, L.L(cw), h)) hoverPage = i;
         if (ui_.tab(L.X(x), y, L.L(cw), h, std::to_string(i + 1), i == cur, i == cur ? UiExp::inert().withId(kIds[i]) : UiExp::nav(moreNav(i)).withId(kIds[i]))) go = i;
+    }
+    if (hoverPage >= 0 && setTab_ == TAB_VIDEO && hoverPage < 9) {
+        const std::string t = kVideoPages[hoverPage];
+        const float hs = ui_.hintScale(), tw = r_.textWidth(t, hs), th = r_.textHeight(hs), pad = L.L(8);
+        const float bx = L.X(640) - tw * 0.5f - pad, by = y - th - 2 * pad - L.L(4);
+        r_.rect(bx, by, tw + 2 * pad, th + 2 * pad, {0.05f, 0.06f, 0.08f, 0.96f});
+        ui_.hint(bx + pad, by + pad, t, ui_.textC(), tw + 1);
+    }
     if (ui_.button(L.X(x), y, L.L(cw), h, ">", cur < n - 1 ? UiExp::nav(moreNav(cur + 1)).withId("NEXT PAGE") : UiExp::inert().withId("NEXT PAGE"), cur < n - 1)) go = cur + 1;
     if (ui_.probing() && settingsPageKeys()) {   // (the UI test: the arrow keys do the same)
         ui_.keyAction("LEFT ARROW (PREVIOUS PAGE)", GLFW_KEY_LEFT, 0, cur > 0 ? UiExp::nav(moreNav(cur - 1)) : UiExp::inert());
@@ -8654,17 +8686,7 @@ void Game::drawMoreSettings(const SetLayout& L) {
         g.hint("WINDOWS, WITH PRIORITIZE GAME ON;", "HIGH CAN SLOW OTHER PROGRAMS");
         g.section("PRESET");   // a starting point: shadows, anti-aliasing, render scale, fog and effects at once
         {
-            static const std::vector<std::string> vn = {"PRESET: CUSTOM", "PRESET: LOW", "PRESET: MEDIUM", "PRESET: HIGH", "PRESET: COMPETITIVE"};
-            if (ui_.cycle(g.x(), g.top(), w, h, "PRESET", cfg_.videoPreset, 5, vn, UiExp::cfg("video_preset")) && cfg_.videoPreset > 0) {
-                struct P { bool shadows; int shadowRes, msaa, scale; float fog, fx; bool bursts, recoil; };
-                static const P ps[] = {{false, 1024, 0, 75, 1.0f, 0.6f, true, true}, {true, 2048, 1, 100, 1.0f, 1.0f, true, true},
-                                       {true, 4096, 4, 100, 1.0f, 1.0f, true, true}, {false, 1024, 0, 100, 0.0f, 0.5f, false, false}};
-                const P& p = ps[cfg_.videoPreset - 1];
-                cfg_.shadows = p.shadows; cfg_.msaa = p.msaa; cfg_.renderScale = p.scale; cfg_.fxOpacity = p.fx;
-                cfg_.killBursts = p.bursts; cfg_.viewRecoil = p.recoil;
-                if (cfg_.shadowRes != p.shadowRes) r_.setShadowRes(cfg_.shadowRes = p.shadowRes);
-                r_.setFog(cfg_.fog = p.fog);
-            }
+            videoPresetCycle(g.x(), g.top(), w, h);
             g.next();
             g.hint("COMPETITIVE: NO FOG OR SHADOWS, FEWER EFFECTS;", "CHANGE ANYTHING AFTER (IT STAYS)");
         }

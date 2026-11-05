@@ -821,6 +821,8 @@ DISCORD:	DISCORD:
 DISCORD:  (PUBLIC)	DISCORD:  (公開)
 DISCORD: TYPE THE 6-DIGIT CODE FROM /link IN DISCORD	DISCORD: DISCORDの /link で得た6桁コードを入力
 DISPLAY	ディスプレイ
+DISPLAY / LATENCY / IMAGE / SOUND	ディスプレイ / 遅延 / 画像 / サウンド
+DISPLAY / SOUND GROUPS / PERFORMANCE / PRESET	ディスプレイ / サウンドグループ / パフォーマンス / プリセット
 DISPLAY: BORDERLESS FULLSCREEN	ディスプレイ: ボーダーレスフルスクリーン
 DISPLAY: EXCLUSIVE FULLSCREEN	ディスプレイ: 排他フルスクリーン
 DISPLAY: WINDOWED	ディスプレイ: ウィンドウ
@@ -1577,6 +1579,7 @@ MALE	男性
 MAP	マップ
 MAP COLOR	マップの色
 MAP COLORS	マップカラー
+MAP COLORS / PLAYERS / HEALTH BARS / NAME TAGS	マップカラー / プレイヤー / 体力バー / ネームタグ
 MAP DOWNLOADS	マップのダウンロード
 MAP EDITOR	マップエディター
 MAP EDITOR *	マップエディター *
@@ -2300,6 +2303,7 @@ ND	ND
 NE	NE
 NET GRAPH	ネットグラフ
 NETWORK	ネットワーク
+NETWORK / LIGHT CACHE / MENU CURSOR	ネットワーク / ライトキャッシュ / メニューカーソル
 NETWORK READ	ネットワーク受信
 NETWORK WARNINGS	ネットワーク警告
 NEUTRAL PAYLOAD	ニュートラルペイロード
@@ -2461,6 +2465,7 @@ OUTLINE OPACITY	輪郭の不透明度
 OUTLINE PX	輪郭 PX
 OUTLINES	輪郭
 OUTPUT	出力
+OUTPUT / VOLUME / CALLOUTS	出力 / 音量 / コールアウト
 OVER 1: LOUDER, TO HEAR THEM COMING	1以上: 大きく、接近が分かる
 OVERRIDES FOLDER	overridesフォルダ
 OVERRIDES OF YOURS - ON / OFF AT THE NEXT START	あなたのオーバーライド - 次回起動時にオン / オフ
@@ -2884,6 +2889,7 @@ SCREENSHOT FORMAT	スクリーンショット形式
 SCREENSHOT SAVED (NO HUD):	スクリーンショット保存 (HUDなし):
 SCREENSHOT SAVED:	スクリーンショット保存:
 SCREENSHOTS	スクリーンショット
+SCREENSHOTS / DEMOS / LATENCY	スクリーンショット / デモ / 遅延
 SCROLLBAR	スクロールバー
 SE	SE
 SEARCH	検索
@@ -2924,6 +2930,7 @@ SHADOW QUALITY: HIGH	影の品質: 高
 SHADOW QUALITY: LOW	影の品質: 低
 SHADOW QUALITY: MEDIUM	影の品質: 中
 SHADOWS	影
+SHADOWS / PLAYERS / OUTLINES / COLORS	影 / プレイヤー / 輪郭 / カラー
 SHAPE	形状
 SHARPEN	シャープ化
 SHIFT + ARROWS: GROW THAT SIDE    CTRL + ARROWS: SHRINK IT    M: MATERIAL / TEAM    N: SHAPE    K: COAT THE SIDE YOU LOOK AT	SHIFT + 矢印: その面を拡大    CTRL + 矢印: 縮小    M: 素材 / チーム    N: 形状    K: 見ている面を塗る
@@ -3561,6 +3568,7 @@ WIDTH; CUSTOM (GLTF) PLAYER MODELS HAVE NO OUTLINE	幅; カスタム (GLTF) プ�
 WINDIR	WINDIR
 WINDOW	ウィンドウ
 WINDOW + INPUT	ウィンドウ + 入力
+WINDOW / SHADOWS / GPU / HITSOUNDS / FLAT MAP	ウィンドウ / 影 / GPU / ヒット音 / フラットマップ
 WINDOW SIZE	ウィンドウサイズ
 WINDOW SIZE:	ウィンドウサイズ:
 WINDOWED	ウィンドウ
@@ -3588,6 +3596,7 @@ WORK SANS	WORK SANS
 WORKING...	処理中...
 WORLD	ワールド
 WORLD + HUD + SHADOW MAP BUILD	ワールド + HUD + シャドウマップ構築
+WORLD / PICTURE / EFFECTS	ワールド / 画像 / エフェクト
 WORLD OUTLINE	ワールドの輪郭
 WORLD OUTLINE WIDTH	ワールド輪郭の幅
 WORST #MS  PING #  3D #X#	最悪 #MS  PING #  3D #X#

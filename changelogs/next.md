@@ -26,3 +26,4 @@
 - Clearer errors in the menus: the server browser says when it couldn't load the list and offers bots instead, RANKS shows one "couldn't reach the ranking server" message with RETRY, official servers that don't answer say NO RESPONSE, and an empty address box tells you what it's for.
 - RANKED's queue now shows a FINDING A RANKED MATCH card with a timer and CANCEL, and tells you when nobody is waiting and it hosts a ranked game for you. The ladder cards say which is 1v1 and which is free for all.
 - Every menu screen now has the main menu's top bar: its name top-left (SERVERS, HOST, BOTS, RANKS...) and the QUARK wordmark in the same place, and START is highlighted on HOST and BOTS.
+- VIDEO + AUDIO: the graphics PRESET (LOW / MEDIUM / HIGH / COMPETITIVE) is now on page 1, and hovering a page number shows what's on that page.
