@@ -540,6 +540,7 @@ CHAT OPACITY	チャット不透明度
 CHAT SECONDS	チャット表示秒数
 CHECK AGAIN	再確認
 CHECK FILES	ファイルを確認
+CHECK YOUR CONNECTION, OR TRY AGAIN IN A MINUTE	接続を確認するか、少し待ってからもう一度
 CHECKING...	確認中...
 CHECKPOINT	チェックポイント
 CHECKPT	CP
@@ -654,6 +655,8 @@ COULD NOT DELETE	削除できませんでした
 COULD NOT RENAME THE RUN	ランの名前を変更できませんでした
 COULD NOT SAVE	保存できませんでした
 COULD NOT WRITE	書き込めませんでした
+COULDN'T LOAD THE INTERNET LIST - CHECK YOUR CONNECTION	インターネットリストを読み込めません - 接続を確認してください
+COULDN'T REACH THE RANKING SERVER	ランキングサーバーに接続できません
 COULDN'T SAVE THE SCREENSHOT	スクリーンショットを保存できませんでした
 COULDN'T START RECORDING	録画を開始できませんでした
 COUNTDOWN: A TICK EACH OF THE LAST 10 S	カウントダウン: 最後の10秒に毎秒音
@@ -1192,6 +1195,7 @@ HARD TO TELL APART WITH	見分けにくい色覚:
 HARDWARE GPU SCHEDULING IS OFF	ハードウェア GPU スケジューリングがオフ
 HAS NO BINDS	割り当てなし
 HAS NO WIDGETS	ウィジェットなし
+HAVE A FRIEND'S ADDRESS? PASTE IT HERE	フレンドのアドレスはここに貼り付け
 HEAD ON: THE DASH RUNS ON UP THE FACE AT ITS FULL 24 M/S	正面から: ダッシュはそのまま 24 M/S で面を上る
 HEADSHOT	ヘッドショット
 HEADSHOT HIT	ヘッドショットヒット
@@ -2336,6 +2340,7 @@ NO RESPONSE - CLICK TO TRY	応答なし - クリックで再試行
 NO RUNS SAVED YET	保存されたランはまだありません
 NO RUNS YET - FINISH	ランなし - ゴールしてください
 NO SERVER ANSWERED - PLAYING BOTS	応答するサーバーなし - BOT戦を開始
+NO SERVER LIST RIGHT NOW	現在サーバーリストがありません
 NO SETTINGS ON THE CLIPBOARD (EXPORT MAKES THEM)	クリップボードに設定がありません (エクスポートで作成)
 NO TIMES YET	記録なし
 NO VSYNC	垂直同期なし
@@ -2533,6 +2538,7 @@ PIRATE	海賊
 PITCH	ピッチ
 PLAY	プレイ
 PLAY A RUN TO SEE YOUR BESTS HERE	プレイするとここにベスト記録が表示されます
+PLAY BOTS INSTEAD	代わりにBOT戦
 PLAY IT	プレイする
 PLAY MODE	プレイモード
 PLAY TIME TRIAL	タイムアタックをプレイ

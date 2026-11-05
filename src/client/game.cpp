@@ -6007,6 +6007,7 @@ void Game::drawLeaderboard(const SetLayout& L) {
     }
     const int kTop = 15;
     const float ts = ui_.textScale(), colW = 220, rowH = 20;
+    bool boardDown = false;   // a column couldn't reach the ranking server (review round 2: the same error four times)
     ui_.panel(L.X(160), L.Y(166), L.L(960), L.L(522), 0.85f);
     ui_.labelCentered(L.X(640), L.Y(182), "RANKED LEADERBOARD", kWhite, 1.5f, L.L(928));
     // a column: its name bar; rows: "1. NAME" and the number right-aligned (names cut to fit: they're data)
@@ -6017,7 +6018,7 @@ void Game::drawLeaderboard(const SetLayout& L) {
         ui_.labelCentered(L.X(x + colW * 0.5f), L.Y(230), title, kWhite, 1.0f, L.L(colW - 8));
         const float sx = L.X(x + 4), sw = L.L(colW - 8);
         if (!loaded) { ui_.hintWrapped(sx, L.Y(262), "LOADING...", kGrey, sw, L.L(14)); return; }
-        if (!rows->empty() && (*rows)[0].rating < 0) { ui_.hintWrapped(sx, L.Y(262), upper((*rows)[0].name), kGrey, sw, L.L(14)); return; }
+        if (!rows->empty() && (*rows)[0].rating < 0) { boardDown = true; return; }   // (one message for the board, under the columns)
         if (rows->empty()) ui_.hintWrapped(sx, L.Y(262), race ? "NO TIMES YET" : "NOBODY RANKED YET (3 GAMES)", kGrey, sw, L.L(14));
         for (size_t i = 0; i < rows->size() && i < (size_t)top; i++) {
             const RankService::LeaderRow& lr = (*rows)[i];
@@ -6064,6 +6065,11 @@ void Game::drawLeaderboard(const SetLayout& L) {
             ui_.hint(L.X(180 + 3 * 236) + L.L(colW - 8) - vw, L.Y(ly), v, it != mine.end() ? kWhite : kGrey, vw + 1);
         }
         if (ly + 14 <= 614) ui_.hintWrapped(L.X(180 + 3 * 236), L.Y(ly + 4), "UNPLAYED MAPS COUNT AT THEIR DEFAULT TIME", kGrey, L.L(colW - 8), L.L(13));
+    }
+    if (boardDown) {   // once, across the ladder columns, with RETRY (the next fetch is otherwise 30 s away)
+        ui_.labelCentered(L.X(176 + (3 * 236 - 16) * 0.5f), L.Y(300), "COULDN'T REACH THE RANKING SERVER", kWhite, 1.0f, L.L(3 * 236 - 32));
+        ui_.labelCentered(L.X(176 + (3 * 236 - 16) * 0.5f), L.Y(324), "CHECK YOUR CONNECTION, OR TRY AGAIN IN A MINUTE", kGrey, 1.0f, L.L(3 * 236 - 32));
+        if (ui_.button(L.X(176 + (3 * 236 - 16) * 0.5f - 70), L.Y(356), L.L(140), L.L(40), "RETRY", UiExp::inert().withId("RETRY"))) nextBoardFetch_ = 0;
     }
     {   // TRIAL MAP: which ranked race map PLAY TIME TRIAL starts
         const auto& rm = rankedRaceMaps();
@@ -10329,7 +10335,7 @@ void Game::drawMainPlay(float s, float px, float pw, float rx, float rw, float r
         char b[48];
         const std::string* val = &kWaiting;
         if (sv && !sv->noReply) { snprintf(b, sizeof b, "%d/%d · %d MS", sv->players, sv->maxPlayers, (int)sv->ping); val = &sbuf(10 + i, b); }
-        else if (sv) val = &kNoReply;
+        else if (sv || time_ - browserAt_ > 6) val = &kNoReply;   // (not listed 6 s after asking: no answer either; was "..." for good)
         const float vx = d.value(rx + rw - 16, yy, kListRowH, *val, kMutedC);
         const std::string& nm = sv && !sv->noReply ? sv->name : kOfficialName;
         drawPieces(r_, d.X(rx + 16 + bw + 8), d.midY(yy, kListRowH, ts), ts, d.X(vx - 12 - (rx + 16 + bw + 8)), {&nm}, ui_.textC());
@@ -10530,8 +10536,13 @@ void Game::drawJoin(const SetLayout& L) {
         }
     }
     if (ui_.button(L.X(784), L.Y(186), L.L(136), h, "CONNECT", UiExp::nav("connecting")) || (uiIn_.enter && !joinAddr_.empty())) connectTo(joinAddr_);
+    // (an empty address box says what it's for: review round 2 found 127.0.0.1 and CONNECT read as the way in)
+    if (joinAddr_.empty() && !ui_.focused(2)) ui_.hint(lx + L.L(8), L.Y(186) + (h - r_.textHeight(hs)) * 0.5f, "HAVE A FRIEND'S ADDRESS? PASTE IT HERE", kGrey, L.L(316));
     ui_.label(lx, L.Y(246), "SERVERS (LAN + INTERNET)", ui_.accent, 1.0f, lw);
-    ui_.hint(lx, L.Y(266), browser_.internetStatus(), kGrey, lw);
+    // (a failed list in words, not "HTTP ERROR STATUS"; the list panel then offers a way on)
+    const bool listDown = browser_.listFailed();
+    if (listDown) ui_.hint(lx, L.Y(266), "COULDN'T LOAD THE INTERNET LIST - CHECK YOUR CONNECTION", Color{1.0f, 0.7f, 0.35f, 1}, lw);
+    else ui_.hint(lx, L.Y(266), browser_.internetStatus(), kGrey, lw);
     ui_.panel(lx, L.Y(282), lw, L.L(200), 0.6f);
     // the columns: SERVER, MAP, PLAYERS, PING (design x of each, and how far it may run)
     static const float colX[4] = {372, 622, 752, 852}, colEnd[4] = {612, 744, 844, 908};
@@ -10614,7 +10625,10 @@ void Game::drawJoin(const SetLayout& L) {
         }
         r_.text(nameX, ty, ts, name, kWhite);
     }
-    if (browser_.servers().empty()) ui_.label(L.X(372), L.Y(310), "NO GAMES FOUND", kGrey, 1.0f, L.L(536));
+    if (browser_.servers().empty() && listDown) {   // nothing heard at all: REFRESH LIST below, or bots now
+        ui_.label(L.X(372), L.Y(310), "NO SERVER LIST RIGHT NOW", kGrey, 1.0f, L.L(536));
+        if (ui_.button(L.X(372), L.Y(340), L.L(200), L.L(kMRow), "PLAY BOTS INSTEAD", UiExp::nav("vsbots"))) { setScreen(Screen::VsBots); return; }
+    } else if (browser_.servers().empty()) ui_.label(L.X(372), L.Y(310), "NO GAMES FOUND", kGrey, 1.0f, L.L(536));
     else if (shown.empty()) ui_.label(L.X(372), L.Y(310), "NO GAMES MATCH THE FILTERS", kGrey, 1.0f, L.L(536));
     {   // under the list: how far it's scrolled, and the right-click hint
         char more[96];
@@ -10743,10 +10757,10 @@ void Game::drawHost(const SetLayout& L) {
             ui_.hint(x, L.Y(y), kWith, kGrey, w - L.L(cw + 8));
             ui_.hint(x + lw, L.Y(y), addr, ui_.textC(), w - L.L(cw + 8) - lw);
         } else if (pubIpFuture_.valid()) ui_.hint(x, L.Y(y), kFinding, kGrey, w - L.L(cw + 8));
-        else ui_.hint(x, L.Y(y), "FRIENDS JOIN WITH YOUR PUBLIC IP:" + hostPortStr_, kGrey, w - L.L(cw + 8));
+        else ui_.hint(x, L.Y(y), "FRIENDS JOIN WITH YOUR PUBLIC IP:" + hostPortStr_, kGrey, w);   // (the lookup failed: no COPY)
         static const std::string kCopy = "COPY", kCopied = "COPIED";
         const bool can = !addr.empty();
-        if (ui_.button(x + w - L.L(cw), L.Y(y - 4), L.L(cw), L.L(24), time_ - pubIpCopiedAt_ < 2 ? kCopied : kCopy, UiExp::inert().withId("COPY ADDRESS"), can) && can) {
+        if (can && ui_.button(x + w - L.L(cw), L.Y(y - 4), L.L(cw), L.L(24), time_ - pubIpCopiedAt_ < 2 ? kCopied : kCopy, UiExp::inert().withId("COPY ADDRESS"), can) && can) {
             glfwSetClipboardString(win_, addr.c_str());
             pubIpCopiedAt_ = time_;
         }

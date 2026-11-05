@@ -984,6 +984,7 @@ bool NetClient::projectileHidden(uint16_t id) const {
 ServerBrowser::~ServerBrowser() = default;   // (a fetch still running keeps its own Fetch alive and drops its result)
 
 std::string ServerBrowser::internetStatus() { std::lock_guard<std::mutex> l(fetch_->mu); return fetch_->netStatus; }
+bool ServerBrowser::listFailed() { std::lock_guard<std::mutex> l(fetch_->mu); return fetch_->failed; }
 
 void ServerBrowser::refresh() {
     refreshes_++;
@@ -991,7 +992,7 @@ void ServerBrowser::refresh() {
     servers_.clear();
     listed_.clear();
     uint64_t gen;
-    { std::lock_guard<std::mutex> l(fetch_->mu); gen = ++fetch_->gen; fetch_->netStatus = "SEARCHING THE INTERNET..."; fetch_->fetched.clear(); }
+    { std::lock_guard<std::mutex> l(fetch_->mu); gen = ++fetch_->gen; fetch_->netStatus = "SEARCHING THE INTERNET..."; fetch_->failed = false; fetch_->fetched.clear(); }
     std::thread([f = fetch_, gen] {
         std::vector<std::string> list;
         std::string err;
@@ -1001,6 +1002,7 @@ void ServerBrowser::refresh() {
         if (f->gen != gen) return;   // a newer refresh() is under way: its answer counts
         f->fetched = list;
         f->myIp = me;
+        f->failed = !ok;
         f->netStatus = ok ? std::to_string(list.size()) + " INTERNET SERVER(S) LISTED" : "INTERNET LIST: " + err;
         for (auto& c : f->netStatus) c = (char)toupper((unsigned char)c);
     }).detach();

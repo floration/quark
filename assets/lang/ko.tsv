@@ -540,6 +540,7 @@ CHAT OPACITY	채팅 불투명도
 CHAT SECONDS	채팅 표시 시간(초)
 CHECK AGAIN	다시 확인
 CHECK FILES	파일 확인
+CHECK YOUR CONNECTION, OR TRY AGAIN IN A MINUTE	연결을 확인하거나 잠시 후 다시 시도하세요
 CHECKING...	확인 중...
 CHECKPOINT	체크포인트
 CHECKPT	체크포인트
@@ -654,6 +655,8 @@ COULD NOT DELETE	삭제 실패
 COULD NOT RENAME THE RUN	기록 이름 변경 실패
 COULD NOT SAVE	저장 실패
 COULD NOT WRITE	쓰기 실패
+COULDN'T LOAD THE INTERNET LIST - CHECK YOUR CONNECTION	인터넷 목록을 불러오지 못했습니다 - 연결을 확인하세요
+COULDN'T REACH THE RANKING SERVER	랭킹 서버에 연결할 수 없습니다
 COULDN'T SAVE THE SCREENSHOT	스크린샷 저장 실패
 COULDN'T START RECORDING	녹화 시작 실패
 COUNTDOWN: A TICK EACH OF THE LAST 10 S	카운트다운: 마지막 10초 동안 매초 틱 소리
@@ -1192,6 +1195,7 @@ HARD TO TELL APART WITH	구분하기 어려운 색:
 HARDWARE GPU SCHEDULING IS OFF	하드웨어 GPU 스케줄링이 꺼져 있음
 HAS NO BINDS	키 지정 없음
 HAS NO WIDGETS	위젯 없음
+HAVE A FRIEND'S ADDRESS? PASTE IT HERE	친구 주소가 있나요? 여기에 붙여넣기
 HEAD ON: THE DASH RUNS ON UP THE FACE AT ITS FULL 24 M/S	정면으로: 대시가 24 M/S 그대로 면을 오른다
 HEADSHOT	헤드샷
 HEADSHOT HIT	헤드샷 적중
@@ -2336,6 +2340,7 @@ NO RESPONSE - CLICK TO TRY	응답 없음 - 클릭하여 재시도
 NO RUNS SAVED YET	저장된 기록 없음
 NO RUNS YET - FINISH	아직 기록 없음 - 완주하세요
 NO SERVER ANSWERED - PLAYING BOTS	응답하는 서버 없음 - 봇과 플레이
+NO SERVER LIST RIGHT NOW	지금은 서버 목록이 없습니다
 NO SETTINGS ON THE CLIPBOARD (EXPORT MAKES THEM)	클립보드에 설정 없음 (내보내기로 생성)
 NO TIMES YET	아직 기록 없음
 NO VSYNC	수직 동기화 없음
@@ -2533,6 +2538,7 @@ PIRATE	해적
 PITCH	피치
 PLAY	플레이
 PLAY A RUN TO SEE YOUR BESTS HERE	플레이하면 여기에 최고 기록이 표시됩니다
+PLAY BOTS INSTEAD	대신 봇과 플레이
 PLAY IT	플레이하기
 PLAY MODE	플레이 모드
 PLAY TIME TRIAL	타임 트라이얼 플레이
