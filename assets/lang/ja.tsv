@@ -929,6 +929,7 @@ ESC TO CANCEL	ESCでキャンセル
 ESC: LESSONS	ESC: レッスン
 ESC: PAUSE / SETTINGS   R: RESTART	ESC: 一時停止 / 設定   R: リスタート
 EVERY LANDING HYPERS AGAIN AS SOON AS A DASH CHARGE IS BACK	ダッシュのチャージが戻ればすぐ、着地ごとに再びハイパー
+EVERY SERVER IS FULL - PLAYING BOTS	すべてのサーバーが満員 - BOT戦を開始
 EVERY SETTING IS BACK TO ITS DEFAULT	全設定をデフォルトに戻しました
 EVERY WEAPON, ALL MOVEMENT - NO GIMMICKS	全武器・全移動 - ギミックなし
 EVERYONE THROWS - THE LOSING SHAPE IS OUT	全員が出す - 負けた手は脱落
@@ -989,6 +990,7 @@ FINAL	決勝
 FIND A SERVER	サーバーを探す
 FIND CLIP BOXES	クリップボックスを検索
 FIND INVISIBLE WALLS:	見えない壁を検索:
+FINDING A GAME...	ゲームを検索中...
 FINDING A RANKED MATCH	ランクマッチを検索中
 FINDING YOUR ADDRESS...	アドレスを確認中...
 FINISH	ゴール
@@ -1279,6 +1281,7 @@ HOP 15 M/S UP OFF A LANDING	着地から 15 M/S で跳ねる
 HOST	ホスト
 HOST EDIT SESSION	編集セッションをホスト
 HOST EDIT SESSION: friends join and build with you; everyone's camera shows in the view.	編集セッションをホスト: フレンドが参加して一緒に制作; 全員のカメラが画面に表示されます。
+HOST NOW	今すぐホスト
 HOSTING	ホスト中
 HOSTING ON UDP PORT	ホスト中 UDPポート:
 HOW	やり方
@@ -2351,7 +2354,8 @@ NO SETTINGS ON THE CLIPBOARD (EXPORT MAKES THEM)	クリップボードに設定�
 NO TIMES YET	記録なし
 NO VSYNC	垂直同期なし
 NOBODY RANKED YET (3 GAMES)	ランク入りはまだいません (3試合)
-NOBODY WAITING - HOSTING A RANKED GAME, AN OPPONENT WILL JOIN YOU	待機中の相手なし - ランク戦をホスト中、相手が参加します
+NOBODY WAITING - HOSTING A RANKED GAME, THE NEXT PLAYER TO QUEUE JOINS YOU	待機中の相手なし - ランク戦をホスト中、次に検索した人が参加します
+NOBODY YET: YOU HOST IN # S	まだ誰もいません: # 秒後にホスト
 NONE	なし
 NONE YET	まだなし
 NONE YET - EXPORT ONE, OR COPY A GROUP AND IMPORT	まだなし - エクスポートするか、グループをコピーしてインポート
@@ -2642,7 +2646,7 @@ QUEUES - SHARED WITH DISCORD	キュー - DISCORDと共有
 QUEUES NEED A RANKED KEY (quark.key) - COULDN'T MAKE ONE	キューにはランクキーが必要 (quark.key) - 作成できませんでした
 QUICK DASH	クイックダッシュ
 QUICK PLAY	クイックプレイ
-QUICK PLAY JOINS THE BUSIEST OFFICIAL SERVER	クイックプレイで一番にぎわう公式サーバーに参加
+QUICK PLAY JOINS A GAME WITH ROOM, OR STARTS BOTS	クイックプレイは空きのあるゲームに参加、なければBOT戦
 QUIP	一言
 QUIP CAPTIONS	一言の字幕
 QUIPS	一言
@@ -2904,6 +2908,7 @@ SEMIFINALS	準決勝
 SENSITIVITY	感度
 SENSITIVITY FROM ANOTHER GAME	他のゲームから感度を変換
 SERVER	サーバー
+SERVER LIST UNREACHABLE - HOSTING A RANKED GAME ONLY YOUR ADDRESS REACHES	サーバーリストに接続できません - ランク戦はあなたのアドレスからのみ参加可能
 SERVER LOG	サーバーログ
 SERVER LOG: EXTREME (EVERY TICK)	サーバーログ: 最大 (毎ティック)
 SERVER LOG: OFF	サーバーログ: オフ

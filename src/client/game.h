@@ -1208,10 +1208,13 @@ private:
     int bestRankedMap(int ladder) const; // the ladder's own ranked map, else any ranked map for it
     void findRankedMatch(int ladder);
     void quickPlay();
+    void quickPlayTick();
+    double quickAt_ = -1;                // QUICK PLAY pressed (FINDING A GAME...), -1: not
     void videoPresetCycle(float x, float y, float w, float h);   // VIDEO + AUDIO's PRESET row (page 1 and MORE 3)
     void drawRankedQueue();              // RANKED's FINDING A RANKED MATCH card (CANCEL; hosts after 3 s with nobody waiting)
     int queueLadder_ = -1;               // the ladder being queued for (-1: not queueing)
-    double queueAt_ = 0;                    // QUICK PLAY: the best official server that answers (bots when none does)    // RANKED's queue: join a waiting ranked game on the ladder, else host one
+    double queueAt_ = 0, queueHostAfter_ = 20, queueRefreshed_ = 0;
+    void hostRankedQueue(int ladder);    // the queue's fallback: host a public ranked game, HOST's settings put back after                    // QUICK PLAY: the best official server that answers (bots when none does)    // RANKED's queue: join a waiting ranked game on the ladder, else host one
     bool rankedQueue_ = false;           // (startHost from the queue: listed publicly)
     bool pressInput(int code);
     void drawControls(const SetLayout& L);

@@ -929,6 +929,7 @@ ESC TO CANCEL	ESC ДЛЯ ОТМЕНЫ
 ESC: LESSONS	ESC: УРОКИ
 ESC: PAUSE / SETTINGS   R: RESTART	ESC: ПАУЗА / НАСТРОЙКИ   R: ЗАНОВО
 EVERY LANDING HYPERS AGAIN AS SOON AS A DASH CHARGE IS BACK	КАЖДОЕ ПРИЗЕМЛЕНИЕ — СНОВА ГИПЕР, КАК ТОЛЬКО ВЕРНЁТСЯ ЗАРЯД РЫВКА
+EVERY SERVER IS FULL - PLAYING BOTS	ВСЕ СЕРВЕРЫ ЗАПОЛНЕНЫ - ИГРА С БОТАМИ
 EVERY SETTING IS BACK TO ITS DEFAULT	ВСЕ НАСТРОЙКИ СБРОШЕНЫ ПО УМОЛЧАНИЮ
 EVERY WEAPON, ALL MOVEMENT - NO GIMMICKS	ВСЁ ОРУЖИЕ, ВСЁ ПЕРЕДВИЖЕНИЕ - БЕЗ ФОКУСОВ
 EVERYONE THROWS - THE LOSING SHAPE IS OUT	ВСЕ ВЫБРАСЫВАЮТ - ПРОИГРАВШАЯ ФИГУРА ВЫБЫВАЕТ
@@ -989,6 +990,7 @@ FINAL	ФИНАЛ
 FIND A SERVER	НАЙТИ СЕРВЕР
 FIND CLIP BOXES	НАЙТИ CLIP-БЛОКИ
 FIND INVISIBLE WALLS:	НАЙТИ НЕВИДИМЫЕ СТЕНЫ:
+FINDING A GAME...	ПОИСК ИГРЫ...
 FINDING A RANKED MATCH	ПОИСК РЕЙТИНГОВОГО МАТЧА
 FINDING YOUR ADDRESS...	ИЩЕМ ТВОЙ АДРЕС...
 FINISH	ФИНИШ
@@ -1279,6 +1281,7 @@ HOP 15 M/S UP OFF A LANDING	ОТСКОК 15 М/С ПРИ ПРИЗЕМЛЕНИИ
 HOST	ХОСТ
 HOST EDIT SESSION	СЕССИЯ ПРАВКИ (ХОСТ)
 HOST EDIT SESSION: friends join and build with you; everyone's camera shows in the view.	СЕССИЯ ПРАВКИ (ХОСТ): друзья заходят и строят с вами; камеры всех видны на экране.
+HOST NOW	СОЗДАТЬ СЕЙЧАС
 HOSTING	ХОСТИНГ
 HOSTING ON UDP PORT	ХОСТИНГ НА UDP-ПОРТУ
 HOW	КАК
@@ -2351,7 +2354,8 @@ NO SETTINGS ON THE CLIPBOARD (EXPORT MAKES THEM)	НЕТ НАСТРОЕК В БУ
 NO TIMES YET	ВРЕМЁН ПОКА НЕТ
 NO VSYNC	БЕЗ VSYNC
 NOBODY RANKED YET (3 GAMES)	В РЕЙТИНГЕ ПОКА НИКОГО (3 ИГРЫ)
-NOBODY WAITING - HOSTING A RANKED GAME, AN OPPONENT WILL JOIN YOU	НИКТО НЕ ЖДЁТ - ВЫ СОЗДАЛИ РЕЙТИНГОВУЮ ИГРУ, СОПЕРНИК ПРИСОЕДИНИТСЯ
+NOBODY WAITING - HOSTING A RANKED GAME, THE NEXT PLAYER TO QUEUE JOINS YOU	НИКТО НЕ ЖДЁТ - ВЫ СОЗДАЛИ РЕЙТИНГОВУЮ ИГРУ, СЛЕДУЮЩИЙ В ПОИСКЕ ПРИСОЕДИНИТСЯ
+NOBODY YET: YOU HOST IN # S	ПОКА НИКОГО: ВЫ СОЗДАДИТЕ ИГРУ ЧЕРЕЗ # С
 NONE	НЕТ
 NONE YET	ПОКА НЕТ
 NONE YET - EXPORT ONE, OR COPY A GROUP AND IMPORT	ПОКА НЕТ - ЭКСПОРТИРУЙТЕ ИЛИ СКОПИРУЙТЕ ГРУППУ И ИМПОРТИРУЙТЕ
@@ -2642,7 +2646,7 @@ QUEUES - SHARED WITH DISCORD	ОЧЕРЕДИ - ОБЩИЕ С DISCORD
 QUEUES NEED A RANKED KEY (quark.key) - COULDN'T MAKE ONE	ДЛЯ ОЧЕРЕДЕЙ НУЖЕН РЕЙТИНГОВЫЙ КЛЮЧ (quark.key) - НЕ УДАЛОСЬ СОЗДАТЬ
 QUICK DASH	БЫСТРЫЙ РЫВОК
 QUICK PLAY	БЫСТРАЯ ИГРА
-QUICK PLAY JOINS THE BUSIEST OFFICIAL SERVER	БЫСТРАЯ ИГРА: САМЫЙ ЖИВОЙ ОФИЦИАЛЬНЫЙ СЕРВЕР
+QUICK PLAY JOINS A GAME WITH ROOM, OR STARTS BOTS	БЫСТРАЯ ИГРА: ИГРА СО СВОБОДНЫМ МЕСТОМ ИЛИ БОТЫ
 QUIP	ФРАЗА
 QUIP CAPTIONS	СУБТИТРЫ ФРАЗ
 QUIPS	ФРАЗЫ
@@ -2904,6 +2908,7 @@ SEMIFINALS	ПОЛУФИНАЛ
 SENSITIVITY	ЧУВСТВИТ.
 SENSITIVITY FROM ANOTHER GAME	ЧУВСТВИТЕЛЬНОСТЬ ИЗ ДРУГОЙ ИГРЫ
 SERVER	СЕРВЕР
+SERVER LIST UNREACHABLE - HOSTING A RANKED GAME ONLY YOUR ADDRESS REACHES	СПИСОК СЕРВЕРОВ НЕДОСТУПЕН - РЕЙТИНГОВАЯ ИГРА ДОСТУПНА ТОЛЬКО ПО ВАШЕМУ АДРЕСУ
 SERVER LOG	ЛОГ СЕРВЕРА
 SERVER LOG: EXTREME (EVERY TICK)	ЛОГ СЕРВЕРА: ЭКСТРИМ (КАЖДЫЙ ТИК)
 SERVER LOG: OFF	ЛОГ СЕРВЕРА: ВЫКЛ

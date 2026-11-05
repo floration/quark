@@ -929,6 +929,7 @@ ESC TO CANCEL	ESC로 취소
 ESC: LESSONS	ESC: 레슨
 ESC: PAUSE / SETTINGS   R: RESTART	ESC: 일시정지 / 설정   R: 재시작
 EVERY LANDING HYPERS AGAIN AS SOON AS A DASH CHARGE IS BACK	대시 충전이 돌아오는 즉시 착지할 때마다 다시 하이퍼
+EVERY SERVER IS FULL - PLAYING BOTS	모든 서버가 가득 찼습니다 - 봇과 플레이
 EVERY SETTING IS BACK TO ITS DEFAULT	모든 설정이 기본값으로 돌아갔습니다
 EVERY WEAPON, ALL MOVEMENT - NO GIMMICKS	모든 무기, 모든 이동기 - 변형 없음
 EVERYONE THROWS - THE LOSING SHAPE IS OUT	모두 동시에 냄 - 진 모양은 탈락
@@ -989,6 +990,7 @@ FINAL	결승
 FIND A SERVER	서버 찾기
 FIND CLIP BOXES	클립 박스 찾기
 FIND INVISIBLE WALLS:	보이지 않는 벽 찾기:
+FINDING A GAME...	게임 찾는 중...
 FINDING A RANKED MATCH	랭크 매치 찾는 중
 FINDING YOUR ADDRESS...	주소 확인 중...
 FINISH	완주
@@ -1279,6 +1281,7 @@ HOP 15 M/S UP OFF A LANDING	착지에서 15 M/S로 튀어 오르기
 HOST	호스트
 HOST EDIT SESSION	편집 세션 호스트
 HOST EDIT SESSION: friends join and build with you; everyone's camera shows in the view.	편집 세션 호스트: 친구가 참가해 함께 제작합니다; 모두의 카메라가 화면에 표시됩니다.
+HOST NOW	지금 호스트
 HOSTING	호스트 중
 HOSTING ON UDP PORT	UDP 포트에서 호스트 중
 HOW	방법
@@ -2351,7 +2354,8 @@ NO SETTINGS ON THE CLIPBOARD (EXPORT MAKES THEM)	클립보드에 설정 없음 (
 NO TIMES YET	아직 기록 없음
 NO VSYNC	수직 동기화 없음
 NOBODY RANKED YET (3 GAMES)	아직 랭크된 사람 없음 (3게임)
-NOBODY WAITING - HOSTING A RANKED GAME, AN OPPONENT WILL JOIN YOU	기다리는 상대 없음 - 랭크 게임을 호스팅합니다, 상대가 참가합니다
+NOBODY WAITING - HOSTING A RANKED GAME, THE NEXT PLAYER TO QUEUE JOINS YOU	기다리는 상대 없음 - 랭크 게임을 호스팅합니다, 다음 대기자가 참가합니다
+NOBODY YET: YOU HOST IN # S	아직 없음: # 초 후 호스트
 NONE	없음
 NONE YET	아직 없음
 NONE YET - EXPORT ONE, OR COPY A GROUP AND IMPORT	아직 없음 - 하나를 내보내거나 그룹을 복사해 가져오기
@@ -2642,7 +2646,7 @@ QUEUES - SHARED WITH DISCORD	대기열 - DISCORD와 공유
 QUEUES NEED A RANKED KEY (quark.key) - COULDN'T MAKE ONE	대기열에는 랭크 키가 필요합니다 (quark.key) - 생성 실패
 QUICK DASH	빠른 대시
 QUICK PLAY	빠른 플레이
-QUICK PLAY JOINS THE BUSIEST OFFICIAL SERVER	빠른 플레이로 사람이 가장 많은 공식 서버에 참가
+QUICK PLAY JOINS A GAME WITH ROOM, OR STARTS BOTS	빠른 플레이는 자리가 있는 게임에 참가하거나 봇과 시작합니다
 QUIP	한마디
 QUIP CAPTIONS	한마디 자막
 QUIPS	한마디
@@ -2904,6 +2908,7 @@ SEMIFINALS	4강
 SENSITIVITY	감도
 SENSITIVITY FROM ANOTHER GAME	다른 게임의 감도
 SERVER	서버
+SERVER LIST UNREACHABLE - HOSTING A RANKED GAME ONLY YOUR ADDRESS REACHES	서버 목록에 연결할 수 없음 - 내 주소로만 참가할 수 있는 랭크 게임을 호스팅합니다
 SERVER LOG	서버 로그
 SERVER LOG: EXTREME (EVERY TICK)	서버 로그: 극단적 (매 틱)
 SERVER LOG: OFF	서버 로그: 끄기

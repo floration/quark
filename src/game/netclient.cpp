@@ -1014,6 +1014,13 @@ void ServerBrowser::refresh() {
         sock_.send(NetAddr{0x7F000001u, p}, buf, sizeof buf);
     }
     sentAt_ = timeNow();
+    // the official servers, asked directly (review round 3: known only from the internet list, so with the list down
+    // they never answered or went silent - their rows said "..." for good and QUICK PLAY never fell back to bots)
+    for (size_t i = 0; i < kOfficialServerCount; i++) {
+        const NetAddr na{kOfficialServers[i].ip, kOfficialServers[i].port};
+        listed_.push_back({na, sentAt_, 1, false});
+        sock_.send(na, buf, sizeof buf);
+    }
 }
 
 void ServerBrowser::query(const std::string& address) {
