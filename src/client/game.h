@@ -37,6 +37,8 @@ struct GLFWwindow;
 
 // The redesign's coordinates (720p, a 1280 frame) on this screen: x centred on W / 2, everything times s, y from oy
 // (Game::menuLayout: the menus' pages, narrowed on a squarer screen with their top kept under the title)
+constexpr float kMenuStripW = 72;   // the main menu's icon strip (720p design px), on every top-level menu screen
+
 struct SetLayout {
     float s = 1, cx = 640, oy = 0;
     float X(float px) const { return cx + (px - 640) * s; }
@@ -235,6 +237,8 @@ private:
     void openMainTab(int tab);         // shows a tab, and reads what it shows (bests, recent maps) once
     void drawMainMenu();
     void drawMainStrip(float s, float H);
+    void leaveForStrip();        // (a strip click off the main menu: leave the screen as its BACK does)
+    float menuStripPx_ = 0;      // the main menu's strip beside this frame's menu screen (px; 0: none), menuLayout centres right of it
     void drawMainPlay(float s, float px, float pw, float rx, float rw, float ry);
     void drawMainPractice(float s, float px, float pw, float rx, float rw, float ry);
     void drawMainCreate(float s, float px, float pw, float rx, float rw, float ry);
@@ -254,6 +258,12 @@ private:
     void drawVsBots(const SetLayout& L);
     void drawConnecting(const SetLayout& L);
     void debugMenuPage();     // --menupage PATH: that menu page open (screenshots)
+    // HOST's address for friends (review 2026-11-04: "FRIENDS JOIN WITH YOUR PUBLIC IP" left players looking it up):
+    // this machine's public IPv4, looked up once on its own thread when HOST first opens; COPY puts ip:port on the clipboard
+    std::future<std::string> pubIpFuture_;
+    std::string pubIp_;
+    bool pubIpAsked_ = false;
+    double pubIpCopiedAt_ = -1e9;
     bool hostAdvanced_ = false;   // HOST > ADVANCED (UDP port, port forward, server log, bot brain) open
     std::vector<std::string> hostBrains_;   // ADVANCED's BOT BRAIN choices after BUILT-IN: bots/*.qbrain, listed when HOST opens
     std::string hostBrainNote_;             // the chosen brain's problem, short ("" none): it doesn't compile
@@ -486,7 +496,7 @@ private:
     std::string previewSig_;    // (the maps the renderer's previews are of: names, file times and sizes)
     std::vector<MapInfo> mapInfo_;
     enum { PICK_NONE = 0, PICK_HOST_MAP, PICK_HOST_MODE, PICK_BOT_MAP, PICK_BOT_MODE, PICK_LIVE_MAP, PICK_LIVE_MODE, PICK_VARIANT, PICK_TMAPS, PICK_TMODES, PICK_RANKED };
-    int variantCtx_ = 0, liveVariant_ = 0; // ruleset step: 0 host, 1 vs bots, 2 in game
+    int variantCtx_ = 0, liveVariant_ = 0; // ruleset step: 0 host, 1 vs bots, 2 in game, 3 RANKED's queue (main menu)
     std::vector<bool> multiSel_;
     int liveMode_ = 0, liveMap_ = 0;  // in-game map/mode change (host) or vote (anyone)
     bool livePickVote_ = false;
@@ -1014,7 +1024,7 @@ private:
     std::string confirmWhat_; double confirmUntil_ = 0;   // CONFIRM LEAVE: the button armed by a first click
     bool confirmed(const std::string& what);   // (true: do it; false: armed, click again)
     bool confirmArmed(const std::string& what) const { return cfg_.confirmLeave && confirmWhat_ == what && time_ < confirmUntil_; }
-    int settingsStartTab() const { return cfg_.rememberTab ? cfg_.lastTab : TAB_PLAYER; }
+    int settingsStartTab() const { return cfg_.rememberTab ? cfg_.lastTab : TAB_CONTROLS; }   // (CONTROLS: sensitivity, what players open settings for most; review 2026-11-04)
     int prioLevel(bool focused) const { return cfg_.prioritize && focused ? cfg_.cpuPriority : 0; }
     // a display change waiting for KEEP (VIDEO > MORE: RESOLUTION, VIDEO: DISPLAY): reverted at keepUntil_ unless kept
     double keepUntil_ = 0;
@@ -1201,6 +1211,8 @@ private:
     void drawConsole(float W, float H, float s, float ts);
     int bestMapFor(int mode) const;
     int bestRankedMap(int ladder) const; // the ladder's own ranked map, else any ranked map for it
+    void findRankedMatch(int ladder);    // RANKED's queue: join a waiting ranked game on the ladder, else host one
+    bool rankedQueue_ = false;           // (startHost from the queue: listed publicly)
     bool pressInput(int code);
     void drawControls(const SetLayout& L);
     void drawHudSettings(const SetLayout& L);

@@ -260,7 +260,7 @@ void Game::startHost(bool vsBots) {
     sc.logLevel = cfg_.hostLog;
     sc.duelTeamSize = cfg_.hostDuelSize;
     sc.arenaVariant = cfg_.hostArenaVariant;
-    sc.publicList = cfg_.hostPublic;
+    sc.publicList = cfg_.hostPublic || rankedQueue_;   // (RANKED's queue: always listed, so the next player finds it)
     sc.ranked = cfg_.hostRanked;
     if (!vsBots && !sc.ranked && !cfg_.hostCustom.empty()) { // a custom mode: its rules, its mode, a map from its pool
         if (loadCustomMode(cfg_.hostCustom, sc.custom)) {
@@ -780,10 +780,29 @@ int Game::bestRankedMap(int ladder) const {
     return any < 0 ? 0 : any;
 }
 
+// RANKED's queue (the main menu's RANKED, a ladder picked): join the ranked game on that ladder with someone waiting
+// in it (lowest ping; servers 1.19.9+ say their ladder in the info reply), else host one on its own map, listed so
+// the next player to queue finds it. Uses the list the main menu keeps fresh (every 10 s).
+void Game::findRankedMatch(int ladder) {
+    picker_ = PICK_NONE;
+    variantCtx_ = 0;
+    cfg_.save();
+    const ServerInfo* best = nullptr;
+    for (const ServerInfo& sv : browser_.servers())
+        if (!sv.noReply && sv.rankedLadder == ladder && sv.players > 0 && sv.players < sv.maxPlayers && (!best || sv.ping < best->ping)) best = &sv;
+    if (best) { joinAddr_ = best->addr.toString(); connectTo(joinAddr_); return; }
+    hostMapIdx_ = bestRankedMap(ladder);
+    hostModeIdx_ = rankedMode(ladder);
+    rankedQueue_ = true;   // (startHost: on the server list whatever HOST's PUBLIC says)
+    startHost();
+    rankedQueue_ = false;
+}
+
 // The map built for this mode if there is one, else the first map that supports it.
 // A mode's default map where several are built for it (owner, 2026-10-30: "surfy map is default surf gamemode map").
 static const char* defaultMapName(int mode) {
     switch (mode) {
+    case MODE_FFA: return "sewer";   // (built for it, HOST's default; cobblestone, the benchmark map, supports FFA too: review 2026-11-04)
     case MODE_SURF: return "surfy";
     case MODE_BALL: return "qk8";   // (owner, 2026-11-01: qk8 and the bridge)
     default: return nullptr;
@@ -1135,7 +1154,7 @@ void Game::onKey(int key, int action, int mods) {
         if (devicesOpen_) { devicesOpen_ = false; cfg_.save(); return; }   // (DEVICES: back to VIDEO + AUDIO)
         if (moreOpen_) { moreOpen_ = false; cfg_.save(); return; }   // (MORE: back to its tab)
         if (screen_ == Screen::Settings) { leaveSettings(); return; }   // (any tab: as BACK)
-        if (picker_ != PICK_NONE) { picker_ = PICK_NONE; return; }
+        if (picker_ != PICK_NONE) { if (picker_ == PICK_RANKED && variantCtx_ == 3 && screen_ == Screen::Host) setScreen(Screen::Main); picker_ = PICK_NONE; return; }
         if (screen_ == Screen::Leaderboard && raceStatsView_) { raceStatsView_ = false; return; } // race stats: back to the board
         if (screen_ == Screen::CustomMode) { setScreen(customFromMain_ ? Screen::Main : Screen::Host); return; }   // same as its BACK (unsaved changes dropped)
         if (screen_ == Screen::Host && hostAdvanced_) { hostAdvanced_ = false; cfg_.save(); return; }   // ADVANCED: back to HOST, as its BACK
@@ -1153,6 +1172,13 @@ void Game::onFocus(bool focused) {
     if (focused) focusGained_ = true; else swallowedBtn_ = 0;   // (let go while away: no release comes)
     if (!opts_.uiTest) setGamePriority(prioLevel(focused));   // (alt-tabbed: the other programs get their share back)
     focused_ = focused;
+    // Exclusive fullscreen at its own FULLSCREEN SIZE, alt-tabbed: the desktop goes back to its own resolution (owner,
+    // 2026-11-05), which only a minimized window gives back (GLFW lets the display mode go then, and takes it again
+    // when the game is brought back). MINIMIZE ON ALT-TAB on does that already for every size.
+    if (!focused && !opts_.uiTest && cfg_.displayMode == 2 && !cfg_.autoIconify && glfwGetWindowMonitor(win_) && cfg_.fsWidth > 0 && cfg_.fsHeight > 0) {
+        const DeskMode d = desktopMode(glfwGetWindowMonitor(win_));
+        if (d.w != cfg_.fsWidth || d.h != cfg_.fsHeight) glfwIconifyWindow(win_);
+    }
     applyBackground();
 }
 
@@ -6824,7 +6850,7 @@ void Game::debugSettingsTab() {
 void Game::drawSettings() {
     if (setTab_ == TAB_HUD && widgetEdit_) { drawWidgetEditor(); return; }   // (the HUD's widget editor: the whole screen)
     if (setTab_ == TAB_HUD && hudEdit_) { drawHudEditor(); return; }        // (EDIT ON SCREEN: the whole screen)
-    const SetLayout L{ui_.s(), r_.width() * 0.5f};
+    const SetLayout L{ui_.s(), menuStripPx_ + (r_.width() - menuStripPx_) * 0.5f};   // (right of the strip when it's up)
     const bool modal = setTab_ == TAB_CONTROLS && filePick_ == 2;   // the import list: the page under it takes nothing
     ui_.muted = modal;
     // HUD tab: the HUD under a see-through panel (in game drawHud drew the live one; the main menu's: sample values)
@@ -9774,9 +9800,10 @@ float bandTop(float kH) { return kBandTop + std::max(0.0f, (kBandH - (kH + 32)) 
 }
 
 SetLayout Game::menuLayout(float designW) const {
-    const float s = ui_.s(), W = (float)r_.width();
+    // (beside the main menu's strip when it's up: the page centred in what's right of it)
+    const float s = ui_.s(), W = (float)r_.width() - menuStripPx_;
     const float k = std::min(s, W / (designW + 40));   // (a page designW wide keeps 20 px each side; its top stays at y 166)
-    return {k, W * 0.5f, kBandTop * (s - k)};
+    return {k, menuStripPx_ + W * 0.5f, kBandTop * (s - k)};
 }
 
 // In game (the pause menu and its pages: votes, queues, the live pickers): the band between the notice list (y 80..144)
@@ -9883,13 +9910,19 @@ void Game::drawMenu() {
         r_.rectGradient(x2, 0, x3 - x2, H, c2, c3, c3, c2);
         r_.rectGradient(x3, 0, W - x3, H, c3, c4, c4, c3);
     } else if (cfg_.menuBg != 2) r_.rect(0, 0, W, H, {0.03f, 0.035f, 0.05f, r_.worldLoaded() ? 0.6f : 1.0f});   // (a plain MENU BACKGROUND: as it is)
+    // every top-level menu screen keeps the main menu's strip on its left (review 2026-11-04: off the main menu
+    // there was no way to PLAY / SETTINGS / QUIT but BACK); the page is centred right of it (menuLayout)
+    const bool full = screen_ == Screen::Settings && (settingsInGame_ || widgetEdit_ || hudEdit_);   // (the HUD editors: the whole screen)
+    const bool strip = !mainPage && !full && !edPrompt_ && !tutOffer_ && screen_ != Screen::Connecting && screen_ != Screen::Main;
+    menuStripPx_ = strip ? std::round(kMenuStripW * s) : 0;
     drawNotices(12 * s, ui_.textScale(), s); // e.g. "SAVED <mode>": the strip above the title, clear of the buttons
-    float cx = W * 0.5f;
+    float cx = menuStripPx_ + (W - menuStripPx_) * 0.5f;
     // the title, drawn like the app icon (a baked texture: Renderer::logo); not over the settings shell (it covered it),
     // nor over the main menu's page (its strip has the Q)
     if (screen_ != Screen::Settings && !mainPage) r_.logo(cx, H * 0.12f, 8 * s, rgba(cfg_.fixedLogo ? defaultSettings().colorFriendly : cfg_.colorFriendly),
                                              rgba(cfg_.fixedLogo ? defaultSettings().colorEnemy : cfg_.colorEnemy));   // (the Q in both team colours; FIXED LOGO COLORS: the defaults)
-    if (!mainPage) r_.text(8 * s, H - 20 * s, std::max(1.0f, std::round(s)), kQuarkBuildId, kGrey);   // (the main page: beside its strip; the full build, owner 2026-11-04)
+    if (!mainPage && !strip) r_.text(8 * s, H - 20 * s, std::max(1.0f, std::round(s)), kQuarkBuildId, kGrey);   // (with the strip: beside it; the full build, owner 2026-11-04)
+    if (strip) { const size_t ss0 = r_.uiMark(); drawMainStrip(s, H); r_.uiSupersample(ss0); }   // (before the page: its clicks first)
 
     if (picker_ != PICK_NONE && (screen_ == Screen::Host || screen_ == Screen::VsBots)) { drawPicker(cx, H * 0.12f + 80 * s); return; }
     if (edPrompt_ && screen_ == Screen::Main) { drawEditorSavePrompt(); return; }
@@ -9922,7 +9955,7 @@ void Game::drawMenu() {
 // panels beside the page puts them under it. What a tab shows from files (bests, your maps) is read when it opens
 // (openMainTab), the server list only while PLAY is up; nothing allocates per frame beyond a widget's own label.
 namespace {
-constexpr float kStripW = 72, kPageX = 104, kPageW = 350, kPanelTop = 90, kRightPad = 32, kCardH = 140, kListRowH = 33;
+constexpr float kStripW = kMenuStripW, kPageX = 104, kPageW = 350, kPanelTop = 90, kRightPad = 32, kCardH = 140, kListRowH = 33;
 const Color kStripC = {0.031f, 0.039f, 0.055f, 0.97f};
 const Color kMutedC = {0.60f, 0.65f, 0.71f, 1};     // the strip's labels, values, hints
 const Color kCapsC = {0.50f, 0.55f, 0.60f, 1};      // a panel's caption (OFFICIAL SERVERS)
@@ -9934,71 +9967,6 @@ const std::string kNone;
 const std::string& sbuf(int slot, const char* s) {
     static std::string b[16];
     return b[slot & 15].assign(s);
-}
-// a thick 2D line (square ends, w past each end by w / 2 so joined segments close up)
-void seg2D(Renderer& r, float x0, float y0, float x1, float y1, float w, const Color& c) {
-    float dx = x1 - x0, dy = y1 - y0;
-    const float l = std::sqrt(dx * dx + dy * dy);
-    if (l < 1e-3f) return;
-    dx *= w * 0.5f / l; dy *= w * 0.5f / l;
-    const float q[8] = {x0 - dx - dy, y0 - dy + dx, x1 + dx - dy, y1 + dy + dx, x1 + dx + dy, y1 + dy - dx, x0 - dx + dy, y0 - dy - dx};
-    r.quad2D(q, c);
-}
-// an arc around (cx, cy) from angle a0 to a1 (radians, y down), in n segments
-void arc2D(Renderer& r, float cx, float cy, float rad, float a0, float a1, float w, const Color& c, int n = 14) {
-    for (int i = 0; i < n; i++) {
-        const float t0 = a0 + (a1 - a0) * i / n, t1 = a0 + (a1 - a0) * (i + 1) / n;
-        seg2D(r, cx + rad * std::cos(t0), cy + rad * std::sin(t0), cx + rad * std::cos(t1), cy + rad * std::sin(t1), w, c);
-    }
-}
-// The strip's icons, drawn on a 24 x 24 grid (the mockup's line icons) centred on (cx, cy), `size` pixels across
-enum MainIcon { ICON_PLAY, ICON_GAUGE, ICON_GRID, ICON_TROPHY, ICON_GEAR, ICON_CHAT, ICON_INFO, ICON_POWER };
-void mainIcon(Renderer& r, int icon, float cx, float cy, float size, const Color& c) {
-    const float u = size / 24, w = std::max(1.0f, 2 * u);
-    auto X = [&](float x) { return cx + (x - 12) * u; };
-    auto Y = [&](float y) { return cy + (y - 12) * u; };
-    auto L = [&](float a, float b, float c2, float d) { seg2D(r, X(a), Y(b), X(c2), Y(d), w, c); };
-    const float pi = 3.14159265f;
-    switch (icon) {
-        case ICON_PLAY: { const float q[8] = {X(7), Y(4), X(20), Y(12), X(7), Y(20), X(7), Y(20)}; r.quad2D(q, c); break; }
-        case ICON_GAUGE:   // a dial, its needle up and right
-            arc2D(r, X(12), Y(14), 10 * u, pi * 0.83f, pi * 2.17f, w, c, 16);
-            L(12, 14, 16, 10);
-            break;
-        case ICON_GRID:    // a framed grid (CREATE: the map editor's)
-            r.roundRect(X(2), Y(4), 20 * u, 16 * u, 2 * u, c, w);
-            L(7, 4, 7, 20); L(17, 4, 17, 20); L(2, 12, 22, 12);
-            break;
-        case ICON_TROPHY:
-            L(7, 4, 17, 4); L(7, 4, 7, 9); L(17, 4, 17, 9);
-            arc2D(r, X(12), Y(9), 5 * u, 0, pi, w, c, 10);
-            L(17, 5, 20, 5); L(20, 5, 20, 7); L(7, 5, 4, 5); L(4, 5, 4, 7);
-            arc2D(r, X(17), Y(7), 3 * u, 0, pi * 0.5f, w, c, 5); arc2D(r, X(7), Y(7), 3 * u, pi * 0.5f, pi, w, c, 5);
-            L(12, 14, 12, 21); L(8, 21, 16, 21);
-            break;
-        case ICON_GEAR: {
-            r.roundRect(X(12) - 3 * u, Y(12) - 3 * u, 6 * u, 6 * u, 3 * u, c, w);
-            r.roundRect(X(12) - 7.5f * u, Y(12) - 7.5f * u, 15 * u, 15 * u, 7.5f * u, c, w);
-            for (int k = 0; k < 8; k++) {
-                const float a = pi * 0.25f * k, ca = std::cos(a), sa = std::sin(a);
-                seg2D(r, X(12 + 7 * ca), Y(12 + 7 * sa), X(12 + 9.5f * ca), Y(12 + 9.5f * sa), 3.6f * u, c);
-            }
-            break;
-        }
-        case ICON_CHAT:
-            r.roundRect(X(3) - u, Y(3) - u, 20 * u, 16 * u, 2.5f * u, c, w);
-            L(3, 17, 3, 21); L(3, 21, 7, 17);
-            break;
-        case ICON_INFO:
-            r.roundRect(X(2), Y(2), 20 * u, 20 * u, 10 * u, c, w);
-            L(12, 11, 12, 16);
-            r.roundRect(X(12) - 1.3f * u, Y(7.5f) - 1.3f * u, 2.6f * u, 2.6f * u, 1.3f * u, c);
-            break;
-        case ICON_POWER:
-            arc2D(r, X(12), Y(12.93f), 9 * u, -0.78f, 3.92f, w, c, 18);   // (open at the top, from 1:30 round to 10:30)
-            L(12, 2, 12, 12);
-            break;
-    }
 }
 // a line of pieces one after the other (" · " between them; each looked up in the language on its own), shrunk to fit
 // maxW, the last piece that doesn't fit at the smallest size cut ("...")
@@ -10107,6 +10075,7 @@ void Game::openMainTab(int tab) {
 
 void Game::drawMainMenu() {
     const float W = (float)r_.width(), H = (float)r_.height(), s = H / 720.0f, Wd = W / s;
+    const size_t ss0 = r_.uiMark();   // (all of it supersampled, 4 x 4 a pixel: owner 2026-11-04, "always render at 400%")
     drawMainStrip(s, H);
     // the page beside the strip; the panels on the right, or under the page when the screen is too narrow for both
     const float px = kPageX, pw = kPageW;
@@ -10114,12 +10083,23 @@ void Game::drawMainMenu() {
     const bool stacked = rw < 280;
     if (stacked) { rx = px; rw = pw; }
     static const std::string kTitles[MAIN_TABS] = {"PLAY", "PRACTICE", "CREATE"};
-    ui_.label(px * s, 38 * s, kTitles[mainTab_], ui_.textC(), 2.25f, std::min(pw, Wd - kRightPad - 284 - px) * s);   // (clear of the name chip)
+    ui_.label(px * s, 29 * s, kTitles[mainTab_], ui_.textC(), 2.25f, std::min(pw, Wd - kRightPad - 284 - px) * s);   // (clear of the name chip)
     if (mainTab_ == MAIN_PLAY) drawMainPlay(s, px, pw, rx, rw, stacked ? 304 : kPanelTop);
     else if (mainTab_ == MAIN_PRACTICE) drawMainPractice(s, px, pw, rx, rw, stacked ? 420 : kPanelTop);
     else drawMainCreate(s, px, pw, rx, rw, stacked ? 330 : kPanelTop);
+    // the QUARK wordmark (owner 2026-11-04: "it doesnt say quark anywhere on the main screen"), 40 high, in the top bar
+    // between the page and the name chip's widest (284); left out where that gap is too narrow for it
+    {
+        const float lts = 6.5f, lw = r_.logoWidth(lts * s) / s, gapL = px + pw + 24, gapR = Wd - kRightPad - 284 - 24;
+        // (centred on the screen where it fits there, else in the gap; reviewers: "138 px right of the screen centre")
+        const float cxd = std::clamp(Wd * 0.5f, gapL + lw * 0.5f, gapR - lw * 0.5f);
+        if (!stacked && gapR - gapL >= lw)
+            r_.logo(cxd * s, 22 * s, lts * s, rgba(cfg_.fixedLogo ? defaultSettings().colorFriendly : cfg_.colorFriendly),
+                    rgba(cfg_.fixedLogo ? defaultSettings().colorEnemy : cfg_.colorEnemy));
+    }
     drawNameChip(s, W);
     if (!error_.empty()) ui_.labelCentered((kStripW * s + W) * 0.5f, H - 48 * s, error_, kRed, 1.0f, W - (kStripW + 48) * s);
+    r_.uiSupersample(ss0);
 }
 
 // The strip: the Q, the five tabs (icon over a label; the current one an accent bar on its left and a lighter fill),
@@ -10128,7 +10108,9 @@ void Game::drawMainStrip(float s, float H) {
     const float sw = kStripW * s;
     r_.rect(0, 0, sw, H, kStripC);
     r_.rect(sw, 0, std::max(1.0f, std::round(s)), H, {1, 1, 1, 0.07f});
-    r_.logoQ(sw * 0.5f, 16 * s, 4.8f * s, rgba(cfg_.fixedLogo ? defaultSettings().colorFriendly : cfg_.colorFriendly),
+    // the Q centred in the strip's head (0 - 88): its bowl on the strip's middle (the tail hangs right of it), its ink
+    // half way down (owner 2026-11-04: "the Q in the top left is weirdly slightly off"; it sat 12 px high)
+    r_.logoQ(sw * 0.5f + 0.75f * s, 27.5f * s, 4.8f * s, rgba(cfg_.fixedLogo ? defaultSettings().colorFriendly : cfg_.colorFriendly),
              rgba(cfg_.fixedLogo ? defaultSettings().colorEnemy : cfg_.colorEnemy));
     const Color white = ui_.textC();
     const float lts = std::max(r_.minTextScale(), 1.3f * s);
@@ -10138,17 +10120,21 @@ void Game::drawMainStrip(float s, float H) {
         r_.rect(bx, by, tw + 16 * s, th + 10 * s, {0.05f, 0.06f, 0.08f, 0.95f});
         r_.text(bx + 8 * s, by + 5 * s, hs, t, c);
     };
+    // the lit tab: the main menu's tab, or the screen's (RANKS, SETTINGS; the play screens PLAY, the trainer PRACTICE)
+    const int stripCur = screen_ == Screen::Main ? mainTab_ : screen_ == Screen::Leaderboard ? 3 : screen_ == Screen::Settings ? 4
+                       : screen_ == Screen::Trainer || screen_ == Screen::Benchmarks || screen_ == Screen::BenchmarkResult ? (int)MAIN_PRACTICE
+                       : screen_ == Screen::CustomMode && customFromMain_ ? (int)MAIN_CREATE : screen_ == Screen::Info ? -1 : (int)MAIN_PLAY;
     static const std::string kLabels[5] = {"PLAY", "PRACTICE", "CREATE", "RANKS", "SETTINGS"};
     static const int kIcons[5] = {ICON_PLAY, ICON_GAUGE, ICON_GRID, ICON_TROPHY, ICON_GEAR};
     for (int i = 0; i < 5; i++) {
         const float y = (88 + 64 * i) * s, h = 60 * s;
-        const bool cur = i < MAIN_TABS && mainTab_ == i, hv = ui_.over(0, y, sw, h);
+        const bool cur = i == stripCur, hv = ui_.over(0, y, sw, h);
         if (cur) {
             r_.rect(0, y, sw, h, {ui_.accent.r, ui_.accent.g, ui_.accent.b, 0.12f});
             r_.rect(0, y, 3 * s, h, ui_.accent);
         } else if (hv) r_.rect(0, y, sw, h, {1, 1, 1, 0.06f});
         const Color c = cur || hv ? white : kMutedC;
-        mainIcon(r_, kIcons[i], sw * 0.5f, y + 21 * s, 22 * s, c);
+        r_.icon(kIcons[i], sw * 0.5f, y + 21 * s, 22 * s, c);
         const TextFit f = r_.fitText(kLabels[i], lts, sw - 4 * s);   // (TRAINING, ТРЕНИРОВКА: the whole strip)
         if (f.keep >= 0) { const std::string t = r_.textClip(kLabels[i], f.scale, sw - 4 * s); r_.text((sw - r_.textWidth(t, f.scale)) * 0.5f, y + 38 * s, f.scale, t, c); }
         else r_.text((sw - r_.textWidth(kLabels[i], f.scale, f.level)) * 0.5f, y + 38 * s + (r_.textHeight(lts) - r_.textHeight(f.scale)) * 0.5f, f.scale, kLabels[i], c, f.level);
@@ -10156,32 +10142,50 @@ void Game::drawMainStrip(float s, float H) {
         static const char* const kIds[5] = {"PLAY", "PRACTICE", "CREATE", "RANKS", "SETTINGS"};
         if (ui_.probing()) ui_.custom(0, y, sw, h, kLabels[i], (cur ? UiExp::inert() : kNav[i]).withId(kIds[i]));
         if (!(hv && uiIn_.pressed) || cur) continue;
+        leaveForStrip();
         if (i < MAIN_TABS) openMainTab(i);
         else if (i == 3) { nextBoardFetch_ = 0; raceStatsView_ = false; setScreen(Screen::Leaderboard); }   // RANKS: the leaderboard
         else { openSettingsTab(settingsStartTab()); setScreen(Screen::Settings); }
         uiIn_.pressed = false;
     }
-    // the foot: DISCORD, INFO, QUIT (44 high, from 14 above the bottom)
+    // the foot: DISCORD, INFO, QUIT, each an icon over its label like the tabs (review 2026-11-04: icons alone, named
+    // only under the mouse, read as "chat" and a mystery); 54 high, from 14 above the bottom
     static const std::string kDiscord = "DISCORD", kInfo = "INFO", kQuit = "QUIT", kSure = "SURE? QUIT";
     for (int i = 0; i < 3; i++) {
-        const float h = 44 * s, y = H - (14 + 44 * (3 - i)) * s;
-        const bool hv = ui_.over(0, y, sw, h), armed = i == 2 && confirmArmed("quit");
+        const float h = 54 * s, y = H - (14 + 54 * (3 - i)) * s;
+        const bool hv = ui_.over(0, y, sw, h), armed = i == 2 && confirmArmed("quit"), lit = i == 1 && screen_ == Screen::Info;
         if (armed) r_.rect(0, y, sw, h, {kRed.r * 0.35f, kRed.g * 0.35f, kRed.b * 0.35f, 0.9f});
+        else if (lit) { r_.rect(0, y, sw, h, {ui_.accent.r, ui_.accent.g, ui_.accent.b, 0.12f}); r_.rect(0, y, 3 * s, h, ui_.accent); }
         else if (hv) r_.rect(0, y, sw, h, {1, 1, 1, 0.06f});
         const Color quitC = {1.0f, 0.54f, 0.5f, 1};
-        mainIcon(r_, i == 0 ? ICON_CHAT : i == 1 ? ICON_INFO : ICON_POWER, sw * 0.5f, y + h * 0.5f, 22 * s, i == 2 ? (hv || armed ? kRed : quitC) : hv ? white : kMutedC);
-        const std::string& name = i == 0 ? kDiscord : i == 1 ? kInfo : armed ? kSure : kQuit;
-        if (hv || armed) tooltip(y, h, name, i == 2 ? kRed : white);
-        const UiExp e = i == 0 ? UiExp::url().withId("DISCORD") : i == 1 ? UiExp::nav("info/*").withId("INFO")
+        const Color c = i == 2 ? (hv || armed ? kRed : quitC) : hv || lit ? white : kMutedC;
+        r_.icon(i == 0 ? ICON_CHAT : i == 1 ? ICON_INFO : ICON_POWER, sw * 0.5f, y + 19 * s, 20 * s, c);
+        const std::string& name = i == 0 ? kDiscord : i == 1 ? kInfo : kQuit;
+        const TextFit f = r_.fitText(name, lts, sw - 4 * s);
+        if (f.keep >= 0) { const std::string t = r_.textClip(name, f.scale, sw - 4 * s); r_.text((sw - r_.textWidth(t, f.scale)) * 0.5f, y + 34 * s, f.scale, t, c); }
+        else r_.text((sw - r_.textWidth(name, f.scale, f.level)) * 0.5f, y + 34 * s + (r_.textHeight(lts) - r_.textHeight(f.scale)) * 0.5f, f.scale, name, c, f.level);
+        if (armed) tooltip(y, h, kSure, kRed);   // (armed: SURE? QUIT beside the strip)
+        const UiExp e = i == 0 ? UiExp::url().withId("DISCORD") : i == 1 ? (lit ? UiExp::inert() : UiExp::nav("info/*")).withId("INFO")
                       : (cfg_.confirmLeave && !armed ? UiExp::state("confirm", "quit") : UiExp::quit()).withId("QUIT");
-        if (ui_.probing()) ui_.custom(0, y, sw, h, name, e);
+        if (ui_.probing()) ui_.custom(0, y, sw, h, armed ? kSure : name, e);
         if (!(hv && uiIn_.pressed)) continue;
         if (i == 0) openUrl(kDiscordUrl);
-        else if (i == 1) setScreen(Screen::Info);   // how everything works
+        else if (i == 1) { if (screen_ != Screen::Info) { leaveForStrip(); setScreen(Screen::Info); } }   // how everything works
         else if (confirmed("quit")) quit_ = true;
         uiIn_.pressed = false;
     }
     r_.text(sw + 8 * s, H - 20 * s, std::max(1.0f, std::round(s)), kQuarkBuildId, kGrey);   // (the full build, owner 2026-11-04)
+}
+
+// a strip tab / INFO clicked off the main menu: leave the screen as its BACK does (settings applied, HOST's choices
+// saved, an unsaved custom mode dropped), then the strip opens where it goes
+void Game::leaveForStrip() {
+    if (screen_ == Screen::Main) return;
+    picker_ = PICK_NONE;
+    hostAdvanced_ = false;
+    if (screen_ == Screen::Settings) { leaveSettings(); return; }
+    cfg_.save();
+    setScreen(Screen::Main);
 }
 
 namespace {
@@ -10248,7 +10252,7 @@ void Game::drawMainPlay(float s, float px, float pw, float rx, float rw, float r
     {   // LAST PLAYED
         const float x = px, y = 90, w = pw;
         d.card(x, y, w, kCardH);
-        static const std::string kLast = "LAST PLAYED", kNoGame = "NO GAME YET", kNoGameLine = "JOIN A SERVER, PLAY BOTS OR HOST YOUR OWN";
+        static const std::string kLast = "LAST PLAYED", kNoGame = "NO GAME YET", kNoGameLine = "JOIN A SERVER, PLAY BOTS OR HOST YOUR OWN", kQuickLine = "QUICK PLAY JOINS THE OFFICIAL SERVER";
         d.caption(x + 16, y + 15, kLast, ui_.accent, w - 32);
         if (hasLast) {
             static const std::string kServerAt = "SERVER";
@@ -10268,9 +10272,15 @@ void Game::drawMainPlay(float s, float px, float pw, float rx, float rw, float r
             if (d.bigButton(x + 16, y + 84, w - 32, 42, kReconnect, UiExp::nav("connecting").withId("RECONNECT"))) { reconnectAt_ = 0; reconnectTries_ = 0; connectTo(cfg_.lastAddress); }
         } else {
             drawPieces(r_, d.X(x + 16), d.X(y + 33), std::round(ts * 1.25f), d.X(w - 32), {&kNoGame}, ui_.textC());
-            drawPieces(r_, d.X(x + 16), d.X(y + 62), hs, d.X(w - 32), {&kNoGameLine}, kMutedC);
-            static const std::string kFind = "FIND A SERVER";
-            if (d.bigButton(x + 16, y + 84, w - 32, 42, kFind, UiExp::nav("join").withId("FIND A SERVER"))) setScreen(Screen::Join);
+            static const bool quickOk = kOfficialServerCount > 0 && !([] { const char* e = getenv("QUARK_MASTER"); return e && std::string(e).find("http") != 0; }());
+            drawPieces(r_, d.X(x + 16), d.X(y + 62), hs, d.X(w - 32), {quickOk ? &kQuickLine : &kNoGameLine}, kMutedC);
+            // QUICK PLAY: straight into the official (production) server; SERVERS below is the list (review 2026-11-04:
+            // FIND A SERVER, SERVERS and ALL SERVERS were three ways to one screen). No official server: the list.
+            static const std::string kQuick = "QUICK PLAY", kFind = "FIND A SERVER";
+            if (quickOk) {
+                static const std::string quickAddr = NetAddr{kOfficialServers[0].ip, kOfficialServers[0].port}.toString();
+                if (d.bigButton(x + 16, y + 84, w - 32, 42, kQuick, UiExp::nav("connecting").withId("QUICK PLAY"))) { joinAddr_ = quickAddr; connectTo(quickAddr); return; }
+            } else if (d.bigButton(x + 16, y + 84, w - 32, 42, kFind, UiExp::nav("join").withId("FIND A SERVER"))) setScreen(Screen::Join);
         }
     }
     {   // SERVERS / BOTS / HOST
@@ -10334,8 +10344,8 @@ void Game::drawMainPlay(float s, float px, float pw, float rx, float rw, float r
     d.caption(rx + 16, y + 12, kMoreWays, kCapsC, rw - 32);
     const float hw = (rw - 32 - 8) / 2;
     if (ui_.button(d.X(rx + 16), d.X(y + 32), d.X(hw), d.X(40), kRanked, UiExp::nav("host/picker:ladders"))) {
-        setScreen(Screen::Host);   // (HOST with its ranked ladders open: pick one, then START)
-        variantCtx_ = 0;
+        setScreen(Screen::Host);   // (a queue: pick a ladder, then it finds a ranked game on it or hosts one; BACK: here)
+        variantCtx_ = 3;
         picker_ = PICK_RANKED;
     }
     if (ui_.button(d.X(rx + 24 + hw), d.X(y + 32), d.X(hw), d.X(40), kCustom, UiExp::nav("custom/general"))) {
@@ -10709,8 +10719,29 @@ void Game::drawHost(const SetLayout& L) {
     else ui_.toggle(x, L.Y(y), hw, h, "BALANCE BOTS", cfg_.hostBalanceBots, UiExp::cfg("host_balance_bots"));
     ui_.toggle(x2, L.Y(y), hw, h, "PUBLIC", cfg_.hostPublic, UiExp::cfg("host_public"));
     y += 44;
-    ui_.hint(x, L.Y(y), cfg_.streamer ? std::string("FRIENDS JOIN WITH YOUR PUBLIC IP (STREAMER MODE)") : "FRIENDS JOIN WITH YOUR PUBLIC IP:" + hostPortStr_, kGrey, w);
-    y += 20;
+    if (cfg_.streamer) ui_.hint(x, L.Y(y), "FRIENDS JOIN WITH YOUR PUBLIC IP (STREAMER MODE)", kGrey, w);
+    else {   // the address itself, and COPY (the IP looked up once, on its own thread: never a stall here)
+        if (!pubIpAsked_) { pubIpAsked_ = true; pubIpFuture_ = std::async(std::launch::async, [] { return publicIpv4(); }); }
+        if (pubIpFuture_.valid() && pubIpFuture_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) pubIp_ = pubIpFuture_.get();
+        static std::string addr;
+        const std::string want = pubIp_.empty() ? std::string() : pubIp_ + ":" + hostPortStr_;
+        if (addr != want) addr = want;
+        const float cw = 92;
+        static const std::string kWith = "FRIENDS JOIN WITH:", kFinding = "FINDING YOUR ADDRESS...";
+        if (!addr.empty()) {   // (the label looked up in the language, the address drawn after it as it is)
+            const float lw = r_.textWidth(kWith, ui_.hintScale()) + L.L(6);
+            ui_.hint(x, L.Y(y), kWith, kGrey, w - L.L(cw + 8));
+            ui_.hint(x + lw, L.Y(y), addr, ui_.textC(), w - L.L(cw + 8) - lw);
+        } else if (pubIpFuture_.valid()) ui_.hint(x, L.Y(y), kFinding, kGrey, w - L.L(cw + 8));
+        else ui_.hint(x, L.Y(y), "FRIENDS JOIN WITH YOUR PUBLIC IP:" + hostPortStr_, kGrey, w - L.L(cw + 8));
+        static const std::string kCopy = "COPY", kCopied = "COPIED";
+        const bool can = !addr.empty();
+        if (ui_.button(x + w - L.L(cw), L.Y(y - 4), L.L(cw), L.L(24), time_ - pubIpCopiedAt_ < 2 ? kCopied : kCopy, UiExp::inert().withId("COPY ADDRESS"), can) && can) {
+            glfwSetClipboardString(win_, addr.c_str());
+            pubIpCopiedAt_ = time_;
+        }
+    }
+     y += 26;
     if (ui_.button(x, L.Y(y), w, h, "ADVANCED  >", UiExp::nav("host/advanced"))) { hostAdvanced_ = true; refreshHostBrains(); }
     y += 60;
     if (ui_.button(x, L.Y(y), hw, h, "BACK", UiExp::nav("main*"))) { cfg_.save(); setScreen(Screen::Main); }
@@ -12002,7 +12033,11 @@ void Game::applyDisplayMode() {
     // Render at the new size right away (don't wait for a resize event that may arrive late).
     int fw = 0, fh = 0;
     glfwGetFramebufferSize(win_, &fw, &fh);
-    if (cfg_.displayMode != 0) { fw = std::max(fw, vm.w); fh = std::max(fh, vm.h); }
+    // (borderless: at least the desktop's size, the window may not have grown yet. Exclusive: its own size, which
+    // FULLSCREEN SIZE may make smaller than the desktop: drawn at the desktop's size, the picture sat in the bottom-left
+    // corner of a smaller screen, cut off (owner, 2026-11-05: "it should center the game and it isnt"))
+    if (cfg_.displayMode == 2) { if (cfg_.fsWidth > 0 && cfg_.fsHeight > 0) { fw = cfg_.fsWidth; fh = cfg_.fsHeight; } else { fw = std::max(fw, vm.w); fh = std::max(fh, vm.h); } }
+    else if (cfg_.displayMode == 1) { fw = std::max(fw, vm.w); fh = std::max(fh, vm.h); }
     if (fw > 0 && fh > 0) r_.resize(fw, fh);
 }
 
@@ -12371,9 +12406,11 @@ void Game::drawPicker(float cx, float y) {
     }
     // where a choice / BACK leaves you (the UI test checks it): the host / vs bots menu, or the pause menu (or its votes)
     const char* done = host ? "host" : "vsbots";
-    const char* back = screen_ == Screen::InGame ? (builder ? "ingame/pause/vote*" : voteMenu_ ? "ingame/pause/vote" : "ingame/pause") : done;
+    const bool queue = ladders && variantCtx_ == 3;   // RANKED from the main menu: picking a ladder finds a game (BACK: the main menu)
+    const char* back = screen_ == Screen::InGame ? (builder ? "ingame/pause/vote*" : voteMenu_ ? "ingame/pause/vote" : "ingame/pause") : queue ? "main" : done;
     if ((int)multiSel_.size() != n) multiSel_.assign(n, false);
     std::string title = picker_ == PICK_TMAPS ? "TOURNEY MAPS (PICK ANY, THEY ROTATE)" : picker_ == PICK_TMODES ? "TOURNEY RULESETS (PICK ANY, THEY ROTATE)"
+                      : queue ? "RANKED - PICK A LADDER TO FIND A MATCH"
                       : ladders ? "RANKED - CHOOSE A LADDER"
                       : variants ? std::string(modeTitle(mode)) + " - CHOOSE A RULESET" : modes ? "CHOOSE A MODE"
                       : std::string("CHOOSE A MAP FOR ") + (rankedNow ? "RANKED" : modeTitle(mode));
@@ -12427,6 +12464,7 @@ void Game::drawPicker(float cx, float y) {
         }
         it.pe = multi ? UiExp::state("multisel")
               : ladders && live ? UiExp::cmd(livePickVote_ ? "callvote ranked on" : "ranked on")
+              : queue ? UiExp::state("hosting", "1").optional()   // (finds a waiting game, else hosts one)
               : ladders ? UiExp::nav("host")
               : variants ? (live ? UiExp::nav("ingame/pause/picker:livemap") : UiExp::nav(done))
               : modes && i == MODE_COUNT ? UiExp::nav(live ? "ingame/pause/picker:ladders" : "host/picker:ladders")
@@ -12458,6 +12496,7 @@ void Game::drawPicker(float cx, float y) {
             variant = kLadders[i];
             mode = MODE_ARENA;
             if (!(mapInfo_[mapIdx].ranked >> variant & 1)) mapIdx = bestRankedMap(variant);
+            if (variantCtx_ == 3) { findRankedMatch(variant); return; }   // (RANKED from the main menu: the queue)
             finish();
         }
         else if (variants) { variant = i; if (live) picker_ = PICK_LIVE_MAP; else finish(); }   // in game: then the map
@@ -12529,7 +12568,7 @@ void Game::drawPicker(float cx, float y) {
                     return;
                 }
             }
-            if (ui_.button(L.X(176), L.Y(ry), L.L(fw), L.L(40), "BACK", UiExp::nav(back))) picker_ = PICK_NONE;
+            if (ui_.button(L.X(176), L.Y(ry), L.L(fw), L.L(40), "BACK", UiExp::nav(back))) { if (queue) setScreen(Screen::Main); picker_ = PICK_NONE; }
             return;
         }
         // every card once a frame (labels, tags: what it shows; the buffers are reused)
@@ -12597,7 +12636,7 @@ void Game::drawPicker(float cx, float y) {
                 return;
             }
         }
-        if (ui_.button(L.X(176), L.Y(ry), L.L(fw), L.L(40), "BACK", UiExp::nav(back))) picker_ = PICK_NONE;
+        if (ui_.button(L.X(176), L.Y(ry), L.L(fw), L.L(40), "BACK", UiExp::nav(back))) { if (queue) setScreen(Screen::Main); picker_ = PICK_NONE; }
     }
 }
 

@@ -657,22 +657,24 @@ uniform vec2 uScreen;
 uniform vec2 uFontSize;
 uniform vec2 uLogoSize;
 uniform vec2 uExtSize;   // (the language glyph atlas: its quads' z is 2, texel coords (texel + 1) * 8)
-out vec2 vUV; out vec4 vColor; flat out float vScale; flat out float vSplit;
+out vec2 vUV; out vec4 vColor; flat out float vScale; flat out float vSplit; flat out float vSS;
 // a rounded rect (aText.w 1, Renderer::roundRect): its pixel position in it, its size (the last corner's: both
 // triangles end on it), corner radius and ring width
 out vec2 vLocal; flat out vec2 vSize; flat out vec3 vShape;
 void main() {
     vScale = aText.x + aText.y / 256.0;   // (255 + 255/256: a logo texel, Renderer::logo)
-    vSplit = aText.z;
+    vSS = aText.z > 3.5 ? 1.0 : 0.0;   // (+4: supersampled 4 x 4, Renderer::uiSupersample)
+    float z = aText.z - 4.0 * vSS;
+    vSplit = z;
     vShape = vec3(aText.w, aText.x, aText.y * 0.25);
     vLocal = aUV * 0.25; vSize = aUV * 0.25;
-    vUV = aText.z > 1.5 ? (aUV / 8.0 - 1.0) / uExtSize : (aUV / 32.0 - 1.0) / (vScale > 255.5 ? uLogoSize : uFontSize); vColor = aColor;
+    vUV = z > 1.5 ? (aUV / 8.0 - 1.0) / uExtSize : (aUV / 32.0 - 1.0) / (vScale > 255.5 ? uLogoSize : uFontSize); vColor = aColor;
     gl_Position = vec4(aPos.x / uScreen.x * 2.0 - 1.0, 1.0 - aPos.y / uScreen.y * 2.0, 0.0, 1.0);
 })";
 // Text: one distance-field sample per pixel. The glyph edge (0.5) is smoothed over one screen pixel; a band
 // outside it (1 px, wider on big text) is the black outline, coverage-blended under the fill.
 const char* kUiFS = R"(#version 330 core
-in vec2 vUV; in vec4 vColor; flat in float vScale; flat in float vSplit;
+in vec2 vUV; in vec4 vColor; flat in float vScale; flat in float vSplit; flat in float vSS;
 in vec2 vLocal; flat in vec2 vSize; flat in vec3 vShape;
 uniform sampler2D uFont;
 uniform sampler2D uExt;
@@ -681,11 +683,65 @@ uniform float uK; // distance-field units per screen pixel at scale 1 (texels pe
 // the title (Renderer::logo): its two team colours; the split Q's line (a window point, its normal towards the second
 // colour) and half the seam's width (px)
 uniform vec3 uLogoA, uLogoB;
+uniform vec2 uLogoInk;     // the letters' ink rows (texels): the gloss
+uniform vec2 uLogoSize;    // (the logo texture's size, texels: as the vertex shader's)
 uniform vec2 uSplitP, uSplitN;
 uniform float uSplitSeam;
 uniform float uOutline;   // the outline's width, x (HUD > MORE: TEXT OUTLINE; 0: none)
 out vec4 fragColor;
+// The line icons (Renderer::icon, UiIcon): signed distances on a 24 x 24 grid (y down), h half the stroke. seg: a line
+// with round ends; arc: from angle a0 round to a1 (radians, a1 > a0); box: a rounded rect's edge.
+float seg(vec2 p, vec2 a, vec2 b) { vec2 pa = p - a, ba = b - a; return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0)); }
+float arc(vec2 p, vec2 c, float r, float a0, float a1) {
+    vec2 q = p - c;
+    if (mod(atan(q.y, q.x) - a0, 6.2831853) <= a1 - a0) return abs(length(q) - r);
+    return min(length(q - r * vec2(cos(a0), sin(a0))), length(q - r * vec2(cos(a1), sin(a1))));
+}
+float box(vec2 p, vec2 c, vec2 b, float r) { vec2 q = abs(p - c) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
+float icon(int id, vec2 p, float h) {
+    const float PI = 3.14159265;
+    float d = 1e9;
+    if (id == 0) {   // PLAY: a filled triangle, its corners rounded
+        vec2 a = vec2(8.0, 5.5), b = vec2(18.5, 12.0), c = vec2(8.0, 18.5);
+        float e = min(seg(p, a, b), min(seg(p, b, c), seg(p, c, a)));
+        bool inside = p.x > a.x && dot(p - a, vec2(b.y - a.y, a.x - b.x)) < 0.0 && dot(p - c, vec2(c.y - b.y, b.x - c.x)) < 0.0;
+        return (inside ? -e : e) - h;
+    }
+    if (id == 1) d = min(arc(p, vec2(12.0, 14.0), 9.5, PI * 0.8, PI * 2.2), seg(p, vec2(12.0, 14.0), vec2(16.0, 9.5)));   // GAUGE
+    else if (id == 2)   // GRID: a framed grid
+        d = min(abs(box(p, vec2(12.0), vec2(10.0, 8.0), 2.0)), min(min(seg(p, vec2(8.0, 4.0), vec2(8.0, 20.0)), seg(p, vec2(16.0, 4.0), vec2(16.0, 20.0))), seg(p, vec2(2.0, 12.0), vec2(22.0, 12.0))));
+    else if (id == 3) {   // TROPHY: the cup, its handles, the stem and base
+        d = min(seg(p, vec2(7.0, 4.0), vec2(17.0, 4.0)), min(seg(p, vec2(7.0, 4.0), vec2(7.0, 9.0)), seg(p, vec2(17.0, 4.0), vec2(17.0, 9.0))));
+        d = min(d, arc(p, vec2(12.0, 9.0), 5.0, 0.0, PI));
+        d = min(d, min(arc(p, vec2(7.0, 7.0), 2.5, PI * 0.5, PI * 1.5), arc(p, vec2(17.0, 7.0), 2.5, -PI * 0.5, PI * 0.5)));
+        d = min(d, min(seg(p, vec2(12.0, 14.0), vec2(12.0, 20.0)), seg(p, vec2(8.0, 20.0), vec2(16.0, 20.0))));
+    } else if (id == 4) {   // GEAR: the outline of a disc with 8 teeth, a hole in the middle
+        vec2 q = p - 12.0;
+        float s = PI * 0.25, a = mod(atan(q.y, q.x) + s * 0.5, s) - s * 0.5;
+        vec2 t = length(q) * vec2(cos(a), sin(a));
+        float g = min(length(q) - 6.5, box(t, vec2(8.0, 0.0), vec2(2.0, 1.7), 0.6));
+        d = min(abs(g), abs(length(q) - 3.0));
+    } else if (id == 5)   // CHAT: a speech bubble
+        d = min(abs(box(p, vec2(12.0, 10.0), vec2(9.5, 7.5), 2.5)), min(seg(p, vec2(5.5, 17.5), vec2(5.5, 21.5)), seg(p, vec2(5.5, 21.5), vec2(10.0, 17.5))));
+    else if (id == 6)   // INFO: a ring, an i in it
+        return min(min(abs(length(p - 12.0) - 10.0), seg(p, vec2(12.0, 11.0), vec2(12.0, 16.5))) - h, length(p - vec2(12.0, 7.3)) - 1.4);
+    else if (id == 7) d = min(arc(p, vec2(12.0, 13.0), 8.5, -0.9, PI + 0.9), seg(p, vec2(12.0, 2.5), vec2(12.0, 11.0)));   // POWER
+    return d - h;
+}
 void main() {
+    vec2 ddx = dFdx(vUV), ddy = dFdy(vUV);   // (before any branch: one screen pixel in the atlas; supersampling)
+    if (vShape.x > 1.5) {   // an icon: its shape's coverage (the grid scaled to the quad; at least a 1 px stroke)
+        // (4 x 4 samples a pixel, each smoothed over its own quarter pixel: as if drawn at 400% and scaled down)
+        float u = vSize.x / 24.0, h = max(1.0, 0.5 / u), a = 0.0;
+        int id = int(vShape.y + 0.5);
+        for (int i = 0; i < 4; i++)
+            for (int j = 0; j < 4; j++)
+                a += clamp(0.5 - icon(id, (vLocal + (vec2(i, j) - 1.5) * 0.25) / u, h) * u * 4.0, 0.0, 1.0);
+        a *= 1.0 / 16.0;
+        if (a <= 0.004) discard;
+        fragColor = vec4(vColor.rgb, vColor.a * a);
+        return;
+    }
     if (vShape.x > 0.5) {   // a rounded rect: coverage from its signed distance (< 0 inside), a ring minus what's further in
         vec2 b = vSize * 0.5, p = vLocal - b;
         float r = min(vShape.y, min(b.x, b.y));
@@ -699,8 +755,21 @@ void main() {
     }
     if (vScale > 255.5) {   // the baked title: masks, R the friendly half, G the enemy half, A the black outline
         vec4 t = texture(uLogo, vUV);
+        if (vSS > 0.5) {   // (the main menu: 4 x 4 samples a pixel, as if drawn at 400%)
+            t = vec4(0.0);
+            for (int i = 0; i < 4; i++)
+                for (int j = 0; j < 4; j++) t += textureLod(uLogo, vUV + ddx * ((float(i) - 1.5) * 0.25) + ddy * ((float(j) - 1.5) * 0.25), 0.0);
+            t *= 1.0 / 16.0;
+        }
         float a = max(t.a, max(t.r, t.g));
-        vec3 c = uLogoA * t.r + uLogoB * t.g;   // (over black: premultiplied)
+        vec2 tx = vUV * uLogoSize;   // (texels)
+        // the arcade gloss (owner 2026-11-04, "glossy arcade"): the top half lit, brightest at the top, a step at the
+        // middle (smoothed over one screen pixel) to the bottom half's deeper shade
+        float v = clamp((tx.y - uLogoInk.x) / (uLogoInk.y - uLogoInk.x), 0.0, 1.0);
+        float px = max(abs(ddy.y) * uLogoSize.y, 1e-3) / (uLogoInk.y - uLogoInk.x);   // (one screen pixel in v)
+        float sh = mix(1.0 + 0.4 * (1.0 - v / 0.5), 0.8 - 0.15 * (v - 0.5), smoothstep(0.5 - 0.5 * px, 0.5 + 0.5 * px, v));
+        vec3 c = min(uLogoA * sh, vec3(1.0)) * t.r + min(uLogoB * sh, vec3(1.0)) * t.g;   // (over black: premultiplied)
+        if (vScale > 255.994) a += t.b * 0.75 * (1.0 - a);   // the drop shadow under it all (black; not on logoQ's lone Q)
         fragColor = vec4(a > 0.0 ? c / a : c, a * vColor.a);
         return;
     }
@@ -709,9 +778,23 @@ void main() {
     float px = uK / vScale;                       // one screen pixel in distance-field units
     float w = 0.5 * px;
     float od = max(0.12, 0.5 - max(1.0, vScale * 0.15) * px * uOutline); // outline edge
-    float o = smoothstep(od - w, od + w, d);
+    float o, fill;
+    if (vSS > 0.5) {   // the main menu's text: 4 x 4 samples a pixel, each edge a quarter pixel wide (as if drawn at 400%)
+        o = 0.0; fill = 0.0;
+        float w4 = 0.25 * w;
+        for (int i = 0; i < 4; i++)
+            for (int j = 0; j < 4; j++) {
+                vec2 uv = vUV + ddx * ((float(i) - 1.5) * 0.25) + ddy * ((float(j) - 1.5) * 0.25);
+                float e = vSplit > 1.5 ? textureLod(uExt, uv, 0.0).r : textureLod(uFont, uv, 0.0).r;
+                o += smoothstep(od - w4, od + w4, e);
+                fill += smoothstep(0.5 - w4, 0.5 + w4, e);
+            }
+        o *= 1.0 / 16.0; fill *= 1.0 / 16.0;
+    } else {
+        o = smoothstep(od - w, od + w, d);
+        fill = smoothstep(0.5 - w, 0.5 + w, d);
+    }
     if (o <= 0.004) discard;
-    float fill = smoothstep(0.5 - w, 0.5 + w, d);
     vec3 col = vColor.rgb;
     if (vSplit > 0.5 && vSplit < 1.5) {   // the title's Q in another font: the second colour past the slanted line, a black seam on it
         float s = dot(gl_FragCoord.xy - uSplitP, uSplitN);
@@ -1133,6 +1216,7 @@ bool Renderer::init(int shadowRes, std::string* err) {
     uExtSize_ = U(uiProg_, "uExtSize");
     glUniform2f(uExtSize_, (float)extW_, (float)extH_);
     glUniform2f(U(uiProg_, "uLogoSize"), (float)kLogoW, (float)kLogoH);
+    glUniform2f(U(uiProg_, "uLogoInk"), kLogoInkY0, kLogoInkY1);
     uLogoA_ = U(uiProg_, "uLogoA"); uLogoB_ = U(uiProg_, "uLogoB");
     uSplitP_ = U(uiProg_, "uSplitP"); uSplitN_ = U(uiProg_, "uSplitN"); uSplitSeam_ = U(uiProg_, "uSplitSeam");
     uOutline_ = U(uiProg_, "uOutline"); glUniform1f(uOutline_, 1.0f); outlineSet_ = 1.0f;
@@ -2387,7 +2471,7 @@ float Renderer::uiInkBottom(size_t from, float skipTop, float skipBottom) const 
         float y0 = ui_[q].pos[1], y1 = y0;
         for (int i = 1; i < 4; i++) { y0 = std::min(y0, (float)ui_[q + i].pos[1]); y1 = std::max(y1, (float)ui_[q + i].pos[1]); }
         const Vertex2D& v = ui_[q];
-        if (v.pad[1] != 1 && (v.scaleInt || v.scaleFrac)) {   // a glyph: its padding isn't ink
+        if (v.pad[1] == 0 && (v.scaleInt || v.scaleFrac)) {   // a glyph: its padding isn't ink
             const float pad = kUiPad * (v.scaleInt + v.scaleFrac / 256.0f);
             y0 += pad; y1 -= pad;
         }
@@ -2409,6 +2493,8 @@ void Renderer::uiTransform(size_t from, float px, float py, float k, float dx, f
         if (v.pad[1] == 1) {   // a rounded rect: its size (uv x4), radius and ring
             v.uv[0] = (uint16_t)std::min(65535.0f, std::round(v.uv[0] * k)); v.uv[1] = (uint16_t)std::min(65535.0f, std::round(v.uv[1] * k));
             v.scaleInt = (uint8_t)std::min(255.0f, std::round(v.scaleInt * k)); v.scaleFrac = (uint8_t)std::min(255.0f, std::round(v.scaleFrac * k));
+        } else if (v.pad[1] == 2) {   // an icon: its size (uv x4; scaleInt is which icon)
+            v.uv[0] = (uint16_t)std::min(65535.0f, std::round(v.uv[0] * k)); v.uv[1] = (uint16_t)std::min(65535.0f, std::round(v.uv[1] * k));
         } else if (v.scaleInt || v.scaleFrac) {   // a glyph: its text scale (the outline's width follows it)
             const float sc = clampf((v.scaleInt + v.scaleFrac / 256.0f) * k, 1.0f / 256, 255);
             v.scaleInt = (uint8_t)sc;
@@ -2466,9 +2552,44 @@ void Renderer::roundRect(float x, float y, float w, float h, float radius, const
     put(d[0], X0, Y0, 0, 0); put(d[1], X1, Y0, U1, 0); put(d[2], X1, Y1, U1, V1); put(d[3], X0, Y1, 0, V1);
 }
 
+// A line icon (UiIcon, renderer.h): one quad, its shape a signed distance in the UI shader on a 24 x 24 grid, so its
+// edges are smooth (a pixel of coverage) at any size, where lines built from quads were hard-edged and snapped to whole
+// pixels. The quad is whole pixels; the shape is drawn in it at quarter-pixel precision.
+void Renderer::icon(int id, float cx, float cy, float size, const Color& c) {
+    if (alpha_ <= 0 || size <= 0) return;   // (fully transparent: nothing to draw)
+    const float half = std::round(size * 0.5f);
+    const int16_t X0 = px(cx - half), Y0 = px(cy - half), X1 = (int16_t)(X0 + 2 * half), Y1 = (int16_t)(Y0 + 2 * half);
+    if (X1 <= X0) return;
+    const uint16_t U1 = (uint16_t)std::min(65535, (X1 - X0) * 4), V1 = (uint16_t)std::min(65535, (Y1 - Y0) * 4);
+    const Rgba8 col = rgba8(c, alpha_);
+    const size_t n = ui_.size();
+    ui_.resize(n + 4);
+    Vertex2D* d = ui_.data() + n;
+    auto put = [&](Vertex2D& v, int16_t X, int16_t Y, uint16_t u, uint16_t w2) {
+        v.pos[0] = X; v.pos[1] = Y; v.uv[0] = u; v.uv[1] = w2;
+        memcpy(v.color, col.v, 4);
+        v.scaleInt = (uint8_t)id; v.scaleFrac = 0; v.pad[0] = 0; v.pad[1] = 2;
+    };
+    put(d[0], X0, Y0, 0, 0); put(d[1], X1, Y0, U1, 0); put(d[2], X1, Y1, U1, V1); put(d[3], X0, Y1, 0, V1);
+}
+
+// The UI quads from `from` on: their text drawn supersampled (4 x 4 samples a pixel in the UI shader, as smooth as drawing
+// it at 400% and scaling it down; owner 2026-11-04: the main menu's icons and text), and the baked logo. Icons always are.
+void Renderer::uiSupersample(size_t from) {
+    for (size_t i = from; i < ui_.size(); i++) {
+        Vertex2D& v = ui_[i];
+        if (v.pad[1] == 0 && (v.scaleInt || v.scaleFrac) && v.pad[0] < 4) v.pad[0] += 4;   // (glyphs and the logo: not rects)
+    }
+}
+
 // The logo's size: the em of the game's text at ts (7.5 units) times Rubik's cap height matched to the old UI font's
 // (0.66 / 0.70), as it was designed (ui-redesign-spec, "Title logo"); its baseline 5.7 units below the line top.
 static constexpr float kLogoEmK = 0.66f / 0.70f, kLogoTilt = 0.16f, kLogoSeam = 12.0f / 844.0f;
+
+float Renderer::logoWidth(float ts) const {
+    if (!g_uiFont && logoTex_) return (kLogoInkX1 - kLogoInkX0) * 7.5f * ts * kLogoEmK / kLogoEm;
+    return textWidth("QUARK", ts * kLogoEmK);
+}
 
 void Renderer::logo(float cx, float y, float ts, const Color& friendly, const Color& enemy) {
     if (alpha_ <= 0) return;   // (fully transparent: nothing to draw)
@@ -2477,7 +2598,7 @@ void Renderer::logo(float cx, float y, float ts, const Color& friendly, const Co
     if (!g_uiFont && logoTex_) {   // Rubik: the baked logo, one quad (its masks tinted in the shader)
         const float k = 7.5f * ts * kLogoEmK / kLogoEm;
         // whole pixels: the pen origin on the pixel grid, the quad its exact size (no shimmer as it's scaled)
-        const float x0 = std::round(cx - kLogoAdv * k * 0.5f - kLogoOX * k), y0 = std::round(y + 5.7f * ts - kLogoOY * k);
+        const float x0 = std::round(cx - (kLogoInkX0 + kLogoInkX1) * 0.5f * k), y0 = std::round(y + 5.7f * ts - kLogoOY * k);   // (the slanted ink centred)
         uiQuad(ui_, x0, y0, x0 + kLogoW * k, y0 + kLogoH * k, u16uv(0), u16uv(0), u16uv(kLogoW), u16uv(kLogoH), rgba8({1, 1, 1, friendly.a}, alpha_), 255, 255);
         logoDrawn_ = true;
         return;
@@ -2505,16 +2626,17 @@ void Renderer::logo(float cx, float y, float ts, const Color& friendly, const Co
 }
 
 
-// The title's Q alone (the main menu's icon strip): the baked logo's first 134 texel columns (the Q and its outline end
-// at 130, the U's start at 137), centred on cx; in another UI font the Q in it, split as logo() splits it.
+// The title's Q alone (the main menu's icon strip): the baked logo's Q outline columns [kLogoQX0, kLogoQX1), without the
+// shadow, centred on cx; in another UI font the Q in it, split as logo() splits it.
 void Renderer::logoQ(float cx, float y, float ts, const Color& friendly, const Color& enemy) {
     if (alpha_ <= 0 || ts <= 0) return;
     logoA_ = friendly; logoB_ = enemy;
-    constexpr int kQW = 134;
     if (!g_uiFont && logoTex_) {
         const float k = 7.5f * ts * kLogoEmK / kLogoEm;
-        const float x0 = std::round(cx - kQW * k * 0.5f), y0 = std::round(y + 5.7f * ts - kLogoOY * k);
-        uiQuad(ui_, x0, y0, x0 + kQW * k, y0 + kLogoH * k, u16uv(0), u16uv(0), u16uv(kQW), u16uv(kLogoH), rgba8({1, 1, 1, friendly.a}, alpha_), 255, 255);
+        // the Q's outline columns centred on cx (its shadow is left out: UARK's would show at its edge; scaleFrac 254)
+        const float x0 = std::round(cx - (kLogoQX1 - kLogoQX0) * k * 0.5f), y0 = std::round(y + 5.7f * ts - kLogoOY * k);
+        uiQuad(ui_, x0, y0, x0 + (kLogoQX1 - kLogoQX0) * k, y0 + kLogoH * k, u16uv((int)kLogoQX0), u16uv(0), u16uv((int)kLogoQX1), u16uv(kLogoH),
+               rgba8({1, 1, 1, friendly.a}, alpha_), 255, 254);
         logoDrawn_ = true;
         return;
     }

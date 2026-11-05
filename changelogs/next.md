@@ -10,7 +10,18 @@
 - F3's latency graph says GPU WAIT (LATENT SYNC) instead of GPU WAIT (ULTRA) when Latent Sync is on and LOW LATENCY isn't ULTRA.
 
 ## Menus
+- **Sharp main menu icons:** the icons down the main menu's left strip are drawn as smooth shapes now, so they stay crisp at any resolution instead of looking pixelated; they and the main menu's text are drawn supersampled (as smooth as rendering at 400%). The main screen shows the QUARK wordmark at the top, and the Q in the strip's corner sits centred. The QUARK logo has a glossy arcade look: a lit top half and a drop shadow.
+- **Menu fixes from a three-player review** (a total beginner, an FPS player new to Quark, a regular):
+  - With no last game, the main menu's big button is **QUICK PLAY**: straight into the official server (the server list is still SERVERS).
+  - HOST shows the address your friends join with, and a **COPY** button.
+  - Settings opens on CONTROLS (sensitivity) unless REMEMBER LAST TAB is on.
+  - Bots in free for all start on Sewer, the map built for it, instead of Cobblestone.
+  - DISCORD, INFO and QUIT at the strip's foot have labels.
+  - The page title lines up with the top bar; the aim trainer's difficulty row and BACK no longer stick out of the panel, and its "LEADERBOARD: SOON" lines are gone.
 - The version in the menus' bottom left (and F3) shows the full build, e.g. `quark-1.19.8-a4bfca60`, with `-dirty` on a build of uncommitted changes.
+- **Exclusive fullscreen at a custom FULLSCREEN SIZE:** the picture fills the screen again (it sat cut off in the bottom-left corner), alt-tabbing out gives the desktop its own resolution back (the game minimizes), and closing the game restores it straight away.
+- RANKED on the main menu is now a queue: pick a ladder and it joins a ranked game where someone is waiting, or hosts one (listed publicly) so the next player finds you.
+- The main menu's side strip (PLAY, PRACTICE, CREATE, RANKS, SETTINGS, DISCORD, INFO, QUIT) now stays on every menu screen, so you can jump anywhere without backing out first.
 
 ## Weapon models
 - **Weapon animations:** weapon models can now have moving parts: the shotgun racks after a shot, the sticky launcher turns its drum, the sniper's bolt cycles, the rifle's bolt kicks, the laser's coil spins while you fire, and more (each weapon its own). They move the moment you click, at any ping. VIDEO > EFFECTS: WEAPON ANIMATIONS turns them off. Other players' weapons show the parts still.

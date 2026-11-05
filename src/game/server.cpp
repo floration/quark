@@ -838,6 +838,8 @@ void Server::handlePacket(const NetAddr& from, const uint8_t* data, int len) {
         writeHeader(w, PKT_INFO_REPLY);
         w.str(listName().substr(0, kInfoNameMax)); w.str(cfg_.map.substr(0, kInfoMapMax)); w.u8((uint8_t)cfg_.mode);
         w.u8((uint8_t)playerCount()); w.u8((uint8_t)cfg_.maxPlayers); w.u16(port());
+        // (added in 1.19.9: older clients stop reading at the port) RANKED's FIND MATCH looks for a ranked ladder's server
+        w.u8(rankedLadderPlayed() ? INFO_RANKED : 0); w.u8((uint8_t)cfg_.arenaVariant);
         sendTo(from, out, w.size());
         return;
     }

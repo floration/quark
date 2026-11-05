@@ -5338,6 +5338,7 @@ static void testCrossLanguageConstants(uint16_t port) {
     for (int k = 0; ok && k < 2; k++) { int l = rep[off++]; ok = off + l <= n; if (ok) str[k].assign((char*)rep + off, l); off += l; }
     ok = ok && off + 5 <= n;
     CHECK(ok && str[1] == "bastion" && rep[off] == MODE_KOTH && rep[off + 1] == 0 && rep[off + 2] == 7 && (rep[off + 3] | rep[off + 4] << 8) == port);
+    CHECK(off + 7 <= n && rep[off + 5] == 0 && rep[off + 6] == 0);   // (1.19.9: flags, ladder - an unranked server)
     s.stop();
 }
 

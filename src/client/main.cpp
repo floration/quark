@@ -260,6 +260,9 @@ int main(int argc, char** argv) {
         { QZONE("after swap (low latency wait)"); game.afterSwap(); }
         QFRAME();
     }
+    // Exclusive fullscreen: the desktop's own resolution back at once, before the shutdown's saving and the hosted
+    // server's goodbyes (owner, 2026-11-05: closing the game should put the desktop resolution back)
+    if (glfwGetWindowMonitor(win)) { glfwHideWindow(win); glfwSetWindowMonitor(win, nullptr, 0, 0, 640, 480, 0); }
     game.shutdown();
     glfwDestroyWindow(win);
     glfwTerminate();

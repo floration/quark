@@ -1067,6 +1067,7 @@ void ServerBrowser::poll() {
         si.name = r.str(); si.map = r.str(); si.mode = r.u8(); si.players = r.u8(); si.maxPlayers = r.u8();
         r.u16();
         if (r.bad()) continue;
+        if (r.remaining() >= 2) { const uint8_t f = r.u8(); si.rankedLadder = (f & INFO_RANKED) ? r.u8() : -1; }   // (an older server: not there)
         si.ping = (float)((timeNow() - sentAt_) * 1000.0);
         for (size_t k = 0; k < servers_.size(); k++) // a late answer replaces its "no response" placeholder
             if (servers_[k].noReply && servers_[k].addr == from) { servers_.erase(servers_.begin() + k); break; }

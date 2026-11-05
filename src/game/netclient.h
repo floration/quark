@@ -305,6 +305,7 @@ struct ServerInfo {
     float ping = 0;
     bool noReply = false; // on the internet list but didn't answer (port not open?); still clickable
     bool official = false; // an official Quark server (isOfficialServer, master.h: by its address, never its name)
+    int rankedLadder = -1;  // the ranked ladder it plays (arenaVariant: 0 vanilla, 1 laser vampire, 5 instagib), -1 none or an older server
 };
 
 // LAN discovery and direct server queries.
