@@ -683,6 +683,9 @@ uniform float uK; // distance-field units per screen pixel at scale 1 (texels pe
 // the title (Renderer::logo): its two team colours; the split Q's line (a window point, its normal towards the second
 // colour) and half the seam's width (px)
 uniform vec3 uLogoA, uLogoB;
+uniform vec2 uLogoInk;     // the letters' ink rows (texels): the shine
+uniform vec2 uLogoSize;    // (the logo texture's size, texels: as the vertex shader's)
+uniform vec4 uLogoSplit;   // the split line (x, y, slope) and where the enemy glow ends (texels)
 uniform vec2 uSplitP, uSplitN;
 uniform float uSplitSeam;
 uniform float uOutline;   // the outline's width, x (HUD > MORE: TEXT OUTLINE; 0: none)
@@ -760,7 +763,16 @@ void main() {
             t *= 1.0 / 16.0;
         }
         float a = max(t.a, max(t.r, t.g));
-        vec3 c = uLogoA * t.r + uLogoB * t.g;   // (over black: premultiplied)
+        vec2 tx = vUV * uLogoSize;   // (texels)
+        // a shine down the letters: lighter at the top, deeper at the bottom (owner 2026-11-04, "F")
+        float sh = mix(1.3, 0.72, clamp((tx.y - uLogoInk.x) / (uLogoInk.y - uLogoInk.x), 0.0, 1.0));
+        vec3 c = min(uLogoA * sh, vec3(1.0)) * t.r + min(uLogoB * sh, vec3(1.0)) * t.g;   // (over black: premultiplied)
+        if (vScale > 255.994) {   // the team-colour glow under it all (not on logoQ's lone Q)
+            bool enemy = tx.x > uLogoSplit.x - uLogoSplit.z * (tx.y - uLogoSplit.y) && tx.x < uLogoSplit.w;
+            float g = t.b * 0.95 * (1.0 - a);
+            c += (enemy ? uLogoB : uLogoA) * g;
+            a += g;
+        }
         fragColor = vec4(a > 0.0 ? c / a : c, a * vColor.a);
         return;
     }
@@ -1207,6 +1219,8 @@ bool Renderer::init(int shadowRes, std::string* err) {
     uExtSize_ = U(uiProg_, "uExtSize");
     glUniform2f(uExtSize_, (float)extW_, (float)extH_);
     glUniform2f(U(uiProg_, "uLogoSize"), (float)kLogoW, (float)kLogoH);
+    glUniform2f(U(uiProg_, "uLogoInk"), kLogoInkY0, kLogoInkY1);
+    glUniform4f(U(uiProg_, "uLogoSplit"), kLogoSplitX, kLogoSplitY, kLogoSplitK, kLogoEnemyEnd);
     uLogoA_ = U(uiProg_, "uLogoA"); uLogoB_ = U(uiProg_, "uLogoB");
     uSplitP_ = U(uiProg_, "uSplitP"); uSplitN_ = U(uiProg_, "uSplitN"); uSplitSeam_ = U(uiProg_, "uSplitSeam");
     uOutline_ = U(uiProg_, "uOutline"); glUniform1f(uOutline_, 1.0f); outlineSet_ = 1.0f;
@@ -2551,7 +2565,7 @@ void Renderer::uiSupersample(size_t from) {
 static constexpr float kLogoEmK = 0.66f / 0.70f, kLogoTilt = 0.16f, kLogoSeam = 12.0f / 844.0f;
 
 float Renderer::logoWidth(float ts) const {
-    if (!g_uiFont && logoTex_) return kLogoAdv * 7.5f * ts * kLogoEmK / kLogoEm;
+    if (!g_uiFont && logoTex_) return (kLogoInkX1 - kLogoInkX0) * 7.5f * ts * kLogoEmK / kLogoEm;
     return textWidth("QUARK", ts * kLogoEmK);
 }
 
@@ -2562,7 +2576,7 @@ void Renderer::logo(float cx, float y, float ts, const Color& friendly, const Co
     if (!g_uiFont && logoTex_) {   // Rubik: the baked logo, one quad (its masks tinted in the shader)
         const float k = 7.5f * ts * kLogoEmK / kLogoEm;
         // whole pixels: the pen origin on the pixel grid, the quad its exact size (no shimmer as it's scaled)
-        const float x0 = std::round(cx - kLogoAdv * k * 0.5f - kLogoOX * k), y0 = std::round(y + 5.7f * ts - kLogoOY * k);
+        const float x0 = std::round(cx - (kLogoInkX0 + kLogoInkX1) * 0.5f * k), y0 = std::round(y + 5.7f * ts - kLogoOY * k);   // (the slanted ink centred)
         uiQuad(ui_, x0, y0, x0 + kLogoW * k, y0 + kLogoH * k, u16uv(0), u16uv(0), u16uv(kLogoW), u16uv(kLogoH), rgba8({1, 1, 1, friendly.a}, alpha_), 255, 255);
         logoDrawn_ = true;
         return;
@@ -2590,16 +2604,17 @@ void Renderer::logo(float cx, float y, float ts, const Color& friendly, const Co
 }
 
 
-// The title's Q alone (the main menu's icon strip): the baked logo's first 134 texel columns (the Q and its outline end
-// at 130, the U's start at 137), centred on cx; in another UI font the Q in it, split as logo() splits it.
+// The title's Q alone (the main menu's icon strip): the baked logo's Q outline columns [kLogoQX0, kLogoQX1), without the
+// glow, centred on cx; in another UI font the Q in it, split as logo() splits it.
 void Renderer::logoQ(float cx, float y, float ts, const Color& friendly, const Color& enemy) {
     if (alpha_ <= 0 || ts <= 0) return;
     logoA_ = friendly; logoB_ = enemy;
-    constexpr int kQW = 134;
     if (!g_uiFont && logoTex_) {
         const float k = 7.5f * ts * kLogoEmK / kLogoEm;
-        const float x0 = std::round(cx - kQW * k * 0.5f), y0 = std::round(y + 5.7f * ts - kLogoOY * k);
-        uiQuad(ui_, x0, y0, x0 + kQW * k, y0 + kLogoH * k, u16uv(0), u16uv(0), u16uv(kQW), u16uv(kLogoH), rgba8({1, 1, 1, friendly.a}, alpha_), 255, 255);
+        // the Q's outline columns centred on cx (its glow is left out: UARK's would show at its edge; scaleFrac 254)
+        const float x0 = std::round(cx - (kLogoQX1 - kLogoQX0) * k * 0.5f), y0 = std::round(y + 5.7f * ts - kLogoOY * k);
+        uiQuad(ui_, x0, y0, x0 + (kLogoQX1 - kLogoQX0) * k, y0 + kLogoH * k, u16uv((int)kLogoQX0), u16uv(0), u16uv((int)kLogoQX1), u16uv(kLogoH),
+               rgba8({1, 1, 1, friendly.a}, alpha_), 255, 254);
         logoDrawn_ = true;
         return;
     }

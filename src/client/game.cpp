@@ -10036,11 +10036,13 @@ void Game::drawMainMenu() {
     else if (mainTab_ == MAIN_PRACTICE) drawMainPractice(s, px, pw, rx, rw, stacked ? 420 : kPanelTop);
     else drawMainCreate(s, px, pw, rx, rw, stacked ? 330 : kPanelTop);
     // the QUARK wordmark (owner 2026-11-04: "it doesnt say quark anywhere on the main screen"), 40 high, in the top bar
-    // half way between the page and the name chip's widest (284); left out where that gap is too narrow for it
+    // between the page and the name chip's widest (284); left out where that gap is too narrow for it
     {
         const float lts = 6.5f, lw = r_.logoWidth(lts * s) / s, gapL = px + pw + 24, gapR = Wd - kRightPad - 284 - 24;
+        // (centred on the screen where it fits there, else in the gap; reviewers: "138 px right of the screen centre")
+        const float cxd = std::clamp(Wd * 0.5f, gapL + lw * 0.5f, gapR - lw * 0.5f);
         if (!stacked && gapR - gapL >= lw)
-            r_.logo((gapL + gapR) * 0.5f * s, 22 * s, lts * s, rgba(cfg_.fixedLogo ? defaultSettings().colorFriendly : cfg_.colorFriendly),
+            r_.logo(cxd * s, 22 * s, lts * s, rgba(cfg_.fixedLogo ? defaultSettings().colorFriendly : cfg_.colorFriendly),
                     rgba(cfg_.fixedLogo ? defaultSettings().colorEnemy : cfg_.colorEnemy));
     }
     drawNameChip(s, W);
