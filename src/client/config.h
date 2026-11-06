@@ -274,6 +274,7 @@ struct Settings {
     // the main menu's LAST PLAYED card (1.19.x): the last server's mode title, map title and name as they were when you
     // last joined it (lastAddress); empty before the first game, so the card says NO GAME YET
     std::string lastMode, lastMap, lastServer;
+    int lastLadder = 0;         // RANKED's queue: the ladder last queued for (its picker starts lit on it)
     std::string lastTrainer;    // PRACTICE's AIM TRAINER card: the scenario last started, "<id>:<difficulty>" (empty: none yet)
     // JOIN's server list (1.19.4): sort (0 ping, 1 players, 2 name), hide full / empty, a ping cap (0 = any), and your
     // favourite and recent servers ("host:port" lists, ';'-separated; recent: the last 8 joined, newest first)

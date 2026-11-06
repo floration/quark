@@ -26,6 +26,7 @@
 #include "../game/master.h"
 #include "../game/gamemodes.h"
 #include "../common/version.h"
+#include <random>
 #include "gltf.h"
 #include "overrides.h"
 #include "hudclock.h"
@@ -159,7 +160,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     hostModeIdx_ = clampf((float)cfg_.hostMode, 0, MODE_COUNT - 1);
     cfg_.hostMaxPlayers = std::min(std::max(cfg_.hostMaxPlayers, 2), kMaxPlayers);
     hostPortStr_ = std::to_string(cfg_.hostPort);
-    joinAddr_ = cfg_.lastAddress;
+    joinAddr_ = cfg_.lastAddress == "127.0.0.1" ? std::string() : cfg_.lastAddress;   // (the old default: empty, so the box's hint shows)
     if (!opts_.menuPage.empty()) debugMenuPage();   // (after the host / bots settings are read: a picker can set them)
     applyMenuTheme();
     glfwSetMonitorCallback(onMonitorEvent);   // (a monitor plugged in or out: DEVICES' MONITOR found again)
@@ -782,22 +783,119 @@ int Game::bestRankedMap(int ladder) const {
     return any < 0 ? 0 : any;
 }
 
+// QUICK PLAY: your channel's official server (a testing build: the TESTING server, else production - review round 3:
+// it could send a stable player to the testing build), asked afresh, when it answers and has room; full: an unranked
+// server with players and room (never a ranked one: a casual player in a rated 1v1); no answer within 3 s: bots,
+// saying so. Pressing it starts a short FINDING A GAME... (quickPlayTick, each frame) - never a blind connect.
+static size_t quickOfficial() {
+    int dots = 0;
+    for (const char* p = kQuarkVersion; *p; p++) dots += *p == '.';
+    return dots >= 3 && kOfficialServerCount > 1 ? 1 : 0;   // (x.y.z.N: a testing build)
+}
+
+void Game::quickPlay() {
+    if (kOfficialServerCount == 0) return;
+    const size_t k = quickOfficial();
+    browser_.query(NetAddr{kOfficialServers[k].ip, kOfficialServers[k].port}.toString());
+    quickAt_ = time_;
+}
+
+void Game::quickPlayTick() {
+    if (quickAt_ < 0) return;
+    if (screen_ != Screen::Main || queueLadder_ >= 0) { quickAt_ = -1; return; }
+    const size_t k = quickOfficial();
+    const ServerInfo* off = nullptr;
+    for (const ServerInfo& c : browser_.servers())
+        if (c.addr.ip == kOfficialServers[k].ip && c.addr.port == kOfficialServers[k].port && !c.noReply) off = &c;
+    const ServerInfo* best = off && off->players < off->maxPlayers ? off : nullptr;
+    if (!best && off)   // (full: an unranked game with people in it and room)
+        for (const ServerInfo& sv : browser_.servers())
+            if (!sv.noReply && sv.rankedLadder < 0 && !sv.official && sv.players > 0 && sv.players < sv.maxPlayers && (!best || sv.ping < best->ping)) best = &sv;
+    if (best) { quickAt_ = -1; joinAddr_ = best->addr.toString(); connectTo(joinAddr_); return; }
+    if (off) { quickAt_ = -1; notify("EVERY SERVER IS FULL - PLAYING BOTS", 6); startHost(true); return; }
+    if (time_ - quickAt_ < 3) return;
+    quickAt_ = -1;
+    notify("NO SERVER ANSWERED - PLAYING BOTS", 6);
+    startHost(true);
+}
+
 // RANKED's queue (the main menu's RANKED, a ladder picked): join the ranked game on that ladder with someone waiting
 // in it (lowest ping; servers 1.19.9+ say their ladder in the info reply), else host one on its own map, listed so
 // the next player to queue finds it. Uses the list the main menu keeps fresh (every 10 s).
 void Game::findRankedMatch(int ladder) {
+    // (review round 2: it decided at once from a list up to 10 s old and hosted without a word; round 3: after 3 s,
+    // so two players queueing together both hosted, and it left HOST set to ranked) - a FINDING A RANKED MATCH card
+    // over the main menu (drawRankedQueue): ~20 s of looking, HOST NOW, CANCEL; HOST's own settings untouched
     picker_ = PICK_NONE;
     variantCtx_ = 0;
+    cfg_.lastLadder = ladder;   // (the queue's picker starts on it next time)
     cfg_.save();
-    const ServerInfo* best = nullptr;
-    for (const ServerInfo& sv : browser_.servers())
-        if (!sv.noReply && sv.rankedLadder == ladder && sv.players > 0 && sv.players < sv.maxPlayers && (!best || sv.ping < best->ping)) best = &sv;
-    if (best) { joinAddr_ = best->addr.toString(); connectTo(joinAddr_); return; }
+    queueLadder_ = ladder;
+    queueAt_ = time_;
+    // (20 s plus up to 5 s at random: two players who queue together don't both give up and host at the same moment)
+    static std::mt19937 rng{std::random_device{}()};
+    queueHostAfter_ = 20 + std::uniform_real_distribution<double>(0, 5)(rng);
+    queueRefreshed_ = time_;
+    browser_.refresh();
+    browserAt_ = time_;
+    setScreen(Screen::Main);
+}
+
+// RANKED's queue hosting: a public ranked game on the ladder's own map, with HOST's settings put back after (they're
+// HOST's: review round 3 found the next HOST opening as RANKED, bots greyed out)
+void Game::hostRankedQueue(int ladder) {
+    const bool wasRanked = cfg_.hostRanked;
+    const int wasVariant = cfg_.hostArenaVariant, wasMap = hostMapIdx_, wasMode = hostModeIdx_;
+    cfg_.hostRanked = true;
+    cfg_.hostArenaVariant = ladder;
     hostMapIdx_ = bestRankedMap(ladder);
     hostModeIdx_ = rankedMode(ladder);
     rankedQueue_ = true;   // (startHost: on the server list whatever HOST's PUBLIC says)
     startHost();
     rankedQueue_ = false;
+    cfg_.hostRanked = wasRanked;
+    cfg_.hostArenaVariant = wasVariant;
+    hostMapIdx_ = wasMap;
+    hostModeIdx_ = wasMode;
+}
+
+// the queue's card: joins a ranked server on the ladder with someone waiting as soon as one answers (the list asked
+// again at 10 s); with none by ~20 s, or HOST NOW, hosts one listed publicly so the next player to queue finds it
+void Game::drawRankedQueue() {
+    const SetLayout L = menuLayout(560);
+    const float bw = L.L(528);
+    float y = 360 - 100;
+    ui_.panel(L.X(360), L.Y(y - 16), L.L(560), L.L(200), 0.94f);
+    ui_.labelCentered(L.X(640), L.Y(y), "FINDING A RANKED MATCH", kWhite, 1.25f, bw);
+    y += 32;
+    ui_.labelCentered(L.X(640), L.Y(y), arenaVariant(queueLadder_).title, ui_.accent, 1.0f, bw);
+    y += 26;
+    const int secs = (int)std::max(0.0, time_ - queueAt_), left = (int)std::ceil(std::max(0.0, queueHostAfter_ - (time_ - queueAt_)));
+    char b[64];
+    snprintf(b, sizeof b, "%d:%02d", secs / 60, secs % 60);
+    ui_.hintCentered(L.X(640), L.Y(y), "LOOKING FOR SOMEONE WAITING ON THIS LADDER", kGrey, bw);
+    ui_.hintCentered(L.X(640), L.Y(y + 18), b, kGrey, bw);
+    snprintf(b, sizeof b, "NOBODY YET: YOU HOST IN %d S", left);
+    static std::string hostIn;
+    hostIn = b;
+    ui_.hintCentered(L.X(640), L.Y(y + 36), hostIn, kGrey, bw);
+    y += 68;
+    const bool listDown = browser_.listFailed();
+    if (ui_.button(L.X(640 - 188), L.Y(y), L.L(180), L.L(40), "CANCEL", UiExp::nav("main*").withId("CANCEL")) || uiIn_.escape) { queueLadder_ = -1; return; }
+    const bool hostNow = ui_.button(L.X(640 + 8), L.Y(y), L.L(180), L.L(40), "HOST NOW", UiExp::state("hosting", "1").optional().withId("HOST NOW"));
+    if (ui_.probing()) return;   // (the UI test: the card, not a game)
+    const ServerInfo* best = nullptr;
+    for (const ServerInfo& sv : browser_.servers())
+        if (!sv.noReply && sv.rankedLadder == queueLadder_ && sv.players > 0 && sv.players < sv.maxPlayers && (!best || sv.ping < best->ping)) best = &sv;
+    const int ladder = queueLadder_;
+    if (best) { queueLadder_ = -1; joinAddr_ = best->addr.toString(); connectTo(joinAddr_); return; }
+    if (time_ - queueRefreshed_ > 10) { queueRefreshed_ = time_; browser_.refresh(); browserAt_ = time_; }
+    if (!hostNow && time_ - queueAt_ < queueHostAfter_) return;
+    queueLadder_ = -1;
+    // (the list down: nobody can find the game, so no promise of an opponent)
+    notify(listDown ? "SERVER LIST UNREACHABLE - HOSTING A RANKED GAME ONLY YOUR ADDRESS REACHES"
+                    : "NOBODY WAITING - HOSTING A RANKED GAME, THE NEXT PLAYER TO QUEUE JOINS YOU", 8);
+    hostRankedQueue(ladder);
 }
 
 // The map built for this mode if there is one, else the first map that supports it.
@@ -6024,6 +6122,7 @@ void Game::drawLeaderboard(const SetLayout& L) {
     }
     const int kTop = 15;
     const float ts = ui_.textScale(), colW = 220, rowH = 20;
+    bool boardDown = false;   // a column couldn't reach the ranking server (review round 2: the same error four times)
     ui_.panel(L.X(160), L.Y(166), L.L(960), L.L(522), 0.85f);
     ui_.labelCentered(L.X(640), L.Y(182), "RANKED LEADERBOARD", kWhite, 1.5f, L.L(928));
     // a column: its name bar; rows: "1. NAME" and the number right-aligned (names cut to fit: they're data)
@@ -6034,7 +6133,7 @@ void Game::drawLeaderboard(const SetLayout& L) {
         ui_.labelCentered(L.X(x + colW * 0.5f), L.Y(230), title, kWhite, 1.0f, L.L(colW - 8));
         const float sx = L.X(x + 4), sw = L.L(colW - 8);
         if (!loaded) { ui_.hintWrapped(sx, L.Y(262), "LOADING...", kGrey, sw, L.L(14)); return; }
-        if (!rows->empty() && (*rows)[0].rating < 0) { ui_.hintWrapped(sx, L.Y(262), upper((*rows)[0].name), kGrey, sw, L.L(14)); return; }
+        if (!rows->empty() && (*rows)[0].rating < 0) { boardDown = true; return; }   // (one message for the board, under the columns)
         if (rows->empty()) ui_.hintWrapped(sx, L.Y(262), race ? "NO TIMES YET" : "NOBODY RANKED YET (3 GAMES)", kGrey, sw, L.L(14));
         for (size_t i = 0; i < rows->size() && i < (size_t)top; i++) {
             const RankService::LeaderRow& lr = (*rows)[i];
@@ -6081,6 +6180,11 @@ void Game::drawLeaderboard(const SetLayout& L) {
             ui_.hint(L.X(180 + 3 * 236) + L.L(colW - 8) - vw, L.Y(ly), v, it != mine.end() ? kWhite : kGrey, vw + 1);
         }
         if (ly + 14 <= 614) ui_.hintWrapped(L.X(180 + 3 * 236), L.Y(ly + 4), "UNPLAYED MAPS COUNT AT THEIR DEFAULT TIME", kGrey, L.L(colW - 8), L.L(13));
+    }
+    if (boardDown) {   // once, across the ladder columns, with RETRY (the next fetch is otherwise 30 s away)
+        ui_.labelCentered(L.X(176 + (3 * 236 - 16) * 0.5f), L.Y(300), "COULDN'T REACH THE RANKING SERVER", kWhite, 1.0f, L.L(3 * 236 - 32));
+        ui_.labelCentered(L.X(176 + (3 * 236 - 16) * 0.5f), L.Y(324), "CHECK YOUR CONNECTION, OR TRY AGAIN IN A MINUTE", kGrey, 1.0f, L.L(3 * 236 - 32));
+        if (ui_.button(L.X(176 + (3 * 236 - 16) * 0.5f - 70), L.Y(356), L.L(140), L.L(40), "RETRY", UiExp::inert().withId("RETRY"))) nextBoardFetch_ = 0;
     }
     {   // TRIAL MAP: which ranked race map PLAY TIME TRIAL starts
         const auto& rm = rankedRaceMaps();
@@ -7454,6 +7558,22 @@ void Game::drawGameplaySettings(const SetLayout& L) {
     g.hint("HIDES ALL PLAYERS' CHAT MESSAGES");
 }
 
+// VIDEO + AUDIO's PRESET (page 1, review round 2: on page 4 nobody found it; and MORE 3): a starting point - shadows,
+// anti-aliasing, render scale, fog and effects at once
+void Game::videoPresetCycle(float x, float y, float w, float h) {
+    static const std::vector<std::string> vn = {"PRESET: CUSTOM", "PRESET: LOW", "PRESET: MEDIUM", "PRESET: HIGH", "PRESET: COMPETITIVE"};
+    if (ui_.cycle(x, y, w, h, "PRESET", cfg_.videoPreset, 5, vn, UiExp::cfg("video_preset")) && cfg_.videoPreset > 0) {
+        struct P { bool shadows; int shadowRes, msaa, scale; float fog, fx; bool bursts, recoil; };
+        static const P ps[] = {{false, 1024, 0, 75, 1.0f, 0.6f, true, true}, {true, 2048, 1, 100, 1.0f, 1.0f, true, true},
+                               {true, 4096, 4, 100, 1.0f, 1.0f, true, true}, {false, 1024, 0, 100, 0.0f, 0.5f, false, false}};
+        const P& p = ps[cfg_.videoPreset - 1];
+        cfg_.shadows = p.shadows; cfg_.msaa = p.msaa; cfg_.renderScale = p.scale; cfg_.fxOpacity = p.fx;
+        cfg_.killBursts = p.bursts; cfg_.viewRecoil = p.recoil;
+        if (cfg_.shadowRes != p.shadowRes) r_.setShadowRes(cfg_.shadowRes = p.shadowRes);
+        r_.setFog(cfg_.fog = p.fog);
+    }
+}
+
 void Game::drawVideoSettings(const SetLayout& L) {
     SetFlow f{ui_, L, kColL, 90};
     const float w = f.w(), h = f.h(), hw = L.L(kHalfW);
@@ -7473,6 +7593,8 @@ void Game::drawVideoSettings(const SetLayout& L) {
         cfg_.maxFps = std::min(std::max(0, (int)std::lround(v)), 100000);
         f.next();
     }
+    videoPresetCycle(f.x(), f.top(), w, h);   // (the quality preset first: review round 2)
+    f.next();
     f.section("LATENCY");
 #ifdef _WIN32
     static const std::vector<std::string> presNames = {"VSYNC: OFF", "VSYNC: ON", "VSYNC: ADAPTIVE", "VSYNC: LATENT SYNC"};
@@ -7881,8 +8003,22 @@ void Game::drawSettingsPages(const SetLayout& L, float footY) {
     int go = -1;
     if (ui_.button(L.X(x), y, L.L(cw), h, "<", cur > 0 ? UiExp::nav(moreNav(cur - 1)).withId("PREVIOUS PAGE") : UiExp::inert().withId("PREVIOUS PAGE"), cur > 0)) go = cur - 1;
     x += cw + gap;
-    for (int i = 0; i < n; i++, x += cw + gap)
+    // VIDEO + AUDIO's nine pages say what's on them under the mouse (review round 2: "9 unnamed pages")
+    static const char* const kVideoPages[9] = {"DISPLAY / LATENCY / IMAGE / SOUND", "WINDOW / SHADOWS / GPU / HITSOUNDS / FLAT MAP", "WORLD / PICTURE / EFFECTS",
+                                               "DISPLAY / SOUND GROUPS / PERFORMANCE / PRESET", "SHADOWS / PLAYERS / OUTLINES / COLORS", "OUTPUT / VOLUME / CALLOUTS",
+                                               "NETWORK / LIGHT CACHE / MENU CURSOR", "MAP COLORS / PLAYERS / HEALTH BARS / NAME TAGS", "SCREENSHOTS / DEMOS / LATENCY"};
+    int hoverPage = -1;
+    for (int i = 0; i < n; i++, x += cw + gap) {
+        if (ui_.over(L.X(x), y, L.L(cw), h)) hoverPage = i;
         if (ui_.tab(L.X(x), y, L.L(cw), h, std::to_string(i + 1), i == cur, i == cur ? UiExp::inert().withId(kIds[i]) : UiExp::nav(moreNav(i)).withId(kIds[i]))) go = i;
+    }
+    if (hoverPage >= 0 && setTab_ == TAB_VIDEO && hoverPage < 9) {
+        const std::string t = kVideoPages[hoverPage];
+        const float hs = ui_.hintScale(), tw = r_.textWidth(t, hs), th = r_.textHeight(hs), pad = L.L(8);
+        const float bx = L.X(640) - tw * 0.5f - pad, by = y - th - 2 * pad - L.L(4);
+        r_.rect(bx, by, tw + 2 * pad, th + 2 * pad, {0.05f, 0.06f, 0.08f, 0.96f});
+        ui_.hint(bx + pad, by + pad, t, ui_.textC(), tw + 1);
+    }
     if (ui_.button(L.X(x), y, L.L(cw), h, ">", cur < n - 1 ? UiExp::nav(moreNav(cur + 1)).withId("NEXT PAGE") : UiExp::inert().withId("NEXT PAGE"), cur < n - 1)) go = cur + 1;
     if (ui_.probing() && settingsPageKeys()) {   // (the UI test: the arrow keys do the same)
         ui_.keyAction("LEFT ARROW (PREVIOUS PAGE)", GLFW_KEY_LEFT, 0, cur > 0 ? UiExp::nav(moreNav(cur - 1)) : UiExp::inert());
@@ -8796,17 +8932,7 @@ void Game::drawMoreSettings(const SetLayout& L) {
         g.hint("WINDOWS, WITH PRIORITIZE GAME ON;", "HIGH CAN SLOW OTHER PROGRAMS");
         g.section("PRESET");   // a starting point: shadows, anti-aliasing, render scale, fog and effects at once
         {
-            static const std::vector<std::string> vn = {"PRESET: CUSTOM", "PRESET: LOW", "PRESET: MEDIUM", "PRESET: HIGH", "PRESET: COMPETITIVE"};
-            if (ui_.cycle(g.x(), g.top(), w, h, "PRESET", cfg_.videoPreset, 5, vn, UiExp::cfg("video_preset")) && cfg_.videoPreset > 0) {
-                struct P { bool shadows; int shadowRes, msaa, scale; float fog, fx; bool bursts, recoil; };
-                static const P ps[] = {{false, 1024, 0, 75, 1.0f, 0.6f, true, true}, {true, 2048, 1, 100, 1.0f, 1.0f, true, true},
-                                       {true, 4096, 4, 100, 1.0f, 1.0f, true, true}, {false, 1024, 0, 100, 0.0f, 0.5f, false, false}};
-                const P& p = ps[cfg_.videoPreset - 1];
-                cfg_.shadows = p.shadows; cfg_.msaa = p.msaa; cfg_.renderScale = p.scale; cfg_.fxOpacity = p.fx;
-                cfg_.killBursts = p.bursts; cfg_.viewRecoil = p.recoil;
-                if (cfg_.shadowRes != p.shadowRes) r_.setShadowRes(cfg_.shadowRes = p.shadowRes);
-                r_.setFog(cfg_.fog = p.fog);
-            }
+            videoPresetCycle(g.x(), g.top(), w, h);
             g.next();
             g.hint("COMPETITIVE: NO FOG OR SHADOWS, FEWER EFFECTS;", "CHANGE ANYTHING AFTER (IT STAYS)");
         }
@@ -10076,6 +10202,7 @@ void Game::debugMenuPage() {
         infoScroll_ = scroll;
     } else if (under("leaderboard")) { setScreen(Screen::Leaderboard); raceStatsView_ = p == "leaderboard/race-stats"; }
     else if (p == "demos") setScreen(Screen::Demos);
+    else if (p == "main/ranked-queue") { setScreen(Screen::Main); queueLadder_ = 1; queueAt_ = time_; }   // (RANKED's FINDING A RANKED MATCH card)
     else if (p == "connecting") connectTo("127.0.0.1:9");
     else setScreen(Screen::Main);
 }
@@ -10086,9 +10213,11 @@ void Game::drawMenu() {
     const float W = (float)r_.width(), H = (float)r_.height();
     float s = H / 720.0f;
     ui_.begin(&r_, uiIn_, s);
+    typingAtFrame_ = ui_.typing();
+    quickPlayTick();   // (QUICK PLAY's FINDING A GAME...: joins or starts bots once the server answers or 3 s pass)   // (a field Enter just closed: that Enter isn't a menu key - menuKeysFree)
     // the main menu's own page (no question over it): its rail fades into the backdrop instead of the veil (mock4's
     // gradient: dark behind the strip and the page, clear by two thirds across, a little darker at the right edge)
-    const bool mainPage = screen_ == Screen::Main && !edPrompt_ && !tutOffer_;
+    const bool mainPage = screen_ == Screen::Main && !edPrompt_ && !tutOffer_ && queueLadder_ < 0;
     if (mainPage) {
         if (!r_.worldLoaded()) r_.rect(0, 0, W, H, {0.03f, 0.035f, 0.05f, 1});
         const float x0 = 72 * s, x1 = 440 * s, x2 = 640 * s, x3 = std::max(x2 + 1, W * 0.68f);
@@ -10103,12 +10232,29 @@ void Game::drawMenu() {
     // (the HUD editors, and the HUD tab's preview, which shows the HUD where it really sits: the whole screen)
     const bool full = screen_ == Screen::Settings && (settingsInGame_ || widgetEdit_ || hudEdit_ || hudPreviewOn());
     const bool strip = !mainPage && !full && !edPrompt_ && !tutOffer_ && screen_ != Screen::Connecting && screen_ != Screen::Main;
-    menuStripPx_ = strip ? std::round(kMenuStripW * s) : 0;
+    // (SETTINGS > HUD hides the strip for its full-screen HUD preview, but its panel stays where every other tab's is:
+    // review round 3 saw it jump 56 px left under the cursor)
+    const bool hudTab = screen_ == Screen::Settings && !settingsInGame_ && !widgetEdit_ && !hudEdit_ && hudPreviewOn();
+    menuStripPx_ = strip || hudTab ? std::round(kMenuStripW * s) : 0;
     drawNotices(12 * s, ui_.textScale(), s); // e.g. "SAVED <mode>": the strip above the title, clear of the buttons
     float cx = menuStripPx_ + (W - menuStripPx_) * 0.5f;
     // the title, drawn like the app icon (a baked texture: Renderer::logo); not over the settings shell (it covered it),
     // nor over the main menu's page (its strip has the Q)
-    if (screen_ != Screen::Settings && !mainPage) r_.logo(cx, H * 0.12f, 8 * s, rgba(cfg_.fixedLogo ? defaultSettings().colorFriendly : cfg_.colorFriendly),
+    // a strip screen: the main menu's top bar - its title top-left beside the strip, the small wordmark centred
+    // (review round 2: the big logo sat in a different place and size on every screen, and pages had no title)
+    if (strip && screen_ != Screen::Settings) {
+        const char* title = screen_ == Screen::Join ? "SERVERS" : screen_ == Screen::Host && picker_ == PICK_RANKED && variantCtx_ == 3 ? "RANKED" : screen_ == Screen::Host ? "HOST" : screen_ == Screen::VsBots ? "BOTS"
+                          : screen_ == Screen::Leaderboard ? "RANKS" : screen_ == Screen::Info ? "INFO"
+                          : "";   // (AIM TRAINER, DEMOS, BENCHMARKS, CUSTOM MODE: their panel heads them - review round 3 saw each twice)
+        const float Wd = W / s, lts = 6.5f, lw = r_.logoWidth(lts * s) / s, tx = 104;
+        const float tw = std::min(Wd * 0.5f - tx - 24 - lw * 0.5f, 420.0f);
+        ui_.label(tx * s, 29 * s, title, ui_.textC(), 2.25f, std::max(120.0f, tw) * s);
+        const float twd = r_.textWidth(title, ui_.textScale() * 2.25f) / s;
+        const float cxd = std::max(Wd * 0.5f, tx + twd + 24 + lw * 0.5f);
+        if (cxd + lw * 0.5f <= Wd - 16)
+            r_.logo(cxd * s, 22 * s, lts * s, rgba(cfg_.fixedLogo ? defaultSettings().colorFriendly : cfg_.colorFriendly),
+                    rgba(cfg_.fixedLogo ? defaultSettings().colorEnemy : cfg_.colorEnemy));
+    } else if (screen_ != Screen::Settings && !mainPage) r_.logo(cx, H * 0.12f, 8 * s, rgba(cfg_.fixedLogo ? defaultSettings().colorFriendly : cfg_.colorFriendly),
                                              rgba(cfg_.fixedLogo ? defaultSettings().colorEnemy : cfg_.colorEnemy));   // (the Q in both team colours; FIXED LOGO COLORS: the defaults)
     if (!mainPage && !strip) r_.text(8 * s, H - 20 * s, std::max(1.0f, std::round(s)), kQuarkBuildId, kGrey);   // (with the strip: beside it; the full build, owner 2026-11-04)
     if (strip) { const size_t ss0 = r_.uiMark(); drawMainStrip(s, H); r_.uiSupersample(ss0); }   // (before the page: its clicks first)
@@ -10116,6 +10262,7 @@ void Game::drawMenu() {
     if (picker_ != PICK_NONE && (screen_ == Screen::Host || screen_ == Screen::VsBots)) { drawPicker(cx, H * 0.12f + 80 * s); return; }
     if (edPrompt_ && screen_ == Screen::Main) { drawEditorSavePrompt(); return; }
     if (tutOffer_ && screen_ == Screen::Main) { drawTutorialOffer(); return; }   // (the first launch: the TUTORIAL, once)
+    if (queueLadder_ >= 0 && screen_ == Screen::Main) { drawRankedQueue(); return; }   // (RANKED's queue: FINDING A RANKED MATCH)
     const SetLayout L = menuLayout(kMW + 32);   // (the column pages: 392 wide)
     switch (screen_) {
         case Screen::Main: drawMainMenu(); break;
@@ -10313,6 +10460,9 @@ void Game::drawMainStrip(float s, float H) {
     // (any other screen: the tab it was opened from - DEMOS from CREATE, CUSTOM MODE from PLAY; review round 2)
     const int stripCur = screen_ == Screen::Main ? mainTab_ : screen_ == Screen::Leaderboard ? 3 : screen_ == Screen::Settings ? 4
                        : screen_ == Screen::Info ? -1 : stripFromTab_;
+    // keys 1-5 open the strip's tabs while nothing is being typed (review round 2: no keyboard way around the menus)
+    int keyTab = -1;
+    if (menuKeysFree() && uiIn_.chars.size() == 1 && uiIn_.chars[0] >= '1' && uiIn_.chars[0] <= '5') keyTab = uiIn_.chars[0] - '1';
     static const std::string kLabels[5] = {"PLAY", "PRACTICE", "CREATE", "RANKS", "SETTINGS"};
     static const int kIcons[5] = {ICON_PLAY, ICON_GAUGE, ICON_GRID, ICON_TROPHY, ICON_GEAR};
     for (int i = 0; i < 5; i++) {
@@ -10330,7 +10480,7 @@ void Game::drawMainStrip(float s, float H) {
         static const UiExp kNav[5] = {UiExp::nav("main"), UiExp::nav("main/practice"), UiExp::nav("main/create"), UiExp::nav("leaderboard"), UiExp::nav("settings")};
         static const char* const kIds[5] = {"PLAY", "PRACTICE", "CREATE", "RANKS", "SETTINGS"};
         if (ui_.probing()) ui_.custom(0, y, sw, h, kLabels[i], (cur ? UiExp::inert() : kNav[i]).withId(kIds[i]));
-        if (!(hv && uiIn_.pressed) || cur) continue;
+        if (!((hv && uiIn_.pressed) || keyTab == i) || cur) continue;
         leaveForStrip();
         if (i < MAIN_TABS) openMainTab(i);
         else if (i == 3) { nextBoardFetch_ = 0; raceStatsView_ = false; setScreen(Screen::Leaderboard); }   // RANKS: the leaderboard
@@ -10364,6 +10514,13 @@ void Game::drawMainStrip(float s, float H) {
         uiIn_.pressed = false;
     }
     r_.text(sw + 8 * s, H - 20 * s, std::max(1.0f, std::round(s)), kQuarkBuildId, kGrey);   // (the full build, owner 2026-11-04)
+}
+
+// menu keys (1-5: the strip's tabs; Enter: the page's big button) only while no text field, popup, key capture,
+// picker or card wants the keyboard
+bool Game::menuKeysFree() const {
+    return !ui_.typing() && !typingAtFrame_ && !ui_.popupOpen() && !nameEdit_ && captureAction_ < 0 && picker_ == PICK_NONE && !edPrompt_ && !tutOffer_ &&
+           queueLadder_ < 0 && !chatting_ && !console_ && !hostAdvanced_;
 }
 
 // a strip tab / INFO clicked off the main menu: leave the screen as its BACK does (settings applied, HOST's choices
@@ -10427,6 +10584,7 @@ void Game::drawMainPlay(float s, float px, float pw, float rx, float rw, float r
     const MainDraw d{r_, ui_, uiIn_, s};
     const float ts = ui_.textScale(), hs = ui_.hintScale();
     const bool hasLast = !cfg_.lastAddress.empty() && (!cfg_.lastMap.empty() || !cfg_.recentServers.empty());
+    static const bool quickOk = kOfficialServerCount > 0 && !([] { const char* e = getenv("QUARK_MASTER"); return e && std::string(e).find("http") != 0; }());
     // the last server in the list (matched by its address: a host name isn't looked up here)
     static std::string lastKey;
     static NetAddr lastAddr;
@@ -10441,7 +10599,7 @@ void Game::drawMainPlay(float s, float px, float pw, float rx, float rw, float r
     {   // LAST PLAYED
         const float x = px, y = 90, w = pw;
         d.card(x, y, w, kCardH);
-        static const std::string kLast = "LAST PLAYED", kNoGame = "NO GAME YET", kNoGameLine = "JOIN A SERVER, PLAY BOTS OR HOST YOUR OWN", kQuickLine = "QUICK PLAY JOINS THE OFFICIAL SERVER";
+        static const std::string kLast = "LAST PLAYED", kNoGame = "NO GAME YET", kNoGameLine = "JOIN A SERVER, PLAY BOTS OR HOST YOUR OWN", kQuickLine = "QUICK PLAY JOINS A GAME WITH ROOM, OR STARTS BOTS";
         d.caption(x + 16, y + 15, kLast, ui_.accent, w - 32);
         if (hasLast) {
             static const std::string kServerAt = "SERVER";
@@ -10457,18 +10615,20 @@ void Game::drawMainPlay(float s, float px, float pw, float rx, float rw, float r
                 snprintf(b, sizeof b, "%d MS", (int)live->ping);
                 drawPieces(r_, d.X(x + 16), d.X(y + 62), hs, d.X(w - 32), {&name, &pl, &sbuf(1, b)}, kMutedC);
             } else drawPieces(r_, d.X(x + 16), d.X(y + 62), hs, d.X(w - 32), {&name}, kMutedC);
-            static const std::string kReconnect = "RECONNECT";
-            if (d.bigButton(x + 16, y + 84, w - 32, 42, kReconnect, UiExp::nav("connecting").withId("RECONNECT"))) { reconnectAt_ = 0; reconnectTries_ = 0; connectTo(cfg_.lastAddress); }
+            // RECONNECT beside QUICK PLAY (review round 2: QUICK PLAY used to vanish after the first game), both one click
+            static const std::string kReconnect = "RECONNECT", kQuick2 = "QUICK PLAY", kFinding2 = "FINDING A GAME...";
+            const float qw = std::round((w - 32 - 8) * 0.55f);
+            if (quickOk && (d.bigButton(x + 16, y + 84, qw, 42, quickAt_ >= 0 ? kFinding2 : kQuick2, UiExp::nav("connecting").optional().withId("QUICK PLAY")) || (uiIn_.enter && menuKeysFree()))) { quickPlay(); return; }   // (Enter: the big button)
+            if (quickOk ? ui_.button(d.X(x + 16 + qw + 8), d.X(y + 84), d.X(w - 32 - qw - 8), d.X(42), kReconnect, UiExp::nav("connecting").withId("RECONNECT"))
+                        : d.bigButton(x + 16, y + 84, w - 32, 42, kReconnect, UiExp::nav("connecting").withId("RECONNECT"))) { reconnectAt_ = 0; reconnectTries_ = 0; connectTo(cfg_.lastAddress); }
         } else {
             drawPieces(r_, d.X(x + 16), d.X(y + 33), std::round(ts * 1.25f), d.X(w - 32), {&kNoGame}, ui_.textC());
-            static const bool quickOk = kOfficialServerCount > 0 && !([] { const char* e = getenv("QUARK_MASTER"); return e && std::string(e).find("http") != 0; }());
             drawPieces(r_, d.X(x + 16), d.X(y + 62), hs, d.X(w - 32), {quickOk ? &kQuickLine : &kNoGameLine}, kMutedC);
             // QUICK PLAY: straight into the official (production) server; SERVERS below is the list (review 2026-11-04:
             // FIND A SERVER, SERVERS and ALL SERVERS were three ways to one screen). No official server: the list.
-            static const std::string kQuick = "QUICK PLAY", kFind = "FIND A SERVER";
+            static const std::string kQuick = "QUICK PLAY", kFind = "FIND A SERVER", kFinding = "FINDING A GAME...";
             if (quickOk) {
-                static const std::string quickAddr = NetAddr{kOfficialServers[0].ip, kOfficialServers[0].port}.toString();
-                if (d.bigButton(x + 16, y + 84, w - 32, 42, kQuick, UiExp::nav("connecting").withId("QUICK PLAY"))) { joinAddr_ = quickAddr; connectTo(quickAddr); return; }
+                if (d.bigButton(x + 16, y + 84, w - 32, 42, quickAt_ >= 0 ? kFinding : kQuick, UiExp::nav("connecting").optional().withId("QUICK PLAY")) || (uiIn_.enter && menuKeysFree())) { quickPlay(); return; }   // (Enter: the big button)
             } else if (d.bigButton(x + 16, y + 84, w - 32, 42, kFind, UiExp::nav("join").withId("FIND A SERVER"))) setScreen(Screen::Join);
         }
     }
@@ -10508,7 +10668,7 @@ void Game::drawMainPlay(float s, float px, float pw, float rx, float rw, float r
         char b[48];
         const std::string* val = &kWaiting;
         if (sv && !sv->noReply) { snprintf(b, sizeof b, "%d/%d · %d MS", sv->players, sv->maxPlayers, (int)sv->ping); val = &sbuf(10 + i, b); }
-        else if (sv) val = &kNoReply;
+        else if (sv || time_ - browserAt_ > 6) val = &kNoReply;   // (not listed 6 s after asking: no answer either; was "..." for good)
         const float vx = d.value(rx + rw - 16, yy, kListRowH, *val, kMutedC);
         const std::string& nm = sv && !sv->noReply ? sv->name : kOfficialName;
         drawPieces(r_, d.X(rx + 16 + bw + 8), d.midY(yy, kListRowH, ts), ts, d.X(vx - 12 - (rx + 16 + bw + 8)), {&nm}, ui_.textC());
@@ -10709,8 +10869,13 @@ void Game::drawJoin(const SetLayout& L) {
         }
     }
     if (ui_.button(L.X(784), L.Y(186), L.L(136), h, "CONNECT", UiExp::nav("connecting")) || (uiIn_.enter && !joinAddr_.empty())) connectTo(joinAddr_);
+    // (an empty address box says what it's for: review round 2 found 127.0.0.1 and CONNECT read as the way in)
+    if (joinAddr_.empty() && !ui_.focused(2)) ui_.hint(lx + L.L(8), L.Y(186) + (h - r_.textHeight(hs)) * 0.5f, "HAVE A FRIEND'S ADDRESS? PASTE IT HERE", kGrey, L.L(316));
     ui_.label(lx, L.Y(246), "SERVERS (LAN + INTERNET)", ui_.accent, 1.0f, lw);
-    ui_.hint(lx, L.Y(266), browser_.internetStatus(), kGrey, lw);
+    // (a failed list in words, not "HTTP ERROR STATUS"; the list panel then offers a way on)
+    const bool listDown = browser_.listFailed();
+    if (listDown) ui_.hint(lx, L.Y(266), "COULDN'T LOAD THE INTERNET LIST - CHECK YOUR CONNECTION", Color{1.0f, 0.7f, 0.35f, 1}, lw);
+    else ui_.hint(lx, L.Y(266), browser_.internetStatus(), kGrey, lw);
     ui_.panel(lx, L.Y(282), lw, L.L(200), 0.6f);
     // the columns: SERVER, MAP, PLAYERS, PING (design x of each, and how far it may run)
     static const float colX[4] = {372, 622, 752, 852}, colEnd[4] = {612, 744, 844, 908};
@@ -10793,7 +10958,10 @@ void Game::drawJoin(const SetLayout& L) {
         }
         r_.text(nameX, ty, ts, name, kWhite);
     }
-    if (browser_.servers().empty()) ui_.label(L.X(372), L.Y(310), "NO GAMES FOUND", kGrey, 1.0f, L.L(536));
+    if (browser_.servers().empty() && listDown) {   // nothing heard at all: REFRESH LIST below, or bots now
+        ui_.label(L.X(372), L.Y(310), "NO SERVER LIST RIGHT NOW", kGrey, 1.0f, L.L(536));
+        if (ui_.button(L.X(372), L.Y(340), L.L(200), L.L(kMRow), "PLAY BOTS INSTEAD", UiExp::nav("vsbots"))) { setScreen(Screen::VsBots); return; }
+    } else if (browser_.servers().empty()) ui_.label(L.X(372), L.Y(310), "NO GAMES FOUND", kGrey, 1.0f, L.L(536));
     else if (shown.empty()) ui_.label(L.X(372), L.Y(310), "NO GAMES MATCH THE FILTERS", kGrey, 1.0f, L.L(536));
     {   // under the list: how far it's scrolled, and the right-click hint
         char more[96];
@@ -10922,10 +11090,10 @@ void Game::drawHost(const SetLayout& L) {
             ui_.hint(x, L.Y(y), kWith, kGrey, w - L.L(cw + 8));
             ui_.hint(x + lw, L.Y(y), addr, ui_.textC(), w - L.L(cw + 8) - lw);
         } else if (pubIpFuture_.valid()) ui_.hint(x, L.Y(y), kFinding, kGrey, w - L.L(cw + 8));
-        else ui_.hint(x, L.Y(y), "FRIENDS JOIN WITH YOUR PUBLIC IP:" + hostPortStr_, kGrey, w - L.L(cw + 8));
+        else ui_.hint(x, L.Y(y), "FRIENDS JOIN WITH YOUR PUBLIC IP:" + hostPortStr_, kGrey, w);   // (the lookup failed: no COPY)
         static const std::string kCopy = "COPY", kCopied = "COPIED";
         const bool can = !addr.empty();
-        if (ui_.button(x + w - L.L(cw), L.Y(y - 4), L.L(cw), L.L(24), time_ - pubIpCopiedAt_ < 2 ? kCopied : kCopy, UiExp::inert().withId("COPY ADDRESS"), can) && can) {
+        if (can && ui_.button(x + w - L.L(cw), L.Y(y - 4), L.L(cw), L.L(24), time_ - pubIpCopiedAt_ < 2 ? kCopied : kCopy, UiExp::inert().withId("COPY ADDRESS"), can) && can) {
             glfwSetClipboardString(win_, addr.c_str());
             pubIpCopiedAt_ = time_;
         }
@@ -10934,7 +11102,7 @@ void Game::drawHost(const SetLayout& L) {
     if (ui_.button(x, L.Y(y), w, h, "ADVANCED  >", UiExp::nav("host/advanced"))) { hostAdvanced_ = true; refreshHostBrains(); }
     y += 60;
     if (ui_.button(x, L.Y(y), hw, h, "BACK", UiExp::nav("main*"))) { cfg_.save(); setScreen(Screen::Main); }
-    if (ui_.button(x2, L.Y(y), hw, h, "START", UiExp::state("hosting", "1"))) startHost();
+    if (MainDraw{r_, ui_, uiIn_, 1.0f}.bigButton(x2, L.Y(y), hw, h, "START", UiExp::state("hosting", "1")) || (uiIn_.enter && menuKeysFree())) { uiIn_.pressed = false; startHost(); }   // (the accent: review round 2, START was as grey as BACK)
     if (!error_.empty()) ui_.labelCentered(L.X(640), L.Y(y + 64), error_, kRed, 1.0f, L.L(960));
 }
 
@@ -11031,7 +11199,7 @@ void Game::drawVsBots(const SetLayout& L) {
     }
     y += 12;   // (20 px over the footer)
     if (ui_.button(x, L.Y(y), hw, h, "BACK", UiExp::nav("main*"))) { cfg_.save(); setScreen(Screen::Main); }
-    if (ui_.button(x2, L.Y(y), hw, h, "START", UiExp::state("hosting", "1"))) startHost(true);
+    if (MainDraw{r_, ui_, uiIn_, 1.0f}.bigButton(x2, L.Y(y), hw, h, "START", UiExp::state("hosting", "1")) || (uiIn_.enter && menuKeysFree())) { uiIn_.pressed = false; startHost(true); }   // (the accent, as HOST's)
     if (!error_.empty()) ui_.labelCentered(L.X(640), L.Y(y + 64), error_, kRed, 1.0f, L.L(960));
 }
 
@@ -12623,8 +12791,9 @@ void Game::drawPicker(float cx, float y) {
         Item it;
         if (ladders) {
             it.label = arenaVariant(kLadders[i]).title;
-            it.sub = std::string(arenaVariant(kLadders[i]).desc) + " - OWN RATING";
-            it.cur = rankedNow && kLadders[i] == (live ? net_.mode().arenaVariant : variant);
+            // (the mode first: review round 2 found nothing said which ladder is 1v1 and which free for all)
+            it.sub = std::string(modeTitle(rankedMode(kLadders[i]))) + " - " + arenaVariant(kLadders[i]).desc + " - OWN RATING";
+            it.cur = queue ? kLadders[i] == cfg_.lastLadder : rankedNow && kLadders[i] == (live ? net_.mode().arenaVariant : variant);   // (the queue: the ladder last queued for)
         } else if (variants) {
             it.label = arenaVariant(i).title;
             it.sub = arenaVariant(i).desc;
@@ -12680,12 +12849,12 @@ void Game::drawPicker(float cx, float y) {
             net_.sendCommand(std::string(livePickVote_ ? "callvote " : "") + "ranked on " + arenaVariant(kLadders[i]).name);
             picker_ = PICK_NONE; voteMenu_ = false; paused_ = false;
         }
+        else if (ladders && variantCtx_ == 3) findRankedMatch(kLadders[i]);   // (RANKED from the main menu: the queue; HOST's settings untouched)
         else if (ladders) {
             cfg_.hostRanked = true;
             variant = kLadders[i];
             mode = MODE_ARENA;
             if (!(mapInfo_[mapIdx].ranked >> variant & 1)) mapIdx = bestRankedMap(variant);
-            if (variantCtx_ == 3) { findRankedMatch(variant); return; }   // (RANKED from the main menu: the queue)
             finish();
         }
         else if (variants) { variant = i; if (live) picker_ = PICK_LIVE_MAP; else finish(); }   // in game: then the map

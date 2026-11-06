@@ -548,6 +548,7 @@ CHAT OPACITY	채팅 불투명도
 CHAT SECONDS	채팅 표시 시간(초)
 CHECK AGAIN	다시 확인
 CHECK FILES	파일 확인
+CHECK YOUR CONNECTION, OR TRY AGAIN IN A MINUTE	연결을 확인하거나 잠시 후 다시 시도하세요
 CHECKING...	확인 중...
 CHECKPOINT	체크포인트
 CHECKPT	체크포인트
@@ -664,6 +665,8 @@ COULD NOT DELETE	삭제 실패
 COULD NOT RENAME THE RUN	기록 이름 변경 실패
 COULD NOT SAVE	저장 실패
 COULD NOT WRITE	쓰기 실패
+COULDN'T LOAD THE INTERNET LIST - CHECK YOUR CONNECTION	인터넷 목록을 불러오지 못했습니다 - 연결을 확인하세요
+COULDN'T REACH THE RANKING SERVER	랭킹 서버에 연결할 수 없습니다
 COULDN'T SAVE THE SCREENSHOT	스크린샷 저장 실패
 COULDN'T START RECORDING	녹화 시작 실패
 COUNTDOWN: A TICK EACH OF THE LAST 10 S	카운트다운: 마지막 10초 동안 매초 틱 소리
@@ -832,6 +835,8 @@ DISCORD:	DISCORD:
 DISCORD:  (PUBLIC)	DISCORD:  (공개)
 DISCORD: TYPE THE 6-DIGIT CODE FROM /link IN DISCORD	DISCORD: DISCORD의 /link에서 받은 6자리 코드를 입력하세요
 DISPLAY	화면
+DISPLAY / LATENCY / IMAGE / SOUND	화면 / 지연 시간 / 이미지 / 사운드
+DISPLAY / SOUND GROUPS / PERFORMANCE / PRESET	화면 / 사운드 그룹 / 성능 / 프리셋
 DISPLAY: BORDERLESS FULLSCREEN	화면: 테두리 없는 전체 화면
 DISPLAY: EXCLUSIVE FULLSCREEN	화면: 전용 전체 화면
 DISPLAY: WINDOWED	화면: 창 모드
@@ -941,6 +946,7 @@ ESC: PAUSE / SETTINGS   R: RESTART	ESC: 일시정지 / 설정   R: 재시작
 EVERY ENEMY / TEAMMATE AS ONE MODEL (NOT IN RANKED)	모든 적 / 팀원을 하나의 모델로 (랭크 제외)
 EVERY LANDING HYPERS AGAIN AS SOON AS A DASH CHARGE IS BACK	대시 충전이 돌아오는 즉시 착지할 때마다 다시 하이퍼
 EVERY MODEL HAS THE SAME HITBOX - RANKED: EVERYONE IS STANDARD	모든 모델의 히트박스는 같음 - 랭크: 모두 표준
+EVERY SERVER IS FULL - PLAYING BOTS	모든 서버가 가득 찼습니다 - 봇과 플레이
 EVERY SETTING IS BACK TO ITS DEFAULT	모든 설정이 기본값으로 돌아갔습니다
 EVERY WEAPON, ALL MOVEMENT - NO GIMMICKS	모든 무기, 모든 이동기 - 변형 없음
 EVERYONE THROWS - THE LOSING SHAPE IS OUT	모두 동시에 냄 - 진 모양은 탈락
@@ -1001,6 +1007,8 @@ FINAL	결승
 FIND A SERVER	서버 찾기
 FIND CLIP BOXES	클립 박스 찾기
 FIND INVISIBLE WALLS:	보이지 않는 벽 찾기:
+FINDING A GAME...	게임 찾는 중...
+FINDING A RANKED MATCH	랭크 매치 찾는 중
 FINDING YOUR ADDRESS...	주소 확인 중...
 FINISH	완주
 FINISHED	완료
@@ -1216,6 +1224,7 @@ HARD TO TELL APART WITH	구분하기 어려운 색:
 HARDWARE GPU SCHEDULING IS OFF	하드웨어 GPU 스케줄링이 꺼져 있음
 HAS NO BINDS	키 지정 없음
 HAS NO WIDGETS	위젯 없음
+HAVE A FRIEND'S ADDRESS? PASTE IT HERE	친구 주소가 있나요? 여기에 붙여넣기
 HEAD ON: THE DASH RUNS ON UP THE FACE AT ITS FULL 24 M/S	정면으로: 대시가 24 M/S 그대로 면을 오른다
 HEADSHOT	헤드샷
 HEADSHOT HIT	헤드샷 적중
@@ -1296,6 +1305,7 @@ HOP 15 M/S UP OFF A LANDING	착지에서 15 M/S로 튀어 오르기
 HOST	호스트
 HOST EDIT SESSION	편집 세션 호스트
 HOST EDIT SESSION: friends join and build with you; everyone's camera shows in the view.	편집 세션 호스트: 친구가 참가해 함께 제작합니다; 모두의 카메라가 화면에 표시됩니다.
+HOST NOW	지금 호스트
 HOSTING	호스트 중
 HOSTING ON UDP PORT	UDP 포트에서 호스트 중
 HOW	방법
@@ -1573,6 +1583,7 @@ LOCATOR READY	탐지기 준비됨
 LOGIC:	로직:
 LOGO + YOUR BOTS	로고 + 내 봇
 LOOK	외형
+LOOKING FOR SOMEONE WAITING ON THIS LADDER	이 래더에서 기다리는 상대를 찾는 중
 LOOKS INTEGRATED: IF THERE'S A DEDICATED GPU,	내장 그래픽으로 보임: 외장 GPU가 있다면,
 LOSS	손실
 LOSS #%	손실 #%
@@ -1598,6 +1609,7 @@ MALE	남성
 MAP	맵
 MAP COLOR	맵 색상
 MAP COLORS	맵 색상
+MAP COLORS / PLAYERS / HEALTH BARS / NAME TAGS	맵 색상 / 플레이어 / 체력 바 / 이름표
 MAP DOWNLOADS	맵 다운로드
 MAP EDITOR	맵 에디터
 MAP EDITOR *	맵 에디터 *
@@ -2328,6 +2340,7 @@ ND	ND
 NE	NE
 NET GRAPH	넷 그래프
 NETWORK	네트워크
+NETWORK / LIGHT CACHE / MENU CURSOR	네트워크 / 조명 캐시 / 메뉴 커서
 NETWORK READ	네트워크 읽기
 NETWORK WARNINGS	네트워크 경고
 NEUTRAL PAYLOAD	중립 화물
@@ -2369,10 +2382,14 @@ NO RESPONSE	응답 없음
 NO RESPONSE - CLICK TO TRY	응답 없음 - 클릭하여 재시도
 NO RUNS SAVED YET	저장된 기록 없음
 NO RUNS YET - FINISH	아직 기록 없음 - 완주하세요
+NO SERVER ANSWERED - PLAYING BOTS	응답하는 서버 없음 - 봇과 플레이
+NO SERVER LIST RIGHT NOW	지금은 서버 목록이 없습니다
 NO SETTINGS ON THE CLIPBOARD (EXPORT MAKES THEM)	클립보드에 설정 없음 (내보내기로 생성)
 NO TIMES YET	아직 기록 없음
 NO VSYNC	수직 동기화 없음
 NOBODY RANKED YET (3 GAMES)	아직 랭크된 사람 없음 (3게임)
+NOBODY WAITING - HOSTING A RANKED GAME, THE NEXT PLAYER TO QUEUE JOINS YOU	기다리는 상대 없음 - 랭크 게임을 호스팅합니다, 다음 대기자가 참가합니다
+NOBODY YET: YOU HOST IN # S	아직 없음: # 초 후 호스트
 NONE	없음
 NONE YET	아직 없음
 NONE YET - EXPORT ONE, OR COPY A GROUP AND IMPORT	아직 없음 - 하나를 내보내거나 그룹을 복사해 가져오기
@@ -2486,6 +2503,7 @@ OUTLINE OPACITY	외곽선 불투명도
 OUTLINE PX	외곽선 PX
 OUTLINES	외곽선
 OUTPUT	출력
+OUTPUT / VOLUME / CALLOUTS	출력 / 볼륨 / 콜아웃
 OVER 1: LOUDER, TO HEAR THEM COMING	1 초과: 더 크게, 다가오는 소리 듣기용
 OVERRIDES FOLDER	오버라이드 폴더
 OVERRIDES OF YOURS - ON / OFF AT THE NEXT START	내 오버라이드 - 다음 실행 시 켜기 / 끄기
@@ -2570,6 +2588,7 @@ PITCH	피치
 PLAGUEDOC	역병 의사
 PLAY	플레이
 PLAY A RUN TO SEE YOUR BESTS HERE	플레이하면 여기에 최고 기록이 표시됩니다
+PLAY BOTS INSTEAD	대신 봇과 플레이
 PLAY IT	플레이하기
 PLAY MODE	플레이 모드
 PLAY TIME TRIAL	타임 트라이얼 플레이
@@ -2668,7 +2687,7 @@ QUEUES - SHARED WITH DISCORD	대기열 - DISCORD와 공유
 QUEUES NEED A RANKED KEY (quark.key) - COULDN'T MAKE ONE	대기열에는 랭크 키가 필요합니다 (quark.key) - 생성 실패
 QUICK DASH	빠른 대시
 QUICK PLAY	빠른 플레이
-QUICK PLAY JOINS THE OFFICIAL SERVER	빠른 플레이로 공식 서버에 참가
+QUICK PLAY JOINS A GAME WITH ROOM, OR STARTS BOTS	빠른 플레이는 자리가 있는 게임에 참가하거나 봇과 시작합니다
 QUIP	한마디
 QUIP CAPTIONS	한마디 자막
 QUIPS	한마디
@@ -2920,6 +2939,7 @@ SCREENSHOT FORMAT	스크린샷 형식
 SCREENSHOT SAVED (NO HUD):	스크린샷 저장됨 (HUD 없음):
 SCREENSHOT SAVED:	스크린샷 저장됨:
 SCREENSHOTS	스크린샷
+SCREENSHOTS / DEMOS / LATENCY	스크린샷 / 데모 / 지연 시간
 SCROLLBAR	스크롤바
 SE	SE
 SEARCH	검색
@@ -2934,6 +2954,7 @@ SEMIFINALS	4강
 SENSITIVITY	감도
 SENSITIVITY FROM ANOTHER GAME	다른 게임의 감도
 SERVER	서버
+SERVER LIST UNREACHABLE - HOSTING A RANKED GAME ONLY YOUR ADDRESS REACHES	서버 목록에 연결할 수 없음 - 내 주소로만 참가할 수 있는 랭크 게임을 호스팅합니다
 SERVER LOG	서버 로그
 SERVER LOG: EXTREME (EVERY TICK)	서버 로그: 극단적 (매 틱)
 SERVER LOG: OFF	서버 로그: 끄기
@@ -2960,6 +2981,7 @@ SHADOW QUALITY: HIGH	그림자 품질: 높음
 SHADOW QUALITY: LOW	그림자 품질: 낮음
 SHADOW QUALITY: MEDIUM	그림자 품질: 중간
 SHADOWS	그림자
+SHADOWS / PLAYERS / OUTLINES / COLORS	그림자 / 플레이어 / 외곽선 / 색상
 SHAPE	모양
 SHARPEN	선명화
 SHIFT + ARROWS: GROW THAT SIDE    CTRL + ARROWS: SHRINK IT    M: MATERIAL / TEAM    N: SHAPE    K: COAT THE SIDE YOU LOOK AT	SHIFT + 화살표: 해당 면 늘리기    CTRL + 화살표: 줄이기    M: 재질 / 팀    N: 모양    K: 보고 있는 면 칠하기
@@ -3606,6 +3628,7 @@ WIDTH; CUSTOM (GLTF) PLAYER MODELS HAVE NO OUTLINE	두께; 사용자 지정 (GLT
 WINDIR	WINDIR
 WINDOW	창
 WINDOW + INPUT	창 + 입력
+WINDOW / SHADOWS / GPU / HITSOUNDS / FLAT MAP	창 / 그림자 / GPU / 타격음 / 평면 맵
 WINDOW SIZE	창 크기
 WINDOW SIZE:	창 크기:
 WINDOWED	창 모드
@@ -3633,6 +3656,7 @@ WORK SANS	WORK SANS
 WORKING...	작업 중...
 WORLD	월드
 WORLD + HUD + SHADOW MAP BUILD	월드 + HUD + 그림자 맵 생성
+WORLD / PICTURE / EFFECTS	월드 / 사진 / 효과
 WORLD OUTLINE	월드 외곽선
 WORLD OUTLINE WIDTH	월드 외곽선 두께
 WORST #MS  PING #  3D #X#	최악 #MS  PING #  3D #X#

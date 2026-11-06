@@ -548,6 +548,7 @@ CHAT OPACITY	ПРОЗРАЧН. ЧАТА
 CHAT SECONDS	СЕКУНД ЧАТА
 CHECK AGAIN	ПРОВЕРИТЬ СНОВА
 CHECK FILES	ПРОВЕРИТЬ ФАЙЛЫ
+CHECK YOUR CONNECTION, OR TRY AGAIN IN A MINUTE	ПРОВЕРЬТЕ ПОДКЛЮЧЕНИЕ ИЛИ ПОПРОБУЙТЕ ЧЕРЕЗ МИНУТУ
 CHECKING...	ПРОВЕРКА...
 CHECKPOINT	ЧЕКПОИНТ
 CHECKPT	ЧЕКП.
@@ -664,6 +665,8 @@ COULD NOT DELETE	НЕ УДАЛОСЬ УДАЛИТЬ
 COULD NOT RENAME THE RUN	НЕ УДАЛОСЬ ПЕРЕИМЕНОВАТЬ ЗАПУСК
 COULD NOT SAVE	НЕ УДАЛОСЬ СОХРАНИТЬ
 COULD NOT WRITE	НЕ УДАЛОСЬ ЗАПИСАТЬ
+COULDN'T LOAD THE INTERNET LIST - CHECK YOUR CONNECTION	НЕ УДАЛОСЬ ЗАГРУЗИТЬ СПИСОК - ПРОВЕРЬТЕ ПОДКЛЮЧЕНИЕ
+COULDN'T REACH THE RANKING SERVER	СЕРВЕР РЕЙТИНГА НЕДОСТУПЕН
 COULDN'T SAVE THE SCREENSHOT	НЕ УДАЛОСЬ СОХРАНИТЬ СКРИНШОТ
 COULDN'T START RECORDING	НЕ УДАЛОСЬ НАЧАТЬ ЗАПИСЬ
 COUNTDOWN: A TICK EACH OF THE LAST 10 S	ОТСЧЁТ: ТИК КАЖДУЮ ИЗ ПОСЛЕДНИХ 10 С
@@ -832,6 +835,8 @@ DISCORD:	DISCORD:
 DISCORD:  (PUBLIC)	DISCORD:  (ПУБЛИЧНО)
 DISCORD: TYPE THE 6-DIGIT CODE FROM /link IN DISCORD	DISCORD: ВВЕДИТЕ 6-ЗНАЧНЫЙ КОД ИЗ /link В DISCORD
 DISPLAY	ЭКРАН
+DISPLAY / LATENCY / IMAGE / SOUND	ЭКРАН / ЗАДЕРЖКА / ИЗОБР. / ЗВУК
+DISPLAY / SOUND GROUPS / PERFORMANCE / PRESET	ЭКРАН / ГРУППЫ ЗВУКОВ / ПРОИЗВОДИТ. / ПРЕСЕТ
 DISPLAY: BORDERLESS FULLSCREEN	ЭКРАН: ОКНО БЕЗ РАМКИ
 DISPLAY: EXCLUSIVE FULLSCREEN	ЭКРАН: ЭКСКЛЮЗИВНЫЙ ПОЛНЫЙ ЭКРАН
 DISPLAY: WINDOWED	ЭКРАН: В ОКНЕ
@@ -941,6 +946,7 @@ ESC: PAUSE / SETTINGS   R: RESTART	ESC: ПАУЗА / НАСТРОЙКИ   R: З�
 EVERY ENEMY / TEAMMATE AS ONE MODEL (NOT IN RANKED)	ВСЕ ВРАГИ / СОЮЗНИКИ ОДНОЙ МОДЕЛЬЮ (НЕ В РЕЙТИНГЕ)
 EVERY LANDING HYPERS AGAIN AS SOON AS A DASH CHARGE IS BACK	КАЖДОЕ ПРИЗЕМЛЕНИЕ — СНОВА ГИПЕР, КАК ТОЛЬКО ВЕРНЁТСЯ ЗАРЯД РЫВКА
 EVERY MODEL HAS THE SAME HITBOX - RANKED: EVERYONE IS STANDARD	У ВСЕХ МОДЕЛЕЙ ОДИН ХИТБОКС - РЕЙТИНГ: У ВСЕХ СТАНДАРТ
+EVERY SERVER IS FULL - PLAYING BOTS	ВСЕ СЕРВЕРЫ ЗАПОЛНЕНЫ - ИГРА С БОТАМИ
 EVERY SETTING IS BACK TO ITS DEFAULT	ВСЕ НАСТРОЙКИ СБРОШЕНЫ ПО УМОЛЧАНИЮ
 EVERY WEAPON, ALL MOVEMENT - NO GIMMICKS	ВСЁ ОРУЖИЕ, ВСЁ ПЕРЕДВИЖЕНИЕ - БЕЗ ФОКУСОВ
 EVERYONE THROWS - THE LOSING SHAPE IS OUT	ВСЕ ВЫБРАСЫВАЮТ - ПРОИГРАВШАЯ ФИГУРА ВЫБЫВАЕТ
@@ -1001,6 +1007,8 @@ FINAL	ФИНАЛ
 FIND A SERVER	НАЙТИ СЕРВЕР
 FIND CLIP BOXES	НАЙТИ CLIP-БЛОКИ
 FIND INVISIBLE WALLS:	НАЙТИ НЕВИДИМЫЕ СТЕНЫ:
+FINDING A GAME...	ПОИСК ИГРЫ...
+FINDING A RANKED MATCH	ПОИСК РЕЙТИНГОВОГО МАТЧА
 FINDING YOUR ADDRESS...	ИЩЕМ ТВОЙ АДРЕС...
 FINISH	ФИНИШ
 FINISHED	ФИНИШ
@@ -1216,6 +1224,7 @@ HARD TO TELL APART WITH	ТРУДНО РАЗЛИЧИТЬ ПРИ
 HARDWARE GPU SCHEDULING IS OFF	АППАРАТНОЕ ПЛАНИРОВАНИЕ GPU ВЫКЛЮЧЕНО
 HAS NO BINDS	НЕТ НАЗНАЧЕНИЙ
 HAS NO WIDGETS	НЕТ ВИДЖЕТОВ
+HAVE A FRIEND'S ADDRESS? PASTE IT HERE	ЕСТЬ АДРЕС ДРУГА? ВСТАВЬТЕ СЮДА
 HEAD ON: THE DASH RUNS ON UP THE FACE AT ITS FULL 24 M/S	В ЛОБ: РЫВОК ИДЁТ ВВЕРХ ПО СКЛОНУ НА ПОЛНЫХ 24 М/С
 HEADSHOT	ХЕДШОТ
 HEADSHOT HIT	ПОПАДАНИЕ В ГОЛОВУ
@@ -1296,6 +1305,7 @@ HOP 15 M/S UP OFF A LANDING	ОТСКОК 15 М/С ПРИ ПРИЗЕМЛЕНИИ
 HOST	ХОСТ
 HOST EDIT SESSION	СЕССИЯ ПРАВКИ (ХОСТ)
 HOST EDIT SESSION: friends join and build with you; everyone's camera shows in the view.	СЕССИЯ ПРАВКИ (ХОСТ): друзья заходят и строят с вами; камеры всех видны на экране.
+HOST NOW	СОЗДАТЬ СЕЙЧАС
 HOSTING	ХОСТИНГ
 HOSTING ON UDP PORT	ХОСТИНГ НА UDP-ПОРТУ
 HOW	КАК
@@ -1573,6 +1583,7 @@ LOCATOR READY	ЛОКАТОР ГОТОВ
 LOGIC:	ЛОГИКА:
 LOGO + YOUR BOTS	ЛОГОТИП + ВАШИ БОТЫ
 LOOK	ВИД
+LOOKING FOR SOMEONE WAITING ON THIS LADDER	ИЩЕМ ТОГО, КТО ЖДЁТ В ЭТОЙ ТАБЛИЦЕ
 LOOKS INTEGRATED: IF THERE'S A DEDICATED GPU,	ПОХОЖЕ НА ВСТРОЕННУЮ: ЕСЛИ ЕСТЬ ДИСКРЕТНАЯ GPU,
 LOSS	ПОТЕРИ
 LOSS #%	ПОТЕРИ #%
@@ -1598,6 +1609,7 @@ MALE	МУЖ.
 MAP	КАРТА
 MAP COLOR	ЦВЕТ КАРТЫ
 MAP COLORS	ЦВЕТА КАРТЫ
+MAP COLORS / PLAYERS / HEALTH BARS / NAME TAGS	ЦВЕТА КАРТЫ / ИГРОКИ / ПОЛОСЫ ЗДОРОВЬЯ / ТАБЛИЧКИ ИМЁН
 MAP DOWNLOADS	ЗАГРУЗКА КАРТ
 MAP EDITOR	РЕДАКТОР КАРТ
 MAP EDITOR *	РЕДАКТОР КАРТ *
@@ -2328,6 +2340,7 @@ ND	ND
 NE	NE
 NET GRAPH	ГРАФИК СЕТИ
 NETWORK	СЕТЬ
+NETWORK / LIGHT CACHE / MENU CURSOR	СЕТЬ / КЭШ ОСВЕЩЕНИЯ / КУРСОР МЕНЮ
 NETWORK READ	ЧТЕНИЕ СЕТИ
 NETWORK WARNINGS	ПРЕДУПР. СЕТИ
 NEUTRAL PAYLOAD	НЕЙТРАЛЬНАЯ ВАГОНЕТКА
@@ -2369,10 +2382,14 @@ NO RESPONSE	НЕТ ОТВЕТА
 NO RESPONSE - CLICK TO TRY	НЕТ ОТВЕТА - КЛИК ДЛЯ ПОВТОРА
 NO RUNS SAVED YET	ЗАПУСКОВ ПОКА НЕТ
 NO RUNS YET - FINISH	ЗАЕЗДОВ НЕТ - ФИНИШИРУЙТЕ
+NO SERVER ANSWERED - PLAYING BOTS	НИ ОДИН СЕРВЕР НЕ ОТВЕТИЛ - ИГРА С БОТАМИ
+NO SERVER LIST RIGHT NOW	СПИСКА СЕРВЕРОВ СЕЙЧАС НЕТ
 NO SETTINGS ON THE CLIPBOARD (EXPORT MAKES THEM)	НЕТ НАСТРОЕК В БУФЕРЕ (ИХ СОЗДАЁТ ЭКСПОРТ)
 NO TIMES YET	ВРЕМЁН ПОКА НЕТ
 NO VSYNC	БЕЗ VSYNC
 NOBODY RANKED YET (3 GAMES)	В РЕЙТИНГЕ ПОКА НИКОГО (3 ИГРЫ)
+NOBODY WAITING - HOSTING A RANKED GAME, THE NEXT PLAYER TO QUEUE JOINS YOU	НИКТО НЕ ЖДЁТ - ВЫ СОЗДАЛИ РЕЙТИНГОВУЮ ИГРУ, СЛЕДУЮЩИЙ В ПОИСКЕ ПРИСОЕДИНИТСЯ
+NOBODY YET: YOU HOST IN # S	ПОКА НИКОГО: ВЫ СОЗДАДИТЕ ИГРУ ЧЕРЕЗ # С
 NONE	НЕТ
 NONE YET	ПОКА НЕТ
 NONE YET - EXPORT ONE, OR COPY A GROUP AND IMPORT	ПОКА НЕТ - ЭКСПОРТИРУЙТЕ ИЛИ СКОПИРУЙТЕ ГРУППУ И ИМПОРТИРУЙТЕ
@@ -2486,6 +2503,7 @@ OUTLINE OPACITY	ПРОЗРАЧН. КОНТУРА
 OUTLINE PX	КОНТУР PX
 OUTLINES	КОНТУРЫ
 OUTPUT	ВЫВОД
+OUTPUT / VOLUME / CALLOUTS	ВЫВОД / ГРОМКОСТЬ / КОЛЛАУТЫ
 OVER 1: LOUDER, TO HEAR THEM COMING	БОЛЬШЕ 1: ГРОМЧЕ, ЧТОБЫ СЛЫШАТЬ ИХ ЗАРАНЕЕ
 OVERRIDES FOLDER	ПАПКА OVERRIDES
 OVERRIDES OF YOURS - ON / OFF AT THE NEXT START	ВАШИ ЗАМЕНЫ - ВКЛ / ВЫКЛ ПРИ СЛЕДУЮЩЕМ ЗАПУСКЕ
@@ -2570,6 +2588,7 @@ PITCH	ТАНГАЖ
 PLAGUEDOC	ЧУМНОЙ ДОКТОР
 PLAY	ИГРАТЬ
 PLAY A RUN TO SEE YOUR BESTS HERE	СЫГРАЙТЕ, ЧТОБЫ УВИДЕТЬ ЗДЕСЬ СВОИ РЕКОРДЫ
+PLAY BOTS INSTEAD	ИГРАТЬ С БОТАМИ
 PLAY IT	СЫГРАТЬ
 PLAY MODE	РЕЖИМ ИГРЫ
 PLAY TIME TRIAL	ЗАЕЗД НА ВРЕМЯ
@@ -2668,7 +2687,7 @@ QUEUES - SHARED WITH DISCORD	ОЧЕРЕДИ - ОБЩИЕ С DISCORD
 QUEUES NEED A RANKED KEY (quark.key) - COULDN'T MAKE ONE	ДЛЯ ОЧЕРЕДЕЙ НУЖЕН РЕЙТИНГОВЫЙ КЛЮЧ (quark.key) - НЕ УДАЛОСЬ СОЗДАТЬ
 QUICK DASH	БЫСТРЫЙ РЫВОК
 QUICK PLAY	БЫСТРАЯ ИГРА
-QUICK PLAY JOINS THE OFFICIAL SERVER	БЫСТРАЯ ИГРА: ОФИЦИАЛЬНЫЙ СЕРВЕР
+QUICK PLAY JOINS A GAME WITH ROOM, OR STARTS BOTS	БЫСТРАЯ ИГРА: ИГРА СО СВОБОДНЫМ МЕСТОМ ИЛИ БОТЫ
 QUIP	ФРАЗА
 QUIP CAPTIONS	СУБТИТРЫ ФРАЗ
 QUIPS	ФРАЗЫ
@@ -2920,6 +2939,7 @@ SCREENSHOT FORMAT	ФОРМАТ СКРИНШОТОВ
 SCREENSHOT SAVED (NO HUD):	СКРИНШОТ СОХРАНЁН (БЕЗ HUD):
 SCREENSHOT SAVED:	СКРИНШОТ СОХРАНЁН:
 SCREENSHOTS	СКРИНШОТЫ
+SCREENSHOTS / DEMOS / LATENCY	СКРИНШОТЫ / ДЕМО / ЗАДЕРЖКА
 SCROLLBAR	ПРОКРУТКА
 SE	SE
 SEARCH	ПОИСК
@@ -2934,6 +2954,7 @@ SEMIFINALS	ПОЛУФИНАЛ
 SENSITIVITY	ЧУВСТВИТ.
 SENSITIVITY FROM ANOTHER GAME	ЧУВСТВИТЕЛЬНОСТЬ ИЗ ДРУГОЙ ИГРЫ
 SERVER	СЕРВЕР
+SERVER LIST UNREACHABLE - HOSTING A RANKED GAME ONLY YOUR ADDRESS REACHES	СПИСОК СЕРВЕРОВ НЕДОСТУПЕН - РЕЙТИНГОВАЯ ИГРА ДОСТУПНА ТОЛЬКО ПО ВАШЕМУ АДРЕСУ
 SERVER LOG	ЛОГ СЕРВЕРА
 SERVER LOG: EXTREME (EVERY TICK)	ЛОГ СЕРВЕРА: ЭКСТРИМ (КАЖДЫЙ ТИК)
 SERVER LOG: OFF	ЛОГ СЕРВЕРА: ВЫКЛ
@@ -2960,6 +2981,7 @@ SHADOW QUALITY: HIGH	КАЧЕСТВО ТЕНЕЙ: ВЫСОКОЕ
 SHADOW QUALITY: LOW	КАЧЕСТВО ТЕНЕЙ: НИЗКОЕ
 SHADOW QUALITY: MEDIUM	КАЧЕСТВО ТЕНЕЙ: СРЕДНЕЕ
 SHADOWS	ТЕНИ
+SHADOWS / PLAYERS / OUTLINES / COLORS	ТЕНИ / ИГРОКИ / КОНТУРЫ / ЦВЕТА
 SHAPE	ФОРМА
 SHARPEN	РЕЗКОСТЬ
 SHIFT + ARROWS: GROW THAT SIDE    CTRL + ARROWS: SHRINK IT    M: MATERIAL / TEAM    N: SHAPE    K: COAT THE SIDE YOU LOOK AT	SHIFT + СТРЕЛКИ: РАСТИТЬ СТОРОНУ    CTRL + СТРЕЛКИ: УМЕНЬШИТЬ    M: МАТЕРИАЛ / КОМАНДА    N: ФОРМА    K: ПОКРЫТЬ СТОРОНУ ПОД ВЗГЛЯДОМ
@@ -3606,6 +3628,7 @@ WIDTH; CUSTOM (GLTF) PLAYER MODELS HAVE NO OUTLINE	ТОЛЩИНА; У СВОИХ
 WINDIR	WINDIR
 WINDOW	ОКНО
 WINDOW + INPUT	ОКНО + ВВОД
+WINDOW / SHADOWS / GPU / HITSOUNDS / FLAT MAP	ОКНО / ТЕНИ / GPU / ХИТСАУНДЫ / ПЛОСК. КАРТА
 WINDOW SIZE	РАЗМЕР ОКНА
 WINDOW SIZE:	РАЗМЕР ОКНА:
 WINDOWED	В ОКНЕ
@@ -3633,6 +3656,7 @@ WORK SANS	WORK SANS
 WORKING...	РАБОТАЮ...
 WORLD	МИР
 WORLD + HUD + SHADOW MAP BUILD	МИР + HUD + КАРТА ТЕНЕЙ
+WORLD / PICTURE / EFFECTS	МИР / ИЗОБР. / ЭФФЕКТЫ
 WORLD OUTLINE	КОНТУР МИРА
 WORLD OUTLINE WIDTH	ТОЛЩИНА КОНТУРА МИРА
 WORST #MS  PING #  3D #X#	ХУДШИЙ #МС  PING #  3D #X#

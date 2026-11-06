@@ -548,6 +548,7 @@ CHAT OPACITY	チャット不透明度
 CHAT SECONDS	チャット表示秒数
 CHECK AGAIN	再確認
 CHECK FILES	ファイルを確認
+CHECK YOUR CONNECTION, OR TRY AGAIN IN A MINUTE	接続を確認するか、少し待ってからもう一度
 CHECKING...	確認中...
 CHECKPOINT	チェックポイント
 CHECKPT	CP
@@ -664,6 +665,8 @@ COULD NOT DELETE	削除できませんでした
 COULD NOT RENAME THE RUN	ランの名前を変更できませんでした
 COULD NOT SAVE	保存できませんでした
 COULD NOT WRITE	書き込めませんでした
+COULDN'T LOAD THE INTERNET LIST - CHECK YOUR CONNECTION	インターネットリストを読み込めません - 接続を確認してください
+COULDN'T REACH THE RANKING SERVER	ランキングサーバーに接続できません
 COULDN'T SAVE THE SCREENSHOT	スクリーンショットを保存できませんでした
 COULDN'T START RECORDING	録画を開始できませんでした
 COUNTDOWN: A TICK EACH OF THE LAST 10 S	カウントダウン: 最後の10秒に毎秒音
@@ -832,6 +835,8 @@ DISCORD:	DISCORD:
 DISCORD:  (PUBLIC)	DISCORD:  (公開)
 DISCORD: TYPE THE 6-DIGIT CODE FROM /link IN DISCORD	DISCORD: DISCORDの /link で得た6桁コードを入力
 DISPLAY	ディスプレイ
+DISPLAY / LATENCY / IMAGE / SOUND	ディスプレイ / 遅延 / 画像 / サウンド
+DISPLAY / SOUND GROUPS / PERFORMANCE / PRESET	ディスプレイ / サウンドグループ / パフォーマンス / プリセット
 DISPLAY: BORDERLESS FULLSCREEN	ディスプレイ: ボーダーレスフルスクリーン
 DISPLAY: EXCLUSIVE FULLSCREEN	ディスプレイ: 排他フルスクリーン
 DISPLAY: WINDOWED	ディスプレイ: ウィンドウ
@@ -941,6 +946,7 @@ ESC: PAUSE / SETTINGS   R: RESTART	ESC: 一時停止 / 設定   R: リスター�
 EVERY ENEMY / TEAMMATE AS ONE MODEL (NOT IN RANKED)	全ての敵 / 味方を1つのモデルで表示 (ランク以外)
 EVERY LANDING HYPERS AGAIN AS SOON AS A DASH CHARGE IS BACK	ダッシュのチャージが戻ればすぐ、着地ごとに再びハイパー
 EVERY MODEL HAS THE SAME HITBOX - RANKED: EVERYONE IS STANDARD	全モデル同じ当たり判定 - ランク: 全員が標準
+EVERY SERVER IS FULL - PLAYING BOTS	すべてのサーバーが満員 - BOT戦を開始
 EVERY SETTING IS BACK TO ITS DEFAULT	全設定をデフォルトに戻しました
 EVERY WEAPON, ALL MOVEMENT - NO GIMMICKS	全武器・全移動 - ギミックなし
 EVERYONE THROWS - THE LOSING SHAPE IS OUT	全員が出す - 負けた手は脱落
@@ -1001,6 +1007,8 @@ FINAL	決勝
 FIND A SERVER	サーバーを探す
 FIND CLIP BOXES	クリップボックスを検索
 FIND INVISIBLE WALLS:	見えない壁を検索:
+FINDING A GAME...	ゲームを検索中...
+FINDING A RANKED MATCH	ランクマッチを検索中
 FINDING YOUR ADDRESS...	アドレスを確認中...
 FINISH	ゴール
 FINISHED	完了
@@ -1216,6 +1224,7 @@ HARD TO TELL APART WITH	見分けにくい色覚:
 HARDWARE GPU SCHEDULING IS OFF	ハードウェア GPU スケジューリングがオフ
 HAS NO BINDS	割り当てなし
 HAS NO WIDGETS	ウィジェットなし
+HAVE A FRIEND'S ADDRESS? PASTE IT HERE	フレンドのアドレスはここに貼り付け
 HEAD ON: THE DASH RUNS ON UP THE FACE AT ITS FULL 24 M/S	正面から: ダッシュはそのまま 24 M/S で面を上る
 HEADSHOT	ヘッドショット
 HEADSHOT HIT	ヘッドショットヒット
@@ -1296,6 +1305,7 @@ HOP 15 M/S UP OFF A LANDING	着地から 15 M/S で跳ねる
 HOST	ホスト
 HOST EDIT SESSION	編集セッションをホスト
 HOST EDIT SESSION: friends join and build with you; everyone's camera shows in the view.	編集セッションをホスト: フレンドが参加して一緒に制作; 全員のカメラが画面に表示されます。
+HOST NOW	今すぐホスト
 HOSTING	ホスト中
 HOSTING ON UDP PORT	ホスト中 UDPポート:
 HOW	やり方
@@ -1573,6 +1583,7 @@ LOCATOR READY	ロケーター準備完了
 LOGIC:	ロジック:
 LOGO + YOUR BOTS	ロゴ + 自分のボット
 LOOK	視点
+LOOKING FOR SOMEONE WAITING ON THIS LADDER	このラダーで待っている相手を探しています
 LOOKS INTEGRATED: IF THERE'S A DEDICATED GPU,	内蔵GPUのようです: 専用GPUがある場合、
 LOSS	ロス
 LOSS #%	ロス #%
@@ -1598,6 +1609,7 @@ MALE	男性
 MAP	マップ
 MAP COLOR	マップの色
 MAP COLORS	マップカラー
+MAP COLORS / PLAYERS / HEALTH BARS / NAME TAGS	マップカラー / プレイヤー / 体力バー / ネームタグ
 MAP DOWNLOADS	マップのダウンロード
 MAP EDITOR	マップエディター
 MAP EDITOR *	マップエディター *
@@ -2328,6 +2340,7 @@ ND	ND
 NE	NE
 NET GRAPH	ネットグラフ
 NETWORK	ネットワーク
+NETWORK / LIGHT CACHE / MENU CURSOR	ネットワーク / ライトキャッシュ / メニューカーソル
 NETWORK READ	ネットワーク受信
 NETWORK WARNINGS	ネットワーク警告
 NEUTRAL PAYLOAD	ニュートラルペイロード
@@ -2369,10 +2382,14 @@ NO RESPONSE	応答なし
 NO RESPONSE - CLICK TO TRY	応答なし - クリックで再試行
 NO RUNS SAVED YET	保存されたランはまだありません
 NO RUNS YET - FINISH	ランなし - ゴールしてください
+NO SERVER ANSWERED - PLAYING BOTS	応答するサーバーなし - BOT戦を開始
+NO SERVER LIST RIGHT NOW	現在サーバーリストがありません
 NO SETTINGS ON THE CLIPBOARD (EXPORT MAKES THEM)	クリップボードに設定がありません (エクスポートで作成)
 NO TIMES YET	記録なし
 NO VSYNC	垂直同期なし
 NOBODY RANKED YET (3 GAMES)	ランク入りはまだいません (3試合)
+NOBODY WAITING - HOSTING A RANKED GAME, THE NEXT PLAYER TO QUEUE JOINS YOU	待機中の相手なし - ランク戦をホスト中、次に検索した人が参加します
+NOBODY YET: YOU HOST IN # S	まだ誰もいません: # 秒後にホスト
 NONE	なし
 NONE YET	まだなし
 NONE YET - EXPORT ONE, OR COPY A GROUP AND IMPORT	まだなし - エクスポートするか、グループをコピーしてインポート
@@ -2486,6 +2503,7 @@ OUTLINE OPACITY	輪郭の不透明度
 OUTLINE PX	輪郭 PX
 OUTLINES	輪郭
 OUTPUT	出力
+OUTPUT / VOLUME / CALLOUTS	出力 / 音量 / コールアウト
 OVER 1: LOUDER, TO HEAR THEM COMING	1以上: 大きく、接近が分かる
 OVERRIDES FOLDER	overridesフォルダ
 OVERRIDES OF YOURS - ON / OFF AT THE NEXT START	あなたのオーバーライド - 次回起動時にオン / オフ
@@ -2570,6 +2588,7 @@ PITCH	ピッチ
 PLAGUEDOC	ペスト医師
 PLAY	プレイ
 PLAY A RUN TO SEE YOUR BESTS HERE	プレイするとここにベスト記録が表示されます
+PLAY BOTS INSTEAD	代わりにBOT戦
 PLAY IT	プレイする
 PLAY MODE	プレイモード
 PLAY TIME TRIAL	タイムアタックをプレイ
@@ -2668,7 +2687,7 @@ QUEUES - SHARED WITH DISCORD	キュー - DISCORDと共有
 QUEUES NEED A RANKED KEY (quark.key) - COULDN'T MAKE ONE	キューにはランクキーが必要 (quark.key) - 作成できませんでした
 QUICK DASH	クイックダッシュ
 QUICK PLAY	クイックプレイ
-QUICK PLAY JOINS THE OFFICIAL SERVER	クイックプレイで公式サーバーに参加
+QUICK PLAY JOINS A GAME WITH ROOM, OR STARTS BOTS	クイックプレイは空きのあるゲームに参加、なければBOT戦
 QUIP	一言
 QUIP CAPTIONS	一言の字幕
 QUIPS	一言
@@ -2920,6 +2939,7 @@ SCREENSHOT FORMAT	スクリーンショット形式
 SCREENSHOT SAVED (NO HUD):	スクリーンショット保存 (HUDなし):
 SCREENSHOT SAVED:	スクリーンショット保存:
 SCREENSHOTS	スクリーンショット
+SCREENSHOTS / DEMOS / LATENCY	スクリーンショット / デモ / 遅延
 SCROLLBAR	スクロールバー
 SE	SE
 SEARCH	検索
@@ -2934,6 +2954,7 @@ SEMIFINALS	準決勝
 SENSITIVITY	感度
 SENSITIVITY FROM ANOTHER GAME	他のゲームから感度を変換
 SERVER	サーバー
+SERVER LIST UNREACHABLE - HOSTING A RANKED GAME ONLY YOUR ADDRESS REACHES	サーバーリストに接続できません - ランク戦はあなたのアドレスからのみ参加可能
 SERVER LOG	サーバーログ
 SERVER LOG: EXTREME (EVERY TICK)	サーバーログ: 最大 (毎ティック)
 SERVER LOG: OFF	サーバーログ: オフ
@@ -2960,6 +2981,7 @@ SHADOW QUALITY: HIGH	影の品質: 高
 SHADOW QUALITY: LOW	影の品質: 低
 SHADOW QUALITY: MEDIUM	影の品質: 中
 SHADOWS	影
+SHADOWS / PLAYERS / OUTLINES / COLORS	影 / プレイヤー / 輪郭 / カラー
 SHAPE	形状
 SHARPEN	シャープ化
 SHIFT + ARROWS: GROW THAT SIDE    CTRL + ARROWS: SHRINK IT    M: MATERIAL / TEAM    N: SHAPE    K: COAT THE SIDE YOU LOOK AT	SHIFT + 矢印: その面を拡大    CTRL + 矢印: 縮小    M: 素材 / チーム    N: 形状    K: 見ている面を塗る
@@ -3606,6 +3628,7 @@ WIDTH; CUSTOM (GLTF) PLAYER MODELS HAVE NO OUTLINE	幅; カスタム (GLTF) プ�
 WINDIR	WINDIR
 WINDOW	ウィンドウ
 WINDOW + INPUT	ウィンドウ + 入力
+WINDOW / SHADOWS / GPU / HITSOUNDS / FLAT MAP	ウィンドウ / 影 / GPU / ヒット音 / フラットマップ
 WINDOW SIZE	ウィンドウサイズ
 WINDOW SIZE:	ウィンドウサイズ:
 WINDOWED	ウィンドウ
@@ -3633,6 +3656,7 @@ WORK SANS	WORK SANS
 WORKING...	処理中...
 WORLD	ワールド
 WORLD + HUD + SHADOW MAP BUILD	ワールド + HUD + シャドウマップ構築
+WORLD / PICTURE / EFFECTS	ワールド / 画像 / エフェクト
 WORLD OUTLINE	ワールドの輪郭
 WORLD OUTLINE WIDTH	ワールド輪郭の幅
 WORST #MS  PING #  3D #X#	最悪 #MS  PING #  3D #X#
