@@ -373,12 +373,12 @@ void Game::startHost(bool vsBots) {
         setScreen(vsBots ? Screen::VsBots : Screen::Host);
         return;
     }
-    if (!vsBots) {
+    if (!vsBots && !rankedQueue_) {   // (RANKED's queue hosting: HOST's own choices stay as they were - review round 4)
         cfg_.hostMap = sc.map;
         cfg_.hostMode = sc.mode;
         cfg_.hostPort = sc.port;
     }
-    cfg_.save();
+    if (!rankedQueue_) cfg_.save();   // (the queue saves once HOST's settings are back: hostRankedQueue)
     hostQuit_ = false;
     Server* srv = host_.get();
     hostThread_ = std::thread([this, srv] { raiseThreadPriority(); srv->run(hostQuit_); });
@@ -794,27 +794,36 @@ static size_t quickOfficial() {
 
 void Game::quickPlay() {
     if (kOfficialServerCount == 0) return;
-    const size_t k = quickOfficial();
-    browser_.query(NetAddr{kOfficialServers[k].ip, kOfficialServers[k].port}.toString());
+    // (a fresh list, not answers up to 10 s old: the official servers are asked directly by refresh)
+    browser_.refresh();
+    browserAt_ = time_;
     quickAt_ = time_;
 }
 
+// QUICK PLAY's choice (review round 4: it went to bots with the official server down even with community games up,
+// and took an empty official server over a busy community one): a game with people in it first - your official
+// server if it has players and room, else the busiest unranked community game with room - then your official server
+// empty; with neither after 3 s, bots, saying which it was. Esc cancels the search.
 void Game::quickPlayTick() {
     if (quickAt_ < 0) return;
     if (screen_ != Screen::Main || queueLadder_ >= 0) { quickAt_ = -1; return; }
+    if (uiIn_.escape) { quickAt_ = -1; uiIn_.escape = false; return; }
     const size_t k = quickOfficial();
     const ServerInfo* off = nullptr;
     for (const ServerInfo& c : browser_.servers())
         if (c.addr.ip == kOfficialServers[k].ip && c.addr.port == kOfficialServers[k].port && !c.noReply) off = &c;
-    const ServerInfo* best = off && off->players < off->maxPlayers ? off : nullptr;
-    if (!best && off)   // (full: an unranked game with people in it and room)
-        for (const ServerInfo& sv : browser_.servers())
-            if (!sv.noReply && sv.rankedLadder < 0 && !sv.official && sv.players > 0 && sv.players < sv.maxPlayers && (!best || sv.ping < best->ping)) best = &sv;
-    if (best) { quickAt_ = -1; joinAddr_ = best->addr.toString(); connectTo(joinAddr_); return; }
-    if (off) { quickAt_ = -1; notify("EVERY SERVER IS FULL - PLAYING BOTS", 6); startHost(true); return; }
-    if (time_ - quickAt_ < 3) return;
+    const bool offRoom = off && off->players < off->maxPlayers;
+    const ServerInfo* busy = nullptr;   // the busiest unranked community game with room (never ranked, never official)
+    for (const ServerInfo& sv : browser_.servers())
+        if (!sv.noReply && sv.rankedLadder < 0 && !sv.official && sv.players > 0 && sv.players < sv.maxPlayers &&
+            (!busy || sv.players > busy->players || (sv.players == busy->players && sv.ping < busy->ping))) busy = &sv;
+    const ServerInfo* pick = offRoom && off->players > 0 ? off : busy;
+    const bool waited = time_ - quickAt_ >= 3;
+    if (!pick && waited && offRoom) pick = off;   // (nobody playing anywhere: the official server, empty)
+    if (pick) { quickAt_ = -1; joinAddr_ = pick->addr.toString(); connectTo(joinAddr_); return; }
+    if (!waited) return;
     quickAt_ = -1;
-    notify("NO SERVER ANSWERED - PLAYING BOTS", 6);
+    notify(off ? "EVERY SERVER IS FULL - PLAYING BOTS" : "NO SERVER ANSWERED - PLAYING BOTS", 6);
     startHost(true);
 }
 
@@ -835,6 +844,7 @@ void Game::findRankedMatch(int ladder) {
     static std::mt19937 rng{std::random_device{}()};
     queueHostAfter_ = 20 + std::uniform_real_distribution<double>(0, 5)(rng);
     queueRefreshed_ = time_;
+    queueListDown_ = false;
     browser_.refresh();
     browserAt_ = time_;
     setScreen(Screen::Main);
@@ -844,7 +854,9 @@ void Game::findRankedMatch(int ladder) {
 // HOST's: review round 3 found the next HOST opening as RANKED, bots greyed out)
 void Game::hostRankedQueue(int ladder) {
     const bool wasRanked = cfg_.hostRanked;
-    const int wasVariant = cfg_.hostArenaVariant, wasMap = hostMapIdx_, wasMode = hostModeIdx_;
+    const int wasVariant = cfg_.hostArenaVariant, wasMap = hostMapIdx_, wasMode = hostModeIdx_, wasMax = cfg_.hostMaxPlayers;
+    // (a 1v1 ladder hosts for two: at HOST's 8 a running duel said 2/8 and the next player to queue walked into it)
+    if (rankedMode(ladder) != MODE_FFA) cfg_.hostMaxPlayers = 2;
     cfg_.hostRanked = true;
     cfg_.hostArenaVariant = ladder;
     hostMapIdx_ = bestRankedMap(ladder);
@@ -856,46 +868,10 @@ void Game::hostRankedQueue(int ladder) {
     cfg_.hostArenaVariant = wasVariant;
     hostMapIdx_ = wasMap;
     hostModeIdx_ = wasMode;
+    cfg_.hostMaxPlayers = wasMax;
+    cfg_.save();
 }
 
-// the queue's card: joins a ranked server on the ladder with someone waiting as soon as one answers (the list asked
-// again at 10 s); with none by ~20 s, or HOST NOW, hosts one listed publicly so the next player to queue finds it
-void Game::drawRankedQueue() {
-    const SetLayout L = menuLayout(560);
-    const float bw = L.L(528);
-    float y = 360 - 100;
-    ui_.panel(L.X(360), L.Y(y - 16), L.L(560), L.L(200), 0.94f);
-    ui_.labelCentered(L.X(640), L.Y(y), "FINDING A RANKED MATCH", kWhite, 1.25f, bw);
-    y += 32;
-    ui_.labelCentered(L.X(640), L.Y(y), arenaVariant(queueLadder_).title, ui_.accent, 1.0f, bw);
-    y += 26;
-    const int secs = (int)std::max(0.0, time_ - queueAt_), left = (int)std::ceil(std::max(0.0, queueHostAfter_ - (time_ - queueAt_)));
-    char b[64];
-    snprintf(b, sizeof b, "%d:%02d", secs / 60, secs % 60);
-    ui_.hintCentered(L.X(640), L.Y(y), "LOOKING FOR SOMEONE WAITING ON THIS LADDER", kGrey, bw);
-    ui_.hintCentered(L.X(640), L.Y(y + 18), b, kGrey, bw);
-    snprintf(b, sizeof b, "NOBODY YET: YOU HOST IN %d S", left);
-    static std::string hostIn;
-    hostIn = b;
-    ui_.hintCentered(L.X(640), L.Y(y + 36), hostIn, kGrey, bw);
-    y += 68;
-    const bool listDown = browser_.listFailed();
-    if (ui_.button(L.X(640 - 188), L.Y(y), L.L(180), L.L(40), "CANCEL", UiExp::nav("main*").withId("CANCEL")) || uiIn_.escape) { queueLadder_ = -1; return; }
-    const bool hostNow = ui_.button(L.X(640 + 8), L.Y(y), L.L(180), L.L(40), "HOST NOW", UiExp::state("hosting", "1").optional().withId("HOST NOW"));
-    if (ui_.probing()) return;   // (the UI test: the card, not a game)
-    const ServerInfo* best = nullptr;
-    for (const ServerInfo& sv : browser_.servers())
-        if (!sv.noReply && sv.rankedLadder == queueLadder_ && sv.players > 0 && sv.players < sv.maxPlayers && (!best || sv.ping < best->ping)) best = &sv;
-    const int ladder = queueLadder_;
-    if (best) { queueLadder_ = -1; joinAddr_ = best->addr.toString(); connectTo(joinAddr_); return; }
-    if (time_ - queueRefreshed_ > 10) { queueRefreshed_ = time_; browser_.refresh(); browserAt_ = time_; }
-    if (!hostNow && time_ - queueAt_ < queueHostAfter_) return;
-    queueLadder_ = -1;
-    // (the list down: nobody can find the game, so no promise of an opponent)
-    notify(listDown ? "SERVER LIST UNREACHABLE - HOSTING A RANKED GAME ONLY YOUR ADDRESS REACHES"
-                    : "NOBODY WAITING - HOSTING A RANKED GAME, THE NEXT PLAYER TO QUEUE JOINS YOU", 8);
-    hostRankedQueue(ladder);
-}
 
 // The map built for this mode if there is one, else the first map that supports it.
 // A mode's default map where several are built for it (owner, 2026-10-30: "surfy map is default surf gamemode map").
@@ -909,7 +885,7 @@ static const char* defaultMapName(int mode) {
 }
 
 int Game::bestMapFor(int mode) const {
-    int fallback = -1;
+    int fallback = -1, standIn = -1;
     if (const char* name = defaultMapName(mode)) {
         const bool info = mapInfo_.size() == maps_.size();
         for (size_t i = 0; i < maps_.size(); i++) {
@@ -930,12 +906,15 @@ int Game::bestMapFor(int mode) const {
             if (!m.load(maps_[i]) || !m.supportsMode(mode)) continue;
             preferred = m.preferredMode;
         }
-        // tag plays on the hide and seek map, power on the team vs one
-        if (preferred == mode || (mode == MODE_TAG && preferred == MODE_HIDE) || (mode == MODE_POWER && preferred == MODE_VS) ||
-            (mode == MODE_WINNER && preferred == MODE_ARENA)) return (int)i;   // (winner stays: a 1v1 map)
+        if (preferred == mode) return (int)i;
+        // a stand-in only if no map is built for the mode (review round 4: TAG opened on Cruise Ship, a hide and seek
+        // map, though fairground, riverside and rooftops are built for tag): tag on the hide and seek map, power on the
+        // team vs one, winner stays on a 1v1 map
+        if (standIn < 0 && ((mode == MODE_TAG && preferred == MODE_HIDE) || (mode == MODE_POWER && preferred == MODE_VS) ||
+                            (mode == MODE_WINNER && preferred == MODE_ARENA))) standIn = (int)i;
         if (fallback < 0) fallback = (int)i;
     }
-    return fallback < 0 ? 0 : fallback;
+    return standIn >= 0 ? standIn : fallback < 0 ? 0 : fallback;
 }
 
 bool Game::isDown(int action) const {
@@ -10271,7 +10250,7 @@ void Game::drawMainStrip(float s, float H) {
         const TextFit f = r_.fitText(kLabels[i], lts, sw - 4 * s);   // (TRAINING, ТРЕНИРОВКА: the whole strip)
         if (f.keep >= 0) { const std::string t = r_.textClip(kLabels[i], f.scale, sw - 4 * s); r_.text((sw - r_.textWidth(t, f.scale)) * 0.5f, y + 38 * s, f.scale, t, c); }
         else r_.text((sw - r_.textWidth(kLabels[i], f.scale, f.level)) * 0.5f, y + 38 * s + (r_.textHeight(lts) - r_.textHeight(f.scale)) * 0.5f, f.scale, kLabels[i], c, f.level);
-        static const UiExp kNav[5] = {UiExp::nav("main"), UiExp::nav("main/practice"), UiExp::nav("main/create"), UiExp::nav("leaderboard"), UiExp::nav("settings")};
+        static const UiExp kNav[5] = {UiExp::nav("main"), UiExp::nav("main/practice"), UiExp::nav("main/create"), UiExp::nav("leaderboard"), UiExp::nav("settings*")};
         static const char* const kIds[5] = {"PLAY", "PRACTICE", "CREATE", "RANKS", "SETTINGS"};
         if (ui_.probing()) ui_.custom(0, y, sw, h, kLabels[i], (cur ? UiExp::inert() : kNav[i]).withId(kIds[i]));
         if (!((hv && uiIn_.pressed) || keyTab == i) || cur) continue;
@@ -10370,6 +10349,63 @@ struct MainDraw {
     float midY(float y, float h, float ts) const { return X(y) + (X(h) - r.textHeight(ts)) * 0.5f; }
 };
 }
+
+// the queue's card: joins a ranked server on the ladder with someone waiting as soon as one answers (the list asked
+// again at 10 s); with none by ~20 s, or HOST NOW, hosts one listed publicly so the next player to queue finds it
+void Game::drawRankedQueue() {
+    const SetLayout L = menuLayout(560);
+    const float bw = L.L(528);
+    float y = 360 - 100;
+    ui_.panel(L.X(360), L.Y(y - 16), L.L(560), L.L(200), 0.94f);
+    ui_.labelCentered(L.X(640), L.Y(y), "FINDING A RANKED MATCH", kWhite, 1.25f, bw);
+    y += 32;
+    ui_.labelCentered(L.X(640), L.Y(y), arenaVariant(queueLadder_).title, ui_.accent, 1.0f, bw);
+    y += 26;
+    const int secs = (int)std::max(0.0, time_ - queueAt_), left = (int)std::ceil(std::max(0.0, queueHostAfter_ - (time_ - queueAt_)));
+    char b[64];
+    snprintf(b, sizeof b, "%d:%02d", secs / 60, secs % 60);
+    // (the list down, seen once this queue - a refresh in progress doesn't clear it - said at once: review round 4)
+    const int ls = browser_.listState();
+    if (ls == 2) queueListDown_ = true;
+    else if (ls == 1) queueListDown_ = false;
+    const bool listDown = queueListDown_;
+    if (listDown) {
+        ui_.hintCentered(L.X(640), L.Y(y), "THE SERVER LIST IS DOWN - NOBODY CAN FIND A RANKED GAME RIGHT NOW", Color{1.0f, 0.7f, 0.35f, 1}, bw);
+        ui_.hintCentered(L.X(640), L.Y(y + 18), b, kGrey, bw);
+        ui_.hintCentered(L.X(640), L.Y(y + 36), "STILL TRYING - HOST NOW HOSTS ONE ONLY YOUR ADDRESS REACHES", kGrey, bw);
+    } else {
+        ui_.hintCentered(L.X(640), L.Y(y), "LOOKING FOR SOMEONE WAITING ON THIS LADDER", kGrey, bw);
+        ui_.hintCentered(L.X(640), L.Y(y + 18), b, kGrey, bw);
+        snprintf(b, sizeof b, "NOBODY YET: YOU HOST IN %d S", left);
+        static std::string hostIn;
+        hostIn = b;
+        ui_.hintCentered(L.X(640), L.Y(y + 36), hostIn, kGrey, bw);
+    }
+    y += 68;
+    if (ui_.button(L.X(640 - 188), L.Y(y), L.L(180), L.L(40), "CANCEL", UiExp::nav("main*").withId("CANCEL")) || uiIn_.escape) { queueLadder_ = -1; return; }
+    const bool hostNow = MainDraw{r_, ui_, uiIn_, 1.0f}.bigButton(L.X(640 + 8), L.Y(y), L.L(180), L.L(40), "HOST NOW", UiExp::state("hosting", "1").optional().withId("HOST NOW")) ||
+                         uiIn_.enter;   // (the accent and Enter: the card's one action besides waiting)
+    if (ui_.probing()) return;   // (the UI test: the card, not a game)
+    // someone waiting: a 1v1 ladder's game with exactly one player in it (two is a duel under way), a free for all
+    // ladder's with players and room
+    const bool duel = rankedMode(queueLadder_) != MODE_FFA;
+    const ServerInfo* best = nullptr;
+    for (const ServerInfo& sv : browser_.servers())
+        if (!sv.noReply && sv.rankedLadder == queueLadder_ && (duel ? sv.players == 1 : sv.players > 0 && sv.players < sv.maxPlayers) &&
+            (!best || sv.ping < best->ping)) best = &sv;
+    const int ladder = queueLadder_;
+    if (best) { queueLadder_ = -1; joinAddr_ = best->addr.toString(); connectTo(joinAddr_); return; }
+    // (asked again every 5 s, not at 10 s only: two players queueing together see each other's game before either hosts)
+    if (time_ - queueRefreshed_ > 5) { queueRefreshed_ = time_; browser_.refresh(); browserAt_ = time_; }
+    if (queueListDown_ && !hostNow) return;   // (the list down: nobody can find a game, so no countdown - HOST NOW or CANCEL)
+    if (!hostNow && time_ - queueAt_ < queueHostAfter_) return;
+    queueLadder_ = -1;
+    // (the list down: nobody can find the game, so no promise of an opponent)
+    notify(listDown ? "SERVER LIST UNREACHABLE - HOSTING A RANKED GAME ONLY YOUR ADDRESS REACHES"
+                    : "NOBODY WAITING - HOSTING A RANKED GAME, THE NEXT PLAYER TO QUEUE JOINS YOU", 8);
+    hostRankedQueue(ladder);
+}
+
 
 // PLAY: LAST PLAYED (the server you joined last: its mode, map, name and live players / ping, RECONNECT), SERVERS /
 // BOTS / HOST; on the right the official servers (live from the server list; a click joins), the community count

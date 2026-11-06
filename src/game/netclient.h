@@ -318,6 +318,7 @@ public:
     const std::vector<ServerInfo>& servers() const { return servers_; }
     std::string internetStatus();
     bool listFailed();                      // the last internet list fetch failed (the menus say so in words, with a way on)
+    int listState();                        // the internet list: 0 being fetched, 1 fetched, 2 failed
     int refreshes() const { return refreshes_; }   // (the UI test: REFRESH did refresh)
 private:
     int refreshes_ = 0;
@@ -331,10 +332,15 @@ private:
         std::vector<std::string> fetched;  // addresses from the internet list, waiting to be queried
         std::string netStatus, myIp;
         bool failed = false;
+        int state = 0;   // listState()
     };
     std::shared_ptr<Fetch> fetch_ = std::make_shared<Fetch>();
     struct Listed { NetAddr addr; double since; int tries; bool mine; };
     std::vector<Listed> listed_;       // internet entries not heard from yet
     std::vector<ServerInfo> servers_;
     double sentAt_ = 0;
+    // when each server was last asked (a ping is timed from its own request: review round 4 found every ping timed
+    // from the browser's last packet, so the re-asks reset it and the list, its sort and both matchmakers ranked by noise)
+    std::vector<std::pair<NetAddr, double>> askedAt_;
+    void markAsked(const NetAddr& a, double t);
 };

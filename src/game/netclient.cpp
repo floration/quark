@@ -985,14 +985,20 @@ ServerBrowser::~ServerBrowser() = default;   // (a fetch still running keeps its
 
 std::string ServerBrowser::internetStatus() { std::lock_guard<std::mutex> l(fetch_->mu); return fetch_->netStatus; }
 bool ServerBrowser::listFailed() { std::lock_guard<std::mutex> l(fetch_->mu); return fetch_->failed; }
+int ServerBrowser::listState() { std::lock_guard<std::mutex> l(fetch_->mu); return fetch_->state; }
+void ServerBrowser::markAsked(const NetAddr& a, double t) {
+    for (auto& p : askedAt_) if (p.first == a) { p.second = t; return; }
+    askedAt_.push_back({a, t});
+}
 
 void ServerBrowser::refresh() {
     refreshes_++;
     if (!sock_.isOpen()) sock_.open(0, true);
     servers_.clear();
     listed_.clear();
+    askedAt_.clear();
     uint64_t gen;
-    { std::lock_guard<std::mutex> l(fetch_->mu); gen = ++fetch_->gen; fetch_->netStatus = "SEARCHING THE INTERNET..."; fetch_->failed = false; fetch_->fetched.clear(); }
+    { std::lock_guard<std::mutex> l(fetch_->mu); gen = ++fetch_->gen; fetch_->netStatus = "SEARCHING THE INTERNET..."; fetch_->failed = false; fetch_->state = 0; fetch_->fetched.clear(); }
     std::thread([f = fetch_, gen] {
         std::vector<std::string> list;
         std::string err;
@@ -1003,6 +1009,7 @@ void ServerBrowser::refresh() {
         f->fetched = list;
         f->myIp = me;
         f->failed = !ok;
+        f->state = ok ? 1 : 2;
         f->netStatus = ok ? std::to_string(list.size()) + " INTERNET SERVER(S) LISTED" : "INTERNET LIST: " + err;
         for (auto& c : f->netStatus) c = (char)toupper((unsigned char)c);
     }).detach();
@@ -1020,6 +1027,7 @@ void ServerBrowser::refresh() {
         const NetAddr na{kOfficialServers[i].ip, kOfficialServers[i].port};
         listed_.push_back({na, sentAt_, 1, false});
         sock_.send(na, buf, sizeof buf);
+        markAsked(na, sentAt_);
     }
 }
 
@@ -1032,6 +1040,7 @@ void ServerBrowser::query(const std::string& address) {
     writeHeader(w, PKT_INFO_REQUEST);
     sock_.send(a, buf, sizeof buf);
     sentAt_ = timeNow();
+    markAsked(a, sentAt_);
 }
 
 void ServerBrowser::poll() {
@@ -1077,7 +1086,9 @@ void ServerBrowser::poll() {
         r.u16();
         if (r.bad()) continue;
         if (r.remaining() >= 2) { const uint8_t f = r.u8(); si.rankedLadder = (f & INFO_RANKED) ? r.u8() : -1; }   // (an older server: not there)
-        si.ping = (float)((timeNow() - sentAt_) * 1000.0);
+        double asked = sentAt_;   // (a LAN broadcast's answer: from the broadcast, sentAt_ when nothing else asked since)
+        for (auto& p : askedAt_) if (p.first == from) asked = p.second;
+        si.ping = (float)((timeNow() - asked) * 1000.0);
         for (size_t k = 0; k < servers_.size(); k++) // a late answer replaces its "no response" placeholder
             if (servers_[k].noReply && servers_[k].addr == from) { servers_.erase(servers_.begin() + k); break; }
         bool dup = false;

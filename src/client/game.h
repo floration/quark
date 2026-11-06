@@ -1214,6 +1214,7 @@ private:
     void drawRankedQueue();              // RANKED's FINDING A RANKED MATCH card (CANCEL; hosts after 3 s with nobody waiting)
     int queueLadder_ = -1;               // the ladder being queued for (-1: not queueing)
     double queueAt_ = 0, queueHostAfter_ = 20, queueRefreshed_ = 0;
+    bool queueListDown_ = false;         // the server list failed during this queue (sticky until it loads)
     void hostRankedQueue(int ladder);    // the queue's fallback: host a public ranked game, HOST's settings put back after                    // QUICK PLAY: the best official server that answers (bots when none does)    // RANKED's queue: join a waiting ranked game on the ladder, else host one
     bool rankedQueue_ = false;           // (startHost from the queue: listed publicly)
     bool pressInput(int code);
