@@ -165,7 +165,14 @@ bool convert(const std::string& in, std::string* out, std::string* err) {
                 if (!readSnapshotClient(r, s, ver)) continue;
                 size_t header = n - (size_t)r.remaining();
                 if (!readSnapshotWorld(r, s, s.baseTick && havePrev ? &prev : nullptr)) continue;
+                const size_t world = n - (size_t)r.remaining();   // (where the events start)
                 if (!readSnapshotEvents(r, s)) continue;
+                const size_t evEnd = n - (size_t)r.remaining();
+                // protocol 70 and older: EV_PLAYERINFO's model and sound pack both in b (16 models at most); 71 moves
+                // the pack into a's top bits and gives b to the model (upgradePlayerInfo). The same size: rewritten in place.
+                bool infoChanged = false;
+                if (ver < kPlayerInfoLooksSince)
+                    for (GameEvent& e : s.events) infoChanged |= upgradePlayerInfo(e);
                 prev = s;
                 havePrev = true;
                 snaps++;
@@ -177,7 +184,16 @@ bool convert(const std::string& in, std::string* out, std::string* err) {
                 res.append(rec, 9);
                 res.append((const char*)&n2, 4);
                 res.append((const char*)hb, (size_t)w.size());
-                res.append(rec + 13 + header, n - header);
+                if (!infoChanged) res.append(rec + 13 + header, n - header);
+                else {
+                    res.append(rec + 13 + header, world - header);
+                    const size_t at = res.size(), len = evEnd - world;
+                    res.resize(at + len);
+                    Writer we((uint8_t*)&res[at], (int)len);
+                    writeSnapshotEvents(we, s.events);
+                    if (we.overflowed() || (size_t)we.size() != len) { *err = "a snapshot's events don't fit"; return false; }
+                    res.append(rec + 13 + evEnd, n - evEnd);
+                }
             } else {
                 keep();
             }

@@ -19,8 +19,8 @@
 #include <condition_variable>
 #include "../common/version.h"
 
-// EV_PLAYERINFO's b byte: model in the low 4 bits, sound pack in the high 4
-static uint8_t looksByte(const ServerPlayer& p) { return (uint8_t)((p.model & 15) | ((p.soundPack & 15) << 4)); }
+// EV_PLAYERINFO's looks: the id and sound pack in a, the model in b (setPlayerInfoLooks, protocol.h)
+static void playerInfoLooks(GameEvent& e, int id, const ServerPlayer& p) { setPlayerInfoLooks(e, id, p.model, p.soundPack); }
 
 namespace {
 constexpr double kTimeout = 10.0;
@@ -1183,7 +1183,7 @@ void Server::handleConnect(const NetAddr& from, Reader& r, int len) {
     for (auto& o : players_) o.specVoted &= ~(1u << id);   // (a newcomer in this slot: nobody has voted on them yet)
     sendAccept(sock_, p, id, map_, cfg_.mode);
     sendWelcome(id);
-    GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = looksByte(p); e.c = (int16_t)p.nameColor; e.text = name;
+    GameEvent e; e.type = EV_PLAYERINFO; playerInfoLooks(e, id, p); e.c = (int16_t)p.nameColor; e.text = name;
     broadcastEvent(e);
     GameEvent rk; rk.type = EV_RANKINFO; rk.a = (uint8_t)id; rk.text = rankId; // (empty: the slot's previous owner's id is gone)
     broadcastEvent(rk);
@@ -1201,7 +1201,7 @@ void Server::handleConnect(const NetAddr& from, Reader& r, int len) {
 void Server::sendWelcome(int id) {
     for (int i = 0; i < kMaxPlayers; i++) {
         if (!players_[i].connected || i == id) continue;
-        GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)i; e.b = looksByte(players_[i]); e.c = (int16_t)players_[i].nameColor; e.text = players_[i].name;
+        GameEvent e; e.type = EV_PLAYERINFO; playerInfoLooks(e, i, players_[i]); e.c = (int16_t)players_[i].nameColor; e.text = players_[i].name;
         sendEvent(id, e);
         if (!players_[i].rankId.empty()) { GameEvent r; r.type = EV_RANKINFO; r.a = (uint8_t)i; r.text = players_[i].rankId; sendEvent(id, r); }
     }
@@ -1257,7 +1257,7 @@ bool Server::restorePlayer(int id, const NetAddr& from, uint32_t nonce, const st
     p.buttons = p.prevButtons = 0; p.keys = 0; p.moveEv = 0;
     sendAccept(sock_, p, id, map_, cfg_.mode);
     sendWelcome(id);
-    { GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = looksByte(p); e.c = (int16_t)p.nameColor; e.text = p.name; sendEvent(id, e); }
+    { GameEvent e; e.type = EV_PLAYERINFO; playerInfoLooks(e, id, p); e.c = (int16_t)p.nameColor; e.text = p.name; sendEvent(id, e); }
     if (!p.rankId.empty()) { GameEvent r; r.type = EV_RANKINFO; r.a = (uint8_t)id; r.text = p.rankId; sendEvent(id, r); }
     sendRules(id);
     if (tourney_.running) broadcastBracket();
@@ -1715,7 +1715,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
         if (rest == p.name) return;
         message(p.name + " is now " + rest);
         p.name = rest;
-        GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = looksByte(p); e.c = (int16_t)p.nameColor; e.text = rest;
+        GameEvent e; e.type = EV_PLAYERINFO; playerInfoLooks(e, id, p); e.c = (int16_t)p.nameColor; e.text = rest;
         broadcastEvent(e);
     } else if (cmd == "model") { // cosmetic only: same hitbox for every model
         int mdl = 0, pack = 0, color = 0;   // "model <model> <sound pack> [name colour]": cosmetic, heard / seen by everyone
@@ -1728,7 +1728,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
         p.model = mdl;
         p.soundPack = pack;
         p.nameColor = (uint16_t)color;
-        GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = looksByte(p); e.c = (int16_t)p.nameColor; e.text = p.name;
+        GameEvent e; e.type = EV_PLAYERINFO; playerInfoLooks(e, id, p); e.c = (int16_t)p.nameColor; e.text = p.name;
         broadcastEvent(e);
     } else if (cmd == "callvote") {
         if (cfg_.tutorial) { GameEvent e; e.type = EV_MESSAGE; e.text = "not in the tutorial"; sendEvent(id, e); return; }
@@ -4173,7 +4173,7 @@ int Server::addBot(int team, int skill, bool balance, const std::string* brainNa
     { GameEvent r; r.type = EV_RANKINFO; r.a = (uint8_t)id; broadcastEvent(r); }
     p.model = cfg_.ranked || cfg_.botLooks == 1 ? 0 : (int)(bots_[id].rng % kPlayerModels); // bots: a mix of looks (ranked, or the host's BOT LOOKS: STANDARD: default)
     p.soundPack = (int)((bots_[id].rng >> 8) % kSoundPacks);
-    GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = looksByte(p); e.c = (int16_t)p.nameColor; e.text = p.name;
+    GameEvent e; e.type = EV_PLAYERINFO; playerInfoLooks(e, id, p); e.c = (int16_t)p.nameColor; e.text = p.name;
     broadcastEvent(e);
     // Its brain: the one asked for, else the server's (cfg botBrain); never on ranked or time trial (setBotBrain refuses)
     std::string label;

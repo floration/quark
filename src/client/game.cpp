@@ -469,6 +469,7 @@ void Game::leaveGame(const std::string& error) {
     hudEditClose();
     if (settingsInGame_) cfg_.save();
     settingsInGame_ = voteSetup_ = voteMenu_ = specPick_ = queueMenu_ = practiceMenu_ = playersMenu_ = fontsOpen_ = devicesOpen_ = widgetEdit_ = false;
+    modelPick_ = 0;
     setTab_ = TAB_PLAYER; controlsSub_ = 0;
     ui_.closePopup();
     picker_ = PICK_NONE;
@@ -1163,6 +1164,8 @@ void Game::onKey(int key, int action, int mods) {
             return;
         }
     }
+    // the model picker: the arrows move its choice, Enter picks it
+    if (modelPick_ && settingsShown() && setTab_ != TAB_SEARCH && !chatting_ && !console_ && !ui_.typing() && captureAction_ < 0 && !ui_.popupOpen() && modelPickerKey(key)) return;
     // settings: Left / Right turn the tab's page (the page strip's arrows), when nothing else has the keyboard
     if ((key == GLFW_KEY_LEFT || key == GLFW_KEY_RIGHT) && !(mods & (GLFW_MOD_CONTROL | GLFW_MOD_ALT | GLFW_MOD_SUPER)) && settingsPageKeys()) {
         settingsPage(moreOpen_ + (key == GLFW_KEY_RIGHT ? 1 : -1));
@@ -1210,6 +1213,7 @@ void Game::onKey(int key, int action, int mods) {
             if (filePick_) { filePick_ = 0; return; }
             if (widgetEdit_) { widgetEdit_ = false; widgets_.save(activeHudPath()); return; }
             if (hudEdit_) { hudEditClose(); return; }   // (EDIT ON SCREEN: back to the HUD tab)
+            if (modelPick_) { modelPick_ = 0; cfg_.save(); return; }   // (the model picker: back to its page)
             if (fontsOpen_) { fontsOpen_ = false; cfg_.save(); return; }   // (FONT: back to PLAYER)
             if (devicesOpen_) { devicesOpen_ = false; cfg_.save(); return; }   // (DEVICES: back to VIDEO + AUDIO)
             if (moreOpen_) { moreOpen_ = false; cfg_.save(); return; }   // (MORE: back to its tab)
@@ -1228,6 +1232,7 @@ void Game::onKey(int key, int action, int mods) {
         if (filePick_) { filePick_ = 0; return; }
         if (widgetEdit_) { widgetEdit_ = false; widgets_.save(activeHudPath()); return; }
         if (hudEdit_) { hudEditClose(); return; }   // (EDIT ON SCREEN: back to the HUD tab)
+        if (modelPick_ && screen_ == Screen::Settings) { modelPick_ = 0; cfg_.save(); return; }   // (the model picker: back to its page)
         if (fontsOpen_) { fontsOpen_ = false; cfg_.save(); return; }   // (FONT: back to PLAYER)
         if (devicesOpen_) { devicesOpen_ = false; cfg_.save(); return; }   // (DEVICES: back to VIDEO + AUDIO)
         if (moreOpen_) { moreOpen_ = false; cfg_.save(); return; }   // (MORE: back to its tab)
@@ -1414,6 +1419,7 @@ void Game::onScroll(double dy) {
     if (screen_ == Screen::Join) { joinScroll_ = std::max(0, joinScroll_ - (dy > 0 ? 1 : -1)); return; }
     if (hudEdit_ && !chatting_ && setTab_ == TAB_HUD && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) { hudEdWheel_ += dy; return; }
     if (setTab_ == TAB_SEARCH && settingsShown()) { searchScroll_ = std::max(0, searchScroll_ - (dy > 0 ? 2 : -2)); return; }   // (2 rows a notch; clamped when drawn)
+    if (modelPick_ && settingsShown() && setTab_ != TAB_SEARCH) { modelScroll_ = std::max(0, modelScroll_ - (dy > 0 ? 1 : -1)); return; }   // (a row a notch; clamped when drawn)
     if (fontsOpen_ && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) { fontScroll_ = std::max(0, fontScroll_ - (dy > 0 ? 1 : -1)); return; }   // (clamped when drawn)
     if (devicesOpen_ && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) {   // (the list under the mouse)
         for (int k = 0; k < 3; k++) {
@@ -2297,6 +2303,7 @@ void Game::frame(double dt) {
                 if (w == WPN_KNIFE && !alt) knifeSlash_[net_.clientId() % kMaxPlayers] = time_;
                 if (isThrow(w, alt)) { localFireLocked_ = true; heldWeapon_ = wp_.thrown(weaponView()); }   // (and out comes the next weapon)
                 recoil_ = w == WPN_LASER ? 0.15 : w == WPN_SNIPER ? 1.6 : 1.0;
+                vmShotAt_[w] = time_; vmShotRefire_[w] = localRefire_; vmShots_[w]++;   // (the model's moving parts: drawViewParts)
                 matchShots_++;
                 if (w != WPN_KNIFE && w != WPN_SYRINGE && w != WPN_LOCATOR) muzzleUntil_ = time_ + (w == WPN_SNIPER ? 0.07 : 0.05);
                 if (w == WPN_ROCKET || w == WPN_CROSSBOW || (w == WPN_STICKY && !alt) || isThrow(w, alt)) spawnPredictedProjectile(w, alt, c);   // X5
@@ -2719,17 +2726,23 @@ void Game::drawWorld(float alpha) {
 
     Vec3 dbgBombPos;   // (--models in bomb mode: a dropped bomb in front of the lineup, which carries it)
     const bool dbgBomb = opts_.debugModels && alive && ms.mode == MODE_BOMB;
+    // (--models: the lineup is a batch of kLineup models in the last kLineup player slots, --modelpage N the Nth batch:
+    // more models than player slots, 64 planned, never need more slots)
+    constexpr int kLineup = 11;
+    static_assert(kLineup < kMaxPlayers, "the lineup's slots are the last player slots");
+    const int lineupFirst = std::min(opts_.debugModelPage, (kPlayerModels - 1) / kLineup) * kLineup;
+    const int lineupN = std::min(kLineup, kPlayerModels - lineupFirst);
     if (opts_.debugModels && alive) { // model lineup for screenshots: the last slots, 5 m ahead, facing you
         Vec3 f = {-std::sin(yaw_), 0, -std::cos(yaw_)}, rt = {std::cos(yaw_), 0, -std::sin(yaw_)};
         dbgBombPos = net_.smoothedPos(alpha) + f * 3.0f;
-        for (int k = 0; k < kPlayerModels; k++) {
-            auto& ip = players[kMaxPlayers - kPlayerModels + k];
+        for (int k = 0; k < lineupN; k++) {
+            auto& ip = players[kMaxPlayers - kLineup + k];
             ip.valid = true;
             ip.snap = PlayerSnap{};
-            ip.snap.id = (uint8_t)(kMaxPlayers - kPlayerModels + k);
+            ip.snap.id = (uint8_t)(kMaxPlayers - kLineup + k);
             ip.snap.flags = PS_ALIVE | (k % 2 ? PS_TEAM_B : 0);
             ip.snap.pos = net_.smoothedPos(alpha) + f * 5.0f + rt * ((k - 2) * 1.5f);
-            if (opts_.debugWalk) ip.snap.pos = net_.smoothedPos(alpha) + f * 7.0f + rt * ((k - 5) * 1.15f);   // (all 11 in view)
+            if (opts_.debugWalk) ip.snap.pos = net_.smoothedPos(alpha) + f * 7.0f + rt * ((k - 5) * 1.15f);   // (all 11 of the batch in view)
             ip.snap.yaw = yaw_ + 3.14159265f;
             if (opts_.debugWalk) ip.snap.yaw = yaw_ - 1.5707963f;   // (side-on: the strides show)
             if (dbgBomb) { ip.snap.flags |= PS_HASBOMB; ip.snap.yaw -= 2.3f; }   // (turned away: the backpack shows)
@@ -2774,12 +2787,12 @@ void Game::drawWorld(float alpha) {
             const float adt = at.init ? (float)(time_ - animT_[i]) : 0.0f;
             animT_[i] = time_;
             animStep(at, pos / bs, yaw, pitch, ground, adt);   // (in model metres: a double-size body steps as far)
-            if (opts_.debugModels && i >= kMaxPlayers - kPlayerModels) {   // (--models: the lineup runs in place, each a step apart)
-                const int k = i - (kMaxPlayers - kPlayerModels);
+            if (opts_.debugModels && i >= kMaxPlayers - kLineup) {   // (--models: the lineup runs in place, each a step apart)
+                const int k = i - (kMaxPlayers - kLineup);
                 at.s.speed = k % 3 == 2 ? 3.0f : 7.0f;
                 at.s.phase = (float)std::fmod(time_ * 1.6 + k * 0.09, 1.0);
                 at.s.legYaw = k % 4 == 1 ? 0.6f : 0.0f;
-                at.s.air = k == kPlayerModels - 1 ? 1.0f : 0.0f;
+                at.s.air = k == kLineup - 1 ? 1.0f : 0.0f;
             }
         }
         if (self && alive && !cfg_.ownShadow) continue;   // (MORE 4: OWN SHADOW off: your unseen body isn't drawn at all)
@@ -2796,7 +2809,7 @@ void Game::drawWorld(float alpha) {
         // the player model (cosmetic: every model fits the same hitbox); ranked / time trial: the default for everyone
         // (GAMEPLAY > MORE: ENEMY MODEL / TEAM MODEL draw every enemy / teammate as one model)
         const bool friendly = !self && isFriendly(i);
-        const int pm = ranked ? 0 : opts_.debugModels && i >= kMaxPlayers - kPlayerModels ? i - (kMaxPlayers - kPlayerModels)
+        const int pm = ranked ? 0 : opts_.debugModels && i >= kMaxPlayers - kLineup ? lineupFirst + i - (kMaxPlayers - kLineup)
                      : cfg_.enemyModel >= 0 && !self && !friendly ? cfg_.enemyModel
                      : cfg_.teamModel >= 0 && friendly ? cfg_.teamModel : net_.playerModel(i);
         const ModelMesh* ov = modelOverride(MODEL_PLAYER, pm);
@@ -2812,7 +2825,15 @@ void Game::drawWorld(float alpha) {
             overrideTints(MODEL_PLAYER, pm, pal, tint);
             Mat4 sc;
             sc.m[0] = bs; sc.m[5] = bs * hs; sc.m[10] = bs;
-            r_.mesh(*ov, Mat4::translate(pos) * Mat4::rotY(yaw) * sc, tint, sv, true, vis);
+            const Mat4 w = Mat4::translate(pos) * Mat4::rotY(yaw) * sc;
+            if (cfg_.playerAnims && ov->rig.animated) {   // parts on joints (anim_<bone> nodes): posed like the box models
+                PlayerPose pose;
+                playerPose(anim_[i].s, ov->rig, pose);
+                Mat4 px[kMaxAnimParts];   // (a part: w * its bone * T(its pivot); the crouch squashes the posed body, as sc did)
+                const size_t n = std::min(ov->parts.size(), kMaxAnimParts);
+                for (size_t k = 0; k < n; k++) px[k] = mulAffine(w, posedPart(pose, ov->parts[k].tag, ov->parts[k].pivot));
+                r_.meshPosed(*ov, w, px, tint, sv, true, vis);
+            } else r_.mesh(*ov, w, tint, sv, true, vis);
         } else {
             if (const ModelParts* bx = boxOverride(MODEL_PLAYER, pm)) overrideBoxParts(MODEL_PLAYER, pm, *bx, pal, hs, parts_);
             else playerModelParts(pm, hs, pal, parts_);
@@ -3506,7 +3527,13 @@ void Game::drawWorld(float alpha) {
         if (const ModelMesh* ov = modelOverride(MODEL_WEAPON, w)) {   // the owner's model (docs/ASSETS.md)
             Vec3 tint[TINT_COUNT];
             overrideTints(MODEL_WEAPON, w, vpal, tint);
-            if (tilt) {
+            if (!ov->parts.empty()) {   // (anim_ nodes: the body, then each part at its pivot times its motion)
+                Mat4 sc;
+                sc.m[0] = sc.m[5] = sc.m[10] = k;
+                const Mat4 base = mulAffine(wf, sc);
+                r_.viewMeshXf(*ov, base, tint, false);
+                drawViewParts(*ov, w, base, tint, !specGun && cfg_.weaponAnims);
+            } else if (tilt) {
                 Mat4 sc;
                 sc.m[0] = sc.m[5] = sc.m[10] = k;
                 r_.viewMeshXf(*ov, wf * sc, tint);
@@ -3516,9 +3543,23 @@ void Game::drawWorld(float alpha) {
             else viewmodelParts(w, vpal, parts_);
             // the locator's screen: dim while it recharges, pulsing when it's ready
             float glow = w != WPN_LOCATOR || specGun ? 1.0f : time_ >= locatorReady_ ? 0.85f + 0.35f * (float)std::sin(time_ * 6.0) : 0.3f;
+            // a box model's moving parts ("part" boxes): each at its pivot times its motion, like the anim_ nodes
+            bool moving = false;
+            for (const ModelPart& q : parts_) moving |= q.wpart != 0;
+            WeaponAnimState st;
+            if (moving) st = viewAnimState(w, !specGun && cfg_.weaponAnims);
+            const bool animate = moving && !specGun && cfg_.weaponAnims;
             for (const ModelPart& q : parts_) {
                 const Vec3 c = q.slot == TINT_GLOW ? q.color * glow : q.color;
-                if (tilt) r_.viewBoxXf(wf * Mat4::translate(q.c * k), q.h * k, c);
+                if (q.wpart) {
+                    Mat4 m;
+                    if (animate && !weaponPartMotion(w, q.wpart, st, m)) continue;   // (hidden: being reloaded)
+                    Mat4 sc;
+                    sc.m[0] = sc.m[5] = sc.m[10] = k;
+                    Mat4 xf = mulAffine(mulAffine(wf, sc), Mat4::translate(q.pivot));
+                    if (animate) xf = mulAffine(xf, m);
+                    r_.viewBoxXf(mulAffine(xf, Mat4::translate(q.c - q.pivot)), q.h, c);
+                } else if (tilt) r_.viewBoxXf(wf * Mat4::translate(q.c * k), q.h * k, c);
                 else r_.viewBox(at + q.c * k, q.h * k, c);
             }
         }
@@ -6846,6 +6887,7 @@ void Game::openSettingsTab(int tab) {
     if (tab == TAB_LATENCY && !perfFuture_.valid()) perfChecked_ = false;   // (the performance check read again on each visit)
     controlsSub_ = 0;
     fontsOpen_ = devicesOpen_ = widgetEdit_ = false;
+    modelPick_ = 0;
     moreOpen_ = 0;
     widgetSel_ = -1;
     filePick_ = 0;
@@ -6894,6 +6936,8 @@ void Game::debugSettingsTab() {
     for (int i = 0; i < 8; i++) if (t.rfind(tabs[i], 0) == 0) setTab_ = i;
     if (t.rfind("search/", 0) == 0) setSearch_ = upper(t.substr(7));   // (search/QUERY: that typed)
     if (t == "fonts") fontsOpen_ = true;
+    if (t == "models") { setTab_ = TAB_PLAYER; openModelPicker(1); }   // (models/enemy, models/team: GAMEPLAY > MORE's)
+    if (t == "models/enemy" || t == "models/team") { setTab_ = TAB_GAMEPLAY; moreOpen_ = 1; openModelPicker(t == "models/enemy" ? 2 : 3); }
     if (t == "video/devices") { devicesOpen_ = true; devListed_ = false; }
     if (t == "video/more" || t == "controls/more" || t == "gameplay/more" || t == "player/more" || t == "hud/more") moreOpen_ = 1;
     if (t == "video/more2" || t == "gameplay/more2" || t == "controls/more2") moreOpen_ = 2;
@@ -6942,6 +6986,7 @@ void Game::drawSettings() {
     }
     const size_t inkFrom = r_.uiMark();   // (the UI test: where the page's content starts)
     if (setTab_ == TAB_SEARCH) drawSearchTab(L);
+    else if (modelPick_) drawModelPicker(L);
     else if (fontsOpen_) drawFontSettings(L);
     else if (devicesOpen_) drawDeviceSettings(L);
     else if (moreOpen_) drawMoreSettings(L);
@@ -6959,7 +7004,9 @@ void Game::drawSettings() {
     if (ui_.probing()) { setFootTop_ = L.Y(footY); setInkBottom_ = r_.uiInkBottom(inkFrom, setFootTop_, setFootTop_ + L.L(kRowH)); }
     // the footer: BACK (FONT: back to PLAYER; DEVICES: to VIDEO + AUDIO; any page of a tab: out of settings), the
     // page strip in the middle, and the page's reset on the right (drawn by the page)
-    if (fontsOpen_) {
+    if (modelPick_ && setTab_ != TAB_SEARCH) {   // (the model picker: back to the page it was opened from)
+        if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav(modelPick_ == 1 ? "~settings" : "~settings/gameplay/more"))) { modelPick_ = 0; cfg_.save(); }
+    } else if (fontsOpen_) {
         if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav("~settings"))) { fontsOpen_ = false; cfg_.save(); }
     } else if (devicesOpen_) {
         if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav("~settings/video"))) { devicesOpen_ = false; cfg_.save(); }
@@ -6967,7 +7014,7 @@ void Game::drawSettings() {
         leaveSettings();
         return;
     }
-    if (!fontsOpen_ && !devicesOpen_ && !modal && morePages() > 0) drawSettingsPages(L, footY);
+    if (!fontsOpen_ && !devicesOpen_ && !modelPick_ && !modal && morePages() > 0) drawSettingsPages(L, footY);
     if (ui_.probing() && !modal && !ui_.typing() && !ui_.popupOpen() && captureAction_ < 0 && !widgetEdit_ && !hudEdit_) {   // (the UI test: the search keys)
         if (setTab_ != TAB_SEARCH) {
             ui_.keyAction("CTRL+F (SEARCH)", GLFW_KEY_F, GLFW_MOD_CONTROL, UiExp::nav("~settings/search"));
@@ -7061,9 +7108,9 @@ void Game::drawPlayerSettings(const SetLayout& L) {
     SetFlow g{ui_, L, kColR, 90};
     g.header("LOOK");
     {
-        static std::vector<std::string> mn;
-        if (mn.empty()) for (int i = 0; i < kPlayerModels; i++) mn.push_back(std::string("PLAYER MODEL: ") + playerModelName(i));
-        ui_.cycle(g.x(), g.top(), w, h, "MODEL", cfg_.model, kPlayerModels, mn, UiExp::cfg("model"));
+        // (the model picker: every model drawn, in a grid of its own; settings/models)
+        if (ui_.button(g.x(), g.top(), w, h, std::string("PLAYER MODEL: ") + playerModelName(cfg_.model) + "  >", UiExp::nav("~settings/models").withId("MODEL")))
+            openModelPicker(1);
         g.next();
     }
     {   // your name's colour as everyone sees it (scoreboard, chat, kill feed): off (the default), or one picked
@@ -7171,52 +7218,41 @@ void Game::drawCompassRadar(float W, float H, float s) {
     }
 }
 
-// The PLAYER tab's model preview: the chosen model's boxes (playerModelParts, or a box override) in your team colour,
-// turned by previewYaw_ and seen a little from above, projected flat (orthographic) into the 2D batch: each box's
-// faces toward the camera, lit by one light, far faces first. A mesh override has no boxes: a line says so.
-void Game::drawModelPreview(float x, float y, float w, float h) {
-    if (ui_.relocating()) return;   // (settings SEARCH draws the PLAYER page for its widgets only)
-    r_.rect(x, y, w, h, {0, 0, 0, 0.25f});
-    const int pm = std::min(std::max(cfg_.model, 0), kPlayerModels - 1);
-    if (modelOverride(MODEL_PLAYER, pm)) {
-        ui_.hintCentered(x + w * 0.5f, y + h * 0.5f - 6, "YOUR OWN MODEL FILE: NO PREVIEW HERE", kGrey, w - 16);
-        return;
-    }
-    // turning: slowly by itself, or with the mouse while dragged (pressed over the box, held)
-    if (uiIn_.pressed && ui_.over(x, y, w, h)) { previewDrag_ = true; previewLastX_ = uiIn_.mx; }
-    if (!uiIn_.down) previewDrag_ = false;
-    if (previewDrag_) { previewYaw_ += (uiIn_.mx - previewLastX_) * 0.012f; previewLastX_ = uiIn_.mx; }
-    else previewYaw_ += (float)frameDt_ * 0.6f;
-    previewYaw_ = std::fmod(previewYaw_, 6.2831853f);
+// A player model as flat 2D faces, for the menus (the PLAYER tab's preview, the model picker's thumbnails and its
+// hovered model): the model's boxes (playerModelParts, or a box override) in the team colour, turned by yaw and seen a
+// little from above, projected flat (orthographic) to fit the box x y w h: each box's faces toward the camera, lit by
+// one light, into previewFaces_ far faces first. phase >= 0: walking in place at that point of the stride (PLAYER
+// ANIMATIONS on, a model with leg joints). false: a mesh override, which has no boxes to show.
+bool Game::modelFaces(int pm, const Vec3& team, float yaw, float phase, float x, float y, float w, float h, bool tight) {
+    previewFaces_.clear();
+    if (modelOverride(MODEL_PLAYER, pm)) return false;
     ModelPalette pal;
-    pal.c[TINT_TEAM] = cfg_.colorFriendly;
+    pal.c[TINT_TEAM] = team;
     if (const ModelParts* bx = boxOverride(MODEL_PLAYER, pm)) overrideBoxParts(MODEL_PLAYER, pm, *bx, pal, 1.0f, previewParts_);
     else playerModelParts(pm, 1.0f, pal, previewParts_);
-    const float cy = std::cos(previewYaw_), sy = std::sin(previewYaw_);
+    const float cy = std::cos(yaw), sy = std::sin(yaw);
     const float cp = std::cos(0.25f), sp = std::sin(0.25f);   // (seen 14 degrees from above)
-    const float k = std::min(h * 0.88f / 2.25f, w * 0.4f), ox = x + w * 0.5f, oy = y + h * 0.5f + 1.0f * k * cp;   // (2 m tall, centred)
+    // (2 m tall, centred; tight: the picker's cards, filled as far as a turning model allows)
+    const float k = tight ? std::min(h * 0.94f / 2.08f, w / 1.15f) : std::min(h * 0.88f / 2.25f, w * 0.4f), ox = x + w * 0.5f, oy = y + h * 0.5f + 1.0f * k * cp;
     // model space -> view (x right, y up, z toward the camera)
     auto view = [&](Vec3 p) {
         const Vec3 r = {cy * p.x + sy * p.z, p.y, -sy * p.x + cy * p.z};
         return Vec3{r.x, cp * r.y - sp * r.z, sp * r.y + cp * r.z};
     };
     const Vec3 light = normalize(Vec3{-0.4f, 0.7f, 0.6f});
-    // PLAYER ANIMATIONS: walking in place, slowly (off, or a model without leg bones: standing)
     PlayerRig rig;
-    if (cfg_.playerAnims) playerRig(previewParts_, rig);
+    if (cfg_.playerAnims && phase >= 0) playerRig(previewParts_, rig);
     PlayerPose pose;
     if (rig.animated) {
         AnimState as;
         as.speed = 2.2f;
-        previewPhase_ = (float)std::fmod(previewPhase_ + frameDt_ * as.speed / kAnim.walkStride, 1.0);
-        as.phase = previewPhase_;
+        as.phase = phase;
         playerPose(as, rig, pose);
     }
     auto xform = [](const Mat4& m, const Vec3& p, float w) {   // (w 1: a point, 0: a direction)
         return Vec3(m.m[0] * p.x + m.m[4] * p.y + m.m[8] * p.z + m.m[12] * w, m.m[1] * p.x + m.m[5] * p.y + m.m[9] * p.z + m.m[13] * w,
                     m.m[2] * p.x + m.m[6] * p.y + m.m[10] * p.z + m.m[14] * w);
     };
-    previewFaces_.clear();
     static const int kFace[6][4] = {{1, 3, 7, 5}, {0, 4, 6, 2}, {2, 6, 7, 3}, {0, 1, 5, 4}, {4, 5, 7, 6}, {0, 2, 3, 1}};   // +x -x +y -y +z -z
     static const Vec3 kN[6] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
     for (const ModelPart& q : previewParts_) {
@@ -7243,8 +7279,175 @@ void Game::drawModelPreview(float x, float y, float w, float h) {
         }
     }
     std::sort(previewFaces_.begin(), previewFaces_.end(), [](const PreviewFace& a, const PreviewFace& b) { return a.z < b.z; });
-    for (const PreviewFace& pf : previewFaces_) r_.quad2D(pf.xy, pf.c);
+    return true;
+}
+
+// previewFaces_ drawn through quad(xy, colour), far first, each face with its 1 px outline (`edge` px wide, the game's
+// box outline look: a dark band inside every face edge, so a nearer face's covers a farther one's)
+template <class Quad>
+void Game::drawPreviewFaces(const std::vector<PreviewFace>& faces, float edge, Quad&& quad) {
+    const Color dark = {0.03f, 0.03f, 0.04f, 1};
+    for (const PreviewFace& pf : faces) {
+        quad(pf.xy, pf.c);
+        if (edge <= 0) continue;
+        float cx = 0, cy = 0;
+        for (int i = 0; i < 4; i++) { cx += pf.xy[2 * i] * 0.25f; cy += pf.xy[2 * i + 1] * 0.25f; }
+        for (int i = 0; i < 4; i++) {   // (each edge as a thin quad from the edge toward the face's centre)
+            const int j = (i + 1) & 3;
+            const float ax = pf.xy[2 * i], ay = pf.xy[2 * i + 1], bx = pf.xy[2 * j], by = pf.xy[2 * j + 1];
+            float nx = -(by - ay), ny = bx - ax;
+            const float len = std::sqrt(nx * nx + ny * ny);
+            if (len < 1e-3f) continue;
+            nx /= len; ny /= len;
+            if (nx * (cx - ax) + ny * (cy - ay) < 0) { nx = -nx; ny = -ny; }   // (inward)
+            const float xy[8] = {ax, ay, bx, by, bx + nx * edge, by + ny * edge, ax + nx * edge, ay + ny * edge};
+            quad(xy, Color{dark.r, dark.g, dark.b, pf.c.a});
+        }
+    }
+}
+
+// The PLAYER tab's model preview: your model (modelFaces) turning, walking in place; drag it to turn it. A mesh
+// override has no boxes: a line says so.
+void Game::drawModelPreview(float x, float y, float w, float h) {
+    if (ui_.relocating()) return;   // (settings SEARCH draws the PLAYER page for its widgets only)
+    r_.rect(x, y, w, h, {0, 0, 0, 0.25f});
+    const int pm = std::min(std::max(cfg_.model, 0), kPlayerModels - 1);
+    // turning: slowly by itself, or with the mouse while dragged (pressed over the box, held)
+    if (uiIn_.pressed && ui_.over(x, y, w, h)) { previewDrag_ = true; previewLastX_ = uiIn_.mx; }
+    if (!uiIn_.down) previewDrag_ = false;
+    if (previewDrag_) { previewYaw_ += (uiIn_.mx - previewLastX_) * 0.012f; previewLastX_ = uiIn_.mx; }
+    else previewYaw_ += (float)frameDt_ * 0.6f;
+    previewYaw_ = std::fmod(previewYaw_, 6.2831853f);
+    previewPhase_ = (float)std::fmod(previewPhase_ + frameDt_ * 2.2f / kAnim.walkStride, 1.0);   // (walking at 2.2 m/s)
+    if (!modelFaces(pm, cfg_.colorFriendly, previewYaw_, previewPhase_, x, y, w, h)) {
+        ui_.hintCentered(x + w * 0.5f, y + h * 0.5f - 6, "YOUR OWN MODEL FILE: NO PREVIEW HERE", kGrey, w - 16);
+        return;
+    }
+    drawPreviewFaces(previewFaces_, ui_.s(), [&](const float* xy, const Color& c) { r_.quad2D(xy, c); });
     ui_.hint(x + 6, y + 4, "DRAG TO TURN", kGrey);
+}
+
+// ---- The model picker (settings/models; modelPick_) ------------------------------------------------------------------
+// 8 cards a row, 4 rows on screen (the wheel or the arrows scroll the rest), each its model's thumbnail over its
+// name. The thumbnails are drawn once into Renderer::thumbAtlas (a cell each, at the cards' pixel size: sharp at every
+// resolution) when the picker opens with a new key (colour, size, theme, ranked's shipped-only models); each frame
+// costs one textured quad a card. Only the hot card (under the mouse, or the keyboard's) is drawn live: turning,
+// walking in place, a few hundred quads, as the PLAYER tab's preview.
+static void tabFrame(Renderer& r, const Ui& ui, float x, float y, float w, float h);
+namespace {
+constexpr int kPickCols = 8, kPickRows = 4;
+constexpr float kPickX = 268, kPickTop = 112, kPickGap = 8, kPickW = (744 - kPickGap * (kPickCols - 1)) / kPickCols, kPickImgH = 100, kPickNameH = 18;
+constexpr float kThumbYaw = 3.14159265f - 0.55f;   // (front three-quarter: the model faces -Z)
+}
+
+void Game::openModelPicker(int which) {
+    modelPick_ = which;
+    modelScroll_ = -1;   // (scrolled to the current one when drawn)
+    modelCursor_ = -1;
+    pickAnimOf_ = -1;
+    ui_.closePopup();
+}
+
+bool Game::modelPickerKey(int key) {
+    const int n = kPlayerModels + (modelPick_ == 1 ? 0 : 1);
+    const int cur = modelPick_ == 1 ? cfg_.model : (modelPick_ == 2 ? cfg_.enemyModel : cfg_.teamModel) + 1;
+    int c = modelCursor_ >= 0 ? modelCursor_ : cur;
+    switch (key) {
+        case GLFW_KEY_LEFT: c--; break;
+        case GLFW_KEY_RIGHT: c++; break;
+        case GLFW_KEY_UP: c -= kPickCols; break;
+        case GLFW_KEY_DOWN: c += kPickCols; break;
+        case GLFW_KEY_PAGE_UP: c -= kPickCols * kPickRows; break;
+        case GLFW_KEY_PAGE_DOWN: c += kPickCols * kPickRows; break;
+        case GLFW_KEY_HOME: c = 0; break;
+        case GLFW_KEY_END: c = n - 1; break;
+        case GLFW_KEY_ENTER: case GLFW_KEY_KP_ENTER: case GLFW_KEY_SPACE: {
+            int& v = modelPick_ == 1 ? cfg_.model : modelPick_ == 2 ? cfg_.enemyModel : cfg_.teamModel;
+            v = modelPick_ == 1 ? c : c - 1;
+            cfg_.save();
+            return true;
+        }
+        default: return false;
+    }
+    modelCursor_ = std::clamp(c, 0, n - 1);
+    const int row = modelCursor_ / kPickCols;   // (kept in view)
+    if (modelScroll_ >= 0) modelScroll_ = std::clamp(modelScroll_, row - kPickRows + 1, row);
+    return true;
+}
+
+void Game::drawModelPicker(const SetLayout& L) {
+    const int which = modelPick_;
+    const bool force = which != 1;   // (ENEMY / TEAM MODEL: card 0 is THEIR OWN)
+    const int n = kPlayerModels + (force ? 1 : 0);
+    int& value = which == 1 ? cfg_.model : which == 2 ? cfg_.enemyModel : cfg_.teamModel;
+    const int cur = force ? value + 1 : value;
+    const Vec3 team = which == 2 ? cfg_.colorEnemy : cfg_.colorFriendly;
+    const char* key = which == 1 ? "model" : which == 2 ? "enemy_model" : "team_model";
+    const int rowsAll = (n + kPickCols - 1) / kPickCols, rows = std::min(rowsAll, kPickRows);
+    if (modelScroll_ < 0) modelScroll_ = cur / kPickCols - rows / 2;
+    modelScroll_ = std::clamp(modelScroll_, 0, rowsAll - rows);
+    ui_.label(L.X(kPickX), L.Y(84), which == 1 ? "PLAYER MODEL" : which == 2 ? "ENEMY MODEL" : "TEAM MODEL", ui_.accent, 1.0f, L.L(360));
+    ui_.hint(L.X(kPickX + 368), L.Y(88), which == 1 ? "EVERY MODEL HAS THE SAME HITBOX - RANKED: EVERYONE IS STANDARD"
+                                                    : "EVERY ENEMY / TEAMMATE AS ONE MODEL (NOT IN RANKED)", kGrey, L.L(744 - 368));
+    // the thumbnails: again only when what they show changes
+    const int cw = std::max(8, (int)std::lround(L.L(kPickW))), ch = std::max(8, (int)std::lround(L.L(kPickImgH)));
+    const Color bg = ui_.btnC(), bgHot = ui_.contrast ? Color{0.12f, 0.12f, 0.12f, 1} : Color{0.2f, 0.23f, 0.29f, 1};
+    uint64_t k = 1469598103934665603ull;
+    auto mix = [&](uint64_t v) { k = (k ^ v) * 1099511628211ull; };
+    auto mixf = [&](float f) { uint32_t b; memcpy(&b, &f, 4); mix(b); };
+    mix((uint64_t)cw); mix((uint64_t)ch); mix((uint64_t)kPlayerModels); mix(fairModels_ ? 1 : 0);
+    mixf(team.x); mixf(team.y); mixf(team.z); mixf(bg.r); mixf(bg.g); mixf(bg.b); mixf(ui_.s());
+    if (k != pickKey_ && !ui_.relocating()) {
+        pickKey_ = k;
+        r_.thumbAtlas(cw, ch, kPlayerModels);
+        for (int m = 0; m < kPlayerModels; m++) {
+            const float full[8] = {0, 0, (float)cw, 0, (float)cw, (float)ch, 0, (float)ch};
+            r_.thumbQuad(m, full, Color{bg.r, bg.g, bg.b, 1});
+            if (modelFaces(m, team, kThumbYaw, -1, 0, 0, (float)cw, (float)ch, true))
+                drawPreviewFaces(previewFaces_, std::max(1.0f, ui_.s()), [&](const float* xy, const Color& c) { r_.thumbQuad(m, xy, c); });
+        }
+    }
+    // the hot card: under the mouse (it moves the keyboard's choice too), else the keyboard's
+    for (int r = 0; r < rows; r++)
+        for (int c = 0; c < kPickCols; c++) {
+            const int i = (modelScroll_ + r) * kPickCols + c;
+            if (i < n && ui_.over(L.X(kPickX + c * (kPickW + kPickGap)), L.Y(kPickTop + r * (kPickImgH + kPickNameH + kPickGap)), L.L(kPickW), L.L(kPickImgH + kPickNameH)))
+                modelCursor_ = i;
+        }
+    const int hot = modelCursor_;
+    if (hot != pickAnimOf_) { pickAnimOf_ = hot; pickYaw_ = kThumbYaw; pickPhase_ = 0; }   // (it starts as its thumbnail stands)
+    pickYaw_ = std::fmod(pickYaw_ + (float)frameDt_ * 1.2f, 6.2831853f);
+    pickPhase_ = (float)std::fmod(pickPhase_ + frameDt_ * 2.2f / kAnim.walkStride, 1.0);
+    for (int r = 0; r < rows; r++)
+        for (int c = 0; c < kPickCols; c++) {
+            const int i = (modelScroll_ + r) * kPickCols + c;
+            if (i >= n) break;
+            const int m = force ? i - 1 : i;   // (-1: THEIR OWN)
+            const float bx = L.X(kPickX + c * (kPickW + kPickGap)), by = L.Y(kPickTop + r * (kPickImgH + kPickNameH + kPickGap));
+            const float bw = L.L(kPickW), bh = L.L(kPickImgH);
+            if (i == cur) tabFrame(r_, ui_, bx, by, bw, L.L(kPickImgH + kPickNameH));
+            const std::string name = m < 0 ? "THEIR OWN" : playerModelName(m);
+            const UiExp e = (i == cur ? UiExp::inert() : UiExp::cfg(key)).withId(m < 0 ? "THEIR OWN" : playerModelName(m));
+            bool pick = false;
+            if (ui_.relocating()) {}
+            else if (m < 0 || modelOverride(MODEL_PLAYER, m)) {   // (no thumbnail: THEIR OWN, or a mesh file of yours)
+                r_.rect(bx, by, bw, bh, i == hot ? bgHot : bg);
+                if (m < 0) ui_.labelCentered(bx + bw * 0.5f, by + bh * 0.5f - L.L(16), "?", kGrey, 2.0f, bw - L.L(8));   // (the name says THEIR OWN)
+                else ui_.hintCentered(bx + bw * 0.5f, by + bh * 0.5f - L.L(6), "YOUR OWN FILE", kGrey, bw - L.L(8));
+            } else if (i == hot) {   // (live: turning, walking in place)
+                r_.rect(bx, by, bw, bh, bgHot);
+                if (modelFaces(m, team, pickYaw_, pickPhase_, bx, by, bw, bh, true))
+                    drawPreviewFaces(previewFaces_, std::max(1.0f, ui_.s()), [&](const float* xy, const Color& col) { r_.quad2D(xy, col); });
+            } else r_.thumb(bx, by, bw, bh, m);
+            if (!ui_.relocating() && uiIn_.pressed && ui_.over(bx, by, bw, bh)) pick = true;   // (the picture picks it too)
+            if (ui_.button(bx, by + bh, bw, L.L(kPickNameH), name, e.clipOk())) pick = true;
+            if (pick && i != cur) { value = m; modelCursor_ = i; cfg_.save(); }
+        }
+    if (rowsAll > rows) {
+        char more[64];
+        snprintf(more, sizeof more, "ROWS %d-%d OF %d - WHEEL OR ARROWS TO SCROLL", modelScroll_ + 1, modelScroll_ + rows, rowsAll);
+        ui_.hintCentered(L.X(640), L.Y(kPickTop + rows * (kPickImgH + kPickNameH + kPickGap) - 2), more, kGrey, L.L(744));
+    }
 }
 
 void Game::drawGameplaySettings(const SetLayout& L) {
@@ -7735,7 +7938,7 @@ void Game::drawSearchTab(const SetLayout& L) {
             counts[pi] = sl.n - start;
             // (a row that opens something of its page's own - CONTROLS' IMPORT and its file list, an editor - takes you
             // to that page with it open)
-            if (!jump && (filePick_ || fontsOpen_ || widgetEdit_ || hudEdit_)) jump = &p;
+            if (!jump && (filePick_ || fontsOpen_ || modelPick_ || widgetEdit_ || hudEdit_)) jump = &p;
         }
         valid = true;
         ui_.reloc = nullptr;
@@ -7819,7 +8022,7 @@ void Game::settingsPage(int n) {
 // the keyboard: the < > rows are clicked, they never hold focus.)
 bool Game::settingsPageKeys() const {
     return settingsShown() && morePages() > 0 && !chatting_ && !console_ && !ui_.typing() && captureAction_ < 0 && !ui_.popupOpen() && !ui_.sliderHeld() &&
-           !fontsOpen_ && !devicesOpen_ && !widgetEdit_ && !hudEdit_ && filePick_ == 0;
+           !fontsOpen_ && !devicesOpen_ && !modelPick_ && !widgetEdit_ && !hudEdit_ && filePick_ == 0;
 }
 
 // the settings path of this tab's MORE page n (0: the tab itself)
@@ -7960,15 +8163,14 @@ void Game::drawMoreSettings(const SetLayout& L) {
         f.hint("WHILE TYPING, CHAT IS ALWAYS FULLY SHOWN");
         f.section("FORCE PLAYER MODELS");
         {
-            static std::vector<std::string> en;
-            if (en.empty()) { en.push_back("ENEMY MODEL: THEIR OWN"); for (int m = 0; m < kPlayerModels; m++) en.push_back(std::string("ENEMY MODEL: ") + playerModelName(m)); }
-            int ei = cfg_.enemyModel + 1;
-            if (ui_.cycle(f.x(), f.top(), w, h, "ENEMY MODEL", ei, kPlayerModels + 1, en, UiExp::cfg("enemy_model"))) cfg_.enemyModel = ei - 1;
+            // (the model picker, with THEIR OWN first: settings/models/enemy, /team)
+            if (ui_.button(f.x(), f.top(), w, h, std::string("ENEMY MODEL: ") + (cfg_.enemyModel >= 0 ? playerModelName(cfg_.enemyModel) : "THEIR OWN") + "  >",
+                           UiExp::nav("~settings/models/enemy").withId("ENEMY MODEL")))
+                openModelPicker(2);
             f.next();
-            static std::vector<std::string> tm;
-            if (tm.empty()) { tm.push_back("TEAM MODEL: THEIR OWN"); for (int m = 0; m < kPlayerModels; m++) tm.push_back(std::string("TEAM MODEL: ") + playerModelName(m)); }
-            int ti = cfg_.teamModel + 1;
-            if (ui_.cycle(f.x(), f.top(), w, h, "TEAM MODEL", ti, kPlayerModels + 1, tm, UiExp::cfg("team_model"))) cfg_.teamModel = ti - 1;
+            if (ui_.button(f.x(), f.top(), w, h, std::string("TEAM MODEL: ") + (cfg_.teamModel >= 0 ? playerModelName(cfg_.teamModel) : "THEIR OWN") + "  >",
+                           UiExp::nav("~settings/models/team").withId("TEAM MODEL")))
+                openModelPicker(3);
             f.next();
             f.hint("EVERY ENEMY / TEAMMATE AS ONE MODEL (NOT IN", "RANKED, WHERE EVERYONE IS STANDARD)");
             ui_.toggle(f.x(), f.top(), w, h, "PLAYER ANIMATIONS", cfg_.playerAnims, UiExp::cfg("player_anims"));
@@ -8129,8 +8331,12 @@ void Game::drawMoreSettings(const SetLayout& L) {
             ui_.toggle(x2, g.top(), hw, h, "TRACERS", cfg_.tracers, UiExp::cfg("tracers"));
             g.next();
         }
-        ui_.toggle(g.x(), g.top(), w, h, "GUN RECOIL KICK", cfg_.viewRecoil, UiExp::cfg("view_recoil"));
-        g.next();
+        {   // WEAPON ANIMATIONS: a model's moving parts (docs/ASSETS.md "Animated parts"; off: they stay still)
+            const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
+            ui_.toggle(g.x(), g.top(), hw, h, "GUN RECOIL KICK", cfg_.viewRecoil, UiExp::cfg("view_recoil"));
+            ui_.toggle(x2, g.top(), hw, h, "WEAPON ANIMATIONS", cfg_.weaponAnims, UiExp::cfg("weapon_anims"));
+            g.next();
+        }
         {
             const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
             g.section("TRACERS + TRAILS");
@@ -12881,6 +13087,47 @@ void Game::drawHookClaw(const Vec3& pivot, const Vec3& offset, float yaw, float 
     if (const ModelParts* bx = boxOverride(MODEL_PROP, PROP_HOOK)) overrideBoxParts(MODEL_PROP, PROP_HOOK, *bx, pal, 1.0f, parts_);
     else propParts(PROP_HOOK, pal, parts_);
     for (const ModelPart& q : parts_) r_.boxPitched(pivot, offset + q.c * bs, q.h * bs, yaw, pitch, q.color, sv, q.shadow);
+}
+
+// The first-person weapon's animated parts (an override's anim_ nodes, docs/ASSETS.md "Animated parts"): each at its
+// pivot times its motion (models.cpp weaponPartMotion) from your own predicted shots, on top of the weapon's frame (its
+// kick included). animate false (spectating someone, WEAPON ANIMATIONS off): still at their pivots. A handful of
+// matrices and one viewMeshXf a part; no allocation.
+WeaponAnimState Game::viewAnimState(int w, bool animate) {
+    const float dt = std::min((float)frameDt_, 0.05f);
+    WeaponAnimState st;
+    if (animate && w >= 0 && w < WPN_COUNT) {
+        if (vmShots_[w]) { st.since = (float)std::min(time_ - vmShotAt_[w], 1e6); st.refire = vmShotRefire_[w]; st.shots = vmShots_[w]; }
+        if (w == WPN_LASER) {   // the coil spins up over 0.3 s while you fire (a shot every 1 ms), down over 0.6 s after
+            const bool firing = vmShots_[w] && time_ - vmShotAt_[w] < 0.03;
+            vmSpinRate_ = firing ? std::min(1.0f, vmSpinRate_ + dt / 0.3f) : std::max(0.0f, vmSpinRate_ - dt / 0.6f);
+            vmSpin_ = std::fmod(vmSpin_ + vmSpinRate_ * 3.0f * 6.2831853f * dt, 6.2831853f);   // (3 turns a second at full)
+            st.spin = vmSpin_;
+        }
+        if (w == WPN_LOCATOR) {
+            st.clock = (float)std::fmod(time_, 2.0);
+            // the antenna: a damped spring (2.8 Hz) kicked by your turning
+            float dy = yaw_ - vmLastYaw_, dp = pitch_ - vmLastPitch_;
+            dy = std::remainder(dy, 6.2831853f);
+            if (std::fabs(dy) > 0.5f || std::fabs(dp) > 0.5f) dy = dp = 0;   // (a respawn / teleport: no fling)
+            vmWobbleVel_ += (-300.0f * vmWobble_ - 8.7f * vmWobbleVel_) * dt + dp * 6.0f + std::fabs(dy) * 2.0f;
+            vmWobble_ = std::clamp(vmWobble_ + vmWobbleVel_ * dt, -0.35f, 0.35f);
+            st.wobble = vmWobble_;
+        }
+    }
+    vmLastYaw_ = yaw_; vmLastPitch_ = pitch_;
+    return st;
+}
+
+void Game::drawViewParts(const ModelMesh& ov, int w, const Mat4& base, const Vec3* tint, bool animate) {
+    const WeaponAnimState st = viewAnimState(w, animate);
+    for (const ModelMesh& p : ov.parts) {
+        Mat4 m;
+        if (animate && !weaponPartMotion(w, p.tag, st, m)) continue;   // (hidden: being reloaded)
+        Mat4 xf = mulAffine(base, Mat4::translate(p.pivot));
+        if (animate) xf = mulAffine(xf, m);
+        r_.viewMeshXf(p, xf, tint, false);
+    }
 }
 
 void Game::drawHeldWeapon(int i, int w, const Vec3& shoulder, float yaw, float pitch, float bs, const Vec3& accent, float sv) {

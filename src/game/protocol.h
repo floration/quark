@@ -135,6 +135,27 @@ struct GameEvent {
     std::string text;
 };
 
+// EV_PLAYERINFO's looks (protocol 71): a = the player id (5 bits, kMaxPlayers 32) | the sound pack << 5 (3 bits), b = the
+// model (a whole byte). Protocol 70 and older put both in b (model | pack << 4: 16 models at most) and a was the id
+// alone: the demo converter rewrites those (upgradePlayerInfo). No extra byte on the wire.
+static_assert(kMaxPlayers <= 32, "EV_PLAYERINFO keeps the player id in a's low 5 bits");
+constexpr uint16_t kPlayerInfoLooksSince = 71;
+inline void setPlayerInfoLooks(GameEvent& e, int id, int model, int pack) {
+    e.a = (uint8_t)((id & 31) | (pack & 7) << 5);
+    e.b = (uint8_t)model;
+}
+inline int playerInfoId(const GameEvent& e) { return e.a & 31; }
+inline int playerInfoModel(const GameEvent& e) { return e.b < kPlayerModels ? e.b : 0; }
+inline int playerInfoPack(const GameEvent& e) { const int p = e.a >> 5; return p < kSoundPacks ? p : 0; }
+// an EV_PLAYERINFO as protocol 70 and older wrote it, into today's layout (true: it was one and was rewritten)
+inline bool upgradePlayerInfo(GameEvent& e) {
+    if (e.type != EV_PLAYERINFO) return false;
+    const int id = e.a, model = e.b & 15, pack = e.b >> 4;
+    if (id >= kMaxPlayers) return false;   // (dropped by every reader anyway: left as it was)
+    setPlayerInfoLooks(e, id, model < kPlayerModels ? model : 0, pack < kSoundPacks ? pack : 0);
+    return true;
+}
+
 enum BombState : uint8_t { BOMB_NONE = 0, BOMB_CARRIED, BOMB_DROPPED, BOMB_PLANTED, BOMB_EXPLODED, BOMB_DEFUSED };
 
 struct ModeState {

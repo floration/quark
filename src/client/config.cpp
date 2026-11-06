@@ -113,6 +113,7 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "kill_bursts") killBursts = iv != 0;
         else if (k == "tracers") tracers = iv != 0;
         else if (k == "view_recoil") viewRecoil = iv != 0;
+        else if (k == "weapon_anims") weaponAnims = iv != 0;
         else if (k == "shot_format") shotFormat = iv == 1 ? 1 : 0;
         else if (k == "shot_folder") shotFolder = iv == 1 ? 1 : 0;
         else if (k == "shot_hide_hud") shotHideHud = iv != 0;
@@ -270,7 +271,7 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "height") height = iv;
         else if (k == "shadows") shadows = iv != 0;
         else if (k == "model") model = (iv >= 0 && iv < kPlayerModels) ? iv : 0;
-        else if (k == "soundpack") soundPack = (iv >= 0 && iv < 5) ? iv : 0;
+        else if (k == "soundpack") soundPack = (iv >= 0 && iv < kSoundPacks) ? iv : 0;
         else if (k == "name_color") { char* e = nullptr; long c = strtol(v.c_str(), &e, 16); nameColor = !v.empty() && v != "-1" && e && !*e && c >= 0 && c <= 0xFFFFFF ? (int)c : -1; }
         else if (k == "health_bars_117") hbMigrated = iv != 0;
         else if (k == "socd") socd = (iv >= 0 && iv <= 2) ? iv : 0;
@@ -462,7 +463,7 @@ std::string Settings::toText() const {
     for (int i = 0; i < 3; i++) if (!colorPreset[i].empty()) f << "\ncolor_preset_" << i + 1 << "=" << colorPreset[i];
     for (auto& b : cmdBinds) f << "\ncbind_" << b.first << "=" << b.second;
     for (auto& a : aliases) f << "\nalias_" << a.first << "=" << a.second;
-    f << "\nfs_width=" << fsWidth << "\nfs_height=" << fsHeight << "\nauto_record=" << autoRecord << "\ndemo_keep=" << demoKeep << "\ndemo_sort=" << demoSort << "\nvideo_preset=" << videoPreset << "\nfx_opacity=" << fxOpacity << "\nkill_bursts=" << killBursts << "\ntracers=" << tracers << "\nview_recoil=" << viewRecoil
+    f << "\nfs_width=" << fsWidth << "\nfs_height=" << fsHeight << "\nauto_record=" << autoRecord << "\ndemo_keep=" << demoKeep << "\ndemo_sort=" << demoSort << "\nvideo_preset=" << videoPreset << "\nfx_opacity=" << fxOpacity << "\nkill_bursts=" << killBursts << "\ntracers=" << tracers << "\nview_recoil=" << viewRecoil << "\nweapon_anims=" << weaponAnims
        << "\nfov=" << fov << "\nbrightness=" << brightness << "\ndisplay_default=1" << "\ndisplay_mode=" << displayMode
       << "\npresent_mode=" << presentMode << "\nlatent_offset_us=" << latentOffsetUs << "\ngpu_max_clocks=" << gpuMaxClocks << "\ndisable_fso=" << disableFso << "\nearly_flush=" << earlyFlush << "\ncpu_latch=" << cpuLatch << "\ngpu_latch=" << gpuLatch << "\nhud_first=" << hudFirst << "\nfast_world=" << fastWorld << "\nprioritize=" << prioritize << "\nlow_latency=" << lowLatency << "\ninterp_ms=" << interpMs
       << "\nmaxfps=" << maxFps << "\nwidth=" << width << "\nheight=" << height << "\nwin_x=" << winX << "\nwin_y=" << winY << "\nbg_fps=" << bgFps << "\nbg_mute=" << bgMute << "\nbg_draw=" << bgDraw

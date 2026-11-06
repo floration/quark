@@ -114,8 +114,13 @@ public:
     // an override model (models.h, docs/ASSETS.md) in place of a model's boxes: model space through xf, each vertex's
     // colour times tint[its slot]; viewMesh: camera-relative like viewBox (offset, then uniform scale)
     void mesh(const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, bool castShadow = true, bool visible = true);
+    // a posed model: the body through xf, part k through partXf[k] (one a part, model -> world, its pivot included).
+    // Culled once by the whole model's sphere (allCenter / allRadius, widened for a stride); same vertex stream as
+    // mesh(), so no extra draw call.
+    void meshPosed(const ModelMesh& m, const Mat4& xf, const Mat4* partXf, const Vec3* tint, float sunVis, bool castShadow = true, bool visible = true);
     void viewMesh(const ModelMesh& m, const Vec3& offset, float scale, const Vec3* tint);
-    void viewMeshXf(const ModelMesh& m, const Mat4& local, const Vec3* tint);   // (local: model -> camera space)
+    // (local: model -> camera space; parts false: the body alone, the caller draws its animated parts itself)
+    void viewMeshXf(const ModelMesh& m, const Mat4& local, const Vec3* tint, bool parts = true);
     void overlayBox(const Vec3& center, const Vec3& half, const Vec3& color); // world space, drawn over everything (editor handles)
     Vec3 viewPoint(const Vec3& offset) const;  // where a camera-relative point (as viewBox takes) is in the world
     void translucentBox(const AABB& b, const Color& c);
@@ -207,6 +212,14 @@ public:
     // next frame after they change; preview() draws image `slot` like a swatch (over this frame's 2D batch).
     void setPreviews(std::vector<std::vector<uint8_t>> images, int w, int h);
     void preview(float x, float y, float w, float h, int slot);
+    // Thumbnails (Settings > PLAYER MODEL's picker): one atlas of `count` cells w x h px, each drawn ONCE from solid
+    // quads (thumbQuad: cell-local pixels, y down; the first should fill the cell: it's shown opaque) into the atlas by
+    // the next flush2D, then shown by thumb() like a preview (an image over this frame's 2D batch). thumbAtlas with
+    // another size or count starts over (every cell empty). So the picker's 64 models cost a textured quad each a
+    // frame, not ~1000 posed faces each; redrawing a cell is just thumbQuads to it again (it's cleared first).
+    void thumbAtlas(int w, int h, int count);
+    void thumbQuad(int cell, const float xy[8], const Color& c);
+    void thumb(float x, float y, float w, float h, int cell);
     // The 2D batch so far uploaded now (the HUD before the late latch): flush2D then only draws it, unless more was added.
     void prepare2D();
 
@@ -276,6 +289,7 @@ private:
     unsigned compile(const char* vs, const char* fs, std::string* err);
     void aim(float yaw, float pitch);   // (setCamera's view half: the view, its vectors, viewProj_ and the frustum planes)
     void emitBox(std::vector<DynVertex>& out, const Mat4& xf, const Vec3& half, const Vec3& color, float sunVis);
+    void meshOne(const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, bool castShadow, bool visible);
     void emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, std::vector<FlatVertex>* flatOut);
 public:
     Vec3 outlineColor;   // the edge colour for the boxes drawn while it's set (players' outline setting); black by default
@@ -360,6 +374,15 @@ private:
     unsigned previewTex_ = 0;
     std::vector<float> previewQuads_;   // (this frame's: x0 y0 x1 y1 slot per quad)
     void drawImageQuads(std::vector<float>& quads, unsigned tex, int cols, int rows, const std::vector<int>* slotOf);
+    std::vector<float> imgVerts_;      // (drawImageQuads' vertices: kept, no allocation a frame)
+    // the thumbnail atlas (thumbAtlas): cells thumbW_ x thumbH_, thumbCols_ x thumbRows_ of them, thumbN_ in use
+    int thumbW_ = 0, thumbH_ = 0, thumbN_ = 0, thumbCols_ = 1, thumbRows_ = 1;
+    bool thumbAlloc_ = false;          // (the texture is (re)made, cleared, at the next flush2D)
+    unsigned thumbTex_ = 0, thumbFbo_ = 0;
+    Vertex2DList thumbVerts_;          // (quads waiting to be drawn into the atlas)
+    std::vector<uint8_t> thumbTouched_;   // (the cells they're in: cleared before)
+    std::vector<float> thumbDraw_;     // (this frame's thumb() quads: x0 y0 x1 y1 cell)
+    void buildThumbs();
     int worldVerts_ = 0;
     std::vector<WorldChunk> chunks_;
     std::vector<int> drawFirst_, drawCount_;

@@ -42,6 +42,7 @@ namespace fs = std::filesystem;
 
 std::string Game::uiScreenPath() const {
     auto settingsSub = [&]() -> std::string {   // (the tab, then what's open on it)
+        if (modelPick_ && setTab_ != TAB_SEARCH) return modelPick_ == 1 ? "/models" : modelPick_ == 2 ? "/models/enemy" : "/models/team";
         switch (setTab_) {
             case TAB_PLAYER: if (moreOpen_) return "/player/more"; if (!fontsOpen_ && ui_.dropdownOpen()) return "/language"; break;
             case TAB_GAMEPLAY: return moreOpen_ >= 4 ? "/gameplay/more4" : moreOpen_ == 3 ? "/gameplay/more3" : moreOpen_ == 2 ? "/gameplay/more2" : moreOpen_ ? "/gameplay/more" : "/gameplay";
@@ -682,6 +683,7 @@ private:
         g.paused_ = g.chatting_ = g.console_ = false;
         g.chatText_.clear();
         g.settingsInGame_ = g.voteMenu_ = g.queueMenu_ = g.practiceMenu_ = g.playersMenu_ = g.fontsOpen_ = g.devicesOpen_ = false;
+        g.modelPick_ = 0;
         g.moreOpen_ = 0;
         g.setSearch_.clear();
         g.searchScroll_ = 0;

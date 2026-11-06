@@ -1952,7 +1952,13 @@ void Renderer::emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const M
     }
 }
 
+// (a model's animated parts, models.h ModelMesh::parts: each still at its pivot; none: one empty check)
 void Renderer::mesh(const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, bool castShadow, bool visible) {
+    meshOne(m, xf, tint, sunVis, castShadow, visible);
+    for (const ModelMesh& p : m.parts) meshOne(p, mulAffine(xf, Mat4::translate(p.pivot)), tint, sunVis, castShadow, visible);
+}
+
+void Renderer::meshOne(const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, bool castShadow, bool visible) {
     const float* x = xf.m;
     Vec3 c = {x[0] * m.center.x + x[4] * m.center.y + x[8] * m.center.z + x[12], x[1] * m.center.x + x[5] * m.center.y + x[9] * m.center.z + x[13],
               x[2] * m.center.x + x[6] * m.center.y + x[10] * m.center.z + x[14]};
@@ -1966,15 +1972,35 @@ void Renderer::mesh(const ModelMesh& m, const Mat4& xf, const Vec3* tint, float 
     casters_.push_back({c, m.radius * sc});
 }
 
+void Renderer::meshPosed(const ModelMesh& m, const Mat4& xf, const Mat4* partXf, const Vec3* tint, float sunVis, bool castShadow, bool visible) {
+    const float* x = xf.m;
+    const Vec3& a = m.allCenter;
+    Vec3 c = {x[0] * a.x + x[4] * a.y + x[8] * a.z + x[12], x[1] * a.x + x[5] * a.y + x[9] * a.z + x[13], x[2] * a.x + x[6] * a.y + x[10] * a.z + x[14]};
+    // (posed: a stride or the tucked jump reaches past the standing sphere)
+    const float rad = m.allRadius * 1.25f * std::max({length(Vec3(x[0], x[1], x[2])), length(Vec3(x[4], x[5], x[6])), length(Vec3(x[8], x[9], x[10]))});
+    if (visible && !inView(c, rad)) { visible = false; if (!castShadow) return; }
+    std::vector<DynVertex>* out;
+    std::vector<FlatVertex>* flat;
+    if (visible) { out = &dyn_; flat = &flat_; }
+    else if (castShadow && shadowCasters) { out = &dynShadowOnly_; flat = nullptr; }
+    else return;
+    emitMesh(*out, m, xf, tint, sunVis, flat);
+    for (size_t k = 0; k < m.parts.size(); k++) emitMesh(*out, m.parts[k], partXf[k], tint, sunVis, flat);
+    casters_.push_back({c, rad});
+}
+
 void Renderer::viewMesh(const ModelMesh& m, const Vec3& offset, float scale, const Vec3* tint) {
     Mat4 s;
     s.m[0] = s.m[5] = s.m[10] = scale;
     Mat4 xf = Mat4::translate(camPos_) * Mat4::rotY(camYaw_) * Mat4::rotX(camPitch_) * Mat4::translate(offset) * s;
     emitMesh(view_, m, xf, tint, 1.0f, &viewFlat_);   // (translucent parts: drawn over the view model, in its pass)
+    for (const ModelMesh& p : m.parts) emitMesh(view_, p, mulAffine(xf, Mat4::translate(p.pivot)), tint, 1.0f, &viewFlat_);
 }
 
-void Renderer::viewMeshXf(const ModelMesh& m, const Mat4& local, const Vec3* tint) {
-    emitMesh(view_, m, Mat4::translate(camPos_) * Mat4::rotY(camYaw_) * Mat4::rotX(camPitch_) * local, tint, 1.0f, &viewFlat_);
+void Renderer::viewMeshXf(const ModelMesh& m, const Mat4& local, const Vec3* tint, bool parts) {
+    const Mat4 xf = Mat4::translate(camPos_) * Mat4::rotY(camYaw_) * Mat4::rotX(camPitch_) * local;
+    emitMesh(view_, m, xf, tint, 1.0f, &viewFlat_);
+    if (parts) for (const ModelMesh& p : m.parts) emitMesh(view_, p, mulAffine(xf, Mat4::translate(p.pivot)), tint, 1.0f, &viewFlat_);
 }
 
 void Renderer::overlayBox(const Vec3& center, const Vec3& half, const Vec3& color) {
@@ -2809,6 +2835,91 @@ void Renderer::preview(float x, float y, float w, float h, int slot) {
     previewQuads_.insert(previewQuads_.end(), q, q + 5);
 }
 
+void Renderer::thumbAtlas(int w, int h, int count) {
+    w = std::max(1, std::min(w, 1024)); h = std::max(1, std::min(h, 1024)); count = std::max(0, count);
+    if (w == thumbW_ && h == thumbH_ && count == thumbN_ && thumbTex_) return;
+    thumbW_ = w; thumbH_ = h; thumbN_ = count;
+    // (as square as it goes, at most 8192 px a side: 64 cells of 172 x 200, 1440p's, are 8 x 8 = 1376 x 1600, 8.8 MB)
+    thumbCols_ = std::max(1, std::min((int)std::ceil(std::sqrt((double)std::max(1, count))), 8192 / w));
+    thumbRows_ = std::max(1, (count + thumbCols_ - 1) / thumbCols_);
+    thumbAlloc_ = true;
+    thumbVerts_.clear();
+    thumbTouched_.assign((size_t)count, 0);
+}
+
+void Renderer::thumbQuad(int cell, const float xy[8], const Color& c) {
+    if (cell < 0 || cell >= thumbN_) return;
+    // the cell's top-left in the atlas as the 2D shader draws it (y down): drawImageQuads takes row r from texture
+    // rows r h .. (r + 1) h, its top the higher, so in y-down pixels row r starts at (rows - 1 - r) h
+    const float ox = (float)((cell % thumbCols_) * thumbW_), oy = (float)((thumbRows_ - 1 - cell / thumbCols_) * thumbH_);
+    constexpr uint16_t u = (uint16_t)((kUiCell * 0.5f + 1) * 32.0f), v = (uint16_t)((kUiCell * 6.5f + 1) * 32.0f);
+    const size_t n = thumbVerts_.size();
+    thumbVerts_.resize(n + 4);
+    uiQuadAt(thumbVerts_.data() + n, 0, 0, 0, 0, u, v, u, v, rgba8(c, 1.0f), 0, 0);
+    for (int i = 0; i < 4; i++) {
+        thumbVerts_[n + i].pos[0] = px(ox + clampf(xy[2 * i], 0, (float)thumbW_));
+        thumbVerts_[n + i].pos[1] = px(oy + clampf(xy[2 * i + 1], 0, (float)thumbH_));
+    }
+    thumbTouched_[(size_t)cell] = 1;
+}
+
+void Renderer::thumb(float x, float y, float w, float h, int cell) {
+    if (cell < 0 || cell >= thumbN_) return;
+    const float q[5] = {x, y, x + w, y + h, (float)cell};
+    thumbDraw_.insert(thumbDraw_.end(), q, q + 5);
+}
+
+// the thumbnails' waiting quads into their cells (each cell touched cleared first), by the 2D program into the atlas:
+// the batch's own buffer, swapped in for the draw (the batch is empty by now), and its uScreen the atlas's size
+void Renderer::buildThumbs() {
+    const int W = thumbW_ * thumbCols_, H = thumbH_ * thumbRows_;
+    glDisable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE);
+    if (thumbAlloc_) {
+        thumbAlloc_ = false;
+        if (!thumbTex_) { glGenTextures(1, &thumbTex_); glGenFramebuffers(1, &thumbFbo_); }
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, thumbTex_);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, W, H, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glBindFramebuffer(GL_FRAMEBUFFER, thumbFbo_);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, thumbTex_, 0);
+        const float zero[4] = {0, 0, 0, 1};
+        glClearBufferfv(GL_COLOR, 0, zero);   // (not glClear: the clear colour stays the frame's)
+    }
+    if (thumbVerts_.empty()) { glBindFramebuffer(GL_FRAMEBUFFER, 0); return; }
+    glBindFramebuffer(GL_FRAMEBUFFER, thumbFbo_);
+    glViewport(0, 0, W, H);
+    glEnable(GL_SCISSOR_TEST);
+    const float bg[4] = {0, 0, 0, 1};
+    for (int k = 0; k < thumbN_; k++)
+        if (thumbTouched_[(size_t)k]) {
+            thumbTouched_[(size_t)k] = 0;
+            glScissor((k % thumbCols_) * thumbW_, (k / thumbCols_) * thumbH_, thumbW_, thumbH_);
+            glClearBufferfv(GL_COLOR, 0, bg);
+        }
+    glDisable(GL_SCISSOR_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    ui_.swap(thumbVerts_);
+    upload(uiVbo_, uiCap_, ui_);
+    glUseProgram(uiProg_);
+    glUniform2f(uUiScreen_, (float)W, (float)H);
+    uiScreen_[0] = uiScreen_[1] = -1;   // (the next flush2D sets the window's again)
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, fontTex_);
+    glBindVertexArray(uiVao_);
+    if (ui_.size() / 4 > uiIdxQuads_) uiIndices(ui_.size() / 4 * 2);
+    glDrawElements(GL_TRIANGLES, (GLsizei)(ui_.size() / 4 * 6), GL_UNSIGNED_INT, nullptr);
+    glDisable(GL_BLEND);
+    ui_.clear();
+    ui_.swap(thumbVerts_);   // (both buffers keep their capacity)
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, width_, height_);
+}
+
 // Textured quads in window pixels (x0 y0 x1 y1 slot each) from an atlas of cols x rows slots, over the 2D batch; slotOf
 // maps a quad's number to its slot (-1: not drawn), or the number is the slot. The quads are cleared.
 void Renderer::drawImageQuads(std::vector<float>& quads, unsigned tex, int cols, int rows, const std::vector<int>* slotOf) {
@@ -2821,8 +2932,8 @@ void Renderer::drawImageQuads(std::vector<float>& quads, unsigned tex, int cols,
         glEnableVertexAttribArray(0); glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 16, (void*)0);
         glEnableVertexAttribArray(1); glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, (void*)8);
     }
-    std::vector<float> v;
-    v.reserve(quads.size() / 5 * 24);
+    std::vector<float>& v = imgVerts_;   // (kept between frames: no allocation)
+    v.clear();
     for (size_t i = 0; i + 5 <= quads.size(); i += 5) {
         const float* r = &quads[i];
         const int k = !slotOf ? (int)r[4] : slotOf->empty() ? -1 : (*slotOf)[(int)r[4]];
@@ -3159,6 +3270,11 @@ void Renderer::flush2D() {
     if (!swatchQuads_.empty()) {   // (the editor's material picker: over the batch)
         buildSwatches();
         drawImageQuads(swatchQuads_, swatchTex_, kSwatchCols, kSwatchRows, &swatchSlotOf_);
+    }
+    if (thumbAlloc_ || !thumbVerts_.empty()) buildThumbs();   // (the model picker's thumbnails: drawn once into their atlas)
+    if (!thumbDraw_.empty()) {   // (...and shown over the batch)
+        if (thumbTex_) drawImageQuads(thumbDraw_, thumbTex_, thumbCols_, thumbRows_, nullptr);
+        thumbDraw_.clear();
     }
     if (!previewQuads_.empty()) {   // (the map picker's previews: over the batch)
         if (previewDirty_ && previewW_ > 0) {

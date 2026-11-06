@@ -5,6 +5,8 @@
 // not, lists / strips / fans) of every mesh in the default scene with their node transforms (matrix or TRS,
 // nested); POSITION, NORMAL (flat normals when missing), COLOR_0 (float / normalised u8 / u16, vec3 / vec4) times
 // the material's baseColorFactor. Textures are ignored. Materials are kept by name (tint slots: models.h).
+// Nodes named anim_<part> (at most kMaxAnimParts) are kept apart as MeshData::anims with their pivot (docs/ASSETS.md
+// "Animated parts"); their triangles stay in model space, assembled, so a reader that ignores them sees the whole model.
 #pragma once
 #include <cstdint>
 #include <functional>

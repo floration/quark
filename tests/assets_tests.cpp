@@ -328,7 +328,7 @@ static void testModelExport() {
             meshToModel(b, mm);
             ACHECK(mm.opaque.size() + mm.translucent.size() == b.triangleCount() * 3 && mm.radius > 0);
         }
-    ACHECK(models == 11 + 11 + 7 + 1 + 8);   // (weapons: 11 with the locator; props: GUN_ARM ARM BOMB_PACK BOMB CART GATE HOOK_ARM HOOK)
+    ACHECK(models == kPlayerModels + 11 + 7 + 1 + 8);   // (the players; weapons: 11 with the locator; props: GUN_ARM ARM BOMB_PACK BOMB CART GATE HOOK_ARM HOOK)
     ACHECK(modelPath(MODEL_PROP, PROP_CART) == "models/prop/CART" && modelPath(MODEL_PROP, PROP_BOMB_PACK) == "models/prop/BOMB_PACK");
     // a prop's slot colours come from the palette (the cart: 11 boxes, its band the team colour, its rim the accent)
     {
@@ -367,7 +367,18 @@ static void testBoxModels() {
     // a joint (players): optional, by name; none is the root (an older file: drawn still)
     ACHECK(parseBoxModel("{\"version\":2,\"boxes\":[" + box + ",\"bone\":\"shin_r\"}]}", p, &err) && p.size() == 1 && p[0].bone == BONE_SHIN_R);
     ACHECK(parseBoxModel("{\"version\":2,\"boxes\":[" + box + "}]}", p, &err) && p.size() == 1 && p[0].bone == BONE_ROOT);
+    // a weapon's moving part: by name, with its pivot; written back the same (boxModelJson)
+    ACHECK(parseBoxModel("{\"version\":2,\"boxes\":[" + box + ",\"part\":\"pump\",\"pivot\":[0,0.01,-0.2]}]}", p, &err) && p.size() == 1 && p[0].wpart == WPART_PUMP && p[0].pivot.z == -0.2f);
+    {
+        ModelParts back;
+        finishBoxModel(MODEL_WEAPON, 0, p);   // (the mul a slot box gets on load)
+        ACHECK(parseBoxModel(boxModelJson(p), back, &err) && back.size() == 1 && back[0].wpart == WPART_PUMP && back[0].pivot.y == 0.01f && back[0].pivot.z == -0.2f);
+    }
+    ACHECK(parseBoxModel("{\"version\":2,\"boxes\":[" + box + "}]}", p, &err) && p.size() == 1 && p[0].wpart == WPART_NONE);
     const char* bad[] = {
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,1,1],\"part\":\"wing\"}]}",   // unknown part
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,1,1],\"pivot\":[0,0,0]}]}",   // pivot, no part
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,1,1],\"part\":\"bolt\",\"pivot\":[0,99,0]}]}",
         "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,1,1],\"bone\":\"tail\"}]}",   // unknown bone
         "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,1,1],\"bone\":3}]}",        // bone by number
         "{\"version\":2,\"boxes\":[]}",                                                              // no boxes
@@ -461,6 +472,89 @@ static void testGltfLoader() {
     ACHECK(ok && m.triangleCount() == 1);
     ACHECK(!loadGltf((const uint8_t*)"{\"nodes\":[", 10, nullptr, m, &err));
     ACHECK(!loadGltf((const uint8_t*)"glTF\2\0\0\0\xff\xff\0\0", 12, nullptr, m, &err));
+}
+
+static void testGltfAnimParts() {
+    // a weapon file with a static body and one anim_pump node (docs/ASSETS.md "Animated parts"): the body as before,
+    // the pump apart with its pivot (the node's translation through its parent; its own rotation ignored) and its
+    // triangles relative to it
+    const float pos[9] = {0, 0, 0, 1, 0, 0, 0, 1, 0};
+    const uint16_t idx[3] = {0, 1, 2};
+    std::vector<uint8_t> bin(sizeof pos + 8);
+    memcpy(bin.data(), pos, sizeof pos);
+    memcpy(bin.data() + sizeof pos, idx, sizeof idx);
+    auto resolve = [&](const std::string& uri, std::vector<uint8_t>& out) { out = bin; return uri == "tri.bin"; };
+    const std::string tail =
+        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"},{\"bufferView\":1,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"}],"
+        "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},{\"buffer\":0,\"byteOffset\":36,\"byteLength\":6}],"
+        "\"buffers\":[{\"byteLength\":44,\"uri\":\"tri.bin\"}]}";
+    const std::string meshes = "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"indices\":1,\"material\":0}]},"
+                               "{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"indices\":1,\"material\":1}]}],"
+                               "\"materials\":[{\"name\":\"metal\"},{\"name\":\"base\"}],";
+    std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+        "\"nodes\":[{\"children\":[1,2],\"translation\":[0,0.1,0]},{\"name\":\"body\",\"mesh\":0},"
+        "{\"name\":\"anim_pump\",\"mesh\":1,\"translation\":[0,-0.05,-0.3],\"rotation\":[0,0.7071068,0,0.7071068]}]," + meshes + tail;
+    MeshData m;
+    std::string err;
+    bool ok = loadGltf((const uint8_t*)json.data(), json.size(), resolve, m, &err);
+    if (!ok) printf("  anim: %s\n", err.c_str());
+    ACHECK(ok && m.prims.size() == 2 && m.anims.size() == 1);
+    if (!ok || m.prims.size() != 2 || m.anims.size() != 1) return;
+    ACHECK(m.anims[0].name == "pump" && length(m.anims[0].pivot - Vec3(0, 0.05f, -0.3f)) < 1e-6f);
+    ACHECK(m.prims[0].anim == -1 && m.prims[1].anim == 0 && m.prims[1].slot == TINT_BASE);
+    // (in MeshData the part sits assembled at its pivot, model space: the export, bounds and editors see it whole)
+    ACHECK(std::fabs(m.prims[1].pos[3] - 1) < 1e-6f && std::fabs(m.prims[1].pos[4] - 0.05f) < 1e-6f && std::fabs(m.prims[1].pos[5] + 0.3f) < 1e-6f);
+    ModelMesh mm;
+    meshToModel(m, mm);
+    ACHECK(mm.opaque.size() == 3 && mm.parts.size() == 1);
+    if (mm.parts.size() == 1) {
+        const ModelMesh& p = mm.parts[0];
+        ACHECK(p.name == "pump" && length(p.pivot - Vec3(0, 0.05f, -0.3f)) < 1e-6f && p.opaque.size() == 3 && p.parts.empty());
+        ACHECK(std::fabs(p.opaque[1].pos[0] - 1) < 1e-6f && std::fabs(p.opaque[1].pos[1]) < 1e-6f && std::fabs(p.opaque[1].pos[2]) < 1e-6f);   // (relative to the pivot)
+        ACHECK(std::fabs(mm.opaque[1].pos[1] - 0.1f) < 1e-6f);   // the body: the parent's translation, as before
+        ACHECK(weaponPartFromName(p.name) == WPART_PUMP && std::string(weaponPartName(WPART_PUMP)) == "pump" && weaponPartFromName("nope") == WPART_NONE);
+    }
+    // Blender's copy suffix and capitals: the same part
+    std::string dup = json;
+    dup.replace(dup.find("anim_pump"), 9, "anim_Pump.001");
+    ACHECK(loadGltf((const uint8_t*)dup.data(), dup.size(), resolve, m, &err) && m.anims.size() == 1 && m.anims[0].name == "pump");
+    // the same file without the anim_ name: loads exactly as before (one body, no anims, no parts; the node's rotation
+    // applied as any node's)
+    std::string plain = json;
+    plain.replace(plain.find("anim_pump"), 9, "pump");
+    ok = loadGltf((const uint8_t*)plain.data(), plain.size(), resolve, m, &err);
+    ACHECK(ok && m.anims.empty() && m.prims.size() == 2 && m.prims[1].anim == -1);
+    meshToModel(m, mm);
+    ACHECK(mm.parts.empty() && mm.opaque.size() == 6);
+    Vec3 mn, mx;
+    if (ok && m.bounds(mn, mx)) ACHECK(length(mm.center - (mn + mx) * 0.5f) < 1e-6f && std::fabs(mm.radius - length(mx - mn) * 0.5f) < 1e-6f);
+    // past kMaxAnimParts anim nodes, the rest stay in the body
+    std::string many = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[";
+    std::string nodes;
+    for (size_t i = 0; i <= kMaxAnimParts; i++) {
+        many += (i ? "," : "") + std::to_string(i);
+        nodes += std::string(i ? "," : "") + "{\"name\":\"anim_p" + std::to_string(i) + "\",\"mesh\":1,\"translation\":[" + std::to_string(i) + ",0,0]}";
+    }
+    many += "]}],\"nodes\":[" + nodes + "]," + meshes + tail;
+    ok = loadGltf((const uint8_t*)many.data(), many.size(), resolve, m, &err);
+    ACHECK(ok && m.anims.size() == kMaxAnimParts && m.prims.size() == kMaxAnimParts + 1 && m.prims.back().anim == -1);
+    // the motions: still with no shot yet; the shotgun's pump back mid-rack and home after; the rocket's round gone
+    // just after a shot and back by the next; a part a weapon doesn't move stays still
+    WeaponAnimState st;
+    Mat4 x;
+    ACHECK(weaponPartMotion(WPN_SHOTGUN, WPART_PUMP, st, x) && std::fabs(x.m[14]) < 1e-6f);
+    st.since = 0.3f; st.refire = weaponDef(WPN_SHOTGUN).refire; st.shots = 1;
+    ACHECK(weaponPartMotion(WPN_SHOTGUN, WPART_PUMP, st, x) && x.m[14] > 0.05f);
+    st.since = st.refire;
+    ACHECK(weaponPartMotion(WPN_SHOTGUN, WPART_PUMP, st, x) && std::fabs(x.m[14]) < 1e-6f);
+    st.since = 0.05f; st.refire = weaponDef(WPN_ROCKET).refire;
+    ACHECK(!weaponPartMotion(WPN_ROCKET, WPART_ROUND, st, x));
+    st.since = st.refire;
+    ACHECK(weaponPartMotion(WPN_ROCKET, WPART_ROUND, st, x) && std::fabs(x.m[14]) < 1e-6f);
+    st.since = 0.3f;
+    ACHECK(weaponPartMotion(WPN_RIFLE, WPART_PUMP, st, x) && std::fabs(x.m[14]) < 1e-9f && x.m[0] == 1);
+    st.since = 1; st.shots = 2;   // the sticky's drum: one chamber a shot (two shots: 120 degrees round)
+    ACHECK(weaponPartMotion(WPN_STICKY, WPART_DRUM, st, x) && std::fabs(x.m[0] - std::cos(120 * 3.14159265f / 180)) < 1e-5f);
 }
 
 static void testDecoders() {
@@ -810,7 +904,7 @@ static void testExport() {
     ACHECK(sounds == (size_t)Audio::kPacks * SND_VOICE_THREE);
     ACHECK(voices - quips == (size_t)kAnnouncerVoices * (SND_COUNT - SND_VOICE_THREE));
     ACHECK(quips >= (size_t)kAnnouncerVoices);   // (every voice has its quips: the default set, or the shipped quips/ files)
-    ACHECK(models == 38 && maps == official && missing == 0);   // (5 players, 11 weapons, 7 projectiles, the crown, 8 props)
+    ACHECK(models == (size_t)kPlayerModels + 27 && maps == official && missing == 0);   // (the players, 11 weapons, 7 projectiles, the crown, 8 props)
     ACHECK(man.find("\"fonts/Rubik.") != std::string::npos && man.find("\"fonts/WorkSans.") != std::string::npos && man.find("\"images/icon.") != std::string::npos);
     std::error_code ec;
     fs::remove_all(dir, ec);
@@ -1326,12 +1420,127 @@ static void testPlayerAnimation() {
     }
 }
 
+// A player mesh with moving parts (docs/ASSETS.md "Player mesh parts") on the generic anim_ loader: each anim_<bone>
+// node is a part tagged with its PlayerBone, the rig comes from the pivots, and a part drawn through
+// posedPart(pose, bone, pivot) puts its vertices where the box path's posedPart puts a box centred there; a mesh
+// without them (or with legs on one side only) stays still, and a weapon's anim_bolt on a player is a still part.
+static void testPlayerMeshParts() {
+    const float pos[9] = {0, 0, 0, 0.01f, 0, 0, 0, -0.01f, 0};
+    const uint32_t idx[3] = {0, 1, 2};
+    std::vector<uint8_t> bin(sizeof pos + sizeof idx);
+    memcpy(bin.data(), pos, sizeof pos);
+    memcpy(bin.data() + sizeof pos, idx, sizeof idx);
+    auto file = [&](const std::string& nodes, int n) {
+        std::string roots;
+        for (int i = 0; i < n; i++) roots += (i ? "," : "") + std::to_string(i);
+        return "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[" + roots + "]}],\"nodes\":[" + nodes + "],"
+               "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"indices\":1,\"material\":0}]}],\"materials\":[{\"name\":\"team_x\"}],"
+               "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"},{\"bufferView\":1,\"componentType\":5125,\"count\":3,\"type\":\"SCALAR\"}],"
+               "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},{\"buffer\":0,\"byteOffset\":36,\"byteLength\":12}],"
+               "\"buffers\":[{\"byteLength\":48,\"uri\":\"data:application/octet-stream;base64," + base64Encode(bin.data(), bin.size()) + "\"}]}";
+    };
+    struct N { const char* name; Vec3 t; };
+    const N nodes[] = {{"BODY", {0, 0, 0}}, {"anim_thigh_l", {-0.12f, 0.9f, 0}}, {"anim_thigh_r", {0.12f, 0.9f, 0}}, {"anim_shin_l", {-0.12f, 0.48f, 0}},
+                       {"anim_Shin_R.001", {0.12f, 0.48f, 0}}, {"anim_foot_l", {-0.12f, 0.11f, 0}}, {"anim_foot_r", {0.12f, 0.11f, 0}},
+                       {"anim_torso", {0, 0.9f, 0}}, {"anim_head", {0, 1.45f, 0}}, {"anim_pelvis", {0, 0.9f, 0}}, {"anim_bolt", {0, 1, 0}}};
+    const int nn = (int)(sizeof nodes / sizeof nodes[0]);
+    std::string js;
+    for (const N& n : nodes) {
+        char b[160];
+        snprintf(b, sizeof b, "%s{\"name\":\"%s\",\"mesh\":0,\"translation\":[%g,%g,%g]}", js.empty() ? "" : ",", n.name, n.t.x, n.t.y, n.t.z);
+        js += b;
+    }
+    const std::string g = file(js, nn);
+    MeshData m;
+    std::string err;
+    ACHECK(loadGltf((const uint8_t*)g.data(), g.size(), nullptr, m, &err));
+    ACHECK(m.anims.size() == (size_t)nn - 1);
+    ModelMesh mm;
+    meshToModel(m, mm);
+    playerMeshRig(mm);
+    ACHECK(mm.opaque.size() == 3 && mm.parts.size() == (size_t)nn - 1);   // (the body: BODY alone)
+    if (mm.parts.size() != (size_t)nn - 1) return;
+    for (int i = 1; i < nn; i++) {
+        const ModelMesh& p = mm.parts[i - 1];
+        std::string nm = std::string(nodes[i].name).substr(5);
+        if (nm.find('.') != std::string::npos) nm = nm.substr(0, nm.find('.'));
+        for (char& c : nm) c = (char)std::tolower((unsigned char)c);
+        ACHECK(p.tag == std::max(boneFromName(nm), 0));   // (anim_bolt: a weapon's part, not a bone: root, still)
+        ACHECK(length(p.pivot - nodes[i].t) < 1e-6f && std::fabs(p.opaque[1].pos[0] - 0.01f) < 1e-6f && std::fabs(p.opaque[1].pos[1]) < 1e-6f);   // (relative to the pivot)
+    }
+    const PlayerRig& r = mm.rig;
+    ACHECK(r.animated && std::fabs(r.hipY - 0.9f) < 1e-6f && std::fabs(r.kneeY - 0.48f) < 1e-6f && std::fabs(r.hipX - 0.12f) < 1e-6f);
+    ACHECK(std::fabs(r.ankleY - 0.11f) < 1e-6f && std::fabs(r.neckY - 1.45f) < 1e-6f && std::fabs(r.waistY - 0.9f) < 1e-6f && r.footHalf == 0);
+    Vec3 mn, mx;
+    ACHECK(m.bounds(mn, mx) && length(mm.allCenter - (mn + mx) * 0.5f) < 1e-6f && mm.allRadius > mm.radius);   // (the whole model's sphere)
+    // posed: part vertex v (relative to its pivot) through posedPart(pose, bone, pivot) == the box path's bone * (pivot + v)
+    AnimState s;
+    s.speed = 7; s.phase = 0.25f; s.legYaw = 0.4f; s.pitch = 0.3f;
+    PlayerPose pose;
+    playerPose(s, r, pose);
+    bool same = true, moved = false;
+    for (const ModelMesh& p : mm.parts) {
+        const Mat4 x = posedPart(pose, p.tag, p.pivot);
+        for (const ModelMesh::V& v : p.opaque) {
+            const Vec3 c = {v.pos[0], v.pos[1], v.pos[2]}, a = p.pivot + c;   // (a: model space, at rest)
+            const Vec3 got = {x.m[0] * c.x + x.m[4] * c.y + x.m[8] * c.z + x.m[12], x.m[1] * c.x + x.m[5] * c.y + x.m[9] * c.z + x.m[13], x.m[2] * c.x + x.m[6] * c.y + x.m[10] * c.z + x.m[14]};
+            const Mat4 q = posedPart(pose, p.tag, a);
+            same = same && length(got - Vec3(q.m[12], q.m[13], q.m[14])) < 1e-5f;
+            if (p.tag == BONE_SHIN_L && length(got - a) > 0.05f) moved = true;
+            if (p.tag == BONE_ROOT && length(got - a) > 1e-6f) same = false;   // (root never moves)
+        }
+    }
+    ACHECK(same && moved);
+    // an older mesh (one node, no anim_ names): no parts, still
+    const std::string old = file("{\"name\":\"BODY\",\"mesh\":0}", 1);
+    MeshData m2;
+    ACHECK(loadGltf((const uint8_t*)old.data(), old.size(), nullptr, m2, &err) && m2.anims.empty());
+    ModelMesh mm2;
+    meshToModel(m2, mm2);
+    playerMeshRig(mm2);
+    ACHECK(!mm2.rig.animated && mm2.parts.empty() && mm2.opaque.size() == 3);
+    // legs on one side only: not animated (drawn still)
+    const std::string half = file("{\"name\":\"anim_thigh_l\",\"mesh\":0,\"translation\":[-0.1,0.9,0]},{\"name\":\"anim_shin_l\",\"mesh\":0,\"translation\":[-0.1,0.5,0]}", 2);
+    MeshData m3;
+    ACHECK(loadGltf((const uint8_t*)half.data(), half.size(), nullptr, m3, &err));
+    ModelMesh mm3;
+    meshToModel(m3, mm3);
+    playerMeshRig(mm3);
+    ACHECK(!mm3.rig.animated && mm3.parts.size() == 2);
+}
+
+// Every player model ships: a box model file each in assets/overrides/models/player/ (embedded at build time), so a
+// model with no built-in boxes (past BANDIT) never falls back to STANDARD on anyone's screen; each walks (both legs'
+// joints), and its name is a translation key (the picker and the cycle draw the names)
+static void testShippedPlayerModels() {
+    overrides::useUserFolder(false);
+    ModelOverrides mo;
+    loadModelOverrides(mo);
+    int shipped = 0;
+    for (int m = 0; m < kPlayerModels; m++) {
+        const ModelMesh* mm = mo.shipped[MODEL_PLAYER][m].get();
+        if (!mm || mm->boxes.empty()) { printf("  %s: no shipped box model (models/player/%s.gltf)\n", playerModelName(m), playerModelName(m)); ACHECK(false); continue; }
+        shipped++;
+        PlayerRig rig;
+        playerRig(mm->boxes, rig);
+        if (!rig.animated) printf("  %s: its shipped model doesn't walk\n", playerModelName(m));
+        ACHECK(rig.animated);
+        if (!lang::hasKey(playerModelName(m))) printf("  %s: not a translation key (tools/lang/extract.py)\n", playerModelName(m));
+        ACHECK(lang::hasKey(playerModelName(m)));
+    }
+    printf("  %d of %d player models shipped as box models\n", shipped, kPlayerModels);
+    overrides::useUserFolder(true);
+}
+
 int assetTests() {
     g_afail = 0;
     testModelExport();
     testGltfLoader();
+    testGltfAnimParts();
     testBoxModels();
     testPlayerAnimation();
+    testPlayerMeshParts();
+    testShippedPlayerModels();
     testDecoders();
     testFontAtlas();
     testUiFonts();

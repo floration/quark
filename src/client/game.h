@@ -73,6 +73,7 @@ struct LaunchOptions {
     bool debugHudLayout = false; // --hudlayout: open HUD layout settings in game
     bool debugModels = false;
     bool debugWalk = false;    // (--walk: the --models lineup turned side-on)
+    int debugModelPage = 0;    // (--modelpage N: the --models lineup shows models 11 N .. 11 N + 10: kLineup a batch)
     int debugRps = 0;           // --rpsshot: the hide and seek tiebreak panel with made-up players (1 picking, 2 reveal, 3 three-way reveal)
     bool camSet = false;         // --cam: fixed backdrop camera (map analysis shots); in a match, the view's camera
     Vec3 camPos;
@@ -764,6 +765,15 @@ private:
     std::string shownName(int id) const;   // (STREAMER MODE: other players as "PLAYER <n>")
     bool hitHead_ = false;   // (the last hit a headshot: the crosshair flashes HEADSHOT's colour)
     double centerUntil_ = 0, hitUntil_ = 0, damageUntil_ = 0, recoil_ = 0, localNextFire_ = 0;
+    // the first-person weapon's moving parts (models.h weaponPartMotion; only an override with anim_ nodes reads these):
+    // your own predicted shots per weapon (when, that shot's refire, how many), the laser coil's spin-up (0..1) and turn,
+    // the locator antenna's spring (angle, rate) and the aim it last saw
+    double vmShotAt_[WPN_COUNT] = {};
+    float vmShotRefire_[WPN_COUNT] = {};
+    unsigned vmShots_[WPN_COUNT] = {};
+    float vmSpinRate_ = 0, vmSpin_ = 0, vmWobble_ = 0, vmWobbleVel_ = 0, vmLastYaw_ = 0, vmLastPitch_ = 0;
+    void drawViewParts(const ModelMesh& ov, int w, const Mat4& base, const Vec3* tint, bool animate);
+    WeaponAnimState viewAnimState(int w, bool animate);   // (the shot clock, the laser's spin, the antenna's spring)
     // the first-person grapple arm: how far it has turned toward the hook (camera space yaw / pitch, radians) and raised
     // (0..1), eased each frame; and each player's launcher muzzle as drawn this frame (their rope starts there)
     float hookAimYaw_ = -0.06f, hookAimPitch_ = 0, hookRaise_ = 0;
@@ -960,6 +970,22 @@ private:
     ModelParts previewParts_;
     struct PreviewFace { float xy[8]; float z; Color c; };
     std::vector<PreviewFace> previewFaces_;
+    bool modelFaces(int pm, const Vec3& team, float yaw, float phase, float x, float y, float w, float h, bool tight = false);   // (into previewFaces_)
+    template <class Quad> static void drawPreviewFaces(const std::vector<PreviewFace>& faces, float edge, Quad&& quad);
+    // The model picker (settings/models; owner, 2026-11-05: "a menu that renders them all so you can see them all when
+    // selecting"): every player model in a grid, in the team colour, the current one framed, click (or arrows + Enter)
+    // to pick. 1: PLAYER MODEL (yours), 2: ENEMY MODEL, 3: TEAM MODEL (GAMEPLAY > MORE: THEIR OWN first); 0 closed.
+    // Each model is drawn once into a thumbnail atlas (Renderer::thumbAtlas) when the picker opens or its colour, size
+    // or theme changes (pickKey_); only the hovered / selected one is drawn live, turning and walking.
+    int modelPick_ = 0;
+    int modelScroll_ = 0;          // the first row shown (the wheel)
+    int modelCursor_ = -1;         // the keyboard's choice (-1: the current one); the mouse over a card moves it
+    float pickYaw_ = 0, pickPhase_ = 0;
+    int pickAnimOf_ = -1;          // (the card pickYaw_ belongs to: a new one starts from the thumbnails' angle)
+    uint64_t pickKey_ = 0;         // (what the atlas holds: the colour, cell size, theme, models)
+    void openModelPicker(int which);
+    void drawModelPicker(const SetLayout& L);
+    bool modelPickerKey(int key);  // arrows / Home / End / Page keys / Enter in the picker (true: taken)
     std::string chCodeMsg_; double chCodeUntil_ = 0;   // (CROSSHAIR > COPY / PASTE CODE's answer)
     void drawMoreSettings(const SetLayout& L);
     const char* moreNav(int n) const;

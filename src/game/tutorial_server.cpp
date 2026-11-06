@@ -17,7 +17,7 @@ void Server::tutorialStart() {
         ServerPlayer& p = players_[id];
         p.name = name;
         p.model = 0;
-        GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = (uint8_t)(p.model | (p.soundPack << 4)); e.c = (int16_t)p.nameColor; e.text = p.name;
+        GameEvent e; e.type = EV_PLAYERINFO; setPlayerInfoLooks(e, id, p.model, p.soundPack); e.c = (int16_t)p.nameColor; e.text = p.name;
         broadcastEvent(e);
     };
     tutGhost_ = addBot(TEAM_A, BOT_BEGINNER);

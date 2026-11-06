@@ -22,6 +22,15 @@
 - **Exclusive fullscreen at a custom FULLSCREEN SIZE:** the picture fills the screen again (it sat cut off in the bottom-left corner), alt-tabbing out gives the desktop its own resolution back (the game minimizes), and closing the game restores it straight away.
 - RANKED on the main menu is now a queue: pick a ladder and it joins a ranked game where someone is waiting, or hosts one (listed publicly) so the next player finds you.
 - The main menu's side strip (PLAY, PRACTICE, CREATE, RANKS, SETTINGS, DISCORD, INFO, QUIT) now stays on every menu screen, so you can jump anywhere without backing out first.
+
+## Weapon models
+- **New weapon models:** all 11 weapons have new outlined models with more shape (the rifle is now a low-poly AK, stepped receivers, toothed rails, ported brakes, round tubes, big team-colour panels), in the same clean style as the maps and menus. Their moving parts animate too. They're AI-made placeholders until human-made ones replace them.
+- **Weapon animations:** weapon models can now have moving parts: the shotgun racks after a shot, the sticky launcher turns its drum, the sniper's bolt cycles, the rifle's bolt kicks, the laser's coil spins while you fire, and more (each weapon its own). They move the moment you click, at any ping. VIDEO > EFFECTS: WEAPON ANIMATIONS turns them off. Other players' weapons show the parts still.
+
+## Player models
+- **New outlined player models:** all 11 characters are redrawn as clean blocky models with outlines, matching the outlined weapons. All 11 walk, SIMPLE included (it used to stand still). The hitbox is unchanged, and ranked and time trials show these models to everyone.
+- **64 player models:** 53 new characters join the 11, from an astronaut, a samurai and a viking to a yeti, a penguin and a goalie. All are outlined, all walk, and every one has the same hitbox. Ranked still shows everyone as STANDARD. Network protocol 71.
+- **Character picker:** Settings > PLAYER > PLAYER MODEL now opens a grid that shows every model in your team colour, with its name under it and your current one framed. Hover a model (or move to it with the arrow keys) and it turns and walks. Click it or press Enter to pick it. ENEMY MODEL and TEAM MODEL (GAMEPLAY > MORE) open the same picker, in the enemy or team colour, with THEIR OWN first.
 - QUICK PLAY stays on the PLAY card after your first game (beside RECONNECT) and joins the busiest official server with room; if no official server answers, it starts a game against bots.
 - Clearer errors in the menus: the server browser says when it couldn't load the list and offers bots instead, RANKS shows one "couldn't reach the ranking server" message with RETRY, official servers that don't answer say NO RESPONSE, and an empty address box tells you what it's for.
 - RANKED's queue now shows a FINDING A RANKED MATCH card with a timer and CANCEL, and tells you when nobody is waiting and it hosts a ranked game for you. The ladder cards say which is 1v1 and which is free for all.

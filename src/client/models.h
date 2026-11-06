@@ -49,6 +49,11 @@ struct ModelPart {
     // players: the joint the box hangs from (PlayerBone below; its `c` is where it sits in the standing pose). Every
     // other model, and a box model file without "bone", is all BONE_ROOT: drawn still.
     uint8_t bone = 0;
+    // weapons: the moving part the box belongs to (WeaponPart below, "part" in the file; 0: the still body) and the
+    // point it turns about or slides from ("pivot", model space). The first-person weapon draws it at pivot * its
+    // motion (weaponPartMotion), like a mesh override's anim_ nodes.
+    uint8_t wpart = 0;
+    Vec3 pivot = {0, 0, 0};
 };
 using ModelParts = std::vector<ModelPart>;
 constexpr size_t kMaxDefaultParts = 32;   // the most boxes in one default model (the tests check): the game reserves it
@@ -194,9 +199,19 @@ struct MeshPrim {
     float alpha = 1;
     std::vector<float> pos, nrm, col; // xyz, xyz, rgb per vertex
     std::vector<uint32_t> idx;
+    int anim = -1;                 // the anim node it belongs to (MeshData::anims), -1: the static body
+};
+// A glTF node named anim_<part> (docs/ASSETS.md "Animated parts"): a part the game moves about its pivot (the node's
+// translation, model space). Its primitives (MeshPrim::anim) are in model space like the rest, assembled at the pivot,
+// so anything that ignores anims (bounds, the export, the editors) sees the whole model at rest.
+constexpr size_t kMaxAnimParts = 12;   // per model: anim nodes past these stay in the static body
+struct MeshAnim {
+    std::string name;   // the part ("pump" for anim_pump; lower case as written)
+    Vec3 pivot;
 };
 struct MeshData {
     std::vector<MeshPrim> prims;
+    std::vector<MeshAnim> anims;   // (empty: a model with no anim nodes, loaded exactly as before)
     bool bounds(Vec3& mn, Vec3& mx) const;
     size_t triangleCount() const;
 };
@@ -212,15 +227,56 @@ struct ModelMesh {
     // a box model (its file's extras.quark.boxes, docs/ASSETS.md): drawn by the box path like a built-in model
     // (outlines, crouch per part, visOnly, shadows), the triangles above unused. Empty: a mesh.
     ModelParts boxes;
+    // Animated parts (the file's anim_<part> nodes, at most kMaxAnimParts): each a mesh of its own whose triangles are
+    // relative to its pivot (model space). The triangles above are the static body without them. Renderer::mesh /
+    // viewMesh / viewMeshXf draw every part still at its pivot, so any model kind draws whole as it is; a draw path
+    // that animates them (the first-person weapon: weaponPartMotion) draws the body with parts off and each part with
+    // pivot * its motion. Empty (no anim nodes): nothing changes, nothing costs.
+    std::vector<ModelMesh> parts;
+    std::string name;                     // a part's name ("pump"); its pivot, and what the game moves it as
+    Vec3 pivot = {0, 0, 0};
+    uint8_t tag = 0;                      // (a part: a weapon's WeaponPart / a player's PlayerBone, set by loadModelOverrides; 0: none / root)
+    // the whole model's bounding sphere, body and parts at rest (model space): what a posed player is culled by
+    Vec3 allCenter = {0, 0, 0};
+    float allRadius = 0;
+    // a player mesh whose parts are joints (anim_<bone> nodes, docs/ASSETS.md "Player mesh parts"): the joints from
+    // their pivots (playerMeshRig). rig.animated false: drawn still, as before.
+    PlayerRig rig;
 };
 void meshToModel(const MeshData& mesh, ModelMesh& out);
+// A player mesh: tags each part with its PlayerBone (anim_pelvis -> BONE_PELVIS; an unknown name: BONE_ROOT, still) and
+// measures the rig from the pivots: hips at the thighs' (x: the legs' spacing), knees at the shins', ankles at the
+// feet's, the neck at the head's, the waist at the torso's (else the hips). Needs both thighs and shins, else still.
+void playerMeshRig(ModelMesh& m);
+
+// ---- first-person weapon part motions (pure, no GL: the game and the tests share it) ------------------------------
+// The parts a weapon model may name (anim_<name>, docs/ASSETS.md); each weapon moves its own ones from your predicted
+// shots (WeaponAnimState). Others (and a part on a weapon that doesn't move it) stay still at their pivot.
+enum WeaponPart : uint8_t { WPART_NONE = 0, WPART_BOLT, WPART_MAG, WPART_ROUND, WPART_SPIN, WPART_PUMP, WPART_DRUM, WPART_STRING, WPART_LEVER, WPART_PLUNGER, WPART_SWEEP, WPART_ANTENNA, WPART_COUNT };
+const char* weaponPartName(int part);            // "bolt", "mag", ... ("" for NONE)
+int weaponPartFromName(const std::string& name);  // "pump" -> WPART_PUMP; unknown: WPART_NONE
+// What the motions are made from: the game keeps it for the weapon in your hands (your own shots, predicted)
+struct WeaponAnimState {
+    float since = 1e9f;    // seconds since your last shot with this weapon (primary or alt), 1e9: none yet
+    float refire = 1;      // that shot's refire (shotRefire)
+    unsigned shots = 0;    // shots fired with it (the sticky's drum: one chamber each)
+    float spin = 0;        // laser: the coil's turn (radians, the game winds it up while you fire, down after)
+    float clock = 0;       // seconds, wrapped (the locator's sweep)
+    float wobble = 0;      // locator: the antenna's spring angle (radians, about X)
+};
+// The part's motion about its pivot (model space; drawn as pivot * this). false: hidden this frame (a round or bolt
+// being reloaded). Identity for a part the weapon doesn't move.
+bool weaponPartMotion(int weapon, int part, const WeaponAnimState& s, Mat4& out);
 constexpr size_t kMaxOverrideTriangles = 20000;   // per model: more is refused (it streams every frame)
 constexpr size_t kMaxOverrideBoxes = 256;         // per box model: more is refused (each is a box with an outline)
 
 // The owner's glTF overrides of every model (loadModelOverrides, gltf.h), loaded once at startup: the shipped ones
 // (assets/overrides/, every player has them) and yours (the per-user overrides folder). Ranked and time trials draw
 // the shipped ones only: your own could make enemies bigger or brighter for you alone. Nothing loaded: all null.
-constexpr int kMaxModelsPerKind = kProjectileModels;   // (the most models of one kind)
+// (the most models of one kind: the 64 players; ModelOverrides keeps two pointers a slot. More players: raise it)
+constexpr int kMaxModelsPerKind = 64;
+static_assert(kPlayerModels <= kMaxModelsPerKind && kProjectileModels <= kMaxModelsPerKind && WPN_COUNT <= kMaxModelsPerKind,
+              "ModelOverrides holds kMaxModelsPerKind models of a kind");
 struct ModelOverrides {
     std::unique_ptr<ModelMesh> shipped[MODEL_KINDS][kMaxModelsPerKind], user[MODEL_KINDS][kMaxModelsPerKind];
     // what to draw for a model (null: its box model); shippedOnly: ranked (fairRules)
