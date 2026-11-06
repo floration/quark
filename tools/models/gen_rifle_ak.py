@@ -159,6 +159,8 @@ def build():
     # receiver: a flat-sided slab, the magwell dip at the bottom front, the rear tang
     solid(B, "metal_dark", S([(-100, 16), (72, 16), (76, 10), (76, -18), (58, -22), (-26, -22), (-34, -28),
                                (-74, -28), (-80, -22), (-100, -22)]), "x", -18, 18)
+    # front trunnion: joins the receiver to the barrel and the handguard (under the rear sight block)
+    solid(B, "metal_dark", S([(-130, 14), (-100, 14), (-100, -20), (-130, -16)]), "x", -16, 16)
     # dust cover: an arched section along the receiver, its rear button
     arch = [(-16, 15), (16, 15), (16, 22), (13, 27), (7, 30), (-7, 30), (-13, 27), (-16, 22)]
     solid(B, "metal_mid", arch, "z", -92 + D, 66 + D)
@@ -175,13 +177,13 @@ def build():
 
     # lower handguard (wood): a rounded section; upper handguard around the gas tube
     low = [(-17, 10), (17, 10), (19, -4), (15, -16), (7, -22), (-7, -22), (-15, -16), (-19, -4)]
-    solid(B, "team_wood", low, "z", -212, -96)
-    solid(B, "metal_dark", offset(ccw(low), 1.5), "z", -98, -90)   # retainer
+    solid(B, "team_wood", low, "z", -212, -100)
+    solid(B, "metal_dark", offset(ccw(low), 1.5), "z", -102, -94)   # retainer, against the trunnion
     solid(B, "metal_dark", offset(ccw(low), 1.0), "z", -218, -212)  # front cap
     up = [(-12, 11), (12, 11), (13, 22), (9, 29), (-9, 29), (-13, 22)]
-    solid(B, "team_wood", up, "z", -200, -90)
+    solid(B, "team_wood", up, "z", -200, -94)
     # barrel, gas tube, gas block, front sight block, brake
-    solid(B, "metal_mid", ngon(0, 8, 7, 8), "z", -276, -212)
+    solid(B, "metal_mid", ngon(0, 8, 7, 8), "z", -276, -94)
     solid(B, "metal_mid", ngon(0, 24, 6, 8), "z", -230, -198)
     solid(B, "metal_dark", [(-240, -1), (-226, -1), (-226, 31), (-232, 33), (-240, 30)], "x", -10, 10)
     solid(B, "metal_dark", [(-272, -2), (-250, -2), (-250, 15), (-255, 20), (-256, 40), (-262, 40), (-264, 20), (-272, 15)], "x", -8, 8)
