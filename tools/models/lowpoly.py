@@ -29,7 +29,7 @@ TONES = {   # material -> (slot reference, factor) or a fixed colour
     "glow_hot": ("glow", 1.4), "sleeve": (0.12, 0.12, 0.14), "ink": (0.012, 0.013, 0.016),
 }
 ALPHA = {"base_glass": 0.45}
-OUTLINE = 1.1   # mm the hull grows
+OUTLINE = 2.6   # mm the hull grows (owner, 2026-11-06: "it should still have some outlines": 1.1 mm was under a pixel in first person)
 
 
 # ---- 2D -----------------------------------------------------------------------------------------------------------
