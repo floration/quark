@@ -685,6 +685,8 @@ private:
         g.settingsInGame_ = g.voteMenu_ = g.queueMenu_ = g.practiceMenu_ = g.playersMenu_ = g.fontsOpen_ = g.devicesOpen_ = false;
         g.modelPick_ = 0;
         g.moreOpen_ = 0;
+        g.queueLadder_ = -1;   // (RANKED's queue and QUICK PLAY's search: neither outlives a reset)
+        g.quickAt_ = -1;
         g.setSearch_.clear();
         g.searchScroll_ = 0;
         g.searchDrag_ = false;

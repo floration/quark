@@ -10591,7 +10591,7 @@ void Game::drawRankedQueue() {
     if (ui_.button(L.X(640 - 188), L.Y(y), L.L(180), L.L(40), "CANCEL", UiExp::nav("main*").withId("CANCEL")) || uiIn_.escape) { queueLadder_ = -1; return; }
     const bool hostNow = MainDraw{r_, ui_, uiIn_, 1.0f}.bigButton(L.X(640 + 8), L.Y(y), L.L(180), L.L(40), "HOST NOW", UiExp::state("hosting", "1").optional().withId("HOST NOW")) ||
                          uiIn_.enter;   // (the accent and Enter: the card's one action besides waiting)
-    if (ui_.probing()) return;   // (the UI test: the card, not a game)
+    if (ui_.probing() && !hostNow) return;   // (the UI test: the card waits for HOST NOW, never a found game or the countdown)
     // someone waiting: a 1v1 ladder's game with exactly one player in it (two is a duel under way), a free for all
     // ladder's with players and room
     const bool duel = rankedMode(queueLadder_) != MODE_FFA;
@@ -12858,7 +12858,7 @@ void Game::drawPicker(float cx, float y) {
         }
         it.pe = multi ? UiExp::state("multisel")
               : ladders && live ? UiExp::cmd(livePickVote_ ? "callvote ranked on" : "ranked on")
-              : queue ? UiExp::state("hosting", "1").optional()   // (finds a waiting game, else hosts one)
+              : queue ? UiExp::nav("main")   // (the queue card on the main menu: finds a waiting game, else hosts one)
               : ladders ? UiExp::nav("host")
               : variants ? (live ? UiExp::nav("ingame/pause/picker:livemap") : UiExp::nav(done))
               : modes && i == MODE_COUNT ? UiExp::nav(live ? "ingame/pause/picker:ladders" : "host/picker:ladders")
