@@ -10,5 +10,31 @@
 - F3's latency graph says GPU WAIT (LATENT SYNC) instead of GPU WAIT (ULTRA) when Latent Sync is on and LOW LATENCY isn't ULTRA.
 
 ## Menus
+- **Sharp main menu icons:** the icons down the main menu's left strip are drawn as smooth shapes now, so they stay crisp at any resolution instead of looking pixelated; they and the main menu's text are drawn supersampled (as smooth as rendering at 400%). The main screen shows the QUARK wordmark at the top, and the Q in the strip's corner sits centred. The QUARK logo has a glossy arcade look: a lit top half and a drop shadow.
+- **Menu fixes from a three-player review** (a total beginner, an FPS player new to Quark, a regular):
+  - With no last game, the main menu's big button is **QUICK PLAY**: straight into the official server (the server list is still SERVERS).
+  - HOST shows the address your friends join with, and a **COPY** button.
+  - Settings opens on CONTROLS (sensitivity) unless REMEMBER LAST TAB is on.
+  - Bots in free for all start on Sewer, the map built for it, instead of Cobblestone.
+  - DISCORD, INFO and QUIT at the strip's foot have labels.
+  - The page title lines up with the top bar; the aim trainer's difficulty row and BACK no longer stick out of the panel, and its "LEADERBOARD: SOON" lines are gone.
 - The version in the menus' bottom left (and F3) shows the full build, e.g. `quark-1.19.8-a4bfca60`, with `-dirty` on a build of uncommitted changes.
 - **Exclusive fullscreen at a custom FULLSCREEN SIZE:** the picture fills the screen again (it sat cut off in the bottom-left corner), alt-tabbing out gives the desktop its own resolution back (the game minimizes), and closing the game restores it straight away.
+- RANKED on the main menu is now a queue: pick a ladder and it joins a ranked game where someone is waiting, or hosts one (listed publicly) so the next player finds you.
+- The main menu's side strip (PLAY, PRACTICE, CREATE, RANKS, SETTINGS, DISCORD, INFO, QUIT) now stays on every menu screen, so you can jump anywhere without backing out first.
+
+## Weapon models
+- **New weapon models:** all 11 weapons have new outlined models with more shape (the rifle is now a low-poly AK, stepped receivers, toothed rails, ported brakes, round tubes, big team-colour panels), in the same clean style as the maps and menus. Their moving parts animate too. They're AI-made placeholders until human-made ones replace them.
+- **Weapon animations:** weapon models can now have moving parts: the shotgun racks after a shot, the sticky launcher turns its drum, the sniper's bolt cycles, the rifle's bolt kicks, the laser's coil spins while you fire, and more (each weapon its own). They move the moment you click, at any ping. VIDEO > EFFECTS: WEAPON ANIMATIONS turns them off. Other players' weapons show the parts still.
+
+## Player models
+- **New outlined player models:** all 11 characters are redrawn as clean blocky models with outlines, matching the outlined weapons. All 11 walk, SIMPLE included (it used to stand still). The hitbox is unchanged, and ranked and time trials show these models to everyone.
+- **64 player models:** 53 new characters join the 11, from an astronaut, a samurai and a viking to a yeti, a penguin and a goalie. All are outlined, all walk, and every one has the same hitbox. Ranked still shows everyone as STANDARD. Network protocol 71.
+- **Character picker:** Settings > PLAYER > PLAYER MODEL now opens a grid that shows every model in your team colour, with its name under it and your current one framed. Hover a model (or move to it with the arrow keys) and it turns and walks. Click it or press Enter to pick it. ENEMY MODEL and TEAM MODEL (GAMEPLAY > MORE) open the same picker, in the enemy or team colour, with THEIR OWN first.
+- QUICK PLAY stays on the PLAY card after your first game (beside RECONNECT) and joins the busiest official server with room; if no official server answers, it starts a game against bots.
+- Clearer errors in the menus: the server browser says when it couldn't load the list and offers bots instead, RANKS shows one "couldn't reach the ranking server" message with RETRY, official servers that don't answer say NO RESPONSE, and an empty address box tells you what it's for.
+- RANKED's queue now shows a FINDING A RANKED MATCH card with a timer and CANCEL, and tells you when nobody is waiting and it hosts a ranked game for you. The ladder cards say which is 1v1 and which is free for all.
+- Every menu screen now has the main menu's top bar: its name top-left (SERVERS, HOST, BOTS, RANKS...) and the QUARK wordmark in the same place, and START is highlighted on HOST and BOTS.
+- VIDEO + AUDIO: the graphics PRESET (LOW / MEDIUM / HIGH / COMPETITIVE) is now on page 1, and hovering a page number shows what's on that page.
+- Menu keys: 1-5 switch between PLAY, PRACTICE, CREATE, RANKS and SETTINGS, and Enter presses QUICK PLAY on the main menu and START on HOST and BOTS.
+- QUICK PLAY now only joins your build's official server (the testing server on testing builds), never a ranked game; when it's full or doesn't answer within 3 s it starts bots and says why. The ranked queue looks for about 20 s (HOST NOW skips the wait), leaves your HOST settings alone and remembers your last ladder. SERVERS starts with an empty address box.

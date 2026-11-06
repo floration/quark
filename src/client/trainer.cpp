@@ -397,7 +397,7 @@ void Game::drawTrainerMenu(const SetLayout& L) {
     for (int m = 0; m < TR_MODES; m++)
         if (ui_.tab(L.X(176 + m * 160), L.Y(216), L.L(152), th, trainer::modeName(m), trMode_ == m, trMode_ == m ? UiExp::inert() : UiExp::state("trainer"))) trMode_ = m;
     for (int d = 0; d < kDiffs; d++)
-        if (ui_.tab(L.X(640 + d * 160), L.Y(216), L.L(152), th, diffName(d), trDiff_ == d, trDiff_ == d ? UiExp::inert() : UiExp::state("trainer"))) trDiff_ = d;
+        if (ui_.tab(L.X(632 + d * 160), L.Y(216), L.L(152), th, diffName(d), trDiff_ == d, trDiff_ == d ? UiExp::inert() : UiExp::state("trainer"))) trDiff_ = d;
     for (int c = 0; c < CAT_COUNT; c++)
         if (ui_.tab(L.X(176 + c * 312), L.Y(256), L.L(304), th, catName(c), trCat_ == c, trCat_ == c ? UiExp::inert() : UiExp::state("trainer"), true)) trCat_ = c;
     const auto scs = list(trMode_, trCat_);
@@ -411,12 +411,12 @@ void Game::drawTrainerMenu(const SetLayout& L) {
         const bool played = it != trScores_.end() && it->second.plays > 0;
         ui_.label(L.X(x + 10), L.Y(y + 52), played ? "BEST " + std::to_string(it->second.best) : "NOT PLAYED YET", played ? kGold : kGrey, 1.0f, L.L(cw - 20));
         if (played) ui_.hint(L.X(x + 10), L.Y(y + 74), "LAST " + std::to_string(it->second.last) + "   " + std::to_string(it->second.plays) + (it->second.plays == 1 ? " PLAY" : " PLAYS"), kGrey, L.L(cw - 20));
-        ui_.hint(L.X(x + 10), L.Y(y + 90), "LEADERBOARD: SOON", kGrey, L.L(cw - 20));
+        // (no "LEADERBOARD: SOON" line: placeholder text, six times a page; review 2026-11-04. Back when boards exist.)
         if (ui_.button(L.X(x + 10), L.Y(y + ch - 44), L.L(cw - 20), L.L(34), "PLAY", UiExp::nav("trainer/run").withId(sc->id))) { trainerStart(sc); return; }
     }
     ui_.hint(L.X(176), L.Y(622), trainer::modeName(trMode_) == std::string("2D") ? "2D: THE VIEW STAYS STILL, YOUR MOUSE MOVES THE CROSSHAIR" : "3D STATIC: YOU CAN'T MOVE - LOOK AND SHOOT",
              kGrey, L.L(600));
     ui_.hint(L.X(176), L.Y(638), trCat_ == CAT_CLICK ? "RIFLE, ONE SHOT A CLICK. SCORE: KILLS X 100 X ACCURACY" : trCat_ == CAT_SWITCH ? "LASER. SCORE: KILLS X 100 X ACCURACY" : "LASER. SCORE: DAMAGE X 10 X ACCURACY",
              kGrey, L.L(600));
-    if (ui_.button(L.X(944), L.Y(632), L.L(176), L.L(40), "BACK", UiExp::nav("main*"))) setScreen(Screen::Main);
+    if (ui_.button(L.X(928), L.Y(632), L.L(176), L.L(40), "BACK", UiExp::nav("main*"))) setScreen(Screen::Main);
 }

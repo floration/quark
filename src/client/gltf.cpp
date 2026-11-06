@@ -1,6 +1,7 @@
 #include "gltf.h"
 #include "overrides.h"
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -218,7 +219,7 @@ struct Doc {
     }
 };
 
-bool addPrimitive(Doc& d, const J& prim, const M4& xf, MeshData& out) {
+bool addPrimitive(Doc& d, const J& prim, const M4& xf, MeshData& out, int anim = -1) {
     int mode = prim.inum("mode", 4);
     if (mode != 4 && mode != 5 && mode != 6) return true;   // points / lines: nothing to draw
     const J* attrs = prim.get("attributes");
@@ -246,6 +247,7 @@ bool addPrimitive(Doc& d, const J& prim, const M4& xf, MeshData& out) {
     }
     // material: name (tint slot) and base colour
     MeshPrim mp;
+    mp.anim = anim;
     double base[4] = {1, 1, 1, 1};
     mp.material = "body";
     const J* mats = d.root.get("materials");
@@ -299,20 +301,35 @@ bool addPrimitive(Doc& d, const J& prim, const M4& xf, MeshData& out) {
     return true;
 }
 
-bool addNode(Doc& d, int ni, const M4& parent, MeshData& out, int depth) {
+// anim: the anim node (MeshData::anims) this one is under, -1: the body. A node named anim_<part> starts its own (at
+// most kMaxAnimParts; past them it stays in the body): its pivot is its translation (through its parents), its own
+// rotation / scale are ignored, so its triangles sit in model space at the pivot like the rest (docs/ASSETS.md).
+bool addNode(Doc& d, int ni, const M4& parent, MeshData& out, int depth, int anim = -1) {
     const J* nodes = d.root.get("nodes");
     if (!nodes || ni < 0 || ni >= (int)nodes->size() || depth > 64) { d.err = "bad node"; return false; }
     const J& n = nodes->a[ni];
-    M4 xf = parent * nodeMatrix(n);
+    M4 xf;
+    const std::string name = n.str("name");
+    if (name.size() > 5 && name.compare(0, 5, "anim_") == 0 && out.anims.size() < kMaxAnimParts) {
+        M4 t;
+        const M4 own = nodeMatrix(n);   // (a "matrix" instead of a translation: its translation)
+        for (int i = 0; i < 3; i++) t.m[12 + i] = own.m[12 + i];
+        xf = parent * t;
+        anim = (int)out.anims.size();
+        // the part's name: lower case, without a copy's ".001" (Blender's duplicates)
+        std::string part = name.substr(5, name.find('.') == std::string::npos ? std::string::npos : name.find('.') - 5);
+        for (char& c : part) c = (char)std::tolower((unsigned char)c);
+        out.anims.push_back({part, Vec3((float)xf.m[12], (float)xf.m[13], (float)xf.m[14])});
+    } else xf = parent * nodeMatrix(n);
     if (n.get("mesh")) {
         const J* meshes = d.root.get("meshes");
         int mi = n.inum("mesh", -1);
         if (!meshes || mi < 0 || mi >= (int)meshes->size()) { d.err = "bad mesh"; return false; }
         if (const J* prims = meshes->a[mi].get("primitives"))
-            for (const J& p : prims->a) if (!addPrimitive(d, p, xf, out)) return false;
+            for (const J& p : prims->a) if (!addPrimitive(d, p, xf, out, anim)) return false;
     }
     if (const J* ch = n.get("children"))
-        for (const J& c : ch->a) if (!addNode(d, (int)c.n, xf, out, depth + 1)) return false;
+        for (const J& c : ch->a) if (!addNode(d, (int)c.n, xf, out, depth + 1, anim)) return false;
     return true;
 }
 
@@ -376,6 +393,12 @@ bool boxesFrom(const J& q, ModelParts& out, std::string& err) {
             if (bn < 0) { err = where + "unknown bone \"" + b.str("bone") + "\""; return false; }
             p.bone = (uint8_t)bn;
         }
+        if (b.get("part")) {   // (weapons' moving parts, with the pivot they move about)
+            const int wp = b.get("part")->t == J::STR ? weaponPartFromName(b.str("part")) : -1;
+            if (wp <= 0) { err = where + "unknown part \"" + b.str("part") + "\""; return false; }
+            p.wpart = (uint8_t)wp;
+            if (!vec(b, "pivot", p.pivot, -64, 64, false)) { err = where + "pivot must be 3 numbers within 64 m"; return false; }
+        } else if (b.get("pivot")) { err = where + "pivot without a part"; return false; }
         out.push_back(p);
     }
     return true;
@@ -393,6 +416,7 @@ std::string boxModelJson(const ModelParts& boxes) {
         if (p.slot != TINT_NONE && (p.teamMul.x != 0 || p.teamMul.y != 0 || p.teamMul.z != 0)) j += ",\"teamMul\":" + v3(p.teamMul);
         if (p.alpha != 1) j += ",\"alpha\":" + fmt9(p.alpha);
         if (p.bone != BONE_ROOT) j += std::string(",\"bone\":\"") + boneName(p.bone) + "\"";
+        if (p.wpart) j += std::string(",\"part\":\"") + weaponPartName(p.wpart) + "\",\"pivot\":" + v3(p.pivot);
         j += std::string(",\"shadow\":") + (p.shadow ? "true" : "false") + ",\"visOnly\":" + (p.visOnly ? "true" : "false") + ",\"crouch\":" + (p.crouch ? "true" : "false") + "}";
     }
     return j + "]}";
@@ -412,6 +436,7 @@ bool parseBoxModel(const std::string& json, ModelParts& out, std::string* err) {
 
 bool loadGltf(const uint8_t* data, size_t size, const GltfResolver& resolve, MeshData& out, std::string* err, ModelParts* boxes) {
     out.prims.clear();
+    out.anims.clear();
     if (boxes) boxes->clear();
     Doc d;
     auto fail = [&](const std::string& m) { if (err) *err = m; return false; };
@@ -534,8 +559,14 @@ void loadModelOverrides(ModelOverrides& out) {
                 if (mesh.triangleCount() > kMaxOverrideTriangles) { printf("override %s (%s): %zu triangles (at most %zu)\n", matched.c_str(), where, mesh.triangleCount(), kMaxOverrideTriangles); continue; }
                 auto m = std::make_unique<ModelMesh>();
                 if (!boxes.empty()) { finishBoxModel(kind, i, boxes); m->boxes = std::move(boxes); }   // (drawn as boxes)
-                else meshToModel(mesh, *m);
-                if (m->boxes.empty()) printf("override: %s (%s)\n", matched.c_str(), where);
+                else {
+                    meshToModel(mesh, *m);
+                    if (kind == MODEL_WEAPON)   // (what the viewmodel moves each part as: weaponPartMotion)
+                        for (ModelMesh& part : m->parts) part.tag = (uint8_t)weaponPartFromName(part.name);
+                    else if (kind == MODEL_PLAYER) playerMeshRig(*m);   // (parts on joints: walks like the box models)
+                }
+                if (m->boxes.empty() && !m->parts.empty()) printf("override: %s (%s, %zu animated parts)\n", matched.c_str(), where, m->parts.size());
+                else if (m->boxes.empty()) printf("override: %s (%s)\n", matched.c_str(), where);
                 else printf("override: %s (%s, a box model: %zu boxes)\n", matched.c_str(), where, m->boxes.size());
                 (from == overrides::FROM_USER ? out.user : out.shipped)[kind][i] = std::move(m);
             }
