@@ -617,6 +617,7 @@ def main():
     ap.add_argument("--scratch", default="/tmp/quark-outlined")
     ap.add_argument("--ingame", action="store_true")
     ap.add_argument("--only", default="")
+    ap.add_argument("--box-rifle", action="store_true", help="also write the old box rifle (replaced by gen_rifle_ak.py)")
     ap.add_argument("--builtin", action="store_true", help="also shoot the built-in models for a side-by-side")
     ap.add_argument("--map", default="qk3")
     ap.add_argument("--cam", default="-6 1.6 -15 158 -5")
@@ -626,6 +627,8 @@ def main():
     wdir = os.path.join(args.out, "models", "weapon")
     for n in ORDER:
         if only and n not in only:
+            continue
+        if n == "RIFLE" and not args.box_rifle:   # (the shipped rifle is the low-poly AK: tools/models/gen_rifle_ak.py)
             continue
         w = BUILDERS[n]()
         errs, parts = check(w)
