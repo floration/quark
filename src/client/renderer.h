@@ -27,8 +27,9 @@ static_assert(sizeof(DynVertex) == 44, "DynVertex: setupDynVao's offsets");
 struct FlatVertex { float pos[3]; float color[4]; };
 // 16 bytes: screen pixels, font atlas texel coords (u16 fixed point: (texel + 1) * 32), color (RGBA8), and for text
 // the text scale (integer part + 1/256ths; 0 = plain rect), which sets the distance-field edge and outline width
-// in the shader, so each character is one quad. pad[0]: the title's split Q; pad[1]: a rounded rect (roundRect: uv its
-// own pixel position * 4, scaleInt its corner radius, scaleFrac its ring width * 4).
+// in the shader, so each character is one quad. pad[0]: the title's split Q; pad[1]: 1 a rounded rect (roundRect: uv its
+// own pixel position * 4, scaleInt its corner radius, scaleFrac its ring width * 4; pad[0] + 4: text supersampled), 2 an icon (icon: uv as roundRect's,
+// scaleInt which UiIcon).
 struct Vertex2D { int16_t pos[2]; uint16_t uv[2]; uint8_t color[4]; uint8_t scaleInt, scaleFrac, pad[2]; };
 // The 2D batch's allocator: growing the batch leaves the new vertices unset (every writer sets all of a vertex's
 // fields), so text and rects don't zero a vertex just before writing it.
@@ -42,6 +43,8 @@ template <class T> struct NoInitAlloc : std::allocator<T> {
 using Vertex2DList = std::vector<Vertex2D, NoInitAlloc<Vertex2D>>;
 
 struct Color { float r, g, b, a; };
+// The UI's line icons (Renderer::icon; their shapes are in the UI shader, kUiFS's icon()): the main menu's strip
+enum UiIcon { ICON_PLAY = 0, ICON_GAUGE, ICON_GRID, ICON_TROPHY, ICON_GEAR, ICON_CHAT, ICON_INFO, ICON_POWER, ICON_COUNT };
 constexpr Color kGlassTint = {0.86f, 0.90f, 0.93f, 0.26f};   // glass panes (map material 21): very light grey, see-through
 inline Color rgba(const Vec3& c, float a = 1) { return {c.x, c.y, c.z, a}; }
 
@@ -111,6 +114,10 @@ public:
     // an override model (models.h, docs/ASSETS.md) in place of a model's boxes: model space through xf, each vertex's
     // colour times tint[its slot]; viewMesh: camera-relative like viewBox (offset, then uniform scale)
     void mesh(const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, bool castShadow = true, bool visible = true);
+    // a posed model: the body through xf, part k through partXf[k] (one a part, model -> world, its pivot included).
+    // Culled once by the whole model's sphere (allCenter / allRadius, widened for a stride); same vertex stream as
+    // mesh(), so no extra draw call.
+    void meshPosed(const ModelMesh& m, const Mat4& xf, const Mat4* partXf, const Vec3* tint, float sunVis, bool castShadow = true, bool visible = true);
     void viewMesh(const ModelMesh& m, const Vec3& offset, float scale, const Vec3* tint);
     // (local: model -> camera space; parts false: the body alone, the caller draws its animated parts itself)
     void viewMeshXf(const ModelMesh& m, const Mat4& local, const Vec3* tint, bool parts = true);
@@ -152,6 +159,10 @@ public:
     float uiInkBottom(size_t from, float skipTop, float skipBottom) const;
     // one solid quad with free corners (xy: 4 points, clockwise or not; convex): the PLAYER tab's model preview's faces
     void quad2D(const float xy[8], const Color& c);
+    // a line icon (UiIcon), size px square centred on (cx, cy), drawn as shapes in the UI shader (smooth at any size)
+    void icon(int id, float cx, float cy, float size, const Color& c);
+    // the text among the UI quads from `from` on drawn supersampled, 4 x 4 a pixel (as smooth as at 400%)
+    void uiSupersample(size_t from);
     void setTextOutline(float k) { textOutline_ = k < 0 ? 0 : k > 1.5f ? 1.5f : k; }   // the text outline's width, x (0: none)
     void uiTransform(size_t from, float px, float py, float k, float dx, float dy);
     // The QUARK title (the menus'): centred on cx, its line top at y (as text() takes it), at text scale ts (fractional
@@ -162,6 +173,7 @@ public:
     void logo(float cx, float y, float ts, const Color& friendly, const Color& enemy);
     // the title's Q alone, as logo() draws it at ts (the main menu's icon strip)
     void logoQ(float cx, float y, float ts, const Color& friendly, const Color& enemy);
+    float logoWidth(float ts) const;   // logo()'s width at ts (px)
     // level: how far its letters are closed up (font units, each pair as far as its ink allows: textfit.h; Ui's fitting)
     void text(float x, float y, float scale, const std::string& s, const Color& c, float level = 0);
     // proportional UI font (Rubik Bold, or the one picked in Settings > FONT): widths come from per-glyph advances
@@ -200,6 +212,14 @@ public:
     // next frame after they change; preview() draws image `slot` like a swatch (over this frame's 2D batch).
     void setPreviews(std::vector<std::vector<uint8_t>> images, int w, int h);
     void preview(float x, float y, float w, float h, int slot);
+    // Thumbnails (Settings > PLAYER MODEL's picker): one atlas of `count` cells w x h px, each drawn ONCE from solid
+    // quads (thumbQuad: cell-local pixels, y down; the first should fill the cell: it's shown opaque) into the atlas by
+    // the next flush2D, then shown by thumb() like a preview (an image over this frame's 2D batch). thumbAtlas with
+    // another size or count starts over (every cell empty). So the picker's 64 models cost a textured quad each a
+    // frame, not ~1000 posed faces each; redrawing a cell is just thumbQuads to it again (it's cleared first).
+    void thumbAtlas(int w, int h, int count);
+    void thumbQuad(int cell, const float xy[8], const Color& c);
+    void thumb(float x, float y, float w, float h, int cell);
     // The 2D batch so far uploaded now (the HUD before the late latch): flush2D then only draws it, unless more was added.
     void prepare2D();
 
@@ -354,6 +374,15 @@ private:
     unsigned previewTex_ = 0;
     std::vector<float> previewQuads_;   // (this frame's: x0 y0 x1 y1 slot per quad)
     void drawImageQuads(std::vector<float>& quads, unsigned tex, int cols, int rows, const std::vector<int>* slotOf);
+    std::vector<float> imgVerts_;      // (drawImageQuads' vertices: kept, no allocation a frame)
+    // the thumbnail atlas (thumbAtlas): cells thumbW_ x thumbH_, thumbCols_ x thumbRows_ of them, thumbN_ in use
+    int thumbW_ = 0, thumbH_ = 0, thumbN_ = 0, thumbCols_ = 1, thumbRows_ = 1;
+    bool thumbAlloc_ = false;          // (the texture is (re)made, cleared, at the next flush2D)
+    unsigned thumbTex_ = 0, thumbFbo_ = 0;
+    Vertex2DList thumbVerts_;          // (quads waiting to be drawn into the atlas)
+    std::vector<uint8_t> thumbTouched_;   // (the cells they're in: cleared before)
+    std::vector<float> thumbDraw_;     // (this frame's thumb() quads: x0 y0 x1 y1 cell)
+    void buildThumbs();
     int worldVerts_ = 0;
     std::vector<WorldChunk> chunks_;
     std::vector<int> drawFirst_, drawCount_;

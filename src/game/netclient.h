@@ -305,6 +305,7 @@ struct ServerInfo {
     float ping = 0;
     bool noReply = false; // on the internet list but didn't answer (port not open?); still clickable
     bool official = false; // an official Quark server (isOfficialServer, master.h: by its address, never its name)
+    int rankedLadder = -1;  // the ranked ladder it plays (arenaVariant: 0 vanilla, 1 laser vampire, 5 instagib), -1 none or an older server
 };
 
 // LAN discovery and direct server queries.
@@ -316,6 +317,7 @@ public:
     void poll();
     const std::vector<ServerInfo>& servers() const { return servers_; }
     std::string internetStatus();
+    bool listFailed();                      // the last internet list fetch failed (the menus say so in words, with a way on)
     int refreshes() const { return refreshes_; }   // (the UI test: REFRESH did refresh)
 private:
     int refreshes_ = 0;
@@ -328,6 +330,7 @@ private:
         uint64_t gen = 0;
         std::vector<std::string> fetched;  // addresses from the internet list, waiting to be queried
         std::string netStatus, myIp;
+        bool failed = false;
     };
     std::shared_ptr<Fetch> fetch_ = std::make_shared<Fetch>();
     struct Listed { NetAddr addr; double since; int tries; bool mine; };

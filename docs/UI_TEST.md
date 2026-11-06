@@ -115,7 +115,7 @@ reached by starting a game of the scenario's own (TIME TRIAL hosts one) is on it
 one JOIN > CONNECT leaves is.
 
 Settings is one shell with six tabs, the same in the menus (`settings...`) and in game (`ingame/pause/settings...`):
-`settings` (PLAYER), `settings/fonts` (PLAYER > FONT), `settings/gameplay`, `settings/controls` (GENERAL + INTERFACE
+`settings` (PLAYER), `settings/fonts` (PLAYER > FONT), `settings/models` (PLAYER > PLAYER MODEL's picker; `settings/models/enemy`, `/team`: GAMEPLAY > MORE's ENEMY / TEAM MODEL), `settings/gameplay`, `settings/controls` (GENERAL + INTERFACE
 KEYS), `settings/controls/movement` (MOVE + WEAPON KEYS), `settings/controls/files` (the import list), `settings/video`
 (VIDEO + AUDIO), `settings/video/devices` (VIDEO + AUDIO > DEVICES), `settings/crosshair`, `settings/hud`, `settings/hud/elements` (the ELEMENT dropdown open), `settings/hud/edit` (EDIT ON SCREEN: each element a handle, the selection's corner a size handle, the editor's keys key actions),
 `settings/hud/widgets` (+ `/files`, `/values`). The tab row's tabs are `nav("~settings/<tab>")` buttons (the current one
@@ -137,6 +137,8 @@ WINDOW SIZE, "fov" / "FOV" must show the FOV slider, "fov zoom" SNIPER ZOOM FOV,
 (failures are listed as SETUP). host-ffa skips the tab in game (the same widgets, tested on their pages there). `quark
 --settingsmenu --settingstab <page>[+<picker label>] --menushot --screenshot out.png` (or `--settings` in game) opens a
 page for a screenshot, e.g. `hud/elements` or `player+TEAM COLOR`.
+
+The model picker (`settings/models`, `/enemy`, `/team`): each card's name is a `cfg("model")` (`enemy_model`, `team_model`) button with the model's name as its id (THEIR OWN: `THEIR OWN`; the current one: `inert()`); only the rows on screen are reported (the wheel and the arrow keys scroll the rest); BACK and Esc go back to the page it was opened from.
 
 Settings > FONT (`settings/fonts`): each font entry is a `cfg("ui_font")` button (the one in use: `inert()`), with its
 name as a stable id whichever is in use; REFRESH is `state("fontscan")`, OPEN FOLDER `url()`. The test puts the

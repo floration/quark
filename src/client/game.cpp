@@ -26,6 +26,7 @@
 #include "../game/master.h"
 #include "../game/gamemodes.h"
 #include "../common/version.h"
+#include <random>
 #include "gltf.h"
 #include "overrides.h"
 #include "hudclock.h"
@@ -159,7 +160,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     hostModeIdx_ = clampf((float)cfg_.hostMode, 0, MODE_COUNT - 1);
     cfg_.hostMaxPlayers = std::min(std::max(cfg_.hostMaxPlayers, 2), kMaxPlayers);
     hostPortStr_ = std::to_string(cfg_.hostPort);
-    joinAddr_ = cfg_.lastAddress;
+    joinAddr_ = cfg_.lastAddress == "127.0.0.1" ? std::string() : cfg_.lastAddress;   // (the old default: empty, so the box's hint shows)
     if (!opts_.menuPage.empty()) debugMenuPage();   // (after the host / bots settings are read: a picker can set them)
     applyMenuTheme();
     glfwSetMonitorCallback(onMonitorEvent);   // (a monitor plugged in or out: DEVICES' MONITOR found again)
@@ -260,7 +261,7 @@ void Game::startHost(bool vsBots) {
     sc.logLevel = cfg_.hostLog;
     sc.duelTeamSize = cfg_.hostDuelSize;
     sc.arenaVariant = cfg_.hostArenaVariant;
-    sc.publicList = cfg_.hostPublic;
+    sc.publicList = cfg_.hostPublic || rankedQueue_;   // (RANKED's queue: always listed, so the next player finds it)
     sc.ranked = cfg_.hostRanked;
     if (!vsBots && !sc.ranked && !cfg_.hostCustom.empty()) { // a custom mode: its rules, its mode, a map from its pool
         if (loadCustomMode(cfg_.hostCustom, sc.custom)) {
@@ -468,6 +469,7 @@ void Game::leaveGame(const std::string& error) {
     hudEditClose();
     if (settingsInGame_) cfg_.save();
     settingsInGame_ = voteSetup_ = voteMenu_ = specPick_ = queueMenu_ = practiceMenu_ = playersMenu_ = fontsOpen_ = devicesOpen_ = widgetEdit_ = false;
+    modelPick_ = 0;
     setTab_ = TAB_PLAYER; controlsSub_ = 0;
     ui_.closePopup();
     picker_ = PICK_NONE;
@@ -485,6 +487,7 @@ void Game::leaveGame(const std::string& error) {
 
 void Game::setScreen(Screen s) {
     if (s == Screen::CustomMode && screen_ != Screen::CustomMode) customFromMain_ = screen_ == Screen::Main;
+    if (screen_ == Screen::Main && s != Screen::Main) stripFromTab_ = mainTab_;   // (the strip keeps that tab lit there)
     screen_ = s;
     uiIn_.pressed = uiIn_.rpressed = false; // the click that changed screens doesn't also press whatever is under it on the new one
     ui_.clearFocus();
@@ -780,10 +783,126 @@ int Game::bestRankedMap(int ladder) const {
     return any < 0 ? 0 : any;
 }
 
+// QUICK PLAY: your channel's official server (a testing build: the TESTING server, else production - review round 3:
+// it could send a stable player to the testing build), asked afresh, when it answers and has room; full: an unranked
+// server with players and room (never a ranked one: a casual player in a rated 1v1); no answer within 3 s: bots,
+// saying so. Pressing it starts a short FINDING A GAME... (quickPlayTick, each frame) - never a blind connect.
+static size_t quickOfficial() {
+    int dots = 0;
+    for (const char* p = kQuarkVersion; *p; p++) dots += *p == '.';
+    return dots >= 3 && kOfficialServerCount > 1 ? 1 : 0;   // (x.y.z.N: a testing build)
+}
+
+void Game::quickPlay() {
+    if (kOfficialServerCount == 0) return;
+    const size_t k = quickOfficial();
+    browser_.query(NetAddr{kOfficialServers[k].ip, kOfficialServers[k].port}.toString());
+    quickAt_ = time_;
+}
+
+void Game::quickPlayTick() {
+    if (quickAt_ < 0) return;
+    if (screen_ != Screen::Main || queueLadder_ >= 0) { quickAt_ = -1; return; }
+    const size_t k = quickOfficial();
+    const ServerInfo* off = nullptr;
+    for (const ServerInfo& c : browser_.servers())
+        if (c.addr.ip == kOfficialServers[k].ip && c.addr.port == kOfficialServers[k].port && !c.noReply) off = &c;
+    const ServerInfo* best = off && off->players < off->maxPlayers ? off : nullptr;
+    if (!best && off)   // (full: an unranked game with people in it and room)
+        for (const ServerInfo& sv : browser_.servers())
+            if (!sv.noReply && sv.rankedLadder < 0 && !sv.official && sv.players > 0 && sv.players < sv.maxPlayers && (!best || sv.ping < best->ping)) best = &sv;
+    if (best) { quickAt_ = -1; joinAddr_ = best->addr.toString(); connectTo(joinAddr_); return; }
+    if (off) { quickAt_ = -1; notify("EVERY SERVER IS FULL - PLAYING BOTS", 6); startHost(true); return; }
+    if (time_ - quickAt_ < 3) return;
+    quickAt_ = -1;
+    notify("NO SERVER ANSWERED - PLAYING BOTS", 6);
+    startHost(true);
+}
+
+// RANKED's queue (the main menu's RANKED, a ladder picked): join the ranked game on that ladder with someone waiting
+// in it (lowest ping; servers 1.19.9+ say their ladder in the info reply), else host one on its own map, listed so
+// the next player to queue finds it. Uses the list the main menu keeps fresh (every 10 s).
+void Game::findRankedMatch(int ladder) {
+    // (review round 2: it decided at once from a list up to 10 s old and hosted without a word; round 3: after 3 s,
+    // so two players queueing together both hosted, and it left HOST set to ranked) - a FINDING A RANKED MATCH card
+    // over the main menu (drawRankedQueue): ~20 s of looking, HOST NOW, CANCEL; HOST's own settings untouched
+    picker_ = PICK_NONE;
+    variantCtx_ = 0;
+    cfg_.lastLadder = ladder;   // (the queue's picker starts on it next time)
+    cfg_.save();
+    queueLadder_ = ladder;
+    queueAt_ = time_;
+    // (20 s plus up to 5 s at random: two players who queue together don't both give up and host at the same moment)
+    static std::mt19937 rng{std::random_device{}()};
+    queueHostAfter_ = 20 + std::uniform_real_distribution<double>(0, 5)(rng);
+    queueRefreshed_ = time_;
+    browser_.refresh();
+    browserAt_ = time_;
+    setScreen(Screen::Main);
+}
+
+// RANKED's queue hosting: a public ranked game on the ladder's own map, with HOST's settings put back after (they're
+// HOST's: review round 3 found the next HOST opening as RANKED, bots greyed out)
+void Game::hostRankedQueue(int ladder) {
+    const bool wasRanked = cfg_.hostRanked;
+    const int wasVariant = cfg_.hostArenaVariant, wasMap = hostMapIdx_, wasMode = hostModeIdx_;
+    cfg_.hostRanked = true;
+    cfg_.hostArenaVariant = ladder;
+    hostMapIdx_ = bestRankedMap(ladder);
+    hostModeIdx_ = rankedMode(ladder);
+    rankedQueue_ = true;   // (startHost: on the server list whatever HOST's PUBLIC says)
+    startHost();
+    rankedQueue_ = false;
+    cfg_.hostRanked = wasRanked;
+    cfg_.hostArenaVariant = wasVariant;
+    hostMapIdx_ = wasMap;
+    hostModeIdx_ = wasMode;
+}
+
+// the queue's card: joins a ranked server on the ladder with someone waiting as soon as one answers (the list asked
+// again at 10 s); with none by ~20 s, or HOST NOW, hosts one listed publicly so the next player to queue finds it
+void Game::drawRankedQueue() {
+    const SetLayout L = menuLayout(560);
+    const float bw = L.L(528);
+    float y = 360 - 100;
+    ui_.panel(L.X(360), L.Y(y - 16), L.L(560), L.L(200), 0.94f);
+    ui_.labelCentered(L.X(640), L.Y(y), "FINDING A RANKED MATCH", kWhite, 1.25f, bw);
+    y += 32;
+    ui_.labelCentered(L.X(640), L.Y(y), arenaVariant(queueLadder_).title, ui_.accent, 1.0f, bw);
+    y += 26;
+    const int secs = (int)std::max(0.0, time_ - queueAt_), left = (int)std::ceil(std::max(0.0, queueHostAfter_ - (time_ - queueAt_)));
+    char b[64];
+    snprintf(b, sizeof b, "%d:%02d", secs / 60, secs % 60);
+    ui_.hintCentered(L.X(640), L.Y(y), "LOOKING FOR SOMEONE WAITING ON THIS LADDER", kGrey, bw);
+    ui_.hintCentered(L.X(640), L.Y(y + 18), b, kGrey, bw);
+    snprintf(b, sizeof b, "NOBODY YET: YOU HOST IN %d S", left);
+    static std::string hostIn;
+    hostIn = b;
+    ui_.hintCentered(L.X(640), L.Y(y + 36), hostIn, kGrey, bw);
+    y += 68;
+    const bool listDown = browser_.listFailed();
+    if (ui_.button(L.X(640 - 188), L.Y(y), L.L(180), L.L(40), "CANCEL", UiExp::nav("main*").withId("CANCEL")) || uiIn_.escape) { queueLadder_ = -1; return; }
+    const bool hostNow = ui_.button(L.X(640 + 8), L.Y(y), L.L(180), L.L(40), "HOST NOW", UiExp::state("hosting", "1").optional().withId("HOST NOW"));
+    if (ui_.probing()) return;   // (the UI test: the card, not a game)
+    const ServerInfo* best = nullptr;
+    for (const ServerInfo& sv : browser_.servers())
+        if (!sv.noReply && sv.rankedLadder == queueLadder_ && sv.players > 0 && sv.players < sv.maxPlayers && (!best || sv.ping < best->ping)) best = &sv;
+    const int ladder = queueLadder_;
+    if (best) { queueLadder_ = -1; joinAddr_ = best->addr.toString(); connectTo(joinAddr_); return; }
+    if (time_ - queueRefreshed_ > 10) { queueRefreshed_ = time_; browser_.refresh(); browserAt_ = time_; }
+    if (!hostNow && time_ - queueAt_ < queueHostAfter_) return;
+    queueLadder_ = -1;
+    // (the list down: nobody can find the game, so no promise of an opponent)
+    notify(listDown ? "SERVER LIST UNREACHABLE - HOSTING A RANKED GAME ONLY YOUR ADDRESS REACHES"
+                    : "NOBODY WAITING - HOSTING A RANKED GAME, THE NEXT PLAYER TO QUEUE JOINS YOU", 8);
+    hostRankedQueue(ladder);
+}
+
 // The map built for this mode if there is one, else the first map that supports it.
 // A mode's default map where several are built for it (owner, 2026-10-30: "surfy map is default surf gamemode map").
 static const char* defaultMapName(int mode) {
     switch (mode) {
+    case MODE_FFA: return "sewer";   // (built for it, HOST's default; cobblestone, the benchmark map, supports FFA too: review 2026-11-04)
     case MODE_SURF: return "surfy";
     case MODE_BALL: return "qk8";   // (owner, 2026-11-01: qk8 and the bridge)
     default: return nullptr;
@@ -1066,6 +1185,8 @@ void Game::onKey(int key, int action, int mods) {
             return;
         }
     }
+    // the model picker: the arrows move its choice, Enter picks it
+    if (modelPick_ && settingsShown() && setTab_ != TAB_SEARCH && !chatting_ && !console_ && !ui_.typing() && captureAction_ < 0 && !ui_.popupOpen() && modelPickerKey(key)) return;
     // settings: Left / Right turn the tab's page (the page strip's arrows), when nothing else has the keyboard
     if ((key == GLFW_KEY_LEFT || key == GLFW_KEY_RIGHT) && !(mods & (GLFW_MOD_CONTROL | GLFW_MOD_ALT | GLFW_MOD_SUPER)) && settingsPageKeys()) {
         settingsPage(moreOpen_ + (key == GLFW_KEY_RIGHT ? 1 : -1));
@@ -1113,6 +1234,7 @@ void Game::onKey(int key, int action, int mods) {
             if (filePick_) { filePick_ = 0; return; }
             if (widgetEdit_) { widgetEdit_ = false; widgets_.save(activeHudPath()); return; }
             if (hudEdit_) { hudEditClose(); return; }   // (EDIT ON SCREEN: back to the HUD tab)
+            if (modelPick_) { modelPick_ = 0; cfg_.save(); return; }   // (the model picker: back to its page)
             if (fontsOpen_) { fontsOpen_ = false; cfg_.save(); return; }   // (FONT: back to PLAYER)
             if (devicesOpen_) { devicesOpen_ = false; cfg_.save(); return; }   // (DEVICES: back to VIDEO + AUDIO)
             if (moreOpen_) { moreOpen_ = false; cfg_.save(); return; }   // (MORE: back to its tab)
@@ -1131,11 +1253,12 @@ void Game::onKey(int key, int action, int mods) {
         if (filePick_) { filePick_ = 0; return; }
         if (widgetEdit_) { widgetEdit_ = false; widgets_.save(activeHudPath()); return; }
         if (hudEdit_) { hudEditClose(); return; }   // (EDIT ON SCREEN: back to the HUD tab)
+        if (modelPick_ && screen_ == Screen::Settings) { modelPick_ = 0; cfg_.save(); return; }   // (the model picker: back to its page)
         if (fontsOpen_) { fontsOpen_ = false; cfg_.save(); return; }   // (FONT: back to PLAYER)
         if (devicesOpen_) { devicesOpen_ = false; cfg_.save(); return; }   // (DEVICES: back to VIDEO + AUDIO)
         if (moreOpen_) { moreOpen_ = false; cfg_.save(); return; }   // (MORE: back to its tab)
         if (screen_ == Screen::Settings) { leaveSettings(); return; }   // (any tab: as BACK)
-        if (picker_ != PICK_NONE) { picker_ = PICK_NONE; return; }
+        if (picker_ != PICK_NONE) { if (picker_ == PICK_RANKED && variantCtx_ == 3 && screen_ == Screen::Host) setScreen(Screen::Main); picker_ = PICK_NONE; return; }
         if (screen_ == Screen::Leaderboard && raceStatsView_) { raceStatsView_ = false; return; } // race stats: back to the board
         if (screen_ == Screen::CustomMode) { setScreen(customFromMain_ ? Screen::Main : Screen::Host); return; }   // same as its BACK (unsaved changes dropped)
         if (screen_ == Screen::Host && hostAdvanced_) { hostAdvanced_ = false; cfg_.save(); return; }   // ADVANCED: back to HOST, as its BACK
@@ -1153,6 +1276,13 @@ void Game::onFocus(bool focused) {
     if (focused) focusGained_ = true; else swallowedBtn_ = 0;   // (let go while away: no release comes)
     if (!opts_.uiTest) setGamePriority(prioLevel(focused));   // (alt-tabbed: the other programs get their share back)
     focused_ = focused;
+    // Exclusive fullscreen at its own FULLSCREEN SIZE, alt-tabbed: the desktop goes back to its own resolution (owner,
+    // 2026-11-05), which only a minimized window gives back (GLFW lets the display mode go then, and takes it again
+    // when the game is brought back). MINIMIZE ON ALT-TAB on does that already for every size.
+    if (!focused && !opts_.uiTest && cfg_.displayMode == 2 && !cfg_.autoIconify && glfwGetWindowMonitor(win_) && cfg_.fsWidth > 0 && cfg_.fsHeight > 0) {
+        const DeskMode d = desktopMode(glfwGetWindowMonitor(win_));
+        if (d.w != cfg_.fsWidth || d.h != cfg_.fsHeight) glfwIconifyWindow(win_);
+    }
     applyBackground();
 }
 
@@ -1310,6 +1440,7 @@ void Game::onScroll(double dy) {
     if (screen_ == Screen::Join) { joinScroll_ = std::max(0, joinScroll_ - (dy > 0 ? 1 : -1)); return; }
     if (hudEdit_ && !chatting_ && setTab_ == TAB_HUD && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) { hudEdWheel_ += dy; return; }
     if (setTab_ == TAB_SEARCH && settingsShown()) { searchScroll_ = std::max(0, searchScroll_ - (dy > 0 ? 2 : -2)); return; }   // (2 rows a notch; clamped when drawn)
+    if (modelPick_ && settingsShown() && setTab_ != TAB_SEARCH) { modelScroll_ = std::max(0, modelScroll_ - (dy > 0 ? 1 : -1)); return; }   // (a row a notch; clamped when drawn)
     if (fontsOpen_ && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) { fontScroll_ = std::max(0, fontScroll_ - (dy > 0 ? 1 : -1)); return; }   // (clamped when drawn)
     if (devicesOpen_ && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) {   // (the list under the mouse)
         for (int k = 0; k < 3; k++) {
@@ -2616,17 +2747,23 @@ void Game::drawWorld(float alpha) {
 
     Vec3 dbgBombPos;   // (--models in bomb mode: a dropped bomb in front of the lineup, which carries it)
     const bool dbgBomb = opts_.debugModels && alive && ms.mode == MODE_BOMB;
+    // (--models: the lineup is a batch of kLineup models in the last kLineup player slots, --modelpage N the Nth batch:
+    // more models than player slots, 64 planned, never need more slots)
+    constexpr int kLineup = 11;
+    static_assert(kLineup < kMaxPlayers, "the lineup's slots are the last player slots");
+    const int lineupFirst = std::min(opts_.debugModelPage, (kPlayerModels - 1) / kLineup) * kLineup;
+    const int lineupN = std::min(kLineup, kPlayerModels - lineupFirst);
     if (opts_.debugModels && alive) { // model lineup for screenshots: the last slots, 5 m ahead, facing you
         Vec3 f = {-std::sin(yaw_), 0, -std::cos(yaw_)}, rt = {std::cos(yaw_), 0, -std::sin(yaw_)};
         dbgBombPos = net_.smoothedPos(alpha) + f * 3.0f;
-        for (int k = 0; k < kPlayerModels; k++) {
-            auto& ip = players[kMaxPlayers - kPlayerModels + k];
+        for (int k = 0; k < lineupN; k++) {
+            auto& ip = players[kMaxPlayers - kLineup + k];
             ip.valid = true;
             ip.snap = PlayerSnap{};
-            ip.snap.id = (uint8_t)(kMaxPlayers - kPlayerModels + k);
+            ip.snap.id = (uint8_t)(kMaxPlayers - kLineup + k);
             ip.snap.flags = PS_ALIVE | (k % 2 ? PS_TEAM_B : 0);
             ip.snap.pos = net_.smoothedPos(alpha) + f * 5.0f + rt * ((k - 2) * 1.5f);
-            if (opts_.debugWalk) ip.snap.pos = net_.smoothedPos(alpha) + f * 7.0f + rt * ((k - 5) * 1.15f);   // (all 11 in view)
+            if (opts_.debugWalk) ip.snap.pos = net_.smoothedPos(alpha) + f * 7.0f + rt * ((k - 5) * 1.15f);   // (all 11 of the batch in view)
             ip.snap.yaw = yaw_ + 3.14159265f;
             if (opts_.debugWalk) ip.snap.yaw = yaw_ - 1.5707963f;   // (side-on: the strides show)
             if (dbgBomb) { ip.snap.flags |= PS_HASBOMB; ip.snap.yaw -= 2.3f; }   // (turned away: the backpack shows)
@@ -2671,12 +2808,12 @@ void Game::drawWorld(float alpha) {
             const float adt = at.init ? (float)(time_ - animT_[i]) : 0.0f;
             animT_[i] = time_;
             animStep(at, pos / bs, yaw, pitch, ground, adt);   // (in model metres: a double-size body steps as far)
-            if (opts_.debugModels && i >= kMaxPlayers - kPlayerModels) {   // (--models: the lineup runs in place, each a step apart)
-                const int k = i - (kMaxPlayers - kPlayerModels);
+            if (opts_.debugModels && i >= kMaxPlayers - kLineup) {   // (--models: the lineup runs in place, each a step apart)
+                const int k = i - (kMaxPlayers - kLineup);
                 at.s.speed = k % 3 == 2 ? 3.0f : 7.0f;
                 at.s.phase = (float)std::fmod(time_ * 1.6 + k * 0.09, 1.0);
                 at.s.legYaw = k % 4 == 1 ? 0.6f : 0.0f;
-                at.s.air = k == kPlayerModels - 1 ? 1.0f : 0.0f;
+                at.s.air = k == kLineup - 1 ? 1.0f : 0.0f;
             }
         }
         if (self && alive && !cfg_.ownShadow) continue;   // (MORE 4: OWN SHADOW off: your unseen body isn't drawn at all)
@@ -2693,7 +2830,7 @@ void Game::drawWorld(float alpha) {
         // the player model (cosmetic: every model fits the same hitbox); ranked / time trial: the default for everyone
         // (GAMEPLAY > MORE: ENEMY MODEL / TEAM MODEL draw every enemy / teammate as one model)
         const bool friendly = !self && isFriendly(i);
-        const int pm = ranked ? 0 : opts_.debugModels && i >= kMaxPlayers - kPlayerModels ? i - (kMaxPlayers - kPlayerModels)
+        const int pm = ranked ? 0 : opts_.debugModels && i >= kMaxPlayers - kLineup ? lineupFirst + i - (kMaxPlayers - kLineup)
                      : cfg_.enemyModel >= 0 && !self && !friendly ? cfg_.enemyModel
                      : cfg_.teamModel >= 0 && friendly ? cfg_.teamModel : net_.playerModel(i);
         const ModelMesh* ov = modelOverride(MODEL_PLAYER, pm);
@@ -2709,7 +2846,15 @@ void Game::drawWorld(float alpha) {
             overrideTints(MODEL_PLAYER, pm, pal, tint);
             Mat4 sc;
             sc.m[0] = bs; sc.m[5] = bs * hs; sc.m[10] = bs;
-            r_.mesh(*ov, Mat4::translate(pos) * Mat4::rotY(yaw) * sc, tint, sv, true, vis);
+            const Mat4 w = Mat4::translate(pos) * Mat4::rotY(yaw) * sc;
+            if (cfg_.playerAnims && ov->rig.animated) {   // parts on joints (anim_<bone> nodes): posed like the box models
+                PlayerPose pose;
+                playerPose(anim_[i].s, ov->rig, pose);
+                Mat4 px[kMaxAnimParts];   // (a part: w * its bone * T(its pivot); the crouch squashes the posed body, as sc did)
+                const size_t n = std::min(ov->parts.size(), kMaxAnimParts);
+                for (size_t k = 0; k < n; k++) px[k] = mulAffine(w, posedPart(pose, ov->parts[k].tag, ov->parts[k].pivot));
+                r_.meshPosed(*ov, w, px, tint, sv, true, vis);
+            } else r_.mesh(*ov, w, tint, sv, true, vis);
         } else {
             if (const ModelParts* bx = boxOverride(MODEL_PLAYER, pm)) overrideBoxParts(MODEL_PLAYER, pm, *bx, pal, hs, parts_);
             else playerModelParts(pm, hs, pal, parts_);
@@ -5977,6 +6122,7 @@ void Game::drawLeaderboard(const SetLayout& L) {
     }
     const int kTop = 15;
     const float ts = ui_.textScale(), colW = 220, rowH = 20;
+    bool boardDown = false;   // a column couldn't reach the ranking server (review round 2: the same error four times)
     ui_.panel(L.X(160), L.Y(166), L.L(960), L.L(522), 0.85f);
     ui_.labelCentered(L.X(640), L.Y(182), "RANKED LEADERBOARD", kWhite, 1.5f, L.L(928));
     // a column: its name bar; rows: "1. NAME" and the number right-aligned (names cut to fit: they're data)
@@ -5987,7 +6133,7 @@ void Game::drawLeaderboard(const SetLayout& L) {
         ui_.labelCentered(L.X(x + colW * 0.5f), L.Y(230), title, kWhite, 1.0f, L.L(colW - 8));
         const float sx = L.X(x + 4), sw = L.L(colW - 8);
         if (!loaded) { ui_.hintWrapped(sx, L.Y(262), "LOADING...", kGrey, sw, L.L(14)); return; }
-        if (!rows->empty() && (*rows)[0].rating < 0) { ui_.hintWrapped(sx, L.Y(262), upper((*rows)[0].name), kGrey, sw, L.L(14)); return; }
+        if (!rows->empty() && (*rows)[0].rating < 0) { boardDown = true; return; }   // (one message for the board, under the columns)
         if (rows->empty()) ui_.hintWrapped(sx, L.Y(262), race ? "NO TIMES YET" : "NOBODY RANKED YET (3 GAMES)", kGrey, sw, L.L(14));
         for (size_t i = 0; i < rows->size() && i < (size_t)top; i++) {
             const RankService::LeaderRow& lr = (*rows)[i];
@@ -6034,6 +6180,11 @@ void Game::drawLeaderboard(const SetLayout& L) {
             ui_.hint(L.X(180 + 3 * 236) + L.L(colW - 8) - vw, L.Y(ly), v, it != mine.end() ? kWhite : kGrey, vw + 1);
         }
         if (ly + 14 <= 614) ui_.hintWrapped(L.X(180 + 3 * 236), L.Y(ly + 4), "UNPLAYED MAPS COUNT AT THEIR DEFAULT TIME", kGrey, L.L(colW - 8), L.L(13));
+    }
+    if (boardDown) {   // once, across the ladder columns, with RETRY (the next fetch is otherwise 30 s away)
+        ui_.labelCentered(L.X(176 + (3 * 236 - 16) * 0.5f), L.Y(300), "COULDN'T REACH THE RANKING SERVER", kWhite, 1.0f, L.L(3 * 236 - 32));
+        ui_.labelCentered(L.X(176 + (3 * 236 - 16) * 0.5f), L.Y(324), "CHECK YOUR CONNECTION, OR TRY AGAIN IN A MINUTE", kGrey, 1.0f, L.L(3 * 236 - 32));
+        if (ui_.button(L.X(176 + (3 * 236 - 16) * 0.5f - 70), L.Y(356), L.L(140), L.L(40), "RETRY", UiExp::inert().withId("RETRY"))) nextBoardFetch_ = 0;
     }
     {   // TRIAL MAP: which ranked race map PLAY TIME TRIAL starts
         const auto& rm = rankedRaceMaps();
@@ -6757,6 +6908,7 @@ void Game::openSettingsTab(int tab) {
     if (tab == TAB_LATENCY && !perfFuture_.valid()) perfChecked_ = false;   // (the performance check read again on each visit)
     controlsSub_ = 0;
     fontsOpen_ = devicesOpen_ = widgetEdit_ = false;
+    modelPick_ = 0;
     moreOpen_ = 0;
     widgetSel_ = -1;
     filePick_ = 0;
@@ -6805,6 +6957,8 @@ void Game::debugSettingsTab() {
     for (int i = 0; i < 8; i++) if (t.rfind(tabs[i], 0) == 0) setTab_ = i;
     if (t.rfind("search/", 0) == 0) setSearch_ = upper(t.substr(7));   // (search/QUERY: that typed)
     if (t == "fonts") fontsOpen_ = true;
+    if (t == "models") { setTab_ = TAB_PLAYER; openModelPicker(1); }   // (models/enemy, models/team: GAMEPLAY > MORE's)
+    if (t == "models/enemy" || t == "models/team") { setTab_ = TAB_GAMEPLAY; moreOpen_ = 1; openModelPicker(t == "models/enemy" ? 2 : 3); }
     if (t == "video/devices") { devicesOpen_ = true; devListed_ = false; }
     if (t == "video/more" || t == "controls/more" || t == "gameplay/more" || t == "player/more" || t == "hud/more") moreOpen_ = 1;
     if (t == "video/more2" || t == "gameplay/more2" || t == "controls/more2") moreOpen_ = 2;
@@ -6830,7 +6984,7 @@ void Game::debugSettingsTab() {
 void Game::drawSettings() {
     if (setTab_ == TAB_HUD && widgetEdit_) { drawWidgetEditor(); return; }   // (the HUD's widget editor: the whole screen)
     if (setTab_ == TAB_HUD && hudEdit_) { drawHudEditor(); return; }        // (EDIT ON SCREEN: the whole screen)
-    const SetLayout L{ui_.s(), r_.width() * 0.5f};
+    const SetLayout L{ui_.s(), menuStripPx_ + (r_.width() - menuStripPx_) * 0.5f};   // (right of the strip when it's up)
     const bool modal = setTab_ == TAB_CONTROLS && filePick_ == 2;   // the import list: the page under it takes nothing
     ui_.muted = modal;
     // HUD tab: the HUD under a see-through panel (in game drawHud drew the live one; the main menu's: sample values)
@@ -6853,6 +7007,7 @@ void Game::drawSettings() {
     }
     const size_t inkFrom = r_.uiMark();   // (the UI test: where the page's content starts)
     if (setTab_ == TAB_SEARCH) drawSearchTab(L);
+    else if (modelPick_) drawModelPicker(L);
     else if (fontsOpen_) drawFontSettings(L);
     else if (devicesOpen_) drawDeviceSettings(L);
     else if (moreOpen_) drawMoreSettings(L);
@@ -6870,7 +7025,9 @@ void Game::drawSettings() {
     if (ui_.probing()) { setFootTop_ = L.Y(footY); setInkBottom_ = r_.uiInkBottom(inkFrom, setFootTop_, setFootTop_ + L.L(kRowH)); }
     // the footer: BACK (FONT: back to PLAYER; DEVICES: to VIDEO + AUDIO; any page of a tab: out of settings), the
     // page strip in the middle, and the page's reset on the right (drawn by the page)
-    if (fontsOpen_) {
+    if (modelPick_ && setTab_ != TAB_SEARCH) {   // (the model picker: back to the page it was opened from)
+        if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav(modelPick_ == 1 ? "~settings" : "~settings/gameplay/more"))) { modelPick_ = 0; cfg_.save(); }
+    } else if (fontsOpen_) {
         if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav("~settings"))) { fontsOpen_ = false; cfg_.save(); }
     } else if (devicesOpen_) {
         if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav("~settings/video"))) { devicesOpen_ = false; cfg_.save(); }
@@ -6878,7 +7035,7 @@ void Game::drawSettings() {
         leaveSettings();
         return;
     }
-    if (!fontsOpen_ && !devicesOpen_ && !modal && morePages() > 0) drawSettingsPages(L, footY);
+    if (!fontsOpen_ && !devicesOpen_ && !modelPick_ && !modal && morePages() > 0) drawSettingsPages(L, footY);
     if (ui_.probing() && !modal && !ui_.typing() && !ui_.popupOpen() && captureAction_ < 0 && !widgetEdit_ && !hudEdit_) {   // (the UI test: the search keys)
         if (setTab_ != TAB_SEARCH) {
             ui_.keyAction("CTRL+F (SEARCH)", GLFW_KEY_F, GLFW_MOD_CONTROL, UiExp::nav("~settings/search"));
@@ -6972,9 +7129,9 @@ void Game::drawPlayerSettings(const SetLayout& L) {
     SetFlow g{ui_, L, kColR, 90};
     g.header("LOOK");
     {
-        static std::vector<std::string> mn;
-        if (mn.empty()) for (int i = 0; i < kPlayerModels; i++) mn.push_back(std::string("PLAYER MODEL: ") + playerModelName(i));
-        ui_.cycle(g.x(), g.top(), w, h, "MODEL", cfg_.model, kPlayerModels, mn, UiExp::cfg("model"));
+        // (the model picker: every model drawn, in a grid of its own; settings/models)
+        if (ui_.button(g.x(), g.top(), w, h, std::string("PLAYER MODEL: ") + playerModelName(cfg_.model) + "  >", UiExp::nav("~settings/models").withId("MODEL")))
+            openModelPicker(1);
         g.next();
     }
     {   // your name's colour as everyone sees it (scoreboard, chat, kill feed): off (the default), or one picked
@@ -7082,52 +7239,41 @@ void Game::drawCompassRadar(float W, float H, float s) {
     }
 }
 
-// The PLAYER tab's model preview: the chosen model's boxes (playerModelParts, or a box override) in your team colour,
-// turned by previewYaw_ and seen a little from above, projected flat (orthographic) into the 2D batch: each box's
-// faces toward the camera, lit by one light, far faces first. A mesh override has no boxes: a line says so.
-void Game::drawModelPreview(float x, float y, float w, float h) {
-    if (ui_.relocating()) return;   // (settings SEARCH draws the PLAYER page for its widgets only)
-    r_.rect(x, y, w, h, {0, 0, 0, 0.25f});
-    const int pm = std::min(std::max(cfg_.model, 0), kPlayerModels - 1);
-    if (modelOverride(MODEL_PLAYER, pm)) {
-        ui_.hintCentered(x + w * 0.5f, y + h * 0.5f - 6, "YOUR OWN MODEL FILE: NO PREVIEW HERE", kGrey, w - 16);
-        return;
-    }
-    // turning: slowly by itself, or with the mouse while dragged (pressed over the box, held)
-    if (uiIn_.pressed && ui_.over(x, y, w, h)) { previewDrag_ = true; previewLastX_ = uiIn_.mx; }
-    if (!uiIn_.down) previewDrag_ = false;
-    if (previewDrag_) { previewYaw_ += (uiIn_.mx - previewLastX_) * 0.012f; previewLastX_ = uiIn_.mx; }
-    else previewYaw_ += (float)frameDt_ * 0.6f;
-    previewYaw_ = std::fmod(previewYaw_, 6.2831853f);
+// A player model as flat 2D faces, for the menus (the PLAYER tab's preview, the model picker's thumbnails and its
+// hovered model): the model's boxes (playerModelParts, or a box override) in the team colour, turned by yaw and seen a
+// little from above, projected flat (orthographic) to fit the box x y w h: each box's faces toward the camera, lit by
+// one light, into previewFaces_ far faces first. phase >= 0: walking in place at that point of the stride (PLAYER
+// ANIMATIONS on, a model with leg joints). false: a mesh override, which has no boxes to show.
+bool Game::modelFaces(int pm, const Vec3& team, float yaw, float phase, float x, float y, float w, float h, bool tight) {
+    previewFaces_.clear();
+    if (modelOverride(MODEL_PLAYER, pm)) return false;
     ModelPalette pal;
-    pal.c[TINT_TEAM] = cfg_.colorFriendly;
+    pal.c[TINT_TEAM] = team;
     if (const ModelParts* bx = boxOverride(MODEL_PLAYER, pm)) overrideBoxParts(MODEL_PLAYER, pm, *bx, pal, 1.0f, previewParts_);
     else playerModelParts(pm, 1.0f, pal, previewParts_);
-    const float cy = std::cos(previewYaw_), sy = std::sin(previewYaw_);
+    const float cy = std::cos(yaw), sy = std::sin(yaw);
     const float cp = std::cos(0.25f), sp = std::sin(0.25f);   // (seen 14 degrees from above)
-    const float k = std::min(h * 0.88f / 2.25f, w * 0.4f), ox = x + w * 0.5f, oy = y + h * 0.5f + 1.0f * k * cp;   // (2 m tall, centred)
+    // (2 m tall, centred; tight: the picker's cards, filled as far as a turning model allows)
+    const float k = tight ? std::min(h * 0.94f / 2.08f, w / 1.15f) : std::min(h * 0.88f / 2.25f, w * 0.4f), ox = x + w * 0.5f, oy = y + h * 0.5f + 1.0f * k * cp;
     // model space -> view (x right, y up, z toward the camera)
     auto view = [&](Vec3 p) {
         const Vec3 r = {cy * p.x + sy * p.z, p.y, -sy * p.x + cy * p.z};
         return Vec3{r.x, cp * r.y - sp * r.z, sp * r.y + cp * r.z};
     };
     const Vec3 light = normalize(Vec3{-0.4f, 0.7f, 0.6f});
-    // PLAYER ANIMATIONS: walking in place, slowly (off, or a model without leg bones: standing)
     PlayerRig rig;
-    if (cfg_.playerAnims) playerRig(previewParts_, rig);
+    if (cfg_.playerAnims && phase >= 0) playerRig(previewParts_, rig);
     PlayerPose pose;
     if (rig.animated) {
         AnimState as;
         as.speed = 2.2f;
-        previewPhase_ = (float)std::fmod(previewPhase_ + frameDt_ * as.speed / kAnim.walkStride, 1.0);
-        as.phase = previewPhase_;
+        as.phase = phase;
         playerPose(as, rig, pose);
     }
     auto xform = [](const Mat4& m, const Vec3& p, float w) {   // (w 1: a point, 0: a direction)
         return Vec3(m.m[0] * p.x + m.m[4] * p.y + m.m[8] * p.z + m.m[12] * w, m.m[1] * p.x + m.m[5] * p.y + m.m[9] * p.z + m.m[13] * w,
                     m.m[2] * p.x + m.m[6] * p.y + m.m[10] * p.z + m.m[14] * w);
     };
-    previewFaces_.clear();
     static const int kFace[6][4] = {{1, 3, 7, 5}, {0, 4, 6, 2}, {2, 6, 7, 3}, {0, 1, 5, 4}, {4, 5, 7, 6}, {0, 2, 3, 1}};   // +x -x +y -y +z -z
     static const Vec3 kN[6] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
     for (const ModelPart& q : previewParts_) {
@@ -7154,8 +7300,175 @@ void Game::drawModelPreview(float x, float y, float w, float h) {
         }
     }
     std::sort(previewFaces_.begin(), previewFaces_.end(), [](const PreviewFace& a, const PreviewFace& b) { return a.z < b.z; });
-    for (const PreviewFace& pf : previewFaces_) r_.quad2D(pf.xy, pf.c);
+    return true;
+}
+
+// previewFaces_ drawn through quad(xy, colour), far first, each face with its 1 px outline (`edge` px wide, the game's
+// box outline look: a dark band inside every face edge, so a nearer face's covers a farther one's)
+template <class Quad>
+void Game::drawPreviewFaces(const std::vector<PreviewFace>& faces, float edge, Quad&& quad) {
+    const Color dark = {0.03f, 0.03f, 0.04f, 1};
+    for (const PreviewFace& pf : faces) {
+        quad(pf.xy, pf.c);
+        if (edge <= 0) continue;
+        float cx = 0, cy = 0;
+        for (int i = 0; i < 4; i++) { cx += pf.xy[2 * i] * 0.25f; cy += pf.xy[2 * i + 1] * 0.25f; }
+        for (int i = 0; i < 4; i++) {   // (each edge as a thin quad from the edge toward the face's centre)
+            const int j = (i + 1) & 3;
+            const float ax = pf.xy[2 * i], ay = pf.xy[2 * i + 1], bx = pf.xy[2 * j], by = pf.xy[2 * j + 1];
+            float nx = -(by - ay), ny = bx - ax;
+            const float len = std::sqrt(nx * nx + ny * ny);
+            if (len < 1e-3f) continue;
+            nx /= len; ny /= len;
+            if (nx * (cx - ax) + ny * (cy - ay) < 0) { nx = -nx; ny = -ny; }   // (inward)
+            const float xy[8] = {ax, ay, bx, by, bx + nx * edge, by + ny * edge, ax + nx * edge, ay + ny * edge};
+            quad(xy, Color{dark.r, dark.g, dark.b, pf.c.a});
+        }
+    }
+}
+
+// The PLAYER tab's model preview: your model (modelFaces) turning, walking in place; drag it to turn it. A mesh
+// override has no boxes: a line says so.
+void Game::drawModelPreview(float x, float y, float w, float h) {
+    if (ui_.relocating()) return;   // (settings SEARCH draws the PLAYER page for its widgets only)
+    r_.rect(x, y, w, h, {0, 0, 0, 0.25f});
+    const int pm = std::min(std::max(cfg_.model, 0), kPlayerModels - 1);
+    // turning: slowly by itself, or with the mouse while dragged (pressed over the box, held)
+    if (uiIn_.pressed && ui_.over(x, y, w, h)) { previewDrag_ = true; previewLastX_ = uiIn_.mx; }
+    if (!uiIn_.down) previewDrag_ = false;
+    if (previewDrag_) { previewYaw_ += (uiIn_.mx - previewLastX_) * 0.012f; previewLastX_ = uiIn_.mx; }
+    else previewYaw_ += (float)frameDt_ * 0.6f;
+    previewYaw_ = std::fmod(previewYaw_, 6.2831853f);
+    previewPhase_ = (float)std::fmod(previewPhase_ + frameDt_ * 2.2f / kAnim.walkStride, 1.0);   // (walking at 2.2 m/s)
+    if (!modelFaces(pm, cfg_.colorFriendly, previewYaw_, previewPhase_, x, y, w, h)) {
+        ui_.hintCentered(x + w * 0.5f, y + h * 0.5f - 6, "YOUR OWN MODEL FILE: NO PREVIEW HERE", kGrey, w - 16);
+        return;
+    }
+    drawPreviewFaces(previewFaces_, ui_.s(), [&](const float* xy, const Color& c) { r_.quad2D(xy, c); });
     ui_.hint(x + 6, y + 4, "DRAG TO TURN", kGrey);
+}
+
+// ---- The model picker (settings/models; modelPick_) ------------------------------------------------------------------
+// 8 cards a row, 4 rows on screen (the wheel or the arrows scroll the rest), each its model's thumbnail over its
+// name. The thumbnails are drawn once into Renderer::thumbAtlas (a cell each, at the cards' pixel size: sharp at every
+// resolution) when the picker opens with a new key (colour, size, theme, ranked's shipped-only models); each frame
+// costs one textured quad a card. Only the hot card (under the mouse, or the keyboard's) is drawn live: turning,
+// walking in place, a few hundred quads, as the PLAYER tab's preview.
+static void tabFrame(Renderer& r, const Ui& ui, float x, float y, float w, float h);
+namespace {
+constexpr int kPickCols = 8, kPickRows = 4;
+constexpr float kPickX = 268, kPickTop = 112, kPickGap = 8, kPickW = (744 - kPickGap * (kPickCols - 1)) / kPickCols, kPickImgH = 100, kPickNameH = 18;
+constexpr float kThumbYaw = 3.14159265f - 0.55f;   // (front three-quarter: the model faces -Z)
+}
+
+void Game::openModelPicker(int which) {
+    modelPick_ = which;
+    modelScroll_ = -1;   // (scrolled to the current one when drawn)
+    modelCursor_ = -1;
+    pickAnimOf_ = -1;
+    ui_.closePopup();
+}
+
+bool Game::modelPickerKey(int key) {
+    const int n = kPlayerModels + (modelPick_ == 1 ? 0 : 1);
+    const int cur = modelPick_ == 1 ? cfg_.model : (modelPick_ == 2 ? cfg_.enemyModel : cfg_.teamModel) + 1;
+    int c = modelCursor_ >= 0 ? modelCursor_ : cur;
+    switch (key) {
+        case GLFW_KEY_LEFT: c--; break;
+        case GLFW_KEY_RIGHT: c++; break;
+        case GLFW_KEY_UP: c -= kPickCols; break;
+        case GLFW_KEY_DOWN: c += kPickCols; break;
+        case GLFW_KEY_PAGE_UP: c -= kPickCols * kPickRows; break;
+        case GLFW_KEY_PAGE_DOWN: c += kPickCols * kPickRows; break;
+        case GLFW_KEY_HOME: c = 0; break;
+        case GLFW_KEY_END: c = n - 1; break;
+        case GLFW_KEY_ENTER: case GLFW_KEY_KP_ENTER: case GLFW_KEY_SPACE: {
+            int& v = modelPick_ == 1 ? cfg_.model : modelPick_ == 2 ? cfg_.enemyModel : cfg_.teamModel;
+            v = modelPick_ == 1 ? c : c - 1;
+            cfg_.save();
+            return true;
+        }
+        default: return false;
+    }
+    modelCursor_ = std::clamp(c, 0, n - 1);
+    const int row = modelCursor_ / kPickCols;   // (kept in view)
+    if (modelScroll_ >= 0) modelScroll_ = std::clamp(modelScroll_, row - kPickRows + 1, row);
+    return true;
+}
+
+void Game::drawModelPicker(const SetLayout& L) {
+    const int which = modelPick_;
+    const bool force = which != 1;   // (ENEMY / TEAM MODEL: card 0 is THEIR OWN)
+    const int n = kPlayerModels + (force ? 1 : 0);
+    int& value = which == 1 ? cfg_.model : which == 2 ? cfg_.enemyModel : cfg_.teamModel;
+    const int cur = force ? value + 1 : value;
+    const Vec3 team = which == 2 ? cfg_.colorEnemy : cfg_.colorFriendly;
+    const char* key = which == 1 ? "model" : which == 2 ? "enemy_model" : "team_model";
+    const int rowsAll = (n + kPickCols - 1) / kPickCols, rows = std::min(rowsAll, kPickRows);
+    if (modelScroll_ < 0) modelScroll_ = cur / kPickCols - rows / 2;
+    modelScroll_ = std::clamp(modelScroll_, 0, rowsAll - rows);
+    ui_.label(L.X(kPickX), L.Y(84), which == 1 ? "PLAYER MODEL" : which == 2 ? "ENEMY MODEL" : "TEAM MODEL", ui_.accent, 1.0f, L.L(360));
+    ui_.hint(L.X(kPickX + 368), L.Y(88), which == 1 ? "EVERY MODEL HAS THE SAME HITBOX - RANKED: EVERYONE IS STANDARD"
+                                                    : "EVERY ENEMY / TEAMMATE AS ONE MODEL (NOT IN RANKED)", kGrey, L.L(744 - 368));
+    // the thumbnails: again only when what they show changes
+    const int cw = std::max(8, (int)std::lround(L.L(kPickW))), ch = std::max(8, (int)std::lround(L.L(kPickImgH)));
+    const Color bg = ui_.btnC(), bgHot = ui_.contrast ? Color{0.12f, 0.12f, 0.12f, 1} : Color{0.2f, 0.23f, 0.29f, 1};
+    uint64_t k = 1469598103934665603ull;
+    auto mix = [&](uint64_t v) { k = (k ^ v) * 1099511628211ull; };
+    auto mixf = [&](float f) { uint32_t b; memcpy(&b, &f, 4); mix(b); };
+    mix((uint64_t)cw); mix((uint64_t)ch); mix((uint64_t)kPlayerModels); mix(fairModels_ ? 1 : 0);
+    mixf(team.x); mixf(team.y); mixf(team.z); mixf(bg.r); mixf(bg.g); mixf(bg.b); mixf(ui_.s());
+    if (k != pickKey_ && !ui_.relocating()) {
+        pickKey_ = k;
+        r_.thumbAtlas(cw, ch, kPlayerModels);
+        for (int m = 0; m < kPlayerModels; m++) {
+            const float full[8] = {0, 0, (float)cw, 0, (float)cw, (float)ch, 0, (float)ch};
+            r_.thumbQuad(m, full, Color{bg.r, bg.g, bg.b, 1});
+            if (modelFaces(m, team, kThumbYaw, -1, 0, 0, (float)cw, (float)ch, true))
+                drawPreviewFaces(previewFaces_, std::max(1.0f, ui_.s()), [&](const float* xy, const Color& c) { r_.thumbQuad(m, xy, c); });
+        }
+    }
+    // the hot card: under the mouse (it moves the keyboard's choice too), else the keyboard's
+    for (int r = 0; r < rows; r++)
+        for (int c = 0; c < kPickCols; c++) {
+            const int i = (modelScroll_ + r) * kPickCols + c;
+            if (i < n && ui_.over(L.X(kPickX + c * (kPickW + kPickGap)), L.Y(kPickTop + r * (kPickImgH + kPickNameH + kPickGap)), L.L(kPickW), L.L(kPickImgH + kPickNameH)))
+                modelCursor_ = i;
+        }
+    const int hot = modelCursor_;
+    if (hot != pickAnimOf_) { pickAnimOf_ = hot; pickYaw_ = kThumbYaw; pickPhase_ = 0; }   // (it starts as its thumbnail stands)
+    pickYaw_ = std::fmod(pickYaw_ + (float)frameDt_ * 1.2f, 6.2831853f);
+    pickPhase_ = (float)std::fmod(pickPhase_ + frameDt_ * 2.2f / kAnim.walkStride, 1.0);
+    for (int r = 0; r < rows; r++)
+        for (int c = 0; c < kPickCols; c++) {
+            const int i = (modelScroll_ + r) * kPickCols + c;
+            if (i >= n) break;
+            const int m = force ? i - 1 : i;   // (-1: THEIR OWN)
+            const float bx = L.X(kPickX + c * (kPickW + kPickGap)), by = L.Y(kPickTop + r * (kPickImgH + kPickNameH + kPickGap));
+            const float bw = L.L(kPickW), bh = L.L(kPickImgH);
+            if (i == cur) tabFrame(r_, ui_, bx, by, bw, L.L(kPickImgH + kPickNameH));
+            const std::string name = m < 0 ? "THEIR OWN" : playerModelName(m);
+            const UiExp e = (i == cur ? UiExp::inert() : UiExp::cfg(key)).withId(m < 0 ? "THEIR OWN" : playerModelName(m));
+            bool pick = false;
+            if (ui_.relocating()) {}
+            else if (m < 0 || modelOverride(MODEL_PLAYER, m)) {   // (no thumbnail: THEIR OWN, or a mesh file of yours)
+                r_.rect(bx, by, bw, bh, i == hot ? bgHot : bg);
+                if (m < 0) ui_.labelCentered(bx + bw * 0.5f, by + bh * 0.5f - L.L(16), "?", kGrey, 2.0f, bw - L.L(8));   // (the name says THEIR OWN)
+                else ui_.hintCentered(bx + bw * 0.5f, by + bh * 0.5f - L.L(6), "YOUR OWN FILE", kGrey, bw - L.L(8));
+            } else if (i == hot) {   // (live: turning, walking in place)
+                r_.rect(bx, by, bw, bh, bgHot);
+                if (modelFaces(m, team, pickYaw_, pickPhase_, bx, by, bw, bh, true))
+                    drawPreviewFaces(previewFaces_, std::max(1.0f, ui_.s()), [&](const float* xy, const Color& col) { r_.quad2D(xy, col); });
+            } else r_.thumb(bx, by, bw, bh, m);
+            if (!ui_.relocating() && uiIn_.pressed && ui_.over(bx, by, bw, bh)) pick = true;   // (the picture picks it too)
+            if (ui_.button(bx, by + bh, bw, L.L(kPickNameH), name, e.clipOk())) pick = true;
+            if (pick && i != cur) { value = m; modelCursor_ = i; cfg_.save(); }
+        }
+    if (rowsAll > rows) {
+        char more[64];
+        snprintf(more, sizeof more, "ROWS %d-%d OF %d - WHEEL OR ARROWS TO SCROLL", modelScroll_ + 1, modelScroll_ + rows, rowsAll);
+        ui_.hintCentered(L.X(640), L.Y(kPickTop + rows * (kPickImgH + kPickNameH + kPickGap) - 2), more, kGrey, L.L(744));
+    }
 }
 
 void Game::drawGameplaySettings(const SetLayout& L) {
@@ -7245,6 +7558,22 @@ void Game::drawGameplaySettings(const SetLayout& L) {
     g.hint("HIDES ALL PLAYERS' CHAT MESSAGES");
 }
 
+// VIDEO + AUDIO's PRESET (page 1, review round 2: on page 4 nobody found it; and MORE 3): a starting point - shadows,
+// anti-aliasing, render scale, fog and effects at once
+void Game::videoPresetCycle(float x, float y, float w, float h) {
+    static const std::vector<std::string> vn = {"PRESET: CUSTOM", "PRESET: LOW", "PRESET: MEDIUM", "PRESET: HIGH", "PRESET: COMPETITIVE"};
+    if (ui_.cycle(x, y, w, h, "PRESET", cfg_.videoPreset, 5, vn, UiExp::cfg("video_preset")) && cfg_.videoPreset > 0) {
+        struct P { bool shadows; int shadowRes, msaa, scale; float fog, fx; bool bursts, recoil; };
+        static const P ps[] = {{false, 1024, 0, 75, 1.0f, 0.6f, true, true}, {true, 2048, 1, 100, 1.0f, 1.0f, true, true},
+                               {true, 4096, 4, 100, 1.0f, 1.0f, true, true}, {false, 1024, 0, 100, 0.0f, 0.5f, false, false}};
+        const P& p = ps[cfg_.videoPreset - 1];
+        cfg_.shadows = p.shadows; cfg_.msaa = p.msaa; cfg_.renderScale = p.scale; cfg_.fxOpacity = p.fx;
+        cfg_.killBursts = p.bursts; cfg_.viewRecoil = p.recoil;
+        if (cfg_.shadowRes != p.shadowRes) r_.setShadowRes(cfg_.shadowRes = p.shadowRes);
+        r_.setFog(cfg_.fog = p.fog);
+    }
+}
+
 void Game::drawVideoSettings(const SetLayout& L) {
     SetFlow f{ui_, L, kColL, 90};
     const float w = f.w(), h = f.h(), hw = L.L(kHalfW);
@@ -7264,6 +7593,8 @@ void Game::drawVideoSettings(const SetLayout& L) {
         cfg_.maxFps = std::min(std::max(0, (int)std::lround(v)), 100000);
         f.next();
     }
+    videoPresetCycle(f.x(), f.top(), w, h);   // (the quality preset first: review round 2)
+    f.next();
     f.section("LATENCY");
 #ifdef _WIN32
     static const std::vector<std::string> presNames = {"VSYNC: OFF", "VSYNC: ON", "VSYNC: ADAPTIVE", "VSYNC: LATENT SYNC"};
@@ -7628,7 +7959,7 @@ void Game::drawSearchTab(const SetLayout& L) {
             counts[pi] = sl.n - start;
             // (a row that opens something of its page's own - CONTROLS' IMPORT and its file list, an editor - takes you
             // to that page with it open)
-            if (!jump && (filePick_ || fontsOpen_ || widgetEdit_ || hudEdit_)) jump = &p;
+            if (!jump && (filePick_ || fontsOpen_ || modelPick_ || widgetEdit_ || hudEdit_)) jump = &p;
         }
         valid = true;
         ui_.reloc = nullptr;
@@ -7672,8 +8003,22 @@ void Game::drawSettingsPages(const SetLayout& L, float footY) {
     int go = -1;
     if (ui_.button(L.X(x), y, L.L(cw), h, "<", cur > 0 ? UiExp::nav(moreNav(cur - 1)).withId("PREVIOUS PAGE") : UiExp::inert().withId("PREVIOUS PAGE"), cur > 0)) go = cur - 1;
     x += cw + gap;
-    for (int i = 0; i < n; i++, x += cw + gap)
+    // VIDEO + AUDIO's nine pages say what's on them under the mouse (review round 2: "9 unnamed pages")
+    static const char* const kVideoPages[9] = {"DISPLAY / LATENCY / IMAGE / SOUND", "WINDOW / SHADOWS / GPU / HITSOUNDS / FLAT MAP", "WORLD / PICTURE / EFFECTS",
+                                               "DISPLAY / SOUND GROUPS / PERFORMANCE / PRESET", "SHADOWS / PLAYERS / OUTLINES / COLORS", "OUTPUT / VOLUME / CALLOUTS",
+                                               "NETWORK / LIGHT CACHE / MENU CURSOR", "MAP COLORS / PLAYERS / HEALTH BARS / NAME TAGS", "SCREENSHOTS / DEMOS / LATENCY"};
+    int hoverPage = -1;
+    for (int i = 0; i < n; i++, x += cw + gap) {
+        if (ui_.over(L.X(x), y, L.L(cw), h)) hoverPage = i;
         if (ui_.tab(L.X(x), y, L.L(cw), h, std::to_string(i + 1), i == cur, i == cur ? UiExp::inert().withId(kIds[i]) : UiExp::nav(moreNav(i)).withId(kIds[i]))) go = i;
+    }
+    if (hoverPage >= 0 && setTab_ == TAB_VIDEO && hoverPage < 9) {
+        const std::string t = kVideoPages[hoverPage];
+        const float hs = ui_.hintScale(), tw = r_.textWidth(t, hs), th = r_.textHeight(hs), pad = L.L(8);
+        const float bx = L.X(640) - tw * 0.5f - pad, by = y - th - 2 * pad - L.L(4);
+        r_.rect(bx, by, tw + 2 * pad, th + 2 * pad, {0.05f, 0.06f, 0.08f, 0.96f});
+        ui_.hint(bx + pad, by + pad, t, ui_.textC(), tw + 1);
+    }
     if (ui_.button(L.X(x), y, L.L(cw), h, ">", cur < n - 1 ? UiExp::nav(moreNav(cur + 1)).withId("NEXT PAGE") : UiExp::inert().withId("NEXT PAGE"), cur < n - 1)) go = cur + 1;
     if (ui_.probing() && settingsPageKeys()) {   // (the UI test: the arrow keys do the same)
         ui_.keyAction("LEFT ARROW (PREVIOUS PAGE)", GLFW_KEY_LEFT, 0, cur > 0 ? UiExp::nav(moreNav(cur - 1)) : UiExp::inert());
@@ -7698,7 +8043,7 @@ void Game::settingsPage(int n) {
 // the keyboard: the < > rows are clicked, they never hold focus.)
 bool Game::settingsPageKeys() const {
     return settingsShown() && morePages() > 0 && !chatting_ && !console_ && !ui_.typing() && captureAction_ < 0 && !ui_.popupOpen() && !ui_.sliderHeld() &&
-           !fontsOpen_ && !devicesOpen_ && !widgetEdit_ && !hudEdit_ && filePick_ == 0;
+           !fontsOpen_ && !devicesOpen_ && !modelPick_ && !widgetEdit_ && !hudEdit_ && filePick_ == 0;
 }
 
 // the settings path of this tab's MORE page n (0: the tab itself)
@@ -7839,15 +8184,14 @@ void Game::drawMoreSettings(const SetLayout& L) {
         f.hint("WHILE TYPING, CHAT IS ALWAYS FULLY SHOWN");
         f.section("FORCE PLAYER MODELS");
         {
-            static std::vector<std::string> en;
-            if (en.empty()) { en.push_back("ENEMY MODEL: THEIR OWN"); for (int m = 0; m < kPlayerModels; m++) en.push_back(std::string("ENEMY MODEL: ") + playerModelName(m)); }
-            int ei = cfg_.enemyModel + 1;
-            if (ui_.cycle(f.x(), f.top(), w, h, "ENEMY MODEL", ei, kPlayerModels + 1, en, UiExp::cfg("enemy_model"))) cfg_.enemyModel = ei - 1;
+            // (the model picker, with THEIR OWN first: settings/models/enemy, /team)
+            if (ui_.button(f.x(), f.top(), w, h, std::string("ENEMY MODEL: ") + (cfg_.enemyModel >= 0 ? playerModelName(cfg_.enemyModel) : "THEIR OWN") + "  >",
+                           UiExp::nav("~settings/models/enemy").withId("ENEMY MODEL")))
+                openModelPicker(2);
             f.next();
-            static std::vector<std::string> tm;
-            if (tm.empty()) { tm.push_back("TEAM MODEL: THEIR OWN"); for (int m = 0; m < kPlayerModels; m++) tm.push_back(std::string("TEAM MODEL: ") + playerModelName(m)); }
-            int ti = cfg_.teamModel + 1;
-            if (ui_.cycle(f.x(), f.top(), w, h, "TEAM MODEL", ti, kPlayerModels + 1, tm, UiExp::cfg("team_model"))) cfg_.teamModel = ti - 1;
+            if (ui_.button(f.x(), f.top(), w, h, std::string("TEAM MODEL: ") + (cfg_.teamModel >= 0 ? playerModelName(cfg_.teamModel) : "THEIR OWN") + "  >",
+                           UiExp::nav("~settings/models/team").withId("TEAM MODEL")))
+                openModelPicker(3);
             f.next();
             f.hint("EVERY ENEMY / TEAMMATE AS ONE MODEL (NOT IN", "RANKED, WHERE EVERYONE IS STANDARD)");
             ui_.toggle(f.x(), f.top(), w, h, "PLAYER ANIMATIONS", cfg_.playerAnims, UiExp::cfg("player_anims"));
@@ -8588,17 +8932,7 @@ void Game::drawMoreSettings(const SetLayout& L) {
         g.hint("WINDOWS, WITH PRIORITIZE GAME ON;", "HIGH CAN SLOW OTHER PROGRAMS");
         g.section("PRESET");   // a starting point: shadows, anti-aliasing, render scale, fog and effects at once
         {
-            static const std::vector<std::string> vn = {"PRESET: CUSTOM", "PRESET: LOW", "PRESET: MEDIUM", "PRESET: HIGH", "PRESET: COMPETITIVE"};
-            if (ui_.cycle(g.x(), g.top(), w, h, "PRESET", cfg_.videoPreset, 5, vn, UiExp::cfg("video_preset")) && cfg_.videoPreset > 0) {
-                struct P { bool shadows; int shadowRes, msaa, scale; float fog, fx; bool bursts, recoil; };
-                static const P ps[] = {{false, 1024, 0, 75, 1.0f, 0.6f, true, true}, {true, 2048, 1, 100, 1.0f, 1.0f, true, true},
-                                       {true, 4096, 4, 100, 1.0f, 1.0f, true, true}, {false, 1024, 0, 100, 0.0f, 0.5f, false, false}};
-                const P& p = ps[cfg_.videoPreset - 1];
-                cfg_.shadows = p.shadows; cfg_.msaa = p.msaa; cfg_.renderScale = p.scale; cfg_.fxOpacity = p.fx;
-                cfg_.killBursts = p.bursts; cfg_.viewRecoil = p.recoil;
-                if (cfg_.shadowRes != p.shadowRes) r_.setShadowRes(cfg_.shadowRes = p.shadowRes);
-                r_.setFog(cfg_.fog = p.fog);
-            }
+            videoPresetCycle(g.x(), g.top(), w, h);
             g.next();
             g.hint("COMPETITIVE: NO FOG OR SHADOWS, FEWER EFFECTS;", "CHANGE ANYTHING AFTER (IT STAYS)");
         }
@@ -9780,9 +10114,10 @@ float bandTop(float kH) { return kBandTop + std::max(0.0f, (kBandH - (kH + 32)) 
 }
 
 SetLayout Game::menuLayout(float designW) const {
-    const float s = ui_.s(), W = (float)r_.width();
+    // (beside the main menu's strip when it's up: the page centred in what's right of it)
+    const float s = ui_.s(), W = (float)r_.width() - menuStripPx_;
     const float k = std::min(s, W / (designW + 40));   // (a page designW wide keeps 20 px each side; its top stays at y 166)
-    return {k, W * 0.5f, kBandTop * (s - k)};
+    return {k, menuStripPx_ + W * 0.5f, kBandTop * (s - k)};
 }
 
 // In game (the pause menu and its pages: votes, queues, the live pickers): the band between the notice list (y 80..144)
@@ -9867,6 +10202,7 @@ void Game::debugMenuPage() {
         infoScroll_ = scroll;
     } else if (under("leaderboard")) { setScreen(Screen::Leaderboard); raceStatsView_ = p == "leaderboard/race-stats"; }
     else if (p == "demos") setScreen(Screen::Demos);
+    else if (p == "main/ranked-queue") { setScreen(Screen::Main); queueLadder_ = 1; queueAt_ = time_; }   // (RANKED's FINDING A RANKED MATCH card)
     else if (p == "connecting") connectTo("127.0.0.1:9");
     else setScreen(Screen::Main);
 }
@@ -9877,9 +10213,11 @@ void Game::drawMenu() {
     const float W = (float)r_.width(), H = (float)r_.height();
     float s = H / 720.0f;
     ui_.begin(&r_, uiIn_, s);
+    typingAtFrame_ = ui_.typing();
+    quickPlayTick();   // (QUICK PLAY's FINDING A GAME...: joins or starts bots once the server answers or 3 s pass)   // (a field Enter just closed: that Enter isn't a menu key - menuKeysFree)
     // the main menu's own page (no question over it): its rail fades into the backdrop instead of the veil (mock4's
     // gradient: dark behind the strip and the page, clear by two thirds across, a little darker at the right edge)
-    const bool mainPage = screen_ == Screen::Main && !edPrompt_ && !tutOffer_;
+    const bool mainPage = screen_ == Screen::Main && !edPrompt_ && !tutOffer_ && queueLadder_ < 0;
     if (mainPage) {
         if (!r_.worldLoaded()) r_.rect(0, 0, W, H, {0.03f, 0.035f, 0.05f, 1});
         const float x0 = 72 * s, x1 = 440 * s, x2 = 640 * s, x3 = std::max(x2 + 1, W * 0.68f);
@@ -9889,17 +10227,42 @@ void Game::drawMenu() {
         r_.rectGradient(x2, 0, x3 - x2, H, c2, c3, c3, c2);
         r_.rectGradient(x3, 0, W - x3, H, c3, c4, c4, c3);
     } else if (cfg_.menuBg != 2) r_.rect(0, 0, W, H, {0.03f, 0.035f, 0.05f, r_.worldLoaded() ? 0.6f : 1.0f});   // (a plain MENU BACKGROUND: as it is)
+    // every top-level menu screen keeps the main menu's strip on its left (review 2026-11-04: off the main menu
+    // there was no way to PLAY / SETTINGS / QUIT but BACK); the page is centred right of it (menuLayout)
+    // (the HUD editors, and the HUD tab's preview, which shows the HUD where it really sits: the whole screen)
+    const bool full = screen_ == Screen::Settings && (settingsInGame_ || widgetEdit_ || hudEdit_ || hudPreviewOn());
+    const bool strip = !mainPage && !full && !edPrompt_ && !tutOffer_ && screen_ != Screen::Connecting && screen_ != Screen::Main;
+    // (SETTINGS > HUD hides the strip for its full-screen HUD preview, but its panel stays where every other tab's is:
+    // review round 3 saw it jump 56 px left under the cursor)
+    const bool hudTab = screen_ == Screen::Settings && !settingsInGame_ && !widgetEdit_ && !hudEdit_ && hudPreviewOn();
+    menuStripPx_ = strip || hudTab ? std::round(kMenuStripW * s) : 0;
     drawNotices(12 * s, ui_.textScale(), s); // e.g. "SAVED <mode>": the strip above the title, clear of the buttons
-    float cx = W * 0.5f;
+    float cx = menuStripPx_ + (W - menuStripPx_) * 0.5f;
     // the title, drawn like the app icon (a baked texture: Renderer::logo); not over the settings shell (it covered it),
     // nor over the main menu's page (its strip has the Q)
-    if (screen_ != Screen::Settings && !mainPage) r_.logo(cx, H * 0.12f, 8 * s, rgba(cfg_.fixedLogo ? defaultSettings().colorFriendly : cfg_.colorFriendly),
+    // a strip screen: the main menu's top bar - its title top-left beside the strip, the small wordmark centred
+    // (review round 2: the big logo sat in a different place and size on every screen, and pages had no title)
+    if (strip && screen_ != Screen::Settings) {
+        const char* title = screen_ == Screen::Join ? "SERVERS" : screen_ == Screen::Host && picker_ == PICK_RANKED && variantCtx_ == 3 ? "RANKED" : screen_ == Screen::Host ? "HOST" : screen_ == Screen::VsBots ? "BOTS"
+                          : screen_ == Screen::Leaderboard ? "RANKS" : screen_ == Screen::Info ? "INFO"
+                          : "";   // (AIM TRAINER, DEMOS, BENCHMARKS, CUSTOM MODE: their panel heads them - review round 3 saw each twice)
+        const float Wd = W / s, lts = 6.5f, lw = r_.logoWidth(lts * s) / s, tx = 104;
+        const float tw = std::min(Wd * 0.5f - tx - 24 - lw * 0.5f, 420.0f);
+        ui_.label(tx * s, 29 * s, title, ui_.textC(), 2.25f, std::max(120.0f, tw) * s);
+        const float twd = r_.textWidth(title, ui_.textScale() * 2.25f) / s;
+        const float cxd = std::max(Wd * 0.5f, tx + twd + 24 + lw * 0.5f);
+        if (cxd + lw * 0.5f <= Wd - 16)
+            r_.logo(cxd * s, 22 * s, lts * s, rgba(cfg_.fixedLogo ? defaultSettings().colorFriendly : cfg_.colorFriendly),
+                    rgba(cfg_.fixedLogo ? defaultSettings().colorEnemy : cfg_.colorEnemy));
+    } else if (screen_ != Screen::Settings && !mainPage) r_.logo(cx, H * 0.12f, 8 * s, rgba(cfg_.fixedLogo ? defaultSettings().colorFriendly : cfg_.colorFriendly),
                                              rgba(cfg_.fixedLogo ? defaultSettings().colorEnemy : cfg_.colorEnemy));   // (the Q in both team colours; FIXED LOGO COLORS: the defaults)
-    if (!mainPage) r_.text(8 * s, H - 20 * s, std::max(1.0f, std::round(s)), kQuarkBuildId, kGrey);   // (the main page: beside its strip; the full build, owner 2026-11-04)
+    if (!mainPage && !strip) r_.text(8 * s, H - 20 * s, std::max(1.0f, std::round(s)), kQuarkBuildId, kGrey);   // (with the strip: beside it; the full build, owner 2026-11-04)
+    if (strip) { const size_t ss0 = r_.uiMark(); drawMainStrip(s, H); r_.uiSupersample(ss0); }   // (before the page: its clicks first)
 
     if (picker_ != PICK_NONE && (screen_ == Screen::Host || screen_ == Screen::VsBots)) { drawPicker(cx, H * 0.12f + 80 * s); return; }
     if (edPrompt_ && screen_ == Screen::Main) { drawEditorSavePrompt(); return; }
     if (tutOffer_ && screen_ == Screen::Main) { drawTutorialOffer(); return; }   // (the first launch: the TUTORIAL, once)
+    if (queueLadder_ >= 0 && screen_ == Screen::Main) { drawRankedQueue(); return; }   // (RANKED's queue: FINDING A RANKED MATCH)
     const SetLayout L = menuLayout(kMW + 32);   // (the column pages: 392 wide)
     switch (screen_) {
         case Screen::Main: drawMainMenu(); break;
@@ -9928,7 +10291,7 @@ void Game::drawMenu() {
 // panels beside the page puts them under it. What a tab shows from files (bests, your maps) is read when it opens
 // (openMainTab), the server list only while PLAY is up; nothing allocates per frame beyond a widget's own label.
 namespace {
-constexpr float kStripW = 72, kPageX = 104, kPageW = 350, kPanelTop = 90, kRightPad = 32, kCardH = 140, kListRowH = 33;
+constexpr float kStripW = kMenuStripW, kPageX = 104, kPageW = 350, kPanelTop = 90, kRightPad = 32, kCardH = 140, kListRowH = 33;
 const Color kStripC = {0.031f, 0.039f, 0.055f, 0.97f};
 const Color kMutedC = {0.60f, 0.65f, 0.71f, 1};     // the strip's labels, values, hints
 const Color kCapsC = {0.50f, 0.55f, 0.60f, 1};      // a panel's caption (OFFICIAL SERVERS)
@@ -9940,71 +10303,6 @@ const std::string kNone;
 const std::string& sbuf(int slot, const char* s) {
     static std::string b[16];
     return b[slot & 15].assign(s);
-}
-// a thick 2D line (square ends, w past each end by w / 2 so joined segments close up)
-void seg2D(Renderer& r, float x0, float y0, float x1, float y1, float w, const Color& c) {
-    float dx = x1 - x0, dy = y1 - y0;
-    const float l = std::sqrt(dx * dx + dy * dy);
-    if (l < 1e-3f) return;
-    dx *= w * 0.5f / l; dy *= w * 0.5f / l;
-    const float q[8] = {x0 - dx - dy, y0 - dy + dx, x1 + dx - dy, y1 + dy + dx, x1 + dx + dy, y1 + dy - dx, x0 - dx + dy, y0 - dy - dx};
-    r.quad2D(q, c);
-}
-// an arc around (cx, cy) from angle a0 to a1 (radians, y down), in n segments
-void arc2D(Renderer& r, float cx, float cy, float rad, float a0, float a1, float w, const Color& c, int n = 14) {
-    for (int i = 0; i < n; i++) {
-        const float t0 = a0 + (a1 - a0) * i / n, t1 = a0 + (a1 - a0) * (i + 1) / n;
-        seg2D(r, cx + rad * std::cos(t0), cy + rad * std::sin(t0), cx + rad * std::cos(t1), cy + rad * std::sin(t1), w, c);
-    }
-}
-// The strip's icons, drawn on a 24 x 24 grid (the mockup's line icons) centred on (cx, cy), `size` pixels across
-enum MainIcon { ICON_PLAY, ICON_GAUGE, ICON_GRID, ICON_TROPHY, ICON_GEAR, ICON_CHAT, ICON_INFO, ICON_POWER };
-void mainIcon(Renderer& r, int icon, float cx, float cy, float size, const Color& c) {
-    const float u = size / 24, w = std::max(1.0f, 2 * u);
-    auto X = [&](float x) { return cx + (x - 12) * u; };
-    auto Y = [&](float y) { return cy + (y - 12) * u; };
-    auto L = [&](float a, float b, float c2, float d) { seg2D(r, X(a), Y(b), X(c2), Y(d), w, c); };
-    const float pi = 3.14159265f;
-    switch (icon) {
-        case ICON_PLAY: { const float q[8] = {X(7), Y(4), X(20), Y(12), X(7), Y(20), X(7), Y(20)}; r.quad2D(q, c); break; }
-        case ICON_GAUGE:   // a dial, its needle up and right
-            arc2D(r, X(12), Y(14), 10 * u, pi * 0.83f, pi * 2.17f, w, c, 16);
-            L(12, 14, 16, 10);
-            break;
-        case ICON_GRID:    // a framed grid (CREATE: the map editor's)
-            r.roundRect(X(2), Y(4), 20 * u, 16 * u, 2 * u, c, w);
-            L(7, 4, 7, 20); L(17, 4, 17, 20); L(2, 12, 22, 12);
-            break;
-        case ICON_TROPHY:
-            L(7, 4, 17, 4); L(7, 4, 7, 9); L(17, 4, 17, 9);
-            arc2D(r, X(12), Y(9), 5 * u, 0, pi, w, c, 10);
-            L(17, 5, 20, 5); L(20, 5, 20, 7); L(7, 5, 4, 5); L(4, 5, 4, 7);
-            arc2D(r, X(17), Y(7), 3 * u, 0, pi * 0.5f, w, c, 5); arc2D(r, X(7), Y(7), 3 * u, pi * 0.5f, pi, w, c, 5);
-            L(12, 14, 12, 21); L(8, 21, 16, 21);
-            break;
-        case ICON_GEAR: {
-            r.roundRect(X(12) - 3 * u, Y(12) - 3 * u, 6 * u, 6 * u, 3 * u, c, w);
-            r.roundRect(X(12) - 7.5f * u, Y(12) - 7.5f * u, 15 * u, 15 * u, 7.5f * u, c, w);
-            for (int k = 0; k < 8; k++) {
-                const float a = pi * 0.25f * k, ca = std::cos(a), sa = std::sin(a);
-                seg2D(r, X(12 + 7 * ca), Y(12 + 7 * sa), X(12 + 9.5f * ca), Y(12 + 9.5f * sa), 3.6f * u, c);
-            }
-            break;
-        }
-        case ICON_CHAT:
-            r.roundRect(X(3) - u, Y(3) - u, 20 * u, 16 * u, 2.5f * u, c, w);
-            L(3, 17, 3, 21); L(3, 21, 7, 17);
-            break;
-        case ICON_INFO:
-            r.roundRect(X(2), Y(2), 20 * u, 20 * u, 10 * u, c, w);
-            L(12, 11, 12, 16);
-            r.roundRect(X(12) - 1.3f * u, Y(7.5f) - 1.3f * u, 2.6f * u, 2.6f * u, 1.3f * u, c);
-            break;
-        case ICON_POWER:
-            arc2D(r, X(12), Y(12.93f), 9 * u, -0.78f, 3.92f, w, c, 18);   // (open at the top, from 1:30 round to 10:30)
-            L(12, 2, 12, 12);
-            break;
-    }
 }
 // a line of pieces one after the other (" · " between them; each looked up in the language on its own), shrunk to fit
 // maxW, the last piece that doesn't fit at the smallest size cut ("...")
@@ -10113,6 +10411,7 @@ void Game::openMainTab(int tab) {
 
 void Game::drawMainMenu() {
     const float W = (float)r_.width(), H = (float)r_.height(), s = H / 720.0f, Wd = W / s;
+    const size_t ss0 = r_.uiMark();   // (all of it supersampled, 4 x 4 a pixel: owner 2026-11-04, "always render at 400%")
     drawMainStrip(s, H);
     // the page beside the strip; the panels on the right, or under the page when the screen is too narrow for both
     const float px = kPageX, pw = kPageW;
@@ -10120,12 +10419,23 @@ void Game::drawMainMenu() {
     const bool stacked = rw < 280;
     if (stacked) { rx = px; rw = pw; }
     static const std::string kTitles[MAIN_TABS] = {"PLAY", "PRACTICE", "CREATE"};
-    ui_.label(px * s, 38 * s, kTitles[mainTab_], ui_.textC(), 2.25f, std::min(pw, Wd - kRightPad - 284 - px) * s);   // (clear of the name chip)
+    ui_.label(px * s, 29 * s, kTitles[mainTab_], ui_.textC(), 2.25f, std::min(pw, Wd - kRightPad - 284 - px) * s);   // (clear of the name chip)
     if (mainTab_ == MAIN_PLAY) drawMainPlay(s, px, pw, rx, rw, stacked ? 304 : kPanelTop);
     else if (mainTab_ == MAIN_PRACTICE) drawMainPractice(s, px, pw, rx, rw, stacked ? 420 : kPanelTop);
     else drawMainCreate(s, px, pw, rx, rw, stacked ? 330 : kPanelTop);
+    // the QUARK wordmark (owner 2026-11-04: "it doesnt say quark anywhere on the main screen"), 40 high, in the top bar
+    // between the page and the name chip's widest (284); left out where that gap is too narrow for it
+    {
+        const float lts = 6.5f, lw = r_.logoWidth(lts * s) / s, gapL = px + pw + 24, gapR = Wd - kRightPad - 284 - 24;
+        // (centred on the screen where it fits there, else in the gap; reviewers: "138 px right of the screen centre")
+        const float cxd = std::clamp(Wd * 0.5f, gapL + lw * 0.5f, gapR - lw * 0.5f);
+        if (!stacked && gapR - gapL >= lw)
+            r_.logo(cxd * s, 22 * s, lts * s, rgba(cfg_.fixedLogo ? defaultSettings().colorFriendly : cfg_.colorFriendly),
+                    rgba(cfg_.fixedLogo ? defaultSettings().colorEnemy : cfg_.colorEnemy));
+    }
     drawNameChip(s, W);
     if (!error_.empty()) ui_.labelCentered((kStripW * s + W) * 0.5f, H - 48 * s, error_, kRed, 1.0f, W - (kStripW + 48) * s);
+    r_.uiSupersample(ss0);
 }
 
 // The strip: the Q, the five tabs (icon over a label; the current one an accent bar on its left and a lighter fill),
@@ -10134,7 +10444,9 @@ void Game::drawMainStrip(float s, float H) {
     const float sw = kStripW * s;
     r_.rect(0, 0, sw, H, kStripC);
     r_.rect(sw, 0, std::max(1.0f, std::round(s)), H, {1, 1, 1, 0.07f});
-    r_.logoQ(sw * 0.5f, 16 * s, 4.8f * s, rgba(cfg_.fixedLogo ? defaultSettings().colorFriendly : cfg_.colorFriendly),
+    // the Q centred in the strip's head (0 - 88): its bowl on the strip's middle (the tail hangs right of it), its ink
+    // half way down (owner 2026-11-04: "the Q in the top left is weirdly slightly off"; it sat 12 px high)
+    r_.logoQ(sw * 0.5f + 0.75f * s, 27.5f * s, 4.8f * s, rgba(cfg_.fixedLogo ? defaultSettings().colorFriendly : cfg_.colorFriendly),
              rgba(cfg_.fixedLogo ? defaultSettings().colorEnemy : cfg_.colorEnemy));
     const Color white = ui_.textC();
     const float lts = std::max(r_.minTextScale(), 1.3f * s);
@@ -10144,50 +10456,82 @@ void Game::drawMainStrip(float s, float H) {
         r_.rect(bx, by, tw + 16 * s, th + 10 * s, {0.05f, 0.06f, 0.08f, 0.95f});
         r_.text(bx + 8 * s, by + 5 * s, hs, t, c);
     };
+    // the lit tab: the main menu's tab, or the screen's (RANKS, SETTINGS; the play screens PLAY, the trainer PRACTICE)
+    // (any other screen: the tab it was opened from - DEMOS from CREATE, CUSTOM MODE from PLAY; review round 2)
+    const int stripCur = screen_ == Screen::Main ? mainTab_ : screen_ == Screen::Leaderboard ? 3 : screen_ == Screen::Settings ? 4
+                       : screen_ == Screen::Info ? -1 : stripFromTab_;
+    // keys 1-5 open the strip's tabs while nothing is being typed (review round 2: no keyboard way around the menus)
+    int keyTab = -1;
+    if (menuKeysFree() && uiIn_.chars.size() == 1 && uiIn_.chars[0] >= '1' && uiIn_.chars[0] <= '5') keyTab = uiIn_.chars[0] - '1';
     static const std::string kLabels[5] = {"PLAY", "PRACTICE", "CREATE", "RANKS", "SETTINGS"};
     static const int kIcons[5] = {ICON_PLAY, ICON_GAUGE, ICON_GRID, ICON_TROPHY, ICON_GEAR};
     for (int i = 0; i < 5; i++) {
         const float y = (88 + 64 * i) * s, h = 60 * s;
-        const bool cur = i < MAIN_TABS && mainTab_ == i, hv = ui_.over(0, y, sw, h);
+        const bool cur = i == stripCur, hv = ui_.over(0, y, sw, h);
         if (cur) {
             r_.rect(0, y, sw, h, {ui_.accent.r, ui_.accent.g, ui_.accent.b, 0.12f});
             r_.rect(0, y, 3 * s, h, ui_.accent);
         } else if (hv) r_.rect(0, y, sw, h, {1, 1, 1, 0.06f});
         const Color c = cur || hv ? white : kMutedC;
-        mainIcon(r_, kIcons[i], sw * 0.5f, y + 21 * s, 22 * s, c);
+        r_.icon(kIcons[i], sw * 0.5f, y + 21 * s, 22 * s, c);
         const TextFit f = r_.fitText(kLabels[i], lts, sw - 4 * s);   // (TRAINING, ТРЕНИРОВКА: the whole strip)
         if (f.keep >= 0) { const std::string t = r_.textClip(kLabels[i], f.scale, sw - 4 * s); r_.text((sw - r_.textWidth(t, f.scale)) * 0.5f, y + 38 * s, f.scale, t, c); }
         else r_.text((sw - r_.textWidth(kLabels[i], f.scale, f.level)) * 0.5f, y + 38 * s + (r_.textHeight(lts) - r_.textHeight(f.scale)) * 0.5f, f.scale, kLabels[i], c, f.level);
         static const UiExp kNav[5] = {UiExp::nav("main"), UiExp::nav("main/practice"), UiExp::nav("main/create"), UiExp::nav("leaderboard"), UiExp::nav("settings")};
         static const char* const kIds[5] = {"PLAY", "PRACTICE", "CREATE", "RANKS", "SETTINGS"};
         if (ui_.probing()) ui_.custom(0, y, sw, h, kLabels[i], (cur ? UiExp::inert() : kNav[i]).withId(kIds[i]));
-        if (!(hv && uiIn_.pressed) || cur) continue;
+        if (!((hv && uiIn_.pressed) || keyTab == i) || cur) continue;
+        leaveForStrip();
         if (i < MAIN_TABS) openMainTab(i);
         else if (i == 3) { nextBoardFetch_ = 0; raceStatsView_ = false; setScreen(Screen::Leaderboard); }   // RANKS: the leaderboard
         else { openSettingsTab(settingsStartTab()); setScreen(Screen::Settings); }
         uiIn_.pressed = false;
     }
-    // the foot: DISCORD, INFO, QUIT (44 high, from 14 above the bottom)
+    // the foot: DISCORD, INFO, QUIT, each an icon over its label like the tabs (review 2026-11-04: icons alone, named
+    // only under the mouse, read as "chat" and a mystery); 54 high, from 14 above the bottom
     static const std::string kDiscord = "DISCORD", kInfo = "INFO", kQuit = "QUIT", kSure = "SURE? QUIT";
     for (int i = 0; i < 3; i++) {
-        const float h = 44 * s, y = H - (14 + 44 * (3 - i)) * s;
-        const bool hv = ui_.over(0, y, sw, h), armed = i == 2 && confirmArmed("quit");
+        const float h = 54 * s, y = H - (14 + 54 * (3 - i)) * s;
+        const bool hv = ui_.over(0, y, sw, h), armed = i == 2 && confirmArmed("quit"), lit = i == 1 && screen_ == Screen::Info;
         if (armed) r_.rect(0, y, sw, h, {kRed.r * 0.35f, kRed.g * 0.35f, kRed.b * 0.35f, 0.9f});
+        else if (lit) { r_.rect(0, y, sw, h, {ui_.accent.r, ui_.accent.g, ui_.accent.b, 0.12f}); r_.rect(0, y, 3 * s, h, ui_.accent); }
         else if (hv) r_.rect(0, y, sw, h, {1, 1, 1, 0.06f});
         const Color quitC = {1.0f, 0.54f, 0.5f, 1};
-        mainIcon(r_, i == 0 ? ICON_CHAT : i == 1 ? ICON_INFO : ICON_POWER, sw * 0.5f, y + h * 0.5f, 22 * s, i == 2 ? (hv || armed ? kRed : quitC) : hv ? white : kMutedC);
-        const std::string& name = i == 0 ? kDiscord : i == 1 ? kInfo : armed ? kSure : kQuit;
-        if (hv || armed) tooltip(y, h, name, i == 2 ? kRed : white);
-        const UiExp e = i == 0 ? UiExp::url().withId("DISCORD") : i == 1 ? UiExp::nav("info/*").withId("INFO")
+        const Color c = i == 2 ? (hv || armed ? kRed : quitC) : hv || lit ? white : kMutedC;
+        r_.icon(i == 0 ? ICON_CHAT : i == 1 ? ICON_INFO : ICON_POWER, sw * 0.5f, y + 19 * s, 20 * s, c);
+        const std::string& name = i == 0 ? kDiscord : i == 1 ? kInfo : kQuit;
+        const TextFit f = r_.fitText(name, lts, sw - 4 * s);
+        if (f.keep >= 0) { const std::string t = r_.textClip(name, f.scale, sw - 4 * s); r_.text((sw - r_.textWidth(t, f.scale)) * 0.5f, y + 34 * s, f.scale, t, c); }
+        else r_.text((sw - r_.textWidth(name, f.scale, f.level)) * 0.5f, y + 34 * s + (r_.textHeight(lts) - r_.textHeight(f.scale)) * 0.5f, f.scale, name, c, f.level);
+        if (armed) tooltip(y, h, kSure, kRed);   // (armed: SURE? QUIT beside the strip)
+        const UiExp e = i == 0 ? UiExp::url().withId("DISCORD") : i == 1 ? (lit ? UiExp::inert() : UiExp::nav("info/*")).withId("INFO")
                       : (cfg_.confirmLeave && !armed ? UiExp::state("confirm", "quit") : UiExp::quit()).withId("QUIT");
-        if (ui_.probing()) ui_.custom(0, y, sw, h, name, e);
+        if (ui_.probing()) ui_.custom(0, y, sw, h, armed ? kSure : name, e);
         if (!(hv && uiIn_.pressed)) continue;
         if (i == 0) openUrl(kDiscordUrl);
-        else if (i == 1) setScreen(Screen::Info);   // how everything works
+        else if (i == 1) { if (screen_ != Screen::Info) { leaveForStrip(); setScreen(Screen::Info); } }   // how everything works
         else if (confirmed("quit")) quit_ = true;
         uiIn_.pressed = false;
     }
     r_.text(sw + 8 * s, H - 20 * s, std::max(1.0f, std::round(s)), kQuarkBuildId, kGrey);   // (the full build, owner 2026-11-04)
+}
+
+// menu keys (1-5: the strip's tabs; Enter: the page's big button) only while no text field, popup, key capture,
+// picker or card wants the keyboard
+bool Game::menuKeysFree() const {
+    return !ui_.typing() && !typingAtFrame_ && !ui_.popupOpen() && !nameEdit_ && captureAction_ < 0 && picker_ == PICK_NONE && !edPrompt_ && !tutOffer_ &&
+           queueLadder_ < 0 && !chatting_ && !console_ && !hostAdvanced_;
+}
+
+// a strip tab / INFO clicked off the main menu: leave the screen as its BACK does (settings applied, HOST's choices
+// saved, an unsaved custom mode dropped), then the strip opens where it goes
+void Game::leaveForStrip() {
+    if (screen_ == Screen::Main) return;
+    picker_ = PICK_NONE;
+    hostAdvanced_ = false;
+    if (screen_ == Screen::Settings) { leaveSettings(); return; }
+    cfg_.save();
+    setScreen(Screen::Main);
 }
 
 namespace {
@@ -10240,6 +10584,7 @@ void Game::drawMainPlay(float s, float px, float pw, float rx, float rw, float r
     const MainDraw d{r_, ui_, uiIn_, s};
     const float ts = ui_.textScale(), hs = ui_.hintScale();
     const bool hasLast = !cfg_.lastAddress.empty() && (!cfg_.lastMap.empty() || !cfg_.recentServers.empty());
+    static const bool quickOk = kOfficialServerCount > 0 && !([] { const char* e = getenv("QUARK_MASTER"); return e && std::string(e).find("http") != 0; }());
     // the last server in the list (matched by its address: a host name isn't looked up here)
     static std::string lastKey;
     static NetAddr lastAddr;
@@ -10254,7 +10599,7 @@ void Game::drawMainPlay(float s, float px, float pw, float rx, float rw, float r
     {   // LAST PLAYED
         const float x = px, y = 90, w = pw;
         d.card(x, y, w, kCardH);
-        static const std::string kLast = "LAST PLAYED", kNoGame = "NO GAME YET", kNoGameLine = "JOIN A SERVER, PLAY BOTS OR HOST YOUR OWN";
+        static const std::string kLast = "LAST PLAYED", kNoGame = "NO GAME YET", kNoGameLine = "JOIN A SERVER, PLAY BOTS OR HOST YOUR OWN", kQuickLine = "QUICK PLAY JOINS A GAME WITH ROOM, OR STARTS BOTS";
         d.caption(x + 16, y + 15, kLast, ui_.accent, w - 32);
         if (hasLast) {
             static const std::string kServerAt = "SERVER";
@@ -10270,13 +10615,21 @@ void Game::drawMainPlay(float s, float px, float pw, float rx, float rw, float r
                 snprintf(b, sizeof b, "%d MS", (int)live->ping);
                 drawPieces(r_, d.X(x + 16), d.X(y + 62), hs, d.X(w - 32), {&name, &pl, &sbuf(1, b)}, kMutedC);
             } else drawPieces(r_, d.X(x + 16), d.X(y + 62), hs, d.X(w - 32), {&name}, kMutedC);
-            static const std::string kReconnect = "RECONNECT";
-            if (d.bigButton(x + 16, y + 84, w - 32, 42, kReconnect, UiExp::nav("connecting").withId("RECONNECT"))) { reconnectAt_ = 0; reconnectTries_ = 0; connectTo(cfg_.lastAddress); }
+            // RECONNECT beside QUICK PLAY (review round 2: QUICK PLAY used to vanish after the first game), both one click
+            static const std::string kReconnect = "RECONNECT", kQuick2 = "QUICK PLAY", kFinding2 = "FINDING A GAME...";
+            const float qw = std::round((w - 32 - 8) * 0.55f);
+            if (quickOk && (d.bigButton(x + 16, y + 84, qw, 42, quickAt_ >= 0 ? kFinding2 : kQuick2, UiExp::nav("connecting").optional().withId("QUICK PLAY")) || (uiIn_.enter && menuKeysFree()))) { quickPlay(); return; }   // (Enter: the big button)
+            if (quickOk ? ui_.button(d.X(x + 16 + qw + 8), d.X(y + 84), d.X(w - 32 - qw - 8), d.X(42), kReconnect, UiExp::nav("connecting").withId("RECONNECT"))
+                        : d.bigButton(x + 16, y + 84, w - 32, 42, kReconnect, UiExp::nav("connecting").withId("RECONNECT"))) { reconnectAt_ = 0; reconnectTries_ = 0; connectTo(cfg_.lastAddress); }
         } else {
             drawPieces(r_, d.X(x + 16), d.X(y + 33), std::round(ts * 1.25f), d.X(w - 32), {&kNoGame}, ui_.textC());
-            drawPieces(r_, d.X(x + 16), d.X(y + 62), hs, d.X(w - 32), {&kNoGameLine}, kMutedC);
-            static const std::string kFind = "FIND A SERVER";
-            if (d.bigButton(x + 16, y + 84, w - 32, 42, kFind, UiExp::nav("join").withId("FIND A SERVER"))) setScreen(Screen::Join);
+            drawPieces(r_, d.X(x + 16), d.X(y + 62), hs, d.X(w - 32), {quickOk ? &kQuickLine : &kNoGameLine}, kMutedC);
+            // QUICK PLAY: straight into the official (production) server; SERVERS below is the list (review 2026-11-04:
+            // FIND A SERVER, SERVERS and ALL SERVERS were three ways to one screen). No official server: the list.
+            static const std::string kQuick = "QUICK PLAY", kFind = "FIND A SERVER", kFinding = "FINDING A GAME...";
+            if (quickOk) {
+                if (d.bigButton(x + 16, y + 84, w - 32, 42, quickAt_ >= 0 ? kFinding : kQuick, UiExp::nav("connecting").optional().withId("QUICK PLAY")) || (uiIn_.enter && menuKeysFree())) { quickPlay(); return; }   // (Enter: the big button)
+            } else if (d.bigButton(x + 16, y + 84, w - 32, 42, kFind, UiExp::nav("join").withId("FIND A SERVER"))) setScreen(Screen::Join);
         }
     }
     {   // SERVERS / BOTS / HOST
@@ -10315,7 +10668,7 @@ void Game::drawMainPlay(float s, float px, float pw, float rx, float rw, float r
         char b[48];
         const std::string* val = &kWaiting;
         if (sv && !sv->noReply) { snprintf(b, sizeof b, "%d/%d · %d MS", sv->players, sv->maxPlayers, (int)sv->ping); val = &sbuf(10 + i, b); }
-        else if (sv) val = &kNoReply;
+        else if (sv || time_ - browserAt_ > 6) val = &kNoReply;   // (not listed 6 s after asking: no answer either; was "..." for good)
         const float vx = d.value(rx + rw - 16, yy, kListRowH, *val, kMutedC);
         const std::string& nm = sv && !sv->noReply ? sv->name : kOfficialName;
         drawPieces(r_, d.X(rx + 16 + bw + 8), d.midY(yy, kListRowH, ts), ts, d.X(vx - 12 - (rx + 16 + bw + 8)), {&nm}, ui_.textC());
@@ -10340,8 +10693,8 @@ void Game::drawMainPlay(float s, float px, float pw, float rx, float rw, float r
     d.caption(rx + 16, y + 12, kMoreWays, kCapsC, rw - 32);
     const float hw = (rw - 32 - 8) / 2;
     if (ui_.button(d.X(rx + 16), d.X(y + 32), d.X(hw), d.X(40), kRanked, UiExp::nav("host/picker:ladders"))) {
-        setScreen(Screen::Host);   // (HOST with its ranked ladders open: pick one, then START)
-        variantCtx_ = 0;
+        setScreen(Screen::Host);   // (a queue: pick a ladder, then it finds a ranked game on it or hosts one; BACK: here)
+        variantCtx_ = 3;
         picker_ = PICK_RANKED;
     }
     if (ui_.button(d.X(rx + 24 + hw), d.X(y + 32), d.X(hw), d.X(40), kCustom, UiExp::nav("custom/general"))) {
@@ -10516,8 +10869,13 @@ void Game::drawJoin(const SetLayout& L) {
         }
     }
     if (ui_.button(L.X(784), L.Y(186), L.L(136), h, "CONNECT", UiExp::nav("connecting")) || (uiIn_.enter && !joinAddr_.empty())) connectTo(joinAddr_);
+    // (an empty address box says what it's for: review round 2 found 127.0.0.1 and CONNECT read as the way in)
+    if (joinAddr_.empty() && !ui_.focused(2)) ui_.hint(lx + L.L(8), L.Y(186) + (h - r_.textHeight(hs)) * 0.5f, "HAVE A FRIEND'S ADDRESS? PASTE IT HERE", kGrey, L.L(316));
     ui_.label(lx, L.Y(246), "SERVERS (LAN + INTERNET)", ui_.accent, 1.0f, lw);
-    ui_.hint(lx, L.Y(266), browser_.internetStatus(), kGrey, lw);
+    // (a failed list in words, not "HTTP ERROR STATUS"; the list panel then offers a way on)
+    const bool listDown = browser_.listFailed();
+    if (listDown) ui_.hint(lx, L.Y(266), "COULDN'T LOAD THE INTERNET LIST - CHECK YOUR CONNECTION", Color{1.0f, 0.7f, 0.35f, 1}, lw);
+    else ui_.hint(lx, L.Y(266), browser_.internetStatus(), kGrey, lw);
     ui_.panel(lx, L.Y(282), lw, L.L(200), 0.6f);
     // the columns: SERVER, MAP, PLAYERS, PING (design x of each, and how far it may run)
     static const float colX[4] = {372, 622, 752, 852}, colEnd[4] = {612, 744, 844, 908};
@@ -10600,7 +10958,10 @@ void Game::drawJoin(const SetLayout& L) {
         }
         r_.text(nameX, ty, ts, name, kWhite);
     }
-    if (browser_.servers().empty()) ui_.label(L.X(372), L.Y(310), "NO GAMES FOUND", kGrey, 1.0f, L.L(536));
+    if (browser_.servers().empty() && listDown) {   // nothing heard at all: REFRESH LIST below, or bots now
+        ui_.label(L.X(372), L.Y(310), "NO SERVER LIST RIGHT NOW", kGrey, 1.0f, L.L(536));
+        if (ui_.button(L.X(372), L.Y(340), L.L(200), L.L(kMRow), "PLAY BOTS INSTEAD", UiExp::nav("vsbots"))) { setScreen(Screen::VsBots); return; }
+    } else if (browser_.servers().empty()) ui_.label(L.X(372), L.Y(310), "NO GAMES FOUND", kGrey, 1.0f, L.L(536));
     else if (shown.empty()) ui_.label(L.X(372), L.Y(310), "NO GAMES MATCH THE FILTERS", kGrey, 1.0f, L.L(536));
     {   // under the list: how far it's scrolled, and the right-click hint
         char more[96];
@@ -10715,12 +11076,33 @@ void Game::drawHost(const SetLayout& L) {
     else ui_.toggle(x, L.Y(y), hw, h, "BALANCE BOTS", cfg_.hostBalanceBots, UiExp::cfg("host_balance_bots"));
     ui_.toggle(x2, L.Y(y), hw, h, "PUBLIC", cfg_.hostPublic, UiExp::cfg("host_public"));
     y += 44;
-    ui_.hint(x, L.Y(y), cfg_.streamer ? std::string("FRIENDS JOIN WITH YOUR PUBLIC IP (STREAMER MODE)") : "FRIENDS JOIN WITH YOUR PUBLIC IP:" + hostPortStr_, kGrey, w);
-    y += 20;
+    if (cfg_.streamer) ui_.hint(x, L.Y(y), "FRIENDS JOIN WITH YOUR PUBLIC IP (STREAMER MODE)", kGrey, w);
+    else {   // the address itself, and COPY (the IP looked up once, on its own thread: never a stall here)
+        if (!pubIpAsked_) { pubIpAsked_ = true; pubIpFuture_ = std::async(std::launch::async, [] { return publicIpv4(); }); }
+        if (pubIpFuture_.valid() && pubIpFuture_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) pubIp_ = pubIpFuture_.get();
+        static std::string addr;
+        const std::string want = pubIp_.empty() ? std::string() : pubIp_ + ":" + hostPortStr_;
+        if (addr != want) addr = want;
+        const float cw = 92;
+        static const std::string kWith = "FRIENDS JOIN WITH:", kFinding = "FINDING YOUR ADDRESS...";
+        if (!addr.empty()) {   // (the label looked up in the language, the address drawn after it as it is)
+            const float lw = r_.textWidth(kWith, ui_.hintScale()) + L.L(6);
+            ui_.hint(x, L.Y(y), kWith, kGrey, w - L.L(cw + 8));
+            ui_.hint(x + lw, L.Y(y), addr, ui_.textC(), w - L.L(cw + 8) - lw);
+        } else if (pubIpFuture_.valid()) ui_.hint(x, L.Y(y), kFinding, kGrey, w - L.L(cw + 8));
+        else ui_.hint(x, L.Y(y), "FRIENDS JOIN WITH YOUR PUBLIC IP:" + hostPortStr_, kGrey, w);   // (the lookup failed: no COPY)
+        static const std::string kCopy = "COPY", kCopied = "COPIED";
+        const bool can = !addr.empty();
+        if (can && ui_.button(x + w - L.L(cw), L.Y(y - 4), L.L(cw), L.L(24), time_ - pubIpCopiedAt_ < 2 ? kCopied : kCopy, UiExp::inert().withId("COPY ADDRESS"), can) && can) {
+            glfwSetClipboardString(win_, addr.c_str());
+            pubIpCopiedAt_ = time_;
+        }
+    }
+     y += 26;
     if (ui_.button(x, L.Y(y), w, h, "ADVANCED  >", UiExp::nav("host/advanced"))) { hostAdvanced_ = true; refreshHostBrains(); }
     y += 60;
     if (ui_.button(x, L.Y(y), hw, h, "BACK", UiExp::nav("main*"))) { cfg_.save(); setScreen(Screen::Main); }
-    if (ui_.button(x2, L.Y(y), hw, h, "START", UiExp::state("hosting", "1"))) startHost();
+    if (MainDraw{r_, ui_, uiIn_, 1.0f}.bigButton(x2, L.Y(y), hw, h, "START", UiExp::state("hosting", "1")) || (uiIn_.enter && menuKeysFree())) { uiIn_.pressed = false; startHost(); }   // (the accent: review round 2, START was as grey as BACK)
     if (!error_.empty()) ui_.labelCentered(L.X(640), L.Y(y + 64), error_, kRed, 1.0f, L.L(960));
 }
 
@@ -10817,7 +11199,7 @@ void Game::drawVsBots(const SetLayout& L) {
     }
     y += 12;   // (20 px over the footer)
     if (ui_.button(x, L.Y(y), hw, h, "BACK", UiExp::nav("main*"))) { cfg_.save(); setScreen(Screen::Main); }
-    if (ui_.button(x2, L.Y(y), hw, h, "START", UiExp::state("hosting", "1"))) startHost(true);
+    if (MainDraw{r_, ui_, uiIn_, 1.0f}.bigButton(x2, L.Y(y), hw, h, "START", UiExp::state("hosting", "1")) || (uiIn_.enter && menuKeysFree())) { uiIn_.pressed = false; startHost(true); }   // (the accent, as HOST's)
     if (!error_.empty()) ui_.labelCentered(L.X(640), L.Y(y + 64), error_, kRed, 1.0f, L.L(960));
 }
 
@@ -12008,7 +12390,11 @@ void Game::applyDisplayMode() {
     // Render at the new size right away (don't wait for a resize event that may arrive late).
     int fw = 0, fh = 0;
     glfwGetFramebufferSize(win_, &fw, &fh);
-    if (cfg_.displayMode != 0) { fw = std::max(fw, vm.w); fh = std::max(fh, vm.h); }
+    // (borderless: at least the desktop's size, the window may not have grown yet. Exclusive: its own size, which
+    // FULLSCREEN SIZE may make smaller than the desktop: drawn at the desktop's size, the picture sat in the bottom-left
+    // corner of a smaller screen, cut off (owner, 2026-11-05: "it should center the game and it isnt"))
+    if (cfg_.displayMode == 2) { if (cfg_.fsWidth > 0 && cfg_.fsHeight > 0) { fw = cfg_.fsWidth; fh = cfg_.fsHeight; } else { fw = std::max(fw, vm.w); fh = std::max(fh, vm.h); } }
+    else if (cfg_.displayMode == 1) { fw = std::max(fw, vm.w); fh = std::max(fh, vm.h); }
     if (fw > 0 && fh > 0) r_.resize(fw, fh);
 }
 
@@ -12377,9 +12763,11 @@ void Game::drawPicker(float cx, float y) {
     }
     // where a choice / BACK leaves you (the UI test checks it): the host / vs bots menu, or the pause menu (or its votes)
     const char* done = host ? "host" : "vsbots";
-    const char* back = screen_ == Screen::InGame ? (builder ? "ingame/pause/vote*" : voteMenu_ ? "ingame/pause/vote" : "ingame/pause") : done;
+    const bool queue = ladders && variantCtx_ == 3;   // RANKED from the main menu: picking a ladder finds a game (BACK: the main menu)
+    const char* back = screen_ == Screen::InGame ? (builder ? "ingame/pause/vote*" : voteMenu_ ? "ingame/pause/vote" : "ingame/pause") : queue ? "main" : done;
     if ((int)multiSel_.size() != n) multiSel_.assign(n, false);
     std::string title = picker_ == PICK_TMAPS ? "TOURNEY MAPS (PICK ANY, THEY ROTATE)" : picker_ == PICK_TMODES ? "TOURNEY RULESETS (PICK ANY, THEY ROTATE)"
+                      : queue ? "RANKED - PICK A LADDER TO FIND A MATCH"
                       : ladders ? "RANKED - CHOOSE A LADDER"
                       : variants ? std::string(modeTitle(mode)) + " - CHOOSE A RULESET" : modes ? "CHOOSE A MODE"
                       : std::string("CHOOSE A MAP FOR ") + (rankedNow ? "RANKED" : modeTitle(mode));
@@ -12403,8 +12791,9 @@ void Game::drawPicker(float cx, float y) {
         Item it;
         if (ladders) {
             it.label = arenaVariant(kLadders[i]).title;
-            it.sub = std::string(arenaVariant(kLadders[i]).desc) + " - OWN RATING";
-            it.cur = rankedNow && kLadders[i] == (live ? net_.mode().arenaVariant : variant);
+            // (the mode first: review round 2 found nothing said which ladder is 1v1 and which free for all)
+            it.sub = std::string(modeTitle(rankedMode(kLadders[i]))) + " - " + arenaVariant(kLadders[i]).desc + " - OWN RATING";
+            it.cur = queue ? kLadders[i] == cfg_.lastLadder : rankedNow && kLadders[i] == (live ? net_.mode().arenaVariant : variant);   // (the queue: the ladder last queued for)
         } else if (variants) {
             it.label = arenaVariant(i).title;
             it.sub = arenaVariant(i).desc;
@@ -12433,6 +12822,7 @@ void Game::drawPicker(float cx, float y) {
         }
         it.pe = multi ? UiExp::state("multisel")
               : ladders && live ? UiExp::cmd(livePickVote_ ? "callvote ranked on" : "ranked on")
+              : queue ? UiExp::state("hosting", "1").optional()   // (finds a waiting game, else hosts one)
               : ladders ? UiExp::nav("host")
               : variants ? (live ? UiExp::nav("ingame/pause/picker:livemap") : UiExp::nav(done))
               : modes && i == MODE_COUNT ? UiExp::nav(live ? "ingame/pause/picker:ladders" : "host/picker:ladders")
@@ -12459,6 +12849,7 @@ void Game::drawPicker(float cx, float y) {
             net_.sendCommand(std::string(livePickVote_ ? "callvote " : "") + "ranked on " + arenaVariant(kLadders[i]).name);
             picker_ = PICK_NONE; voteMenu_ = false; paused_ = false;
         }
+        else if (ladders && variantCtx_ == 3) findRankedMatch(kLadders[i]);   // (RANKED from the main menu: the queue; HOST's settings untouched)
         else if (ladders) {
             cfg_.hostRanked = true;
             variant = kLadders[i];
@@ -12535,7 +12926,7 @@ void Game::drawPicker(float cx, float y) {
                     return;
                 }
             }
-            if (ui_.button(L.X(176), L.Y(ry), L.L(fw), L.L(40), "BACK", UiExp::nav(back))) picker_ = PICK_NONE;
+            if (ui_.button(L.X(176), L.Y(ry), L.L(fw), L.L(40), "BACK", UiExp::nav(back))) { if (queue) setScreen(Screen::Main); picker_ = PICK_NONE; }
             return;
         }
         // every card once a frame (labels, tags: what it shows; the buffers are reused)
@@ -12603,7 +12994,7 @@ void Game::drawPicker(float cx, float y) {
                 return;
             }
         }
-        if (ui_.button(L.X(176), L.Y(ry), L.L(fw), L.L(40), "BACK", UiExp::nav(back))) picker_ = PICK_NONE;
+        if (ui_.button(L.X(176), L.Y(ry), L.L(fw), L.L(40), "BACK", UiExp::nav(back))) { if (queue) setScreen(Screen::Main); picker_ = PICK_NONE; }
     }
 }
 

@@ -37,6 +37,8 @@ struct GLFWwindow;
 
 // The redesign's coordinates (720p, a 1280 frame) on this screen: x centred on W / 2, everything times s, y from oy
 // (Game::menuLayout: the menus' pages, narrowed on a squarer screen with their top kept under the title)
+constexpr float kMenuStripW = 72;   // the main menu's icon strip (720p design px), on every top-level menu screen
+
 struct SetLayout {
     float s = 1, cx = 640, oy = 0;
     float X(float px) const { return cx + (px - 640) * s; }
@@ -71,6 +73,7 @@ struct LaunchOptions {
     bool debugHudLayout = false; // --hudlayout: open HUD layout settings in game
     bool debugModels = false;
     bool debugWalk = false;    // (--walk: the --models lineup turned side-on)
+    int debugModelPage = 0;    // (--modelpage N: the --models lineup shows models 11 N .. 11 N + 10: kLineup a batch)
     int debugRps = 0;           // --rpsshot: the hide and seek tiebreak panel with made-up players (1 picking, 2 reveal, 3 three-way reveal)
     bool camSet = false;         // --cam: fixed backdrop camera (map analysis shots); in a match, the view's camera
     Vec3 camPos;
@@ -235,6 +238,11 @@ private:
     void openMainTab(int tab);         // shows a tab, and reads what it shows (bests, recent maps) once
     void drawMainMenu();
     void drawMainStrip(float s, float H);
+    bool typingAtFrame_ = false;
+    bool menuKeysFree() const;   // (1-5 / Enter in the menus: nothing else wants the keyboard)
+    void leaveForStrip();        // (a strip click off the main menu: leave the screen as its BACK does)
+    int stripFromTab_ = 0;       // the main menu tab the current screen was opened from (the strip lights it)
+    float menuStripPx_ = 0;      // the main menu's strip beside this frame's menu screen (px; 0: none), menuLayout centres right of it
     void drawMainPlay(float s, float px, float pw, float rx, float rw, float ry);
     void drawMainPractice(float s, float px, float pw, float rx, float rw, float ry);
     void drawMainCreate(float s, float px, float pw, float rx, float rw, float ry);
@@ -254,6 +262,12 @@ private:
     void drawVsBots(const SetLayout& L);
     void drawConnecting(const SetLayout& L);
     void debugMenuPage();     // --menupage PATH: that menu page open (screenshots)
+    // HOST's address for friends (review 2026-11-04: "FRIENDS JOIN WITH YOUR PUBLIC IP" left players looking it up):
+    // this machine's public IPv4, looked up once on its own thread when HOST first opens; COPY puts ip:port on the clipboard
+    std::future<std::string> pubIpFuture_;
+    std::string pubIp_;
+    bool pubIpAsked_ = false;
+    double pubIpCopiedAt_ = -1e9;
     bool hostAdvanced_ = false;   // HOST > ADVANCED (UDP port, port forward, server log, bot brain) open
     std::vector<std::string> hostBrains_;   // ADVANCED's BOT BRAIN choices after BUILT-IN: bots/*.qbrain, listed when HOST opens
     std::string hostBrainNote_;             // the chosen brain's problem, short ("" none): it doesn't compile
@@ -486,7 +500,7 @@ private:
     std::string previewSig_;    // (the maps the renderer's previews are of: names, file times and sizes)
     std::vector<MapInfo> mapInfo_;
     enum { PICK_NONE = 0, PICK_HOST_MAP, PICK_HOST_MODE, PICK_BOT_MAP, PICK_BOT_MODE, PICK_LIVE_MAP, PICK_LIVE_MODE, PICK_VARIANT, PICK_TMAPS, PICK_TMODES, PICK_RANKED };
-    int variantCtx_ = 0, liveVariant_ = 0; // ruleset step: 0 host, 1 vs bots, 2 in game
+    int variantCtx_ = 0, liveVariant_ = 0; // ruleset step: 0 host, 1 vs bots, 2 in game, 3 RANKED's queue (main menu)
     std::vector<bool> multiSel_;
     int liveMode_ = 0, liveMap_ = 0;  // in-game map/mode change (host) or vote (anyone)
     bool livePickVote_ = false;
@@ -956,6 +970,22 @@ private:
     ModelParts previewParts_;
     struct PreviewFace { float xy[8]; float z; Color c; };
     std::vector<PreviewFace> previewFaces_;
+    bool modelFaces(int pm, const Vec3& team, float yaw, float phase, float x, float y, float w, float h, bool tight = false);   // (into previewFaces_)
+    template <class Quad> static void drawPreviewFaces(const std::vector<PreviewFace>& faces, float edge, Quad&& quad);
+    // The model picker (settings/models; owner, 2026-11-05: "a menu that renders them all so you can see them all when
+    // selecting"): every player model in a grid, in the team colour, the current one framed, click (or arrows + Enter)
+    // to pick. 1: PLAYER MODEL (yours), 2: ENEMY MODEL, 3: TEAM MODEL (GAMEPLAY > MORE: THEIR OWN first); 0 closed.
+    // Each model is drawn once into a thumbnail atlas (Renderer::thumbAtlas) when the picker opens or its colour, size
+    // or theme changes (pickKey_); only the hovered / selected one is drawn live, turning and walking.
+    int modelPick_ = 0;
+    int modelScroll_ = 0;          // the first row shown (the wheel)
+    int modelCursor_ = -1;         // the keyboard's choice (-1: the current one); the mouse over a card moves it
+    float pickYaw_ = 0, pickPhase_ = 0;
+    int pickAnimOf_ = -1;          // (the card pickYaw_ belongs to: a new one starts from the thumbnails' angle)
+    uint64_t pickKey_ = 0;         // (what the atlas holds: the colour, cell size, theme, models)
+    void openModelPicker(int which);
+    void drawModelPicker(const SetLayout& L);
+    bool modelPickerKey(int key);  // arrows / Home / End / Page keys / Enter in the picker (true: taken)
     std::string chCodeMsg_; double chCodeUntil_ = 0;   // (CROSSHAIR > COPY / PASTE CODE's answer)
     void drawMoreSettings(const SetLayout& L);
     const char* moreNav(int n) const;
@@ -1015,7 +1045,7 @@ private:
     std::string confirmWhat_; double confirmUntil_ = 0;   // CONFIRM LEAVE: the button armed by a first click
     bool confirmed(const std::string& what);   // (true: do it; false: armed, click again)
     bool confirmArmed(const std::string& what) const { return cfg_.confirmLeave && confirmWhat_ == what && time_ < confirmUntil_; }
-    int settingsStartTab() const { return cfg_.rememberTab ? cfg_.lastTab : TAB_PLAYER; }
+    int settingsStartTab() const { return cfg_.rememberTab ? cfg_.lastTab : TAB_CONTROLS; }   // (CONTROLS: sensitivity, what players open settings for most; review 2026-11-04)
     int prioLevel(bool focused) const { return cfg_.prioritize && focused ? cfg_.cpuPriority : 0; }
     // a display change waiting for KEEP (VIDEO > MORE: RESOLUTION, VIDEO: DISPLAY): reverted at keepUntil_ unless kept
     double keepUntil_ = 0;
@@ -1202,6 +1232,16 @@ private:
     void drawConsole(float W, float H, float s, float ts);
     int bestMapFor(int mode) const;
     int bestRankedMap(int ladder) const; // the ladder's own ranked map, else any ranked map for it
+    void findRankedMatch(int ladder);
+    void quickPlay();
+    void quickPlayTick();
+    double quickAt_ = -1;                // QUICK PLAY pressed (FINDING A GAME...), -1: not
+    void videoPresetCycle(float x, float y, float w, float h);   // VIDEO + AUDIO's PRESET row (page 1 and MORE 3)
+    void drawRankedQueue();              // RANKED's FINDING A RANKED MATCH card (CANCEL; hosts after 3 s with nobody waiting)
+    int queueLadder_ = -1;               // the ladder being queued for (-1: not queueing)
+    double queueAt_ = 0, queueHostAfter_ = 20, queueRefreshed_ = 0;
+    void hostRankedQueue(int ladder);    // the queue's fallback: host a public ranked game, HOST's settings put back after                    // QUICK PLAY: the best official server that answers (bots when none does)    // RANKED's queue: join a waiting ranked game on the ladder, else host one
+    bool rankedQueue_ = false;           // (startHost from the queue: listed publicly)
     bool pressInput(int code);
     void drawControls(const SetLayout& L);
     void drawHudSettings(const SetLayout& L);

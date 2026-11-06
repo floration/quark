@@ -1,5 +1,6 @@
 " matches more than one player: use the id (status lists them)	" 와(과) 일치하는 플레이어가 여럿입니다: ID를 사용하세요 (status에 표시됨)
 ","color":	","color":
+","pivot":	","pivot":
 "IT" IN YOUR ENEMY COLOUR, THE REST YOUR TEAM'S	"술래"는 적 색상, 나머지는 우리 팀 색상
 "path"	"path"
 # # # TO # # #	# # # → # # #
@@ -237,6 +238,7 @@ ADVANCED	상급
 ADVANCED  >	상급  >
 ADVANCED > BOT BRAIN: what your bots play: the built-in brain, or a .qbrain file from the bots folder in your data folder. A file that doesn't compile shows its error line and the bots play the built-in brain. Never in ranked.	상급 > 봇 AI: 봇의 플레이 방식: 내장 AI 또는 데이터 폴더의 bots 폴더에 있는 .qbrain 파일. 컴파일되지 않는 파일은 오류 줄을 표시하고 봇은 내장 AI로 플레이합니다. 랭크에서는 사용하지 않습니다.
 AGAIN (R)	다시 (R)
+AGENT	요원
 AHEAD	앞섬
 AIM 15 DEGREES DOWN: EVERY LANDING IS A HYPER	15도 아래 조준: 착지마다 하이퍼
 AIM A LITTLE DOWN	약간 아래를 조준
@@ -264,6 +266,7 @@ AIR CONTROL	공중 제어
 AIR DRIFT (UNDER RUN SPEED)	공중 드리프트 (달리기 속도 이하)
 AIR ROCKET	에어 로켓
 AIR STRAFE CAP	공중 스트레이프 한도
+ALIEN	외계인
 ALL	전체
 ALL MODES	모든 모드
 ALL OFF	모두 끄기
@@ -320,6 +323,7 @@ AS THICK	같은 두께
 ASIDE: A FRAME LESS LAG IN A WINDOW	참고: 창 모드에서 1프레임 지연 감소
 ASK "SURE?" FIRST: CLICK AGAIN	"확실합니까?" 먼저 묻기: 다시 클릭
 ASSUMED	가정
+ASTRONAUT	우주비행사
 AT # # #	위치 # # #
 AT CAMERA	카메라 위치
 AT SPEED, HOOK A PILLAR BESIDE YOU: THE HOOK TURNS YOU ROUND IT AND YOU KEEP YOUR SPEED.	속도를 낸 채 옆 기둥에 갈고리: 기둥을 돌며 방향을 틀고 속도는 유지된다.
@@ -396,6 +400,7 @@ BAR W	바 W
 BARLOW CONDENSED	BARLOW CONDENSED
 BASIC	기본
 BEBAS NEUE	BEBAS NEUE
+BEE	꿀벌
 BEGINNER	초급
 BEHIND	뒤처짐
 BEHIND (0: AS IN FRONT)	뒤 (0: 앞과 동일)
@@ -493,6 +498,7 @@ BUILT FOR	제작 모드
 BUILT FOR sets the mode the map is made for; the MODES grid sets what it's offered for. PLAYABLE AS shows what it has the pieces for (team modes need A and B spawns).	제작 모드는 맵이 만들어진 모드를 정하고, 모드 그리드는 어떤 모드에 제공될지 정합니다. 플레이 가능 모드는 맵에 필요한 요소가 있는 모드를 보여줍니다 (팀 모드는 A, B 스폰 필요).
 BUILT FOR:	제작 모드:
 BUILT FOR: ANY	제작 모드: 모두
+BUNNY	토끼
 BUNNY HOP WITH ONE STRAFE KEY AT A TIME, TURNING WITH IT: SPEED WITH NO DASH.	옆 이동 키를 하나씩 누르며 버니합, 그쪽으로 회전: 대시 없이 속도.
 BURSTS UP TO 24 M/S ON A 180 WALL	180 벽에서 최대 24 M/S 돌진
 BURSTS UP TO 24 M/S ON THE WALL	벽에서 최대 24 M/S 돌진
@@ -518,6 +524,8 @@ CAPTIONS: THE ANNOUNCER AS TEXT TOO	자막: 아나운서 음성도 텍스트로
 CAPTURE	점령
 CAPTURE THE HILL	언덕 점령
 CART	화물
+CAT	고양이
+CAVEMAN	원시인
 CEILING HANG	천장 매달리기
 CHAMPION	챔피언
 CHANGE ANYTHING AFTER (IT STAYS)	이후 무엇이든 변경 (유지됨)
@@ -540,9 +548,11 @@ CHAT OPACITY	채팅 불투명도
 CHAT SECONDS	채팅 표시 시간(초)
 CHECK AGAIN	다시 확인
 CHECK FILES	파일 확인
+CHECK YOUR CONNECTION, OR TRY AGAIN IN A MINUTE	연결을 확인하거나 잠시 후 다시 시도하세요
 CHECKING...	확인 중...
 CHECKPOINT	체크포인트
 CHECKPT	체크포인트
+CHEF	요리사
 CHOOSE	선택
 CHOOSE -	선택 -
 CHOOSE A MAP FOR	맵 선택:
@@ -577,6 +587,7 @@ CLOSEST FREE MATCH: OVERWATCH	가장 비슷한 무료 게임: OVERWATCH
 CLOSEST FREE MATCH: QUAKE	가장 비슷한 무료 게임: QUAKE
 CLOSEST FREE MATCH: TF2	가장 비슷한 무료 게임: TF2
 CLOSEST FREE MATCH: TF2 SECONDARY	가장 비슷한 무료 게임: TF2 보조 무기
+CLOWN	광대
 CM PER 360	CM PER 360
 CM PER 360: MOUSE TRAVEL FOR ONE FULL TURN	CM PER 360: 한 바퀴 도는 데 필요한 마우스 이동 거리
 COLOR	색상
@@ -640,9 +651,12 @@ COOLDOWN BARS	쿨다운 바
 COOLDOWN BARS: ALWAYS	쿨다운 바: 항상
 COOLDOWN BARS: WHEN NOT READY	쿨다운 바: 준비 안 됐을 때
 COOLDOWN RING	쿨다운 링
+COPIED	복사됨
 COPIED (COULDN'T WRITE FILE)	복사됨 (파일 쓰기 실패)
 COPIED + SAVED CONTROLS/	복사 + CONTROLS/에 저장됨
 COPIED + SAVED HUDS/	복사 + HUDS/에 저장됨
+COPY	복사
+COPY ADDRESS	주소 복사
 COPY CODE	코드 복사
 COPY COLORS	색상 복사
 COPY NAME	이름 복사
@@ -651,6 +665,8 @@ COULD NOT DELETE	삭제 실패
 COULD NOT RENAME THE RUN	기록 이름 변경 실패
 COULD NOT SAVE	저장 실패
 COULD NOT WRITE	쓰기 실패
+COULDN'T LOAD THE INTERNET LIST - CHECK YOUR CONNECTION	인터넷 목록을 불러오지 못했습니다 - 연결을 확인하세요
+COULDN'T REACH THE RANKING SERVER	랭킹 서버에 연결할 수 없습니다
 COULDN'T SAVE THE SCREENSHOT	스크린샷 저장 실패
 COULDN'T START RECORDING	녹화 시작 실패
 COUNTDOWN: A TICK EACH OF THE LAST 10 S	카운트다운: 마지막 10초 동안 매초 틱 소리
@@ -718,6 +734,7 @@ CUSTOM WIDGETS: build your own HUD pieces (number, bar, icon) from any value, dr
 CUSTOM: PICK OUTLINE "CUSTOM" ON PLAYER; SAME: ITS	사용자 지정: 플레이어 탭에서 외곽선 "사용자 지정" 선택; 동일: 그
 CYAN	청록
 CYAN / RED	청록 / 빨강
+CYBORG	사이보그
 D3DKMTCloseAdapter	D3DKMTCloseAdapter
 D3DKMTGetProcessSchedulingPriorityClass	D3DKMTGetProcessSchedulingPriorityClass
 D3DKMTGetScanLine	D3DKMTGetScanLine
@@ -729,6 +746,7 @@ DAMAGE FLASH	피격 섬광
 DAMAGE NUMBER COLOR	피해량 숫자 색상
 DAMAGE NUMBER SIZE	피해량 숫자 크기
 DAMAGE NUMBERS	피해량 숫자
+DANCER	댄서
 DASH	대시
 DASH + GRAPPLE	대시 + 그래플
 DASH AND JUMP TOGETHER	대시와 점프를 동시에
@@ -794,6 +812,7 @@ DEMO RATE	데모 빈도
 DEMO RATE: 62.5 HZ	데모 빈도: 62.5 HZ
 DEMO RATE: FULL	데모 빈도: 전체
 DEMO SAVED - CREATE > DEMOS	데모 저장됨 - 만들기 > 데모
+DEMOLITION	폭파병
 DEMOS	데모
 DEPTH	깊이
 DESC	내림차순
@@ -804,6 +823,7 @@ DIFFICULTY: ADVANCED	난이도: 상급
 DIFFICULTY: BEGINNER	난이도: 초급
 DIFFICULTY: EXPERT	난이도: 전문가
 DIFFICULTY: INTERMEDIATE	난이도: 중급
+DINO	공룡
 DISABLE CHAT	채팅 비활성화
 DISCONNECT	연결 끊기
 DISCORD	DISCORD
@@ -815,10 +835,13 @@ DISCORD:	DISCORD:
 DISCORD:  (PUBLIC)	DISCORD:  (공개)
 DISCORD: TYPE THE 6-DIGIT CODE FROM /link IN DISCORD	DISCORD: DISCORD의 /link에서 받은 6자리 코드를 입력하세요
 DISPLAY	화면
+DISPLAY / LATENCY / IMAGE / SOUND	화면 / 지연 시간 / 이미지 / 사운드
+DISPLAY / SOUND GROUPS / PERFORMANCE / PRESET	화면 / 사운드 그룹 / 성능 / 프리셋
 DISPLAY: BORDERLESS FULLSCREEN	화면: 테두리 없는 전체 화면
 DISPLAY: EXCLUSIVE FULLSCREEN	화면: 전용 전체 화면
 DISPLAY: WINDOWED	화면: 창 모드
 DISTANCE	거리
+DIVER	잠수부
 DMG	피해량
 DMITRI	DMITRI
 DON'T DASH NOW: A DASH ABOVE 32 M/S CAPS YOU DOWN (A HYPER ABOVE 36)	지금 대시 금지: 32 M/S 이상에서 대시하면 속도가 깎인다 (하이퍼는 36 이상)
@@ -909,10 +932,10 @@ ENEMY HOLDS THE HILL	적이 언덕 점령 중
 ENEMY IS PUSHING	적이 화물 미는 중
 ENEMY MODEL	적 모델
 ENEMY MODEL:	적 모델:
-ENEMY MODEL: THEIR OWN	적 모델: 본인 설정
 ENEMY OUTLINE	적 외곽선
 ENEMY OUTLINE:	적 외곽선:
 ENEMY WIDTH	적 너비
+ENGINEER	엔지니어
 ENTER	ENTER
 ERROR ON LINE	오류 발생 줄
 ESC	ESC
@@ -920,7 +943,10 @@ ESC (CLEAR SEARCH)	ESC (검색 지우기)
 ESC TO CANCEL	ESC로 취소
 ESC: LESSONS	ESC: 레슨
 ESC: PAUSE / SETTINGS   R: RESTART	ESC: 일시정지 / 설정   R: 재시작
+EVERY ENEMY / TEAMMATE AS ONE MODEL (NOT IN RANKED)	모든 적 / 팀원을 하나의 모델로 (랭크 제외)
 EVERY LANDING HYPERS AGAIN AS SOON AS A DASH CHARGE IS BACK	대시 충전이 돌아오는 즉시 착지할 때마다 다시 하이퍼
+EVERY MODEL HAS THE SAME HITBOX - RANKED: EVERYONE IS STANDARD	모든 모델의 히트박스는 같음 - 랭크: 모두 표준
+EVERY SERVER IS FULL - PLAYING BOTS	모든 서버가 가득 찼습니다 - 봇과 플레이
 EVERY SETTING IS BACK TO ITS DEFAULT	모든 설정이 기본값으로 돌아갔습니다
 EVERY WEAPON, ALL MOVEMENT - NO GIMMICKS	모든 무기, 모든 이동기 - 변형 없음
 EVERYONE THROWS - THE LOSING SHAPE IS OUT	모두 동시에 냄 - 진 모양은 탈락
@@ -981,6 +1007,9 @@ FINAL	결승
 FIND A SERVER	서버 찾기
 FIND CLIP BOXES	클립 박스 찾기
 FIND INVISIBLE WALLS:	보이지 않는 벽 찾기:
+FINDING A GAME...	게임 찾는 중...
+FINDING A RANKED MATCH	랭크 매치 찾는 중
+FINDING YOUR ADDRESS...	주소 확인 중...
 FINISH	완주
 FINISHED	완료
 FIRE	사격
@@ -989,6 +1018,7 @@ FIRE AFTER A DASH, NEVER JUST BEFORE ONE: A DASH ERASES A BLAST'S PUSH	대시 �
 FIRE AND GRAPPLE TOGETHER	발사와 그래플을 동시에
 FIRE RATE	연사 속도
 FIRE THE MOMENT THE DASH GOES, NEVER BEFORE: A DASH ERASES A BLAST'S PUSH	대시가 나가는 순간 쏜다, 그 전엔 안 된다: 대시는 폭발의 밀림을 지운다
+FIREFIGHTER	소방관
 FIRES THE MOMENT IT IS	준비되는 즉시 발사
 FIRST TO #	#선승
 FIX GAPS	틈 메우기
@@ -996,6 +1026,7 @@ FIX MAP	맵 수정
 FIXED LOGO COLORS	로고 색상 고정
 FIXED TEAMS	팀 고정
 FIXED TEAMS: SPECTATING AND DEMOS SHOW	팀 고정: 관전과 데모에서 표시
+FLAMER	화염방사병
 FLAT LIGHTING	평면 조명
 FLAT MAP	평면 맵
 FLAT MAP, NO LIGHTING	평면 맵, 조명 없음
@@ -1033,6 +1064,7 @@ FPS MIN (1S)	FPS 최저 (1초)
 FRAME CAP OFFSET	FPS 제한 선행
 FRAME CAP WAIT	프레임 제한 대기
 FRAME TIME OVER THE RUN	실행 중 프레임 시간
+FRAME TIMES 5 S: AVG #  BEST #  WORST # US	프레임 시간 5 S: 평균 #  최고 #  최저 # US
 FRAME'S START: EVEN FRAMES; AUTO 5% OF THE FRAME	정확히 대기: 고른 프레임; 자동은 프레임의 5%
 FRAMES	프레임
 FREE FOR ALL	개인전
@@ -1040,6 +1072,8 @@ FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next 
 FRENZY	FRENZY
 FRIENDS JOIN WITH YOUR PUBLIC IP (STREAMER MODE)	친구는 공인 IP로 참가 (스트리머 모드)
 FRIENDS JOIN WITH YOUR PUBLIC IP:	친구는 공인 IP로 참가:
+FRIENDS JOIN WITH:	친구 접속 주소:
+FROG	개구리
 FROM	출처
 FROM 11.7 M UP OR MORE THE HOP IS THE BIGGEST, 15.7 M/S	11.7 M 이상에서 떨어지면 최대 15.7 M/S
 FROM STANDING OR A SLOW RISE ONLY: RISING FAST, THE BUBBLES CAN'T CATCH YOU	서 있거나 천천히 오를 때만: 빠르게 오르는 중이면 거품이 따라오지 못한다
@@ -1088,19 +1122,22 @@ GET 40 M UP	40 M 올라가기
 GET 55 M UP	55 M 오르기
 GET 7 M UP	7 M 위로 올라가기
 GET IT WITH /link - THE CODE IS PUBLIC	/link로 받기 - 코드는 공개됨
-GHOST	GHOST
+GHOST	유령
 GHOST'S KEYS	고스트의 키
 GIANT SNIPERS	거대 저격수
 GIBS	고어
 GL	GL
 GL {} / {}	GL {} / {}
+GLADIATOR	검투사
 GLASS CANNONS	유리 대포
 GLOW	광원
 GLOW STRENGTH	광원 세기
 GO	시작
 GO!	시작!
 GOAL	목표
+GOALIE	골키퍼
 GODLIKE	신급
+GOLEM	골렘
 GPU	GPU
 GPU + CPU GO TO THE GAME FIRST WHILE FOCUSED	창 활성 시 GPU + CPU를 게임에 우선 할당
 GPU HUD	GPU HUD
@@ -1119,6 +1156,7 @@ GPU SCHEDULING ON: RESTART YOUR PC FOR IT TO TAKE EFFECT	GPU 스케줄링 켜짐
 GPU SCHEDULING: NOT CHANGED (THE ADMIN PROMPT WAS DECLINED)	GPU 스케줄링: 변경 안 됨 (관리자 확인 거부)
 GPU SCHEDULING: WINDOWS ONLY	GPU 스케줄링: WINDOWS 전용
 GPU SCHEDULING: WINDOWS REFUSED THE CHANGE	GPU 스케줄링: WINDOWS가 거부함
+GPU WAIT (LATENT SYNC)	GPU 대기 (LATENT SYNC)
 GPU WAIT (LOW LATENCY ON)	GPU 대기 (저지연 켜짐)
 GPU WAIT (ULTRA)	GPU 대기 (울트라)
 GPU dynamic pass	GPU dynamic pass
@@ -1162,6 +1200,7 @@ GROUND FRICTION	지상 마찰
 GROUP	그룹
 GROUP FILE	그룹 파일
 GROUPS	그룹
+GUARD	근위병
 GUN COLOR	총기 색상
 GUN RECOIL KICK	총기 반동
 GUN: CUSTOM	총기: 사용자 지정
@@ -1185,6 +1224,7 @@ HARD TO TELL APART WITH	구분하기 어려운 색:
 HARDWARE GPU SCHEDULING IS OFF	하드웨어 GPU 스케줄링이 꺼져 있음
 HAS NO BINDS	키 지정 없음
 HAS NO WIDGETS	위젯 없음
+HAVE A FRIEND'S ADDRESS? PASTE IT HERE	친구 주소가 있나요? 여기에 붙여넣기
 HEAD ON: THE DASH RUNS ON UP THE FACE AT ITS FULL 24 M/S	정면으로: 대시가 24 M/S 그대로 면을 오른다
 HEADSHOT	헤드샷
 HEADSHOT HIT	헤드샷 적중
@@ -1265,6 +1305,7 @@ HOP 15 M/S UP OFF A LANDING	착지에서 15 M/S로 튀어 오르기
 HOST	호스트
 HOST EDIT SESSION	편집 세션 호스트
 HOST EDIT SESSION: friends join and build with you; everyone's camera shows in the view.	편집 세션 호스트: 친구가 참가해 함께 제작합니다; 모두의 카메라가 화면에 표시됩니다.
+HOST NOW	지금 호스트
 HOSTING	호스트 중
 HOSTING ON UDP PORT	UDP 포트에서 호스트 중
 HOW	방법
@@ -1374,6 +1415,7 @@ ITS STYLE: SAME AS ABOVE	스타일: 위와 동일
 ITS STYLE: T	스타일: T
 IVO	IVO
 Input	입력
+JESTER	어릿광대
 JOIN A SERVER, PLAY BOTS OR HOST YOUR OWN	서버에 참가하거나, 봇과 대전하거나, 직접 호스트하세요
 JOIN A TEAM FROM THE MENU (ESC)	메뉴(ESC)에서 팀에 참가하세요
 JOIN GAME	게임 참가
@@ -1430,6 +1472,7 @@ KILLED	처치됨
 KILLED BY	처치자:
 KILLING SPREE	연속 처치
 KILLS	킬
+KING	왕
 KING OF THE HILL	언덕의 왕
 KING OF THE HILL - stand on the hill with no enemy on it to score a point a second. First to 100.	언덕의 왕 - 적이 없는 언덕 위에 서 있으면 초당 1점. 100점 선취.
 KNIFE	나이프
@@ -1479,7 +1522,6 @@ LATEST ({})	최신 ({})
 LAUNCH OPTIONS (PASSED TO THE GAME)	실행 옵션 (게임에 전달)
 LAUNCHER ON THE RIGHT	런처를 오른쪽에
 LAY A STICKY BOMB, STAND ON IT, SET IT OFF AS YOU JUMP.	점착 폭탄을 깔고 그 위에 서서 점프하며 터뜨리기.
-LEADERBOARD: SOON	리더보드: 곧 공개
 LEAVE	나가기
 LEAVE ALL	모두 나가기
 LEAVE TUTORIAL	튜토리얼 나가기
@@ -1541,6 +1583,7 @@ LOCATOR READY	탐지기 준비됨
 LOGIC:	로직:
 LOGO + YOUR BOTS	로고 + 내 봇
 LOOK	외형
+LOOKING FOR SOMEONE WAITING ON THIS LADDER	이 래더에서 기다리는 상대를 찾는 중
 LOOKS INTEGRATED: IF THERE'S A DEDICATED GPU,	내장 그래픽으로 보임: 외장 GPU가 있다면,
 LOSS	손실
 LOSS #%	손실 #%
@@ -1558,6 +1601,7 @@ LOW LATENCY: ULTRA	저지연: 울트라
 LOW LATENCY: ULTRA STARTS EACH FRAME THIS EARLY;	저지연: 울트라는 각 프레임을 이만큼 일찍 시작;
 LOWER RATES: LESS CPU AND UPLOAD	낮은 빈도: CPU 및 업로드 감소
 LOWER: SLOWER WHILE SCOPED	낮을수록: 스코프 중 더 느림
+LUMBERJACK	나무꾼
 Latch	Latch
 MAGENTA	자홍
 MAKE	만들기
@@ -1565,6 +1609,7 @@ MALE	남성
 MAP	맵
 MAP COLOR	맵 색상
 MAP COLORS	맵 색상
+MAP COLORS / PLAYERS / HEALTH BARS / NAME TAGS	맵 색상 / 플레이어 / 체력 바 / 이름표
 MAP DOWNLOADS	맵 다운로드
 MAP EDITOR	맵 에디터
 MAP EDITOR *	맵 에디터 *
@@ -1577,10 +1622,12 @@ MAPS FOLDER	맵 폴더
 MAPS KEPT	맵 유지됨
 MAPS MARKED "NOT FOR THIS MODE" MAY NOT WORK IN IT	"이 모드용 아님" 표시된 맵은 해당 모드에서 작동하지 않을 수 있음
 MAPS YOU SAVE IN THE EDITOR SHOW HERE	에디터에서 저장한 맵이 여기에 표시됩니다
+MARINE	해병
 MARK COLOR	표시 색상
 MARK TIME	표시 시간
 MARKER OPACITY	마커 불투명도
 MARKER SIZE	마커 크기
+MARKSMAN	저격수
 MAT4	MAT4
 MATCH	경기
 MATCH OVER	경기 종료
@@ -2191,6 +2238,7 @@ MAX (0=AUTO)	최대 (0=자동)
 MAX PING	최대 핑
 MAX PLAYERS	최대 인원
 MB (OFFICIAL MAPS SHIP BAKED)	MB (공식 맵은 굽기 포함)
+MEDIC	의무병
 MEDIUM	보통
 MEDIUM BOTS	보통 봇
 MENU (ESC)	메뉴 (ESC)
@@ -2203,9 +2251,11 @@ MENUS	메뉴
 METER SCALE	계기 배율
 METER TICKS	계기 눈금
 MILO	MILO
+MIME	마임
 MIN # US	최소 # US
 MIN FPS (WORST FRAME)	최저 FPS (최악 프레임)
 MINE	내 것
+MINER	광부
 MINIMIZE ON ALT-TAB	ALT-TAB 시 최소화
 MIRROR	대칭
 MIRROR X	X축 대칭
@@ -2255,6 +2305,8 @@ MOVEMENT TECH	이동 테크닉
 MS	MS
 MULTI POINT	멀티 포인트
 MULTI POINT - attackers take the points in order (A, B, C...). Only they capture; a defender on the point holds it. Each point taken adds 90 s and moves both teams' spawns forward. Each team attacks once.	멀티 포인트 - 공격팀은 순서대로(A, B, C...) 지점을 점령합니다. 공격팀만 점령할 수 있고, 수비가 지점 위에 있으면 점령이 멈춥니다. 지점 하나를 점령할 때마다 90초가 추가되고 양 팀의 스폰이 앞으로 이동합니다. 각 팀이 한 번씩 공격합니다.
+MUMMY	미라
+MUSHROOM	버섯
 MUTE	음소거
 MUTE IN BACKGROUND	백그라운드에서 음소거
 MUTED	음소거됨
@@ -2288,6 +2340,7 @@ ND	ND
 NE	NE
 NET GRAPH	넷 그래프
 NETWORK	네트워크
+NETWORK / LIGHT CACHE / MENU CURSOR	네트워크 / 조명 캐시 / 메뉴 커서
 NETWORK READ	네트워크 읽기
 NETWORK WARNINGS	네트워크 경고
 NEUTRAL PAYLOAD	중립 화물
@@ -2329,10 +2382,14 @@ NO RESPONSE	응답 없음
 NO RESPONSE - CLICK TO TRY	응답 없음 - 클릭하여 재시도
 NO RUNS SAVED YET	저장된 기록 없음
 NO RUNS YET - FINISH	아직 기록 없음 - 완주하세요
+NO SERVER ANSWERED - PLAYING BOTS	응답하는 서버 없음 - 봇과 플레이
+NO SERVER LIST RIGHT NOW	지금은 서버 목록이 없습니다
 NO SETTINGS ON THE CLIPBOARD (EXPORT MAKES THEM)	클립보드에 설정 없음 (내보내기로 생성)
 NO TIMES YET	아직 기록 없음
 NO VSYNC	수직 동기화 없음
 NOBODY RANKED YET (3 GAMES)	아직 랭크된 사람 없음 (3게임)
+NOBODY WAITING - HOSTING A RANKED GAME, THE NEXT PLAYER TO QUEUE JOINS YOU	기다리는 상대 없음 - 랭크 게임을 호스팅합니다, 다음 대기자가 참가합니다
+NOBODY YET: YOU HOST IN # S	아직 없음: # 초 후 호스트
 NONE	없음
 NONE YET	아직 없음
 NONE YET - EXPORT ONE, OR COPY A GROUP AND IMPORT	아직 없음 - 하나를 내보내거나 그룹을 복사해 가져오기
@@ -2446,6 +2503,7 @@ OUTLINE OPACITY	외곽선 불투명도
 OUTLINE PX	외곽선 PX
 OUTLINES	외곽선
 OUTPUT	출력
+OUTPUT / VOLUME / CALLOUTS	출력 / 볼륨 / 콜아웃
 OVER 1: LOUDER, TO HEAR THEM COMING	1 초과: 더 크게, 다가오는 소리 듣기용
 OVERRIDES FOLDER	오버라이드 폴더
 OVERRIDES OF YOURS - ON / OFF AT THE NEXT START	내 오버라이드 - 다음 실행 시 켜기 / 끄기
@@ -2499,12 +2557,14 @@ PAYLOAD	화물
 PAYLOAD - attackers push the cart along its track by standing next to it; defenders stop it. Checkpoints along the track add time and stop it rolling back. Each team attacks once.	화물 - 공격팀은 화물 옆에 서서 선로를 따라 밉니다; 수비팀은 막습니다. 선로의 체크포인트는 시간을 추가하고 화물이 뒤로 밀리지 않게 합니다. 각 팀이 한 번씩 공격합니다.
 PAYLOAD CONTESTED	화물 경합 중
 PAYLOAD PATH POINT	화물 경로 지점
+PENGUIN	펭귄
 PER MODE	모드별
 PER WEAPON	무기별
 PERCEPTUAL	지각적
 PERF STATS	성능 통계
 PERFORMANCE	성능
 PERFORMANCE CHECK	성능 점검
+PHARAOH	파라오
 PHYSICS	물리
 PIA	PIA
 PICK A FILE TO IMPORT	가져올 파일 선택
@@ -2514,6 +2574,7 @@ PICK IT IN WINDOWS' GRAPHICS SETTINGS	WINDOWS 그래픽 설정에서 선택
 PICK VSYNC: LATENT SYNC (VIDEO + AUDIO) FIRST;	수직 동기화 선택: LATENT SYNC (비디오 + 오디오) 우선;
 PICTURE	사진
 PICTURES: PICTURES/QUARK IN YOUR HOME FOLDER	사진: 홈 폴더의 PICTURES/QUARK
+PIMP	포주
 PING	PING
 PING #	PING #
 PING # MS  LOSS #%	PING # MS  손실 #%
@@ -2524,8 +2585,10 @@ PING: < 50	PING: < 50
 PING: ANY	PING: 전체
 PIRATE	해적
 PITCH	피치
+PLAGUEDOC	역병 의사
 PLAY	플레이
 PLAY A RUN TO SEE YOUR BESTS HERE	플레이하면 여기에 최고 기록이 표시됩니다
+PLAY BOTS INSTEAD	대신 봇과 플레이
 PLAY IT	플레이하기
 PLAY MODE	플레이 모드
 PLAY TIME TRIAL	타임 트라이얼 플레이
@@ -2537,6 +2600,7 @@ PLAYER > MORE SETS THE MENU ACCENT	플레이어 > 더 보기에서 메뉴 강조
 PLAYER ANIMATIONS	플레이어 애니메이션
 PLAYER BASED	플레이어 기반
 PLAYER JOINS	플레이어 참가
+PLAYER MODEL	플레이어 모델
 PLAYER MODEL:	플레이어 모델:
 PLAYER OUTLINE WIDTH	플레이어 외곽선 두께
 PLAYER SHADOWS	플레이어 그림자
@@ -2591,6 +2655,8 @@ PROJECTILE SPEED	투사체 속도
 PUBLIC	공개
 PUBLIC lists the server on the internet server list (off: friends join with your IP, shown on the host screen). Games on your network show up for everyone on it.	공개는 서버를 인터넷 서버 목록에 올립니다 (끄면: 친구가 호스트 화면에 표시된 IP로 참가). 같은 네트워크의 게임은 해당 네트워크의 모든 사람에게 표시됩니다.
 PULSE	펄스
+PUMPKIN	호박
+PUNK	펑크
 PUSH THE PAYLOAD	화물 밀기
 PUSH THE PAYLOAD TO THE ENEMY END	화물을 적 진영 끝까지 밀기
 PUT .QBRAIN FILES IN THE BOTS FOLDER TO PICK ONE	.QBRAIN 파일을 BOTS 폴더에 넣으면 선택 가능
@@ -2609,7 +2675,6 @@ QUAKE	QUAKE
 QUARK	QUARK
 QUARK 1.17 - 1.18	QUARK 1.17 - 1.18
 QUARK CLASSIC	QUARK 클래식
-QUARK V	QUARK V
 QUARTERFINALS	8강
 QUEUE	대기열
 QUEUE FILLED: FLASH TASKBAR	대기열 완료: 작업 표시줄 깜빡임
@@ -2621,6 +2686,8 @@ QUEUED, NO CRACKLE ON A BUSY PC	대기열 사용, 바쁜 PC에서도 끊김 없�
 QUEUES - SHARED WITH DISCORD	대기열 - DISCORD와 공유
 QUEUES NEED A RANKED KEY (quark.key) - COULDN'T MAKE ONE	대기열에는 랭크 키가 필요합니다 (quark.key) - 생성 실패
 QUICK DASH	빠른 대시
+QUICK PLAY	빠른 플레이
+QUICK PLAY JOINS A GAME WITH ROOM, OR STARTS BOTS	빠른 플레이는 자리가 있는 게임에 참가하거나 봇과 시작합니다
 QUIP	한마디
 QUIP CAPTIONS	한마디 자막
 QUIPS	한마디
@@ -2656,6 +2723,7 @@ RANDOM TURNS ON THE WALL	벽에서 무작위로 방향 전환
 RANKED	랭크
 RANKED - CHOOSE A LADDER	랭크 - 래더 선택
 RANKED - NOT RATED	랭크 - 레이팅 미반영
+RANKED - PICK A LADDER TO FIND A MATCH	랭크 - 래더를 골라 매치 찾기
 RANKED 1V1	랭크 1V1
 RANKED ALWAYS USES THE DEFAULT CONTROLS	랭크는 항상 기본 조작 사용
 RANKED ALWAYS USES THE DEFAULT HUD	랭크는 항상 기본 HUD 사용
@@ -2775,6 +2843,7 @@ ROCKET SUPER	로켓 슈퍼
 ROCKET, LASER AND KNIFE	로켓, 레이저, 나이프
 ROCKETS AND STICKIES - NO SELF DAMAGE	로켓과 점착탄 - 자해 피해 없음
 ROCKETS ONLY	로켓만
+ROCKSTAR	록스타
 ROLL	롤
 ROOM	방
 ROPE COLOR	로프 색상
@@ -2800,6 +2869,7 @@ ROUND WON	라운드 승리
 ROUND YOU AT ONE HEIGHT, CHANGING SPEED	같은 높이에서 주위를, 속도가 바뀜
 ROUNDS	라운드
 ROWS #-# OF # (WHEEL)	#-#행 / # (휠)
+ROWS #-# OF # - WHEEL OR ARROWS TO SCROLL	#-#행 / # - 휠 또는 화살표로 스크롤
 ROWS #-# OF # - WHEEL TO SCROLL	#-#행 / # - 휠로 스크롤
 RPS BY MOUSE	마우스로 가위바위보
 RPS BY MOUSE: CLICK A TIEBREAK CARD TO THROW IT	마우스로 가위바위보: 결승 카드를 클릭해 내기
@@ -2817,6 +2887,7 @@ RUN FORWARD	앞으로 달리기
 RUN NAME	기록 이름
 RUN SPEED	달리기 속도
 RUN, JUMP THE HURDLES, REACH THE GLOWING LINE.	달리고, 허들을 넘고, 빛나는 선까지.
+RUNNER	러너
 RUNS	기록
 Ranked games use the default model, HUD and controls and 10 ms interpolation, so everyone plays the same game.	랭크 게임은 기본 모델, HUD, 조작과 10 ms 보간을 사용해 모두가 같은 조건으로 플레이합니다.
 Restore	Restore
@@ -2826,6 +2897,7 @@ SAFE: OK BLUE, ERRORS ORANGE; IT: TAG / HIDE'S	안전: 정상 파랑, 오류 주
 SAME	동일
 SAME AS FPS LIMIT	FPS 제한과 동일
 SAME DPI: THE SAME TURN PER INCH OF MOUSE	같은 DPI: 마우스 1인치당 같은 회전
+SAMURAI	사무라이
 SATURATION	채도
 SATURATION 0: BLACK AND WHITE	채도 0: 흑백
 SATURATION: THEIR COLOUR ONLY, 0 GREY TO 2 VIVID	채도: 플레이어 색만, 0 회색 ~ 2 선명
@@ -2847,6 +2919,7 @@ SAY:	말하기:
 SCALAR	스칼라
 SCALE: X2 TAKES TWICE THE SPEED TO FILL	배율: X2는 채우는 데 두 배 속도 필요
 SCANOUT TO THE CROSSHAIR (EST)	조준점까지 스캔아웃 (추정)
+SCARECROW	허수아비
 SCI-FI / DECOR	SF / 장식
 SCISSORS	가위
 SCOPE OVERLAY	스코프 오버레이
@@ -2866,6 +2939,7 @@ SCREENSHOT FORMAT	스크린샷 형식
 SCREENSHOT SAVED (NO HUD):	스크린샷 저장됨 (HUD 없음):
 SCREENSHOT SAVED:	스크린샷 저장됨:
 SCREENSHOTS	스크린샷
+SCREENSHOTS / DEMOS / LATENCY	스크린샷 / 데모 / 지연 시간
 SCROLLBAR	스크롤바
 SE	SE
 SEARCH	검색
@@ -2880,6 +2954,7 @@ SEMIFINALS	4강
 SENSITIVITY	감도
 SENSITIVITY FROM ANOTHER GAME	다른 게임의 감도
 SERVER	서버
+SERVER LIST UNREACHABLE - HOSTING A RANKED GAME ONLY YOUR ADDRESS REACHES	서버 목록에 연결할 수 없음 - 내 주소로만 참가할 수 있는 랭크 게임을 호스팅합니다
 SERVER LOG	서버 로그
 SERVER LOG: EXTREME (EVERY TICK)	서버 로그: 극단적 (매 틱)
 SERVER LOG: OFF	서버 로그: 끄기
@@ -2906,6 +2981,7 @@ SHADOW QUALITY: HIGH	그림자 품질: 높음
 SHADOW QUALITY: LOW	그림자 품질: 낮음
 SHADOW QUALITY: MEDIUM	그림자 품질: 중간
 SHADOWS	그림자
+SHADOWS / PLAYERS / OUTLINES / COLORS	그림자 / 플레이어 / 외곽선 / 색상
 SHAPE	모양
 SHARPEN	선명화
 SHIFT + ARROWS: GROW THAT SIDE    CTRL + ARROWS: SHRINK IT    M: MATERIAL / TEAM    N: SHAPE    K: COAT THE SIDE YOU LOOK AT	SHIFT + 화살표: 해당 면 늘리기    CTRL + 화살표: 줄이기    M: 재질 / 팀    N: 모양    K: 보고 있는 면 칠하기
@@ -2944,6 +3020,7 @@ SIZING	크기 조정
 SIZING: EXACT PIXELS	크기 조정: 픽셀 고정
 SIZING: SCALE WITH RESOLUTION	크기 조정: 해상도에 맞춤
 SIZZLE	SIZZLE
+SKELETON	해골
 SKIP	건너뛰기
 SKIP IT	건너뛰기
 SKIP LESSON	레슨 건너뛰기
@@ -2971,6 +3048,7 @@ SNIPER SCOPE	저격 스코프
 SNIPER ZOOM FOV	저격 줌 FOV
 SNIPERS - ANY HIT KILLS	저격수 - 한 방이면 처치
 SNIPERS ONLY	저격총만
+SNOWMAN	눈사람
 SOCD	SOCD
 SORT	정렬
 SORT BY	정렬 기준
@@ -3102,6 +3180,7 @@ STYLE: ICON + BAR	스타일: 아이콘 + 바
 STYLE: NUMBER	스타일: 숫자
 STYLE: T	스타일: T
 SUBTRACT	빼기
+SUMO	스모 선수
 SUPER	슈퍼
 SUPER CHAINING	슈퍼 체인
 SUPER DASH	슈퍼 대시
@@ -3112,6 +3191,7 @@ SURE?	확실합니까?
 SURE? QUIT	확실합니까? 종료
 SURF	서핑
 SURFACES	표면
+SURFER	서퍼
 SW	SW
 SWAP	교체
 SWAP FIRE	사격 버튼 교체
@@ -3169,7 +3249,6 @@ TEAM COLORS:	팀 색상:
 TEAM COLORS: CUSTOM	팀 색상: 사용자 지정
 TEAM MODEL	팀 모델
 TEAM MODEL:	팀 모델:
-TEAM MODEL: THEIR OWN	팀 모델: 본인 설정
 TEAM OUTLINE	팀 외곽선
 TEAM OUTLINE:	팀 외곽선:
 TEAM PANEL	팀 패널
@@ -3250,6 +3329,7 @@ THE SHARE OF THE MODE'S MAX HEALTH	모드 최대 체력 대비 비율
 THE TASKBAR BUTTON FLASHES	작업 표시줄 버튼 깜빡임
 THE WHOLE STREAM POPS UNDER YOU. HOLD IT: ANOTHER EVERY 1.8 S	거품 줄기가 전부 발밑에서 터진다. 누르고 있으면 1.8 S마다 한 번 더
 THE WINDOW'S SIZE AND PLACE ARE KEPT	창 크기와 위치 유지
+THEIR OWN	본인 설정
 THEIRS	상대 것
 THEME.CFG LINE	THEME.CFG 줄
 THEN	그다음
@@ -3308,8 +3388,10 @@ TOGGLE: PRESS TO HOOK, PRESS AGAIN TO LET GO	토글: 눌러서 훅 걸기, 다�
 TOGGLE: PRESS USE TO PLANT / DEFUSE, AGAIN TO STOP	토글: 사용 키를 눌러 설치 / 해체, 다시 눌러 중지
 TONE CURVE	톤 커브
 TONE CURVE OFF: FLAT, LINEAR COLOUR; CLEAN: NO	톤 커브 끄기: 평면, 선형 색상; 클린: 없음
+TOP #  BOTTOM # US (AVG +-50% OR WIDER)	위 #  아래 # US (평균 +-50% 이상)
 TOP RIGHT, WITHOUT A WIDGET (F3 HAS MORE)	오른쪽 위, 위젯 없이 (F3에 더 많음)
 TOTAL K / D	총 K / D
+TOURIST	관광객
 TOURNEY	토너먼트
 TOURNEY - a single-elimination bracket of 1v1s; everyone else spectates the match in progress.	토너먼트 - 1v1 싱글 엘리미네이션 대진표; 나머지 플레이어는 진행 중인 경기를 관전합니다.
 TOURNEY BRACKET	토너먼트 대진표
@@ -3347,6 +3429,7 @@ TUTORIAL	튜토리얼
 TUTORIAL -	튜토리얼 -
 TUTORIAL - {}	튜토리얼 - {}
 TUTORIAL COMPLETE	튜토리얼 완료
+TVHEAD	TV 머리
 TWO	둘
 TWO BALLS ON 9 SPOTS, 20 HP	9개 지점에 공 두 개, 20 HP
 TWO TINY BALLS	아주 작은 공 두 개
@@ -3444,6 +3527,7 @@ VIDEO 8	비디오 8
 VIDEO 9	비디오 9
 VIDEO: DEVICES	비디오: 장치
 VIEW	시점
+VIKING	바이킹
 VISUALIZE SOUNDS	소리 시각화
 VOICE	음성
 VOICE:	음성:
@@ -3523,6 +3607,7 @@ WEAPON:	무기:
 WEAPONS	무기
 WEAPONS (THEIR NUMBER KEYS STILL WORK)	무기 (숫자 키는 계속 작동)
 WELCOME TO QUARK	QUARK에 오신 것을 환영합니다
+WEREWOLF	늑대인간
 WHAT THE BOTS PLAY: .QBRAIN FILES IN THE BOTS FOLDER	봇이 사용하는 AI: BOTS 폴더의 .QBRAIN 파일
 WHEEL DN	WHEEL DN
 WHEEL UP	WHEEL UP
@@ -3543,6 +3628,7 @@ WIDTH; CUSTOM (GLTF) PLAYER MODELS HAVE NO OUTLINE	두께; 사용자 지정 (GLT
 WINDIR	WINDIR
 WINDOW	창
 WINDOW + INPUT	창 + 입력
+WINDOW / SHADOWS / GPU / HITSOUNDS / FLAT MAP	창 / 그림자 / GPU / 타격음 / 평면 맵
 WINDOW SIZE	창 크기
 WINDOW SIZE:	창 크기:
 WINDOWED	창 모드
@@ -3570,6 +3656,7 @@ WORK SANS	WORK SANS
 WORKING...	작업 중...
 WORLD	월드
 WORLD + HUD + SHADOW MAP BUILD	월드 + HUD + 그림자 맵 생성
+WORLD / PICTURE / EFFECTS	월드 / 사진 / 효과
 WORLD OUTLINE	월드 외곽선
 WORLD OUTLINE WIDTH	월드 외곽선 두께
 WORST #MS  PING #  3D #X#	최악 #MS  PING #  3D #X#
@@ -3588,6 +3675,7 @@ YELLOW	노랑
 YES	예
 YES #  NO #  OF #   F1 YES / F2 NO   #s	찬성 #  반대 #  / #   F1 찬성 / F2 반대   #초
 YET REACHED IN YOUR ENEMY COLOUR	아직 도달 못 한 곳은 적 색상으로
+YETI	예티
 YOU DIED	사망했습니다
 YOU FLY AT EACH OTHER, UP TO 24 M/S, FOR UP TO 3 S	서로를 향해 날아간다. 최대 24 M/S, 최대 3 S
 YOU HAVE THE BOMB - PLANT AT A SITE	폭탄 보유 중 - 지점에 설치하세요
@@ -3609,6 +3697,7 @@ YOUR HOOK CATCHES PLAYERS TOO: IT PULLS YOU BOTH TOGETHER. CATCH THEM, OR DRAG T
 YOUR KILLS	내 킬
 YOUR MATCH:  # SHOTS  # HITS  #% ACCURACY  # DAMAGE  BEST STREAK #	내 경기:  발사 #  적중 #  정확도 #%  피해량 #  최고 연속 처치 #
 YOUR NAME (CHAT AND SCOREBOARD)	내 이름 (채팅 및 스코어보드)
+YOUR OWN FILE	내 파일
 YOUR OWN MODEL FILE: NO PREVIEW HERE	내 모델 파일: 여기서는 미리보기 없음
 YOUR OWN ROCKET THROWS YOU. HERE IT DOES NO DAMAGE.	자신의 로켓이 너를 날린다. 여기선 피해 없음.
 YOUR OWN: PUT .TTF / .OTF FILES IN MODS/FONTS,	직접 추가: .TTF / .OTF 파일을 MODS/FONTS에 넣고,
@@ -4023,6 +4112,8 @@ ping up on # of # players	플레이어 #/#명 핑 상승
 pinned version	pinned version
 pinned version {} (installed: {}) - press INSTALL to switch to it	고정 버전 {} (설치됨: {}) - 바꾸려면 설치를 누르세요
 pinned version {} not found (release list incomplete) - installed: {}	고정 버전 {} 을(를) 찾지 못했습니다 (릴리스 목록 불완전) - 설치됨: {}
+pivot must be 3 numbers within 64 m	pivot는 64 m 이내의 숫자 3개여야 함
+pivot without a part	part 없는 pivot
 placed the group from the clipboard	클립보드의 그룹 배치됨
 point # taken by team #	#팀이 지점 # 점령
 poll events	poll events
@@ -4233,6 +4324,7 @@ ungrouped into	그룹 해제됨:
 unknown bone "	알 수 없는 본 "
 unknown mode	알 수 없는 모드
 unknown mode '	알 수 없는 모드 '
+unknown part "	알 수 없는 파트 "
 unknown ruleset	알 수 없는 규칙
 unknown setting '	알 수 없는 설정 '
 unknown slot "	알 수 없는 슬롯 "

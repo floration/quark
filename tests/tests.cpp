@@ -5338,6 +5338,7 @@ static void testCrossLanguageConstants(uint16_t port) {
     for (int k = 0; ok && k < 2; k++) { int l = rep[off++]; ok = off + l <= n; if (ok) str[k].assign((char*)rep + off, l); off += l; }
     ok = ok && off + 5 <= n;
     CHECK(ok && str[1] == "bastion" && rep[off] == MODE_KOTH && rep[off + 1] == 0 && rep[off + 2] == 7 && (rep[off + 3] | rep[off + 4] << 8) == port);
+    CHECK(off + 7 <= n && rep[off + 5] == 0 && rep[off + 6] == 0);   // (1.19.9: flags, ladder - an unranked server)
     s.stop();
 }
 
@@ -8846,6 +8847,51 @@ static void testDemoUpgrade() {
         CHECK(demo::convert(demo46(kHookRocket), &out46b, &why) && lastSelf(out46b, &m46b));
         printf("  protocol 46 -> %d: hook target %d (was 5), %d (was %d)\n", (int)kProtocolVersion, (int)m46a.hookTarget, (int)m46b.hookTarget, (int)kHookRocket);
         CHECK(m46a.hookTarget == 5 && (m46a.flags & MF_HOOKED) && m46a.hookPoint.y == 2 && m46b.hookTarget == 0 && (m46b.flags & MF_HOOKED));
+        // protocol 70 (EV_PLAYERINFO: model | pack << 4 in b, the id alone in a) converts to 71's layout (the pack in a's
+        // top 3 bits over the id, the whole byte b the model): player 4, NINJA (9), sound pack 3; and a model past 15
+        // (only 71 can carry one) round-trips
+        auto demo70 = [&](uint8_t a, uint8_t b) {
+            Snapshot sn;
+            sn.tick = 1;
+            GameEvent e; e.id = 900; e.type = EV_PLAYERINFO; e.a = a; e.b = b; e.c = 0x1234; e.text = "looks";
+            sn.events.push_back(e);
+            std::vector<uint8_t> bb(4096);
+            Writer w(bb.data(), (int)bb.size());
+            writeSnapshotClient(w, sn); writeSnapshotWorld(w, sn, nullptr); writeSnapshotEvents(w, sn.events);
+            std::string body((const char*)bb.data(), (size_t)w.size()), out = cur;
+            const uint16_t proto = 70;
+            memcpy(&out[4], &proto, 2);
+            uint8_t type = 2; double t = 1e6; uint32_t n = (uint32_t)body.size();
+            out.append((const char*)&type, 1); out.append((const char*)&t, 8); out.append((const char*)&n, 4); out += body;
+            return out;
+        };
+        auto lastEvents = [](const std::string& dm, std::vector<GameEvent>* ev) {   // the last snapshot's events
+            size_t pos = 6, last = 0;
+            uint32_t ln = 0;
+            while (pos + 13 <= dm.size()) {
+                uint32_t n; memcpy(&n, dm.data() + pos + 9, 4);
+                if ((uint8_t)dm[pos] == 2) { last = pos; ln = n; }
+                pos += 13 + (size_t)n;
+            }
+            Reader r((const uint8_t*)dm.data() + last + 13, (int)ln);
+            Snapshot sn;
+            bool ok = last && readSnapshotClient(r, sn) && readSnapshotWorld(r, sn, nullptr) && readSnapshotEvents(r, sn) && r.remaining() == 0;
+            *ev = sn.events;
+            return ok && sn.tick == 1;
+        };
+        {
+            std::string out70;
+            std::vector<GameEvent> ev;
+            CHECK(demo::convertible(70) && demo::convert(demo70(4, (uint8_t)(9 | 3 << 4)), &out70, &why) && lastEvents(out70, &ev));
+            CHECK(ev.size() == 1 && ev[0].type == EV_PLAYERINFO && playerInfoId(ev[0]) == 4 && playerInfoModel(ev[0]) == 9 && playerInfoPack(ev[0]) == 3 &&
+                  ev[0].c == 0x1234 && ev[0].text == "looks" && ev[0].id == 900);
+            printf("  protocol 70 -> %d: player %d, model %s, sound pack %d\n", (int)kProtocolVersion, playerInfoId(ev[0]), playerModelName(playerInfoModel(ev[0])), playerInfoPack(ev[0]));
+            GameEvent now; now.type = EV_PLAYERINFO;
+            setPlayerInfoLooks(now, 31, kPlayerModels - 1, kSoundPacks - 1);
+            CHECK(playerInfoId(now) == 31 && playerInfoModel(now) == kPlayerModels - 1 && playerInfoPack(now) == kSoundPacks - 1 && kPlayerModels > 16);
+            GameEvent bad; bad.type = EV_PLAYERINFO; bad.a = 2 | 7 << 5; bad.b = 255;   // (a model / pack this build doesn't have: the default)
+            CHECK(playerInfoId(bad) == 2 && playerInfoModel(bad) == 0 && playerInfoPack(bad) == 0);
+        }
         // and today's: riding a rocket round-trips the rocket's id, velocity and gravity
         Snapshot sr;
         sr.self.flags = MF_HOOKED; sr.self.hookTarget = kHookRocket; sr.self.hookProj = 777; sr.self.hookVel = {48, -1, 2}; sr.self.hookGrav = 13.5f; sr.self.hookAccel = kRocketAccel;

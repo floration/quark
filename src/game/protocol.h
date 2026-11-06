@@ -25,7 +25,7 @@ enum PacketType : uint8_t {
     PKT_ACCEPT = 64,     // u32 nonce, u8 clientId, str map, 32 bytes map id (MapId: sha256), u8 mode, u32 token lo, u32 token hi (reconnect token)
     PKT_REJECT,          // str reason
     PKT_SNAPSHOT,        // u32 nonce, see Snapshot
-    PKT_INFO_REPLY,      // str serverName, str map, u8 mode, u8 players, u8 maxPlayers, u16 port
+    PKT_INFO_REPLY,      // str serverName, str map, u8 mode, u8 players, u8 maxPlayers, u16 port, then (1.19.9+; older servers stop at port) u8 flags (INFO_RANKED: a ranked ladder is played), u8 its ladder (arenaVariant)
     PKT_KICKED,          // u32 nonce, str reason
     PKT_MAP_DATA,        // u32 nonce, 32 bytes map id (edits chain it), 32 bytes the text's sha256 (mapContentId), u32 totalBytes, u32 offset, u16 n, n bytes
     PKT_CHALLENGE,       // u32 nonce, u32 cookie: echo the cookie in PKT_CONNECT to prove you own your address
@@ -36,7 +36,8 @@ constexpr int kInfoRequestBytes = 160;      // PKT_INFO_REQUEST size; the reply 
 // A testing server (or testing build) plays ranked but never rates it (Server::rated): every notice about that starts
 // with this (the client's HUD tags the match NOT RATED when it sees it).
 constexpr const char* kUnratedNotice = "TESTING SERVER - RANKED NOT RATED";
-constexpr int kInfoNameMax = 96, kInfoMapMax = 40; // 5 + 97 + 41 + 5 <= kInfoRequestBytes
+constexpr int kInfoNameMax = 96, kInfoMapMax = 40; // 5 + 97 + 41 + 5 + 2 <= kInfoRequestBytes
+enum : uint8_t { INFO_RANKED = 1 };   // PKT_INFO_REPLY flags
 constexpr int kRejectHeaderBytes = 5;       // PKT_REJECT before its reason (u32 magic, u8 type)
 constexpr int kProbeRequestBytes = 32;      // PKT_PROBE_REQUEST size (the 9 byte reply is smaller: no amplification)
 constexpr int kMapChunk = 1200;              // map file bytes per PKT_MAP_DATA
@@ -133,6 +134,27 @@ struct GameEvent {
     int16_t c = 0;
     std::string text;
 };
+
+// EV_PLAYERINFO's looks (protocol 71): a = the player id (5 bits, kMaxPlayers 32) | the sound pack << 5 (3 bits), b = the
+// model (a whole byte). Protocol 70 and older put both in b (model | pack << 4: 16 models at most) and a was the id
+// alone: the demo converter rewrites those (upgradePlayerInfo). No extra byte on the wire.
+static_assert(kMaxPlayers <= 32, "EV_PLAYERINFO keeps the player id in a's low 5 bits");
+constexpr uint16_t kPlayerInfoLooksSince = 71;
+inline void setPlayerInfoLooks(GameEvent& e, int id, int model, int pack) {
+    e.a = (uint8_t)((id & 31) | (pack & 7) << 5);
+    e.b = (uint8_t)model;
+}
+inline int playerInfoId(const GameEvent& e) { return e.a & 31; }
+inline int playerInfoModel(const GameEvent& e) { return e.b < kPlayerModels ? e.b : 0; }
+inline int playerInfoPack(const GameEvent& e) { const int p = e.a >> 5; return p < kSoundPacks ? p : 0; }
+// an EV_PLAYERINFO as protocol 70 and older wrote it, into today's layout (true: it was one and was rewritten)
+inline bool upgradePlayerInfo(GameEvent& e) {
+    if (e.type != EV_PLAYERINFO) return false;
+    const int id = e.a, model = e.b & 15, pack = e.b >> 4;
+    if (id >= kMaxPlayers) return false;   // (dropped by every reader anyway: left as it was)
+    setPlayerInfoLooks(e, id, model < kPlayerModels ? model : 0, pack < kSoundPacks ? pack : 0);
+    return true;
+}
 
 enum BombState : uint8_t { BOMB_NONE = 0, BOMB_CARRIED, BOMB_DROPPED, BOMB_PLANTED, BOMB_EXPLODED, BOMB_DEFUSED };
 

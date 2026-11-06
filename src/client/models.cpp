@@ -1033,7 +1033,11 @@ static void meshTriangles(const MeshData& mesh, int anim, const Vec3& off, Model
 
 void meshToModel(const MeshData& mesh, ModelMesh& out) {
     out.parts.clear();
+    out.rig = PlayerRig{};
     meshTriangles(mesh, -1, {0, 0, 0}, out);   // (no anim nodes: every prim, exactly as before)
+    Vec3 mn, mx;
+    if (mesh.bounds(mn, mx)) { out.allCenter = (mn + mx) * 0.5f; out.allRadius = length(mx - mn) * 0.5f; }
+    else { out.allCenter = {}; out.allRadius = 0; }
     for (size_t a = 0; a < mesh.anims.size(); a++) {
         ModelMesh part;
         meshTriangles(mesh, (int)a, mesh.anims[a].pivot, part);
@@ -1042,6 +1046,33 @@ void meshToModel(const MeshData& mesh, ModelMesh& out) {
         part.pivot = mesh.anims[a].pivot;
         out.parts.push_back(std::move(part));
     }
+}
+
+void playerMeshRig(ModelMesh& m) {
+    m.rig = PlayerRig{};
+    Vec3 piv[BONE_COUNT];
+    unsigned has = 0;
+    for (ModelMesh& p : m.parts) {
+        const int b = boneFromName(p.name);
+        p.tag = (uint8_t)(b > 0 && b < BONE_COUNT ? b : BONE_ROOT);
+        if (p.tag != BONE_ROOT && !(has >> p.tag & 1u)) { piv[p.tag] = p.pivot; has |= 1u << p.tag; }
+    }
+    auto got = [&](int b) { return (has >> b & 1u) != 0; };
+    if (!got(BONE_THIGH_L) || !got(BONE_THIGH_R) || !got(BONE_SHIN_L) || !got(BONE_SHIN_R)) return;
+    PlayerRig& r = m.rig;
+    const Vec3 &tl = piv[BONE_THIGH_L], &tr = piv[BONE_THIGH_R], &sl = piv[BONE_SHIN_L], &sr = piv[BONE_SHIN_R];
+    r.hipY = (tl.y + tr.y) * 0.5f;
+    r.kneeY = (sl.y + sr.y) * 0.5f;
+    r.hipX = (std::fabs(tl.x) + std::fabs(tr.x)) * 0.5f;
+    if (!(r.hipY > r.kneeY) || !(r.kneeY > 0) || !std::isfinite(r.hipY + r.kneeY + r.hipX)) { r = PlayerRig{}; return; }
+    r.waistY = got(BONE_TORSO) ? piv[BONE_TORSO].y : r.hipY;
+    if (got(BONE_HEAD)) r.neckY = piv[BONE_HEAD].y;
+    float ankle = 0;
+    if (got(BONE_FOOT_L)) ankle = std::max(ankle, piv[BONE_FOOT_L].y);
+    if (got(BONE_FOOT_R)) ankle = std::max(ankle, piv[BONE_FOOT_R].y);
+    r.ankleY = std::min(std::max(ankle, 0.0f), r.kneeY);
+    r.footHalf = 0;
+    r.animated = true;
 }
 
 // ---- first-person weapon part motions ------------------------------------------------------------------------------

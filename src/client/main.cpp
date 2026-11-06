@@ -92,6 +92,7 @@ int main(int argc, char** argv) {
         else if (a == "--hudlayout") { opts.debugSettings = true; opts.debugHudLayout = true; }
         else if (a == "--models") opts.debugModels = true;
         else if (a == "--walk") { opts.debugModels = true; opts.debugWalk = true; }   // the lineup side-on, mid-stride (PLAYER ANIMATIONS screenshots)
+        else if (a == "--modelpage") { opts.debugModels = true; opts.debugModelPage = std::max(0, atoi(next().c_str())); }   // the lineup's Nth batch of 11 (0: the first 11)
         else if (a == "--rpsshot") opts.debugRps = atoi(next().c_str());   // the tiebreak panel (screenshots)
         else if (a == "--timetrial") opts.timeTrial = true;
         else if (a == "--tutorial") {   // the TUTORIAL at once: [LESSON[:PHASE]] (an id or 0-based number; PHASE try / done / finish / lessons)
@@ -260,6 +261,9 @@ int main(int argc, char** argv) {
         { QZONE("after swap (low latency wait)"); game.afterSwap(); }
         QFRAME();
     }
+    // Exclusive fullscreen: the desktop's own resolution back at once, before the shutdown's saving and the hosted
+    // server's goodbyes (owner, 2026-11-05: closing the game should put the desktop resolution back)
+    if (glfwGetWindowMonitor(win)) { glfwHideWindow(win); glfwSetWindowMonitor(win, nullptr, 0, 0, 640, 480, 0); }
     game.shutdown();
     glfwDestroyWindow(win);
     glfwTerminate();

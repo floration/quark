@@ -408,8 +408,8 @@ void NetClient::onSnapshot(Snapshot& s) {
     }
     for (auto& e : evReady_) {
         if (rec_) fresh.push_back(e);
-        if (e.type == EV_PLAYERINFO && e.a < kMaxPlayers) { names_[e.a] = e.text; int m = e.b & 15, sp = e.b >> 4;
-            models_[e.a] = m < kPlayerModels ? m : 0; packs_[e.a] = sp < kSoundPacks ? sp : 0; nameColors_[e.a] = (uint16_t)e.c; }
+        if (e.type == EV_PLAYERINFO) { const int id = playerInfoId(e); names_[id] = e.text;
+            models_[id] = playerInfoModel(e); packs_[id] = playerInfoPack(e); nameColors_[id] = (uint16_t)e.c; }
         if (e.type == EV_RANKINFO && e.a < kMaxPlayers) rankIds_[e.a] = e.text;
         if (e.type == EV_RANKSIGN) {   // a ranked match went live (or a time trial started): vouch that we're in it (the server forwards it with the ticket)
             std::string sig;
@@ -984,6 +984,7 @@ bool NetClient::projectileHidden(uint16_t id) const {
 ServerBrowser::~ServerBrowser() = default;   // (a fetch still running keeps its own Fetch alive and drops its result)
 
 std::string ServerBrowser::internetStatus() { std::lock_guard<std::mutex> l(fetch_->mu); return fetch_->netStatus; }
+bool ServerBrowser::listFailed() { std::lock_guard<std::mutex> l(fetch_->mu); return fetch_->failed; }
 
 void ServerBrowser::refresh() {
     refreshes_++;
@@ -991,7 +992,7 @@ void ServerBrowser::refresh() {
     servers_.clear();
     listed_.clear();
     uint64_t gen;
-    { std::lock_guard<std::mutex> l(fetch_->mu); gen = ++fetch_->gen; fetch_->netStatus = "SEARCHING THE INTERNET..."; fetch_->fetched.clear(); }
+    { std::lock_guard<std::mutex> l(fetch_->mu); gen = ++fetch_->gen; fetch_->netStatus = "SEARCHING THE INTERNET..."; fetch_->failed = false; fetch_->fetched.clear(); }
     std::thread([f = fetch_, gen] {
         std::vector<std::string> list;
         std::string err;
@@ -1001,6 +1002,7 @@ void ServerBrowser::refresh() {
         if (f->gen != gen) return;   // a newer refresh() is under way: its answer counts
         f->fetched = list;
         f->myIp = me;
+        f->failed = !ok;
         f->netStatus = ok ? std::to_string(list.size()) + " INTERNET SERVER(S) LISTED" : "INTERNET LIST: " + err;
         for (auto& c : f->netStatus) c = (char)toupper((unsigned char)c);
     }).detach();
@@ -1012,6 +1014,13 @@ void ServerBrowser::refresh() {
         sock_.send(NetAddr{0x7F000001u, p}, buf, sizeof buf);
     }
     sentAt_ = timeNow();
+    // the official servers, asked directly (review round 3: known only from the internet list, so with the list down
+    // they never answered or went silent - their rows said "..." for good and QUICK PLAY never fell back to bots)
+    for (size_t i = 0; i < kOfficialServerCount; i++) {
+        const NetAddr na{kOfficialServers[i].ip, kOfficialServers[i].port};
+        listed_.push_back({na, sentAt_, 1, false});
+        sock_.send(na, buf, sizeof buf);
+    }
 }
 
 void ServerBrowser::query(const std::string& address) {
@@ -1067,6 +1076,7 @@ void ServerBrowser::poll() {
         si.name = r.str(); si.map = r.str(); si.mode = r.u8(); si.players = r.u8(); si.maxPlayers = r.u8();
         r.u16();
         if (r.bad()) continue;
+        if (r.remaining() >= 2) { const uint8_t f = r.u8(); si.rankedLadder = (f & INFO_RANKED) ? r.u8() : -1; }   // (an older server: not there)
         si.ping = (float)((timeNow() - sentAt_) * 1000.0);
         for (size_t k = 0; k < servers_.size(); k++) // a late answer replaces its "no response" placeholder
             if (servers_[k].noReply && servers_[k].addr == from) { servers_.erase(servers_.begin() + k); break; }
@@ -1096,7 +1106,7 @@ bool NetClient::startRecording(const std::string& path, bool fullRate) {
     recEvents_.clear();
     for (int i = 0; i < kMaxPlayers; i++) {
         if (names_[i].empty()) continue;
-        GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)i; e.b = (uint8_t)(models_[i] | packs_[i] << 4); e.c = (int16_t)nameColors_[i]; e.text = names_[i];
+        GameEvent e; e.type = EV_PLAYERINFO; setPlayerInfoLooks(e, i, models_[i], packs_[i]); e.c = (int16_t)nameColors_[i]; e.text = names_[i];
         recEvents_.push_back(e);
         if (!rankIds_[i].empty()) { GameEvent r; r.type = EV_RANKINFO; r.a = (uint8_t)i; r.text = rankIds_[i]; recEvents_.push_back(r); }
     }

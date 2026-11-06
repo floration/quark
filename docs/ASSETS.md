@@ -22,7 +22,7 @@ python3 tools/studio/build.py build/assets_export     # -> build/studio/ (+ mani
 | Sounds | 34 sounds x 5 kits = 170 WAV (48 kHz mono) | `sounds/<kit>/<SOUND>.wav`, kit = `default` `heavy_metal` `magical` `retro` `mouth` |
 | Voices | 27 announcer lines x 7 voices = 189 WAV | `voices/<voice>/<LINE>.wav`, voice = `male` `female` `british` `old_man` `e_girl` `india` `spy` |
 | Quips | each voice's quip set (today the default: 8 x 7 = 56 WAV) | `voices/<voice>/quips/<NAME>.wav` |
-| Models | 5 players, 11 weapon viewmodels, 7 projectiles, the crown, 8 props = 32 glTF | `models/player/<NAME>.gltf`, `models/weapon/<NAME>.gltf`, `models/projectile/<NAME>.gltf`, `models/crown/CROWN.gltf`, `models/prop/<NAME>.gltf` |
+| Models | 64 players, 11 weapon viewmodels, 7 projectiles, the crown, 8 props = 91 glTF | `models/player/<NAME>.gltf`, `models/weapon/<NAME>.gltf`, `models/projectile/<NAME>.gltf`, `models/crown/CROWN.gltf`, `models/prop/<NAME>.gltf` |
 | Maps | every shipped map (.qmap) | `maps/<name>.qmap` |
 | Fonts | the default UI font (Rubik), WORK SANS and the game-font look-alikes of Settings > FONT | `fonts/Rubik.ttf`, `fonts/WorkSans.ttf`, `fonts/<file in assets/fonts>` (`BebasNeue-Regular.ttf`, `LibreQuake-CONCHARS.png`, ...) |
 | Images | the game icon | `images/icon.png` |
@@ -55,6 +55,14 @@ everything but the map, explosions, tracers / beams and the zone volumes), one g
 model's own space (metres, +Y up, front at -Z):
 
 - **player**: feet on the ground at the origin, 2 m tall, facing -Z. Every model shares one hitbox: stay inside it.
+  **Adding a player model** is data only: its name at the end of `kPlayerModelNames` (src/game/gamedefs.h; the order
+  is the index on the wire and in quark.cfg, so never reorder or remove one), its box model file
+  `assets/overrides/models/player/<NAME>.gltf` (shipped and embedded; the first 11 also have built-in boxes in
+  models.cpp, later ones draw as STANDARD without the file, and `quark_tests assets` fails a model with no shipped box
+  file), the name's translations (`tools/lang/extract.py`, then a line in each `assets/lang/<code>.tsv`; `make_atlas.py`
+  for new CJK characters) and a provenance entry. Up to 64 (`kMaxModelsPerKind`, models.h: raise it for more) and 256
+  on the wire (EV_PLAYERINFO's model byte). The picker, the bots and the menus pick the new one up by themselves. The
+  OUTLINED set's generator (tools/models/gen_players_outlined.py) writes all 64 byte for byte.
 - **weapon**: the first-person viewmodel. Origin at the weapon's pivot (the HUD's viewmodel x / y / depth put it
   there and its size scales it), barrel along -Z.
 - **projectile**: origin at the projectile, flying toward -Z (ROCKET, KNIFE, STICKY, CROSSBOW, BUBBLE, SYRINGE, ORB =
@@ -138,7 +146,21 @@ logged and the default is kept. Parsed once at startup; drawing costs what the b
   boxes, so a model with longer legs walks with longer legs. A file with no `bone` at all (every older one), or without
   a thigh and a shin on both sides, is drawn standing still, as before. The default SIMPLE is all `root`. The tuning
   (stride lengths, swing, knee bend, the jump pose, turn limits) is `kAnim` in src/client/models.cpp. A mesh override
-  (no box list) isn't animated.
+  (no box list) walks only with its parts split as in "Player mesh parts" below; otherwise it stands still.
+- **Player mesh parts** (on the same `anim_<part>` loader as the weapons' "Animated parts"): a player mesh override splits its moving parts into glTF nodes named `anim_<bone>` (lower
+  case, a joint name above: `anim_pelvis`, `anim_torso`, `anim_head`, `anim_thigh_l`, `anim_shin_l`, `anim_thigh_r`,
+  `anim_shin_r`, `anim_foot_l`, `anim_foot_r`), each with a `mesh` and a `translation` = that joint's pivot in model
+  space (thighs: the hip, x = the leg's offset; shins: the knee; feet: the ankle; head: the neck; torso: the waist;
+  pelvis: the hips' centre), its vertices relative to the pivot, no rotation or scale. Everything else (a node without
+  an `anim_` name) is the root: it never moves. The joints are taken from the pivots the way playerRig measures a box
+  model's (both thighs and shins needed, or the model stands still), and each part is drawn through its joint's
+  playerPose matrix (`w * bone * T(pivot)`, the box path's posedPart), so it walks like the box models; a crouch
+  squashes the posed body. A name that isn't a joint (`anim_bolt`) is a part that never moves. PLAYER ANIMATIONS off:
+  drawn still. Cost: the body and parts go into the same vertex stream as any mesh (no extra draw call), one cull test
+  and one shadow caster per player, one 3x4 matrix product per part a frame, no allocation. `tools/models/gen_players_realistic_dark.py` writes all 11 players this
+  way (the "D2 realistic dark" set: at most 1000 triangles each, every vertex inside the hitbox; not shipped). The
+  shipped players are the OUTLINED set (owner, 2026-11-05): box model files in `assets/overrides/models/player/`,
+  written by `tools/models/gen_players_outlined.py --out assets/overrides --no-preview` (it checks the hitbox).
 - **Weapons' moving parts** (`part`, WEAPON ANIMATIONS): a box with `part` (a name from the Animated parts table
   below: `bolt`, `pump`, `drum`, ...) moves with that part in first person, about its `pivot` (model space; default
   the origin), exactly like an anim_ node. Boxes without it are the still body. Held by other players they're drawn
