@@ -156,7 +156,7 @@ bool Game::trainerKey(int key, int action) {
     if (b.has(A_PERF, key) || b.has(A_PERFMINI, key) || b.has(A_SCREENSHOT, key)) return false;
     if (trPaused_ && settingsInGame_) {
         if (action == GLFW_PRESS && key == GLFW_KEY_ESCAPE &&
-            !(ui_.popupOpen() || filePick_ || widgetEdit_ || hudEdit_ || fontsOpen_ || devicesOpen_ || moreOpen_)) { leaveSettings(); return true; }
+            !(ui_.popupOpen() || filePick_ || widgetEdit_ || hudEdit_ || fontsOpen_ || devicesOpen_)) { leaveSettings(); return true; }
         return false;
     }
     if (action != GLFW_PRESS) return true;
@@ -350,7 +350,7 @@ void Game::trainerFrame(double dt) {
         const float bx = px + 20 * s, bw = pw - 40 * s;
         if (ui_.button(bx, y, bw, bh, "RESUME (ESC)", UiExp::nav("trainer/run"))) { trPaused_ = false; captureMouse(true); }
         y += bh + gap;
-        if (ui_.button(bx, y, bw, bh, "SETTINGS", UiExp::nav("trainer/run/pause/settings"))) { settingsInGame_ = true; openSettingsTab(settingsStartTab()); }
+        if (ui_.button(bx, y, bw, bh, "SETTINGS", UiExp::nav("trainer/run/pause/settings*"))) { settingsInGame_ = true; openSettingsTab(settingsStartTab()); }
         y += bh + gap;
         if (ui_.button(bx, y, bw, bh, "RESTART (R)", UiExp::nav("trainer/run"))) { trainerStart(trSc_); return; }
         y += bh + gap;

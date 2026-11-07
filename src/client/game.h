@@ -275,7 +275,8 @@ private:
     void checkHostBrain();                  // compile the chosen brain (loadBrain: cached while the file is unchanged)
     void drawPauseMenu(float cx, float y);
     // Settings: one shell, six tabs (drawSettings: the menus and the pause menu; game.cpp "Settings")
-    enum { TAB_PLAYER, TAB_GAMEPLAY, TAB_CONTROLS, TAB_VIDEO, TAB_CROSSHAIR, TAB_HUD, TAB_LATENCY, TAB_SEARCH };   // (SEARCH: every setting in one list)
+    // the settings tabs, in the tab row's order (settings review 2026-11-07; their pages: setTabs() in game.cpp). SEARCH: every setting in one list
+    enum { TAB_GENERAL, TAB_CONTROLS, TAB_GAMEPLAY, TAB_HUD, TAB_CROSSHAIR, TAB_VIDEO, TAB_AUDIO, TAB_LATENCY, TAB_SEARCH, TAB_COUNT, TAB_PLAYER = TAB_GENERAL };
     int setTab_ = TAB_PLAYER;
     int controlsSub_ = 0;    // CONTROLS: 0 general + interface keys, 1 move + weapon keys
     void drawSettings();
@@ -283,9 +284,6 @@ private:
     void leaveSettings();
     void debugSettingsTab();
     bool pctSlider(float x, float y, float w, float h, const char* label, float& v, float hi, const char* fmt, const UiExp& e, float def);   // --settingstab
-    void drawPlayerSettings(const SetLayout& L);
-    void drawGameplaySettings(const SetLayout& L);
-    void drawVideoSettings(const SetLayout& L);
     void drawImportDialog(const SetLayout& L);
     void captureMouse(bool on);
     Vec3 teamColor(int playerId) const;
@@ -901,7 +899,6 @@ private:
     // F3 cycles (owner 2026-10-29): 1 the FPS line, 2 + ping / 3D size / server, 3 everything with the pipeline graph, 0 off.
     // Only 3 runs the graph's and input-to-frame measuring (GPU timestamps): 1 and 2 cost just their text.
     void turnGain(float* kYaw, float* kPitch) const;
-    void drawLatencySettings(const struct SetLayout& L);
     std::vector<struct PerfFinding> perfFindings_;
     std::future<std::vector<struct PerfFinding>> perfFuture_;   // (the check runs on its own thread)
     bool perfChecked_ = false;
@@ -951,20 +948,14 @@ private:
     void applyBackground();            // bgCap_ and the background mute from focused_ / iconified_
     bool scoresOn_ = false;            // the scoreboard shown (CONTROLS > MORE: SCOREBOARD TOGGLE)
     double raceResetAt_ = -1;          // (RACE RESET pressed and not yet acted on: let go, the checkpoint; held 250 ms, the start)
-    int moreOpen_ = 0;                 // settings: the tab's MORE page open (1, 2: which; 1.19.4, the settings that don't fit the tab)
-    int morePages() const { return setTab_ == TAB_VIDEO ? 8 : setTab_ == TAB_GAMEPLAY ? 4 : setTab_ == TAB_CONTROLS ? 2 : setTab_ == TAB_PLAYER || setTab_ == TAB_HUD ? 1 : 0; }
+    int moreOpen_ = 0;                 // settings: the page of the tab shown (0: its first; setTabs() in game.cpp names them)
+    int morePages() const { return setPageCount(setTab_) - 1; }   // (the pages after the tab's first)
     // batch 3 (1.19.4): GAMEPLAY > MORE 2 (feedback), MORE 3 (HUD info), MORE 4 (social, spectating); CONTROLS > MORE 2; PLAYER > MORE
-    void drawGameplayMore2(const SetLayout& L);
-    void drawGameplayMore3(const SetLayout& L);
-    void drawGameplayMore4(const SetLayout& L);
-    void drawControlsMore2(const SetLayout& L);
-    void drawPlayerMore(const SetLayout& L);
     // PLAYER: your model in your team colour, turning (drag to turn it): its boxes projected into the 2D batch, only
     // while the tab is open (a few hundred quads)
     void drawModelPreview(float x, float y, float w, float h);
     void drawCompassRadar(float W, float H, float s);   // HUD > MORE: COMPASS, RADAR
     std::vector<std::pair<Vec3, Color>> radarObj_;     // (the objectives' markers this frame, for the RADAR)
-    void drawHudMore(const SetLayout& L);               // HUD > MORE (batch 4b)
     float previewYaw_ = 0.6f;
     bool previewDrag_ = false;
     float previewLastX_ = 0;
@@ -988,13 +979,22 @@ private:
     void drawModelPicker(const SetLayout& L);
     bool modelPickerKey(int key);  // arrows / Home / End / Page keys / Enter in the picker (true: taken)
     std::string chCodeMsg_; double chCodeUntil_ = 0;   // (CROSSHAIR > COPY / PASTE CODE's answer)
-    void drawMoreSettings(const SetLayout& L);
-    const char* moreNav(int n) const;
     // the page strip at the foot of a tab with MORE pages ("<  1 2 3 ... N  >", 1.19.4+): page n (0: the tab itself),
     // clamped to the tab's pages; the Left / Right arrow keys step it while nothing else has the keyboard
     void settingsPage(int n);
     bool settingsPageKeys() const;
-    void drawSettingsPages(const SetLayout& L, float footY);
+    void drawSetSection(int id, const SetLayout& L, struct SetFlow& c);   // one settings section (game.cpp: kSetSec)
+    float drawSetSections(const SetLayout& L, const std::vector<int>& secs, float top, bool leftOnly);
+    void drawSetPageRow(const SetLayout& L);
+    struct { double at = 0; int maps = 0, bakes = 0; uint64_t mapBytes = 0, bakeBytes = 0; } cacheScan_;   // (LATENCY > NETWORK / GENERAL > FILES: the folders' counts, every 2 s)
+    const char* moreNav(int n) const;   // "~settings/<tab>[/<page>]" of this tab's page n
+    void drawSettingsPages(const SetLayout& L, float footY);   // the footer's page strip: < 1 2 3 >
+    void drawSetPage(const SetLayout& L);
+    void measureSetSections();
+    int setPageCount(int tab) const;
+    const char* setPageName(int tab, int page) const;
+    const char* setTabName(int tab) const;
+    std::string setPagePath(int tab, int page) const;   // "settings/<tab>[/<page>]"
     // (UI test only) the lowest pixel the settings page's content drew on this frame, and the footer row's top: the
     // test fails a page whose content runs into its footer (-1: no settings page drawn this frame)
     float setInkBottom_ = -1, setFootTop_ = 0;
@@ -1046,7 +1046,8 @@ private:
     std::string confirmWhat_; double confirmUntil_ = 0;   // CONFIRM LEAVE: the button armed by a first click
     bool confirmed(const std::string& what);   // (true: do it; false: armed, click again)
     bool confirmArmed(const std::string& what) const { return cfg_.confirmLeave && confirmWhat_ == what && time_ < confirmUntil_; }
-    int settingsStartTab() const { return cfg_.rememberTab ? cfg_.lastTab : TAB_CONTROLS; }   // (CONTROLS: sensitivity, what players open settings for most; review 2026-11-04)
+    bool confirmPending(const std::string& what) const { return confirmWhat_ == what && time_ < confirmUntil_; }   // (armed whatever CONFIRM LEAVING says)
+    int settingsStartTab() const { return cfg_.rememberTab && cfg_.lastTab >= 0 && cfg_.lastTab < TAB_COUNT ? cfg_.lastTab : TAB_CONTROLS; }   // (CONTROLS: sensitivity, what players open settings for most; review 2026-11-04)
     int prioLevel(bool focused) const { return cfg_.prioritize && focused ? cfg_.cpuPriority : 0; }
     // a display change waiting for KEEP (VIDEO > MORE: RESOLUTION, VIDEO: DISPLAY): reverted at keepUntil_ unless kept
     double keepUntil_ = 0;

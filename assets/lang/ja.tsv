@@ -330,12 +330,14 @@ AT SPEED, HOOK A PILLAR BESIDE YOU: THE HOOK TURNS YOU ROUND IT AND YOU KEEP YOU
 ATTACK + RACE	攻撃 + レース
 ATTACK - PLANT THE BOMB	攻撃 - 爆弾を設置
 ATTACK: CARRY THE BOMB TO A SITE AND PLANT IT	攻撃: 爆弾をサイトに運んで設置
+AUDIO	オーディオ
 AUDIO INPUT (MICROPHONE)	音声入力 (マイク)
 AUDIO LATENCY	オーディオ遅延
 AUDIO LATENCY: LOW	オーディオ遅延: 低
 AUDIO LATENCY: NORMAL	オーディオ遅延: 通常
 AUDIO LATENCY: SAFE	オーディオ遅延: 安全
 AUDIO OUTPUT	音声出力
+AUDIO: DEVICES	オーディオ: デバイス
 AUTO	自動
 AUTO (# US)	自動 (# US)
 AUTO LEARNS IT; MORE: FEWER GPU BUBBLES, MORE LAG	自動で調整; 多い: GPUの空き減、遅延増
@@ -362,6 +364,7 @@ AVG # US	平均 # US
 AVG FPS	平均 FPS
 AVG FRAME	平均フレーム
 AVX2	AVX2
+AXES	軸
 Anything in the maps folder shows up in the lists. Servers send their map to players who don't have it.	mapsフォルダ内のものはリストに表示されます。サーバーはマップを持っていないプレイヤーに送信します。
 AvSetMmThreadCharacteristicsW	AvSetMmThreadCharacteristicsW
 BACK	戻る
@@ -432,7 +435,7 @@ BIG HIT	大ダメージ
 BIG HIT: 40+ DAMAGE; NOT USABLE: THE WEAPON LIST	大ダメージ: 40以上; 使用不可: 武器リスト
 BIG NOODLE	BIG NOODLE
 BIND FLY KEYS	飛行キーを割り当て
-BIND HIDE HUD ON CONTROLS	操作設定でHUD非表示を割り当て
+BIND HIDE HUD ON CONTROLS > MORE KEYS	操作設定 > その他のキー でHUD非表示を割り当て
 BLACK	黒
 BLADES	ブレード
 BLAZE	BLAZE
@@ -528,7 +531,6 @@ CAT	ネコ
 CAVEMAN	原始人
 CEILING HANG	天井ぶら下がり
 CHAMPION	チャンピオン
-CHANGE ANYTHING AFTER (IT STAYS)	後から自由に変更可 (保持されます)
 CHANGE MAP / MODE	マップ / モード変更
 CHANGE MAP / MODE (pick the mode, then the map), FORCE START, RELOAD MAP, EDIT MODE (everyone edits the map together).	マップ / モード変更 (モード、次にマップを選択)、強制開始、マップ再読込、編集モード (全員でマップを編集)。
 CHANGELOG	更新履歴
@@ -541,6 +543,8 @@ CHANNELS: SWAPPED	チャンネル: 左右反転
 CHAT	チャット
 CHAT BOX	チャット欄
 CHAT COLOR	チャットの色
+CHAT FADE	チャットのフェード
+CHAT KEYS	チャットキー
 CHAT LINES	チャット行数
 CHAT OFF -	チャット オフ -
 CHAT ON	チャット オン
@@ -601,6 +605,7 @@ COLOR: YELLOW	色: 黄
 COLORBLIND: BLUE-YELLOW	色覚補正: 青-黄
 COLORBLIND: RED-GREEN	色覚補正: 赤-緑
 COLORS	カラー
+COLORS + MORE	色 + その他
 COLORS COPIED: PASTE THEM ANYWHERE	カラーをコピー: どこにでも貼り付け可
 COLORS FROM	カラー元:
 COLORS PASTED	カラーを貼り付け
@@ -618,8 +623,8 @@ COMET	COMET
 COMMUNITY	コミュニティ
 COMPASS	コンパス
 COMPASS + RADAR	コンパス + レーダー
-COMPETITIVE: NO FOG OR SHADOWS, FEWER EFFECTS;	競技: 霧と影なし、エフェクト削減;
 COMPOSITED FRAME SHOWN (EST)	合成フレーム表示 (推定)
+COMPOSITOR	コンポジター
 COMPOSITOR ON MOST DRIVERS	多くのドライバーでコンポジター
 COMPOSITOR: NEXT VBLANK (EST)	コンポジター: 次のVBLANK (推定)
 CONCHARS is compressed	CONCHARS が圧縮されています
@@ -642,10 +647,6 @@ CONTRAST	コントラスト
 CONTROL PANEL > POWER OPTIONS: HIGH PERFORMANCE	コントロールパネル > パワーオプション: 高パフォーマンス
 CONTROL SCRIPTS ARE OFF IN RANKED	ランクでは操作スクリプト無効
 CONTROLS	操作設定
-CONTROLS 2	操作設定 2
-CONTROLS 3	操作設定 3
-CONTROLS: MORE KEYS	操作設定: その他のキー
-CONTROLS: MOVE KEYS	操作設定: 移動キー
 CONVERTING...	変換中...
 COOLDOWN BARS	クールダウンバー
 COOLDOWN BARS: ALWAYS	クールダウンバー: 常に
@@ -731,7 +732,7 @@ CUSTOM TAG	カスタムタグ
 CUSTOM TEAM	カスタムチーム
 CUSTOM WIDGETS	カスタムウィジェット
 CUSTOM WIDGETS: build your own HUD pieces (number, bar, icon) from any value, drag them around, and import / export layouts.	カスタムウィジェット: 任意の値から独自のHUD要素 (数値、バー、アイコン) を作成し、ドラッグで配置、レイアウトのインポート / エクスポートも可能。
-CUSTOM: PICK OUTLINE "CUSTOM" ON PLAYER; SAME: ITS	カスタム: プレイヤーで輪郭「カスタム」を選択; 同じ: その
+CUSTOM: PICK OUTLINE "CUSTOM" UNDER OUTLINES; SAME: ITS	カスタム: 輪郭で「カスタム」を選択; 同じ: その
 CYAN	シアン
 CYAN / RED	シアン / 赤
 CYBORG	サイボーグ
@@ -835,8 +836,6 @@ DISCORD:	DISCORD:
 DISCORD:  (PUBLIC)	DISCORD:  (公開)
 DISCORD: TYPE THE 6-DIGIT CODE FROM /link IN DISCORD	DISCORD: DISCORDの /link で得た6桁コードを入力
 DISPLAY	ディスプレイ
-DISPLAY / LATENCY / IMAGE / SOUND	ディスプレイ / 遅延 / 画像 / サウンド
-DISPLAY / SOUND GROUPS / PERFORMANCE / PRESET	ディスプレイ / サウンドグループ / パフォーマンス / プリセット
 DISPLAY: BORDERLESS FULLSCREEN	ディスプレイ: ボーダーレスフルスクリーン
 DISPLAY: EXCLUSIVE FULLSCREEN	ディスプレイ: 排他フルスクリーン
 DISPLAY: WINDOWED	ディスプレイ: ウィンドウ
@@ -922,8 +921,10 @@ ELEMENT: SCORE BOX	要素: スコアボックス
 ELEMENT: SPEED METER	要素: スピードメーター
 ELEMENT: WEAPON LIST	要素: 武器リスト
 ELEMENT: WEAPON NAME	要素: 武器名
+ELEMENTS	要素
 END	END
 END SESSION	セッション終了
+ENEMIES	敵
 ENEMIES ALIVE	敵の生存数
 ENEMY BOTS	敵ボット
 ENEMY COLOR	敵の色
@@ -1002,6 +1003,7 @@ FIGHTER	ファイター
 FILE	ファイル
 FILE NAME	ファイル名
 FILE: NAME / TITLE	ファイル: 名前 / タイトル
+FILES	ファイル
 FILL THE UNEVEN TEAMS WITH BOTS?	人数差をボットで埋めますか?
 FINAL	決勝
 FIND A SERVER	サーバーを探す
@@ -1061,6 +1063,7 @@ FPS AND 1% LOWS	FPS と 1% LOW
 FPS LIMIT	FPS制限
 FPS LIMIT: WAKES THIS EARLY, THEN WAITS EXACTLY TO THE	FPS制限: この分早く起き、フレーム開始まで
 FPS MIN (1S)	FPS 最小 (1秒)
+FRAME	フレーム
 FRAME CAP OFFSET	FPS制限の先行
 FRAME CAP WAIT	フレーム上限待機
 FRAME TIME OVER THE RUN	ラン中のフレームタイム
@@ -1108,16 +1111,12 @@ GAME LATENCY ~{} NS  (MOUSE REPORT IN TO GPU DONE; F3: NEXT VIEW)	ゲームの�
 GAME {} NS + MOUSE POLLING {} NS (# HZ) + DISPLAY {} NS (# HZ)	ゲーム {} NS + マウス {} NS (# HZ) + ディスプレイ {} NS (# HZ)
 GAMEMODE	ゲームモード
 GAMEPLAY	ゲームプレイ
-GAMEPLAY 2	ゲームプレイ 2
-GAMEPLAY 3	ゲームプレイ 3
-GAMEPLAY 4	ゲームプレイ 4
-GAMEPLAY 5	ゲームプレイ 5
 GAMMA	ガンマ
 GAP	間隔
 GATE	ゲート
 GEFORCE	GEFORCE
 GENERAL	一般
-GENERAL + INTERFACE	一般 + インターフェース
+GENERAL > MENUS SETS THE MENU ACCENT	一般 > メニュー でメニューのアクセントを設定
 GET 40 M UP	40 M 上がる
 GET 55 M UP	55 M 上がる
 GET 7 M UP	7 M 上がる
@@ -1164,6 +1163,7 @@ GPU resolve / scale	GPU resolve / scale
 GPU shadow pass	GPU shadow pass
 GPU world pass	GPU world pass
 GRADE FROM LOW COLOR	低い値の色からグラデーション
+GRAPHICS	グラフィック
 GRAPPLE	グラップル
 GRAPPLE + HAND	グラップル + 手
 GRAPPLE A PLAYER	プレイヤーにフック
@@ -1314,7 +1314,6 @@ HP	HP
 HTTP	HTTP
 HUD	HUD
 HUD & SETTINGS	HUD & 設定
-HUD 2	HUD 2
 HUD > VERBOSE INFO TURNS THE BLOCK ON	HUD > 詳細情報 でこのブロックを表示
 HUD BEFORE WORLD	HUD を先に描く
 HUD COLORS	HUDカラー
@@ -1405,7 +1404,7 @@ IS ON A RAMPAGE	ランペイジ!
 IS UNSTOPPABLE	アンストッパブル!
 IT IN MY PALETTE	鬼を自分のパレットで
 IT IS ALWAYS IN THE MAIN MENU: PRACTICE > TUTORIAL	いつでもメインメニュー: 練習 > チュートリアル
-ITS COLOURS ARE ON THE CROSSHAIR TAB	色はクロスヘアタブで設定
+ITS COLOURS ARE ON THE CROSSHAIR TAB (ON HIT)	色はクロスヘアタブ (ヒット時) で設定
 ITS STYLE	スタイル
 ITS STYLE: CIRCLE	スタイル: 円
 ITS STYLE: CROSS	スタイル: 十字
@@ -1513,6 +1512,7 @@ LATE FRAME	遅延フレーム
 LATE: TEAR	遅延時: ティアリング
 LATE: WAIT	遅延時: 待機
 LATENCY	遅延
+LATENCY > SYNC: NV SINGLE-THREAD (OR THE NVIDIA CONTROL PANEL)	遅延 > 同期: NV シングルスレッド (または NVIDIA コントロールパネル)
 LATENCY: GPU SCHED: TURN ON (THEN RESTART)	遅延: GPU スケジューリング: オンにする (その後再起動)
 LATENT SAFETY	レイテント安全マージン
 LATENT SYNC	レイテントシンク
@@ -1609,7 +1609,6 @@ MALE	男性
 MAP	マップ
 MAP COLOR	マップの色
 MAP COLORS	マップカラー
-MAP COLORS / PLAYERS / HEALTH BARS / NAME TAGS	マップカラー / プレイヤー / 体力バー / ネームタグ
 MAP DOWNLOADS	マップのダウンロード
 MAP EDITOR	マップエディター
 MAP EDITOR *	マップエディター *
@@ -2250,6 +2249,7 @@ MENU THEME: HIGH CONTRAST	メニューテーマ: ハイコントラスト
 MENUS	メニュー
 METER SCALE	メーターの目盛り
 METER TICKS	メーターの刻み
+METERS	メーター
 MILO	MILO
 MIME	パントマイム
 MIN # US	最小 # US
@@ -2282,6 +2282,7 @@ MOON SHOTGUN	月面ショットガン
 MOON SHOTGUNS	月面ショットガン
 MORE	詳細
 MORE KEYS	その他のキー
+MORE VOLUME	その他の音量
 MORE WAYS TO PLAY	その他の遊び方
 MOUSE	マウス
 MOUSE 1	MOUSE 1
@@ -2296,8 +2297,8 @@ MOUSE TO PHOTON ~{} NS  (# HZ DISPLAY, {}, {})	マウスから光まで ~{} NS  
 MOUSE TO PHOTON: IN GAME ONLY	マウスから表示まで: ゲーム中のみ
 MOUSE {} # HZ (AVG)	マウス {} # HZ (平均)
 MOVE	移動
-MOVE + WEAPON KEYS	移動 + 武器キー
 MOVE DOWN	下降
+MOVE KEYS	移動キー
 MOVE TO SPECTATOR	観戦に移動
 MOVE UP	上昇
 MOVEMENT	移動
@@ -2308,6 +2309,7 @@ MULTI POINT - attackers take the points in order (A, B, C...). Only they capture
 MUMMY	ミイラ
 MUSHROOM	キノコ
 MUTE	ミュート
+MUTE CHAT	チャットのミュート
 MUTE IN BACKGROUND	バックグラウンドでミュート
 MUTED	ミュート中
 MUZZLE FLASH	マズルフラッシュ
@@ -2340,7 +2342,6 @@ ND	ND
 NE	NE
 NET GRAPH	ネットグラフ
 NETWORK	ネットワーク
-NETWORK / LIGHT CACHE / MENU CURSOR	ネットワーク / ライトキャッシュ / メニューカーソル
 NETWORK READ	ネットワーク受信
 NETWORK WARNINGS	ネットワーク警告
 NEUTRAL PAYLOAD	ニュートラルペイロード
@@ -2497,11 +2498,11 @@ OTTO	OTTO
 OUT	脱落
 OUTLINE	輪郭
 OUTLINE A	輪郭 A
+OUTLINE COLORS	輪郭の色
 OUTLINE OPACITY	輪郭の不透明度
 OUTLINE PX	輪郭 PX
 OUTLINES	輪郭
 OUTPUT	出力
-OUTPUT / VOLUME / CALLOUTS	出力 / 音量 / コールアウト
 OVER 1: LOUDER, TO HEAR THEM COMING	1以上: 大きく、接近が分かる
 OVERRIDES FOLDER	overridesフォルダ
 OVERRIDES OF YOURS - ON / OFF AT THE NEXT START	あなたのオーバーライド - 次回起動時にオン / オフ
@@ -2560,7 +2561,6 @@ PER MODE	モード別
 PER WEAPON	武器別
 PERCEPTUAL	知覚
 PERF STATS	パフォーマンス統計
-PERFORMANCE	パフォーマンス
 PERFORMANCE CHECK	パフォーマンスチェック
 PHARAOH	ファラオ
 PHYSICS	物理
@@ -2569,7 +2569,7 @@ PICK A FILE TO IMPORT	インポートするファイルを選択
 PICK A KEY NO ACTION IS BOUND TO	未割り当てのキーを選択
 PICK A SCENARIO	シナリオを選択
 PICK IT IN WINDOWS' GRAPHICS SETTINGS	WINDOWSのグラフィック設定で選択
-PICK VSYNC: LATENT SYNC (VIDEO + AUDIO) FIRST;	垂直同期を選択: まずレイテントシンク (ビデオ + オーディオ);
+PICK VSYNC: LATENT SYNC (ABOVE) FIRST;	垂直同期を選択: まずレイテントシンク (上);
 PICTURE	画像
 PICTURES: PICTURES/QUARK IN YOUR HOME FOLDER	ピクチャ: ホームフォルダの PICTURES/QUARK
 PIMP	ポン引き
@@ -2593,16 +2593,15 @@ PLAY TIME TRIAL	タイムアタックをプレイ
 PLAY VS BOTS	ボット戦
 PLAYABLE AS:	プレイ可能:
 PLAYER	プレイヤー
-PLAYER 2	プレイヤー 2
-PLAYER > MORE SETS THE MENU ACCENT	プレイヤー > 詳細 でメニューのアクセントを設定
 PLAYER ANIMATIONS	プレイヤーアニメーション
 PLAYER BASED	プレイヤーベース
+PLAYER BRIGHTNESS	プレイヤーの明るさ
 PLAYER JOINS	プレイヤー参加
 PLAYER MODEL	プレイヤーモデル
 PLAYER MODEL:	プレイヤーモデル:
 PLAYER OUTLINE WIDTH	プレイヤー輪郭の幅
 PLAYER SHADOWS	プレイヤーの影
-PLAYER SHADOWS (VIDEO + AUDIO); ALWAYS LIT:	プレイヤーの影 (ビデオ + オーディオ); 常時点灯:
+PLAYER SHADOWS (VIDEO > DISPLAY); ALWAYS LIT:	プレイヤーの影 (ビデオ > ディスプレイ); 常時点灯:
 PLAYERS	プレイヤー
 PLAYERS NEVER DARKENED BY THE MAP'S SHADE	プレイヤーはマップの影で暗くならない
 PLAYERS ON YOUR SERVER	サーバーのプレイヤー
@@ -2755,6 +2754,7 @@ READ INPUT	入力読取
 READY	準備完了
 REALTIME	リアルタイム
 REC	REC
+REC + TOURNEY	REC + トーナメント
 RECENT	最近
 RECENT MAP	最近のマップ
 RECENT MAPS	最近のマップ
@@ -2937,7 +2937,6 @@ SCREENSHOT FORMAT	スクリーンショット形式
 SCREENSHOT SAVED (NO HUD):	スクリーンショット保存 (HUDなし):
 SCREENSHOT SAVED:	スクリーンショット保存:
 SCREENSHOTS	スクリーンショット
-SCREENSHOTS / DEMOS / LATENCY	スクリーンショット / デモ / 遅延
 SCROLLBAR	スクロールバー
 SE	SE
 SEARCH	検索
@@ -2979,7 +2978,6 @@ SHADOW QUALITY: HIGH	影の品質: 高
 SHADOW QUALITY: LOW	影の品質: 低
 SHADOW QUALITY: MEDIUM	影の品質: 中
 SHADOWS	影
-SHADOWS / PLAYERS / OUTLINES / COLORS	影 / プレイヤー / 輪郭 / カラー
 SHAPE	形状
 SHARPEN	シャープ化
 SHIFT + ARROWS: GROW THAT SIDE    CTRL + ARROWS: SHRINK IT    M: MATERIAL / TEAM    N: SHAPE    K: COAT THE SIDE YOU LOOK AT	SHIFT + 矢印: その面を拡大    CTRL + 矢印: 縮小    M: 素材 / チーム    N: 形状    K: 見ている面を塗る
@@ -3060,6 +3058,7 @@ SORT: NAME	並べ替え: 名前
 SORT: NEWEST FIRST	並べ替え: 新しい順
 SORT: OLDEST FIRST	並べ替え: 古い順
 SOUND	サウンド
+SOUND EXTRAS	サウンドの追加設定
 SOUND GROUPS	サウンドグループ
 SOUND OCCLUSION	音の遮蔽
 SOUND ON	サウンド オン
@@ -3197,6 +3196,7 @@ SWAP	入れ替え
 SWAP FIRE	射撃ボタン入れ替え
 SWING TURN	スイングターン
 SWITCHING	切り替え
+SYNC	同期
 SYRINGE	注射器
 SYSTEM DEFAULT	システムデフォルト
 SYSTEM LINE COLOR	システム行の色
@@ -3425,6 +3425,7 @@ TRUE FULLSCREEN	真のフルスクリーン
 TRUE FULLSCREEN: WINDOWS' FULLSCREEN OPTIMIZATIONS OFF (NEXT START)	真のフルスクリーン: WINDOWS の全画面最適化をオフ (次回起動から)
 TRY IT NOW	今すぐ挑戦
 TT	TT
+TUNING	微調整
 TURN 35 DEGREES AT 20 M/S OR MORE	20 M/S 以上で 35 度曲がる
 TURNING LEFT	左へ回転中
 TURNING RIGHT	右へ回転中
@@ -3466,7 +3467,6 @@ ULTRA (SAFETY # US)	ウルトラ (安全マージン # US)
 ULTRA ONLY: THE HUD DRAWN BEFORE THE LATE READ,	ULTRA のみ: HUD を遅延読み取りの前に描き,
 ULTRA SAFETY	ウルトラ安全マージン
 ULTRA: 0 QUEUED + EACH FRAME STARTED LATE	ULTRA: キュー 0 + 各フレームを遅く開始
-ULTRA: 0 QUEUED + LATE INPUT SAMPLING	ウルトラ: キュー0 + 遅延入力サンプリング
 UNBAKE	ベイク解除
 UNBOUND	未割り当て
 UNCHANGED	変更なし
@@ -3518,17 +3518,6 @@ VERTICAL SENSITIVITY	垂直感度
 VERTICAL: ONE KEY	上下: 1キー
 VERTICAL: TWO KEYS	上下: 2キー
 VIDEO	ビデオ
-VIDEO + AUDIO	ビデオ + オーディオ
-VIDEO + AUDIO > MORE: NV THREADED OFF (OR THE NVIDIA CONTROL PANEL)	ビデオ + オーディオ > 詳細: NV THREADED オフ (または NVIDIA パネル)
-VIDEO 2	ビデオ 2
-VIDEO 3	ビデオ 3
-VIDEO 4	ビデオ 4
-VIDEO 5	ビデオ 5
-VIDEO 6	ビデオ 6
-VIDEO 7	ビデオ 7
-VIDEO 8	ビデオ 8
-VIDEO 9	ビデオ 9
-VIDEO: DEVICES	ビデオ: デバイス
 VIEW	視点
 VIKING	ヴァイキング
 VISUALIZE SOUNDS	音を可視化
@@ -3630,8 +3619,6 @@ WIDTH 0 = NO OUTLINE	幅 0 = 輪郭なし
 WIDTH; CUSTOM (GLTF) PLAYER MODELS HAVE NO OUTLINE	幅; カスタム (GLTF) プレイヤーモデルには輪郭なし
 WINDIR	WINDIR
 WINDOW	ウィンドウ
-WINDOW + INPUT	ウィンドウ + 入力
-WINDOW / SHADOWS / GPU / HITSOUNDS / FLAT MAP	ウィンドウ / 影 / GPU / ヒット音 / フラットマップ
 WINDOW SIZE	ウィンドウサイズ
 WINDOW SIZE:	ウィンドウサイズ:
 WINDOWED	ウィンドウ
@@ -3659,7 +3646,6 @@ WORK SANS	WORK SANS
 WORKING...	処理中...
 WORLD	ワールド
 WORLD + HUD + SHADOW MAP BUILD	ワールド + HUD + シャドウマップ構築
-WORLD / PICTURE / EFFECTS	ワールド / 画像 / エフェクト
 WORLD OUTLINE	ワールドの輪郭
 WORLD OUTLINE WIDTH	ワールド輪郭の幅
 WORST #MS  PING #  3D #X#	最悪 #MS  PING #  3D #X#

@@ -330,12 +330,14 @@ AT SPEED, HOOK A PILLAR BESIDE YOU: THE HOOK TURNS YOU ROUND IT AND YOU KEEP YOU
 ATTACK + RACE	공격 + 레이스
 ATTACK - PLANT THE BOMB	공격 - 폭탄 설치
 ATTACK: CARRY THE BOMB TO A SITE AND PLANT IT	공격: 폭탄을 지점으로 옮겨 설치
+AUDIO	오디오
 AUDIO INPUT (MICROPHONE)	오디오 입력 (마이크)
 AUDIO LATENCY	오디오 지연
 AUDIO LATENCY: LOW	오디오 지연: 낮음
 AUDIO LATENCY: NORMAL	오디오 지연: 보통
 AUDIO LATENCY: SAFE	오디오 지연: 안전
 AUDIO OUTPUT	오디오 출력
+AUDIO: DEVICES	오디오: 장치
 AUTO	자동
 AUTO (# US)	자동 (# US)
 AUTO LEARNS IT; MORE: FEWER GPU BUBBLES, MORE LAG	자동 조정; 높을수록: GPU 공백 감소, 지연 증가
@@ -362,6 +364,7 @@ AVG # US	평균 # US
 AVG FPS	평균 FPS
 AVG FRAME	평균 프레임
 AVX2	AVX2
+AXES	축
 Anything in the maps folder shows up in the lists. Servers send their map to players who don't have it.	맵 폴더에 있는 모든 맵이 목록에 표시됩니다. 서버는 맵이 없는 플레이어에게 맵을 전송합니다.
 AvSetMmThreadCharacteristicsW	AvSetMmThreadCharacteristicsW
 BACK	뒤로
@@ -432,7 +435,7 @@ BIG HIT	큰 피해
 BIG HIT: 40+ DAMAGE; NOT USABLE: THE WEAPON LIST	큰 피해: 40+ 피해; 사용 불가: 무기 목록
 BIG NOODLE	BIG NOODLE
 BIND FLY KEYS	비행 키 지정
-BIND HIDE HUD ON CONTROLS	조작 설정에서 HUD 숨기기 키 지정
+BIND HIDE HUD ON CONTROLS > MORE KEYS	조작 > 추가 키에서 HUD 숨기기 키 지정
 BLACK	검정
 BLADES	칼날
 BLAZE	BLAZE
@@ -528,7 +531,6 @@ CAT	고양이
 CAVEMAN	원시인
 CEILING HANG	천장 매달리기
 CHAMPION	챔피언
-CHANGE ANYTHING AFTER (IT STAYS)	이후 무엇이든 변경 (유지됨)
 CHANGE MAP / MODE	맵 / 모드 변경
 CHANGE MAP / MODE (pick the mode, then the map), FORCE START, RELOAD MAP, EDIT MODE (everyone edits the map together).	맵 / 모드 변경 (모드 선택 후 맵 선택), 강제 시작, 맵 다시 불러오기, 편집 모드 (모두 함께 맵 편집).
 CHANGELOG	변경 사항
@@ -541,6 +543,8 @@ CHANNELS: SWAPPED	채널: 좌우 반전
 CHAT	채팅
 CHAT BOX	채팅창
 CHAT COLOR	채팅 색상
+CHAT FADE	채팅 페이드
+CHAT KEYS	채팅 키
 CHAT LINES	채팅 줄 수
 CHAT OFF -	채팅 끄기 -
 CHAT ON	채팅 켜기
@@ -601,6 +605,7 @@ COLOR: YELLOW	색상: 노랑
 COLORBLIND: BLUE-YELLOW	색맹: 청황
 COLORBLIND: RED-GREEN	색맹: 적록
 COLORS	색상
+COLORS + MORE	색상 + 더 보기
 COLORS COPIED: PASTE THEM ANYWHERE	색상 복사됨: 어디든 붙여넣기
 COLORS FROM	색상 출처
 COLORS PASTED	색상 붙여넣음
@@ -618,8 +623,8 @@ COMET	COMET
 COMMUNITY	커뮤니티
 COMPASS	나침반
 COMPASS + RADAR	나침반 + 레이더
-COMPETITIVE: NO FOG OR SHADOWS, FEWER EFFECTS;	경쟁: 안개·그림자 없음, 효과 감소;
 COMPOSITED FRAME SHOWN (EST)	합성 프레임 표시 (추정)
+COMPOSITOR	컴포지터
 COMPOSITOR ON MOST DRIVERS	대부분의 드라이버에서 컴포지터
 COMPOSITOR: NEXT VBLANK (EST)	컴포지터: 다음 VBLANK (추정)
 CONCHARS is compressed	CONCHARS가 압축되어 있음
@@ -642,10 +647,6 @@ CONTRAST	대비
 CONTROL PANEL > POWER OPTIONS: HIGH PERFORMANCE	제어판 > 전원 옵션: 고성능
 CONTROL SCRIPTS ARE OFF IN RANKED	랭크에서는 조작 스크립트 사용 불가
 CONTROLS	조작
-CONTROLS 2	조작 2
-CONTROLS 3	조작 3
-CONTROLS: MORE KEYS	조작: 추가 키
-CONTROLS: MOVE KEYS	조작: 이동 키
 CONVERTING...	변환 중...
 COOLDOWN BARS	쿨다운 바
 COOLDOWN BARS: ALWAYS	쿨다운 바: 항상
@@ -731,7 +732,7 @@ CUSTOM TAG	사용자 지정 태그
 CUSTOM TEAM	사용자 지정 팀
 CUSTOM WIDGETS	커스텀 위젯
 CUSTOM WIDGETS: build your own HUD pieces (number, bar, icon) from any value, drag them around, and import / export layouts.	커스텀 위젯: 원하는 값으로 나만의 HUD 요소(숫자, 바, 아이콘)를 만들어 배치하고, 레이아웃을 가져오기 / 내보내기하세요.
-CUSTOM: PICK OUTLINE "CUSTOM" ON PLAYER; SAME: ITS	사용자 지정: 플레이어 탭에서 외곽선 "사용자 지정" 선택; 동일: 그
+CUSTOM: PICK OUTLINE "CUSTOM" UNDER OUTLINES; SAME: ITS	사용자 지정: 외곽선에서 "사용자 지정" 선택; 동일: 그
 CYAN	청록
 CYAN / RED	청록 / 빨강
 CYBORG	사이보그
@@ -835,8 +836,6 @@ DISCORD:	DISCORD:
 DISCORD:  (PUBLIC)	DISCORD:  (공개)
 DISCORD: TYPE THE 6-DIGIT CODE FROM /link IN DISCORD	DISCORD: DISCORD의 /link에서 받은 6자리 코드를 입력하세요
 DISPLAY	화면
-DISPLAY / LATENCY / IMAGE / SOUND	화면 / 지연 시간 / 이미지 / 사운드
-DISPLAY / SOUND GROUPS / PERFORMANCE / PRESET	화면 / 사운드 그룹 / 성능 / 프리셋
 DISPLAY: BORDERLESS FULLSCREEN	화면: 테두리 없는 전체 화면
 DISPLAY: EXCLUSIVE FULLSCREEN	화면: 전용 전체 화면
 DISPLAY: WINDOWED	화면: 창 모드
@@ -922,8 +921,10 @@ ELEMENT: SCORE BOX	요소: 점수판
 ELEMENT: SPEED METER	요소: 속도계
 ELEMENT: WEAPON LIST	요소: 무기 목록
 ELEMENT: WEAPON NAME	요소: 무기 이름
+ELEMENTS	요소
 END	종료
 END SESSION	세션 종료
+ENEMIES	적
 ENEMIES ALIVE	생존한 적
 ENEMY BOTS	적 봇
 ENEMY COLOR	적 색상
@@ -1002,6 +1003,7 @@ FIGHTER	전투원
 FILE	파일
 FILE NAME	파일 이름
 FILE: NAME / TITLE	파일: 이름 / 제목
+FILES	파일
 FILL THE UNEVEN TEAMS WITH BOTS?	인원이 맞지 않는 팀을 봇으로 채울까요?
 FINAL	결승
 FIND A SERVER	서버 찾기
@@ -1061,6 +1063,7 @@ FPS AND 1% LOWS	FPS 및 1% LOW
 FPS LIMIT	FPS 제한
 FPS LIMIT: WAKES THIS EARLY, THEN WAITS EXACTLY TO THE	FPS 제한: 이만큼 일찍 깨어나 프레임 시작까지
 FPS MIN (1S)	FPS 최저 (1초)
+FRAME	프레임
 FRAME CAP OFFSET	FPS 제한 선행
 FRAME CAP WAIT	프레임 제한 대기
 FRAME TIME OVER THE RUN	실행 중 프레임 시간
@@ -1108,16 +1111,12 @@ GAME LATENCY ~{} NS  (MOUSE REPORT IN TO GPU DONE; F3: NEXT VIEW)	게임 지연 
 GAME {} NS + MOUSE POLLING {} NS (# HZ) + DISPLAY {} NS (# HZ)	게임 {} NS + 마우스 폴링 {} NS (# HZ) + 디스플레이 {} NS (# HZ)
 GAMEMODE	게임 모드
 GAMEPLAY	게임플레이
-GAMEPLAY 2	게임플레이 2
-GAMEPLAY 3	게임플레이 3
-GAMEPLAY 4	게임플레이 4
-GAMEPLAY 5	게임플레이 5
 GAMMA	감마
 GAP	간격
 GATE	게이트
 GEFORCE	GEFORCE
 GENERAL	일반
-GENERAL + INTERFACE	일반 + 인터페이스
+GENERAL > MENUS SETS THE MENU ACCENT	일반 > 메뉴에서 메뉴 강조색 설정
 GET 40 M UP	40 M 올라가기
 GET 55 M UP	55 M 오르기
 GET 7 M UP	7 M 위로 올라가기
@@ -1164,6 +1163,7 @@ GPU resolve / scale	GPU resolve / scale
 GPU shadow pass	GPU shadow pass
 GPU world pass	GPU world pass
 GRADE FROM LOW COLOR	낮은 색상부터 그라데이션
+GRAPHICS	그래픽
 GRAPPLE	그래플
 GRAPPLE + HAND	그래플 + 손
 GRAPPLE A PLAYER	플레이어에게 갈고리
@@ -1314,7 +1314,6 @@ HP	HP
 HTTP	HTTP
 HUD	HUD
 HUD & SETTINGS	HUD 및 설정
-HUD 2	HUD 2
 HUD > VERBOSE INFO TURNS THE BLOCK ON	HUD > 상세 정보로 이 블록을 켭니다
 HUD BEFORE WORLD	HUD 먼저 그리기
 HUD COLORS	HUD 색상
@@ -1405,7 +1404,7 @@ IS ON A RAMPAGE	광란 중
 IS UNSTOPPABLE	아무도 못 막습니다
 IT IN MY PALETTE	내 팔레트에서
 IT IS ALWAYS IN THE MAIN MENU: PRACTICE > TUTORIAL	언제든 메인 메뉴: 연습 > 튜토리얼
-ITS COLOURS ARE ON THE CROSSHAIR TAB	색상은 조준점 탭에 있음
+ITS COLOURS ARE ON THE CROSSHAIR TAB (ON HIT)	색상은 조준점 탭 (적중 시)에 있음
 ITS STYLE	스타일
 ITS STYLE: CIRCLE	스타일: 원
 ITS STYLE: CROSS	스타일: 십자
@@ -1513,6 +1512,7 @@ LATE FRAME	지연 프레임
 LATE: TEAR	지연 시: 티어링
 LATE: WAIT	지연 시: 대기
 LATENCY	지연 시간
+LATENCY > SYNC: NV SINGLE-THREAD (OR THE NVIDIA CONTROL PANEL)	지연 시간 > 동기화: NV 단일 스레드 (또는 NVIDIA 제어판)
 LATENCY: GPU SCHED: TURN ON (THEN RESTART)	지연 시간: GPU 스케줄링: 켜기 (그 후 재시작)
 LATENT SAFETY	LATENT 안전 여유
 LATENT SYNC	LATENT SYNC
@@ -1609,7 +1609,6 @@ MALE	남성
 MAP	맵
 MAP COLOR	맵 색상
 MAP COLORS	맵 색상
-MAP COLORS / PLAYERS / HEALTH BARS / NAME TAGS	맵 색상 / 플레이어 / 체력 바 / 이름표
 MAP DOWNLOADS	맵 다운로드
 MAP EDITOR	맵 에디터
 MAP EDITOR *	맵 에디터 *
@@ -2250,6 +2249,7 @@ MENU THEME: HIGH CONTRAST	메뉴 테마: 고대비
 MENUS	메뉴
 METER SCALE	계기 배율
 METER TICKS	계기 눈금
+METERS	미터
 MILO	MILO
 MIME	마임
 MIN # US	최소 # US
@@ -2282,6 +2282,7 @@ MOON SHOTGUN	달 샷건
 MOON SHOTGUNS	달 샷건
 MORE	더 보기
 MORE KEYS	추가 키
+MORE VOLUME	추가 음량
 MORE WAYS TO PLAY	더 많은 플레이 방식
 MOUSE	마우스
 MOUSE 1	MOUSE 1
@@ -2296,8 +2297,8 @@ MOUSE TO PHOTON ~{} NS  (# HZ DISPLAY, {}, {})	마우스에서 광자까지 ~{} 
 MOUSE TO PHOTON: IN GAME ONLY	마우스-화면 지연: 게임 중에만
 MOUSE {} # HZ (AVG)	마우스 {} # HZ (평균)
 MOVE	이동
-MOVE + WEAPON KEYS	이동 + 무기 키
 MOVE DOWN	아래로 이동
+MOVE KEYS	이동 키
 MOVE TO SPECTATOR	관전자로 이동
 MOVE UP	위로 이동
 MOVEMENT	이동
@@ -2308,6 +2309,7 @@ MULTI POINT - attackers take the points in order (A, B, C...). Only they capture
 MUMMY	미라
 MUSHROOM	버섯
 MUTE	음소거
+MUTE CHAT	채팅 음소거
 MUTE IN BACKGROUND	백그라운드에서 음소거
 MUTED	음소거됨
 MUZZLE FLASH	총구 화염
@@ -2340,7 +2342,6 @@ ND	ND
 NE	NE
 NET GRAPH	넷 그래프
 NETWORK	네트워크
-NETWORK / LIGHT CACHE / MENU CURSOR	네트워크 / 조명 캐시 / 메뉴 커서
 NETWORK READ	네트워크 읽기
 NETWORK WARNINGS	네트워크 경고
 NEUTRAL PAYLOAD	중립 화물
@@ -2497,11 +2498,11 @@ OTTO	OTTO
 OUT	탈락
 OUTLINE	외곽선
 OUTLINE A	외곽선 A
+OUTLINE COLORS	외곽선 색상
 OUTLINE OPACITY	외곽선 불투명도
 OUTLINE PX	외곽선 PX
 OUTLINES	외곽선
 OUTPUT	출력
-OUTPUT / VOLUME / CALLOUTS	출력 / 볼륨 / 콜아웃
 OVER 1: LOUDER, TO HEAR THEM COMING	1 초과: 더 크게, 다가오는 소리 듣기용
 OVERRIDES FOLDER	오버라이드 폴더
 OVERRIDES OF YOURS - ON / OFF AT THE NEXT START	내 오버라이드 - 다음 실행 시 켜기 / 끄기
@@ -2560,7 +2561,6 @@ PER MODE	모드별
 PER WEAPON	무기별
 PERCEPTUAL	지각적
 PERF STATS	성능 통계
-PERFORMANCE	성능
 PERFORMANCE CHECK	성능 점검
 PHARAOH	파라오
 PHYSICS	물리
@@ -2569,7 +2569,7 @@ PICK A FILE TO IMPORT	가져올 파일 선택
 PICK A KEY NO ACTION IS BOUND TO	동작이 지정되지 않은 키를 선택하세요
 PICK A SCENARIO	시나리오 선택
 PICK IT IN WINDOWS' GRAPHICS SETTINGS	WINDOWS 그래픽 설정에서 선택
-PICK VSYNC: LATENT SYNC (VIDEO + AUDIO) FIRST;	수직 동기화 선택: LATENT SYNC (비디오 + 오디오) 우선;
+PICK VSYNC: LATENT SYNC (ABOVE) FIRST;	수직 동기화 선택: LATENT SYNC (위) 우선;
 PICTURE	사진
 PICTURES: PICTURES/QUARK IN YOUR HOME FOLDER	사진: 홈 폴더의 PICTURES/QUARK
 PIMP	포주
@@ -2593,16 +2593,15 @@ PLAY TIME TRIAL	타임 트라이얼 플레이
 PLAY VS BOTS	봇과 대전
 PLAYABLE AS:	플레이 가능 모드:
 PLAYER	플레이어
-PLAYER 2	플레이어 2
-PLAYER > MORE SETS THE MENU ACCENT	플레이어 > 더 보기에서 메뉴 강조색 설정
 PLAYER ANIMATIONS	플레이어 애니메이션
 PLAYER BASED	플레이어 기반
+PLAYER BRIGHTNESS	플레이어 밝기
 PLAYER JOINS	플레이어 참가
 PLAYER MODEL	플레이어 모델
 PLAYER MODEL:	플레이어 모델:
 PLAYER OUTLINE WIDTH	플레이어 외곽선 두께
 PLAYER SHADOWS	플레이어 그림자
-PLAYER SHADOWS (VIDEO + AUDIO); ALWAYS LIT:	플레이어 그림자 (비디오 + 오디오); 항상 밝게:
+PLAYER SHADOWS (VIDEO > DISPLAY); ALWAYS LIT:	플레이어 그림자 (비디오 > 화면); 항상 밝게:
 PLAYERS	플레이어
 PLAYERS NEVER DARKENED BY THE MAP'S SHADE	맵 그늘에 플레이어가 어두워지지 않음
 PLAYERS ON YOUR SERVER	내 서버의 플레이어
@@ -2755,6 +2754,7 @@ READ INPUT	입력 읽기
 READY	준비
 REALTIME	실시간
 REC	REC
+REC + TOURNEY	REC + 토너먼트
 RECENT	최근
 RECENT MAP	최근 맵
 RECENT MAPS	최근 맵
@@ -2937,7 +2937,6 @@ SCREENSHOT FORMAT	스크린샷 형식
 SCREENSHOT SAVED (NO HUD):	스크린샷 저장됨 (HUD 없음):
 SCREENSHOT SAVED:	스크린샷 저장됨:
 SCREENSHOTS	스크린샷
-SCREENSHOTS / DEMOS / LATENCY	스크린샷 / 데모 / 지연 시간
 SCROLLBAR	스크롤바
 SE	SE
 SEARCH	검색
@@ -2979,7 +2978,6 @@ SHADOW QUALITY: HIGH	그림자 품질: 높음
 SHADOW QUALITY: LOW	그림자 품질: 낮음
 SHADOW QUALITY: MEDIUM	그림자 품질: 중간
 SHADOWS	그림자
-SHADOWS / PLAYERS / OUTLINES / COLORS	그림자 / 플레이어 / 외곽선 / 색상
 SHAPE	모양
 SHARPEN	선명화
 SHIFT + ARROWS: GROW THAT SIDE    CTRL + ARROWS: SHRINK IT    M: MATERIAL / TEAM    N: SHAPE    K: COAT THE SIDE YOU LOOK AT	SHIFT + 화살표: 해당 면 늘리기    CTRL + 화살표: 줄이기    M: 재질 / 팀    N: 모양    K: 보고 있는 면 칠하기
@@ -3060,6 +3058,7 @@ SORT: NAME	정렬: 이름
 SORT: NEWEST FIRST	정렬: 최신순
 SORT: OLDEST FIRST	정렬: 오래된순
 SOUND	사운드
+SOUND EXTRAS	사운드 추가
 SOUND GROUPS	사운드 그룹
 SOUND OCCLUSION	소리 차폐
 SOUND ON	소리 켜기
@@ -3197,6 +3196,7 @@ SWAP	교체
 SWAP FIRE	사격 버튼 교체
 SWING TURN	스윙 턴
 SWITCHING	전환
+SYNC	동기화
 SYRINGE	주사기
 SYSTEM DEFAULT	시스템 기본값
 SYSTEM LINE COLOR	시스템 줄 색상
@@ -3425,6 +3425,7 @@ TRUE FULLSCREEN	진짜 전체 화면
 TRUE FULLSCREEN: WINDOWS' FULLSCREEN OPTIMIZATIONS OFF (NEXT START)	진짜 전체 화면: WINDOWS 전체 화면 최적화 끔 (다음 실행부터)
 TRY IT NOW	지금 해 보기
 TT	TT
+TUNING	세부 조정
 TURN 35 DEGREES AT 20 M/S OR MORE	20 M/S 이상으로 35도 돌기
 TURNING LEFT	왼쪽으로 회전 중
 TURNING RIGHT	오른쪽으로 회전 중
@@ -3466,7 +3467,6 @@ ULTRA (SAFETY # US)	울트라 (안전 여유 # US)
 ULTRA ONLY: THE HUD DRAWN BEFORE THE LATE READ,	ULTRA 전용: HUD를 늦은 읽기 전에 그리고,
 ULTRA SAFETY	울트라 안전 여유
 ULTRA: 0 QUEUED + EACH FRAME STARTED LATE	ULTRA: 대기 0 + 각 프레임을 늦게 시작
-ULTRA: 0 QUEUED + LATE INPUT SAMPLING	울트라: 대기 0 + 늦은 입력 샘플링
 UNBAKE	굽기 해제
 UNBOUND	미지정
 UNCHANGED	변경 없음
@@ -3518,17 +3518,6 @@ VERTICAL SENSITIVITY	수직 감도
 VERTICAL: ONE KEY	수직: 키 하나
 VERTICAL: TWO KEYS	수직: 키 두 개
 VIDEO	비디오
-VIDEO + AUDIO	비디오 + 오디오
-VIDEO + AUDIO > MORE: NV THREADED OFF (OR THE NVIDIA CONTROL PANEL)	비디오 + 오디오 > 더 보기: NV THREADED 끔 (또는 NVIDIA 제어판)
-VIDEO 2	비디오 2
-VIDEO 3	비디오 3
-VIDEO 4	비디오 4
-VIDEO 5	비디오 5
-VIDEO 6	비디오 6
-VIDEO 7	비디오 7
-VIDEO 8	비디오 8
-VIDEO 9	비디오 9
-VIDEO: DEVICES	비디오: 장치
 VIEW	시점
 VIKING	바이킹
 VISUALIZE SOUNDS	소리 시각화
@@ -3630,8 +3619,6 @@ WIDTH 0 = NO OUTLINE	너비 0 = 윤곽선 없음
 WIDTH; CUSTOM (GLTF) PLAYER MODELS HAVE NO OUTLINE	두께; 사용자 지정 (GLTF) 플레이어 모델은 외곽선 없음
 WINDIR	WINDIR
 WINDOW	창
-WINDOW + INPUT	창 + 입력
-WINDOW / SHADOWS / GPU / HITSOUNDS / FLAT MAP	창 / 그림자 / GPU / 타격음 / 평면 맵
 WINDOW SIZE	창 크기
 WINDOW SIZE:	창 크기:
 WINDOWED	창 모드
@@ -3659,7 +3646,6 @@ WORK SANS	WORK SANS
 WORKING...	작업 중...
 WORLD	월드
 WORLD + HUD + SHADOW MAP BUILD	월드 + HUD + 그림자 맵 생성
-WORLD / PICTURE / EFFECTS	월드 / 사진 / 효과
 WORLD OUTLINE	월드 외곽선
 WORLD OUTLINE WIDTH	월드 외곽선 두께
 WORST #MS  PING #  3D #X#	최악 #MS  PING #  3D #X#

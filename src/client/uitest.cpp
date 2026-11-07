@@ -43,21 +43,17 @@ namespace fs = std::filesystem;
 std::string Game::uiScreenPath() const {
     auto settingsSub = [&]() -> std::string {   // (the tab, then what's open on it)
         if (modelPick_ && setTab_ != TAB_SEARCH) return modelPick_ == 1 ? "/models" : modelPick_ == 2 ? "/models/enemy" : "/models/team";
-        switch (setTab_) {
-            case TAB_PLAYER: if (moreOpen_) return "/player/more"; if (!fontsOpen_ && ui_.dropdownOpen()) return "/language"; break;
-            case TAB_GAMEPLAY: return moreOpen_ >= 4 ? "/gameplay/more4" : moreOpen_ == 3 ? "/gameplay/more3" : moreOpen_ == 2 ? "/gameplay/more2" : moreOpen_ ? "/gameplay/more" : "/gameplay";
-            case TAB_CONTROLS: return moreOpen_ >= 2 ? "/controls/more2" : moreOpen_ ? "/controls/more" : filePick_ == 2 ? "/controls/files" : controlsSub_ == 1 ? "/controls/movement" : controlsSub_ == 2 ? "/controls/keys2" : "/controls";
-            case TAB_VIDEO: return devicesOpen_ ? "/video/devices" : moreOpen_ == 8 ? "/video/more8" : moreOpen_ == 7 ? "/video/more7" : moreOpen_ == 6 ? "/video/more6" : moreOpen_ == 5 ? "/video/more5" : moreOpen_ == 4 ? "/video/more4" : moreOpen_ == 3 ? "/video/more3" : moreOpen_ == 2 ? "/video/more2" : moreOpen_ ? "/video/more" : "/video";
-            case TAB_CROSSHAIR: return "/crosshair";
-            case TAB_SEARCH: return "/search";
-            case TAB_LATENCY: return "/latency";
-            case TAB_HUD:
-                if (hudEdit_) return "/hud/edit";
-                if (widgetEdit_) return filePick_ == 1 ? "/hud/widgets/files" : valueDrop_ && widgetSel_ >= 0 ? "/hud/widgets/values" : "/hud/widgets";
-                if (moreOpen_) return "/hud/more";
-                return ui_.dropdownOpen() ? "/hud/elements" : "/hud";
+        if (fontsOpen_) return "/fonts";
+        if (setTab_ == TAB_GENERAL && moreOpen_ == 0 && ui_.dropdownOpen()) return "/general/language";
+        if (setTab_ == TAB_AUDIO && devicesOpen_) return "/audio/devices";
+        if (setTab_ == TAB_CONTROLS && filePick_ == 2) return "/controls/files";
+        if (setTab_ == TAB_HUD) {
+            if (hudEdit_) return "/hud/edit";
+            if (widgetEdit_) return filePick_ == 1 ? "/hud/widgets/files" : valueDrop_ && widgetSel_ >= 0 ? "/hud/widgets/values" : "/hud/widgets";
+            if (moreOpen_ == 0 && ui_.dropdownOpen()) return "/hud/elements";
         }
-        return fontsOpen_ ? "/fonts" : "";
+        return setPagePath(setTab_, moreOpen_).substr(8);   // ("settings/video/graphics" -> "/video/graphics")
+
     };
     auto pickerName = [](int p) -> const char* {
         switch (p) {
@@ -157,7 +153,7 @@ std::string Game::uiObserve(const std::string& w) {
     if (w == "demos") return listDir(userDataPath("demos"));
     if (w == "demodel") return demoDelArmed_ + "@" + std::to_string(demoDelUntil_);
     if (w == "demoren") return demoRename_;
-    if (w == "confirm") return confirmArmed(confirmWhat_) ? confirmWhat_ : "";
+    if (w == "confirm") return confirmPending(confirmWhat_) ? confirmWhat_ : "";
     if (w == "lookmsg") return cfg_.toText() + "|" + lookMsg_ + "@" + std::to_string(lookMsgUntil_);
     if (w == "chcode") return cfg_.toText() + "|" + chCodeMsg_ + "@" + std::to_string(chCodeUntil_);
     if (w == "groups") return listDir(userDataPath("groups"));

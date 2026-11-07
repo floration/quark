@@ -1215,8 +1215,7 @@ void Game::onKey(int key, int action, int mods) {
             if (hudEdit_) { hudEditClose(); return; }   // (EDIT ON SCREEN: back to the HUD tab)
             if (modelPick_) { modelPick_ = 0; cfg_.save(); return; }   // (the model picker: back to its page)
             if (fontsOpen_) { fontsOpen_ = false; cfg_.save(); return; }   // (FONT: back to PLAYER)
-            if (devicesOpen_) { devicesOpen_ = false; cfg_.save(); return; }   // (DEVICES: back to VIDEO + AUDIO)
-            if (moreOpen_) { moreOpen_ = false; cfg_.save(); return; }   // (MORE: back to its tab)
+            if (devicesOpen_) { devicesOpen_ = false; cfg_.save(); return; }   // (DEVICES: back to AUDIO)
             if (settingsInGame_) { leaveSettings(); return; }   // (any tab: as BACK)
             if (tut_.menu) { tut_.menu = false; return; }   // (TUTORIAL: LESSONS back to its pause menu)
             if (voteMenu_ || voteSetup_ || queueMenu_ || practiceMenu_ || playersMenu_ || picker_ != PICK_NONE) { voteSetup_ = voteMenu_ = queueMenu_ = practiceMenu_ = playersMenu_ = specPick_ = false; picker_ = PICK_NONE; return; }
@@ -1234,8 +1233,7 @@ void Game::onKey(int key, int action, int mods) {
         if (hudEdit_) { hudEditClose(); return; }   // (EDIT ON SCREEN: back to the HUD tab)
         if (modelPick_ && screen_ == Screen::Settings) { modelPick_ = 0; cfg_.save(); return; }   // (the model picker: back to its page)
         if (fontsOpen_) { fontsOpen_ = false; cfg_.save(); return; }   // (FONT: back to PLAYER)
-        if (devicesOpen_) { devicesOpen_ = false; cfg_.save(); return; }   // (DEVICES: back to VIDEO + AUDIO)
-        if (moreOpen_) { moreOpen_ = false; cfg_.save(); return; }   // (MORE: back to its tab)
+        if (devicesOpen_) { devicesOpen_ = false; cfg_.save(); return; }   // (DEVICES: back to AUDIO)
         if (screen_ == Screen::Settings) { leaveSettings(); return; }   // (any tab: as BACK)
         if (picker_ != PICK_NONE) { if (picker_ == PICK_RANKED && variantCtx_ == 3 && screen_ == Screen::Host) setScreen(Screen::Main); picker_ = PICK_NONE; return; }
         if (screen_ == Screen::Leaderboard && raceStatsView_) { raceStatsView_ = false; return; } // race stats: back to the board
@@ -6394,7 +6392,7 @@ void Game::drawTutorialPause(float cx, float y) {
         if (c.half(1, "START OVER", UiExp::cmd("tutorial reset"))) { paused_ = false; tutorialBegin(tut_.lesson); tut_.demoEnd = time_; }
         if (c.half(2, "LESSONS", UiExp::nav("ingame/pause/lessons"))) tut_.menu = true;
         c.next();
-        if (c.full("SETTINGS", UiExp::nav("ingame/pause/settings"))) { settingsInGame_ = true; openSettingsTab(settingsStartTab()); }
+        if (c.full("SETTINGS", UiExp::nav("ingame/pause/settings*"))) { settingsInGame_ = true; openSettingsTab(settingsStartTab()); }
         c.next();
     }
     c.last();
@@ -6772,7 +6770,7 @@ void Game::drawPauseMenu(float cx, float y) {
         ui_.panel(L.X(kPX - 16), L.Y(c.y - 16), L.L(kPW + 32), L.L(kH + 32), 0.95f);
         if (c.full("RESUME", UiExp::nav("ingame"))) paused_ = false;
         c.next();
-        if (c.full("SETTINGS", UiExp::nav("ingame/pause/settings"))) { settingsInGame_ = true; openSettingsTab(settingsStartTab()); }
+        if (c.full("SETTINGS", UiExp::nav("ingame/pause/settings*"))) { settingsInGame_ = true; openSettingsTab(settingsStartTab()); }
         c.next();
         c.last();
         if (c.half(1, "STOP DEMO", UiExp::nav("demos"))) { leaveGame(); setScreen(Screen::Demos); return; }
@@ -6809,7 +6807,7 @@ void Game::drawPauseMenu(float cx, float y) {
         if (pair("STOP RECORDING (" + fmtTime((float)net_.recordingTime()) + ")", UiExp::state("recording", "0").withId("STOP RECORDING"))) { net_.stopRecording(); notify("DEMO SAVED - CREATE > DEMOS", 4); }
     } else if (pair("RECORD DEMO", UiExp::state("recording", "1"))) startRecording();
     if (!host_ && pair("PLAYERS", UiExp::nav("ingame/pause/players"))) playersMenu_ = true;
-    if (c.full("SETTINGS", UiExp::nav("ingame/pause/settings"))) { settingsInGame_ = true; openSettingsTab(settingsStartTab()); }
+    if (c.full("SETTINGS", UiExp::nav("ingame/pause/settings*"))) { settingsInGame_ = true; openSettingsTab(settingsStartTab()); }
     c.next();
     if (host_) {   // the host's controls: start now, reload the map file (picks up edits to it), change map / mode live, edit together
         c.section("HOST");
@@ -6853,6 +6851,7 @@ const Color kLabelC = {0.85f, 0.87f, 0.9f, 1};
 constexpr int kNameColorOn = 0xFFD040;   // NAME COLOR turned on (the old R / G / B sliders' default)
 constexpr int kCustomInterpMs = 10;      // SMOOTHING: CUSTOM starts here (and a right-click on its slider goes back to it)
 
+}   // (SetFlow: outside the anonymous namespace, game.h names it for drawSetSection)
 // A column of a settings page: y runs down it in design px (header 24 high, a row 32 + 8, a hint line 14).
 struct SetFlow {
     Ui& ui;
@@ -6874,6 +6873,7 @@ struct SetFlow {
         y += 16;
     }
 };
+namespace {
 Vec3 rgbOf(int c) { return {((c >> 16) & 255) / 255.0f, ((c >> 8) & 255) / 255.0f, (c & 255) / 255.0f}; }
 int packOf(const Vec3& c) {
     auto ch = [](float v) { return (int)std::lround(clampf(v, 0, 1) * 255); };
@@ -6924,9 +6924,7 @@ void Game::leaveSettings() {
     else setScreen(Screen::Main);
 }
 
-// --settingstab PAGE[+PICKER]: open that page (screenshots): player, fonts, gameplay, controls, controls/movement,
-// controls/files, video, video/devices, crosshair, hud, hud/elements, hud/widgets, hud/<element> (that element picked:
-// health, weapon, bars, speed, slots, keys); "+LABEL" opens that colour picker on it
+
 // A volume shown as a percent (0-1 stored as 0-100 %): every volume slider reads the same way (settings review
 // 2026-11-07: VOLUME said 60 %, the others 1.00 on bars of different lengths)
 bool Game::pctSlider(float x, float y, float w, float h, const char* label, float& v, float hi, const char* fmt, const UiExp& e, float def) {
@@ -6936,40 +6934,8 @@ bool Game::pctSlider(float x, float y, float w, float h, const char* label, floa
     return true;
 }
 
-void Game::debugSettingsTab() {
-    std::string t = opts_.settingsTab, pick;
-    if (t.empty()) return;
-    size_t plus = t.find('+');
-    if (plus != std::string::npos) { pick = t.substr(plus + 1); t = t.substr(0, plus); }
-    static const char* tabs[] = {"player", "gameplay", "controls", "video", "crosshair", "hud", "latency", "search"};
-    for (int i = 0; i < 8; i++) if (t.rfind(tabs[i], 0) == 0) setTab_ = i;
-    if (t.rfind("search/", 0) == 0) setSearch_ = upper(t.substr(7));   // (search/QUERY: that typed)
-    if (t == "fonts") fontsOpen_ = true;
-    if (t == "models") { setTab_ = TAB_PLAYER; openModelPicker(1); }   // (models/enemy, models/team: GAMEPLAY > MORE's)
-    if (t == "models/enemy" || t == "models/team") { setTab_ = TAB_GAMEPLAY; moreOpen_ = 1; openModelPicker(t == "models/enemy" ? 2 : 3); }
-    if (t == "video/devices") { devicesOpen_ = true; devListed_ = false; }
-    if (t == "video/more" || t == "controls/more" || t == "gameplay/more" || t == "player/more" || t == "hud/more") moreOpen_ = 1;
-    if (t == "video/more2" || t == "gameplay/more2" || t == "controls/more2") moreOpen_ = 2;
-    if (t == "video/more3" || t == "gameplay/more3") moreOpen_ = 3;
-    if (t == "video/more4" || t == "gameplay/more4") moreOpen_ = 4;
-    if (t == "video/more5") moreOpen_ = 5;
-    if (t == "video/more6") moreOpen_ = 6;
-    if (t == "video/more7") moreOpen_ = 7;
-    if (t == "video/more8") moreOpen_ = 8;
-    if (t == "controls/movement") controlsSub_ = 1;
-    if (t == "controls/keys2") controlsSub_ = 2;
-    if (t == "controls/files") filePick_ = 2;
-    if (t == "hud/elements") ui_.openPopup("ELEMENT", true);
-    if (t == "hud/widgets") { widgetEdit_ = true; widgetSel_ = 0; }
-    if (t == "hud/edit") hudEditOpen();
-    static const char* els[] = {"hud/health", "hud/weapon", "hud/bars", "hud/speed", "hud/slots", "hud/keys", "hud/viewmodel", "hud/grapple"};
-    static const int elIds[] = {Settings::HUD_HEALTH, Settings::HUD_WEAPON, Settings::HUD_BARS, Settings::HUD_SPEED, Settings::HUD_SLOTS, Settings::HUD_KEYS,
-                                Settings::HUD_VIEWMODEL, Settings::HUD_GRAPPLE};
-    for (int i = 0; i < 8; i++) if (t == els[i]) hudSel_ = elIds[i];
-    if (!pick.empty()) ui_.openPopup(pick, false);
-}
-
 void Game::drawSettings() {
+    measureSetSections();
     if (setTab_ == TAB_HUD && widgetEdit_) { drawWidgetEditor(); return; }   // (the HUD's widget editor: the whole screen)
     if (setTab_ == TAB_HUD && hudEdit_) { drawHudEditor(); return; }        // (EDIT ON SCREEN: the whole screen)
     const SetLayout L{ui_.s(), menuStripPx_ + (r_.width() - menuStripPx_) * 0.5f};   // (right of the strip when it's up)
@@ -6982,15 +6948,18 @@ void Game::drawSettings() {
     const float footY = setTab_ == TAB_HUD && !moreOpen_ ? kHudFootY : 640;
     ui_.panel(L.X(252), L.Y(32), L.L(776), L.L(footY + 48 - 32), hudPreview ? 0.6f : 1.0f);
     ui_.dropBottom = L.Y(footY) - L.L(4);   // (a long dropdown grows into columns above the footer: BACK and the page numbers stay clear)
-    {   // the tab row, an accent line under it
-        static const char* names[] = {"PLAYER", "GAMEPLAY", "CONTROLS", "VIDEO + AUDIO", "CROSSHAIR", "HUD", "LATENCY", "SEARCH"};
-        static const char* navs[] = {"~settings", "~settings/gameplay", "~settings/controls", "~settings/video", "~settings/crosshair", "~settings/hud",
-                                     "~settings/latency", "~settings/search"};
-        // (SEARCH last: the tabs before it are where settings live, it looks through all of them. LATENCY: 2026-11-02)
-        static const float tx[] = {268, 348, 450, 552, 682, 788, 842, 932}, tw[] = {76, 98, 98, 126, 102, 50, 86, 80};
+    {   // the tab row, an accent line under it (settings review 2026-11-07: GENERAL ... LATENCY, SEARCH last: the tabs
+        // before it are where settings live, it looks through all of them)
+        static const char* const names[TAB_COUNT] = {"GENERAL", "CONTROLS", "GAMEPLAY", "HUD", "CROSSHAIR", "VIDEO", "AUDIO", "LATENCY", "SEARCH"};
+        static const float tw[TAB_COUNT] = {84, 96, 96, 50, 98, 66, 66, 82, 74};   // (744 across, 4 apart)
+        static std::string navs[TAB_COUNT];
+        if (navs[0].empty()) for (int t = 0; t < TAB_COUNT; t++) navs[t] = "~" + setPagePath(t, 0);
         int pick = -1;
-        for (int t = 0; t < 8; t++)
-            if (ui_.tab(L.X(tx[t]), L.Y(40), L.L(tw[t]), L.L(kRowH), names[t], t == setTab_, UiExp::nav(navs[t]))) pick = t;
+        float tx = 268;
+        for (int t = 0; t < TAB_COUNT; t++) {
+            if (ui_.tab(L.X(tx), L.Y(40), L.L(tw[t]), L.L(kRowH), names[t], t == setTab_, UiExp::nav(navs[t].c_str()))) pick = t;
+            tx += tw[t] + 4;
+        }
         r_.rect(L.X(268), L.Y(72), L.L(744), L.L(2), ui_.accent);
         if (pick >= 0) { openSettingsTab(pick); return; }   // (next frame: the new tab)
     }
@@ -6999,27 +6968,18 @@ void Game::drawSettings() {
     else if (modelPick_) drawModelPicker(L);
     else if (fontsOpen_) drawFontSettings(L);
     else if (devicesOpen_) drawDeviceSettings(L);
-    else if (moreOpen_) drawMoreSettings(L);
-    else switch (setTab_) {
-        case TAB_PLAYER: drawPlayerSettings(L); break;
-        case TAB_GAMEPLAY: drawGameplaySettings(L); break;
-        case TAB_CONTROLS: drawControls(L); break;
-        case TAB_VIDEO: drawVideoSettings(L); break;
-        case TAB_CROSSHAIR: drawCrosshairSettings(L); break;
-        case TAB_HUD: drawHudSettings(L); break;
-        case TAB_LATENCY: drawLatencySettings(L); break;
-    }
+    else { drawSetPageRow(L); drawSetPage(L); }
     if (setTab_ == TAB_HUD && (widgetEdit_ || hudEdit_)) return;   // (WIDGET EDITOR / EDIT ON SCREEN was just clicked)
     // (the UI test: the content's lowest pixel, leaving out what the page drew in its footer row: RESET, DEVICES)
     if (ui_.probing()) { setFootTop_ = L.Y(footY); setInkBottom_ = r_.uiInkBottom(inkFrom, setFootTop_, setFootTop_ + L.L(kRowH)); }
     // the footer: BACK (FONT: back to PLAYER; DEVICES: to VIDEO + AUDIO; any page of a tab: out of settings), the
     // page strip in the middle, and the page's reset on the right (drawn by the page)
     if (modelPick_ && setTab_ != TAB_SEARCH) {   // (the model picker: back to the page it was opened from)
-        if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav(modelPick_ == 1 ? "~settings" : "~settings/gameplay/more"))) { modelPick_ = 0; cfg_.save(); }
+        if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav(modelPick_ == 1 ? "~settings/general" : "~settings/video/enemies"))) { modelPick_ = 0; cfg_.save(); }
     } else if (fontsOpen_) {
-        if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav("~settings"))) { fontsOpen_ = false; cfg_.save(); }
+        if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav("~settings/general"))) { fontsOpen_ = false; cfg_.save(); }
     } else if (devicesOpen_) {
-        if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav("~settings/video"))) { devicesOpen_ = false; cfg_.save(); }
+        if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav("~settings/audio"))) { devicesOpen_ = false; cfg_.save(); }
     } else if (ui_.button(L.X(268), L.Y(footY), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav(settingsInGame_ ? "ingame/pause" : "main*"))) {
         leaveSettings();
         return;
@@ -7069,117 +7029,6 @@ static bool profileRows(Ui& ui, SetFlow& f, bool hud, int& ruleMode, std::string
     return changed;
 }
 
-void Game::drawPlayerSettings(const SetLayout& L) {
-    // --- left: IDENTITY, OUTLINES
-    SetFlow f{ui_, L, kColL, 90};
-    const float w = f.w(), h = f.h();
-    f.header("IDENTITY");
-    f.label("NAME");
-    ui_.textField(1, f.x(), f.top(), w, h, cfg_.name, 20, UiExp::cfg("name").withId("NAME"));
-    f.next();
-    // Discord: run /link in the Discord server, type the 6-digit code the bot gives you here ("unlink" to remove it);
-    // linking makes the Discord name public next to your game name and ranked id (crowns and queue fills)
-    if (cfg_.discordName.empty()) f.label("DISCORD CODE");
-    else {
-        const float ts = ui_.textScale();
-        ui_.label(f.x(), f.top(), "DISCORD: " + r_.textClip(upper(cfg_.discordName), ts, w - r_.textWidth("DISCORD:  (PUBLIC)", ts)) + " (PUBLIC)", kLabelC, 1.0f, w);
-        f.y += 20;
-    }
-    ui_.maskText = cfg_.streamer;
-    ui_.textField(43, f.x(), f.top(), w, h, discordCode_, 8, UiExp::local().withId("DISCORD CODE"));
-    ui_.maskText = false;
-    f.next();
-    f.hint(cfg_.discordName.empty() ? "GET IT WITH /link - THE CODE IS PUBLIC" : "A NEW CODE FROM /link RELINKS IT - unlink REMOVES IT");
-    f.section("OUTLINES");
-    {
-        static std::vector<std::string> ot, oe;
-        if (ot.empty()) for (int i = 0; i < kOutlineColors; i++) { ot.push_back(std::string("TEAM OUTLINE: ") + kOutlineNames[i]); oe.push_back(std::string("ENEMY OUTLINE: ") + kOutlineNames[i]); }
-        ui_.cycle(f.x(), f.top(), w, h, "TEAM OUTLINE", cfg_.outlineFriendly, kOutlineColors, ot, UiExp::cfg("outline_friendly"));
-        f.next();
-        ui_.cycle(f.x(), f.top(), w, h, "ENEMY OUTLINE", cfg_.outlineEnemy, kOutlineColors, oe, UiExp::cfg("outline_enemy"));
-        f.next();
-        // outline widths (pixels): players' models and the map's edges; 0 = none (dragged: quarter pixels; typed: as typed, up to 6)
-        if (ui_.slider(f.x(), f.top(), w, h, "PLAYER OUTLINE WIDTH", cfg_.outlinePlayer, 0, 4, "%.2f", UiExp::cfg("outline_player_width"), defaultSettings().outlinePlayer) && !ui_.typed())
-            cfg_.outlinePlayer = std::round(cfg_.outlinePlayer * 4) / 4;
-        f.next();
-        if (ui_.slider(f.x(), f.top(), w, h, "WORLD OUTLINE WIDTH", cfg_.outlineWorld, 0, 4, "%.2f", UiExp::cfg("outline_world_width"), defaultSettings().outlineWorld) && !ui_.typed())
-            cfg_.outlineWorld = std::round(cfg_.outlineWorld * 4) / 4;
-        cfg_.outlinePlayer = clampf(cfg_.outlinePlayer, 0, 6);
-        cfg_.outlineWorld = clampf(cfg_.outlineWorld, 0, 6);
-        f.next();
-        f.hint("WIDTH 0 = NO OUTLINE");
-    }
-    {   // your model, turning (drag it to turn it): under the outlines, down to the footer
-        const float top = f.top() + L.L(8), bot = L.Y(628);
-        if (bot - top > L.L(80)) drawModelPreview(f.x(), top, w, bot - top);
-    }
-
-    // --- right: LOOK, TEAM COLORS, INTERFACE
-    SetFlow g{ui_, L, kColR, 90};
-    g.header("LOOK");
-    {
-        // (the model picker: every model drawn, in a grid of its own; settings/models)
-        if (ui_.button(g.x(), g.top(), w, h, std::string("PLAYER MODEL: ") + playerModelName(cfg_.model) + "  >", UiExp::nav("~settings/models").withId("MODEL")))
-            openModelPicker(1);
-        g.next();
-    }
-    {   // your name's colour as everyone sees it (scoreboard, chat, kill feed): off (the default), or one picked
-        bool custom = cfg_.nameColor >= 0;
-        if (ui_.toggle(g.x(), g.top(), w, h, "NAME COLOR", custom, UiExp::cfg("name_color"))) cfg_.nameColor = custom ? kNameColorOn : -1;
-        g.next();
-        Vec3 nc = rgbOf(cfg_.nameColor >= 0 ? cfg_.nameColor : 0xFFFFFF);
-        int r = ui_.colorPicker(g.x(), g.top(), w, h, "CUSTOM NAME COLOR", nc, UiExp::cfg("name_color"), {1, 1, 1});
-        if (r == Ui::RESET) cfg_.nameColor = -1;          // (right-click: back to the default, no colour)
-        else if (r == Ui::CHANGED) cfg_.nameColor = packOf(nc);   // (picking one turns it on)
-        g.next();
-    }
-    g.section("TEAM COLORS");
-    {
-        static std::vector<std::string> pn;
-        if (pn.empty()) {
-            for (int i = 0; i < kPaletteCount; i++) pn.push_back(std::string("TEAM COLORS: ") + kPalettes[i].name);
-            pn.push_back("TEAM COLORS: CUSTOM");
-        }
-        int pi = -1;
-        for (int i = 0; i < kPaletteCount; i++)
-            if (length(kPalettes[i].friendly - cfg_.colorFriendly) < 0.01f && length(kPalettes[i].enemy - cfg_.colorEnemy) < 0.01f) pi = i;
-        // own colours: CUSTOM is one more value, so ">" goes to the first preset and "<" to the last
-        const int n = pi < 0 ? kPaletteCount + 1 : kPaletteCount;
-        if (pi < 0) pi = kPaletteCount;
-        if (ui_.cycle(g.x(), g.top(), w, h, "PRESET", pi, n, pn, UiExp::cfg("color_*")) && pi < kPaletteCount) {
-            cfg_.colorFriendly = kPalettes[pi].friendly;
-            cfg_.colorEnemy = kPalettes[pi].enemy;
-        }
-        g.next();
-        g.hint("PRESETS SET BOTH COLORS BELOW");
-    }
-    ui_.colorPicker(g.x(), g.top(), w, h, "TEAM COLOR", cfg_.colorFriendly, UiExp::cfg("color_friendly"), defaultSettings().colorFriendly);
-    g.next();
-    ui_.colorPicker(g.x(), g.top(), w, h, "ENEMY COLOR", cfg_.colorEnemy, UiExp::cfg("color_enemy"), defaultSettings().colorEnemy);
-    g.next();
-    if (const char* clash = colorPairClash(cfg_.colorFriendly, cfg_.colorEnemy))   // (a COLORBLIND preset fixes it)
-        g.hint("HARD TO TELL APART WITH", std::string(clash) + " COLOR BLINDNESS");
-    else g.hint(cfg_.menuAccentOn ? "PLAYER > MORE SETS THE MENU ACCENT" : "TEAM COLOR IS ALSO THE MENU ACCENT");
-    applyMenuTheme();
-    g.section("INTERFACE");   // (FONT: a page of its own in this tab)
-    if (ui_.button(g.x(), g.top(), w, h, "FONT: " + upper(cfg_.uiFont.empty() ? std::string(uifonts::kDefault) : cfg_.uiFont) + "  >",
-                   UiExp::nav("~settings/fonts").withId("FONT"))) { fontsOpen_ = true; fontListed_ = false; fontScroll_ = 0; ui_.closePopup(); }
-    g.next();
-    g.hint("THE FONT OF THE MENUS AND THE HUD");
-    {   // LANGUAGE (lang.h): AUTO (the system's), then each language in its own name
-        static std::vector<std::string> names;
-        const auto& L = lang::languages();
-        if (names.empty()) { names.push_back("AUTO"); for (const auto& l : L) names.push_back(l.name); }
-        int li = cfg_.language == "auto" ? 0 : lang::indexOf(cfg_.language) + 1;
-        if (li < 0) li = 0;
-        if (ui_.dropdown(g.x(), g.top(), w, h, "LANGUAGE", li, names, UiExp::nav("~settings/language").withId("LANGUAGE"), UiExp::nav("~settings"), UiExp::cfg("language"))) {
-            cfg_.language = li <= 0 ? "auto" : L[li - 1].code;
-            cfg_.save();
-        }
-        g.next();
-        g.hint(cfg_.language == "auto" ? "AUTO: YOUR SYSTEM'S LANGUAGE" : "THE LANGUAGE OF THE MENUS AND THE HUD");
-    }
-}
 
 // HUD > MORE: a COMPASS strip at the bottom centre (N / E / S / W and the degrees between, turning with your view) and
 // a RADAR in the top left corner: teammates (never enemies) and the objectives' markers, turned so up is where you
@@ -7460,92 +7309,6 @@ void Game::drawModelPicker(const SetLayout& L) {
     }
 }
 
-void Game::drawGameplaySettings(const SetLayout& L) {
-    SetFlow f{ui_, L, kColL, 90};
-    const float w = f.w(), h = f.h();
-    f.header("VIEW");
-    ui_.slider(f.x(), f.top(), w, h, "FOV", cfg_.fov, 70, 130, "%.0f", UiExp::cfg("fov"), defaultSettings().fov);
-    cfg_.fov = clampf(cfg_.fov, 60, 140);   // (typed: quark.cfg's range)
-    f.next();
-    ui_.slider(f.x(), f.top(), w, h, "SCOPE OVERLAY", cfg_.scopeOpacity, 0, 1, "%.2f", UiExp::cfg("scope_opacity"), defaultSettings().scopeOpacity);
-    cfg_.scopeOpacity = clampf(cfg_.scopeOpacity, 0, 1);
-    f.next();
-    // the first-person gun (and grapple launcher) see-through: 1 solid, 0 not drawn; HUD > WEAPON MODEL still places it
-    ui_.slider(f.x(), f.top(), w, h, "WEAPON MODEL OPACITY", cfg_.viewmodelOpacity, 0, 1, "%.2f", UiExp::cfg("viewmodel_opacity"), defaultSettings().viewmodelOpacity);
-    cfg_.viewmodelOpacity = clampf(cfg_.viewmodelOpacity, 0, 1);
-    f.next();
-    // the sniper's and rifle's alt-fire zoom (degrees, as FOV). Client-side only.
-    ui_.slider(f.x(), f.top(), w, h, "SNIPER ZOOM FOV", cfg_.zoomFovSniper, 10, 90, "%.0f", UiExp::cfg("zoom_fov_sniper"), defaultSettings().zoomFovSniper);
-    f.next();
-    ui_.slider(f.x(), f.top(), w, h, "RIFLE ZOOM FOV", cfg_.zoomFovRifle, 10, 90, "%.0f", UiExp::cfg("zoom_fov_rifle"), defaultSettings().zoomFovRifle);
-    cfg_.zoomFovSniper = clampf(cfg_.zoomFovSniper, 10, 140);   // (typed: quark.cfg's range; used up to the normal FOV)
-    cfg_.zoomFovRifle = clampf(cfg_.zoomFovRifle, 10, 140);
-    f.next();
-    {
-        static const std::string std = "STANDARD: SNIPER " + std::to_string((int)baseWeaponDef(WPN_SNIPER).zoomFov) + ", RIFLE " + std::to_string((int)baseWeaponDef(WPN_RIFLE).zoomFov);
-        f.hint(std);
-    }
-    f.section("SHOTS");
-    static const std::vector<std::string> own = {"YOUR SHOTS: WITH WEAPON MODEL", "YOUR SHOTS: ALWAYS", "YOUR SHOTS: NEVER"};
-    ui_.cycle(f.x(), f.top(), w, h, "YOUR SHOTS", cfg_.ownShots, 3, own, UiExp::cfg("own_shots"));
-    f.next();
-    f.hint("TRACERS + LASER START WHERE THE GUN IS");
-    ui_.toggle(f.x(), f.top(), w, h, "OTHER PLAYERS' TRACERS / BEAMS", cfg_.enemyShots, UiExp::cfg("enemy_shots"));
-    f.next();
-    {   // hit sparks (on walls and players) and muzzle flashes, yours and everyone's: cosmetic, visibility
-        const float hw = L.L(kHalfW);
-        ui_.toggle(f.x(), f.top(), hw, h, "IMPACT SPARKS", cfg_.impactSparks, UiExp::cfg("impact_sparks"));
-        ui_.toggle(L.X(kColL + kColW - kHalfW), f.top(), hw, h, "MUZZLE FLASH", cfg_.muzzleFlash, UiExp::cfg("muzzle_flash"));
-        f.next();
-    }
-    f.section("MAPS");
-    if (ui_.toggle(f.x(), f.top(), w, h, "LEGACY MAPS", cfg_.legacyMaps, UiExp::cfg("legacy_maps"))) {
-        setLegacyMapsListed(cfg_.legacyMaps);
-        rescanMaps();
-    }
-    f.next();
-    f.hint("THE OLD MAPS (BEFORE 1.19.6) IN THE MAP LISTS. NEVER RANKED");
-    // (NETWORK, the smoothing delay, is on VIDEO + AUDIO page 7 with the other network settings: this column ran into
-    // the footer, 2026-10-30)
-
-    SetFlow g{ui_, L, kColR, 90};
-    g.header("FEEDBACK");
-    ui_.toggle(g.x(), g.top(), w, h, "DAMAGE NUMBERS", cfg_.dmgNums, UiExp::cfg("dmg_nums"));
-    g.next();
-    {   // their size, with a sample of the number at that size
-        const float sw = L.L(304), bx = L.X(kColR + 312), bw = L.L(48);
-        if (ui_.slider(g.x(), g.top(), sw, h, "DAMAGE NUMBER SIZE", cfg_.dmgNumScale, 0.5f, 3.0f, "%.2f", UiExp::cfg("dmg_num_scale"), defaultSettings().dmgNumScale) && !ui_.typed())
-            cfg_.dmgNumScale = std::round(cfg_.dmgNumScale * 20) / 20;   // (dragged: 0.05 steps; typed: as typed)
-        cfg_.dmgNumScale = clampf(cfg_.dmgNumScale, 0.5f, 3.0f);
-        float k = std::max(1.0f, std::round(ui_.textScale() * cfg_.dmgNumScale));
-        r_.rect(bx, g.top(), bw, h, {0.42f, 0.43f, 0.45f, 1});
-        if (cfg_.dmgNums) r_.text(bx + bw * 0.5f - r_.textWidth("42", k) * 0.5f, g.top() + (h - r_.textHeight(k)) * 0.5f, k, "42", kWhite);
-        g.next();
-    }
-    // the flash round the screen's edges when you're hit (0 = off)
-    ui_.slider(g.x(), g.top(), w, h, "DAMAGE FLASH", cfg_.damageFlash, 0, 1, "%.2f", UiExp::cfg("damage_flash"), defaultSettings().damageFlash);
-    cfg_.damageFlash = clampf(cfg_.damageFlash, 0, 1);
-    g.next();
-    g.hint("SCREEN EDGES FLASH WHEN HIT. 0 = OFF");
-    ui_.toggle(g.x(), g.top(), w, h, "STICKY COUNTER", cfg_.stickyCounter, UiExp::cfg("sticky_counter"));
-    g.next();
-    g.section("OTHER PLAYERS");
-    ui_.toggle(g.x(), g.top(), w, h, "HEALTH BARS OVER PLAYERS", cfg_.healthBars, UiExp::cfg("health_bars"));
-    g.next();
-    g.hint("RANKED TOO");   // (owner, 2026-11-01: health bars are allowed in ranked; the old hint said the opposite)
-    {
-        static const std::vector<std::string> hbp = {"HEALTH BAR: OVER THE HEAD", "HEALTH BAR: AT THE FEET"};
-        int hi = cfg_.healthBarsBottom ? 1 : 0;
-        if (ui_.cycle(g.x(), g.top(), w, h, "HEALTH BAR POSITION", hi, 2, hbp, UiExp::cfg("health_bars_bottom"))) cfg_.healthBarsBottom = hi == 1;
-        g.next();
-    }
-    ui_.toggle(g.x(), g.top(), w, h, "WINNERS CROWN", cfg_.crowns, UiExp::cfg("crowns"));
-    g.next();
-    g.section("CHAT");
-    if (ui_.toggle(g.x(), g.top(), w, h, "DISABLE CHAT", cfg_.chatOff, UiExp::cfg("chat_off")) && cfg_.chatOff) for (auto& t : typingUntil_) t = 0;
-    g.next();
-    g.hint("HIDES ALL PLAYERS' CHAT MESSAGES");
-}
 
 // VIDEO + AUDIO's PRESET (page 1, review round 2: on page 4 nobody found it; and MORE 3): a starting point - shadows,
 // anti-aliasing, render scale, fog and effects at once
@@ -7563,155 +7326,6 @@ void Game::videoPresetCycle(float x, float y, float w, float h) {
     }
 }
 
-void Game::drawVideoSettings(const SetLayout& L) {
-    SetFlow f{ui_, L, kColL, 90};
-    const float w = f.w(), h = f.h(), hw = L.L(kHalfW);
-    f.header("DISPLAY");
-    static const std::vector<std::string> dispNames = {"DISPLAY: WINDOWED", "DISPLAY: BORDERLESS FULLSCREEN", "DISPLAY: EXCLUSIVE FULLSCREEN"};
-    {
-        const int was = cfg_.displayMode;
-        if (ui_.cycle(f.x(), f.top(), w, h, "DISPLAY", cfg_.displayMode, 3, dispNames, UiExp::cfg("display_mode"))) { applyDisplayMode(); askKeepDisplay(was, cfg_.width, cfg_.height); }
-    }
-    f.next();
-    f.hint("EXCLUSIVE / BORDERLESS SKIP THE DESKTOP", "COMPOSITOR ON MOST DRIVERS");
-    {   // any cap, typed or dragged (0: unlimited); right-click: the screen's refresh rate (G-Sync / FreeSync: a few under)
-        gameMonitor();
-        float v = (float)cfg_.maxFps;
-        ui_.slider(f.x(), f.top(), w, h, "FPS LIMIT", v, 0, 1000, cfg_.maxFps <= 0 ? "UNLIMITED" : "%.0f", UiExp::cfg("maxfps"),
-                   (float)(vmHz_ > 0 ? vmHz_ : 60));
-        cfg_.maxFps = std::min(std::max(0, (int)std::lround(v)), 100000);
-        f.next();
-    }
-    videoPresetCycle(f.x(), f.top(), w, h);   // (the quality preset first: review round 2)
-    f.next();
-    f.section("LATENCY");
-#ifdef _WIN32
-    static const std::vector<std::string> presNames = {"VSYNC: OFF", "VSYNC: ON", "VSYNC: ADAPTIVE", "VSYNC: LATENT SYNC"};
-    const int nPres = 4;
-#else
-    static const std::vector<std::string> presNames = {"VSYNC: OFF", "VSYNC: ON", "VSYNC: ADAPTIVE"};
-    const int nPres = 3;
-#endif
-    if (ui_.cycle(f.x(), f.top(), w, h, "PRESENT", cfg_.presentMode, nPres, presNames, UiExp::cfg("present_mode"))) applyPresentMode();
-    f.next();
-    f.hint("OFF = LOWEST LATENCY, MAY TEAR");
-    if (cfg_.presentMode == 3) {   // latent sync: where the tear line goes (0: the top of the blank)
-        float v = (float)cfg_.latentOffsetUs;
-        ui_.slider(f.x(), f.top(), w, h, "TEAR LINE OFFSET (US)", v, -2000, 2000, "%.0f", UiExp::cfg("latent_offset_us"), 0);
-        cfg_.latentOffsetUs = (int)std::lround(clampf(v, -4000, 4000));
-        f.next();
-    }
-    static const std::vector<std::string> llNames = {"LOW LATENCY: OFF", "LOW LATENCY: ON", "LOW LATENCY: ULTRA"};
-    ui_.cycle(f.x(), f.top(), w, h, "LOW LATENCY", cfg_.lowLatency, 3, llNames, UiExp::cfg("low_latency"));
-    f.next();
-    f.hint("ON: AT MOST 1 FRAME QUEUED", "ULTRA: 0 QUEUED + LATE INPUT SAMPLING");
-#ifdef _WIN32
-    // NVIDIA: "Prefer maximum performance" in quark's driver profile (the driver reads it at the next start)
-    if (ui_.toggle(f.x(), f.top(), w, h, "GPU MAX CLOCKS", cfg_.gpuMaxClocks, UiExp::cfg("gpu_max_clocks"))) {
-        std::string msg = "GPU MAX CLOCKS: NOT CHANGED IN THE UI TEST";
-        if (!uiTest_ && !nvMaxClocks(cfg_.gpuMaxClocks, &msg)) cfg_.gpuMaxClocks = false;
-        notify(msg);
-    }
-    f.next();
-    f.hint("KEEPS GPU CLOCKS HIGH: LESS LAG, MORE POWER", keyOf(A_PERF) + " SHOWS INPUT->FRAME LATENCY");
-    if (ui_.toggle(f.x(), f.top(), w, h, "PRIORITIZE GAME", cfg_.prioritize, UiExp::cfg("prioritize")) && !uiTest_)
-        setGamePriority(prioLevel(glfwGetWindowAttrib(win_, GLFW_FOCUSED) != 0));
-    f.next();
-    f.hint("GPU + CPU GO TO THE GAME FIRST WHILE FOCUSED", "(BROWSER VIDEOS, ELECTRON APPS WAIT)");
-#else
-    f.y -= 16;
-    f.hint("", keyOf(A_PERF) + " SHOWS INPUT->FRAME LATENCY");
-#endif
-    // (FLAT MAP, FULLBRIGHT and its colour, is on page 2: on Windows, with GPU MAX CLOCKS and PRIORITIZE GAME, this
-    // column ran into the footer - MAP COLOR under BACK; 2026-10-30)
-
-    SetFlow g{ui_, L, kColR, 90};
-    g.header("IMAGE");
-    // (BRIGHTNESS and PLAYER SHADOWS share a row, as RENDER SCALE and SHARPEN do: a row more would push SOUND into
-    // DEVICES with Windows' EXCLUSIVE AUDIO)
-    ui_.slider(g.x(), g.top(), hw, h, "BRIGHTNESS", cfg_.brightness, 0.6f, 1.8f, "%.2f", UiExp::cfg("brightness"), defaultSettings().brightness);
-    cfg_.brightness = clampf(cfg_.brightness, 0.6f, 1.8f);   // (typed: quark.cfg's range)
-    ui_.toggle(L.X(kColR + kColW - kHalfW), g.top(), hw, h, "PLAYER SHADOWS", cfg_.shadows, UiExp::cfg("shadows"));
-    g.next();
-    {
-        static const int aaModes[] = {0, 1, 2, 4, 8};
-        static std::vector<std::string> aaNames;
-        if (aaNames.empty()) {   // (a mode the GPU can't do says so: it runs at the GPU's most, SHOW WHEN N/A)
-            const int mx = r_.maxSamples();
-            aaNames = {"ANTI-ALIASING: OFF", "ANTI-ALIASING: SMOOTH (CHEAP)", mx >= 2 ? "ANTI-ALIASING: MSAA 2X" : "ANTI-ALIASING: MSAA 2X (N/A)",
-                       mx >= 4 ? "ANTI-ALIASING: MSAA 4X" : "ANTI-ALIASING: MSAA 4X (N/A HERE)",
-                       mx >= 8 ? "ANTI-ALIASING: MSAA 8X" : "ANTI-ALIASING: MSAA 8X (N/A: " + std::to_string(mx) + "X HERE)"};
-        }
-        int ai = 0;
-        for (int i = 0; i < 5; i++) if (aaModes[i] == cfg_.msaa) ai = i;
-        if (ui_.cycle(g.x(), g.top(), w, h, "ANTI-ALIASING", ai, 5, aaNames, UiExp::cfg("msaa"))) cfg_.msaa = aaModes[ai];
-        g.next();
-    }
-    {   // the 3D scene at this % of the window's pixels (the HUD and menus always at 100%): below for frame rate, above
-        // as supersampling; SHARPEN: below 100%, sharpened as it's stretched
-        float v = (float)cfg_.renderScale;
-        if (ui_.slider(g.x(), g.top(), hw, h, "RENDER SCALE", v, 25, 400, "%.0f%%", UiExp::cfg("render_scale"), (float)defaultSettings().renderScale))
-            cfg_.renderScale = std::max(25, std::min(400, (int)std::lround(v)));
-        ui_.toggle(L.X(kColR + kColW - kHalfW), g.top(), hw, h, "SHARPEN", cfg_.renderSharpen, UiExp::cfg("render_sharpen"));
-        g.next();
-    }
-    g.section("SOUND");
-    // (MORE 5: SHOW DB: each volume as its gain in dB; VOLUME up to 150%, PERCEPTUAL: its square)
-    char vf[4][24];
-    {
-        const float gains[4] = {cfg_.volPerceptual ? cfg_.volume * cfg_.volume : cfg_.volume, cfg_.volumeEffects, cfg_.volumeAnnouncer, cfg_.volumeQuips};
-        for (int k = 0; k < 4; k++) {
-            if (!cfg_.volDb) snprintf(vf[k], sizeof vf[k], "%%.0f%%%%");
-            else if (gains[k] < 0.001f) snprintf(vf[k], sizeof vf[k], "-INF DB");
-            else snprintf(vf[k], sizeof vf[k], "%+.1f DB", 20.0f * std::log10(gains[k]));
-        }
-    }
-    {
-        float pct = cfg_.volume * 100;
-        if (ui_.slider(g.x(), g.top(), w, h, "VOLUME", pct, 0, 150, vf[0], UiExp::cfg("volume"), defaultSettings().volume * 100))
-            audio_.setMasterVolume((cfg_.volume = clampf(pct / 100, 0, 1.5f), masterGain()));
-    }
-    g.next();
-    // on top of VOLUME: every sound effect (the hitsound too), and the announcer's lines
-    if (pctSlider(g.x(), g.top(), w, h, "EFFECTS VOLUME", cfg_.volumeEffects, 1, vf[1], UiExp::cfg("volume_effects"), defaultSettings().volumeEffects))
-        audio_.setEffectsVolume(cfg_.volumeEffects = clampf(cfg_.volumeEffects, 0, 1));
-    g.next();
-    if (pctSlider(g.x(), g.top(), w, h, "ANNOUNCER VOLUME", cfg_.volumeAnnouncer, 1, vf[2], UiExp::cfg("volume_announcer"), defaultSettings().volumeAnnouncer))
-        audio_.setAnnouncerVolume(cfg_.volumeAnnouncer = clampf(cfg_.volumeAnnouncer, 0, 1));
-    g.next();
-    // quips (the QUIP key): their own volume and on / off, apart from the announcer's (QUIPS shares HITSOUND's row:
-    // a row more would not fit above DEVICES with Windows' EXCLUSIVE AUDIO)
-    if (pctSlider(g.x(), g.top(), w, h, "QUIPS VOLUME", cfg_.volumeQuips, 1, vf[3], UiExp::cfg("volume_quips"), defaultSettings().volumeQuips))
-        audio_.setQuipVolume(cfg_.volumeQuips = clampf(cfg_.volumeQuips, 0, 1));
-    g.next();
-    ui_.toggle(g.x(), g.top(), hw, h, "HITSOUND", cfg_.hitsounds, UiExp::cfg("hitsounds"));
-    if (ui_.toggle(L.X(kColR + kColW - kHalfW), g.top(), hw, h, "QUIPS", cfg_.quips, UiExp::cfg("quips"))) {
-        audio_.setQuips(cfg_.quips);
-        if (cfg_.quips && audio_.quipCount() > 0) audio_.play(SND_QUIP, 1.0f);   // (a taste of them)
-    }
-    g.next();
-    {
-        static const std::vector<std::string> sn = {"SOUND PACK: DEFAULT", "SOUND PACK: HEAVY METAL", "SOUND PACK: MAGICAL", "SOUND PACK: RETRO", "SOUND PACK: MOUTH"};
-        ui_.cycle(g.x(), g.top(), w, h, "SOUNDS", cfg_.soundPack, 5, sn, UiExp::cfg("soundpack"));
-        g.next();
-    }
-    // (EXCLUSIVE AUDIO, Windows only, is on page 6 under OUTPUT: here it put VOICE 2 px over the footer, 2026-10-30)
-    {   // the announcer (in SOUND: its own section header no longer fit under the two volumes above)
-        static const std::vector<std::string> an = {"ANNOUNCER: OFF", "ANNOUNCER: COUNTDOWN", "ANNOUNCER: ALL CALLS"};
-        static std::vector<std::string> av;
-        if (av.empty()) for (int v = 0; v < kAnnouncerVoices; v++) av.push_back(std::string("VOICE: ") + announcerVoiceName(v));
-        if (ui_.cycle(g.x(), g.top(), w, h, "ANNOUNCER", cfg_.announcer, 3, an, UiExp::cfg("announcer")) && cfg_.announcer > 0) audio_.play(SND_VOICE_GO, 1.0f);
-        g.next();
-        if (ui_.cycle(g.x(), g.top(), w, h, "VOICE", cfg_.announcerVoice, kAnnouncerVoices, av, UiExp::cfg("voice"))) { audio_.setAnnouncer(cfg_.announcerVoice); audio_.play(SND_VOICE_GODLIKE, 1.0f); }
-        g.next();
-    }
-    // the footer's right: DEVICES (sound output, microphone, monitor), a page of its own in this tab
-    if (ui_.button(L.X(836), L.Y(640), hw, h, "DEVICES  >", UiExp::nav("~settings/video/devices").withId("DEVICES"))) {
-        devicesOpen_ = true; devListed_ = false;
-        for (int& s : devScroll_) s = 0;
-        ui_.closePopup();
-    }
-}
 
 // The page's lists, from the OS (a few ms: on opening the page, REFRESH, a monitor plugged in or out). Names upper
 // case and unique; monitors with their desktop mode.
@@ -7900,18 +7514,16 @@ void Game::drawSearchTab(const SetLayout& L) {
     sl.matched = ui_.probing() ? &searchMatched_ : nullptr;
     searchMatched_.clear();
     {   // every page, as it is drawn on its tab (its state put back afterwards)
-        struct Pg { int tab, more, sub; bool devices; const char* tag; };
-        static const Pg pages[] = {
-            {TAB_PLAYER, 0, 0, false, "PLAYER"}, {TAB_PLAYER, 1, 0, false, "PLAYER 2"},
-            {TAB_GAMEPLAY, 0, 0, false, "GAMEPLAY"}, {TAB_GAMEPLAY, 1, 0, false, "GAMEPLAY 2"}, {TAB_GAMEPLAY, 2, 0, false, "GAMEPLAY 3"},
-            {TAB_GAMEPLAY, 3, 0, false, "GAMEPLAY 4"}, {TAB_GAMEPLAY, 4, 0, false, "GAMEPLAY 5"},
-            {TAB_CONTROLS, 0, 0, false, "CONTROLS"}, {TAB_CONTROLS, 0, 1, false, "CONTROLS: MOVE KEYS"}, {TAB_CONTROLS, 0, 2, false, "CONTROLS: MORE KEYS"},
-            {TAB_CONTROLS, 1, 0, false, "CONTROLS 2"}, {TAB_CONTROLS, 2, 0, false, "CONTROLS 3"},
-            {TAB_VIDEO, 0, 0, false, "VIDEO"}, {TAB_VIDEO, 1, 0, false, "VIDEO 2"}, {TAB_VIDEO, 2, 0, false, "VIDEO 3"}, {TAB_VIDEO, 3, 0, false, "VIDEO 4"},
-            {TAB_VIDEO, 4, 0, false, "VIDEO 5"}, {TAB_VIDEO, 5, 0, false, "VIDEO 6"}, {TAB_VIDEO, 6, 0, false, "VIDEO 7"}, {TAB_VIDEO, 7, 0, false, "VIDEO 8"},
-            {TAB_VIDEO, 8, 0, false, "VIDEO 9"}, {TAB_VIDEO, 0, 0, true, "VIDEO: DEVICES"},
-            {TAB_CROSSHAIR, 0, 0, false, "CROSSHAIR"}, {TAB_HUD, 0, 0, false, "HUD"}, {TAB_HUD, 1, 0, false, "HUD 2"},
-            {TAB_LATENCY, 0, 0, false, "LATENCY"}};
+        // every page of every tab (the table's), as drawn on its tab; DEVICES too (a page opened from AUDIO)
+        struct Pg { int tab, more; bool devices; std::string tag; };
+        static const std::vector<Pg> pages = [this] {
+            std::vector<Pg> v;
+            for (int t = 0; t < TAB_SEARCH; t++)
+                for (int p = 0; p < setPageCount(t); p++)
+                    v.push_back({t, p, false, setPageCount(t) > 1 ? std::string(setTabName(t)) + ": " + setPageName(t, p) : std::string(setTabName(t))});
+            v.push_back({TAB_AUDIO, 0, true, "AUDIO: DEVICES"});
+            return v;
+        }();
         const int tab0 = setTab_, more0 = moreOpen_, sub0 = controlsSub_;
         const Pg* jump = nullptr;
         const bool dev0 = devicesOpen_;
@@ -7919,8 +7531,9 @@ void Game::drawSearchTab(const SetLayout& L) {
         // A page whose rows all lie above or below the rows on screen isn't run: its count from the last full pass
         // stands in. Every page runs when anything could have changed a count (the query, the scroll, a click or a
         // drag, typing, an open picker, the UI test), and every 16th frame anyway.
-        constexpr int kPages = sizeof pages / sizeof pages[0];
-        static int counts[kPages] = {}, sinceFull = 0;
+        const int kPages = (int)pages.size();
+        static std::vector<int> counts(pages.size(), 0);
+        static int sinceFull = 0;
         static bool valid = false;
         static int lastFirst = -1;
         const bool full = !valid || ++sinceFull >= 16 || searchScroll_ != lastFirst || queryChanged || uiIn_.pressed || uiIn_.rpressed || uiIn_.down ||
@@ -7933,19 +7546,10 @@ void Game::drawSearchTab(const SetLayout& L) {
             const Pg& p = pages[pi];
             const int start = sl.n;
             if (!full && (start + counts[pi] <= sl.first * 3 || start >= (sl.first + sl.rows) * 3)) { sl.n += counts[pi]; continue; }
-            setTab_ = p.tab; moreOpen_ = p.more; controlsSub_ = p.sub; devicesOpen_ = p.devices;
-            sl.tag = p.tag;
+            setTab_ = p.tab; moreOpen_ = p.more; devicesOpen_ = p.devices;
+            sl.tag = p.tag.c_str();
             if (p.devices) drawDeviceSettings(L);
-            else if (p.more) drawMoreSettings(L);
-            else switch (p.tab) {
-                case TAB_PLAYER: drawPlayerSettings(L); break;
-                case TAB_GAMEPLAY: drawGameplaySettings(L); break;
-                case TAB_CONTROLS: drawControls(L); break;
-                case TAB_VIDEO: drawVideoSettings(L); break;
-                case TAB_CROSSHAIR: drawCrosshairSettings(L); break;
-                case TAB_HUD: drawHudSettings(L); break;
-                case TAB_LATENCY: drawLatencySettings(L); break;
-            }
+            else drawSetPage(L);
             counts[pi] = sl.n - start;
             // (a row that opens something of its page's own - CONTROLS' IMPORT and its file list, an editor - takes you
             // to that page with it open)
@@ -7954,7 +7558,7 @@ void Game::drawSearchTab(const SetLayout& L) {
         valid = true;
         ui_.reloc = nullptr;
         r_.setAlpha(alpha0);
-        if (jump) { setTab_ = jump->tab; moreOpen_ = jump->more; controlsSub_ = jump->sub; devicesOpen_ = jump->devices; ui_.closePopup(); }
+        if (jump) { setTab_ = jump->tab; moreOpen_ = jump->more; devicesOpen_ = jump->devices; ui_.closePopup(); }
         else { setTab_ = tab0; moreOpen_ = more0; controlsSub_ = sub0; devicesOpen_ = dev0; }
     }
     searchRows_ = (sl.n + 2) / 3;
@@ -7993,17 +7597,13 @@ void Game::drawSettingsPages(const SetLayout& L, float footY) {
     int go = -1;
     if (ui_.button(L.X(x), y, L.L(cw), h, "<", cur > 0 ? UiExp::nav(moreNav(cur - 1)).withId("PREVIOUS PAGE") : UiExp::inert().withId("PREVIOUS PAGE"), cur > 0)) go = cur - 1;
     x += cw + gap;
-    // VIDEO + AUDIO's nine pages say what's on them under the mouse (review round 2: "9 unnamed pages")
-    static const char* const kVideoPages[9] = {"DISPLAY / LATENCY / IMAGE / SOUND", "WINDOW / SHADOWS / GPU / HITSOUNDS / FLAT MAP", "WORLD / PICTURE / EFFECTS",
-                                               "DISPLAY / SOUND GROUPS / PERFORMANCE / PRESET", "SHADOWS / PLAYERS / OUTLINES / COLORS", "OUTPUT / VOLUME / CALLOUTS",
-                                               "NETWORK / LIGHT CACHE / MENU CURSOR", "MAP COLORS / PLAYERS / HEALTH BARS / NAME TAGS", "SCREENSHOTS / DEMOS / LATENCY"};
     int hoverPage = -1;
     for (int i = 0; i < n; i++, x += cw + gap) {
         if (ui_.over(L.X(x), y, L.L(cw), h)) hoverPage = i;
         if (ui_.tab(L.X(x), y, L.L(cw), h, std::to_string(i + 1), i == cur, i == cur ? UiExp::inert().withId(kIds[i]) : UiExp::nav(moreNav(i)).withId(kIds[i]))) go = i;
     }
-    if (hoverPage >= 0 && setTab_ == TAB_VIDEO && hoverPage < 9) {
-        const std::string t = kVideoPages[hoverPage];
+    if (hoverPage >= 0) {   // (the page's name under the mouse: review round 2, "9 unnamed pages")
+        const std::string t = setPageName(setTab_, hoverPage);
         const float hs = ui_.hintScale(), tw = r_.textWidth(t, hs), th = r_.textHeight(hs), pad = L.L(8);
         const float bx = L.X(640) - tw * 0.5f - pad, by = y - th - 2 * pad - L.L(4);
         r_.rect(bx, by, tw + 2 * pad, th + 2 * pad, {0.05f, 0.06f, 0.08f, 0.96f});
@@ -8036,25 +7636,6 @@ bool Game::settingsPageKeys() const {
            !fontsOpen_ && !devicesOpen_ && !modelPick_ && !widgetEdit_ && !hudEdit_ && filePick_ == 0;
 }
 
-// the settings path of this tab's MORE page n (0: the tab itself)
-const char* Game::moreNav(int n) const {   // (static strings: a UiExp keeps the pointer)
-    static const char* const p[5][9] = {{"~settings/video", "~settings/video/more", "~settings/video/more2", "~settings/video/more3",
-                                         "~settings/video/more4", "~settings/video/more5", "~settings/video/more6", "~settings/video/more7",
-                                         "~settings/video/more8"},
-                                        {"~settings/controls", "~settings/controls/more", "~settings/controls/more2", "~settings/controls/more2",
-                                         "~settings/controls/more2", "~settings/controls/more2", "~settings/controls/more2", "~settings/controls/more2",
-                                         "~settings/controls/more2"},
-                                        {"~settings/gameplay", "~settings/gameplay/more", "~settings/gameplay/more2", "~settings/gameplay/more3",
-                                         "~settings/gameplay/more4", "~settings/gameplay/more4", "~settings/gameplay/more4", "~settings/gameplay/more4",
-                                         "~settings/gameplay/more4"},
-                                        {"~settings", "~settings/player/more", "~settings/player/more", "~settings/player/more",
-                                         "~settings/player/more", "~settings/player/more", "~settings/player/more", "~settings/player/more",
-                                         "~settings/player/more"},
-                                        {"~settings/hud", "~settings/hud/more", "~settings/hud/more", "~settings/hud/more",
-                                         "~settings/hud/more", "~settings/hud/more", "~settings/hud/more", "~settings/hud/more",
-                                         "~settings/hud/more"}};
-    return p[setTab_ == TAB_VIDEO ? 0 : setTab_ == TAB_CONTROLS ? 1 : setTab_ == TAB_PLAYER ? 3 : setTab_ == TAB_HUD ? 4 : 2][std::min(std::max(n, 0), 8)];
-}
 
 // MORE (settings/<tab>/more, 1.19.4): the tab's settings that don't fit on it. GAMEPLAY: the kill feed, chat, enemies,
 // all settings, the screen, menus. CONTROLS: the mouse's other axis, zoom, grapple and hand, the scoreboard key, the
@@ -8062,1485 +7643,23 @@ const char* Game::moreNav(int n) const {   // (static strings: a UiExp keeps the
 // effects, tracers and trails, output; 3 display, sound groups, performance, presets; 4 shadows, players, outlines,
 // colours, accessibility; 5 the sound's output, volume, callouts, cue sounds; 6 network (smoothing too), caches,
 // display, cursor, USE.
-void Game::drawMoreSettings(const SetLayout& L) {
-    if (setTab_ == TAB_GAMEPLAY && moreOpen_ == 2) { drawGameplayMore2(L); return; }
-    if (setTab_ == TAB_GAMEPLAY && moreOpen_ == 3) { drawGameplayMore3(L); return; }
-    if (setTab_ == TAB_GAMEPLAY && moreOpen_ >= 4) { drawGameplayMore4(L); return; }
-    if (setTab_ == TAB_CONTROLS && moreOpen_ >= 2) { drawControlsMore2(L); return; }
-    if (setTab_ == TAB_PLAYER) { drawPlayerMore(L); return; }
-    if (setTab_ == TAB_HUD) { drawHudMore(L); return; }
-    SetFlow f{ui_, L, kColL, 90}, g{ui_, L, kColR, 90};
-    const float w = f.w(), h = f.h();
-    if (setTab_ == TAB_CONTROLS) {
-        f.header("MOUSE");
-        ui_.slider(f.x(), f.top(), w, h, "VERTICAL SENSITIVITY", cfg_.sensY, 0.25f, 4.0f, "X%.2f", UiExp::cfg("sens_y"), defaultSettings().sensY);
-        cfg_.sensY = clampf(cfg_.sensY, 0.1f, 10.0f);
-        f.next();
-        f.hint("UP / DOWN AS A MULTIPLE OF SENSITIVITY");
-        ui_.toggle(f.x(), f.top(), w, h, "INVERT Y", cfg_.invertY, UiExp::cfg("invert_y"));
-        f.next();
-        f.section("ZOOM");
-        ui_.slider(f.x(), f.top(), w, h, "ZOOM SENSITIVITY", cfg_.zoomSens, 0.25f, 4.0f, "X%.2f", UiExp::cfg("zoom_sens"), defaultSettings().zoomSens);
-        cfg_.zoomSens = clampf(cfg_.zoomSens, 0.1f, 10.0f);
-        f.next();
-        f.hint("X1.00: THE SAME FEEL AS UNZOOMED", "LOWER: SLOWER WHILE SCOPED");
-        f.section("GRAPPLE + HAND");
-        {
-            static const std::vector<std::string> gn = {"GRAPPLE: HOLD", "GRAPPLE: TOGGLE"};
-            int gi = cfg_.grappleToggle;
-            if (ui_.cycle(f.x(), f.top(), w, h, "GRAPPLE", gi, 2, gn, UiExp::cfg("grapple_toggle"))) { cfg_.grappleToggle = gi; grappleOn_ = false; }
-            f.next();
-            f.hint("TOGGLE: PRESS TO HOOK, PRESS AGAIN TO LET GO");
-        }
-        {
-            static const std::vector<std::string> hn = {"HAND: RIGHT", "HAND: LEFT"};
-            int hi = cfg_.leftHanded;
-            if (ui_.cycle(f.x(), f.top(), w, h, "HAND", hi, 2, hn, UiExp::cfg("left_handed"))) cfg_.leftHanded = hi;
-            f.next();
-            f.hint("LEFT: THE GUN ON THE LEFT, THE GRAPPLE", "LAUNCHER ON THE RIGHT");
-        }
-        g.header("SCREEN");
-        static const std::vector<std::string> sn = {"SCOREBOARD: HOLD", "SCOREBOARD: TOGGLE"};
-        int st = cfg_.scoreToggle;
-        if (ui_.cycle(g.x(), g.top(), w, h, "SCOREBOARD", st, 2, sn, UiExp::cfg("score_toggle"))) { cfg_.scoreToggle = st; scoresOn_ = false; }
-        g.next();
-        g.hint("TOGGLE: PRESS THE SCOREBOARD KEY TO SHOW / HIDE");
-        g.section("WEAPON SCROLL");   // NEXT / PREV WEAPON: wrap at the ends or stop; weapons it passes over
-        ui_.toggle(g.x(), g.top(), w, h, "WRAP AROUND", cfg_.scrollWrap, UiExp::cfg("scroll_wrap"));
-        g.next();
-        {
-            static int skW = WPN_ROCKET;
-            static std::vector<std::string> wn;
-            if (wn.empty()) for (int i = 0; i < WPN_COUNT; i++) wn.push_back("WEAPON: " + upper(baseWeaponDef(i).name));
-            const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
-            ui_.cycle(g.x(), g.top(), hw, h, "WEAPON", skW, WPN_COUNT, wn, UiExp::local());
-            bool skip = cfg_.scrollSkip >> skW & 1;
-            if (ui_.toggle(x2, g.top(), hw, h, "SKIP IT", skip, UiExp::cfg("scroll_skip"))) cfg_.scrollSkip = skip ? cfg_.scrollSkip | 1 << skW : cfg_.scrollSkip & ~(1 << skW);
-            g.next();
-            g.hint("THE SCROLL WHEEL PASSES OVER SKIPPED", "WEAPONS (THEIR NUMBER KEYS STILL WORK)");
-        }
-        g.section("SENSITIVITY FROM ANOTHER GAME");   // the same turn per mouse count: quark's yaw is 0.022 degrees a count x SENSITIVITY
-        {
-            static const struct { const char* name; float yaw; } kGames[] = {
-                {"FROM: CS2 / CS:GO", 0.022f}, {"FROM: QUAKE", 0.022f}, {"FROM: APEX LEGENDS", 0.022f}, {"FROM: TEAM FORTRESS 2", 0.022f},
-                {"FROM: VALORANT", 0.07f}, {"FROM: OVERWATCH 2", 0.0066f}, {"FROM: CALL OF DUTY", 0.0066f}};
-            constexpr int n = sizeof kGames / sizeof kGames[0];
-            static std::vector<std::string> gn;
-            if (gn.empty()) for (auto& k : kGames) gn.push_back(k.name);
-            static int gi = 0;
-            static float theirs = 1.0f;
-            ui_.cycle(g.x(), g.top(), w, h, "FROM", gi, n, gn, UiExp::local());
-            g.next();
-            const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
-            ui_.slider(g.x(), g.top(), hw, h, "THEIRS", theirs, 0.01f, 20.0f, "%.3f", UiExp::local(), 1.0f);
-            theirs = clampf(theirs, 0.001f, 100.0f);
-            const float mine = clampf(theirs * kGames[gi].yaw / 0.022f, 0.01f, 50.0f);
-            char lbl[48];
-            snprintf(lbl, sizeof lbl, "USE %.3f", mine);
-            if (ui_.button(x2, g.top(), hw, h, lbl, (std::fabs(mine - cfg_.sensitivity) < 1e-4f ? UiExp::inert() : UiExp::cfg("sensitivity")).withId("USE IT")))
-                cfg_.sensitivity = mine;
-            g.next();
-            g.hint("SAME DPI: THE SAME TURN PER INCH OF MOUSE");
-        }
-        return;
-    }
-    if (setTab_ == TAB_GAMEPLAY) {
-        f.header("KILL FEED");
-        auto intSlider = [&](SetFlow& c, const char* label, int& v, int lo, int hi, const char* fmt, const char* key, int def) {
-            float fv = (float)v;
-            ui_.slider(c.x(), c.top(), w, h, label, fv, (float)lo, (float)hi, fmt, UiExp::cfg(key), (float)def);
-            v = std::min(std::max(lo, (int)std::lround(fv)), hi);
-            c.next();
-        };
-        const Settings& d = defaultSettings();
-        intSlider(f, "KILL FEED SECONDS", cfg_.feedTime, 1, 30, "%.0f S", "feed_time", d.feedTime);
-        intSlider(f, "KILL FEED LINES", cfg_.feedLines, 1, 12, "%.0f", "feed_lines", d.feedLines);
-        ui_.toggle(f.x(), f.top(), w, h, "ONLY KILLS I'M IN", cfg_.feedMine, UiExp::cfg("feed_mine"));
-        f.next();
-        f.section("CHAT");
-        {   // (one row, two halves: the column's room for PLAYER ANIMATIONS below)
-            const float hw = L.L(kHalfW), xl = L.X(kColL + kColW - kHalfW);
-            float ct = (float)cfg_.chatTime, cl = (float)cfg_.chatLines;
-            ui_.slider(f.x(), f.top(), hw, h, "CHAT SECONDS", ct, 1, 60, "%.0f S", UiExp::cfg("chat_time"), (float)d.chatTime);
-            ui_.slider(xl, f.top(), hw, h, "CHAT LINES", cl, 1, 16, "%.0f", UiExp::cfg("chat_lines"), (float)d.chatLines);
-            cfg_.chatTime = std::min(std::max(1, (int)std::lround(ct)), 60);
-            cfg_.chatLines = std::min(std::max(1, (int)std::lround(cl)), 16);
-            f.next();
-        }
-        while ((int)chatFeed_.size() > cfg_.chatLines) chatFeed_.pop_front();
-        ui_.slider(f.x(), f.top(), w, h, "CHAT OPACITY", cfg_.chatOpacity, 0.1f, 1.0f, "%.2f", UiExp::cfg("chat_opacity"), d.chatOpacity);
-        cfg_.chatOpacity = clampf(cfg_.chatOpacity, 0.1f, 1.0f);
-        f.next();
-        f.hint("WHILE TYPING, CHAT IS ALWAYS FULLY SHOWN");
-        f.section("FORCE PLAYER MODELS");
-        {
-            // (the model picker, with THEIR OWN first: settings/models/enemy, /team)
-            if (ui_.button(f.x(), f.top(), w, h, std::string("ENEMY MODEL: ") + (cfg_.enemyModel >= 0 ? playerModelName(cfg_.enemyModel) : "THEIR OWN") + "  >",
-                           UiExp::nav("~settings/models/enemy").withId("ENEMY MODEL")))
-                openModelPicker(2);
-            f.next();
-            if (ui_.button(f.x(), f.top(), w, h, std::string("TEAM MODEL: ") + (cfg_.teamModel >= 0 ? playerModelName(cfg_.teamModel) : "THEIR OWN") + "  >",
-                           UiExp::nav("~settings/models/team").withId("TEAM MODEL")))
-                openModelPicker(3);
-            f.next();
-            f.hint("EVERY ENEMY / TEAMMATE AS ONE MODEL (NOT IN", "RANKED, WHERE EVERYONE IS STANDARD)");
-            ui_.toggle(f.x(), f.top(), w, h, "PLAYER ANIMATIONS", cfg_.playerAnims, UiExp::cfg("player_anims"));
-            f.next();
-        }
-        f.section("ALL SETTINGS");   // every setting as text on the clipboard (your name, Discord and servers stay yours)
-        {
-            static const char* const kOwn[] = {"name=", "discord=", "rank_hello=", "last_address=", "last_mode=", "last_map=", "last_server=", "last_trainer=", "fav_servers=", "recent_servers="};
-            auto own = [](const std::string& l) { for (const char* p : kOwn) if (l.rfind(p, 0) == 0) return true; return false; };
-            const float tw = (w - L.L(16)) / 3, tg = L.L(8);
-            if (ui_.button(f.x(), f.top(), tw, h, "EXPORT", UiExp::state("allset"))) {
-                std::istringstream in(cfg_.toText());
-                std::string out = "quark-settings:\n", l;
-                while (std::getline(in, l)) if (!own(l)) out += l + "\n";
-                glfwSetClipboardString(win_, out.c_str());
-                allMsg_ = "SETTINGS COPIED: PASTE THEM ANYWHERE"; allMsgUntil_ = time_ + 3;
-            }
-            if (ui_.button(f.x() + tw + tg, f.top(), tw, h, "IMPORT", UiExp::state("allset"))) {
-                const char* clip = glfwGetClipboardString(win_);
-                const std::string text = clip ? clip : "";
-                if (text.find("quark-settings:") == std::string::npos) { allMsg_ = "NO SETTINGS ON THE CLIPBOARD (EXPORT MAKES THEM)"; }
-                else {
-                    std::istringstream in(text.substr(text.find("quark-settings:") + 15));
-                    std::string l;
-                    int n = 0;
-                    cfg_.ultraMarginMigrated = false;   // (as load(): an export from before ULTRA SAFETY AUTO, on 150, moves to it)
-                    while (std::getline(in, l)) {
-                        while (!l.empty() && (l.back() == '\r' || l.back() == ' ')) l.pop_back();
-                        const size_t eq = l.find('=');
-                        if (eq == std::string::npos || own(l)) continue;
-                        cfg_.set(l.substr(0, eq), l.substr(eq + 1));
-                        n++;
-                    }
-                    cfg_.finishLoad();
-                    cfg_.save();
-                    applySettings();
-                    allMsg_ = std::to_string(n) + " SETTINGS IMPORTED";
-                }
-                allMsgUntil_ = time_ + 3;
-            }
-            const bool armed = time_ < resetAllArmed_;
-            auto fresh = [&] {   // (the defaults, with what's yours kept)
-                Settings d = defaultSettings();
-                d.name = cfg_.name; d.discordName = cfg_.discordName; d.rankHello = cfg_.rankHello; d.lastAddress = cfg_.lastAddress;
-                d.lastMode = cfg_.lastMode; d.lastMap = cfg_.lastMap; d.lastServer = cfg_.lastServer; d.lastTrainer = cfg_.lastTrainer;
-                d.favServers = cfg_.favServers; d.recentServers = cfg_.recentServers;
-                return d;
-            };
-            const bool same = armed && fresh().toText() == cfg_.toText();   // (only while armed: two texts a frame)
-            if (ui_.button(f.x() + 2 * (tw + tg), f.top(), tw, h, armed ? "SURE?" : "RESET ALL",
-                           (!armed ? UiExp::state("allset") : same ? UiExp::state("allset") : UiExp::cfg("*")).withId("RESET ALL"))) {
-                if (!armed) { resetAllArmed_ = time_ + 3; allMsg_ = "CLICK AGAIN TO RESET EVERY SETTING (NOT YOUR NAME)"; allMsgUntil_ = time_ + 3; }
-                else {
-                    cfg_ = fresh();
-                    cfg_.save();
-                    applySettings();
-                    resetAllArmed_ = 0;
-                    allMsg_ = "EVERY SETTING IS BACK TO ITS DEFAULT"; allMsgUntil_ = time_ + 3;
-                }
-            }
-            f.next();
-            f.hint(time_ < allMsgUntil_ ? allMsg_ : std::string("EXPORT / IMPORT USE THE CLIPBOARD"));
-        }
-        g.header("SCREEN");
-        const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
-        ui_.toggle(g.x(), g.top(), hw, h, "SHOW FPS", cfg_.showFps, UiExp::cfg("show_fps"));
-        ui_.toggle(x2, g.top(), hw, h, "SHOW PING", cfg_.showPing, UiExp::cfg("show_ping"));
-        g.next();
-        g.hint("TOP RIGHT, WITHOUT A WIDGET (F3 HAS MORE)");
-        ui_.toggle(g.x(), g.top(), w, h, "HIDE HUD KEEPS CROSSHAIR", cfg_.hideHudCrosshair, UiExp::cfg("hide_hud_crosshair"));
-        g.next();
-        g.hint("BIND HIDE HUD ON CONTROLS");
-        ui_.toggle(g.x(), g.top(), w, h, "HEALTH BAR: MODE'S MAX", cfg_.hpScaled, UiExp::cfg("hp_scaled"));
-        g.next();
-        g.hint("OFF: THE BAR IS FULL AT 100 IN EVERY MODE");
-        {
-            const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
-            ui_.toggle(g.x(), g.top(), hw, h, "CAPTIONS", cfg_.captions, UiExp::cfg("captions"));
-            ui_.toggle(x2, g.top(), hw, h, "MATCH SUMMARY", cfg_.matchSummary, UiExp::cfg("match_summary"));
-            g.next();
-            g.hint("CAPTIONS: THE ANNOUNCER AS TEXT TOO");
-        }
-        {
-            const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
-            ui_.toggle(g.x(), g.top(), hw, h, "RACE GHOST", cfg_.ghost, UiExp::cfg("ghost"));
-            ui_.toggle(x2, g.top(), hw, h, "TEAM PANEL", cfg_.teamPanel, UiExp::cfg("team_panel"));
-            g.next();
-        }
-        g.section("MENUS");
-        ui_.toggle(g.x(), g.top(), w, h, "REMEMBER LAST TAB", cfg_.rememberTab, UiExp::cfg("remember_tab"));
-        g.next();
-        ui_.toggle(g.x(), g.top(), w, h, "CONFIRM QUIT / LEAVE", cfg_.confirmLeave, UiExp::cfg("confirm_leave"));
-        g.next();
-        g.hint("QUIT, DISCONNECT AND STOP HOSTING", "ASK \"SURE?\" FIRST: CLICK AGAIN");
-        ui_.toggle(g.x(), g.top(), w, h, "AUTO RECONNECT", cfg_.autoReconnect, UiExp::cfg("auto_reconnect"));
-        g.next();
-        g.hint("A DROPPED CONNECTION TRIES AGAIN (3 TIMES)");
-        ui_.toggle(g.x(), g.top(), w, h, "QUEUE FILLED: FLASH TASKBAR", cfg_.queueFlash, UiExp::cfg("queue_flash"));
-        g.next();
-        return;
-    }
-    if (moreOpen_ == 2) {   // VIDEO + AUDIO > MORE 2: the picture and the effects
-        f.header("WORLD");
-        if (ui_.slider(f.x(), f.top(), w, h, "FOG", cfg_.fog, 0, 3, cfg_.fog < 0.005f ? "OFF" : "X%.2f", UiExp::cfg("fog"), defaultSettings().fog))
-            r_.setFog(cfg_.fog = clampf(cfg_.fog, 0, 3));
-        f.next();
-        f.hint("THE HAZE OVER DISTANT WALLS (0: NONE)");
-        f.section("PICTURE");
-        {
-            const Settings& d = defaultSettings();
-            bool ch = ui_.slider(f.x(), f.top(), w, h, "GAMMA", cfg_.gamma, 0.5f, 2.0f, "%.2f", UiExp::cfg("gamma"), d.gamma);
-            f.next();
-            ch |= ui_.slider(f.x(), f.top(), w, h, "CONTRAST", cfg_.contrast, 0.5f, 2.0f, "%.2f", UiExp::cfg("contrast"), d.contrast);
-            f.next();
-            ch |= ui_.slider(f.x(), f.top(), w, h, "SATURATION", cfg_.saturation, 0, 2.0f, "%.2f", UiExp::cfg("saturation"), d.saturation);
-            f.next();
-            cfg_.gamma = clampf(cfg_.gamma, 0.5f, 2.0f); cfg_.contrast = clampf(cfg_.contrast, 0.5f, 2.0f); cfg_.saturation = clampf(cfg_.saturation, 0, 2.0f);
-            if (ch) r_.setGrade(cfg_.gamma, cfg_.contrast, cfg_.saturation);
-            f.hint("THE 3D SCENE (THE HUD STAYS AS IT IS);", "SATURATION 0: BLACK AND WHITE");
-        }
-        {   // 1.19.4 batch 3: the look's switches (shader uniforms: none costs anything per frame at its default)
-            const float hw = L.L(kHalfW), x2 = L.X(kColL + kColW - kHalfW);
-            f.section("LOOK");
-            ui_.toggle(f.x(), f.top(), hw, h, "TONE CURVE", cfg_.toneCurve, UiExp::cfg("tone_curve"));
-            ui_.toggle(x2, f.top(), hw, h, "CLEAN SURFACES", cfg_.cleanSurfaces, UiExp::cfg("clean_surfaces"));
-            f.next();
-            ui_.toggle(f.x(), f.top(), hw, h, "FLAT LIGHTING", cfg_.flatLight, UiExp::cfg("flat_light"));
-            ui_.toggle(x2, f.top(), hw, h, "SIMPLE SKY", cfg_.simpleSky, UiExp::cfg("simple_sky"));
-            f.next();
-            ui_.toggle(f.x(), f.top(), hw, h, "FAR SCENERY", cfg_.farScenery, UiExp::cfg("far_scenery"));
-            {
-                static const int dd[] = {150, 250, 400};
-                static const std::vector<std::string> dn = {"DRAW: 150 M", "DRAW: 250 M", "DRAW: 400 M"};
-                int di = cfg_.drawDist <= 150 ? 0 : cfg_.drawDist <= 250 ? 1 : 2;
-                if (ui_.cycle(x2, f.top(), hw, h, "DRAW DISTANCE", di, 3, dn, UiExp::cfg("draw_dist"))) cfg_.drawDist = dd[di];
-            }
-            f.next();
-            {   // PATTERN FADE (owner, 2026-10-31): far / grazing patterns fade to their average, like lava's veins
-                const Settings d = defaultSettings();
-                ui_.toggle(f.x(), f.top(), hw, h, "PATTERN FADE", cfg_.patternFade, UiExp::cfg("pattern_fade"));
-                ui_.slider(x2, f.top(), hw, h, "FADE DISTANCE", cfg_.fadeDist, 0.25f, 4.0f, "%.2fx", UiExp::cfg("fade_dist"), d.fadeDist);
-                cfg_.fadeDist = clampf(cfg_.fadeDist, 0.25f, 4.0f);
-                f.next();
-                ui_.slider(f.x(), f.top(), hw, h, "FADE LENGTH", cfg_.fadeLen, 1.25f, 8.0f, "%.2fx", UiExp::cfg("fade_len"), d.fadeLen);
-                cfg_.fadeLen = clampf(cfg_.fadeLen, 1.25f, 8.0f);
-                f.next();
-            }
-            f.hint("TONE CURVE OFF: FLAT, LINEAR COLOUR; CLEAN: NO", "PANEL SEAMS; FLAT: NO BAKED LIGHT OR SHADOW");
-        }
-        g.header("EFFECTS");
-        ui_.slider(g.x(), g.top(), w, h, "EFFECTS OPACITY", cfg_.fxOpacity, 0, 1, cfg_.fxOpacity < 0.01f ? "OFF" : "%.2f", UiExp::cfg("fx_opacity"), defaultSettings().fxOpacity);
-        cfg_.fxOpacity = clampf(cfg_.fxOpacity, 0, 1);
-        g.next();
-        g.hint("EXPLOSIONS, SPARKS AND BURSTS");
-        {
-            const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
-            ui_.toggle(g.x(), g.top(), hw, h, "KILL BURSTS", cfg_.killBursts, UiExp::cfg("kill_bursts"));
-            ui_.toggle(x2, g.top(), hw, h, "TRACERS", cfg_.tracers, UiExp::cfg("tracers"));
-            g.next();
-        }
-        {   // WEAPON ANIMATIONS: a model's moving parts (docs/ASSETS.md "Animated parts"; off: they stay still)
-            const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
-            ui_.toggle(g.x(), g.top(), hw, h, "GUN RECOIL KICK", cfg_.viewRecoil, UiExp::cfg("view_recoil"));
-            ui_.toggle(x2, g.top(), hw, h, "WEAPON ANIMATIONS", cfg_.weaponAnims, UiExp::cfg("weapon_anims"));
-            g.next();
-        }
-        {
-            const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
-            g.section("TRACERS + TRAILS");
-            static const std::vector<std::string> tn = {"TRACERS: CLASSIC", "TRACERS: TEAM", "TRACERS: CUSTOM"};
-            ui_.cycle(g.x(), g.top(), hw, h, "TRACER COLOR", cfg_.tracerMode, 3, tn, UiExp::cfg("tracer_mode"));
-            ui_.colorPicker(x2, g.top(), hw, h, "MY TRACER", cfg_.tracerColor, UiExp::cfg("tracer_color"), defaultSettings().tracerColor);
-            g.next();
-            static const std::vector<std::string> rn = {"TRAILS: OFF", "TRAILS: SHORT", "TRAILS: FULL"};
-            ui_.cycle(g.x(), g.top(), hw, h, "TRAILS", cfg_.trails, 3, rn, UiExp::cfg("trails"));
-            ui_.slider(x2, g.top(), hw, h, "TRAIL OPACITY", cfg_.trailOpacity, 0, 1, "%.2f", UiExp::cfg("trail_opacity"), defaultSettings().trailOpacity);
-            cfg_.trailOpacity = clampf(cfg_.trailOpacity, 0, 1);
-            g.next();
-            g.hint("TRAILS: THE STREAKS BEHIND ROCKETS, BOLTS,", "KNIVES, SYRINGES AND ORBS");
-            g.section("OUTPUT");
-            ui_.toggle(g.x(), g.top(), hw, h, "DEBAND", cfg_.dither, UiExp::cfg("dither"));
-            ui_.toggle(x2, g.top(), hw, h, "10-BIT OUTPUT", cfg_.out10, UiExp::cfg("out10"));
-            g.next();
-            const int bits = r_.outputBits();
-            if (cfg_.out10 && bits < 10) g.hint("10-BIT: NOT SUPPORTED HERE (" + std::to_string(bits) + "-BIT WINDOW)", "OR RESTART: IT'S ASKED FOR AT START");
-            else g.hint("DEBAND: A FAINT DITHER, NO BANDS IN SKY / FOG;", bits >= 10 ? std::string("10-BIT: ON (A 10-BIT WINDOW)") : std::string("10-BIT: AT THE NEXT START, WHERE SUPPORTED"));
-            // batch 4: liquids and glow, the SMOOTH pass's strength, the lightmap's filter
-            g.section("SURFACES");
-            ui_.toggle(g.x(), g.top(), hw, h, "LIQUIDS FLOW", cfg_.liquidFlow, UiExp::cfg("liquid_flow"));
-            ui_.slider(x2, g.top(), hw, h, "GLOW STRENGTH", cfg_.glowStrength, 0, 2, "X%.2f", UiExp::cfg("glow_strength"), defaultSettings().glowStrength);
-            cfg_.glowStrength = clampf(cfg_.glowStrength, 0, 2);
-            g.next();
-            ui_.slider(g.x(), g.top(), hw, h, "SMOOTH STRENGTH", cfg_.smoothAmt, 0.25f, 1, "%.2f", UiExp::cfg("smooth_amt"), defaultSettings().smoothAmt);
-            cfg_.smoothAmt = clampf(cfg_.smoothAmt, 0.25f, 1);
-            static const std::vector<std::string> lfn = {"LIGHTMAP: SMOOTH", "LIGHTMAP: NEAREST"};
-            int lf = cfg_.lightmapNearest;
-            if (ui_.cycle(x2, g.top(), hw, h, "LIGHTMAP FILTER", lf, 2, lfn, UiExp::cfg("lightmap_nearest"))) cfg_.lightmapNearest = lf;
-            g.next();
-        }
-        return;
-    }
-    if (moreOpen_ == 4) {   // VIDEO + AUDIO > MORE 4: shadows, players, outlines, colours, accessibility
-        const float hw = L.L(kHalfW), xl = L.X(kColL + kColW - kHalfW), xr = L.X(kColR + kColW - kHalfW);
-        const Settings& d = defaultSettings();
-        f.header("SHADOWS");
-        {
-            static const std::vector<std::string> en = {"SHADOW EDGE: HARD", "SHADOW EDGE: SOFT", "SHADOW EDGE: SOFTER"};
-            ui_.cycle(f.x(), f.top(), w, h, "SHADOW EDGE", cfg_.shadowFilter, 3, en, UiExp::cfg("shadow_filter"));
-            f.next();
-            static const int sd[] = {16, 32, 64};
-            static const std::vector<std::string> sn = {"SHADOW DISTANCE: 16 M", "SHADOW DISTANCE: 32 M", "SHADOW DISTANCE: 64 M"};
-            int si = cfg_.shadowDist <= 16 ? 0 : cfg_.shadowDist <= 32 ? 1 : 2;
-            if (ui_.cycle(f.x(), f.top(), w, h, "SHADOW DISTANCE", si, 3, sn, UiExp::cfg("shadow_dist"))) cfg_.shadowDist = sd[si];
-            f.next();
-            ui_.toggle(f.x(), f.top(), hw, h, "ON THE MAP", cfg_.shadowWorld, UiExp::cfg("shadow_world"));
-            ui_.toggle(xl, f.top(), hw, h, "ON PLAYERS", cfg_.shadowPlayers, UiExp::cfg("shadow_players"));
-            f.next();
-            ui_.toggle(f.x(), f.top(), hw, h, "OWN SHADOW", cfg_.ownShadow, UiExp::cfg("own_shadow"));
-            ui_.toggle(xl, f.top(), hw, h, "ALWAYS LIT", cfg_.playersLit, UiExp::cfg("players_lit"));
-            f.next();
-            f.hint("PLAYER SHADOWS (VIDEO + AUDIO); ALWAYS LIT:", "PLAYERS NEVER DARKENED BY THE MAP'S SHADE");
-        }
-        f.section("PLAYERS");
-        // (one row, two halves: a full row more and the column ran into BACK)
-        ui_.slider(f.x(), f.top(), hw, h, "BRIGHTNESS", cfg_.playerEmit, 0, 1, "%.2f", UiExp::cfg("player_emit"), d.playerEmit);
-        ui_.slider(xl, f.top(), hw, h, "SATURATION", cfg_.playerSat, 0, 2.0f, "%.2f", UiExp::cfg("player_saturation"), d.playerSat);
-        cfg_.playerEmit = clampf(cfg_.playerEmit, 0, 1);
-        cfg_.playerSat = clampf(cfg_.playerSat, 0, 2.0f);
-        f.next();
-        f.hint("BRIGHTNESS: THEIR OWN LIGHT, 1 = FULL COLOUR IN ANY SHADE;", "SATURATION: THEIR COLOUR ONLY, 0 GREY TO 2 VIVID");
-        f.section("OUTLINES");
-        ui_.colorPicker(f.x(), f.top(), hw, h, "CUSTOM TEAM", cfg_.outlineFriendlyColor, UiExp::cfg("outline_friendly_color"), d.outlineFriendlyColor);
-        ui_.colorPicker(xl, f.top(), hw, h, "CUSTOM ENEMY", cfg_.outlineEnemyColor, UiExp::cfg("outline_enemy_color"), d.outlineEnemyColor);
-        f.next();
-        ui_.slider(f.x(), f.top(), w, h, "OUTLINE OPACITY", cfg_.outlineAlpha, 0, 1, "%.2f", UiExp::cfg("outline_alpha"), d.outlineAlpha);
-        cfg_.outlineAlpha = clampf(cfg_.outlineAlpha, 0, 1);
-        f.next();
-        ui_.slider(f.x(), f.top(), hw, h, "TEAM WIDTH", cfg_.outlineTeamW, -0.25f, 4, cfg_.outlineTeamW < 0 ? "SAME" : "%.2f", UiExp::cfg("outline_team_width"), d.outlineTeamW);
-        ui_.slider(xl, f.top(), hw, h, "ENEMY WIDTH", cfg_.outlineEnemyW, -0.25f, 4, cfg_.outlineEnemyW < 0 ? "SAME" : "%.2f", UiExp::cfg("outline_enemy_width"), d.outlineEnemyW);
-        cfg_.outlineTeamW = cfg_.outlineTeamW < 0 ? -1 : clampf(cfg_.outlineTeamW, 0, 6);
-        cfg_.outlineEnemyW = cfg_.outlineEnemyW < 0 ? -1 : clampf(cfg_.outlineEnemyW, 0, 6);
-        f.next();
-        f.hint("CUSTOM: PICK OUTLINE \"CUSTOM\" ON PLAYER; SAME: ITS", "WIDTH; CUSTOM (GLTF) PLAYER MODELS HAVE NO OUTLINE");
-        g.header("COLORS");
-        ui_.colorPicker(g.x(), g.top(), hw, h, "ROPE COLOR", cfg_.ropeColor, UiExp::cfg("rope_color"), d.ropeColor);
-        ui_.toggle(xr, g.top(), hw, h, "FIXED TEAMS", cfg_.fixedTeams, UiExp::cfg("fixed_teams"));
-        g.next();
-        ui_.colorPicker(g.x(), g.top(), hw, h, "TEAM A", cfg_.teamAColor, UiExp::cfg("team_a_color"), d.teamAColor);
-        ui_.colorPicker(xr, g.top(), hw, h, "TEAM B", cfg_.teamBColor, UiExp::cfg("team_b_color"), d.teamBColor);
-        g.next();
-        g.hint("FIXED TEAMS: SPECTATING AND DEMOS SHOW", "TEAM A AND B IN THESE, NOT YOURS / THE ENEMY'S");
-        g.section("COLOR SCHEME");
-        {
-            static int slot = 0;
-            static const std::vector<std::string> sl = {"SLOT 1", "SLOT 2", "SLOT 3"};
-            const float tw = (w - L.L(16)) / 3, tg = L.L(8);
-            if (ui_.button(g.x(), g.top(), hw, h, "COPY COLORS", UiExp::state("lookmsg"))) {
-                glfwSetClipboardString(win_, cfg_.colorCode().c_str());
-                lookMsg_ = "COLORS COPIED: PASTE THEM ANYWHERE"; lookMsgUntil_ = time_ + 3;
-            }
-            if (ui_.button(xr, g.top(), hw, h, "PASTE COLORS", UiExp::state("lookmsg"))) {
-                const char* clip = glfwGetClipboardString(win_);
-                const bool ok = clip && cfg_.colorFromCode(clip);
-                lookMsg_ = ok ? "COLORS PASTED" : "NO COLOR CODE ON THE CLIPBOARD"; lookMsgUntil_ = time_ + 3;
-                if (ok) { cfg_.save(); ui_.accent = rgba(cfg_.colorFriendly); }
-            }
-            g.next();
-            ui_.cycle(g.x(), g.top(), tw, h, "SLOT", slot, 3, sl, UiExp::local());
-            if (ui_.button(g.x() + tw + tg, g.top(), tw, h, "SAVE", UiExp::state("lookmsg"))) {
-                cfg_.colorPreset[slot] = cfg_.colorCode();
-                lookMsg_ = "COLORS SAVED IN " + sl[slot]; lookMsgUntil_ = time_ + 3;
-            }
-            if (ui_.button(g.x() + 2 * (tw + tg), g.top(), tw, h, "LOAD", UiExp::state("lookmsg"), !cfg_.colorPreset[slot].empty())) {
-                cfg_.colorFromCode(cfg_.colorPreset[slot]);
-                ui_.accent = rgba(cfg_.colorFriendly);
-                lookMsg_ = "COLORS FROM " + sl[slot]; lookMsgUntil_ = time_ + 3;
-            }
-            g.next();
-            g.hint(time_ < lookMsgUntil_ ? lookMsg_ : std::string("TEAM, OUTLINE, CROSSHAIR, TRACER AND ROPE COLORS"));
-        }
-        g.section("ACCESSIBILITY");
-        ui_.toggle(g.x(), g.top(), hw, h, "REDUCE FLASHING", cfg_.reduceFlash, UiExp::cfg("reduce_flash"));
-        ui_.toggle(xr, g.top(), hw, h, "SAFE OK / ERROR", cfg_.safeColors, UiExp::cfg("safe_colors"));
-        g.next();
-        ui_.toggle(g.x(), g.top(), hw, h, "IT IN MY PALETTE", cfg_.itPalette, UiExp::cfg("it_palette"));
-        ui_.toggle(xr, g.top(), hw, h, "SPLITS: PALETTE", cfg_.splitPalette, UiExp::cfg("split_palette"));
-        g.next();
-        ui_.toggle(g.x(), g.top(), w, h, "SPLITS: AHEAD / BEHIND", cfg_.splitWords, UiExp::cfg("split_words"));
-        g.next();
-        g.hint("SAFE: OK BLUE, ERRORS ORANGE; IT: TAG / HIDE'S", "\"IT\" IN YOUR ENEMY COLOUR, THE REST YOUR TEAM'S");
-        return;
-    }
-    if (moreOpen_ == 5) {   // VIDEO + AUDIO > MORE 5: the sound's output and its callouts
-        const float hw = L.L(kHalfW), xl = L.X(kColL + kColW - kHalfW), xr = L.X(kColR + kColW - kHalfW);
-        const Settings& d = defaultSettings();
-        f.header("OUTPUT");
-        static const std::vector<std::string> cn = {"CHANNELS: STEREO", "CHANNELS: MONO", "CHANNELS: SWAPPED"};
-        ui_.cycle(f.x(), f.top(), w, h, "CHANNELS", cfg_.channels, 3, cn, UiExp::cfg("channels"));
-        f.next();
-        ui_.slider(f.x(), f.top(), hw, h, "STEREO WIDTH", cfg_.stereoWidth, 0, 1, "%.2f", UiExp::cfg("stereo_width"), d.stereoWidth);
-        ui_.slider(xl, f.top(), hw, h, "BEHIND YOU", cfg_.behindMuffle, 0, 1, "%.2f", UiExp::cfg("behind_muffle"), d.behindMuffle);
-        cfg_.stereoWidth = clampf(cfg_.stereoWidth, 0, 1); cfg_.behindMuffle = clampf(cfg_.behindMuffle, 0, 1);
-        f.next();
-        ui_.slider(f.x(), f.top(), w, h, "HEARING RANGE", cfg_.hearRange, 30, 150, "%.0f M", UiExp::cfg("hear_range"), d.hearRange);
-        cfg_.hearRange = clampf(std::round(cfg_.hearRange), 30, 150);
-        f.next();
-        f.hint("BEHIND YOU: THE DIP AND MUFFLE ON SOUNDS", "BEHIND (0: AS IN FRONT)");
-        ui_.toggle(f.x(), f.top(), w, h, "SOUND OCCLUSION", cfg_.occlusion, UiExp::cfg("occlusion"));
-        f.next();
-        f.hint("SOUNDS BEHIND WALLS MUFFLED: YOU HEAR LESS", "(IT AFFECTS GAMEPLAY)");
-        static const std::vector<std::string> dn = {"DYNAMIC RANGE: CLEAN", "DYNAMIC RANGE: NORMAL", "DYNAMIC RANGE: NIGHT"};
-        ui_.cycle(f.x(), f.top(), w, h, "DYNAMIC RANGE", cfg_.dynRange, 3, dn, UiExp::cfg("dyn_range"));
-        f.next();
-        static const std::vector<std::string> ln = {"AUDIO LATENCY: LOW", "AUDIO LATENCY: NORMAL", "AUDIO LATENCY: SAFE"};
-        ui_.cycle(f.x(), f.top(), w, h, "AUDIO LATENCY", cfg_.audioLatency, 3, ln, UiExp::cfg("audio_latency"));
-        f.next();
-#ifdef _WIN32
-        f.hint("NIGHT: QUIET UP, LOUD DOWN; LOW: AS NORMAL", "ON WINDOWS (ALREADY ITS SHORTEST); SAFE: X2");
-#else
-        f.hint("NIGHT: QUIET UP, LOUD DOWN; SAFE: MORE", "QUEUED, NO CRACKLE ON A BUSY PC");
-#endif
-#ifdef _WIN32
-        // the sound device to the game alone: about 10 ms sooner, and Discord / music go silent while the game runs
-        // (on page 1's SOUND until 2026-10-30: there it ran VOICE into the footer)
-        if (ui_.toggle(f.x(), f.top(), w, h, !cfg_.exclusiveAudio || audio_.exclusiveActive() ? "EXCLUSIVE AUDIO" : audio_.exclusiveState() == Audio::kExclUnsupported ? "EXCLUSIVE AUDIO (N/A)" : "EXCLUSIVE AUDIO (BUSY)",   // (N/A: the device takes none of its formats)
-                       cfg_.exclusiveAudio, UiExp::cfg("exclusive_audio")))
-            audio_.setExclusive(cfg_.exclusiveAudio);
-        f.next();
-        f.hint("TAKES THE SOUND DEVICE FOR LOWER AUDIO LAG");
-#endif
-        f.section("VOLUME");
-        ui_.toggle(f.x(), f.top(), hw, h, "SHOW DB", cfg_.volDb, UiExp::cfg("vol_db"));
-        ui_.toggle(xl, f.top(), hw, h, "PERCEPTUAL", cfg_.volPerceptual, UiExp::cfg("vol_perceptual"));
-        f.next();
-        pctSlider(f.x(), f.top(), hw, h, "BACKGROUND VOLUME", cfg_.bgVolume, 1, nullptr, UiExp::cfg("bg_volume"), d.bgVolume);
-        cfg_.bgVolume = clampf(cfg_.bgVolume, 0, 1);
-        ui_.toggle(xl, f.top(), hw, h, "FORCE MY PACK", cfg_.forcePack, UiExp::cfg("force_pack"));
-        f.next();
-        f.hint("FORCE MY PACK: EVERYONE IN YOUR SOUND PACK");
-        g.header("CALLOUTS");
-        static const std::vector<std::string> sn = {"STREAK CALLOUTS: ALL", "STREAK CALLOUTS: MINE", "STREAK CALLOUTS: OFF"};
-        ui_.cycle(g.x(), g.top(), w, h, "STREAK CALLOUTS", cfg_.streakCalls, 3, sn, UiExp::cfg("streak_calls"));
-        g.next();
-        static const std::vector<std::string> tn = {"TIME WARNINGS: OFF", "TIME WARNINGS: 60 + 30 S", "TIME WARNINGS: + COUNTDOWN"};
-        ui_.cycle(g.x(), g.top(), w, h, "TIME WARNINGS", cfg_.timeWarn, 3, tn, UiExp::cfg("time_warn"));
-        g.next();
-        ui_.toggle(g.x(), g.top(), w, h, "TIME WARNINGS ON SCREEN", cfg_.timeWarnText, UiExp::cfg("time_warn_text"));
-        g.next();
-        g.hint("COUNTDOWN: A TICK EACH OF THE LAST 10 S");
-        g.section("CUE SOUNDS");
-        {
-            static const int cues[] = {SND_HURT, SND_DEATH, SND_DASH, SND_SUPER, SND_HYPER, SND_GRAPPLE_FIRE, SND_GRAPPLE_HIT, SND_JUMP, SND_LAND, SND_KILL, SND_STREAK, SND_TYPING};
-            static const std::vector<std::string> cuen = {"CUE: HURT", "CUE: DEATH", "CUE: DASH", "CUE: SUPER", "CUE: HYPER", "CUE: GRAPPLE FIRE", "CUE: GRAPPLE HIT",
-                                                          "CUE: JUMP", "CUE: LANDING", "CUE: KILL", "CUE: STREAK STING", "CUE: TYPING"};
-            static int ci = 0;
-            ui_.cycle(g.x(), g.top(), hw, h, "CUE", ci, 12, cuen, UiExp::local());
-            bool on = !(cfg_.cueMute >> cues[ci] & 1);
-            if (ui_.toggle(xr, g.top(), hw, h, "PLAY IT", on, UiExp::cfg("cue_mute"))) {
-                cfg_.cueMute = on ? cfg_.cueMute & ~(int)(1u << cues[ci]) : cfg_.cueMute | (int)(1u << cues[ci]);
-                if (on) audio_.play(cues[ci], 0.8f);
-            }
-            g.next();
-        }
-        g.section("ANNOUNCER CALLS");
-        {
-            static std::vector<std::string> an;
-            if (an.empty())
-                for (int k = 0; k < SND_COUNT - SND_VOICE_THREE; k++) an.push_back(std::string("CALL: ") + kVoiceCaptions[k]);
-            static int ai = 0;
-            ui_.cycle(g.x(), g.top(), w, h, "CALL", ai, SND_COUNT - SND_VOICE_THREE, an, UiExp::local());
-            g.next();
-            bool on = !(cfg_.annMute >> ai & 1);
-            if (ui_.toggle(g.x(), g.top(), w, h, "SAY IT", on, UiExp::cfg("ann_mute"))) {
-                cfg_.annMute = on ? cfg_.annMute & ~(1LL << ai) : cfg_.annMute | (1LL << ai);
-                if (on && cfg_.announcer > 0) announce(SND_VOICE_THREE + ai);
-            }
-            g.next();
-            g.hint("EACH OF THE ANNOUNCER'S LINES ON OR OFF");
-        }
-        g.section("SEE SOUNDS");
-        ui_.toggle(g.x(), g.top(), w, h, "VISUALIZE SOUNDS", cfg_.soundViz, UiExp::cfg("sound_viz"));
-        g.next();
-        g.hint("STEPS, SHOTS, BOOMS... AS WORDS ROUND THE", "CROSSHAIR, TOWARD WHERE THEY CAME FROM");
-        return;
-    }
-    if (moreOpen_ == 6) {   // VIDEO + AUDIO > MORE 6: network, caches, display, the cursor, USE
-        const float hw = L.L(kHalfW), xl = L.X(kColL + kColW - kHalfW);
-        const Settings& d = defaultSettings();
-        f.header("NETWORK");
-        ui_.toggle(f.x(), f.top(), w, h, "NET GRAPH", cfg_.netGraph, UiExp::cfg("net_graph"));
-        f.next();
-        f.hint("PING / LOSS GRAPH AND RATES (APART FROM F3)");
-        {
-            static const int pr[] = {2, 4, 8};
-            static const std::vector<std::string> pn = {"PACKET LOSS PROTECTION: 2", "PACKET LOSS PROTECTION: 4", "PACKET LOSS PROTECTION: 8"};
-            int pi = cfg_.cmdRedundancy <= 2 ? 0 : cfg_.cmdRedundancy <= 4 ? 1 : 2;
-            if (ui_.cycle(f.x(), f.top(), w, h, "PACKET LOSS PROTECTION", pi, 3, pn, UiExp::cfg("cmd_redundancy"))) cfg_.cmdRedundancy = pr[pi];
-            f.next();
-            f.hint("EACH INPUT SENT IN THIS MANY PACKETS");
-        }
-        {   // other players' interpolation delay (ranked: always 10 ms): adaptive (the default), custom (the slider), or off
-            // (was GAMEPLAY > NETWORK until 2026-10-30: that page's left column ran into its footer)
-            static const std::vector<std::string> imn = {"SMOOTHING (INTERP): ADAPTIVE", "SMOOTHING (INTERP): CUSTOM", "SMOOTHING (INTERP): OFF"};
-            int ii = cfg_.interpMs == 0 ? 0 : cfg_.interpMs < 0 ? 2 : 1;
-            if (ui_.cycle(f.x(), f.top(), w, h, "INTERP", ii, 3, imn, UiExp::cfg("interp_ms"))) cfg_.interpMs = ii == 0 ? 0 : ii == 2 ? -1 : kCustomInterpMs;
-            f.next();
-            f.hint("HOW OTHER PLAYERS' MOVES ARE SMOOTHED");
-            float v = (float)(cfg_.interpMs > 0 ? cfg_.interpMs : kCustomInterpMs);   // (moving it picks CUSTOM)
-            if (ui_.slider(f.x(), f.top(), w, h, "SMOOTHING DELAY (MS)", v, 1, (float)kMaxInterpMs, "%.0f", UiExp::cfg("interp_ms"), (float)kCustomInterpMs))
-                cfg_.interpMs = std::min(std::max(1, (int)std::lround(v)), kMaxInterpMs);
-            f.next();
-            f.hint("USED WHEN SMOOTHING IS CUSTOM");
-        }
-        ui_.toggle(f.x(), f.top(), hw, h, "MAP DOWNLOADS", cfg_.mapDownloads, UiExp::cfg("map_downloads"));
-        {
-            float v = (float)cfg_.mapCacheMax;
-            ui_.slider(xl, f.top(), hw, h, "MAPS KEPT", v, 5, 200, "%.0f", UiExp::cfg("map_cache_max"), (float)d.mapCacheMax);
-            const int nv = std::min(std::max(1, (int)std::lround(v)), 1000);
-            if (nv != cfg_.mapCacheMax) { cfg_.mapCacheMax = nv; if (!uiTest_) pruneMapDownloads(); }
-        }
-        f.next();
-        static double scanAt = 0;
-        static int nMaps = 0, nBakes = 0;
-        static uint64_t mapBytes = 0, bakeBytes = 0;
-        if (time_ >= scanAt) {   // (the folders' counts, every 2 s while the page is open)
-            scanAt = time_ + 2;
-            nMaps = 0; mapBytes = 0;
-            std::error_code ec;
-            for (auto& e : std::filesystem::directory_iterator(std::filesystem::u8path(userMapsDir() + "/downloads"), ec))
-                if (e.path().extension() == ".qmap") { nMaps++; mapBytes += e.file_size(ec); }
-            nBakes = lightCacheStats(&bakeBytes);
-        }
-        if (ui_.button(f.x(), f.top(), w, h, "CLEAR DOWNLOADED MAPS", UiExp::state("lookmsg"))) {
-            std::error_code ec;
-            int n = 0;
-            for (auto& e : std::filesystem::directory_iterator(std::filesystem::u8path(userMapsDir() + "/downloads"), ec))
-                if (e.path().extension() == ".qmap" && std::filesystem::remove(e.path(), ec)) n++;
-            lookMsg_ = std::to_string(n) + " DOWNLOADED MAPS DELETED"; lookMsgUntil_ = time_ + 3; scanAt = 0;
-        }
-        f.next();
-        f.hint(std::to_string(nMaps) + " DOWNLOADED, " + std::to_string((mapBytes + 1023) / 1024) + " KB; OFF: A SERVER'S", "MAP YOU DON'T HAVE ENDS THE CONNECTION");
-        f.section("LIGHT CACHE");
-        {
-            float v = (float)cfg_.lightCacheMax;
-            ui_.slider(f.x(), f.top(), hw, h, "BAKES KEPT", v, 4, 128, "%.0f", UiExp::cfg("light_cache_max"), (float)d.lightCacheMax);
-            cfg_.lightCacheMax = std::min(std::max(4, (int)std::lround(v)), 500);
-            float t = (float)cfg_.bakeThreads;
-            ui_.slider(xl, f.top(), hw, h, "BAKE THREADS", t, 0, 32, cfg_.bakeThreads <= 0 ? "AUTO" : "%.0f", UiExp::cfg("bake_threads"), (float)d.bakeThreads);
-            cfg_.bakeThreads = std::min(std::max(0, (int)std::lround(t)), 256);
-            f.next();
-        }
-        if (ui_.button(f.x(), f.top(), w, h, "CLEAR LIGHT BAKES", UiExp::state("lookmsg"))) {
-            const int n = clearLightCache();
-            lookMsg_ = std::to_string(n) + " BAKES DELETED (BAKED AGAIN WHEN PLAYED)"; lookMsgUntil_ = time_ + 3; scanAt = 0;
-        }
-        f.next();
-        f.hint(time_ < lookMsgUntil_ ? lookMsg_ : std::to_string(nBakes) + " BAKES, " + std::to_string(bakeBytes / (1024 * 1024)) + " MB (OFFICIAL MAPS SHIP BAKED)");
-        g.header("DISPLAY");
-        static const std::vector<std::string> fm = {"FOV: HORIZONTAL", "FOV: VERTICAL", "FOV: HORIZONTAL AT 4:3"};
-        ui_.cycle(g.x(), g.top(), w, h, "FOV MODE", cfg_.fovMode, 3, fm, UiExp::cfg("fov_mode"));
-        g.next();
-        {
-            char b[64];
-            snprintf(b, sizeof b, "FOV %.0f: %.0f DEGREES ACROSS THIS SCREEN", cfg_.fov, hfov());
-            g.hint(b);
-        }
-        static const std::vector<std::string> bn = {"BYPASS COMPOSITOR: FULLSCREEN", "BYPASS COMPOSITOR: ALWAYS", "BYPASS COMPOSITOR: NEVER"};
-        ui_.cycle(g.x(), g.top(), w, h, "BYPASS COMPOSITOR", cfg_.bypassCompositor, 3, bn, UiExp::cfg("bypass_compositor"));
-        g.next();
-#if defined(__linux__)
-        g.hint("LINUX (X11): THE DESKTOP'S COMPOSITOR STEPS", "ASIDE: A FRAME LESS LAG IN A WINDOW");
-#else
-        g.hint("N/A HERE: LINUX (X11) ONLY");
-#endif
-        g.section("LATENT SYNC");
-        {
-            float v = (float)cfg_.latentSafetyUs;
-            ui_.slider(g.x(), g.top(), hw, h, "LATENT SAFETY", v, 0, 2000, "%.0f US", UiExp::cfg("latent_safety_us"), (float)d.latentSafetyUs);
-            cfg_.latentSafetyUs = std::min(std::max(0, (int)std::lround(v)), 3000);
-            static const std::vector<std::string> sn = {"LATE: TEAR", "LATE: WAIT"};
-            int si = cfg_.latentSlow;
-            if (ui_.cycle(L.X(kColR + kColW - kHalfW), g.top(), hw, h, "LATE FRAME", si, 2, sn, UiExp::cfg("latent_slow"))) cfg_.latentSlow = si;
-            g.next();
-#ifdef _WIN32
-            g.hint(cfg_.presentMode == 3 ? "SPARE TIME BEFORE THE BLANK; A LATE FRAME" : "PICK VSYNC: LATENT SYNC (VIDEO + AUDIO) FIRST;",
-                   cfg_.presentMode == 3 ? "TEARS NOW OR WAITS A REFRESH" : "THESE ONLY APPLY TO IT");
-#else
-            g.hint("N/A HERE: LATENT SYNC IS WINDOWS ONLY");
-#endif
-        }
-        g.section("MENU CURSOR");
-        {
-            static const std::vector<std::string> zn = {"SIZE: SYSTEM", "SIZE: X1", "SIZE: X1.5", "SIZE: X2"};
-            static const std::vector<std::string> cc = {"COLOR: WHITE", "COLOR: BLACK", "COLOR: YELLOW", "COLOR: TEAM"};
-            ui_.cycle(g.x(), g.top(), hw, h, "CURSOR SIZE", cfg_.cursorSize, 4, zn, UiExp::cfg("cursor_size"));
-            ui_.cycle(L.X(kColR + kColW - kHalfW), g.top(), hw, h, "CURSOR COLOR", cfg_.cursorColor, 4, cc, UiExp::cfg("cursor_color"));
-            g.next();
-            g.hint("SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)");
-        }
-        g.section("CONTROLS");
-        {
-            static const std::vector<std::string> un = {"USE: HOLD", "USE: TOGGLE"};
-            int ui = cfg_.useToggle;
-            if (ui_.cycle(g.x(), g.top(), w, h, "USE", ui, 2, un, UiExp::cfg("use_toggle"))) { cfg_.useToggle = ui; useOn_ = false; }
-            g.next();
-            g.hint("TOGGLE: PRESS USE TO PLANT / DEFUSE, AGAIN TO STOP");
-        }
-        return;
-    }
-    if (moreOpen_ == 7) {   // VIDEO + AUDIO > MORE 7 (batch 4): the map's colours, players' colours, health bars, name tags
-        const float hw = L.L(kHalfW), xl = L.X(kColL + kColW - kHalfW), xr = L.X(kColR + kColW - kHalfW);
-        const Settings& d = defaultSettings();
-        f.header("MAP COLORS");
-        ui_.colorPicker(f.x(), f.top(), hw, h, "WORLD OUTLINE", cfg_.worldEdgeColor, UiExp::cfg("world_edge_color"), d.worldEdgeColor);
-        ui_.toggle(xl, f.top(), hw, h, "HIGH CONTRAST", cfg_.highContrast, UiExp::cfg("high_contrast"));
-        f.next();
-        ui_.toggle(f.x(), f.top(), hw, h, "WALLBANG TINT", cfg_.wallbangTint, UiExp::cfg("wallbang_tint"));
-        ui_.colorPicker(xl, f.top(), hw, h, "WALLBANG", cfg_.wallbangColor, UiExp::cfg("wallbang_color"), d.wallbangColor);
-        f.next();
-        ui_.toggle(f.x(), f.top(), hw, h, "MY SKY", cfg_.skyOverride, UiExp::cfg("sky_override"));
-        ui_.colorPicker(xl, f.top(), hw, h, "SKY", cfg_.skyColor, UiExp::cfg("sky_color"), d.skyColor);
-        f.next();
-        ui_.toggle(f.x(), f.top(), hw, h, "MY GLOW", cfg_.glowOverride, UiExp::cfg("glow_override"));
-        ui_.colorPicker(xl, f.top(), hw, h, "GLOW", cfg_.glowColor, UiExp::cfg("glow_color"), d.glowColor);
-        f.next();
-        f.hint("MY SKY / GLOW: THESE IN PLACE OF EVERY MAP'S;", "HIGH CONTRAST: LIGHTER WALLS, DARKER TRIM");
-        f.section("OBJECTIVES");
-        ui_.toggle(f.x(), f.top(), hw, h, "IN MY PALETTE", cfg_.objPalette, UiExp::cfg("obj_palette"));
-        ui_.toggle(xl, f.top(), hw, h, "ZONE PULSE", cfg_.objPulse, UiExp::cfg("obj_pulse"));
-        f.next();
-        ui_.slider(f.x(), f.top(), w, h, "ZONE OPACITY", cfg_.objOpacity, 0, 2, "X%.2f", UiExp::cfg("obj_opacity"), d.objOpacity);
-        cfg_.objOpacity = clampf(cfg_.objOpacity, 0, 2);
-        f.next();
-        f.hint("PALETTE: THE BOMB'S BLINK AND CHECKPOINTS NOT", "YET REACHED IN YOUR ENEMY COLOUR");
-        f.section("EFFECTS + F3");
-        {
-            static const std::vector<std::string> ecn = {"EFFECTS: OWN", "EFFECTS: TEAM", "EFFECTS: CUSTOM"};
-            ui_.cycle(f.x(), f.top(), hw, h, "EFFECT COLOR", cfg_.fxColorMode, 3, ecn, UiExp::cfg("fx_color_mode"));
-            ui_.colorPicker(xl, f.top(), hw, h, "MY EFFECTS", cfg_.fxColor, UiExp::cfg("fx_color"), d.fxColor);
-        }
-        f.next();
-        ui_.toggle(f.x(), f.top(), w, h, "F3 COLORBLIND COLORS", cfg_.f3Safe, UiExp::cfg("f3_safe"));
-        f.next();
-        g.header("PLAYERS");
-        ui_.toggle(g.x(), g.top(), hw, h, "FFA COLORS", cfg_.ffaColors, UiExp::cfg("ffa_colors"));
-        ui_.toggle(xr, g.top(), hw, h, "OWN EFFECTS", cfg_.ownFx, UiExp::cfg("own_fx"));
-        g.next();
-        ui_.colorPicker(g.x(), g.top(), hw, h, "OWN COLOR", cfg_.ownFxColor, UiExp::cfg("own_fx_color"), d.ownFxColor);
-        {
-            static const std::vector<std::string> gn = {"GUN: MAP", "GUN: TEAM", "GUN: CUSTOM"};
-            ui_.cycle(xr, g.top(), hw, h, "GUN COLOR", cfg_.gunColor, 3, gn, UiExp::cfg("gun_color"));
-        }
-        g.next();
-        ui_.colorPicker(g.x(), g.top(), hw, h, "CUSTOM GUN", cfg_.gunCustom, UiExp::cfg("gun_custom"), d.gunCustom);
-        g.next();
-        g.hint("FFA: EACH OPPONENT THEIR OWN COLOUR; OWN: YOUR", "SHOTS, LASER AND ROPE IN OWN COLOR");
-        g.section("HEALTH BARS");
-        {
-            float v = (float)cfg_.hbLow;
-            ui_.slider(g.x(), g.top(), hw, h, "LOW AT", v, 0, 100, "%.0f HP", UiExp::cfg("hb_low"), (float)d.hbLow);
-            cfg_.hbLow = std::min(std::max(0, (int)std::lround(v)), 100);
-        }
-        ui_.colorPicker(xr, g.top(), hw, h, "LOW COLOR", cfg_.hbLowColor, UiExp::cfg("hb_low_color"), d.hbLowColor);
-        g.next();
-        ui_.toggle(g.x(), g.top(), hw, h, "BAR COLOR", cfg_.hbCustom, UiExp::cfg("hb_custom"));
-        ui_.colorPicker(xr, g.top(), hw, h, "BAR", cfg_.hbColor, UiExp::cfg("hb_color"), d.hbColor);
-        g.next();
-        g.section("NAME TAGS");
-        {
-            static const std::vector<std::string> tn = {"TAGS: TEAM", "TAGS: WHITE", "TAGS: CUSTOM"};
-            ui_.cycle(g.x(), g.top(), hw, h, "TAG COLOR", cfg_.tagColor, 3, tn, UiExp::cfg("tag_color"));
-            ui_.colorPicker(xr, g.top(), hw, h, "CUSTOM TAG", cfg_.tagCustom, UiExp::cfg("tag_custom"), d.tagCustom);
-            g.next();
-            ui_.slider(g.x(), g.top(), hw, h, "TAG OPACITY", cfg_.tagAlpha, 0.1f, 1, "%.2f", UiExp::cfg("tag_alpha"), d.tagAlpha);
-            ui_.slider(xr, g.top(), hw, h, "TAG SIZE", cfg_.tagSize, 0.5f, 3, "X%.2f", UiExp::cfg("tag_size"), d.tagSize);
-            cfg_.tagAlpha = clampf(cfg_.tagAlpha, 0.1f, 1); cfg_.tagSize = clampf(cfg_.tagSize, 0.5f, 3);
-            g.next();
-            g.hint("TEAMMATES' NAMES OVER THEIR HEADS");
-        }
-        return;
-    }
-    if (moreOpen_ == 8) {   // VIDEO + AUDIO > MORE 8 (batch 4): screenshots, demos, the window, latency, sound extras
-        const float hw = L.L(kHalfW), xl = L.X(kColL + kColW - kHalfW), xr = L.X(kColR + kColW - kHalfW);
-        const Settings& d = defaultSettings();
-        f.header("SCREENSHOTS");
-        {
-            static const std::vector<std::string> fn = {"FORMAT: PNG", "FORMAT: TGA"};
-            static const std::vector<std::string> dn = {"FOLDER: DATA", "FOLDER: PICTURES"};
-            ui_.cycle(f.x(), f.top(), hw, h, "SCREENSHOT FORMAT", cfg_.shotFormat, 2, fn, UiExp::cfg("shot_format"));
-            ui_.cycle(xl, f.top(), hw, h, "SCREENSHOT FOLDER", cfg_.shotFolder, 2, dn, UiExp::cfg("shot_folder"));
-            f.next();
-            ui_.toggle(f.x(), f.top(), hw, h, "HIDE HUD", cfg_.shotHideHud, UiExp::cfg("shot_hide_hud"));
-            if (ui_.button(xl, f.top(), hw, h, "OPEN FOLDER", UiExp::url().withId("OPEN SCREENSHOTS"))) {
-                std::error_code ec;
-                std::filesystem::create_directories(std::filesystem::u8path(shotDir()), ec);
-                openUrl(std::filesystem::absolute(std::filesystem::u8path(shotDir()), ec).lexically_normal().u8string());
-            }
-            f.next();
-            f.hint(keyOf(A_SCREENSHOT) + " TAKES ONE; HIDE HUD: THE 3D VIEW ONLY;", "PICTURES: PICTURES/QUARK IN YOUR HOME FOLDER");
-        }
-        f.section("DEMOS");
-        {
-            static const std::vector<std::string> rn = {"DEMO RATE: 62.5 HZ", "DEMO RATE: FULL"};
-            int ri = cfg_.demoFullRate;
-            if (ui_.cycle(f.x(), f.top(), w, h, "DEMO RATE", ri, 2, rn, UiExp::cfg("demo_full_rate"))) cfg_.demoFullRate = ri == 1;
-            f.next();
-            f.hint("FULL: EVERY SNAPSHOT (BIGGER FILES); ALSO ON DEMOS");
-        }
-        f.section("WINDOW + INPUT");
-        ui_.toggle(f.x(), f.top(), w, h, "ALWAYS ON TOP", cfg_.onTop, UiExp::cfg("on_top"));
-        f.next();
-        {
-            static const float db[] = {0.0f, 0.05f, 0.1f, 0.15f};
-            static const std::vector<std::string> bn = {"DASH BUFFER: OFF", "DASH BUFFER: 0.05 S", "DASH BUFFER: 0.1 S", "DASH BUFFER: 0.15 S"};
-            int bi = cfg_.dashBuffer < 0.025f ? 0 : cfg_.dashBuffer < 0.075f ? 1 : cfg_.dashBuffer < 0.125f ? 2 : 3;
-            if (ui_.cycle(f.x(), f.top(), w, h, "DASH BUFFER", bi, 4, bn, UiExp::cfg("dash_buffer"))) cfg_.dashBuffer = db[bi];
-            f.next();
-            f.hint("A DASH PRESSED THIS SOON BEFORE IT'S READY", "FIRES THE MOMENT IT IS");
-        }
-        g.header("LATENCY");
-        {
-            float v = (float)cfg_.ultraMarginUs;   // (0, the far left: AUTO, learnt as it runs; ultramargin.h)
-            ui_.slider(g.x(), g.top(), w, h, "ULTRA SAFETY", v, 0, 1000, cfg_.ultraMarginUs <= 0 ? "AUTO" : "%.0f US", UiExp::cfg("ultra_margin_us"), (float)d.ultraMarginUs);
-            cfg_.ultraMarginUs = std::min(std::max(0, (int)std::lround(v)), 2000);
-            g.next();
-            g.hint("LOW LATENCY: ULTRA STARTS EACH FRAME THIS EARLY;", "AUTO LEARNS IT; MORE: FEWER GPU BUBBLES, MORE LAG");
-        }
-        {
-            float v = (float)cfg_.capOffsetUs;   // (-1, the far left: AUTO, 5% of the cap's frame; 0: off)
-            char autoTxt[48];
-            snprintf(autoTxt, sizeof autoTxt, "AUTO (%.0f US)", maxFps() > 0 ? capOffset(1.0 / maxFps()) * 1e6 : 0.0);
-            const std::string shown = cfg_.capOffsetUs < 0 ? (maxFps() > 0 ? std::string(autoTxt) : std::string("AUTO")) : cfg_.capOffsetUs == 0 ? std::string("OFF") : std::string("%.0f US");
-            ui_.slider(g.x(), g.top(), w, h, "FRAME CAP OFFSET", v, -1, 1000, shown.c_str(), UiExp::cfg("cap_offset_us"), (float)d.capOffsetUs);
-            cfg_.capOffsetUs = std::min(std::max(-1, (int)std::lround(v)), 5000);
-            g.next();
-            g.hint("FPS LIMIT: WAKES THIS EARLY, THEN WAITS EXACTLY TO THE", "FRAME'S START: EVEN FRAMES; AUTO 5% OF THE FRAME");
-        }
-        {
-            static const std::vector<std::string> mn = {"MOUSE THREAD: SHARED", "MOUSE THREAD: OWN CORE"};
-            int mi = cfg_.mouseOwnCore ? 1 : 0;
-            if (ui_.cycle(g.x(), g.top(), w, h, "MOUSE THREAD", mi, 2, mn, UiExp::cfg("mouse_own_core"))) { cfg_.mouseOwnCore = mi == 1; applyRawInput(); }
-            g.next();
-            char cs[64];
-            if (rawMouse_.core() >= 0) snprintf(cs, sizeof cs, "NOW ON CORE %d; THE GAME STAYS OFF IT", rawMouse_.core()); else snprintf(cs, sizeof cs, "%s", "RAW INPUT, WINDOWS, 4+ CORES ONLY");
-            g.hint("OWN CORE: RAW INPUT READ AT TOP PRIORITY ON ONE FAST CORE;", cs);
-        }
-        if (ui_.toggle(g.x(), g.top(), hw, h, "NV SINGLE-THREAD", cfg_.nvThreaded, UiExp::cfg("nv_threaded"))) {
-            std::string msg = "NOT CHANGED IN THE UI TEST";
-            if (!uiTest_ && !nvThreadedOff(cfg_.nvThreaded, &msg)) cfg_.nvThreaded = false;
-            notify(msg);
-        }
-        if (ui_.toggle(xr, g.top(), hw, h, "NV DXGI PRESENT", cfg_.nvDxgi, UiExp::cfg("nv_dxgi"))) {
-            std::string msg = "NOT CHANGED IN THE UI TEST";
-            if (!uiTest_ && !nvDxgiPresent(cfg_.nvDxgi, &msg)) cfg_.nvDxgi = false;
-            notify(msg);
-        }
-        g.next();
-#ifdef _WIN32
-        g.hint("NVIDIA DRIVER PROFILE, FROM THE NEXT START:", "THREADED OPTIMIZATION OFF; PRESENT VIA DXGI");
-#else
-        g.hint("N/A HERE: WINDOWS + NVIDIA ONLY");
-#endif
-        g.section("SOUND");
-        ui_.toggle(g.x(), g.top(), hw, h, "HITSOUND TIERS", cfg_.hitTiers, UiExp::cfg("hit_tiers"));
-        {
-            bool on = !(cfg_.cueMute >> SND_TYPING & 1);
-            if (ui_.toggle(xr, g.top(), hw, h, "TYPING SOUNDS", on, UiExp::cfg("cue_mute")))
-                cfg_.cueMute = on ? cfg_.cueMute & ~(int)(1u << SND_TYPING) : cfg_.cueMute | (int)(1u << SND_TYPING);
-        }
-        g.next();
-        ui_.toggle(g.x(), g.top(), hw, h, "QUIP CAPTIONS", cfg_.quipCaptions, UiExp::cfg("quip_captions"));
-        ui_.slider(xr, g.top(), hw, h, "DUCKING", cfg_.annDuck, 0, 1, cfg_.annDuck < 0.01f ? "OFF" : "%.2f", UiExp::cfg("ann_duck"), d.annDuck);
-        cfg_.annDuck = clampf(cfg_.annDuck, 0, 1);
-        g.next();
-        g.hint("TIERS OFF: ONE HITSOUND FOR EVERY HIT; DUCKING:", "EFFECTS QUIETER WHILE THE ANNOUNCER SPEAKS");
-        return;
-    }
-    if (moreOpen_ == 3) {   // VIDEO + AUDIO > MORE 3: the display and the process
-        f.header("DISPLAY");
-        {   // FULLSCREEN SIZE: the monitor's own modes (each size once), for exclusive fullscreen
-            std::vector<std::pair<int, int>> sizes = {{0, 0}};
-            if (GLFWmonitor* mon = chosenMonitor()) {
-                int n = 0;
-                const GLFWvidmode* ms = glfwGetVideoModes(mon, &n);
-                for (int i = n - 1; i >= 0; i--) {   // (largest first)
-                    std::pair<int, int> sz = {ms[i].width, ms[i].height};
-                    if (sz.first >= 640 && std::find(sizes.begin(), sizes.end(), sz) == sizes.end()) sizes.push_back(sz);
-                }
-            }
-            int cur = 0;
-            for (size_t i = 0; i < sizes.size(); i++) if (sizes[i].first == cfg_.fsWidth && sizes[i].second == cfg_.fsHeight) cur = (int)i;
-            if (cfg_.fsWidth > 0 && cur == 0) { sizes.push_back({cfg_.fsWidth, cfg_.fsHeight}); cur = (int)sizes.size() - 1; }
-            std::vector<std::string> names;
-            for (auto& z : sizes) names.push_back(z.first ? "FULLSCREEN SIZE: " + std::to_string(z.first) + " X " + std::to_string(z.second) : std::string("FULLSCREEN SIZE: DESKTOP"));
-            int pick = cur;
-            if (ui_.cycle(f.x(), f.top(), w, h, "FULLSCREEN SIZE", pick, (int)sizes.size(), names, UiExp::cfg("fs_*")) && pick != cur) {
-                cfg_.fsWidth = sizes[pick].first; cfg_.fsHeight = sizes[pick].second;
-                if (cfg_.displayMode == 2 && !uiTest_) applyDisplayMode();
-            }
-            f.next();
-            f.hint("EXCLUSIVE FULLSCREEN ONLY; A 4:3 SIZE IS", "STRETCHED (OR BARRED BY YOUR GPU'S SCALING)");
-            ui_.hint(f.x(), f.L.Y(f.y - 4), "WARNING: DON'T TOUCH THIS UNLESS YOU KNOW WHAT YOU'RE DOING", rgba(cfg_.warnColor), f.w());
-            f.y += 16;
-        }
-        if (ui_.toggle(f.x(), f.top(), w, h, "G-SYNC / FREESYNC", cfg_.vrr, UiExp::cfg("vrr"))) applyPresentMode();
-        f.next();
-        f.hint(vrrHz_ > 3 ? "VSYNC ON, FPS CAPPED AT " + std::to_string(vrrHz_ - 3) + " (REFRESH - 3)" : std::string("VSYNC ON, FPS CAPPED 3 UNDER THE REFRESH"),
-               "FOR A VARIABLE REFRESH MONITOR");
-        if (ui_.toggle(f.x(), f.top(), w, h, "MINIMIZE ON ALT-TAB", cfg_.autoIconify, UiExp::cfg("auto_iconify")))
-            glfwSetWindowAttrib(win_, GLFW_AUTO_ICONIFY, cfg_.autoIconify ? GLFW_TRUE : GLFW_FALSE);
-        f.next();
-        f.hint("FULLSCREEN: OFF KEEPS IT ON SCREEN", "BEHIND OTHER WINDOWS");
-        f.section("SOUND GROUPS");   // (on top of EFFECTS VOLUME)
-        {
-            const Settings& d = defaultSettings();
-            pctSlider(f.x(), f.top(), w, h, "MY FOOTSTEPS", cfg_.volSteps, 1, nullptr, UiExp::cfg("vol_steps"), d.volSteps);
-            cfg_.volSteps = clampf(cfg_.volSteps, 0, 1);
-            f.next();
-            pctSlider(f.x(), f.top(), w, h, "OTHERS' FOOTSTEPS", cfg_.volOthersSteps, 2, nullptr, UiExp::cfg("vol_others_steps"), d.volOthersSteps);
-            cfg_.volOthersSteps = clampf(cfg_.volOthersSteps, 0, 2);
-            f.next();
-            f.hint("OVER 1: LOUDER, TO HEAR THEM COMING");
-            pctSlider(f.x(), f.top(), w, h, "GUNFIRE", cfg_.volWeapons, 1, nullptr, UiExp::cfg("vol_weapons"), d.volWeapons);
-            cfg_.volWeapons = clampf(cfg_.volWeapons, 0, 1);
-            f.next();
-            ui_.slider(f.x(), f.top(), w, h, "BOMB BEEP", cfg_.volObjective, 0, 1, "%.2f", UiExp::cfg("vol_objective"), d.volObjective);
-            cfg_.volObjective = clampf(cfg_.volObjective, 0, 1);
-            f.next();
-        }
-        g.header("PERFORMANCE");
-        static const std::vector<std::string> pn = {"CPU PRIORITY: ABOVE NORMAL", "CPU PRIORITY: HIGH"};
-        int pi = cfg_.cpuPriority - 1;
-        if (ui_.cycle(g.x(), g.top(), w, h, "CPU PRIORITY", pi, 2, pn, UiExp::cfg("cpu_priority"))) {
-            cfg_.cpuPriority = pi + 1;
-            if (!uiTest_) setGamePriority(prioLevel(glfwGetWindowAttrib(win_, GLFW_FOCUSED) != 0));
-        }
-        g.next();
-        g.hint("WINDOWS, WITH PRIORITIZE GAME ON;", "HIGH CAN SLOW OTHER PROGRAMS");
-        g.section("PRESET");   // a starting point: shadows, anti-aliasing, render scale, fog and effects at once
-        {
-            videoPresetCycle(g.x(), g.top(), w, h);
-            g.next();
-            g.hint("COMPETITIVE: NO FOG OR SHADOWS, FEWER EFFECTS;", "CHANGE ANYTHING AFTER (IT STAYS)");
-        }
-        return;
-    }
-    // VIDEO + AUDIO
-    f.header("WINDOW");
-    {   // the windowed size: common sizes that fit the monitor, plus the current one if it's none of them
-        static const int sizes[][2] = {{1280, 720}, {1366, 768}, {1600, 900}, {1920, 1080}, {2560, 1440}, {3840, 2160}};
-        GLFWmonitor* mon = chosenMonitor();
-        const DeskMode dm = mon ? desktopMode(mon) : DeskMode{};
-        std::vector<std::pair<int, int>> opts;
-        for (auto& s : sizes) if (dm.w <= 0 || (s[0] <= dm.w && s[1] <= dm.h)) opts.push_back({s[0], s[1]});
-        int cur = -1;
-        for (size_t i = 0; i < opts.size(); i++) if (opts[i].first == cfg_.width && opts[i].second == cfg_.height) cur = (int)i;
-        if (cur < 0) { opts.push_back({cfg_.width, cfg_.height}); cur = (int)opts.size() - 1; }
-        std::vector<std::string> names;
-        for (auto& o : opts) names.push_back("WINDOW SIZE: " + std::to_string(o.first) + " X " + std::to_string(o.second));
-        int pick = cur;
-        if (ui_.cycle(f.x(), f.top(), w, h, "WINDOW SIZE", pick, (int)opts.size(), names, UiExp::cfg("width")) && pick != cur) {
-            const int ow = cfg_.width, oh = cfg_.height;
-            cfg_.width = opts[pick].first; cfg_.height = opts[pick].second;
-            if (cfg_.displayMode == 0 && !uiTest_) { applyDisplayMode(); askKeepDisplay(cfg_.displayMode, ow, oh); }
-        }
-        f.next();
-        if (cfg_.displayMode == 0) f.hint("THE WINDOW'S SIZE AND PLACE ARE KEPT", "FOR THE NEXT LAUNCH");
-        else f.hint("FOR WINDOWED MODE (FULLSCREEN USES", "THE MONITOR'S OWN SIZE)");
-    }
-    f.section("SHADOWS");
-    {
-        static const int res[] = {1024, 2048, 4096};
-        static const std::vector<std::string> names = {"SHADOW QUALITY: LOW", "SHADOW QUALITY: MEDIUM", "SHADOW QUALITY: HIGH"};
-        int qi = cfg_.shadowRes <= 1024 ? 0 : cfg_.shadowRes <= 2048 ? 1 : 2;
-        if (ui_.cycle(f.x(), f.top(), w, h, "SHADOW QUALITY", qi, 3, names, UiExp::cfg("shadowres"))) {
-            cfg_.shadowRes = res[qi];
-            r_.setShadowRes(cfg_.shadowRes);
-        }
-        f.next();
-        f.hint("PLAYERS' SHADOW DETAIL (PLAYER SHADOWS", "ON VIDEO + AUDIO TURNS THEM OFF)");
-    }
-    f.section("GPU");
-    {
-        const std::string gpu = upper(r_.gpuName().empty() ? std::string("UNKNOWN") : r_.gpuName());
-        f.hint(gpu);
-        const bool integrated = gpu.find("INTEL") != std::string::npos || gpu.find("UHD") != std::string::npos || gpu.find("IRIS") != std::string::npos;
-        if (integrated) f.hint("LOOKS INTEGRATED: IF THERE'S A DEDICATED GPU,", "PICK IT IN WINDOWS' GRAPHICS SETTINGS");
-    }
-    g.header("WHEN UNFOCUSED");
-    {
-        float v = (float)cfg_.bgFps;
-        ui_.slider(g.x(), g.top(), w, h, "BACKGROUND FPS LIMIT", v, 0, 240, cfg_.bgFps <= 0 ? "SAME AS FPS LIMIT" : "%.0f", UiExp::cfg("bg_fps"), (float)defaultSettings().bgFps);
-        cfg_.bgFps = std::min(std::max(0, (int)std::lround(v)), 1000);
-        g.next();
-        g.hint("ALT-TABBED OR MINIMIZED: LESS POWER AND HEAT");
-        ui_.toggle(g.x(), g.top(), w, h, "DRAW IN BACKGROUND", cfg_.bgDraw, UiExp::cfg("bg_draw"));
-        g.next();
-        g.hint("OFF: NO FRAMES WHILE ALT-TABBED (THE GAME AND A", "HOSTED SERVER KEEP RUNNING); ON: DRAWN AT THE LIMIT");
-        if (ui_.toggle(g.x(), g.top(), w, h, "MUTE IN BACKGROUND", cfg_.bgMute, UiExp::cfg("bg_mute"))) applyBackground();
-        g.next();
-    }
-    g.section("HITSOUNDS");   // (HITSOUND on VIDEO + AUDIO turns them on / off)
-    {
-        const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
-        if (pctSlider(g.x(), g.top(), w, h, "HITSOUND VOLUME", cfg_.hitVolume, 2, nullptr, UiExp::cfg("hit_volume"), defaultSettings().hitVolume))
-            audio_.play(SND_HIT_MED, 0.9f * (cfg_.hitVolume = clampf(cfg_.hitVolume, 0, 2)), 1.0f, cfg_.hitPack);
-        g.next();
-        static const std::vector<std::string> hp = {"HITSOUND: MY SOUND PACK", "HITSOUND: DEFAULT", "HITSOUND: HEAVY METAL", "HITSOUND: MAGICAL", "HITSOUND: RETRO", "HITSOUND: MOUTH"};
-        int pi = cfg_.hitPack + 1;
-        if (ui_.cycle(g.x(), g.top(), w, h, "HITSOUND", pi, 6, hp, UiExp::cfg("hit_pack"))) { cfg_.hitPack = pi - 1; audio_.play(SND_HIT_MED, 0.9f * cfg_.hitVolume, 1.0f, cfg_.hitPack); }
-        g.next();
-        ui_.toggle(g.x(), g.top(), hw, h, "HEADSHOT", cfg_.headshotSound, UiExp::cfg("headshot_sound"));
-        ui_.toggle(x2, g.top(), hw, h, "KILL SOUND", cfg_.killSound, UiExp::cfg("kill_sound"));
-        g.next();
-    }
-    f.section("INTERFACE");
-    ui_.slider(f.x(), f.top(), w, h, "HUD SIZE", cfg_.hudSize, 0.5f, 2.0f, "X%.2f", UiExp::cfg("hud_size"), defaultSettings().hudSize);
-    cfg_.hudSize = clampf(cfg_.hudSize, 0.5f, 2.0f);
-    f.next();
-    f.hint("EVERY HUD ELEMENT AT ONCE (EACH ALSO HAS", "ITS OWN SIZE ON THE HUD TAB)");
-    f.section("FLAT MAP");   // (page 1 until 2026-10-30: there it ran into the footer on Windows)
-    ui_.toggle(f.x(), f.top(), w, h, "FULLBRIGHT", cfg_.fullbright, UiExp::cfg("fullbright"));
-    f.next();
-    f.hint("FLAT MAP, NO LIGHTING");
-    {   // its colour (white: the classic look)
-        const float hw = L.L(kHalfW);
-        Vec3& c = cfg_.fullbrightColor;
-        const Vec3& d = defaultSettings().fullbrightColor;
-        ui_.colorPicker(f.x(), f.top(), hw, h, "MAP COLOR", c, UiExp::cfg("fullbright_color"), d);
-        bool white = c.x == d.x && c.y == d.y && c.z == d.z;
-        if (ui_.button(L.X(kColL + 184), f.top(), hw, h, "RESET MAP COLOR", UiExp::cfg("fullbright_color").withId("RESET MAP COLOR"), !white)) c = d;
-        f.next();
-    }
-}
 
 // ---- batch 3 (1.19.4, the 2s): GAMEPLAY > MORE 2 / 3 / 4, CONTROLS > MORE 2, PLAYER > MORE --------------------------
 // GAMEPLAY > MORE 2: feedback. Damage numbers (colour, stacking, time), the damage arcs, the kill mark and KILL TEXT,
 // the hit flash's time, low health (its share, colour, pulse, beep), heal numbers, the gun's kick.
-void Game::drawGameplayMore2(const SetLayout& L) {
-    SetFlow f{ui_, L, kColL, 90}, g{ui_, L, kColR, 90};
-    const float w = f.w(), h = f.h(), hw = L.L(kHalfW);
-    const Settings& d = defaultSettings();
-    const float fx2 = L.X(kColL + kColW - kHalfW), gx2 = L.X(kColR + kColW - kHalfW);
-    f.header("DAMAGE NUMBERS");
-    ui_.colorPicker(f.x(), f.top(), w, h, "DAMAGE NUMBER COLOR", cfg_.dmgNumColor, UiExp::cfg("dmg_num_color"), d.dmgNumColor);
-    f.next();
-    {
-        static const std::vector<std::string> sn = {"STACKING: QUICK HITS ADD UP", "STACKING: A NUMBER A HIT", "STACKING: RUNNING TOTAL"};
-        ui_.cycle(f.x(), f.top(), w, h, "STACKING", cfg_.dmgNumStack, 3, sn, UiExp::cfg("dmg_num_stack"));
-        f.next();
-    }
-    ui_.slider(f.x(), f.top(), w, h, "NUMBER TIME", cfg_.dmgNumTime, 0.3f, 3, "%.1f S", UiExp::cfg("dmg_num_time"), d.dmgNumTime);
-    cfg_.dmgNumTime = clampf(cfg_.dmgNumTime, 0.3f, 3);
-    f.next();
-    f.hint("HEADSHOTS STAY RED, BIG HITS GOLD");
-    f.section("DAMAGE ARCS");
-    ui_.toggle(f.x(), f.top(), hw, h, "DAMAGE ARCS", cfg_.dmgArcs, UiExp::cfg("dmg_arcs"));
-    ui_.colorPicker(fx2, f.top(), hw, h, "ARC COLOR", cfg_.dmgArcColor, UiExp::cfg("dmg_arc_color"), d.dmgArcColor);
-    f.next();
-    ui_.slider(f.x(), f.top(), hw, h, "ARC SIZE", cfg_.dmgArcSize, 0.5f, 2, "X%.2f", UiExp::cfg("dmg_arc_size"), d.dmgArcSize);
-    ui_.slider(fx2, f.top(), hw, h, "ARC TIME", cfg_.dmgArcTime, 0.3f, 3, "%.1f S", UiExp::cfg("dmg_arc_time"), d.dmgArcTime);
-    cfg_.dmgArcSize = clampf(cfg_.dmgArcSize, 0.5f, 2); cfg_.dmgArcTime = clampf(cfg_.dmgArcTime, 0.3f, 3);
-    f.next();
-    f.hint("WHERE THE HITS YOU TAKE COME FROM");
-    f.section("YOUR KILLS");
-    ui_.toggle(f.x(), f.top(), hw, h, "KILL MARK", cfg_.killMark, UiExp::cfg("kill_mark"));
-    ui_.toggle(fx2, f.top(), hw, h, "KILL TEXT", cfg_.killText, UiExp::cfg("kill_text"));
-    f.next();
-    ui_.slider(f.x(), f.top(), hw, h, "MARK TIME", cfg_.killMarkTime, 0.2f, 2, "%.2f S", UiExp::cfg("kill_mark_time"), d.killMarkTime);
-    cfg_.killMarkTime = clampf(cfg_.killMarkTime, 0.2f, 2);
-    ui_.colorPicker(fx2, f.top(), hw, h, "MARK COLOR", cfg_.killMarkColor, UiExp::cfg("kill_mark_color"), d.killMarkColor);
-    f.next();
-    f.hint("KILL TEXT: \"KILLED <NAME>\" OVER THE CROSSHAIR");
-
-    g.header("HIT FLASH");
-    ui_.slider(g.x(), g.top(), w, h, "HIT FLASH TIME", cfg_.hitFlashTime, 0.05f, 1, "%.2f S", UiExp::cfg("hit_flash_time"), d.hitFlashTime);
-    cfg_.hitFlashTime = clampf(cfg_.hitFlashTime, 0.05f, 1);
-    g.next();
-    g.hint("ITS COLOURS ARE ON THE CROSSHAIR TAB");
-    g.section("LOW HEALTH");
-    {
-        float pct = cfg_.lowHp * 100;
-        if (ui_.slider(g.x(), g.top(), w, h, "LOW HEALTH BELOW", pct, 0, 90, pct < 0.5f ? "OFF" : "%.0f%%", UiExp::cfg("low_hp"), d.lowHp * 100))
-            cfg_.lowHp = clampf(std::round(pct) / 100, 0, 0.9f);
-        g.next();
-    }
-    ui_.colorPicker(g.x(), g.top(), w, h, "LOW HEALTH COLOR", cfg_.lowHpColor, UiExp::cfg("low_hp_color"), d.lowHpColor);
-    g.next();
-    ui_.toggle(g.x(), g.top(), hw, h, "PULSE", cfg_.lowHpPulse, UiExp::cfg("low_hp_pulse"));
-    if (ui_.toggle(gx2, g.top(), hw, h, "WARNING BEEP", cfg_.lowHpSound, UiExp::cfg("low_hp_sound")) && cfg_.lowHpSound) audio_.play(SND_CHECKPOINT, 0.7f, 0.55f);
-    g.next();
-    g.hint("THE SHARE OF THE MODE'S MAX HEALTH");
-    g.section("HEALING");
-    ui_.toggle(g.x(), g.top(), w, h, "HEAL NUMBERS", cfg_.healNums, UiExp::cfg("heal_nums"));
-    g.next();
-    g.hint("A GREEN +N OVER YOUR HEALTH (VAMPIRE,", "REGEN, THE SYRINGE)");
-    g.section("WEAPON MODEL");
-    ui_.slider(g.x(), g.top(), w, h, "WEAPON KICK", cfg_.recoilAmount, 0, 2, cfg_.recoilAmount < 0.01f ? "OFF" : "X%.2f", UiExp::cfg("recoil_amount"), d.recoilAmount);
-    cfg_.recoilAmount = clampf(cfg_.recoilAmount, 0, 2);
-    g.next();
-    g.hint("THE GUN'S KICK ON A SHOT (0: NONE)");
-    {   // per weapon: shown, and an offset on top of the HUD tab's WEAPON MODEL element (wpn_vm_<n>)
-        static int pw = WPN_RIFLE;
-        static std::vector<std::string> wn;
-        if (wn.empty()) for (int i = 0; i < WPN_COUNT; i++) wn.push_back(upper(baseWeaponDef(i).name));
-        const float hw = L.L(kHalfW), gx2 = L.X(kColR + kColW - kHalfW);
-        ui_.cycle(g.x(), g.top(), hw, h, "MODEL OF", pw, WPN_COUNT, wn, UiExp::local().clipOk());
-        bool sh = !cfg_.wpnVmHide[pw];
-        if (ui_.toggle(gx2, g.top(), hw, h, "SHOWN", sh, UiExp::cfg("wpn_vm_*"))) cfg_.wpnVmHide[pw] = !sh;
-        g.next();
-        const float tw = (w - 2 * L.L(8)) / 3, step = tw + L.L(8);
-        static const char* const lab[3] = {"X", "Y", "DEPTH"};
-        for (int i = 0; i < 3; i++) {
-            if (ui_.slider(g.x() + step * i, g.top(), tw, h, lab[i], cfg_.wpnVmOff[pw][i], -200, 200, "%+.0f", UiExp::cfg("wpn_vm_*"), 0.0f) && !ui_.typed())
-                cfg_.wpnVmOff[pw][i] = std::round(cfg_.wpnVmOff[pw][i]);
-            cfg_.wpnVmOff[pw][i] = clampf(cfg_.wpnVmOff[pw][i], -200, 200);
-        }
-        g.next();
-    }
-}
 
 // GAMEPLAY > MORE 3: HUD info. The speed meter (units, scale, ticks), the bars' captions, the round clock, the verbose
 // block's lines; auto-hiding elements, objective markers, the scope, network warnings, the spectator HUD.
-void Game::drawGameplayMore3(const SetLayout& L) {
-    SetFlow f{ui_, L, kColL, 90}, g{ui_, L, kColR, 90};
-    const float w = f.w(), h = f.h(), hw = L.L(kHalfW);
-    const Settings& d = defaultSettings();
-    const float fx2 = L.X(kColL + kColW - kHalfW), gx2 = L.X(kColR + kColW - kHalfW);
-    auto bit = [&](float x, float y, const char* label, int& mask, int b, const char* key) {   // a toggle for one bit of a mask
-        bool on = mask >> b & 1;
-        if (ui_.toggle(x, y, hw, h, label, on, UiExp::cfg(key))) mask = on ? mask | 1 << b : mask & ~(1 << b);
-    };
-    f.header("SPEED METER");
-    {
-        static const std::vector<std::string> un = {"SPEED UNITS: M/S", "SPEED UNITS: KM/H", "SPEED UNITS: UPS (QUAKE)"};
-        ui_.cycle(f.x(), f.top(), w, h, "SPEED UNITS", cfg_.speedUnit, 3, un, UiExp::cfg("speed_unit"));
-        f.next();
-    }
-    ui_.slider(f.x(), f.top(), hw, h, "METER SCALE", cfg_.speedScale, 0.25f, 4, "X%.2f", UiExp::cfg("speed_scale"), d.speedScale);
-    cfg_.speedScale = clampf(cfg_.speedScale, 0.25f, 4);
-    ui_.toggle(fx2, f.top(), hw, h, "METER TICKS", cfg_.speedTicks, UiExp::cfg("speed_ticks"));
-    f.next();
-    f.hint("SCALE: X2 TAKES TWICE THE SPEED TO FILL");
-    f.section("BAR CAPTIONS");
-    bit(f.x(), f.top(), "WEAPON CAPTION", cfg_.barCaps, 0, "bar_caps");
-    bit(fx2, f.top(), "DASH CAPTION", cfg_.barCaps, 1, "bar_caps");
-    f.next();
-    bit(f.x(), f.top(), "HOOK CAPTION", cfg_.barCaps, 2, "bar_caps");
-    bit(fx2, f.top(), "SPEED CAPTION", cfg_.barCaps, 3, "bar_caps");
-    f.next();
-    f.section("CLOCK");
-    {
-        static const std::vector<std::string> cn = {"ROUND CLOCK: TIME LEFT", "ROUND CLOCK: TIME PLAYED"};
-        ui_.cycle(f.x(), f.top(), w, h, "ROUND CLOCK", cfg_.clockMode, 2, cn, UiExp::cfg("clock_mode"));
-        f.next();
-    }
-    ui_.toggle(f.x(), f.top(), hw, h, "TENTHS", cfg_.clockTenths, UiExp::cfg("clock_tenths"));
-    ui_.toggle(fx2, f.top(), hw, h, "12 H CLOCK", cfg_.clock12, UiExp::cfg("clock_12h"));
-    f.next();
-    f.hint("TENTHS: THE LAST 10 S AS 0:09.4");
-    f.section("VERBOSE INFO LINES");
-    {
-        static const std::vector<std::string> vn = {"LINE: TIME", "LINE: VERSION", "LINE: FPS", "LINE: FPS MIN", "LINE: SPEED", "LINE: PING", "LINE: LOSS",
-                                                    "LINE: TICK / SNAP", "LINE: ENEMIES", "LINE: TEAMMATES", "LINE: TIME LEFT", "LINE: MAP", "LINE: MODE", "LINE: K / D"};
-        static int vl = 0;
-        ui_.cycle(f.x(), f.top(), hw, h, "LINE", vl, (int)vn.size(), vn, UiExp::local());
-        bit(fx2, f.top(), "SHOW LINE", cfg_.verboseLines, vl, "verbose_lines");
-        f.next();
-        f.hint("HUD > VERBOSE INFO TURNS THE BLOCK ON");
-    }
-    f.section("ROUND MODES");
-    ui_.toggle(f.x(), f.top(), w, h, "STALEMATE WARNING", cfg_.drainWarn, UiExp::cfg("drain_warn"));
-    f.next();
-
-    g.header("AUTO-HIDE");
-    {
-        static const std::vector<std::string> hn = {"HEALTH: ALWAYS", "HEALTH: AFTER A CHANGE + LOW", "HEALTH: ONLY WHEN LOW"};
-        static const std::vector<std::string> sn = {"WEAPON LIST: ALWAYS", "WEAPON LIST: AFTER A SWITCH"};
-        static const std::vector<std::string> bn = {"COOLDOWN BARS: ALWAYS", "COOLDOWN BARS: WHEN NOT READY"};
-        ui_.cycle(g.x(), g.top(), w, h, "AUTO-HIDE HEALTH", cfg_.autoHideHealth, 3, hn, UiExp::cfg("autohide_health"));
-        g.next();
-        ui_.cycle(g.x(), g.top(), w, h, "AUTO-HIDE WEAPON LIST", cfg_.autoHideSlots, 2, sn, UiExp::cfg("autohide_slots"));
-        g.next();
-        ui_.cycle(g.x(), g.top(), w, h, "AUTO-HIDE BARS", cfg_.autoHideBars, 2, bn, UiExp::cfg("autohide_bars"));
-        g.next();
-    }
-    g.section("OBJECTIVE MARKERS");
-    ui_.slider(g.x(), g.top(), hw, h, "MARKER SIZE", cfg_.objSize, 0.5f, 2, "X%.2f", UiExp::cfg("obj_size"), d.objSize);
-    ui_.slider(gx2, g.top(), hw, h, "MARKER OPACITY", cfg_.objMarkOpacity, 0.1f, 1, "%.2f", UiExp::cfg("obj_mark_opacity"), d.objMarkOpacity);
-    cfg_.objSize = clampf(cfg_.objSize, 0.5f, 2); cfg_.objMarkOpacity = clampf(cfg_.objMarkOpacity, 0.1f, 1);
-    g.next();
-    ui_.toggle(g.x(), g.top(), hw, h, "DISTANCE", cfg_.objDistance, UiExp::cfg("obj_distance"));
-    ui_.toggle(gx2, g.top(), hw, h, "EDGE ARROWS", cfg_.objArrow, UiExp::cfg("obj_arrow"));
-    g.next();
-    g.section("SNIPER SCOPE");
-    ui_.slider(g.x(), g.top(), hw, h, "SCOPE SIZE", cfg_.scopeSize, 0.5f, 1.2f, "X%.2f", UiExp::cfg("scope_size"), d.scopeSize);
-    ui_.slider(gx2, g.top(), hw, h, "RETICLE WIDTH", cfg_.scopeLine, 1, 4, "%.1f", UiExp::cfg("scope_line"), d.scopeLine);
-    cfg_.scopeSize = clampf(cfg_.scopeSize, 0.5f, 1.2f); cfg_.scopeLine = clampf(cfg_.scopeLine, 1, 4);
-    g.next();
-    ui_.colorPicker(g.x(), g.top(), w, h, "RETICLE COLOR", cfg_.scopeColor, UiExp::cfg("scope_color"), d.scopeColor);
-    g.next();
-    g.section("MORE");
-    ui_.toggle(g.x(), g.top(), hw, h, "NETWORK WARNINGS", cfg_.netIcons, UiExp::cfg("net_icons"));
-    ui_.toggle(gx2, g.top(), hw, h, "FEED HS MARK", cfg_.feedHeadshot, UiExp::cfg("feed_headshot"));
-    g.next();
-    {
-        static const std::vector<std::string> pn = {"SPECTATOR HUD: FULL", "SPECTATOR HUD: MINIMAL"};
-        ui_.cycle(g.x(), g.top(), w, h, "SPECTATOR HUD", cfg_.specHud, 2, pn, UiExp::cfg("spec_hud"));
-        g.next();
-    }
-    ui_.toggle(g.x(), g.top(), w, h, "STAIR SMOOTHING", cfg_.stepSmooth, UiExp::cfg("step_smooth"));   // (batch 4b)
-    g.next();
-    g.hint("OFF: THE VIEW STEPS UP STAIRS AT ONCE");
-}
 
 // GAMEPLAY > MORE 4: social and spectating. Chat's look (one colour, system colour, a box, timestamps, mentions, the
 // word filter, team only, name colours, system messages), streamer mode, the scoreboard; alerts when unfocused, on
 // join, the death camera, spectating.
-void Game::drawGameplayMore4(const SetLayout& L) {
-    SetFlow f{ui_, L, kColL, 90}, g{ui_, L, kColR, 90};
-    const float w = f.w(), h = f.h(), hw = L.L(kHalfW);
-    const Settings& d = defaultSettings();
-    const float fx2 = L.X(kColL + kColW - kHalfW), gx2 = L.X(kColR + kColW - kHalfW);
-    f.header("CHAT");
-    ui_.toggle(f.x(), f.top(), hw, h, "ONE CHAT COLOR", cfg_.chatOneColor, UiExp::cfg("chat_one_color"));
-    ui_.colorPicker(fx2, f.top(), hw, h, "CHAT COLOR", cfg_.chatColor, UiExp::cfg("chat_color"), d.chatColor);
-    f.next();
-    ui_.toggle(f.x(), f.top(), hw, h, "CHAT BOX", cfg_.chatBox, UiExp::cfg("chat_box"));
-    ui_.slider(fx2, f.top(), hw, h, "BOX OPACITY", cfg_.chatBoxOpacity, 0.1f, 1, "%.2f", UiExp::cfg("chat_box_opacity"), d.chatBoxOpacity);
-    cfg_.chatBoxOpacity = clampf(cfg_.chatBoxOpacity, 0.1f, 1);
-    f.next();
-    ui_.toggle(f.x(), f.top(), hw, h, "TIMESTAMPS", cfg_.chatStamps, UiExp::cfg("chat_stamps"));
-    ui_.toggle(fx2, f.top(), hw, h, "WORD FILTER", cfg_.chatFilter, UiExp::cfg("chat_filter"));
-    f.next();
-    ui_.toggle(f.x(), f.top(), hw, h, "MY NAME: GOLD", cfg_.mentionHl, UiExp::cfg("mention_hl"));
-    ui_.toggle(fx2, f.top(), hw, h, "MY NAME: PING", cfg_.mentionSound, UiExp::cfg("mention_sound"));
-    f.next();
-    ui_.toggle(f.x(), f.top(), hw, h, "TEAM CHAT ONLY", cfg_.teamChatOnly, UiExp::cfg("team_chat_only"));
-    ui_.toggle(fx2, f.top(), hw, h, "NAME COLORS", cfg_.otherNameColors, UiExp::cfg("other_name_colors"));
-    f.next();
-    ui_.colorPicker(f.x(), f.top(), w, h, "SYSTEM LINE COLOR", cfg_.sysColor, UiExp::cfg("sys_color"), d.sysColor);
-    f.next();
-    {
-        static const std::vector<std::string> mn = {"SYSTEM MESSAGES: ALL", "SYSTEM MESSAGES: IMPORTANT", "SYSTEM MESSAGES: OFF"};
-        ui_.cycle(f.x(), f.top(), w, h, "SYSTEM MESSAGES", cfg_.sysMsgs, 3, mn, UiExp::cfg("sys_msgs"));
-        f.next();
-        f.hint("IMPORTANT: VOTES, KICKS, RANKED, ERRORS");
-    }
-    f.section("SCOREBOARD");
-    {
-        static const std::vector<std::string> sn = {"SORT BY: SCORE", "SORT BY: KILLS", "SORT BY: DEATHS", "SORT BY: PING", "SORT BY: NAME"};
-        ui_.cycle(f.x(), f.top(), w, h, "SORT BY", cfg_.scoreSort, 5, sn, UiExp::cfg("score_sort"));
-        f.next();
-        static const std::vector<std::string> cn = {"COLUMN: K", "COLUMN: D", "COLUMN: DMG", "COLUMN: OBJ", "COLUMN: ACC", "COLUMN: PING", "COLUMN: TOTAL K / D"};
-        static int ci = 0;
-        ui_.cycle(f.x(), f.top(), hw, h, "COLUMN", ci, (int)cn.size(), cn, UiExp::local());
-        bool on = cfg_.scoreCols >> ci & 1;
-        if (ui_.toggle(fx2, f.top(), hw, h, "SHOW COLUMN", on, UiExp::cfg("score_cols"))) cfg_.scoreCols = on ? cfg_.scoreCols | 1 << ci : cfg_.scoreCols & ~(1 << ci);
-        f.next();
-    }
-    f.section("MORE");   // (batch 4b)
-    ui_.toggle(f.x(), f.top(), hw, h, "SHOW I'M TYPING", cfg_.sendTyping, UiExp::cfg("send_typing"));
-    ui_.toggle(fx2, f.top(), hw, h, "RPS BY MOUSE", cfg_.rpsClick, UiExp::cfg("rps_click"));
-    f.next();
-    f.hint("RPS BY MOUSE: CLICK A TIEBREAK CARD TO THROW IT");
-
-    g.header("WHEN UNFOCUSED, FLASH ON");
-    auto bit = [&](float x, const char* label, int b) {
-        bool on = cfg_.alerts >> b & 1;
-        if (ui_.toggle(x, g.top(), hw, h, label, on, UiExp::cfg("alerts"))) cfg_.alerts = on ? cfg_.alerts | 1 << b : cfg_.alerts & ~(1 << b);
-    };
-    bit(g.x(), "MATCH START", 0); bit(gx2, "ROUND START", 1);
-    g.next();
-    bit(g.x(), "VOTE CALLED", 2); bit(gx2, "PLAYER JOINS", 3);
-    g.next();
-    g.hint("THE TASKBAR BUTTON FLASHES");
-    g.section("JOINING + PRIVACY");
-    {
-        static const std::vector<std::string> jn = {"ON JOIN: PLAY", "ON JOIN: SPECTATE", "ON JOIN: ASK"};
-        ui_.cycle(g.x(), g.top(), w, h, "ON JOIN", cfg_.onJoin, 3, jn, UiExp::cfg("on_join"));
-        g.next();
-    }
-    ui_.toggle(g.x(), g.top(), hw, h, "STREAMER MODE", cfg_.streamer, UiExp::cfg("streamer"));
-    ui_.toggle(gx2, g.top(), hw, h, "HIDE RATINGS", cfg_.hideRatings, UiExp::cfg("hide_ratings"));
-    g.next();
-    g.hint("STREAMER: ADDRESSES, CODES, OTHERS' NAMES HIDDEN");
-    g.section("RACE");
-    {
-        static const std::vector<std::string> vn = {"VS: BEST RUN", "VS: BEST SEGMENTS", "VS: LAST RUN"};
-        ui_.cycle(g.x(), g.top(), hw, h, "SPLITS VS", cfg_.raceSplitVs, 3, vn, UiExp::cfg("race_split_vs"));
-        ui_.slider(gx2, g.top(), hw, h, "SPLIT TIME", cfg_.raceSplitTime, 0.5f, 10, "%.1f S", UiExp::cfg("race_split_time"), d.raceSplitTime);
-        cfg_.raceSplitTime = clampf(cfg_.raceSplitTime, 0.5f, 10);
-        g.next();
-    }
-    g.section("DEATH + SPECTATING");
-    {
-        static const std::vector<std::string> dn = {"DEATH CAMERA: THE KILLER", "DEATH CAMERA: MY BODY", "DEATH CAMERA: A TEAMMATE"};
-        ui_.cycle(g.x(), g.top(), w, h, "DEATH CAMERA", cfg_.deathCam, 3, dn, UiExp::cfg("death_cam"));
-        g.next();
-    }
-    ui_.slider(g.x(), g.top(), w, h, "KILL CAM TIME", cfg_.killCamTime, 0, kKillCamTime, "%.1f S", UiExp::cfg("kill_cam_time"), d.killCamTime);
-    cfg_.killCamTime = clampf(cfg_.killCamTime, 0, kKillCamTime);
-    g.next();
-    if (ui_.slider(g.x(), g.top(), hw, h, "SPECTATOR FOV", cfg_.specFov, 0, 130, cfg_.specFov < 0.5f ? "MINE" : "%.0f", UiExp::cfg("spec_fov"), d.specFov) && !ui_.typed())
-        cfg_.specFov = std::round(cfg_.specFov);   // (dragged: whole degrees, the far left is MINE; typed: as typed)
-    cfg_.specFov = cfg_.specFov < 0.5f ? 0 : clampf(cfg_.specFov, 30, 140);
-    ui_.toggle(gx2, g.top(), hw, h, "THIRD PERSON", cfg_.specThird, UiExp::cfg("spec_third"));
-    g.next();
-}
 // CONTROLS > MORE 2: per weapon (sensitivity, alt-fire toggle, swapped fire buttons), the mouse (acceleration, raw
 // input), auto-hop, the console's key and whether it opens in the menus, alt-fire toggle in ranked.
-void Game::drawControlsMore2(const SetLayout& L) {
-    SetFlow f{ui_, L, kColL, 90}, g{ui_, L, kColR, 90};
-    const float w = f.w(), h = f.h(), hw = L.L(kHalfW);
-    const Settings& d = defaultSettings();
-    const float fx2 = L.X(kColL + kColW - kHalfW), gx2 = L.X(kColR + kColW - kHalfW);
-    f.header("PER WEAPON");
-    {
-        static int pw = WPN_SNIPER;
-        static std::vector<std::string> wn;
-        if (wn.empty()) for (int i = 0; i < WPN_COUNT; i++) wn.push_back("WEAPON: " + upper(baseWeaponDef(i).name));
-        ui_.cycle(f.x(), f.top(), w, h, "WEAPON", pw, WPN_COUNT, wn, UiExp::local());
-        f.next();
-        ui_.slider(f.x(), f.top(), w, h, "WEAPON SENSITIVITY", cfg_.wpnSens[pw], 0.25f, 3, "X%.2f", UiExp::cfg("wpn_sens_*"), 1.0f);
-        cfg_.wpnSens[pw] = clampf(cfg_.wpnSens[pw], 0.1f, 5);
-        f.next();
-        f.hint("X SENSITIVITY WHILE THIS WEAPON IS HELD");
-        const int am = altToggleMask();
-        bool at = am >> pw & 1, sw = cfg_.swapFire >> pw & 1;
-        if (ui_.toggle(f.x(), f.top(), hw, h, "ALT-FIRE TOGGLES", at, UiExp::cfg("alt_toggle_weapons"))) cfg_.altToggleWpns = at ? am | 1 << pw : am & ~(1 << pw);
-        if (ui_.toggle(fx2, f.top(), hw, h, "SWAP FIRE", sw, UiExp::cfg("swap_fire"))) cfg_.swapFire = sw ? cfg_.swapFire | 1 << pw : cfg_.swapFire & ~(1 << pw);
-        f.next();
-        f.hint("ALT-FIRE TOGGLES: WITH ALT-FIRE: TOGGLE ON", "(BY DEFAULT ONLY THE SCOPES)");
-    }
-    f.section("MOUSE");
-    ui_.slider(f.x(), f.top(), w, h, "MOUSE ACCELERATION", cfg_.mouseAccel, 0, 1, cfg_.mouseAccel < 0.005f ? "OFF" : "%.2f", UiExp::cfg("mouse_accel"), d.mouseAccel);
-    cfg_.mouseAccel = clampf(cfg_.mouseAccel, 0, 1);
-    f.next();
-    f.hint("FASTER MOVES TURN FURTHER (AT MOST X4)");
-    if (ui_.toggle(f.x(), f.top(), w, h, "RAW INPUT", cfg_.rawInput, UiExp::cfg("raw_input"))) applyRawInput();
-    f.next();
-    f.hint("OFF: THE OS'S POINTER MOTION (ITS OWN", "ACCELERATION AND SPEED SETTING)");
-    f.section("MAP EDITOR");
-    ui_.toggle(f.x(), f.top(), hw, h, "BIND FLY KEYS", cfg_.edFlyBinds, UiExp::cfg("ed_fly_binds"));
-    ui_.slider(fx2, f.top(), hw, h, "FAST FLY", cfg_.edFastMul, 1, 10, "X%.1f", UiExp::cfg("ed_fast_mul"), d.edFastMul);
-    cfg_.edFastMul = clampf(cfg_.edFastMul, 1, 10);
-    f.next();
-    if (ui_.slider(f.x(), f.top(), hw, h, "CUSTOM GRID", cfg_.edGridCustom, 0, 8, cfg_.edGridCustom <= 0 ? "OFF" : "%.2f M", UiExp::cfg("ed_grid_custom"), d.edGridCustom) && !ui_.typed())
-        cfg_.edGridCustom = std::round(cfg_.edGridCustom * 20) / 20;   // (dragged: 5 cm steps)
-    cfg_.edGridCustom = clampf(cfg_.edGridCustom, 0, 16);
-    ui_.slider(fx2, f.top(), hw, h, "ROTATION STEP", cfg_.edRotStep, 1, 90, "%.0f DEG", UiExp::cfg("ed_rot_step"), d.edRotStep);
-    cfg_.edRotStep = clampf(std::round(cfg_.edRotStep), 1, 90);
-    f.next();
-    f.hint("ROTATION STEP: Q / E ON A SPAWN; THE FLY", "SPEED, GRID AND LAST LIGHT ARE KEPT");
-
-    g.header("MOVEMENT");
-    ui_.toggle(g.x(), g.top(), hw, h, "AUTO-HOP", cfg_.autoHop, UiExp::cfg("auto_hop"));
-    {   // flight (3D VAMP): MOVE UP and MOVE DOWN, or MOVE UP alone (held: up, let go: down)
-        static const std::vector<std::string> vn = {"VERTICAL: TWO KEYS", "VERTICAL: ONE KEY"};
-        if (ui_.cycle(gx2, g.top(), hw, h, "VERTICAL KEYS", cfg_.verticalKeys, 2, vn, UiExp::cfg("vertical_keys"))) cfg_.save();
-    }
-    g.next();
-    g.hint("AUTO-HOP OFF: HELD JUMP JUMPS ONCE", "FLYING, ONE KEY: MOVE UP HELD UP, LET GO DOWN");
-    g.section("CONSOLE");
-    {
-        static const int keys[] = {96, 290, 299, 300, 260, 268, 92, 39};   // ` F1 F10 F11 INSERT HOME \ '
-        static const std::vector<std::string> kn = {"CONSOLE KEY: `", "CONSOLE KEY: F1", "CONSOLE KEY: F10", "CONSOLE KEY: F11", "CONSOLE KEY: INSERT",
-                                                    "CONSOLE KEY: HOME", "CONSOLE KEY: \\", "CONSOLE KEY: '"};
-        int ki = 0;
-        for (int i = 0; i < 8; i++) if (keys[i] == cfg_.consoleKey) ki = i;
-        if (ui_.cycle(g.x(), g.top(), w, h, "CONSOLE KEY", ki, 8, kn, UiExp::cfg("console_key"))) cfg_.consoleKey = keys[ki];
-        g.next();
-        g.hint("PICK A KEY NO ACTION IS BOUND TO");
-    }
-    ui_.toggle(g.x(), g.top(), w, h, "CONSOLE IN MENUS", cfg_.consoleMenus, UiExp::cfg("console_menus"));
-    g.next();
-    g.section("RANKED");
-    ui_.toggle(g.x(), g.top(), w, h, "ALT-FIRE TOGGLE IN RANKED", cfg_.rankedAltToggle, UiExp::cfg("ranked_alt_toggle"));
-    g.next();
-    g.hint("THE OTHER CONTROL SCRIPTS STAY OFF IN RANKED");
-    g.section("EDITOR TEST PLAY");
-    {
-        static std::vector<std::string> mn;
-        if (mn.empty()) { mn.push_back("TEST MODE: THE MAP'S"); for (int m = 0; m < MODE_COUNT; m++) mn.push_back(std::string("TEST MODE: ") + upper(modeName(m))); }
-        int mi = cfg_.edTestMode + 1;
-        if (ui_.cycle(g.x(), g.top(), w, h, "TEST MODE", mi, (int)mn.size(), mn, UiExp::cfg("ed_test_mode"))) cfg_.edTestMode = mi - 1;
-        g.next();
-        float b = (float)cfg_.edTestBots;
-        ui_.slider(g.x(), g.top(), hw, h, "TEST BOTS", b, 0, 7, "%.0f", UiExp::cfg("ed_test_bots"), (float)d.edTestBots);
-        cfg_.edTestBots = std::min(std::max(0, (int)std::lround(b)), 7);
-        ui_.toggle(gx2, g.top(), hw, h, "AT CAMERA", cfg_.edTestAtCam, UiExp::cfg("ed_test_at_cam"));
-        g.next();
-        ui_.toggle(g.x(), g.top(), w, h, "SKIP WARMUP", cfg_.edTestNoWarmup, UiExp::cfg("ed_test_no_warmup"));
-        g.next();
-    }
-    ui_.colorPicker(g.x(), g.top(), w, h, "CLIP BOX COLOR", cfg_.clipColor, UiExp::cfg("clip_color"), d.clipColor);   // (batch 4b: the editor's clip boxes)
-    g.next();
-}
 // PLAYER > MORE: the menus' theme and background, the data folder; your quip, mods (your overrides), ranked queues.
-void Game::drawPlayerMore(const SetLayout& L) {
-    SetFlow f{ui_, L, kColL, 90}, g{ui_, L, kColR, 90};
-    const float w = f.w(), h = f.h(), hw = L.L(kHalfW);
-    const Settings& d = defaultSettings();
-    const float fx2 = L.X(kColL + kColW - kHalfW), gx2 = L.X(kColR + kColW - kHalfW);
-    f.header("MENU THEME");
-    bool ch = false;
-    {
-        static const std::vector<std::string> tn = {"MENU THEME: DARK", "MENU THEME: HIGH CONTRAST"};
-        ch |= ui_.cycle(f.x(), f.top(), w, h, "MENU THEME", cfg_.menuTheme, 2, tn, UiExp::cfg("menu_theme"));
-        f.next();
-    }
-    ch |= ui_.toggle(f.x(), f.top(), hw, h, "OWN ACCENT", cfg_.menuAccentOn, UiExp::cfg("menu_accent_on"));
-    ch |= ui_.colorPicker(fx2, f.top(), hw, h, "ACCENT", cfg_.menuAccent, UiExp::cfg("menu_accent"), d.menuAccent) != Ui::UNCHANGED;
-    f.next();
-    ch |= ui_.slider(f.x(), f.top(), hw, h, "TEXT BRIGHTNESS", cfg_.textBright, 0.5f, 1, "%.2f", UiExp::cfg("text_bright"), d.textBright);
-    ch |= ui_.slider(fx2, f.top(), hw, h, "PANEL DARKNESS", cfg_.panelDark, 0.5f, 1.5f, "X%.2f", UiExp::cfg("panel_dark"), d.panelDark);
-    cfg_.textBright = clampf(cfg_.textBright, 0.5f, 1); cfg_.panelDark = clampf(cfg_.panelDark, 0.5f, 1.5f);
-    f.next();
-    f.hint("OWN ACCENT: NOT THE TEAM COLOR");
-    if (ch) applyMenuTheme();
-    f.section("MENU BACKGROUND");
-    {
-        static const std::vector<std::string> bn = {"BACKGROUND: CASTLE", "BACKGROUND: A MAP I PICK", "BACKGROUND: PLAIN COLOR"};
-        bool reload = ui_.cycle(f.x(), f.top(), w, h, "MENU BACKGROUND", cfg_.menuBg, 3, bn, UiExp::cfg("menu_bg"));
-        f.next();
-        std::vector<std::string> mn;
-        int mi = 0;
-        for (size_t i = 0; i < maps_.size(); i++) { mn.push_back("MAP: " + upper(maps_[i])); if (maps_[i] == cfg_.menuBgMap) mi = (int)i; }
-        if (mn.empty()) ui_.button(f.x(), f.top(), w, h, "MAP: NONE", UiExp::inert().withId("BACKGROUND MAP"), false);
-        else if (ui_.cycle(f.x(), f.top(), w, h, "BACKGROUND MAP", mi, (int)mn.size(), mn, (mn.size() < 2 ? UiExp::inert() : UiExp::cfg("menu_bg_map")).clipOk())) {
-            cfg_.menuBgMap = maps_[mi];
-            if (cfg_.menuBg == 1) reload = true;
-        }
-        f.next();
-        ui_.colorPicker(f.x(), f.top(), w, h, "BACKGROUND COLOR", cfg_.menuBgColor, UiExp::cfg("menu_bg_color"), d.menuBgColor);
-        f.next();
-        // (the map is baked again only from the main menu's settings: in a match the world is the match's)
-        if (reload && !settingsInGame_ && screen_ == Screen::Settings) loadMenuBackdrop();
-    }
-    f.section("DATA FOLDER");
-    f.hint(cfg_.streamer ? std::string("(HIDDEN: STREAMER MODE)") : upper(userDataPath()));
-    if (ui_.button(f.x(), f.top(), w, h, "OPEN DATA FOLDER", UiExp::url())) openUrl(userDataPath());
-    f.next();
-    f.hint("SETTINGS, MAPS, DEMOS, SCREENSHOTS, HUDS");
-
-    g.header("QUIPS");
-    {
-        const int n = audio_.quipCount();
-        std::vector<std::string> qn = {"MY QUIP: A RANDOM ONE"};
-        for (int k = 0; k < n; k++) qn.push_back("MY QUIP: " + upper(audio_.quipName(k)));
-        int qi = cfg_.quipPick < 0 || cfg_.quipPick >= n ? 0 : cfg_.quipPick + 1;
-        if (ui_.cycle(g.x(), g.top(), w, h, "MY QUIP", qi, (int)qn.size(), qn, (qn.size() < 2 ? UiExp::inert() : UiExp::cfg("quip_pick")).clipOk())) {
-            cfg_.quipPick = qi - 1;
-            if (qi > 0) audio_.play(SND_QUIP + qi - 1, 0.9f);
-        }
-        g.next();
-        g.hint(std::to_string(n) + " QUIPS FOR YOUR ANNOUNCER VOICE");
-    }
-    g.section("MODS");
-    ui_.toggle(g.x(), g.top(), w, h, "USE MY OVERRIDES", cfg_.useOverrides, UiExp::cfg("use_overrides"));
-    g.next();
-    {
-        static double listedAt = -10;
-        static int mine = 0;
-        if (time_ - listedAt > 2) {   // (counted every 2 s while this page is open)
-            listedAt = time_;
-            mine = 0;
-            for (auto& o : overrides::list()) mine += o.rfind("user:", 0) == 0;
-        }
-        g.hint(std::to_string(mine) + " OVERRIDES OF YOURS - ON / OFF AT THE NEXT START");
-    }
-    if (ui_.button(g.x(), g.top(), hw, h, "OVERRIDES FOLDER", UiExp::url())) openUrl(userDataPath("overrides"));
-    if (ui_.button(gx2, g.top(), hw, h, "MODS FOLDER", UiExp::url())) openUrl(userDataPath("mods"));
-    g.next();
-    g.hint("FONTS GO IN MODS/FONTS; ASSETS IN OVERRIDES/");
-    g.section("RANKED QUEUES");
-    ui_.toggle(g.x(), g.top(), w, h, "REMEMBER MY QUEUES", cfg_.rememberQueues, UiExp::cfg("remember_queues"));
-    g.next();
-    g.hint("THE QUEUES YOU'RE IN, JOINED AGAIN NEXT START");
-    g.section("LOGO + YOUR BOTS");   // (batch 4b)
-    ui_.toggle(g.x(), g.top(), w, h, "FIXED LOGO COLORS", cfg_.fixedLogo, UiExp::cfg("fixed_logo"));
-    g.next();
-    {
-        static const std::vector<std::string> bl = {"YOUR BOTS: MIXED MODELS", "YOUR BOTS: ALL STANDARD"};
-        ui_.cycle(g.x(), g.top(), w, h, "BOT LOOKS", cfg_.botLooks, 2, bl, UiExp::cfg("bot_looks"));
-        g.next();
-        if (ui_.button(g.x(), g.top(), w, h, "BOT NAMES FILE", UiExp::url())) {
-            std::error_code ec;
-            const std::string dir = userDataPath("bots"), f = dir + "/names.txt";
-            std::filesystem::create_directories(std::filesystem::u8path(dir), ec);
-            if (!std::filesystem::exists(std::filesystem::u8path(f), ec)) {   // (a start: one name a line)
-                std::ofstream o(std::filesystem::u8path(f));
-                o << "ACE\nBLAZE\nCOMET\nDUSK\n";
-            }
-            openUrl(dir);
-        }
-        g.next();
-        g.hint("BOTS/NAMES.TXT: A NAME A LINE, USED WHEN YOU HOST");
-    }
-}
 
 // HUD > MORE (batch 4b, the 1s): the HUD's own colours (bars recharging, the speed meter, the weapon list, the sticky
 // counter, the banners, damage numbers), the text outline; notices; a compass and a radar; REC; tourney's TAB.
-void Game::drawHudMore(const SetLayout& L) {
-    SetFlow f{ui_, L, kColL, 90}, g{ui_, L, kColR, 90};
-    const float w = f.w(), h = f.h(), hw = L.L(kHalfW);
-    const Settings& d = defaultSettings();
-    const float fx2 = L.X(kColL + kColW - kHalfW), gx2 = L.X(kColR + kColW - kHalfW);
-    f.header("HUD COLORS");
-    ui_.colorPicker(f.x(), f.top(), hw, h, "RECHARGING", cfg_.barRechargeColor, UiExp::cfg("bar_recharge_color"), d.barRechargeColor);
-    ui_.colorPicker(fx2, f.top(), hw, h, "NOT USABLE", cfg_.slotOffColor, UiExp::cfg("slot_off_color"), d.slotOffColor);
-    f.next();
-    ui_.colorPicker(f.x(), f.top(), hw, h, "SPEED: SLOW", cfg_.speedLowColor, UiExp::cfg("speed_low_color"), d.speedLowColor);
-    ui_.colorPicker(fx2, f.top(), hw, h, "SPEED: FAST", cfg_.speedHighColor, UiExp::cfg("speed_high_color"), d.speedHighColor);
-    f.next();
-    ui_.colorPicker(f.x(), f.top(), hw, h, "WARNINGS", cfg_.warnColor, UiExp::cfg("warn_color"), d.warnColor);
-    ui_.colorPicker(fx2, f.top(), hw, h, "INFO LINES", cfg_.infoColor, UiExp::cfg("info_color"), d.infoColor);
-    f.next();
-    ui_.colorPicker(f.x(), f.top(), hw, h, "HEADSHOT HIT", cfg_.dmgHeadColor, UiExp::cfg("dmg_head_color"), d.dmgHeadColor);
-    ui_.colorPicker(fx2, f.top(), hw, h, "BIG HIT", cfg_.dmgBigColor, UiExp::cfg("dmg_big_color"), d.dmgBigColor);
-    f.next();
-    ui_.colorPicker(f.x(), f.top(), w, h, "STICKIES AT MAX", cfg_.stickyFullColor, UiExp::cfg("sticky_full_color"), d.stickyFullColor);
-    f.next();
-    f.hint("BIG HIT: 40+ DAMAGE; NOT USABLE: THE WEAPON LIST");
-    f.section("TEXT");
-    ui_.slider(f.x(), f.top(), w, h, "TEXT OUTLINE", cfg_.textOutline, 0, 1.5f, cfg_.textOutline < 0.01f ? "NONE" : "X%.2f", UiExp::cfg("text_outline"), d.textOutline);
-    cfg_.textOutline = clampf(cfg_.textOutline, 0, 1.5f);
-    r_.setTextOutline(cfg_.textOutline);
-    f.next();
-    f.hint("THE DARK EDGE ROUND ALL TEXT, MENUS TOO");
-
-    g.header("NOTICES");
-    {
-        float n = (float)cfg_.noticeLines;
-        ui_.slider(g.x(), g.top(), hw, h, "NOTICE LINES", n, 1, 8, "%.0f", UiExp::cfg("notice_lines"), (float)d.noticeLines);
-        cfg_.noticeLines = std::min(std::max((int)std::lround(n), 1), 8);
-        ui_.slider(gx2, g.top(), hw, h, "NOTICE TIME", cfg_.noticeTime, 0.5f, 3, "X%.1f", UiExp::cfg("notice_time"), d.noticeTime);
-        cfg_.noticeTime = clampf(cfg_.noticeTime, 0.5f, 3);
-        g.next();
-        g.hint("THE MESSAGES UNDER THE SCORE BOX");
-    }
-    g.section("COMPASS + RADAR");
-    ui_.toggle(g.x(), g.top(), hw, h, "COMPASS", cfg_.compass, UiExp::cfg("compass"));
-    ui_.toggle(gx2, g.top(), hw, h, "RADAR", cfg_.radar, UiExp::cfg("radar"));
-    g.next();
-    ui_.slider(g.x(), g.top(), w, h, "RADAR RANGE", cfg_.radarRange, 10, 120, "%.0f M", UiExp::cfg("radar_range"), d.radarRange);
-    cfg_.radarRange = clampf(cfg_.radarRange, 10, 120);
-    g.next();
-    g.hint("RADAR: TEAMMATES AND OBJECTIVES, NEVER ENEMIES", "(NOT IN RANKED)");
-    g.section("MORE");
-    ui_.toggle(g.x(), g.top(), w, h, "HIDE REC", cfg_.hideRec, UiExp::cfg("hide_rec"));
-    g.next();
-    {
-        static const std::vector<std::string> tn = {"TOURNEY TAB: THE BRACKET", "TOURNEY TAB: THE SCOREBOARD"};
-        ui_.cycle(g.x(), g.top(), w, h, "TOURNEY TAB", cfg_.tourneyTab, 2, tn, UiExp::cfg("tourney_tab"));
-    }
-    g.next();
-    g.hint("HIDE REC: NO BLINKING REC WHILE RECORDING");
-}
 
 void Game::drawDeviceSettings(const SetLayout& L) {
     if (!devListed_) listDevices();
@@ -9632,11 +7751,7 @@ void Game::drawDeviceSettings(const SetLayout& L) {
 }
 
 void Game::drawControls(const SetLayout& L) {
-    const float w = L.L(kColW), h = L.L(kRowH), hw = L.L(kHalfW);
-    // the two sub-pages
-    if (ui_.tab(L.X(268), L.Y(90), L.L(244), h, "GENERAL + INTERFACE", controlsSub_ == 0, UiExp::nav("~settings/controls"), true)) { controlsSub_ = 0; captureAction_ = -1; }
-    if (ui_.tab(L.X(518), L.Y(90), L.L(244), h, "MOVE + WEAPON KEYS", controlsSub_ == 1, UiExp::nav("~settings/controls/movement"), true)) { controlsSub_ = 1; captureAction_ = -1; }
-    if (ui_.tab(L.X(768), L.Y(90), L.L(244), h, "MORE KEYS", controlsSub_ == 2, UiExp::nav("~settings/controls/keys2"), true)) { controlsSub_ = 2; captureAction_ = -1; }
+    const float h = L.L(kRowH), hw = L.L(kHalfW);
     if (bindTakenA_ >= 0 && time_ < bindTakenUntil_ && captureAction_ < 0) {   // (a key taken from another action: say so, UNDO)
         const std::string t = upper(inputName(bindTakenCode_)) + " WAS ON " + actionName(bindTakenA_) + ": UNBOUND THERE";
         ui_.hint(L.X(268), L.Y(126), t, {1.0f, 0.7f, 0.35f, 1}, L.L(640));
@@ -9694,68 +7809,11 @@ void Game::drawControls(const SetLayout& L) {
         float y = keyRows(kColR, 154, "CHAT", {A_CHAT, A_TOGGLECHAT, A_QUIP});
         y = keyRows(kColR, y, "VOTES", {A_VOTEYES, A_VOTENO, A_VOTESTART});
         keyRows(kColR, y, "SCREEN", {A_SCORES, A_PERF, A_PERFMINI, A_SCREENSHOT});
-        // left: the mouse, key options, per-mode profiles, import / export
-        SetFlow f{ui_, L, kColL, 154};
-        f.header("MOUSE");
-        ui_.slider(f.x(), f.top(), w, h, "SENSITIVITY", cfg_.sensitivity, 0.1f, 10.0f, "%.2f", UiExp::cfg("sensitivity"), defaultSettings().sensitivity);
-        cfg_.sensitivity = clampf(cfg_.sensitivity, 0.01f, 50.0f);   // (typed: quark.cfg's range)
-        f.next();
-        {   // the same thing as cm per 360 at your mouse DPI (drag either); counts per 360 = 360 / (sens * 0.022), cm = counts / dpi * 2.54
-            auto cmOf = [&](float sens) { return 360.0f / (sens * 0.022f) / cfg_.dpi * 2.54f; };
-            float cm = cmOf(cfg_.sensitivity);
-            if (ui_.slider(f.x(), f.top(), hw, h, "CM PER 360", cm, 5, 120, "%.1f", UiExp::cfg("sensitivity"), cmOf(defaultSettings().sensitivity)))
-                cfg_.sensitivity = clampf(360.0f / (cm / 2.54f * cfg_.dpi) / 0.022f, 0.01f, 50.0f);
-            static std::string dpiText;   // click and type any DPI
-            if (!ui_.typing()) dpiText = std::to_string(cfg_.dpi);
-            const float dx = L.X(kColL + 184);
-            if (ui_.textField(42, dx, f.top(), hw, h, dpiText, 6, UiExp::cfg("dpi").withId("DPI"))) {
-                dpiText.erase(std::remove_if(dpiText.begin(), dpiText.end(), [](char ch) { return ch < '0' || ch > '9'; }), dpiText.end());
-                int v = atoi(dpiText.c_str());
-                if (v >= 50 && v <= 100000) cfg_.dpi = v;
-            }
-            ui_.label(dx + hw - r_.textWidth("DPI", ui_.textScale()) - 6 * L.s, f.top() + (h - r_.textHeight(ui_.textScale())) * 0.5f, "DPI", {0.6f, 0.62f, 0.66f, 1});
-            f.next();
-            f.hint("CM PER 360: MOUSE TRAVEL FOR ONE FULL TURN");
-        }
-        f.section("KEYS");   // control scripts (off in ranked)
-        static const std::vector<std::string> sn = {"OPPOSITE KEYS: CANCEL", "OPPOSITE KEYS: LAST WINS", "OPPOSITE KEYS: FIRST WINS"};
-        static const std::vector<std::string> an = {"ALT-FIRE: HOLD", "ALT-FIRE: TOGGLE"};
-        if (ui_.cycle(f.x(), f.top(), w, h, "SOCD", cfg_.socd, 3, sn, UiExp::cfg("socd"))) cfg_.save();
-        f.next();
-        f.hint("LEFT + RIGHT HELD: LAST WINS = SNAP TAP (FLYING UP + DOWN TOO)");
-        int at = cfg_.altToggle;
-        if (ui_.cycle(f.x(), f.top(), w, h, "ALT", at, 2, an, UiExp::cfg("alt_toggle"))) { cfg_.altToggle = at; cfg_.save(); }
-        f.next();
-        f.section("PROFILES");
-        if (profileRows(ui_, f, false, ruleMode_, cfg_.modeCtl, profilesCached("controls", time_))) { cfg_.save(); appliedMode_ = -2; }   // (re-applied now)
-        const float tw = L.L((kColW - 16) / 3), tg = L.L(8);
-        if (ui_.button(f.x(), f.top(), tw, h, "IMPORT", UiExp::state("ctlimport"))) {   // controls on the clipboard win, else pick a file from controls/
-            const char* clip = glfwGetClipboardString(win_);
-            if (clip && controlsFromText(clip, cfg_.binds, cfg_.socd, cfg_.altToggle)) { cfg_.save(); widgetMsg_ = "IMPORTED CONTROLS FROM CLIPBOARD"; widgetMsgUntil_ = time_ + 3; }
-            else filePick_ = 2;
-        }
-        if (ui_.button(f.x() + tw + tg, f.top(), tw, h, "EXPORT", UiExp::state("files:controls"))) {
-            std::string text = controlsToText(cfg_.binds, cfg_.socd, cfg_.altToggle), name = stampedName("controls");
-            {   // (with your aim: used as a mode's profile, these override yours in that mode)
-                char aim[160];
-                snprintf(aim, sizeof aim, "sensitivity=%g\nfov=%g\nzoom_fov_sniper=%g\nzoom_fov_rifle=%g\n", cfg_.sensitivity, cfg_.fov, cfg_.zoomFovSniper, cfg_.zoomFovRifle);
-                text += aim;
-            }
-            glfwSetClipboardString(win_, text.c_str());
-            bool ok = writeTextFile(profileDir("controls") + "/" + name, text);
-            g_profilesStale = true;
-            widgetMsg_ = ok ? "COPIED + SAVED CONTROLS/" + upper(name) : "COPIED (COULDN'T WRITE FILE)";
-            widgetMsgUntil_ = time_ + 4;
-        }
-        if (ui_.button(f.x() + 2 * (tw + tg), f.top(), tw, h, "FOLDER", UiExp::url())) openUrl(profileDir("controls"));
-        f.next();
-        f.hint("CONTROL SCRIPTS ARE OFF IN RANKED");
-        if (time_ < widgetMsgUntil_) ui_.hint(f.x(), f.top(), widgetMsg_, ui_.accent, w);
     }
     static const Binds defaults = [] { Binds b; b.setDefaults(); return b; }();
     bool isDefault = std::memcmp(defaults.code, cfg_.binds.code, sizeof defaults.code) == 0;
     // (two clicks: one click wiped every key with no way back - settings review 2026-11-07)
-    const bool armed = confirmArmed("resetkeys");   // (always asked, whatever CONFIRM LEAVING says: there's no undo)
+    const bool armed = confirmPending("resetkeys");   // (always asked, whatever CONFIRM LEAVING says: there's no undo)
     if (ui_.button(L.X(836), L.Y(640), hw, h, armed ? "SURE? RESET ALL" : "RESET ALL KEYS", (armed ? UiExp::cfg("bind_*") : UiExp::state("confirm", "resetkeys")).withId("RESET ALL KEYS"), !isDefault)) {
         if (armed) { confirmWhat_.clear(); cfg_.binds.setDefaults(); captureAction_ = -1; cfg_.save(); }
         else { confirmWhat_ = "resetkeys"; confirmUntil_ = time_ + 3; }
@@ -9783,83 +7841,12 @@ void Game::drawImportDialog(const SetLayout& L) {
             widgetMsgUntil_ = time_ + 3;
             return;
         }
-    if (ui_.button(bx, L.Y(y), bw, bh, "CANCEL", UiExp::nav("~settings/controls"))) filePick_ = 0;
+    if (ui_.button(bx, L.Y(y), bw, bh, "CANCEL", UiExp::nav("~settings/controls/chat-keys"))) filePick_ = 0;
 }
 
 // LATENCY (owner, 2026-11-02: "make a latency settings tab and each tweak gets its own toggle, so i can test every
 // combination myself"): every tweak between the mouse and the photon on its own, F3's graph to compare them with, and a
 // check of the driver's and Windows' settings that cost frames
-void Game::drawLatencySettings(const SetLayout& L) {
-    const float w = L.L(kColW), h = L.L(kRowH), hw = L.L(kHalfW), xr = L.X(kColR + kColW - kHalfW);
-    SetFlow f{ui_, L, kColL, 90};
-    f.header("THE FRAME");
-    static const std::vector<std::string> llNames = {"LOW LATENCY: OFF", "LOW LATENCY: ON", "LOW LATENCY: ULTRA"};
-    ui_.cycle(f.x(), f.top(), w, h, "LOW LATENCY", cfg_.lowLatency, 3, llNames, UiExp::cfg("low_latency"));
-    f.next();
-    f.hint("ON: AT MOST 1 FRAME QUEUED", "ULTRA: 0 QUEUED + EACH FRAME STARTED LATE");
-    ui_.toggle(f.x(), f.top(), w, h, "EARLY FLUSH", cfg_.earlyFlush, UiExp::cfg("early_flush"));
-    f.next();
-    f.hint("THE SHADOWS AND THE WORLD GO TO THE GPU AS SOON", "AS THEY'RE DRAWN, NOT AT THE SWAP");
-    ui_.toggle(f.x(), f.top(), w, h, "CPU LATE LATCH", cfg_.cpuLatch, UiExp::cfg("cpu_latch"));
-    f.next();
-    f.hint("THE MOUSE READ AGAIN JUST BEFORE THE WORLD IS DRAWN");
-    ui_.toggle(f.x(), f.top(), w, h, "GPU LATE LATCH", cfg_.gpuLatch, UiExp::cfg("gpu_latch"));
-    f.next();
-    f.hint(r_.latchSupported ? "THE GPU READS YOUR AIM AS IT STARTS DRAWING;" : "N/A: THE DRIVER LACKS GL 4.4 BUFFER STORAGE",
-           "WINDOWS RAW INPUT, NO MOUSE ACCEL");
-    ui_.toggle(f.x(), f.top(), w, h, "HUD BEFORE WORLD", cfg_.hudFirst, UiExp::cfg("hud_first"));
-    f.next();
-    f.hint("ULTRA ONLY: THE HUD DRAWN BEFORE THE LATE READ,", "LAID OVER THE WORLD AFTER IT");
-    ui_.toggle(f.x(), f.top(), w, h, "EARLY DEPTH TEST", cfg_.fastWorld, UiExp::cfg("fast_world"));
-    f.next();
-    f.hint("THE GPU SKIPS THE WORLD'S HIDDEN PIXELS", "(UNTIL A HOLE IS BLOWN IN A WALL)");
-    f.hint(keyOf(A_PERF) + " 3 TIMES: THE GRAPH; 4 TIMES: THE GAME'S PART ONLY");
-
-    SetFlow g{ui_, L, kColR, 90};
-    g.header("WINDOWS");
-    {   // Windows' hardware-accelerated GPU scheduling: a system setting (admin prompt, then a restart). Elsewhere N/A.
-        static int hags = hwSchedState();
-        const std::string lbl = hags == 1 ? "GPU SCHED: ON" : hags == 0 ? "GPU SCHED: TURN ON" : "GPU SCHED: N/A";
-        if (ui_.button(g.x(), g.top(), hw, h, lbl, UiExp::inert().withId("GPU SCHEDULING")) && hags == 0) {
-            std::string msg = "NOT CHANGED IN THE UI TEST";
-            if (!uiTest_ && hwSchedEnable(&msg)) { hags = 1; perfChecked_ = false; }
-            notify(msg);
-        }
-        // "Disable fullscreen optimizations" for quark.exe (per user, no admin): real exclusive fullscreen
-        if (ui_.toggle(xr, g.top(), hw, h, "TRUE FULLSCREEN", cfg_.disableFso, UiExp::cfg("disable_fso"))) {
-            std::string msg = "NOT CHANGED IN THE UI TEST";
-            if (!uiTest_ && !fsoDisable(cfg_.disableFso, &msg)) cfg_.disableFso = !cfg_.disableFso;
-            notify(msg);
-        }
-        g.next();
-        g.hint("GPU SCHED: WINDOWS' HARDWARE GPU SCHEDULING;", "TRUE FULLSCREEN: WINDOWS' FULLSCREEN OPTIMIZATIONS OFF (NEXT START)");
-    }
-    g.section("PERFORMANCE CHECK");
-    // (on its own thread: loading the drivers' libraries can take a moment, and the menu keeps its frame rate meanwhile)
-    if (!perfChecked_ && !perfFuture_.valid()) {
-        const std::string gpu = r_.gpuName();
-        perfFuture_ = std::async(std::launch::async, [gpu] { return perfCheck(gpu); });
-    }
-    if (perfFuture_.valid() && perfFuture_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        perfFindings_ = perfFuture_.get();
-        perfChecked_ = true;
-    }
-    if (!perfChecked_) g.label("CHECKING...");
-    else if (perfFindings_.empty()) g.label(
-#ifdef _WIN32
-        "NOTHING FOUND: YOUR DRIVER AND WINDOWS SETTINGS LOOK RIGHT"
-#else
-        "WINDOWS ONLY"
-#endif
-    );
-    for (size_t i = 0; i < perfFindings_.size() && i < 9; i++) {
-        ui_.label(g.x(), g.top(), perfFindings_[i].what, Color{1.0f, 0.75f, 0.35f, 1}, 1.0f, w);
-        g.y += 18;
-        ui_.hint(g.x(), g.top(), perfFindings_[i].fix, kGrey, w);
-        g.y += 18;
-    }
-    if (ui_.button(g.x(), g.top() + L.L(4), hw, h, "CHECK AGAIN", UiExp::inert()) && !perfFuture_.valid()) perfChecked_ = false;
-}
 
 void Game::drawCrosshairSettings(const SetLayout& L) {
     const float s = L.s, w = L.L(kColW), h = L.L(kRowH);
@@ -9980,7 +7967,7 @@ void Game::drawHudSettings(const SetLayout& L) {
     static const std::vector<std::string> names = {"WEAPON MODEL", "GRAPPLE MODEL", "HEALTH", "WEAPON NAME", "COOLDOWN BARS", "SPEED METER", "WEAPON LIST",
                                                    "KEY OVERLAY (VERBOSE)", "SCORE BOX", "KILL FEED", "CHAT", "OBJECTIVE", "NOTICES", "SCOREBOARD"};
     static_assert(sizeof(order) / sizeof(order[0]) == Settings::HUD_COUNT, "every HUD element in the dropdown");
-    SetFlow f{ui_, L, kColL, 90};
+    SetFlow f{ui_, L, kColL, 134};
     f.header("ELEMENT");
     const float dropY = f.top();
     f.next();
@@ -10022,7 +8009,7 @@ void Game::drawHudSettings(const SetLayout& L) {
         f.next();
     }
 
-    SetFlow g{ui_, L, kColR, 90};
+    SetFlow g{ui_, L, kColR, 134};
     g.header("WHOLE HUD");
     if (ui_.button(g.x(), g.top(), w, h, "EDIT ON SCREEN", UiExp::nav("~settings/hud/edit"))) { hudEditOpen(); return; }
     g.next();
@@ -10047,6 +8034,2531 @@ void Game::drawHudSettings(const SetLayout& L) {
 
 // FONT (PLAYER > FONT): the UI font (uifonts.h). Built-ins first, then mods/fonts; a click builds that font's atlas once
 // and saves it. As many rows as fit above the folder buttons; the wheel scrolls the rest.
+namespace {
+enum SetSec : int {
+    SS_PLAYER_IDENTITY,
+    SS_PLAYER_OUTLINES,
+    SS_PLAYER_LOOK,
+    SS_PLAYER_TEAM_COLORS,
+    SS_PLAYER_INTERFACE,
+    SS_GAMEPLAY_VIEW,
+    SS_GAMEPLAY_SHOTS,
+    SS_GAMEPLAY_MAPS,
+    SS_GAMEPLAY_FEEDBACK,
+    SS_GAMEPLAY_OTHER_PLAYERS,
+    SS_GAMEPLAY_CHAT,
+    SS_VIDEO_DISPLAY,
+    SS_VIDEO_LATENCY,
+    SS_VIDEO_IMAGE,
+    SS_VIDEO_SOUND,
+    SS_CONTROLS2_MOUSE,
+    SS_CONTROLS2_ZOOM,
+    SS_CONTROLS2_GRAPPLE_HAND,
+    SS_CONTROLS2_SCREEN,
+    SS_CONTROLS2_WEAPON_SCROLL,
+    SS_CONTROLS2_SENSITIVITY_FROM_ANOTHER_GAME,
+    SS_GAMEPLAY2_KILL_FEED,
+    SS_GAMEPLAY2_CHAT,
+    SS_GAMEPLAY2_FORCE_PLAYER_MODELS,
+    SS_GAMEPLAY2_ALL_SETTINGS,
+    SS_GAMEPLAY2_SCREEN,
+    SS_GAMEPLAY2_MENUS,
+    SS_VIDEO3_WORLD,
+    SS_VIDEO3_PICTURE,
+    SS_VIDEO3_LOOK,
+    SS_VIDEO3_EFFECTS,
+    SS_VIDEO3_TRACERS_TRAILS,
+    SS_VIDEO3_OUTPUT,
+    SS_VIDEO3_SURFACES,
+    SS_VIDEO5_SHADOWS,
+    SS_VIDEO5_PLAYERS,
+    SS_VIDEO5_OUTLINES,
+    SS_VIDEO5_COLORS,
+    SS_VIDEO5_COLOR_SCHEME,
+    SS_VIDEO5_ACCESSIBILITY,
+    SS_VIDEO6_OUTPUT,
+    SS_VIDEO6_VOLUME,
+    SS_VIDEO6_CALLOUTS,
+    SS_VIDEO6_CUE_SOUNDS,
+    SS_VIDEO6_ANNOUNCER_CALLS,
+    SS_VIDEO6_SEE_SOUNDS,
+    SS_VIDEO7_NETWORK,
+    SS_VIDEO7_LIGHT_CACHE,
+    SS_VIDEO7_DISPLAY,
+    SS_VIDEO7_LATENT_SYNC,
+    SS_VIDEO7_MENU_CURSOR,
+    SS_VIDEO7_CONTROLS,
+    SS_VIDEO8_MAP_COLORS,
+    SS_VIDEO8_OBJECTIVES,
+    SS_VIDEO8_EFFECTS_F3,
+    SS_VIDEO8_PLAYERS,
+    SS_VIDEO8_HEALTH_BARS,
+    SS_VIDEO8_NAME_TAGS,
+    SS_VIDEO9_SCREENSHOTS,
+    SS_VIDEO9_DEMOS,
+    SS_VIDEO9_WINDOW_INPUT,
+    SS_VIDEO9_LATENCY,
+    SS_VIDEO9_SOUND,
+    SS_VIDEO4_DISPLAY,
+    SS_VIDEO4_SOUND_GROUPS,
+    SS_VIDEO4_PERFORMANCE,
+    SS_VIDEO2_WINDOW,
+    SS_VIDEO2_SHADOWS,
+    SS_VIDEO2_GPU,
+    SS_VIDEO2_WHEN_UNFOCUSED,
+    SS_VIDEO2_HITSOUNDS,
+    SS_VIDEO2_INTERFACE,
+    SS_VIDEO2_FLAT_MAP,
+    SS_GAMEPLAY3_DAMAGE_NUMBERS,
+    SS_GAMEPLAY3_DAMAGE_ARCS,
+    SS_GAMEPLAY3_YOUR_KILLS,
+    SS_GAMEPLAY3_HIT_FLASH,
+    SS_GAMEPLAY3_LOW_HEALTH,
+    SS_GAMEPLAY3_HEALING,
+    SS_GAMEPLAY3_WEAPON_MODEL,
+    SS_GAMEPLAY4_SPEED_METER,
+    SS_GAMEPLAY4_BAR_CAPTIONS,
+    SS_GAMEPLAY4_CLOCK,
+    SS_GAMEPLAY4_VERBOSE_INFO_LINES,
+    SS_GAMEPLAY4_ROUND_MODES,
+    SS_GAMEPLAY4_AUTO_HIDE,
+    SS_GAMEPLAY4_OBJECTIVE_MARKERS,
+    SS_GAMEPLAY4_SNIPER_SCOPE,
+    SS_GAMEPLAY4_MORE,
+    SS_GAMEPLAY5_CHAT,
+    SS_GAMEPLAY5_SCOREBOARD,
+    SS_GAMEPLAY5_MORE,
+    SS_GAMEPLAY5_WHEN_UNFOCUSED_FLASH_ON,
+    SS_GAMEPLAY5_JOINING_PRIVACY,
+    SS_GAMEPLAY5_RACE,
+    SS_GAMEPLAY5_DEATH_SPECTATING,
+    SS_CONTROLS3_PER_WEAPON,
+    SS_CONTROLS3_MOUSE,
+    SS_CONTROLS3_MAP_EDITOR,
+    SS_CONTROLS3_MOVEMENT,
+    SS_CONTROLS3_CONSOLE,
+    SS_CONTROLS3_RANKED,
+    SS_CONTROLS3_EDITOR_TEST_PLAY,
+    SS_PLAYER2_MENU_THEME,
+    SS_PLAYER2_MENU_BACKGROUND,
+    SS_PLAYER2_DATA_FOLDER,
+    SS_PLAYER2_QUIPS,
+    SS_PLAYER2_MODS,
+    SS_PLAYER2_RANKED_QUEUES,
+    SS_PLAYER2_LOGO_YOUR_BOTS,
+    SS_HUD2_HUD_COLORS,
+    SS_HUD2_TEXT,
+    SS_HUD2_NOTICES,
+    SS_HUD2_COMPASS_RADAR,
+    SS_HUD2_MORE,
+    SS_CONTROLS_MOUSE,
+    SS_CONTROLS_KEYS,
+    SS_CONTROLS_PROFILES,
+    SS_LATENCY_THE_FRAME,
+    SS_LATENCY_WINDOWS,
+    SS_LATENCY_PERFORMANCE_CHECK,
+    SS_LATENCY_COMPOSITOR,
+    SS_CONTROLS_DASH,
+    SS_COUNT
+};
+
+}
+namespace {
+struct SetSecInfo { const char* title; int col; };
+const SetSecInfo kSetSec[SS_COUNT] = {
+    {"IDENTITY", 0},   // SS_PLAYER_IDENTITY
+    {"OUTLINES", 0},   // SS_PLAYER_OUTLINES
+    {"LOOK", 1},   // SS_PLAYER_LOOK
+    {"TEAM COLORS", 1},   // SS_PLAYER_TEAM_COLORS
+    {"INTERFACE", 1},   // SS_PLAYER_INTERFACE
+    {"VIEW", 0},   // SS_GAMEPLAY_VIEW
+    {"SHOTS", 0},   // SS_GAMEPLAY_SHOTS
+    {"MAPS", 0},   // SS_GAMEPLAY_MAPS
+    {"FEEDBACK", 1},   // SS_GAMEPLAY_FEEDBACK
+    {"OTHER PLAYERS", 1},   // SS_GAMEPLAY_OTHER_PLAYERS
+    {"MUTE CHAT", 1},   // SS_GAMEPLAY_CHAT
+    {"DISPLAY", 0},   // SS_VIDEO_DISPLAY
+    {"SYNC", 0},   // SS_VIDEO_LATENCY
+    {"IMAGE", 1},   // SS_VIDEO_IMAGE
+    {"SOUND", 1},   // SS_VIDEO_SOUND
+    {"AXES", 0},   // SS_CONTROLS2_MOUSE
+    {"ZOOM", 0},   // SS_CONTROLS2_ZOOM
+    {"GRAPPLE + HAND", 0},   // SS_CONTROLS2_GRAPPLE_HAND
+    {"SCOREBOARD", 1},   // SS_CONTROLS2_SCREEN
+    {"WEAPON SCROLL", 1},   // SS_CONTROLS2_WEAPON_SCROLL
+    {"SENSITIVITY FROM ANOTHER GAME", 1},   // SS_CONTROLS2_SENSITIVITY_FROM_ANOTHER_GAME
+    {"KILL FEED", 0},   // SS_GAMEPLAY2_KILL_FEED
+    {"CHAT FADE", 0},   // SS_GAMEPLAY2_CHAT
+    {"FORCE PLAYER MODELS", 0},   // SS_GAMEPLAY2_FORCE_PLAYER_MODELS
+    {"ALL SETTINGS", 0},   // SS_GAMEPLAY2_ALL_SETTINGS
+    {"SCREEN", 1},   // SS_GAMEPLAY2_SCREEN
+    {"MENUS", 1},   // SS_GAMEPLAY2_MENUS
+    {"WORLD", 0},   // SS_VIDEO3_WORLD
+    {"PICTURE", 0},   // SS_VIDEO3_PICTURE
+    {"LOOK", 0},   // SS_VIDEO3_LOOK
+    {"EFFECTS", 1},   // SS_VIDEO3_EFFECTS
+    {"TRACERS + TRAILS", 1},   // SS_VIDEO3_TRACERS_TRAILS
+    {"OUTPUT", 1},   // SS_VIDEO3_OUTPUT
+    {"SURFACES", 1},   // SS_VIDEO3_SURFACES
+    {"SHADOWS", 0},   // SS_VIDEO5_SHADOWS
+    {"PLAYER BRIGHTNESS", 0},   // SS_VIDEO5_PLAYERS
+    {"OUTLINE COLORS", 0},   // SS_VIDEO5_OUTLINES
+    {"COLORS", 1},   // SS_VIDEO5_COLORS
+    {"COLOR SCHEME", 1},   // SS_VIDEO5_COLOR_SCHEME
+    {"ACCESSIBILITY", 1},   // SS_VIDEO5_ACCESSIBILITY
+    {"OUTPUT", 0},   // SS_VIDEO6_OUTPUT
+    {"MORE VOLUME", 0},   // SS_VIDEO6_VOLUME
+    {"CALLOUTS", 1},   // SS_VIDEO6_CALLOUTS
+    {"CUE SOUNDS", 1},   // SS_VIDEO6_CUE_SOUNDS
+    {"ANNOUNCER CALLS", 1},   // SS_VIDEO6_ANNOUNCER_CALLS
+    {"SEE SOUNDS", 1},   // SS_VIDEO6_SEE_SOUNDS
+    {"NETWORK", 0},   // SS_VIDEO7_NETWORK
+    {"LIGHT CACHE", 0},   // SS_VIDEO7_LIGHT_CACHE
+    {"FOV", 1},   // SS_VIDEO7_DISPLAY
+    {"LATENT SYNC", 1},   // SS_VIDEO7_LATENT_SYNC
+    {"MENU CURSOR", 1},   // SS_VIDEO7_MENU_CURSOR
+    {"CONTROLS", 1},   // SS_VIDEO7_CONTROLS
+    {"MAP COLORS", 0},   // SS_VIDEO8_MAP_COLORS
+    {"OBJECTIVES", 0},   // SS_VIDEO8_OBJECTIVES
+    {"EFFECTS + F3", 0},   // SS_VIDEO8_EFFECTS_F3
+    {"PLAYERS", 1},   // SS_VIDEO8_PLAYERS
+    {"HEALTH BARS", 1},   // SS_VIDEO8_HEALTH_BARS
+    {"NAME TAGS", 1},   // SS_VIDEO8_NAME_TAGS
+    {"SCREENSHOTS", 0},   // SS_VIDEO9_SCREENSHOTS
+    {"DEMOS", 0},   // SS_VIDEO9_DEMOS
+    {"WINDOW", 0},   // SS_VIDEO9_WINDOW_INPUT
+    {"TUNING", 1},   // SS_VIDEO9_LATENCY
+    {"SOUND EXTRAS", 1},   // SS_VIDEO9_SOUND
+    {"FULLSCREEN", 0},   // SS_VIDEO4_DISPLAY
+    {"SOUND GROUPS", 0},   // SS_VIDEO4_SOUND_GROUPS
+    {"CPU", 1},   // SS_VIDEO4_PERFORMANCE
+    {"WINDOW", 0},   // SS_VIDEO2_WINDOW
+    {"SHADOW QUALITY", 0},   // SS_VIDEO2_SHADOWS
+    {"GPU", 0},   // SS_VIDEO2_GPU
+    {"WHEN UNFOCUSED", 1},   // SS_VIDEO2_WHEN_UNFOCUSED
+    {"HITSOUNDS", 1},   // SS_VIDEO2_HITSOUNDS
+    {"INTERFACE", 0},   // SS_VIDEO2_INTERFACE
+    {"FLAT MAP", 0},   // SS_VIDEO2_FLAT_MAP
+    {"DAMAGE NUMBERS", 0},   // SS_GAMEPLAY3_DAMAGE_NUMBERS
+    {"DAMAGE ARCS", 0},   // SS_GAMEPLAY3_DAMAGE_ARCS
+    {"YOUR KILLS", 0},   // SS_GAMEPLAY3_YOUR_KILLS
+    {"HIT FLASH", 1},   // SS_GAMEPLAY3_HIT_FLASH
+    {"LOW HEALTH", 1},   // SS_GAMEPLAY3_LOW_HEALTH
+    {"HEALING", 1},   // SS_GAMEPLAY3_HEALING
+    {"WEAPON MODEL", 1},   // SS_GAMEPLAY3_WEAPON_MODEL
+    {"SPEED METER", 0},   // SS_GAMEPLAY4_SPEED_METER
+    {"BAR CAPTIONS", 0},   // SS_GAMEPLAY4_BAR_CAPTIONS
+    {"CLOCK", 0},   // SS_GAMEPLAY4_CLOCK
+    {"VERBOSE INFO LINES", 0},   // SS_GAMEPLAY4_VERBOSE_INFO_LINES
+    {"ROUND MODES", 0},   // SS_GAMEPLAY4_ROUND_MODES
+    {"AUTO-HIDE", 1},   // SS_GAMEPLAY4_AUTO_HIDE
+    {"OBJECTIVE MARKERS", 1},   // SS_GAMEPLAY4_OBJECTIVE_MARKERS
+    {"SNIPER SCOPE", 1},   // SS_GAMEPLAY4_SNIPER_SCOPE
+    {"MORE", 1},   // SS_GAMEPLAY4_MORE
+    {"CHAT", 0},   // SS_GAMEPLAY5_CHAT
+    {"SCOREBOARD", 0},   // SS_GAMEPLAY5_SCOREBOARD
+    {"TYPING", 0},   // SS_GAMEPLAY5_MORE
+    {"WHEN UNFOCUSED, FLASH ON", 1},   // SS_GAMEPLAY5_WHEN_UNFOCUSED_FLASH_ON
+    {"JOINING + PRIVACY", 1},   // SS_GAMEPLAY5_JOINING_PRIVACY
+    {"RACE", 1},   // SS_GAMEPLAY5_RACE
+    {"DEATH + SPECTATING", 1},   // SS_GAMEPLAY5_DEATH_SPECTATING
+    {"PER WEAPON", 0},   // SS_CONTROLS3_PER_WEAPON
+    {"INPUT", 0},   // SS_CONTROLS3_MOUSE
+    {"MAP EDITOR", 0},   // SS_CONTROLS3_MAP_EDITOR
+    {"MOVEMENT", 1},   // SS_CONTROLS3_MOVEMENT
+    {"CONSOLE", 1},   // SS_CONTROLS3_CONSOLE
+    {"RANKED", 1},   // SS_CONTROLS3_RANKED
+    {"EDITOR TEST PLAY", 1},   // SS_CONTROLS3_EDITOR_TEST_PLAY
+    {"MENU THEME", 0},   // SS_PLAYER2_MENU_THEME
+    {"MENU BACKGROUND", 0},   // SS_PLAYER2_MENU_BACKGROUND
+    {"DATA FOLDER", 0},   // SS_PLAYER2_DATA_FOLDER
+    {"QUIPS", 1},   // SS_PLAYER2_QUIPS
+    {"MODS", 1},   // SS_PLAYER2_MODS
+    {"RANKED QUEUES", 1},   // SS_PLAYER2_RANKED_QUEUES
+    {"LOGO + YOUR BOTS", 1},   // SS_PLAYER2_LOGO_YOUR_BOTS
+    {"HUD COLORS", 0},   // SS_HUD2_HUD_COLORS
+    {"TEXT", 0},   // SS_HUD2_TEXT
+    {"NOTICES", 1},   // SS_HUD2_NOTICES
+    {"COMPASS + RADAR", 1},   // SS_HUD2_COMPASS_RADAR
+    {"REC + TOURNEY", 1},   // SS_HUD2_MORE
+    {"MOUSE", 0},   // SS_CONTROLS_MOUSE
+    {"KEYS", 0},   // SS_CONTROLS_KEYS
+    {"PROFILES", 0},   // SS_CONTROLS_PROFILES
+    {"THE FRAME", 0},   // SS_LATENCY_THE_FRAME
+    {"WINDOWS", 1},   // SS_LATENCY_WINDOWS
+    {"PERFORMANCE CHECK", 1},   // SS_LATENCY_PERFORMANCE_CHECK
+    {"COMPOSITOR", 1},   // SS_LATENCY_COMPOSITOR
+    {"DASH", 1},   // SS_CONTROLS_DASH
+};
+}
+
+
+// ---- the settings sections (settings review 2026-11-07): every block a page used to draw in place, drawn by
+// drawSetSection into whichever tab, page and column kSetTabs (below) puts it. A block was written for one column
+// (kSetSec[].col: 0 left, 1 right); drawn in the other, its SetLayout is shifted by the column step, so its
+// L.X(kColL / kColR ...) positions land in the column it is drawn in.
+void Game::drawSetSection(int id, const SetLayout& L, SetFlow& c) {
+    [[maybe_unused]] const float w = c.w(), h = c.h(), hw = L.L(kHalfW);
+    [[maybe_unused]] const float xl = L.X(kColL + kColW - kHalfW), xr = L.X(kColR + kColW - kHalfW), fx2 = xl, gx2 = xr;
+    [[maybe_unused]] const Settings& d = defaultSettings();
+    [[maybe_unused]] auto bit = [&](float x, float y, const char* label, int& mask, int b, const char* key) {   // a toggle for one bit of a mask
+        bool on = mask >> b & 1;
+        if (ui_.toggle(x, y, hw, h, label, on, UiExp::cfg(key))) mask = on ? mask | 1 << b : mask & ~(1 << b);
+    };
+    switch (id) {
+    case SS_PLAYER_IDENTITY: {   // was drawPlayerSettings: IDENTITY
+    c.label("NAME");
+    ui_.textField(1, c.x(), c.top(), w, h, cfg_.name, 20, UiExp::cfg("name").withId("NAME"));
+    c.next();
+    // Discord: run /link in the Discord server, type the 6-digit code the bot gives you here ("unlink" to remove it);
+    // linking makes the Discord name public next to your game name and ranked id (crowns and queue fills)
+    if (cfg_.discordName.empty()) c.label("DISCORD CODE");
+    else {
+        const float ts = ui_.textScale();
+        ui_.label(c.x(), c.top(), "DISCORD: " + r_.textClip(upper(cfg_.discordName), ts, w - r_.textWidth("DISCORD:  (PUBLIC)", ts)) + " (PUBLIC)", kLabelC, 1.0f, w);
+        c.y += 20;
+    }
+    ui_.maskText = cfg_.streamer;
+    ui_.textField(43, c.x(), c.top(), w, h, discordCode_, 8, UiExp::local().withId("DISCORD CODE"));
+    ui_.maskText = false;
+    c.next();
+    c.hint(cfg_.discordName.empty() ? "GET IT WITH /link - THE CODE IS PUBLIC" : "A NEW CODE FROM /link RELINKS IT - unlink REMOVES IT");
+        break;
+    }
+    case SS_PLAYER_OUTLINES: {   // was drawPlayerSettings: OUTLINES
+    {
+        static std::vector<std::string> ot, oe;
+        if (ot.empty()) for (int i = 0; i < kOutlineColors; i++) { ot.push_back(std::string("TEAM OUTLINE: ") + kOutlineNames[i]); oe.push_back(std::string("ENEMY OUTLINE: ") + kOutlineNames[i]); }
+        ui_.cycle(c.x(), c.top(), w, h, "TEAM OUTLINE", cfg_.outlineFriendly, kOutlineColors, ot, UiExp::cfg("outline_friendly"));
+        c.next();
+        ui_.cycle(c.x(), c.top(), w, h, "ENEMY OUTLINE", cfg_.outlineEnemy, kOutlineColors, oe, UiExp::cfg("outline_enemy"));
+        c.next();
+        // outline widths (pixels): players' models and the map's edges; 0 = none (dragged: quarter pixels; typed: as typed, up to 6)
+        if (ui_.slider(c.x(), c.top(), w, h, "PLAYER OUTLINE WIDTH", cfg_.outlinePlayer, 0, 4, "%.2f", UiExp::cfg("outline_player_width"), defaultSettings().outlinePlayer) && !ui_.typed())
+            cfg_.outlinePlayer = std::round(cfg_.outlinePlayer * 4) / 4;
+        c.next();
+        if (ui_.slider(c.x(), c.top(), w, h, "WORLD OUTLINE WIDTH", cfg_.outlineWorld, 0, 4, "%.2f", UiExp::cfg("outline_world_width"), defaultSettings().outlineWorld) && !ui_.typed())
+            cfg_.outlineWorld = std::round(cfg_.outlineWorld * 4) / 4;
+        cfg_.outlinePlayer = clampf(cfg_.outlinePlayer, 0, 6);
+        cfg_.outlineWorld = clampf(cfg_.outlineWorld, 0, 6);
+        c.next();
+        c.hint("WIDTH 0 = NO OUTLINE");
+    }
+
+        break;
+    }
+    case SS_PLAYER_LOOK: {   // was drawPlayerSettings: LOOK
+    {
+        // (the model picker: every model drawn, in a grid of its own; settings/models)
+        if (ui_.button(c.x(), c.top(), w, h, std::string("PLAYER MODEL: ") + playerModelName(cfg_.model) + "  >", UiExp::nav("~settings/models").withId("MODEL")))
+            openModelPicker(1);
+        c.next();
+    }
+    {   // your name's colour as everyone sees it (scoreboard, chat, kill feed): off (the default), or one picked
+        bool custom = cfg_.nameColor >= 0;
+        if (ui_.toggle(c.x(), c.top(), w, h, "NAME COLOR", custom, UiExp::cfg("name_color"))) cfg_.nameColor = custom ? kNameColorOn : -1;
+        c.next();
+        Vec3 nc = rgbOf(cfg_.nameColor >= 0 ? cfg_.nameColor : 0xFFFFFF);
+        int r = ui_.colorPicker(c.x(), c.top(), w, h, "CUSTOM NAME COLOR", nc, UiExp::cfg("name_color"), {1, 1, 1});
+        if (r == Ui::RESET) cfg_.nameColor = -1;          // (right-click: back to the default, no colour)
+        else if (r == Ui::CHANGED) cfg_.nameColor = packOf(nc);   // (picking one turns it on)
+        c.next();
+    }
+        break;
+    }
+    case SS_PLAYER_TEAM_COLORS: {   // was drawPlayerSettings: TEAM COLORS
+    {
+        static std::vector<std::string> pn;
+        if (pn.empty()) {
+            for (int i = 0; i < kPaletteCount; i++) pn.push_back(std::string("TEAM COLORS: ") + kPalettes[i].name);
+            pn.push_back("TEAM COLORS: CUSTOM");
+        }
+        int pi = -1;
+        for (int i = 0; i < kPaletteCount; i++)
+            if (length(kPalettes[i].friendly - cfg_.colorFriendly) < 0.01f && length(kPalettes[i].enemy - cfg_.colorEnemy) < 0.01f) pi = i;
+        // own colours: CUSTOM is one more value, so ">" goes to the first preset and "<" to the last
+        const int n = pi < 0 ? kPaletteCount + 1 : kPaletteCount;
+        if (pi < 0) pi = kPaletteCount;
+        if (ui_.cycle(c.x(), c.top(), w, h, "PRESET", pi, n, pn, UiExp::cfg("color_*")) && pi < kPaletteCount) {
+            cfg_.colorFriendly = kPalettes[pi].friendly;
+            cfg_.colorEnemy = kPalettes[pi].enemy;
+        }
+        c.next();
+        c.hint("PRESETS SET BOTH COLORS BELOW");
+    }
+    ui_.colorPicker(c.x(), c.top(), w, h, "TEAM COLOR", cfg_.colorFriendly, UiExp::cfg("color_friendly"), defaultSettings().colorFriendly);
+    c.next();
+    ui_.colorPicker(c.x(), c.top(), w, h, "ENEMY COLOR", cfg_.colorEnemy, UiExp::cfg("color_enemy"), defaultSettings().colorEnemy);
+    c.next();
+    if (const char* clash = colorPairClash(cfg_.colorFriendly, cfg_.colorEnemy))   // (a COLORBLIND preset fixes it)
+        c.hint("HARD TO TELL APART WITH", std::string(clash) + " COLOR BLINDNESS");
+    else c.hint(cfg_.menuAccentOn ? "GENERAL > MENUS SETS THE MENU ACCENT" : "TEAM COLOR IS ALSO THE MENU ACCENT");
+    applyMenuTheme();
+        break;
+    }
+    case SS_PLAYER_INTERFACE: {   // was drawPlayerSettings: INTERFACE
+    if (ui_.button(c.x(), c.top(), w, h, "FONT: " + upper(cfg_.uiFont.empty() ? std::string(uifonts::kDefault) : cfg_.uiFont) + "  >",
+                   UiExp::nav("~settings/fonts").withId("FONT"))) { fontsOpen_ = true; fontListed_ = false; fontScroll_ = 0; ui_.closePopup(); }
+    c.next();
+    c.hint("THE FONT OF THE MENUS AND THE HUD");
+    {   // LANGUAGE (lang.h): AUTO (the system's), then each language in its own name
+        static std::vector<std::string> names;
+        const auto& L = lang::languages();
+        if (names.empty()) { names.push_back("AUTO"); for (const auto& l : L) names.push_back(l.name); }
+        int li = cfg_.language == "auto" ? 0 : lang::indexOf(cfg_.language) + 1;
+        if (li < 0) li = 0;
+        if (ui_.dropdown(c.x(), c.top(), w, h, "LANGUAGE", li, names, UiExp::nav("~settings/general/language").withId("LANGUAGE"), UiExp::nav("~settings/general"), UiExp::cfg("language"))) {
+            cfg_.language = li <= 0 ? "auto" : L[li - 1].code;
+            cfg_.save();
+        }
+        c.next();
+        c.hint(cfg_.language == "auto" ? "AUTO: YOUR SYSTEM'S LANGUAGE" : "THE LANGUAGE OF THE MENUS AND THE HUD");
+    }
+        break;
+    }
+    case SS_GAMEPLAY_VIEW: {   // was drawGameplaySettings: VIEW
+    ui_.slider(c.x(), c.top(), w, h, "FOV", cfg_.fov, 70, 130, "%.0f", UiExp::cfg("fov"), defaultSettings().fov);
+    cfg_.fov = clampf(cfg_.fov, 60, 140);   // (typed: quark.cfg's range)
+    c.next();
+    ui_.slider(c.x(), c.top(), w, h, "SCOPE OVERLAY", cfg_.scopeOpacity, 0, 1, "%.2f", UiExp::cfg("scope_opacity"), defaultSettings().scopeOpacity);
+    cfg_.scopeOpacity = clampf(cfg_.scopeOpacity, 0, 1);
+    c.next();
+    // the first-person gun (and grapple launcher) see-through: 1 solid, 0 not drawn; HUD > WEAPON MODEL still places it
+    ui_.slider(c.x(), c.top(), w, h, "WEAPON MODEL OPACITY", cfg_.viewmodelOpacity, 0, 1, "%.2f", UiExp::cfg("viewmodel_opacity"), defaultSettings().viewmodelOpacity);
+    cfg_.viewmodelOpacity = clampf(cfg_.viewmodelOpacity, 0, 1);
+    c.next();
+    // the sniper's and rifle's alt-fire zoom (degrees, as FOV). Client-side only.
+    ui_.slider(c.x(), c.top(), w, h, "SNIPER ZOOM FOV", cfg_.zoomFovSniper, 10, 90, "%.0f", UiExp::cfg("zoom_fov_sniper"), defaultSettings().zoomFovSniper);
+    c.next();
+    ui_.slider(c.x(), c.top(), w, h, "RIFLE ZOOM FOV", cfg_.zoomFovRifle, 10, 90, "%.0f", UiExp::cfg("zoom_fov_rifle"), defaultSettings().zoomFovRifle);
+    cfg_.zoomFovSniper = clampf(cfg_.zoomFovSniper, 10, 140);   // (typed: quark.cfg's range; used up to the normal FOV)
+    cfg_.zoomFovRifle = clampf(cfg_.zoomFovRifle, 10, 140);
+    c.next();
+    {
+        static const std::string std = "STANDARD: SNIPER " + std::to_string((int)baseWeaponDef(WPN_SNIPER).zoomFov) + ", RIFLE " + std::to_string((int)baseWeaponDef(WPN_RIFLE).zoomFov);
+        c.hint(std);
+    }
+        break;
+    }
+    case SS_GAMEPLAY_SHOTS: {   // was drawGameplaySettings: SHOTS
+    static const std::vector<std::string> own = {"YOUR SHOTS: WITH WEAPON MODEL", "YOUR SHOTS: ALWAYS", "YOUR SHOTS: NEVER"};
+    ui_.cycle(c.x(), c.top(), w, h, "YOUR SHOTS", cfg_.ownShots, 3, own, UiExp::cfg("own_shots"));
+    c.next();
+    c.hint("TRACERS + LASER START WHERE THE GUN IS");
+    ui_.toggle(c.x(), c.top(), w, h, "OTHER PLAYERS' TRACERS / BEAMS", cfg_.enemyShots, UiExp::cfg("enemy_shots"));
+    c.next();
+    {   // hit sparks (on walls and players) and muzzle flashes, yours and everyone's: cosmetic, visibility
+        const float hw = L.L(kHalfW);
+        ui_.toggle(c.x(), c.top(), hw, h, "IMPACT SPARKS", cfg_.impactSparks, UiExp::cfg("impact_sparks"));
+        ui_.toggle(L.X(kColL + kColW - kHalfW), c.top(), hw, h, "MUZZLE FLASH", cfg_.muzzleFlash, UiExp::cfg("muzzle_flash"));
+        c.next();
+    }
+        break;
+    }
+    case SS_GAMEPLAY_MAPS: {   // was drawGameplaySettings: MAPS
+    if (ui_.toggle(c.x(), c.top(), w, h, "LEGACY MAPS", cfg_.legacyMaps, UiExp::cfg("legacy_maps"))) {
+        setLegacyMapsListed(cfg_.legacyMaps);
+        rescanMaps();
+    }
+    c.next();
+    c.hint("THE OLD MAPS (BEFORE 1.19.6) IN THE MAP LISTS. NEVER RANKED");
+    // (NETWORK, the smoothing delay, is on VIDEO + AUDIO page 7 with the other network settings: this column ran into
+    // the footer, 2026-10-30)
+
+        break;
+    }
+    case SS_GAMEPLAY_FEEDBACK: {   // was drawGameplaySettings: FEEDBACK
+    ui_.toggle(c.x(), c.top(), w, h, "DAMAGE NUMBERS", cfg_.dmgNums, UiExp::cfg("dmg_nums"));
+    c.next();
+    {   // their size, with a sample of the number at that size
+        const float sw = L.L(304), bx = L.X(kColR + 312), bw = L.L(48);
+        if (ui_.slider(c.x(), c.top(), sw, h, "DAMAGE NUMBER SIZE", cfg_.dmgNumScale, 0.5f, 3.0f, "%.2f", UiExp::cfg("dmg_num_scale"), defaultSettings().dmgNumScale) && !ui_.typed())
+            cfg_.dmgNumScale = std::round(cfg_.dmgNumScale * 20) / 20;   // (dragged: 0.05 steps; typed: as typed)
+        cfg_.dmgNumScale = clampf(cfg_.dmgNumScale, 0.5f, 3.0f);
+        float k = std::max(1.0f, std::round(ui_.textScale() * cfg_.dmgNumScale));
+        r_.rect(bx, c.top(), bw, h, {0.42f, 0.43f, 0.45f, 1});
+        if (cfg_.dmgNums) r_.text(bx + bw * 0.5f - r_.textWidth("42", k) * 0.5f, c.top() + (h - r_.textHeight(k)) * 0.5f, k, "42", kWhite);
+        c.next();
+    }
+    // the flash round the screen's edges when you're hit (0 = off)
+    ui_.slider(c.x(), c.top(), w, h, "DAMAGE FLASH", cfg_.damageFlash, 0, 1, "%.2f", UiExp::cfg("damage_flash"), defaultSettings().damageFlash);
+    cfg_.damageFlash = clampf(cfg_.damageFlash, 0, 1);
+    c.next();
+    c.hint("SCREEN EDGES FLASH WHEN HIT. 0 = OFF");
+    ui_.toggle(c.x(), c.top(), w, h, "STICKY COUNTER", cfg_.stickyCounter, UiExp::cfg("sticky_counter"));
+    c.next();
+        break;
+    }
+    case SS_GAMEPLAY_OTHER_PLAYERS: {   // was drawGameplaySettings: OTHER PLAYERS
+    ui_.toggle(c.x(), c.top(), w, h, "HEALTH BARS OVER PLAYERS", cfg_.healthBars, UiExp::cfg("health_bars"));
+    c.next();
+    c.hint("RANKED TOO");   // (owner, 2026-11-01: health bars are allowed in ranked; the old hint said the opposite)
+    {
+        static const std::vector<std::string> hbp = {"HEALTH BAR: OVER THE HEAD", "HEALTH BAR: AT THE FEET"};
+        int hi = cfg_.healthBarsBottom ? 1 : 0;
+        if (ui_.cycle(c.x(), c.top(), w, h, "HEALTH BAR POSITION", hi, 2, hbp, UiExp::cfg("health_bars_bottom"))) cfg_.healthBarsBottom = hi == 1;
+        c.next();
+    }
+    ui_.toggle(c.x(), c.top(), w, h, "WINNERS CROWN", cfg_.crowns, UiExp::cfg("crowns"));
+    c.next();
+        break;
+    }
+    case SS_GAMEPLAY_CHAT: {   // was drawGameplaySettings: CHAT
+    if (ui_.toggle(c.x(), c.top(), w, h, "DISABLE CHAT", cfg_.chatOff, UiExp::cfg("chat_off")) && cfg_.chatOff) for (auto& t : typingUntil_) t = 0;
+    c.next();
+    c.hint("HIDES ALL PLAYERS' CHAT MESSAGES");
+        break;
+    }
+    case SS_VIDEO_DISPLAY: {   // was drawVideoSettings: DISPLAY
+    static const std::vector<std::string> dispNames = {"DISPLAY: WINDOWED", "DISPLAY: BORDERLESS FULLSCREEN", "DISPLAY: EXCLUSIVE FULLSCREEN"};
+    {
+        const int was = cfg_.displayMode;
+        if (ui_.cycle(c.x(), c.top(), w, h, "DISPLAY", cfg_.displayMode, 3, dispNames, UiExp::cfg("display_mode"))) { applyDisplayMode(); askKeepDisplay(was, cfg_.width, cfg_.height); }
+    }
+    c.next();
+    c.hint("EXCLUSIVE / BORDERLESS SKIP THE DESKTOP", "COMPOSITOR ON MOST DRIVERS");
+    {   // any cap, typed or dragged (0: unlimited); right-click: the screen's refresh rate (G-Sync / FreeSync: a few under)
+        gameMonitor();
+        float v = (float)cfg_.maxFps;
+        ui_.slider(c.x(), c.top(), w, h, "FPS LIMIT", v, 0, 1000, cfg_.maxFps <= 0 ? "UNLIMITED" : "%.0f", UiExp::cfg("maxfps"),
+                   (float)(vmHz_ > 0 ? vmHz_ : 60));
+        cfg_.maxFps = std::min(std::max(0, (int)std::lround(v)), 100000);
+        c.next();
+    }
+    videoPresetCycle(c.x(), c.top(), w, h);   // (the quality preset first: review round 2)
+    c.next();
+        break;
+    }
+    case SS_VIDEO_LATENCY: {   // was drawVideoSettings: LATENCY
+#ifdef _WIN32
+    static const std::vector<std::string> presNames = {"VSYNC: OFF", "VSYNC: ON", "VSYNC: ADAPTIVE", "VSYNC: LATENT SYNC"};
+    const int nPres = 4;
+#else
+    static const std::vector<std::string> presNames = {"VSYNC: OFF", "VSYNC: ON", "VSYNC: ADAPTIVE"};
+    const int nPres = 3;
+#endif
+    if (ui_.cycle(c.x(), c.top(), w, h, "PRESENT", cfg_.presentMode, nPres, presNames, UiExp::cfg("present_mode"))) applyPresentMode();
+    c.next();
+    c.hint("OFF = LOWEST LATENCY, MAY TEAR");
+    if (cfg_.presentMode == 3) {   // latent sync: where the tear line goes (0: the top of the blank)
+        float v = (float)cfg_.latentOffsetUs;
+        ui_.slider(c.x(), c.top(), w, h, "TEAR LINE OFFSET (US)", v, -2000, 2000, "%.0f", UiExp::cfg("latent_offset_us"), 0);
+        cfg_.latentOffsetUs = (int)std::lround(clampf(v, -4000, 4000));
+        c.next();
+    }
+#ifdef _WIN32
+    // NVIDIA: "Prefer maximum performance" in quark's driver profile (the driver reads it at the next start)
+    if (ui_.toggle(c.x(), c.top(), w, h, "GPU MAX CLOCKS", cfg_.gpuMaxClocks, UiExp::cfg("gpu_max_clocks"))) {
+        std::string msg = "GPU MAX CLOCKS: NOT CHANGED IN THE UI TEST";
+        if (!uiTest_ && !nvMaxClocks(cfg_.gpuMaxClocks, &msg)) cfg_.gpuMaxClocks = false;
+        notify(msg);
+    }
+    c.next();
+    c.hint("KEEPS GPU CLOCKS HIGH: LESS LAG, MORE POWER", keyOf(A_PERF) + " SHOWS INPUT->FRAME LATENCY");
+    if (ui_.toggle(c.x(), c.top(), w, h, "PRIORITIZE GAME", cfg_.prioritize, UiExp::cfg("prioritize")) && !uiTest_)
+        setGamePriority(prioLevel(glfwGetWindowAttrib(win_, GLFW_FOCUSED) != 0));
+    c.next();
+    c.hint("GPU + CPU GO TO THE GAME FIRST WHILE FOCUSED", "(BROWSER VIDEOS, ELECTRON APPS WAIT)");
+#else
+    c.y -= 16;
+    c.hint("", keyOf(A_PERF) + " SHOWS INPUT->FRAME LATENCY");
+#endif
+    // (FLAT MAP, FULLBRIGHT and its colour, is on page 2: on Windows, with GPU MAX CLOCKS and PRIORITIZE GAME, this
+    // column ran into the footer - MAP COLOR under BACK; 2026-10-30)
+
+        break;
+    }
+    case SS_VIDEO_IMAGE: {   // was drawVideoSettings: IMAGE
+    // (BRIGHTNESS and PLAYER SHADOWS share a row, as RENDER SCALE and SHARPEN do: a row more would push SOUND into
+    // DEVICES with Windows' EXCLUSIVE AUDIO)
+    ui_.slider(c.x(), c.top(), hw, h, "BRIGHTNESS", cfg_.brightness, 0.6f, 1.8f, "%.2f", UiExp::cfg("brightness"), defaultSettings().brightness);
+    cfg_.brightness = clampf(cfg_.brightness, 0.6f, 1.8f);   // (typed: quark.cfg's range)
+    ui_.toggle(L.X(kColR + kColW - kHalfW), c.top(), hw, h, "PLAYER SHADOWS", cfg_.shadows, UiExp::cfg("shadows"));
+    c.next();
+    {
+        static const int aaModes[] = {0, 1, 2, 4, 8};
+        static std::vector<std::string> aaNames;
+        if (aaNames.empty()) {   // (a mode the GPU can't do says so: it runs at the GPU's most, SHOW WHEN N/A)
+            const int mx = r_.maxSamples();
+            aaNames = {"ANTI-ALIASING: OFF", "ANTI-ALIASING: SMOOTH (CHEAP)", mx >= 2 ? "ANTI-ALIASING: MSAA 2X" : "ANTI-ALIASING: MSAA 2X (N/A)",
+                       mx >= 4 ? "ANTI-ALIASING: MSAA 4X" : "ANTI-ALIASING: MSAA 4X (N/A HERE)",
+                       mx >= 8 ? "ANTI-ALIASING: MSAA 8X" : "ANTI-ALIASING: MSAA 8X (N/A: " + std::to_string(mx) + "X HERE)"};
+        }
+        int ai = 0;
+        for (int i = 0; i < 5; i++) if (aaModes[i] == cfg_.msaa) ai = i;
+        if (ui_.cycle(c.x(), c.top(), w, h, "ANTI-ALIASING", ai, 5, aaNames, UiExp::cfg("msaa"))) cfg_.msaa = aaModes[ai];
+        c.next();
+    }
+    {   // the 3D scene at this % of the window's pixels (the HUD and menus always at 100%): below for frame rate, above
+        // as supersampling; SHARPEN: below 100%, sharpened as it's stretched
+        float v = (float)cfg_.renderScale;
+        if (ui_.slider(c.x(), c.top(), hw, h, "RENDER SCALE", v, 25, 400, "%.0f%%", UiExp::cfg("render_scale"), (float)defaultSettings().renderScale))
+            cfg_.renderScale = std::max(25, std::min(400, (int)std::lround(v)));
+        ui_.toggle(L.X(kColR + kColW - kHalfW), c.top(), hw, h, "SHARPEN", cfg_.renderSharpen, UiExp::cfg("render_sharpen"));
+        c.next();
+    }
+        break;
+    }
+    case SS_VIDEO_SOUND: {   // was drawVideoSettings: SOUND
+    // (MORE 5: SHOW DB: each volume as its gain in dB; VOLUME up to 150%, PERCEPTUAL: its square)
+    char vf[4][24];
+    {
+        const float gains[4] = {cfg_.volPerceptual ? cfg_.volume * cfg_.volume : cfg_.volume, cfg_.volumeEffects, cfg_.volumeAnnouncer, cfg_.volumeQuips};
+        for (int k = 0; k < 4; k++) {
+            if (!cfg_.volDb) snprintf(vf[k], sizeof vf[k], "%%.0f%%%%");
+            else if (gains[k] < 0.001f) snprintf(vf[k], sizeof vf[k], "-INF DB");
+            else snprintf(vf[k], sizeof vf[k], "%+.1f DB", 20.0f * std::log10(gains[k]));
+        }
+    }
+    {
+        float pct = cfg_.volume * 100;
+        if (ui_.slider(c.x(), c.top(), w, h, "VOLUME", pct, 0, 150, vf[0], UiExp::cfg("volume"), defaultSettings().volume * 100))
+            audio_.setMasterVolume((cfg_.volume = clampf(pct / 100, 0, 1.5f), masterGain()));
+    }
+    c.next();
+    // on top of VOLUME: every sound effect (the hitsound too), and the announcer's lines
+    if (pctSlider(c.x(), c.top(), w, h, "EFFECTS VOLUME", cfg_.volumeEffects, 1, vf[1], UiExp::cfg("volume_effects"), defaultSettings().volumeEffects))
+        audio_.setEffectsVolume(cfg_.volumeEffects = clampf(cfg_.volumeEffects, 0, 1));
+    c.next();
+    if (pctSlider(c.x(), c.top(), w, h, "ANNOUNCER VOLUME", cfg_.volumeAnnouncer, 1, vf[2], UiExp::cfg("volume_announcer"), defaultSettings().volumeAnnouncer))
+        audio_.setAnnouncerVolume(cfg_.volumeAnnouncer = clampf(cfg_.volumeAnnouncer, 0, 1));
+    c.next();
+    // quips (the QUIP key): their own volume and on / off, apart from the announcer's (QUIPS shares HITSOUND's row:
+    // a row more would not fit above DEVICES with Windows' EXCLUSIVE AUDIO)
+    if (pctSlider(c.x(), c.top(), w, h, "QUIPS VOLUME", cfg_.volumeQuips, 1, vf[3], UiExp::cfg("volume_quips"), defaultSettings().volumeQuips))
+        audio_.setQuipVolume(cfg_.volumeQuips = clampf(cfg_.volumeQuips, 0, 1));
+    c.next();
+    ui_.toggle(c.x(), c.top(), hw, h, "HITSOUND", cfg_.hitsounds, UiExp::cfg("hitsounds"));
+    if (ui_.toggle(L.X(kColR + kColW - kHalfW), c.top(), hw, h, "QUIPS", cfg_.quips, UiExp::cfg("quips"))) {
+        audio_.setQuips(cfg_.quips);
+        if (cfg_.quips && audio_.quipCount() > 0) audio_.play(SND_QUIP, 1.0f);   // (a taste of them)
+    }
+    c.next();
+    {
+        static const std::vector<std::string> sn = {"SOUND PACK: DEFAULT", "SOUND PACK: HEAVY METAL", "SOUND PACK: MAGICAL", "SOUND PACK: RETRO", "SOUND PACK: MOUTH"};
+        ui_.cycle(c.x(), c.top(), w, h, "SOUNDS", cfg_.soundPack, 5, sn, UiExp::cfg("soundpack"));
+        c.next();
+    }
+    // (EXCLUSIVE AUDIO, Windows only, is on page 6 under OUTPUT: here it put VOICE 2 px over the footer, 2026-10-30)
+    {   // the announcer (in SOUND: its own section header no longer fit under the two volumes above)
+        static const std::vector<std::string> an = {"ANNOUNCER: OFF", "ANNOUNCER: COUNTDOWN", "ANNOUNCER: ALL CALLS"};
+        static std::vector<std::string> av;
+        if (av.empty()) for (int v = 0; v < kAnnouncerVoices; v++) av.push_back(std::string("VOICE: ") + announcerVoiceName(v));
+        if (ui_.cycle(c.x(), c.top(), w, h, "ANNOUNCER", cfg_.announcer, 3, an, UiExp::cfg("announcer")) && cfg_.announcer > 0) audio_.play(SND_VOICE_GO, 1.0f);
+        c.next();
+        if (ui_.cycle(c.x(), c.top(), w, h, "VOICE", cfg_.announcerVoice, kAnnouncerVoices, av, UiExp::cfg("voice"))) { audio_.setAnnouncer(cfg_.announcerVoice); audio_.play(SND_VOICE_GODLIKE, 1.0f); }
+        c.next();
+    }
+        break;
+    }
+    case SS_CONTROLS2_MOUSE: {   // was drawMoreSettings: MOUSE
+        ui_.slider(c.x(), c.top(), w, h, "VERTICAL SENSITIVITY", cfg_.sensY, 0.25f, 4.0f, "X%.2f", UiExp::cfg("sens_y"), defaultSettings().sensY);
+        cfg_.sensY = clampf(cfg_.sensY, 0.1f, 10.0f);
+        c.next();
+        c.hint("UP / DOWN AS A MULTIPLE OF SENSITIVITY");
+        ui_.toggle(c.x(), c.top(), w, h, "INVERT Y", cfg_.invertY, UiExp::cfg("invert_y"));
+        c.next();
+        break;
+    }
+    case SS_CONTROLS2_ZOOM: {   // was drawMoreSettings: ZOOM
+        ui_.slider(c.x(), c.top(), w, h, "ZOOM SENSITIVITY", cfg_.zoomSens, 0.25f, 4.0f, "X%.2f", UiExp::cfg("zoom_sens"), defaultSettings().zoomSens);
+        cfg_.zoomSens = clampf(cfg_.zoomSens, 0.1f, 10.0f);
+        c.next();
+        c.hint("X1.00: THE SAME FEEL AS UNZOOMED", "LOWER: SLOWER WHILE SCOPED");
+        break;
+    }
+    case SS_CONTROLS2_GRAPPLE_HAND: {   // was drawMoreSettings: GRAPPLE + HAND
+        {
+            static const std::vector<std::string> gn = {"GRAPPLE: HOLD", "GRAPPLE: TOGGLE"};
+            int gi = cfg_.grappleToggle;
+            if (ui_.cycle(c.x(), c.top(), w, h, "GRAPPLE", gi, 2, gn, UiExp::cfg("grapple_toggle"))) { cfg_.grappleToggle = gi; grappleOn_ = false; }
+            c.next();
+            c.hint("TOGGLE: PRESS TO HOOK, PRESS AGAIN TO LET GO");
+        }
+        {
+            static const std::vector<std::string> hn = {"HAND: RIGHT", "HAND: LEFT"};
+            int hi = cfg_.leftHanded;
+            if (ui_.cycle(c.x(), c.top(), w, h, "HAND", hi, 2, hn, UiExp::cfg("left_handed"))) cfg_.leftHanded = hi;
+            c.next();
+            c.hint("LEFT: THE GUN ON THE LEFT, THE GRAPPLE", "LAUNCHER ON THE RIGHT");
+        }
+        break;
+    }
+    case SS_CONTROLS2_SCREEN: {   // was drawMoreSettings: SCREEN
+        static const std::vector<std::string> sn = {"SCOREBOARD: HOLD", "SCOREBOARD: TOGGLE"};
+        int st = cfg_.scoreToggle;
+        if (ui_.cycle(c.x(), c.top(), w, h, "SCOREBOARD", st, 2, sn, UiExp::cfg("score_toggle"))) { cfg_.scoreToggle = st; scoresOn_ = false; }
+        c.next();
+        c.hint("TOGGLE: PRESS THE SCOREBOARD KEY TO SHOW / HIDE");
+        break;
+    }
+    case SS_CONTROLS2_WEAPON_SCROLL: {   // was drawMoreSettings: WEAPON SCROLL
+        ui_.toggle(c.x(), c.top(), w, h, "WRAP AROUND", cfg_.scrollWrap, UiExp::cfg("scroll_wrap"));
+        c.next();
+        {
+            static int skW = WPN_ROCKET;
+            static std::vector<std::string> wn;
+            if (wn.empty()) for (int i = 0; i < WPN_COUNT; i++) wn.push_back("WEAPON: " + upper(baseWeaponDef(i).name));
+            const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
+            ui_.cycle(c.x(), c.top(), hw, h, "WEAPON", skW, WPN_COUNT, wn, UiExp::local());
+            bool skip = cfg_.scrollSkip >> skW & 1;
+            if (ui_.toggle(x2, c.top(), hw, h, "SKIP IT", skip, UiExp::cfg("scroll_skip"))) cfg_.scrollSkip = skip ? cfg_.scrollSkip | 1 << skW : cfg_.scrollSkip & ~(1 << skW);
+            c.next();
+            c.hint("THE SCROLL WHEEL PASSES OVER SKIPPED", "WEAPONS (THEIR NUMBER KEYS STILL WORK)");
+        }
+        break;
+    }
+    case SS_CONTROLS2_SENSITIVITY_FROM_ANOTHER_GAME: {   // was drawMoreSettings: SENSITIVITY FROM ANOTHER GAME
+        {
+            static const struct { const char* name; float yaw; } kGames[] = {
+                {"FROM: CS2 / CS:GO", 0.022f}, {"FROM: QUAKE", 0.022f}, {"FROM: APEX LEGENDS", 0.022f}, {"FROM: TEAM FORTRESS 2", 0.022f},
+                {"FROM: VALORANT", 0.07f}, {"FROM: OVERWATCH 2", 0.0066f}, {"FROM: CALL OF DUTY", 0.0066f}};
+            constexpr int n = sizeof kGames / sizeof kGames[0];
+            static std::vector<std::string> gn;
+            if (gn.empty()) for (auto& k : kGames) gn.push_back(k.name);
+            static int gi = 0;
+            static float theirs = 1.0f;
+            ui_.cycle(c.x(), c.top(), w, h, "FROM", gi, n, gn, UiExp::local());
+            c.next();
+            const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
+            ui_.slider(c.x(), c.top(), hw, h, "THEIRS", theirs, 0.01f, 20.0f, "%.3f", UiExp::local(), 1.0f);
+            theirs = clampf(theirs, 0.001f, 100.0f);
+            const float mine = clampf(theirs * kGames[gi].yaw / 0.022f, 0.01f, 50.0f);
+            char lbl[48];
+            snprintf(lbl, sizeof lbl, "USE %.3f", mine);
+            if (ui_.button(x2, c.top(), hw, h, lbl, (std::fabs(mine - cfg_.sensitivity) < 1e-4f ? UiExp::inert() : UiExp::cfg("sensitivity")).withId("USE IT")))
+                cfg_.sensitivity = mine;
+            c.next();
+            c.hint("SAME DPI: THE SAME TURN PER INCH OF MOUSE");
+        }
+        break;
+    }
+    case SS_GAMEPLAY2_KILL_FEED: {   // was drawMoreSettings: KILL FEED
+        auto intSlider = [&](SetFlow& c, const char* label, int& v, int lo, int hi, const char* fmt, const char* key, int def) {
+            float fv = (float)v;
+            ui_.slider(c.x(), c.top(), w, h, label, fv, (float)lo, (float)hi, fmt, UiExp::cfg(key), (float)def);
+            v = std::min(std::max(lo, (int)std::lround(fv)), hi);
+            c.next();
+        };
+        const Settings& d = defaultSettings();
+        intSlider(c, "KILL FEED SECONDS", cfg_.feedTime, 1, 30, "%.0f S", "feed_time", d.feedTime);
+        intSlider(c, "KILL FEED LINES", cfg_.feedLines, 1, 12, "%.0f", "feed_lines", d.feedLines);
+        ui_.toggle(c.x(), c.top(), w, h, "ONLY KILLS I'M IN", cfg_.feedMine, UiExp::cfg("feed_mine"));
+        c.next();
+        break;
+    }
+    case SS_GAMEPLAY2_CHAT: {   // was drawMoreSettings: CHAT
+        {   // (one row, two halves: the column's room for PLAYER ANIMATIONS below)
+            const float hw = L.L(kHalfW), xl = L.X(kColL + kColW - kHalfW);
+            float ct = (float)cfg_.chatTime, cl = (float)cfg_.chatLines;
+            ui_.slider(c.x(), c.top(), hw, h, "CHAT SECONDS", ct, 1, 60, "%.0f S", UiExp::cfg("chat_time"), (float)d.chatTime);
+            ui_.slider(xl, c.top(), hw, h, "CHAT LINES", cl, 1, 16, "%.0f", UiExp::cfg("chat_lines"), (float)d.chatLines);
+            cfg_.chatTime = std::min(std::max(1, (int)std::lround(ct)), 60);
+            cfg_.chatLines = std::min(std::max(1, (int)std::lround(cl)), 16);
+            c.next();
+        }
+        while ((int)chatFeed_.size() > cfg_.chatLines) chatFeed_.pop_front();
+        ui_.slider(c.x(), c.top(), w, h, "CHAT OPACITY", cfg_.chatOpacity, 0.1f, 1.0f, "%.2f", UiExp::cfg("chat_opacity"), d.chatOpacity);
+        cfg_.chatOpacity = clampf(cfg_.chatOpacity, 0.1f, 1.0f);
+        c.next();
+        c.hint("WHILE TYPING, CHAT IS ALWAYS FULLY SHOWN");
+        break;
+    }
+    case SS_GAMEPLAY2_FORCE_PLAYER_MODELS: {   // was drawMoreSettings: FORCE PLAYER MODELS
+        {
+            // (the model picker, with THEIR OWN first: settings/models/enemy, /team)
+            if (ui_.button(c.x(), c.top(), w, h, std::string("ENEMY MODEL: ") + (cfg_.enemyModel >= 0 ? playerModelName(cfg_.enemyModel) : "THEIR OWN") + "  >",
+                           UiExp::nav("~settings/models/enemy").withId("ENEMY MODEL")))
+                openModelPicker(2);
+            c.next();
+            if (ui_.button(c.x(), c.top(), w, h, std::string("TEAM MODEL: ") + (cfg_.teamModel >= 0 ? playerModelName(cfg_.teamModel) : "THEIR OWN") + "  >",
+                           UiExp::nav("~settings/models/team").withId("TEAM MODEL")))
+                openModelPicker(3);
+            c.next();
+            c.hint("EVERY ENEMY / TEAMMATE AS ONE MODEL (NOT IN", "RANKED, WHERE EVERYONE IS STANDARD)");
+            ui_.toggle(c.x(), c.top(), w, h, "PLAYER ANIMATIONS", cfg_.playerAnims, UiExp::cfg("player_anims"));
+            c.next();
+        }
+        break;
+    }
+    case SS_GAMEPLAY2_ALL_SETTINGS: {   // was drawMoreSettings: ALL SETTINGS
+        {
+            static const char* const kOwn[] = {"name=", "discord=", "rank_hello=", "last_address=", "last_mode=", "last_map=", "last_server=", "last_trainer=", "fav_servers=", "recent_servers="};
+            auto own = [](const std::string& l) { for (const char* p : kOwn) if (l.rfind(p, 0) == 0) return true; return false; };
+            const float tw = (w - L.L(16)) / 3, tg = L.L(8);
+            if (ui_.button(c.x(), c.top(), tw, h, "EXPORT", UiExp::state("allset"))) {
+                std::istringstream in(cfg_.toText());
+                std::string out = "quark-settings:\n", l;
+                while (std::getline(in, l)) if (!own(l)) out += l + "\n";
+                glfwSetClipboardString(win_, out.c_str());
+                allMsg_ = "SETTINGS COPIED: PASTE THEM ANYWHERE"; allMsgUntil_ = time_ + 3;
+            }
+            if (ui_.button(c.x() + tw + tg, c.top(), tw, h, "IMPORT", UiExp::state("allset"))) {
+                const char* clip = glfwGetClipboardString(win_);
+                const std::string text = clip ? clip : "";
+                if (text.find("quark-settings:") == std::string::npos) { allMsg_ = "NO SETTINGS ON THE CLIPBOARD (EXPORT MAKES THEM)"; }
+                else {
+                    std::istringstream in(text.substr(text.find("quark-settings:") + 15));
+                    std::string l;
+                    int n = 0;
+                    cfg_.ultraMarginMigrated = false;   // (as load(): an export from before ULTRA SAFETY AUTO, on 150, moves to it)
+                    while (std::getline(in, l)) {
+                        while (!l.empty() && (l.back() == '\r' || l.back() == ' ')) l.pop_back();
+                        const size_t eq = l.find('=');
+                        if (eq == std::string::npos || own(l)) continue;
+                        cfg_.set(l.substr(0, eq), l.substr(eq + 1));
+                        n++;
+                    }
+                    cfg_.finishLoad();
+                    cfg_.save();
+                    applySettings();
+                    allMsg_ = std::to_string(n) + " SETTINGS IMPORTED";
+                }
+                allMsgUntil_ = time_ + 3;
+            }
+            const bool armed = time_ < resetAllArmed_;
+            auto fresh = [&] {   // (the defaults, with what's yours kept)
+                Settings d = defaultSettings();
+                d.name = cfg_.name; d.discordName = cfg_.discordName; d.rankHello = cfg_.rankHello; d.lastAddress = cfg_.lastAddress;
+                d.lastMode = cfg_.lastMode; d.lastMap = cfg_.lastMap; d.lastServer = cfg_.lastServer; d.lastTrainer = cfg_.lastTrainer;
+                d.favServers = cfg_.favServers; d.recentServers = cfg_.recentServers;
+                return d;
+            };
+            const bool same = armed && fresh().toText() == cfg_.toText();   // (only while armed: two texts a frame)
+            if (ui_.button(c.x() + 2 * (tw + tg), c.top(), tw, h, armed ? "SURE?" : "RESET ALL",
+                           (!armed ? UiExp::state("allset") : same ? UiExp::state("allset") : UiExp::cfg("*")).withId("RESET ALL"))) {
+                if (!armed) { resetAllArmed_ = time_ + 3; allMsg_ = "CLICK AGAIN TO RESET EVERY SETTING (NOT YOUR NAME)"; allMsgUntil_ = time_ + 3; }
+                else {
+                    cfg_ = fresh();
+                    cfg_.save();
+                    applySettings();
+                    resetAllArmed_ = 0;
+                    allMsg_ = "EVERY SETTING IS BACK TO ITS DEFAULT"; allMsgUntil_ = time_ + 3;
+                }
+            }
+            c.next();
+            c.hint(time_ < allMsgUntil_ ? allMsg_ : std::string("EXPORT / IMPORT USE THE CLIPBOARD"));
+        }
+        break;
+    }
+    case SS_GAMEPLAY2_SCREEN: {   // was drawMoreSettings: SCREEN
+        const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
+        ui_.toggle(c.x(), c.top(), hw, h, "SHOW FPS", cfg_.showFps, UiExp::cfg("show_fps"));
+        ui_.toggle(x2, c.top(), hw, h, "SHOW PING", cfg_.showPing, UiExp::cfg("show_ping"));
+        c.next();
+        c.hint("TOP RIGHT, WITHOUT A WIDGET (F3 HAS MORE)");
+        ui_.toggle(c.x(), c.top(), w, h, "HIDE HUD KEEPS CROSSHAIR", cfg_.hideHudCrosshair, UiExp::cfg("hide_hud_crosshair"));
+        c.next();
+        c.hint("BIND HIDE HUD ON CONTROLS > MORE KEYS");
+        ui_.toggle(c.x(), c.top(), w, h, "HEALTH BAR: MODE'S MAX", cfg_.hpScaled, UiExp::cfg("hp_scaled"));
+        c.next();
+        c.hint("OFF: THE BAR IS FULL AT 100 IN EVERY MODE");
+        {
+            const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
+            ui_.toggle(c.x(), c.top(), hw, h, "CAPTIONS", cfg_.captions, UiExp::cfg("captions"));
+            ui_.toggle(x2, c.top(), hw, h, "MATCH SUMMARY", cfg_.matchSummary, UiExp::cfg("match_summary"));
+            c.next();
+            c.hint("CAPTIONS: THE ANNOUNCER AS TEXT TOO");
+        }
+        {
+            const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
+            ui_.toggle(c.x(), c.top(), hw, h, "RACE GHOST", cfg_.ghost, UiExp::cfg("ghost"));
+            ui_.toggle(x2, c.top(), hw, h, "TEAM PANEL", cfg_.teamPanel, UiExp::cfg("team_panel"));
+            c.next();
+        }
+        break;
+    }
+    case SS_GAMEPLAY2_MENUS: {   // was drawMoreSettings: MENUS
+        ui_.toggle(c.x(), c.top(), w, h, "REMEMBER LAST TAB", cfg_.rememberTab, UiExp::cfg("remember_tab"));
+        c.next();
+        ui_.toggle(c.x(), c.top(), w, h, "CONFIRM QUIT / LEAVE", cfg_.confirmLeave, UiExp::cfg("confirm_leave"));
+        c.next();
+        c.hint("QUIT, DISCONNECT AND STOP HOSTING", "ASK \"SURE?\" FIRST: CLICK AGAIN");
+        ui_.toggle(c.x(), c.top(), w, h, "AUTO RECONNECT", cfg_.autoReconnect, UiExp::cfg("auto_reconnect"));
+        c.next();
+        c.hint("A DROPPED CONNECTION TRIES AGAIN (3 TIMES)");
+        ui_.toggle(c.x(), c.top(), w, h, "QUEUE FILLED: FLASH TASKBAR", cfg_.queueFlash, UiExp::cfg("queue_flash"));
+        c.next();
+        break;
+    }
+    case SS_VIDEO3_WORLD: {   // was drawMoreSettings: WORLD
+        if (ui_.slider(c.x(), c.top(), w, h, "FOG", cfg_.fog, 0, 3, cfg_.fog < 0.005f ? "OFF" : "X%.2f", UiExp::cfg("fog"), defaultSettings().fog))
+            r_.setFog(cfg_.fog = clampf(cfg_.fog, 0, 3));
+        c.next();
+        c.hint("THE HAZE OVER DISTANT WALLS (0: NONE)");
+        break;
+    }
+    case SS_VIDEO3_PICTURE: {   // was drawMoreSettings: PICTURE
+        {
+            const Settings& d = defaultSettings();
+            bool ch = ui_.slider(c.x(), c.top(), w, h, "GAMMA", cfg_.gamma, 0.5f, 2.0f, "%.2f", UiExp::cfg("gamma"), d.gamma);
+            c.next();
+            ch |= ui_.slider(c.x(), c.top(), w, h, "CONTRAST", cfg_.contrast, 0.5f, 2.0f, "%.2f", UiExp::cfg("contrast"), d.contrast);
+            c.next();
+            ch |= ui_.slider(c.x(), c.top(), w, h, "SATURATION", cfg_.saturation, 0, 2.0f, "%.2f", UiExp::cfg("saturation"), d.saturation);
+            c.next();
+            cfg_.gamma = clampf(cfg_.gamma, 0.5f, 2.0f); cfg_.contrast = clampf(cfg_.contrast, 0.5f, 2.0f); cfg_.saturation = clampf(cfg_.saturation, 0, 2.0f);
+            if (ch) r_.setGrade(cfg_.gamma, cfg_.contrast, cfg_.saturation);
+            c.hint("THE 3D SCENE (THE HUD STAYS AS IT IS);", "SATURATION 0: BLACK AND WHITE");
+        }
+        break;
+    }
+    case SS_VIDEO3_LOOK: {   // was drawMoreSettings: LOOK
+        {   // 1.19.4 batch 3: the look's switches (shader uniforms: none costs anything per frame at its default)
+            const float hw = L.L(kHalfW), x2 = L.X(kColL + kColW - kHalfW);
+            ui_.toggle(c.x(), c.top(), hw, h, "TONE CURVE", cfg_.toneCurve, UiExp::cfg("tone_curve"));
+            ui_.toggle(x2, c.top(), hw, h, "CLEAN SURFACES", cfg_.cleanSurfaces, UiExp::cfg("clean_surfaces"));
+            c.next();
+            ui_.toggle(c.x(), c.top(), hw, h, "FLAT LIGHTING", cfg_.flatLight, UiExp::cfg("flat_light"));
+            ui_.toggle(x2, c.top(), hw, h, "SIMPLE SKY", cfg_.simpleSky, UiExp::cfg("simple_sky"));
+            c.next();
+            ui_.toggle(c.x(), c.top(), hw, h, "FAR SCENERY", cfg_.farScenery, UiExp::cfg("far_scenery"));
+            {
+                static const int dd[] = {150, 250, 400};
+                static const std::vector<std::string> dn = {"DRAW: 150 M", "DRAW: 250 M", "DRAW: 400 M"};
+                int di = cfg_.drawDist <= 150 ? 0 : cfg_.drawDist <= 250 ? 1 : 2;
+                if (ui_.cycle(x2, c.top(), hw, h, "DRAW DISTANCE", di, 3, dn, UiExp::cfg("draw_dist"))) cfg_.drawDist = dd[di];
+            }
+            c.next();
+            {   // PATTERN FADE (owner, 2026-10-31): far / grazing patterns fade to their average, like lava's veins
+                const Settings d = defaultSettings();
+                ui_.toggle(c.x(), c.top(), hw, h, "PATTERN FADE", cfg_.patternFade, UiExp::cfg("pattern_fade"));
+                ui_.slider(x2, c.top(), hw, h, "FADE DISTANCE", cfg_.fadeDist, 0.25f, 4.0f, "%.2fx", UiExp::cfg("fade_dist"), d.fadeDist);
+                cfg_.fadeDist = clampf(cfg_.fadeDist, 0.25f, 4.0f);
+                c.next();
+                ui_.slider(c.x(), c.top(), hw, h, "FADE LENGTH", cfg_.fadeLen, 1.25f, 8.0f, "%.2fx", UiExp::cfg("fade_len"), d.fadeLen);
+                cfg_.fadeLen = clampf(cfg_.fadeLen, 1.25f, 8.0f);
+                c.next();
+            }
+            c.hint("TONE CURVE OFF: FLAT, LINEAR COLOUR; CLEAN: NO", "PANEL SEAMS; FLAT: NO BAKED LIGHT OR SHADOW");
+        }
+        break;
+    }
+    case SS_VIDEO3_EFFECTS: {   // was drawMoreSettings: EFFECTS
+        ui_.slider(c.x(), c.top(), w, h, "EFFECTS OPACITY", cfg_.fxOpacity, 0, 1, cfg_.fxOpacity < 0.01f ? "OFF" : "%.2f", UiExp::cfg("fx_opacity"), defaultSettings().fxOpacity);
+        cfg_.fxOpacity = clampf(cfg_.fxOpacity, 0, 1);
+        c.next();
+        c.hint("EXPLOSIONS, SPARKS AND BURSTS");
+        {
+            const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
+            ui_.toggle(c.x(), c.top(), hw, h, "KILL BURSTS", cfg_.killBursts, UiExp::cfg("kill_bursts"));
+            ui_.toggle(x2, c.top(), hw, h, "TRACERS", cfg_.tracers, UiExp::cfg("tracers"));
+            c.next();
+        }
+        {   // WEAPON ANIMATIONS: a model's moving parts (docs/ASSETS.md "Animated parts"; off: they stay still)
+            const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
+            ui_.toggle(c.x(), c.top(), hw, h, "GUN RECOIL KICK", cfg_.viewRecoil, UiExp::cfg("view_recoil"));
+            ui_.toggle(x2, c.top(), hw, h, "WEAPON ANIMATIONS", cfg_.weaponAnims, UiExp::cfg("weapon_anims"));
+            c.next();
+        }
+        break;
+    }
+    case SS_VIDEO3_TRACERS_TRAILS: {   // was drawMoreSettings: TRACERS + TRAILS
+        {
+            const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
+            static const std::vector<std::string> tn = {"TRACERS: CLASSIC", "TRACERS: TEAM", "TRACERS: CUSTOM"};
+            ui_.cycle(c.x(), c.top(), hw, h, "TRACER COLOR", cfg_.tracerMode, 3, tn, UiExp::cfg("tracer_mode"));
+            ui_.colorPicker(x2, c.top(), hw, h, "MY TRACER", cfg_.tracerColor, UiExp::cfg("tracer_color"), defaultSettings().tracerColor);
+            c.next();
+            static const std::vector<std::string> rn = {"TRAILS: OFF", "TRAILS: SHORT", "TRAILS: FULL"};
+            ui_.cycle(c.x(), c.top(), hw, h, "TRAILS", cfg_.trails, 3, rn, UiExp::cfg("trails"));
+            ui_.slider(x2, c.top(), hw, h, "TRAIL OPACITY", cfg_.trailOpacity, 0, 1, "%.2f", UiExp::cfg("trail_opacity"), defaultSettings().trailOpacity);
+            cfg_.trailOpacity = clampf(cfg_.trailOpacity, 0, 1);
+            c.next();
+            c.hint("TRAILS: THE STREAKS BEHIND ROCKETS, BOLTS,", "KNIVES, SYRINGES AND ORBS");
+        }
+        break;
+    }
+    case SS_VIDEO3_OUTPUT: {   // was drawMoreSettings: OUTPUT
+        {
+            const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
+            ui_.toggle(c.x(), c.top(), hw, h, "DEBAND", cfg_.dither, UiExp::cfg("dither"));
+            ui_.toggle(x2, c.top(), hw, h, "10-BIT OUTPUT", cfg_.out10, UiExp::cfg("out10"));
+            c.next();
+            const int bits = r_.outputBits();
+            if (cfg_.out10 && bits < 10) c.hint("10-BIT: NOT SUPPORTED HERE (" + std::to_string(bits) + "-BIT WINDOW)", "OR RESTART: IT'S ASKED FOR AT START");
+            else c.hint("DEBAND: A FAINT DITHER, NO BANDS IN SKY / FOG;", bits >= 10 ? std::string("10-BIT: ON (A 10-BIT WINDOW)") : std::string("10-BIT: AT THE NEXT START, WHERE SUPPORTED"));
+            // batch 4: liquids and glow, the SMOOTH pass's strength, the lightmap's filter
+        }
+        break;
+    }
+    case SS_VIDEO3_SURFACES: {   // was drawMoreSettings: SURFACES
+        {
+            const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
+            ui_.toggle(c.x(), c.top(), hw, h, "LIQUIDS FLOW", cfg_.liquidFlow, UiExp::cfg("liquid_flow"));
+            ui_.slider(x2, c.top(), hw, h, "GLOW STRENGTH", cfg_.glowStrength, 0, 2, "X%.2f", UiExp::cfg("glow_strength"), defaultSettings().glowStrength);
+            cfg_.glowStrength = clampf(cfg_.glowStrength, 0, 2);
+            c.next();
+            ui_.slider(c.x(), c.top(), hw, h, "SMOOTH STRENGTH", cfg_.smoothAmt, 0.25f, 1, "%.2f", UiExp::cfg("smooth_amt"), defaultSettings().smoothAmt);
+            cfg_.smoothAmt = clampf(cfg_.smoothAmt, 0.25f, 1);
+            static const std::vector<std::string> lfn = {"LIGHTMAP: SMOOTH", "LIGHTMAP: NEAREST"};
+            int lf = cfg_.lightmapNearest;
+            if (ui_.cycle(x2, c.top(), hw, h, "LIGHTMAP FILTER", lf, 2, lfn, UiExp::cfg("lightmap_nearest"))) cfg_.lightmapNearest = lf;
+            c.next();
+        }
+        break;
+    }
+    case SS_VIDEO5_SHADOWS: {   // was drawMoreSettings: SHADOWS
+        {
+            static const std::vector<std::string> en = {"SHADOW EDGE: HARD", "SHADOW EDGE: SOFT", "SHADOW EDGE: SOFTER"};
+            ui_.cycle(c.x(), c.top(), w, h, "SHADOW EDGE", cfg_.shadowFilter, 3, en, UiExp::cfg("shadow_filter"));
+            c.next();
+            static const int sd[] = {16, 32, 64};
+            static const std::vector<std::string> sn = {"SHADOW DISTANCE: 16 M", "SHADOW DISTANCE: 32 M", "SHADOW DISTANCE: 64 M"};
+            int si = cfg_.shadowDist <= 16 ? 0 : cfg_.shadowDist <= 32 ? 1 : 2;
+            if (ui_.cycle(c.x(), c.top(), w, h, "SHADOW DISTANCE", si, 3, sn, UiExp::cfg("shadow_dist"))) cfg_.shadowDist = sd[si];
+            c.next();
+            ui_.toggle(c.x(), c.top(), hw, h, "ON THE MAP", cfg_.shadowWorld, UiExp::cfg("shadow_world"));
+            ui_.toggle(xl, c.top(), hw, h, "ON PLAYERS", cfg_.shadowPlayers, UiExp::cfg("shadow_players"));
+            c.next();
+            ui_.toggle(c.x(), c.top(), hw, h, "OWN SHADOW", cfg_.ownShadow, UiExp::cfg("own_shadow"));
+            ui_.toggle(xl, c.top(), hw, h, "ALWAYS LIT", cfg_.playersLit, UiExp::cfg("players_lit"));
+            c.next();
+            c.hint("PLAYER SHADOWS (VIDEO > DISPLAY); ALWAYS LIT:", "PLAYERS NEVER DARKENED BY THE MAP'S SHADE");
+        }
+        break;
+    }
+    case SS_VIDEO5_PLAYERS: {   // was drawMoreSettings: PLAYERS
+        // (one row, two halves: a full row more and the column ran into BACK)
+        ui_.slider(c.x(), c.top(), hw, h, "BRIGHTNESS", cfg_.playerEmit, 0, 1, "%.2f", UiExp::cfg("player_emit"), d.playerEmit);
+        ui_.slider(xl, c.top(), hw, h, "SATURATION", cfg_.playerSat, 0, 2.0f, "%.2f", UiExp::cfg("player_saturation"), d.playerSat);
+        cfg_.playerEmit = clampf(cfg_.playerEmit, 0, 1);
+        cfg_.playerSat = clampf(cfg_.playerSat, 0, 2.0f);
+        c.next();
+        c.hint("BRIGHTNESS: THEIR OWN LIGHT, 1 = FULL COLOUR IN ANY SHADE;", "SATURATION: THEIR COLOUR ONLY, 0 GREY TO 2 VIVID");
+        break;
+    }
+    case SS_VIDEO5_OUTLINES: {   // was drawMoreSettings: OUTLINES
+        ui_.colorPicker(c.x(), c.top(), hw, h, "CUSTOM TEAM", cfg_.outlineFriendlyColor, UiExp::cfg("outline_friendly_color"), d.outlineFriendlyColor);
+        ui_.colorPicker(xl, c.top(), hw, h, "CUSTOM ENEMY", cfg_.outlineEnemyColor, UiExp::cfg("outline_enemy_color"), d.outlineEnemyColor);
+        c.next();
+        ui_.slider(c.x(), c.top(), w, h, "OUTLINE OPACITY", cfg_.outlineAlpha, 0, 1, "%.2f", UiExp::cfg("outline_alpha"), d.outlineAlpha);
+        cfg_.outlineAlpha = clampf(cfg_.outlineAlpha, 0, 1);
+        c.next();
+        ui_.slider(c.x(), c.top(), hw, h, "TEAM WIDTH", cfg_.outlineTeamW, -0.25f, 4, cfg_.outlineTeamW < 0 ? "SAME" : "%.2f", UiExp::cfg("outline_team_width"), d.outlineTeamW);
+        ui_.slider(xl, c.top(), hw, h, "ENEMY WIDTH", cfg_.outlineEnemyW, -0.25f, 4, cfg_.outlineEnemyW < 0 ? "SAME" : "%.2f", UiExp::cfg("outline_enemy_width"), d.outlineEnemyW);
+        cfg_.outlineTeamW = cfg_.outlineTeamW < 0 ? -1 : clampf(cfg_.outlineTeamW, 0, 6);
+        cfg_.outlineEnemyW = cfg_.outlineEnemyW < 0 ? -1 : clampf(cfg_.outlineEnemyW, 0, 6);
+        c.next();
+        c.hint("CUSTOM: PICK OUTLINE \"CUSTOM\" UNDER OUTLINES; SAME: ITS", "WIDTH; CUSTOM (GLTF) PLAYER MODELS HAVE NO OUTLINE");
+        break;
+    }
+    case SS_VIDEO5_COLORS: {   // was drawMoreSettings: COLORS
+        ui_.colorPicker(c.x(), c.top(), hw, h, "ROPE COLOR", cfg_.ropeColor, UiExp::cfg("rope_color"), d.ropeColor);
+        ui_.toggle(xr, c.top(), hw, h, "FIXED TEAMS", cfg_.fixedTeams, UiExp::cfg("fixed_teams"));
+        c.next();
+        ui_.colorPicker(c.x(), c.top(), hw, h, "TEAM A", cfg_.teamAColor, UiExp::cfg("team_a_color"), d.teamAColor);
+        ui_.colorPicker(xr, c.top(), hw, h, "TEAM B", cfg_.teamBColor, UiExp::cfg("team_b_color"), d.teamBColor);
+        c.next();
+        c.hint("FIXED TEAMS: SPECTATING AND DEMOS SHOW", "TEAM A AND B IN THESE, NOT YOURS / THE ENEMY'S");
+        break;
+    }
+    case SS_VIDEO5_COLOR_SCHEME: {   // was drawMoreSettings: COLOR SCHEME
+        {
+            static int slot = 0;
+            static const std::vector<std::string> sl = {"SLOT 1", "SLOT 2", "SLOT 3"};
+            const float tw = (w - L.L(16)) / 3, tg = L.L(8);
+            if (ui_.button(c.x(), c.top(), hw, h, "COPY COLORS", UiExp::state("lookmsg"))) {
+                glfwSetClipboardString(win_, cfg_.colorCode().c_str());
+                lookMsg_ = "COLORS COPIED: PASTE THEM ANYWHERE"; lookMsgUntil_ = time_ + 3;
+            }
+            if (ui_.button(xr, c.top(), hw, h, "PASTE COLORS", UiExp::state("lookmsg"))) {
+                const char* clip = glfwGetClipboardString(win_);
+                const bool ok = clip && cfg_.colorFromCode(clip);
+                lookMsg_ = ok ? "COLORS PASTED" : "NO COLOR CODE ON THE CLIPBOARD"; lookMsgUntil_ = time_ + 3;
+                if (ok) { cfg_.save(); ui_.accent = rgba(cfg_.colorFriendly); }
+            }
+            c.next();
+            ui_.cycle(c.x(), c.top(), tw, h, "SLOT", slot, 3, sl, UiExp::local());
+            if (ui_.button(c.x() + tw + tg, c.top(), tw, h, "SAVE", UiExp::state("lookmsg"))) {
+                cfg_.colorPreset[slot] = cfg_.colorCode();
+                lookMsg_ = "COLORS SAVED IN " + sl[slot]; lookMsgUntil_ = time_ + 3;
+            }
+            if (ui_.button(c.x() + 2 * (tw + tg), c.top(), tw, h, "LOAD", UiExp::state("lookmsg"), !cfg_.colorPreset[slot].empty())) {
+                cfg_.colorFromCode(cfg_.colorPreset[slot]);
+                ui_.accent = rgba(cfg_.colorFriendly);
+                lookMsg_ = "COLORS FROM " + sl[slot]; lookMsgUntil_ = time_ + 3;
+            }
+            c.next();
+            c.hint(time_ < lookMsgUntil_ ? lookMsg_ : std::string("TEAM, OUTLINE, CROSSHAIR, TRACER AND ROPE COLORS"));
+        }
+        break;
+    }
+    case SS_VIDEO5_ACCESSIBILITY: {   // was drawMoreSettings: ACCESSIBILITY
+        ui_.toggle(c.x(), c.top(), hw, h, "REDUCE FLASHING", cfg_.reduceFlash, UiExp::cfg("reduce_flash"));
+        ui_.toggle(xr, c.top(), hw, h, "SAFE OK / ERROR", cfg_.safeColors, UiExp::cfg("safe_colors"));
+        c.next();
+        ui_.toggle(c.x(), c.top(), hw, h, "IT IN MY PALETTE", cfg_.itPalette, UiExp::cfg("it_palette"));
+        ui_.toggle(xr, c.top(), hw, h, "SPLITS: PALETTE", cfg_.splitPalette, UiExp::cfg("split_palette"));
+        c.next();
+        ui_.toggle(c.x(), c.top(), w, h, "SPLITS: AHEAD / BEHIND", cfg_.splitWords, UiExp::cfg("split_words"));
+        c.next();
+        c.hint("SAFE: OK BLUE, ERRORS ORANGE; IT: TAG / HIDE'S", "\"IT\" IN YOUR ENEMY COLOUR, THE REST YOUR TEAM'S");
+        break;
+    }
+    case SS_VIDEO6_OUTPUT: {   // was drawMoreSettings: OUTPUT
+        static const std::vector<std::string> cn = {"CHANNELS: STEREO", "CHANNELS: MONO", "CHANNELS: SWAPPED"};
+        ui_.cycle(c.x(), c.top(), w, h, "CHANNELS", cfg_.channels, 3, cn, UiExp::cfg("channels"));
+        c.next();
+        ui_.slider(c.x(), c.top(), hw, h, "STEREO WIDTH", cfg_.stereoWidth, 0, 1, "%.2f", UiExp::cfg("stereo_width"), d.stereoWidth);
+        ui_.slider(xl, c.top(), hw, h, "BEHIND YOU", cfg_.behindMuffle, 0, 1, "%.2f", UiExp::cfg("behind_muffle"), d.behindMuffle);
+        cfg_.stereoWidth = clampf(cfg_.stereoWidth, 0, 1); cfg_.behindMuffle = clampf(cfg_.behindMuffle, 0, 1);
+        c.next();
+        ui_.slider(c.x(), c.top(), w, h, "HEARING RANGE", cfg_.hearRange, 30, 150, "%.0f M", UiExp::cfg("hear_range"), d.hearRange);
+        cfg_.hearRange = clampf(std::round(cfg_.hearRange), 30, 150);
+        c.next();
+        c.hint("BEHIND YOU: THE DIP AND MUFFLE ON SOUNDS", "BEHIND (0: AS IN FRONT)");
+        ui_.toggle(c.x(), c.top(), w, h, "SOUND OCCLUSION", cfg_.occlusion, UiExp::cfg("occlusion"));
+        c.next();
+        c.hint("SOUNDS BEHIND WALLS MUFFLED: YOU HEAR LESS", "(IT AFFECTS GAMEPLAY)");
+        static const std::vector<std::string> dn = {"DYNAMIC RANGE: CLEAN", "DYNAMIC RANGE: NORMAL", "DYNAMIC RANGE: NIGHT"};
+        ui_.cycle(c.x(), c.top(), w, h, "DYNAMIC RANGE", cfg_.dynRange, 3, dn, UiExp::cfg("dyn_range"));
+        c.next();
+        static const std::vector<std::string> ln = {"AUDIO LATENCY: LOW", "AUDIO LATENCY: NORMAL", "AUDIO LATENCY: SAFE"};
+        ui_.cycle(c.x(), c.top(), w, h, "AUDIO LATENCY", cfg_.audioLatency, 3, ln, UiExp::cfg("audio_latency"));
+        c.next();
+#ifdef _WIN32
+        c.hint("NIGHT: QUIET UP, LOUD DOWN; LOW: AS NORMAL", "ON WINDOWS (ALREADY ITS SHORTEST); SAFE: X2");
+#else
+        c.hint("NIGHT: QUIET UP, LOUD DOWN; SAFE: MORE", "QUEUED, NO CRACKLE ON A BUSY PC");
+#endif
+#ifdef _WIN32
+        // the sound device to the game alone: about 10 ms sooner, and Discord / music go silent while the game runs
+        // (on page 1's SOUND until 2026-10-30: there it ran VOICE into the footer)
+        if (ui_.toggle(c.x(), c.top(), w, h, !cfg_.exclusiveAudio || audio_.exclusiveActive() ? "EXCLUSIVE AUDIO" : audio_.exclusiveState() == Audio::kExclUnsupported ? "EXCLUSIVE AUDIO (N/A)" : "EXCLUSIVE AUDIO (BUSY)",   // (N/A: the device takes none of its formats)
+                       cfg_.exclusiveAudio, UiExp::cfg("exclusive_audio")))
+            audio_.setExclusive(cfg_.exclusiveAudio);
+        c.next();
+        c.hint("TAKES THE SOUND DEVICE FOR LOWER AUDIO LAG");
+#endif
+        break;
+    }
+    case SS_VIDEO6_VOLUME: {   // was drawMoreSettings: VOLUME
+        ui_.toggle(c.x(), c.top(), hw, h, "SHOW DB", cfg_.volDb, UiExp::cfg("vol_db"));
+        ui_.toggle(xl, c.top(), hw, h, "PERCEPTUAL", cfg_.volPerceptual, UiExp::cfg("vol_perceptual"));
+        c.next();
+        pctSlider(c.x(), c.top(), hw, h, "BACKGROUND VOLUME", cfg_.bgVolume, 1, nullptr, UiExp::cfg("bg_volume"), d.bgVolume);
+        cfg_.bgVolume = clampf(cfg_.bgVolume, 0, 1);
+        ui_.toggle(xl, c.top(), hw, h, "FORCE MY PACK", cfg_.forcePack, UiExp::cfg("force_pack"));
+        c.next();
+        c.hint("FORCE MY PACK: EVERYONE IN YOUR SOUND PACK");
+        break;
+    }
+    case SS_VIDEO6_CALLOUTS: {   // was drawMoreSettings: CALLOUTS
+        static const std::vector<std::string> sn = {"STREAK CALLOUTS: ALL", "STREAK CALLOUTS: MINE", "STREAK CALLOUTS: OFF"};
+        ui_.cycle(c.x(), c.top(), w, h, "STREAK CALLOUTS", cfg_.streakCalls, 3, sn, UiExp::cfg("streak_calls"));
+        c.next();
+        static const std::vector<std::string> tn = {"TIME WARNINGS: OFF", "TIME WARNINGS: 60 + 30 S", "TIME WARNINGS: + COUNTDOWN"};
+        ui_.cycle(c.x(), c.top(), w, h, "TIME WARNINGS", cfg_.timeWarn, 3, tn, UiExp::cfg("time_warn"));
+        c.next();
+        ui_.toggle(c.x(), c.top(), w, h, "TIME WARNINGS ON SCREEN", cfg_.timeWarnText, UiExp::cfg("time_warn_text"));
+        c.next();
+        c.hint("COUNTDOWN: A TICK EACH OF THE LAST 10 S");
+        break;
+    }
+    case SS_VIDEO6_CUE_SOUNDS: {   // was drawMoreSettings: CUE SOUNDS
+        {
+            static const int cues[] = {SND_HURT, SND_DEATH, SND_DASH, SND_SUPER, SND_HYPER, SND_GRAPPLE_FIRE, SND_GRAPPLE_HIT, SND_JUMP, SND_LAND, SND_KILL, SND_STREAK, SND_TYPING};
+            static const std::vector<std::string> cuen = {"CUE: HURT", "CUE: DEATH", "CUE: DASH", "CUE: SUPER", "CUE: HYPER", "CUE: GRAPPLE FIRE", "CUE: GRAPPLE HIT",
+                                                          "CUE: JUMP", "CUE: LANDING", "CUE: KILL", "CUE: STREAK STING", "CUE: TYPING"};
+            static int ci = 0;
+            ui_.cycle(c.x(), c.top(), hw, h, "CUE", ci, 12, cuen, UiExp::local());
+            bool on = !(cfg_.cueMute >> cues[ci] & 1);
+            if (ui_.toggle(xr, c.top(), hw, h, "PLAY IT", on, UiExp::cfg("cue_mute"))) {
+                cfg_.cueMute = on ? cfg_.cueMute & ~(int)(1u << cues[ci]) : cfg_.cueMute | (int)(1u << cues[ci]);
+                if (on) audio_.play(cues[ci], 0.8f);
+            }
+            c.next();
+        }
+        break;
+    }
+    case SS_VIDEO6_ANNOUNCER_CALLS: {   // was drawMoreSettings: ANNOUNCER CALLS
+        {
+            static std::vector<std::string> an;
+            if (an.empty())
+                for (int k = 0; k < SND_COUNT - SND_VOICE_THREE; k++) an.push_back(std::string("CALL: ") + kVoiceCaptions[k]);
+            static int ai = 0;
+            ui_.cycle(c.x(), c.top(), w, h, "CALL", ai, SND_COUNT - SND_VOICE_THREE, an, UiExp::local());
+            c.next();
+            bool on = !(cfg_.annMute >> ai & 1);
+            if (ui_.toggle(c.x(), c.top(), w, h, "SAY IT", on, UiExp::cfg("ann_mute"))) {
+                cfg_.annMute = on ? cfg_.annMute & ~(1LL << ai) : cfg_.annMute | (1LL << ai);
+                if (on && cfg_.announcer > 0) announce(SND_VOICE_THREE + ai);
+            }
+            c.next();
+            c.hint("EACH OF THE ANNOUNCER'S LINES ON OR OFF");
+        }
+        break;
+    }
+    case SS_VIDEO6_SEE_SOUNDS: {   // was drawMoreSettings: SEE SOUNDS
+        ui_.toggle(c.x(), c.top(), w, h, "VISUALIZE SOUNDS", cfg_.soundViz, UiExp::cfg("sound_viz"));
+        c.next();
+        c.hint("STEPS, SHOTS, BOOMS... AS WORDS ROUND THE", "CROSSHAIR, TOWARD WHERE THEY CAME FROM");
+        break;
+    }
+    case SS_VIDEO7_NETWORK: {   // was drawMoreSettings: NETWORK
+        ui_.toggle(c.x(), c.top(), w, h, "NET GRAPH", cfg_.netGraph, UiExp::cfg("net_graph"));
+        c.next();
+        c.hint("PING / LOSS GRAPH AND RATES (APART FROM F3)");
+        {
+            static const int pr[] = {2, 4, 8};
+            static const std::vector<std::string> pn = {"PACKET LOSS PROTECTION: 2", "PACKET LOSS PROTECTION: 4", "PACKET LOSS PROTECTION: 8"};
+            int pi = cfg_.cmdRedundancy <= 2 ? 0 : cfg_.cmdRedundancy <= 4 ? 1 : 2;
+            if (ui_.cycle(c.x(), c.top(), w, h, "PACKET LOSS PROTECTION", pi, 3, pn, UiExp::cfg("cmd_redundancy"))) cfg_.cmdRedundancy = pr[pi];
+            c.next();
+            c.hint("EACH INPUT SENT IN THIS MANY PACKETS");
+        }
+        {   // other players' interpolation delay (ranked: always 10 ms): adaptive (the default), custom (the slider), or off
+            // (was GAMEPLAY > NETWORK until 2026-10-30: that page's left column ran into its footer)
+            static const std::vector<std::string> imn = {"SMOOTHING (INTERP): ADAPTIVE", "SMOOTHING (INTERP): CUSTOM", "SMOOTHING (INTERP): OFF"};
+            int ii = cfg_.interpMs == 0 ? 0 : cfg_.interpMs < 0 ? 2 : 1;
+            if (ui_.cycle(c.x(), c.top(), w, h, "INTERP", ii, 3, imn, UiExp::cfg("interp_ms"))) cfg_.interpMs = ii == 0 ? 0 : ii == 2 ? -1 : kCustomInterpMs;
+            c.next();
+            c.hint("HOW OTHER PLAYERS' MOVES ARE SMOOTHED");
+            float v = (float)(cfg_.interpMs > 0 ? cfg_.interpMs : kCustomInterpMs);   // (moving it picks CUSTOM)
+            if (ui_.slider(c.x(), c.top(), w, h, "SMOOTHING DELAY (MS)", v, 1, (float)kMaxInterpMs, "%.0f", UiExp::cfg("interp_ms"), (float)kCustomInterpMs))
+                cfg_.interpMs = std::min(std::max(1, (int)std::lround(v)), kMaxInterpMs);
+            c.next();
+            c.hint("USED WHEN SMOOTHING IS CUSTOM");
+        }
+        ui_.toggle(c.x(), c.top(), hw, h, "MAP DOWNLOADS", cfg_.mapDownloads, UiExp::cfg("map_downloads"));
+        {
+            float v = (float)cfg_.mapCacheMax;
+            ui_.slider(xl, c.top(), hw, h, "MAPS KEPT", v, 5, 200, "%.0f", UiExp::cfg("map_cache_max"), (float)d.mapCacheMax);
+            const int nv = std::min(std::max(1, (int)std::lround(v)), 1000);
+            if (nv != cfg_.mapCacheMax) { cfg_.mapCacheMax = nv; if (!uiTest_) pruneMapDownloads(); }
+        }
+        c.next();
+        double& scanAt = cacheScan_.at;   // (shared with LIGHT CACHE, its own section now)
+        int &nMaps = cacheScan_.maps, &nBakes = cacheScan_.bakes;
+        uint64_t &mapBytes = cacheScan_.mapBytes, &bakeBytes = cacheScan_.bakeBytes;
+        if (time_ >= scanAt) {   // (the folders' counts, every 2 s while the page is open)
+            scanAt = time_ + 2;
+            nMaps = 0; mapBytes = 0;
+            std::error_code ec;
+            for (auto& e : std::filesystem::directory_iterator(std::filesystem::u8path(userMapsDir() + "/downloads"), ec))
+                if (e.path().extension() == ".qmap") { nMaps++; mapBytes += e.file_size(ec); }
+            nBakes = lightCacheStats(&bakeBytes);
+        }
+        if (ui_.button(c.x(), c.top(), w, h, "CLEAR DOWNLOADED MAPS", UiExp::state("lookmsg"))) {
+            std::error_code ec;
+            int n = 0;
+            for (auto& e : std::filesystem::directory_iterator(std::filesystem::u8path(userMapsDir() + "/downloads"), ec))
+                if (e.path().extension() == ".qmap" && std::filesystem::remove(e.path(), ec)) n++;
+            lookMsg_ = std::to_string(n) + " DOWNLOADED MAPS DELETED"; lookMsgUntil_ = time_ + 3; scanAt = 0;
+        }
+        c.next();
+        c.hint(std::to_string(nMaps) + " DOWNLOADED, " + std::to_string((mapBytes + 1023) / 1024) + " KB; OFF: A SERVER'S", "MAP YOU DON'T HAVE ENDS THE CONNECTION");
+        break;
+    }
+    case SS_VIDEO7_LIGHT_CACHE: {   // was drawMoreSettings: LIGHT CACHE
+        double& scanAt = cacheScan_.at;
+        int& nBakes = cacheScan_.bakes;
+        uint64_t& bakeBytes = cacheScan_.bakeBytes;
+        if (time_ >= scanAt) { scanAt = time_ + 2; nBakes = lightCacheStats(&bakeBytes); }
+        {
+            float v = (float)cfg_.lightCacheMax;
+            ui_.slider(c.x(), c.top(), hw, h, "BAKES KEPT", v, 4, 128, "%.0f", UiExp::cfg("light_cache_max"), (float)d.lightCacheMax);
+            cfg_.lightCacheMax = std::min(std::max(4, (int)std::lround(v)), 500);
+            float t = (float)cfg_.bakeThreads;
+            ui_.slider(xl, c.top(), hw, h, "BAKE THREADS", t, 0, 32, cfg_.bakeThreads <= 0 ? "AUTO" : "%.0f", UiExp::cfg("bake_threads"), (float)d.bakeThreads);
+            cfg_.bakeThreads = std::min(std::max(0, (int)std::lround(t)), 256);
+            c.next();
+        }
+        if (ui_.button(c.x(), c.top(), w, h, "CLEAR LIGHT BAKES", UiExp::state("lookmsg"))) {
+            const int n = clearLightCache();
+            lookMsg_ = std::to_string(n) + " BAKES DELETED (BAKED AGAIN WHEN PLAYED)"; lookMsgUntil_ = time_ + 3; scanAt = 0;
+        }
+        c.next();
+        c.hint(time_ < lookMsgUntil_ ? lookMsg_ : std::to_string(nBakes) + " BAKES, " + std::to_string(bakeBytes / (1024 * 1024)) + " MB (OFFICIAL MAPS SHIP BAKED)");
+        break;
+    }
+    case SS_VIDEO7_DISPLAY: {   // was drawMoreSettings: DISPLAY
+        static const std::vector<std::string> fm = {"FOV: HORIZONTAL", "FOV: VERTICAL", "FOV: HORIZONTAL AT 4:3"};
+        ui_.cycle(c.x(), c.top(), w, h, "FOV MODE", cfg_.fovMode, 3, fm, UiExp::cfg("fov_mode"));
+        c.next();
+        {
+            char b[64];
+            snprintf(b, sizeof b, "FOV %.0f: %.0f DEGREES ACROSS THIS SCREEN", cfg_.fov, hfov());
+            c.hint(b);
+        }
+        break;
+    }
+    case SS_LATENCY_COMPOSITOR: {   // (was VIDEO + AUDIO page 7's DISPLAY, under FOV MODE)
+        static const std::vector<std::string> bn = {"BYPASS COMPOSITOR: FULLSCREEN", "BYPASS COMPOSITOR: ALWAYS", "BYPASS COMPOSITOR: NEVER"};
+        ui_.cycle(c.x(), c.top(), w, h, "BYPASS COMPOSITOR", cfg_.bypassCompositor, 3, bn, UiExp::cfg("bypass_compositor"));
+        c.next();
+#if defined(__linux__)
+        c.hint("LINUX (X11): THE DESKTOP'S COMPOSITOR STEPS", "ASIDE: A FRAME LESS LAG IN A WINDOW");
+#else
+        c.hint("N/A HERE: LINUX (X11) ONLY");
+#endif
+        break;
+    }
+    case SS_VIDEO7_LATENT_SYNC: {   // was drawMoreSettings: LATENT SYNC
+        {
+            float v = (float)cfg_.latentSafetyUs;
+            ui_.slider(c.x(), c.top(), hw, h, "LATENT SAFETY", v, 0, 2000, "%.0f US", UiExp::cfg("latent_safety_us"), (float)d.latentSafetyUs);
+            cfg_.latentSafetyUs = std::min(std::max(0, (int)std::lround(v)), 3000);
+            static const std::vector<std::string> sn = {"LATE: TEAR", "LATE: WAIT"};
+            int si = cfg_.latentSlow;
+            if (ui_.cycle(L.X(kColR + kColW - kHalfW), c.top(), hw, h, "LATE FRAME", si, 2, sn, UiExp::cfg("latent_slow"))) cfg_.latentSlow = si;
+            c.next();
+#ifdef _WIN32
+            c.hint(cfg_.presentMode == 3 ? "SPARE TIME BEFORE THE BLANK; A LATE FRAME" : "PICK VSYNC: LATENT SYNC (ABOVE) FIRST;",
+                   cfg_.presentMode == 3 ? "TEARS NOW OR WAITS A REFRESH" : "THESE ONLY APPLY TO IT");
+#else
+            c.hint("N/A HERE: LATENT SYNC IS WINDOWS ONLY");
+#endif
+        }
+        break;
+    }
+    case SS_VIDEO7_MENU_CURSOR: {   // was drawMoreSettings: MENU CURSOR
+        {
+            static const std::vector<std::string> zn = {"SIZE: SYSTEM", "SIZE: X1", "SIZE: X1.5", "SIZE: X2"};
+            static const std::vector<std::string> cc = {"COLOR: WHITE", "COLOR: BLACK", "COLOR: YELLOW", "COLOR: TEAM"};
+            ui_.cycle(c.x(), c.top(), hw, h, "CURSOR SIZE", cfg_.cursorSize, 4, zn, UiExp::cfg("cursor_size"));
+            ui_.cycle(L.X(kColR + kColW - kHalfW), c.top(), hw, h, "CURSOR COLOR", cfg_.cursorColor, 4, cc, UiExp::cfg("cursor_color"));
+            c.next();
+            c.hint("SYSTEM: YOUR OS'S ARROW (COLOR: OURS ONLY)");
+        }
+        break;
+    }
+    case SS_VIDEO7_CONTROLS: {   // was drawMoreSettings: CONTROLS
+        {
+            static const std::vector<std::string> un = {"USE: HOLD", "USE: TOGGLE"};
+            int ui = cfg_.useToggle;
+            if (ui_.cycle(c.x(), c.top(), w, h, "USE", ui, 2, un, UiExp::cfg("use_toggle"))) { cfg_.useToggle = ui; useOn_ = false; }
+            c.next();
+            c.hint("TOGGLE: PRESS USE TO PLANT / DEFUSE, AGAIN TO STOP");
+        }
+        break;
+    }
+    case SS_VIDEO8_MAP_COLORS: {   // was drawMoreSettings: MAP COLORS
+        ui_.colorPicker(c.x(), c.top(), hw, h, "WORLD OUTLINE", cfg_.worldEdgeColor, UiExp::cfg("world_edge_color"), d.worldEdgeColor);
+        ui_.toggle(xl, c.top(), hw, h, "HIGH CONTRAST", cfg_.highContrast, UiExp::cfg("high_contrast"));
+        c.next();
+        ui_.toggle(c.x(), c.top(), hw, h, "WALLBANG TINT", cfg_.wallbangTint, UiExp::cfg("wallbang_tint"));
+        ui_.colorPicker(xl, c.top(), hw, h, "WALLBANG", cfg_.wallbangColor, UiExp::cfg("wallbang_color"), d.wallbangColor);
+        c.next();
+        ui_.toggle(c.x(), c.top(), hw, h, "MY SKY", cfg_.skyOverride, UiExp::cfg("sky_override"));
+        ui_.colorPicker(xl, c.top(), hw, h, "SKY", cfg_.skyColor, UiExp::cfg("sky_color"), d.skyColor);
+        c.next();
+        ui_.toggle(c.x(), c.top(), hw, h, "MY GLOW", cfg_.glowOverride, UiExp::cfg("glow_override"));
+        ui_.colorPicker(xl, c.top(), hw, h, "GLOW", cfg_.glowColor, UiExp::cfg("glow_color"), d.glowColor);
+        c.next();
+        c.hint("MY SKY / GLOW: THESE IN PLACE OF EVERY MAP'S;", "HIGH CONTRAST: LIGHTER WALLS, DARKER TRIM");
+        break;
+    }
+    case SS_VIDEO8_OBJECTIVES: {   // was drawMoreSettings: OBJECTIVES
+        ui_.toggle(c.x(), c.top(), hw, h, "IN MY PALETTE", cfg_.objPalette, UiExp::cfg("obj_palette"));
+        ui_.toggle(xl, c.top(), hw, h, "ZONE PULSE", cfg_.objPulse, UiExp::cfg("obj_pulse"));
+        c.next();
+        ui_.slider(c.x(), c.top(), w, h, "ZONE OPACITY", cfg_.objOpacity, 0, 2, "X%.2f", UiExp::cfg("obj_opacity"), d.objOpacity);
+        cfg_.objOpacity = clampf(cfg_.objOpacity, 0, 2);
+        c.next();
+        c.hint("PALETTE: THE BOMB'S BLINK AND CHECKPOINTS NOT", "YET REACHED IN YOUR ENEMY COLOUR");
+        break;
+    }
+    case SS_VIDEO8_EFFECTS_F3: {   // was drawMoreSettings: EFFECTS + F3
+        {
+            static const std::vector<std::string> ecn = {"EFFECTS: OWN", "EFFECTS: TEAM", "EFFECTS: CUSTOM"};
+            ui_.cycle(c.x(), c.top(), hw, h, "EFFECT COLOR", cfg_.fxColorMode, 3, ecn, UiExp::cfg("fx_color_mode"));
+            ui_.colorPicker(xl, c.top(), hw, h, "MY EFFECTS", cfg_.fxColor, UiExp::cfg("fx_color"), d.fxColor);
+        }
+        c.next();
+        ui_.toggle(c.x(), c.top(), w, h, "F3 COLORBLIND COLORS", cfg_.f3Safe, UiExp::cfg("f3_safe"));
+        c.next();
+        break;
+    }
+    case SS_VIDEO8_PLAYERS: {   // was drawMoreSettings: PLAYERS
+        ui_.toggle(c.x(), c.top(), hw, h, "FFA COLORS", cfg_.ffaColors, UiExp::cfg("ffa_colors"));
+        ui_.toggle(xr, c.top(), hw, h, "OWN EFFECTS", cfg_.ownFx, UiExp::cfg("own_fx"));
+        c.next();
+        ui_.colorPicker(c.x(), c.top(), hw, h, "OWN COLOR", cfg_.ownFxColor, UiExp::cfg("own_fx_color"), d.ownFxColor);
+        {
+            static const std::vector<std::string> gn = {"GUN: MAP", "GUN: TEAM", "GUN: CUSTOM"};
+            ui_.cycle(xr, c.top(), hw, h, "GUN COLOR", cfg_.gunColor, 3, gn, UiExp::cfg("gun_color"));
+        }
+        c.next();
+        ui_.colorPicker(c.x(), c.top(), hw, h, "CUSTOM GUN", cfg_.gunCustom, UiExp::cfg("gun_custom"), d.gunCustom);
+        c.next();
+        c.hint("FFA: EACH OPPONENT THEIR OWN COLOUR; OWN: YOUR", "SHOTS, LASER AND ROPE IN OWN COLOR");
+        break;
+    }
+    case SS_VIDEO8_HEALTH_BARS: {   // was drawMoreSettings: HEALTH BARS
+        {
+            float v = (float)cfg_.hbLow;
+            ui_.slider(c.x(), c.top(), hw, h, "LOW AT", v, 0, 100, "%.0f HP", UiExp::cfg("hb_low"), (float)d.hbLow);
+            cfg_.hbLow = std::min(std::max(0, (int)std::lround(v)), 100);
+        }
+        ui_.colorPicker(xr, c.top(), hw, h, "LOW COLOR", cfg_.hbLowColor, UiExp::cfg("hb_low_color"), d.hbLowColor);
+        c.next();
+        ui_.toggle(c.x(), c.top(), hw, h, "BAR COLOR", cfg_.hbCustom, UiExp::cfg("hb_custom"));
+        ui_.colorPicker(xr, c.top(), hw, h, "BAR", cfg_.hbColor, UiExp::cfg("hb_color"), d.hbColor);
+        c.next();
+        break;
+    }
+    case SS_VIDEO8_NAME_TAGS: {   // was drawMoreSettings: NAME TAGS
+        {
+            static const std::vector<std::string> tn = {"TAGS: TEAM", "TAGS: WHITE", "TAGS: CUSTOM"};
+            ui_.cycle(c.x(), c.top(), hw, h, "TAG COLOR", cfg_.tagColor, 3, tn, UiExp::cfg("tag_color"));
+            ui_.colorPicker(xr, c.top(), hw, h, "CUSTOM TAG", cfg_.tagCustom, UiExp::cfg("tag_custom"), d.tagCustom);
+            c.next();
+            ui_.slider(c.x(), c.top(), hw, h, "TAG OPACITY", cfg_.tagAlpha, 0.1f, 1, "%.2f", UiExp::cfg("tag_alpha"), d.tagAlpha);
+            ui_.slider(xr, c.top(), hw, h, "TAG SIZE", cfg_.tagSize, 0.5f, 3, "X%.2f", UiExp::cfg("tag_size"), d.tagSize);
+            cfg_.tagAlpha = clampf(cfg_.tagAlpha, 0.1f, 1); cfg_.tagSize = clampf(cfg_.tagSize, 0.5f, 3);
+            c.next();
+            c.hint("TEAMMATES' NAMES OVER THEIR HEADS");
+        }
+        break;
+    }
+    case SS_VIDEO9_SCREENSHOTS: {   // was drawMoreSettings: SCREENSHOTS
+        {
+            static const std::vector<std::string> fn = {"FORMAT: PNG", "FORMAT: TGA"};
+            static const std::vector<std::string> dn = {"FOLDER: DATA", "FOLDER: PICTURES"};
+            ui_.cycle(c.x(), c.top(), hw, h, "SCREENSHOT FORMAT", cfg_.shotFormat, 2, fn, UiExp::cfg("shot_format"));
+            ui_.cycle(xl, c.top(), hw, h, "SCREENSHOT FOLDER", cfg_.shotFolder, 2, dn, UiExp::cfg("shot_folder"));
+            c.next();
+            ui_.toggle(c.x(), c.top(), hw, h, "HIDE HUD", cfg_.shotHideHud, UiExp::cfg("shot_hide_hud"));
+            if (ui_.button(xl, c.top(), hw, h, "OPEN FOLDER", UiExp::url().withId("OPEN SCREENSHOTS"))) {
+                std::error_code ec;
+                std::filesystem::create_directories(std::filesystem::u8path(shotDir()), ec);
+                openUrl(std::filesystem::absolute(std::filesystem::u8path(shotDir()), ec).lexically_normal().u8string());
+            }
+            c.next();
+            c.hint(keyOf(A_SCREENSHOT) + " TAKES ONE; HIDE HUD: THE 3D VIEW ONLY;", "PICTURES: PICTURES/QUARK IN YOUR HOME FOLDER");
+        }
+        break;
+    }
+    case SS_VIDEO9_DEMOS: {   // was drawMoreSettings: DEMOS
+        {
+            static const std::vector<std::string> rn = {"DEMO RATE: 62.5 HZ", "DEMO RATE: FULL"};
+            int ri = cfg_.demoFullRate;
+            if (ui_.cycle(c.x(), c.top(), w, h, "DEMO RATE", ri, 2, rn, UiExp::cfg("demo_full_rate"))) cfg_.demoFullRate = ri == 1;
+            c.next();
+            c.hint("FULL: EVERY SNAPSHOT (BIGGER FILES); ALSO ON DEMOS");
+        }
+        break;
+    }
+    case SS_VIDEO9_WINDOW_INPUT: {   // was drawMoreSettings: WINDOW + INPUT
+        ui_.toggle(c.x(), c.top(), w, h, "ALWAYS ON TOP", cfg_.onTop, UiExp::cfg("on_top"));
+        c.next();
+        break;
+    }
+    case SS_CONTROLS_DASH: {   // (was VIDEO + AUDIO page 9's WINDOW + INPUT)
+        {
+            static const float db[] = {0.0f, 0.05f, 0.1f, 0.15f};
+            static const std::vector<std::string> bn = {"DASH BUFFER: OFF", "DASH BUFFER: 0.05 S", "DASH BUFFER: 0.1 S", "DASH BUFFER: 0.15 S"};
+            int bi = cfg_.dashBuffer < 0.025f ? 0 : cfg_.dashBuffer < 0.075f ? 1 : cfg_.dashBuffer < 0.125f ? 2 : 3;
+            if (ui_.cycle(c.x(), c.top(), w, h, "DASH BUFFER", bi, 4, bn, UiExp::cfg("dash_buffer"))) cfg_.dashBuffer = db[bi];
+            c.next();
+            c.hint("A DASH PRESSED THIS SOON BEFORE IT'S READY", "FIRES THE MOMENT IT IS");
+        }
+        break;
+    }
+    case SS_VIDEO9_LATENCY: {   // was drawMoreSettings: LATENCY
+        {
+            float v = (float)cfg_.ultraMarginUs;   // (0, the far left: AUTO, learnt as it runs; ultramargin.h)
+            ui_.slider(c.x(), c.top(), w, h, "ULTRA SAFETY", v, 0, 1000, cfg_.ultraMarginUs <= 0 ? "AUTO" : "%.0f US", UiExp::cfg("ultra_margin_us"), (float)d.ultraMarginUs);
+            cfg_.ultraMarginUs = std::min(std::max(0, (int)std::lround(v)), 2000);
+            c.next();
+            c.hint("LOW LATENCY: ULTRA STARTS EACH FRAME THIS EARLY;", "AUTO LEARNS IT; MORE: FEWER GPU BUBBLES, MORE LAG");
+        }
+        {
+            float v = (float)cfg_.capOffsetUs;   // (-1, the far left: AUTO, 5% of the cap's frame; 0: off)
+            char autoTxt[48];
+            snprintf(autoTxt, sizeof autoTxt, "AUTO (%.0f US)", maxFps() > 0 ? capOffset(1.0 / maxFps()) * 1e6 : 0.0);
+            const std::string shown = cfg_.capOffsetUs < 0 ? (maxFps() > 0 ? std::string(autoTxt) : std::string("AUTO")) : cfg_.capOffsetUs == 0 ? std::string("OFF") : std::string("%.0f US");
+            ui_.slider(c.x(), c.top(), w, h, "FRAME CAP OFFSET", v, -1, 1000, shown.c_str(), UiExp::cfg("cap_offset_us"), (float)d.capOffsetUs);
+            cfg_.capOffsetUs = std::min(std::max(-1, (int)std::lround(v)), 5000);
+            c.next();
+            c.hint("FPS LIMIT: WAKES THIS EARLY, THEN WAITS EXACTLY TO THE", "FRAME'S START: EVEN FRAMES; AUTO 5% OF THE FRAME");
+        }
+        {
+            static const std::vector<std::string> mn = {"MOUSE THREAD: SHARED", "MOUSE THREAD: OWN CORE"};
+            int mi = cfg_.mouseOwnCore ? 1 : 0;
+            if (ui_.cycle(c.x(), c.top(), w, h, "MOUSE THREAD", mi, 2, mn, UiExp::cfg("mouse_own_core"))) { cfg_.mouseOwnCore = mi == 1; applyRawInput(); }
+            c.next();
+            char cs[64];
+            if (rawMouse_.core() >= 0) snprintf(cs, sizeof cs, "NOW ON CORE %d; THE GAME STAYS OFF IT", rawMouse_.core()); else snprintf(cs, sizeof cs, "%s", "RAW INPUT, WINDOWS, 4+ CORES ONLY");
+            c.hint("OWN CORE: RAW INPUT READ AT TOP PRIORITY ON ONE FAST CORE;", cs);
+        }
+        if (ui_.toggle(c.x(), c.top(), hw, h, "NV SINGLE-THREAD", cfg_.nvThreaded, UiExp::cfg("nv_threaded"))) {
+            std::string msg = "NOT CHANGED IN THE UI TEST";
+            if (!uiTest_ && !nvThreadedOff(cfg_.nvThreaded, &msg)) cfg_.nvThreaded = false;
+            notify(msg);
+        }
+        if (ui_.toggle(xr, c.top(), hw, h, "NV DXGI PRESENT", cfg_.nvDxgi, UiExp::cfg("nv_dxgi"))) {
+            std::string msg = "NOT CHANGED IN THE UI TEST";
+            if (!uiTest_ && !nvDxgiPresent(cfg_.nvDxgi, &msg)) cfg_.nvDxgi = false;
+            notify(msg);
+        }
+        c.next();
+#ifdef _WIN32
+        c.hint("NVIDIA DRIVER PROFILE, FROM THE NEXT START:", "THREADED OPTIMIZATION OFF; PRESENT VIA DXGI");
+#else
+        c.hint("N/A HERE: WINDOWS + NVIDIA ONLY");
+#endif
+        break;
+    }
+    case SS_VIDEO9_SOUND: {   // was drawMoreSettings: SOUND
+        ui_.toggle(c.x(), c.top(), hw, h, "HITSOUND TIERS", cfg_.hitTiers, UiExp::cfg("hit_tiers"));
+        {
+            bool on = !(cfg_.cueMute >> SND_TYPING & 1);
+            if (ui_.toggle(xr, c.top(), hw, h, "TYPING SOUNDS", on, UiExp::cfg("cue_mute")))
+                cfg_.cueMute = on ? cfg_.cueMute & ~(int)(1u << SND_TYPING) : cfg_.cueMute | (int)(1u << SND_TYPING);
+        }
+        c.next();
+        ui_.toggle(c.x(), c.top(), hw, h, "QUIP CAPTIONS", cfg_.quipCaptions, UiExp::cfg("quip_captions"));
+        ui_.slider(xr, c.top(), hw, h, "DUCKING", cfg_.annDuck, 0, 1, cfg_.annDuck < 0.01f ? "OFF" : "%.2f", UiExp::cfg("ann_duck"), d.annDuck);
+        cfg_.annDuck = clampf(cfg_.annDuck, 0, 1);
+        c.next();
+        c.hint("TIERS OFF: ONE HITSOUND FOR EVERY HIT; DUCKING:", "EFFECTS QUIETER WHILE THE ANNOUNCER SPEAKS");
+        break;
+    }
+    case SS_VIDEO4_DISPLAY: {   // was drawMoreSettings: DISPLAY
+        {   // FULLSCREEN SIZE: the monitor's own modes (each size once), for exclusive fullscreen
+            std::vector<std::pair<int, int>> sizes = {{0, 0}};
+            if (GLFWmonitor* mon = chosenMonitor()) {
+                int n = 0;
+                const GLFWvidmode* ms = glfwGetVideoModes(mon, &n);
+                for (int i = n - 1; i >= 0; i--) {   // (largest first)
+                    std::pair<int, int> sz = {ms[i].width, ms[i].height};
+                    if (sz.first >= 640 && std::find(sizes.begin(), sizes.end(), sz) == sizes.end()) sizes.push_back(sz);
+                }
+            }
+            int cur = 0;
+            for (size_t i = 0; i < sizes.size(); i++) if (sizes[i].first == cfg_.fsWidth && sizes[i].second == cfg_.fsHeight) cur = (int)i;
+            if (cfg_.fsWidth > 0 && cur == 0) { sizes.push_back({cfg_.fsWidth, cfg_.fsHeight}); cur = (int)sizes.size() - 1; }
+            std::vector<std::string> names;
+            for (auto& z : sizes) names.push_back(z.first ? "FULLSCREEN SIZE: " + std::to_string(z.first) + " X " + std::to_string(z.second) : std::string("FULLSCREEN SIZE: DESKTOP"));
+            int pick = cur;
+            if (ui_.cycle(c.x(), c.top(), w, h, "FULLSCREEN SIZE", pick, (int)sizes.size(), names, UiExp::cfg("fs_*")) && pick != cur) {
+                cfg_.fsWidth = sizes[pick].first; cfg_.fsHeight = sizes[pick].second;
+                if (cfg_.displayMode == 2 && !uiTest_) applyDisplayMode();
+            }
+            c.next();
+            c.hint("EXCLUSIVE FULLSCREEN ONLY; A 4:3 SIZE IS", "STRETCHED (OR BARRED BY YOUR GPU'S SCALING)");
+            ui_.hint(c.x(), c.L.Y(c.y - 4), "WARNING: DON'T TOUCH THIS UNLESS YOU KNOW WHAT YOU'RE DOING", rgba(cfg_.warnColor), c.w());
+            c.y += 16;
+        }
+        if (ui_.toggle(c.x(), c.top(), w, h, "G-SYNC / FREESYNC", cfg_.vrr, UiExp::cfg("vrr"))) applyPresentMode();
+        c.next();
+        c.hint(vrrHz_ > 3 ? "VSYNC ON, FPS CAPPED AT " + std::to_string(vrrHz_ - 3) + " (REFRESH - 3)" : std::string("VSYNC ON, FPS CAPPED 3 UNDER THE REFRESH"),
+               "FOR A VARIABLE REFRESH MONITOR");
+        if (ui_.toggle(c.x(), c.top(), w, h, "MINIMIZE ON ALT-TAB", cfg_.autoIconify, UiExp::cfg("auto_iconify")))
+            glfwSetWindowAttrib(win_, GLFW_AUTO_ICONIFY, cfg_.autoIconify ? GLFW_TRUE : GLFW_FALSE);
+        c.next();
+        c.hint("FULLSCREEN: OFF KEEPS IT ON SCREEN", "BEHIND OTHER WINDOWS");
+        break;
+    }
+    case SS_VIDEO4_SOUND_GROUPS: {   // was drawMoreSettings: SOUND GROUPS
+        {
+            const Settings& d = defaultSettings();
+            pctSlider(c.x(), c.top(), w, h, "MY FOOTSTEPS", cfg_.volSteps, 1, nullptr, UiExp::cfg("vol_steps"), d.volSteps);
+            cfg_.volSteps = clampf(cfg_.volSteps, 0, 1);
+            c.next();
+            pctSlider(c.x(), c.top(), w, h, "OTHERS' FOOTSTEPS", cfg_.volOthersSteps, 2, nullptr, UiExp::cfg("vol_others_steps"), d.volOthersSteps);
+            cfg_.volOthersSteps = clampf(cfg_.volOthersSteps, 0, 2);
+            c.next();
+            c.hint("OVER 1: LOUDER, TO HEAR THEM COMING");
+            pctSlider(c.x(), c.top(), w, h, "GUNFIRE", cfg_.volWeapons, 1, nullptr, UiExp::cfg("vol_weapons"), d.volWeapons);
+            cfg_.volWeapons = clampf(cfg_.volWeapons, 0, 1);
+            c.next();
+            pctSlider(c.x(), c.top(), w, h, "BOMB BEEP", cfg_.volObjective, 1, nullptr, UiExp::cfg("vol_objective"), d.volObjective);
+            cfg_.volObjective = clampf(cfg_.volObjective, 0, 1);
+            c.next();
+        }
+        break;
+    }
+    case SS_VIDEO4_PERFORMANCE: {   // was drawMoreSettings: PERFORMANCE
+        static const std::vector<std::string> pn = {"CPU PRIORITY: ABOVE NORMAL", "CPU PRIORITY: HIGH"};
+        int pi = cfg_.cpuPriority - 1;
+        if (ui_.cycle(c.x(), c.top(), w, h, "CPU PRIORITY", pi, 2, pn, UiExp::cfg("cpu_priority"))) {
+            cfg_.cpuPriority = pi + 1;
+            if (!uiTest_) setGamePriority(prioLevel(glfwGetWindowAttrib(win_, GLFW_FOCUSED) != 0));
+        }
+        c.next();
+        c.hint("WINDOWS, WITH PRIORITIZE GAME ON;", "HIGH CAN SLOW OTHER PROGRAMS");
+        break;
+    }
+    case SS_VIDEO2_WINDOW: {   // was drawMoreSettings: WINDOW
+    {   // the windowed size: common sizes that fit the monitor, plus the current one if it's none of them
+        static const int sizes[][2] = {{1280, 720}, {1366, 768}, {1600, 900}, {1920, 1080}, {2560, 1440}, {3840, 2160}};
+        GLFWmonitor* mon = chosenMonitor();
+        const DeskMode dm = mon ? desktopMode(mon) : DeskMode{};
+        std::vector<std::pair<int, int>> opts;
+        for (auto& s : sizes) if (dm.w <= 0 || (s[0] <= dm.w && s[1] <= dm.h)) opts.push_back({s[0], s[1]});
+        int cur = -1;
+        for (size_t i = 0; i < opts.size(); i++) if (opts[i].first == cfg_.width && opts[i].second == cfg_.height) cur = (int)i;
+        if (cur < 0) { opts.push_back({cfg_.width, cfg_.height}); cur = (int)opts.size() - 1; }
+        std::vector<std::string> names;
+        for (auto& o : opts) names.push_back("WINDOW SIZE: " + std::to_string(o.first) + " X " + std::to_string(o.second));
+        int pick = cur;
+        if (ui_.cycle(c.x(), c.top(), w, h, "WINDOW SIZE", pick, (int)opts.size(), names, UiExp::cfg("width")) && pick != cur) {
+            const int ow = cfg_.width, oh = cfg_.height;
+            cfg_.width = opts[pick].first; cfg_.height = opts[pick].second;
+            if (cfg_.displayMode == 0 && !uiTest_) { applyDisplayMode(); askKeepDisplay(cfg_.displayMode, ow, oh); }
+        }
+        c.next();
+        if (cfg_.displayMode == 0) c.hint("THE WINDOW'S SIZE AND PLACE ARE KEPT", "FOR THE NEXT LAUNCH");
+        else c.hint("FOR WINDOWED MODE (FULLSCREEN USES", "THE MONITOR'S OWN SIZE)");
+    }
+        break;
+    }
+    case SS_VIDEO2_SHADOWS: {   // was drawMoreSettings: SHADOWS
+    {
+        static const int res[] = {1024, 2048, 4096};
+        static const std::vector<std::string> names = {"SHADOW QUALITY: LOW", "SHADOW QUALITY: MEDIUM", "SHADOW QUALITY: HIGH"};
+        int qi = cfg_.shadowRes <= 1024 ? 0 : cfg_.shadowRes <= 2048 ? 1 : 2;
+        if (ui_.cycle(c.x(), c.top(), w, h, "SHADOW QUALITY", qi, 3, names, UiExp::cfg("shadowres"))) {
+            cfg_.shadowRes = res[qi];
+            r_.setShadowRes(cfg_.shadowRes);
+        }
+        c.next();
+        c.hint("PLAYERS' SHADOW DETAIL (PLAYER SHADOWS", "ON VIDEO > DISPLAY TURNS THEM OFF)");
+    }
+        break;
+    }
+    case SS_VIDEO2_GPU: {   // was drawMoreSettings: GPU
+    {
+        const std::string gpu = upper(r_.gpuName().empty() ? std::string("UNKNOWN") : r_.gpuName());
+        c.hint(gpu);
+        const bool integrated = gpu.find("INTEL") != std::string::npos || gpu.find("UHD") != std::string::npos || gpu.find("IRIS") != std::string::npos;
+        if (integrated) c.hint("LOOKS INTEGRATED: IF THERE'S A DEDICATED GPU,", "PICK IT IN WINDOWS' GRAPHICS SETTINGS");
+    }
+        break;
+    }
+    case SS_VIDEO2_WHEN_UNFOCUSED: {   // was drawMoreSettings: WHEN UNFOCUSED
+    {
+        float v = (float)cfg_.bgFps;
+        ui_.slider(c.x(), c.top(), w, h, "BACKGROUND FPS LIMIT", v, 0, 240, cfg_.bgFps <= 0 ? "SAME AS FPS LIMIT" : "%.0f", UiExp::cfg("bg_fps"), (float)defaultSettings().bgFps);
+        cfg_.bgFps = std::min(std::max(0, (int)std::lround(v)), 1000);
+        c.next();
+        c.hint("ALT-TABBED OR MINIMIZED: LESS POWER AND HEAT");
+        ui_.toggle(c.x(), c.top(), w, h, "DRAW IN BACKGROUND", cfg_.bgDraw, UiExp::cfg("bg_draw"));
+        c.next();
+        c.hint("OFF: NO FRAMES WHILE ALT-TABBED (THE GAME AND A", "HOSTED SERVER KEEP RUNNING); ON: DRAWN AT THE LIMIT");
+        if (ui_.toggle(c.x(), c.top(), w, h, "MUTE IN BACKGROUND", cfg_.bgMute, UiExp::cfg("bg_mute"))) applyBackground();
+        c.next();
+    }
+        break;
+    }
+    case SS_VIDEO2_HITSOUNDS: {   // was drawMoreSettings: HITSOUNDS
+    {
+        const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
+        if (pctSlider(c.x(), c.top(), w, h, "HITSOUND VOLUME", cfg_.hitVolume, 2, nullptr, UiExp::cfg("hit_volume"), defaultSettings().hitVolume))
+            audio_.play(SND_HIT_MED, 0.9f * (cfg_.hitVolume = clampf(cfg_.hitVolume, 0, 2)), 1.0f, cfg_.hitPack);
+        c.next();
+        static const std::vector<std::string> hp = {"HITSOUND: MY SOUND PACK", "HITSOUND: DEFAULT", "HITSOUND: HEAVY METAL", "HITSOUND: MAGICAL", "HITSOUND: RETRO", "HITSOUND: MOUTH"};
+        int pi = cfg_.hitPack + 1;
+        if (ui_.cycle(c.x(), c.top(), w, h, "HITSOUND", pi, 6, hp, UiExp::cfg("hit_pack"))) { cfg_.hitPack = pi - 1; audio_.play(SND_HIT_MED, 0.9f * cfg_.hitVolume, 1.0f, cfg_.hitPack); }
+        c.next();
+        ui_.toggle(c.x(), c.top(), hw, h, "HEADSHOT", cfg_.headshotSound, UiExp::cfg("headshot_sound"));
+        ui_.toggle(x2, c.top(), hw, h, "KILL SOUND", cfg_.killSound, UiExp::cfg("kill_sound"));
+        c.next();
+    }
+        break;
+    }
+    case SS_VIDEO2_INTERFACE: {   // was drawMoreSettings: INTERFACE
+    ui_.slider(c.x(), c.top(), w, h, "HUD SIZE", cfg_.hudSize, 0.5f, 2.0f, "X%.2f", UiExp::cfg("hud_size"), defaultSettings().hudSize);
+    cfg_.hudSize = clampf(cfg_.hudSize, 0.5f, 2.0f);
+    c.next();
+    c.hint("EVERY HUD ELEMENT AT ONCE (EACH ALSO HAS", "ITS OWN SIZE ON HUD > ELEMENTS)");
+        break;
+    }
+    case SS_VIDEO2_FLAT_MAP: {   // was drawMoreSettings: FLAT MAP
+    ui_.toggle(c.x(), c.top(), w, h, "FULLBRIGHT", cfg_.fullbright, UiExp::cfg("fullbright"));
+    c.next();
+    c.hint("FLAT MAP, NO LIGHTING");
+    {   // its colour (white: the classic look)
+        const float hw = L.L(kHalfW);
+        Vec3& mc = cfg_.fullbrightColor;
+        const Vec3& d = defaultSettings().fullbrightColor;
+        ui_.colorPicker(c.x(), c.top(), hw, h, "MAP COLOR", mc, UiExp::cfg("fullbright_color"), d);
+        bool white = mc.x == d.x && mc.y == d.y && mc.z == d.z;
+        if (ui_.button(L.X(kColL + 184), c.top(), hw, h, "RESET MAP COLOR", UiExp::cfg("fullbright_color").withId("RESET MAP COLOR"), !white)) mc = d;
+        c.next();
+    }
+        break;
+    }
+    case SS_GAMEPLAY3_DAMAGE_NUMBERS: {   // was drawGameplayMore2: DAMAGE NUMBERS
+    ui_.colorPicker(c.x(), c.top(), w, h, "DAMAGE NUMBER COLOR", cfg_.dmgNumColor, UiExp::cfg("dmg_num_color"), d.dmgNumColor);
+    c.next();
+    {
+        static const std::vector<std::string> sn = {"STACKING: QUICK HITS ADD UP", "STACKING: A NUMBER A HIT", "STACKING: RUNNING TOTAL"};
+        ui_.cycle(c.x(), c.top(), w, h, "STACKING", cfg_.dmgNumStack, 3, sn, UiExp::cfg("dmg_num_stack"));
+        c.next();
+    }
+    ui_.slider(c.x(), c.top(), w, h, "NUMBER TIME", cfg_.dmgNumTime, 0.3f, 3, "%.1f S", UiExp::cfg("dmg_num_time"), d.dmgNumTime);
+    cfg_.dmgNumTime = clampf(cfg_.dmgNumTime, 0.3f, 3);
+    c.next();
+    c.hint("HEADSHOTS STAY RED, BIG HITS GOLD");
+        break;
+    }
+    case SS_GAMEPLAY3_DAMAGE_ARCS: {   // was drawGameplayMore2: DAMAGE ARCS
+    ui_.toggle(c.x(), c.top(), hw, h, "DAMAGE ARCS", cfg_.dmgArcs, UiExp::cfg("dmg_arcs"));
+    ui_.colorPicker(fx2, c.top(), hw, h, "ARC COLOR", cfg_.dmgArcColor, UiExp::cfg("dmg_arc_color"), d.dmgArcColor);
+    c.next();
+    ui_.slider(c.x(), c.top(), hw, h, "ARC SIZE", cfg_.dmgArcSize, 0.5f, 2, "X%.2f", UiExp::cfg("dmg_arc_size"), d.dmgArcSize);
+    ui_.slider(fx2, c.top(), hw, h, "ARC TIME", cfg_.dmgArcTime, 0.3f, 3, "%.1f S", UiExp::cfg("dmg_arc_time"), d.dmgArcTime);
+    cfg_.dmgArcSize = clampf(cfg_.dmgArcSize, 0.5f, 2); cfg_.dmgArcTime = clampf(cfg_.dmgArcTime, 0.3f, 3);
+    c.next();
+    c.hint("WHERE THE HITS YOU TAKE COME FROM");
+        break;
+    }
+    case SS_GAMEPLAY3_YOUR_KILLS: {   // was drawGameplayMore2: YOUR KILLS
+    ui_.toggle(c.x(), c.top(), hw, h, "KILL MARK", cfg_.killMark, UiExp::cfg("kill_mark"));
+    ui_.toggle(fx2, c.top(), hw, h, "KILL TEXT", cfg_.killText, UiExp::cfg("kill_text"));
+    c.next();
+    ui_.slider(c.x(), c.top(), hw, h, "MARK TIME", cfg_.killMarkTime, 0.2f, 2, "%.2f S", UiExp::cfg("kill_mark_time"), d.killMarkTime);
+    cfg_.killMarkTime = clampf(cfg_.killMarkTime, 0.2f, 2);
+    ui_.colorPicker(fx2, c.top(), hw, h, "MARK COLOR", cfg_.killMarkColor, UiExp::cfg("kill_mark_color"), d.killMarkColor);
+    c.next();
+    c.hint("KILL TEXT: \"KILLED <NAME>\" OVER THE CROSSHAIR");
+        break;
+    }
+    case SS_GAMEPLAY3_HIT_FLASH: {   // was drawGameplayMore2: HIT FLASH
+    ui_.slider(c.x(), c.top(), w, h, "HIT FLASH TIME", cfg_.hitFlashTime, 0.05f, 1, "%.2f S", UiExp::cfg("hit_flash_time"), d.hitFlashTime);
+    cfg_.hitFlashTime = clampf(cfg_.hitFlashTime, 0.05f, 1);
+    c.next();
+    c.hint("ITS COLOURS ARE ON THE CROSSHAIR TAB (ON HIT)");
+        break;
+    }
+    case SS_GAMEPLAY3_LOW_HEALTH: {   // was drawGameplayMore2: LOW HEALTH
+    {
+        float pct = cfg_.lowHp * 100;
+        if (ui_.slider(c.x(), c.top(), w, h, "LOW HEALTH BELOW", pct, 0, 90, pct < 0.5f ? "OFF" : "%.0f%%", UiExp::cfg("low_hp"), d.lowHp * 100))
+            cfg_.lowHp = clampf(std::round(pct) / 100, 0, 0.9f);
+        c.next();
+    }
+    ui_.colorPicker(c.x(), c.top(), w, h, "LOW HEALTH COLOR", cfg_.lowHpColor, UiExp::cfg("low_hp_color"), d.lowHpColor);
+    c.next();
+    ui_.toggle(c.x(), c.top(), hw, h, "PULSE", cfg_.lowHpPulse, UiExp::cfg("low_hp_pulse"));
+    if (ui_.toggle(gx2, c.top(), hw, h, "WARNING BEEP", cfg_.lowHpSound, UiExp::cfg("low_hp_sound")) && cfg_.lowHpSound) audio_.play(SND_CHECKPOINT, 0.7f, 0.55f);
+    c.next();
+    c.hint("THE SHARE OF THE MODE'S MAX HEALTH");
+        break;
+    }
+    case SS_GAMEPLAY3_HEALING: {   // was drawGameplayMore2: HEALING
+    ui_.toggle(c.x(), c.top(), w, h, "HEAL NUMBERS", cfg_.healNums, UiExp::cfg("heal_nums"));
+    c.next();
+    c.hint("A GREEN +N OVER YOUR HEALTH (VAMPIRE,", "REGEN, THE SYRINGE)");
+        break;
+    }
+    case SS_GAMEPLAY3_WEAPON_MODEL: {   // was drawGameplayMore2: WEAPON MODEL
+    ui_.slider(c.x(), c.top(), w, h, "WEAPON KICK", cfg_.recoilAmount, 0, 2, cfg_.recoilAmount < 0.01f ? "OFF" : "X%.2f", UiExp::cfg("recoil_amount"), d.recoilAmount);
+    cfg_.recoilAmount = clampf(cfg_.recoilAmount, 0, 2);
+    c.next();
+    c.hint("THE GUN'S KICK ON A SHOT (0: NONE)");
+    {   // per weapon: shown, and an offset on top of the HUD tab's WEAPON MODEL element (wpn_vm_<n>)
+        static int pw = WPN_RIFLE;
+        static std::vector<std::string> wn;
+        if (wn.empty()) for (int i = 0; i < WPN_COUNT; i++) wn.push_back(upper(baseWeaponDef(i).name));
+        const float hw = L.L(kHalfW), gx2 = L.X(kColR + kColW - kHalfW);
+        ui_.cycle(c.x(), c.top(), hw, h, "MODEL OF", pw, WPN_COUNT, wn, UiExp::local().clipOk());
+        bool sh = !cfg_.wpnVmHide[pw];
+        if (ui_.toggle(gx2, c.top(), hw, h, "SHOWN", sh, UiExp::cfg("wpn_vm_*"))) cfg_.wpnVmHide[pw] = !sh;
+        c.next();
+        const float tw = (w - 2 * L.L(8)) / 3, step = tw + L.L(8);
+        static const char* const lab[3] = {"X", "Y", "DEPTH"};
+        for (int i = 0; i < 3; i++) {
+            if (ui_.slider(c.x() + step * i, c.top(), tw, h, lab[i], cfg_.wpnVmOff[pw][i], -200, 200, "%+.0f", UiExp::cfg("wpn_vm_*"), 0.0f) && !ui_.typed())
+                cfg_.wpnVmOff[pw][i] = std::round(cfg_.wpnVmOff[pw][i]);
+            cfg_.wpnVmOff[pw][i] = clampf(cfg_.wpnVmOff[pw][i], -200, 200);
+        }
+        c.next();
+    }
+        break;
+    }
+    case SS_GAMEPLAY4_SPEED_METER: {   // was drawGameplayMore3: SPEED METER
+    {
+        static const std::vector<std::string> un = {"SPEED UNITS: M/S", "SPEED UNITS: KM/H", "SPEED UNITS: UPS (QUAKE)"};
+        ui_.cycle(c.x(), c.top(), w, h, "SPEED UNITS", cfg_.speedUnit, 3, un, UiExp::cfg("speed_unit"));
+        c.next();
+    }
+    ui_.slider(c.x(), c.top(), hw, h, "METER SCALE", cfg_.speedScale, 0.25f, 4, "X%.2f", UiExp::cfg("speed_scale"), d.speedScale);
+    cfg_.speedScale = clampf(cfg_.speedScale, 0.25f, 4);
+    ui_.toggle(fx2, c.top(), hw, h, "METER TICKS", cfg_.speedTicks, UiExp::cfg("speed_ticks"));
+    c.next();
+    c.hint("SCALE: X2 TAKES TWICE THE SPEED TO FILL");
+        break;
+    }
+    case SS_GAMEPLAY4_BAR_CAPTIONS: {   // was drawGameplayMore3: BAR CAPTIONS
+    bit(c.x(), c.top(), "WEAPON CAPTION", cfg_.barCaps, 0, "bar_caps");
+    bit(fx2, c.top(), "DASH CAPTION", cfg_.barCaps, 1, "bar_caps");
+    c.next();
+    bit(c.x(), c.top(), "HOOK CAPTION", cfg_.barCaps, 2, "bar_caps");
+    bit(fx2, c.top(), "SPEED CAPTION", cfg_.barCaps, 3, "bar_caps");
+    c.next();
+        break;
+    }
+    case SS_GAMEPLAY4_CLOCK: {   // was drawGameplayMore3: CLOCK
+    {
+        static const std::vector<std::string> cn = {"ROUND CLOCK: TIME LEFT", "ROUND CLOCK: TIME PLAYED"};
+        ui_.cycle(c.x(), c.top(), w, h, "ROUND CLOCK", cfg_.clockMode, 2, cn, UiExp::cfg("clock_mode"));
+        c.next();
+    }
+    ui_.toggle(c.x(), c.top(), hw, h, "TENTHS", cfg_.clockTenths, UiExp::cfg("clock_tenths"));
+    ui_.toggle(fx2, c.top(), hw, h, "12 H CLOCK", cfg_.clock12, UiExp::cfg("clock_12h"));
+    c.next();
+    c.hint("TENTHS: THE LAST 10 S AS 0:09.4");
+        break;
+    }
+    case SS_GAMEPLAY4_VERBOSE_INFO_LINES: {   // was drawGameplayMore3: VERBOSE INFO LINES
+    {
+        static const std::vector<std::string> vn = {"LINE: TIME", "LINE: VERSION", "LINE: FPS", "LINE: FPS MIN", "LINE: SPEED", "LINE: PING", "LINE: LOSS",
+                                                    "LINE: TICK / SNAP", "LINE: ENEMIES", "LINE: TEAMMATES", "LINE: TIME LEFT", "LINE: MAP", "LINE: MODE", "LINE: K / D"};
+        static int vl = 0;
+        ui_.cycle(c.x(), c.top(), hw, h, "LINE", vl, (int)vn.size(), vn, UiExp::local());
+        bit(fx2, c.top(), "SHOW LINE", cfg_.verboseLines, vl, "verbose_lines");
+        c.next();
+        c.hint("HUD > VERBOSE INFO TURNS THE BLOCK ON");
+    }
+        break;
+    }
+    case SS_GAMEPLAY4_ROUND_MODES: {   // was drawGameplayMore3: ROUND MODES
+    ui_.toggle(c.x(), c.top(), w, h, "STALEMATE WARNING", cfg_.drainWarn, UiExp::cfg("drain_warn"));
+    c.next();
+        break;
+    }
+    case SS_GAMEPLAY4_AUTO_HIDE: {   // was drawGameplayMore3: AUTO-HIDE
+    {
+        static const std::vector<std::string> hn = {"HEALTH: ALWAYS", "HEALTH: AFTER A CHANGE + LOW", "HEALTH: ONLY WHEN LOW"};
+        static const std::vector<std::string> sn = {"WEAPON LIST: ALWAYS", "WEAPON LIST: AFTER A SWITCH"};
+        static const std::vector<std::string> bn = {"COOLDOWN BARS: ALWAYS", "COOLDOWN BARS: WHEN NOT READY"};
+        ui_.cycle(c.x(), c.top(), w, h, "AUTO-HIDE HEALTH", cfg_.autoHideHealth, 3, hn, UiExp::cfg("autohide_health"));
+        c.next();
+        ui_.cycle(c.x(), c.top(), w, h, "AUTO-HIDE WEAPON LIST", cfg_.autoHideSlots, 2, sn, UiExp::cfg("autohide_slots"));
+        c.next();
+        ui_.cycle(c.x(), c.top(), w, h, "AUTO-HIDE BARS", cfg_.autoHideBars, 2, bn, UiExp::cfg("autohide_bars"));
+        c.next();
+    }
+        break;
+    }
+    case SS_GAMEPLAY4_OBJECTIVE_MARKERS: {   // was drawGameplayMore3: OBJECTIVE MARKERS
+    ui_.slider(c.x(), c.top(), hw, h, "MARKER SIZE", cfg_.objSize, 0.5f, 2, "X%.2f", UiExp::cfg("obj_size"), d.objSize);
+    ui_.slider(gx2, c.top(), hw, h, "MARKER OPACITY", cfg_.objMarkOpacity, 0.1f, 1, "%.2f", UiExp::cfg("obj_mark_opacity"), d.objMarkOpacity);
+    cfg_.objSize = clampf(cfg_.objSize, 0.5f, 2); cfg_.objMarkOpacity = clampf(cfg_.objMarkOpacity, 0.1f, 1);
+    c.next();
+    ui_.toggle(c.x(), c.top(), hw, h, "DISTANCE", cfg_.objDistance, UiExp::cfg("obj_distance"));
+    ui_.toggle(gx2, c.top(), hw, h, "EDGE ARROWS", cfg_.objArrow, UiExp::cfg("obj_arrow"));
+    c.next();
+        break;
+    }
+    case SS_GAMEPLAY4_SNIPER_SCOPE: {   // was drawGameplayMore3: SNIPER SCOPE
+    ui_.slider(c.x(), c.top(), hw, h, "SCOPE SIZE", cfg_.scopeSize, 0.5f, 1.2f, "X%.2f", UiExp::cfg("scope_size"), d.scopeSize);
+    ui_.slider(gx2, c.top(), hw, h, "RETICLE WIDTH", cfg_.scopeLine, 1, 4, "%.1f", UiExp::cfg("scope_line"), d.scopeLine);
+    cfg_.scopeSize = clampf(cfg_.scopeSize, 0.5f, 1.2f); cfg_.scopeLine = clampf(cfg_.scopeLine, 1, 4);
+    c.next();
+    ui_.colorPicker(c.x(), c.top(), w, h, "RETICLE COLOR", cfg_.scopeColor, UiExp::cfg("scope_color"), d.scopeColor);
+    c.next();
+        break;
+    }
+    case SS_GAMEPLAY4_MORE: {   // was drawGameplayMore3: MORE
+    ui_.toggle(c.x(), c.top(), hw, h, "NETWORK WARNINGS", cfg_.netIcons, UiExp::cfg("net_icons"));
+    ui_.toggle(gx2, c.top(), hw, h, "FEED HS MARK", cfg_.feedHeadshot, UiExp::cfg("feed_headshot"));
+    c.next();
+    {
+        static const std::vector<std::string> pn = {"SPECTATOR HUD: FULL", "SPECTATOR HUD: MINIMAL"};
+        ui_.cycle(c.x(), c.top(), w, h, "SPECTATOR HUD", cfg_.specHud, 2, pn, UiExp::cfg("spec_hud"));
+        c.next();
+    }
+    ui_.toggle(c.x(), c.top(), w, h, "STAIR SMOOTHING", cfg_.stepSmooth, UiExp::cfg("step_smooth"));   // (batch 4b)
+    c.next();
+    c.hint("OFF: THE VIEW STEPS UP STAIRS AT ONCE");
+        break;
+    }
+    case SS_GAMEPLAY5_CHAT: {   // was drawGameplayMore4: CHAT
+    ui_.toggle(c.x(), c.top(), hw, h, "ONE CHAT COLOR", cfg_.chatOneColor, UiExp::cfg("chat_one_color"));
+    ui_.colorPicker(fx2, c.top(), hw, h, "CHAT COLOR", cfg_.chatColor, UiExp::cfg("chat_color"), d.chatColor);
+    c.next();
+    ui_.toggle(c.x(), c.top(), hw, h, "CHAT BOX", cfg_.chatBox, UiExp::cfg("chat_box"));
+    ui_.slider(fx2, c.top(), hw, h, "BOX OPACITY", cfg_.chatBoxOpacity, 0.1f, 1, "%.2f", UiExp::cfg("chat_box_opacity"), d.chatBoxOpacity);
+    cfg_.chatBoxOpacity = clampf(cfg_.chatBoxOpacity, 0.1f, 1);
+    c.next();
+    ui_.toggle(c.x(), c.top(), hw, h, "TIMESTAMPS", cfg_.chatStamps, UiExp::cfg("chat_stamps"));
+    ui_.toggle(fx2, c.top(), hw, h, "WORD FILTER", cfg_.chatFilter, UiExp::cfg("chat_filter"));
+    c.next();
+    ui_.toggle(c.x(), c.top(), hw, h, "MY NAME: GOLD", cfg_.mentionHl, UiExp::cfg("mention_hl"));
+    ui_.toggle(fx2, c.top(), hw, h, "MY NAME: PING", cfg_.mentionSound, UiExp::cfg("mention_sound"));
+    c.next();
+    ui_.toggle(c.x(), c.top(), hw, h, "TEAM CHAT ONLY", cfg_.teamChatOnly, UiExp::cfg("team_chat_only"));
+    ui_.toggle(fx2, c.top(), hw, h, "NAME COLORS", cfg_.otherNameColors, UiExp::cfg("other_name_colors"));
+    c.next();
+    ui_.colorPicker(c.x(), c.top(), w, h, "SYSTEM LINE COLOR", cfg_.sysColor, UiExp::cfg("sys_color"), d.sysColor);
+    c.next();
+    {
+        static const std::vector<std::string> mn = {"SYSTEM MESSAGES: ALL", "SYSTEM MESSAGES: IMPORTANT", "SYSTEM MESSAGES: OFF"};
+        ui_.cycle(c.x(), c.top(), w, h, "SYSTEM MESSAGES", cfg_.sysMsgs, 3, mn, UiExp::cfg("sys_msgs"));
+        c.next();
+        c.hint("IMPORTANT: VOTES, KICKS, RANKED, ERRORS");
+    }
+        break;
+    }
+    case SS_GAMEPLAY5_SCOREBOARD: {   // was drawGameplayMore4: SCOREBOARD
+    {
+        static const std::vector<std::string> sn = {"SORT BY: SCORE", "SORT BY: KILLS", "SORT BY: DEATHS", "SORT BY: PING", "SORT BY: NAME"};
+        ui_.cycle(c.x(), c.top(), w, h, "SORT BY", cfg_.scoreSort, 5, sn, UiExp::cfg("score_sort"));
+        c.next();
+        static const std::vector<std::string> cn = {"COLUMN: K", "COLUMN: D", "COLUMN: DMG", "COLUMN: OBJ", "COLUMN: ACC", "COLUMN: PING", "COLUMN: TOTAL K / D"};
+        static int ci = 0;
+        ui_.cycle(c.x(), c.top(), hw, h, "COLUMN", ci, (int)cn.size(), cn, UiExp::local());
+        bool on = cfg_.scoreCols >> ci & 1;
+        if (ui_.toggle(fx2, c.top(), hw, h, "SHOW COLUMN", on, UiExp::cfg("score_cols"))) cfg_.scoreCols = on ? cfg_.scoreCols | 1 << ci : cfg_.scoreCols & ~(1 << ci);
+        c.next();
+    }
+        break;
+    }
+    case SS_GAMEPLAY5_MORE: {   // was drawGameplayMore4: MORE
+    ui_.toggle(c.x(), c.top(), hw, h, "SHOW I'M TYPING", cfg_.sendTyping, UiExp::cfg("send_typing"));
+    ui_.toggle(fx2, c.top(), hw, h, "RPS BY MOUSE", cfg_.rpsClick, UiExp::cfg("rps_click"));
+    c.next();
+    c.hint("RPS BY MOUSE: CLICK A TIEBREAK CARD TO THROW IT");
+        break;
+    }
+    case SS_GAMEPLAY5_WHEN_UNFOCUSED_FLASH_ON: {   // was drawGameplayMore4: WHEN UNFOCUSED, FLASH ON
+    auto bit = [&](float x, const char* label, int b) {
+        bool on = cfg_.alerts >> b & 1;
+        if (ui_.toggle(x, c.top(), hw, h, label, on, UiExp::cfg("alerts"))) cfg_.alerts = on ? cfg_.alerts | 1 << b : cfg_.alerts & ~(1 << b);
+    };
+    bit(c.x(), "MATCH START", 0); bit(gx2, "ROUND START", 1);
+    c.next();
+    bit(c.x(), "VOTE CALLED", 2); bit(gx2, "PLAYER JOINS", 3);
+    c.next();
+    c.hint("THE TASKBAR BUTTON FLASHES");
+        break;
+    }
+    case SS_GAMEPLAY5_JOINING_PRIVACY: {   // was drawGameplayMore4: JOINING + PRIVACY
+    {
+        static const std::vector<std::string> jn = {"ON JOIN: PLAY", "ON JOIN: SPECTATE", "ON JOIN: ASK"};
+        ui_.cycle(c.x(), c.top(), w, h, "ON JOIN", cfg_.onJoin, 3, jn, UiExp::cfg("on_join"));
+        c.next();
+    }
+    ui_.toggle(c.x(), c.top(), hw, h, "STREAMER MODE", cfg_.streamer, UiExp::cfg("streamer"));
+    ui_.toggle(gx2, c.top(), hw, h, "HIDE RATINGS", cfg_.hideRatings, UiExp::cfg("hide_ratings"));
+    c.next();
+    c.hint("STREAMER: ADDRESSES, CODES, OTHERS' NAMES HIDDEN");
+        break;
+    }
+    case SS_GAMEPLAY5_RACE: {   // was drawGameplayMore4: RACE
+    {
+        static const std::vector<std::string> vn = {"VS: BEST RUN", "VS: BEST SEGMENTS", "VS: LAST RUN"};
+        ui_.cycle(c.x(), c.top(), hw, h, "SPLITS VS", cfg_.raceSplitVs, 3, vn, UiExp::cfg("race_split_vs"));
+        ui_.slider(gx2, c.top(), hw, h, "SPLIT TIME", cfg_.raceSplitTime, 0.5f, 10, "%.1f S", UiExp::cfg("race_split_time"), d.raceSplitTime);
+        cfg_.raceSplitTime = clampf(cfg_.raceSplitTime, 0.5f, 10);
+        c.next();
+    }
+        break;
+    }
+    case SS_GAMEPLAY5_DEATH_SPECTATING: {   // was drawGameplayMore4: DEATH + SPECTATING
+    {
+        static const std::vector<std::string> dn = {"DEATH CAMERA: THE KILLER", "DEATH CAMERA: MY BODY", "DEATH CAMERA: A TEAMMATE"};
+        ui_.cycle(c.x(), c.top(), w, h, "DEATH CAMERA", cfg_.deathCam, 3, dn, UiExp::cfg("death_cam"));
+        c.next();
+    }
+    ui_.slider(c.x(), c.top(), w, h, "KILL CAM TIME", cfg_.killCamTime, 0, kKillCamTime, "%.1f S", UiExp::cfg("kill_cam_time"), d.killCamTime);
+    cfg_.killCamTime = clampf(cfg_.killCamTime, 0, kKillCamTime);
+    c.next();
+    if (ui_.slider(c.x(), c.top(), hw, h, "SPECTATOR FOV", cfg_.specFov, 0, 130, cfg_.specFov < 0.5f ? "MINE" : "%.0f", UiExp::cfg("spec_fov"), d.specFov) && !ui_.typed())
+        cfg_.specFov = std::round(cfg_.specFov);   // (dragged: whole degrees, the far left is MINE; typed: as typed)
+    cfg_.specFov = cfg_.specFov < 0.5f ? 0 : clampf(cfg_.specFov, 30, 140);
+    ui_.toggle(gx2, c.top(), hw, h, "THIRD PERSON", cfg_.specThird, UiExp::cfg("spec_third"));
+    c.next();
+        break;
+    }
+    case SS_CONTROLS3_PER_WEAPON: {   // was drawControlsMore2: PER WEAPON
+    {
+        static int pw = WPN_SNIPER;
+        static std::vector<std::string> wn;
+        if (wn.empty()) for (int i = 0; i < WPN_COUNT; i++) wn.push_back("WEAPON: " + upper(baseWeaponDef(i).name));
+        ui_.cycle(c.x(), c.top(), w, h, "WEAPON", pw, WPN_COUNT, wn, UiExp::local());
+        c.next();
+        ui_.slider(c.x(), c.top(), w, h, "WEAPON SENSITIVITY", cfg_.wpnSens[pw], 0.25f, 3, "X%.2f", UiExp::cfg("wpn_sens_*"), 1.0f);
+        cfg_.wpnSens[pw] = clampf(cfg_.wpnSens[pw], 0.1f, 5);
+        c.next();
+        c.hint("X SENSITIVITY WHILE THIS WEAPON IS HELD");
+        const int am = altToggleMask();
+        bool at = am >> pw & 1, sw = cfg_.swapFire >> pw & 1;
+        if (ui_.toggle(c.x(), c.top(), hw, h, "ALT-FIRE TOGGLES", at, UiExp::cfg("alt_toggle_weapons"))) cfg_.altToggleWpns = at ? am | 1 << pw : am & ~(1 << pw);
+        if (ui_.toggle(fx2, c.top(), hw, h, "SWAP FIRE", sw, UiExp::cfg("swap_fire"))) cfg_.swapFire = sw ? cfg_.swapFire | 1 << pw : cfg_.swapFire & ~(1 << pw);
+        c.next();
+        c.hint("ALT-FIRE TOGGLES: WITH ALT-FIRE: TOGGLE ON", "(BY DEFAULT ONLY THE SCOPES)");
+    }
+        break;
+    }
+    case SS_CONTROLS3_MOUSE: {   // was drawControlsMore2: MOUSE
+    ui_.slider(c.x(), c.top(), w, h, "MOUSE ACCELERATION", cfg_.mouseAccel, 0, 1, cfg_.mouseAccel < 0.005f ? "OFF" : "%.2f", UiExp::cfg("mouse_accel"), d.mouseAccel);
+    cfg_.mouseAccel = clampf(cfg_.mouseAccel, 0, 1);
+    c.next();
+    c.hint("FASTER MOVES TURN FURTHER (AT MOST X4)");
+    if (ui_.toggle(c.x(), c.top(), w, h, "RAW INPUT", cfg_.rawInput, UiExp::cfg("raw_input"))) applyRawInput();
+    c.next();
+    c.hint("OFF: THE OS'S POINTER MOTION (ITS OWN", "ACCELERATION AND SPEED SETTING)");
+        break;
+    }
+    case SS_CONTROLS3_MAP_EDITOR: {   // was drawControlsMore2: MAP EDITOR
+    ui_.toggle(c.x(), c.top(), hw, h, "BIND FLY KEYS", cfg_.edFlyBinds, UiExp::cfg("ed_fly_binds"));
+    ui_.slider(fx2, c.top(), hw, h, "FAST FLY", cfg_.edFastMul, 1, 10, "X%.1f", UiExp::cfg("ed_fast_mul"), d.edFastMul);
+    cfg_.edFastMul = clampf(cfg_.edFastMul, 1, 10);
+    c.next();
+    if (ui_.slider(c.x(), c.top(), hw, h, "CUSTOM GRID", cfg_.edGridCustom, 0, 8, cfg_.edGridCustom <= 0 ? "OFF" : "%.2f M", UiExp::cfg("ed_grid_custom"), d.edGridCustom) && !ui_.typed())
+        cfg_.edGridCustom = std::round(cfg_.edGridCustom * 20) / 20;   // (dragged: 5 cm steps)
+    cfg_.edGridCustom = clampf(cfg_.edGridCustom, 0, 16);
+    ui_.slider(fx2, c.top(), hw, h, "ROTATION STEP", cfg_.edRotStep, 1, 90, "%.0f DEG", UiExp::cfg("ed_rot_step"), d.edRotStep);
+    cfg_.edRotStep = clampf(std::round(cfg_.edRotStep), 1, 90);
+    c.next();
+    c.hint("ROTATION STEP: Q / E ON A SPAWN; THE FLY", "SPEED, GRID AND LAST LIGHT ARE KEPT");
+        break;
+    }
+    case SS_CONTROLS3_MOVEMENT: {   // was drawControlsMore2: MOVEMENT
+    ui_.toggle(c.x(), c.top(), hw, h, "AUTO-HOP", cfg_.autoHop, UiExp::cfg("auto_hop"));
+    {   // flight (3D VAMP): MOVE UP and MOVE DOWN, or MOVE UP alone (held: up, let go: down)
+        static const std::vector<std::string> vn = {"VERTICAL: TWO KEYS", "VERTICAL: ONE KEY"};
+        if (ui_.cycle(gx2, c.top(), hw, h, "VERTICAL KEYS", cfg_.verticalKeys, 2, vn, UiExp::cfg("vertical_keys"))) cfg_.save();
+    }
+    c.next();
+    c.hint("AUTO-HOP OFF: HELD JUMP JUMPS ONCE", "FLYING, ONE KEY: MOVE UP HELD UP, LET GO DOWN");
+        break;
+    }
+    case SS_CONTROLS3_CONSOLE: {   // was drawControlsMore2: CONSOLE
+    {
+        static const int keys[] = {96, 290, 299, 300, 260, 268, 92, 39};   // ` F1 F10 F11 INSERT HOME \ '
+        static const std::vector<std::string> kn = {"CONSOLE KEY: `", "CONSOLE KEY: F1", "CONSOLE KEY: F10", "CONSOLE KEY: F11", "CONSOLE KEY: INSERT",
+                                                    "CONSOLE KEY: HOME", "CONSOLE KEY: \\", "CONSOLE KEY: '"};
+        int ki = 0;
+        for (int i = 0; i < 8; i++) if (keys[i] == cfg_.consoleKey) ki = i;
+        if (ui_.cycle(c.x(), c.top(), w, h, "CONSOLE KEY", ki, 8, kn, UiExp::cfg("console_key"))) cfg_.consoleKey = keys[ki];
+        c.next();
+        c.hint("PICK A KEY NO ACTION IS BOUND TO");
+    }
+    ui_.toggle(c.x(), c.top(), w, h, "CONSOLE IN MENUS", cfg_.consoleMenus, UiExp::cfg("console_menus"));
+    c.next();
+        break;
+    }
+    case SS_CONTROLS3_RANKED: {   // was drawControlsMore2: RANKED
+    ui_.toggle(c.x(), c.top(), w, h, "ALT-FIRE TOGGLE IN RANKED", cfg_.rankedAltToggle, UiExp::cfg("ranked_alt_toggle"));
+    c.next();
+    c.hint("THE OTHER CONTROL SCRIPTS STAY OFF IN RANKED");
+        break;
+    }
+    case SS_CONTROLS3_EDITOR_TEST_PLAY: {   // was drawControlsMore2: EDITOR TEST PLAY
+    {
+        static std::vector<std::string> mn;
+        if (mn.empty()) { mn.push_back("TEST MODE: THE MAP'S"); for (int m = 0; m < MODE_COUNT; m++) mn.push_back(std::string("TEST MODE: ") + upper(modeName(m))); }
+        int mi = cfg_.edTestMode + 1;
+        if (ui_.cycle(c.x(), c.top(), w, h, "TEST MODE", mi, (int)mn.size(), mn, UiExp::cfg("ed_test_mode"))) cfg_.edTestMode = mi - 1;
+        c.next();
+        float b = (float)cfg_.edTestBots;
+        ui_.slider(c.x(), c.top(), hw, h, "TEST BOTS", b, 0, 7, "%.0f", UiExp::cfg("ed_test_bots"), (float)d.edTestBots);
+        cfg_.edTestBots = std::min(std::max(0, (int)std::lround(b)), 7);
+        ui_.toggle(gx2, c.top(), hw, h, "AT CAMERA", cfg_.edTestAtCam, UiExp::cfg("ed_test_at_cam"));
+        c.next();
+        ui_.toggle(c.x(), c.top(), w, h, "SKIP WARMUP", cfg_.edTestNoWarmup, UiExp::cfg("ed_test_no_warmup"));
+        c.next();
+    }
+    ui_.colorPicker(c.x(), c.top(), w, h, "CLIP BOX COLOR", cfg_.clipColor, UiExp::cfg("clip_color"), d.clipColor);   // (batch 4b: the editor's clip boxes)
+    c.next();
+        break;
+    }
+    case SS_PLAYER2_MENU_THEME: {   // was drawPlayerMore: MENU THEME
+    bool ch = false;
+    {
+        static const std::vector<std::string> tn = {"MENU THEME: DARK", "MENU THEME: HIGH CONTRAST"};
+        ch |= ui_.cycle(c.x(), c.top(), w, h, "MENU THEME", cfg_.menuTheme, 2, tn, UiExp::cfg("menu_theme"));
+        c.next();
+    }
+    ch |= ui_.toggle(c.x(), c.top(), hw, h, "OWN ACCENT", cfg_.menuAccentOn, UiExp::cfg("menu_accent_on"));
+    ch |= ui_.colorPicker(fx2, c.top(), hw, h, "ACCENT", cfg_.menuAccent, UiExp::cfg("menu_accent"), d.menuAccent) != Ui::UNCHANGED;
+    c.next();
+    ch |= ui_.slider(c.x(), c.top(), hw, h, "TEXT BRIGHTNESS", cfg_.textBright, 0.5f, 1, "%.2f", UiExp::cfg("text_bright"), d.textBright);
+    ch |= ui_.slider(fx2, c.top(), hw, h, "PANEL DARKNESS", cfg_.panelDark, 0.5f, 1.5f, "X%.2f", UiExp::cfg("panel_dark"), d.panelDark);
+    cfg_.textBright = clampf(cfg_.textBright, 0.5f, 1); cfg_.panelDark = clampf(cfg_.panelDark, 0.5f, 1.5f);
+    c.next();
+    c.hint("OWN ACCENT: NOT THE TEAM COLOR");
+    if (ch) applyMenuTheme();
+        break;
+    }
+    case SS_PLAYER2_MENU_BACKGROUND: {   // was drawPlayerMore: MENU BACKGROUND
+    {
+        static const std::vector<std::string> bn = {"BACKGROUND: CASTLE", "BACKGROUND: A MAP I PICK", "BACKGROUND: PLAIN COLOR"};
+        bool reload = ui_.cycle(c.x(), c.top(), w, h, "MENU BACKGROUND", cfg_.menuBg, 3, bn, UiExp::cfg("menu_bg"));
+        c.next();
+        std::vector<std::string> mn;
+        int mi = 0;
+        for (size_t i = 0; i < maps_.size(); i++) { mn.push_back("MAP: " + upper(maps_[i])); if (maps_[i] == cfg_.menuBgMap) mi = (int)i; }
+        if (mn.empty()) ui_.button(c.x(), c.top(), w, h, "MAP: NONE", UiExp::inert().withId("BACKGROUND MAP"), false);
+        else if (ui_.cycle(c.x(), c.top(), w, h, "BACKGROUND MAP", mi, (int)mn.size(), mn, (mn.size() < 2 ? UiExp::inert() : UiExp::cfg("menu_bg_map")).clipOk())) {
+            cfg_.menuBgMap = maps_[mi];
+            if (cfg_.menuBg == 1) reload = true;
+        }
+        c.next();
+        ui_.colorPicker(c.x(), c.top(), w, h, "BACKGROUND COLOR", cfg_.menuBgColor, UiExp::cfg("menu_bg_color"), d.menuBgColor);
+        c.next();
+        // (the map is baked again only from the main menu's settings: in a match the world is the match's)
+        if (reload && !settingsInGame_ && screen_ == Screen::Settings) loadMenuBackdrop();
+    }
+        break;
+    }
+    case SS_PLAYER2_DATA_FOLDER: {   // was drawPlayerMore: DATA FOLDER
+    c.hint(cfg_.streamer ? std::string("(HIDDEN: STREAMER MODE)") : upper(userDataPath()));
+    if (ui_.button(c.x(), c.top(), w, h, "OPEN DATA FOLDER", UiExp::url())) openUrl(userDataPath());
+    c.next();
+    c.hint("SETTINGS, MAPS, DEMOS, SCREENSHOTS, HUDS");
+        break;
+    }
+    case SS_PLAYER2_QUIPS: {   // was drawPlayerMore: QUIPS
+    {
+        const int n = audio_.quipCount();
+        std::vector<std::string> qn = {"MY QUIP: A RANDOM ONE"};
+        for (int k = 0; k < n; k++) qn.push_back("MY QUIP: " + upper(audio_.quipName(k)));
+        int qi = cfg_.quipPick < 0 || cfg_.quipPick >= n ? 0 : cfg_.quipPick + 1;
+        if (ui_.cycle(c.x(), c.top(), w, h, "MY QUIP", qi, (int)qn.size(), qn, (qn.size() < 2 ? UiExp::inert() : UiExp::cfg("quip_pick")).clipOk())) {
+            cfg_.quipPick = qi - 1;
+            if (qi > 0) audio_.play(SND_QUIP + qi - 1, 0.9f);
+        }
+        c.next();
+        c.hint(std::to_string(n) + " QUIPS FOR YOUR ANNOUNCER VOICE");
+    }
+        break;
+    }
+    case SS_PLAYER2_MODS: {   // was drawPlayerMore: MODS
+    ui_.toggle(c.x(), c.top(), w, h, "USE MY OVERRIDES", cfg_.useOverrides, UiExp::cfg("use_overrides"));
+    c.next();
+    {
+        static double listedAt = -10;
+        static int mine = 0;
+        if (time_ - listedAt > 2) {   // (counted every 2 s while this page is open)
+            listedAt = time_;
+            mine = 0;
+            for (auto& o : overrides::list()) mine += o.rfind("user:", 0) == 0;
+        }
+        c.hint(std::to_string(mine) + " OVERRIDES OF YOURS - ON / OFF AT THE NEXT START");
+    }
+    if (ui_.button(c.x(), c.top(), hw, h, "OVERRIDES FOLDER", UiExp::url())) openUrl(userDataPath("overrides"));
+    if (ui_.button(gx2, c.top(), hw, h, "MODS FOLDER", UiExp::url())) openUrl(userDataPath("mods"));
+    c.next();
+    c.hint("FONTS GO IN MODS/FONTS; ASSETS IN OVERRIDES/");
+        break;
+    }
+    case SS_PLAYER2_RANKED_QUEUES: {   // was drawPlayerMore: RANKED QUEUES
+    ui_.toggle(c.x(), c.top(), w, h, "REMEMBER MY QUEUES", cfg_.rememberQueues, UiExp::cfg("remember_queues"));
+    c.next();
+    c.hint("THE QUEUES YOU'RE IN, JOINED AGAIN NEXT START");
+        break;
+    }
+    case SS_PLAYER2_LOGO_YOUR_BOTS: {   // was drawPlayerMore: LOGO + YOUR BOTS
+    ui_.toggle(c.x(), c.top(), w, h, "FIXED LOGO COLORS", cfg_.fixedLogo, UiExp::cfg("fixed_logo"));
+    c.next();
+    {
+        static const std::vector<std::string> bl = {"YOUR BOTS: MIXED MODELS", "YOUR BOTS: ALL STANDARD"};
+        ui_.cycle(c.x(), c.top(), w, h, "BOT LOOKS", cfg_.botLooks, 2, bl, UiExp::cfg("bot_looks"));
+        c.next();
+        if (ui_.button(c.x(), c.top(), w, h, "BOT NAMES FILE", UiExp::url())) {
+            std::error_code ec;
+            const std::string dir = userDataPath("bots"), f = dir + "/names.txt";
+            std::filesystem::create_directories(std::filesystem::u8path(dir), ec);
+            if (!std::filesystem::exists(std::filesystem::u8path(f), ec)) {   // (a start: one name a line)
+                std::ofstream o(std::filesystem::u8path(f));
+                o << "ACE\nBLAZE\nCOMET\nDUSK\n";
+            }
+            openUrl(dir);
+        }
+        c.next();
+        c.hint("BOTS/NAMES.TXT: A NAME A LINE, USED WHEN YOU HOST");
+    }
+        break;
+    }
+    case SS_HUD2_HUD_COLORS: {   // was drawHudMore: HUD COLORS
+    ui_.colorPicker(c.x(), c.top(), hw, h, "RECHARGING", cfg_.barRechargeColor, UiExp::cfg("bar_recharge_color"), d.barRechargeColor);
+    ui_.colorPicker(fx2, c.top(), hw, h, "NOT USABLE", cfg_.slotOffColor, UiExp::cfg("slot_off_color"), d.slotOffColor);
+    c.next();
+    ui_.colorPicker(c.x(), c.top(), hw, h, "SPEED: SLOW", cfg_.speedLowColor, UiExp::cfg("speed_low_color"), d.speedLowColor);
+    ui_.colorPicker(fx2, c.top(), hw, h, "SPEED: FAST", cfg_.speedHighColor, UiExp::cfg("speed_high_color"), d.speedHighColor);
+    c.next();
+    ui_.colorPicker(c.x(), c.top(), hw, h, "WARNINGS", cfg_.warnColor, UiExp::cfg("warn_color"), d.warnColor);
+    ui_.colorPicker(fx2, c.top(), hw, h, "INFO LINES", cfg_.infoColor, UiExp::cfg("info_color"), d.infoColor);
+    c.next();
+    ui_.colorPicker(c.x(), c.top(), hw, h, "HEADSHOT HIT", cfg_.dmgHeadColor, UiExp::cfg("dmg_head_color"), d.dmgHeadColor);
+    ui_.colorPicker(fx2, c.top(), hw, h, "BIG HIT", cfg_.dmgBigColor, UiExp::cfg("dmg_big_color"), d.dmgBigColor);
+    c.next();
+    ui_.colorPicker(c.x(), c.top(), w, h, "STICKIES AT MAX", cfg_.stickyFullColor, UiExp::cfg("sticky_full_color"), d.stickyFullColor);
+    c.next();
+    c.hint("BIG HIT: 40+ DAMAGE; NOT USABLE: THE WEAPON LIST");
+        break;
+    }
+    case SS_HUD2_TEXT: {   // was drawHudMore: TEXT
+    ui_.slider(c.x(), c.top(), w, h, "TEXT OUTLINE", cfg_.textOutline, 0, 1.5f, cfg_.textOutline < 0.01f ? "NONE" : "X%.2f", UiExp::cfg("text_outline"), d.textOutline);
+    cfg_.textOutline = clampf(cfg_.textOutline, 0, 1.5f);
+    r_.setTextOutline(cfg_.textOutline);
+    c.next();
+    c.hint("THE DARK EDGE ROUND ALL TEXT, MENUS TOO");
+        break;
+    }
+    case SS_HUD2_NOTICES: {   // was drawHudMore: NOTICES
+    {
+        float n = (float)cfg_.noticeLines;
+        ui_.slider(c.x(), c.top(), hw, h, "NOTICE LINES", n, 1, 8, "%.0f", UiExp::cfg("notice_lines"), (float)d.noticeLines);
+        cfg_.noticeLines = std::min(std::max((int)std::lround(n), 1), 8);
+        ui_.slider(gx2, c.top(), hw, h, "NOTICE TIME", cfg_.noticeTime, 0.5f, 3, "X%.1f", UiExp::cfg("notice_time"), d.noticeTime);
+        cfg_.noticeTime = clampf(cfg_.noticeTime, 0.5f, 3);
+        c.next();
+        c.hint("THE MESSAGES UNDER THE SCORE BOX");
+    }
+        break;
+    }
+    case SS_HUD2_COMPASS_RADAR: {   // was drawHudMore: COMPASS + RADAR
+    ui_.toggle(c.x(), c.top(), hw, h, "COMPASS", cfg_.compass, UiExp::cfg("compass"));
+    ui_.toggle(gx2, c.top(), hw, h, "RADAR", cfg_.radar, UiExp::cfg("radar"));
+    c.next();
+    ui_.slider(c.x(), c.top(), w, h, "RADAR RANGE", cfg_.radarRange, 10, 120, "%.0f M", UiExp::cfg("radar_range"), d.radarRange);
+    cfg_.radarRange = clampf(cfg_.radarRange, 10, 120);
+    c.next();
+    c.hint("RADAR: TEAMMATES AND OBJECTIVES, NEVER ENEMIES", "(NOT IN RANKED)");
+        break;
+    }
+    case SS_HUD2_MORE: {   // was drawHudMore: MORE
+    ui_.toggle(c.x(), c.top(), w, h, "HIDE REC", cfg_.hideRec, UiExp::cfg("hide_rec"));
+    c.next();
+    {
+        static const std::vector<std::string> tn = {"TOURNEY TAB: THE BRACKET", "TOURNEY TAB: THE SCOREBOARD"};
+        ui_.cycle(c.x(), c.top(), w, h, "TOURNEY TAB", cfg_.tourneyTab, 2, tn, UiExp::cfg("tourney_tab"));
+    }
+    c.next();
+    c.hint("HIDE REC: NO BLINKING REC WHILE RECORDING");
+        break;
+    }
+    case SS_CONTROLS_MOUSE: {   // was drawControls: MOUSE
+        ui_.slider(c.x(), c.top(), w, h, "SENSITIVITY", cfg_.sensitivity, 0.1f, 10.0f, "%.2f", UiExp::cfg("sensitivity"), defaultSettings().sensitivity);
+        cfg_.sensitivity = clampf(cfg_.sensitivity, 0.01f, 50.0f);   // (typed: quark.cfg's range)
+        c.next();
+        {   // the same thing as cm per 360 at your mouse DPI (drag either); counts per 360 = 360 / (sens * 0.022), cm = counts / dpi * 2.54
+            auto cmOf = [&](float sens) { return 360.0f / (sens * 0.022f) / cfg_.dpi * 2.54f; };
+            float cm = cmOf(cfg_.sensitivity);
+            if (ui_.slider(c.x(), c.top(), hw, h, "CM PER 360", cm, 5, 120, "%.1f", UiExp::cfg("sensitivity"), cmOf(defaultSettings().sensitivity)))
+                cfg_.sensitivity = clampf(360.0f / (cm / 2.54f * cfg_.dpi) / 0.022f, 0.01f, 50.0f);
+            static std::string dpiText;   // click and type any DPI
+            if (!ui_.typing()) dpiText = std::to_string(cfg_.dpi);
+            const float dx = L.X(kColL + 184);
+            if (ui_.textField(42, dx, c.top(), hw, h, dpiText, 6, UiExp::cfg("dpi").withId("DPI"))) {
+                dpiText.erase(std::remove_if(dpiText.begin(), dpiText.end(), [](char ch) { return ch < '0' || ch > '9'; }), dpiText.end());
+                int v = atoi(dpiText.c_str());
+                if (v >= 50 && v <= 100000) cfg_.dpi = v;
+            }
+            ui_.label(dx + hw - r_.textWidth("DPI", ui_.textScale()) - 6 * L.s, c.top() + (h - r_.textHeight(ui_.textScale())) * 0.5f, "DPI", {0.6f, 0.62f, 0.66f, 1});
+            c.next();
+            c.hint("CM PER 360: MOUSE TRAVEL FOR ONE FULL TURN");
+        }
+        break;
+    }
+    case SS_CONTROLS_KEYS: {   // was drawControls: KEYS
+        static const std::vector<std::string> sn = {"OPPOSITE KEYS: CANCEL", "OPPOSITE KEYS: LAST WINS", "OPPOSITE KEYS: FIRST WINS"};
+        static const std::vector<std::string> an = {"ALT-FIRE: HOLD", "ALT-FIRE: TOGGLE"};
+        if (ui_.cycle(c.x(), c.top(), w, h, "SOCD", cfg_.socd, 3, sn, UiExp::cfg("socd"))) cfg_.save();
+        c.next();
+        c.hint("LEFT + RIGHT HELD: LAST WINS = SNAP TAP (FLYING UP + DOWN TOO)");
+        int at = cfg_.altToggle;
+        if (ui_.cycle(c.x(), c.top(), w, h, "ALT", at, 2, an, UiExp::cfg("alt_toggle"))) { cfg_.altToggle = at; cfg_.save(); }
+        c.next();
+        break;
+    }
+    case SS_CONTROLS_PROFILES: {   // was drawControls: PROFILES
+        if (profileRows(ui_, c, false, ruleMode_, cfg_.modeCtl, profilesCached("controls", time_))) { cfg_.save(); appliedMode_ = -2; }   // (re-applied now)
+        const float tw = L.L((kColW - 16) / 3), tg = L.L(8);
+        if (ui_.button(c.x(), c.top(), tw, h, "IMPORT", UiExp::state("ctlimport"))) {   // controls on the clipboard win, else pick a file from controls/
+            const char* clip = glfwGetClipboardString(win_);
+            if (clip && controlsFromText(clip, cfg_.binds, cfg_.socd, cfg_.altToggle)) { cfg_.save(); widgetMsg_ = "IMPORTED CONTROLS FROM CLIPBOARD"; widgetMsgUntil_ = time_ + 3; }
+            else filePick_ = 2;
+        }
+        if (ui_.button(c.x() + tw + tg, c.top(), tw, h, "EXPORT", UiExp::state("files:controls"))) {
+            std::string text = controlsToText(cfg_.binds, cfg_.socd, cfg_.altToggle), name = stampedName("controls");
+            {   // (with your aim: used as a mode's profile, these override yours in that mode)
+                char aim[160];
+                snprintf(aim, sizeof aim, "sensitivity=%g\nfov=%g\nzoom_fov_sniper=%g\nzoom_fov_rifle=%g\n", cfg_.sensitivity, cfg_.fov, cfg_.zoomFovSniper, cfg_.zoomFovRifle);
+                text += aim;
+            }
+            glfwSetClipboardString(win_, text.c_str());
+            bool ok = writeTextFile(profileDir("controls") + "/" + name, text);
+            g_profilesStale = true;
+            widgetMsg_ = ok ? "COPIED + SAVED CONTROLS/" + upper(name) : "COPIED (COULDN'T WRITE FILE)";
+            widgetMsgUntil_ = time_ + 4;
+        }
+        if (ui_.button(c.x() + 2 * (tw + tg), c.top(), tw, h, "FOLDER", UiExp::url())) openUrl(profileDir("controls"));
+        c.next();
+        c.hint("CONTROL SCRIPTS ARE OFF IN RANKED");
+        if (time_ < widgetMsgUntil_) ui_.hint(c.x(), c.top(), widgetMsg_, ui_.accent, w);
+        break;
+    }
+    case SS_LATENCY_THE_FRAME: {   // was drawLatencySettings: THE FRAME
+    static const std::vector<std::string> llNames = {"LOW LATENCY: OFF", "LOW LATENCY: ON", "LOW LATENCY: ULTRA"};
+    ui_.cycle(c.x(), c.top(), w, h, "LOW LATENCY", cfg_.lowLatency, 3, llNames, UiExp::cfg("low_latency"));
+    c.next();
+    c.hint("ON: AT MOST 1 FRAME QUEUED", "ULTRA: 0 QUEUED + EACH FRAME STARTED LATE");
+    ui_.toggle(c.x(), c.top(), w, h, "EARLY FLUSH", cfg_.earlyFlush, UiExp::cfg("early_flush"));
+    c.next();
+    c.hint("THE SHADOWS AND THE WORLD GO TO THE GPU AS SOON", "AS THEY'RE DRAWN, NOT AT THE SWAP");
+    ui_.toggle(c.x(), c.top(), w, h, "CPU LATE LATCH", cfg_.cpuLatch, UiExp::cfg("cpu_latch"));
+    c.next();
+    c.hint("THE MOUSE READ AGAIN JUST BEFORE THE WORLD IS DRAWN");
+    ui_.toggle(c.x(), c.top(), w, h, "GPU LATE LATCH", cfg_.gpuLatch, UiExp::cfg("gpu_latch"));
+    c.next();
+    c.hint(r_.latchSupported ? "THE GPU READS YOUR AIM AS IT STARTS DRAWING;" : "N/A: THE DRIVER LACKS GL 4.4 BUFFER STORAGE",
+           "WINDOWS RAW INPUT, NO MOUSE ACCEL");
+    ui_.toggle(c.x(), c.top(), w, h, "HUD BEFORE WORLD", cfg_.hudFirst, UiExp::cfg("hud_first"));
+    c.next();
+    c.hint("ULTRA ONLY: THE HUD DRAWN BEFORE THE LATE READ,", "LAID OVER THE WORLD AFTER IT");
+    ui_.toggle(c.x(), c.top(), w, h, "EARLY DEPTH TEST", cfg_.fastWorld, UiExp::cfg("fast_world"));
+    c.next();
+    c.hint("THE GPU SKIPS THE WORLD'S HIDDEN PIXELS", "(UNTIL A HOLE IS BLOWN IN A WALL)");
+    c.hint(keyOf(A_PERF) + " 3 TIMES: THE GRAPH; 4 TIMES: THE GAME'S PART ONLY");
+
+        break;
+    }
+    case SS_LATENCY_WINDOWS: {   // was drawLatencySettings: WINDOWS
+    {   // Windows' hardware-accelerated GPU scheduling: a system setting (admin prompt, then a restart). Elsewhere N/A.
+        static int hags = hwSchedState();
+        const std::string lbl = hags == 1 ? "GPU SCHED: ON" : hags == 0 ? "GPU SCHED: TURN ON" : "GPU SCHED: N/A";
+        if (ui_.button(c.x(), c.top(), hw, h, lbl, UiExp::inert().withId("GPU SCHEDULING")) && hags == 0) {
+            std::string msg = "NOT CHANGED IN THE UI TEST";
+            if (!uiTest_ && hwSchedEnable(&msg)) { hags = 1; perfChecked_ = false; }
+            notify(msg);
+        }
+        // "Disable fullscreen optimizations" for quark.exe (per user, no admin): real exclusive fullscreen
+        if (ui_.toggle(xr, c.top(), hw, h, "TRUE FULLSCREEN", cfg_.disableFso, UiExp::cfg("disable_fso"))) {
+            std::string msg = "NOT CHANGED IN THE UI TEST";
+            if (!uiTest_ && !fsoDisable(cfg_.disableFso, &msg)) cfg_.disableFso = !cfg_.disableFso;
+            notify(msg);
+        }
+        c.next();
+        c.hint("GPU SCHED: WINDOWS' HARDWARE GPU SCHEDULING;", "TRUE FULLSCREEN: WINDOWS' FULLSCREEN OPTIMIZATIONS OFF (NEXT START)");
+    }
+        break;
+    }
+    case SS_LATENCY_PERFORMANCE_CHECK: {   // was drawLatencySettings: PERFORMANCE CHECK
+    // (on its own thread: loading the drivers' libraries can take a moment, and the menu keeps its frame rate meanwhile)
+    if (!perfChecked_ && !perfFuture_.valid()) {
+        const std::string gpu = r_.gpuName();
+        perfFuture_ = std::async(std::launch::async, [gpu] { return perfCheck(gpu); });
+    }
+    if (perfFuture_.valid() && perfFuture_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        perfFindings_ = perfFuture_.get();
+        perfChecked_ = true;
+    }
+    if (!perfChecked_) c.label("CHECKING...");
+    else if (perfFindings_.empty()) c.label(
+#ifdef _WIN32
+        "NOTHING FOUND: YOUR DRIVER AND WINDOWS SETTINGS LOOK RIGHT"
+#else
+        "WINDOWS ONLY"
+#endif
+    );
+    for (size_t i = 0; i < perfFindings_.size() && i < 8; i++) {   // (8: the column ends above the footer under WINDOWS)
+        ui_.label(c.x(), c.top(), perfFindings_[i].what, Color{1.0f, 0.75f, 0.35f, 1}, 1.0f, w);
+        c.y += 18;
+        ui_.hint(c.x(), c.top(), perfFindings_[i].fix, kGrey, w);
+        c.y += 18;
+    }
+    if (ui_.button(c.x(), c.top() + L.L(4), hw, h, "CHECK AGAIN", UiExp::inert()) && !perfFuture_.valid()) perfChecked_ = false;
+    c.y += 4;
+    c.next();
+        break;
+    }
+    }
+}
+
+// ---- the settings tabs and their pages (settings review 2026-11-07: four reviewers found settings on the tabs nobody
+// looks on - the net graph on VIDEO + AUDIO page 7, SHOW FPS on GAMEPLAY page 2, mouse settings over three CONTROLS
+// pages, nine unnamed VIDEO + AUDIO pages). Every tab, its named pages and what each page shows, in one table: the tab
+// row, the page row, the screen paths (UI test, --settingstab), SEARCH's list and the arrow keys all read it.
+namespace {
+enum SetCustom { SC_NONE, SC_KEYS_GENERAL, SC_KEYS_MOVE, SC_KEYS_MORE, SC_CROSSHAIR, SC_HUD_ELEMENTS };
+constexpr int SS_RIGHT = -1;   // (in a page's list: the sections after it go in the right column)
+struct SetPage {
+    const char* name;   // the page row's label (upper case) and, lower-cased with spaces as '-', its path
+    int custom;         // a page with its own layout (the key grids, the crosshair, the HUD's elements), or SC_NONE
+    std::vector<int> secs;   // the sections, left column then (after SS_RIGHT) right column; a custom page: its left column
+};
+struct SetTab { const char* name; const char* path; float w; std::vector<SetPage> pages; };
+const std::vector<SetTab>& setTabs() {
+    static const std::vector<SetTab> t = {
+        {"GENERAL", "general", 84, {
+            {"PLAYER", SC_NONE, {SS_PLAYER_IDENTITY, SS_PLAYER_LOOK, SS_RIGHT, SS_PLAYER_INTERFACE, SS_PLAYER2_QUIPS, SS_PLAYER2_LOGO_YOUR_BOTS}},
+            {"MENUS", SC_NONE, {SS_PLAYER2_MENU_THEME, SS_PLAYER2_MENU_BACKGROUND, SS_RIGHT, SS_GAMEPLAY2_MENUS, SS_VIDEO7_MENU_CURSOR, SS_PLAYER2_RANKED_QUEUES}},
+            {"FILES", SC_NONE, {SS_GAMEPLAY2_ALL_SETTINGS, SS_PLAYER2_DATA_FOLDER, SS_PLAYER2_MODS, SS_RIGHT, SS_VIDEO9_SCREENSHOTS, SS_VIDEO9_DEMOS, SS_VIDEO7_LIGHT_CACHE}},
+            {"WINDOW", SC_NONE, {SS_VIDEO2_WHEN_UNFOCUSED, SS_GAMEPLAY5_WHEN_UNFOCUSED_FLASH_ON, SS_RIGHT, SS_VIDEO9_WINDOW_INPUT, SS_GAMEPLAY5_JOINING_PRIVACY}},
+        }},
+        {"CONTROLS", "controls", 96, {
+            {"MOUSE", SC_NONE, {SS_CONTROLS_MOUSE, SS_CONTROLS2_MOUSE, SS_CONTROLS3_MOUSE, SS_RIGHT, SS_CONTROLS2_SENSITIVITY_FROM_ANOTHER_GAME, SS_CONTROLS2_ZOOM, SS_CONTROLS3_PER_WEAPON}},
+            {"MOVE KEYS", SC_KEYS_MOVE, {}},
+            {"CHAT KEYS", SC_KEYS_GENERAL, {SS_CONTROLS_KEYS, SS_CONTROLS_PROFILES}},
+            {"MORE KEYS", SC_KEYS_MORE, {}},
+            {"OPTIONS", SC_NONE, {SS_CONTROLS2_GRAPPLE_HAND, SS_CONTROLS2_SCREEN, SS_VIDEO7_CONTROLS, SS_CONTROLS3_MOVEMENT, SS_RIGHT, SS_CONTROLS_DASH, SS_CONTROLS2_WEAPON_SCROLL, SS_CONTROLS3_RANKED, SS_CONTROLS3_CONSOLE}},
+            {"EDITOR", SC_NONE, {SS_CONTROLS3_MAP_EDITOR, SS_RIGHT, SS_CONTROLS3_EDITOR_TEST_PLAY}},
+        }},
+        {"GAMEPLAY", "gameplay", 96, {
+            {"VIEW", SC_NONE, {SS_GAMEPLAY_VIEW, SS_VIDEO7_DISPLAY, SS_RIGHT, SS_GAMEPLAY_SHOTS, SS_GAMEPLAY4_SNIPER_SCOPE, SS_GAMEPLAY3_WEAPON_MODEL}},
+            {"CHAT", SC_NONE, {SS_GAMEPLAY5_CHAT, SS_RIGHT, SS_GAMEPLAY2_CHAT, SS_GAMEPLAY_CHAT, SS_GAMEPLAY5_MORE, SS_GAMEPLAY2_KILL_FEED}},
+            {"MATCH", SC_NONE, {SS_GAMEPLAY5_SCOREBOARD, SS_GAMEPLAY5_DEATH_SPECTATING, SS_RIGHT, SS_GAMEPLAY5_RACE, SS_GAMEPLAY4_ROUND_MODES, SS_GAMEPLAY_MAPS}},
+        }},
+        {"HUD", "hud", 50, {
+            {"ELEMENTS", SC_HUD_ELEMENTS, {}},
+            {"SCREEN", SC_NONE, {SS_GAMEPLAY2_SCREEN, SS_VIDEO2_INTERFACE, SS_RIGHT, SS_HUD2_NOTICES, SS_HUD2_COMPASS_RADAR, SS_HUD2_MORE}},
+            {"DAMAGE", SC_NONE, {SS_GAMEPLAY_FEEDBACK, SS_GAMEPLAY3_DAMAGE_NUMBERS, SS_RIGHT, SS_GAMEPLAY3_DAMAGE_ARCS, SS_GAMEPLAY3_HIT_FLASH, SS_GAMEPLAY3_LOW_HEALTH}},
+            {"METERS", SC_NONE, {SS_GAMEPLAY4_SPEED_METER, SS_GAMEPLAY4_BAR_CAPTIONS, SS_GAMEPLAY4_CLOCK, SS_GAMEPLAY4_VERBOSE_INFO_LINES, SS_RIGHT, SS_GAMEPLAY4_AUTO_HIDE, SS_GAMEPLAY4_OBJECTIVE_MARKERS, SS_GAMEPLAY3_YOUR_KILLS}},
+            {"COLORS + MORE", SC_NONE, {SS_HUD2_HUD_COLORS, SS_HUD2_TEXT, SS_GAMEPLAY3_HEALING, SS_RIGHT, SS_GAMEPLAY4_MORE}},
+        }},
+        {"CROSSHAIR", "crosshair", 98, {{"CROSSHAIR", SC_CROSSHAIR, {}}}},
+        {"VIDEO", "video", 66, {
+            {"DISPLAY", SC_NONE, {SS_VIDEO_DISPLAY, SS_VIDEO4_DISPLAY, SS_RIGHT, SS_VIDEO_IMAGE, SS_VIDEO2_WINDOW, SS_VIDEO3_OUTPUT}},
+            {"GRAPHICS", SC_NONE, {SS_VIDEO3_PICTURE, SS_VIDEO3_LOOK, SS_RIGHT, SS_VIDEO3_WORLD, SS_VIDEO2_SHADOWS, SS_VIDEO5_SHADOWS, SS_VIDEO2_GPU}},
+            {"EFFECTS", SC_NONE, {SS_VIDEO3_EFFECTS, SS_VIDEO3_TRACERS_TRAILS, SS_VIDEO3_SURFACES, SS_RIGHT, SS_VIDEO2_FLAT_MAP, SS_VIDEO8_MAP_COLORS}},
+            {"ENEMIES", SC_NONE, {SS_PLAYER_TEAM_COLORS, SS_PLAYER_OUTLINES, SS_RIGHT, SS_VIDEO5_OUTLINES, SS_VIDEO5_PLAYERS, SS_GAMEPLAY2_FORCE_PLAYER_MODELS}},
+            {"PLAYERS", SC_NONE, {SS_VIDEO8_PLAYERS, SS_GAMEPLAY_OTHER_PLAYERS, SS_VIDEO8_HEALTH_BARS, SS_RIGHT, SS_VIDEO8_NAME_TAGS}},
+            {"COLORS", SC_NONE, {SS_VIDEO5_COLORS, SS_VIDEO5_COLOR_SCHEME, SS_VIDEO8_OBJECTIVES, SS_RIGHT, SS_VIDEO8_EFFECTS_F3, SS_VIDEO5_ACCESSIBILITY}},
+        }},
+        {"AUDIO", "audio", 66, {
+            {"VOLUME", SC_NONE, {SS_VIDEO_SOUND, SS_RIGHT, SS_VIDEO6_VOLUME, SS_VIDEO4_SOUND_GROUPS, SS_VIDEO2_HITSOUNDS}},
+            {"OUTPUT", SC_NONE, {SS_VIDEO6_OUTPUT, SS_RIGHT, SS_VIDEO9_SOUND, SS_VIDEO6_SEE_SOUNDS}},
+            {"CALLOUTS", SC_NONE, {SS_VIDEO6_CALLOUTS, SS_VIDEO6_CUE_SOUNDS, SS_RIGHT, SS_VIDEO6_ANNOUNCER_CALLS}},
+        }},
+        {"LATENCY", "latency", 82, {
+            {"NETWORK", SC_NONE, {SS_VIDEO7_NETWORK}},
+            {"SYNC", SC_NONE, {SS_VIDEO_LATENCY, SS_VIDEO7_LATENT_SYNC, SS_LATENCY_COMPOSITOR, SS_RIGHT, SS_VIDEO9_LATENCY, SS_VIDEO4_PERFORMANCE}},
+            {"FRAME", SC_NONE, {SS_LATENCY_THE_FRAME, SS_RIGHT, SS_LATENCY_WINDOWS, SS_LATENCY_PERFORMANCE_CHECK}},
+        }},
+        {"SEARCH", "search", 74, {{"SEARCH", SC_NONE, {}}}},
+    };
+    return t;
+}
+std::string pagePath(int tab, int page) {   // "settings/<tab>[/<page>]" (the first page: the tab's own path)
+    const SetTab& t = setTabs()[tab];
+    std::string p = std::string("settings/") + t.path;
+    if (page > 0) {
+        p += '/';
+        for (const char* c = t.pages[page].name; *c; c++) {   // ("MOVE + FIRE KEYS": move-fire-keys)
+            if (std::isalnum((unsigned char)*c)) p += (char)std::tolower((unsigned char)*c);
+            else if (p.back() != '-' && p.back() != '/') p += '-';
+        }
+    }
+    return p;
+}
+}
+
+int Game::setPageCount(int tab) const { return tab >= 0 && tab < (int)setTabs().size() ? (int)setTabs()[tab].pages.size() : 0; }
+const char* Game::setTabName(int tab) const { return setTabs()[tab].name; }
+const char* Game::setPageName(int tab, int page) const { return setTabs()[tab].pages[std::min(std::max(page, 0), setPageCount(tab) - 1)].name; }
+const char* Game::moreNav(int n) const {   // (static strings: a UiExp keeps the pointer)
+    static std::vector<std::string> navs[TAB_COUNT];
+    if (navs[setTab_].empty()) for (int i = 0; i < setPageCount(setTab_); i++) navs[setTab_].push_back("~" + pagePath(setTab_, i));
+    return navs[setTab_][std::min(std::max(n, 0), (int)navs[setTab_].size() - 1)].c_str();
+}
+std::string Game::setPagePath(int tab, int page) const { return pagePath(tab, std::min(std::max(page, 0), std::max(0, setPageCount(tab) - 1))); }
+
+// The page's sections in two columns: a section's title (the first in a column a header, the next ones a section with
+// space over it), then the section. A section written for the other column is drawn with its layout shifted there.
+float Game::drawSetSections(const SetLayout& L, const std::vector<int>& secs, float top, bool leftOnly) {
+    SetFlow cols[2] = {{ui_, L, kColL, top}, {ui_, L, kColR, top}};
+    int side = 0;
+    bool first[2] = {true, true};
+    for (int id : secs) {
+        if (id == SS_RIGHT) { side = 1; if (leftOnly) break; continue; }
+        const int native = kSetSec[id].col;
+        SetLayout Ls = L;
+        Ls.cx += (side - native) * (kColR - kColL) * L.s;
+        SetFlow c{ui_, Ls, native ? kColR : kColL, cols[side].y};
+        if (first[side]) c.header(kSetSec[id].title); else c.section(kSetSec[id].title);
+        first[side] = false;
+        drawSetSection(id, Ls, c);
+        cols[side].y = c.y;
+    }
+    return cols[0].y;   // (the left column's bottom: GENERAL > PLAYER puts your model under it)
+}
+
+// the page row (a tab with more than one page): its pages by name, the one shown lit; the arrow keys turn them
+void Game::drawSetPageRow(const SetLayout& L) {
+    const SetTab& t = setTabs()[setTab_];
+    const int n = (int)t.pages.size();
+    if (n < 2) return;
+    const float gap = 6, cw = (744 - gap * (n - 1)) / n;
+    int go = -1;
+    for (int i = 0; i < n; i++)
+        if (ui_.tab(L.X(268 + i * (cw + gap)), L.Y(90), L.L(cw), L.L(kRowH), t.pages[i].name, i == moreOpen_, UiExp::nav(moreNav(i)), true)) go = i;
+    if (go >= 0 && go != moreOpen_) settingsPage(go);
+}
+
+// the page shown: a custom one (with its left-column sections, if any) or its sections from under the page row
+void Game::drawSetPage(const SetLayout& L) {
+    const SetTab& t = setTabs()[setTab_];
+    const SetPage& p = t.pages[std::min(std::max(moreOpen_, 0), (int)t.pages.size() - 1)];
+    const float top = t.pages.size() > 1 ? 134 : 90;
+    switch (p.custom) {
+        case SC_KEYS_GENERAL: controlsSub_ = 0; drawControls(L); drawSetSections(L, p.secs, 154, true); return;
+        case SC_KEYS_MOVE: controlsSub_ = 1; drawControls(L); return;
+        case SC_KEYS_MORE: controlsSub_ = 2; drawControls(L); return;
+        case SC_CROSSHAIR: drawCrosshairSettings(L); return;
+        case SC_HUD_ELEMENTS: drawHudSettings(L); return;
+    }
+    const float leftEnd = drawSetSections(L, p.secs, top, false);
+    if (setTab_ == TAB_GENERAL && moreOpen_ == 0) {   // your model, turning (drag it to turn it): under the left column, down to the footer
+        const float y0 = L.Y(leftEnd + 8), bot = L.Y(628);
+        if (bot - y0 > L.L(80)) drawModelPreview(L.X(kColL), y0, L.L(kColW), bot - y0);
+    }
+    if (setTab_ == TAB_AUDIO && moreOpen_ == 0) {   // the footer's right: DEVICES (sound output, microphone, monitor), a page of its own
+        if (ui_.button(L.X(836), L.Y(640), L.L(kHalfW), L.L(kRowH), "DEVICES  >", UiExp::nav("~settings/audio/devices").withId("DEVICES"))) {
+            devicesOpen_ = true; devListed_ = false;
+            for (int& s : devScroll_) s = 0;
+            ui_.closePopup();
+        }
+    }
+}
+
+void Game::measureSetSections() {   // (layout work: QUARK_SETSEC_HEIGHTS=1 prints every section's height, design px)
+    static bool measured = false;
+    if (!measured && getenv("QUARK_SETSEC_HEIGHTS")) {
+        measured = true;   // (layout work: every section's height, design px)
+        const SetLayout L0{1, 640, 0};
+        r_.setAlpha(0);
+        for (int id = 0; id < SS_COUNT; id++) {
+            SetFlow c{ui_, L0, kSetSec[id].col ? kColR : kColL, 0};
+            c.section(kSetSec[id].title);
+            drawSetSection(id, L0, c);
+            printf("setsec %d %s %.0f\n", id, kSetSec[id].title, c.y);
+        }
+        r_.setAlpha(1);
+        fflush(stdout);
+    }
+}
+
+// --settingstab PATH[+PICKER] (screenshots): a page's path under settings ("video", "video/graphics", "controls/mouse"),
+// or one of the pages opened from a page: fonts, models, models/enemy, models/team, audio/devices, controls/files,
+// hud/elements (the dropdown open), hud/widgets, hud/edit, hud/<element> (health, weapon, bars, speed, slots, keys,
+// viewmodel, grapple), search/QUERY; "+LABEL" opens that colour picker on it
+void Game::debugSettingsTab() {
+    std::string t = opts_.settingsTab, pick;
+    if (t.empty()) return;
+    size_t plus = t.find('+');
+    if (plus != std::string::npos) { pick = t.substr(plus + 1); t = t.substr(0, plus); }
+    for (int i = 0; i < (int)setTabs().size(); i++)
+        for (int p = 0; p < setPageCount(i); p++)
+            if ("settings/" + t == pagePath(i, p)) { setTab_ = i; moreOpen_ = p; }
+    if (t.rfind("search/", 0) == 0) { setTab_ = TAB_SEARCH; setSearch_ = upper(t.substr(7)); }
+    if (t == "fonts") fontsOpen_ = true;
+    if (t == "models") { setTab_ = TAB_GENERAL; openModelPicker(1); }
+    if (t == "models/enemy" || t == "models/team") { setTab_ = TAB_VIDEO; moreOpen_ = 3; openModelPicker(t == "models/enemy" ? 2 : 3); }
+    if (t == "audio/devices") { setTab_ = TAB_AUDIO; devicesOpen_ = true; devListed_ = false; }
+    if (t == "controls/files") { setTab_ = TAB_CONTROLS; moreOpen_ = 2; filePick_ = 2; }
+    if (t == "hud/elements") { setTab_ = TAB_HUD; ui_.openPopup("ELEMENT", true); }
+    if (t == "hud/widgets") { setTab_ = TAB_HUD; widgetEdit_ = true; widgetSel_ = 0; }
+    if (t == "hud/edit") { setTab_ = TAB_HUD; hudEditOpen(); }
+    static const char* els[] = {"hud/health", "hud/weapon", "hud/bars", "hud/speed", "hud/slots", "hud/keys", "hud/viewmodel", "hud/grapple"};
+    static const int elIds[] = {Settings::HUD_HEALTH, Settings::HUD_WEAPON, Settings::HUD_BARS, Settings::HUD_SPEED, Settings::HUD_SLOTS, Settings::HUD_KEYS,
+                                Settings::HUD_VIEWMODEL, Settings::HUD_GRAPPLE};
+    for (int i = 0; i < 8; i++) if (t == els[i]) { setTab_ = TAB_HUD; hudSel_ = elIds[i]; }
+    if (!pick.empty()) ui_.openPopup(pick, false);
+}
+
+
 void Game::drawFontSettings(const SetLayout& L) {
     if (!fontListed_) { fontList_ = uifonts::scan(); fontListed_ = true; fontScans_++; }
     const float w = L.L(kColW), h = L.L(kRowH), hw = L.L(kHalfW), hs = ui_.hintScale();
