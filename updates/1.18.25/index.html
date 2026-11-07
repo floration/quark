@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.18.25: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.18.25</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<p>A tests-only update (the &quot;Discuss and improve release tests&quot; work). No game, server, protocol or file format change: 1.18.25 plays with 1.18.22 to 1.18.24 (protocol 44). Three lines in src/ exist only for the tests and cost nothing at run time (see &quot;src/: test-only hooks&quot;). Numbers are from a 4-core cloud box.</p>
+<h3>Map grading removed; the map safety checks kept</h3>
+<ul>
+<li><b>Owner</b>: &quot;The maps test will soon be irrelevant with the addition of real human designed maps, so get rid of it.&quot;
+</li>
+<li><b>Removed</b>: tests/mapreport.cpp (the decor / layout / movement / creativity / mode fit / balance scores, the &gt;= 7 bar,
+ the attack/defend -1..+1 s timing band, originality, <code># exempt</code>), <code>quark_tests mapreport</code>, docs/MAP_REPORT.md,
+ docs/MAP_METRICS.md, and the report&#x27;s shot sheets (docs/map_shots/, tools/map_shots.sh). The suite no longer writes
+ .cams files into the source tree.
+</li>
+<li><b>Kept, every check that fails a broken map</b>: spawns, routes, nav from every spawn to every objective, ladders,
+ stairs, cart sweep, symmetry, the map format tests. &quot;Built for one mode&quot; (a <code>for</code> line) moved into testAllMaps.
+ Human-made maps keep their report-only grace (misses print as HUMAN-MADE).
+</li>
+<li><b>The out-of-bounds check stays</b>: it lived in the report&#x27;s bar, and moved to tests/mapbounds.cpp with the movement
+ envelope and tech graph trimmed to what it needs (same sampling, same numbers on every map; 1.18.7&#x27;s dash rules,
+ <code>dashReady</code>, carried over). It runs as the <code>mapbounds</code> and <code>mapbounds2</code> groups (every other map each) and as
+ <code>quark_tests bounds</code>; <code>OOB_TRACE=&lt;map&gt;</code> lists what&#x27;s out.
+</li>
+<li><b>The map editor keeps the measurement</b>: tools/map_editor/native carries its own copy (measure_impl.h, from
+ 07ef254), now the only one; its comments and README say so. The old metric definitions are in git at 07ef254.
+</li>
+<li>Docs: RELEASE_CHECKLIST, HANDOVER, ASSETS,
+ MAP_STRUCTURES, JUDGMENT_CALLS.
+</li></ul>
+<h3>Faster tests: full local run ~279 s -&gt; ~107 s</h3>
+<p>What each check asserts is unchanged; only waiting that isn&#x27;t part of a check went, and real-time checks re-run only when the machine itself stalled.</p>
+<ul>
+<li><b>Bots-only tests on a manual clock</b> (ffaVsExperts, the every-mode loop, testBotAim, testBotFalls, testGrappleBots):
+ a test clock that moves only when the test steps it to the server&#x27;s next tick. Every tick runs, none is waited for,
+ and a seeded match is the same every run (the old wall-clock runs skipped ticks on a loaded box, the cause of the
+ flaky <code>hooks &gt;= 1</code>). bots 64 -&gt; 9 s, botaim 62 -&gt; 1.3 s, botfalls 46 -&gt; 1.3 s. 1v1 and duel in the every-mode loop
+ have a joining player since 1.18.21 (F7), so those two stay on the real clock.
+</li>
+<li><b>brains</b>: the native-vs-interpreted lockstep steps every tick (Server::stepTick, as the mode lockstep does) instead
+ of playing 396 s of game time in real time: 101 -&gt; ~5 s, the same 1.19 million thinks compared.
+</li>
+<li><b>Tick-rate tests on 1-1.5 s windows</b> (were 3 s), the window holding the connect dropped unjudged, and a re-run only
+ when this machine stalled a tick past the threshold itself: group tickrate 96 -&gt; ~63 s, and 3 passes in 10 -&gt;
+ 10 in 10. testing&#x27;s timingTest (1.18.22) wraps them as well.
+</li>
+<li><b>Netcode re-runs only on real machine stalls</b>: pump() can measure how long the machine left its loop unrun (wall
+ time minus the thread&#x27;s CPU time: the game&#x27;s own slowness never counts). The uptime clock, interpolation delay and
+ input backlog checks run again (3 tries, the last counts) only after such a stall, never with a looser threshold:
+ 8 passes in 10 -&gt; 30 in 30. testClockWrap (the same view-tick lag through the 2^32 ms wrap) moved from &quot;server&quot; into
+ &quot;netcode&quot; beside them, with the same re-run: under the busy parallel phase it read 14-35 ms in 2 of 3 full runs.
+</li>
+<li><b>Waits a check doesn&#x27;t need</b>: countdowns, freeze and round ends skipped where a test doesn&#x27;t check them (tourney
+ 25 -&gt; 1 s, duel 24 -&gt; 3 s), weapons tests start once both players have spawned, the vote / rejoin / ranked tests
+ poll for what they wait on, the hello retry is 0.5 s in tests.
+</li>
+<li><b>Groups</b>: governor, resetmaps and userdata run with the others; only tickrate, netcode and weaponpredict run after
+ them, one at a time. rules, maps and mapbounds, and the mode lockstep (~41 s of CPU) are split in two so no group
+ bounds the run; groups are listed longest first. 3 group processes per core (the groups mostly wait on real-time
+ play: with one per core the cores sat ~70% idle). Groups that only compute run at nice 10 so the real-time groups
+ beside them get the cores (without it, 2 of 3 full runs failed a real-time check after 1.18.22).
+</li>
+<li><b>Rules halves</b>: tests whose ports overlap stay in one half (the halves run at once on one port block):
+ hudclock takes 29280-29291, which hide, shorthanded and rps reach too. 1.18.23&#x27;s mode calls test (one bomb match, ~2 s) joins the second half.
+</li>
+<li><b>weaponpredict</b> (the client&#x27;s weapon prediction over a 40 ms network) runs alone after the others, inside
+ timingTest: in the rules group it missed its 0.8 s window in 1 full run of 3, and in 10 of 20 runs beside 8 busy
+ loops on 1.18.17&#x27;s own build (about 1 in 30 even idle).
+</li>
+<li><b><code>quark_tests NAME</code> runs the whole group</b> (as <code>group NAME</code> does). The 38 subset shortcuts are gone (some shared a
+ group&#x27;s name and ran less of it). Kept: playtest, serverbench, snapbench, ffaexperts, racefloors, bounds,
+ exportassets, rules NAME (one rules test), signing, launcher, bot, groups, group, serial, and the brain / mode /
+ weapon tools and benches (exportbrain ... modebench, exportweapons ..., exprbench, navbench). An unknown name is an error
+ listing them. 1.18.24&#x27;s nav and navstuck shortcuts went too: both tests run in the botaim group.
+</li>
+<li>Group times print in real seconds (they were game seconds, 4x).
+</li></ul>
+<h3>Sanitizer fixes (CI&#x27;s final-test job)</h3>
+<ul>
+<li>quark_tests replaces operator new / delete; the nothrow forms now go through it too. Under ASan they were ASan&#x27;s
+ own, so std::stable_sort&#x27;s buffer was freed by the wrong allocator: 16 of 17 sanitizer reports.
+</li>
+<li>Server tests are <code>noinline</code>: inlined into serverTests() their Servers (~1.2 MB each) shared one ~17 MB frame under
+ ASan, past Linux&#x27;s 8 MB stack.
+</li>
+<li>tests/lsan.supp: the per-thread rules tables are kept on purpose (a thread_local with a destructor crashed at
+ thread exit under MinGW).
+</li>
+<li>release.yml (sanitizer step only): <code>ulimit -s 65536</code> (ASan gives every local its own slot: votes ~7.5 MB) and
+ <code>LSAN_OPTIONS</code> with the suppressions file.
+</li></ul>
+<h3>src/: test-only hooks (no run-time cost)</h3>
+<ul>
+<li><code>Server::rateStalls_</code> (default true): the loss / bandwidth rate tests leave stalls out of the verdict. One member
+ read where the verdict is made, once per rate window.
+</li>
+<li><code>RankService::helloRetryScale</code> (1.0): a static read only when a ranked hello failed.
+</li>
+<li><code>MasterAnnouncer::queuedPosts()</code>: an accessor the game never calls.
+</li>
+<li>The manual clock (net.cpp): timeNow() keeps its one compare against 1.0 on the game&#x27;s path; a manual clock uses the
+ existing scaled path with a zero rate, no new branch. <code>Server::nextTickForTest()</code> is an inline accessor.
+</li></ul>
+<h3>Tools</h3>
+<ul>
+<li>Tests editor: the brain / mode tools and bounds count as tools, <code>mapreport</code> is gone; a list&#x27;s parallel flag comes
+ from the scheduler call; rewriting the group lists keeps a group&#x27;s comment lines with it; its tests follow the new
+ tests.cpp (test_serve.py 23/23, run.mjs 47/47).
+</li>
+<li>release_check.sh&#x27;s list of groups run alone: tickrate, netcode, weaponpredict.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.18.24/">&larr; 1.18.24</a></span><span><a href="../1.18.26/">1.18.26 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

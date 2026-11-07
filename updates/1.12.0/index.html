@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.12.0: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.12.0</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<p class="note">The full notes for this version are its short notes: that was all that was written then.</p>
+<div class="prose">
+<h3>Announcer</h3>
+<ul>
+<li>Recorded voices: MALE, FEMALE, BRITISH, OLD MAN, E-GIRL, INDIA and SPY (Settings &gt; VOICE).
+</li>
+<li>New calls:
+<ul>
+<li>&quot;You died&quot;.
+</li>
+<li>&quot;Headshot&quot; and &quot;Direct&quot; (an air rocket kill).
+</li>
+<li>Killstreaks: &quot;Killing spree&quot; (3 kills), &quot;Rampage&quot; (5), &quot;Unstoppable&quot; (7), &quot;Godlike&quot; (10).
+</li>
+<li>Time left: &quot;One minute remaining&quot; and &quot;Thirty seconds remaining&quot;.
+</li>
+<li>&quot;Round over&quot;.
+</li></ul>
+</li>
+<li>A new 3-2-1-fight countdown.
+</li>
+<li>When someone else gets a killstreak, you hear a sting and see a notice. You also hear a sound when you die.
+</li>
+<li><b>Quips:</b> press G (rebindable: QUIP) to say a random line from the voice pack. Everyone hears it from where you stand.
+</li>
+<li>When someone types in chat, others hear soft key clicks and see &quot;...&quot; over their head.
+</li></ul>
+<h3>Weapons and movement</h3>
+<ul>
+<li><b>Knife:</b> 30 damage every 0.75 s.
+</li>
+<li><b>Crossbow:</b> headshots do 75, and a bolt hit shoves hard.
+</li>
+<li><b>Bubble gun:</b> single shots fire 5 a second. The alt-fire stream sends 5 bubbles when the nearest enemy is close, rising to 15 from 30 m away, so it can&#x27;t one-shot up close.
+</li>
+<li><b>Rockets and stickies:</b> they inherit your velocity when fired.
+</li>
+<li><b>Air strafing:</b> a wider range of turn speeds gains speed, and overstrafing costs much less. Top speed rose a little: about 22 m/s after 4 s, up from 20.5.
+</li>
+<li><b>Dash:</b> it can now leave you at up to 28 m/s, so a dash always adds speed.
+</li></ul>
+<h3>Tag and hide and seek</h3>
+<ul>
+<li><b>Locator:</b> the tagger or seeker presses E (use) to see a random runner or hider through walls for 1 second. It has a 5 second cooldown.
+</li>
+<li><b>Invisible ceiling:</b> you can&#x27;t hook or jump out over the outer walls of the arena maps any more. It&#x27;s an invisible wall above them that only blocks players; shots, hooks and sight go through it.
+</li></ul>
+<h3>Ranked and community</h3>
+<ul>
+<li><b>Crowns:</b> #1 on any ranked board wears a gold crown, and the rest of the top 10 wear silver. They show over your head, next to your name in chat, and on the scoreboard. Turn them off in Settings &gt; VISUALS &gt; WINNERS CROWN.
+</li>
+<li><b>Ranked instagib spawns:</b> in instagib and free for all, you spawn where nobody can see you.
+</li>
+<li><b>Instagib scoreboard:</b> shows only GIBS and accuracy.
+</li>
+<li><b>Discord link:</b> type your Discord name in Settings (next to your name). The Discord bot uses it for leaderboard roles and queue pings.
+</li>
+<li><b>Queues:</b> ESC &gt; QUEUE lets you queue for any mode or ranked ladder from inside the game. These queues are shared with the Discord server. When one fills, everyone in it is told, both in game and on Discord. If you&#x27;re in a ranked match at the time, you&#x27;re told when it ends.
+</li>
+<li><b>Discord bot</b> (<code>tools/discordbot</code>):
+<ul>
+<li>posts updates, live servers with player counts, a ping role for when a game starts, the queues, the leaderboards and the INFO text;
+</li>
+<li>gives the #1 and top 10 roles.
+</li></ul>
+</li></ul>
+<h3>Settings</h3>
+<ul>
+<li>New <b>VISUALS</b> page:
+<ul>
+<li>fullbright (a flat white map);
+</li>
+<li>your shots: with the weapon model, always or never. They come from where the gun is, or would be.
+</li>
+<li>other players&#x27; tracers and beams on or off;
+</li>
+<li>health bars over players (not in ranked);
+</li>
+<li>scope overlay opacity;
+</li>
+<li>sticky counter;
+</li>
+<li>winners crown.
+</li></ul>
+</li>
+<li><b>Sticky counter:</b> the HUD shows STICKIES n/6 while you hold the launcher or have stickies out.
+</li>
+<li><b>Console:</b> <code> opens a console that sets any setting on the fly. Type </code>help<code>; </code>list fov<code> searches; </code>fov 110<code> sets a value; </code>/callvote ...` sends a server command.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.11.0/">&larr; 1.11.0</a></span><span><a href="../1.12.1/">1.12.1 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

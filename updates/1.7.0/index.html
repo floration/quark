@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.7.0: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.7.0</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<p class="note">The full notes for this version are its short notes: that was all that was written then.</p>
+<div class="prose">
+<h3>Custom game modes</h3>
+<ul>
+<li>Build your own modes in game: <b>Host &gt; Custom mode &gt; NEW / EDIT</b>.
+<ul>
+<li><b>General:</b> the mode it plays as, health, gravity, move speed, jump height, knockback, and dash / grapple / self damage / instagib / vampire / regen toggles. Time, score and round limits are also set here.
+</li>
+<li><b>Weapons:</b> turn each weapon on or off and set its fire rate, damage and projectile speed.
+</li>
+<li><b>Maps:</b> a map pool that rotates to the next map after every match.
+</li></ul>
+</li>
+<li>Presets are saved to <code>custom_modes/&lt;name&gt;.qmode</code>. Pick one in the Host menu and host as usual.
+</li>
+<li>Everyone who joins gets the server&#x27;s rules automatically. Movement and weapon timing predict exactly, and the server list shows the mode as <code>[name] server</code>.
+</li>
+<li>Map votes on a custom server stay inside its pool and its mode. Ranked always uses the standard rules.
+</li></ul>
+<h3>Fixes</h3>
+<ul>
+<li>The laser beam now comes out of the laser model&#x27;s emitter and follows the HUD viewmodel position, depth and scale.
+</li>
+<li>Jumping, falling, grappling or dashing into stairs carries you up them like walking does. You no longer bonk off the risers and lose your speed.
+</li>
+<li>Switching weapons with fire or alt-fire held (e.g. scoped sniper) no longer fires the new weapon. Let go and press again.
+</li></ul>
+<h3>Balance</h3>
+<ul>
+<li>Sniper: no spread when unscoped. Hip shots go exactly where the crosshair is.
+</li>
+<li>Bubble gun: bubbles travel 20% faster (primary 15.6 m/s; the alt-fire stream 8.4 to 24 m/s).
+</li></ul>
+<h3>New mode: multi point</h3>
+<ul>
+<li>The attackers take the map&#x27;s points one at a time, in order.
+</li>
+<li>Only the attackers capture. Standing on the point with no defender on it fills it, and more attackers fill it faster. A defender on the point holds it. A point left alone slowly drains.
+</li>
+<li>Every point taken adds 90 s to the clock and moves both teams&#x27; spawns forward. The attack wins the round when every point falls; the defence wins if time runs out.
+</li>
+<li>The sides swap after the round. More points taken wins, then the faster attack.
+</li>
+<li>Maps define the points (<code>point</code> boxes, in attack order) and the spawns for each stage (<code>spawn att2 ...</code>, <code>spawn def0 ...</code>).
+</li></ul>
+<h3>New map: Lodestone (multi point)</h3>
+<ul>
+<li>A working mine the size of four hamlets, two storeys deep.
+<ul>
+<li><b>North half:</b> a sunlit surface (the pithead, the mill, spoil heaps) over room-and-pillar workings, cut through by an open pit with benches and haul ramps.
+</li>
+<li><b>South half:</b> two great caverns under the mountain, the shaft station and the crystal grotto with its underground lake. They&#x27;re lit by a sun shaft, overhead lamps and glowing crystals.
+</li></ul>
+</li>
+<li>Five points down the mine: A the pithead, B the pit floor, C the workings, D the grotto shore, E the mother lode.
+</li></ul>
+<h3>Syringe (key 0)</h3>
+<ul>
+<li><b>Fire:</b> heals you 1 hp every 0.1 s while held.
+</li>
+<li><b>Alt-fire:</b> throws it. A teammate it hits gets 30 hp at once and all their cooldowns reset (weapon, dash, grapple). The throw has a 2 s cooldown.
+</li></ul>
+<h3>Weapons, HUD and controls</h3>
+<ul>
+<li>Every weapon&#x27;s shots now start at its model&#x27;s muzzle, wherever the HUD layout puts the model: tracers, beams and your own projectiles.
+</li>
+<li>Rockets, sticky bombs and crossbow bolts have proper models (fins and flame, a spiked mine with a blinking core, a bolt with fletching).
+</li>
+<li>HUD settings: the elements are in a dropdown, and the weapon model has its own button.
+</li>
+<li>Weapon keys 9 (knife) and 0 (syringe) now work. Before, the knife&#x27;s slot fell through to &quot;next weapon&quot;.
+</li></ul>
+<h3>Votes and bots</h3>
+<ul>
+<li>One button, CHANGE MAP / MODE: pick the mode, then a map for it. One vote (or one change for the host) does both.
+</li>
+<li>Bot levels shifted down one: expert is the old advanced, advanced the old intermediate, intermediate the old beginner. Beginner is a notch easier than before.
+</li></ul>
+<h3>Editor</h3>
+<ul>
+<li>A LADDER button: one object you can move and stretch. Its rails and rungs are made from it, so they always fit.
+</li>
+<li>Move arrows on boxes, zones and ladders. The face squares still resize.
+</li>
+<li>Clicking selects whatever is under the mouse. It used to only work near the middle of the view.
+</li></ul>
+<h3>Fixes</h3>
+<ul>
+<li><b>Viaduct:</b> buttress fins beside every arch, and a fifth spandrel wall. Hooking the middle of a wall and dashing along it to an arch no longer skips a section.
+</li>
+<li><b>Walking up stairs:</b> you could get stuck against a 0.5 m step when you stopped a hair short of it. Fixed.
+</li>
+<li><b>Bot route finding:</b> much faster on big maps.
+</li></ul>
+<h3>Announcer</h3>
+<ul>
+<li>A voice counts each round in (&quot;three, two, one, fight!&quot;).
+</li>
+<li>With ANNOUNCER: ALL CALLS (Settings) it also calls the mode&#x27;s moments: bomb planted / defused, hill captured / lost, point captured / lost, round won / lost, overtime.
+</li>
+<li>Set it to COUNTDOWN for the count only, or OFF.
+</li></ul>
+<h3>Race</h3>
+<ul>
+<li>Race now starts in practice: run the course untimed, with checkpoints. Nothing is timed or recorded, and it never starts by itself. Vote start (F4) and the race proper begins.
+</li>
+<li>The race leaderboard only takes time trials on the shipped, unchanged Viaduct. The server only marks a run as a time trial there, and your client only sends (or counts as a personal best) a run on the official map.
+</li>
+<li>Bastion, Foundry and Colosseum can also be played as multi point (their hill and bomb sites become the points).
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.6.0/">&larr; 1.6.0</a></span><span><a href="../1.8.0/">1.8.0 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

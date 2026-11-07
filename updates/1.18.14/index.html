@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.18.14: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.18.14</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<p>Two settings the owner asked for: &quot;a devices tab to the bottom right of the video + audio tab in settings, when you click this you go to a page that lets you select specific audio output/input device, monitor, etc&quot;, and &quot;2 seperate volume sliders for effects and announcer&quot;. No gameplay, network or file format change; quark.cfg gains six keys (older configs load as before: every new key starts at its default).</p>
+<h3>EFFECTS VOLUME and ANNOUNCER VOLUME (src/client/audio.{h,cpp}, src/client/game.cpp)</h3>
+<ul>
+<li><b>Two sliders under VOLUME</b> in VIDEO + AUDIO → SOUND, 0 to 1, default 1.00 (the sound as before), right-click: the default. quark.cfg keys <code>volume_effects</code> and <code>volume_announcer</code>.
+</li>
+<li><b>On top of the master</b>: the mixer multiplies each voice by its category&#x27;s volume (an effect: everything before the announcer&#x27;s ids, the four hitsound tiers and the kill sound included; the announcer: its recorded / generated lines), then the master VOLUME and the soft limiter as before.
+</li>
+<li><b>Applied per mix period</b>, read once a period from two atomics (no lock, nothing per sample but the multiply the gains already had): a sound already playing follows the slider from the next period (5 ms), and a 3D sound&#x27;s per-period gain ramp is scaled with it, so a change makes no click.
+</li>
+<li><b>The tab still fits</b>: the two sliders took 80 px the SOUND column didn&#x27;t have (the announcer&#x27;s VOICE section ended at 562 of the 640 footer), so the VOICE header went and ANNOUNCER / VOICE sit at the end of SOUND. The right column now ends at 598, the left at 620; nothing overlaps at 1280x720, 1920x1080 or 1024x768.
+</li>
+<li>Tests (assets, no sound device needed): a rifle shot at effects 1 / 0.5 / 0 (half within the limiter&#x27;s bend, 0 silent), the announcer at 0 leaves it untouched; a line at announcer 0 is silent, effects at 0 leaves it untouched; a shot already playing goes silent from the next period when effects goes to 0.
+</li></ul>
+<h3>DEVICES (src/client/game.cpp drawDeviceSettings, src/client/devices.h)</h3>
+<ul>
+<li><b>A page of the VIDEO + AUDIO tab</b> (<code>settings/video/devices</code>, the tab stays lit), opened by DEVICES at the bottom right of the tab&#x27;s footer, where the other tabs have their reset; BACK (bottom left) and Esc go back to VIDEO + AUDIO.
+</li>
+<li><b>Rows like the FONT page</b>: the default first, then the OS&#x27;s devices by name; the one in use &quot;&gt; NAME &lt;&quot;, a click on another picks it, saves quark.cfg and applies it at once. A list longer than its rows scrolls with the wheel over it (5 rows for the output and the monitor, 4 for the microphone). Names are upper case, and two devices with the same name are told apart (&quot;DELL P2419H #2&quot;).
+</li>
+<li><b>When the OS is asked</b>: when the page opens, on its REFRESH, and (monitors) when one is plugged in or out; never per frame. Windows: one MMDevice enumeration per list on a short-lived thread with its own COM apartment (whatever the game thread&#x27;s is), a few ms.
+</li>
+<li><b>Stable ids in quark.cfg</b>: <code>audio_output</code> / <code>audio_input</code> (Windows: the endpoint id, which survives restarts and port changes; Linux: the ALSA device name; macOS: the CoreAudio UID), <code>monitor</code> (GLFW&#x27;s monitor name, &quot;#2&quot; for a second of the same), <code>fullscreen_hz</code>. &quot;&quot; (or 0) = the default. A value is one line of at most 256 bytes (cut on a UTF-8 boundary).
+</li>
+<li><b>A saved device that&#x27;s gone</b> (unplugged, renamed): the default is used and a notice says so (&quot;THE CHOSEN AUDIO OUTPUT IS GONE: USING THE SYSTEM DEFAULT&quot;, &quot;MONITOR ... NOT FOUND: USING THE PRIMARY&quot;); the page says it in orange under the list, and the choice is kept for when it&#x27;s back. REFRESH tries a missing output again.
+</li>
+<li>Tests (assets): a saved id found / the default / gone, same-named monitors numbered, ids as quark.cfg values (line breaks dropped, the 256-byte cut never splits a character), the OS lists asked for (and every entry with an id and a name), choosing an output before the device opens. UI test: every row (the one in use INERT, the rest CFG; a machine with no sound devices has only the default row, in use: INERT), REFRESH (<code>state(&quot;devscan&quot;)</code>), BACK, Esc, in the menus and in game.
+</li></ul>
+<h4>AUDIO OUTPUT (src/client/audio.cpp)</h4>
+<ul>
+<li><b>Switching reopens the output the way a lost device or EXCLUSIVE AUDIO already does</b>: Audio::setOutputDevice stores the id and sets the backend&#x27;s reopen flag; its own loop closes the stream between two periods and opens the new device with exactly the same code (WASAPI shared at the engine&#x27;s period, or exclusive at the device&#x27;s; the same one-period queue). So nothing is added to the latency, and EXCLUSIVE AUDIO works on the chosen device too. Picking the device already open does nothing.
+</li>
+<li><b>Windows</b>: the endpoint is opened by id (IMMDeviceEnumerator::GetDevice), only when it&#x27;s active and activates; else the default endpoint, with the &quot;gone&quot; flag. The log line says which (&quot;the chosen device&quot; / &quot;the default device (the chosen one is gone)&quot;). A device unplugged mid-game falls back to the default as before (the session fails and reopens; the chosen one isn&#x27;t there). The WinMM fallback (no WASAPI) stays on the default.
+</li>
+<li><b>Linux</b>: ALSA&#x27;s device hints (snd_device_name_hint, loaded at runtime like the output); offered: each card&#x27;s sysdefault and HDMI entries, pulse, pipewire and jack (not every plugin route: front, surround51, dmix...). The output thread reopens between two writes.
+</li>
+<li><b>macOS</b>: CoreAudio&#x27;s devices with output (or input) streams, by UID and name (CoreAudio.framework now linked); the AudioQueue is made on the chosen device (kAudioQueueProperty_CurrentDevice), closed and made again on a change.
+</li></ul>
+<h4>AUDIO INPUT</h4>
+<ul>
+<li>Listed and stored like the output (<code>audio_input</code>), but <b>nothing in the game records sound yet</b> (no voice chat), and the page&#x27;s hint says so: the choice is kept for voice chat later.
+</li></ul>
+<h4>MONITOR and REFRESH RATE (src/client/game.cpp applyDisplayMode)</h4>
+<ul>
+<li><b>MONITOR</b>: PRIMARY MONITOR (the default, as before), then each monitor with its desktop mode (&quot;GENERIC PNP MONITOR  2560X1440 240 HZ&quot;). Borderless covers the chosen monitor, exclusive fullscreen takes it, windowed opens 100 px in from its corner. Picking one in fullscreen / borderless moves the window there at once.
+</li>
+<li><b>REFRESH RATE</b> (exclusive fullscreen only): DESKTOP (the monitor&#x27;s own rate, as before) or any other rate the monitor has at its desktop size, highest first; GLFW takes the closest mode. A rate saved for another monitor is shown as &quot;(NOT ON THIS MONITOR)&quot; until changed.
+</li>
+<li><b>The desktop mode is remembered</b> while the game is exclusive on a monitor: glfwGetVideoMode then reports the game&#x27;s own mode, so going back to DESKTOP (or to borderless) used the switched rate.
+</li>
+<li><b>gameMonitor</b> (Latent Sync, F3, the FPS LIMIT default) uses the chosen monitor when not exclusive, from a pointer looked up only when the setting or the monitors change (GLFW&#x27;s monitor callback sets a flag the frame reads; a gone monitor&#x27;s pointer is never used again).
+</li>
+<li>The UI test puts <code>monitor</code> and <code>fullscreen_hz</code> back at once like <code>display_mode</code> (they move the window).
+</li></ul>
+<h3>Docs</h3>
+<ul>
+<li>docs/RELEASE_CHECKLIST.md: rows for the two volumes and the DEVICES page. docs/UI_TEST.md: the page, its ids and expectations. assets/provenance/ui.json: <code>ui/settings/video/devices</code> (AI-made).
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.18.13/">&larr; 1.18.13</a></span><span><a href="../1.18.15/">1.18.15 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>
