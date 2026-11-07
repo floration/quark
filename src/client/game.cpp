@@ -6927,6 +6927,15 @@ void Game::leaveSettings() {
 // --settingstab PAGE[+PICKER]: open that page (screenshots): player, fonts, gameplay, controls, controls/movement,
 // controls/files, video, video/devices, crosshair, hud, hud/elements, hud/widgets, hud/<element> (that element picked:
 // health, weapon, bars, speed, slots, keys); "+LABEL" opens that colour picker on it
+// A volume shown as a percent (0-1 stored as 0-100 %): every volume slider reads the same way (settings review
+// 2026-11-07: VOLUME said 60 %, the others 1.00 on bars of different lengths)
+bool Game::pctSlider(float x, float y, float w, float h, const char* label, float& v, float hi, const char* fmt, const UiExp& e, float def) {
+    float pct = v * 100;
+    if (!ui_.slider(x, y, w, h, label, pct, 0, hi * 100, fmt ? fmt : "%.0f%%", e, def * 100)) return false;
+    v = clampf(pct / 100, 0, hi);
+    return true;
+}
+
 void Game::debugSettingsTab() {
     std::string t = opts_.settingsTab, pick;
     if (t.empty()) return;
@@ -6972,6 +6981,7 @@ void Game::drawSettings() {
     // (the HUD tab's panel ends higher: its footer stays clear of the HUD's bottom row, the weapon list and health)
     const float footY = setTab_ == TAB_HUD && !moreOpen_ ? kHudFootY : 640;
     ui_.panel(L.X(252), L.Y(32), L.L(776), L.L(footY + 48 - 32), hudPreview ? 0.6f : 1.0f);
+    ui_.dropBottom = L.Y(footY) - L.L(4);   // (a long dropdown grows into columns above the footer: BACK and the page numbers stay clear)
     {   // the tab row, an accent line under it
         static const char* names[] = {"PLAYER", "GAMEPLAY", "CONTROLS", "VIDEO + AUDIO", "CROSSHAIR", "HUD", "LATENCY", "SEARCH"};
         static const char* navs[] = {"~settings", "~settings/gameplay", "~settings/controls", "~settings/video", "~settings/crosshair", "~settings/hud",
@@ -7522,7 +7532,7 @@ void Game::drawGameplaySettings(const SetLayout& L) {
     g.section("OTHER PLAYERS");
     ui_.toggle(g.x(), g.top(), w, h, "HEALTH BARS OVER PLAYERS", cfg_.healthBars, UiExp::cfg("health_bars"));
     g.next();
-    g.hint("RANKED: NO HEALTH BARS");
+    g.hint("RANKED TOO");   // (owner, 2026-11-01: health bars are allowed in ranked; the old hint said the opposite)
     {
         static const std::vector<std::string> hbp = {"HEALTH BAR: OVER THE HEAD", "HEALTH BAR: AT THE FEET"};
         int hi = cfg_.healthBarsBottom ? 1 : 0;
@@ -7651,7 +7661,7 @@ void Game::drawVideoSettings(const SetLayout& L) {
     {
         const float gains[4] = {cfg_.volPerceptual ? cfg_.volume * cfg_.volume : cfg_.volume, cfg_.volumeEffects, cfg_.volumeAnnouncer, cfg_.volumeQuips};
         for (int k = 0; k < 4; k++) {
-            if (!cfg_.volDb) snprintf(vf[k], sizeof vf[k], k == 0 ? "%%.0f%%%%" : "%%.2f");
+            if (!cfg_.volDb) snprintf(vf[k], sizeof vf[k], "%%.0f%%%%");
             else if (gains[k] < 0.001f) snprintf(vf[k], sizeof vf[k], "-INF DB");
             else snprintf(vf[k], sizeof vf[k], "%+.1f DB", 20.0f * std::log10(gains[k]));
         }
@@ -7663,15 +7673,15 @@ void Game::drawVideoSettings(const SetLayout& L) {
     }
     g.next();
     // on top of VOLUME: every sound effect (the hitsound too), and the announcer's lines
-    if (ui_.slider(g.x(), g.top(), w, h, "EFFECTS VOLUME", cfg_.volumeEffects, 0, 1, vf[1], UiExp::cfg("volume_effects"), defaultSettings().volumeEffects))
+    if (pctSlider(g.x(), g.top(), w, h, "EFFECTS VOLUME", cfg_.volumeEffects, 1, vf[1], UiExp::cfg("volume_effects"), defaultSettings().volumeEffects))
         audio_.setEffectsVolume(cfg_.volumeEffects = clampf(cfg_.volumeEffects, 0, 1));
     g.next();
-    if (ui_.slider(g.x(), g.top(), w, h, "ANNOUNCER VOLUME", cfg_.volumeAnnouncer, 0, 1, vf[2], UiExp::cfg("volume_announcer"), defaultSettings().volumeAnnouncer))
+    if (pctSlider(g.x(), g.top(), w, h, "ANNOUNCER VOLUME", cfg_.volumeAnnouncer, 1, vf[2], UiExp::cfg("volume_announcer"), defaultSettings().volumeAnnouncer))
         audio_.setAnnouncerVolume(cfg_.volumeAnnouncer = clampf(cfg_.volumeAnnouncer, 0, 1));
     g.next();
     // quips (the QUIP key): their own volume and on / off, apart from the announcer's (QUIPS shares HITSOUND's row:
     // a row more would not fit above DEVICES with Windows' EXCLUSIVE AUDIO)
-    if (ui_.slider(g.x(), g.top(), w, h, "QUIPS VOLUME", cfg_.volumeQuips, 0, 1, vf[3], UiExp::cfg("volume_quips"), defaultSettings().volumeQuips))
+    if (pctSlider(g.x(), g.top(), w, h, "QUIPS VOLUME", cfg_.volumeQuips, 1, vf[3], UiExp::cfg("volume_quips"), defaultSettings().volumeQuips))
         audio_.setQuipVolume(cfg_.volumeQuips = clampf(cfg_.volumeQuips, 0, 1));
     g.next();
     ui_.toggle(g.x(), g.top(), hw, h, "HITSOUND", cfg_.hitsounds, UiExp::cfg("hitsounds"));
@@ -7724,7 +7734,8 @@ void Game::listDevices() {
     for (int i = 0; i < n; i++) {
         const DeskMode m = desktopMode(ms[i]);
         char mode[48];
-        snprintf(mode, sizeof mode, "  %dX%d %d HZ", m.w, m.h, m.hz);
+        if (m.hz > 0) snprintf(mode, sizeof mode, "  %dX%d %d HZ", m.w, m.h, m.hz);
+        else snprintf(mode, sizeof mode, "  %dX%d", m.w, m.h);   // (no rate reported: not "0 HZ")
         devMons_.push_back({names[i], upper(names[i]) + mode});
     }
     listRates();
@@ -8505,7 +8516,7 @@ void Game::drawMoreSettings(const SetLayout& L) {
         ui_.toggle(f.x(), f.top(), hw, h, "SHOW DB", cfg_.volDb, UiExp::cfg("vol_db"));
         ui_.toggle(xl, f.top(), hw, h, "PERCEPTUAL", cfg_.volPerceptual, UiExp::cfg("vol_perceptual"));
         f.next();
-        ui_.slider(f.x(), f.top(), hw, h, "BACKGROUND VOLUME", cfg_.bgVolume, 0, 1, "%.2f", UiExp::cfg("bg_volume"), d.bgVolume);
+        pctSlider(f.x(), f.top(), hw, h, "BACKGROUND VOLUME", cfg_.bgVolume, 1, nullptr, UiExp::cfg("bg_volume"), d.bgVolume);
         cfg_.bgVolume = clampf(cfg_.bgVolume, 0, 1);
         ui_.toggle(xl, f.top(), hw, h, "FORCE MY PACK", cfg_.forcePack, UiExp::cfg("force_pack"));
         f.next();
@@ -8817,7 +8828,7 @@ void Game::drawMoreSettings(const SetLayout& L) {
             if (rawMouse_.core() >= 0) snprintf(cs, sizeof cs, "NOW ON CORE %d; THE GAME STAYS OFF IT", rawMouse_.core()); else snprintf(cs, sizeof cs, "%s", "RAW INPUT, WINDOWS, 4+ CORES ONLY");
             g.hint("OWN CORE: RAW INPUT READ AT TOP PRIORITY ON ONE FAST CORE;", cs);
         }
-        if (ui_.toggle(g.x(), g.top(), hw, h, "NV THREADED OFF", cfg_.nvThreaded, UiExp::cfg("nv_threaded"))) {
+        if (ui_.toggle(g.x(), g.top(), hw, h, "NV SINGLE-THREAD", cfg_.nvThreaded, UiExp::cfg("nv_threaded"))) {
             std::string msg = "NOT CHANGED IN THE UI TEST";
             if (!uiTest_ && !nvThreadedOff(cfg_.nvThreaded, &msg)) cfg_.nvThreaded = false;
             notify(msg);
@@ -8886,14 +8897,14 @@ void Game::drawMoreSettings(const SetLayout& L) {
         f.section("SOUND GROUPS");   // (on top of EFFECTS VOLUME)
         {
             const Settings& d = defaultSettings();
-            ui_.slider(f.x(), f.top(), w, h, "MY FOOTSTEPS", cfg_.volSteps, 0, 1, "%.2f", UiExp::cfg("vol_steps"), d.volSteps);
+            pctSlider(f.x(), f.top(), w, h, "MY FOOTSTEPS", cfg_.volSteps, 1, nullptr, UiExp::cfg("vol_steps"), d.volSteps);
             cfg_.volSteps = clampf(cfg_.volSteps, 0, 1);
             f.next();
-            ui_.slider(f.x(), f.top(), w, h, "OTHERS' FOOTSTEPS", cfg_.volOthersSteps, 0, 2, "%.2f", UiExp::cfg("vol_others_steps"), d.volOthersSteps);
+            pctSlider(f.x(), f.top(), w, h, "OTHERS' FOOTSTEPS", cfg_.volOthersSteps, 2, nullptr, UiExp::cfg("vol_others_steps"), d.volOthersSteps);
             cfg_.volOthersSteps = clampf(cfg_.volOthersSteps, 0, 2);
             f.next();
             f.hint("OVER 1: LOUDER, TO HEAR THEM COMING");
-            ui_.slider(f.x(), f.top(), w, h, "GUNFIRE", cfg_.volWeapons, 0, 1, "%.2f", UiExp::cfg("vol_weapons"), d.volWeapons);
+            pctSlider(f.x(), f.top(), w, h, "GUNFIRE", cfg_.volWeapons, 1, nullptr, UiExp::cfg("vol_weapons"), d.volWeapons);
             cfg_.volWeapons = clampf(cfg_.volWeapons, 0, 1);
             f.next();
             ui_.slider(f.x(), f.top(), w, h, "BOMB BEEP", cfg_.volObjective, 0, 1, "%.2f", UiExp::cfg("vol_objective"), d.volObjective);
@@ -8975,7 +8986,7 @@ void Game::drawMoreSettings(const SetLayout& L) {
     g.section("HITSOUNDS");   // (HITSOUND on VIDEO + AUDIO turns them on / off)
     {
         const float hw = L.L(kHalfW), x2 = L.X(kColR + kColW - kHalfW);
-        if (ui_.slider(g.x(), g.top(), w, h, "HITSOUND VOLUME", cfg_.hitVolume, 0, 2, "%.2f", UiExp::cfg("hit_volume"), defaultSettings().hitVolume))
+        if (pctSlider(g.x(), g.top(), w, h, "HITSOUND VOLUME", cfg_.hitVolume, 2, nullptr, UiExp::cfg("hit_volume"), defaultSettings().hitVolume))
             audio_.play(SND_HIT_MED, 0.9f * (cfg_.hitVolume = clampf(cfg_.hitVolume, 0, 2)), 1.0f, cfg_.hitPack);
         g.next();
         static const std::vector<std::string> hp = {"HITSOUND: MY SOUND PACK", "HITSOUND: DEFAULT", "HITSOUND: HEAVY METAL", "HITSOUND: MAGICAL", "HITSOUND: RETRO", "HITSOUND: MOUTH"};
@@ -9743,7 +9754,12 @@ void Game::drawControls(const SetLayout& L) {
     }
     static const Binds defaults = [] { Binds b; b.setDefaults(); return b; }();
     bool isDefault = std::memcmp(defaults.code, cfg_.binds.code, sizeof defaults.code) == 0;
-    if (ui_.button(L.X(836), L.Y(640), hw, h, "RESET ALL KEYS", UiExp::cfg("bind_*"), !isDefault)) { cfg_.binds.setDefaults(); captureAction_ = -1; cfg_.save(); }
+    // (two clicks: one click wiped every key with no way back - settings review 2026-11-07)
+    const bool armed = confirmArmed("resetkeys");   // (always asked, whatever CONFIRM LEAVING says: there's no undo)
+    if (ui_.button(L.X(836), L.Y(640), hw, h, armed ? "SURE? RESET ALL" : "RESET ALL KEYS", (armed ? UiExp::cfg("bind_*") : UiExp::state("confirm", "resetkeys")).withId("RESET ALL KEYS"), !isDefault)) {
+        if (armed) { confirmWhat_.clear(); cfg_.binds.setDefaults(); captureAction_ = -1; cfg_.save(); }
+        else { confirmWhat_ = "resetkeys"; confirmUntil_ = time_ + 3; }
+    }
 }
 
 // CONTROLS > IMPORT with nothing on the clipboard: the files in controls/, in a dialog over the (dimmed) tab
@@ -9810,13 +9826,13 @@ void Game::drawLatencySettings(const SetLayout& L) {
             notify(msg);
         }
         // "Disable fullscreen optimizations" for quark.exe (per user, no admin): real exclusive fullscreen
-        if (ui_.toggle(xr, g.top(), hw, h, "NO FULLSCREEN OPT.", cfg_.disableFso, UiExp::cfg("disable_fso"))) {
+        if (ui_.toggle(xr, g.top(), hw, h, "TRUE FULLSCREEN", cfg_.disableFso, UiExp::cfg("disable_fso"))) {
             std::string msg = "NOT CHANGED IN THE UI TEST";
             if (!uiTest_ && !fsoDisable(cfg_.disableFso, &msg)) cfg_.disableFso = !cfg_.disableFso;
             notify(msg);
         }
         g.next();
-        g.hint("GPU SCHED: WINDOWS' HARDWARE GPU SCHEDULING;", "NO FULLSCREEN OPT.: TRUE EXCLUSIVE FULLSCREEN (NEXT START)");
+        g.hint("GPU SCHED: WINDOWS' HARDWARE GPU SCHEDULING;", "TRUE FULLSCREEN: WINDOWS' FULLSCREEN OPTIMIZATIONS OFF (NEXT START)");
     }
     g.section("PERFORMANCE CHECK");
     // (on its own thread: loading the drivers' libraries can take a moment, and the menu keeps its frame rate meanwhile)

@@ -2369,8 +2369,6 @@ NO CROSSHAIR CODE ON THE CLIPBOARD	НЕТ КОДА ПРИЦЕЛА В БУФЕР�
 NO FILES IN	НЕТ ФАЙЛОВ В
 NO FILES IN CONTROLS/ - USE FOLDER	НЕТ ФАЙЛОВ В CONTROLS/ - ИСПОЛЬЗУЙТЕ ПАПКУ
 NO FRAMES MEASURED	КАДРЫ НЕ ИЗМЕРЕНЫ
-NO FULLSCREEN OPT.	БЕЗ ОПТ. ЭКРАНА
-NO FULLSCREEN OPT.: TRUE EXCLUSIVE FULLSCREEN (NEXT START)	БЕЗ ОПТ. ЭКРАНА: НАСТОЯЩИЙ ЭКСКЛЮЗИВНЫЙ ПОЛНЫЙ ЭКРАН (СЛЕД. ЗАПУСК)
 NO GAME YET	ИГР ЕЩЁ НЕ БЫЛО
 NO GAMES FOUND	ИГРЫ НЕ НАЙДЕНЫ
 NO GAMES MATCH THE FILTERS	НЕТ ИГР ПО ФИЛЬТРАМ
@@ -2422,7 +2420,7 @@ NS + MOUSE POLLING	NS + ОПРОС МЫШИ
 NUM	NUM
 NUMBER TIME	ВРЕМЯ ЦИФР
 NV DXGI PRESENT	NV DXGI PRESENT
-NV THREADED OFF	NV THREADED ВЫКЛ
+NV SINGLE-THREAD	NV ОДИН ПОТОК
 NVIDIA	NVIDIA
 NVIDIA CAPS YOUR FRAME RATE (MAX FRAME RATE)	NVIDIA ОГРАНИЧИВАЕТ FPS (MAX FRAME RATE)
 NVIDIA CONTROL PANEL > MANAGE 3D SETTINGS > LOW LATENCY MODE: ON	ПАНЕЛЬ NVIDIA > ПАРАМЕТРЫ 3D > РЕЖИМ НИЗКОЙ ЗАДЕРЖКИ: ВКЛ
@@ -2738,9 +2736,9 @@ RANKED MATCH OVER - REPORTING THE RESULT	РЕЙТИНГОВЫЙ МАТЧ ОКО�
 RANKED OFF	РЕЙТИНГ ВЫКЛ
 RANKED ON -	РЕЙТИНГ ВКЛ -
 RANKED QUEUES	РЕЙТИНГОВЫЕ ОЧЕРЕДИ
+RANKED TOO	И В РЕЙТИНГОВЫХ
 RANKED VANILLA	РЕЙТИНГОВАЯ ВАНИЛЛА
 RANKED: DEFAULT MODEL, HUD, CONTROLS AND 10 MS INTERP FOR FAIRNESS	РЕЙТИНГ: МОДЕЛЬ, HUD, УПРАВЛЕНИЕ ПО УМОЛЧ. И ИНТЕРП. 10 МС ДЛЯ ЧЕСТНОСТИ
-RANKED: NO HEALTH BARS	РЕЙТИНГ: БЕЗ ПОЛОС ЗДОРОВЬЯ
 RANKS	РАНГИ
 RATE	ЧАСТ.
 RATING	РЕЙТИНГ
@@ -3190,6 +3188,7 @@ SUPER DASH JUMP	ПРЫЖОК С СУПЕРРЫВКА
 SUPER DASH SPEED (MAX)	СКОРОСТЬ СУПЕРРЫВКА (МАКС.)
 SURE?	ТОЧНО?
 SURE? QUIT	ТОЧНО? ВЫЙТИ
+SURE? RESET ALL	ТОЧНО? СБРОСИТЬ ВСЁ
 SURF	СЁРФ
 SURFACES	ПОВЕРХНОСТИ
 SURFER	СЁРФЕР
@@ -3422,6 +3421,8 @@ TRAILS: SHORT	СЛЕДЫ: КОРОТКИЕ
 TRAILS: THE STREAKS BEHIND ROCKETS, BOLTS,	СЛЕДЫ: ПОЛОСЫ ЗА РАКЕТАМИ, БОЛТАМИ,
 TRAINER MENU	МЕНЮ ТРЕНАЖЁРА
 TRIAL MAP	КАРТА ЗАЕЗДА
+TRUE FULLSCREEN	НАСТОЯЩИЙ ПОЛНЫЙ ЭКРАН
+TRUE FULLSCREEN: WINDOWS' FULLSCREEN OPTIMIZATIONS OFF (NEXT START)	НАСТОЯЩИЙ ПОЛНЫЙ ЭКРАН: ОПТИМИЗАЦИЯ WINDOWS ВЫКЛ. (СО СЛЕДУЮЩЕГО ЗАПУСКА)
 TRY IT NOW	ПОПРОБОВАТЬ
 TT	TT
 TURN 35 DEGREES AT 20 M/S OR MORE	ПОВЕРНИ НА 35 ГРАДУСОВ НА 20 М/С ИЛИ БЫСТРЕЕ

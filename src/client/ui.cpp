@@ -11,6 +11,7 @@ void Ui::begin(Renderer* r, const UiInput& in, float scale) {
     scale_ = scale;
     textScale_ = std::max(1.0f, std::round(2.0f * scale));
     sliderCounter_ = 0;
+    dropBottom = 0;
     boxL_ = boxR_ = 0;
     where = scope = nullptr;
     muted = false;
@@ -644,15 +645,21 @@ bool Ui::dropdown(float x, float y, float w, float h, const std::string& label, 
     const bool hv = hover(x, y, w, h);
     // the list: under the field, an entry a row (over it when it would run off the bottom of the window)
     const float rowH = h, gap = 4 * s, pad = 8 * s;
-    const float lw = w, lh = pad * 2 + n * rowH + (n - 1) * gap, lx = x;
-    const float ly = (y + h + 4 * s + lh > (float)r_->height() && y - 4 * s - lh >= 0) ? y - 4 * s - lh : y + h + 4 * s;
+    const float bottom = dropBottom > 0 ? std::min(dropBottom, (float)r_->height()) : (float)r_->height();
+    const int cols = n <= 1 ? 1 : fitColumns(n, bottom - (y + h + 4 * s) - pad * 2 + gap, rowH + gap, 1, 3), rows = (n + cols - 1) / cols;
+    const float lw = w * cols, lh = pad * 2 + rows * rowH + (rows - 1) * gap;
+    const float lx = x + lw <= (float)r_->width() ? x : x + w - lw;   // (wider than the field: to its right, else its left)
+    const float ly = (y + h + 4 * s + lh > bottom && y - 4 * s - lh >= 0) ? y - 4 * s - lh : y + h + 4 * s;
+    const float colW = (lw - pad) / cols;   // (each entry: its column less the gap)
+    auto entry = [&](int i, float& ex, float& ey, float& ew) { ex = lx + pad + (i / rows) * colW; ey = ly + pad + (i % rows) * (rowH + gap); ew = colW - pad; };
     if (in_.pressed && hv) {
         if (open) { closePopup(); open = false; }
         else { popup_ = Popup(); popup_.kind = POP_DROP; popup_.id = label; open = true; }
     } else if (open && in_.pressed) {
         for (int i = 0; i < n; i++) {
-            float ey = ly + pad + i * (rowH + gap);
-            if (in_.mx >= lx + pad && in_.mx < lx + lw - pad && in_.my >= ey && in_.my < ey + rowH) {
+            float ex, ey, ew;
+            entry(i, ex, ey, ew);
+            if (in_.mx >= ex && in_.mx < ex + ew && in_.my >= ey && in_.my < ey + rowH) {
                 if (i != index) { index = i; changed = true; }
                 closePopup(); open = false;
                 break;
@@ -673,11 +680,14 @@ bool Ui::dropdown(float x, float y, float w, float h, const std::string& label, 
         popup_.box[0] = lx; popup_.box[1] = ly; popup_.box[2] = lw; popup_.box[3] = lh;
         popup_.names = names;
         popup_.index = index;
+        popup_.cols = cols; popup_.rows = rows;
         if (reporting())
             for (int i = 0; i < n; i++) {
                 UiWidget wd;
                 wd.where = where; wd.scope = scope;
-                wd.kind = UiWidget::BUTTON; wd.x = lx + pad; wd.y = ly + pad + i * (rowH + gap); wd.w = lw - 2 * pad; wd.h = rowH;
+                float ex, ey, ew;
+                entry(i, ex, ey, ew);
+                wd.kind = UiWidget::BUTTON; wd.x = ex; wd.y = ey; wd.w = ew; wd.h = rowH;
                 wd.label = names[i]; wd.exp = (i == index ? closed : pick).withId(names[i].c_str());
                 emitWidget(wd);
             }
@@ -699,8 +709,10 @@ void Ui::popups() {
     if (popup_.kind == POP_DROP) {
         r_->rect(b[0], b[1], b[2], b[3], {0.05f, 0.06f, 0.08f, 0.98f});
         const float pad = 8 * s, rowH = popup_.ah, gap = 4 * s;
+        const int rows = std::max(1, popup_.rows);
+        const float colW = (b[2] - pad) / std::max(1, popup_.cols);
         for (int i = 0; i < (int)popup_.names.size(); i++) {
-            float ex = b[0] + pad, ey = b[1] + pad + i * (rowH + gap), ew = b[2] - 2 * pad;
+            float ex = b[0] + pad + (i / rows) * colW, ey = b[1] + pad + (i % rows) * (rowH + gap), ew = colW - pad;
             bool hv = in_.mx >= ex && in_.mx < ex + ew && in_.my >= ey && in_.my < ey + rowH;
             Color bg = i == popup_.index ? accent : hv ? Color{accent.r * 0.5f, accent.g * 0.5f, accent.b * 0.5f, 0.95f} : Color{0.14f, 0.16f, 0.2f, 0.9f};
             r_->rect(ex, ey, ew, rowH, bg);

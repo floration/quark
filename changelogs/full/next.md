@@ -47,6 +47,15 @@
 - **TAG's default map:** `bestMapFor` fell back to the first map that offered the mode before the tag-on-a-hide-map stand-in; a map built for TAG now wins, then the stand-in.
 - **UI test:** the strip's SETTINGS expected the settings screen's first tab, but settings opens on CONTROLS since the round-1 fixes; it now expects any settings tab.
 
+## Settings: fixes from the first settings review (owner, 2026-11-07: "do this same thing but for the settings menus")
+- **Why:** four reviewers (a new player, a CS2 player new to Quark, a Quark regular, a senior game dev) went through every settings page; merged list in the project files (menu-review/settings1/merged.md). These are the fixes that don't depend on how the tabs are grouped.
+- **Wrong hint:** GAMEPLAY said "RANKED: NO HEALTH BARS", but ranked draws them since the owner's 2026-11-01 call; it now says RANKED TOO.
+- **RESET ALL KEYS** asks SURE? RESET ALL first (3 s, whatever CONFIRM LEAVING says): one click wiped every bind with no undo.
+- **Search keywords:** SENS now finds CM PER 360, the converter, MOUSE ACCELERATION, RAW INPUT; FPS finds FPS LIMIT, G-SYNC, SHOW FPS; GRAPHICS finds PRESET; MOUSE finds INVERT Y; VOLUME finds footsteps and gunfire; LAG / NETWORK find NET GRAPH, PACKET LOSS, MAX PING, SHOW PING (tools/settings_index.py KEYWORDS; the index also reads the new percent sliders).
+- **Volumes in percent:** every volume slider reads 0-100 % (OTHERS' FOOTSTEPS and HITSOUND to 200 %); VOLUME said 60 % while the others said 1.00 on bars of different lengths. Stored values unchanged (`Game::pctSlider`).
+- **Long dropdowns** grow into up to three columns above the settings footer (`Ui::dropBottom`): HUD > ELEMENT's 14 entries ran over the page numbers and BACK.
+- **Labels:** NV THREADED OFF: OFF is NV SINGLE-THREAD, NO FULLSCREEN OPT. is TRUE FULLSCREEN (same settings, no double negatives). DEVICES no longer says "0 HZ" for a monitor that reports no rate.
+
 ## Display: exclusive fullscreen at a custom size (owner, 2026-11-05)
 - applyDisplayMode resized the renderer to at least the desktop's size in every fullscreen mode. In exclusive fullscreen with VIDEO > FULLSCREEN SIZE smaller than the desktop, GLFW's resize callback (fired inside glfwSetWindowMonitor) was overwritten with the desktop size, so the game drew a desktop-sized picture into the smaller screen: anchored bottom-left and cut off. Exclusive now uses FULLSCREEN SIZE; borderless keeps the desktop-size floor.
 - Alt-tab with MINIMIZE ON ALT-TAB off kept the custom display mode on the desktop. With a FULLSCREEN SIZE that isn't the desktop's, losing focus now minimizes the window, which is when GLFW gives the display mode back (and takes it again on return). The desktop-size case is unchanged (no mode change to undo, and minimizing there is still the setting's choice).

@@ -192,6 +192,9 @@ public:
     // too (the editor's panel under its menus); `scope` - what they act on (the editor's selection kind). Cleared by begin().
     const char* where = nullptr;
     const char* scope = nullptr;
+    // A dropdown's list stops above this y (0: the window's bottom) and grows into columns instead (the settings
+    // panel's footer: HUD > ELEMENT's 14 entries ran over the page numbers - settings review 2026-11-07). Cleared by begin().
+    float dropBottom = 0;
     bool muted = false;   // drawn under a modal question that takes every click: not reported (cleared by begin())
     // A list of n items in a box `w` wide with `availH` of height left: as many columns as it takes to fit (at least
     // `minCols`), so long lists grow sideways instead of running off the bottom. Returns the column count.
@@ -219,6 +222,7 @@ private:
         bool seen = false;            // its widget was drawn this frame (else begin() closes it)
         float box[4] = {};            // the popup's rect (a click outside it and its widget closes it)
         float ax = 0, ay = 0, aw = 0, ah = 0;   // its widget's rect
+        int cols = 1, rows = 1;       // (a dropdown's list: entries down each column, then the next column)
         float hh = 0, ss = 0, vv = 0; // the picker's hue / saturation / value (kept while dragging: grey has no hue)
         int drag = 0;                 // dragging: 1 the square, 2 the hue bar
         bool init = false;            // (opened by openPopup: the hsv is read from the colour when it's drawn)

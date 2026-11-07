@@ -281,7 +281,8 @@ private:
     void drawSettings();
     void openSettingsTab(int tab);
     void leaveSettings();
-    void debugSettingsTab();   // --settingstab
+    void debugSettingsTab();
+    bool pctSlider(float x, float y, float w, float h, const char* label, float& v, float hi, const char* fmt, const UiExp& e, float def);   // --settingstab
     void drawPlayerSettings(const SetLayout& L);
     void drawGameplaySettings(const SetLayout& L);
     void drawVideoSettings(const SetLayout& L);
