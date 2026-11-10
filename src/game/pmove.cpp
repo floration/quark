@@ -1094,6 +1094,21 @@ bool ballMove(Vec3& c, Vec3& v, const Map& map, float dt) {
                 for (int k = o + 1; k < 3; k++) delta[order[k]] += r[order[k]];
                 continue;
             }
+            // a ledge up to a player's step height (owner, 2026-11-10: "ball should have a step height"): it goes up
+            // onto it keeping its speed, as a player walking or flying into a stair's riser does, instead of bouncing
+            // off. Higher than that is a wall. Only a step that lands higher counts (a hair short of a riser too).
+            if (i != 1) {
+                const AABB at = shifted(box, i, got);
+                const float up = ballSweep(map, at, 1, kStepHeight);
+                if (up > 1e-4f) {
+                    const AABB raised = shifted(at, 1, up);
+                    const float over = ballSweep(map, raised, i, want - got);
+                    if (std::fabs(over) > 1e-5f) {
+                        const float down = ballSweep(map, shifted(raised, i, over), 1, -up);
+                        if (up + down > 1e-4f) { c[i] += over; c.y += up + down; continue; }
+                    }
+                }
+            }
             // every other surface is rubber: back at kRubberBounce, a slow touch stops
             v[i] = std::fabs(v[i]) > kRubberMin ? -v[i] * kRubberBounce : 0.0f;
         }
