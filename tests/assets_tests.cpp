@@ -1583,26 +1583,36 @@ static void testPlayerMeshParts() {
     ACHECK(!mm3.rig.animated && mm3.parts.size() == 2);
 }
 
-// Every player model ships: a box model file each in assets/overrides/models/player/ (embedded at build time), so a
+// Every player model ships: a model file each in assets/overrides/models/player/ (embedded at build time), so a
 // model with no built-in boxes (past BANDIT) never falls back to STANDARD on anyone's screen; each walks (both legs'
-// joints), and its name is a translation key (the picker and the cycle draw the names)
+// joints: a box file's bones, or a mesh's anim_ nodes as the low-poly set has them), stays within the hitbox's
+// height and the 1000-triangle budget of a mesh player (docs/ASSETS.md), and its name is a translation key (the
+// picker and the cycle draw the names)
 static void testShippedPlayerModels() {
     overrides::useUserFolder(false);
     ModelOverrides mo;
     loadModelOverrides(mo);
-    int shipped = 0;
+    int shipped = 0, meshes = 0;
     for (int m = 0; m < kPlayerModels; m++) {
         const ModelMesh* mm = mo.shipped[MODEL_PLAYER][m].get();
-        if (!mm || mm->boxes.empty()) { printf("  %s: no shipped box model (models/player/%s.gltf)\n", playerModelName(m), playerModelName(m)); ACHECK(false); continue; }
+        if (!mm) { printf("  %s: no shipped model (models/player/%s.gltf)\n", playerModelName(m), playerModelName(m)); ACHECK(false); continue; }
         shipped++;
         PlayerRig rig;
-        playerRig(mm->boxes, rig);
+        if (mm->boxes.empty()) {   // (a mesh: its anim_ joints, measured on load by playerMeshRig)
+            meshes++;
+            rig = mm->rig;
+            size_t verts = mm->opaque.size() + mm->translucent.size();
+            for (const ModelMesh& p : mm->parts) verts += p.opaque.size() + p.translucent.size();
+            if (verts > 3000) printf("  %s: %zu triangles (at most 1000)\n", playerModelName(m), verts / 3);
+            ACHECK(verts > 0 && verts <= 3000);
+            ACHECK(mm->allRadius > 0.5f && mm->allCenter.y + mm->allRadius < 2.6f);
+        } else playerRig(mm->boxes, rig);
         if (!rig.animated) printf("  %s: its shipped model doesn't walk\n", playerModelName(m));
         ACHECK(rig.animated);
         if (!lang::hasKey(playerModelName(m))) printf("  %s: not a translation key (tools/lang/extract.py)\n", playerModelName(m));
         ACHECK(lang::hasKey(playerModelName(m)));
     }
-    printf("  %d of %d player models shipped as box models\n", shipped, kPlayerModels);
+    printf("  %d of %d player models shipped (%d meshes, %d box models)\n", shipped, kPlayerModels, meshes, shipped - meshes);
     overrides::useUserFolder(true);
 }
 

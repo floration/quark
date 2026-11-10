@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstring>
+#include <unordered_map>
 
 const char* tintSlotName(int s) {
     static const char* n[TINT_COUNT] = {"body", "team", "glow", "metal", "base", "accent"};
@@ -1017,13 +1018,81 @@ void partsToMesh(const ModelParts& parts, MeshData& out) {
 }
 
 // the triangles of the prims in anim node `anim` (-1: the body), less `off`, into out (bounds from them too)
+static bool isInk(const std::string& material) {
+    return material.size() >= 3 && std::tolower((unsigned char)material[0]) == 'i' && std::tolower((unsigned char)material[1]) == 'n' &&
+           std::tolower((unsigned char)material[2]) == 'k';
+}
+
+// Each hull vertex's growth direction (ModelMesh::inkDir): the faces that meet at its position (the hull is drawn
+// inside out, so its winding normals point in; a mesh whose hull points the other way is told by which side of the
+// hull's middle its faces face), the mean of their distinct normals, mitred so each of them moves 1 m.
+static void inkDirections(ModelMesh& m) {
+    m.inkDir.clear();
+    if (m.inkIdx.empty()) return;
+    std::vector<uint32_t> keep;
+    for (uint32_t i : m.inkIdx) if (i % 3 == 0 && i + 2 < m.opaque.size()) { keep.push_back(i); keep.push_back(i + 1); keep.push_back(i + 2); }
+    m.inkIdx.swap(keep);
+    auto P = [&](uint32_t i) { return Vec3(m.opaque[i].pos[0], m.opaque[i].pos[1], m.opaque[i].pos[2]); };
+    Vec3 mid{0, 0, 0};
+    for (uint32_t i : m.inkIdx) mid = mid + P(i);
+    mid = mid * (1.0f / (float)std::max<size_t>(1, m.inkIdx.size()));
+    std::vector<Vec3> fn(m.inkIdx.size() / 3);
+    float side = 0;
+    for (size_t t = 0; t < fn.size(); t++) {
+        const Vec3 a = P(m.inkIdx[t * 3]), b = P(m.inkIdx[t * 3 + 1]), c = P(m.inkIdx[t * 3 + 2]);
+        const Vec3 n = cross(b - a, c - a);
+        const float l = length(n);
+        fn[t] = l > 1e-12f ? n * (1.0f / l) : Vec3(0, 0, 0);
+        side += dot(fn[t], (a + b + c) * (1.0f / 3.0f) - mid) * l;
+    }
+    const float out = side > 0 ? 1.0f : -1.0f;   // (inside out, as the low-poly builder writes it: -1)
+    // the faces at each position (exact: the hull's corners are shared bit for bit)
+    std::unordered_map<uint64_t, std::vector<uint32_t>> at;
+    auto key = [&](uint32_t i) {
+        const float* p = m.opaque[i].pos;
+        uint64_t h = 1469598103934665603ull;
+        for (int k = 0; k < 3; k++) { uint32_t u; memcpy(&u, &p[k], 4); h = (h ^ u) * 1099511628211ull; }
+        return h;
+    };
+    for (size_t t = 0; t < fn.size(); t++)
+        for (int k = 0; k < 3; k++) at[key(m.inkIdx[t * 3 + k])].push_back((uint32_t)t);
+    m.inkDir.resize(m.inkIdx.size() * 3);
+    std::unordered_map<uint64_t, Vec3> done;
+    for (size_t j = 0; j < m.inkIdx.size(); j++) {
+        const uint64_t h = key(m.inkIdx[j]);
+        auto it = done.find(h);
+        if (it == done.end()) {
+            Vec3 ns[16]; int nn = 0;
+            for (uint32_t t : at[h]) {
+                const Vec3 n = fn[t] * out;
+                if (dot(n, n) < 0.5f) continue;
+                bool dup = false;
+                for (int q = 0; q < nn && !dup; q++) dup = dot(ns[q], n) > 0.999f;
+                if (!dup && nn < 16) ns[nn++] = n;
+            }
+            Vec3 d{0, 0, 0};
+            for (int q = 0; q < nn; q++) d = d + ns[q];
+            const float l = length(d);
+            if (l > 1e-6f) {
+                d = d * (1.0f / l);
+                float lo = 1.0f;
+                for (int q = 0; q < nn; q++) lo = std::min(lo, dot(d, ns[q]));
+                d = d * (1.0f / std::max(lo, 0.25f));   // (mitred; a needle-sharp corner at most 4x)
+            }
+            it = done.emplace(h, d).first;
+        }
+        m.inkDir[j * 3] = it->second.x; m.inkDir[j * 3 + 1] = it->second.y; m.inkDir[j * 3 + 2] = it->second.z;
+    }
+}
+
 static void meshTriangles(const MeshData& mesh, int anim, const Vec3& off, ModelMesh& out) {
-    out.opaque.clear(); out.translucent.clear();
+    out.opaque.clear(); out.translucent.clear(); out.inkIdx.clear(); out.inkDir.clear();
     Vec3 mn(1e30f, 1e30f, 1e30f), mx(-1e30f, -1e30f, -1e30f);
     bool any = false;
     for (const MeshPrim& p : mesh.prims) {
         if (p.anim != anim) continue;
         auto& dst = p.alpha < 0.999f ? out.translucent : out.opaque;
+        const size_t first = dst.size();
         size_t nv = p.pos.size() / 3;
         for (size_t i = 0; i < nv; i++) { Vec3 v(p.pos[i * 3], p.pos[i * 3 + 1], p.pos[i * 3 + 2]); v = v - off; mn = vmin(mn, v); mx = vmax(mx, v); any = true; }
         for (uint32_t i : p.idx) {
@@ -1039,7 +1108,10 @@ static void meshTriangles(const MeshData& mesh, int anim, const Vec3& off, Model
             dst.push_back(v);
         }
         while (dst.size() % 3) dst.pop_back();   // (whole triangles only)
+        if (&dst == &out.opaque && isInk(p.material))
+            for (size_t k = first; k < dst.size(); k++) out.inkIdx.push_back((uint32_t)k);
     }
+    inkDirections(out);
     if (any) { out.center = (mn + mx) * 0.5f; out.radius = length(mx - mn) * 0.5f; }
     else { out.center = {}; out.radius = 0; }
 }

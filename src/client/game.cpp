@@ -2932,10 +2932,12 @@ void Game::drawWorld(float alpha) {
                      : cfg_.teamModel >= 0 && friendly ? cfg_.teamModel : net_.playerModel(i);
         const ModelMesh* ov = modelOverride(MODEL_PLAYER, pm);
         // sunlight on them: only coloured geometry uses it (the shadow pass doesn't), so not for yourself in first
-        // person, nor for a box model out of view (its boxes and what it holds, all within 2.5 m: shadow pass only).
-        // A long ray each (to the map's top): it was the costliest thing per player here.
+        // person, nor for a model out of view (a box model's boxes and what it holds, all within 2.5 m; a mesh: its
+        // posed sphere, allRadius x 1.25 as meshPosed culls it, about 1.2 m for the shipped ones: shadow pass only). A long
+        // ray each (to the map's top): it was the costliest thing per player here.
+        const float reach = ov ? std::max(2.5f, ov->allRadius * 1.25f + length(ov->allCenter - Vec3(0, 1.0f, 0))) : 2.5f;
         float sv = 1.0f;
-        if (vis && !cfg_.playersLit && (ov || r_.inView(at(1.0f), 2.5f * bs))) sv = sunVisibility(map, pos + Vec3(0, 1.0f * hs * bs, 0));   // (PLAYERS ALWAYS LIT: full sun, no ray)
+        if (vis && !cfg_.playersLit && r_.inView(at(1.0f), reach * bs)) sv = sunVisibility(map, pos + Vec3(0, 1.0f * hs * bs, 0));   // (PLAYERS ALWAYS LIT: full sun, no ray)
         ModelPalette pal;
         // the team colour as the HUD and the colour pickers show it: the settings' colours are sRGB, the model's slots
         // linear (taken as it was, the enemy red drew as a pale salmon and the friendly cyan near white: low contrast
@@ -7327,13 +7329,16 @@ void Game::drawCompassRadar(float W, float H, float s) {
 // hovered model): the model's boxes (playerModelParts, or a box override) in the team colour, turned by yaw and seen a
 // little from above, projected flat (orthographic) to fit the box x y w h: each box's faces toward the camera, lit by
 // one light, into previewFaces_ far faces first. phase >= 0: walking in place at that point of the stride (PLAYER
-// ANIMATIONS on, a model with leg joints). false: a mesh override, which has no boxes to show.
+// ANIMATIONS on, a model with leg joints). A mesh override (the shipped low-poly set, or a file of yours) is drawn the
+// same way from its triangles (each lit by its face, no box outline band: its own ink hull outlines it), its anim_
+// joints posed. false: nothing to show (a mesh with no opaque triangles).
 bool Game::modelFaces(int pm, const Vec3& team, float yaw, float phase, float x, float y, float w, float h, bool tight) {
     previewFaces_.clear();
-    if (modelOverride(MODEL_PLAYER, pm)) return false;
     ModelPalette pal;
     pal.c[TINT_TEAM] = team;
-    if (const ModelParts* bx = boxOverride(MODEL_PLAYER, pm)) overrideBoxParts(MODEL_PLAYER, pm, *bx, pal, 1.0f, previewParts_);
+    const ModelMesh* mesh = modelOverride(MODEL_PLAYER, pm);
+    if (mesh) previewParts_.clear();
+    else if (const ModelParts* bx = boxOverride(MODEL_PLAYER, pm)) overrideBoxParts(MODEL_PLAYER, pm, *bx, pal, 1.0f, previewParts_);
     else playerModelParts(pm, 1.0f, pal, previewParts_);
     const float cy = std::cos(yaw), sy = std::sin(yaw);
     const float cp = std::cos(0.25f), sp = std::sin(0.25f);   // (seen 14 degrees from above)
@@ -7346,7 +7351,8 @@ bool Game::modelFaces(int pm, const Vec3& team, float yaw, float phase, float x,
     };
     const Vec3 light = normalize(Vec3{-0.4f, 0.7f, 0.6f});
     PlayerRig rig;
-    if (cfg_.playerAnims && phase >= 0) playerRig(previewParts_, rig);
+    if (mesh) { if (cfg_.playerAnims && phase >= 0) rig = mesh->rig; }
+    else if (cfg_.playerAnims && phase >= 0) playerRig(previewParts_, rig);
     PlayerPose pose;
     if (rig.animated) {
         AnimState as;
@@ -7358,6 +7364,71 @@ bool Game::modelFaces(int pm, const Vec3& team, float yaw, float phase, float x,
         return Vec3(m.m[0] * p.x + m.m[4] * p.y + m.m[8] * p.z + m.m[12] * w, m.m[1] * p.x + m.m[5] * p.y + m.m[9] * p.z + m.m[13] * w,
                     m.m[2] * p.x + m.m[6] * p.y + m.m[10] * p.z + m.m[14] * w);
     };
+    if (mesh) {   // (a z-buffer at the card's pixels, sent as one quad per run of a colour along a row: sorting ~1000
+                  // triangles by their centres drew big faces over nearer small ones, and the ink hull over the body)
+        Vec3 tint[TINT_COUNT];
+        overrideTints(MODEL_PLAYER, pm, pal, tint);
+        const int x0 = (int)std::floor(x), y0 = (int)std::floor(y);
+        const int W = std::clamp((int)std::ceil(x + w) - x0, 1, 4096), H = std::clamp((int)std::ceil(y + h) - y0, 1, 4096);
+        static std::vector<float> zb;   // (the menus' thread only; kept between calls: no allocation a frame)
+        static std::vector<Color> cb;
+        zb.assign((size_t)W * H, -1e30f);
+        cb.resize((size_t)W * H);
+        auto tris = [&](const ModelMesh& part, const Mat4& m) {
+            for (size_t t = 0; t + 2 < part.opaque.size(); t += 3) {
+                const ModelMesh::V* tv = &part.opaque[t];
+                Vec3 v[3];
+                for (int i = 0; i < 3; i++) v[i] = view(xform(m, Vec3(tv[i].pos[0], tv[i].pos[1], tv[i].pos[2]), 1));
+                const Vec3 n = cross(v[1] - v[0], v[2] - v[0]);   // (counter-clockwise toward the camera: front)
+                const float nl = length(n);
+                if (n.z <= 1e-4f * nl || nl < 1e-12f) continue;   // (facing away: the ink hull's near side too)
+                const float lit = 0.5f + 0.5f * std::max(0.0f, dot(n / nl, light));
+                const Vec3& tn = tint[tv[0].slot < TINT_COUNT ? tv[0].slot : 0];
+                const Color c = {clampf(tv[0].col[0] * tn.x * lit, 0, 1), clampf(tv[0].col[1] * tn.y * lit, 0, 1), clampf(tv[0].col[2] * tn.z * lit, 0, 1), 1};
+                float sx[3], sy[3];
+                for (int i = 0; i < 3; i++) { sx[i] = ox + v[i].x * k - x0; sy[i] = oy - v[i].y * k - y0; }
+                const float area = (sx[1] - sx[0]) * (sy[2] - sy[0]) - (sy[1] - sy[0]) * (sx[2] - sx[0]);
+                if (std::fabs(area) < 1e-6f) continue;
+                const int bx0 = std::max(0, (int)std::floor(std::min({sx[0], sx[1], sx[2]}))), bx1 = std::min(W - 1, (int)std::ceil(std::max({sx[0], sx[1], sx[2]})));
+                const int by0 = std::max(0, (int)std::floor(std::min({sy[0], sy[1], sy[2]}))), by1 = std::min(H - 1, (int)std::ceil(std::max({sy[0], sy[1], sy[2]})));
+                for (int py = by0; py <= by1; py++)
+                    for (int px = bx0; px <= bx1; px++) {
+                        const float cx = px + 0.5f, cy = py + 0.5f;
+                        const float w0 = ((sx[1] - cx) * (sy[2] - cy) - (sy[1] - cy) * (sx[2] - cx)) / area;
+                        const float w1 = ((sx[2] - cx) * (sy[0] - cy) - (sy[2] - cy) * (sx[0] - cx)) / area;
+                        const float w2 = 1.0f - w0 - w1;
+                        if (w0 < 0 || w1 < 0 || w2 < 0) continue;
+                        const float z = w0 * v[0].z + w1 * v[1].z + w2 * v[2].z;
+                        const size_t at = (size_t)py * W + px;
+                        if (z > zb[at]) { zb[at] = z; cb[at] = c; }
+                    }
+            }
+        };
+        tris(*mesh, Mat4());
+        const size_t np = std::min(mesh->parts.size(), kMaxAnimParts);
+        for (size_t p = 0; p < np; p++) {
+            const ModelMesh& part = mesh->parts[p];
+            tris(part, rig.animated ? posedPart(pose, part.tag, part.pivot) : Mat4::translate(part.pivot));
+        }
+        for (int py = 0; py < H; py++)
+            for (int px = 0; px < W;) {
+                const size_t at = (size_t)py * W + px;
+                if (zb[at] < -1e29f) { px++; continue; }
+                const Color c = cb[at];
+                int e = px + 1;
+                while (e < W && zb[(size_t)py * W + e] > -1e29f && !memcmp(&cb[(size_t)py * W + e], &c, sizeof c)) e++;
+                PreviewFace pf;
+                pf.edge = false;
+                pf.z = 0;
+                const float fx0 = (float)(x0 + px), fx1 = (float)(x0 + e), fy0 = (float)(y0 + py), fy1 = fy0 + 1;
+                const float xy[8] = {fx0, fy0, fx1, fy0, fx1, fy1, fx0, fy1};
+                memcpy(pf.xy, xy, sizeof xy);
+                pf.c = c;
+                previewFaces_.push_back(pf);
+                px = e;
+            }
+        return !previewFaces_.empty();
+    }
     static const int kFace[6][4] = {{1, 3, 7, 5}, {0, 4, 6, 2}, {2, 6, 7, 3}, {0, 1, 5, 4}, {4, 5, 7, 6}, {0, 2, 3, 1}};   // +x -x +y -y +z -z
     static const Vec3 kN[6] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
     for (const ModelPart& q : previewParts_) {
@@ -7394,7 +7465,7 @@ void Game::drawPreviewFaces(const std::vector<PreviewFace>& faces, float edge, Q
     const Color dark = {0.03f, 0.03f, 0.04f, 1};
     for (const PreviewFace& pf : faces) {
         quad(pf.xy, pf.c);
-        if (edge <= 0) continue;
+        if (edge <= 0 || !pf.edge) continue;
         float cx = 0, cy = 0;
         for (int i = 0; i < 4; i++) { cx += pf.xy[2 * i] * 0.25f; cy += pf.xy[2 * i + 1] * 0.25f; }
         for (int i = 0; i < 4; i++) {   // (each edge as a thin quad from the edge toward the face's centre)
@@ -7411,8 +7482,8 @@ void Game::drawPreviewFaces(const std::vector<PreviewFace>& faces, float edge, Q
     }
 }
 
-// The PLAYER tab's model preview: your model (modelFaces) turning, walking in place; drag it to turn it. A mesh
-// override has no boxes: a line says so.
+// The PLAYER tab's model preview: your model (modelFaces) turning, walking in place; drag it to turn it. A model with
+// nothing to draw (a mesh file with no opaque triangles): a line says so.
 void Game::drawModelPreview(float x, float y, float w, float h) {
     if (ui_.relocating()) return;   // (settings SEARCH draws the PLAYER page for its widgets only)
     r_.rect(x, y, w, h, {0, 0, 0, 0.25f});
@@ -7535,7 +7606,7 @@ void Game::drawModelPicker(const SetLayout& L) {
             const UiExp e = (i == cur ? UiExp::inert() : UiExp::cfg(key)).withId(m < 0 ? "THEIR OWN" : playerModelName(m));
             bool pick = false;
             if (ui_.relocating()) {}
-            else if (m < 0 || modelOverride(MODEL_PLAYER, m)) {   // (no thumbnail: THEIR OWN, or a mesh file of yours)
+            else if (m < 0) {   // (no thumbnail: THEIR OWN)
                 r_.rect(bx, by, bw, bh, i == hot ? bgHot : bg);
                 if (m < 0) ui_.labelCentered(bx + bw * 0.5f, by + bh * 0.5f - L.L(16), "?", kGrey, 2.0f, bw - L.L(8));   // (the name says THEIR OWN)
                 else ui_.hintCentered(bx + bw * 0.5f, by + bh * 0.5f - L.L(6), "YOUR OWN FILE", kGrey, bw - L.L(8));

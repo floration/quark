@@ -1954,6 +1954,27 @@ void Renderer::emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const M
         putVertex(*q++, pos, packNormal(nn) | nw, packColor(Vec3(v.col[0] * t.x, v.col[1] * t.y, v.col[2] * t.z), sunVis), edge, outl);
     }
 #endif
+    if (modelPlayer && !m.inkIdx.empty()) {
+        // A player's outline hull (ModelMesh::inkIdx): in the player's outline colour, unlit, and as thick as the
+        // outline width says (1: as built; 0: shrunk onto the body, no rim). The edge attribute is 0 at every point,
+        // so the shader's outline() is 0 there and it draws vOutline (OUTLINE OPACITY still blends the authored ink in).
+        const float grow = kInkHull * (std::max(outlineWidth, 0.0f) - 1.0f);
+        const uint64_t inkEdge = pack4(0, 0, halfOf(1000.0f), halfOf(1000.0f));
+        const uint64_t inkOutl = pack4(halfOf(outlineColor.x), halfOf(outlineColor.y), halfOf(outlineColor.z), halfOf(1.0f));
+        DynVertex* base = out.data() + at;
+        for (size_t j = 0; j < m.inkIdx.size(); j++) {
+            DynVertex& d = base[m.inkIdx[j]];
+            if (grow != 0.0f) {
+                const float* g = &m.inkDir[j * 3];
+                const float gx = g[0] * grow, gy = g[1] * grow, gz = g[2] * grow;
+                d.pos[0] += x[0] * gx + x[4] * gy + x[8] * gz;
+                d.pos[1] += x[1] * gx + x[5] * gy + x[9] * gz;
+                d.pos[2] += x[2] * gx + x[6] * gy + x[10] * gz;
+            }
+            memcpy(d.edge, &inkEdge, 8);
+            memcpy(d.outline, &inkOutl, 8);
+        }
+    }
     if (!flatOut) return;
     for (const ModelMesh::V& v : m.translucent) {
         FlatVertex f;
