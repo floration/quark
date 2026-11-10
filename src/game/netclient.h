@@ -70,6 +70,8 @@ public:
     uint32_t nextSeq() const { return nextSeq_; } // seq the next tick()'s command will get
     static constexpr uint32_t kCmdRing = 1024;     // commands (and predicted states) kept for replay: over 1 s at 1000 Hz
     uint32_t lastReplayCount() const { return lastReplay_; } // commands the last reconcile re-ran (0 = prediction matched)
+    uint32_t corrections() const { return corrections_; }    // reconciles that found the prediction wrong, this connection
+    Vec3 errorOffset() const { return errorOffset_; }        // the correction still being blended out (drawn = predicted + it)
     // Rocket riding: your own rockets the server hasn't sent yet (the client's predicted copies, X5), where they are as
     // the next tick() starts, so a grapple can catch one at once. Set before each tick (n = 0: none).
     struct RocketCopy { Vec3 pos, vel; float grav = 0, accel = 0; };
@@ -259,6 +261,10 @@ private:
     int nCopies_ = 0;
     // the last predicted catch, for replays: a player (box, id) or a rocket (rocket: at, pos, vel, grav, rid as the probe had them)
     struct HookCatch { uint32_t seq = 0; AABB box; uint8_t id = 0; bool rocket = false; Vec3 at, pos, vel; float grav = 0, accel = 0; uint16_t rid = 0; } hookCatch_;
+    uint32_t corrections_ = 0;
+    bool wasAlive_ = false;   // alive at the last reconcile (a respawn's first state snaps, never blends)
+    bool snapNext_ = false;   // an EV_SPAWN of our own (placed by the server alive: practice reset): the next correction snaps
+    uint32_t teleSeq_ = 0;    // the newest command whose prediction went through a teleporter (a correction near it snaps)
     uint8_t moveEv_ = 0;
     float moveLand_ = 0;
     static constexpr uint32_t kRemoteEvRing = 128;   // (a power of two: the counters wrap cleanly)

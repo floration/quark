@@ -9284,6 +9284,134 @@ static void testInterpRewind(uint16_t port) {
     }
 }
 
+// A UDP relay that holds every packet `oneWay` seconds (game clock) each way: a client connected to its port plays the
+// server at a ping of twice that. One client.
+struct LagRelay {
+    UdpSocket front, back;
+    NetAddr server, client;
+    bool haveClient = false;
+    double oneWay = 0.1;
+    struct Pk { double at; bool up; std::vector<uint8_t> d; };
+    std::deque<Pk> q;
+    bool open(uint16_t port, uint16_t serverPort, double delay) {
+        oneWay = delay;
+        return front.open(port) && back.open(0) && NetAddr::parse("127.0.0.1", serverPort, server);
+    }
+    void pump() {
+        uint8_t buf[2048];
+        NetAddr from;
+        const double now = timeNow();
+        for (int n; (n = front.recv(from, buf, sizeof buf)) > 0;) { client = from; haveClient = true; q.push_back({now + oneWay, true, std::vector<uint8_t>(buf, buf + n)}); }
+        for (int n; (n = back.recv(from, buf, sizeof buf)) > 0;) q.push_back({now + oneWay, false, std::vector<uint8_t>(buf, buf + n)});
+        while (!q.empty() && q.front().at <= now) {
+            const Pk& p = q.front();
+            if (p.up) back.send(server, p.d.data(), p.d.size());
+            else if (haveClient) front.send(client, p.d.data(), p.d.size());
+            q.pop_front();
+        }
+    }
+};
+// pump() with the relay in the loop, and `each` after every client poll (to watch reconciles as they happen)
+template <class F, class G>
+static void lagPump(Server& s, LagRelay& r, NetClient& c, double seconds, F input, G each) {
+    double end = timeNow() + seconds, nextTick = timeNow();
+    while (timeNow() < end) {
+        s.frame();
+        r.pump();
+        c.poll();
+        each();
+        while (timeNow() >= nextTick) { c.tick(input()); nextTick += c.tickPeriod(); }
+        r.pump();
+        hostSleepMs(1);
+    }
+}
+
+// Owner 2026-11-10: "stop rubberbanding of your own player at 200 ms". A correction the client couldn't predict (a
+// push only the server gives: knockback is the server's) is blended out over ~100 ms instead of jumped (it was: over
+// 2 m), up to 8 m; a respawn or a bigger jump still snaps.
+static void testCorrectionBlend(uint16_t port, uint16_t relayPort) {
+    printf("corrections blended at 200 ms ping, big ones snap\n");
+    // Blending: a push only the server gives (as an enemy's), a round trip late on your screen
+    {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+        s.setLog([](const std::string&) {});
+        { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+        LagRelay r;
+        if (!r.open(relayPort, port, 0.1)) { s.stop(); CHECK(false); return; }
+        NetClient a;
+        a.connect("127.0.0.1:" + std::to_string(relayPort), "pushed");
+        auto noop = [] {};
+        auto idle1 = [] { return UserCmd(); };
+        for (int i = 0; i < 100 && !(a.clientId() >= 0 && a.selfAlive()); i++) lagPump(s, r, a, 0.05, idle1, noop);
+        const int id = a.clientId();
+        if (id < 0) { CHECK(false); s.stop(); return; }
+        auto& p = s.players_[id];
+        lagPump(s, r, a, 1.0, idle1, noop);
+        // a push into the air the game can't know of: the correction, when it comes, is metres, and blended
+        auto watch = [&](double secs, float* first, double* at) {
+            const uint32_t c0 = a.corrections();
+            *first = -1;
+            const double end = timeNow() + secs;
+            while (*first < 0 && timeNow() < end)
+                lagPump(s, r, a, 0.001, idle1, [&] { if (*first < 0 && a.corrections() != c0) { *first = length(a.errorOffset()); *at = timeNow(); } });
+        };
+        // free spots standing on the floor 3 m and 20 m from the spawn, for the snaps below (found before anything moves us)
+        auto spotAway = [&](const Vec3& from, float dist, Vec3* out) {
+            for (int k = 0; k < 16; k++) {
+                const Vec3 at = from + angleForward(k * PI / 8, 0) * dist;
+                const float down = s.map_.raycast(at + Vec3(0, 0.5f, 0), Vec3(0, -1, 0), 1.0f);
+                if (down < 0) continue;
+                const Vec3 feet = at + Vec3(0, 0.5f - down + 0.02f, 0);
+                if (s.map_.boxSolid(playerBox(feet, false))) continue;
+                *out = feet;
+                return true;
+            }
+            return false;
+        };
+        Vec3 near, far;
+        const bool haveNear = spotAway(p.move.pos, 3.0f, &near), haveFar = spotAway(p.move.pos, 20.0f, &far);
+        p.move.vel += Vec3(14, 18, 0); p.move.flags &= ~MF_ONGROUND;   // (as damagePlayer pushes)
+        float first = -1;
+        double at = 0;
+        watch(0.5, &first, &at);
+        float left = -1;
+        {   // ~100 ms after the correction: all but a few percent of it gone (exp(-100/33) ~ 5%)
+            const double until = at + 0.1;
+            lagPump(s, r, a, std::max(0.0, until - timeNow()), idle1, noop);
+            left = length(a.errorOffset());
+        }
+        printf("  a server-only push: corrected by %.2f m, blended (%.3f m left ~100 ms later)\n", first, left);
+        CHECK(first > 2.0f && first < 8.0f);   // (over the old 2 m snap: it would have jumped)
+        CHECK(left >= 0 && left < first * 0.12f);
+        lagPump(s, r, a, 1.0, idle1, noop);
+        // a respawn snaps, a near one too (a few metres from where you died)
+        if (haveNear) {
+            const Vec3 here = p.move.pos;
+            s.killPlayer(id, -1, 255);
+            lagPump(s, r, a, 0.4, idle1, noop);
+            s.spawnPlayer(id);
+            p.move.pos = near; p.move.vel = {};
+            float onSpawn = 0;
+            bool back = false;
+            lagPump(s, r, a, 0.6, idle1, [&] { if (a.selfAlive()) { back = true; onSpawn = std::max(onSpawn, length(a.errorOffset())); } });
+            printf("  respawned %.1f m from the death: largest offset alive again %.2f m\n", length(near - here), onSpawn);
+            CHECK(back && onSpawn == 0.0f);   // (from the death spot to the spawn: never blended)
+            lagPump(s, r, a, 0.5, idle1, noop);
+        } else printf("  (no free spot near the spawn: the respawn check skipped)\n");
+        // a jump of the server's further than the blend's reach snaps
+        if (haveFar && length(far - p.move.pos) > 12.0f) {
+            const float dist = length(far - p.move.pos);
+            p.move.pos = far; p.move.vel = {};
+            watch(0.5, &first, &at);
+            printf("  moved %.0f m by the server: offset %.2f m (snapped)\n", dist, first);
+            CHECK(first == 0);
+        } else printf("  (no free spot 20 m away: the snap check skipped)\n");
+        s.stop();
+    }
+}
+
 static void testNetcode(uint16_t port) {
     printf("netcode: delta snapshots, visibility\n");
     ServerConfig cfg;
@@ -10793,7 +10921,7 @@ int main(int argc, char** argv) {
             timingTest("upload cap", [] { testUploadCap(TP(28721)); });
             timingTest("shared congestion", [] { testSharedCongestion(TP(28722)); });
         }},
-        {"netcode", [] { testInterpRewind(TP(28703)); testUptimeClock(TP(28702)); testClockWrap(TP(28804)); testNetcode(TP(28700)); testInputBacklog(TP(28701)); testCrossLanguageConstants(TP(28705)); }},
+        {"netcode", [] { testInterpRewind(TP(28703)); testUptimeClock(TP(28702)); testClockWrap(TP(28804)); testNetcode(TP(28700)); testInputBacklog(TP(28701)); testCrossLanguageConstants(TP(28705)); testCorrectionBlend(TP(28706), TP(28707)); }},
         // (the client's weapon prediction over a 40 ms network: in the rules group it missed its 0.8 s window in about 1
         //  full run of 3 with 12 groups on 4 cores, and in 10 of 20 runs beside 8 busy loops; ~1 in 30 even idle)
         {"weaponpredict", [] { timingTest("weapon prediction", [] { testGameRules("weaponpredict"); }); }},
