@@ -55,3 +55,6 @@
 ## Sounds
 - **New sound cues** (all made by the game itself, no new download): a metallic **tink on headshots** (over the hitsound; the HEADSHOT sound setting turns it off), a **jolt when someone's grapple catches you**, the planted **bomb ticks** (faster as it runs down, higher over the last 5 s), **planting and defusing click** while someone does it (only when you can see them), a **warning when the hill becomes contested**, an **alarm when the enemy captures your point** in multi point, a **clock tick for each second of Dojo's hold-fire start** and a higher one when you can fire, and a **buzz for a race checkpoint that won't count** (skipped one, or a run joined midway) instead of the normal ding.
 - **The bomb's explosion has a flash now:** a fireball out to its kill radius and a white screen flash when you're near (dimmer behind a wall). REDUCE FLASHING turns the screen flash off.
+
+## Visuals
+- **FULLBRIGHT keeps your WORLD OUTLINE colour:** with fullbright on, the map's outlines were always black whatever colour you'd picked. They now use your colour (black is still the default).

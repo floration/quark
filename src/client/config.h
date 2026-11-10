@@ -241,7 +241,7 @@ struct Settings {
     bool quipCaptions = false;     // MORE 5: quips shown as captions
     float annDuck = 0.0f;          // ...effects ducked by this much while the announcer speaks (0: none, 1: silent)
     // VISUALS
-    bool fullbright = false;    // flat white world, black outlines, no lighting
+    bool fullbright = false;    // flat white world, outlines in WORLD OUTLINE's colour, no lighting
     int ownShots = 0;           // your tracers / beam: 0 with the weapon model, 1 always, 2 never
     bool enemyShots = true;     // other players' tracers and beams
     bool impactSparks = true;   // a spark where a hitscan shot meets a wall or a player (yours and everyone's)

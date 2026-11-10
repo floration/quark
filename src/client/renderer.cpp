@@ -140,7 +140,7 @@ uniform sampler2D uCleanTex;   // per material (x): row 0 its look's average alb
 uniform float uFadeAt, uFadeLen;   // PATTERN FADE: metres a pixel where looks start fading to their average (0: off), the end's multiple
 uniform int uMeanPass;   // Renderer::buildCleanMeans: 1 writes the look's albedo + alpha, 2 its glow (0: draw)
 uniform float uFlatLight;   // ...FLAT LIGHTING (1): no lightmap, full sun and sky everywhere
-uniform float uFull;     // fullbright: flat white, black outlines, no light or fog
+uniform float uFull;     // fullbright: flat white, outlines in WORLD OUTLINE's colour, no light or fog
 uniform vec3 uFullColor; // ...and the flat colour (white by default)
 uniform float uOutlineW; // the world's outline width (pixels; settings)
 uniform vec3 uWorldEdge; // VIDEO + AUDIO > MORE 4: WORLD OUTLINE COLOR, linear (black, the default, is the old darkening)
@@ -254,7 +254,10 @@ void main() {
     if (uHoleCount > 0 && (mat == 20 || mat == 24) && vMat - float(mat) > 0.1 && inHole()) discard;   // (0.25 over: thin, breakable)
     if (uFull > 0.5) {
         float g = mat == 2 ? 0.35 : mat == 5 ? 0.6 : mat == 6 ? 0.5 : mat == 7 || mat == 11 ? 0.9 : abs(vN.y) > 0.5 ? 0.8 : 0.95;
-        fragColor = vec4(uFullColor * g * ((mat >= 4 && mat < 8) || mat == 11 ? 1.0 : outline(vEdge, uOutlineW)), 1.0);
+        // (the outline takes WORLD OUTLINE's colour, as without fullbright; uWorldEdge is linear and this path writes
+        // sRGB, so back to sRGB: black, the default, stays black)
+        float o = (mat >= 4 && mat < 8) || mat == 11 ? 1.0 : outline(vEdge, uOutlineW);
+        fragColor = vec4(o >= 1.0 ? uFullColor * g : mix(pow(uWorldEdge, vec3(1.0 / 2.2)), uFullColor * g, o), 1.0);
         return;
     }
     if ((mat >= 4 && mat < 8) || mat == 11) { // glow trim / far scenery / water / lava / acid: unlit, skip everything below
