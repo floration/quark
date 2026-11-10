@@ -42,3 +42,5 @@
 
 ## Maps
 - **No more flickering where two map pieces overlap:** every generated map (all but the hand-made ones) is now built with the map editor's fixes applied: pieces that overlapped on the same face no longer flicker, pieces nobody can see and boxes that were one box in many parts are gone, and hairline gaps under 1/8 m between pieces are closed. Nothing you stand on, touch or shoot through changed; the maps have 3% fewer pieces in all.
+- **The hand-made maps too** (Accelerator, Amphitheatre, Cobblestone, Museum, Reactors, Riverside, Surfy) ship with the same fixes, and every map got a look of its own for what the automatic pass leaves alone (glass, light strips, water, slopes): no more flicker on Museum's skylight, Stadium's goal nets, Solar's end gates, Surfy's teleporter frames and the rest.
+- **Map bugs found on the way:** Cruise Ship's funnel top no longer pokes out of the funnel as four ledges; Greenhouse's wing roofs no longer have slots open to the sky; Railyard's tank cars and locos no longer float 11 cm over their frames (you could see and shoot under them); Datacenter's two stair floodlights that were buried in the steps are gone.
