@@ -51,8 +51,10 @@ def build():
         for sd in parapet:
             if sd == "n": k.box(facade, x0, top, z0, x1, top + 0.8, z0 + 0.3)
             if sd == "s": k.box(facade, x0, top, z1 - 0.3, x1, top + 0.8, z1)
-            if sd == "w": k.box(facade, x0, top, z0, x0 + 0.3, top + 0.8, z1)
-            if sd == "e": k.box(facade, x1 - 0.3, top, z0, x1, top + 0.8, z1)
+            # (the w / e walls run between the n / s ones: no overlap at the corners)
+            za, zb = z0 + (0.3 if "n" in parapet else 0), z1 - (0.3 if "s" in parapet else 0)
+            if sd == "w": k.box(facade, x0, top, za, x0 + 0.3, top + 0.8, zb)
+            if sd == "e": k.box(facade, x1 - 0.3, top, za, x1, top + 0.8, zb)
 
     def windows(x0, z0, x1, z1, y0, y1, side, mat="glow", step=4.0, seed=0):
         """lit window strips on a facade (trim-thin glow, flush): side n/s/w/e is the face"""
@@ -122,9 +124,10 @@ def build():
     k.box("galvanizedgrating", -142, 43.7, -138, -134, 44, -130)
     k.stairs("largescaffoldboards", -142, -130, -138, -106, 60, "z", 1, base=44, solid=False)
     k.box("steeldeckplate", -142, 59.6, -106, -138, 60, -102)
-    for (x, z) in ((-166.2, -137.2), (-166.2, -132.8), (-142.2, -137.2), (-134.2, -138.2), (-134.2, -129.8),
+    for (x, z) in ((-166.2, -137.2), (-166.2, -132.8), (-142.25, -137.2), (-134.2, -138.2), (-134.2, -129.8),
                    (-138, -106), (-138, -102.2)):   # the standards (0.2 m: a hard hook)
-        k.box("galvanizedsteel", x, STREET, z, x + 0.2, 61.2, z + 0.2)
+        w = 0.25 if x == -142.25 else 0.2   # (the one between the landing and the jib walk fills the slot between them)
+        k.box("galvanizedsteel", x, STREET, z, x + w, 61.2, z + 0.2)
     for y in range(32, 61, 6):                                             # ledgers on the outer faces (not over the treads)
         k.box("powdercoatyellow", -166.2, y, -132.8, -142.2, y + 0.12, -132.6)
         if y > 44: k.box("powdercoatyellow", -137.8, y, -130, -137.6, y + 0.12, -102)
@@ -141,8 +144,9 @@ def build():
     k.box("glow", -136.04, 61.4, -145.5, -136, 62.6, -142.5)
     cp(-144, 60, -106, -138, -102)                                         # 2 (the jib's service deck)
     k.box("galvanizedgrating", -143.75, 59.7, -138, -142.25, 60, -46)       # the jib walk (1.5 m, 60 m over the street)
-    k.box("bridgegirder", -144, 57.6, -138, -143.8, 59.7, -46); k.box("bridgegirder", -142.2, 57.6, -138, -142, 59.7, -46)
-    for z in range(-136, -46, 6): k.box("bridgegirder", -144, 57.4, z, -142, 57.6, z + 0.3)
+    # (its girders under the walk's edges, flush with them: no slit beside the walk)
+    k.box("bridgegirder", -143.75, 57.6, -138, -143.55, 59.7, -46); k.box("bridgegirder", -142.45, 57.6, -138, -142.25, 59.7, -46)
+    for z in range(-136, -46, 6): k.box("bridgegirder", -143.75, 57.4, z, -142.25, 57.6, z + 0.3)
     k.box("powdercoatyellow", -143.3, 60, -147.9, -142.7, 72, -147.3)       # the apex over the counter-jib (behind the lane)
     k.box("bridgegirder", -144.6, 59, -160, -141.4, 60, -148)               # counter-jib and its weights
     k.box("weatheredconcrete", -145.2, 55, -160, -140.8, 59, -156)
@@ -270,7 +274,7 @@ def build():
     k.box("tunnellining", 190, -11, 60, 197, -10.6, 130)                   # tunnel ceiling (no grapple through it: a roof)
     k.box("tunnellining", 189.6, -20, 60, 190, -10.6, 137)                 # tunnel west wall
     for z0 in range(-6, 58, 8): k.box("lightblock", 184, -10.3, z0, 186, -10, z0 + 0.8)
-    for z0 in range(64, 136, 8): k.box("lightblock", 196.9, -13, z0, 197, -12.6, z0 + 2)   # strip lights on the tunnel wall
+    for z0 in range(62, 130, 8): k.box("lightblock", 196.9, -13, z0, 197, -12.6, z0 + 2)   # strip lights on the tunnel wall (clear of the gantries)
     for z in (5, 30, 50): m.lines.append(f"light 186 -12 {z} 16 0.8")
     for z in (75, 100, 125): m.lines.append(f"light 193.5 -12 {z} 12 0.6")
     # the station's dressing (off the run line): columns at the platform edge, benches and signs on the back wall,
@@ -307,7 +311,6 @@ def build():
         k.box("glow", 190.46, -17.6, z0 + 1, 190.5, -16.4, z1 - 1); k.box("glow", 196.5, -17.6, z0 + 1, 196.54, -16.4, z1 - 1)
         k.box("castiron", 192.6, -18.6, z1, 194.4, -17.8, z1 + 0.5)                 # the coupler stub
         if z0 > 70: k.ladder(193.5, z0, -19, -15.5, "s", mat="castiron")             # the end ladder up out of the gap
-    k.box("glow", 191, -18, 69.96, 196, -17, 70)                                    # the headlights
     for z0 in (89, 105):   # the low signal gantries just past each gap: 2 m over the roof, so a long jump bonks on them
         k.box("castiron", 190, -13.5, z0, 197, -11, z0 + 1.5)
         k.box("hazard", 190, -13.5, z0 - 0.02, 197, -13.1, z0)
@@ -369,7 +372,7 @@ def build():
     k.light(48, 38.5, 153, 18, 0.7)
     # the last plank: 32 m, 1.4 m wide, rising 4.5 m to the deck over the street (a line you hold)
     k.ramp("scaffoldboards", -6, 152.3, 26, 153.7, 35.35, 40, "-x")
-    for xx in range(-4, 26, 6): k.box("castiron", xx, 34.6, 152.1, xx + 0.15, 35.3, 153.9)   # its trestles' heads
+    for xx in range(-4, 26, 6): k.box("castiron", xx, 34.6, 152.1, xx + 0.15, 35.35, 153.9)   # its trestles' heads
     # the water tower: legs, a deck ring at 40, the tank in the middle
     for (x, z) in ((-20, 146), (-6.6, 146), (-20, 159.4), (-6.6, 159.4)):
         k.box("castiron", x, STREET, z, x + 0.6, 39.6, z + 0.6)
@@ -379,8 +382,8 @@ def build():
     k.box("castiron", -22, 40, 144, -6, 41, 144.1); k.box("castiron", -22, 40, 161.9, -6, 41, 162)
     k.box("castiron", -22.1, 40, 144, -22, 41, 162)
     cp(-10, 40, 144, -6, 162)                                               # 12: the finish
-    k.box("lightblock", -6.2, 40, 144.2, -6, 43, 144.6); k.box("lightblock", -6.2, 40, 161.4, -6, 43, 161.8)
-    k.box("glow", -6.1, 43, 144.2, -6, 43.3, 161.8)
+    k.box("lightblock", -6.2, 40, 144.1, -6, 43, 144.5); k.box("lightblock", -6.2, 40, 161.5, -6, 43, 161.9)   # (on the rails)
+    k.box("glow", -6.1, 43, 144.1, -6, 43.3, 161.9)
     k.light(-14, 44, 153, 16, 0.9)
 
     # ================= the city round it: far scenery (not solid), the street, the site's clip =================
