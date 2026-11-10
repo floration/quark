@@ -92,19 +92,23 @@ def lines(m):
 
 def goal(m, sx):
     """one goal: the frame (posts and crossbar, white steel), the net (cargo net: back, sides, roof), the site inside"""
-    x0, x1 = sorted((sx * HX, sx * (HX + GD)))
     back = sx * (HX + GD)
     p = 0.25
-    # posts and crossbar on the goal line, the back frame
+    # posts and crossbar on the goal line, the back frame (the posts 0.25 m into the ground: no face on the turf's
+    # plane). The net's outside is 5 cm wider than the frame, so no net shares a face plane with the steel
+    # (z-fighting), and its pieces start and end at the steel and at each other instead of running into them
     for z in (-GZ - p, GZ):
-        B(m, "galvanizedsteel", sx * HX - p / 2, 0, z, sx * HX + p / 2, GH, z + p)
-        B(m, "galvanizedsteel", back - p / 2, 0, z, back + p / 2, GH * 0.7, z + p)
+        B(m, "galvanizedsteel", sx * HX - p / 2, -0.25, z, sx * HX + p / 2, GH, z + p)
+        B(m, "galvanizedsteel", back - p / 2, -0.25, z, back + p / 2, GH * 0.7, z + p)
     B(m, "galvanizedsteel", sx * HX - p / 2, GH, -GZ - p, sx * HX + p / 2, GH + p, GZ + p)
     # the net: back, sides and roof (the ball and players stop at it, shots pass)
-    B(m, "cargonet", back - 0.05 * sx, 0, -GZ - p, back + 0.05 * sx, GH, GZ + p)
-    for z in (-GZ - p, GZ + p - 0.1):
-        B(m, "cargonet", x0, 0, z, x1, GH, z + 0.1)
-    B(m, "cargonet", x0, GH, -GZ - p, x1, GH + 0.1, GZ + p)
+    nz = GZ + p + 0.05
+    B(m, "cargonet", back - 0.05 * sx, 0, -nz, back + 0.05 * sx, GH, nz)
+    na, nb = sorted((sx * (HX + p / 2), back - 0.05 * sx))   # (the sides: front post to back net)
+    for (za, zb) in ((-nz, -GZ - p + 0.1), (GZ + p - 0.1, nz)):
+        B(m, "cargonet", na, 0, za, nb, GH, zb)
+    ra, rb = sorted((sx * (HX + p / 2), sx * (HX + GD)))      # (the roof: from the crossbar)
+    B(m, "cargonet", ra, GH, -nz, rb, GH + 0.1, nz)
     # the goal: the inside of the frame (the ball's centre past the goal line scores)
     xa, xb = sorted((sx * (HX + 0.5), sx * (HX + GD - 0.2)))
     m.raw(f"site {xa:g} 0 {-GZ:g} {xb:g} {GH:g} {GZ:g}")
@@ -172,7 +176,8 @@ def floodlights(m):
             x, z = sx * 80, sz * 58
             B(m, "galvanizedsteel", x - 0.6, 0, z - 0.6, x + 0.6, 30, z + 0.6)
             B(m, "galvanizedsteel", x - 3, 30, z - 0.4, x + 3, 33, z + 0.4)
-            B(m, "glow", x - 2.8, 30.2, z - 0.5 * sz - 0.05, x + 2.8, 32.8, z - 0.5 * sz + 0.05)
+            za, zb = sorted((z - 0.4 * sz, z - 0.5 * sz))   # (the lamps, on the bank's pitch side)
+            B(m, "glow", x - 2.8, 30.2, za, x + 2.8, 32.8, zb)
     for (x, z) in ((-40, -20), (-40, 20), (0, -20), (0, 20), (40, -20), (40, 20), (-55, 0), (55, 0), (0, 0)):
         light(m, x, 22, z, 34, 0.9)
     for (x, z) in ((-45, 52), (0, 52), (45, 52), (-45, -52), (0, -52), (45, -52), (76, 0), (-76, 0)):
