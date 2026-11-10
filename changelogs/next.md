@@ -38,3 +38,6 @@
 - VIDEO + AUDIO: the graphics PRESET (LOW / MEDIUM / HIGH / COMPETITIVE) is now on page 1, and hovering a page number shows what's on that page.
 - Menu keys: 1-5 switch between PLAY, PRACTICE, CREATE, RANKS and SETTINGS, and Enter presses QUICK PLAY on the main menu and START on HOST and BOTS.
 - QUICK PLAY now only joins your build's official server (the testing server on testing builds), never a ranked game; when it's full or doesn't answer within 3 s it starts bots and says why. The ranked queue looks for about 20 s (HOST NOW skips the wait), leaves your HOST settings alone and remembers your last ladder. SERVERS starts with an empty address box.
+
+## Ball
+- **The ball has a step height:** it rolls up onto ledges and stairs up to 0.55 m (the same as a player's step) and keeps going, instead of bouncing off them. Anything taller is still a wall it bounces off.

@@ -4573,6 +4573,19 @@ static void testBallMode(uint16_t port) {
         ballMove(c, v, m, 0.3f);
         CHECK(v.x < -3.0f && c.x < 19.5f);   // off the wall at half its speed
     }
+    {   // a step height (owner, 2026-11-10): a 0.5 m ledge it rolls up onto, keeping its speed; a 0.7 m one it bounces off
+        std::string err;
+        Map m;
+        CHECK(m.parse("box -50 -1 -50 50 0 50\nbox 5 0 -50 50 0.5 50\nbox -50 0 -50 -5 0.7 50\nspawn any 0 0 0\n", &err));
+        Vec3 c(3, kBallHalf, 0), v(6, 0, 0);
+        ballMove(c, v, m, 1.0f);
+        printf("  into a 0.5 m step at 6 m/s: x %.2f y %.2f, %.2f m/s\n", c.x, c.y, v.x);
+        CHECK(c.x > 6.0f && std::fabs(c.y - (0.5f + kBallHalf)) < 0.02f && v.x > 3.0f);   // (ice friction alone: 6 to ~3.4 in 1 s)
+        c = Vec3(-3, kBallHalf, 0); v = Vec3(-6, 0, 0);
+        ballMove(c, v, m, 0.5f);
+        printf("  into a 0.7 m ledge at 6 m/s: x %.2f, %.2f m/s\n", c.x, v.x);
+        CHECK(v.x > 1.0f && c.x > -4.6f && c.y < kBallHalf + 0.05f);   // a wall: off it
+    }
     {   // the ball wall (owner, 2026-11-02): the ball bounces off it; players, shots and sight go through; never drawn
         std::string err;
         Map m;

@@ -127,3 +127,10 @@
   - Ranked queue: it hosted after 3 s, before the list's two HTTP calls and pings were done, so two players queueing together both hosted. It now searches for 20 s plus a random 0-5 s, refreshes at 10 s, shows NOBODY YET: YOU HOST IN # S, and has HOST NOW. Hosting puts HOST's own settings back after (hostRankedQueue: the next HOST opened as RANKED with bots greyed out). With the list down, the notice no longer promises an opponent. The queue's picker is titled RANKED (it said HOST) and starts lit on the last ladder (new cfg key last_ladder).
   - SERVERS: the old default last address 127.0.0.1 no longer fills the box, so its hint shows and Enter doesn't connect to yourself.
   - SETTINGS > HUD keeps its panel where the other tabs have it (it jumped 56 px left when the strip hid). AIM TRAINER, DEMOS, BENCHMARKS and CUSTOM MODE no longer repeat their panel's title in the top bar.
+
+## Ball: step height
+- Owner, 2026-11-10: "ball should have a step height". `ballMove` (pmove.cpp) bounced the ball off every non-slope face it ran into on x or z, so a 0.2 m curb or a stair's riser sent it back at half speed like a wall.
+- Now, before the rubber bounce, it tries a player's step: up by up to `kStepHeight` (0.55 m, the player's base step), the rest of that axis's move, then back down by what it rose. It takes the step only when that gets it further along and leaves it higher (a riser, not a flat wall). Its velocity is kept: it goes over the lip at the speed it hit with, as a player does. A face taller than 0.55 m still bounces it.
+- Applies on the floor and in the air (a ball clipping a ledge's lip in flight goes over it), the same as a player's air step. Slopes are unchanged (already turned along the face). Ball walls are tall, so the ball never steps over one.
+- Server only, like the rest of the ball's physics (the ball isn't predicted): no protocol change. Cost: three extra axis sweeps only on a 1 ms step where the ball hits a face.
+- Test: `quark_tests ball` rolls it at 6 m/s into a 0.5 m step (it ends on top, still moving forward) and a 0.7 m ledge (it bounces off).
