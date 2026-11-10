@@ -163,3 +163,23 @@ The build's fixer pass (above) leaves pairs alone where carving could change gam
 - Glacier, Lighthouse and Terraces get the pass; their builder edits wait for the review-answers thread that owns those files.
 - q's hand-made maps (q: "Ship my fixed versions"): `tools/maps/tidy.py --qmap IN OUT` runs the same pass on a whole file, keeping every other line byte for byte and q's own numbers; then a per-map pass by hand. Accelerator 4130 -> 4100, Amphitheatre 602 -> 587, Cobblestone 885 -> 849, Museum 1758 -> 1685, Reactors 750 -> 736, Riverside 1444 -> 1279, Surfy 123 -> 121 (its teleporters never flickered: their steel frames did). quark_maptool's checks give the same results as on the originals.
 
+## Renderer: z-fighting of see-through and shaped pieces (q, 2026-11-10: "fix z-fighting on every map")
+- **Why:** after the map fixer pass and the world mesh's own lift (step 1c: the thinner of two flush faces of different looks lifted 4 mm), two renderer gaps still flickered on every map. (1) See-through things (glass and windows, zone boxes and the like in the flat pass; the see-through looks such as chain-link, fields and shield walls in their own pass) draw blended with no depth write and `GL_LEQUAL`. They were never moved off a coplanar opaque face, so a pane flush with or overlapping its frame, a sill or a wall showed a speckled tint: Museum's skylight, Reactors' glass room, Greenhouse's partition panes on their sills, every window set flush in a wall. (2) Faces of shaped pieces (wedges, corners, tetras, cut boxes) were skipped by step 1c, so a slope face coplanar with another piece flickered.
+- **(1), `src/client/renderer.cpp`:** both see-through passes draw with `glPolygonOffset(1, 2)`.
+  - **What it does:** pushes them a hair AWAY from the camera, in depth-buffer steps, so the bias grows with distance exactly as the depth buffer's own precision does. Where they lie on an opaque face, the opaque face wins every pixel.
+  - **Away, not toward:** a pane overlapping its frame is inside the frame there, so the frame shows untinted. Biasing toward the camera would tint the frame and could show glass through a wall in front of it at distance.
+  - **Cost:** 4 GL state calls a frame. No extra pass, draw or vertex.
+  - **Trade-off:** a see-through face closer than about 2 depth steps in front of an opaque face (2.4 cm at 100 m, 0.2 m at 300 m) hides behind it. Such faces were z-fighting before anyway.
+  - **Checked:** Cruiseship's windows 60 m away still draw and tint.
+- **(2), `src/client/lightmap.cpp` step 1c:** slope polygons take part in the lift.
+  - **Depth:** each gets the depth the "thinner piece goes on top" rule needs: how far its brush's box reaches behind its plane.
+  - **Axis planes:** a slope polygon on an axis plane (a wedge's side) is found in the bucket grid like a box face. A pair overlaps only where a 4x4 grid over their rectangles' intersection lies inside both, never because their bounding rectangles do, so no lift appears where the faces only touch along an edge (the 2026-10-31 rule against lifting faces that merely touch).
+  - **Sloped planes:** they are matched by plane: the normal to 1/100 and the distance to 1/2 m, with the neighbouring distance buckets. All against all took 8.6 s per load on Solar (39,000 sloped polygons). Accelerator gets the same 40 lifts either way.
+  - **The lift:** the same 4 mm a level, now also applied to a slope polygon's corners.
+- **Load-time cost (step 1c runs on every load, cached light or not):**
+  - Later passes skip the faces that overlapped nothing in the first pass.
+  - A huge face (over 32x32 cells of 8 m) checks only the faces on its own plane, not every face of the map.
+  - Solar: step 1c took 230 ms before and about 145 ms now with the shaped pieces included (67 ms for the old work alone). Other maps: 1-10 ms.
+  - The light cache holds only texels and is unchanged, so no bake version bump is needed.
+- **Numbers:** lifted shaped faces per map, e.g. Accelerator 333 (40 on sloped planes), Terraces 259, Sewer 101, Monorail 50, Greenhouse 37, Solar 104.
+- **Test:** `quark_tests groupslopes` checks a wedge flush with a box of another look. With the box deeper than the wedge, the wedge's side is lifted 4 mm; with the box thinner, the box's face is.

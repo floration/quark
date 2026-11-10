@@ -2310,16 +2310,27 @@ void Renderer::drawScene(bool shadows) {
 
     // Translucent geometry (blended, no depth writes): the world's, then in the view pass the view model's own
     // translucent parts, which share the one upload (prepareScene), after the world's.
+    // Both see-through passes are pushed a hair AWAY from the camera (glPolygonOffset: a depth bias in depth-buffer
+    // steps, so it grows with distance exactly as the depth buffer's own precision does): where a pane, a fence or a
+    // zone box lies exactly on an opaque face (set into a frame, standing on a sill or the floor, butting a wall) the
+    // opaque face wins every pixel instead of a speckle of both. Away, not toward: a pane overlapping its frame is
+    // inside the frame there (the frame shows, untinted), and nothing can show through a wall in front of it. A few
+    // state calls a frame, no extra pass; the cost is that see-through faces closer than about 2 depth steps in
+    // FRONT of a wall hide behind it (2.4 cm at 100 m), where they z-fought before anyway.
+    constexpr float kSeeOffsetSlope = 1.0f, kSeeOffsetUnits = 2.0f;
     auto drawFlat = [&](size_t first, size_t count, const Mat4& vp) {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glDepthMask(GL_FALSE);
+        glEnable(GL_POLYGON_OFFSET_FILL);
+        glPolygonOffset(kSeeOffsetSlope, kSeeOffsetUnits);
         glDisable(GL_CULL_FACE);
         glUseProgram(flatProg_);
         setMat(uFlatViewProj_, vp);
         glUniform1i(uFlatLatch_, latchUse_ && &vp == &viewProj_ ? 1 : 0);
         glBindVertexArray(flatVao_);
         glDrawArrays(GL_TRIANGLES, (GLint)first, (GLsizei)count);
+        glDisable(GL_POLYGON_OFFSET_FILL);
         glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
         glEnable(GL_CULL_FACE);
@@ -2329,6 +2340,8 @@ void Renderer::drawScene(bool shadows) {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glDepthMask(GL_FALSE);
+        glEnable(GL_POLYGON_OFFSET_FILL);
+        glPolygonOffset(kSeeOffsetSlope, kSeeOffsetUnits);
         glDisable(GL_CULL_FACE);
         glUseProgram(worldProg_);
         setMat(uWorld_.viewProj, viewProj_);
@@ -2337,6 +2350,7 @@ void Renderer::drawScene(bool shadows) {
         glBindVertexArray(seeVao_);
         glDrawArrays(GL_TRIANGLES, 0, seeVerts_);
         glUniform1f(uWorld_.alphaPass, 0.0f);
+        glDisable(GL_POLYGON_OFFSET_FILL);
         glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
         glEnable(GL_CULL_FACE);
