@@ -121,9 +121,9 @@ def build():
         stairs("galvanizedgrating", -24, 15, -20, 25, PAD, "z", 1, s)          # flight 1: up away from the dam
         B("galvanizedgrating", -24, 0, 25, -16, PAD, 28, s)                    # the turn
         stairs("galvanizedgrating", -20, 15, -16, 25, CREST, "z", -1, s, base=PAD)   # flight 2: back up to the crest
-        B("powdercoatyellow", -20.1, PAD, 15, -19.9, CREST, 25, s)             # the divider
+        B("powdercoatyellow", -20.2, PAD, 15, -20, CREST, 25, s)               # the divider (beside flight 2's steps, not in them)
         B("castinplacewalls", -16, 0, 12.3, -15.6, CREST + 1.3, 28.4, s)        # the walls (a door at the foot)
-        B("castinplacewalls", -24.4, 0, 28, -15.6, PAD + 1.3, 28.4, s)
+        B("castinplacewalls", -24.4, 0, 28, -16, PAD + 1.3, 28.4, s)   # (up to the east wall, not through it)
         B("castinplacewalls", -24.4, 4, 12.3, -24, CREST + 1.3, 28, s)
         B("castinplacewalls", -24.4, 0, 16, -24, 4, 28, s)                     # (the door: z 12.3..16, 4 m high)
         B("powdercoatyellow", -24, CREST, 14.9, -20, CREST + 1.3, 15, s)       # rail over flight 1's well
@@ -131,7 +131,8 @@ def build():
 
     # ================= the gatehouse (the middle: the cart's start, koth's hill, the control room) =================
     k.box("freshgreyconcrete", -8, 0, -7, 8, CREST, -5); k.box("freshgreyconcrete", -8, 0, 5, 8, CREST, 7)
-    k.box("steeldeckplate", -7.5, CREST - 0.05, -6.5, 7.5, CREST, 6.5)
+    # (its floor is the crest's asphalt and the walls' tops: a steel deck plate here lay flush in them, flickering, and the
+    # asphalt was what you stood on)
     for s in (-1, 1):
         # its end walls (a door 7 m wide onto the crest, control-room windows above), long walls
         B("castinplacewalls", -8, CREST, -7, -7.5, 30, -3.5, s); B("castinplacewalls", -8, CREST, 3.5, -7.5, 30, 7, s)
@@ -139,8 +140,8 @@ def build():
         # the stair to the control room
         stairs("galvanizedgrating", -7.5, -6.5, -1.5, -4, 26, "x", -1, s, base=CREST)
         B("powdercoatyellow", -7.5, CREST, -4, -1.5, 26, -3.9, s)
-        B("controlpanel", -7.4, 26, 4.6, -3.5, 27.2, 6.4, s)                  # the control desks (cover up there)
-        B("gaugecluster", -7.4, 27.2, 6.3, -3.5, 28.6, 6.4, s)
+        B("controlpanel", -7.4, 26, 4.6, -3.5, 27.2, 6.5, s)                  # the control desks (cover up there; against the wall)
+        B("gaugecluster", -7.4, 27.2, 6.4, -3.5, 28.6, 6.5, s)
         B("electricalcabinet", -7.4, CREST, 4.8, -5.4, CREST + 2.4, 6.4, s)    # cabinets on the valve floor
         light(-4, CREST + 4, 0, 14, 0.8, s)
     # the valve housing on the centreline (solid; the cart runs through its arch, which is under eye height)
@@ -165,8 +166,8 @@ def build():
 
     # ================= the crest's cover: the maintenance truck, stoplogs, the gantry crane, lamps =================
     for s in (-1, 1):
-        B("powdercoatyellow", -32, CREST, 1.9, -27.5, CREST + 2.6, 4.3, s)     # the truck's box body
-        B("rivetedplates", -27.5, CREST, 1.9, -25.4, CREST + 2.0, 4.3, s)      # its cab
+        B("powdercoatyellow", -32, CREST, 1.9, -27.5, CREST + 2.6, 4.4, s)     # the truck's box body (parked against the parapet)
+        B("rivetedplates", -27.5, CREST, 1.9, -25.4, CREST + 2.0, 4.4, s)      # its cab
         B("dustyglass", -26.3, CREST + 1.2, 2.0, -25.4, CREST + 1.9, 4.2, s)
         B("castiron", -31.6, CREST, 1.8, -30.8, CREST + 0.6, 1.9, s); B("castiron", -26.8, CREST, 1.8, -26, CREST + 0.6, 1.9, s)
         for j in range(4):                                                     # a stack of stoplogs (2 m, solid)
@@ -188,8 +189,9 @@ def build():
     # ================= the access road and the pad (per half) =================
     for s in (-1, 1):
         # the road: from the crest down the hill's foot to the pad (10 m over 45 m)
-        B("retainingwallblocks", -42, 0, 5, -32, PAD, 50, s)
-        W("asphalt", 3, -42, PAD, 5, -38, CREST, 50, s); W("asphalt", 3, -36, PAD, 5, -32, CREST, 50, s)
+        # (the road and its bed stop at the guard wall: run under it, their valley-side faces lay in its face, flickering)
+        B("retainingwallblocks", -42, 0, 5, -32.6, PAD, 50, s)
+        W("asphalt", 3, -42, PAD, 5, -38, CREST, 50, s); W("asphalt", 3, -36, PAD, 5, -32.6, CREST, 50, s)
         # the track bed in a 2 m cutting: 0.5 m sleeper steps, each topped at the line's lowest over the cart's reach
         # (the check sweeps the cart's box against boxes, so a single sloped wedge would count as in its way), so the
         # bed runs 0.27-0.38 m under the line: no sawtooth to see or snag on. The rails sit just outside the cart's
@@ -255,7 +257,7 @@ def build():
         stairs("largecobbledsetts", -50, 12, -45, 16, CREST, "z", -1, s, base=17)
         B("cobbledsetts", -50, 0, 5, -45, CREST, 12, s)
         for (z, y) in ((47, PAD), (33, 13.5), (19, 17), (8, CREST)):
-            B("lightblock", -49.95, y + 2.6, z - 1, -49.85, y + 2.9, z + 1, s)
+            B("lightblock", -50, y + 2.6, z - 1, -49.9, y + 2.9, z + 1, s)   # (on the rock face)
             light(-47.5, y + 3, z, 10, 0.6, s)
         # the rock's faces broken up: ledges and scree aprons at the feet
         B("graniterock", -64, PAD + 6, 52, -62.8, PAD + 7.2, 60, s)

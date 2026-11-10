@@ -2777,17 +2777,43 @@ void Game::drawWorld(float alpha) {
     const int lineupFirst = std::min(opts_.debugModelPage, (kPlayerModels - 1) / kLineup) * kLineup;
     const int lineupN = std::min(kLineup, kPlayerModels - lineupFirst);
     if (opts_.debugModels && alive) { // model lineup for screenshots: the last slots, 5 m ahead, facing you
+        if (opts_.debugLineupDist > 0 && !lineupAimed_) {   // (--lineupdist: from the --cam spot along its yaw, or from
+                                                            // your spawn turned once toward the longest open line)
+            lineupAimed_ = true;
+            hudHidden_ = true;   // (clean shots: the HIDE HUD key's look)
+            lineupBase_ = opts_.camSet ? opts_.camPos - Vec3(0, kEyeHeight, 0) : net_.smoothedPos(alpha);
+            const Vec3 o = lineupBase_ + Vec3(0, 1.0f, 0);
+            auto room = [&](float y) { return map.raycast(o, {-std::sin(y), 0, -std::cos(y)}, 200.0f); };
+            if (opts_.camSet) { lineupYaw_ = deg2rad(opts_.camYaw); lineupRoom_ = room(lineupYaw_); }
+            else {
+                lineupRoom_ = -1;
+                for (int a = 0; a < 64; a++) {
+                    const float y = a * (6.2831853f / 64), d = room(y);
+                    if (d > lineupRoom_) { lineupRoom_ = d; lineupYaw_ = y; }
+                }
+                yaw_ = lineupYaw_;
+            }
+            printf("lineup: --cam %.2f %.2f %.2f %.1f 0 (%.1f m open)\n", o.x, lineupBase_.y + kEyeHeight, o.z, lineupYaw_ * 180.0f / 3.14159265f, lineupRoom_);
+        }
         Vec3 f = {-std::sin(yaw_), 0, -std::cos(yaw_)}, rt = {std::cos(yaw_), 0, -std::sin(yaw_)};
         dbgBombPos = net_.smoothedPos(alpha) + f * 3.0f;
         for (int k = 0; k < lineupN; k++) {
             auto& ip = players[kMaxPlayers - kLineup + k];
-            ip.valid = true;
+            ip.valid = !opts_.debugLineupEmpty;
             ip.snap = PlayerSnap{};
             ip.snap.id = (uint8_t)(kMaxPlayers - kLineup + k);
             ip.snap.flags = PS_ALIVE | (k % 2 ? PS_TEAM_B : 0);
             ip.snap.pos = net_.smoothedPos(alpha) + f * 5.0f + rt * ((k - 2) * 1.5f);
+            if (opts_.debugLineupDist > 0) {   // (--lineupdist: that far along the open line (short of its end), centred,
+                                               // spread wider when far, each on the floor below it)
+                const float ld = std::min(opts_.debugLineupDist, std::max(2.0f, lineupRoom_ - 1.5f));
+                const Vec3 lf = {-std::sin(lineupYaw_), 0, -std::cos(lineupYaw_)}, lr = {std::cos(lineupYaw_), 0, -std::sin(lineupYaw_)};
+                ip.snap.pos = lineupBase_ + lf * ld + lr * ((k - 5) * 1.2f * std::max(1.0f, ld / 12.0f)) + Vec3(0, 1.0f, 0);
+                const float drop = map.raycast(ip.snap.pos, {0, -1, 0}, 3.0f);
+                ip.snap.pos.y -= drop < 3.0f ? drop : 1.0f;   // (no floor near: level with you)
+            }
             if (opts_.debugWalk) ip.snap.pos = net_.smoothedPos(alpha) + f * 7.0f + rt * ((k - 5) * 1.15f);   // (all 11 of the batch in view)
-            ip.snap.yaw = yaw_ + 3.14159265f;
+            ip.snap.yaw = (opts_.debugLineupDist > 0 ? lineupYaw_ : yaw_) + 3.14159265f;
             if (opts_.debugWalk) ip.snap.yaw = yaw_ - 1.5707963f;   // (side-on: the strides show)
             if (dbgBomb) { ip.snap.flags |= PS_HASBOMB; ip.snap.yaw -= 2.3f; }   // (turned away: the backpack shows)
             if (opts_.debugHook) {   // --hook: turned side-on (the launcher arm toward you); every other one hangs on a
@@ -2839,10 +2865,21 @@ void Game::drawWorld(float alpha) {
                 at.s.air = k == kLineup - 1 ? 1.0f : 0.0f;
             }
         }
+        if (opts_.debugLineupDist > 0 && i >= kMaxPlayers - kLineup) {   // (--lineupdist: each one's screen rect, for measuring)
+            float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
+            for (int c = 0; c < 8; c++) {
+                float sx, sy;
+                if (r_.project(pos + Vec3(c & 1 ? 1.1f : -1.1f, c & 2 ? 2.2f : -0.1f, c & 4 ? 1.1f : -1.1f), sx, sy)) {
+                    x0 = std::min(x0, sx); y0 = std::min(y0, sy); x1 = std::max(x1, sx); y1 = std::max(y1, sy);
+                }
+            }
+            printf("lineupbox %d %.0f %.0f %.0f %.0f\n", i, x0, y0, x1, y1);
+        }
         if (self && alive && !cfg_.ownShadow) continue;   // (MORE 4: OWN SHADOW off: your unseen body isn't drawn at all)
         Vec3 col = teamColor(i);
         r_.outlineColor = outlineColor(i);
         r_.modelSat = cfg_.playerSat;   // (MORE 4: PLAYER SATURATION, the bodies drawn from here to the reset below)
+        r_.modelPlayer = true;
         {   // MORE 4: OUTLINE WIDTH for your team / enemies (unset: PLAYER OUTLINE WIDTH)
             const float ow = isFriendly(i) ? cfg_.outlineTeamW : cfg_.outlineEnemyW;
             r_.outlineWidth = ow >= 0 ? ow : cfg_.outlinePlayer;
@@ -2863,7 +2900,10 @@ void Game::drawWorld(float alpha) {
         float sv = 1.0f;
         if (vis && !cfg_.playersLit && (ov || r_.inView(at(1.0f), 2.5f * bs))) sv = sunVisibility(map, pos + Vec3(0, 1.0f * hs * bs, 0));   // (PLAYERS ALWAYS LIT: full sun, no ray)
         ModelPalette pal;
-        pal.c[TINT_TEAM] = col;
+        // the team colour as the HUD and the colour pickers show it: the settings' colours are sRGB, the model's slots
+        // linear (taken as it was, the enemy red drew as a pale salmon and the friendly cyan near white: low contrast
+        // with the map's greys)
+        pal.c[TINT_TEAM] = {std::pow(col.x, 2.2f), std::pow(col.y, 2.2f), std::pow(col.z, 2.2f)};
         if (ov) {   // the owner's model (docs/ASSETS.md)
             Vec3 tint[TINT_COUNT];
             overrideTints(MODEL_PLAYER, pm, pal, tint);
@@ -3043,6 +3083,7 @@ void Game::drawWorld(float alpha) {
     r_.outlineColor = {0, 0, 0};
     r_.outlineWidth = 1.0f;
     r_.modelSat = 1.0f;
+    r_.modelPlayer = false;
     // grapple ropes
     // (a hook latched onto a player ends on their body as drawn here: their interpolated position, or our own)
     auto ropeEnd = [&](int target, const Vec3& anchor, uint16_t rocket = 0) {

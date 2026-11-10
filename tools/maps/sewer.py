@@ -152,7 +152,8 @@ def build():
     def chamber(f, L, fin, fout, ROOM=ROOM, screen=0):
         # the floor either side of the sewage channel (the trunk's, carried through to the far wall)
         f.box("waterstainedconcrete", 37, 55, L - 1, L, -9, -1.5); f.box("waterstainedconcrete", 37, 55, L - 1, L, 1.5, 9)
-        f.box("waterstainedconcrete", 37, 54, L - 1, L - 0.42, -1.5, 1.5); f.box("sewage", 37, 54, L - 0.42, L - 0.14, -1.5, 1.5)
+        # (the channel starts where the trunk's ends, u 38: one sewage surface, not two overlapping ones flickering)
+        f.box("waterstainedconcrete", 38, 54, L - 1, L - 0.42, -1.5, 1.5); f.box("sewage", 38, 54, L - 0.42, L - 0.14, -1.5, 1.5)
         # the ceiling, a manhole in it: a short shaft up to a lit grating (daylight's stand-in)
         for (a, b, c, d) in ((37, 45, -9, 9), (47, 55, -9, 9), (45, 47, -9, -1), (45, 47, 1, 9)):
             f.box(ROOM, a, b, L + 10, L + 11, c, d)
@@ -205,8 +206,8 @@ def build():
         f.cut("castiron", 8, 44, L + 14.0, L + 14.6 + 36 * q, 51.4, 52, [(-q, -1, 0, -(L + 14.0 + 44 * q)), (q, 1, 0, L + 14.6 + 44 * q)])
         # the landing: a sluice gate's frame on its corner, and the wall teleporter straight ahead of leg 1 (a flank:
         # out onto a balcony in the shaft wall, 9 m over the ring below, and back)
+        # (a frame painted on the wall: it lies in it. The gate that hung in it lay wholly inside the wall, never seen)
         f.box("ruststreaks", 52, 52.6, L + 9, L + 15, 44, 44.6); f.box("ruststreaks", 52, 52.6, L + 14.2, L + 15, 44.6, 51.4)
-        f.box("castiron", 52.2, 52.6, L + 10.5, L + 13, 45.2, 51)                       # (the gate, wound up)
         x0, z0 = f.xz(47, 51.5); x1, z1 = f.xz(51, 52.5)
         nx, nz = f.xz(0, -1)
         face = (0 if nx > 0 else 1) if nx else (4 if nz > 0 else 5)
@@ -263,7 +264,8 @@ def build():
             k.box("bargrating", -38, L + 8.4, -19, -35, L + 9, -8.5)                          # far landing
             k.stairs("bargrating", -35, -19, -23, -14, L + 18, "x", 1, base=L + 9, solid=False)
             k.light(-29, L + 6, -11, 13, 0.9); k.light(-29, L + 15, -16.5, 13, 0.9)
-            k.box("lightblock", -37.9, L + 6, -12, -37.8, L + 6.4, -10); k.box("lightblock", -37.9, L + 15, -17.5, -37.8, L + 15.4, -15.5)
+            # (on the west wall's face, x -38: not floating 0.1 m off it)
+            k.box("lightblock", -38, L + 6, -12, -37.9, L + 6.4, -10); k.box("lightblock", -38, L + 15, -17.5, -37.9, L + 15.4, -15.5)
         else:
             k.box("bargrating", -23, L - 0.6, -19, -20, L, -8.5)
 
@@ -366,8 +368,10 @@ def decorate(k, m):
     f.box("gaugecluster", 42, 48, 73.3, 75, -8, -7.7)
     x0, z0 = f.xz(38, 6.5); x1, z1 = f.xz(54, 6.5)
     k.tube_z("castiron", min(z0, z1), max(z0, z1), x0, 80.6, 0.6)
-    # the feeders: light blocks on the tunnel walls by the lamps
+    # the feeders: light blocks on the tunnel walls by the lamps, 0.1 m out from the wall's face (u / v 52) as every
+    # other light block here (inside the wall, face on face, they flickered), and over a jumping head (3.02 m): leg 1's
+    # 3.25 m over its floor, under the pipe run (at L + 6.5 it was 1.75 m over the floor at v 27: out from the wall, a snag)
     for side in range(4):
         f = F(k, side); L = 18 * side
-        f.box("lightblock", 52, 52.1, L + 6.5, L + 7.1, 25, 27)
-        f.box("lightblock", 25, 27, L + 17.2, L + 17.8, 52, 52.1)
+        f.box("lightblock", 51.9, 52, L + 8.0, L + 8.6, 25, 27)
+        f.box("lightblock", 25, 27, L + 17.2, L + 17.8, 51.9, 52)

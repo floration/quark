@@ -152,7 +152,11 @@ def curtain(m, z):
     for (a0, a1) in ((-CX + t, -5), (5, CX - t)):
         k = a0
         while k < a1 - 0.01:
-            z.box(k, H + 0.6, CZ - 0.8, min(k + 1.5, a1), H + 2, CZ)
+            e0, e1 = k, min(k + 1.5, a1)
+            for (g0, g1) in ((-14, -10), (10, 14)):   # (none inside the gate towers over the walk: they were buried there)
+                if g0 <= e0 < g1: e0 = g1
+                if g0 < e1 <= g1: e1 = g0
+            if e1 - e0 > 0.01: z.box(e0, H + 0.6, CZ - 0.8, e1, H + 2, CZ)
             k += 3.0
     # the towers: round, 18 m, a parapet ring on top (hooks: their parapets and the merlons)
     # (hollow above the walk: a floor at 12, doorways where the walks meet them, a parapet; the walk is one loop)
@@ -175,7 +179,7 @@ def curtain(m, z):
         z.stairs(x0, 26, x1, 50, H, "z", 1)
     z.stairs(30, CZ - t - 3, 54, CZ - t, H, "x", 1)                                    # up to the north / south walks
     # the barbicans: a walled yard outside each gate, 10 m walls, open to the sky (the spawns)
-    for (x0, z0, x1, z1) in ((-14, CZ, -12, BZ), (12, CZ, 14, BZ), (-12, BZ - 2, 12, BZ)):
+    for (x0, z0, x1, z1) in ((-14, CZ + 4, -12, BZ), (12, CZ + 4, 14, BZ), (-12, BZ - 2, 12, BZ)):   # (the side walls from the gate towers' far face)
         z.box(x0, -1, z0, x1, 10, z1, mat="largecastlestone")
         z.box(x0, 10, z0, x1, 10.6, z1)
     z.box(-12, -1, CZ, 12, 0, BZ - 2, mat="dirt")
@@ -313,7 +317,7 @@ def keep(m, z):
     # from the east bridge across the hill)
     m.box(26, -1, -3.5, 28.5, 4.0, 3.5, mat="largecastlestone")
     m.box(26.4, 4.0, -2.0, 28.1, WALK - 0.5, 2.0, mat="castlestone")
-    m.box(26.0, 0.0, -1.2, 26.05, 1.2, 1.2, mat="lightblock")
+    m.box(25.95, 0.0, -1.2, 26.0, 1.2, 1.2, mat="lightblock")                          # (the fire: on the breast's face, not in it)
     # inside: lamps in the hall and on the first floor
     for (lx, lz) in ((24, 0), (34, 0)):
         m.light(lx, 6.5, lz, 12, 0.7, fixture=False)
@@ -480,7 +484,7 @@ def objects(m, z):
         z.spawn("any", x, y, zz, yaw, "any")
     # the courtyard's dressing that is also cover: the well (by the hatch), the market stall and the cart across
     # the gate-to-gate line, a low wall (crouch cover)
-    m.box(-7.7, 0, -1.2, -5.3, 1.0, 1.2, mat="castlestone")                            # the well
+    m.box(-7.8, 0, -1.2, -5.2, 1.0, 1.2, mat="castlestone")                            # the well (wall to wall)
     for wx in (-8.0, -5.2):                                                            # its house: walls to 2.4 m east and west (closed at eye height)
         m.box(wx, 0, -1.6, wx + 0.2, 2.4, 1.6, mat="castlestone")
     for (wx, wz) in ((-7.6, -1.1), (-5.6, -1.1), (-7.6, 0.9), (-5.6, 0.9)):
@@ -512,7 +516,8 @@ def decorate(m, z):
     for y in (WALK - 0.6, 18.0):
         m.box(x1, y, -zz, x1 + 0.2, y + 0.4, zz, mat="trim")
         z.box(x0 - 0.2, y, zz, x1 + 0.2, y + 0.4, zz + 0.2, mat="trim")
-        m.box(x0 - 0.2, y, -zz, x0, y + 0.4, -7.5, mat="trim"); m.box(x0 - 0.2, y, 7.5, x0, y + 0.4, zz, mat="trim")
+        ze = WARD if y < WALK else zz   # (the lower course stops at the inner walls: they cover the keep's face there)
+        m.box(x0 - 0.2, y, -ze, x0, y + 0.4, -7.5, mat="trim"); m.box(x0 - 0.2, y, 7.5, x0, y + 0.4, ze, mat="trim")
     for k in (-12, -4, 4, 12):
         m.box(x1, 0, k - 0.6, x1 + 0.25, ROOF, k + 0.6, mat="trim")
     for k in (22, 30, 38):
@@ -528,7 +533,7 @@ def decorate(m, z):
     for (bx, by, bz) in ((-4.5, 0, WARD + IW + MOAT + 1), (4.5, 0, WARD + IW + MOAT + 1), (-7, 0, CZ - 6), (7, 0, CZ - 6)):
         z.box(bx - 0.4, by, bz - 0.4, bx + 0.4, by + 0.9, bz + 0.4, mat="charredtimber")
         z.box(bx - 0.35, by + 0.9, bz - 0.35, bx + 0.35, by + 1.3, bz + 0.35, mat="lightblock")
-    for (tx, tz) in ((-15.8, 2.6), (-4, 15.8), (4, 15.8)):
+    for (tx, tz) in ((-15.85, 2.6), (-4, 15.85), (4, 15.85)):                          # (against the ward's walls)
         z.box(tx - 0.15, 3.6, tz - 0.15, tx + 0.15, 4.2, tz + 0.15, mat="lightblock")
     # the ward: a hand cart and barrels by the north and south walls (out of the gate lanes)
     z.box(7, 0.5, 8.4, 10.5, 1.3, 10.4, mat="wideplanks")                               # (on the hill: cover for cappers)

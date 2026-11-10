@@ -188,8 +188,13 @@ def build():
     for (axis, f, sg) in (("x", -44, 1), ("x", 44, -1), ("z", -44, 1), ("z", 44, -1)):
         o0, o1 = sorted((f, f + sg * 0.06))
         g0, g1 = sorted((f, f + sg * 0.18))
-        if axis == "x": k.box("castiron", g0, 3.5, -44, g1, 3.66, 44)
-        else: k.box("castiron", -44, 3.5, g0, 44, 3.66, g1)
+        # (the gutter only along the street: not behind a building backed onto the shed, where it lay in the window
+        # band's recess and through the stair core's wall)
+        back = [(b[1], b[3]) if axis == "x" else (b[0], b[2]) for b in (W, E, N, S)
+                if (b[0] if axis == "x" else b[1]) == f or (b[2] if axis == "x" else b[3]) == f]
+        for (p, _, q, _) in minus((-44, 0, 44, 1), [(lo, -1, hi, 2) for (lo, hi) in back]):
+            if axis == "x": k.box("castiron", g0, 3.5, p, g1, 3.66, q)
+            else: k.box("castiron", p, 3.5, g0, q, 3.66, g1)
         for u in range(-42, 40, 6):
             if axis == "x" and any(a <= u + 1.5 and u + 1.5 <= b for (a, b) in ((-36.5, -32.5), (32.5, 36.5))): continue
             if axis == "x": k.box("rollershutter", o0, 0, u, o1, 2.8, u + 3.0)
@@ -200,6 +205,12 @@ def build():
             k.stairs("steeldeckplate", sx * 36, sz * 33, sx * 44, sz * 36, 4.0, "x", sx, base=0.0)
     # the city round the block: facades behind the alley, far towers with lit windows
     HS = [9, 13, 7, 11, 15, 8, 12, 10]                                     # (low: the skyline shows over them)
+    xwin = []                                                              # (the x sides' windows: the corners)
+    city = [(box, HS[(side * 3 + j) % len(HS)]) for side in range(4) for j in range(4)
+            for box in [[(-54, a0, -48, a0 + 27), (48, a0, 54, a0 + 27), (a0, -54, a0 + 27, -48), (a0, 48, a0 + 27, 54)][side]
+                        for a0 in [-54 + 27 * j]]]
+    def buried(r, top):   # (r (x0, z0, x1, z1) inside a city building up to `top`: past the block's corner, in the next side's)
+        return any(b[0] <= r[0] and r[2] <= b[2] and b[1] <= r[1] and r[3] <= b[3] and top <= hb for (b, hb) in city)
     for side in range(4):
         for j in range(4):
             a0, a1 = -54 + 27 * j, -54 + 27 * (j + 1)
@@ -212,11 +223,20 @@ def build():
             o0, o1 = sorted((f, f + sg * 0.1))
             q0, q1 = sorted((f, f + sg * 0.5))
             for (i, u) in enumerate(range(a0 + 2, a1 - 2, 4)):
+                ur = (q0, u, q1, u + 2.0) if side < 2 else (u, q0, u + 2.0, q1)   # (the bay's footprint)
                 rows = [y_ for y_ in (6.6, 9.6, 12.6) if y_ + 1.6 < h]
                 for (r_, yw) in enumerate(rows):
+                    if buried(ur, yw + 1.5): continue   # (past the block's corner, inside the next side's building)
                     mat = "glow" if (i * 3 + r_ + side + j) % 5 == 0 else "rainwindow"
-                    if side < 2: k.box(mat, o0, yw, u, o1, yw + 1.5, u + 2.0)
-                    else: k.box(mat, u, yw, o0, u + 2.0, yw + 1.5, o1)
+                    if side < 2: k.box(mat, o0, yw, u, o1, yw + 1.5, u + 2.0); xwin.append((o0, o1, u, u + 2.0, yw))
+                    else:   # (not into an x side's window where two meet in a corner)
+                        lo, hi = u, u + 2.0
+                        for (wx0, wx1, wz0, wz1, wy) in xwin:
+                            if wy == yw and wz0 < o1 and o0 < wz1 and wx0 < hi and lo < wx1:
+                                if wx0 <= lo: lo = wx1
+                                else: hi = wx0
+                        k.box(mat, lo, yw, o0, hi, yw + 1.5, o1)
+                if buried(ur, 6.0): continue   # (the door or AC box too)
                 if i % 2 == 0:   # a back door onto the alley, or an AC box on brackets
                     if side < 2: k.box("steeldoorskin", o0, 4.0, u + 0.4, o1, 6.0, u + 1.4)
                     else: k.box("steeldoorskin", u + 0.4, 4.0, o0, u + 1.4, 6.0, o1)
@@ -287,7 +307,8 @@ def build():
         k.box("galvanizedsteel", -14.2, y, za - 0.1, -14, y + 1.25, za + 0.1)
         k.box("galvanizedsteel", 14, y, za - 0.1, 14.2, y + 1.25, za + 0.1)
         for (ga, gb) in ((-14.2, -14.0), (14.0, 14.2)):                             # the gables, closed
-            k.cut("standingseamroof", (ga, y, za, gb, y + 1.2, za + 4), [(0, 1, 0.3, y + 1.2 + 0.3 * za)])
+            # (between the posts, which cover its ends: the next tooth's post, or the well's rail after the last)
+            k.cut("standingseamroof", (ga, y, za + 0.1, gb, y + 1.2, za + 4 - (0.12 if i == 2 else 0.1)), [(0, 1, 0.3, y + 1.2 + 0.3 * za)])
     # the light wells (x -16..-14, 14..16) open; a ladder up out of each onto the roof, a rail round each well
     k.ladder(-15.88, -37, 6.0, y, "w")
     k.ladder(15.88, -37, 6.0, y, "e")

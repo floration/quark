@@ -5765,6 +5765,23 @@ static void testGroupSlopes() {
     const float lb = outlineAt(l, {1.97f, 1.0f, 0}, nz), lt = outlineAt(l, {2.03f, 1.0f, 0}, nz);
     if (getenv("SLOPE_TRACE")) printf("    loose: box side %.3f, triangle side %.3f\n", lb, lt);
     CHECK(lb >= 0 && lb < 0.1f && lt >= 0 && lt < 0.1f);
+    // A slope's face flush with another piece's face of another look would z-fight: the thinner piece's face is lifted
+    // 4 mm, a slope's too (it never was). The wedge's side triangle at z 0 against a box reaching 3 m behind it: the
+    // wedge is thinner (2 m), so its face moves to z -0.004; against a box 0.5 m deep, the box's face does.
+    auto liftedAt = [](const BakedWorld& w, float material, float z) {
+        int n = 0;
+        for (const WorldVertex& v : w.verts) n += v.normal[2] < -0.99f && std::fabs(v.pos[2] - z) < 1e-4f && std::fabs(v.material - material) < 0.2f;
+        return n;
+    };
+    for (int deep = 0; deep < 2; deep++) {
+        Map f;
+        CHECK(f.parse(std::string(deep ? "box 1 0 0 5 1.5 3\n" : "box 1 0 0 5 1.5 0.5\n") + "wedge 3 1 2 0 0 4 2 2\n" + base));
+        BakedWorld fw;
+        buildWorld(f, fw);
+        const int wedgeUp = liftedAt(fw, 3, -0.004f), boxUp = liftedAt(fw, 0, -0.004f);
+        if (getenv("SLOPE_TRACE")) printf("    flush, box %s: wedge face lifted %d verts, box face %d\n", deep ? "deep" : "thin", wedgeUp, boxUp);
+        CHECK(deep ? wedgeUp > 0 && boxUp == 0 : wedgeUp == 0 && boxUp > 0);
+    }
 }
 
 // Materials 12-19 (owner, 2026-10-28): ice is slippery underfoot, rubber bounces you off it (floor and walls), the rest

@@ -94,6 +94,8 @@ int main(int argc, char** argv) {
         else if (a == "--projectiles") opts.debugProjectiles = true;   // every projectile model in a row ahead (screenshots)
         else if (a == "--walk") { opts.debugModels = true; opts.debugWalk = true; }   // the lineup side-on, mid-stride (PLAYER ANIMATIONS screenshots)
         else if (a == "--modelpage") { opts.debugModels = true; opts.debugModelPage = std::max(0, atoi(next().c_str())); }   // the lineup's Nth batch of 11 (0: the first 11)
+        else if (a == "--lineupdist") { opts.debugModels = true; opts.debugLineupDist = std::max(1.0f, (float)atof(next().c_str())); }   // the lineup that far ahead (visibility shots)
+        else if (a == "--lineupempty") opts.debugLineupEmpty = true;   // (with --lineupdist: the same shot without the lineup, to diff)
         else if (a == "--rpsshot") opts.debugRps = atoi(next().c_str());   // the tiebreak panel (screenshots)
         else if (a == "--timetrial") opts.timeTrial = true;
         else if (a == "--tutorial") {   // the TUTORIAL at once: [LESSON[:PHASE]] (an id or 0-based number; PHASE try / done / finish / lessons)

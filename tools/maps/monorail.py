@@ -255,8 +255,11 @@ def build():
             for wx in range(int(x0) + 2, int(x1) - 2, 4):
                 for wy in (2.2, 5.6, 9.0):
                     if wy + 1.4 < h - 0.5 and R.random() < 0.6:
-                        if side_z > 0: B("glow", wx, wy, side_z - 0.04, wx + 1.6, wy + 1.4, side_z, s)
-                        else: B("glow", wx, wy, side_z, wx + 1.6, wy + 1.4, side_z + 0.04, s)
+                        # (the old town's ground row stops under its shop awnings at 3.1: run through them, the
+                        # awning and the window fought for the facade's face and the build cut both up)
+                        wt = 3.1 if s < 0 and wy < 3 else wy + 1.4
+                        if side_z > 0: B("glow", wx, wy, side_z - 0.04, wx + 1.6, wt, side_z, s)
+                        else: B("glow", wx, wy, side_z, wx + 1.6, wt, side_z + 0.04, s)
             if s < 0:   # old town: shingle roofs (inside the clip)
                 k_dir = 2 if (x1 - x0) < (z1 - z0) else 0
                 a, b = T(x0, z0, s); c, d = T(x1, z1, s)
@@ -280,7 +283,7 @@ def build():
         if s < 0:
             B("castiron", -78, 0.5, 14.8, -63, 1.1, 18.2, s)                          # chassis
             B("corrugated", -78, 1.1, 14.8, -68.5, 3.8, 18.2, s)                      # the box body
-            B("terracotta", -68.3, 1.1, 14.9, -63, 2.9, 18.1, s)   # the cab
+            B("terracotta", -68.3, 1.1, 14.9, -63.04, 2.9, 18.1, s)   # the cab (its windscreen and lamps on its face)
             B("bluetintedglass", -64.2, 2.0, 14.86, -63.0, 2.8, 18.14, s)
             for wx in (-76.5, -71, -65.5):
                 for wz in (14.6, 18.0):
@@ -297,7 +300,7 @@ def build():
         B(km, -112, 0, -22.6, -111.4, 2.8, -18.4, s); B(km, -107.6, 0, -22.6, -107, 2.8, -18.4, s)
         B("cratewood" if s < 0 else "fibrecementboard", -111.4, 0, -22.6, -107.6, 1.1, -18.6, s)   # its counter
         B("corrugated" if s < 0 else "carbonfibre", -112.3, 2.8, -23.8, -106.7, 3.0, -17.6, s)
-        B("hologrampanel" if s > 0 else "neonmaze", -111.6, 1.6, -22.58, -107.4, 2.6, -22.5, s)
+        B("hologrampanel" if s > 0 else "neonmaze", -111.4, 1.6, -22.6, -107.6, 2.6, -22.52, s)   # (on the back, between the sides)
         light(-109.5, 2.4, -20, 8, 0.6, s)
         # the two halves dressed apart under the deck (same footprints): the old town's shopfront awnings and hanging
         # signs, the new district's continuous glass canopy and LED blades, on the blocks' avenue faces at 3 m

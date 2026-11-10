@@ -71,11 +71,12 @@ def cabin_row(k, xs, side, y, locked):
         p0, p1 = zb(0.06, 1.6)                                                                # the bathroom pod
         k.box("whitesquaretile", x + 1.6, y, p0, x + 1.7, h, p1)
         q0, q1 = zb(1.5, 1.6); k.box("whitesquaretile", x + 1.6, y, q0, x + 2.94, h, q1)
-        d0, d1 = zb(0.5, 1.4); k.box("whitesquaretile", x + 1.6, y + 2.2, d0, x + 1.7, h, d1)  # (its doorway's lintel)
-        b0, b1 = zb(1.9, 3.94)
-        k.box("quiltedleather", x + 1.1, y, b0, x + 2.94, y + 0.5, b1)                        # the bunk
-        k.box("wideplanks", x + 1.1, y + 1.8, b0, x + 2.94, y + 1.95, b1)
-        w0, w1 = zb(2.9, 3.94)                                                                # the wardrobe
+        # (no lintel: the pod's side wall above is whole, no doorway is cut in it, and a lintel there was a doubled
+        # piece inside it)
+        b0, b1 = zb(1.9, 4.0)                                 # (the bunk and the wardrobe to the hull: no slit behind)
+        k.box("quiltedleather", x + 1.05, y, b0, x + 2.94, y + 0.5, b1)                       # the bunk (against the wardrobe)
+        k.box("wideplanks", x + 1.05, y + 1.8, b0, x + 2.94, y + 1.95, b1)
+        w0, w1 = zb(2.9, 4.0)                                                                 # the wardrobe
         k.box("wideplanks", x + 0.95, y, w0, x + 1.05, y + 2.2, w1)
         g0, g1 = zb(2.85, 2.95); k.box("wideplanks", x + 0.06, y + 1.3, g0, x + 1.05, y + 2.2, g1)
         k.box("wideplanks", x + 0.06, y + 2.2, w0, x + 1.05, y + 2.3, w1)
@@ -113,7 +114,7 @@ def decorate(k):
             k.box("glow", x0 + 1.95, yy + 2.2, -0.3, x0 + 2.0, yy + 2.5, 0.3)
             k.box("glow", x0 + 8.0, yy + 2.2, -0.3, x0 + 8.05, yy + 2.5, 0.3)
     # the casino's sign over its aft entrance, the dining room's ceiling lamps, the arcade's shop signs
-    k.box("neonmaze", -23.8, D3 + 2.4, -2.5, -23.6, D3 + 2.9, 2.5)
+    k.box("neonmaze", -23.85, D3 + 2.4, -2.5, -23.65, D3 + 2.9, 2.5)      # (on the wall's face)
     for x in (15, 20, 40, 45):
         k.disc("glow", x, 0, 0.6, D4 - 0.55, D4 - 0.4, n=8)
     for x in (-61.8, -53.4, -45, -36.6, -28.2):
@@ -221,7 +222,7 @@ def build():
     k.box("boilerplate", 2, E + 3.2, -HZ, 12, E + 3.5, -5)
     k.box("gaugecluster", 3, E, -12.9, 11.6, E + 1.2, -12)
     # the shaft tunnel (x -66..-36, z -1.2..1.2, ceiling -3.8): the propeller shaft along its floor's side
-    k.box("castiron", -66, E, 0.6, -36, E + 0.6, 1.1)
+    k.box("castiron", -66, E, 0.6, -36, E + 0.6, 1.2)          # (against the tunnel's wall: no slit behind it)
 
     # ================================================================== deck 1: crew (aft) and stores (forward)
     y = D1
@@ -232,7 +233,7 @@ def build():
     for (x, z) in ((-70, -11), (-67.5, -11), (-65, -11), (-62.5, -11)):
         k.box("whitesquaretile", x - 1, y, z - 1, x + 1, y + 1.4, z + 1)            # washers
     for (x, z) in ((-66, -5), (-61, -4)):                                          # laundry bins (open tops)
-        k.box("chipboard", x - 1, y, z - 1, x + 1, y + 0.1, z + 1)
+        k.box("chipboard", x - 0.9, y, z - 0.9, x + 0.9, y + 0.1, z + 0.9)                   # (its floor, between the walls)
         for (a, b, c, d) in ((x - 1, z - 1, x + 1, z - 0.9), (x - 1, z + 0.9, x + 1, z + 1), (x - 1, z - 0.9, x - 0.9, z + 0.9), (x + 0.9, z - 0.9, x + 1, z + 0.9)):
             k.box("chipboard", a, y, b, c, y + 1.0, d)
     for x in (-68, -61):
@@ -412,8 +413,12 @@ def build():
     k.ring("anodizedblack", FX, FZ, 3.0, 3.4, 21.6, 23.2, n=8, a0=-22.5)
     k.box("galvanizedsteel", FX - 0.2, D4, FZ - 1.0, FX, 21.6, FZ + 1.0)
     k.ladder(FX + 0.12, FZ, D4, 21.6, "w", mat="galvanizedsteel")
-    for (x0, z0, x1, z1) in minus((FX - 3.0, FZ - 3.0, FX + 3.0, FZ + 3.0), [(FX, FZ - 1.0, FX + 3.0, FZ + 1.0)]):
-        k.box("galvanizedgrating", x0, 21.2, z0, x1, 21.6, z1)
+    # the grate fills the ring's inner octagon (corners at r 3.0) less the ladder's hole (x FX..FX+3, z +-1)
+    fl, cr = 3.0 * math.cos(math.radians(22.5)), 3.0 * math.sin(math.radians(22.5))   # (the flats at 2.77, corners 1.15 off the axes)
+    for s in (-1, 1):
+        k.prism("galvanizedgrating", [(FX + fl, FZ + s), (FX + fl, FZ + s * cr), (FX + cr, FZ + s * fl), (FX - cr, FZ + s * fl),
+                                      (FX - fl, FZ + s * cr), (FX - fl, FZ + s)], 21.2, 21.6)
+    k.box("galvanizedgrating", FX - fl, 21.2, FZ - 1.0, FX, 21.6, FZ + 1.0)
     # deckchairs (low, along the rails: out of the lanes)
     for x in range(-62, -44, 3):
         for s in (-1, 1):
@@ -453,7 +458,7 @@ def build():
             k.box("anodizedblack", x + 0.2, y + 2.95, f0, x + 1.4, y + 5.0, f1)     # balcony doors
         p0, p1 = sorted((s * 9.4, s * 10.4))
         k.box("whiteconcrete", 25, y + 2.8, p0, 36, y + 2.95, p1)                   # the balcony slab
-        r0, r1 = sorted((s * 10.33, s * 10.4))
+        r0, r1 = sorted((s * 10.3, s * 10.37))     # (the glass rail 3 cm in from the fins' ends: not flush with them)
         k.box("bluetintedglass", 25, y + 2.95, r0, 36, y + 3.9, r1)
         k.box("chrome", 25, y + 3.9, r0, 36, y + 4.0, r1)
         for i in range(6):

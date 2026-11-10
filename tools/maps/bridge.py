@@ -89,7 +89,11 @@ def leg(k, x, sz):
         if face in "sn": hole = (lx - 0.7, min(lz, lz - sz * 0.9), lx + 0.7, max(lz, lz - sz * 0.9))
         else: hole = (lx, lz - 0.7, lx + 0.9, lz + 0.7)
         for (a, b, c, d) in minus((x0 + t, lo, x1 - t, hi), [hole]): k.box("steeldeckplate", a, yf - 0.4, b, c, yf, d)
+    # (the climb volumes only: the kit's rails and rungs would sit 0.09 m into the walls, which are flush with the
+    #  ladders' lines, so they were buried there and the build's tidy pass dropped them anyway)
+    n = len(k.m.lines)
     for ((lx, lz), face, y0, y1) in ladders: k.ladder(lx, lz, y0, y1, face)
+    k.m.lines[n:] = [l for l in k.m.lines[n:] if l.startswith("ladder ")]
     k.box("steeldeckplate", x0 + t, -0.4, lo, x1 - t, 0, hi)
     k.light(x, 2.4, (lo + hi) / 2, 6, 0.6); k.light(x, 22.4, (lo + hi) / 2, 6, 0.6); k.light(x, 42.4, (lo + hi) / 2, 6, 0.6)
 
@@ -211,7 +215,11 @@ def build():
         for x in range(-80, 81, 20): k.box("galvanizedsteel", x - 0.15, WALK_Y + 0.3 - 0.3, ra, x + 0.15, -2.2, rb)   # (hangers)
         for x in (-65.0, -25.0, 25.0, 65.0):
             # a hatch through the deck (and the girder's lip) with a ladder up a post on its outer side
+            # (only its climb volume: the kit's rails and rungs would sit 0.09 m into the post, which is flush with the
+            #  ladder's line, so they are buried in the post and the deck; their tops z-fought the asphalt at 0)
+            n = len(m.lines)
             k.ladder(x, sz * 10.0, WALK_Y, 0, "n" if sz > 0 else "s")
+            m.lines[n:] = [l for l in m.lines[n:] if l.startswith("ladder ")]
             pz0, pz1 = sorted((sz * 9.7, sz * 10.0))
             k.box("galvanizedsteel", x - 0.6, WALK_Y, pz0, x + 0.6, -1.2, pz1)
     for x in (-40.0, 0.0, 40.0):
@@ -291,7 +299,6 @@ def build():
     k.box("precastconcrete", x1 - 0.4, 2.6, z1 - 3.5, x1, 8, z1)
     k.box("precastconcrete", x0, 0, z1 - 0.4, x1 - 6, 8, z1); k.box("precastconcrete", x1 - 3, 0, z1 - 0.4, x1, 8, z1)
     k.box("precastconcrete", x1 - 6, 2.6, z1 - 0.4, x1 - 3, 8, z1)
-    k.box("glass", x0 + 0.4, 5.0, z1 - 0.4, x1 - 6, 7.0, z1 - 0.3)
     for (a, b, c, d) in minus((x0 + 0.4, z0, x1 - 0.4, z1 - 0.4), [(x0 + 0.4, z0 + 0.4, x0 + 2.4, z0 + 7)]):
         k.box("steeldeckplate", a, 3.6, b, c, 4.0, d)
     k.stairs("precastconcrete", x0 + 0.4, z0 + 0.4, x0 + 2.4, z0 + 7, 4, "z", -1)
