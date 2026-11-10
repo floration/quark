@@ -27,7 +27,7 @@ snags), the wing roofs solid but for a lantern (was 827 m2 of glass), the clip l
 spawn 5.5 s."""
 import math
 from .prefabs import M, minus, tiles
-from .bigkit import Kit, num, yaw_to
+from .bigkit import Kit, num, yaw_to, clip_poly
 
 R_IN, R_OUT = 12.0, 12.5          # the palm house's wall
 WALL_H = 13.0
@@ -71,19 +71,33 @@ def glass_wall(k, axis, c0, c1, a0, a1, floor, doors):
     n = max(1, round((a1 - a0) / 3.0))
     for i in range(n + 1):
         x = a0 + (a1 - a0) * i / n
-        k.box("wroughtiron", max(a0, x - 0.08), floor + 2.2, c0 - 0.05, min(a1, x + 0.08), ROOF - 0.2, c1 + 0.05)
+        lo, hi = max(a0, x - 0.08), min(a1, x + 0.08)
+        # (the post at the palm house's end stands just past the wall's end, not over it: over it, its face, the
+        # glass's and the transom's shared the end's plane and flickered, seen through the palm house's glass)
+        if i == 0 and abs(a0) < abs(a1): lo, hi = a0 - 0.08, a0
+        if i == n and abs(a1) < abs(a0): lo, hi = a1, a1 + 0.08
+        k.box("wroughtiron", lo, floor + 2.2, c0 - 0.05, hi, ROOF - 0.2, c1 + 0.05)
 
 
 def roof(k, x0, x1, z0, z1):
     """a wing's roof: lead-sheet slopes either side of a glass lantern 2.4 m wide down the middle (glass only there).
-    It stops at the palm house's wall: the box part ends at |x| 12, the rest is lead cut along the wall's circle (r
-    12.25: inside the wall's thickness), so nothing pokes in over the walkway and no gap opens to the sky"""
+    It stops at the palm house's wall: the box part ends at |x| 12, the rest is lead out to the middle of the wall's
+    glass (its 12-sided polygon at r 12.25, corners at -15 + 30i degrees: inside the glass's thickness), so nothing
+    pokes in over the walkway and no gap opens to the sky (1.19.6 tidy round: it followed the circle r 12.25, which
+    left a slot up to 0.35 m wide between the lead and the glass's flat faces, and two of its pieces crossed over)"""
     sx = 1 if x0 > 0 else -1
-    zs = [z0, -8.0, -6.0, -3.5, 0.0, 3.5, 6.0, 8.0, z1]
-    for i in range(len(zs) - 1):
-        za, zb = zs[i], zs[i + 1]
-        xa, xb = sx * math.sqrt(12.25 ** 2 - za * za), sx * math.sqrt(12.25 ** 2 - zb * zb)
-        k.prism("leadsheet", [(sx * 12.0, za), (xa, za), (xb, zb), (sx * 12.0, zb)][::(1 if sx < 0 else -1)], ROOF, ROOF + 0.25)
+    R = 12.25
+    corner = lambda a: (R * math.cos(math.radians(a)), R * math.sin(math.radians(a)))
+    # (the polygon's edge on this side, from z0 to z1: its corners at 225 / 195 / 165 / 135 degrees (west), mirrored east)
+    pts = [corner(a) for a in (255, 225, 195, 165, 135, 105)]
+    pts = [(sx * -x, z) for (x, z) in pts]
+    def edge_x(z):
+        for (ax, az), (bx, bz) in zip(pts, pts[1:]):
+            if az - 1e-9 <= z <= bz + 1e-9: return ax + (bx - ax) * (z - az) / (bz - az)
+        raise SystemExit("greenhouse: roof edge past the palm house's corners")
+    zs = [z0] + [z for (_, z) in pts if z0 + 1e-6 < z < z1 - 1e-6] + [z1]
+    for za, zb in zip(zs, zs[1:]):
+        k.prism("leadsheet", [(sx * 12.0, za), (edge_x(za), za), (edge_x(zb), zb), (sx * 12.0, zb)], ROOF, ROOF + 0.25)
     x0, x1 = (x0, -12.0) if sx < 0 else (12.0, x1)
     k.box("leadsheet", x0, ROOF, z0, x1, ROOF + 0.25, -1.2)
     k.box("leadsheet", x0, ROOF, 1.2, x1, ROOF + 0.25, z1)
@@ -185,7 +199,8 @@ def build():
     for i in panes:   # the breakable partitions: one axis-thin pane (1/8 m) across each wing's face
         (ax, az), (bx, bz) = seg_chord(i, R_IN)
         x = (ax + bx) / 2
-        k.box("breakableglass", x - 0.0625, 0, min(az, bz), x + 0.0625, DOOR_H, max(az, bz))
+        # (the pane stands on its sill, not into it: their ends shared a plane and flickered)
+        k.box("breakableglass", x - 0.0625, 0.25, min(az, bz), x + 0.0625, DOOR_H, max(az, bz))
         k.box("wroughtiron", x - 0.15, -1, min(az, bz), x + 0.15, 0.25, max(az, bz))                    # (its sill)
     # the crown: two iron tiers and a glass cap
     k.ring("wroughtiron", 0, 0, 9.0, R_OUT, WALL_H, 14.5, n=12, a0=-15)
@@ -229,7 +244,7 @@ def build():
     roof(k, x0 - 0.5, x1, z0 - 0.5, z1 + 0.5)
     k.box("castiron", x0, 4.2, z0, -22, 4.5, -2.0)                                    # the mezzanine (x -26..-22)
     k.box("castiron", x0, 4.5, -2.1, -22, 5.5, -2.0)
-    k.box("castiron", -22.1, 4.5, -6.5, -22, 5.5, -2.0)
+    k.box("castiron", -22.1, 4.5, -6.5, -22, 5.5, -2.1)                               # (meets the other rail, not into it)
     k.stairs("castiron", -22, z0, -13, -6.5, 4.5, "x", -1, solid=False)
     for (a, b) in ((-18, -15),):
         for (c, d) in ((2.0, 3.5), (5.5, 7.0)):
@@ -252,16 +267,18 @@ def build():
     cx0, cz0, cx1, cz1 = CORR
     ch = 4.5
     k.box("londonstock", cx0 - 0.5, -1, cz0 - 0.5, cx1 + 0.5, ch, cz0)                  # (north wall, the room's door cut below)
-    k.box("londonstock", -24.5, -1, cz0, cx0, ch, cz1 + 0.5)
-    k.box("londonstock", cx1, -1, cz0, 24.5, ch, cz1 + 0.5)
-    k.box("londonstock", -21, -1, cz1, 21, ch, cz1 + 0.5)                                # (south wall)
+    # (the end walls stop at the spurs' walls and the south wall between them, the spurs' roofs at the corridor's: no
+    # two pieces of brick overlap with a face in the same plane, which flickered)
+    k.box("londonstock", -24.5, -1, cz0, cx0, ch, cz1)
+    k.box("londonstock", cx1, -1, cz0, 24.5, ch, cz1)
+    k.box("londonstock", -20.5, -1, cz1, 20.5, ch, cz1 + 0.5)                            # (south wall)
     k.box("londonstock", cx0 - 0.5, ch, cz0 - 0.5, cx1 + 0.5, ch + 0.4, cz1 + 0.5)
     for (sx, floor) in ((-1, 0.0), (1, FERN_Y)):
         a, b = sorted((sx * 21, sx * 24))
         wa, wb = sorted((sx * 20.5, sx * 21)); wc, wd = sorted((sx * 24, sx * 24.5))
         k.box("londonstock", wa, FERN_Y - 1, cz1, wb, ch, -9.5)
         k.box("londonstock", wc, FERN_Y - 1, cz1, wd, ch, -9.5)
-        k.box("londonstock", a, ch, cz1, b, ch + 0.4, -9.5)
+        k.box("londonstock", a, ch, cz1 + 0.5, b, ch + 0.4, -9.5)
         if floor == 0: k.box("londonstock", a, -1, cz1, b, 0, -9.5)
         else:
             k.box("londonstock", a, -1, cz1, b, 0, -13)
@@ -272,7 +289,7 @@ def build():
     # (cut the corridor's north wall open into the room)
     m.lines = [l for l in m.lines if not l.startswith(f"londonstock {num(cx0 - 0.5)} -1 {num(cz0 - 0.5)} ")]
     k.box("londonstock", cx0 - 0.5, -1, cz0 - 0.5, -5, ch, cz0); k.box("londonstock", 5, -1, cz0 - 0.5, cx1 + 0.5, ch, cz0)
-    k.box("londonstock", -5, 4.5, cz0 - 0.5, 5, 6, cz0)
+    k.box("londonstock", -5, ch + 0.4, cz0 - 0.5, 5, 6, cz0)                              # (over the door, above the corridor's roof)
     k.disc("castiron", 0, -21.5, 1.5, 0, 3.0, n=8)
     k.disc("londonstock", 0, -21.5, 0.6, 3.0, 12, n=8)
 
@@ -303,8 +320,14 @@ def build():
     for (x0, x1) in ((-20.5, -6), (6, 20.5)):
         k.box("ivyonbrick", x0, 0.5, -15.05, x1, 3.8, -15.0)
     e = BASIN + 0.2
-    k.box("victorianborder", -e, 0, -e, e, 0.02, -BASIN); k.box("victorianborder", -e, 0, BASIN, e, 0.02, e)
-    k.box("victorianborder", -e, 0, -BASIN, -BASIN, 0.02, BASIN); k.box("victorianborder", BASIN, 0, -BASIN, e, 0.02, BASIN)
+    # (the rim tiles only where the pebble path isn't: the path's 12-sided ring (inner corners at r e) covers the
+    # square rim's corners at the same height, and the two flickered there; what is floor at 0.02 is unchanged)
+    hole = [(e * math.cos(math.radians(-15 + 30 * i)), e * math.sin(math.radians(-15 + 30 * i))) for i in range(12)]
+    for (x0, z0, x1, z1) in ((-e, -e, e, -BASIN), (-e, BASIN, e, e), (-e, -BASIN, -BASIN, BASIN), (BASIN, -BASIN, e, BASIN)):
+        poly = hole
+        for (a, b, c) in ((1, 0, x1), (-1, 0, -x0), (0, 1, z1), (0, -1, -z0)): poly = clip_poly(poly, a, b, c)
+        poly = [p for i, p in enumerate(poly) if math.dist(p, poly[i - 1]) > 1e-6]
+        k.prism("victorianborder", poly, 0, 0.02)
     planting(k)
     k.box("cobwebs", -5, 4.6, -23.9, -2, 5.9, -23.8)
 
