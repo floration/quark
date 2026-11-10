@@ -201,6 +201,43 @@ void Audio::synthesize() {
     s[SND_SIZZLE] = make(0.55f); addBand(s[SND_SIZZLE], 2500, 9000, 0.7f, 0.015f, 0.12f, 70, 5000);
     for (int k = 0; k < 6; k++) addBand(s[SND_SIZZLE], 1200, 6000, 0.9f - k * 0.1f, 0.001f, 0.004f, 71 + k, -1, 0.02f + k * 0.055f + (k % 2) * 0.017f);
     finish(s[SND_SIZZLE], 0.22f);
+    // the sound audit's cues (q, 2026-10-30)
+    // headshot: a small metal tink, bell-like inharmonic partials over a click, gone in a fifth of a second
+    auto& ht = s[SND_HEADSHOT_TINK];
+    ht = make(0.2f); addTone(ht, 3870, 0.6f, 0.0008f, 0.05f); addTone(ht, 5420, 0.35f, 0.0008f, 0.032f); addTone(ht, 8130, 0.18f, 0.0008f, 0.018f);
+    addBand(ht, 4000, 11000, 0.25f, 0.0003f, 0.002f, 80); finish(ht, 0.3f);
+    // hooked: a rope's jolt (a low thwack) and a whine rising as it pulls you
+    auto& hk = s[SND_HOOKED];
+    hk = make(0.45f); addThump(hk, 230, 90, 0.025f, 1, 0.001f, 0.05f); addBand(hk, 300, 2200, 0.5f, 0.001f, 0.025f, 81);
+    addThump(hk, 380, 950, 0.12f, 0.35f, 0.02f, 0.12f, 0.02f); addRoom(hk, 0.15f, 0.6f); finish(hk, 0.32f);
+    // the planted bomb: a short electronic beep with a click on its front
+    auto& bt = s[SND_BOMB_TICK];
+    bt = make(0.09f); addTone(bt, 2090, 1, 0.001f, 0.018f); addTone(bt, 4180, 0.2f, 0.001f, 0.009f); addBand(bt, 2000, 8000, 0.25f, 0.0003f, 0.0015f, 82);
+    finish(bt, 0.3f);
+    // planting: a keypad press (a soft high beep and a click); defusing: a lower tool click with a scrape of noise
+    auto& bp = s[SND_BOMB_PLANTING];
+    bp = make(0.1f); addTone(bp, 1560, 0.6f, 0.001f, 0.02f); addBand(bp, 1500, 6000, 0.4f, 0.0003f, 0.004f, 83); finish(bp, 0.22f);
+    auto& bd = s[SND_BOMB_DEFUSING];
+    bd = make(0.12f); addThump(bd, 900, 560, 0.01f, 1, 0.0005f, 0.015f); addBand(bd, 3000, 9000, 0.5f, 0.0005f, 0.012f, 84, 5000, 0.015f); finish(bd, 0.22f);
+    // the hill contested: a two-tone warning (high, low, high), a third harmonic for an edge
+    auto& hc = s[SND_HILL_CONTESTED];
+    hc = make(0.5f);
+    for (int k = 0; k < 3; k++) { const float f = k == 1 ? 660.0f : 880.0f; addTone(hc, f, 0.5f, 0.004f, 0.07f, k * 0.12f); addTone(hc, 3 * f, 0.12f, 0.004f, 0.04f, k * 0.12f); }
+    addRoom(hc, 0.2f, 0.7f); finish(hc, 0.26f);
+    // the enemy capturing your point: two rising siren whoops
+    auto& ca = s[SND_CAPTURE_ALARM];
+    ca = make(0.75f);
+    for (int k = 0; k < 2; k++) { addThump(ca, 520, 1150, 0.12f, 1, 0.01f, 0.12f, k * 0.3f); addThump(ca, 1040, 2300, 0.12f, 0.15f, 0.01f, 0.08f, k * 0.3f); }
+    addRoom(ca, 0.25f, 0.9f); finish(ca, 0.28f);
+    // the holdfire's seconds: a wooden clock tick (its release plays it higher and louder)
+    auto& tk = s[SND_HOLDFIRE_TICK];
+    tk = make(0.1f); addThump(tk, 1800, 1150, 0.004f, 1, 0.0005f, 0.012f); addBand(tk, 1000, 5000, 0.4f, 0.0003f, 0.006f, 85); finish(tk, 0.25f);
+    // a checkpoint that won't count: a low buzz (a square-ish 175 Hz, its odd harmonics), twice
+    auto& cw = s[SND_CHECKPOINT_WRONG];
+    cw = make(0.38f);
+    for (int k = 0; k < 2; k++)
+        for (int h = 1; h <= 7; h += 2) addTone(cw, 175.0f * h, 0.5f / h, 0.004f, 0.06f, k * 0.15f);
+    addBand(cw, 150, 1200, 0.15f, 0.004f, 0.08f, 86); finish(cw, 0.3f);
     // the kits: RETRO re-voices these (chiptune), HEAVY METAL / MAGICAL / WOODEN are recorded (sfx_recorded.h);
     // anything a kit lacks is the DEFAULT sound
     for (int p = 1; p < kPacks; p++)
@@ -1187,6 +1224,8 @@ static const char* kModSoundNames[] = {"HIT", "KILL", "HURT", "STEP", "JUMP", "L
     "SHOTGUN", "STICKY", "CROSSBOW", "BUBBLE", "SYRINGE", "EXPLOSION", "STICKY_ATTACH", "BOLT_HIT", "DASH", "GRAPPLE_FIRE",
     "GRAPPLE_HIT", "DEATH", "STREAK", "TYPING", "CHECKPOINT", "FINISH", "HIT_MED", "HIT_HEAVY", "HIT_BRUTAL",
     "SUPER", "HYPER", "LOCATOR", "SIZZLE",
+    "HEADSHOT_TINK", "HOOKED", "BOMB_TICK", "BOMB_PLANTING", "BOMB_DEFUSING", "HILL_CONTESTED", "CAPTURE_ALARM",
+    "HOLDFIRE_TICK", "CHECKPOINT_WRONG",
     // the announcer's lines (SND_VOICE_*), as the asset export and the overrides name them
     "THREE", "TWO", "ONE", "GO", "BOMB_PLANTED", "BOMB_DEFUSED", "HILL_TAKEN", "HILL_LOST", "POINT_TAKEN", "POINT_LOST",
     "ROUND_WON", "ROUND_LOST", "OVERTIME", "YOU_WIN", "YOU_LOSE", "HIGH_SCORE", "NEW_LEADER", "YOU_DIED", "HEADSHOT",

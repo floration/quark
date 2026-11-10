@@ -35,6 +35,12 @@ enum SoundId {
     SND_SUPER, SND_HYPER, SND_LOCATOR,
     // a hiss: a projectile gone into lava or acid, and you while acid eats you (q, 2026-10-27: "pulse and sizzle")
     SND_SIZZLE,
+    // the sound audit's cues (q, 2026-10-30: "All of them"), all worked out by the client from what it's sent: your hit
+    // was a headshot (a metallic tink over the hitsound), someone's grapple caught you, the planted bomb's tick, a
+    // plant / defuse in progress, the hill contested, the enemy capturing your point, the map's holdfire counting down,
+    // and a race checkpoint that won't count (a buzz, not the ding)
+    SND_HEADSHOT_TINK, SND_HOOKED, SND_BOMB_TICK, SND_BOMB_PLANTING, SND_BOMB_DEFUSING, SND_HILL_CONTESTED,
+    SND_CAPTURE_ALARM, SND_HOLDFIRE_TICK, SND_CHECKPOINT_WRONG,
     // the announcer (recorded lines from voice_data.h, in its order; the same in every sound pack)
     SND_VOICE_THREE, SND_VOICE_TWO, SND_VOICE_ONE, SND_VOICE_GO, SND_VOICE_BOMB_PLANTED, SND_VOICE_BOMB_DEFUSED,
     SND_VOICE_HILL_TAKEN, SND_VOICE_HILL_LOST, SND_VOICE_POINT_TAKEN, SND_VOICE_POINT_LOST, SND_VOICE_ROUND_WON,
