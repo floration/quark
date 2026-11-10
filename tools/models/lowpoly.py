@@ -175,12 +175,13 @@ def _prism(mesh, mat, poly, axis, lo, hi, inward):
         mesh.add(mat, *((a, c, b) if flip else (a, b, c)))
 
 
-def solid(mesh, mat, poly, axis, lo, hi, shell=True):
-    """an extruded polygon, with its outline hull"""
+def solid(mesh, mat, poly, axis, lo, hi, shell=True, outline=None):
+    """an extruded polygon, with its outline hull (outline: the hull's growth in mm, default OUTLINE)"""
+    t = OUTLINE if outline is None else outline
     poly = ccw(poly)
     _prism(mesh, mat, poly, axis, lo, hi, False)
     if shell:
-        _prism(mesh, "ink", offset(poly, OUTLINE), axis, lo - OUTLINE, hi + OUTLINE, True)
+        _prism(mesh, "ink", offset(poly, t), axis, lo - t, hi + t, True)
 
 
 def _loft(mesh, mat, pa, wa, pb, wb, axis, inward):
@@ -200,16 +201,48 @@ def _loft(mesh, mat, pa, wa, pb, wb, axis, inward):
         mesh.add(mat, *((a, c, b) if flip else (a, b, c)))
 
 
-def loft(mesh, mat, pa, wa, pb, wb, axis="z", shell=True):
+def loft(mesh, mat, pa, wa, pb, wb, axis="z", shell=True, outline=None):
+    t = OUTLINE if outline is None else outline
     if wa > wb:
         pa, wa, pb, wb = pb, wb, pa, wa
     pa, pb = ccw(pa), ccw(pb)
     _loft(mesh, mat, pa, wa, pb, wb, axis, False)
     if shell:
-        _loft(mesh, "ink", offset(pa, OUTLINE), wa - OUTLINE, offset(pb, OUTLINE), wb + OUTLINE, axis, True)
+        _loft(mesh, "ink", offset(pa, t), wa - t, offset(pb, t), wb + t, axis, True)
 
 
-def rod(mesh, mat, p0, p1, r, k=6, shell=True):
+def _sweep(mesh, mat, rings, axis, inward):
+    """rings [(polygon, w)] with w rising, each polygon CCW with the same corner count: end caps + side quads"""
+    faces = []
+    p0, w0 = rings[0]
+    p1, w1 = rings[-1]
+    for i, j, k in triangulate(p1):
+        faces.append((_P(axis, *p1[i], w1), _P(axis, *p1[j], w1), _P(axis, *p1[k], w1)))
+    for i, j, k in triangulate(p0):
+        faces.append((_P(axis, *p0[i], w0), _P(axis, *p0[k], w0), _P(axis, *p0[j], w0)))
+    n = len(p0)
+    for (pa, wa), (pb, wb) in zip(rings, rings[1:]):
+        for i in range(n):
+            a0, a1, b1, b0 = _P(axis, *pa[i], wa), _P(axis, *pa[(i + 1) % n], wa), _P(axis, *pb[(i + 1) % n], wb), _P(axis, *pb[i], wb)
+            faces += [(a0, a1, b1), (a0, b1, b0)]
+    flip = _MIRROR[axis] != inward
+    for a, b, c in faces:
+        mesh.add(mat, *((a, c, b) if flip else (a, b, c)))
+
+
+def sweep(mesh, mat, rings, axis="y", shell=True, outline=None):
+    """a loft through several polygons [(polygon, w)] (same corner count, w strictly rising; a polygon is (u, v) as
+    for solid), only its two ends capped: a tapered limb, a torso, a faceted head in one closed solid"""
+    t = OUTLINE if outline is None else outline
+    rings = sorted(((ccw(p), w) for p, w in rings), key=lambda r: r[1])
+    _sweep(mesh, mat, rings, axis, False)
+    if shell:
+        hull = [(offset(p, t), w) for p, w in rings]
+        hull[0], hull[-1] = (hull[0][0], hull[0][1] - t), (hull[-1][0], hull[-1][1] + t)
+        _sweep(mesh, "ink", hull, axis, True)
+
+
+def rod(mesh, mat, p0, p1, r, k=6, shell=True, outline=None):
     """a k-sided rod between two points (any direction)"""
     d = [p1[i] - p0[i] for i in range(3)]
     L = math.sqrt(sum(v * v for v in d))
@@ -220,21 +253,22 @@ def rod(mesh, mat, p0, p1, r, k=6, shell=True):
     if saved:
         raise RuntimeError("rod inside place()")
     mesh.place(R, (0, 0, 0), p0)
-    solid(mesh, mat, ngon(0, 0, r, k), "z", -L, 0, shell)
+    solid(mesh, mat, ngon(0, 0, r, k), "z", -L, 0, shell, outline)
     mesh.unplace()
 
 
 # ---- glTF -----------------------------------------------------------------------------------------------------------
 
-def colour(mat):
-    t = TONES[mat]
+def colour(mat, tones=None):
+    t = (tones or TONES)[mat]
     if isinstance(t[0], str):
         return tuple(c * t[1] for c in REF[t[0]])
     return t
 
 
-def write_gltf(path, name, parts, extras):
-    """parts: [(node name, Mesh, pivot mm or None)]; the first is the body (pivot None)"""
+def write_gltf(path, name, parts, extras, tones=None, generator="gen_weapons_lowpoly.py"):
+    """parts: [(node name, Mesh, pivot mm or None)]; the first is the body (pivot None). tones: a TONES of the
+    caller's (default TONES); generator: the script named in asset.generator"""
     bin_ = bytearray()
     views, accs, mats, meshes, nodes = [], [], [], [], []
     mat_index = {}
@@ -267,7 +301,7 @@ def write_gltf(path, name, parts, extras):
                 for p in (a, b, c):
                     P.append([(p[i] - pv[i]) / 1000.0 for i in range(3)])
                     N.append(n)
-            col = colour(mat)
+            col = colour(mat, tones)
             a0 = len(accs)
             accs.append({"bufferView": put(b"".join(struct.pack("<3f", *p) for p in P), 34962), "componentType": 5126, "count": len(P), "type": "VEC3",
                          "min": [min(p[i] for p in P) for i in range(3)], "max": [max(p[i] for p in P) for i in range(3)]})
@@ -285,7 +319,7 @@ def write_gltf(path, name, parts, extras):
             node["translation"] = [v / 1000.0 for v in pivot]
         nodes.append(node)
     doc = {
-        "asset": {"version": "2.0", "generator": "quark tools/models/gen_weapons_lowpoly.py"},
+        "asset": {"version": "2.0", "generator": "quark tools/models/" + generator},
         "extras": dict(extras, provenance="AI-made placeholder"),
         "scene": 0, "scenes": [{"nodes": list(range(len(nodes)))}],
         "nodes": nodes, "meshes": meshes, "materials": mats, "accessors": accs, "bufferViews": views,
