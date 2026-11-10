@@ -38,3 +38,6 @@
 - VIDEO + AUDIO: the graphics PRESET (LOW / MEDIUM / HIGH / COMPETITIVE) is now on page 1, and hovering a page number shows what's on that page.
 - Menu keys: 1-5 switch between PLAY, PRACTICE, CREATE, RANKS and SETTINGS, and Enter presses QUICK PLAY on the main menu and START on HOST and BOTS.
 - QUICK PLAY now only joins your build's official server (the testing server on testing builds), never a ranked game; when it's full or doesn't answer within 3 s it starts bots and says why. The ranked queue looks for about 20 s (HOST NOW skips the wait), leaves your HOST settings alone and remembers your last ladder. SERVERS starts with an empty address box.
+
+## Maps
+- **No more flickering where two map pieces overlap:** every generated map (all but the hand-made ones) is now built with the map editor's fixes applied: pieces that overlapped on the same face no longer flicker, pieces nobody can see and boxes that were one box in many parts are gone, and hairline gaps under 1/8 m between pieces are closed. Nothing you stand on, touch or shoot through changed; the maps have 3% fewer pieces in all.

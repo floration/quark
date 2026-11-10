@@ -6,6 +6,9 @@ from collections import Counter
 OUT = None   # where save() writes (make_maps.py sets it)
 OVERRIDES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "assets", "overrides", "maps")
 MADE = []
+TIDY = True    # run the tidy pass (tools/maps/tidy.py) in save(); make_maps.py turns it off for the legacy maps
+WORKERS = None # make_maps.py's worker processes for save()'s tidy pass and write (None: in this process)
+PENDING = []   # save()'s jobs, in order: (job, its arguments); job.result() is the tidy report (None: not tidied)
 MAP_FORMAT = 14   # the "version" line every map starts with (src/game/map.h kMapFormatVersion)
 
 class M:
@@ -924,7 +927,26 @@ class M:
             with open(os.path.join(OUT, name + ".qmap"), "wb") as f: f.write(text)
             print("make_maps: %s.qmap is the override assets/overrides/maps/%s.qmap" % (name, name))
             return
-        with open(os.path.join(OUT, name + ".qmap"), "w", newline="\n") as f: f.write("\n".join(s.lines) + "\n")
+        # the tidy pass (tools/maps/tidy.py: the map editor's fixers) and the write, in make_maps.py's worker
+        # processes when it has them (the next map is built meanwhile); no_tidy: a map that opts out of the pass
+        job = (s.lines, os.path.join(OUT, name + ".qmap"), name, TIDY and not getattr(s, "no_tidy", False))
+        try: PENDING.append((WORKERS.submit(finish, *job), job))
+        except Exception: PENDING.append((_Done(finish(*job)), job))   # (no pool, or it can't start processes here)
+
+
+def finish(lines, path, name, tidy_it):
+    """tidies a map's lines (unless tidy_it is false) and writes them to path; -> the tidy report (None: not tidied)"""
+    rep = None
+    if tidy_it:
+        from maps import tidy
+        rep = tidy.run(lines, name)
+    with open(path, "w", newline="\n") as f: f.write("\n".join(lines) + "\n")
+    return rep
+
+
+class _Done:   # (a finished job, for when there is no worker pool)
+    def __init__(s, r): s.r = r
+    def result(s): return s.r
 
 
 def tiles(rects, size):
