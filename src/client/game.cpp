@@ -31,6 +31,7 @@
 #include "overrides.h"
 #include "hudclock.h"
 #include "modecalls.h"
+#include "../game/modeparams.h"
 
 static std::string fmtRace(int ms);
 static std::string hudCfgPath() { return userDataPath("hud.cfg"); } // scriptable widgets, next to quark.cfg
@@ -1633,8 +1634,10 @@ void Game::updateAnnouncer() {
     }
     {   // mode sounds the server sends no event for (modecalls.h): the bomb going off, "it" passed on in tag
         const int itNow = ms.mode == MODE_TAG ? tagItOf(net_.latest().players) : -1;
-        if (annPrevValid_ && bombWentOff(annPrev_, ms))   // a deep, long boom at the bomb, louder than a rocket's (it ends the round)
+        if (annPrevValid_ && bombWentOff(annPrev_, ms)) {   // a deep, long boom at the bomb, louder than a rocket's (it ends the round)
             audio_.play3D(SND_EXPLOSION, ms.bombPos, 2.5f, 0.6f);
+            bombBlast(ms.bombPos);   // (and its flash: it only had the sound)
+        }
         const int tagger = annPrevValid_ ? tagPassFrom(annPrev_, ms, tagIt_, itNow, net_.latest().players) : -1;
         if (tagger >= 0 && itNow == net_.clientId()) {   // you're it: the stab, and the sting of something stuck on you
             audio_.play(SND_HURT, 1.0f);
@@ -1647,13 +1650,33 @@ void Game::updateAnnouncer() {
         }
         tagIt_ = itNow;
     }
-    // the planted bomb beeps with its blink (game.cpp's bomb model: every timer / 20 s, at least 0.15 s), from where it is
+    // the planted bomb ticks with its blink (game.cpp's bomb model: every timer / 20 s, at least 0.15 s), from where it
+    // is, higher over its last 5 s (SND_BOMB_TICK, modecalls.h; it was the sticky's beep pitched up)
     if (ms.mode == MODE_BOMB && ms.bombState == BOMB_PLANTED && ms.phase == PHASE_LIVE && cfg_.volObjective > 0.001f) {
         if (time_ >= bombBeepAt_) {
-            audio_.play3D(SND_STICKY_ATTACH, ms.bombPos + Vec3(0, 0.3f, 0), 0.6f * cfg_.volObjective, 2.2f);
-            bombBeepAt_ = time_ + std::max(0.15, ms.bombTimer / 20.0);
+            audio_.play3D(SND_BOMB_TICK, ms.bombPos + Vec3(0, 0.3f, 0), 0.6f * cfg_.volObjective, bombTickPitch(ms.bombTimer));
+            bombBeepAt_ = time_ + bombTickInterval(ms.bombTimer);
         }
     } else bombBeepAt_ = 0;
+    {   // a plant / defuse going on (one in your sight: the server hides the rest): a click every 0.3 s, at the planter
+        // (where the bomb will be) or at the bomb
+        const int act = bombActionOf(ms);
+        const PlayerSnap* who = act ? net_.findPlayer(ms.actionPlayer) : nullptr;
+        if (bombActGate_.step(act != 0 && cfg_.volObjective > 0.001f, time_, kBombActionClick, true)) {
+            if (act == 2) audio_.play3D(SND_BOMB_DEFUSING, ms.bombPos + Vec3(0, 0.3f, 0), 0.7f * cfg_.volObjective);
+            else if (who && !who->hidden) audio_.play3D(SND_BOMB_PLANTING, who->pos + Vec3(0, 0.5f, 0), 0.7f * cfg_.volObjective);
+        }
+        const PlayerSnap* me = net_.findPlayer(net_.clientId());
+        const int myTeam = me && me->team() != TEAM_SPECTATOR ? me->team() : -1;
+        // the hill contested (both teams on it): a warning as it begins, at most every 4 s
+        if (hillGate_.step(hillContested(ms), time_, kHillContestedGap, false)) audio_.play(SND_HILL_CONTESTED, 0.7f);
+        // the enemy capturing your point: an alarm as it starts, then every 3 s while they fill it
+        if (captureGate_.step(pointUnderCapture(ms, myTeam), time_, kCaptureAlarmEvery, true)) audio_.play(SND_CAPTURE_ALARM, 0.75f);
+        // the map's holdfire (the dojo's bow): a tick each second of it, then the release higher and louder
+        const float hold = holdFireLeft();
+        if (int c = holdFireCue(holdPrev_, hold, ms.phase == PHASE_LIVE)) audio_.play(SND_HOLDFIRE_TICK, c == 2 ? 1.0f : 0.6f, c == 2 ? 1.5f : 1.0f);
+        holdPrev_ = hold;
+    }
     if (ms.phase != PHASE_LIVE) annLeader_ = -2;   // (a new match: the first lead isn't "new")
     else if (annLeader_ == -2) annLeader_ = -1;
     // Killstreaks are per match and per player: a new match (back to warmup, or another mode) starts them again, and a
@@ -4815,6 +4838,11 @@ void Game::drawHud() {
         const float a = 0.12f + (acidBurns_ && !cfg_.reduceFlash ? 0.04f * std::sin((float)(time_ - acidSince_) * 10.0f) : 0.0f);
         r_.rect(0, 0, W, H, {0.35f, 0.9f, 0.2f, a});
     }
+    if (bombFlash_ > 0) {   // the bomb went off near you (bombBlast): a white flash fading over 0.6 s
+        const float t = (float)(time_ - bombFlashAt_) / 0.6f;
+        if (t >= 1 || t < 0) bombFlash_ = 0;
+        else r_.rect(0, 0, W, H, {1.0f, 0.95f, 0.85f, bombFlash_ * (1 - t) * (1 - t)});
+    }
     if (time_ < damageUntil_ && cfg_.damageFlash > 0) {   // (VISUALS > DAMAGE FLASH: its strength, 0 = off)
         float a = (float)(damageUntil_ - time_) / 0.25f * 0.35f * (cfg_.reduceFlash ? std::min(cfg_.damageFlash, 0.3f) : cfg_.damageFlash);
         float b = 30 * s;
@@ -5881,7 +5909,7 @@ void Game::onRaceSplit(int cp, int ms) {
         const float keepFrom = (float)(ghostRunStart_);
         ghostRec_.erase(ghostRec_.begin(), std::find_if(ghostRec_.begin(), ghostRec_.end(), [&](const GhostPt& g) { return g.t >= keepFrom; }));
     }
-    if ((int)raceSplits_.size() != cp - 1) { raceSplits_.clear(); audio_.play(cp == (int)net_.map().raceCheckpoints.size() ? SND_FINISH : SND_CHECKPOINT, 0.9f); return; } // missed one: this run doesn't count
+    if ((int)raceSplits_.size() != cp - 1) { raceSplits_.clear(); audio_.play(SND_CHECKPOINT_WRONG, 0.8f); return; } // missed one: this run doesn't count (a buzz, not the ding)
     raceSplits_.push_back(ms);
     const std::string map = net_.map().name;
     // a time trial run counts (and is compared) only on a ranked race map, shipped and unchanged (the server says so too)
@@ -13632,6 +13660,27 @@ double Game::pingSec() const {
     return me ? me->ping * 0.001 : 0.0;
 }
 
+// The planted bomb going off (it had only its boom): a fireball growing to the kill radius over a second and a bright
+// core, and a white flash on screen by how near you are (none past 2.5 x the radius, a third of it behind a wall).
+// REDUCE FLASHING: no screen flash, and the fireball is drawn softer (as every explosion).
+void Game::bombBlast(const Vec3& at) {
+    const float radius = builtinModeParamsFor(MODE_BOMB).bombRadius;   // (18 m: the client isn't sent a custom mode's)
+    const Vec3 c = at + Vec3(0, 1.0f, 0);
+    explosions_.push_back({c, time_, radius / 3.5f, false, false, false, false, 1.0f});   // (out to (0.5 + 3) x size)
+    explosions_.push_back({c, time_, 1.6f, false, false, false, false, 0.5f});
+    if (cfg_.reduceFlash || cfg_.fxOpacity < 0.01f) return;
+    const Vec3 eye = r_.cameraPos(), d = c - eye;
+    const float dist = length(d);
+    float k = clampf(1.0f - dist / (radius * 2.5f), 0, 1);
+    if (k <= 0) return;
+    if (dist > 0.5f) {   // (one ray, once a round)
+        const float hit = net_.map().raycast(eye, d * (1.0f / dist), dist);
+        if (hit >= 0 && hit < dist - 0.5f) k *= 0.35f;
+    }
+    bombFlash_ = std::max(bombFlash_, 0.7f * k * cfg_.fxOpacity);
+    bombFlashAt_ = time_;
+}
+
 void Game::hitFeedback(int victim, float dmg, bool head) {
     hitUntil_ = time_ + cfg_.hitFlashTime;
     hitHead_ = head;
@@ -13639,7 +13688,9 @@ void Game::hitFeedback(int victim, float dmg, bool head) {
     if (cfg_.hitsounds) {
         int snd = cfg_.hitTiers ? hitSoundFor(dmg) : SND_HIT_MED;   // (MORE 5: HITSOUND TIERS off: one sound)
         if (hitGate_.pass(time_, snd)) audio_.play(snd, 0.9f * cfg_.hitVolume, 1.0f, cfg_.hitPack);
-        if (head && cfg_.headshotSound) audio_.play(SND_HIT, 0.7f * cfg_.hitVolume, 1.7f, cfg_.hitPack);   // (a higher ding over it)
+        // a headshot: a metallic tink over it (SND_HEADSHOT_TINK; it was the light hitsound pitched up); hits landing
+        // together (a blast's victims) make one
+        if (head && cfg_.headshotSound && time_ - headTinkAt_ >= HitSoundGate::kWindow) { audio_.play(SND_HEADSHOT_TINK, 0.8f * cfg_.hitVolume, 1.0f, cfg_.hitPack); headTinkAt_ = time_; }
     }
     // hits on the same target in quick succession add up into one number
     // (GAMEPLAY > MORE 2: STACKING: quick hits add up, a number a hit, or one running total while it shows)
@@ -14253,6 +14304,20 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
             const bool in = next < (int)cps.size() && playerBox(m).overlaps(cps[next]);
             if (int d = practiceDing_.step(next, in, (int)cps.size())) audio_.play(d == 2 ? SND_FINISH : SND_CHECKPOINT, 0.9f);
         } else practiceDing_.reset();
+        // the race or its practice: a checkpoint entered out of order (a gate skipped), which won't count: a buzz
+        if (isRaceMode(ms.mode) && (ms.phase == PHASE_WARMUP || ms.phase == PHASE_LIVE) && alive && mine && !net_.playback() && cps.size() > 1) {
+            const int next = mine->checkpoint, n = (int)cps.size();
+            const AABB box = playerBox(m);
+            int in = next < n && box.overlaps(cps[next]) ? next : -1;
+            for (int k = next + 1; in < 0 && k < n; k++) if (box.overlaps(cps[k])) in = k;
+            if (wrongCp_.step(next, in)) audio_.play(SND_CHECKPOINT_WRONG, 0.8f);
+        } else wrongCp_.reset();
+    }
+    {   // someone's grapple caught you (MF_PULLED, protocol 38): its jolt, once as it starts (not again within 0.5 s:
+        // a break free the server hasn't seen yet can flicker it)
+        const bool pulled = alive && (m.flags & MF_PULLED);
+        if (pulled && !pulledPrev_ && time_ - hookedAt_ > 0.5) { audio_.play(SND_HOOKED, 0.85f); hookedAt_ = time_; }
+        pulledPrev_ = pulled;
     }
 
     for (int i = 0; i < kMaxPlayers; i++) {

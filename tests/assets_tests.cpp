@@ -78,7 +78,7 @@ float rms(const std::vector<float>& x) { double e = 0; for (float v : x) e += (d
 
 // When each sound plays (assets/sfx/custom/README.md), for the studio's descriptions
 const char* soundWhen(int id) {
-    static const char* d[SND_VOICE_THREE] = {"you hit someone for under 10 damage (the light hitsound) - very short, < 0.2 s", "you killed someone - < 0.6 s",
+    static const char* d[] = {"you hit someone for under 10 damage (the light hitsound) - very short, < 0.2 s", "you killed someone - < 0.6 s",
         "you took damage - < 0.3 s", "a footstep (yours and others', in 3D) - very short, < 0.15 s", "a jump - < 0.2 s",
         "landing from a fall - < 0.3 s", "rifle shot - < 0.3 s (automatic: many per second)", "rocket launcher fired - < 0.7 s",
         "knife swing / throw - < 0.35 s", "sniper shot - < 1 s", "laser (lightning gun), repeats while firing - very short, < 0.1 s",
@@ -89,7 +89,20 @@ const char* soundWhen(int id) {
         "race: you passed a checkpoint - < 0.35 s", "race: you crossed the finish - < 0.8 s",
         "you hit someone for 10 to 24 damage (the medium hitsound: heavier and louder than HIT) - short, < 0.25 s",
         "you hit someone for 25 to 50 damage (the heavy hitsound) - < 0.35 s",
-        "you hit someone for more than 50 damage (the brutal hitsound: the heaviest, loudest) - < 0.5 s"};
+        "you hit someone for more than 50 damage (the brutal hitsound: the heaviest, loudest) - < 0.5 s",
+        "you did a super: a dash jump - < 0.4 s", "you did a hyper: a super dash - < 0.5 s",
+        "you used the locator (hide and seek / tag): a sonar-like ping - < 0.9 s",
+        "a shot gone into lava or acid, and you while acid hurts you: a hiss - < 0.6 s",
+        "your hit was a headshot: a metallic tink over the hitsound - very short, < 0.2 s",
+        "someone's grapple caught you and pulls you - < 0.45 s",
+        "the planted bomb ticks (3D), faster as its fuse runs out - very short, < 0.1 s",
+        "bomb: someone planting (3D, at them), one click every 0.3 s while they do - very short, < 0.1 s",
+        "bomb: someone defusing (3D, at the bomb), one click every 0.3 s while they do - very short, < 0.12 s",
+        "king of the hill: the hill became contested (both teams on it) - < 0.5 s",
+        "multi point: the enemy is capturing your point (as it starts, then every 3 s) - < 0.75 s",
+        "the map's holdfire (no firing at the round start): a tick each second, higher and louder as firing is allowed - very short, < 0.1 s",
+        "race: a checkpoint that won't count (out of order, or a run that doesn't count): a buzz - < 0.4 s"};
+    static_assert(sizeof d / sizeof *d == SND_VOICE_THREE, "a line for every sound effect, in SoundId order");
     return id >= 0 && id < SND_VOICE_THREE && d[id] ? d[id] : "";
 }
 const char* kitTitle(int pack) { static const char* n[] = {"DEFAULT", "HEAVY METAL", "MAGICAL", "RETRO", "MOUTH"}; return n[pack]; }
@@ -738,6 +751,33 @@ static void testHitTiers() {
     }
     ACHECK(std::string(Audio::soundName(SND_HIT)) == "HIT" && std::string(Audio::soundName(SND_HIT_MED)) == "HIT_MED" &&
            std::string(Audio::soundName(SND_HIT_HEAVY)) == "HIT_HEAVY" && std::string(Audio::soundName(SND_HIT_BRUTAL)) == "HIT_BRUTAL");
+    a.stop();
+}
+
+// The sound audit's cues (q, 2026-10-30): each a sound of its own in DEFAULT (synthesized), short as its README row
+// says, with headroom; the kits with no recording of it play DEFAULT's (RETRO: chiptuned); named as the files are
+static void testAuditSounds() {
+    struct Cue { int id; const char* name; float maxSec; };
+    const Cue cues[] = {{SND_HEADSHOT_TINK, "HEADSHOT_TINK", 0.2f}, {SND_HOOKED, "HOOKED", 0.45f}, {SND_BOMB_TICK, "BOMB_TICK", 0.1f},
+                        {SND_BOMB_PLANTING, "BOMB_PLANTING", 0.1f}, {SND_BOMB_DEFUSING, "BOMB_DEFUSING", 0.12f},
+                        {SND_HILL_CONTESTED, "HILL_CONTESTED", 0.5f}, {SND_CAPTURE_ALARM, "CAPTURE_ALARM", 0.75f},
+                        {SND_HOLDFIRE_TICK, "HOLDFIRE_TICK", 0.1f}, {SND_CHECKPOINT_WRONG, "CHECKPOINT_WRONG", 0.4f}};
+    Audio a;
+    a.startOffline();
+    for (const Cue& c : cues) {
+        const auto& x = a.samples(0, c.id);
+        ACHECK(std::string(Audio::soundName(c.id)) == c.name);
+        ACHECK(x.size() > 1000 && x.size() <= (size_t)(c.maxSec * Audio::kRate) + 1);
+        ACHECK(peakOf(x) > 0.1f && peakOf(x) <= 0.95f && rms(x) > 0.005f);
+        for (int other = 0; other < SND_VOICE_THREE; other++) if (other != c.id) ACHECK(x != a.samples(0, other));   // (its own)
+        for (int pack = 1; pack < Audio::kPacks; pack++) {
+            const auto& y = a.samples(pack, c.id);
+            ACHECK(pack == Audio::kPackRetro ? !y.empty() && y != x : y == x);   // (RETRO's chiptune changes its length)
+        }
+    }
+    // the wrong checkpoint's buzz is low (most of it under the ding's 1.3 kHz), the headshot's tink high
+    ACHECK(lowShare(a.samples(0, SND_CHECKPOINT_WRONG)) > lowShare(a.samples(0, SND_CHECKPOINT)) + 0.1f);
+    ACHECK(lowShare(a.samples(0, SND_HEADSHOT_TINK)) < 0.01f);
     a.stop();
 }
 
@@ -1547,6 +1587,7 @@ int assetTests() {
     testTextFit();
     testLanguages();
     testHitTiers();
+    testAuditSounds();
     testVoiceSteal();
     testCategoryVolumes();
     testQuips();

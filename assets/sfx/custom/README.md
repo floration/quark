@@ -51,5 +51,14 @@ Keep them short and starting instantly (no silence before the sound): they play 
 | HYPER | you did a hyper: a super dash (dash down into the floor and jump) | < 0.5 s |
 | LOCATOR | you used the locator (hide and seek / tag): a sonar-like ping | < 0.9 s |
 | SIZZLE | a shot gone into lava or acid, and you while acid hurts you: a hiss | < 0.6 s |
+| HEADSHOT_TINK | your hit was a headshot: a metallic tink over the hitsound | very short, < 0.2 s |
+| HOOKED | someone's grapple caught you and pulls you | < 0.45 s |
+| BOMB_TICK | the planted bomb ticks (3D), faster as its fuse runs out | very short, < 0.1 s |
+| BOMB_PLANTING | someone planting (3D, at them): one click every 0.3 s while they do | very short, < 0.1 s |
+| BOMB_DEFUSING | someone defusing (3D, at the bomb): one click every 0.3 s while they do | very short, < 0.12 s |
+| HILL_CONTESTED | king of the hill: the hill became contested (both teams on it) | < 0.5 s |
+| CAPTURE_ALARM | multi point: the enemy is capturing your point (as it starts, then every 3 s) | < 0.75 s |
+| HOLDFIRE_TICK | the map's holdfire (no firing at the round start): a tick each second, higher and louder as firing is allowed | very short, < 0.1 s |
+| CHECKPOINT_WRONG | race: a checkpoint that won't count (out of order, or a run that doesn't count): a buzz | < 0.4 s |
 
-That's 33 sounds per kit, 165 for all five. (The announcer's voice lines are separate: assets/voice/, tools/import_voice.py.)
+That's 43 sounds per kit, 215 for all five. (The announcer's voice lines are separate: assets/voice/, tools/import_voice.py.)

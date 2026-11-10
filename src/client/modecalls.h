@@ -4,6 +4,7 @@
 #pragma once
 #include "../game/gamedefs.h"
 #include "../game/protocol.h"
+#include <cmath>
 #include <cstdio>
 #include <vector>
 
@@ -113,5 +114,76 @@ struct PracticeDing {
         lastSnap = next;
         if (!r && in && dinged != next) { dinged = next; r = next + 1 == total ? 2 : 1; }
         return r;
+    }
+};
+
+// ---- the sound audit's cues (q, 2026-10-30: "All of them"): the client's own, from the states it's sent (no event or
+// protocol change for any of them)
+
+// Bomb: the planted bomb's tick, as often as its model blinks (every fuse left / 20 s, at least 0.15 s: from 2 s apart
+// on a 40 s fuse to 0.15 s over the last 3 s), its pitch rising over the last 5 s (1.0 to 1.3).
+inline double bombTickInterval(float timer) { return timer / 20.0 > 0.15 ? timer / 20.0 : 0.15; }
+inline float bombTickPitch(float timer) { return timer >= 5.0f ? 1.0f : 1.0f + 0.3f * (1.0f - (timer > 0 ? timer : 0.0f) / 5.0f); }
+
+// Bomb: a plant (1) or a defuse (2) going on, 0 none. The server hides one out of your sight (actionPlayer 255), so
+// what you hear is what you could see.
+inline int bombActionOf(const ModeState& ms) {
+    if (ms.mode != MODE_BOMB || ms.phase != PHASE_LIVE || ms.actionPlayer >= kMaxPlayers) return 0;
+    return ms.bombState == BOMB_PLANTED ? 2 : ms.bombState == BOMB_CARRIED ? 1 : 0;
+}
+constexpr double kBombActionClick = 0.3;   // a plant's / defuse's click this often while it goes on
+
+// King of the hill: both teams on the hill.
+inline bool hillContested(const ModeState& ms) { return ms.mode == MODE_KOTH && ms.phase == PHASE_LIVE && (ms.flags & MS_CONTESTED); }
+constexpr double kHillContestedGap = 4.0;   // its warning at most this often (the contest flickers as players step on and off)
+// Multi point: the enemy filling the point your team holds (the defenders' point: attackers alone on it, hillOwner
+// the attackers while they capture; pointStep, gamemodes.cpp). myTeam: TEAM_A / TEAM_B, -1 watching.
+inline bool pointUnderCapture(const ModeState& ms, int myTeam) {
+    return ms.mode == MODE_POINTS && ms.phase == PHASE_LIVE && myTeam >= 0 && myTeam != ms.attackers && ms.hillOwner == ms.attackers &&
+           !(ms.flags & MS_CONTESTED) && ms.point < ms.pointCount;
+}
+constexpr double kCaptureAlarmEvery = 3.0;   // the alarm as a capture starts, then this often while it goes on
+
+// A cue that plays as its condition begins, then (repeat) every gap while it lasts, or (no repeat) again only once
+// it has ended and begun again at least gap after the last one.
+struct CueGate {
+    double next = -1e9;
+    bool was = false;
+    void reset() { next = -1e9; was = false; }
+    bool step(bool on, double now, double gap, bool repeat) {
+        const bool begins = on && !was;
+        was = on;
+        if (!on || now < next || (!begins && !repeat)) return false;
+        next = now + gap;
+        return true;
+    }
+};
+
+// The map's holdfire (the dojo's bow: nobody fires for its first seconds live): a tick as each second of it begins
+// (5, 4, 3, 2, 1 on a 5 s one), then the release as it runs out (2). prevLeft / left: the seconds of it left the last
+// frame and now (0 or less: none); live: the round is still live (a round ended inside it isn't a release).
+inline int holdFireCue(float prevLeft, float left, bool live) {
+    if (prevLeft > 0 && left <= 0) return live ? 2 : 0;
+    if (left > 0 && (prevLeft <= 0 || std::ceil(left) != std::ceil(prevLeft))) return 1;
+    return 0;
+}
+
+// Race: a checkpoint the server won't count, entered out of order (one past the next to take: a skipped gate); the
+// race's and the practice's rule alike (raceStep / tickRacePractice count only the next one). The one your box just
+// passed through counts as taken before the server's count catches up (no buzz at the next gate for a lag).
+struct WrongCheckpoint {
+    int inside = -1;   // the checkpoint your box was in the last frame (-1 none)
+    int took = -1;     // the next one, entered by your box, while the server's count is still on it
+    int lastNext = -1;
+    void reset() { inside = took = lastNext = -1; }
+    // next: the server's count (the next checkpoint's index); in: the checkpoint your box is in (-1 none: the next
+    // one first, else the first later one). True: the buzz, once as you enter it.
+    bool step(int next, int in) {
+        if (next != lastNext) { took = -1; lastNext = next; }
+        if (in >= 0 && in == next) took = next;
+        const int expect = took >= 0 ? took + 1 : next;
+        const bool buzz = in >= 0 && in != inside && in > expect;
+        inside = in;
+        return buzz;
     }
 };

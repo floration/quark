@@ -2715,6 +2715,119 @@ static void testModeSounds(uint16_t port) {
     }
 }
 
+// The sound audit's cues (q, 2026-10-30: "All of them"), the client's own from the states it's sent (modecalls.h): the
+// planted bomb's tick rate and pitch, a plant / defuse in progress, the hill contested, the enemy capturing your point
+// (each rate-limited), the holdfire's ticks and release, a race checkpoint out of order. The rules first, then the
+// hill and the point read off a client's mode state as the server runs them.
+static void testAuditCues(uint16_t port) {
+    printf("audit cues: bomb tick, plant / defuse, hill contested, capture alarm, holdfire, wrong checkpoint\n");
+    // the bomb's tick: 2 s apart on a 40 s fuse, 0.5 s at 10 s left, never under 0.15 s; higher over the last 5 s
+    CHECK(std::fabs(bombTickInterval(40) - 2.0) < 1e-6 && std::fabs(bombTickInterval(10) - 0.5) < 1e-6);
+    CHECK(bombTickInterval(1) == 0.15 && bombTickInterval(0) == 0.15 && bombTickInterval(-2) == 0.15);
+    CHECK(bombTickPitch(20) == 1.0f && bombTickPitch(5) == 1.0f && bombTickPitch(2.5f) > 1.1f && bombTickPitch(2.5f) < 1.2f);
+    CHECK(std::fabs(bombTickPitch(0) - 1.3f) < 1e-5f && std::fabs(bombTickPitch(-1) - 1.3f) < 1e-5f);
+    int ticks = 0;
+    for (float fuse = 40; fuse > 0; fuse -= (float)bombTickInterval(fuse)) ticks++;
+    printf("  a 40 s fuse: %d ticks\n", ticks);
+    CHECK(ticks > 40 && ticks < 80);
+    // a plant (carried) / a defuse (planted) in progress, only live and with someone acting (one in your sight)
+    ModeState b; b.mode = MODE_BOMB; b.phase = PHASE_LIVE; b.bombState = BOMB_CARRIED; b.actionPlayer = 3;
+    CHECK(bombActionOf(b) == 1);
+    b.bombState = BOMB_PLANTED; CHECK(bombActionOf(b) == 2);
+    b.actionPlayer = 255; CHECK(bombActionOf(b) == 0);
+    b.actionPlayer = 3; b.phase = PHASE_ROUND_END; CHECK(bombActionOf(b) == 0);
+    b.phase = PHASE_LIVE; b.mode = MODE_KOTH; CHECK(bombActionOf(b) == 0);
+    // the gates: as it begins, then not again until it has ended and begun again past the gap; or every gap while on
+    CueGate g;
+    CHECK(g.step(true, 0, 4, false) && !g.step(true, 1, 4, false) && !g.step(false, 2, 4, false));
+    CHECK(!g.step(true, 3, 4, false));                         // (begun again inside the gap: quiet, and stays so)
+    CHECK(!g.step(true, 4.5, 4, false) && !g.step(false, 5, 4, false) && g.step(true, 5.5, 4, false));
+    CueGate r;
+    int every = 0;
+    for (int f = 0; f < 700; f++) every += r.step(f < 650, f * 0.01, 3, true);   // (on for 6.5 s: at 0, 3 and 6 s)
+    CHECK(every == 3);
+    // the hill contested; the enemy capturing your point (not contested, not watching, not your own capture)
+    ModeState k; k.mode = MODE_KOTH; k.phase = PHASE_LIVE;
+    CHECK(!hillContested(k));
+    k.flags = MS_CONTESTED; CHECK(hillContested(k));
+    k.phase = PHASE_ROUND_END; CHECK(!hillContested(k));
+    ModeState p; p.mode = MODE_POINTS; p.phase = PHASE_LIVE; p.attackers = TEAM_A; p.pointCount = 3; p.point = 1; p.hillOwner = TEAM_A;
+    CHECK(pointUnderCapture(p, TEAM_B) && !pointUnderCapture(p, TEAM_A) && !pointUnderCapture(p, -1));
+    p.flags = MS_CONTESTED; CHECK(!pointUnderCapture(p, TEAM_B));
+    p.flags = 0; p.hillOwner = 255; CHECK(!pointUnderCapture(p, TEAM_B));
+    // the holdfire (5 s at 60 fps): ticks at 5, 4, 3, 2, 1 s left, the release at 0; a round ended inside it: none
+    int holdTicks = 0, releases = 0;
+    float prev = 0;
+    for (int f = 0; f <= 400; f++) {
+        const float left = f == 0 ? 0.0f : 5.0f - (f - 1) / 60.0f;
+        const int c = holdFireCue(prev, left, true);
+        holdTicks += c == 1; releases += c == 2;
+        prev = left;
+    }
+    CHECK(holdTicks == 5 && releases == 1);
+    CHECK(holdFireCue(2.5f, 0, false) == 0 && holdFireCue(0, 0, true) == 0 && holdFireCue(-3, -2, true) == 0);
+    // a checkpoint out of order: the next one is fine, the one after it too while the server's count catches up; one
+    // skipped buzzes once as you enter it (and again if you go out and back in)
+    WrongCheckpoint w;
+    CHECK(!w.step(0, -1) && !w.step(0, 0) && !w.step(0, -1) && !w.step(0, 1));
+    CHECK(!w.step(1, 1) && !w.step(2, -1));
+    CHECK(w.step(2, 4) && !w.step(2, 4) && !w.step(2, -1) && w.step(2, 4));
+    CHECK(!w.step(2, -1) && !w.step(2, 2) && !w.step(2, -1) && !w.step(2, 3));
+    CHECK(!w.step(5, 5) && !w.step(0, 5));   // (the finish: the practice's count back to 0 with you still in the last one)
+
+    struct Case { int mode; const char* map; };
+    for (Case cs : {Case{MODE_KOTH, "castle"}, Case{MODE_POINTS, "lodestone"}}) {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = cs.map; cfg.mode = cs.mode; cfg.port = port++; cfg.balanceBots = false;
+        NetClient cl[2];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, cl, 2, cls)) { s.stop(); continue; }
+        const int att = rulesTeamPlayer(s, s.ms_.attackers), def = rulesTeamPlayer(s, s.ms_.attackers == TEAM_A ? (int)TEAM_B : (int)TEAM_A);
+        CHECK(att >= 0 && def >= 0);
+        if (att < 0 || def < 0) { s.stop(); continue; }
+        const AABB z = cs.mode == MODE_KOTH ? s.map_.hill : s.map_.points[0];
+        const Vec3 on = {z.center().x, z.mn.y + 0.05f, z.center().z};
+        Vec3 far = s.map_.spawns[0].pos;
+        for (auto& sp : s.map_.spawns) if (length(sp.pos - on) > length(far - on)) far = sp.pos;
+        bool both = false;
+        auto in = [&](int) {   // the attacker on it; the defender too (both) or far away
+            auto& a = s.players_[att]; auto& d = s.players_[def];
+            a.move.pos = on + Vec3(-0.3f, 0, 0); d.move.pos = both ? on + Vec3(0.3f, 0, 0) : far;
+            a.move.vel = d.move.vel = {};
+            a.health = d.health = 100;
+            return UserCmd();
+        };
+        const int defTeam = s.players_[def].team;
+        CueGate gate;
+        int cues = 0;
+        auto run = [&](double secs) {
+            for (double t = 0; t < secs; t += 0.02) {
+                pump(s, cls, 0.02, in);
+                const ModeState& ms = cl[0].mode();
+                const double now = s.time();
+                cues += cs.mode == MODE_KOTH ? gate.step(hillContested(ms), now, kHillContestedGap, false)
+                                             : gate.step(pointUnderCapture(ms, defTeam), now, kCaptureAlarmEvery, true);
+            }
+        };
+        if (cs.mode == MODE_KOTH) {   // one on the hill: theirs, no warning; both on it: contested, one warning
+            run(0.6);
+            const int alone = cues;
+            both = true; run(1.0);
+            printf("  hill: %d warnings alone, %d with both on it (contested %d)\n", alone, cues, (cl[0].mode().flags & MS_CONTESTED) != 0);
+            CHECK(alone == 0 && cues == 1 && hillContested(cl[0].mode()));
+        } else {   // the attacker alone on the defenders' point: the alarm at once, again 3 s on; both on it: quiet
+            run(3.5);
+            const int capturing = cues;
+            const float filled = cl[0].mode().capture;
+            both = true; run(1.0);
+            printf("  point: %d alarms in 3.5 s of capture (%.0f%% filled), %d more contested\n", capturing, filled * 100, cues - capturing);
+            CHECK(capturing == 2 && filled > 0 && cues == capturing && !pointUnderCapture(cl[0].mode(), defTeam));
+        }
+        s.stop();
+    }
+}
+
 // Rocket riding (owner 2026-10-27): the grapple catches a rocket in flight, anyone's, and only rockets; the anchor flies
 // with it and the hook lets go where it explodes (momentum kept, the cooldown started). Predicted: the client catches
 // it as the server does (its own rockets where the server has them, others' where it sees them), and the wall it
@@ -2993,6 +3106,7 @@ static void testGameRules(const std::string& only, int half = 0) {
         {"hudclock", 2, [] { testHudClock(TP(29280)); }},
         {"modecalls", 2, [] { testModeCalls(TP(29312)); }},
         {"modesounds", 2, [] { testModeSounds(TP(29313)); }},
+        {"auditcues", 2, [] { testAuditCues(TP(29320)); }},
         {"weaponpredict", 0, [] { testWeaponPredict(TP(29286)); }},   // (in neither half: real-time round trips, the suite runs it alone)
         {"customkeep", 2, [] { testCustomRulesKeep(); }},
         {"modehooks", 2, [] { testModeHooks(TP(29310)); }},
