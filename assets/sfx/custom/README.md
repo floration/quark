@@ -1,16 +1,22 @@
 # Your own sound effects
 
-Put a file named after the sound into the folder of the kit it belongs to, then run `python3 tools/import_sfx.py`
-(needs ffmpeg) and rebuild. Your file replaces that sound in that kit. Anything you don't supply keeps its current sound.
+**For now the game has one sound kit, DEFAULT** (owner, 2026-11-10: "for now you can get rid of every sound pack except
+for default"). The SOUND PACK setting is gone and `tools/import_sfx.py`'s output (`src/client/sfx_recorded.h`) is no
+longer built or shipped, so files put in these folders do nothing until the packs come back. The folders
+(`default/`, `heavy_metal/`, `magical/`, `retro/`), the importer and the Kenney clips in `assets/sfx/` stay in git for
+that. The MOUTH kit (`mouth/`, the owner's recordings) was removed altogether; its files are in git history.
 
-Folders: `default/`, `heavy_metal/`, `magical/`, `retro/`, `mouth/` (the SOUND PACK setting's five kits).
+To replace a DEFAULT sound today, use an override: `assets/overrides/sounds/default/<SOUND>.*` (docs/ASSETS.md).
+
+How this folder worked (and will again): put a file named after the sound into the folder of the kit it belongs to,
+then run `python3 tools/import_sfx.py` (needs ffmpeg) and rebuild. Your file replaced that sound in that kit.
 Formats: .wav, .ogg, .mp3 or .flac, any sample rate. The importer makes it mono, trims the silence at the start,
 cuts it at the length in the table below (with a short fade) and normalises it. In the other kits it is matched to the DEFAULT sound's loudness.
 Example: `heavy_metal/ROCKET.wav`.
 
 Files here are always loudness matched. A sound that must keep its own level (levelled in the sound editor) goes in
-as an override instead, `assets/overrides/sounds/<kit>/<SOUND>.*`, listed in `assets/overrides/sound-levels.txt`
-(one `sounds/<kit>/<SOUND>` a line; docs/ASSETS.md): the game then skips the matching and only keeps its peak at or
+as an override instead, `assets/overrides/sounds/default/<SOUND>.*`, listed in `assets/overrides/sound-levels.txt`
+(one `sounds/default/<SOUND>` a line; docs/ASSETS.md): the game then skips the matching and only keeps its peak at or
 under 1.0.
 
 Keep them short and starting instantly (no silence before the sound): they play the moment the thing happens.
@@ -61,4 +67,4 @@ Keep them short and starting instantly (no silence before the sound): they play 
 | HOLDFIRE_TICK | the map's holdfire (no firing at the round start): a tick each second, higher and louder as firing is allowed | very short, < 0.1 s |
 | CHECKPOINT_WRONG | race: a checkpoint that won't count (out of order, or a run that doesn't count): a buzz | < 0.4 s |
 
-That's 43 sounds per kit, 215 for all five. (The announcer's voice lines are separate: assets/voice/, tools/import_voice.py.)
+That's 43 sounds. (The announcer's voice lines are separate: assets/voice/, tools/import_voice.py.)

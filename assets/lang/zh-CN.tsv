@@ -1042,8 +1042,6 @@ FONTS GO IN MODS/FONTS; ASSETS IN OVERRIDES/	字体放在 MODS/FONTS; 资源放�
 FOR	用于
 FOR A VARIABLE REFRESH MONITOR	适用于可变刷新率显示器
 FOR THE NEXT LAUNCH	下次启动生效
-FORCE MY PACK	强制使用我的音效包
-FORCE MY PACK: EVERYONE IN YOUR SOUND PACK	强制使用我的音效包: 所有人用你的音效包
 FORCE PLAYER MODELS	强制玩家模型
 FORCE START	强制开始
 FORMAT: PNG	格式: PNG
@@ -1273,12 +1271,6 @@ HITSCAN ONLY	仅即时命中
 HITSOUND	命中音效
 HITSOUND TIERS	命中音效分级
 HITSOUND VOLUME	命中音效音量
-HITSOUND: DEFAULT	命中音效: 默认
-HITSOUND: HEAVY METAL	命中音效: 重金属
-HITSOUND: MAGICAL	命中音效: 魔法
-HITSOUND: MOUTH	命中音效: 嘴巴
-HITSOUND: MY SOUND PACK	命中音效: 我的音效包
-HITSOUND: RETRO	命中音效: 复古
 HITSOUNDS	命中音效
 HOLD ALL THREE	三个都按住
 HOLD BOTH	两个都按住
@@ -2437,7 +2429,7 @@ NVIDIA THREADED OPTIMIZATION IS ON	NVIDIA 线程优化已开启
 NVIDIA TRIPLE BUFFERING IS ON	NVIDIA 三重缓冲已开启
 NVIDIA VERTICAL SYNC IS FORCED ON	NVIDIA 强制开启垂直同步
 NW	NW
-Name, mouse sensitivity (or cm/360 with your DPI), field of view, team and enemy colours, volume, hit sounds, the announcer (off / countdown / all calls; male or female voice), player model and sound pack.	名字、鼠标灵敏度 (或结合 DPI 的 cm/360)、视野、队伍和敌人颜色、音量、命中音效、播报员 (关 / 倒计时 / 全部; 男声或女声)、玩家模型和音效包。
+Name, mouse sensitivity (or cm/360 with your DPI), field of view, team and enemy colours, volume, hit sounds, the announcer (off / countdown / all calls; male or female voice) and player model.	名字、鼠标灵敏度 (或结合 DPI 的 cm/360)、视野、队伍和敌人颜色、音量、命中音效、播报员 (关 / 倒计时 / 全部; 男声或女声)和玩家模型。
 New map	新地图
 OBJ	目标
 OBJECTIVE	目标
@@ -3065,13 +3057,7 @@ SOUND	声音
 SOUND GROUPS	声音分组
 SOUND OCCLUSION	声音遮挡
 SOUND ON	声音开
-SOUND PACK: DEFAULT	音效包: 默认
-SOUND PACK: HEAVY METAL	音效包: 重金属
-SOUND PACK: MAGICAL	音效包: 魔法
-SOUND PACK: MOUTH	音效包: 嘴巴
-SOUND PACK: RETRO	音效包: 复古
 SOUND SWITCHES TO IT AT ONCE	声音立即切换
-SOUNDS	声音
 SOUNDS BEHIND WALLS MUFFLED: YOU HEAR LESS	墙后声音闷化: 听到的更少
 SPACE	SPACE
 SPARE TIME BEFORE THE BLANK; A LATE FRAME	消隐前的余量时间; 迟到帧

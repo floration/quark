@@ -105,7 +105,6 @@ const char* soundWhen(int id) {
     static_assert(sizeof d / sizeof *d == SND_VOICE_THREE, "a line for every sound effect, in SoundId order");
     return id >= 0 && id < SND_VOICE_THREE && d[id] ? d[id] : "";
 }
-const char* kitTitle(int pack) { static const char* n[] = {"DEFAULT", "HEAVY METAL", "MAGICAL", "RETRO", "MOUTH"}; return n[pack]; }
 std::string lineText(int id) { std::string s = Audio::soundName(id); for (char& c : s) c = c == '_' ? ' ' : (char)tolower((unsigned char)c); return s; }
 const char* modelDesc(int kind) {
     switch (kind) {
@@ -174,22 +173,21 @@ int exportAssets(const char* dirArg) {
         if (!spit(dir / fs::u8path(it.file), data)) { printf("exportassets: can't write %s\n", it.file.c_str()); bad++; return; }
         items.push_back(it);
     };
-    // sounds: every kit, then every announcer voice
+    // sounds: the kit (DEFAULT, the only one since 2026-11-10), then every announcer voice
     Audio audio;
     audio.startOffline();
-    for (int pack = 0; pack < Audio::kPacks; pack++)
-        for (int id = 0; id < SND_VOICE_THREE; id++) {
-            std::string kit = Audio::kitDir(pack), n = Audio::soundName(id);
-            add({"sound/" + kit + "/" + n, "Sounds", "sound", n, "sounds/" + kit + "/" + n + ".wav",
-                 std::string(kitTitle(pack)) + " kit: " + soundWhen(id), kit}, wavFile(audio.samples(pack, id), Audio::kRate));
-        }
+    for (int id = 0; id < SND_VOICE_THREE; id++) {
+        std::string kit = Audio::kKitDir, n = Audio::soundName(id);
+        add({"sound/" + kit + "/" + n, "Sounds", "sound", n, "sounds/" + kit + "/" + n + ".wav",
+             "DEFAULT kit: " + std::string(soundWhen(id)), kit}, wavFile(audio.samples(id), Audio::kRate));
+    }
     for (int v = 0; v < kAnnouncerVoices; v++) {
         audio.setAnnouncer(v);
         std::string vd = Audio::voiceDir(v);
         for (int id = SND_VOICE_THREE; id < SND_COUNT; id++) {
             // (a line this voice doesn't have yet is silent in the game: a tenth of a second of silence here, so the
             // studio still lists it and a recording can be added)
-            const std::vector<float>& x = audio.samples(0, id);
+            const std::vector<float>& x = audio.samples(id);
             std::string n = Audio::soundName(id);
             add({"voice/" + vd + "/" + n, "Voices", "sound", n, "voices/" + vd + "/" + n + ".wav",
                  std::string("announcer ") + announcerVoiceName(v) + ": \"" + lineText(id) + "\"" + (x.empty() ? " (not recorded yet: silent)" : ""), vd},
@@ -200,7 +198,7 @@ int exportAssets(const char* dirArg) {
             std::string n = audio.quipName(k);
             add({"voice/" + vd + "/quips/" + n, "Voices", "sound", n, "voices/" + vd + "/quips/" + n + ".wav",
                  std::string("quip ") + announcerVoiceName(v) + ": a line a player says with the QUIP key (any quips/ files replace the whole set)", vd},
-                wavFile(audio.samples(0, SND_QUIP + k), Audio::kRate));
+                wavFile(audio.samples(SND_QUIP + k), Audio::kRate));
         }
     }
     audio.stop();
@@ -728,26 +726,22 @@ static void testHitTiers() {
     Audio a;
     a.startOffline();
     const int tiers[4] = {SND_HIT, SND_HIT_MED, SND_HIT_HEAVY, SND_HIT_BRUTAL};
-    const float ref = Audio::heardLoudness(a.samples(0, SND_HIT)) / kHitTierGain[0];
-    for (int pack = 0; pack < Audio::kPacks; pack++) {
-        for (int t = 0; t < 4; t++) {
-            const auto& x = a.samples(pack, tiers[t]);
-            ACHECK(x.size() > 1000 && x.size() < (size_t)Audio::kRate);
-            ACHECK(peakOf(x) <= 0.95f);   // headroom: never clipping, even the brutal one
-            float l = Audio::heardLoudness(x);
-            if (pack != Audio::kPackRetro) ACHECK(std::fabs(l / ref - kHitTierGain[t]) < 0.03f);   // the ladder, in every kit
-            if (pack != 0) ACHECK(x != a.samples(0, tiers[t]));   // each kit its own (RETRO: DEFAULT's, chiptuned)
-            for (int u = 0; u < t; u++) {
-                const auto& y = a.samples(pack, tiers[u]);
-                ACHECK(x != y);
-                ACHECK(l > Audio::heardLoudness(y) * 1.05f);   // louder than every lighter tier
-            }
-            if (pack == 0 && t > 0) {   // DEFAULT: each heavier (more low end) and longer than the last
-                ACHECK(lowShare(x) > lowShare(a.samples(0, tiers[t - 1])) + 0.05f);
-                ACHECK(x.size() > a.samples(0, tiers[t - 1]).size());
-            }
+    const float ref = Audio::heardLoudness(a.samples(SND_HIT)) / kHitTierGain[0];
+    for (int t = 0; t < 4; t++) {
+        const auto& x = a.samples(tiers[t]);
+        ACHECK(x.size() > 1000 && x.size() < (size_t)Audio::kRate);
+        ACHECK(peakOf(x) <= 0.95f);   // headroom: never clipping, even the brutal one
+        float l = Audio::heardLoudness(x);
+        ACHECK(std::fabs(l / ref - kHitTierGain[t]) < 0.03f);   // the ladder
+        for (int u = 0; u < t; u++) {
+            const auto& y = a.samples(tiers[u]);
+            ACHECK(x != y);
+            ACHECK(l > Audio::heardLoudness(y) * 1.05f);   // louder than every lighter tier
         }
-        ACHECK(lowShare(a.samples(pack, SND_HIT_BRUTAL)) > lowShare(a.samples(pack, SND_HIT)));   // the brutal one heavier, every kit
+        if (t > 0) {   // each heavier (more low end) and longer than the last
+            ACHECK(lowShare(x) > lowShare(a.samples(tiers[t - 1])) + 0.05f);
+            ACHECK(x.size() > a.samples(tiers[t - 1]).size());
+        }
     }
     ACHECK(std::string(Audio::soundName(SND_HIT)) == "HIT" && std::string(Audio::soundName(SND_HIT_MED)) == "HIT_MED" &&
            std::string(Audio::soundName(SND_HIT_HEAVY)) == "HIT_HEAVY" && std::string(Audio::soundName(SND_HIT_BRUTAL)) == "HIT_BRUTAL");
@@ -755,7 +749,7 @@ static void testHitTiers() {
 }
 
 // The sound audit's cues (q, 2026-10-30): each a sound of its own in DEFAULT (synthesized), short as its README row
-// says, with headroom; the kits with no recording of it play DEFAULT's (RETRO: chiptuned); named as the files are
+// says, with headroom; named as the files are
 static void testAuditSounds() {
     struct Cue { int id; const char* name; float maxSec; };
     const Cue cues[] = {{SND_HEADSHOT_TINK, "HEADSHOT_TINK", 0.2f}, {SND_HOOKED, "HOOKED", 0.45f}, {SND_BOMB_TICK, "BOMB_TICK", 0.1f},
@@ -765,19 +759,15 @@ static void testAuditSounds() {
     Audio a;
     a.startOffline();
     for (const Cue& c : cues) {
-        const auto& x = a.samples(0, c.id);
+        const auto& x = a.samples(c.id);
         ACHECK(std::string(Audio::soundName(c.id)) == c.name);
         ACHECK(x.size() > 1000 && x.size() <= (size_t)(c.maxSec * Audio::kRate) + 1);
         ACHECK(peakOf(x) > 0.1f && peakOf(x) <= 0.95f && rms(x) > 0.005f);
-        for (int other = 0; other < SND_VOICE_THREE; other++) if (other != c.id) ACHECK(x != a.samples(0, other));   // (its own)
-        for (int pack = 1; pack < Audio::kPacks; pack++) {
-            const auto& y = a.samples(pack, c.id);
-            ACHECK(pack == Audio::kPackRetro ? !y.empty() && y != x : y == x);   // (RETRO's chiptune changes its length)
-        }
+        for (int other = 0; other < SND_VOICE_THREE; other++) if (other != c.id) ACHECK(x != a.samples(other));   // (its own)
     }
     // the wrong checkpoint's buzz is low (most of it under the ding's 1.3 kHz), the headshot's tink high
-    ACHECK(lowShare(a.samples(0, SND_CHECKPOINT_WRONG)) > lowShare(a.samples(0, SND_CHECKPOINT)) + 0.1f);
-    ACHECK(lowShare(a.samples(0, SND_HEADSHOT_TINK)) < 0.01f);
+    ACHECK(lowShare(a.samples(SND_CHECKPOINT_WRONG)) > lowShare(a.samples(SND_CHECKPOINT)) + 0.1f);
+    ACHECK(lowShare(a.samples(SND_HEADSHOT_TINK)) < 0.01f);
     a.stop();
 }
 
@@ -793,10 +783,11 @@ static void testOverrides() {
     for (size_t i = 0; i < tone.size(); i++) tone[i] = 0.8f * std::sin(i * 0.2f) * (1.0f - (float)i / tone.size());
     ACHECK(spit(root / "sounds/default/hit.wav", wavFile(tone, 48000)));
     ACHECK(spit(root / "voices/male/GO.ogg", slurp(testData() / "tone.ogg")));
-    // a hitsound tier: MOUTH's brutal hit, a low 0.3 s tone over a DC offset (a rumble it must not clip on)
+    // a hitsound tier: the brutal hit, a low 0.3 s tone over a DC offset (a rumble it must not clip on)
     std::vector<float> thud(14400);
     for (size_t i = 0; i < thud.size(); i++) thud[i] = 0.3f + 0.6f * std::sin(i * 0.012f) * (1.0f - (float)i / thud.size()) + 0.05f * std::sin(i * 0.4f);
-    ACHECK(spit(root / "sounds/mouth/HIT_BRUTAL.wav", wavFile(thud, 48000)));
+    ACHECK(spit(root / "sounds/default/HIT_BRUTAL.wav", wavFile(thud, 48000)));
+    ACHECK(spit(root / "sounds/heavy_metal/KILL.wav", wavFile(tone, 48000)));   // a removed kit's override: ignored
     ACHECK(spit(root / "models/player/HEAVY.gltf", "this is not glTF"));
     {   // a player model of yours: a giant (the standard model, three times as wide)
         ModelParts parts;
@@ -830,20 +821,17 @@ static void testOverrides() {
     plain.startOffline();
     overrides::useUserFolder(true);
     mine.startOffline();
-    const auto& d0 = plain.samples(0, SND_HIT);
-    const auto& d1 = mine.samples(0, SND_HIT);
+    const auto& d0 = plain.samples(SND_HIT);
+    const auto& d1 = mine.samples(SND_HIT);
     ACHECK(d1 != d0 && d1.size() >= 9000 && d1.size() <= 9600);
-    ACHECK(mine.samples(Audio::kPackRetro, SND_HIT) != plain.samples(Audio::kPackRetro, SND_HIT));   // RETRO: the new DEFAULT, chiptuned
-    ACHECK(mine.samples(Audio::kPackMetal, SND_HIT) == plain.samples(Audio::kPackMetal, SND_HIT));   // a kit's own sound stays
-    ACHECK(mine.samples(0, SND_KILL) == plain.samples(0, SND_KILL));   // the rest untouched
-    const auto& b1 = mine.samples(Audio::kPackWooden, SND_HIT_BRUTAL);   // (pack 4: MOUTH)
-    ACHECK(b1 != plain.samples(Audio::kPackWooden, SND_HIT_BRUTAL) && b1.size() >= 14000 && b1.size() <= 14400);
+    ACHECK(mine.samples(SND_KILL) == plain.samples(SND_KILL));   // the rest untouched (heavy_metal/KILL: no such kit)
+    const auto& b1 = mine.samples(SND_HIT_BRUTAL);
+    ACHECK(b1 != plain.samples(SND_HIT_BRUTAL) && b1.size() >= 14000 && b1.size() <= 14400);
     ACHECK(peakOf(b1) <= 0.95f);   // levelled as heard, its rumble cut, never clipping
-    ACHECK(std::fabs(Audio::heardLoudness(b1) / Audio::heardLoudness(plain.samples(0, SND_HIT_BRUTAL)) - 1.0f) < 0.05f);
-    ACHECK(mine.samples(Audio::kPackWooden, SND_HIT_HEAVY) == plain.samples(Audio::kPackWooden, SND_HIT_HEAVY));
-    ACHECK(mine.samples(0, SND_HIT_BRUTAL) == plain.samples(0, SND_HIT_BRUTAL));
-    ACHECK(mine.samples(0, SND_VOICE_GO) != plain.samples(0, SND_VOICE_GO));
-    ACHECK(mine.samples(0, SND_VOICE_ONE) == plain.samples(0, SND_VOICE_ONE));
+    ACHECK(std::fabs(Audio::heardLoudness(b1) / Audio::heardLoudness(plain.samples(SND_HIT_BRUTAL)) - 1.0f) < 0.05f);
+    ACHECK(mine.samples(SND_HIT_HEAVY) == plain.samples(SND_HIT_HEAVY));
+    ACHECK(mine.samples(SND_VOICE_GO) != plain.samples(SND_VOICE_GO));
+    ACHECK(mine.samples(SND_VOICE_ONE) == plain.samples(SND_VOICE_ONE));
     fs::remove_all(root, ec);
     overrides::useUserFolder(true);
 }
@@ -873,12 +861,12 @@ static void testSoundLevels() {
     const std::vector<float> quiet = tone(0.1f, 14400), loud = tone(2.5f, 14400);   // 0.3 s each
     ACHECK(spit(root / "sounds/default/ROCKET.wav", wavFile(quiet, 48000)));     // listed (in other case)
     ACHECK(spit(root / "sounds/default/SHOTGUN.wav", wavFile(quiet, 48000)));    // not listed: matched as before
-    ACHECK(spit(root / "sounds/mouth/HIT_MED.wav", wavFile(quiet, 48000)));      // a hitsound tier, listed: no levelHit
-    ACHECK(spit(root / "sounds/heavy_metal/SNIPER.wav", floatWav(loud, 48000))); // listed, peak 2.5: limited to 1.0
+    ACHECK(spit(root / "sounds/default/HIT_MED.wav", wavFile(quiet, 48000)));    // a hitsound tier, listed: no levelHit
+    ACHECK(spit(root / "sounds/default/SNIPER.wav", floatWav(loud, 48000)));     // listed, peak 2.5: limited to 1.0
     ACHECK(spit(root / "voices/male/GO.wav", wavFile(quiet, 48000)));            // a voice line, listed
     ACHECK(spit(root / "voices/male/ONE.wav", wavFile(quiet, 48000)));           // not listed
-    ACHECK(spit(root / "Sound-Levels.txt", "# levelled in the sound editor\r\n  Sounds/Default/rocket \r\n\r\nsounds\\mouth\\hit_med\n"
-                                           "SOUNDS/HEAVY_METAL/SNIPER.wav\nvoices/MALE/go\n#voices/male/ONE\n"));
+    ACHECK(spit(root / "Sound-Levels.txt", "# levelled in the sound editor\r\n  Sounds/Default/rocket \r\n\r\nsounds\\default\\hit_med\n"
+                                           "SOUNDS/DEFAULT/SNIPER.wav\nvoices/MALE/go\n#voices/male/ONE\n"));
     Audio plain, mine;
     overrides::useUserFolder(false);
     plain.startOffline();
@@ -886,22 +874,16 @@ static void testSoundLevels() {
     ACHECK(overrides::soundLevels().find("Sounds/Default/rocket") != std::string::npos);
     mine.startOffline();
     auto near = [](float a, float b) { return std::fabs(a - b) < 0.004f; };
-    const auto& rocket = mine.samples(0, SND_ROCKET);
+    const auto& rocket = mine.samples(SND_ROCKET);
     printf("  peaks: kept ROCKET %.3f, matched SHOTGUN %.3f, kept HIT_MED %.3f, limited SNIPER %.3f, kept GO %.3f, matched ONE %.3f\n",
-           peakOf(rocket), peakOf(mine.samples(0, SND_SHOTGUN)), peakOf(mine.samples(Audio::kPackWooden, SND_HIT_MED)),
-           peakOf(mine.samples(Audio::kPackMetal, SND_SNIPER)), peakOf(mine.samples(0, SND_VOICE_GO)), peakOf(mine.samples(0, SND_VOICE_ONE)));
+           peakOf(rocket), peakOf(mine.samples(SND_SHOTGUN)), peakOf(mine.samples(SND_HIT_MED)),
+           peakOf(mine.samples(SND_SNIPER)), peakOf(mine.samples(SND_VOICE_GO)), peakOf(mine.samples(SND_VOICE_ONE)));
     ACHECK(rocket.size() >= 14000 && rocket.size() <= 14400 && near(peakOf(rocket), 0.1f));
-    ACHECK(std::fabs(peakOf(mine.samples(0, SND_SHOTGUN)) - 0.1f) > 0.05f);   // (DEFAULT's shotgun is far louder than 0.1)
-    ACHECK(near(peakOf(mine.samples(Audio::kPackWooden, SND_HIT_MED)), 0.1f));
-    ACHECK(near(peakOf(mine.samples(Audio::kPackMetal, SND_SNIPER)), 1.0f));
-    ACHECK(near(peakOf(mine.samples(0, SND_VOICE_GO)), 0.1f));
-    ACHECK(std::fabs(peakOf(mine.samples(0, SND_VOICE_ONE)) - 0.1f) > 0.05f);
-    // a kept DEFAULT still becomes the sound of the kits that had DEFAULT's, at its own level (and RETRO's, chiptuned)
-    for (int p = 1; p < Audio::kPacks; p++) {
-        if (p == Audio::kPackRetro) { ACHECK(mine.samples(p, SND_ROCKET) != plain.samples(p, SND_ROCKET)); continue; }
-        if (plain.samples(p, SND_ROCKET) == plain.samples(0, SND_ROCKET)) ACHECK(mine.samples(p, SND_ROCKET) == rocket);
-        else ACHECK(mine.samples(p, SND_ROCKET) == plain.samples(p, SND_ROCKET));
-    }
+    ACHECK(std::fabs(peakOf(mine.samples(SND_SHOTGUN)) - 0.1f) > 0.05f);   // (DEFAULT's shotgun is far louder than 0.1)
+    ACHECK(near(peakOf(mine.samples(SND_HIT_MED)), 0.1f));
+    ACHECK(near(peakOf(mine.samples(SND_SNIPER)), 1.0f));
+    ACHECK(near(peakOf(mine.samples(SND_VOICE_GO)), 0.1f));
+    ACHECK(std::fabs(peakOf(mine.samples(SND_VOICE_ONE)) - 0.1f) > 0.05f);
     fs::remove_all(root, ec);
     overrides::useUserFolder(true);
     ACHECK(overrides::soundLevels().find("rocket") == std::string::npos);
@@ -941,7 +923,8 @@ static void testExport() {
     }
     size_t official = 0;
     for (const OfficialMapData* m = kOfficialMapData; m->name; m++) official++;
-    ACHECK(sounds == (size_t)Audio::kPacks * SND_VOICE_THREE);
+    ACHECK(sounds == (size_t)SND_VOICE_THREE);   // (one kit, DEFAULT)
+    ACHECK(man.find("\"sounds/heavy_metal/") == std::string::npos && man.find("\"sounds/mouth/") == std::string::npos);
     ACHECK(voices - quips == (size_t)kAnnouncerVoices * (SND_COUNT - SND_VOICE_THREE));
     ACHECK(quips >= (size_t)kAnnouncerVoices);   // (every voice has its quips: the default set, or the shipped quips/ files)
     ACHECK(models == (size_t)kPlayerModels + 27 && maps == official && missing == 0);   // (the players, 11 weapons, 7 projectiles, the crown, 8 props)
@@ -959,12 +942,12 @@ static void testVoiceSteal() {
     a.startOffline();
     a.setAnnouncer(1);   // (loads the lines: the default voice isn't loaded until the game picks it)
     int line = -1, shortFx = -1, longFx = -1;
-    for (int id = SND_VOICE_THREE; id < SND_COUNT; id++) if (a.samples(0, id).size() > (size_t)Audio::kRate / 2) { line = id; break; }
+    for (int id = SND_VOICE_THREE; id < SND_COUNT; id++) if (a.samples(id).size() > (size_t)Audio::kRate / 2) { line = id; break; }
     for (int id = 0; id < SND_VOICE_THREE; id++) {
-        size_t n = a.samples(0, id).size();
+        size_t n = a.samples(id).size();
         if (n < 100) continue;
-        if (n < (size_t)Audio::kRate / 5 && (shortFx < 0 || n < a.samples(0, shortFx).size())) shortFx = id;
-        if (n > (size_t)Audio::kRate / 2 && (longFx < 0 || n > a.samples(0, longFx).size())) longFx = id;
+        if (n < (size_t)Audio::kRate / 5 && (shortFx < 0 || n < a.samples(shortFx).size())) shortFx = id;
+        if (n > (size_t)Audio::kRate / 2 && (longFx < 0 || n > a.samples(longFx).size())) longFx = id;
     }
     ACHECK(line >= 0 && shortFx >= 0 && longFx >= 0);
     if (line < 0 || shortFx < 0 || longFx < 0) { a.stop(); return; }
@@ -976,7 +959,7 @@ static void testVoiceSteal() {
         if (i % 16 == 15) a.mix(out.data(), 16);
     }
     a.play(line, 1.0f);                                      // the newest: the last slot
-    for (size_t done = 0; done < a.samples(0, shortFx).size() + 2048; done += 512) a.mix(out.data(), 512);   // the short one ends
+    for (size_t done = 0; done < a.samples(shortFx).size() + 2048; done += 512) a.mix(out.data(), 512);   // the short one ends
     ACHECK(a.voicesPlaying(shortFx) == 0 && a.voicesPlaying(line) == 1);
     a.play(longFx, 1.0f);                                    // full again...
     a.play(longFx, 1.0f);                                    // ...and one more: an effect makes room
@@ -995,8 +978,8 @@ static void testCategoryVolumes() {
     a.setAnnouncer(1);   // (loads the lines)
     a.setMasterVolume(0.5f);
     int line = -1;
-    for (int id = SND_VOICE_THREE; id < SND_COUNT; id++) if (a.samples(0, id).size() > (size_t)Audio::kRate / 4) { line = id; break; }
-    ACHECK(line >= 0 && a.samples(0, SND_RIFLE).size() > 2048);
+    for (int id = SND_VOICE_THREE; id < SND_COUNT; id++) if (a.samples(id).size() > (size_t)Audio::kRate / 4) { line = id; break; }
+    ACHECK(line >= 0 && a.samples(SND_RIFLE).size() > 2048);
     ACHECK(a.categoryGain(SND_HIT) == 1.0f && a.categoryGain(SND_VOICE_GO) == 1.0f);   // (the defaults: as before)
     auto energy = [&](int id, float fx, float ann) {   // the first 1024 frames of one sound at these volumes
         a.setEffectsVolume(fx);
@@ -1060,11 +1043,11 @@ static void testQuips() {
                 if (k > 0) ACHECK(a.quipName(k - 1) < name);   // (sorted)
                 int line = -1;
                 for (int id = SND_VOICE_THREE; id < SND_COUNT; id++) if (name == Audio::soundName(id)) line = id;
-                ACHECK(line >= 0 && isDefaultQuip(line) && a.samples(0, SND_QUIP + k) == a.samples(0, line) && a.hasSound(SND_QUIP + k));
+                ACHECK(line >= 0 && isDefaultQuip(line) && a.samples(SND_QUIP + k) == a.samples(line) && a.hasSound(SND_QUIP + k));
                 for (int id = SND_VOICE_THREE; id < SND_COUNT; id++)   // (no call-out sounds like it)
-                    if (!isDefaultQuip(id) && !a.samples(0, id).empty()) ACHECK(a.samples(0, SND_QUIP + k) != a.samples(0, id));
+                    if (!isDefaultQuip(id) && !a.samples(id).empty()) ACHECK(a.samples(SND_QUIP + k) != a.samples(id));
             }
-            ACHECK(!a.hasSound(SND_QUIP + n) && a.samples(0, SND_QUIP + n).empty());
+            ACHECK(!a.hasSound(SND_QUIP + n) && a.samples(SND_QUIP + n).empty());
             // the sender's pick (one byte, the same for everyone): modulo the listener's set
             for (int pick : {0, 1, 7, 8, 200, 255}) ACHECK(a.quipFor(pick) == pick % n);
         }
@@ -1088,9 +1071,9 @@ static void testQuips() {
         a.startOffline();
         printf("  MALE with 2 quip files: %d quips (%s, %s)\n", a.quipCount(), a.quipName(0).c_str(), a.quipName(1).c_str());
         ACHECK(a.quipCount() == 2 && a.quipName(0) == "CHEER" && a.quipName(1) == "LAUGH");
-        ACHECK(std::fabs(peakOf(a.samples(0, SND_QUIP + 1)) - 0.1f) < 0.004f);           // LAUGH: listed, its own level
-        ACHECK(peakOf(a.samples(0, SND_QUIP)) > 0.2f && a.samples(0, SND_QUIP).size() > 9000);   // CHEER: matched, at the mix rate
-        for (int id = SND_VOICE_THREE; id < SND_COUNT; id++) ACHECK(a.samples(0, SND_QUIP) != a.samples(0, id));
+        ACHECK(std::fabs(peakOf(a.samples(SND_QUIP + 1)) - 0.1f) < 0.004f);           // LAUGH: listed, its own level
+        ACHECK(peakOf(a.samples(SND_QUIP)) > 0.2f && a.samples(SND_QUIP).size() > 9000);   // CHEER: matched, at the mix rate
+        for (int id = SND_VOICE_THREE; id < SND_COUNT; id++) ACHECK(a.samples(SND_QUIP) != a.samples(id));
         for (int pick : {0, 1, 2, 255}) ACHECK(a.quipFor(pick) == pick % 2);
         a.setAnnouncer(1);   // FEMALE: no files of its own, the default set
         ACHECK(a.quipCount() == (int)(sizeof(kDefaultQuips) / sizeof(kDefaultQuips[0])) && a.quipName(0) == "AIR_ROCKET");

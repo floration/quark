@@ -68,10 +68,11 @@ apart.
 
 - A new asset starts as `ai` unless the repository shows otherwise.
 - Evidence the tool applies by itself (`tools/provenance.py sync`): a file at the asset's path in `assets/overrides/`,
-  a recording in `assets/sfx/custom/`, or a map with a `handmade` line makes that item `human`. A HEAVY METAL /
-  MAGICAL / MOUTH sound that tools/import_sfx.py's `KITS` table mixes from Kenney clips is `third-party` (CC0,
-  assets/sfx/CREDITS.md); one it mixes only from the owner's recordings (MOUTH's hitsound tiers) is `human`; a sound a
-  kit doesn't have falls back to DEFAULT's (synthesized: `ai`). Fonts with a licence file next to
+  a recording in `assets/sfx/custom/`, or a map with a `handmade` line makes that item `human`. The game ships one sound
+  kit, DEFAULT (synthesized: `ai`); the other kits were removed for now (2026-11-10), so only `sounds/default/` items
+  are listed. Should a kit come back, a sound that tools/import_sfx.py's `KITS` table mixes from Kenney clips is
+  `third-party` (CC0, assets/sfx/CREDITS.md), one it mixes only from the owner's recordings `human`, and a sound a
+  kit doesn't have falls back to DEFAULT's (`ai`). Fonts with a licence file next to
   them (`<family>-OFL.txt`, `-LICENSE.txt` or `-COPYING.txt`, the font's file name starting with `<family>`) are
   `third-party`.
   Removed assets are dropped; new ones are added as `ai`.

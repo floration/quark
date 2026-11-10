@@ -59,8 +59,9 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "browser_max_ping") browserMaxPing = std::min(std::max(iv, 0), 1000);
         else if (k == "fav_servers") favServers = v;
         else if (k == "recent_servers") recentServers = v;
+        // (soundpack, hit_pack, force_pack: gone with the sound packs, 2026-11-10; an old file's lines are ignored, so it
+        // loads as DEFAULT)
         else if (k == "hit_volume") { if (std::isfinite(fv)) hitVolume = clampf(fv, 0, 2); }
-        else if (k == "hit_pack") hitPack = std::min(std::max(iv, -1), 4);
         else if (k == "headshot_sound") headshotSound = iv != 0;
         else if (k == "kill_sound") killSound = iv != 0;
         else if (k == "hud_size") { if (std::isfinite(fv)) hudSize = clampf(fv, 0.5f, 2.0f); }
@@ -214,7 +215,6 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "vol_db") volDb = iv != 0;
         else if (k == "vol_perceptual") volPerceptual = iv != 0;
         else if (k == "audio_latency") audioLatency = std::min(std::max(iv, 0), 2);
-        else if (k == "force_pack") forcePack = iv != 0;
         else if (k == "streak_calls") streakCalls = std::min(std::max(iv, 0), 2);
         else if (k == "time_warn") timeWarn = std::min(std::max(iv, 0), 2);
         else if (k == "time_warn_text") timeWarnText = iv != 0;
@@ -271,7 +271,6 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "height") height = iv;
         else if (k == "shadows") shadows = iv != 0;
         else if (k == "model") model = (iv >= 0 && iv < kPlayerModels) ? iv : 0;
-        else if (k == "soundpack") soundPack = (iv >= 0 && iv < kSoundPacks) ? iv : 0;
         else if (k == "name_color") { char* e = nullptr; long c = strtol(v.c_str(), &e, 16); nameColor = !v.empty() && v != "-1" && e && !*e && c >= 0 && c <= 0xFFFFFF ? (int)c : -1; }
         else if (k == "health_bars_117") hbMigrated = iv != 0;
         else if (k == "player_emit_v2") emitMigrated = iv != 0;
@@ -444,7 +443,7 @@ void Settings::save() const {
 
 std::string Settings::toText() const {
     std::ostringstream f;
-    f << "name=" << name << "\nsensitivity=" << sensitivity << "\ndpi=" << dpi << "\nsens_y=" << sensY << "\ninvert_y=" << invertY << "\nzoom_sens=" << zoomSens << "\nscore_toggle=" << scoreToggle << "\nhit_volume=" << hitVolume << "\nhit_pack=" << hitPack << "\nheadshot_sound=" << headshotSound << "\nkill_sound=" << killSound << "\nhud_size=" << hudSize << "\nfeed_time=" << feedTime << "\nfeed_lines=" << feedLines << "\nfeed_mine=" << feedMine << "\nchat_time=" << chatTime << "\nchat_lines=" << chatLines << "\nchat_opacity=" << chatOpacity
+    f << "name=" << name << "\nsensitivity=" << sensitivity << "\ndpi=" << dpi << "\nsens_y=" << sensY << "\ninvert_y=" << invertY << "\nzoom_sens=" << zoomSens << "\nscore_toggle=" << scoreToggle << "\nhit_volume=" << hitVolume  << "\nheadshot_sound=" << headshotSound << "\nkill_sound=" << killSound << "\nhud_size=" << hudSize << "\nfeed_time=" << feedTime << "\nfeed_lines=" << feedLines << "\nfeed_mine=" << feedMine << "\nchat_time=" << chatTime << "\nchat_lines=" << chatLines << "\nchat_opacity=" << chatOpacity
       << "\nshow_fps=" << showFps << "\nshow_ping=" << showPing << "\nhide_hud_crosshair=" << hideHudCrosshair << "\nfog=" << fog << "\ngamma=" << gamma << "\ncontrast=" << contrast << "\nsaturation=" << saturation << "\ncpu_priority=" << cpuPriority << "\nscroll_wrap=" << scrollWrap << "\nscroll_skip=" << scrollSkip
       << "\nauto_iconify=" << autoIconify << "\nremember_tab=" << rememberTab << "\nlast_tab=" << lastTab << "\nconfirm_leave=" << confirmLeave << "\nvrr=" << vrr << "\ncaptions=" << captions << "\nhp_scaled=" << hpScaled << "\nvol_steps=" << volSteps << "\nvol_others_steps=" << volOthersSteps << "\nvol_weapons=" << volWeapons << "\nvol_objective=" << volObjective << "\nenemy_model=" << enemyModel << "\nteam_model=" << teamModel << "\nplayer_anims=" << playerAnims << "\ngrapple_toggle=" << grappleToggle << "\nleft_handed=" << leftHanded << "\nauto_reconnect=" << autoReconnect << "\nqueue_flash=" << queueFlash << "\nghost=" << ghost << "\nteam_panel=" << teamPanel << "\nmatch_summary=" << matchSummary;
     f << "\ntone_curve=" << toneCurve << "\ndither=" << dither << "\nout10=" << out10 << "\nclean_surfaces=" << cleanSurfaces << "\npattern_fade=" << patternFade << "\nfade_dist=" << fadeDist << "\nfade_len=" << fadeLen << "\nflat_light=" << flatLight << "\nsimple_sky=" << simpleSky << "\nfar_scenery=" << farScenery << "\ndraw_dist=" << drawDist
@@ -453,7 +452,7 @@ std::string Settings::toText() const {
       << "\nfixed_teams=" << fixedTeams << "\nteam_a_color=" << colorHex(teamAColor) << "\nteam_b_color=" << colorHex(teamBColor) << "\ntracer_mode=" << tracerMode << "\ntracer_color=" << colorHex(tracerColor) << "\nrope_color=" << colorHex(ropeColor)
       << "\ntrails=" << trails << "\ntrail_opacity=" << trailOpacity << "\nreduce_flash=" << reduceFlash << "\nsafe_colors=" << safeColors << "\nit_palette=" << itPalette << "\nsplit_palette=" << splitPalette << "\nsplit_words=" << splitWords
       << "\nfov_mode=" << fovMode << "\nchannels=" << channels << "\nbg_volume=" << bgVolume << "\nstereo_width=" << stereoWidth << "\nbehind_muffle=" << behindMuffle << "\nhear_range=" << hearRange << "\nocclusion=" << occlusion << "\ndyn_range=" << dynRange
-      << "\nvol_db=" << volDb << "\nvol_perceptual=" << volPerceptual << "\naudio_latency=" << audioLatency << "\nforce_pack=" << forcePack << "\nstreak_calls=" << streakCalls << "\ntime_warn=" << timeWarn << "\ntime_warn_text=" << timeWarnText
+      << "\nvol_db=" << volDb << "\nvol_perceptual=" << volPerceptual << "\naudio_latency=" << audioLatency  << "\nstreak_calls=" << streakCalls << "\ntime_warn=" << timeWarn << "\ntime_warn_text=" << timeWarnText
       << "\ncue_mute=" << cueMute << "\nann_mute=" << annMute << "\nsound_viz=" << soundViz << "\nnet_graph=" << netGraph << "\ncmd_redundancy=" << cmdRedundancy << "\nmap_downloads=" << mapDownloads << "\nmap_cache_max=" << mapCacheMax
       << "\nlight_cache_max=" << lightCacheMax << "\nbake_threads=" << bakeThreads << "\nlatent_safety_us=" << latentSafetyUs << "\nlatent_slow=" << latentSlow << "\nbypass_compositor=" << bypassCompositor << "\ncursor_size=" << cursorSize
       << "\ncursor_color=" << cursorColor << "\nuse_toggle=" << useToggle << "\nch_spread=" << chSpread << "\nch_cooldown=" << chCooldown << "\nch_pixels=" << chPixels;
@@ -472,7 +471,7 @@ std::string Settings::toText() const {
        << "\nfov=" << fov << "\nbrightness=" << brightness << "\ndisplay_default=1" << "\ndisplay_mode=" << displayMode
       << "\npresent_mode=" << presentMode << "\nlatent_offset_us=" << latentOffsetUs << "\ngpu_max_clocks=" << gpuMaxClocks << "\ndisable_fso=" << disableFso << "\nearly_flush=" << earlyFlush << "\ncpu_latch=" << cpuLatch << "\ngpu_latch=" << gpuLatch << "\nhud_first=" << hudFirst << "\nfast_world=" << fastWorld << "\nprioritize=" << prioritize << "\nlow_latency=" << lowLatency << "\ninterp_ms=" << interpMs
       << "\nmaxfps=" << maxFps << "\nwidth=" << width << "\nheight=" << height << "\nwin_x=" << winX << "\nwin_y=" << winY << "\nbg_fps=" << bgFps << "\nbg_mute=" << bgMute << "\nbg_draw=" << bgDraw
-      << "\nshadows=" << shadows << "\nmsaa=" << msaa << "\nrender_scale=" << renderScale << "\nrender_sharpen=" << renderSharpen << "\nmodel=" << model << "\nsoundpack=" << soundPack << "\nname_color=" << nameColorText() << "\nhealth_bars_117=1" << "\nplayer_emit_v2=1" << "\nsocd=" << socd << "\nalt_toggle=" << altToggle
+      << "\nshadows=" << shadows << "\nmsaa=" << msaa << "\nrender_scale=" << renderScale << "\nrender_sharpen=" << renderSharpen << "\nmodel=" << model << "\nname_color=" << nameColorText() << "\nhealth_bars_117=1" << "\nplayer_emit_v2=1" << "\nsocd=" << socd << "\nalt_toggle=" << altToggle
       << "\nhud_verbose=" << hudVerbose << "\nhud_widgets=" << hudWidgets << "\nshadowres=" << shadowRes << "\nvolume=" << volume << "\nvolume_effects=" << volumeEffects << "\nvolume_announcer=" << volumeAnnouncer << "\nquips=" << quips << "\nvolume_quips=" << volumeQuips << "\nhitsounds=" << hitsounds << "\nexclusive_audio=" << exclusiveAudio
       << "\naudio_output=" << audioOutput << "\naudio_input=" << audioInput << "\nmonitor=" << monitor << "\nfullscreen_hz=" << fullscreenHz << "\nannouncer=" << announcer << "\nvoice=" << announcerVoice << "\nfullbright=" << fullbright << "\nown_shots=" << ownShots << "\nenemy_shots=" << enemyShots << "\nimpact_sparks=" << impactSparks << "\nmuzzle_flash=" << muzzleFlash << "\nviewmodel_opacity=" << viewmodelOpacity << "\nhealth_bars=" << healthBars << "\nhealth_bars_bottom=" << healthBarsBottom
       << "\nscope_opacity=" << scopeOpacity << "\nsticky_counter=" << stickyCounter << "\ncrowns=" << crowns << "\nchat_off=" << chatOff << "\ndmg_nums=" << dmgNums << "\ndmg_num_scale=" << dmgNumScale << "\ndamage_flash=" << damageFlash << "\nzoom_fov_sniper=" << zoomFovSniper << "\nzoom_fov_rifle=" << zoomFovRifle << "\nfullbright_color=" << colorHex(fullbrightColor) << "\ndiscord=" << discordName << "\nui_font=" << uiFont << "\nlanguage=" << language << "\ndemo_full_rate=" << demoFullRate << "\noutline_friendly=" << outlineFriendly << "\noutline_enemy=" << outlineEnemy << "\noutline_player_width=" << outlinePlayer << "\noutline_world_width=" << outlineWorld

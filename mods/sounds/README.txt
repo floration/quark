@@ -1,10 +1,10 @@
 YOUR OWN SOUNDS (no programming needed)
 
-Put a .wav file named after a sound into a kit's folder here, then start the game:
-  mods/sounds/<kit>/<SOUND>.wav     replaces that sound in that kit
-  mods/sounds/all/<SOUND>.wav       replaces it in every kit (a kit's own folder wins)
-Kits (Settings > SOUND PACK): default, heavy_metal, magical, retro, mouth
-Example: mods/sounds/all/ROCKET.wav gives every kit your rocket sound.
+Put a .wav file named after a sound into the default folder here, then start the game:
+  mods/sounds/default/<SOUND>.wav   replaces that sound
+  mods/sounds/all/<SOUND>.wav       works too (from when there were several sound packs; default/ wins)
+The game has one sound kit, DEFAULT. Folders of the old packs (heavy_metal, magical, retro, mouth) are ignored.
+Example: mods/sounds/default/ROCKET.wav gives you your own rocket sound.
 
 WAV only: 8, 16 or 24-bit PCM or 32-bit float, any sample rate, mono or stereo.
 The game trims silence at the start, cuts it at 3 seconds and matches its loudness to the sound it replaces.

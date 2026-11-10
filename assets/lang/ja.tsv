@@ -1042,8 +1042,6 @@ FONTS GO IN MODS/FONTS; ASSETS IN OVERRIDES/	フォントは MODS/FONTS へ; ア
 FOR	対象
 FOR A VARIABLE REFRESH MONITOR	可変リフレッシュレートモニター用
 FOR THE NEXT LAUNCH	次回起動時
-FORCE MY PACK	自分のパックを強制
-FORCE MY PACK: EVERYONE IN YOUR SOUND PACK	自分のパックを強制: 全員を自分のサウンドパックで
 FORCE PLAYER MODELS	プレイヤーモデルを強制
 FORCE START	強制開始
 FORMAT: PNG	形式: PNG
@@ -1273,12 +1271,6 @@ HITSCAN ONLY	ヒットスキャンのみ
 HITSOUND	ヒット音
 HITSOUND TIERS	ヒット音の段階
 HITSOUND VOLUME	ヒット音量
-HITSOUND: DEFAULT	ヒット音: デフォルト
-HITSOUND: HEAVY METAL	ヒット音: ヘヴィメタル
-HITSOUND: MAGICAL	ヒット音: マジカル
-HITSOUND: MOUTH	ヒット音: 口
-HITSOUND: MY SOUND PACK	ヒット音: 自分のサウンドパック
-HITSOUND: RETRO	ヒット音: レトロ
 HITSOUNDS	ヒット音
 HOLD ALL THREE	3 つとも押し続ける
 HOLD BOTH	両方押し続ける
@@ -2437,7 +2429,7 @@ NVIDIA THREADED OPTIMIZATION IS ON	NVIDIA のスレッド最適化がオン
 NVIDIA TRIPLE BUFFERING IS ON	NVIDIA のトリプルバッファリングがオン
 NVIDIA VERTICAL SYNC IS FORCED ON	NVIDIA が垂直同期を強制オン
 NW	NW
-Name, mouse sensitivity (or cm/360 with your DPI), field of view, team and enemy colours, volume, hit sounds, the announcer (off / countdown / all calls; male or female voice), player model and sound pack.	名前、マウス感度 (またはDPIからcm/360)、視野角、味方と敵の色、音量、ヒット音、アナウンサー (オフ / カウントダウン / すべて; 男性または女性の声)、プレイヤーモデルとサウンドパック。
+Name, mouse sensitivity (or cm/360 with your DPI), field of view, team and enemy colours, volume, hit sounds, the announcer (off / countdown / all calls; male or female voice) and player model.	名前、マウス感度 (またはDPIからcm/360)、視野角、味方と敵の色、音量、ヒット音、アナウンサー (オフ / カウントダウン / すべて; 男性または女性の声)、プレイヤーモデル。
 New map	新しいマップ
 OBJ	OBJ
 OBJECTIVE	目標
@@ -3065,13 +3057,7 @@ SOUND	サウンド
 SOUND GROUPS	サウンドグループ
 SOUND OCCLUSION	音の遮蔽
 SOUND ON	サウンド オン
-SOUND PACK: DEFAULT	サウンドパック: デフォルト
-SOUND PACK: HEAVY METAL	サウンドパック: ヘヴィメタル
-SOUND PACK: MAGICAL	サウンドパック: マジカル
-SOUND PACK: MOUTH	サウンドパック: 口
-SOUND PACK: RETRO	サウンドパック: レトロ
 SOUND SWITCHES TO IT AT ONCE	音声はすぐに切り替わります
-SOUNDS	サウンド
 SOUNDS BEHIND WALLS MUFFLED: YOU HEAR LESS	壁の向こうの音がこもる: 聞こえにくくなる
 SPACE	SPACE
 SPARE TIME BEFORE THE BLANK; A LATE FRAME	ブランク前の余裕時間; 遅れたフレームは

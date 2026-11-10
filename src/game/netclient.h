@@ -122,7 +122,7 @@ public:
     std::string playerName(int id) const;
     const std::string& nameRef(int id) const;   // playerName without the copy (valid until the next poll / playback)
     int playerModel(int id) const { return id >= 0 && id < kMaxPlayers ? models_[id] : 0; }
-    int playerSoundPack(int id) const { return id >= 0 && id < kMaxPlayers ? packs_[id] : 0; }
+    int playerSoundPack(int id) const { return id >= 0 && id < kMaxPlayers ? packs_[id] : 0; }   // (kept for the demo re-emit; sounds are DEFAULT for everyone since 2026-11-10)
     uint16_t playerNameColor(int id) const { return id >= 0 && id < kMaxPlayers ? nameColors_[id] : 0; }   // RGB565, 0 = default
     const std::string& rankId(int id) const { static const std::string none; return id >= 0 && id < kMaxPlayers ? rankIds_[id] : none; }
 

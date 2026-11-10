@@ -1042,8 +1042,6 @@ FONTS GO IN MODS/FONTS; ASSETS IN OVERRIDES/	폰트는 MODS/FONTS에; 에셋은 
 FOR	대상
 FOR A VARIABLE REFRESH MONITOR	가변 주사율 모니터용
 FOR THE NEXT LAUNCH	다음 실행 시
-FORCE MY PACK	내 팩 강제 적용
-FORCE MY PACK: EVERYONE IN YOUR SOUND PACK	내 팩 강제 적용: 모든 플레이어에 내 사운드 팩 사용
 FORCE PLAYER MODELS	플레이어 모델 강제 적용
 FORCE START	강제 시작
 FORMAT: PNG	형식: PNG
@@ -1273,12 +1271,6 @@ HITSCAN ONLY	히트스캔만
 HITSOUND	타격음
 HITSOUND TIERS	타격음 단계
 HITSOUND VOLUME	타격음 볼륨
-HITSOUND: DEFAULT	타격음: 기본
-HITSOUND: HEAVY METAL	타격음: 헤비 메탈
-HITSOUND: MAGICAL	타격음: 마법
-HITSOUND: MOUTH	타격음: 입소리
-HITSOUND: MY SOUND PACK	타격음: 내 사운드 팩
-HITSOUND: RETRO	타격음: 레트로
 HITSOUNDS	타격음
 HOLD ALL THREE	세 개 모두 누르기
 HOLD BOTH	둘 다 누르기
@@ -2437,7 +2429,7 @@ NVIDIA THREADED OPTIMIZATION IS ON	NVIDIA 스레드 최적화가 켜져 있음
 NVIDIA TRIPLE BUFFERING IS ON	NVIDIA 트리플 버퍼링이 켜져 있음
 NVIDIA VERTICAL SYNC IS FORCED ON	NVIDIA가 수직 동기를 강제로 켜짐
 NW	NW
-Name, mouse sensitivity (or cm/360 with your DPI), field of view, team and enemy colours, volume, hit sounds, the announcer (off / countdown / all calls; male or female voice), player model and sound pack.	이름, 마우스 감도 (또는 DPI 기준 cm/360), 시야각, 팀 및 적 색상, 볼륨, 타격음, 아나운서 (끄기 / 카운트다운 / 모든 안내; 남성 또는 여성 음성), 플레이어 모델 및 사운드 팩.
+Name, mouse sensitivity (or cm/360 with your DPI), field of view, team and enemy colours, volume, hit sounds, the announcer (off / countdown / all calls; male or female voice) and player model.	이름, 마우스 감도 (또는 DPI 기준 cm/360), 시야각, 팀 및 적 색상, 볼륨, 타격음, 아나운서 (끄기 / 카운트다운 / 모든 안내; 남성 또는 여성 음성), 플레이어 모델.
 New map	새 맵
 OBJ	목표
 OBJECTIVE	목표
@@ -3065,13 +3057,7 @@ SOUND	사운드
 SOUND GROUPS	사운드 그룹
 SOUND OCCLUSION	소리 차폐
 SOUND ON	소리 켜기
-SOUND PACK: DEFAULT	사운드 팩: 기본
-SOUND PACK: HEAVY METAL	사운드 팩: 헤비 메탈
-SOUND PACK: MAGICAL	사운드 팩: 마법
-SOUND PACK: MOUTH	사운드 팩: 입소리
-SOUND PACK: RETRO	사운드 팩: 레트로
 SOUND SWITCHES TO IT AT ONCE	소리가 즉시 전환됨
-SOUNDS	사운드
 SOUNDS BEHIND WALLS MUFFLED: YOU HEAR LESS	벽 너머 소리 먹먹하게: 덜 들림
 SPACE	SPACE
 SPARE TIME BEFORE THE BLANK; A LATE FRAME	블랭크 전 여유 시간; 지연된 프레임은

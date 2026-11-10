@@ -1013,7 +1013,6 @@ private:
     // 1.19.4 settings, batch 3 (VIDEO + AUDIO > MORE 2 / 4 / 5 / 6, CROSSHAIR)
     float hfov() const;                       // FOV MODE: the horizontal degrees the camera takes
     Vec3 tracerColorFor(int shooter) const;   // TRACER COLOR
-    int soundPackOf(int id) const { return cfg_.forcePack ? -1 : net_.playerSoundPack(id); }   // FORCE MY SOUND PACK
     float masterGain() const;                 // VOLUME as a gain (PERCEPTUAL: squared; unfocused: x BACKGROUND VOLUME)
     void applyLive();                         // the batch's settings into the renderer / mixer / net (each frame: a few compares)
     void drawNetGraph(float W, float H, float s);

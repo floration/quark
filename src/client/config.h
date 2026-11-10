@@ -55,7 +55,6 @@ struct Settings {
                                 // server when hosting if you alt tab it should only pause the frame generation")
     bool shadows = true;
     int model = 0;              // player model (cosmetic): an index into kPlayerModelNames (gamedefs.h: STANDARD .. GOALIE, 64), picked in the PLAYER MODEL picker
-    int soundPack = 0;          // DEFAULT, HEAVY METAL, MAGICAL, RETRO, WOODEN
     int nameColor = -1;         // your name's colour as others see it (0xRRGGBB; -1 = the default)
     bool hbMigrated = false;    // (1.17: health bars were switched on once for every existing config)
     int socd = 0;               // opposite movement keys held together: 0 cancel out, 1 last pressed wins, 2 first pressed wins
@@ -76,7 +75,6 @@ struct Settings {
     float volObjective = 1.0f;         // VIDEO > MORE 3: the planted bomb's beep (faster as it runs down)
     float volSteps = 1.0f, volOthersSteps = 1.0f, volWeapons = 1.0f;   // VIDEO > MORE 3: your footsteps, everyone else's (up to 2: louder), gunfire
     float hitVolume = 1.0f;        // VIDEO > MORE: the hitsound's own volume (x EFFECTS VOLUME; up to 2)
-    int hitPack = -1;              // ...which sound pack's hitsound (-1 = your SOUNDS pack)
     bool headshotSound = true;     // ...a higher ding on a headshot
     bool killSound = true;         // ...the kill sound (its own switch; was only with HITSOUND)
     float hudSize = 1.0f;          // VIDEO > MORE: every HUD element's size at once (x each element's own SIZE)
@@ -178,7 +176,6 @@ struct Settings {
     bool volDb = false;            // ...volumes shown in dB
     bool volPerceptual = false;    // ...VOLUME's slider on a perceptual curve (the gain is its square)
     int audioLatency = 1;          // ...0 low, 1 normal, 2 safe (more queued: no crackle on a busy PC)
-    bool forcePack = false;        // ...everyone's sounds in your SOUND PACK
     int streakCalls = 0;           // ...killstreaks: 0 everyone's, 1 only yours, 2 none
     int timeWarn = 1;              // ...time left: 0 off, 1 one minute + 30 s, 2 also a count of the last 10 s
     bool timeWarnText = false;     // ...and as text on screen

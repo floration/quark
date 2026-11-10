@@ -1042,8 +1042,6 @@ FONTS GO IN MODS/FONTS; ASSETS IN OVERRIDES/	ШРИФТЫ - В MODS/FONTS; РЕ�
 FOR	ДЛЯ
 FOR A VARIABLE REFRESH MONITOR	ДЛЯ МОНИТОРА С VRR
 FOR THE NEXT LAUNCH	ПРИ СЛЕДУЮЩЕМ ЗАПУСКЕ
-FORCE MY PACK	МОЙ ПАК ДЛЯ ВСЕХ
-FORCE MY PACK: EVERYONE IN YOUR SOUND PACK	МОЙ ПАК ДЛЯ ВСЕХ: ВСЕ ЗВУЧАТ ВАШИМ ЗВУКПАКОМ
 FORCE PLAYER MODELS	ФИКС. МОДЕЛИ ИГРОКОВ
 FORCE START	ФОРС-СТАРТ
 FORMAT: PNG	ФОРМАТ: PNG
@@ -1273,12 +1271,6 @@ HITSCAN ONLY	ТОЛЬКО ХИТСКАН
 HITSOUND	ХИТСАУНД
 HITSOUND TIERS	УРОВНИ ХИТСАУНДА
 HITSOUND VOLUME	ГРОМКОСТЬ ХИТСАУНДА
-HITSOUND: DEFAULT	ХИТСАУНД: СТАНДАРТНЫЙ
-HITSOUND: HEAVY METAL	ХИТСАУНД: ХЕВИ-МЕТАЛ
-HITSOUND: MAGICAL	ХИТСАУНД: МАГИЯ
-HITSOUND: MOUTH	ХИТСАУНД: РОТОМ
-HITSOUND: MY SOUND PACK	ХИТСАУНД: МОЙ ЗВУКПАК
-HITSOUND: RETRO	ХИТСАУНД: РЕТРО
 HITSOUNDS	ХИТСАУНДЫ
 HOLD ALL THREE	ДЕРЖИ ВСЕ ТРИ
 HOLD BOTH	ДЕРЖИ ОБЕ
@@ -2437,7 +2429,7 @@ NVIDIA THREADED OPTIMIZATION IS ON	ПОТОЧНАЯ ОПТИМИЗАЦИЯ NVIDI
 NVIDIA TRIPLE BUFFERING IS ON	ТРОЙНАЯ БУФЕРИЗАЦИЯ NVIDIA ВКЛЮЧЕНА
 NVIDIA VERTICAL SYNC IS FORCED ON	NVIDIA ПРИНУДИТЕЛЬНО ВКЛЮЧАЕТ ВЕРТ. СИНХР.
 NW	NW
-Name, mouse sensitivity (or cm/360 with your DPI), field of view, team and enemy colours, volume, hit sounds, the announcer (off / countdown / all calls; male or female voice), player model and sound pack.	Имя, чувствительность мыши (или см/360 с вашим DPI), поле зрения, цвета команды и врагов, громкость, хитсаунды, комментатор (выкл / отсчёт / все фразы; мужской или женский голос), модель игрока и звукпак.
+Name, mouse sensitivity (or cm/360 with your DPI), field of view, team and enemy colours, volume, hit sounds, the announcer (off / countdown / all calls; male or female voice) and player model.	Имя, чувствительность мыши (или см/360 с вашим DPI), поле зрения, цвета команды и врагов, громкость, хитсаунды, комментатор (выкл / отсчёт / все фразы; мужской или женский голос) и модель игрока.
 New map	Новая карта
 OBJ	ЦЕЛЬ
 OBJECTIVE	ЦЕЛЬ
@@ -3065,13 +3057,7 @@ SOUND	ЗВУК
 SOUND GROUPS	ГРУППЫ ЗВУКОВ
 SOUND OCCLUSION	ОККЛЮЗИЯ ЗВУКА
 SOUND ON	ЗВУК ВКЛ
-SOUND PACK: DEFAULT	ЗВУКПАК: СТАНДАРТНЫЙ
-SOUND PACK: HEAVY METAL	ЗВУКПАК: ХЕВИ-МЕТАЛ
-SOUND PACK: MAGICAL	ЗВУКПАК: МАГИЯ
-SOUND PACK: MOUTH	ЗВУКПАК: РОТОМ
-SOUND PACK: RETRO	ЗВУКПАК: РЕТРО
 SOUND SWITCHES TO IT AT ONCE	ЗВУК СРАЗУ ПЕРЕКЛЮЧАЕТСЯ НА НЕГО
-SOUNDS	ЗВУКИ
 SOUNDS BEHIND WALLS MUFFLED: YOU HEAR LESS	ЗВУКИ ЗА СТЕНАМИ ПРИГЛУШЕНЫ: СЛЫШНО МЕНЬШЕ
 SPACE	SPACE
 SPARE TIME BEFORE THE BLANK; A LATE FRAME	ЗАПАС ВРЕМЕНИ ДО ГАШЕНИЯ; ПОЗДНИЙ КАДР
