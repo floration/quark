@@ -133,7 +133,8 @@ def core(k):
 
 
 def stairs(k):
-    """the outside flights: steel deck treads, a scaffold post each side of the top, warning paint on the first step"""
+    """the outside flights: steel deck treads, a scaffold post each side of the top (flush on the flight), warning
+    paint on the first step"""
     for (x0, z0, x1, z1, y, r) in LANDINGS:
         k.box("steeldeckplate", x0, y - 0.3, z0, x1, y, z1)
         xr = x1 - 0.1 if r else x0
@@ -144,14 +145,16 @@ def stairs(k):
             xe = (x1 - 0.3) if r > 0 else (x0 + 0.3)
             for z in (z0 - 0.15, z1 + 0.15):
                 if any(f[4] == t and inside(f, xe, z) for f in FLOORS): continue   # (not where you step off sideways)
-                k.box("galvanizedsteel", xe - 0.075, b, z - 0.075, xe + 0.075, t + 1.1, z + 0.075)
+                zc = z + 0.075 if z < z0 else z - 0.075   # (flush on the flight's side: no slit between them)
+                k.box("galvanizedsteel", xe - 0.075, b, zc - 0.075, xe + 0.075, t + 1.1, zc + 0.075)
             xs = x0 if r > 0 else x1 - 0.3
             k.box("hazard", xs, b, z0, xs + 0.3, b + 0.02, z1)
         else:
             ze = (z1 - 0.3) if r > 0 else (z0 + 0.3)
             for x in (x0 - 0.15, x1 + 0.15):
                 if any(f[4] == t and inside(f, x, ze) for f in FLOORS): continue
-                k.box("galvanizedsteel", x - 0.075, b, ze - 0.075, x + 0.075, t + 1.1, ze + 0.075)
+                xc = x + 0.075 if x < x0 else x - 0.075
+                k.box("galvanizedsteel", xc - 0.075, b, ze - 0.075, xc + 0.075, t + 1.1, ze + 0.075)
             zs = z0 if r > 0 else z1 - 0.3
             k.box("hazard", x0, b, zs, x1, b + 0.02, zs + 0.3)
 
@@ -229,7 +232,7 @@ def crane(k):
     slab(k, "anodizedblack", cx - 2, cz - 2, cx + 2, cz + 2, JIB - 0.4, JIB, holes=[(cx - 0.7, cz - 0.9, cx + 0.7, cz + 0.2)])
     walls(k, "anodizedblack", cx - 2, cz - 2, cx + 2, cz + 2, JIB, JIB + 2.6, [("e", cz, 1.4, 2.2), ("w", cz, 1.4, 2.2)], t=0.3)
     k.box("anodizedblack", cx - 2, JIB + 2.6, cz - 2, cx + 2, JIB + 3.0, cz + 2)
-    k.box("smokedglass", cx - 2.05, JIB + 1.0, cz - 1.6, cx - 1.7, JIB + 2.2, cz - 0.9)
+    k.box("smokedglass", cx - 2.05, JIB + 1.0, cz - 1.6, cx - 1.75, JIB + 2.2, cz - 0.9)   # (its inside face in the wall: no flicker)
     # the jib (east, over the open air) and the counter jib (west) with its weights; rails along the jib
     k.box("powdercoatyellow", cx + 2, JIB - 0.4, cz - 0.9, 40, JIB, cz + 0.9)
     k.box("powdercoatyellow", -20, JIB - 0.4, cz - 0.9, cx - 2, JIB, cz + 0.9)
