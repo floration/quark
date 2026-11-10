@@ -53,9 +53,9 @@ class Sym:
     def bar(s, mat, a, b, w, y0, y1, once=False):
         s.k.bar(mat, a, b, w, y0, y1)
         if not once: s.k.bar(mat, (-a[0], -a[1]), (-b[0], -b[1]), w, y0, y1)
-    def tube_z(s, mat, z0, z1, cx, cy, r, once=False):
-        s.k.tube_z(mat, z0, z1, cx, cy, r)
-        if not once: s.k.tube_z(mat, -z1, -z0, -cx, cy, r)
+    def tube_z(s, mat, z0, z1, cx, cy, r, y0, once=False):
+        tube_on(s.k, mat, z0, z1, cx, cy, r, y0)
+        if not once: tube_on(s.k, mat, -z1, -z0, -cx, cy, r, y0)
     def ladder(s, x, z, y0, y1, face, width=0.9, once=False):
         s.k.ladder(x, z, y0, y1, face, width)
         if not once: s.k.ladder(-x, -z, y0, y1, {"n": "s", "s": "n", "e": "w", "w": "e"}[face], width)
@@ -68,6 +68,53 @@ class Sym:
     def spawn(s, team, x, y, z, yaw, once=False):
         s.k.spawn(team, x, y, z, yaw)
         if not once: s.k.spawn({"a": "b", "b": "a"}.get(team, team), -x, y, -z, (yaw + 360) % 360 - 180)
+
+
+TANK_CY, TANK_R = 2.55, 1.45                               # the tank cars' tanks (centre height, radius)
+TANK_TOP = TANK_CY + TANK_R * math.cos(math.pi / 8)       # (the octagon's flat top, as bigkit's tube_z makes it)
+
+
+def tube_on(k, mat, z0, z1, cx, cy, r, y0):
+    """bigkit's tube_z (an octagonal tube along z, one brush) with its bottom run down to y0, the frame it sits on:
+    the octagon's lower chamfers carry on down (its bottom flat is r cos 22.5 below the centre, so a tube whose round
+    radius reaches the frame left an 11 cm slit under it, seen and shot through the whole car)"""
+    q = r * math.cos(math.pi / 8)
+    planes = [(sx / math.sqrt(2), sy / math.sqrt(2), 0, (sx * cx + sy * cy) / math.sqrt(2) + q) for (sx, sy) in ((1, 1), (1, -1), (-1, 1), (-1, -1))]
+    k.cut(mat, (cx - q, min(y0, cy - q), z0, cx + q, cy + q, z1), planes)
+
+
+def tank_rail(k, x0, x1, z0, z1, cx):
+    """a tank car's end handrail (x0..x1, 1.1..2.1, z0..z1, beside the tank centred on cx) less the tank: its top runs
+    into the tank's lower chamfer, so the part inside the tank (its end face flush with the tank's: flicker) is cut
+    off along that chamfer. The same solid as before (that part was inside the tank)."""
+    s = 1 if (x0 + x1) / 2 > cx else -1
+    q = TANK_R * math.cos(math.pi / 8)
+    plane = (-s / math.sqrt(2), 1 / math.sqrt(2), 0, -(s * cx - TANK_CY) / math.sqrt(2) - q)
+    k.cut("powdercoatyellow", (x0, 1.1, z0, x1, 2.1, z1), [plane])
+
+
+def rail_polys(pts, w, za, zb):
+    """a rail along polyline pts (bigkit's bar per segment, w wide), its ends cut square on the lines z = za and z = zb
+    (where the rail track it joins starts): no gap, no overlap there"""
+    out = []
+    for i, (a, b) in enumerate(zip(pts, pts[1:])):
+        (ax, az), (bx, bz) = a, b
+        L = math.hypot(bx - ax, bz - az); ux, uz = (bx - ax) / L, (bz - az) / L
+        if i == 0: ax, az = ax - ux * 0.2, az - uz * 0.2                 # (run on past the end, then cut)
+        if i == len(pts) - 2: bx, bz = bx + ux * 0.2, bz + uz * 0.2
+        px, pz = -uz * w / 2, ux * w / 2
+        poly = [(ax + px, az + pz), (bx + px, bz + pz), (bx - px, bz - pz), (ax - px, az - pz)]
+        for (c, keep) in ((za, 1), (zb, -1)):                             # (Sutherland-Hodgman: keep * (z - c) >= 0)
+            res = []
+            for j, P in enumerate(poly):
+                Q = poly[(j + 1) % len(poly)]
+                dp, dq = keep * (P[1] - c), keep * (Q[1] - c)
+                if dp >= 0: res.append(P)
+                if (dp >= 0) != (dq >= 0):
+                    f = dp / (dp - dq); res.append((P[0] + (Q[0] - P[0]) * f, P[1] + (Q[1] - P[1]) * f))
+            poly = res
+        if len(poly) >= 3: out.append(poly)
+    return out
 
 
 def curve(a, b, n=8):
@@ -127,7 +174,11 @@ def build():
     for (x0, z0, x1, z1) in bends: k.box("gravel", x0, -1, z0, x1, -0.05, z1)
     for side in (-0.72, 0.72):
         rail = offset(bend, side)
-        for a, b in zip(rail, rail[1:]): S.bar("steel", a, b, 0.09, -0.05, 0)
+        # (the bend's ends run along z (smoothstep): offset there square across, so each rail meets the straight
+        # strip's drawn rail at z -62 end on, and starts where the turntable bridge's track ends at -83; the chord's
+        # skew had one rail 13 cm short of the strip and the other 13 cm into it, the first metre over the bridge)
+        rail[0] = (bend[0][0] - side, bend[0][1]); rail[-1] = (bend[-1][0] - side, bend[-1][1])
+        for poly in rail_polys(rail, 0.09, -83, -62): S.prism("steel", poly, -0.05, 0)
     # the turntable pits (in front of each end building): an octagonal pit 0.5 m deep, the track across it on a bridge
     def pit(cx, cz, r=8.0):
         c = r * math.tan(math.pi / 8)
@@ -153,7 +204,7 @@ def build():
         elif ladder_end > 0: S.ladder(x, z1, 0, 4.0, "n", width=0.6)
     def tankcar(x, z0, z1, ladder_end=-1):
         S.box("greasestainedmetal", x - 1.3, 0, z0, x + 1.3, 1.1, z1)
-        S.tube_z("chrome", z0 + 0.4, z1 - 0.4, x, 2.55, 1.45)                          # the tank (top at 4 m)
+        S.tube_z("chrome", z0 + 0.4, z1 - 0.4, x, TANK_CY, TANK_R, 1.1)                # the tank (top at 3.9 m), on its frame
     def flatcar(x, z0, z1, load=True):
         S.box("rivetedplates", x - 1.4, 0, z0, x + 1.4, 1.1, z1)                        # the deck: one jump up
         if load: S.box("shippingcontainer", x - 1.25, 1.1, z0 + 0.6, x + 1.25, 3.7, z1 - 0.6)
@@ -212,8 +263,9 @@ def build():
         for (cx, cz) in ((tx, -90), (-tx, 90)):
             k.disc("whitewashedbrick", cx, cz, 4.2, 0, 1.0, n=8)
             k.disc("galvanizedsteel", cx, cz, 3.6, 1.0, 10.0, n=8)
-    S.box("galvanizedgrating", 45.2, 9.7, -91, 50.8, 10.0, -89)
-    S.box("galvanizedsteel", 37.6, 0, -91, 38.6, 10.0, -89)                                # the ladder's post
+    face = lambda cx, i: cx + 3.6 * math.cos(2 * math.pi * (i + 0.5) / 8)   # (a tank's flat side, as k.disc makes it: i 0 east, 3 west)
+    S.box("galvanizedgrating", face(42, 0), 9.7, -91, face(54, 3), 10.0, -89)        # (between the tanks' sides: not into their tops)
+    S.box("galvanizedsteel", 37.6, 0, -91, face(42, 3), 10.0, -89)                  # the ladder's post, against the tank
     S.ladder(37.6, -90, 0, 10.0, "e", width=0.8)
     S.box("galvanizedgrating", 37.6, 9.7, -91, 38.4, 10.0, -89)
     S.box("powdercoatgreen", 33.5, 0, -90, 35.5, 1.4, -86)                                  # the pump island
@@ -312,7 +364,7 @@ def build():
     # inside the roundhouse: a locomotive on each of the two other stalls (big cover either side of the main line)
     def loco(x, z0, z1, mat):
         k.box("sootysteel", x - 1.3, 0, z0, x + 1.3, 1.2, z1)
-        k.tube_z(mat, z0 + 4, z1 - 0.5, x, 2.6, 1.4)
+        tube_on(k, mat, z0 + 4, z1 - 0.5, x, 2.6, 1.4, 1.2)   # (the boiler, down onto the frame)
         k.box(mat, x - 1.5, 1.2, z0, x + 1.5, 4.4, z0 + 4)     # the cab
     loco(0, -118, -104, "boilerplate"); loco(-24, -118, -104, "powdercoatgreen")
     # the roundhouse's look: the side doors' tracks fan out from the turntable (rails on the floor, 5 cm), a ring rail
@@ -326,8 +378,7 @@ def build():
         for j in range(n):   # sleepers (3 cm: a step nobody feels)
             f = (j + 0.5) / n; cx, cz = ax + (dx - ax) * f, az + (dz - az) * f
             k.bar("railwaysleepers", (cx - nx * 1.25, cz - nz * 1.25), (cx + nx * 1.25, cz + nz * 1.25), 0.26, 0, 0.03)
-    k.ring("steel", -12, -91, 6.6, 6.8, -0.5, -0.45, n=16)
-    k.disc("sootysteel", -12, -91, 0.9, -0.5, -0.3, n=8)
+    k.ring("steel", -12, -91, 6.6, 6.8, -0.5, -0.45, n=16)   # (no pivot hub: one drawn under the bridge's track was buried in it)
     for px in (-34, -21, -2, 14):
         k.prism("londonstock", [(px - 1.4, -100), (px, -98.2), (px + 1.4, -100)], 0, 10.0)
     # inside the goods shed: a loading platform beside the track and a stack of crates (the same cover, other shapes)
@@ -396,9 +447,10 @@ def decorate(k, S, bend):
         elif kind == "tank":
             wheels(x, z0, z1, 1.3)
             zm = (z0 + z1) / 2
-            S.k.disc("chrome", x, zm, 0.7, 3.9, 4.5, n=8); S.k.disc("chrome", -x, -zm, 0.7, 3.9, 4.5, n=8)
+            S.k.disc("chrome", x, zm, 0.7, TANK_TOP, 4.5, n=8); S.k.disc("chrome", -x, -zm, 0.7, TANK_TOP, 4.5, n=8)   # (on the tank's top)
             for zz in (z0 + 0.4, z1 - 0.8):   # the end platforms' handrails (above the frame, off the gaps)
-                S.box("powdercoatyellow", x - 1.3, 1.1, zz, x - 1.2, 2.1, zz + 0.4); S.box("powdercoatyellow", x + 1.2, 1.1, zz, x + 1.3, 2.1, zz + 0.4)
+                for (a, b) in ((x - 1.3, x - 1.2), (x + 1.2, x + 1.3)):
+                    tank_rail(S.k, a, b, zz, zz + 0.4, x); tank_rail(S.k, -b, -a, -zz - 0.4, -zz, -x)
     # oil spilt beside a tank car (no grip: fast through, no stopping), on the open main-line side
     S.box("oilslick", 2.4, 0, -67, 4.3, 0.05, -59)
     # low cover beside the main line (out of the cart's sweep), staggered: relay cabinets and a pallet stack
