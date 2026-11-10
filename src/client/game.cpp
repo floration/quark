@@ -3280,9 +3280,21 @@ void Game::drawWorld(float alpha) {
         ppal.c[TINT_TEAM] = col;
         ppal.c[TINT_GLOW] = r_.glowColor;
         if (const ModelMesh* ov = modelOverride(MODEL_PROJECTILE, mt)) {
+            // (a mesh keeps the built-in model's life: the sticky's team core blinks, the bubble wobbles, the rocket's
+            // flame flickers: drawn as the built-in one's flame boxes behind the mesh's nozzle)
             Vec3 tint[TINT_COUNT];
             overrideTints(MODEL_PROJECTILE, mt, ppal, tint);
-            r_.mesh(*ov, Mat4::translate(pr.pos) * Mat4::rotY(my) * Mat4::rotX(mp), tint, 1.0f);
+            if (mt == WPN_STICKY) tint[TINT_TEAM] = tint[TINT_TEAM] * core;
+            Mat4 xf = Mat4::translate(pr.pos) * Mat4::rotY(my) * Mat4::rotX(mp);
+            if (mt == WPN_BUBBLE) {
+                const float sx = 1.0f + wob / 0.17f;   // (the box bubble's radius 0.17 + wob across, 0.17 up)
+                xf.m[0] *= sx; xf.m[10] *= sx;
+            }
+            r_.mesh(*ov, xf, tint, 1.0f);
+            if (mt == WPN_ROCKET) {
+                rocketFlameParts(fl, parts_);
+                for (const ModelPart& q : parts_) r_.boxPitched(pr.pos, q.c, q.h, my, mp, q.color, 1.0f);
+            }
         } else {
             if (const ModelParts* bx = boxOverride(MODEL_PROJECTILE, mt)) overrideBoxParts(MODEL_PROJECTILE, mt, *bx, ppal, 1.0f, parts_);   // (still: no flicker / blink / wobble)
             else projectileParts(mt, ppal, fl, core, wob, parts_);
@@ -3356,6 +3368,17 @@ void Game::drawWorld(float alpha) {
         pr.pos = q.pos + (f > 0 ? q.offset * f : Vec3());
         if (length(pr.pos - eye) < 0.8f) continue;   // (its first ~10 ms: the model would fill the view from the muzzle)
         drawProj(pr, true);
+    }
+    if (opts_.debugProjectiles) {   // (--projectiles: every projectile model in a row 1.6 m ahead, flying right, for screenshots)
+        static const int kinds[] = {WPN_ROCKET, WPN_STICKY, WPN_KNIFE, WPN_SYRINGE, WPN_CROSSBOW, WPN_BUBBLE, MODEL_PROJ_ORB};
+        const Vec3 f = {-std::sin(yaw_), 0, -std::cos(yaw_)}, rt = {std::cos(yaw_), 0, -std::sin(yaw_)};
+        for (int k = 0; k < 7; k++) {
+            ProjectileSnap pr;
+            pr.type = (uint8_t)kinds[k]; pr.owner = (uint8_t)me; pr.id = (uint16_t)(0xFF00 + k);
+            pr.pos = eye + f * 1.6f + rt * ((k - 3) * 0.42f) + Vec3(0, -0.15f, 0);
+            pr.vel = (rt + f * -0.35f) * 30.0f;   // (turned a little toward you: side-on with some depth)
+            drawProj(pr, true);
+        }
     }
     drawStuckProps(eye, alpha);
     // explosions

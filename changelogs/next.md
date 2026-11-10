@@ -25,6 +25,7 @@
 
 ## Weapon models
 - **New weapon models:** all 11 weapons and the grapple launcher (arm and claw) are new low-poly models with outlines: a real AK rifle, a .50 sniper, a pump shotgun, a crossbow with a swept prod, a glass syringe and bubble tank, and more, in the same clean style as the maps and menus, with team-colour parts. Their moving parts animate too. They're AI-made placeholders until human-made ones replace them.
+- **New projectile models:** rockets, stickies, thrown knives, syringes, crossbow bolts, bubbles and the energy orb are low-poly outlined models in the weapons' style, so each looks like it came out of its gun. They still move as before: the sticky's core blinks, the bubble wobbles, the rocket's flame flickers, the knife spins. AI-made placeholders too.
 - **Weapon animations:** weapon models can now have moving parts: the shotgun racks after a shot, the sticky launcher turns its drum, the sniper's bolt cycles, the rifle's bolt kicks, the laser's coil spins while you fire, and more (each weapon its own). They move the moment you click, at any ping. VIDEO > EFFECTS: WEAPON ANIMATIONS turns them off. Other players' weapons show the parts still.
 
 ## Player models
