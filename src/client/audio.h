@@ -29,13 +29,28 @@ enum SoundId {
     SND_DEATH, SND_STREAK, SND_TYPING,   // your death thud, someone else's killstreak sting, someone typing (a key click)
     SND_CHECKPOINT, SND_FINISH,          // race: you passed a checkpoint (a ding), you crossed the finish (a rising chime)
     // the hitsound's heavier tiers (SND_HIT is the lightest; hitSoundFor() picks one by the hit's damage). Added after
-    // the rest so the recorded kits' ids (sfx_recorded.h) and everyone's HIT overrides keep their meaning.
+    // the rest so everyone's HIT overrides (and the removed recorded kits' ids, tools/import_sfx.py) keep their meaning.
     SND_HIT_MED, SND_HIT_HEAVY, SND_HIT_BRUTAL,
     // movement tech and the locator (owner, 1.17.0): a super (dash jump), a hyper (super dash), the locator's ping
     SND_SUPER, SND_HYPER, SND_LOCATOR,
     // a hiss: a projectile gone into lava or acid, and you while acid eats you (q, 2026-10-27: "pulse and sizzle")
     SND_SIZZLE,
-    // the announcer (recorded lines from voice_data.h, in its order; the same in every sound pack)
+    // the sound audit's cues (q, 2026-10-30: "All of them"), all worked out by the client from what it's sent: your hit
+    // was a headshot (a metallic tink over the hitsound), someone's grapple caught you, the planted bomb's tick, a
+    // plant / defuse in progress, the hill contested, the enemy capturing your point, the map's holdfire counting down,
+    // and a race checkpoint that won't count (a buzz, not the ding)
+    SND_HEADSHOT_TINK, SND_HOOKED, SND_BOMB_TICK, SND_BOMB_PLANTING, SND_BOMB_DEFUSING, SND_HILL_CONTESTED,
+    SND_CAPTURE_ALARM, SND_HOLDFIRE_TICK, SND_CHECKPOINT_WRONG,
+    // the sound coverage audit (q, 2026-11-10: "ensure everything that is supposed to have a sound has one"), all
+    // client-side: your weapon switch, fire pressed when nothing can fire (a thrown weapon away, the holdfire, the
+    // locator's wait), a thrown knife / syringe landing, a bubble popping, glass breaking, rubble (a breakable block,
+    // a wall coming down, a crumble platform), your dash's wall bounce, a grapple let go, a teleporter, a splash into
+    // a liquid, your respawn, the low-health warning, a goal in ball and the ball struck, a chat message, a vote
+    // called, a ranked queue filled, and a menu click
+    SND_WEAPON_SWITCH, SND_DRYFIRE, SND_KNIFE_HIT, SND_BUBBLE_POP, SND_GLASS_BREAK, SND_DEBRIS, SND_DASH_BOUNCE,
+    SND_GRAPPLE_RELEASE, SND_TELEPORT, SND_SPLASH, SND_SPAWN, SND_LOW_HEALTH, SND_GOAL, SND_BALL_KICK, SND_CHAT, SND_VOTE,
+    SND_MATCH_FOUND, SND_UI_CLICK,
+    // the announcer (recorded lines from voice_data.h, in its order)
     SND_VOICE_THREE, SND_VOICE_TWO, SND_VOICE_ONE, SND_VOICE_GO, SND_VOICE_BOMB_PLANTED, SND_VOICE_BOMB_DEFUSED,
     SND_VOICE_HILL_TAKEN, SND_VOICE_HILL_LOST, SND_VOICE_POINT_TAKEN, SND_VOICE_POINT_LOST, SND_VOICE_ROUND_WON,
     SND_VOICE_ROUND_LOST, SND_VOICE_OVERTIME, SND_VOICE_YOU_WIN, SND_VOICE_YOU_LOSE, SND_VOICE_HIGH_SCORE, SND_VOICE_NEW_LEADER,
@@ -87,10 +102,9 @@ public:
     ~Audio() { stop(); }
 
     // 2D (UI / your own sounds) and 3D (positioned, panned and attenuated from the listener).
-    // pack: which sound pack to voice it with (-1 = yours; other players' sounds use the pack they picked)
-    void play(int id, float volume = 1.0f, float pitch = 1.0f, int pack = -1);
-    void play3D(int id, const Vec3& pos, float volume = 1.0f, float pitch = 1.0f, int pack = -1);
-    bool hasSound(int id) const { return id >= 0 && id < SND_QUIP + kMaxQuips && !samples(0, id).empty(); }
+    void play(int id, float volume = 1.0f, float pitch = 1.0f);
+    void play3D(int id, const Vec3& pos, float volume = 1.0f, float pitch = 1.0f);
+    bool hasSound(int id) const { return id >= 0 && id < SND_QUIP + kMaxQuips && !samples(id).empty(); }
     // (game thread: play3D's copy, plus one handed to the mixer, which re-pans every playing 3D sound with it each period)
     void setListener(const Vec3& pos, float yaw);
     void setMasterVolume(float v) { master_ = v; }
@@ -151,23 +165,24 @@ public:
     int exclusiveState() const { return exclusiveState_; }
     bool exclusiveActive() const { return exclusiveState_ == kExclOn; }
     void setAnnouncer(int set) { if (set != announcer_) { if (running_) loadAnnouncer(set); else announcer_ = set; } } // 0 male, 1 female
-    // Sound kits: DEFAULT (synthesized), HEAVY METAL, MAGICAL, WOODEN (recorded CC0 clips, sfx_recorded.h), RETRO (DEFAULT, chiptuned).
-    // All packs are built at startup, so switching is free and every player can sound different.
-    static constexpr int kPacks = 5;
-    enum { kPackDefault, kPackMetal, kPackMagical, kPackRetro, kPackWooden };
-    void setPack(int pack) { pack_ = (pack < 0 || pack >= kPacks) ? 0 : pack; }
-    int pack() const { return pack_; }
+    // One sound kit: DEFAULT, synthesized at startup (owner, 2026-11-10: "for now you can get rid of every sound pack
+    // except for default"). The SOUND PACK setting and the HEAVY METAL, MAGICAL and RETRO kits are gone from the game;
+    // their sources stay in git so they can come back: the Kenney clips in assets/sfx/ (CREDITS.md), the custom kit
+    // folders assets/sfx/custom/<kit>/ and tools/import_sfx.py (its KITS table; it writes src/client/sfx_recorded.h,
+    // which is no longer in git: git history has it, and RETRO's chiptune, voice() in audio.cpp, as of 2026-11-09). MOUTH
+    // (the owner's recordings) was removed altogether (owner, the same day: "you can get rid of mouth also"). The wire
+    // still carries a player's pack (EV_PLAYERINFO); the client ignores it.
+    static constexpr const char* kKitDir = "default";   // (the export / override / mods folder: sounds/default/)
     bool ok() const { return running_; }
     int voicesPlaying(int id); // tests (what the next mix would play: the sounds started since the last one included)
-    const std::vector<float>& samples(int pack, int id) const { // tests / tools (the game thread: announcerLines_' only writer)
+    const std::vector<float>& samples(int id) const { // tests / tools (the game thread: announcerLines_' only writer)
         static const std::vector<float> none;
-        if (id < SND_VOICE_THREE) return sounds_[pack][id];
+        if (id < SND_VOICE_THREE) return sounds_[id];
         if (id >= SND_QUIP) return announcerLines_ && id - SND_QUIP < (int)announcerLines_->quip.size() ? announcerLines_->quip[id - SND_QUIP] : none;
         return announcerLines_ ? announcerLines_->line[id - SND_VOICE_THREE] : none;
     }
-    // names as files use them (mods/, the asset export, overrides): "ROCKET" / "GO", "heavy_metal", "old_man"
+    // names as files use them (mods/, the asset export, overrides): "ROCKET" / "GO", "old_man"
     static const char* soundName(int id);
-    static const char* kitDir(int pack);
     static const char* voiceDir(int voice);
     // loudness as heard (low end weighted down, like the ear): the hitsound tiers are levelled with it
     static float heardLoudness(const std::vector<float>& v);
@@ -178,22 +193,21 @@ public:
 private:
     // pos: where in the sound, 32.32 fixed point (exact over long clips, where a float's step went coarse past ~2.7 s);
     // step: the pitch; gainL / gainR: the gains the last period ended on (a 3D sound ramps from them to the new ones)
-    struct Voice { int id, pack; uint64_t pos; float step; float gainL, gainR; bool spatial; Vec3 at; float volume; uint32_t seq = 0;
+    struct Voice { int id; uint64_t pos; float step; float gainL, gainR; bool spatial; Vec3 at; float volume; uint32_t seq = 0;
                    float lp = 1, lpY = 0, occl = 0; double queued = 0; };   // (queued: when play() handed it over, steady seconds)   // (occl: SOUND OCCLUSION's 0..1, fixed as it starts)   // (X8: behind you, a one-pole low-pass: its coefficient, 1 = off, and its state)
     // full: the oldest sound effect makes room (an announcer line only if all are)
     static void addVoice(std::vector<Voice>& list, const Voice& v, size_t cap);
     uint32_t voiceSeq_ = 0;    // (under mu_) start order: the mixer's swap-and-pop doesn't keep voices_ in it
     void synthesize();
-    void loadRecordedKits();
-    void loadModSounds();     // players' own sounds: <game folder>/mods/sounds/<kit or all>/<SOUND>.wav
-    void loadOverrideSounds(); // the owner's: sounds/<kit>/<SOUND>.* overrides (docs/ASSETS.md)
+    void loadModSounds();     // players' own sounds: <game folder>/mods/sounds/<default or all>/<SOUND>.wav
+    void loadOverrideSounds(); // the owner's: sounds/default/<SOUND>.* overrides (docs/ASSETS.md)
     void loadOverrideVoice(int set, std::vector<float>* lines, int count); // voices/<voice>/<LINE>.*
     struct AnnouncerLines;
     void loadQuips(int set, AnnouncerLines& a);   // the voice's quip set: its voices/<voice>/quips/ overrides, else the defaults
     void loadAnnouncer(int set);
     int announcer_ = 0;
-    // the announcer's lines, the same in every pack: built off the mixer's lock and handed over as one pointer (a
-    // voice change used to copy every line into all 5 packs while holding the lock the audio thread mixes under)
+    // the announcer's lines: built off the mixer's lock and handed over as one pointer (a voice change used to copy
+    // every line into each sound pack while holding the lock the audio thread mixes under)
     struct AnnouncerLines {
         std::vector<float> line[SND_COUNT - SND_VOICE_THREE];
         std::vector<std::vector<float>> quip;   // (SND_QUIP + k; at most kMaxQuips)
@@ -205,14 +219,13 @@ private:
     std::shared_ptr<const AnnouncerLines> nextLines_, retiredLines_;
     bool linesNew_ = false;
     std::shared_ptr<const AnnouncerLines> mixLines_;   // (the mixer's)
-    std::atomic<int> pack_{0};
     static void voiceGains(Voice& v, const Vec3& listener, const Vec3& right);   // right: the listener's right
     void takePending();                    // (the mixer, under mixMu_) the sounds started since, the listener, the lines
     void render(float* buf, int frames);   // mix() before it is made 16-bit (1 = full scale; the limiter lets the loudest past it)
     void backendThread();
     void wasapiThread(std::atomic<int>* started);   // Windows: WASAPI output; started: 1 running, -1 unavailable (WinMM then)
 
-    std::vector<float> sounds_[kPacks][SND_COUNT];   // (announcer ids stay empty: announcerLines_)
+    std::vector<float> sounds_[SND_COUNT];   // (announcer ids stay empty: announcerLines_)
     // The game thread never waits for a mix pass: play / play3D only push onto pending_ (mu_ held just for that), and
     // the mixer swaps it for its empty incoming_ at the top of each period, then mixes voices_ (its own) with mu_ free.
     std::vector<Voice> voices_, incoming_;   // (the mixer's, under mixMu_)

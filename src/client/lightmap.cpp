@@ -341,6 +341,15 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
     bool ran = parallelFor(map.brushes.size(), stopped, [&](size_t bi) {
         const Brush& br = map.brushes[bi];
         if (!bakedMaterial(br.material)) return;   // clip: invisible; glass: drawn see-through each frame
+        // how far the brush reaches behind a slope polygon's plane (its box's corners: step 1c's "thinner brush on top")
+        auto genDepth = [&](const Vec3& org, const Vec3& n) {
+            float d = 0;
+            for (int c = 0; c < 8; c++) {
+                const Vec3 q = {c & 1 ? br.box.mx.x : br.box.mn.x, c & 2 ? br.box.mx.y : br.box.mn.y, c & 4 ? br.box.mx.z : br.box.mn.z};
+                d = std::max(d, dot(n, org - q));
+            }
+            return d;
+        };
         // a convex polygon face of a slope (corners in order around it; n its outward normal) into slot `slot`
         auto genFace = [&](int slot, std::initializer_list<Vec3> pts, Vec3 n) {
             Face f;
@@ -356,6 +365,7 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
                 f.u0 = std::min(f.u0, f.pu[k]); f.u1 = std::max(f.u1, f.pu[k]); f.v0 = std::min(f.v0, f.pv[k]); f.v1 = std::max(f.v1, f.pv[k]);
             }
             if (f.u1 - f.u0 < 1e-4f || f.v1 - f.v0 < 1e-4f) return;
+            f.depth = genDepth(f.org, n);
             slots[bi * 7 + slot] = f; keep[bi * 7 + slot] = 1;
         };
         if (br.shape == BRUSH_CUT) {   // its faces (map.h cutFaces), each split into pieces of up to 4 corners (a fan: the
@@ -376,6 +386,7 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
                         f.u0 = std::min(f.u0, f.pu[k]); f.u1 = std::max(f.u1, f.pu[k]); f.v0 = std::min(f.v0, f.pv[k]); f.v1 = std::max(f.v1, f.pv[k]);
                     }
                     if (f.u1 - f.u0 < 1e-4f || f.v1 - f.v0 < 1e-4f) continue;
+                    f.depth = genDepth(f.org, n);
                     if (s0 > 0) f.genOff |= 1;                       // (corner 0 to 1: the cut from the piece before)
                     if (c + 1 < np) f.genOff |= (uint8_t)(1 << (f.np - 1));   // (the last corner back to 0: the cut to the next)
                     cutSlots[bi].push_back(f);
@@ -683,22 +694,91 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
         if (f.depth < o.depth - 1e-3f) return true;
         return std::fabs(f.depth - o.depth) <= 1e-3f && f.material > o.material;
     };
+    // Slope polygons count too (owner, 2026-11-10: "fix z-fighting on every map"): a wedge's side flush with a wall, a
+    // ramp's face flush with another piece's (they were never lifted: a slope face on another piece flickered). On an
+    // axis plane they're found in the buckets like a box face; a sloped plane only meets other slopes. A polygon is not
+    // its bounding rectangle: the pair overlaps where a 4x4 grid over the rectangles' intersection (or, on a sloped
+    // plane, either polygon's centre and corners pulled halfway in) lies inside both. Lifted as a box face is (4 mm).
+    // Sloped polygons by plane (Solar has 39,000: all against all took 8.6 s of every load): the normal to 1/100 and
+    // the plane's distance to 1/2 m, a face looked up in its own bucket and the distance's neighbours (Accelerator: the
+    // same 40 lifts as all against all). Two pieces whose normals straddle a step aren't compared (no lift, as before).
+    auto slopeKey = [](const Face& f, int dd) {
+        const float d = dot(f.N, f.org);
+        uint64_t k = (uint64_t)(uint32_t)(int)std::lround(f.N.x * 100.0f);
+        k = k * 0x9E3779B97F4A7C15ull ^ (uint64_t)(uint32_t)(int)std::lround(f.N.y * 100.0f);
+        k = k * 0x9E3779B97F4A7C15ull ^ (uint64_t)(uint32_t)(int)std::lround(f.N.z * 100.0f);
+        k = k * 0x9E3779B97F4A7C15ull ^ (uint64_t)(uint32_t)((int)std::floor(std::max(-1e6f, std::min(1e6f, d)) * 2.0f) + dd);
+        return k;
+    };
+    // every face on an axis plane, by plane (a huge face's lookup: it scanned every face of the map, three times)
+    std::unordered_map<uint64_t, std::vector<uint32_t>> onPlane;
+    for (size_t i = 0; i < faces.size(); i++) if (faces[i].aAxis >= 0) onPlane[key(faces[i].aAxis, faces[i].aSign, 0, planeOf(faces[i].aPlane), 0, 0)].push_back((uint32_t)i);
+    std::unordered_map<uint64_t, std::vector<uint32_t>> slopes;   // (on a sloped plane)
+    for (size_t i = 0; i < faces.size(); i++) if (faces[i].gen && faces[i].aAxis < 0) slopes[slopeKey(faces[i], 0)].push_back((uint32_t)i);
+    auto inFace = [&](const Face& o, const Vec3& p) {   // (p on o's plane)
+        if (o.gen) return inPoly(o, p);
+        const float u = p[(o.axis + 1) % 3], v = p[(o.axis + 2) % 3];
+        return u > o.u0 && u < o.u1 && v > o.v0 && v < o.v1;
+    };
+    auto polysMeet = [&](const Face& f, const Face& o) {   // (both slope polygons on one sloped plane)
+        for (const Face* g : {&f, &o}) {
+            Vec3 mid(0, 0, 0);
+            for (int k = 0; k < g->np; k++) mid = mid + facePoint(*g, g->pu[k], g->pv[k]) * (1.0f / g->np);
+            if (inPoly(f, mid) && inPoly(o, mid)) return true;
+            for (int k = 0; k < g->np; k++) {
+                const Vec3 p = (facePoint(*g, g->pu[k], g->pv[k]) + mid) * 0.5f;
+                if (inPoly(f, p) && inPoly(o, p)) return true;
+            }
+        }
+        return false;
+    };
     std::vector<uint8_t> needLift(faces.size(), 0), prevLift;
     for (int pass = 0; pass < 3; pass++) {
         prevLift = needLift;
         ran = parallelFor(faces.size(), stopped, [&](size_t i) {
             const Face& f = faces[i];
-            if (f.gen) return;
             int lvl = 0;
+            if (pass > 0 && !prevLift[i]) return;   // (over nothing in the first pass: over nothing in any)
+            if (f.aAxis < 0) {   // a sloped plane: the other slopes on it
+                for (int dd = -1; dd <= 1; dd++) {
+                    auto it = slopes.find(slopeKey(f, dd));
+                    if (it == slopes.end()) continue;
+                    for (uint32_t k : it->second) {
+                        const Face& o = faces[k];
+                        if (k == i || dot(f.N, o.N) < 1 - 1e-5f || std::fabs(dot(o.N, f.org - o.org)) > kFlush || !beats(f, o)) continue;
+                        const float r = (f.u1 - f.u0) + (f.v1 - f.v0) + (o.u1 - o.u0) + (o.v1 - o.v0);   // (far apart: can't meet)
+                        const Vec3 d = f.org - o.org;
+                        if (dot(d, d) < r * r && polysMeet(f, o)) lvl = std::max(lvl, prevLift[k] + 1);
+                    }
+                }
+                needLift[i] = (uint8_t)std::min(lvl, 8);
+                return;
+            }
+            const int ua = (f.aAxis + 1) % 3, va = (f.aAxis + 2) % 3;
             auto overlaps = [&](uint32_t k) {
                 const Face& o = faces[k];
-                if (o.gen || o.axis != f.axis || o.sign != f.sign || std::fabs(o.plane - f.plane) > 1e-4f || !beats(f, o)) return false;
-                if (f.u0 < o.u1 && o.u0 < f.u1 && f.v0 < o.v1 && o.v0 < f.v1) lvl = std::max(lvl, prevLift[k] + 1);
+                const bool poly = f.gen || o.gen;
+                if (k == i || o.aAxis != f.aAxis || o.aSign != f.aSign || std::fabs(o.aPlane - f.aPlane) > (poly ? kFlush : 1e-4f) || !beats(f, o)) return false;
+                const float iu0 = std::max(f.au0, o.au0), iu1 = std::min(f.au1, o.au1), iv0 = std::max(f.av0, o.av0), iv1 = std::min(f.av1, o.av1);
+                if (iu0 >= iu1 || iv0 >= iv1) return false;
+                bool meet = !poly;
+                for (int s = 0; s < 16 && !meet; s++) {
+                    Vec3 p;
+                    p[f.aAxis] = f.aPlane;
+                    p[ua] = iu0 + (iu1 - iu0) * ((s % 4 + 0.5f) / 4.0f);
+                    p[va] = iv0 + (iv1 - iv0) * ((s / 4 + 0.5f) / 4.0f);
+                    meet = inFace(f, p) && inFace(o, p);
+                }
+                if (meet) lvl = std::max(lvl, prevLift[k] + 1);
                 return false;
             };
-            int cu0 = cellOf(f.u0), cu1 = cellOf(f.u1), cv0 = cellOf(f.v0), cv1 = cellOf(f.v1);
-            if ((int64_t)(cu1 - cu0 + 1) * (cv1 - cv0 + 1) > 32 * 32) { // a huge face: just scan everything on its plane
-                for (size_t k = 0; k < faces.size(); k++) overlaps((uint32_t)k);
+            int cu0 = cellOf(f.au0), cu1 = cellOf(f.au1), cv0 = cellOf(f.av0), cv1 = cellOf(f.av1);
+            if ((int64_t)(cu1 - cu0 + 1) * (cv1 - cv0 + 1) > 32 * 32) { // a huge face: everything on its plane
+                const int64_t pl = planeOf(f.aPlane);
+                for (int64_t p = pl - 1; p <= pl + 1; p++) {
+                    auto it = onPlane.find(key(f.aAxis, f.aSign, 0, p, 0, 0));
+                    if (it != onPlane.end()) for (uint32_t k : it->second) overlaps(k);
+                }
             } else {   // (any material: overlaps() checks it)
                 for (int cv = cv0; cv <= cv1; cv++)
                     for (int cu = cu0; cu <= cu1; cu++) near(f, kAnyMat, cu, cv, overlaps);
@@ -773,7 +853,7 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
             WorldVertex vs[4];
             for (int k = 0; k < f.np; k++) {
                 WorldVertex& wv = vs[k];
-                Vec3 p = facePoint(f, f.pu[k], f.pv[k]);
+                Vec3 p = facePoint(f, f.pu[k], f.pv[k]) + lift;
                 memcpy(wv.pos, &p.x, 12);
                 memcpy(wv.normal, &n.x, 12);
                 wv.uv[0] = (f.rx + 1 + (f.pu[k] - f.u0) / (f.u1 - f.u0) * f.wu) / (float)W;

@@ -804,6 +804,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             if (bx) { s.dashDirX = -s.dashDirX; blocked &= ~1; }
             else { s.dashDirZ = -s.dashDirZ; blocked &= ~4; }
             s.dashBounces++;
+            s.events |= ME_BOUNCE;
             setCharges(s, maxCharges, 1);   // (owner: a wall bounce leaves you exactly one charge; 1.18.7: if one has recharged)
             chargesSet = true;
             const float bounce = kDashBounceSpeed * mt.m[MV_DASH_SPEED];   // (owner 1.18.7: 16, was the burst)
@@ -906,6 +907,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             const Vec3 at = c - off;
             if (!map.boxSolid(playerBox(at, crouched, scale))) {
                 s.pos = at;
+                s.events |= ME_TELEPORT;
                 // (a wall teleporter is solid: the slide clipped the speed into it this step, so keep the speed you
                 // came in with). A walk teleporter (the one you went INTO: Brush::tpWalk, map format 12) lets you out at
                 // no more than the run speed, never faster than you came in.

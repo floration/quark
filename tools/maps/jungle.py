@@ -173,8 +173,10 @@ def build():
         k.box("mudbath", p, -2, q, r_, -0.4, s_)
     for (p, q, r_, s_) in SINKS:   # black water with no bottom: miss the jump and you sink into the void
         k.box("ink", p, -2, q, r_, -0.4, s_)
-        for (z0, z1) in ((q, q + 0.6), (s_ - 0.6, s_)):   # a rim of drowned stones round it (a hint, under the surface)
-            k.box("lichenrock", p, -2.4, z0, r_, -0.5, z1)
+        # a rim of drowned stones round it (a hint, under the surface), 1/8 m in from the sinkhole's sides: flush
+        # with them, the stones' end and outer faces z-fought the ink's own faces (seen through the mud)
+        for (z0, z1) in ((q + 0.125, q + 0.6), (s_ - 0.6, s_ - 0.125)):
+            k.box("lichenrock", p + 0.125, -2.4, z0, r_ - 0.125, -0.5, z1)
     for i, (x0, x1) in enumerate(SEG):
         lo, hi = h_cause(x1), h_cause(x0)
         mat = ("largemossystoneblocks", "mossystoneblocks")[i % 2]
@@ -186,8 +188,10 @@ def build():
             g0, g1 = SEG[i + 1][1], x0
             if g1 - g0 < 10:   # the rotten planks over an 8 m gap
                 k.box("rottenplanks", g0, h_cause((g0 + g1) / 2) - 0.15, -151, g1, h_cause((g0 + g1) / 2), -149)
-        for xx in (x0 + 1, x1 - 2):   # broken kerb stones on the edges (low: no cover, no snag)
-            k.box("lichenrock", xx, h_cause(xx), CZ0, xx + 1, h_cause(xx) + 0.4, CZ0 + 0.5)
+        for xx in (x0 + 1, x1 - 2):   # broken kerb stones on the edges (low: no cover, no snag); sunk to the
+            # slope's low end (sat at its high end, the stone floated up to 3 cm over the ramp), and 1/8 m in from
+            # the causeway's side so the sunk part doesn't share the ramp's side face (it would z-fight there)
+            k.box("lichenrock", xx, h_cause(xx + 1), CZ0 + 0.125, xx + 1, h_cause(xx) + 0.4, CZ0 + 0.5)
     cp(116, h_cause(118), CZ0, 120, CZ1)                                                     # 2
     cp(16, h_cause(18), CZ0, 20, CZ1)                                                        # 3
     for (x, z, s) in ((146, -161, 0.6), (82, -139, 0.7), (49, -162, 0.6), (-12, -139, 0.7)):   # islands, a tree on each

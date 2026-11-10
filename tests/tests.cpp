@@ -766,9 +766,10 @@ static void testFeatureBlocks() {
     {   // a teleporter: walk into it, out of the other one's top going up
         MoveState s; s.flags = MF_ONGROUND; s.pos = {-31, 0, 31}; s.vel = {8, 0, 0};
         UserCmd c; c.msec = 8; c.forward = 127; c.yaw = -1.5708f;
-        for (int t = 0; t < 400 && s.pos.x < 0; t += 8) pmove(s, c, m);
-        printf("  teleporter: at %.2f %.2f %.2f, vel y %.2f\n", s.pos.x, s.pos.y, s.pos.z, s.vel.y);
-        CHECK(s.pos.x > 40 && s.pos.x < 42 && s.pos.y >= 1.0f);
+        int tele = 0;   // (ME_TELEPORT: the client's teleport sound, once)
+        for (int t = 0; t < 400 && s.pos.x < 0; t += 8) { pmove(s, c, m); tele += (s.events & ME_TELEPORT) != 0; }
+        printf("  teleporter: at %.2f %.2f %.2f, vel y %.2f, %d teleport event\n", s.pos.x, s.pos.y, s.pos.z, s.vel.y, tele);
+        CHECK(s.pos.x > 40 && s.pos.x < 42 && s.pos.y >= 1.0f && tele == 1);
     }
     {   // into its wall at 60 m/s (in the air): out at 60, not the speed the slide left after clipping it (owner, 2026-10-30)
         int kept = 0;
@@ -1801,12 +1802,14 @@ static void testDashTech() {
     { // dash wall bounce: a dash 30 deg off a wall's normal reflects at 16 m/s (owner 1.18.7; it was the dash's speed); 50 deg (glancing) slides
         Map wall;   // a wall across -z, its face 1.5 m ahead
         CHECK(wall.parse("box -50 -1 -50 50 0 50\nbox -50 0 -3 50 4 -1.5\nspawn any 0 0 0\n", &err));
+        uint8_t evs = 0;   // (the dash's move events: ME_BOUNCE, the client's bounce sound)
         auto dashAt = [&](float deg, bool jumpAfter, MoveState* out) {
             MoveState q; q.flags = MF_ONGROUND;
             UserCmd d; d.msec = 1; d.yaw = deg * PI / 180; d.buttons = BTN_DASH;   // (yaw 0 faces -z: the wall's normal)
             for (int i = 0; i < 20; i++) pmove(q, UserCmd(), wall);
             int t = 0;
-            for (; t < 120 && (t == 0 || q.dashTimer > 0) && q.dashBounces == 0 && q.pos.z > -1.098f; t++) pmove(q, d, wall);
+            evs = 0;
+            for (; t < 120 && (t == 0 || q.dashTimer > 0) && q.dashBounces == 0 && q.pos.z > -1.098f; t++) { pmove(q, d, wall); evs |= q.events; }
             if (jumpAfter && q.dashTimer > 0) { d.buttons |= BTN_JUMP; pmove(q, d, wall); }
             *out = q;
             return t;
@@ -1815,6 +1818,7 @@ static void testDashTech() {
         int t = dashAt(30, false, &q);
         printf("  wall bounce at 30 deg after %d ms: (%.3f, %.3f) m/s, %d bounce\n", t, q.vel.x, q.vel.z, q.dashBounces);
         CHECK(q.dashBounces == 1 && q.dashTimer > 0 && std::fabs(q.vel.x - (-8.0f)) < 1e-3f && std::fabs(q.vel.z - 13.8564f) < 1e-3f);
+        CHECK((evs & ME_BOUNCE) && (evs & ME_DASH) && !(evs & ME_TELEPORT));
         UserCmd d; d.msec = 1; d.yaw = 30 * PI / 180; d.buttons = BTN_DASH;
         while (q.dashTimer > 0) pmove(q, d, wall);
         printf("  wall bounce: the rest of the dash and its exit at %.3f m/s\n", hs(q));
@@ -1822,6 +1826,7 @@ static void testDashTech() {
         t = dashAt(50, false, &q);
         printf("  wall at 50 deg after %d ms: z %.5f (%.3f, %.3f) m/s, %d bounces\n", t, q.pos.z, q.vel.x, q.vel.z, q.dashBounces);
         CHECK(q.dashBounces == 0 && q.vel.z == 0 && std::fabs(q.vel.x - (-24.0f * std::sin(50 * PI / 180))) < 1e-3f);   // slides along
+        CHECK(!(evs & ME_BOUNCE));   // (no bounce: no bounce sound)
         dashAt(30, true, &q);   // bounce, then jump during the rest of the dash on the floor: a dash jump the reflected way
         CHECK(q.dashTimer == 0 && std::fabs(hs(q) - 16.0f) < 1e-3f && q.vel.z > 0 && q.vel.y > 7.0f);   // (keeps the bounce's 16)
         // head-on between two walls 2.4 m apart: two bounces, the third wall stops it (at most 2 per dash)
@@ -1931,6 +1936,18 @@ static std::vector<std::string> testedMaps() {
 static void testMaps() {
     printf("maps\n");
     std::string err;
+    // the map pool target (owner, 2026-10-30): every mode playable on at least 5 official maps. Exempt: surf, one-way
+    // payload, multipoint and race (owner, 16:42Z / 2026-11-02), and the 1v1 variants duel and tourney (they play
+    // every 1v1 map); winner stays is retired.
+    for (int k = 0; k < MODE_COUNT; k++) {
+        if (k == MODE_SURF || k == MODE_PAYLOAD || k == MODE_POINTS || k == MODE_RACE || k == MODE_DUEL || k == MODE_TOURNEY || modeRetired(k)) continue;
+        int n = 0;
+        for (auto& name : testedMaps()) {
+            Map m;
+            if (!mapHiddenFromLists(name) && m.load(name) && isOfficialMap(m) && m.supportsMode(k)) n++;
+        }
+        if (n < 5) { printf("  %s: playable on %d official maps (want 5)\n", modeName(k), n); g_fail++; }
+    }
     // Lodestone is offered in every mode but the four that want a compact arena (owner, 1.17)
     { Map v; CHECK(v.load("viaduct") && v.supportsMode(MODE_RACE) && v.preferredMode == MODE_RACE && v.hasVoid && v.checkpoints.size() >= 5); }
     for (const char* name : {"lodestone"}) {
@@ -5753,6 +5770,23 @@ static void testGroupSlopes() {
     const float lb = outlineAt(l, {1.97f, 1.0f, 0}, nz), lt = outlineAt(l, {2.03f, 1.0f, 0}, nz);
     if (getenv("SLOPE_TRACE")) printf("    loose: box side %.3f, triangle side %.3f\n", lb, lt);
     CHECK(lb >= 0 && lb < 0.1f && lt >= 0 && lt < 0.1f);
+    // A slope's face flush with another piece's face of another look would z-fight: the thinner piece's face is lifted
+    // 4 mm, a slope's too (it never was). The wedge's side triangle at z 0 against a box reaching 3 m behind it: the
+    // wedge is thinner (2 m), so its face moves to z -0.004; against a box 0.5 m deep, the box's face does.
+    auto liftedAt = [](const BakedWorld& w, float material, float z) {
+        int n = 0;
+        for (const WorldVertex& v : w.verts) n += v.normal[2] < -0.99f && std::fabs(v.pos[2] - z) < 1e-4f && std::fabs(v.material - material) < 0.2f;
+        return n;
+    };
+    for (int deep = 0; deep < 2; deep++) {
+        Map f;
+        CHECK(f.parse(std::string(deep ? "box 1 0 0 5 1.5 3\n" : "box 1 0 0 5 1.5 0.5\n") + "wedge 3 1 2 0 0 4 2 2\n" + base));
+        BakedWorld fw;
+        buildWorld(f, fw);
+        const int wedgeUp = liftedAt(fw, 3, -0.004f), boxUp = liftedAt(fw, 0, -0.004f);
+        if (getenv("SLOPE_TRACE")) printf("    flush, box %s: wedge face lifted %d verts, box face %d\n", deep ? "deep" : "thin", wedgeUp, boxUp);
+        CHECK(deep ? wedgeUp > 0 && boxUp == 0 : wedgeUp == 0 && boxUp > 0);
+    }
 }
 
 // Materials 12-19 (owner, 2026-10-28): ice is slippery underfoot, rubber bounces you off it (floor and walls), the rest

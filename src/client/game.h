@@ -72,7 +72,10 @@ struct LaunchOptions {
     bool debugWidgets = false;
     bool debugHudLayout = false; // --hudlayout: open HUD layout settings in game
     bool debugModels = false;
+    bool debugProjectiles = false;   // --projectiles: every projectile model in a row ahead (screenshots)
     bool debugWalk = false;    // (--walk: the --models lineup turned side-on)
+    float debugLineupDist = 0;      // (--lineupdist M: the --models lineup that many metres ahead, spread wider with it)
+    bool debugLineupEmpty = false; // (--lineupempty: --lineupdist's view with the lineup left out: a mask by difference)
     int debugModelPage = 0;    // (--modelpage N: the --models lineup shows models 11 N .. 11 N + 10: kLineup a batch)
     int debugRps = 0;           // --rpsshot: the hide and seek tiebreak panel with made-up players (1 picking, 2 reveal, 3 three-way reveal)
     bool camSet = false;         // --cam: fixed backdrop camera (map analysis shots); in a match, the view's camera
@@ -274,6 +277,9 @@ private:
     void refreshHostBrains();               // list the brains again (a file gone: back to the built-in one) and check the choice
     void checkHostBrain();                  // compile the chosen brain (loadBrain: cached while the file is unchanged)
     void drawPauseMenu(float cx, float y);
+    void drawPauseMain();               // the pause menu's own page (in the main menu's look)
+    bool drawGameStrip(float s, float H);  // the main menu's strip in game (GAME, SETTINGS, LEAVE, QUIT); true: the game was left
+    void pauseBackdrop();
     // Settings: one shell, six tabs (drawSettings: the menus and the pause menu; game.cpp "Settings")
     enum { TAB_PLAYER, TAB_GAMEPLAY, TAB_CONTROLS, TAB_VIDEO, TAB_CROSSHAIR, TAB_HUD, TAB_LATENCY, TAB_SEARCH };   // (SEARCH: every setting in one list)
     int setTab_ = TAB_PLAYER;
@@ -295,7 +301,9 @@ private:
     void updateAnnouncer();
     ModeState annPrev_;
     bool annPrevValid_ = false;
-    int annCount_ = 0;
+    BallTouch ballTouch_;   // (ball: struck, from its centre in the snapshots: modecalls.h)
+    double ballKickAt_ = -1;
+    int annCount_ = 0, warmCount_ = 0;   // (the freeze's and the warmup start's countdowns: the second last heard)
     int annLeader_ = -2;   // FFA: you lead alone (1) or not (0, -1: not counted yet); -2 not counting (X10)
 
     GLFWwindow* win_ = nullptr;
@@ -395,6 +403,9 @@ private:
     TutState tut_;
     bool tutorialStart_ = false;   // (startHost: the next host is the tutorial's)
     bool tutOffer_ = false;        // the first launch's offer is up (main menu)
+    bool lineupAimed_ = false;     // (--lineupdist: the lineup turned toward the longest open line, once)
+    float lineupRoom_ = 0, lineupYaw_ = 0;   // ...that line's free metres and its yaw
+    Vec3 lineupBase_;              // ...the feet it starts from
     void startTutorial(int lesson);
     void tutorialBegin(int lesson);
     void tutorialTexts();
@@ -828,6 +839,9 @@ private:
     // mustn't wait for the server). What was shown is kept per victim, and the server's EV_HIT for it is matched against
     // that, so it isn't shown twice; only damage the server adds on its own (stickies, bots' rules...) shows from EV_HIT.
     void hitFeedback(int victim, float dmg, bool head);
+    double headTinkAt_ = -1e9;   // the last headshot tink (hits landing together: one)
+    void bombBlast(const Vec3& at);   // the planted bomb went off: its fireball and the screen flash
+    float bombFlash_ = 0; double bombFlashAt_ = 0;   // that flash's strength (0 none) and when
     float shownDmg_[kMaxPlayers] = {};
     double shownAt_[kMaxPlayers] = {};
     double pingSec() const;   // (your round trip, from the snapshot; 0 offline)
@@ -1001,7 +1015,6 @@ private:
     // 1.19.4 settings, batch 3 (VIDEO + AUDIO > MORE 2 / 4 / 5 / 6, CROSSHAIR)
     float hfov() const;                       // FOV MODE: the horizontal degrees the camera takes
     Vec3 tracerColorFor(int shooter) const;   // TRACER COLOR
-    int soundPackOf(int id) const { return cfg_.forcePack ? -1 : net_.playerSoundPack(id); }   // FORCE MY SOUND PACK
     float masterGain() const;                 // VOLUME as a gain (PERCEPTUAL: squared; unfocused: x BACKGROUND VOLUME)
     void applyLive();                         // the batch's settings into the renderer / mixer / net (each frame: a few compares)
     void drawNetGraph(float W, float H, float s);
@@ -1039,7 +1052,11 @@ private:
     double cornerAt_ = 0; int cornerFrames_ = 0, cornerFps_ = 0;   // SHOW FPS: frames counted over half a second
     float hpMax_ = 100; bool hpAlive_ = false;   // HEALTH BARS: MODE'S MAX: the most health seen this life (from its spawn)
     std::string captionText_; double captionUntil_ = 0;   // ANNOUNCER CAPTIONS: the last line, as text
-    double bombBeepAt_ = 0;            // the planted bomb's next beep (OBJECTIVE volume)
+    double bombBeepAt_ = 0;            // the planted bomb's next tick (OBJECTIVE volume)
+    CueGate bombActGate_, hillGate_, captureGate_;   // a plant's / defuse's clicks, the hill contested, your point being captured (modecalls.h)
+    float holdPrev_ = 0;               // the map's holdfire left, the last frame (its ticks: holdFireCue)
+    WrongCheckpoint wrongCp_;          // race: a checkpoint entered out of order (its buzz)
+    bool pulledPrev_ = false; double hookedAt_ = -1e9;   // someone's grapple held you the last frame; its sound's last play
     void announce(int snd);            // an announcer line (played, and captioned when ANNOUNCER CAPTIONS is on)
     int vrrHz_ = 0;                    // G-SYNC / FREESYNC: the monitor's refresh (the cap goes 3 under it)
     std::string confirmWhat_; double confirmUntil_ = 0;   // CONFIRM LEAVE: the button armed by a first click
@@ -1133,7 +1150,14 @@ private:
     double prevSoundAt_ = 0;   // (updateSounds: when it last ran, for the frame time)
     bool prevAlive_ = false;
     float stepDist_ = 0;
-    struct RemoteAudio { Vec3 pos; bool valid = false; float stepDist = 0; bool hooked = false; bool firing = false; double nextLaser = 0, nextShot = 0, nextHurt = 0; int health = 0; };   // (firing: a demo's recorded player only)
+    // (the coverage audit's own sounds, 2026-11-10: in a liquid, the climb since the last ladder step, when a splash and
+    // a grapple let go last played, and the weapon held last frame for the switch click)
+    bool selfInLiquid_ = false;
+    float ladderDist_ = 0;
+    double splashAt_ = -1, releaseAt_ = -1, switchAt_ = -1, dryAt_ = -1, debrisAt_ = -1, glassSndAt_ = -1, voteSndAt_ = -10, chatSndAt_ = -1;
+    int switchPrev_ = -1;
+    struct RemoteAudio { Vec3 pos; bool valid = false; float stepDist = 0; bool hooked = false; bool firing = false; double nextLaser = 0, nextShot = 0, nextHurt = 0; int health = 0;
+                         bool inLiquid = false; float ladderDist = 0; double nextSplash = 0, nextTele = 0; };   // (firing: a demo's recorded player only)
     RemoteAudio remoteAudio_[kMaxPlayers];
     // rebinding
     bool isDown(int action) const;

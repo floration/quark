@@ -167,8 +167,9 @@ def build():
                 # storeys: the store a single one (roof 3.9), the hotel three (roof 11.8), the others two (roof 8.3)
                 top = 3.6 if (side > 0 and i == 1) else 11.5 if (side > 0 and i == 2) else 8
                 if top > 3.6: B(f, x0, 3.6, Z(zf, zb)[0], x1, top, Z(zf, zb)[1], s)   # the upper storeys (solid)
-                B(f, x0 + 1, top, Z(zf, zf + side * 0.12)[0], x1 - 1, top + 2, Z(zf, zf + side * 0.12)[1], s)   # the false front
-                B("corrugated", x0, top, Z(zf + side * 0.12, zb)[0], x1, top + 0.3, Z(zf + side * 0.12, zb)[1], s)
+                # the false front on the roof's edge (the roof runs to the front face: no notch at its corners)
+                B(f, x0 + 1, top + 0.3, Z(zf, zf + side * 0.12)[0], x1 - 1, top + 2, Z(zf, zf + side * 0.12)[1], s)
+                B("corrugated", x0, top, Z(zf, zb)[0], x1, top + 0.3, Z(zf, zb)[1], s)
                 if top > 8:
                     for wx in (x0 + 2, x1 - 4):
                         B("glow", wx, 8.6, *Z(zf, zf - side * 0.04)[0:1], wx + 2, 10.2, Z(zf, zf - side * 0.04)[1], s)
@@ -202,8 +203,7 @@ def build():
         B("charredtimber", -35.6, 0, -6.7, -30.4, 0.7, -3.9, s)                # its solid skirt (no legs showing)
         for x in (-35.5, -31):
             B("castiron", x, 0, -7.2, x + 0.5, 1.2, -6.9, s); B("castiron", x, 0, -3.7, x + 0.5, 1.2, -3.4, s)
-        B("wideplanks", -30, 0, 7.2, -26, 1.3, 8.6, s)                          # the trough (1.3 m: cover)
-        B("clearlagoon", -29.8, 1.0, 7.4, -26.2, 1.25, 8.4, s)
+        B("wideplanks", -30, 0, 7.2, -26, 1.3, 8.6, s)                          # the trough (1.3 m: cover; solid, so no water box)
         # a freight wagon on a siding beside the track (solid to the ground), crates, the water stand over the line
         B("railwaysleepers", -56, -0.5, 2.0, -42, 0.04, 4.8, s)
         B("castiron", -54, 0, 1.9, -44, 0.7, 4.9, s)
@@ -248,7 +248,7 @@ def build():
     k.box("scaffoldboards", -6.5, 11.6, -6.5, 6.5, 12, 6.5)
     k.disc("logcabin", 0, 0, 4.6, 12, 17, n=8)
     k.wedge("corrugated", 0, -4.6, 17, -4.6, 0, 19, 4.6); k.wedge("corrugated", 1, 0, 17, -4.6, 4.6, 19, 4.6)
-    for (x0, z0, x1, z1) in ((-6.5, -6.38, -6.38, 6.38), (6.38, -6.38, 6.5, 6.38)):
+    for (x0, z0, x1, z1) in ((-6.5, -6.2, -6.38, 6.2), (6.38, -6.2, 6.5, 6.2)):   # (between the parapets: not into them)
         k.box("picketfence", x0, 12, z0, x1, 13, z1)                           # its walkway rail down the street (thin)
     for sz in (1, -1):   # solid 1.2 m parapets to the side streets (gaps at the ladders)
         za, zb = (6.2, 6.5) if sz > 0 else (-6.5, -6.2)

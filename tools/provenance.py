@@ -192,8 +192,7 @@ class Repo:
     def sound(self, kit, name):
         key = "sounds/%s/%s" % (kit, name.lower())
         if key in self.custom:
-            v = {"version": "1.14.1"} if kit == "mouth" else {}
-            return "human", "the owner's recording (assets/sfx/custom/, tools/import_sfx.py)", self.custom[key], v
+            return "human", "the owner's recording (assets/sfx/custom/, tools/import_sfx.py)", self.custom[key], {}
         if kit == "default": return "ai", "synthesized in src/client/audio.cpp", None, {}
         default_ov = self.override("sounds/default/%s.wav" % name)
         if kit == "retro":
@@ -205,7 +204,7 @@ class Repo:
             own = [c for c in clips if c.startswith("custom/")]
             if own and len(own) == len(clips):
                 return ("human", "mixed by tools/import_sfx.py (KITS) from the owner's recordings: " + ", ".join(sorted(set(own))),
-                        None, {"version": "1.14.1"} if kit == "mouth" else {})
+                        None, {})
             packs = sorted(set(KENNEY.get(c.split("/")[0], c.split("/")[0]) for c in clips if not c.startswith("custom/")))
             src = "Kenney %s (CC0 1.0, assets/sfx/CREDITS.md): %s, mixed by tools/import_sfx.py" % (
                 " + ".join(packs), ", ".join(c for c in clips))

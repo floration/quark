@@ -172,7 +172,10 @@ def shelter(k, xw, side, zc, style):
         k.box("burntoutruinwall", wall[0], 3.5, zc + zo * 2, wall[2], 4.6, zc + zo * 8)                # (its broken top)
     else:   # dump
         for (x0, z0, x1, z1) in (wall, wing):
-            k.box("woodencrate", x0 - 0.5, 0, z0, x1 + 0.5, 2.4, z1)
+            c0, c1 = x0 - 0.5, x1 + 0.5
+            if (x0, z0, x1, z1) == wing:   # (the wing's crates stop at the wall's: two breakables overlapping flickered)
+                c0, c1 = (wall[2] + 0.5, c1) if side > 0 else (c0, wall[0] - 0.5)
+            k.box("woodencrate", c0, 0, z0, c1, 2.4, z1)
             k.box("woodencrate", x0 - 0.2, 2.4, z0 + 0.4, x1 + 0.2, 3.5, z1 - 0.4)
         k.box("corrugated", wall[0] - 0.6, 3.5, za, wall[2] + 0.6, 3.7, zb)                            # (the tarp)
 
@@ -231,12 +234,13 @@ def build():
         k.box("gunmetal", x + 0.6, 1.0, z - 0.12, x + 2.8, 1.25, z + 0.12)
     # the wire belt in front of the trench (x 86) and a second line in the crater field (x 138): mesh coils that stop
     # players, not shots, 6 m gaps; spike strips under the worst tangles
-    def wire(x, z0, z1):
-        k.box("chainlinkmesh", x - 0.25, 0, z0, x + 0.25, 1.0, z1)
+    def wire(x, z0, z1, out=None):   # (out: where the belt comes out of the fallen facade; none of it shows before)
+        k.box("chainlinkmesh", x - 0.25, 0, max(z0, out or z0), x + 0.25, 1.0, z1)
         z = z0
         while z <= z1 + 0.01:
-            k.box("charredtimber", x - 0.08, 0, z - 0.08, x + 0.08, 1.3, z + 0.08); z += 4.5
-    for (z0, z1) in ((-78, -52), (-46, -24), (-18, -4.5), (4.5, 18), (24, 46), (52, 78)): wire(86, z0, z1)
+            if out is None or z + 0.08 > out: k.box("charredtimber", x - 0.08, 0, z - 0.08, x + 0.08, 1.3, z + 0.08)
+            z += 4.5
+    for (z0, z1) in ((-78, -52), (-46, -24), (-18, -4.5), (4.5, 18), (24, 46), (52, 78)): wire(86, z0, z1, -67.5 if z0 == -78 else None)
     for (z0, z1) in ((-50, -40), (-24, -10), (40, 60)): wire(138, z0, z1)
     for (z0, z1) in ((-46, -36), (30, 42)): k.box("spikefloor", 86.6, 0, z0, 88.6, 0.05, z1)
 
@@ -249,7 +253,7 @@ def build():
     k.box("charredtimber", 0.4, 3.0, 15.6, 11.6, 3.3, 19.6)
     # house 2 (north-east, one floor, its roof fallen in)
     ruin(k, W, 16, 12, 28, 22, 4.6, [("n", 22, 3, 0, DOOR_H), ("w", 17, 2.5, 1.1, 2.4), ("s", 20, 4, 1.2, 4.6), ("e", 15, 3, 0, DOOR_H)])
-    k.box("collapsedbrick", 18, 0, 17, 22, 0.5, 21.5); k.box("collapsedbrick", 18.8, 0.5, 18.5, 21, 1.0, 21.5)
+    k.box("collapsedbrick", 18, 0, 17, 22, 0.5, 21.6); k.box("collapsedbrick", 18.8, 0.5, 18.5, 21, 1.0, 21.6)   # (up to the wall)
     # house 3 (north-east, back row)
     ruin(k, "bulletpockedwall", 2, 28, 14, 38, 5.2, [("n", 8, 3, 0, DOOR_H), ("e", 33, 2.5, 1.1, 2.4), ("w", 31, 3, 1.2, 5.2), ("s", 6, 2, 1.1, 2.4)])
     # house 4 and 5 (south-east), the barn
@@ -270,7 +274,7 @@ def build():
     # a rubble ramp against house 7's back wall, a charred upper storey stub on house 5
     k.box("corrugated", 1.7, 5.2, 27.7, 9, 5.45, 38.3)
     for z in (32, 36):
-        k.box("charredtimber", -44, 4.8, z - 0.15, -34, 5.1, z + 0.15)
+        k.box("charredtimber", -43.6, 4.8, z - 0.15, -34.4, 5.1, z + 0.15)   # (wall to wall: through them, they flickered on its faces)
     k.box("scorchedtiles", 0.4, 0, -21.6, 13.6, 0.02, -10.4)
     k.wedge("rubblepile", 3, -45.6, 0, -37.6, -40, 1.6, -34)
     k.box("charredtimber", 18, 4.4, -20, 28, 6.2, -19.7); k.box("collapsedbrick", 18, 4.4, -20, 18.4, 5.6, -14)

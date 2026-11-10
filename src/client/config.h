@@ -55,7 +55,6 @@ struct Settings {
                                 // server when hosting if you alt tab it should only pause the frame generation")
     bool shadows = true;
     int model = 0;              // player model (cosmetic): an index into kPlayerModelNames (gamedefs.h: STANDARD .. GOALIE, 64), picked in the PLAYER MODEL picker
-    int soundPack = 0;          // DEFAULT, HEAVY METAL, MAGICAL, RETRO, WOODEN
     int nameColor = -1;         // your name's colour as others see it (0xRRGGBB; -1 = the default)
     bool hbMigrated = false;    // (1.17: health bars were switched on once for every existing config)
     int socd = 0;               // opposite movement keys held together: 0 cancel out, 1 last pressed wins, 2 first pressed wins
@@ -76,7 +75,6 @@ struct Settings {
     float volObjective = 1.0f;         // VIDEO > MORE 3: the planted bomb's beep (faster as it runs down)
     float volSteps = 1.0f, volOthersSteps = 1.0f, volWeapons = 1.0f;   // VIDEO > MORE 3: your footsteps, everyone else's (up to 2: louder), gunfire
     float hitVolume = 1.0f;        // VIDEO > MORE: the hitsound's own volume (x EFFECTS VOLUME; up to 2)
-    int hitPack = -1;              // ...which sound pack's hitsound (-1 = your SOUNDS pack)
     bool headshotSound = true;     // ...a higher ding on a headshot
     bool killSound = true;         // ...the kill sound (its own switch; was only with HITSOUND)
     float hudSize = 1.0f;          // VIDEO > MORE: every HUD element's size at once (x each element's own SIZE)
@@ -146,7 +144,8 @@ struct Settings {
     int shadowDist = 32;           // ...metres the shadow map reaches around you (16 / 32 / 64: farther = blurrier)
     bool shadowWorld = true, shadowPlayers = true;   // ...cast onto the map, onto players
     bool ownShadow = true;         // ...your own body's shadow (first person)
-    float playerEmit = 0.3f;       // ...models' own light (their colour's share that shadow and shade don't touch)
+    float playerEmit = 0.6f;       // ...players' own light (their colour's share that shadow and shade don't touch; 0.3 until players were made easier to see)
+    bool emitMigrated = false;     // (the old default 0.3 moved to the new one once, player_emit_v2)
     float playerSat = 1.0f;        // ...PLAYER SATURATION: players' colour, 0 grey to 2 (1: as drawn; the map untouched)
     bool playersLit = false;       // ...players never darkened by the map's shade (full sun on them)
     Vec3 outlineFriendlyColor = {0, 0, 0}, outlineEnemyColor = {0, 0, 0};   // ...the CUSTOM outline colours
@@ -177,11 +176,10 @@ struct Settings {
     bool volDb = false;            // ...volumes shown in dB
     bool volPerceptual = false;    // ...VOLUME's slider on a perceptual curve (the gain is its square)
     int audioLatency = 1;          // ...0 low, 1 normal, 2 safe (more queued: no crackle on a busy PC)
-    bool forcePack = false;        // ...everyone's sounds in your SOUND PACK
     int streakCalls = 0;           // ...killstreaks: 0 everyone's, 1 only yours, 2 none
     int timeWarn = 1;              // ...time left: 0 off, 1 one minute + 30 s, 2 also a count of the last 10 s
     bool timeWarnText = false;     // ...and as text on screen
-    int cueMute = 0;               // ...cue sounds turned off (a bit per sound id below 32)
+    long long cueMute = 0;         // ...cue sounds turned off (a bit per sound effect id: below SND_VOICE_THREE, under 64)
     long long annMute = 0;         // ...announcer lines turned off (a bit per line, SND_VOICE_THREE = bit 0)
     bool soundViz = false;         // ...nearby sounds shown as marks around the crosshair
     bool netGraph = false;         // MORE 6: ping, loss and rates bottom right (apart from F3)
@@ -240,7 +238,7 @@ struct Settings {
     bool quipCaptions = false;     // MORE 5: quips shown as captions
     float annDuck = 0.0f;          // ...effects ducked by this much while the announcer speaks (0: none, 1: silent)
     // VISUALS
-    bool fullbright = false;    // flat white world, black outlines, no lighting
+    bool fullbright = false;    // flat white world, outlines in WORLD OUTLINE's colour, no lighting
     int ownShots = 0;           // your tracers / beam: 0 with the weapon model, 1 always, 2 never
     bool enemyShots = true;     // other players' tracers and beams
     bool impactSparks = true;   // a spark where a hitscan shot meets a wall or a player (yours and everyone's)

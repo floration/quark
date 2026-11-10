@@ -9,56 +9,30 @@ sun 0.39581954 0.879599 0.26387972
 
 palette base 0.62 0.62 0.6 accent 0.3 0.42 0.3 metal 0.3 0.31 0.33 glow 0.7 0.9 1 sky 0.62 0.7 0.8
 
-concretepavers -75 -1 -46 -60 0 -30
+concretepavers -75 -1 -46 -28 0 -30
 concretepavers -75 -1 -30 -60 0 -15
-concretepavers -75 -1 15 -60 0 30
-concretepavers -75 -1 30 -60 0 46
-concretepavers -60 -1 -46 -30 0 -30
-concretepavers -60 -1 -30 -30 0 -20
+concretepavers -75 -1 15 -60 0 46
+concretepavers -60 -1 -30 -28 0 -20
 concretepavers -60 -1 -20 -32 0 -15
-concretepavers -51 -1 -15 -32 0 0
-concretepavers -51 -1 0 -32 0 15
+concretepavers -51 -1 -15 -32 0 15
 concretepavers -60 -1 15 -32 0 20
-concretepavers -60 -1 20 -30 0 30
-concretepavers -60 -1 30 -30 0 36
+concretepavers -60 -1 20 60 0 36
 concretepavers -60 -1 36 -44 0 42
-concretepavers -60 -1 42 -30 0 46
-concretepavers -30 -1 -46 -28 0 -30
-concretepavers -30 -1 -30 -28 0 -20
-concretepavers -30 -1 20 0 0 30
-concretepavers -30 -1 30 0 0 36
-concretepavers -30 -1 42 0 0 46
-concretepavers 28 -1 -46 30 0 -30
-concretepavers 28 -1 -30 30 0 -20
-concretepavers 0 -1 20 30 0 30
-concretepavers 0 -1 30 30 0 36
-concretepavers 0 -1 42 30 0 46
-concretepavers 30 -1 -46 60 0 -30
-concretepavers 30 -1 -30 60 0 -20
+concretepavers -60 -1 42 60 0 46
+concretepavers 28 -1 -46 75 0 -30
+concretepavers 28 -1 -30 60 0 -20
 concretepavers 32 -1 -20 60 0 -16
-concretepavers 32 -1 -16 54 0 0
-concretepavers 32 -1 0 54 0 16
+concretepavers 32 -1 -16 54 0 16
 concretepavers 32 -1 16 60 0 20
-concretepavers 30 -1 20 60 0 30
-concretepavers 30 -1 30 60 0 36
 concretepavers 44 -1 36 60 0 42
-concretepavers 30 -1 42 60 0 46
-concretepavers 60 -1 -46 75 0 -30
 concretepavers 60 -1 -30 75 0 -16
-concretepavers 60 -1 16 75 0 30
-concretepavers 60 -1 30 75 0 46
+concretepavers 60 -1 16 75 0 46
 boardformedconcrete -81 -1 -15 -51 0 -5
 boardformedconcrete -81 -1 -5 -78 0 5
 boardformedconcrete -72 -1 -5 -51 0 5
 boardformedconcrete -81 -1 5 -51 0 15
-epoxyfloor -32 -1 -20 0 0 0
-epoxyfloor -32 -1 0 0 0 20
-epoxyfloor 0 -1 -20 32 0 0
-epoxyfloor 0 -1 0 32 0 20
-steelcheckerfloor -28 -1 -46 0 0 -28
-steelcheckerfloor -28 -1 -28 0 0 -20
-steelcheckerfloor 0 -1 -46 28 0 -28
-steelcheckerfloor 0 -1 -28 28 0 -20
+epoxyfloor -32 -1 -20 32 0 20
+steelcheckerfloor -28 -1 -46 28 0 -20
 epoxyfloor 54 -1 -16 84 0 -10
 epoxyfloor 54 -1 -10 64 0 10
 epoxyfloor 80 -1 -10 84 0 10
@@ -81,9 +55,11 @@ boardformedconcrete 43 -1.5 37 44 -0.5 41
 boardformedconcrete -44 -1.5 41 44 -0.5 42
 driedriverbed -43 -2 37 43 -1 41
 clearlagoon -44 -1 36 44 -0.2 42
-precastconcrete -77 -1 -48 -75 17.5 -11
+precastconcrete -77 0 -48 -75 17.5 -11
+precastconcrete -77 -1 -48 -75 0 -15
 clip -77 17.5 -48 -75 23 -11
-precastconcrete -77 -1 11 -75 17.5 48
+precastconcrete -77 0 11 -75 17.5 48
+precastconcrete -77 -1 15 -75 0 48
 clip -77 17.5 11 -75 23 48
 precastconcrete 75 -1 -48 77 17.5 -16
 clip 75 17.5 -48 77 23 -16
@@ -225,7 +201,7 @@ powdercoatyellow 54.6 12 -15.4 83.4 12.6 -14.8
 powdercoatyellow 54.6 12 14.8 83.4 12.6 15.4
 powdercoatyellow 77 12.6 -15.4 79 13.4 15.4
 boardformedconcrete -32.6 0 -20 -32 16 -16
-boardformedconcrete -32.6 5 -16 -32 16 -11
+boardformedconcrete -32.6 5.5 -16 -32 16 -11
 boardformedconcrete -32.6 0 -11 -32 16 -3.5
 boardformedconcrete -32.6 7 -3.5 -32 16 3.5
 boardformedconcrete -32.6 0 3.5 -32 16 9.5
@@ -236,7 +212,7 @@ boardformedconcrete 32 5 -14.5 32.6 16 -9.5
 boardformedconcrete 32 0 -9.5 32.6 16 -3.5
 boardformedconcrete 32 7 -3.5 32.6 16 3.5
 boardformedconcrete 32 0 3.5 32.6 16 11
-boardformedconcrete 32 5 11 32.6 16 16
+boardformedconcrete 32 5.5 11 32.6 16 16
 boardformedconcrete 32 0 16 32.6 16 20
 boardformedconcrete -32.6 0 -20.6 -18.5 16 -20
 boardformedconcrete -18.5 5 -20.6 -13.5 16 -20
@@ -256,10 +232,7 @@ boardformedconcrete -3 6 20 3 16 20.6
 boardformedconcrete 3 0 20 17.5 16 20.6
 boardformedconcrete 17.5 5 20 22.5 16 20.6
 boardformedconcrete 22.5 0 20 32.6 16 20.6
-precastconcrete -32.6 16 -20.6 0 16.5 0
-precastconcrete -32.6 16 0 0 16.5 20.6
-precastconcrete 0 16 -20.6 32.6 16.5 0
-precastconcrete 0 16 0 32.6 16.5 20.6
+precastconcrete -32.6 16 -20.6 32.6 16.5 20.6
 galvanizedsteel -24.3 13.6 -20 -23.7 14.2 20
 galvanizedsteel -16.3 13.6 -20 -15.7 14.2 20
 galvanizedsteel -8.3 13.6 -20 -7.7 14.2 20
@@ -401,9 +374,11 @@ cut 380 4 -0.6876 0 -0.7261 -0.6683 -0.9433 0 0.3321 0.3056 0.6876 0 0.7261 0.74
 ventilationduct 62.8 1 -43.3304 65.2 5.5 -43.2104
 cut 380 4 0.6876 0 -0.7261 0.0193 -0.9433 0 -0.3321 -0.0265 -0.6876 0 0.7261 0.0579 0.9433 0 0.3321 1.2489 67.066 1 -42.8143 69.2044 5.5 -41.5104
 cut 380 4 0.7261 0 -0.6876 0.0579 -0.3321 0 -0.9433 -0.0265 -0.7261 0 0.6876 0.0193 0.3321 0 0.9433 1.2489 70.5104 1 -40.2044 71.8143 5.5 -38.066
-railtrack -71 0 -27.6 -54 0.02 -26.4
+railtrack -71 0 -27.6 -62.7 0.02 -26.4
+railtrack -61.3 0 -27.6 -54 0.02 -26.4
 powdercoatyellow -62.7 0 -27.7 -61.3 9 -26.3
-railtrack -71 0 -43.6 -54 0.02 -42.4
+railtrack -71 0 -43.6 -62.7 0.02 -42.4
+railtrack -61.3 0 -43.6 -54 0.02 -42.4
 powdercoatyellow -62.7 0 -43.7 -61.3 9 -42.3
 powdercoatyellow -62.8 9 -42.3 -61.2 10.2 -27.7
 anodizedblack -62.6 6 -36.6 -61.4 9 -35.4
@@ -437,7 +412,10 @@ cut 330 4 0.7071 0 0.7071 1.2071 -0.7071 0 0.7071 0.5 -0.7071 0 -0.7071 -0.2071 
 cut 323 4 0.7071 0 0.7071 1.2071 -0.7071 0 0.7071 0.5 -0.7071 0 -0.7071 -0.2071 0.7071 0 -0.7071 0.5 38.8913 2.2 32.8913 41.1087 2.4 35.1087
 cut 330 4 0.7071 0 0.7071 1.2071 -0.7071 0 0.7071 0.5 -0.7071 0 -0.7071 -0.2071 0.7071 0 -0.7071 0.5 42.4375 0 32.9375 44.5625 2.6 35.0625
 cut 323 4 0.7071 0 0.7071 1.2071 -0.7071 0 0.7071 0.5 -0.7071 0 -0.7071 -0.2071 0.7071 0 -0.7071 0.5 42.3913 2.2 32.8913 44.6087 2.4 35.1087
-hazard 34.5 0 28.5 45.5 0.02 36
+hazard 34.5 0 28.5 37.7 0.02 36
+hazard 38.3 0 28.5 45.5 0.02 36
+hazard 37.7 0 28.5 38.3 0.02 32.8
+hazard 37.7 0 34 38.3 0.02 36
 cut 78 5 0.9391 0 0.3437 1.0843 0.6733 0 0.7394 1.1662 -0.6733 0 0.7394 0.4929 -0.9391 0 0.3437 0.1453 0.3893 0 -0.9211 0 -72.2104 0 32.8 -55.7896 7 43.2104
 cut 78 5 -0.9391 0 -0.3437 -0.1984 -0.6733 0 -0.7394 -0.2465 0.6733 0 -0.7394 0.4269 0.9391 0 -0.3437 0.7406 -0.3893 0 0.9211 0.5318 -72.2104 0 26.7896 -55.7896 7 37.2
 cut 82 3 0.8949 0 0.4462 0.8949 -0.2963 0 0.9551 0.8065 -0.8949 0 -0.4462 -0.3768 -57.4182 7 35 -55 8 39.5
@@ -464,20 +442,22 @@ cut 380 4 -0.6876 0 -0.7261 -0.6683 -0.9433 0 0.3321 0.3056 0.6876 0 0.7261 0.74
 ventilationduct -65.2 1 26.6696 -62.8 5.5 26.7896
 cut 380 4 0.6876 0 -0.7261 0.0193 -0.9433 0 -0.3321 -0.0265 -0.6876 0 0.7261 0.0579 0.9433 0 0.3321 1.2489 -60.934 1 27.1857 -58.7956 5.5 28.4896
 cut 380 4 0.7261 0 -0.6876 0.0579 -0.3321 0 -0.9433 -0.0265 -0.7261 0 0.6876 0.0193 0.3321 0 0.9433 1.2489 -57.4896 1 29.7956 -56.1857 5.5 31.934
-railtrack 54 0 26.4 71 0.02 27.6
+railtrack 54 0 26.4 61.3 0.02 27.6
+railtrack 62.7 0 26.4 71 0.02 27.6
 powdercoatyellow 61.3 0 26.3 62.7 9 27.7
-railtrack 54 0 42.4 71 0.02 43.6
+railtrack 54 0 42.4 61.3 0.02 43.6
+railtrack 62.7 0 42.4 71 0.02 43.6
 powdercoatyellow 61.3 0 42.3 62.7 9 43.7
 powdercoatyellow 61.2 9 27.7 62.8 10.2 42.3
 anodizedblack 61.4 6 35.4 62.6 9 36.6
-castinplacewalls -52 0 -16.5 -32 5.5 -16
-castinplacewalls -52 0 -11 -32 5.5 -10.5
-castinplacewalls -52 5 -16.5 -32 5.5 -10.5
+castinplacewalls -52 0 -16.5 -32.6 5.5 -16
+castinplacewalls -52 0 -11 -32.6 5.5 -10.5
+castinplacewalls -52 5 -16 -32 5.5 -11
 shieldwall -52.1 0 -16 -51.9 5 -11
 shieldwall -32 0 -16 -31.8 5 -11
-castinplacewalls 32 0 10.5 52 5.5 11
-castinplacewalls 32 0 16 52 5.5 16.5
-castinplacewalls 32 5 10.5 52 5.5 16.5
+castinplacewalls 32.6 0 10.5 52 5.5 11
+castinplacewalls 32.6 0 16 52 5.5 16.5
+castinplacewalls 32 5 11 52 5.5 16
 shieldwall 52 0 11 52.2 5 16
 shieldwall 31.8 0 11 32 5 16
 cut 81 4 0.0549 0 0.9985 0.9985 1 0 -0.0002 0.9998 -0.0549 0 -0.9985 -0.0548 -1 0 0.0002 0 -61.1185 0 -16.5 -51.9992 5.5 -15.9709
@@ -493,8 +473,8 @@ powdercoatgreen 28.5 0 25 31.5 2.4 28
 cut 330 4 0.7071 0 0.7071 1.2071 -0.7071 0 0.7071 0.5 -0.7071 0 -0.7071 -0.2071 0.7071 0 -0.7071 0.5 29.1685 2.4 25.6685 30.8315 3.4 27.3315
 meshcatwalk -24 5.7 30 24 6 32.5
 galvanizedsteel -24 6 32.4 24 7 32.5
-galvanizedsteel -24.2 0 30 -23.8 5.7 30.4
-galvanizedsteel -24.2 0 32.1 -23.8 5.7 32.5
+galvanizedsteel -24 0 30 -23.8 5.7 30.4
+galvanizedsteel -24 0 32.1 -23.8 5.7 32.5
 galvanizedsteel -16.2 0 30 -15.8 5.7 30.4
 galvanizedsteel -16.2 0 32.1 -15.8 5.7 32.5
 galvanizedsteel -8.2 0 30 -7.8 5.7 30.4
@@ -505,8 +485,8 @@ galvanizedsteel 7.8 0 30 8.2 5.7 30.4
 galvanizedsteel 7.8 0 32.1 8.2 5.7 32.5
 galvanizedsteel 15.8 0 30 16.2 5.7 30.4
 galvanizedsteel 15.8 0 32.1 16.2 5.7 32.5
-galvanizedsteel 23.8 0 30 24.2 5.7 30.4
-galvanizedsteel 23.8 0 32.1 24.2 5.7 32.5
+galvanizedsteel 23.8 0 30 24 5.7 30.4
+galvanizedsteel 23.8 0 32.1 24 5.7 32.5
 steelcheckerfloor -32 0 30 -31.3333 0.5 32.5
 steelcheckerfloor -31.3333 0 30 -30.6667 1 32.5
 steelcheckerfloor -30.6667 0 30 -30 1.5 32.5
@@ -541,10 +521,7 @@ precastconcrete -28.6 0 -30.5 -28 16 -20.6
 precastconcrete 28 0 -46 28.6 16 -35.5
 precastconcrete 28 5 -35.5 28.6 16 -30.5
 precastconcrete 28 0 -30.5 28.6 16 -20.6
-precastconcrete -28.6 16 -46 0 16.5 -30
-precastconcrete -28.6 16 -30 0 16.5 -20.6
-precastconcrete 0 16 -46 28.6 16.5 -30
-precastconcrete 0 16 -30 28.6 16.5 -20.6
+precastconcrete -28.6 16 -46 28.6 16.5 -20.6
 epoxyfloor -28 7.6 -46 28 8 -42
 epoxyfloor -28 7.6 -42 -27.4 8 -24
 epoxyfloor -23.4 7.6 -42 23.4 8 -24
@@ -681,11 +658,16 @@ precastconcrete -72.6 0 -46 -71.4 17.5 -45.4
 precastconcrete -60.6 0 -46 -59.4 17.5 -45.4
 precastconcrete -48.6 0 -46 -47.4 17.5 -45.4
 precastconcrete -36.6 0 -46 -35.4 17.5 -45.4
-precastconcrete -24.6 0 -46 -23.4 17.5 -45.4
-precastconcrete -12.6 0 -46 -11.4 17.5 -45.4
-precastconcrete -0.6 0 -46 0.6 17.5 -45.4
-precastconcrete 11.4 0 -46 12.6 17.5 -45.4
-precastconcrete 23.4 0 -46 24.6 17.5 -45.4
+precastconcrete -24.6 0 -46 -23.4 7.6 -45.4
+precastconcrete -24.6 8 -46 -23.4 17.5 -45.4
+precastconcrete -12.6 0 -46 -11.4 7.6 -45.4
+precastconcrete -12.6 8 -46 -11.4 17.5 -45.4
+precastconcrete -0.6 0 -46 0.6 7.6 -45.4
+precastconcrete -0.6 8 -46 0.6 17.5 -45.4
+precastconcrete 11.4 0 -46 12.6 7.6 -45.4
+precastconcrete 11.4 8 -46 12.6 17.5 -45.4
+precastconcrete 23.4 0 -46 24.6 7.6 -45.4
+precastconcrete 23.4 8 -46 24.6 17.5 -45.4
 precastconcrete 35.4 0 -46 36.6 17.5 -45.4
 precastconcrete 47.4 0 -46 48.6 17.5 -45.4
 precastconcrete 59.4 0 -46 60.6 17.5 -45.4
@@ -727,16 +709,20 @@ ventilationduct -26 13.2 20.6 -18 15.2 20.66
 ventilationduct -14 13.2 20.6 -6 15.2 20.66
 ventilationduct 6 13.2 20.6 14 15.2 20.66
 ventilationduct 18 13.2 20.6 26 15.2 20.66
-hazard 54 2 -16.06 84 2.3 -16
+hazard 54 2 -16.06 75 2.3 -16
+hazard 77 2 -16.06 84 2.3 -16
 ventilationduct 58 10 -16.06 63 12 -16
 ventilationduct 66 10 -16.06 71 12 -16
-ventilationduct 74 10 -16.06 79 12 -16
-hazard 54 2 16 84 2.3 16.06
+ventilationduct 74 10 -16.06 75 12 -16
+ventilationduct 77 10 -16.06 79 12 -16
+hazard 54 2 16 75 2.3 16.06
+hazard 77 2 16 84 2.3 16.06
 ventilationduct 58 10 16 63 12 16.06
 ventilationduct 66 10 16 71 12 16.06
-ventilationduct 74 10 16 79 12 16.06
+ventilationduct 74 10 16 75 12 16.06
+ventilationduct 77 10 16 79 12 16.06
 concrete -31.5 0 -45 -28.6 1.2 -38.5
-rollershutter -28.66 0 -44 -28.6 4.4 -39.5
+rollershutter -28.66 1.2 -44 -28.6 4.4 -39.5
 hazard -31.5 1.2 -45 -31.3 1.22 -38.5
 radiationwarning -71.5 3 -45.95 -68.5 5 -45.85
 radiationwarning -1.5 3 45.85 1.5 5 45.95

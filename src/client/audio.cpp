@@ -2,7 +2,6 @@
 #include "../common/u8file.h"
 #include "voice_data.h"
 #include "voice_recorded.h"
-#include "sfx_recorded.h"
 #include "../common/profile.h"
 #include "../game/map.h"   // (findDataPath: the game folder, for mods/)
 #include "overrides.h"     // the owner's sounds (docs/ASSETS.md) and the sound file decoders
@@ -80,6 +79,62 @@ void addTone(std::vector<float>& b, float f, float amp, float attack, float deca
         b[i] += std::sin(2 * PI * f * t) * amp * env(t, attack, decay);
     }
 }
+// The coverage audit's layers (2026-11-10): addThump's and addBand's sounds with the envelope's decay and the pitch fall
+// a multiply a sample instead of an exp (a sweep's cutoff every 32 samples), stopped at e^-12 (-104 dB) rather than
+// e^-18: its eighteen sounds as addThump / addBand layers added ~14 ms to startup.
+size_t fastEnd(const std::vector<float>& b, float start, float attack, float decay) {
+    return std::min(b.size(), (size_t)((start + attack + 12.0f * decay) * R) + 1);
+}
+void thumpF(std::vector<float>& b, float f0, float f1, float pitchTime, float amp, float attack, float decay, float start = 0) {
+    const size_t i0 = (size_t)(start * R), e = fastEnd(b, start, attack, decay);
+    const double kp = std::exp(-1.0 / (pitchTime * R)), kd = std::exp(-1.0 / (decay * R));
+    double p = 1, g = 1, ph = 0;
+    const double w0 = 2 * PI / R;
+    for (size_t i = i0; i < e; i++) {
+        const float t = (float)(i - i0) / R;
+        ph += w0 * (f1 + (f0 - f1) * p);
+        b[i] += (float)(std::sin(ph) * g) * amp * (t < attack ? std::sin(0.5f * PI * t / attack) : 1.0f);
+        p *= kp; g *= kd;
+    }
+}
+void bandF(std::vector<float>& b, float lo, float hi, float amp, float attack, float decay, uint32_t seed, float hiEnd = -1, float start = 0) {
+    Noise n; n.s ^= seed * 2654435761u;
+    float a = 0, c = 0, kHi = onePole(hi);
+    const float kLo = onePole(lo), len = b.size() / (float)R;
+    const size_t i0 = (size_t)(start * R), e = fastEnd(b, start, attack, decay);
+    const double kd = std::exp(-1.0 / (decay * R));
+    double g = 1;
+    for (size_t i = i0; i < e; i++) {
+        const float t = (float)(i - i0) / R;
+        if (hiEnd > 0 && ((i - i0) & 31) == 0) kHi = onePole(hi + (hiEnd - hi) * std::min(1.0f, t / len));
+        const float x = n();
+        a += (x - a) * kHi;
+        c += (x - c) * kLo;
+        b[i] += (a - c) * (float)g * amp * (t < attack ? std::sin(0.5f * PI * t / attack) : 1.0f);
+        g *= kd;
+    }
+}
+// a tone and its harmonics (each 1/h as loud), by rotating phasors: no sin or exp a sample (the coverage audit's horn
+// and arpeggio as addTone layers were the dearest part of its startup cost; this is a few multiplies a sample). The same
+// sine as addTone's for one harmonic, up to rounding.
+void addHarmonics(std::vector<float>& b, float f, int harmonics, float amp, float attack, float decay, float start = 0) {
+    const size_t i0 = (size_t)(start * R), e = fastEnd(b, start, attack, decay);
+    const double w = 2 * PI * f / R;
+    const float cr = (float)std::cos(w), ci = (float)std::sin(w), dk = (float)std::exp(-1.0 / (decay * R));
+    float zr = 1, zi = 0, g = amp;   // (z = e^(i phase); g = the level, decaying)
+    const size_t ia = std::min(e, i0 + (size_t)(attack * R));
+    for (size_t i = i0; i < e; i++) {
+        float pr = zr, pi = zi, sum = 0;
+        for (int h = 1; h <= harmonics; h++) {   // (sin(h phase): the imaginary part of z^h)
+            sum += pi / (float)h;
+            const float nr = pr * zr - pi * zi; pi = pr * zi + pi * zr; pr = nr;
+        }
+        b[i] += sum * g * (i < ia ? std::sin(0.5f * PI * (float)(i - i0) / R / attack) : 1.0f);
+        g *= dk;
+        const float nr = zr * cr - zi * ci; zi = zr * ci + zi * cr; zr = nr;
+        if ((i & 255) == 0) { const float m = 1.0f / std::sqrt(zr * zr + zi * zi); zr *= m; zi *= m; }   // (no drift)
+    }
+}
 // small room: a few feedback combs + a low-pass, mixed in quietly
 void addRoom(std::vector<float>& b, float mix, float size = 1.0f) {
     const int delays[4] = {1116, 1188, 1277, 1356};
@@ -107,7 +162,6 @@ void finish(std::vector<float>& b, float peak) {
 }
 } // namespace
 
-static void voice(std::vector<float>& b, int pack);
 static float loudness(const std::vector<float>& v);
 
 // soft saturation (crunch): the clip at peak 1, through tanh with this drive, back to peak 1
@@ -142,7 +196,7 @@ static void buildHitTiers(std::vector<float>* s) {
 
 void Audio::synthesize() {
     voices_.reserve(kMaxVoices);   // (never grows under the mixing lock)
-    auto& s = sounds_[0];
+    auto& s = sounds_;
     // feedback: soft rounded ticks
     buildHitTiers(s);
     s[SND_KILL] = make(0.3f);  addThump(s[SND_KILL], 1300, 1000, 0.01f, 1, 0.0015f, 0.03f); addThump(s[SND_KILL], 1900, 1500, 0.01f, 0.9f, 0.0015f, 0.05f, 0.075f);
@@ -201,17 +255,127 @@ void Audio::synthesize() {
     s[SND_SIZZLE] = make(0.55f); addBand(s[SND_SIZZLE], 2500, 9000, 0.7f, 0.015f, 0.12f, 70, 5000);
     for (int k = 0; k < 6; k++) addBand(s[SND_SIZZLE], 1200, 6000, 0.9f - k * 0.1f, 0.001f, 0.004f, 71 + k, -1, 0.02f + k * 0.055f + (k % 2) * 0.017f);
     finish(s[SND_SIZZLE], 0.22f);
-    // the kits: RETRO re-voices these (chiptune), HEAVY METAL / MAGICAL / WOODEN are recorded (sfx_recorded.h);
-    // anything a kit lacks is the DEFAULT sound
-    for (int p = 1; p < kPacks; p++)
-        for (int i = 0; i < SND_VOICE_THREE; i++) { sounds_[p][i] = s[i]; if (p == kPackRetro) voice(sounds_[p][i], p); }
-    loadRecordedKits();
+    // the sound audit's cues (q, 2026-10-30)
+    // headshot: a small metal tink, bell-like inharmonic partials over a click, gone in a fifth of a second
+    auto& ht = s[SND_HEADSHOT_TINK];
+    ht = make(0.2f); addTone(ht, 3870, 0.6f, 0.0008f, 0.05f); addTone(ht, 5420, 0.35f, 0.0008f, 0.032f); addTone(ht, 8130, 0.18f, 0.0008f, 0.018f);
+    addBand(ht, 4000, 11000, 0.25f, 0.0003f, 0.002f, 80); finish(ht, 0.3f);
+    // hooked: a rope's jolt (a low thwack) and a whine rising as it pulls you
+    auto& hk = s[SND_HOOKED];
+    hk = make(0.45f); addThump(hk, 230, 90, 0.025f, 1, 0.001f, 0.05f); addBand(hk, 300, 2200, 0.5f, 0.001f, 0.025f, 81);
+    addThump(hk, 380, 950, 0.12f, 0.35f, 0.02f, 0.12f, 0.02f); addRoom(hk, 0.15f, 0.6f); finish(hk, 0.32f);
+    // the planted bomb: a short electronic beep with a click on its front
+    auto& bt = s[SND_BOMB_TICK];
+    bt = make(0.09f); addTone(bt, 2090, 1, 0.001f, 0.018f); addTone(bt, 4180, 0.2f, 0.001f, 0.009f); addBand(bt, 2000, 8000, 0.25f, 0.0003f, 0.0015f, 82);
+    finish(bt, 0.3f);
+    // planting: a keypad press (a soft high beep and a click); defusing: a lower tool click with a scrape of noise
+    auto& bp = s[SND_BOMB_PLANTING];
+    bp = make(0.1f); addTone(bp, 1560, 0.6f, 0.001f, 0.02f); addBand(bp, 1500, 6000, 0.4f, 0.0003f, 0.004f, 83); finish(bp, 0.22f);
+    auto& bd = s[SND_BOMB_DEFUSING];
+    bd = make(0.12f); addThump(bd, 900, 560, 0.01f, 1, 0.0005f, 0.015f); addBand(bd, 3000, 9000, 0.5f, 0.0005f, 0.012f, 84, 5000, 0.015f); finish(bd, 0.22f);
+    // the hill contested: a two-tone warning (high, low, high), a third harmonic for an edge
+    auto& hc = s[SND_HILL_CONTESTED];
+    hc = make(0.5f);
+    for (int k = 0; k < 3; k++) { const float f = k == 1 ? 660.0f : 880.0f; addTone(hc, f, 0.5f, 0.004f, 0.07f, k * 0.12f); addTone(hc, 3 * f, 0.12f, 0.004f, 0.04f, k * 0.12f); }
+    addRoom(hc, 0.2f, 0.7f); finish(hc, 0.26f);
+    // the enemy capturing your point: two rising siren whoops
+    auto& ca = s[SND_CAPTURE_ALARM];
+    ca = make(0.75f);
+    for (int k = 0; k < 2; k++) { addThump(ca, 520, 1150, 0.12f, 1, 0.01f, 0.12f, k * 0.3f); addThump(ca, 1040, 2300, 0.12f, 0.15f, 0.01f, 0.08f, k * 0.3f); }
+    addRoom(ca, 0.25f, 0.9f); finish(ca, 0.28f);
+    // the holdfire's seconds: a wooden clock tick (its release plays it higher and louder)
+    auto& tk = s[SND_HOLDFIRE_TICK];
+    tk = make(0.1f); addThump(tk, 1800, 1150, 0.004f, 1, 0.0005f, 0.012f); addBand(tk, 1000, 5000, 0.4f, 0.0003f, 0.006f, 85); finish(tk, 0.25f);
+    // a checkpoint that won't count: a low buzz (a square-ish 175 Hz, its odd harmonics), twice
+    auto& cw = s[SND_CHECKPOINT_WRONG];
+    cw = make(0.38f);
+    for (int k = 0; k < 2; k++)
+        for (int h = 1; h <= 7; h += 2) addTone(cw, 175.0f * h, 0.5f / h, 0.004f, 0.06f, k * 0.15f);
+    addBand(cw, 150, 1200, 0.15f, 0.004f, 0.08f, 86); finish(cw, 0.3f);
+    // the sound coverage audit's sounds (q, 2026-11-10)
+    // weapon switch: two small mechanical clicks, the second lower (the weapon seated)
+    auto& ws = s[SND_WEAPON_SWITCH];
+    ws = make(0.12f); thumpF(ws, 2600, 1800, 0.004f, 1, 0.0004f, 0.006f); bandF(ws, 2500, 9000, 0.35f, 0.0003f, 0.003f, 90);
+    thumpF(ws, 1400, 900, 0.005f, 0.8f, 0.0004f, 0.01f, 0.045f); bandF(ws, 1200, 5000, 0.3f, 0.0003f, 0.004f, 91, -1, 0.045f); finish(ws, 0.18f);
+    // dry fire: a dull, dead click (nothing went off)
+    auto& df = s[SND_DRYFIRE];
+    df = make(0.08f); thumpF(df, 700, 420, 0.004f, 1, 0.0004f, 0.008f); bandF(df, 800, 3000, 0.25f, 0.0003f, 0.003f, 92); finish(df, 0.16f);
+    // a thrown knife / syringe landing: a woody thunk with a short metal ring
+    auto& kh = s[SND_KNIFE_HIT];
+    kh = make(0.18f); thumpF(kh, 420, 180, 0.012f, 1, 0.0008f, 0.03f); bandF(kh, 600, 4000, 0.5f, 0.0005f, 0.012f, 93);
+    addHarmonics(kh, 2350, 1, 0.15f, 0.0008f, 0.05f); finish(kh, 0.24f);
+    // a bubble popping: a quick wet pop (it reused the bubble gun's shot pitched up)
+    auto& bp2 = s[SND_BUBBLE_POP];
+    bp2 = make(0.12f); thumpF(bp2, 1400, 500, 0.008f, 1, 0.0006f, 0.02f); bandF(bp2, 1500, 6000, 0.3f, 0.0003f, 0.006f, 94); finish(bp2, 0.2f);
+    // glass breaking: a bright crash of high noise with tinkles scattered after it, over a small knock
+    auto& gb = s[SND_GLASS_BREAK];
+    gb = make(0.55f); bandF(gb, 3000, 12000, 1, 0.001f, 0.08f, 95, 6000); thumpF(gb, 500, 200, 0.01f, 0.35f, 0.001f, 0.02f);
+    for (int k = 0; k < 9; k++) addHarmonics(gb, 3100.0f + 610.0f * (float)((k * 5) % 9), 1, 0.22f - k * 0.015f, 0.0005f, 0.018f, 0.02f + k * 0.045f + (k % 3) * 0.013f);
+    addRoom(gb, 0.25f, 0.8f); finish(gb, 0.32f);
+    // rubble: a low crumbling rumble with rock knocks through it (a breakable block, a wall down, a crumble platform)
+    auto& db = s[SND_DEBRIS];
+    db = make(0.8f); thumpF(db, 90, 40, 0.06f, 1, 0.004f, 0.12f); bandF(db, 100, 1800, 0.9f, 0.005f, 0.16f, 96, 500);
+    for (int k = 0; k < 7; k++) bandF(db, 300, 2500, 0.7f - k * 0.07f, 0.0005f, 0.012f, 97 + k, -1, 0.03f + k * 0.08f + (k % 2) * 0.03f);
+    finish(db, 0.36f);
+    // your dash bouncing off a wall: a springy thud, a rising boing over it
+    auto& dbn = s[SND_DASH_BOUNCE];
+    dbn = make(0.25f); thumpF(dbn, 160, 70, 0.02f, 1, 0.001f, 0.05f); thumpF(dbn, 300, 650, 0.05f, 0.45f, 0.004f, 0.07f, 0.01f);
+    bandF(dbn, 400, 2500, 0.25f, 0.0005f, 0.01f, 104); finish(dbn, 0.26f);
+    // a grapple let go: the rope reeling back, a falling zip with a click as it seats
+    auto& gr = s[SND_GRAPPLE_RELEASE];
+    gr = make(0.22f); bandF(gr, 600, 6000, 1, 0.004f, 0.05f, 105, 1500); thumpF(gr, 1200, 800, 0.004f, 0.4f, 0.0004f, 0.008f, 0.15f); finish(gr, 0.16f);
+    // a teleporter: a shimmering whoosh with a tone rising through it
+    auto& tp = s[SND_TELEPORT];
+    tp = make(0.6f); bandF(tp, 400, 1200, 1, 0.04f, 0.14f, 106, 7000); thumpF(tp, 400, 1600, 0.2f, 0.4f, 0.01f, 0.18f);
+    addHarmonics(tp, 2400, 1, 0.1f, 0.01f, 0.15f, 0.1f); finish(tp, 0.3f);
+    // a splash into a liquid: a wash of noise closing down, a low plunge, droplets after it
+    auto& sp = s[SND_SPLASH];
+    sp = make(0.5f); bandF(sp, 300, 6000, 1, 0.003f, 0.08f, 107, 1500); thumpF(sp, 200, 80, 0.02f, 0.4f, 0.002f, 0.04f);
+    for (int k = 0; k < 5; k++) thumpF(sp, 1300.0f + 300.0f * (float)((k * 3) % 5), 2300.0f + 250.0f * k, 0.01f, 0.15f, 0.0005f, 0.015f, 0.06f + k * 0.06f);
+    finish(sp, 0.3f);
+    // your respawn: a soft whoosh swelling in, with a fifth under it
+    auto& sw = s[SND_SPAWN];
+    sw = make(0.5f); bandF(sw, 200, 900, 1, 0.12f, 0.09f, 108, 3000); addHarmonics(sw, 660, 1, 0.25f, 0.1f, 0.12f); addHarmonics(sw, 990, 1, 0.15f, 0.12f, 0.1f);
+    finish(sw, 0.22f);
+    // low health: a heartbeat (two low thumps) with a quiet beep so small speakers carry it (it was the race ding pitched down)
+    auto& lh = s[SND_LOW_HEALTH];
+    lh = make(0.45f); thumpF(lh, 75, 45, 0.03f, 1, 0.003f, 0.04f); thumpF(lh, 70, 42, 0.03f, 0.7f, 0.003f, 0.05f, 0.18f);
+    addHarmonics(lh, 880, 1, 0.12f, 0.002f, 0.05f); addHarmonics(lh, 880, 1, 0.08f, 0.002f, 0.05f, 0.18f); finish(lh, 0.4f);
+    // ball: a goal's stadium horn (a chord with its harmonics, two blasts); the ball struck, a rubbery thump
+    auto& gl = s[SND_GOAL];
+    {   // (one blast built once, the second a copy 0.45 s on, its tail longer by the room)
+        std::vector<float> blast = make(0.85f);
+        for (float f : {233.0f, 293.7f, 349.2f}) addHarmonics(blast, f, 3, 0.3f, 0.03f, 0.1f);
+        gl = make(1.3f);
+        const size_t at = (size_t)(0.45f * R);
+        for (size_t i = 0; i < blast.size() && i + at < gl.size(); i++) { gl[i] += blast[i]; gl[i + at] += blast[i] * 1.1f; }
+    }
+    addRoom(gl, 0.4f, 1.4f); finish(gl, 0.34f);
+    auto& bk = s[SND_BALL_KICK];
+    bk = make(0.2f); thumpF(bk, 220, 110, 0.015f, 1, 0.001f, 0.04f); bandF(bk, 400, 2500, 0.4f, 0.0005f, 0.01f, 109); finish(bk, 0.3f);
+    // a chat message: a soft two-note blip
+    auto& ch = s[SND_CHAT];
+    ch = make(0.12f); addHarmonics(ch, 1175, 1, 0.6f, 0.002f, 0.025f); addHarmonics(ch, 1760, 1, 0.35f, 0.002f, 0.025f, 0.035f); finish(ch, 0.14f);
+    // a vote called: a rising two-note notice
+    auto& vt = s[SND_VOTE];
+    vt = make(0.45f); addHarmonics(vt, 784, 1, 0.5f, 0.003f, 0.08f); addHarmonics(vt, 1568, 1, 0.1f, 0.003f, 0.05f);
+    addHarmonics(vt, 1047, 1, 0.5f, 0.003f, 0.12f, 0.12f); addHarmonics(vt, 2094, 1, 0.1f, 0.003f, 0.06f, 0.12f); finish(vt, 0.2f);
+    // a ranked queue filled: a bright four-note arpeggio, the last held (it was the streak sting and the finish chime)
+    auto& mf = s[SND_MATCH_FOUND];
+    mf = make(0.7f);
+    for (int k = 0; k < 4; k++) { const float f = 523.25f * std::pow(2.0f, (k == 0 ? 0 : k == 1 ? 4 : k == 2 ? 7 : 12) / 12.0f);
+                                  addHarmonics(mf, f, 2, 0.45f, 0.003f, k == 3 ? 0.07f : 0.03f, k * 0.08f); }
+    finish(mf, 0.3f);
+    // a menu click: a tiny dry tick
+    auto& uc = s[SND_UI_CLICK];
+    uc = make(0.04f); thumpF(uc, 3000, 2200, 0.002f, 1, 0.0003f, 0.004f); bandF(uc, 3000, 9000, 0.2f, 0.0002f, 0.002f, 110); finish(uc, 0.08f);
+    // (the other kits were built here, copies of these re-voiced or recorded: removed for now, audio.h)
     loadOverrideSounds();
     loadModSounds();
     loadAnnouncer(announcer_);
 }
 
-// The announcer's lines (8-bit 16 kHz, voice_data.h) up to the mix rate, the same in every sound pack.
+// The announcer's lines (8-bit 16 kHz, voice_data.h) up to the mix rate.
 // Each voice: its recorded lines (voice_recorded.h), the generated one (voice_data.h) for any line not recorded.
 void Audio::loadAnnouncer(int set) {
     set = set < 0 || set >= kAnnouncerVoices ? 0 : set;
@@ -288,13 +452,13 @@ float Audio::heardLoudness(const std::vector<float>& v) {   // (one pass, nothin
 }
 
 // a recording's rumble below hearing (a mic bump, a DC offset) cut: it adds no loudness you hear but eats headroom,
-// and levelling such a clip by heard loudness would push it into clipping (the hitsound's tiers, recorded or replaced)
+// and levelling such a clip by heard loudness would push it into clipping (the hitsound's tiers, replaced)
 static void cutRumble(std::vector<float>& v) {
     const float a = onePole(25.0f);
     float l1 = 0, l2 = 0;
     for (float& s : v) { l1 += (s - l1) * a; float x = s - l1; l2 += (x - l2) * a; s = x - l2; }
 }
-// a recorded or replaced hitsound tier as loud as `match` (DEFAULT's, by heard loudness: every kit keeps the ladder);
+// a replaced hitsound tier as loud as `match` (the tier it replaces, by heard loudness: the ladder stays);
 // a clip whose low end would then clip is soft-limited instead (a little more crunch, never a hard clip)
 static void levelHit(std::vector<float>& v, const std::vector<float>& match) {
     cutRumble(v);
@@ -306,49 +470,6 @@ static void levelHit(std::vector<float>& v, const std::vector<float>& match) {
         if (peak <= 0.95f) return;
         if (pass == 3) { for (float& s : v) s *= 0.95f / peak; return; }   // (as close as it gets)
         for (float& s : v) s = 0.95f * std::tanh(s / 0.95f);
-    }
-}
-
-// RETRO: the DEFAULT sounds a little higher, crushed to 4-bit levels held for 4 samples (~12 kHz): chiptune.
-static void voice(std::vector<float>& b, int pack) {
-    if (pack != Audio::kPackRetro || b.empty()) return;
-    float before = loudness(b);
-    const float pitch = 1.1f;
-    std::vector<float> o((size_t)(b.size() / pitch) + 1);
-    for (size_t i = 0; i < o.size(); i++) {
-        float x = i * pitch;
-        size_t k = (size_t)x;
-        float f = x - k;
-        o[i] = k + 1 < b.size() ? b[k] + (b[k + 1] - b[k]) * f : (k < b.size() ? b[k] : 0.0f);
-    }
-    float held = 0;
-    for (size_t i = 0; i < o.size(); i++) { if (i % 4 == 0) held = std::round(o[i] * 8.0f) / 8.0f; o[i] = held; }
-    // fairness: as loud as DEFAULT, so no kit hears or hides footsteps better
-    float after = loudness(o);
-    if (after > 1e-6f) { float g = before / after; for (auto& v : o) v = std::clamp(v * g, -1.0f, 1.0f); }
-    b.swap(o);
-}
-
-// The recorded kits (sfx_recorded.h, 22.05 kHz) up to the mix rate, each matched to the DEFAULT sound's loudness.
-// All done once at startup: the mixer only ever reads ready float buffers.
-void Audio::loadRecordedKits() {
-    for (int pass = 0; pass < 2; pass++)   // (DEFAULT's own recordings first: the other kits match their loudness)
-    for (const SfxClip& c : kSfxClips) {
-        if ((c.kit == 0) != (pass == 0) || c.kit < 0 || c.kit >= kPacks || c.id < 0 || c.id >= SND_VOICE_THREE || c.size < 2) continue;
-        std::vector<float> v((size_t)((double)c.size * R / kSfxRate));
-        for (size_t i = 0; i < v.size(); i++) {
-            float t = (float)((double)i * kSfxRate / R); size_t a = (size_t)t; float f = t - a;
-            float x0 = c.data[std::min(a, c.size - 1)] / 32768.0f, x1 = c.data[std::min(a + 1, c.size - 1)] / 32768.0f;
-            v[i] = x0 + (x1 - x0) * f;
-        }
-        if (c.kit == kPackMagical) { v.resize(v.size() + R / 10, 0.0f); addRoom(v, 0.3f, 1.3f); finish(v, 1.0f); }  // a shimmering hall
-        if (c.kit != 0 && hitTier(c.id) >= 0) levelHit(v, sounds_[0][c.id]);   // (the hitsound's tiers: heard loudness)
-        else {
-            float want = c.kit == 0 ? 0.0f : loudness(sounds_[0][c.id]), have = loudness(v);
-            if (want > 1e-6f && have > 1e-6f) { float g = want / have; for (auto& x : v) x = std::clamp(x * g, -1.0f, 1.0f); }
-        }
-        if (c.kit == 0) for (int p = 1; p < kPacks; p++) if (sounds_[p][c.id] == sounds_[0][c.id]) sounds_[p][c.id] = v;   // (kits without their own take the new DEFAULT)
-        sounds_[c.kit][c.id].swap(v);
     }
 }
 
@@ -406,20 +527,20 @@ static double steadyNow() { return std::chrono::duration<double>(std::chrono::st
 constexpr double kPendingMaxAge = 0.2, kPendingLineMaxAge = 1.5;
 constexpr int kMaxNewFx = 32;   // (a rocket fight's shots, hits and blasts in one 10 ms period stay well under it)
 
-void Audio::play(int id, float volume, float pitch, int pack) {
+void Audio::play(int id, float volume, float pitch) {
     if (master_.load(std::memory_order_relaxed) <= 0) return;   // (MUTE IN BACKGROUND / volume 0: nothing to queue)
     if (!running_ || !playable(id, quipCount(), quipsOn_) || (id < 64 && (muted_.load(std::memory_order_relaxed) >> id & 1))) return;
-    Voice v{id, (pack < 0 || pack >= kPacks) ? pack_.load() : pack, 0, pitch, volume, volume, false, {}, volume};
+    Voice v{id, 0, pitch, volume, volume, false, {}, volume};
     v.queued = steadyNow();
     std::lock_guard<std::mutex> l(mu_);
     v.seq = ++voiceSeq_;
     addVoice(pending_, v, kMaxPending);
 }
 
-void Audio::play3D(int id, const Vec3& pos, float volume, float pitch, int pack) {
+void Audio::play3D(int id, const Vec3& pos, float volume, float pitch) {
     if (master_.load(std::memory_order_relaxed) <= 0) return;
     if (!running_ || !playable(id, quipCount(), quipsOn_) || (id < 64 && (muted_.load(std::memory_order_relaxed) >> id & 1))) return;
-    Voice v{id, (pack < 0 || pack >= kPacks) ? pack_.load() : pack, 0, pitch, 0, 0, true, pos, volume};
+    Voice v{id, 0, pitch, 0, 0, true, pos, volume};
     voiceGains(v, listener_, rightOf(listenerYaw_));
     if (v.gainL + v.gainR < 0.002f) return; // inaudible
     if (keepHeard && heard.size() < 64) heard.push_back({id, pos});
@@ -501,7 +622,7 @@ void Audio::render(float* buf, int n) {
             static const std::vector<float> none;
             const bool line = v.id >= SND_VOICE_THREE;
             const bool quip = v.id >= SND_QUIP;
-            const std::vector<float>& s = !line ? sounds_[v.pack][v.id]
+            const std::vector<float>& s = !line ? sounds_[v.id]
                                         : !mixLines_ ? none
                                         : !quip ? mixLines_->line[v.id - SND_VOICE_THREE]
                                         : v.id - SND_QUIP < (int)mixLines_->quip.size() ? mixLines_->quip[v.id - SND_QUIP] : none;
@@ -1178,8 +1299,8 @@ void Audio::stop() {
 }
 #endif
 
-// ---- mods: anyone's own sounds, no rebuild needed. <game folder>/mods/sounds/<kit>/<SOUND>.wav replaces that sound
-// in that kit (kit: default, heavy_metal, magical, retro, mouth; "all" = every kit); SOUND as in the list in
+// ---- mods: anyone's own sounds, no rebuild needed. <game folder>/mods/sounds/default/<SOUND>.wav replaces that sound
+// ("all" works too, from when there were several kits; default/ wins over it; other kits' folders are ignored); SOUND as in the list in
 // mods/sounds/README.txt (ROCKET, STEP, ...). WAV only (8 / 16 / 24-bit PCM or 32-bit float, any rate, mono or
 // stereo). Trimmed of leading silence, cut at 3 s, loudness matched to the sound it replaces (unless listed in
 // mods/sounds/sound-levels.txt, e.g. "default/ROCKET": then it keeps its own level). Read once at startup.
@@ -1187,17 +1308,18 @@ static const char* kModSoundNames[] = {"HIT", "KILL", "HURT", "STEP", "JUMP", "L
     "SHOTGUN", "STICKY", "CROSSBOW", "BUBBLE", "SYRINGE", "EXPLOSION", "STICKY_ATTACH", "BOLT_HIT", "DASH", "GRAPPLE_FIRE",
     "GRAPPLE_HIT", "DEATH", "STREAK", "TYPING", "CHECKPOINT", "FINISH", "HIT_MED", "HIT_HEAVY", "HIT_BRUTAL",
     "SUPER", "HYPER", "LOCATOR", "SIZZLE",
+    "HEADSHOT_TINK", "HOOKED", "BOMB_TICK", "BOMB_PLANTING", "BOMB_DEFUSING", "HILL_CONTESTED", "CAPTURE_ALARM",
+    "HOLDFIRE_TICK", "CHECKPOINT_WRONG",
+    "WEAPON_SWITCH", "DRYFIRE", "KNIFE_HIT", "BUBBLE_POP", "GLASS_BREAK", "DEBRIS", "DASH_BOUNCE", "GRAPPLE_RELEASE",
+    "TELEPORT", "SPLASH", "SPAWN", "LOW_HEALTH", "GOAL", "BALL_KICK", "CHAT", "VOTE", "MATCH_FOUND", "UI_CLICK",
     // the announcer's lines (SND_VOICE_*), as the asset export and the overrides name them
     "THREE", "TWO", "ONE", "GO", "BOMB_PLANTED", "BOMB_DEFUSED", "HILL_TAKEN", "HILL_LOST", "POINT_TAKEN", "POINT_LOST",
     "ROUND_WON", "ROUND_LOST", "OVERTIME", "YOU_WIN", "YOU_LOSE", "HIGH_SCORE", "NEW_LEADER", "YOU_DIED", "HEADSHOT",
     "AIR_ROCKET", "SPREE", "RAMPAGE", "UNSTOPPABLE", "GODLIKE", "ONE_MINUTE", "THIRTY_SECONDS", "ROUND_OVER"};
 static_assert(sizeof(kModSoundNames) / sizeof(kModSoundNames[0]) == SND_COUNT, "one name per sound, in SoundId order");
-static const char* kModKitDirs[] = {"default", "heavy_metal", "magical", "retro", "mouth"};
-static_assert(sizeof(kModKitDirs) / sizeof(kModKitDirs[0]) == Audio::kPacks, "one folder per sound kit");
 static const char* kVoiceDirs[kAnnouncerVoices] = {"male", "female", "british", "old_man", "e_girl", "india", "spy"};
 
 const char* Audio::soundName(int id) { return kModSoundNames[id < 0 || id >= SND_COUNT ? 0 : id]; }
-const char* Audio::kitDir(int pack) { return kModKitDirs[pack < 0 || pack >= kPacks ? 0 : pack]; }
 const char* Audio::voiceDir(int v) { return kVoiceDirs[v < 0 || v >= kAnnouncerVoices ? 0 : v]; }
 
 // sound-levels.txt (docs/ASSETS.md): the replacements that keep their own level. The sound editor levels groups of
@@ -1267,9 +1389,8 @@ void Audio::loadModSounds() {
         fclose(f);
         keep = keptLevels(text);
     }
-    for (int pass = 0; pass < 2; pass++)   // "all" first, a kit's own folder wins over it
-    for (int kit = 0; kit < kPacks; kit++) {
-        const char* sub = pass == 0 ? "all" : kModKitDirs[kit];
+    for (int pass = 0; pass < 2; pass++) {   // "all" first, default/ wins over it
+        const char* sub = pass == 0 ? "all" : kKitDir;
         std::string dir = root + "/" + sub;
         for (int id = 0; id < SND_VOICE_THREE; id++) {
             FILE* f = u8fopen(dir + "/" + kModSoundNames[id] + ".wav", "rb");
@@ -1280,16 +1401,16 @@ void Audio::loadModSounds() {
             fclose(f);
             std::vector<float> x; int rate = 0;
             if (file.size() < 4 || memcmp(file.data(), "RIFF", 4) || !decodeSound(file.data(), file.size(), x, rate) || x.size() < 16) continue;
-            sounds_[kit][id] = prepareClip(x, rate, 3.0f, sounds_[kit][id], hitTier(id) >= 0,
+            sounds_[id] = prepareClip(x, rate, 3.0f, sounds_[id], hitTier(id) >= 0,
                                            kept(keep, std::string(sub) + "/" + kModSoundNames[id]));
         }
     }
 }
 
-// ---- the owner's overrides (docs/ASSETS.md): sounds/<kit>/<SOUND>.<wav|ogg|flac|mp3> replaces that sound in that
-// kit, voices/<voice>/<LINE>.<ext> that announcer line; each as loud as the sound it replaces, unless sound-levels.txt
-// lists it (then its own level, keptLevels). A DEFAULT override
-// also becomes the sound of every kit that had DEFAULT's (and RETRO's chiptune of it). Nothing to do without any.
+// ---- the owner's overrides (docs/ASSETS.md): sounds/default/<SOUND>.<wav|ogg|flac|mp3> replaces that sound,
+// voices/<voice>/<LINE>.<ext> that announcer line; each as loud as the sound it replaces, unless sound-levels.txt
+// lists it (then its own level, keptLevels). Overrides for the removed kits (sounds/<other kit>/) are ignored.
+// Nothing to do without any.
 static bool overrideClip(const std::string& base, std::vector<float>& x, int& rate) {
     std::vector<uint8_t> file;
     std::string matched, err;
@@ -1302,20 +1423,12 @@ static bool overrideClip(const std::string& base, std::vector<float>& x, int& ra
 void Audio::loadOverrideSounds() {
     if (!overrides::any()) return;
     const std::set<std::string> keep = keptLevels(overrides::soundLevels());
-    for (int kit = 0; kit < kPacks; kit++)   // (DEFAULT first: the other kits are matched to its loudness)
-        for (int id = 0; id < SND_VOICE_THREE; id++) {
-            std::vector<float> x; int rate = 0;
-            std::string base = std::string("sounds/") + kModKitDirs[kit] + "/" + kModSoundNames[id];
-            if (!overrideClip(base, x, rate)) continue;
-            std::vector<float> v = prepareClip(x, rate, 3.0f, sounds_[0][id], hitTier(id) >= 0, kept(keep, base));
-            if (kit == 0) {
-                for (int p = 1; p < kPacks; p++)
-                    if (p != kPackRetro && sounds_[p][id] == sounds_[0][id]) sounds_[p][id] = v;   // kits that had DEFAULT's sound
-                sounds_[kPackRetro][id] = v;
-                voice(sounds_[kPackRetro][id], kPackRetro);                                      // RETRO: DEFAULT, chiptuned
-            }
-            sounds_[kit][id].swap(v);
-        }
+    for (int id = 0; id < SND_VOICE_THREE; id++) {
+        std::vector<float> x; int rate = 0;
+        std::string base = std::string("sounds/") + kKitDir + "/" + kModSoundNames[id];
+        if (!overrideClip(base, x, rate)) continue;
+        sounds_[id] = prepareClip(x, rate, 3.0f, sounds_[id], hitTier(id) >= 0, kept(keep, base));
+    }
 }
 
 void Audio::loadOverrideVoice(int set, std::vector<float>* lines, int count) {

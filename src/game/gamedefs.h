@@ -81,7 +81,9 @@ inline const char* const kPlayerModelNames[] = {
     "TVHEAD", "PLAGUEDOC", "GUARD", "CAVEMAN", "DANCER", "TOURIST", "SURFER", "ROCKSTAR", "LUMBERJACK", "CYBORG", "GOALIE"};
 constexpr int kPlayerModels = (int)(sizeof kPlayerModelNames / sizeof kPlayerModelNames[0]);
 static_assert(kPlayerModels <= 256, "EV_PLAYERINFO carries the model in one byte");
-constexpr int kSoundPacks = 5;            // DEFAULT, HEAVY METAL, MAGICAL, RETRO, WOODEN
+constexpr int kSoundPacks = 5;            // DEFAULT, HEAVY METAL, MAGICAL, RETRO, MOUTH: the wire's range (EV_PLAYERINFO,
+                                          // the model command). Since 2026-11-10 the client has DEFAULT only, sends 0 and
+                                          // ignores everyone's (older clients still hear the pack a player picked)
 static_assert(kSoundPacks <= 8, "EV_PLAYERINFO carries the sound pack in 3 bits");
 inline const char* playerModelName(int m) { return kPlayerModelNames[(m < 0 || m >= kPlayerModels) ? 0 : m]; }
 // Seconds a player waits to respawn during play, or < 0 where nobody does: rounds with one life (VS, bomb, duel,

@@ -1,5 +1,6 @@
 #include "models.h"
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstring>
@@ -723,6 +724,19 @@ void viewmodelParts(int w, const ModelPalette& pal, ModelParts& out) {
     }
 }
 
+// the rocket's flickering flame and its hot core, behind the nozzle (z 0.27): the box rocket's and a mesh rocket's
+static std::array<ModelPart, 2> rocketFlame(float fl) {
+    std::array<ModelPart, 2> f{};
+    f[0].c = {0, 0, 0.36f}; f[0].h = {0.05f * fl, 0.05f * fl, 0.08f * fl}; f[0].color = {2.0f, 1.3f, 0.5f};
+    f[1].c = {0, 0, 0.33f}; f[1].h = {0.025f * fl, 0.025f * fl, 0.05f * fl}; f[1].color = {2.4f, 2.2f, 1.6f};
+    return f;
+}
+
+void rocketFlameParts(float fl, ModelParts& out) {
+    out.clear();
+    for (const ModelPart& q : rocketFlame(fl)) out.push_back(q);
+}
+
 void projectileParts(int type, const ModelPalette& pal, float fl, float core, float wob, ModelParts& out) {
     out.clear();
     Emit e{out};
@@ -753,8 +767,7 @@ void projectileParts(int type, const ModelPalette& pal, float fl, float core, fl
             e({0, 0, 0.24f}, {0.14f, 0.01f, 0.05f}, metalC, N);
             e({0, 0, 0.24f}, {0.01f, 0.14f, 0.05f}, metalC, N);
             e({0, 0, 0.27f}, {0.045f, 0.045f, 0.025f}, metalC * 0.6f, N);
-            e({0, 0, 0.36f}, {0.05f * fl, 0.05f * fl, 0.08f * fl}, Vec3(2.0f, 1.3f, 0.5f), N);
-            e({0, 0, 0.33f}, {0.025f * fl, 0.025f * fl, 0.05f * fl}, Vec3(2.4f, 2.2f, 1.6f), N);
+            for (const ModelPart& q : rocketFlame(fl)) out.push_back(q);
             break;
         case WPN_SYRINGE: // thrown syringe: glass barrel, glowing serum, flange, plunger, hub and needle first
             e({0, 0, 0}, {0.03f, 0.03f, 0.12f}, Vec3(0.8f, 0.85f, 0.9f), N);
