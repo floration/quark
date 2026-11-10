@@ -57,8 +57,8 @@ def build():
             k.box("scifipanels", x, 8, za, wx - 2, 11, zb); x = wx + 2
             k.box("clip", wx - 2, 8, za, wx + 2, 11, zb)
         k.box("scifipanels", x, 8, za, HX, 11, zb)
-        # the chamfer (12 -> 18, |z| 16 -> 10)
-        k.wedge("aircraftskin", 2 if sz > 0 else 3, -HX - 1, 12, min(sz * 10, sz * (HZ + 1)), HX + 1, TOP + 0.5, max(sz * 10, sz * (HZ + 1)), up=1)
+        # the chamfer (12 -> 18.5, |z| 17 -> 10), between the end walls (run into them, its ends would z-fight theirs)
+        k.wedge("aircraftskin", 2 if sz > 0 else 3, -HX, 12, min(sz * 10, sz * (HZ + 1)), HX, TOP + 0.5, max(sz * 10, sz * (HZ + 1)), up=1)
     for sx in (-1, 1):
         xa, xb = sorted((sx * HX, sx * (HX + 1)))
         k.box("boltedaccesspanels", xa, -1, -HZ - 1, xb, TOP + 0.5, HZ + 1)
@@ -166,7 +166,7 @@ def build():
     for sz in (-1, 1):
         za, zb = sorted((sz * (HZ - 0.12), sz * HZ))
         for x in (-21, -15, -9, -3, 3, 9, 15, 21):
-            k.box("anodizedblack", x - 0.2, 0, za, x + 0.2, 12, zb)
+            k.box("anodizedblack", x - 0.2, 0, za, x + 0.2, 11.6, zb)   # (up to the lamp strip, which is in front of it)
             k.wedge("anodizedblack", 2 if sz > 0 else 3, x - 0.2, 11.83, min(sz * 9.83, sz * (HZ + 0.8)), x + 0.2, TOP + 0.33, max(sz * 9.83, sz * (HZ + 0.8)), up=1)
         k.tube_x("oxidizedsteel", -HX, HX, 12.35, sz * 15.55, 0.25)
         ha, hb = sorted((sz * 13.6, sz * 13.85))
