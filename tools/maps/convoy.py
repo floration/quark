@@ -73,7 +73,11 @@ def build_ground(k):
     for t in tiles([(136, -40, HX, 40)], 40): k.box("oilstainedconcrete", t[0], -7, t[1], t[2], 0, t[3])
     for x in range(-228, 136, 12):
         if wx0 - 2 < x < wx1 + 2: continue
-        k.box("roadmarkings", x, 0, -0.12, x + 5, 0.01, 0.12)
+        a, b = x, x + 5
+        if -16 <= a and b <= 16: continue          # (under the square's paving: never seen)
+        if a < 16 < b: a = 16
+        if a < -16 < b: b = -16
+        k.box("roadmarkings", a, 0, -0.12, b, 0.01, 0.12)
     # the wadi: its bed, the ford's ramps (west bank down, east bank up)
     for t in tiles([(wx0, -HZ, wx1, HZ)], 40): k.box("driedriverbed", t[0], -8, t[1], t[2], WADI_Y, t[3])
     k.ramp("driedriverbed", wx0, FORD[0], wx0 + 10, FORD[1], WADI_Y, 0, "-x")
@@ -165,8 +169,6 @@ def fuel_station(k, m):
     k.box("stucco", x0 + t, 0, z1 - t, x1 - t, 4.5, z1)
     k.box("stucco", x0 + t, 0, z0, -90, 4.5, z0 + t); k.box("stucco", -87, 0, z0, -80, 4.5, z0 + t); k.box("stucco", -77, 0, z0, x1 - t, 4.5, z0 + t)
     k.box("stucco", -90, 2.6, z0, -87, 4.5, z0 + t); k.box("stucco", -80, 2.6, z0, -77, 4.5, z0 + t)
-    k.box("glass", -87, 1.0, z0 + 0.1, -80, 2.4, z0 + 0.3)
-    k.box("stucco", -87, 0, z0, -80, 1.0, z0 + t)
     k.box("concreterooftiles", x0 - 0.2, 4.5, z0 - 0.2, x1 + 0.2, 4.9, z1 + 0.2)
     k.stairs("sandstoneashlar", x0 - 3, z0 + 1, x0, z1 - 1, 4.9, "z", -1)
     k.box("wideplanks", -86, 4.75, 28, -83, 5.0, z0 - 0.2)                       # (plank: shop roof to canopy)
@@ -544,7 +546,7 @@ def build():
     for key in "ABCDE":
         x0, z0, x1, z1, y = POINTS[key]
         for (a, b, c, d) in ((x0, z0, x1, z0 + 0.3), (x0, z1 - 0.3, x1, z1), (x0, z0 + 0.3, x0 + 0.3, z1 - 0.3), (x1 - 0.3, z0 + 0.3, x1, z1 - 0.3)):
-            k.box("glow", a, y + (0.02 if key == "B" else 0), b, c, y + 0.06, d)
+            k.box("glow", a, y + (0.02 if key in "BC" else 0), b, c, y + 0.06, d)   # (B, C: on the paving)
         lo = WADI_Y if key == "D" else y                # (D: the deck and the riverbed under it)
         if key == "D":
             for (a, b, c, d) in ((x0, z0, x1, z0 + 0.3), (x0, z1 - 0.3, x1, z1)):
