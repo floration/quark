@@ -73,6 +73,8 @@ struct LaunchOptions {
     bool debugHudLayout = false; // --hudlayout: open HUD layout settings in game
     bool debugModels = false;
     bool debugWalk = false;    // (--walk: the --models lineup turned side-on)
+    float debugLineupDist = 0;      // (--lineupdist M: the --models lineup that many metres ahead, spread wider with it)
+    bool debugLineupEmpty = false; // (--lineupempty: --lineupdist's view with the lineup left out: a mask by difference)
     int debugModelPage = 0;    // (--modelpage N: the --models lineup shows models 11 N .. 11 N + 10: kLineup a batch)
     int debugRps = 0;           // --rpsshot: the hide and seek tiebreak panel with made-up players (1 picking, 2 reveal, 3 three-way reveal)
     bool camSet = false;         // --cam: fixed backdrop camera (map analysis shots); in a match, the view's camera
@@ -395,6 +397,9 @@ private:
     TutState tut_;
     bool tutorialStart_ = false;   // (startHost: the next host is the tutorial's)
     bool tutOffer_ = false;        // the first launch's offer is up (main menu)
+    bool lineupAimed_ = false;     // (--lineupdist: the lineup turned toward the longest open line, once)
+    float lineupRoom_ = 0, lineupYaw_ = 0;   // ...that line's free metres and its yaw
+    Vec3 lineupBase_;              // ...the feet it starts from
     void startTutorial(int lesson);
     void tutorialBegin(int lesson);
     void tutorialTexts();
