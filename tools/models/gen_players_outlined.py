@@ -7,9 +7,10 @@ box path draws them with its outlines, face shading, crouch and walk, the same w
 
 Writes <out>/models/player/<NAME>.gltf (default out: /mnt/project-files/player-models/outlined) and the previews
 lineup-outlined.png (orange team), lineup-outlined-blue.png and walk-outlined.png, each rendered in --scratch first
-and copied over (a network mount). Shipped (owner, 2026-11-05): the files in assets/overrides/models/player/ are this
-script's output, byte for byte: `--out assets/overrides --no-preview` rewrites them. They are AI-made: curated `ai` entries
-(by Claude) in assets/provenance/models.json, which tools/provenance.py sync keeps.
+and copied over (a network mount). Shipped 2026-11-05 to 2026-11-10; REPLACED by the low-poly set (owner, 2026-11-10:
+"we need to redo the player models because they are all blocky instead of low poly"): gen_players_lowpoly.py writes
+the shipped assets/overrides/models/player/ now, so never run this one with `--out assets/overrides`. Kept as the old
+set and as the designs (and TONES) the low-poly characters remake.
 
 The designs are characters_outlined.py (the 11) and characters_outlined_extra.py (the 20), characters_outlined_extra2.py (the 33); NAMES is their order, the
 game's (kPlayerModelNames, src/game/gamedefs.h). A new model: its builder in a characters file, its name in that file's

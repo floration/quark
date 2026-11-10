@@ -56,13 +56,16 @@ model's own space (metres, +Y up, front at -Z):
 
 - **player**: feet on the ground at the origin, 2 m tall, facing -Z. Every model shares one hitbox: stay inside it.
   **Adding a player model** is data only: its name at the end of `kPlayerModelNames` (src/game/gamedefs.h; the order
-  is the index on the wire and in quark.cfg, so never reorder or remove one), its box model file
+  is the index on the wire and in quark.cfg, so never reorder or remove one), its model file
   `assets/overrides/models/player/<NAME>.gltf` (shipped and embedded; the first 11 also have built-in boxes in
-  models.cpp, later ones draw as STANDARD without the file, and `quark_tests assets` fails a model with no shipped box
-  file), the name's translations (`tools/lang/extract.py`, then a line in each `assets/lang/<code>.tsv`; `make_atlas.py`
+  models.cpp, later ones draw as STANDARD without the file, and `quark_tests assets` fails a model with no shipped
+  file, one that doesn't walk, or a mesh over 1000 triangles), the name's translations (`tools/lang/extract.py`, then a line in each `assets/lang/<code>.tsv`; `make_atlas.py`
   for new CJK characters) and a provenance entry. Up to 64 (`kMaxModelsPerKind`, models.h: raise it for more) and 256
   on the wire (EV_PLAYERINFO's model byte). The picker, the bots and the menus pick the new one up by themselves. The
-  OUTLINED set's generator (tools/models/gen_players_outlined.py) writes all 64 byte for byte.
+  shipped files are the LOW-POLY set (below, "Player mesh parts"): `tools/models/gen_players_lowpoly.py --out
+  assets/overrides --no-preview` writes all 64 byte for byte (a new model: its module in
+  tools/models/players_lowpoly/, README.md there). The older OUTLINED box set's generator
+  (tools/models/gen_players_outlined.py) is kept for reference; it no longer writes the shipped files.
 - **weapon**: the first-person viewmodel. Origin at the weapon's pivot (the HUD's viewmodel x / y / depth put it
   there and its size scales it), barrel along -Z.
 - **projectile**: origin at the projectile, flying toward -Z (ROCKET, KNIFE, STICKY, CROSSBOW, BUBBLE, SYRINGE, ORB =
@@ -158,9 +161,30 @@ logged and the default is kept. Parsed once at startup; drawing costs what the b
   squashes the posed body. A name that isn't a joint (`anim_bolt`) is a part that never moves. PLAYER ANIMATIONS off:
   drawn still. Cost: the body and parts go into the same vertex stream as any mesh (no extra draw call), one cull test
   and one shadow caster per player, one 3x4 matrix product per part a frame, no allocation. `tools/models/gen_players_realistic_dark.py` writes all 11 players this
-  way (the "D2 realistic dark" set: at most 1000 triangles each, every vertex inside the hitbox; not shipped). The
-  shipped players are the OUTLINED set (owner, 2026-11-05): box model files in `assets/overrides/models/player/`,
-  written by `tools/models/gen_players_outlined.py --out assets/overrides --no-preview` (it checks the hitbox).
+  way (the "D2 realistic dark" set: at most 1000 triangles each, every vertex inside the hitbox; not shipped).
+- **The shipped players: the LOW-POLY set** (owner, 2026-11-10: "we need to redo the player models because they are
+  all blocky instead of low poly"; it replaced the OUTLINED box set of 2026-11-05). Each of the 64 box designs remade
+  as faceted meshes on the nine `anim_` joint nodes above, written by `tools/models/gen_players_lowpoly.py --out
+  assets/overrides --no-preview` (characters: `tools/models/players_lowpoly/<name>.py`, shared body and props
+  `players_lowpoly/kit.py`, how to write one: `players_lowpoly/README.md`; deterministic). Its rules, checked on
+  what the written file reads back as (ERROR fails the generator, the rest warn):
+  - at most **1000 triangles** a model, counted in the file, the ink hulls included;
+  - an **ink outline** of its own: an inverted hull 10 mm out (`kit.OUTLINE`; range 6-15 mm), near-black `ink`,
+    never team-tinted (a mesh gets no game outline, so the settings' outline colour and width don't change it). Small
+    flush details go without a hull (half the triangles);
+  - **size, +-10% in any dimension** (owner, 2026-11-09): every vertex, outline included, inside the hitbox grown 10%
+    (body cylinder r 0.44 m under the neck line at 1.44 m, head cylinder r 0.198 m above it); the extents per
+    dimension at most 110% of the hitbox's (X, Z: 0.8 m below the neck, 0.36 m above; Y: 1.44 m, and 0.36 m above
+    the neck); X and Y under 90% fail, Z (depth) under 90% only warns (every slim body does);
+  - **walking**: all nine `anim_` nodes with the rig's pivots;
+  - **visibility** (warnings, the player-visibility rules): every non-exempt colour at least sRGB 0.18 (fails), team
+    colour on at least 35% of the front + back view (on the legs and head too, not only the chest), under 10% of the
+    view darker than sRGB 0.35 in a non-team colour and under 25% darker than 0.25, mean dE >= 35 and C* >= 20 on a
+    dark and a bright backdrop; limbs at least 120 mm thick; no crouch pose of its own (the game squashes the posed
+    body).
+  The files are compact glTF (indexed positions, the colour as each material's baseColorFactor, no normals: the game
+  takes each face's flat normal), 2.2 MB for all 64. The picker's thumbnails and the PLAYER tab's preview draw a mesh
+  player from its triangles (a small z-buffer at the card's pixels, posed walking on the hot card).
 - **Weapons' moving parts** (`part`, WEAPON ANIMATIONS): a box with `part` (a name from the Animated parts table
   below: `bolt`, `pump`, `drum`, ...) moves with that part in first person, about its `pivot` (model space; default
   the origin), exactly like an anim_ node. Boxes without it are the still body. Held by other players they're drawn

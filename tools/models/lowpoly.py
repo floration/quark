@@ -266,9 +266,12 @@ def colour(mat, tones=None):
     return t
 
 
-def write_gltf(path, name, parts, extras, tones=None, generator="gen_weapons_lowpoly.py"):
+def write_gltf(path, name, parts, extras, tones=None, generator="gen_weapons_lowpoly.py", compact=False):
     """parts: [(node name, Mesh, pivot mm or None)]; the first is the body (pivot None). tones: a TONES of the
-    caller's (default TONES); generator: the script named in asset.generator"""
+    caller's (default TONES); generator: the script named in asset.generator. compact (the players): indexed
+    positions only (each corner once per primitive, uint16 indices), the colour as the material's baseColorFactor, no
+    NORMAL (the game takes the face's normal, the same flat one written otherwise) and no COLOR_0: the game loads the
+    same triangles, colours and normals from a file about a quarter the size. Off: the weapons' files as before."""
     bin_ = bytearray()
     views, accs, mats, meshes, nodes = [], [], [], [], []
     mat_index = {}
@@ -287,7 +290,8 @@ def write_gltf(path, name, parts, extras, tones=None, generator="gen_weapons_low
         for mat in sorted(mesh.tris):
             if mat not in mat_index:
                 mat_index[mat] = len(mats)
-                m = {"name": mat, "pbrMetallicRoughness": {"baseColorFactor": [1, 1, 1, ALPHA.get(mat, 1)], "metallicFactor": 0, "roughnessFactor": 1}}
+                base = list(colour(mat, tones)) if compact else [1, 1, 1]
+                m = {"name": mat, "pbrMetallicRoughness": {"baseColorFactor": base + [ALPHA.get(mat, 1)], "metallicFactor": 0, "roughnessFactor": 1}}
                 if mat in ALPHA:
                     m["alphaMode"] = "BLEND"
                 mats.append(m)
@@ -301,6 +305,23 @@ def write_gltf(path, name, parts, extras, tones=None, generator="gen_weapons_low
                 for p in (a, b, c):
                     P.append([(p[i] - pv[i]) / 1000.0 for i in range(3)])
                     N.append(n)
+            if compact:
+                at, uniq, idx = {}, [], []
+                for p in P:
+                    k = struct.pack("<3f", *p)
+                    if k not in at:
+                        at[k] = len(uniq)
+                        uniq.append(p)
+                    idx.append(at[k])
+                U = [struct.unpack("<3f", struct.pack("<3f", *p)) for p in uniq]
+                a0 = len(accs)
+                accs.append({"bufferView": put(b"".join(struct.pack("<3f", *p) for p in U), 34962), "componentType": 5126, "count": len(U), "type": "VEC3",
+                             "min": [min(p[i] for p in U) for i in range(3)], "max": [max(p[i] for p in U) for i in range(3)]})
+                big = len(U) > 65535
+                accs.append({"bufferView": put(struct.pack("<%d%s" % (len(idx), "I" if big else "H"), *idx), 34963), "componentType": 5125 if big else 5123,
+                             "count": len(idx), "type": "SCALAR"})
+                out.append({"attributes": {"POSITION": a0}, "indices": a0 + 1, "material": mat_index[mat], "mode": 4})
+                continue
             col = colour(mat, tones)
             a0 = len(accs)
             accs.append({"bufferView": put(b"".join(struct.pack("<3f", *p) for p in P), 34962), "componentType": 5126, "count": len(P), "type": "VEC3",

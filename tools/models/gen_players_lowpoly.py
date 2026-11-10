@@ -10,8 +10,12 @@ The characters are tools/models/players_lowpoly/<name>.py (build() -> kit.Char, 
 players_lowpoly/kit.py; the contract for writing one is players_lowpoly/README.md. A name of kPlayerModelNames
 without a module yet is skipped (printed). Writes <out>/models/player/<NAME>.gltf (default out:
 /mnt/project-files/player-models/lowpoly) and the previews lineup-lowpoly.png (orange), lineup-lowpoly-blue.png,
-walk-lowpoly.png and box-vs-lowpoly.png, rendered in --scratch first and copied over (a network mount). Not shipped
-yet: nothing here writes assets/overrides.
+walk-lowpoly.png and box-vs-lowpoly.png, rendered in --scratch first and copied over (a network mount).
+
+SHIPPED (owner, 2026-11-10): these are the game's default players. `--out assets/overrides --no-preview` writes the
+shipped files assets/overrides/models/player/<NAME>.gltf (docs/ASSETS.md); with previews, an --out inside the
+repository's assets/ keeps the pictures in --scratch. The files are compact (lowpoly.write_gltf compact=True: indexed
+positions, colours as baseColorFactor, no normals: the game loads the same triangles, colours and flat normals).
 
 Checks (ERROR exits 1, warning is printed), all on what the written file reads back as:
 - at most 1000 triangles a model, the ink hulls included;
@@ -78,7 +82,7 @@ def write(ch, path):
     extras = {"style": "lowpoly", "player": ch.name, "description": ch.desc, "outline_mm": ch.outline,
               "rig": {"hipY": r.hip / 1000, "hipX": r.hipx / 1000, "kneeY": r.knee / 1000, "ankleY": r.ankle / 1000,
                       "neckY": r.neck / 1000, "waistY": r.waist / 1000}}
-    return LP.write_gltf(path, ch.name, ch.nodes(), extras, tones=tones, generator="gen_players_lowpoly.py")
+    return LP.write_gltf(path, ch.name, ch.nodes(), extras, tones=tones, generator="gen_players_lowpoly.py", compact=True)
 
 
 def read_back(path):
@@ -94,6 +98,10 @@ def read_back(path):
             a = doc["accessors"][pr["attributes"]["POSITION"]]
             v = doc["bufferViews"][a["bufferView"]]
             P = np.frombuffer(raw, "<f4", a["count"] * 3, v.get("byteOffset", 0)).reshape(-1, 3).astype(float) * 1000 + t
+            if "indices" in pr:   # (compact: indexed corners, back to triangles in rows of 3)
+                ia = doc["accessors"][pr["indices"]]
+                iv = doc["bufferViews"][ia["bufferView"]]
+                P = P[np.frombuffer(raw, "<u2" if ia["componentType"] == 5123 else "<u4", ia["count"], iv.get("byteOffset", 0))]
             prims.append((doc["materials"][pr["material"]]["name"], P))
         out.append((nd["name"], t, prims))
     return doc, out
@@ -421,7 +429,8 @@ def main():
     if skipped:
         print("skipped (no players_lowpoly module yet): %d: %s" % (len(skipped), " ".join(skipped)))
     if not args.no_preview and chars:
-        for p in previews(chars, args.scratch, args.out):
+        in_assets = os.path.abspath(args.out).startswith(os.path.join(os.path.dirname(os.path.dirname(HERE)), "assets") + os.sep) if args.out else False
+        for p in previews(chars, args.scratch, None if in_assets else args.out):
             print("wrote " + p)
     return 0 if ok else 1
 

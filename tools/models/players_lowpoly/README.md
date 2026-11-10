@@ -64,5 +64,6 @@ walk-lowpoly.png, box-vs-lowpoly.png). Use `--out <your scratch>/` while you ite
 - In the game: copy the .gltf to `<data dir>/overrides/models/player/` and run
   `DISPLAY=:99 build/quark --data-dir <data dir> --host ffa --map spire --walk --screenshot out.png`. `--walk` lines
   up page 0's 11 models side-on and walking; `--modelpage N` shows models 11N to 11N+10, and `--models` faces them.
-- Never write `assets/overrides` (not shipped yet), and never edit kit.py's defaults without telling the coordinator
-  (every character uses them).
+- The set is SHIPPED (2026-11-10): `python3 tools/models/gen_players_lowpoly.py --out assets/overrides --no-preview`
+  writes the game's default players (commit them with the module). Never edit kit.py's defaults without telling the
+  coordinator (every character uses them, and the shipped files change with them).
