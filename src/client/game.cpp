@@ -4643,6 +4643,7 @@ void Game::drawHud() {
         }
     }
     float ts = ui_.textScale();
+    menuStripPx_ = 0;   // (the pause menu's strip sets it again while it's up: ingameLayout centres right of it)
     if (paused_ && settingsInGame_ && !widgetEdit_ && hudPreviewOn()) {
         // Settings > HUD: the HUD's own elements live under the see-through shell (the world only lightly dimmed, so they
         // read clearly) and an edit shows as it's made; drawSettings outlines the selected one and draws it over the
@@ -6272,11 +6273,14 @@ void Game::drawScoreboardAt() {
     auto col = [&](int bit) { return (cols >> bit & 1) != 0; };
     const ScoreboardBox b = scoreboardBox(ps.size());
     const float x = b.x, y = b.y, w = b.w, ts = b.ts, rowH = b.rowH;
-    ui_.panel(x, y, w, b.h, 0.8f);
+    // (the main menu's panel look, owner 2026-11-09: a flat dark panel, grey captions, thin rules between the rows, your
+    // row lit in the accent with a bar on its left)
+    const Color capC = {0.50f, 0.55f, 0.60f, 1}, ruleC = {1, 1, 1, 0.06f};
+    r_.rect(x, y, w, b.h, ui_.contrast ? Color{0, 0, 0, 0.95f} : Color{0.063f, 0.078f, 0.106f, std::min(1.0f, 0.85f * ui_.panelDark)});
     float cy = y + 10 * s;
-    r_.text(x + 12 * s, cy, ts, "PLAYER", kGrey);
+    r_.text(x + 12 * s, cy, ts, "PLAYER", capC);
     std::string ladder = arenaVariant(ms.arenaVariant).name;
-    if (ranked && !cfg_.hideRatings) r_.text(x + w * 0.31f, cy, ts, "RATING", kGrey);
+    if (ranked && !cfg_.hideRatings) r_.text(x + w * 0.31f, cy, ts, "RATING", capC);
     // TOTAL K / D: lifetime kills / deaths (every game, live) from the ranking server, for players with a ranked id.
     // Bots have none, and offline (or before the server answered) nobody has: the column only shows when someone has
     // a total, and a row without one says "-" (it was an empty column).
@@ -6286,25 +6290,29 @@ void Game::drawScoreboardAt() {
     };
     bool totals = false;
     if (col(6)) for (auto& p : ps) if (lifeOf(p) != lifetime_.end()) { totals = true; break; }
-    if (totals) r_.text(x + w * 0.79f, cy, ts, "TOTAL K / D", kGrey);
+    if (totals) r_.text(x + w * 0.79f, cy, ts, "TOTAL K / D", capC);
     if (gib) {
-        r_.text(x + w * 0.53f, cy, ts, "GIBS", kGrey);
-        if (col(4)) r_.text(x + w * 0.65f, cy, ts, "ACC", kGrey);
+        r_.text(x + w * 0.53f, cy, ts, "GIBS", capC);
+        if (col(4)) r_.text(x + w * 0.65f, cy, ts, "ACC", capC);
     } else {
-        r_.text(x + w * 0.40f, cy, ts, isRaceMode(ms.mode) ? "WINS" : "SCORE", kGrey);
-        if (col(0)) r_.text(x + w * 0.48f, cy, ts, "K", kGrey);
-        if (col(1)) r_.text(x + w * 0.53f, cy, ts, "D", kGrey);
-        if (col(2)) r_.text(x + w * 0.58f, cy, ts, "DMG", kGrey);
-        if (col(3)) r_.text(x + w * 0.65f, cy, ts, "OBJ", kGrey);
-        if (col(4)) r_.text(x + w * 0.72f, cy, ts, "ACC", kGrey);
+        r_.text(x + w * 0.40f, cy, ts, isRaceMode(ms.mode) ? "WINS" : "SCORE", capC);
+        if (col(0)) r_.text(x + w * 0.48f, cy, ts, "K", capC);
+        if (col(1)) r_.text(x + w * 0.53f, cy, ts, "D", capC);
+        if (col(2)) r_.text(x + w * 0.58f, cy, ts, "DMG", capC);
+        if (col(3)) r_.text(x + w * 0.65f, cy, ts, "OBJ", capC);
+        if (col(4)) r_.text(x + w * 0.72f, cy, ts, "ACC", capC);
     }
-    if (col(5)) r_.text(x + w * 0.92f, cy, ts, "PING", kGrey);
+    if (col(5)) r_.text(x + w * 0.92f, cy, ts, "PING", capC);
     const float nextCol = ranked && !cfg_.hideRatings ? 0.31f : gib ? 0.53f : 0.40f;   // where the column right of PLAYER starts
     cy += rowH;
     for (auto& p : ps) {
         Color c = (p.flags & PS_SPECTATOR) ? kGrey : rgba(teamColor(p.id));
         if (!(p.flags & PS_SPECTATOR)) nameColorOf(p.id, c);   // (a chosen name colour; the table already says the team)
-        if (p.id == net_.clientId()) r_.rect(x + 4 * s, cy - 4 * s, w - 8 * s, rowH - 2 * s, {1, 1, 1, 0.06f});
+        if (&p != &ps.front()) r_.rect(x + 12 * s, cy - 5 * s, w - 24 * s, std::max(1.0f, std::round(s)), ruleC);
+        if (p.id == net_.clientId()) {
+            r_.rect(x + 4 * s, cy - 4 * s, w - 8 * s, rowH - 2 * s, {ui_.accent.r, ui_.accent.g, ui_.accent.b, 0.14f});
+            r_.rect(x + 4 * s, cy - 4 * s, 3 * s, rowH - 2 * s, ui_.accent);
+        }
         float cw = 0;
         if (int place = crownOf(p.id)) { cw = r_.textHeight(ts) * 1.2f; drawCrown(x + 12 * s, cy + r_.textHeight(ts) * 0.1f, cw, place, crownLetter(p.id)); cw += 5 * s; }
         {   // the name stops short of the next column (clipped with "..."); " (DEAD)" always shows
@@ -6438,7 +6446,7 @@ void Game::drawTutorialPause(float cx, float y) {
         if (c.half(1, "START OVER", UiExp::cmd("tutorial reset"))) { paused_ = false; tutorialBegin(tut_.lesson); tut_.demoEnd = time_; }
         if (c.half(2, "LESSONS", UiExp::nav("ingame/pause/lessons"))) tut_.menu = true;
         c.next();
-        if (c.full("SETTINGS", UiExp::nav("ingame/pause/settings"))) { settingsInGame_ = true; openSettingsTab(settingsStartTab()); }
+        if (c.full("SETTINGS", UiExp::nav("ingame/pause/settings/*"))) { settingsInGame_ = true; openSettingsTab(settingsStartTab()); }
         c.next();
     }
     c.last();
@@ -6798,6 +6806,21 @@ void Game::drawVoteSetup() {
 // over: a whole row); SETTINGS; the host's controls in a HOST section; STOP HOSTING / DISCONNECT / BACK TO EDITOR +
 // QUIT on the last row after a gap. A demo: RESUME, SETTINGS, STOP DEMO + QUIT.
 void Game::drawPauseMenu(float cx, float y) {
+    // every pause page has the main menu's strip on its left (owner 2026-11-09: "since we remade the main menu the in
+    // game menus should be updated too"), its pages centred right of it (ingameLayout); not under the HUD editors or
+    // SETTINGS > HUD's full-screen preview (they show the HUD where it really sits)
+    const bool strip = !(settingsInGame_ && (widgetEdit_ || hudEdit_ || hudPreviewOn()));
+    const float s = ui_.s(), H = (float)r_.height();
+    menuStripPx_ = strip ? std::round(kMenuStripW * s) : 0;
+    cx = menuStripPx_ + ((float)r_.width() - menuStripPx_) * 0.5f;
+    const bool mainPage = !settingsInGame_ && picker_ == PICK_NONE && !voteSetup_ && !voteMenu_ && !practiceMenu_ && !playersMenu_ && !queueMenu_ && !tut_.on;
+    if (mainPage) pauseBackdrop();
+    if (strip) {
+        const size_t ss0 = r_.uiMark();
+        const bool left = drawGameStrip(s, H);
+        r_.uiSupersample(ss0);
+        if (left) return;
+    }
     if (settingsInGame_) {
         drawSettings();
         return;
@@ -6809,75 +6832,7 @@ void Game::drawPauseMenu(float cx, float y) {
     if (playersMenu_) { drawPlayersMenu(); return; }
     if (queueMenu_) { drawQueueMenu(cx, y); return; }
     if (tut_.on) { drawTutorialPause(cx, y); return; }
-    const SetLayout L = ingameLayout(kPW + 32);
-    if (net_.playback()) { // watching a demo
-        const float kH = pauseH(2, 0, true);
-        PauseCol c{ui_, L, ingameTop(L, kH)};
-        ui_.panel(L.X(kPX - 16), L.Y(c.y - 16), L.L(kPW + 32), L.L(kH + 32), 0.95f);
-        if (c.full("RESUME", UiExp::nav("ingame"))) paused_ = false;
-        c.next();
-        if (c.full("SETTINGS", UiExp::nav("ingame/pause/settings"))) { settingsInGame_ = true; openSettingsTab(settingsStartTab()); }
-        c.next();
-        c.last();
-        if (c.half(1, "STOP DEMO", UiExp::nav("demos"))) { leaveGame(); setScreen(Screen::Demos); return; }
-        if (c.half(2, confirmArmed("quit") ? "SURE? QUIT" : "QUIT", (cfg_.confirmLeave && !confirmArmed("quit") ? UiExp::state("confirm", "quit") : UiExp::quit()).withId("QUIT")) && confirmed("quit")) quit_ = true;
-        return;
-    }
-    // (1v1s and duels have sides but no teams to pick: one JOIN GAME, the server seats you or puts you in line; owner,
-    // 2026-11-02: "it should say join game instead of join team a/b when theres no teams")
-    const int pm = net_.mode().mode;
-    const bool teamMode = modeIsTeamBased(pm) && !isOneVsOneMode(pm) && pm != MODE_DUEL, ranked = net_.mode().flags & MS_RANKED;
-    const int pairs = (teamMode ? 2 : 1) + 4 + (host_ ? 0 : 1);   // (JOIN A + B or PLAY), SPECTATE, VOTE, QUEUE, RECORD DEMO (, PLAYERS: the host's is under HOST)
-    const int rows = 1 + (pairs + 1) / 2 + 1 + (host_ ? 2 + (ranked ? 0 : 2) : 0);
-    const float kH = pauseH(rows, host_ ? 1 : 0, true);
-    PauseCol c{ui_, L, ingameTop(L, kH)};
-    ui_.panel(L.X(kPX - 16), L.Y(c.y - 16), L.L(kPW + 32), L.L(kH + 32), 0.95f);
-    if (c.full("RESUME", UiExp::nav("ingame"))) paused_ = false;
-    c.next();
-    int k = 0;   // the paired buttons: left, right, next row
-    auto pair = [&](const std::string& t, const UiExp& e) {
-        const bool alone = k == pairs - 1 && k % 2 == 0;   // (the last one with no partner: the whole row)
-        const bool hit = alone ? c.full(t, e) : c.half(1 + k % 2, t, e);
-        if (k % 2 || alone) c.next();
-        k++;
-        return hit;
-    };
-    if (teamMode) {
-        if (pair("JOIN TEAM A", UiExp::cmd("team a"))) { net_.sendCommand("team a"); paused_ = false; }
-        if (pair("JOIN TEAM B", UiExp::cmd("team b"))) { net_.sendCommand("team b"); paused_ = false; }
-    } else if (pair("JOIN GAME", UiExp::cmd("team a"))) { net_.sendCommand("team a"); paused_ = false; }
-    if (pair("SPECTATE", UiExp::cmd("team spec"))) { net_.sendCommand("team spec"); paused_ = false; }
-    if (pair("VOTE", UiExp::nav("ingame/pause/vote"))) { voteMenu_ = true; vsMode_ = vsMods_ = vsMap_ = true; }   // (the builder's toggles: all on)
-    if (pair(queued_.empty() ? "QUEUE" : "QUEUE (" + std::to_string(queued_.size()) + ")", UiExp::nav("ingame/pause/queue").withId("QUEUE"))) queueMenu_ = true;
-    if (net_.recording()) {
-        if (pair("STOP RECORDING (" + fmtTime((float)net_.recordingTime()) + ")", UiExp::state("recording", "0").withId("STOP RECORDING"))) { net_.stopRecording(); notify("DEMO SAVED - CREATE > DEMOS", 4); }
-    } else if (pair("RECORD DEMO", UiExp::state("recording", "1"))) startRecording();
-    if (!host_ && pair("PLAYERS", UiExp::nav("ingame/pause/players"))) playersMenu_ = true;
-    if (c.full("SETTINGS", UiExp::nav("ingame/pause/settings"))) { settingsInGame_ = true; openSettingsTab(settingsStartTab()); }
-    c.next();
-    if (host_) {   // the host's controls: start now, reload the map file (picks up edits to it), change map / mode live, edit together
-        c.section("HOST");
-        if (c.half(1, "FORCE START", UiExp::cmd("forcestart"))) { net_.sendCommand("forcestart"); paused_ = false; }
-        if (c.half(2, "RELOAD MAP", UiExp::cmd("reload"))) { net_.sendCommand("reload"); paused_ = false; }
-        c.next();
-        if (c.full("CHANGE MAP / MODE", UiExp::nav("ingame/pause/picker:livemode")) && !maps_.empty()) openLivePicker(PICK_LIVE_MODE, false);
-        c.next();
-        if (!ranked) {
-            if (c.full("EDIT THE MAP TOGETHER", UiExp::cmd("editmode on"))) { net_.sendCommand("editmode on"); paused_ = false; }
-            c.next();
-            if (c.half(1, "PLAYERS", UiExp::nav("ingame/pause/players"))) playersMenu_ = true;
-            if (c.half(2, "PRACTICE", UiExp::nav("ingame/pause/practice"))) practiceMenu_ = true;
-            c.next();
-        }
-    }
-    c.last();
-    {   // (CONFIRM LEAVE: STOP HOSTING / DISCONNECT and QUIT ask SURE? first; BACK TO EDITOR doesn't)
-        const char* lv = !testMap_.empty() ? "BACK TO EDITOR" : host_ ? "STOP HOSTING" : "DISCONNECT";
-        const bool ask = testMap_.empty() && cfg_.confirmLeave && !confirmArmed("leave");
-        if (c.half(1, testMap_.empty() && confirmArmed("leave") ? "SURE? " + std::string(lv) : std::string(lv), (ask ? UiExp::state("confirm", "leave") : UiExp::nav(!testMap_.empty() ? "editor" : "main*")).withId(lv)) &&
-            (!testMap_.empty() || confirmed("leave"))) { confirmWhat_.clear(); leaveGame(); return; }
-    }
-    if (c.half(2, confirmArmed("quit") ? "SURE? QUIT" : "QUIT", (cfg_.confirmLeave && !confirmArmed("quit") ? UiExp::state("confirm", "quit") : UiExp::quit()).withId("QUIT")) && confirmed("quit")) quit_ = true;
+    drawPauseMain();
 }
 
 // ---------------------------------------------------------------------------
@@ -10151,9 +10106,10 @@ constexpr float kIgTop = 148, kIgH = 490;
 }
 
 SetLayout Game::ingameLayout(float designW) const {
-    const float s = ui_.s(), W = (float)r_.width();
+    // (beside the pause menu's strip when it's up: centred in what's right of it)
+    const float s = ui_.s(), W = (float)r_.width() - menuStripPx_;
     const float k = std::min(s, W / (designW + 40));
-    return {k, W * 0.5f, (kIgTop + kIgH * 0.5f) * (s - k)};
+    return {k, menuStripPx_ + W * 0.5f, (kIgTop + kIgH * 0.5f) * (s - k)};
 }
 
 float Game::ingameTop(const SetLayout& L, float kH) const {
@@ -10845,6 +10801,224 @@ void Game::drawMainCreate(float s, float px, float pw, float rx, float rw, float
         drawPieces(r_, d.X(rx + 16), d.midY(yy, kListRowH, ts), ts, d.X(vx - 12 - rx - 16), {&c.recentMaps[i]}, ui_.textC());
         if (i + 1 < n) d.rule(rx + 16, yy + kListRowH - 1, rw - 32);
     }
+}
+
+// ---- The pause menu, in the main menu's look (owner 2026-11-09) ----------------------------------------------------
+// The strip on the left (the Q, GAME and SETTINGS; LEAVE and QUIT at its foot), the game dimmed behind a rail that
+// fades out like the main menu's backdrop, the page beside the strip: NOW PLAYING (the mode, the map, who's playing,
+// the big RESUME), the team buttons, the match's rows (VOTE, QUEUE, RECORD DEMO, PLAYERS); the host's controls in a
+// panel on the right, or under the page on a narrow screen. Same design pixels (s = H / 720) as the main menu.
+
+// the main menu's rail over the (already dimmed) game: dark behind the strip and the page, clear by two thirds across
+void Game::pauseBackdrop() {
+    const float W = (float)r_.width(), H = (float)r_.height(), s = H / 720.0f;
+    const float x0 = kStripW * s, x1 = 440 * s, x2 = 640 * s, x3 = std::max(x2 + 1, W * 0.68f);
+    const Color c0 = {0.04f, 0.05f, 0.07f, 0.7f}, c1 = {0.04f, 0.05f, 0.07f, 0.6f}, c2 = {0.04f, 0.05f, 0.07f, 0.1f}, c3 = {0.04f, 0.05f, 0.07f, 0};
+    r_.rectGradient(x0, 0, x1 - x0, H, c0, c1, c1, c0);
+    r_.rectGradient(x1, 0, x2 - x1, H, c1, c2, c2, c1);
+    r_.rectGradient(x2, 0, x3 - x2, H, c2, c3, c3, c2);
+}
+
+// The strip in game: GAME (the pause menu's own page; lit there and on its sub-pages) and SETTINGS, LEAVE (STOP
+// HOSTING / DISCONNECT / BACK TO EDITOR / STOP DEMO) and QUIT at its foot, armed like the main menu's QUIT (red, its
+// SURE? beside the strip). True: the game was left this frame (draw nothing more of it).
+bool Game::drawGameStrip(float s, float H) {
+    const float sw = kStripW * s;
+    r_.rect(0, 0, sw, H, kStripC);
+    r_.rect(sw, 0, std::max(1.0f, std::round(s)), H, {1, 1, 1, 0.07f});
+    r_.logoQ(sw * 0.5f + 0.75f * s, 27.5f * s, 4.8f * s, rgba(cfg_.fixedLogo ? defaultSettings().colorFriendly : cfg_.colorFriendly),
+             rgba(cfg_.fixedLogo ? defaultSettings().colorEnemy : cfg_.colorEnemy));
+    const Color white = ui_.textC();
+    const float lts = std::max(r_.minTextScale(), 1.3f * s);
+    auto label = [&](const std::string& name, float y, const Color& c) {   // a label under its icon, fitted to the strip
+        const TextFit f = r_.fitText(name, lts, sw - 4 * s);
+        if (f.keep >= 0) { const std::string t = r_.textClip(name, f.scale, sw - 4 * s); r_.text((sw - r_.textWidth(t, f.scale)) * 0.5f, y, f.scale, t, c); }
+        else r_.text((sw - r_.textWidth(name, f.scale, f.level)) * 0.5f, y + (r_.textHeight(lts) - r_.textHeight(f.scale)) * 0.5f, f.scale, name, c, f.level);
+    };
+    auto tooltip = [&](float y, float h, const std::string& t, const Color& c) {
+        const float hs = ui_.hintScale(), tw = r_.textWidth(t, hs), th = r_.textHeight(hs);
+        const float bx = sw + 8 * s, by = y + (h - th) * 0.5f - 5 * s;
+        r_.rect(bx, by, tw + 16 * s, th + 10 * s, {0.05f, 0.06f, 0.08f, 0.95f});
+        r_.text(bx + 8 * s, by + 5 * s, hs, t, c);
+    };
+    static const std::string kLabels[2] = {"GAME", "SETTINGS"};
+    static const int kIcons[2] = {ICON_PLAY, ICON_GEAR};
+    const int cur = settingsInGame_ ? 1 : 0;
+    const bool onMain = !settingsInGame_ && picker_ == PICK_NONE && !voteSetup_ && !voteMenu_ && !practiceMenu_ && !playersMenu_ && !queueMenu_ && !(tut_.on && tut_.menu);
+    for (int i = 0; i < 2; i++) {
+        const float y = (88 + 64 * i) * s, h = 60 * s;
+        const bool lit = i == cur, hv = ui_.over(0, y, sw, h);
+        if (lit) {
+            r_.rect(0, y, sw, h, {ui_.accent.r, ui_.accent.g, ui_.accent.b, 0.12f});
+            r_.rect(0, y, 3 * s, h, ui_.accent);
+        } else if (hv) r_.rect(0, y, sw, h, {1, 1, 1, 0.06f});
+        if (lit && hv && !onMain) r_.rect(0, y, sw, h, {1, 1, 1, 0.06f});   // (GAME from a sub-page: back to the pause menu)
+        const Color c = lit || hv ? white : kMutedC;
+        r_.icon(kIcons[i], sw * 0.5f, y + 21 * s, 22 * s, c);
+        label(kLabels[i], y + 38 * s, c);
+        const bool inert = i == 0 ? onMain : lit;
+        if (ui_.probing()) ui_.custom(0, y, sw, h, kLabels[i], inert ? UiExp::inert().withId(i ? "SETTINGS" : "GAME")
+                                                                     : (i ? UiExp::nav("ingame/pause/settings/*") : UiExp::nav("ingame/pause")).withId(i ? "SETTINGS" : "GAME"));
+        if (!(hv && uiIn_.pressed) || inert) continue;
+        uiIn_.pressed = false;
+        if (settingsInGame_) leaveSettings();   // (saved and sent, as its BACK)
+        picker_ = PICK_NONE;
+        voteSetup_ = voteMenu_ = practiceMenu_ = playersMenu_ = queueMenu_ = specPick_ = kickPick_ = false;
+        if (tut_.on) tut_.menu = false;
+        if (i == 1) { settingsInGame_ = true; openSettingsTab(settingsStartTab()); }
+    }
+    // the foot: LEAVE and QUIT (icon over label, 54 high, from 14 above the bottom)
+    const bool demo = net_.playback();
+    const char* lv = demo ? "STOP DEMO" : !testMap_.empty() ? "BACK TO EDITOR" : host_ ? "STOP HOSTING" : "DISCONNECT";
+    static const std::string kLeave = "LEAVE", kEditor = "EDITOR", kQuit = "QUIT", kSureQuit = "SURE? QUIT";
+    static std::string sureLeave, leaveName;
+    leaveName.assign(lv);
+    for (int i = 0; i < 2; i++) {
+        const float h = 54 * s, y = H - (14 + 54 * (2 - i)) * s;
+        const char* what = i == 0 ? "leave" : "quit";
+        const bool asks = cfg_.confirmLeave && (i == 1 || (!demo && testMap_.empty()));   // (BACK TO EDITOR and STOP DEMO don't ask)
+        const bool hv = ui_.over(0, y, sw, h), armed = asks && confirmArmed(what);
+        if (armed) r_.rect(0, y, sw, h, {kRed.r * 0.35f, kRed.g * 0.35f, kRed.b * 0.35f, 0.9f});
+        else if (hv) r_.rect(0, y, sw, h, {1, 1, 1, 0.06f});
+        const Color quitC = {1.0f, 0.54f, 0.5f, 1};
+        const Color c = i == 1 ? (hv || armed ? kRed : quitC) : armed ? kRed : hv ? white : kMutedC;
+        r_.icon(i == 0 ? ICON_EXIT : ICON_POWER, sw * 0.5f, y + 19 * s, 20 * s, c);
+        label(i == 1 ? kQuit : testMap_.empty() || demo ? kLeave : kEditor, y + 34 * s, c);
+        if (i == 0 && (hv || armed)) { sureLeave.assign(armed ? "SURE? " : "").append(lv); tooltip(y, h, sureLeave, armed ? kRed : white); }   // (what LEAVE does)
+        if (i == 1 && armed) tooltip(y, h, kSureQuit, kRed);
+        if (ui_.probing()) {
+            const UiExp e = i == 1 ? (asks && !armed ? UiExp::state("confirm", "quit") : UiExp::quit()).withId("QUIT")
+                          : (asks && !armed ? UiExp::state("confirm", "leave") : UiExp::nav(demo ? "demos" : !testMap_.empty() ? "editor" : "main*")).withId(lv);
+            ui_.custom(0, y, sw, h, i == 1 ? (armed ? kSureQuit : kQuit) : (armed ? sureLeave : leaveName), e);
+        }
+        if (!(hv && uiIn_.pressed)) continue;
+        uiIn_.pressed = false;
+        if (i == 1) { if (confirmed("quit")) quit_ = true; continue; }
+        if (asks && !confirmed("leave")) continue;
+        confirmWhat_.clear();
+        leaveGame();
+        if (demo) setScreen(Screen::Demos);
+        return true;
+    }
+    return false;
+}
+
+// The pause menu's own page (see above)
+void Game::drawPauseMain() {
+    const float W = (float)r_.width(), H = (float)r_.height(), s = H / 720.0f, Wd = W / s;
+    const MainDraw d{r_, ui_, uiIn_, s};
+    const float ts = ui_.textScale(), hs = ui_.hintScale();
+    const size_t ss0 = r_.uiMark();
+    const float px = kPageX, pw = std::min(kPageW, Wd - kPageX - 16);
+    static const std::string kPaused = "PAUSED";
+    ui_.label(px * s, 29 * s, kPaused, ui_.textC(), 2.25f, pw * s);
+    // under the notices (HOSTING ON..., a vote) when they reach down this far
+    const float top = std::max(kPanelTop, noticeEnd_ / s + 8);
+    const bool demo = net_.playback();
+    const ModeState& ms = net_.mode();
+    const int pm = ms.mode;
+    const bool ranked = ms.flags & MS_RANKED;
+    {   // NOW PLAYING: the mode and map, who's in it, RESUME
+        const float x = px, y = top, w = pw;
+        d.card(x, y, w, kCardH);
+        static const std::string kNow = "NOW PLAYING", kHosting = "YOUR GAME", kTest = "TEST PLAY", kDemo = "WATCHING A DEMO", kSpec = "SPECTATING";
+        const PlayerSnap* me = net_.findPlayer(net_.clientId());
+        const bool spec = me && (me->flags & PS_SPECTATOR);
+        d.caption(x + 16, y + 15, demo ? kDemo : !testMap_.empty() ? kTest : host_ ? kHosting : spec ? kSpec : kNow, ui_.accent, w - 32);
+        static std::string modeLine, mapLine, whoLine, addr;
+        char b[160];
+        if (ranked) snprintf(b, sizeof b, "%s - %s", rankedKind(ms.arenaVariant), arenaVariant(ms.arenaVariant).title);
+        else if (isOneVsOneMode(pm) || pm == MODE_TOURNEY || (pm == MODE_FFA && ms.arenaVariant != 0)) snprintf(b, sizeof b, "%s - %s", modeTitle(pm), arenaVariant(ms.arenaVariant).title);
+        else snprintf(b, sizeof b, "%s", modeTitle(pm));
+        modeLine.assign(b);
+        const std::string& mapName = net_.map().title.empty() ? net_.map().name : net_.map().title;
+        mapLine.assign(mapName);
+        for (char& ch : mapLine) ch = (char)toupper((unsigned char)ch);
+        drawPieces(r_, d.X(x + 16), d.X(y + 33), std::round(ts * 1.25f), d.X(w - 32), {&modeLine, &mapLine}, ui_.textC());
+        int playing = 0, watching = 0;
+        for (const PlayerSnap& p : net_.latest().players) ((p.flags & PS_SPECTATOR) ? watching : playing)++;
+        snprintf(b, sizeof b, watching ? "%d PLAYING, %d WATCHING" : playing == 1 ? "%d PLAYER" : "%d PLAYERS", playing, watching);
+        whoLine.assign(b);
+        addr.assign(demo || host_ || cfg_.streamer ? "" : net_.address());   // (STREAMER MODE: no address on screen)
+        drawPieces(r_, d.X(x + 16), d.X(y + 62), hs, d.X(w - 32), {&whoLine, &addr}, kMutedC);
+        static const std::string kResume = "RESUME";
+        if (d.bigButton(x + 16, y + 84, w - 32, 42, kResume, UiExp::nav("ingame").withId("RESUME"))) { paused_ = false; uiIn_.pressed = false; r_.uiSupersample(ss0); return; }
+    }
+    float y = top + kCardH + 10;
+    if (!demo) {   // the sides: JOIN TEAM A / B (or JOIN GAME: 1v1s and duels have sides, no teams to pick) and SPECTATE
+        // (owner, 2026-11-02: "it should say join game instead of join team a/b when theres no teams")
+        const bool teamMode = modeIsTeamBased(pm) && !isOneVsOneMode(pm) && pm != MODE_DUEL;
+        const int n = teamMode ? 3 : 2;
+        const float bw = (pw - 6 * (n - 1)) / n;
+        static const std::string kA = "JOIN TEAM A", kB = "JOIN TEAM B", kJoin = "JOIN GAME", kSpectate = "SPECTATE";
+        float bx = px;
+        auto side = [&](const std::string& t, const char* cmd) {
+            const bool hit = ui_.button(d.X(bx), d.X(y), d.X(bw), d.X(40), t, UiExp::cmd(cmd));
+            bx += bw + 6;
+            if (hit) { net_.sendCommand(cmd); paused_ = false; }
+            return hit;
+        };
+        if (teamMode) { if (side(kA, "team a") || side(kB, "team b")) { r_.uiSupersample(ss0); return; } }
+        else if (side(kJoin, "team a")) { r_.uiSupersample(ss0); return; }
+        if (side(kSpectate, "team spec")) { r_.uiSupersample(ss0); return; }
+        y += 40 + 12;
+        // THIS MATCH: VOTE, QUEUE, RECORD DEMO, PLAYERS (the host's: in HOST)
+        const int rows = 3 + (host_ ? 0 : 1);
+        d.panel(px, y, pw, 32 + rows * kListRowH + 8);
+        static const std::string kMatch = "THIS MATCH", kVote = "VOTE", kQueue = "QUEUE", kRecord = "RECORD DEMO", kStop = "STOP RECORDING",
+                                 kPlayers = "PLAYERS", kMore = ">", kOff = "OFF";
+        d.caption(px + 16, y + 12, kMatch, kCapsC, pw - 32);
+        float yy = y + 32;
+        auto row = [&](const std::string& t, const UiExp& e, const std::string& value, const Color& vc, bool last) {
+            const bool hit = d.hot(px + 8, yy, pw - 16, kListRowH, t, e);
+            const float vx = d.value(px + pw - 16, yy, kListRowH, value, vc);
+            drawPieces(r_, d.X(px + 16), d.midY(yy, kListRowH, ts), ts, d.X(vx - 12 - px - 16), {&t}, ui_.textC());
+            if (!last) d.rule(px + 16, yy + kListRowH - 1, pw - 32);
+            yy += kListRowH;
+            return hit;
+        };
+        if (row(kVote, UiExp::nav("ingame/pause/vote"), kMore, ui_.accent, false)) { voteMenu_ = true; vsMode_ = vsMods_ = vsMap_ = true; }   // (the builder's toggles: all on)
+        {
+            static std::string queued;
+            queued.assign(queued_.empty() ? ">" : std::to_string(queued_.size()));
+            if (row(kQueue, UiExp::nav("ingame/pause/queue").withId("QUEUE"), queued, queued_.empty() ? ui_.accent : ui_.textC(), false)) queueMenu_ = true;
+        }
+        if (net_.recording()) {
+            static std::string rec;
+            rec.assign("REC ").append(fmtTime((float)net_.recordingTime()));
+            if (row(kStop, UiExp::state("recording", "0").withId("STOP RECORDING"), rec, kRed, (bool)host_)) { net_.stopRecording(); notify("DEMO SAVED - CREATE > DEMOS", 4); }
+        } else if (row(kRecord, UiExp::state("recording", "1"), kOff, kMutedC, (bool)host_)) startRecording();
+        if (!host_ && row(kPlayers, UiExp::nav("ingame/pause/players"), kMore, ui_.accent, true)) playersMenu_ = true;
+        y = yy + 8 + 12;
+    }
+    if (host_ && !demo) {   // HOST: start now, reload the map file (picks up edits to it), change map / mode live, edit together
+        float rw = std::min(400.0f, Wd - kRightPad - (px + pw + 24)), rx = Wd - kRightPad - rw, ry = top;
+        if (rw < 280) { rx = px; rw = pw; ry = y; }   // (too narrow beside the page: under it)
+        const int rows = 3 + (ranked ? 0 : 3);
+        d.panel(rx, ry, rw, 32 + rows * kListRowH + 8);
+        static const std::string kHost = "HOST", kForce = "FORCE START", kReload = "RELOAD MAP", kChange = "CHANGE MAP / MODE", kEdit = "EDIT THE MAP TOGETHER",
+                                 kPlayers = "PLAYERS", kPractice = "PRACTICE", kMore = ">", kNone;
+        d.caption(rx + 16, ry + 12, kHost, kCapsC, rw - 32);
+        float yy = ry + 32;
+        int k = 0;
+        auto row = [&](const std::string& t, const UiExp& e, bool more) {
+            const bool hit = d.hot(rx + 8, yy, rw - 16, kListRowH, t, e);
+            const float vx = d.value(rx + rw - 16, yy, kListRowH, more ? kMore : kNone, ui_.accent);
+            drawPieces(r_, d.X(rx + 16), d.midY(yy, kListRowH, ts), ts, d.X(vx - 12 - rx - 16), {&t}, ui_.textC());
+            if (++k < rows) d.rule(rx + 16, yy + kListRowH - 1, rw - 32);
+            yy += kListRowH;
+            return hit;
+        };
+        if (row(kForce, UiExp::cmd("forcestart"), false)) { net_.sendCommand("forcestart"); paused_ = false; }
+        if (row(kReload, UiExp::cmd("reload"), false)) { net_.sendCommand("reload"); paused_ = false; }
+        if (row(kChange, UiExp::nav("ingame/pause/picker:livemode"), true) && !maps_.empty()) openLivePicker(PICK_LIVE_MODE, false);
+        if (!ranked) {
+            if (row(kEdit, UiExp::cmd("editmode on"), false)) { net_.sendCommand("editmode on"); paused_ = false; }
+            if (row(kPlayers, UiExp::nav("ingame/pause/players"), true)) playersMenu_ = true;
+            if (row(kPractice, UiExp::nav("ingame/pause/practice"), true)) practiceMenu_ = true;
+        }
+    }
+    r_.uiSupersample(ss0);
 }
 
 // The name as a chip top right (a square with its first letter, then the name); a click opens it as the name field

@@ -22,6 +22,7 @@
 - **Exclusive fullscreen at a custom FULLSCREEN SIZE:** the picture fills the screen again (it sat cut off in the bottom-left corner), alt-tabbing out gives the desktop its own resolution back (the game minimizes), and closing the game restores it straight away.
 - RANKED on the main menu is now a queue: pick a ladder and it joins a ranked game where someone is waiting, or hosts one (listed publicly) so the next player finds you.
 - The main menu's side strip (PLAY, PRACTICE, CREATE, RANKS, SETTINGS, DISCORD, INFO, QUIT) now stays on every menu screen, so you can jump anywhere without backing out first.
+- **In-game menus match the new main menu:** the pause menu has the same strip on its left (GAME, SETTINGS, and LEAVE / QUIT at its foot), a NOW PLAYING card with the mode, map and players and a big RESUME, the team buttons under it, and the match's options (VOTE, QUEUE, RECORD DEMO, PLAYERS) as a list; the host's controls sit in a HOST panel on the right. Vote, queue, players, practice and settings pages open beside the strip. The scoreboard has the main menu's flat panel look, with your row lit in your colour.
 
 ## Weapon models
 - **New weapon models:** all 11 weapons and the grapple launcher (arm and claw) are new low-poly models with outlines: a real AK rifle, a .50 sniper, a pump shotgun, a crossbow with a swept prod, a glass syringe and bubble tank, and more, in the same clean style as the maps and menus, with team-colour parts. Their moving parts animate too. They're AI-made placeholders until human-made ones replace them.

@@ -275,6 +275,9 @@ private:
     void refreshHostBrains();               // list the brains again (a file gone: back to the built-in one) and check the choice
     void checkHostBrain();                  // compile the chosen brain (loadBrain: cached while the file is unchanged)
     void drawPauseMenu(float cx, float y);
+    void drawPauseMain();               // the pause menu's own page (in the main menu's look)
+    bool drawGameStrip(float s, float H);  // the main menu's strip in game (GAME, SETTINGS, LEAVE, QUIT); true: the game was left
+    void pauseBackdrop();
     // Settings: one shell, six tabs (drawSettings: the menus and the pause menu; game.cpp "Settings")
     enum { TAB_PLAYER, TAB_GAMEPLAY, TAB_CONTROLS, TAB_VIDEO, TAB_CROSSHAIR, TAB_HUD, TAB_LATENCY, TAB_SEARCH };   // (SEARCH: every setting in one list)
     int setTab_ = TAB_PLAYER;
