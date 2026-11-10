@@ -301,7 +301,9 @@ private:
     void updateAnnouncer();
     ModeState annPrev_;
     bool annPrevValid_ = false;
-    int annCount_ = 0;
+    BallTouch ballTouch_;   // (ball: struck, from its centre in the snapshots: modecalls.h)
+    double ballKickAt_ = -1;
+    int annCount_ = 0, warmCount_ = 0;   // (the freeze's and the warmup start's countdowns: the second last heard)
     int annLeader_ = -2;   // FFA: you lead alone (1) or not (0, -1: not counted yet); -2 not counting (X10)
 
     GLFWwindow* win_ = nullptr;
@@ -1013,7 +1015,6 @@ private:
     // 1.19.4 settings, batch 3 (VIDEO + AUDIO > MORE 2 / 4 / 5 / 6, CROSSHAIR)
     float hfov() const;                       // FOV MODE: the horizontal degrees the camera takes
     Vec3 tracerColorFor(int shooter) const;   // TRACER COLOR
-    int soundPackOf(int id) const { return cfg_.forcePack ? -1 : net_.playerSoundPack(id); }   // FORCE MY SOUND PACK
     float masterGain() const;                 // VOLUME as a gain (PERCEPTUAL: squared; unfocused: x BACKGROUND VOLUME)
     void applyLive();                         // the batch's settings into the renderer / mixer / net (each frame: a few compares)
     void drawNetGraph(float W, float H, float s);
@@ -1149,7 +1150,14 @@ private:
     double prevSoundAt_ = 0;   // (updateSounds: when it last ran, for the frame time)
     bool prevAlive_ = false;
     float stepDist_ = 0;
-    struct RemoteAudio { Vec3 pos; bool valid = false; float stepDist = 0; bool hooked = false; bool firing = false; double nextLaser = 0, nextShot = 0, nextHurt = 0; int health = 0; };   // (firing: a demo's recorded player only)
+    // (the coverage audit's own sounds, 2026-11-10: in a liquid, the climb since the last ladder step, when a splash and
+    // a grapple let go last played, and the weapon held last frame for the switch click)
+    bool selfInLiquid_ = false;
+    float ladderDist_ = 0;
+    double splashAt_ = -1, releaseAt_ = -1, switchAt_ = -1, dryAt_ = -1, debrisAt_ = -1, glassSndAt_ = -1, voteSndAt_ = -10, chatSndAt_ = -1;
+    int switchPrev_ = -1;
+    struct RemoteAudio { Vec3 pos; bool valid = false; float stepDist = 0; bool hooked = false; bool firing = false; double nextLaser = 0, nextShot = 0, nextHurt = 0; int health = 0;
+                         bool inLiquid = false; float ladderDist = 0; double nextSplash = 0, nextTele = 0; };   // (firing: a demo's recorded player only)
     RemoteAudio remoteAudio_[kMaxPlayers];
     // rebinding
     bool isDown(int action) const;

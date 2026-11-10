@@ -766,9 +766,10 @@ static void testFeatureBlocks() {
     {   // a teleporter: walk into it, out of the other one's top going up
         MoveState s; s.flags = MF_ONGROUND; s.pos = {-31, 0, 31}; s.vel = {8, 0, 0};
         UserCmd c; c.msec = 8; c.forward = 127; c.yaw = -1.5708f;
-        for (int t = 0; t < 400 && s.pos.x < 0; t += 8) pmove(s, c, m);
-        printf("  teleporter: at %.2f %.2f %.2f, vel y %.2f\n", s.pos.x, s.pos.y, s.pos.z, s.vel.y);
-        CHECK(s.pos.x > 40 && s.pos.x < 42 && s.pos.y >= 1.0f);
+        int tele = 0;   // (ME_TELEPORT: the client's teleport sound, once)
+        for (int t = 0; t < 400 && s.pos.x < 0; t += 8) { pmove(s, c, m); tele += (s.events & ME_TELEPORT) != 0; }
+        printf("  teleporter: at %.2f %.2f %.2f, vel y %.2f, %d teleport event\n", s.pos.x, s.pos.y, s.pos.z, s.vel.y, tele);
+        CHECK(s.pos.x > 40 && s.pos.x < 42 && s.pos.y >= 1.0f && tele == 1);
     }
     {   // into its wall at 60 m/s (in the air): out at 60, not the speed the slide left after clipping it (owner, 2026-10-30)
         int kept = 0;
@@ -1801,12 +1802,14 @@ static void testDashTech() {
     { // dash wall bounce: a dash 30 deg off a wall's normal reflects at 16 m/s (owner 1.18.7; it was the dash's speed); 50 deg (glancing) slides
         Map wall;   // a wall across -z, its face 1.5 m ahead
         CHECK(wall.parse("box -50 -1 -50 50 0 50\nbox -50 0 -3 50 4 -1.5\nspawn any 0 0 0\n", &err));
+        uint8_t evs = 0;   // (the dash's move events: ME_BOUNCE, the client's bounce sound)
         auto dashAt = [&](float deg, bool jumpAfter, MoveState* out) {
             MoveState q; q.flags = MF_ONGROUND;
             UserCmd d; d.msec = 1; d.yaw = deg * PI / 180; d.buttons = BTN_DASH;   // (yaw 0 faces -z: the wall's normal)
             for (int i = 0; i < 20; i++) pmove(q, UserCmd(), wall);
             int t = 0;
-            for (; t < 120 && (t == 0 || q.dashTimer > 0) && q.dashBounces == 0 && q.pos.z > -1.098f; t++) pmove(q, d, wall);
+            evs = 0;
+            for (; t < 120 && (t == 0 || q.dashTimer > 0) && q.dashBounces == 0 && q.pos.z > -1.098f; t++) { pmove(q, d, wall); evs |= q.events; }
             if (jumpAfter && q.dashTimer > 0) { d.buttons |= BTN_JUMP; pmove(q, d, wall); }
             *out = q;
             return t;
@@ -1815,6 +1818,7 @@ static void testDashTech() {
         int t = dashAt(30, false, &q);
         printf("  wall bounce at 30 deg after %d ms: (%.3f, %.3f) m/s, %d bounce\n", t, q.vel.x, q.vel.z, q.dashBounces);
         CHECK(q.dashBounces == 1 && q.dashTimer > 0 && std::fabs(q.vel.x - (-8.0f)) < 1e-3f && std::fabs(q.vel.z - 13.8564f) < 1e-3f);
+        CHECK((evs & ME_BOUNCE) && (evs & ME_DASH) && !(evs & ME_TELEPORT));
         UserCmd d; d.msec = 1; d.yaw = 30 * PI / 180; d.buttons = BTN_DASH;
         while (q.dashTimer > 0) pmove(q, d, wall);
         printf("  wall bounce: the rest of the dash and its exit at %.3f m/s\n", hs(q));
@@ -1822,6 +1826,7 @@ static void testDashTech() {
         t = dashAt(50, false, &q);
         printf("  wall at 50 deg after %d ms: z %.5f (%.3f, %.3f) m/s, %d bounces\n", t, q.pos.z, q.vel.x, q.vel.z, q.dashBounces);
         CHECK(q.dashBounces == 0 && q.vel.z == 0 && std::fabs(q.vel.x - (-24.0f * std::sin(50 * PI / 180))) < 1e-3f);   // slides along
+        CHECK(!(evs & ME_BOUNCE));   // (no bounce: no bounce sound)
         dashAt(30, true, &q);   // bounce, then jump during the rest of the dash on the floor: a dash jump the reflected way
         CHECK(q.dashTimer == 0 && std::fabs(hs(q) - 16.0f) < 1e-3f && q.vel.z > 0 && q.vel.y > 7.0f);   // (keeps the bounce's 16)
         // head-on between two walls 2.4 m apart: two bounces, the third wall stops it (at most 2 per dash)

@@ -294,6 +294,7 @@ bool Ui::tab(float x, float y, float w, float h, const std::string& label, bool 
     float tk = 0, ts = fit(shown, w - 8 * scale_, &clipped, &tk);
     r_->text(x + (w - r_->textWidth(shown, ts, tk)) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, shown, textC(), tk);
     if (reporting()) report(UiWidget::BUTTON, x, y, w, h, label, "", e, true, clipped);
+    clicks_ += hv && in_.pressed;
     return hv && in_.pressed;
 }
 
@@ -313,6 +314,7 @@ bool Ui::buttonImpl(float x, float y, float w, float h, const std::string& label
     float ts, tk, tw;
     const std::string& shown = fitText(label, w - 8 * scale_, buf, ts, tk, tw, clipped);
     r_->text(x + (w - tw) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, shown, tc, tk);
+    clicks_ += hv && in_.pressed;   // (every button, toggle and cycle arrow: the menu click, Game::frame)
     return hv && in_.pressed;
 }
 
@@ -647,12 +649,14 @@ bool Ui::dropdown(float x, float y, float w, float h, const std::string& label, 
     const float lw = w, lh = pad * 2 + n * rowH + (n - 1) * gap, lx = x;
     const float ly = (y + h + 4 * s + lh > (float)r_->height() && y - 4 * s - lh >= 0) ? y - 4 * s - lh : y + h + 4 * s;
     if (in_.pressed && hv) {
+        clicks_++;
         if (open) { closePopup(); open = false; }
         else { popup_ = Popup(); popup_.kind = POP_DROP; popup_.id = label; open = true; }
     } else if (open && in_.pressed) {
         for (int i = 0; i < n; i++) {
             float ey = ly + pad + i * (rowH + gap);
             if (in_.mx >= lx + pad && in_.mx < lx + lw - pad && in_.my >= ey && in_.my < ey + rowH) {
+                clicks_++;
                 if (i != index) { index = i; changed = true; }
                 closePopup(); open = false;
                 break;

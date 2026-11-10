@@ -1,13 +1,22 @@
 #!/usr/bin/env python3
-"""Generates src/client/sfx_recorded.h: the recorded sound effects of the HEAVY METAL, MAGICAL and WOODEN sound kits,
-from the CC0 clips in assets/sfx/ (sources and licenses: assets/sfx/CREDITS.md). Each sound is one or more layers
+"""Generates src/client/sfx_recorded.h: the recorded sound effects of the HEAVY METAL and MAGICAL sound kits,
+from the CC0 clips in assets/sfx/ (sources and licenses: assets/sfx/CREDITS.md).
+
+NOT BUILT OR SHIPPED FOR NOW (owner, 2026-11-10: "for now you can get rid of every sound pack except for default"): the
+game has only the DEFAULT kit (synthesized in src/client/audio.cpp), and nothing includes sfx_recorded.h, which is no
+longer in git (its history has the last one). This script, KITS below, the Kenney clips in assets/sfx/ and the kit
+folders in assets/sfx/custom/ stay so the packs can come back: running it writes the header again, and audio.cpp's
+history (as of 2026-11-09) has the code that loaded it (loadRecordedKits) and RETRO's chiptune (voice()). The MOUTH
+kit (kit 4, the owner's recordings in assets/sfx/custom/mouth/, before them WOODEN) was removed altogether (owner:
+"you can get rid of mouth also"); its files and its KITS entry are in git history.
+ Each sound is one or more layers
 (clip, gain, pitch, delay) mixed together, its leading silence trimmed, cut to a length with a fade-out, mono 16-bit at
 22.05 kHz. The game matches each one's loudness to the DEFAULT kit's sound at startup (audio.cpp), so levels stay even.
     python3 tools/import_sfx.py          (needs ffmpeg on PATH to decode the .ogg clips; the game doesn't)
 DEFAULT and RETRO are synthesized (audio.cpp); a sound missing from a kit here falls back to the DEFAULT one.
 
 Your own sounds: put a file at assets/sfx/custom/<kit>/<SOUND>.<wav|ogg|mp3|flac> (kit: default, heavy_metal, magical,
-retro, wooden; SOUND: a name from the list in assets/sfx/custom/README.md, e.g. ROCKET.wav) and run this again. It
+retro; SOUND: a name from the list in assets/sfx/custom/README.md, e.g. ROCKET.wav) and run this again. It
 replaces that sound in that kit (any kit, DEFAULT and RETRO too), as is: trimmed, mono, normalised, up to 3 s."""
 import math, os, re, struct, subprocess
 
@@ -18,7 +27,7 @@ RATE = 22050
 
 def L(f, gain=1.0, pitch=1.0, delay=0.0): return (f, gain, pitch, delay)   # f: under assets/sfx/, .ogg unless it says
 
-# kit index (the setting's order: 0 DEFAULT, 1 HEAVY METAL, 2 MAGICAL, 3 RETRO, 4 WOODEN) -> sound -> (max seconds, layers
+# kit index (the old SOUND PACK setting's order: 0 DEFAULT, 1 HEAVY METAL, 2 MAGICAL, 3 RETRO; 4 was MOUTH) -> sound -> (max seconds, layers
 # [, drive: tanh saturation, the crunch of the heavier hitsound tiers])
 KITS = {
     1: {   # HEAVY METAL: struck steel plates, bells, pots and real explosions
@@ -87,40 +96,7 @@ KITS = {
         "HIT_HEAVY": (0.4, [L("impact/impactGlass_medium_000", pitch=0.85), L("iface/glass_002", 0.5, 0.7), L("scifi/forceField_002", 0.35, 1.8)], 2.2),
         "HIT_BRUTAL": (0.55, [L("impact/impactGlass_heavy_001"), L("scifi/forceField_000", 0.6, 1.1), L("scifi/lowFrequency_explosion_000", 0.45, 1.4), L("iface/glass_004", 0.4, 0.8, 0.02)], 3.5),
     },
-    4: {   # WOODEN: knocks, planks, chops, creaks and doors slamming
-        "HIT": (0.2, [L("impact/impactWood_light_000", pitch=1.2)]),
-        "KILL": (0.5, [L("impact/impactWood_medium_000", pitch=1.1), L("impact/impactWood_light_001", 0.9, 1.5, 0.08)]),
-        "HURT": (0.3, [L("impact/impactWood_heavy_000", pitch=0.9)]),
-        "STEP": (0.15, [L("impact/footstep_wood_000")]),
-        "JUMP": (0.15, [L("impact/footstep_wood_001", 0.6, 1.2)]),
-        "LAND": (0.3, [L("impact/impactWood_heavy_001", pitch=0.8)]),
-        "RIFLE": (0.3, [L("impact/impactPlank_medium_000", pitch=1.2)]),
-        "ROCKET": (0.6, [L("rpg/doorClose_1"), L("impact/impactWood_heavy_002", 0.6, 0.7)]),
-        "KNIFE": (0.25, [L("rpg/chop")]),
-        "SNIPER": (0.8, [L("rpg/doorClose_2"), L("impact/impactPlank_medium_001", 0.6, 0.8)]),
-        "LASER": (0.08, [L("impact/impactWood_light_002", pitch=1.6)]),
-        "SHOTGUN": (0.6, [L("impact/impactWood_heavy_003", pitch=0.75), L("impact/impactPlank_medium_002", 0.8, 0.9)]),
-        "STICKY": (0.3, [L("casino/die-throw-1")]),
-        "CROSSBOW": (0.35, [L("impact/impactPlank_medium_003", pitch=1.3), L("rpg/creak3", 0.4, 1.4)]),
-        "BUBBLE": (0.2, [L("impact/impactWood_light_003", pitch=1.8)]),
-        "SYRINGE": (0.15, [L("impact/impactWood_light_004", pitch=2.0)]),
-        "EXPLOSION": (1.2, [L("rpg/doorClose_3", pitch=0.7), L("impact/impactWood_heavy_004", 0.8, 0.6), L("scifi/lowFrequency_explosion_001", 0.6, 0.9)]),
-        "STICKY_ATTACH": (0.12, [L("impact/impactWood_light_000", pitch=1.6)]),
-        "BOLT_HIT": (0.2, [L("impact/impactPlank_medium_004", pitch=1.3)]),
-        "DASH": (0.35, [L("rpg/cloth1", pitch=1.2)]),
-        "GRAPPLE_FIRE": (0.3, [L("rpg/creak3", pitch=1.2)]),
-        "GRAPPLE_HIT": (0.35, [L("impact/impactWood_medium_001", pitch=1.2)]),
-        "DEATH": (0.7, [L("rpg/doorClose_4", pitch=0.8)]),
-        "STREAK": (0.5, [L("impact/impactWood_medium_002", pitch=1.3), L("impact/impactWood_medium_003", 0.9, 1.8, 0.1)]),
-        "TYPING": (0.06, [L("impact/impactWood_light_001", pitch=2.2)]),
-        "CHECKPOINT": (0.3, [L("impact/impactWood_light_002", pitch=2.0), L("impact/impactWood_light_003", 0.9, 2.5, 0.07)]),
-        "FINISH": (0.5, [L("impact/impactWood_light_002", pitch=1.8), L("impact/impactWood_light_003", 0.9, 2.25, 0.09), L("impact/impactWood_light_004", 1.0, 2.7, 0.18)]),
-        # (kit 4 is MOUTH now: its sounds above are replaced by the owner's recordings in custom/mouth/. The hitsound's
-        # tiers are made from those: the HIT pitched down, layered with the kit's own LAND, HURT, SHOTGUN, EXPLOSION)
-        "HIT_MED": (0.25, [L("custom/mouth/HIT.wav", pitch=0.85), L("custom/mouth/SHOTGUN.wav", 0.4, 1.3)], 1.5),
-        "HIT_HEAVY": (0.35, [L("custom/mouth/HIT.wav", pitch=0.7), L("custom/mouth/LAND.wav", 0.7), L("custom/mouth/SHOTGUN.wav", 0.4, 1.0)], 2.5),
-        "HIT_BRUTAL": (0.5, [L("custom/mouth/HIT.wav", pitch=0.58), L("custom/mouth/HURT.wav", 0.6, 0.8), L("custom/mouth/EXPLOSION.wav", 0.5, 1.3), L("custom/mouth/SHOTGUN.wav", 0.5, 0.8, 0.02)], 4.0),
-    },
+    # (4: MOUTH, the owner's recordings: removed, owner 2026-11-10; in git history)
 }
 
 def sound_ids():
@@ -162,7 +138,7 @@ def build(maxlen, layers, drive=0.0):
     return [int(round(v / peak * 0.89 * 32767)) for v in out]
 
 CUSTOM = os.path.join(SRC, "custom")
-KIT_DIRS = ["default", "heavy_metal", "magical", "retro", "mouth"]
+KIT_DIRS = ["default", "heavy_metal", "magical", "retro"]
 
 def decode_file(path):
     raw = subprocess.run(["ffmpeg", "-v", "error", "-i", path, "-ac", "1", "-ar", str(RATE), "-f", "s16le", "-"],

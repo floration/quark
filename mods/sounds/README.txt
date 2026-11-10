@@ -1,10 +1,10 @@
 YOUR OWN SOUNDS (no programming needed)
 
-Put a .wav file named after a sound into a kit's folder here, then start the game:
-  mods/sounds/<kit>/<SOUND>.wav     replaces that sound in that kit
-  mods/sounds/all/<SOUND>.wav       replaces it in every kit (a kit's own folder wins)
-Kits (Settings > SOUND PACK): default, heavy_metal, magical, retro, mouth
-Example: mods/sounds/all/ROCKET.wav gives every kit your rocket sound.
+Put a .wav file named after a sound into the default folder here, then start the game:
+  mods/sounds/default/<SOUND>.wav   replaces that sound
+  mods/sounds/all/<SOUND>.wav       works too (from when there were several sound packs; default/ wins)
+The game has one sound kit, DEFAULT. Folders of the old packs (heavy_metal, magical, retro, mouth) are ignored.
+Example: mods/sounds/default/ROCKET.wav gives you your own rocket sound.
 
 WAV only: 8, 16 or 24-bit PCM or 32-bit float, any sample rate, mono or stereo.
 The game trims silence at the start, cuts it at 3 seconds and matches its loudness to the sound it replaces.
@@ -43,3 +43,34 @@ SOUND names:
   HIT_MED        you hit someone for 10 to 24 damage (heavier, louder)
   HIT_HEAVY      you hit someone for 25 to 50 damage
   HIT_BRUTAL     you hit someone for more than 50 damage (the heaviest, loudest)
+  SUPER          a super: a dash jump
+  HYPER          a hyper: a super dash
+  LOCATOR        the locator's ping (hide and seek / tag)
+  SIZZLE         a shot gone into lava or acid; acid hurting you
+  HEADSHOT_TINK  your hit was a headshot (over the hitsound)
+  HOOKED         someone's grapple caught you
+  BOMB_TICK      the planted bomb ticking
+  BOMB_PLANTING  someone planting (a click every 0.3 s)
+  BOMB_DEFUSING  someone defusing (a click every 0.3 s)
+  HILL_CONTESTED king of the hill: the hill contested
+  CAPTURE_ALARM  multi point: the enemy capturing your point
+  HOLDFIRE_TICK  a countdown tick (the holdfire, the match start)
+  CHECKPOINT_WRONG  race: a checkpoint that won't count
+  WEAPON_SWITCH  you switched weapons
+  DRYFIRE        fire pressed with nothing to fire
+  KNIFE_HIT      a thrown knife / syringe lands
+  BUBBLE_POP     a bubble pops
+  GLASS_BREAK    glass breaks
+  DEBRIS         rubble: a breakable block, a wall coming down
+  DASH_BOUNCE    your dash bounced off a wall
+  GRAPPLE_RELEASE  a grapple let go
+  TELEPORT       a teleporter
+  SPLASH         a splash into a liquid
+  SPAWN          you respawned
+  LOW_HEALTH     your health fell low (a heartbeat)
+  GOAL           ball: a goal
+  BALL_KICK      ball: the ball struck
+  CHAT           someone else's chat message
+  VOTE           a vote was called
+  MATCH_FOUND    ranked: the queue found your match
+  UI_CLICK       a menu click (keep it tiny)

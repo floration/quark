@@ -187,3 +187,40 @@ struct WrongCheckpoint {
         return buzz;
     }
 };
+
+// ---- the sound coverage audit (q, 2026-11-10: "ensure everything that is supposed to have a sound has one"): the
+// client's own again, from the states it's sent (no event or protocol change)
+
+// Ball: a goal between pv and ms (ballStep scores only live, one goal at a time; a winning goal can end the match in the
+// same step): the team that scored it, -1 none. A reset or a new match (a score going down, or up by more) isn't one.
+inline int ballGoalBy(const ModeState& pv, const ModeState& ms) {
+    if (pv.mode != MODE_BALL || ms.mode != MODE_BALL || pv.phase != PHASE_LIVE) return -1;
+    if (ms.scoreA == pv.scoreA + 1 && ms.scoreB == pv.scoreB) return TEAM_A;
+    if (ms.scoreB == pv.scoreB + 1 && ms.scoreA == pv.scoreA) return TEAM_B;
+    return -1;
+}
+
+// Ball: struck (a kick, a push, a hard bounce): its velocity, over windows of at least kWindow between the snapshots'
+// ball centres (ModeState::bombPos, by the server's clock), changed by more than kDv. A jump of over kReset (the ball put
+// back in the middle) or a gap of over kGap (snapshots lost) starts again without a sound. step: a sample; returns how
+// much the velocity changed (m/s) when it was struck, else 0.
+struct BallTouch {
+    static constexpr float kWindow = 0.03f, kGap = 0.3f, kReset = 6.0f, kDv = 8.0f;
+    bool have = false, haveVel = false;
+    uint64_t t = 0;
+    Vec3 p, v;
+    void reset() { have = haveVel = false; }
+    float step(uint64_t timeMs, const Vec3& pos) {
+        if (!have) { have = true; haveVel = false; t = timeMs; p = pos; return 0; }
+        if (timeMs <= t) return 0;   // (the same snapshot: nothing new)
+        const float dt = (float)(timeMs - t) / 1000.0f;
+        if (dt < kWindow) return 0;  // (too short to say: it waits for a longer window)
+        const Vec3 d = pos - p;
+        t = timeMs; p = pos;
+        if (dt > kGap || length(d) > kReset) { haveVel = false; return 0; }
+        const Vec3 nv = d * (1.0f / dt);
+        const float dv = haveVel ? length(nv - v) : 0.0f;
+        v = nv; haveVel = true;
+        return dv > kDv ? dv : 0.0f;
+    }
+};

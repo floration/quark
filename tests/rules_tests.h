@@ -2715,6 +2715,56 @@ static void testModeSounds(uint16_t port) {
     }
 }
 
+// The sound coverage audit's ball sounds (q, 2026-11-10), the client's own from the snapshots (modecalls.h): a goal by
+// the team whose score went up by one (live only; a reset isn't one), and the ball struck, by its velocity's change
+// between snapshots (a kick, not a roll, a long gap or the ball put back in the middle).
+static void testCoverageCues() {
+    printf("coverage cues: ball goal, ball struck\n");
+    ModeState pv, ms;
+    pv.mode = ms.mode = MODE_BALL; pv.phase = ms.phase = PHASE_LIVE;
+    pv.scoreA = 2; pv.scoreB = 1;
+    ms.scoreA = 3; ms.scoreB = 1;
+    CHECK(ballGoalBy(pv, ms) == TEAM_A);
+    ms.scoreA = 2; ms.scoreB = 2;
+    CHECK(ballGoalBy(pv, ms) == TEAM_B);
+    ms.phase = PHASE_MATCH_END;   // (the winning goal: the match ends in the same step)
+    CHECK(ballGoalBy(pv, ms) == TEAM_B);
+    ms.phase = PHASE_LIVE;
+    ms.scoreA = 0; ms.scoreB = 0; CHECK(ballGoalBy(pv, ms) == -1);    // a restart
+    ms.scoreA = 4; ms.scoreB = 1; CHECK(ballGoalBy(pv, ms) == -1);    // up by two: not one goal
+    ms.scoreA = 3; ms.scoreB = 2; CHECK(ballGoalBy(pv, ms) == -1);    // both: a new state, not a goal
+    ms.scoreA = 2; ms.scoreB = 1; CHECK(ballGoalBy(pv, ms) == -1);    // nothing
+    ms.scoreA = 3; pv.phase = PHASE_WARMUP; CHECK(ballGoalBy(pv, ms) == -1);   // (not live: no goals)
+    pv.phase = PHASE_LIVE; pv.mode = MODE_KOTH; CHECK(ballGoalBy(pv, ms) == -1);   // (another mode's scores)
+    // the ball struck: snapshots 50 ms apart (20 Hz), rolling at 5 m/s, then kicked to 20 m/s sideways
+    BallTouch bt;
+    uint64_t t = 1000;
+    Vec3 p(0, 0.5f, 0);
+    int hits = 0;
+    float last = 0;
+    for (int k = 0; k < 10; k++, t += 50) { p.x += 5.0f * 0.05f; if (float dv = bt.step(t, p)) { hits++; last = dv; } }
+    CHECK(hits == 0);   // (rolling: no sound)
+    for (int k = 0; k < 2; k++) CHECK(bt.step(t - 50, p) == 0);   // (the same snapshot again: nothing new)
+    p.z += 20.0f * 0.05f; p.x += 5.0f * 0.05f;
+    if (float dv = bt.step(t, p)) { hits++; last = dv; }
+    t += 50;
+    CHECK(hits == 1 && std::fabs(last - 20.0f) < 0.05f);
+    for (int k = 0; k < 10; k++, t += 50) { p.z += 20.0f * 0.05f; p.x += 5.0f * 0.05f; CHECK(bt.step(t, p) == 0); }   // flying on: once
+    // a soft push (5 m/s more) is under the threshold; a hard bounce off a wall (20 m/s back) is a hit
+    p.z += 15.0f * 0.05f; CHECK(bt.step(t, p) == 0); t += 50;
+    p.z -= 15.0f * 0.05f; CHECK(bt.step(t, p) > 25.0f); t += 50;
+    // put back in the middle (a jump of 6 m and more), a gap of 0.3 s and more: no sound, and the next step none either
+    p = Vec3(0, 0.5f, 0); CHECK(bt.step(t, p) == 0); t += 50;
+    CHECK(bt.step(t, p) == 0); t += 50;   // (a velocity again from here: still)
+    p.x += 1.0f; CHECK(bt.step(t + 1000, p) == 0); t += 1050;
+    // short windows (60 Hz snapshots under 30 ms apart) wait for a longer one; a fresh one starts with no velocity
+    BallTouch b2;
+    CHECK(b2.step(0, Vec3(0, 0, 0)) == 0 && b2.step(16, Vec3(0, 0, 0)) == 0 && b2.step(33, Vec3(0, 0, 0)) == 0);
+    CHECK(b2.step(66, Vec3(1, 0, 0)) > 25.0f);   // (still, then 30 m/s over the 33 ms)
+    b2.reset();
+    CHECK(b2.step(100, Vec3(5, 0, 0)) == 0 && b2.step(150, Vec3(6, 0, 0)) == 0);   // (its first velocity: nothing to compare)
+}
+
 // The sound audit's cues (q, 2026-10-30: "All of them"), the client's own from the states it's sent (modecalls.h): the
 // planted bomb's tick rate and pitch, a plant / defuse in progress, the hill contested, the enemy capturing your point
 // (each rate-limited), the holdfire's ticks and release, a race checkpoint out of order. The rules first, then the
@@ -3107,6 +3157,7 @@ static void testGameRules(const std::string& only, int half = 0) {
         {"modecalls", 2, [] { testModeCalls(TP(29312)); }},
         {"modesounds", 2, [] { testModeSounds(TP(29313)); }},
         {"auditcues", 2, [] { testAuditCues(TP(29320)); }},
+        {"coveragecues", 2, [] { testCoverageCues(); }},
         {"weaponpredict", 0, [] { testWeaponPredict(TP(29286)); }},   // (in neither half: real-time round trips, the suite runs it alone)
         {"customkeep", 2, [] { testCustomRulesKeep(); }},
         {"modehooks", 2, [] { testModeHooks(TP(29310)); }},

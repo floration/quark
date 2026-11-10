@@ -205,6 +205,9 @@ public:
     bool focused(int id) const { return focus_ == id; }   // that text field has the keyboard
     // Text the focused field wants on the clipboard (Ctrl+C); empty if none.
     std::string takeCopy() { std::string c; c.swap(copied_); return c; }
+    // the clicks on buttons, toggles, cycles and dropdowns since the last take (Game::frame: the menu click, once a frame)
+    int takeClicks() { const int n = clicks_; clicks_ = 0; return n; }
+    void noteClick() { clicks_++; }   // (a click on something the game draws itself: the menu strips' tabs)
 
     Color accent = {0.25f, 0.85f, 1.0f, 1.0f};
 
@@ -272,4 +275,5 @@ private:
     static constexpr int kSliderFocus = 100000;
     double blink_ = 0;
     std::string copied_;
+    int clicks_ = 0;
 };

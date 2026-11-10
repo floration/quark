@@ -701,6 +701,7 @@ CTRL+Y (REDO)	CTRL+Y (やり直し)
 CTRL+Z (UNDO)	CTRL+Z (元に戻す)
 CUE	キュー
 CUE SOUNDS	キュー音
+CUE: CHAT	キュー: チャット
 CUE: DASH	キュー: ダッシュ
 CUE: DEATH	キュー: 死亡
 CUE: GRAPPLE FIRE	キュー: グラップル発射
@@ -710,9 +711,13 @@ CUE: HYPER	キュー: ハイパー
 CUE: JUMP	キュー: ジャンプ
 CUE: KILL	キュー: キル
 CUE: LANDING	キュー: 着地
+CUE: MENU CLICK	キュー: メニュークリック
+CUE: RESPAWN	キュー: リスポーン
 CUE: STREAK STING	キュー: 連続キル
 CUE: SUPER	キュー: スーパー
 CUE: TYPING	キュー: 入力
+CUE: VOTE CALLED	キュー: 投票
+CUE: WEAPON SWITCH	キュー: 武器切替
 CURSOR COLOR	カーソルの色
 CURSOR SIZE	カーソルサイズ
 CUSTOM	カスタム
@@ -796,6 +801,7 @@ DEATH CAMERA: MY BODY	デスカメラ: 自分の体
 DEATH CAMERA: THE KILLER	デスカメラ: キルした相手
 DEBAND	デバンド
 DEBAND: A FAINT DITHER, NO BANDS IN SKY / FOG;	デバンド: 薄いディザで空 / 霧の縞を除去;
+DEBRIS	瓦礫
 DECALOTYPE	DECALOTYPE
 DEFAULT	デフォルト
 DEFEND	防衛
@@ -870,6 +876,7 @@ DRAW: 250 M	描画: 250 M
 DRAW: 400 M	描画: 400 M
 DRIVER	ドライバー
 DROP MY EDITS	編集を破棄
+DRYFIRE	空撃ち
 DUCKING	ダッキング
 DUEL	デュエル
 DUEL - 1v1 (or 2v2): every life has a random modifier (low gravity, giants, rockets only...). First to 11.	デュエル - 1v1 (または2v2): ライフごとにランダムな修正 (低重力、巨人、ロケットのみ...)。11本先取。
@@ -1042,8 +1049,6 @@ FONTS GO IN MODS/FONTS; ASSETS IN OVERRIDES/	フォントは MODS/FONTS へ; ア
 FOR	対象
 FOR A VARIABLE REFRESH MONITOR	可変リフレッシュレートモニター用
 FOR THE NEXT LAUNCH	次回起動時
-FORCE MY PACK	自分のパックを強制
-FORCE MY PACK: EVERYONE IN YOUR SOUND PACK	自分のパックを強制: 全員を自分のサウンドパックで
 FORCE PLAYER MODELS	プレイヤーモデルを強制
 FORCE START	強制開始
 FORMAT: PNG	形式: PNG
@@ -1273,12 +1278,6 @@ HITSCAN ONLY	ヒットスキャンのみ
 HITSOUND	ヒット音
 HITSOUND TIERS	ヒット音の段階
 HITSOUND VOLUME	ヒット音量
-HITSOUND: DEFAULT	ヒット音: デフォルト
-HITSOUND: HEAVY METAL	ヒット音: ヘヴィメタル
-HITSOUND: MAGICAL	ヒット音: マジカル
-HITSOUND: MOUTH	ヒット音: 口
-HITSOUND: MY SOUND PACK	ヒット音: 自分のサウンドパック
-HITSOUND: RETRO	ヒット音: レトロ
 HITSOUNDS	ヒット音
 HOLD ALL THREE	3 つとも押し続ける
 HOLD BOTH	両方押し続ける
@@ -2437,7 +2436,7 @@ NVIDIA THREADED OPTIMIZATION IS ON	NVIDIA のスレッド最適化がオン
 NVIDIA TRIPLE BUFFERING IS ON	NVIDIA のトリプルバッファリングがオン
 NVIDIA VERTICAL SYNC IS FORCED ON	NVIDIA が垂直同期を強制オン
 NW	NW
-Name, mouse sensitivity (or cm/360 with your DPI), field of view, team and enemy colours, volume, hit sounds, the announcer (off / countdown / all calls; male or female voice), player model and sound pack.	名前、マウス感度 (またはDPIからcm/360)、視野角、味方と敵の色、音量、ヒット音、アナウンサー (オフ / カウントダウン / すべて; 男性または女性の声)、プレイヤーモデルとサウンドパック。
+Name, mouse sensitivity (or cm/360 with your DPI), field of view, team and enemy colours, volume, hit sounds, the announcer (off / countdown / all calls; male or female voice) and player model.	名前、マウス感度 (またはDPIからcm/360)、視野角、味方と敵の色、音量、ヒット音、アナウンサー (オフ / カウントダウン / すべて; 男性または女性の声)、プレイヤーモデル。
 New map	新しいマップ
 OBJ	OBJ
 OBJECTIVE	目標
@@ -3065,13 +3064,7 @@ SOUND	サウンド
 SOUND GROUPS	サウンドグループ
 SOUND OCCLUSION	音の遮蔽
 SOUND ON	サウンド オン
-SOUND PACK: DEFAULT	サウンドパック: デフォルト
-SOUND PACK: HEAVY METAL	サウンドパック: ヘヴィメタル
-SOUND PACK: MAGICAL	サウンドパック: マジカル
-SOUND PACK: MOUTH	サウンドパック: 口
-SOUND PACK: RETRO	サウンドパック: レトロ
 SOUND SWITCHES TO IT AT ONCE	音声はすぐに切り替わります
-SOUNDS	サウンド
 SOUNDS BEHIND WALLS MUFFLED: YOU HEAR LESS	壁の向こうの音がこもる: 聞こえにくくなる
 SPACE	SPACE
 SPARE TIME BEFORE THE BLANK; A LATE FRAME	ブランク前の余裕時間; 遅れたフレームは
@@ -3098,6 +3091,7 @@ SPEED: FAST	速度: 高速
 SPEED: HITSCAN	速度: ヒットスキャン
 SPEED: SLOW	速度: 低速
 SPEED: WALK	速度: 歩き
+SPLASH	水しぶき
 SPLIT	スプリット
 SPLIT TIME	スプリットタイム
 SPLITS VS	スプリット比較:
@@ -3268,6 +3262,7 @@ TEAMS: 1V1	チーム: 1V1
 TEAMS: 2V2	チーム: 2V2
 TEAR LINE OFFSET (US)	ティアリング位置オフセット (US)
 TEARS NOW OR WAITS A REFRESH	即ティアリングか次のリフレッシュを待つ
+TELEPORT	テレポート
 TENTHS	0.1秒表示
 TENTHS: THE LAST 10 S AS 0:09.4	0.1秒表示: 最後の10秒を 0:09.4 形式で
 TEST	テスト
