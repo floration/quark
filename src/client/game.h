@@ -968,7 +968,7 @@ private:
     bool previewDrag_ = false;
     float previewLastX_ = 0;
     ModelParts previewParts_;
-    struct PreviewFace { float xy[8]; float z; Color c; };
+    struct PreviewFace { float xy[8]; float z; Color c; bool edge = true; };   // (edge false: a mesh triangle, no box outline band)
     std::vector<PreviewFace> previewFaces_;
     bool modelFaces(int pm, const Vec3& team, float yaw, float phase, float x, float y, float w, float h, bool tight = false);   // (into previewFaces_)
     template <class Quad> static void drawPreviewFaces(const std::vector<PreviewFace>& faces, float edge, Quad&& quad);
