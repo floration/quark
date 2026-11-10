@@ -6446,7 +6446,7 @@ void Game::drawTutorialPause(float cx, float y) {
         if (c.half(1, "START OVER", UiExp::cmd("tutorial reset"))) { paused_ = false; tutorialBegin(tut_.lesson); tut_.demoEnd = time_; }
         if (c.half(2, "LESSONS", UiExp::nav("ingame/pause/lessons"))) tut_.menu = true;
         c.next();
-        if (c.full("SETTINGS", UiExp::nav("ingame/pause/settings"))) { settingsInGame_ = true; openSettingsTab(settingsStartTab()); }
+        if (c.full("SETTINGS", UiExp::nav("ingame/pause/settings/*"))) { settingsInGame_ = true; openSettingsTab(settingsStartTab()); }
         c.next();
     }
     c.last();
@@ -10858,7 +10858,7 @@ bool Game::drawGameStrip(float s, float H) {
         label(kLabels[i], y + 38 * s, c);
         const bool inert = i == 0 ? onMain : lit;
         if (ui_.probing()) ui_.custom(0, y, sw, h, kLabels[i], inert ? UiExp::inert().withId(i ? "SETTINGS" : "GAME")
-                                                                     : (i ? UiExp::nav("ingame/pause/settings") : UiExp::nav("ingame/pause")).withId(i ? "SETTINGS" : "GAME"));
+                                                                     : (i ? UiExp::nav("ingame/pause/settings/*") : UiExp::nav("ingame/pause")).withId(i ? "SETTINGS" : "GAME"));
         if (!(hv && uiIn_.pressed) || inert) continue;
         uiIn_.pressed = false;
         if (settingsInGame_) leaveSettings();   // (saved and sent, as its BACK)
