@@ -25,7 +25,14 @@ left as it is (counted by reason in the report) when either piece is a material 
 the liquids, acid, ice, rubber, asphalt, mud, nograpple, wallbang, clip, the ball wall, glass, breakables, the
 see-through looks, the feature blocks, teleporters, ...; see cosmetic and per_point) or a slope / cut box. The
 editor's other reasons are kept (two pieces of the same material: the flicker barely shows and cutting adds pieces;
-one solid and one not). Deterministic: the same input gives the same output, byte for byte."""
+one solid and one not). Deterministic: the same input gives the same output, byte for byte.
+
+File mode, for q's hand-made maps (they ship as files, tidied the same way; owner, 2026-11-10):
+  python3 tools/maps/tidy.py --qmap IN.qmap OUT.qmap [--report FILE]
+runs the same pass on a whole .qmap of the current format: every line but the pieces the pass changes stays byte for
+byte where it was (header, handmade, comments, groups and parts, markers, ...); a new piece takes its first piece's
+line, its numbers exact (not rounded as a generated map's are). Custom group parts (and room / stairs groups) are
+never changed: a gap fix never grows a piece into one, and a spawn is checked against them too."""
 import os, re, math
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -119,7 +126,10 @@ class B:
         return B(s.mat, [tidy(v) for v in mn], [tidy(v) for v in mx], s.shape, s.kw, s.tail, None, s.origin)
 
 
-def tidy(v): return math.floor(v * 1e5 + 0.5) / 1e5
+EXACT = False   # (the file mode, --qmap: a hand-made map's numbers are kept as they are, new ones written exactly)
+
+
+def tidy(v): return v if EXACT else math.floor(v * 1e5 + 0.5) / 1e5
 def vol(b): return (b.mx[0] - b.mn[0]) * (b.mx[1] - b.mn[1]) * (b.mx[2] - b.mn[2])
 def thinnest(b): return min(b.mx[0] - b.mn[0], b.mx[1] - b.mn[1], b.mx[2] - b.mn[2])
 
@@ -132,6 +142,11 @@ def hard(b):
 
 def fmt(v):
     if v == 0: return "0"
+    if EXACT:   # (the shortest text that reads back as v: a carved slab's faces are its pieces' own numbers)
+        t = repr(float(v))
+        if "e" in t or "E" in t: t = format(v, ".20f").rstrip("0").rstrip(".")
+        if t.endswith(".0"): t = t[:-2]
+        return "0" if t in ("", "-0") else t
     s = ("%.5f" % v).rstrip("0").rstrip(".")
     return "0" if s in ("", "-0") else s
 
@@ -620,6 +635,34 @@ def volumes(lines):
     return out
 
 
+def group_volumes(lines):
+    """-> (every custom group part as a world piece, slopes and cut parts too; and each room / stairs group's box):
+    the game makes these boxes itself (map.cpp groupBoxes), the pass never changes them. No gap fix grows a piece
+    into one, and a spawn is checked against the parts as against the map's own pieces. (Generated maps have no
+    groups; q's hand-made ones do.)"""
+    out, group = [], None
+    for l in lines:
+        h = l.find("#")
+        t = (l[:h] if h >= 0 else l).split()
+        try:
+            if t and t[0] == "group" and len(t) >= 10:
+                v = [float(x) for x in t[4:10]]
+                group = (t[1], v[:3], v[3:])
+                if t[1] != "custom": out.append(B(int(t[2]), v[:3], v[3:], None, "group", None, None, -1))
+            elif t and t[0] == "part" and group and group[0] == "custom" and len(t) >= 8:
+                v = [float(x) for x in t[2:8]]; g0, g1 = group[1], group[2]
+                sz = [g1[k] - g0[k] for k in range(3)]
+                shape = None
+                if len(t) > 8 and t[8] == "cut":
+                    c = int(t[9]); shape = ("cut", [[float(x) for x in t[10 + 4 * k:14 + 4 * k]] for k in range(c)])
+                elif len(t) > 9 and t[8] in ("wedge", "corner", "tetra"):
+                    shape = (t[8], int(t[9]))
+                out.append(B(int(t[1]), [g0[k] + v[k] * sz[k] for k in range(3)], [g0[k] + v[3 + k] * sz[k] for k in range(3)], shape, "part", None, None, -1))
+        except (ValueError, IndexError):
+            continue
+    return out
+
+
 # ---- the pass ----
 def line_of(b):
     if b.line is not None: return b.line
@@ -629,7 +672,8 @@ def line_of(b):
 def run(lines, name=""):
     """tidies the map's lines in place; -> its report (counts, the pairs left by reason)"""
     brushes, parts = parse(lines)
-    keep = volumes(lines)
+    gv = group_volumes(lines)
+    keep = volumes(lines) + gv
     before = len(brushes)
     skipped = {}
     rep = {"map": name, "before": before, "zfight": [0, 0], "trimmed": 0, "merged": [0, 0], "hidden": 0, "gaps": 0, "rounds": 0}
@@ -648,7 +692,7 @@ def run(lines, name=""):
         if not (f or rm or frm or hid or closed): break
     rep["skipped"] = dict(sorted(skipped.items()))
     rep["after"] = len(lst)
-    moves, stuck = spawn_pass(lines, lst, parts)
+    moves, stuck = spawn_pass(lines, lst, parts + [b for b in gv if b.shape])   # (the box parts are in parts)
     if stuck:
         raise SystemExit("make_maps.py: %s: spawn still in something solid after %g m up:\n  %s" % (name, SPAWN_MAX_STEPS * SPAWN_STEP, "\n  ".join(stuck)))
     rep["spawns"] = len(moves)
@@ -663,3 +707,55 @@ def run(lines, name=""):
         else: out.append(l)
     lines[:] = out
     return rep
+
+
+# ---- the file mode: a whole .qmap (q's hand-made maps ship tidied this way) ----
+def _format_version():
+    t = open(_MAP_H, encoding="utf-8").read()
+    return int(re.search(r"constexpr int kMapFormatVersion = (\d+);", t).group(1))
+
+
+def tidy_file(src, dst, name=None):
+    """the pass on the .qmap src, written to dst: the map's own pieces as run() tidies them, every other line (the
+    header, handmade, title, comments, groups and their parts, markers, spawns that needn't move, lights, ...) and
+    every piece the pass leaves as it is byte for byte where it was; a new piece (a carved slab, a merged box, a
+    face moved to close a gap) where its first piece's line was, its numbers exact. -> run()'s report"""
+    global EXACT
+    data = open(src, "rb").read()
+    text = data.decode("utf-8")
+    crlf = "\r\n" in text
+    lines = text.split("\n")   # (a last line ending in "\n" leaves an empty one: written back the same)
+    if crlf: lines = [l[:-1] if l.endswith("\r") else l for l in lines]
+    ver, want = 1, _format_version()
+    for l in lines:
+        t = l.split("#")[0].split()
+        if t and t[0] == "version":
+            ver = int(t[1]); break
+    if ver != want:
+        raise SystemExit("tidy.py: %s is map format %d, this build's is %d: open and save it in the game (or start it once: "
+                         "its maps are converted on disk at startup) first" % (src, ver, want))
+    EXACT = True
+    try:
+        rep = run(lines, name or os.path.splitext(os.path.basename(src))[0])
+    finally:
+        EXACT = False
+    out = ("\r\n" if crlf else "\n").join(lines)
+    with open(dst, "wb") as f: f.write(out.encode("utf-8"))
+    return rep
+
+
+def main(argv=None):
+    import argparse, json
+    ap = argparse.ArgumentParser(description="the map build's tidy pass (the map editor's fixers) on a whole .qmap file")
+    ap.add_argument("--qmap", nargs=2, metavar=("IN", "OUT"), required=True, help="the map to tidy and where to write it (may be the same file)")
+    ap.add_argument("--report", metavar="FILE", help="also write the pass's counts (one JSON line) to FILE")
+    a = ap.parse_args(argv)
+    rep = tidy_file(a.qmap[0], a.qmap[1])
+    line = json.dumps(rep, sort_keys=False)
+    if a.report:
+        with open(a.report, "w", newline="\n") as f: f.write(line + "\n")
+    print(line)
+
+
+if __name__ == "__main__":
+    main()
