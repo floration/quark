@@ -146,7 +146,8 @@ struct Settings {
     int shadowDist = 32;           // ...metres the shadow map reaches around you (16 / 32 / 64: farther = blurrier)
     bool shadowWorld = true, shadowPlayers = true;   // ...cast onto the map, onto players
     bool ownShadow = true;         // ...your own body's shadow (first person)
-    float playerEmit = 0.3f;       // ...models' own light (their colour's share that shadow and shade don't touch)
+    float playerEmit = 0.6f;       // ...players' own light (their colour's share that shadow and shade don't touch; 0.3 until players were made easier to see)
+    bool emitMigrated = false;     // (the old default 0.3 moved to the new one once, player_emit_v2)
     float playerSat = 1.0f;        // ...PLAYER SATURATION: players' colour, 0 grey to 2 (1: as drawn; the map untouched)
     bool playersLit = false;       // ...players never darkened by the map's shade (full sun on them)
     Vec3 outlineFriendlyColor = {0, 0, 0}, outlineEnemyColor = {0, 0, 0};   // ...the CUSTOM outline colours

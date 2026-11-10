@@ -254,7 +254,7 @@ public:
     struct Look {
         bool tone = true, dither = false, clean = false, flatLight = false, simpleSky = false;
         int pcf = 1;            // the shadow edge: 0 hard, 1 soft, 2 softer
-        float emit = 0.3f;      // models' own light share
+        float emit = 0.6f;      // players' own light share
         float outlineA = 1.0f;  // players' outline opacity
         float fadeAt = 0.18f;   // PATTERN FADE: metres a pixel where a look starts fading to its average (0: never)
         float fadeLen = 2.0f;   // ...where it's all average, as a multiple of fadeAt
@@ -295,8 +295,14 @@ public:
     Vec3 outlineColor;   // the edge colour for the boxes drawn while it's set (players' outline setting); black by default
     float outlineWidth = 1.0f;   // ...and the edge width in pixels (players' / the editor's boxes: settings); 0 = none
     float modelSat = 1.0f;       // VIDEO > MORE 4: PLAYER SATURATION for the boxes / models drawn while it's set (1: as drawn)
-    // (the normal's spare 16 bits: 0 = as drawn, else 1 + sat x 16383, sat 0..2; one OR a vertex, no new attribute)
-    uint64_t satW() const { return modelSat == 1.0f ? 0 : (uint64_t)(1 + (int)(std::clamp(modelSat, 0.0f, 2.0f) * 16383.0f + 0.5f)) << 48; }
+    bool modelPlayer = false;    // ...and whether they are a player's (PLAYER BRIGHTNESS, half fog, outlines thinning far away)
+    // (the normal's spare 16 bits: 0 = as drawn, else 1 + sat x 16383, sat 0..2, negated for a player's; one OR a
+    // vertex, no new attribute)
+    uint64_t satW() const {
+        if (modelSat == 1.0f && !modelPlayer) return 0;
+        const int v = 1 + (int)(std::clamp(modelSat, 0.0f, 2.0f) * 16383.0f + 0.5f);
+        return (uint64_t)(uint16_t)(int16_t)(modelPlayer ? -v : v) << 48;
+    }
 private:
 
     int width_ = 1280, height_ = 720;

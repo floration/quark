@@ -274,6 +274,7 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "soundpack") soundPack = (iv >= 0 && iv < kSoundPacks) ? iv : 0;
         else if (k == "name_color") { char* e = nullptr; long c = strtol(v.c_str(), &e, 16); nameColor = !v.empty() && v != "-1" && e && !*e && c >= 0 && c <= 0xFFFFFF ? (int)c : -1; }
         else if (k == "health_bars_117") hbMigrated = iv != 0;
+        else if (k == "player_emit_v2") emitMigrated = iv != 0;
         else if (k == "socd") socd = (iv >= 0 && iv <= 2) ? iv : 0;
         else if (k == "alt_toggle") altToggle = iv != 0;
         else if (k == "hud_verbose") hudVerbose = iv != 0;
@@ -428,7 +429,11 @@ void Settings::finishLoad() {
         bindVersion = 5;
     }
     ultraMarginMigrated = true;   // (from here on a value set is as meant: the console's "ultra_margin_us 0" is AUTO)
-    if (!hbMigrated) { healthBars = true; hbMigrated = true; }   // 1.17 turned health bars on by default: on once for everyone (owner), off again stays off
+    if (!hbMigrated) { healthBars = true; hbMigrated = true; }
+    if (!emitMigrated) {   // players drew too dark to see (owner): a config still on the old default 0.3 gets the new 0.6, once
+        if (std::fabs(playerEmit - 0.3f) < 1e-4f) playerEmit = 0.6f;
+        emitMigrated = true;
+    }   // 1.17 turned health bars on by default: on once for everyone (owner), off again stays off
     if (width < 320) width = 1280;
     if (height < 240) height = 720;
 }
@@ -467,7 +472,7 @@ std::string Settings::toText() const {
        << "\nfov=" << fov << "\nbrightness=" << brightness << "\ndisplay_default=1" << "\ndisplay_mode=" << displayMode
       << "\npresent_mode=" << presentMode << "\nlatent_offset_us=" << latentOffsetUs << "\ngpu_max_clocks=" << gpuMaxClocks << "\ndisable_fso=" << disableFso << "\nearly_flush=" << earlyFlush << "\ncpu_latch=" << cpuLatch << "\ngpu_latch=" << gpuLatch << "\nhud_first=" << hudFirst << "\nfast_world=" << fastWorld << "\nprioritize=" << prioritize << "\nlow_latency=" << lowLatency << "\ninterp_ms=" << interpMs
       << "\nmaxfps=" << maxFps << "\nwidth=" << width << "\nheight=" << height << "\nwin_x=" << winX << "\nwin_y=" << winY << "\nbg_fps=" << bgFps << "\nbg_mute=" << bgMute << "\nbg_draw=" << bgDraw
-      << "\nshadows=" << shadows << "\nmsaa=" << msaa << "\nrender_scale=" << renderScale << "\nrender_sharpen=" << renderSharpen << "\nmodel=" << model << "\nsoundpack=" << soundPack << "\nname_color=" << nameColorText() << "\nhealth_bars_117=1" << "\nsocd=" << socd << "\nalt_toggle=" << altToggle
+      << "\nshadows=" << shadows << "\nmsaa=" << msaa << "\nrender_scale=" << renderScale << "\nrender_sharpen=" << renderSharpen << "\nmodel=" << model << "\nsoundpack=" << soundPack << "\nname_color=" << nameColorText() << "\nhealth_bars_117=1" << "\nplayer_emit_v2=1" << "\nsocd=" << socd << "\nalt_toggle=" << altToggle
       << "\nhud_verbose=" << hudVerbose << "\nhud_widgets=" << hudWidgets << "\nshadowres=" << shadowRes << "\nvolume=" << volume << "\nvolume_effects=" << volumeEffects << "\nvolume_announcer=" << volumeAnnouncer << "\nquips=" << quips << "\nvolume_quips=" << volumeQuips << "\nhitsounds=" << hitsounds << "\nexclusive_audio=" << exclusiveAudio
       << "\naudio_output=" << audioOutput << "\naudio_input=" << audioInput << "\nmonitor=" << monitor << "\nfullscreen_hz=" << fullscreenHz << "\nannouncer=" << announcer << "\nvoice=" << announcerVoice << "\nfullbright=" << fullbright << "\nown_shots=" << ownShots << "\nenemy_shots=" << enemyShots << "\nimpact_sparks=" << impactSparks << "\nmuzzle_flash=" << muzzleFlash << "\nviewmodel_opacity=" << viewmodelOpacity << "\nhealth_bars=" << healthBars << "\nhealth_bars_bottom=" << healthBarsBottom
       << "\nscope_opacity=" << scopeOpacity << "\nsticky_counter=" << stickyCounter << "\ncrowns=" << crowns << "\nchat_off=" << chatOff << "\ndmg_nums=" << dmgNums << "\ndmg_num_scale=" << dmgNumScale << "\ndamage_flash=" << damageFlash << "\nzoom_fov_sniper=" << zoomFovSniper << "\nzoom_fov_rifle=" << zoomFovRifle << "\nfullbright_color=" << colorHex(fullbrightColor) << "\ndiscord=" << discordName << "\nui_font=" << uiFont << "\nlanguage=" << language << "\ndemo_full_rate=" << demoFullRate << "\noutline_friendly=" << outlineFriendly << "\noutline_enemy=" << outlineEnemy << "\noutline_player_width=" << outlinePlayer << "\noutline_world_width=" << outlineWorld

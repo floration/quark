@@ -580,7 +580,7 @@ void main() {
 
 const char* kDynVS = R"(#version 330 core
 layout(location=0) in vec3 aPos;
-layout(location=1) in vec4 aNormal;  // x 32767 (16-bit integers, not normalized by GL: 0 and +-1 exact on every driver); w: PLAYER SATURATION (0: none, else 1 + sat x 16383)
+layout(location=1) in vec4 aNormal;  // x 32767 (16-bit integers, not normalized by GL: 0 and +-1 exact on every driver); w: PLAYER SATURATION (0: none, else 1 + sat x 16383; negative: a player's)
 layout(location=2) in vec4 aColor;   // (half floats, as aEdge and aOutline)
 layout(location=3) in vec4 aEdge;    // the distances to edges 0 and 1, then to 2 and 3
 layout(location=4) in vec4 aOutline; // rgb: the edge colour, a: its width (pixels)
@@ -588,22 +588,23 @@ uniform mat4 uViewProj;
 layout(std140) uniform Latch { mat4 uLatchVP; };
 uniform int uLatchUse;
 uniform mat4 uShadowMat;
-out vec3 vPos; out vec3 vN; out vec4 vColor; out vec4 vShadow; out vec4 vEdge; out vec3 vOutline; flat out float vOutlineW; flat out float vSat;
+out vec3 vPos; out vec3 vN; out vec4 vColor; out vec4 vShadow; out vec4 vEdge; out vec3 vOutline; flat out float vOutlineW; flat out float vSat; flat out float vPlayer;
 void main() {
-    vPos = aPos; vN = aNormal.xyz / 32767.0; vSat = aNormal.w == 0.0 ? 1.0 : (aNormal.w - 1.0) / 16383.0; vColor = aColor; vOutline = aOutline.rgb; vOutlineW = aOutline.a;
+    vPos = aPos; vN = aNormal.xyz / 32767.0; vSat = aNormal.w == 0.0 ? 1.0 : (abs(aNormal.w) - 1.0) / 16383.0; vPlayer = aNormal.w < 0.0 ? 1.0 : 0.0;
+    vColor = aColor; vOutline = aOutline.rgb; vOutlineW = aOutline.a;
     vEdge = vec4(aEdge.xy, aEdge.xy + aEdge.zw);   // (outline() takes edges 2 and 3 as zw - xy)
     vShadow = uShadowMat * vec4(aPos + vN * 0.03, 1.0);
     gl_Position = (uLatchUse != 0 ? uLatchVP : uViewProj) * vec4(aPos, 1.0);
 })";
 
 const char* kDynFS = R"(
-in vec3 vPos; in vec3 vN; in vec4 vColor; in vec4 vShadow; in vec4 vEdge; in vec3 vOutline; flat in float vOutlineW; flat in float vSat;
+in vec3 vPos; in vec3 vN; in vec4 vColor; in vec4 vShadow; in vec4 vEdge; in vec3 vOutline; flat in float vOutlineW; flat in float vSat; flat in float vPlayer;
 uniform vec3 uSunColor, uSkyColor, uSunDir, uFogColor, uCamPos;
 uniform float uFogDensity;
 uniform int uReceiveShadow;
 uniform float uBright;
 uniform float uFade;   // the view model's see-through amount (1 - WEAPON MODEL OPACITY); 0 (unset) everywhere else
-uniform float uEmitAdd;     // VIDEO > MORE 4: PLAYER BRIGHTNESS's own-light share - the default 0.3 (0: as it was)
+uniform float uEmit;        // VIDEO > MORE 4: PLAYER BRIGHTNESS, players' own-light share (everything else here: 0.3)
 uniform float uOutlineFade; // ...1 - OUTLINE OPACITY (0: solid outlines)
 uniform vec3 uGrade;   // (as the world's)
 vec3 grade(vec3 c) {
@@ -617,12 +618,19 @@ void main() {
     float sh = uReceiveShadow != 0 ? shadowAt(vShadow) : 1.0;
     float ndl = max(dot(normalize(vN), uSunDir), 0.0);
     vec3 light = uSkyColor * (0.6 + 0.25 * vN.y) + uSunColor * ndl * vColor.a * sh;
-    float e = 0.3 + uEmitAdd;
+    float e = vPlayer > 0.5 ? uEmit : 0.3;
     vec3 body = vColor.rgb * (light * (1.0 - e) + e);
     if (vSat != 1.0) body = max(mix(vec3(dot(body, vec3(0.2126, 0.7152, 0.0722))), body, vSat), 0.0);   // VIDEO > MORE 4: PLAYER SATURATION (players' bodies, not their outlines)
-    vec3 c = mix(mix(vOutline, body, uOutlineFade), body, outline(vEdge, vOutlineW)); // partly emissive so team colors stay readable; edges in the outline colour
+    // A player's outline thins out on faces a few pixels across (far away): a fixed 1-2 px edge on a 3 px face left
+    // no colour on it, and a far player was a black stick figure. Full at 12 px and up (near: as before), none under 3.
+    float ow = vOutlineW;
+    if (vPlayer > 0.5) {
+        float fpx = min(vEdge.z, vEdge.w) / max(fwidth(min(min(vEdge.x, vEdge.z - vEdge.x), min(vEdge.y, vEdge.w - vEdge.y))), 1e-5);
+        ow *= clamp((fpx - 3.0) / 9.0, 0.0, 1.0);
+    }
+    vec3 c = mix(mix(vOutline, body, uOutlineFade), body, outline(vEdge, ow)); // partly emissive so team colors stay readable; edges in the outline colour
     float d = length(vPos - uCamPos);
-    c = mix(c, uFogColor, 1.0 - exp(-d * uFogDensity)) * uBright;
+    c = mix(c, uFogColor, 1.0 - exp(-d * uFogDensity * (vPlayer > 0.5 ? 0.5 : 1.0))) * uBright;   // (players: half the fog, their colour reads twice as far)
     fragColor = vec4(dith(grade(pow(c, vec3(1.0 / 2.2)))), 1.0 - uFade);
 })";
 
@@ -3343,7 +3351,7 @@ void Renderer::lookUniforms(unsigned prog) {
     glUniform1f(U(prog, "uFlatLight"), look_.flatLight ? 1.0f : 0.0f);
     glUniform1f(U(prog, "uSimple"), look_.simpleSky ? 1.0f : 0.0f);
     glUniform1i(U(prog, "uPcf"), look_.pcf == 0 ? 1 : look_.pcf == 2 ? 2 : 0);
-    glUniform1f(U(prog, "uEmitAdd"), look_.emit - 0.3f);
+    glUniform1f(U(prog, "uEmit"), look_.emit);
     glUniform1f(U(prog, "uOutlineFade"), 1.0f - look_.outlineA);
 }
 
