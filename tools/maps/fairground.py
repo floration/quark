@@ -262,8 +262,8 @@ def build():
         k.box("galvanizedsteel", x - 0.3, 0, BZ - 0.3, x + 0.3, 8.0, BZ + 0.3)
         k.box("steeldeckplate", x - 1.0, 7.7, BZ - 1.8, x + 1.0, 8.0, BZ + 0.3)
         k.box("galvanizedsteel", x - 1.0, 8.0, BZ - 1.8, x + 1.0, 9.6, BZ - 1.68)
-        for dx in (-0.9, 0.9):
-            k.box("galvanizedsteel", x + dx - 0.05, 8.0, BZ - 1.65, x + dx + 0.05, 11.0, BZ - 1.55)
+        for dx in (-0.9, 0.9):                                                    # (the uprights against the rail: no slit)
+            k.box("galvanizedsteel", x + dx - 0.05, 8.0, BZ - 1.68, x + dx + 0.05, 11.0, BZ - 1.55)
     k.box("galvanizedsteel", BX - 4.3, 11.0, BZ - 1.66, BX + 4.3, 11.12, BZ - 1.54)
     k.box("galvanizedsteel", BX - 1.0, 9.5, BZ - 0.06, BX + 1.0, 9.62, BZ + 0.06)
     k.ladder(BX - 3.4, BZ + 0.42, 0.1, 8.0, "n", mat="galvanizedsteel")
@@ -320,21 +320,33 @@ def build():
                 if q[0] < N and q[1] < N and (gx * 7 + gz * 3 + dx) % 9 == 4:
                     open_.add(frozenset(((gx, gz), q)))
     open_ |= {frozenset(((0, 3), (-1, 3))), frozenset(((3, N - 1), (3, N))), frozenset(((N - 1, 2), (N, 2)))}   # the doors
-    brk = 0
+    walls = []                                                                    # (mat, x0, z0, x1, z1, along)
     for gx in range(N + 1):
         for gz in range(N):                                                       # walls along z (x = const)
             if frozenset(((gx - 1, gz), (gx, gz))) in open_: continue
             x = MX + gx * C
             mat = "mirror" if (gx * 7 + gz * 3) % 5 == 2 and 0 < gx < N else "mirrortile"
             t = 0.12 if mat == "mirror" else 0.3
-            k.box(mat, x - t / 2, 0, MZ + gz * C - 0.15, x + t / 2, 3.0, MZ + (gz + 1) * C + 0.15)
+            walls.append([mat, x - t / 2, MZ + gz * C - 0.15, x + t / 2, MZ + (gz + 1) * C + 0.15, 2])
     for gz in range(N + 1):
         for gx in range(N):                                                       # walls along x (z = const)
             if frozenset(((gx, gz - 1), (gx, gz))) in open_: continue
             z = MZ + gz * C
             mat = "mirror" if (gx * 5 + gz * 7) % 5 == 3 and 0 < gz < N else "mirrortile"
             t = 0.12 if mat == "mirror" else 0.3
-            k.box(mat, MX + gx * C - 0.15, 0, z - t / 2, MX + (gx + 1) * C + 0.15, 3.0, z + t / 2)
+            walls.append([mat, MX + gx * C - 0.15, z - t / 2, MX + (gx + 1) * C + 0.15, z + t / 2, 0])
+    # a mirror's end that lies on a tile's outer face (the 0.15 overrun into a corner) stops 1 cm short, inside the
+    # tile: the two faces no longer share a plane (no flicker); the tile fills that corner either way
+    tiles_ = [w for w in walls if w[0] == "mirrortile"]
+    for w in walls:
+        if w[0] != "mirror": continue
+        a, o = (1, 3) if w[5] == 0 else (2, 4)                                   # (the long axis' min / max index)
+        b0, b1 = (2, 4) if w[5] == 0 else (1, 3)                                 # (across it)
+        for (i, d) in ((a, 0.01), (o, -0.01)):
+            if any(abs(tl[i] - w[i]) < 1e-9 and tl[b0] <= w[b0] and w[b1] <= tl[b1] for tl in tiles_):
+                w[i] = round(w[i] + d, 4)
+    for (mat, x0, z0, x1, z1, _) in walls:
+        k.box(mat, x0, 0, z0, x1, 3.0, z1)
     k.box("chippedpaint", MX - 0.3, 3.0, MZ - 0.3, MX + N * C + 0.3, 3.3, MZ + N * C + 0.3)
     k.box("chippedpaint", MX - 0.3, 3.3, MZ - 0.3, MX + N * C + 0.3, 5.0, MZ - 0.1)    # (its sign board)
     k.box("neonmaze", MX + 1.0, 3.6, MZ - 0.38, MX + N * C - 1.0, 4.8, MZ - 0.3)
@@ -347,7 +359,11 @@ def build():
         k.box("rubber", x0, 0.3, z0, x1, 1.0, z1)
     for x in (24.2, 36, 47.8):
         for z in (-43.8, -26.2):
-            k.box("galvanizedsteel", x - 0.2, 0.3, z - 0.2, x + 0.2, 5.0, z + 0.2)
+            # (a corner post's outer faces 1 cm inside the barriers' ones: no shared face plane with the rubber, which
+            # stays the outer face players touch)
+            ex = 0.01 if x != 36 else 0.0
+            k.box("galvanizedsteel", x - 0.2 + (ex if x < 36 else 0), 0.3, z - 0.2 + (ex if z < -35 else 0),
+                  x + 0.2 - (ex if x > 36 else 0), 5.0, z + 0.2 - (ex if z > -35 else 0))
     k.box("corrugated", 23.6, 5.0, -44.4, 48.4, 5.3, -25.6)
     for (z0, z1) in ((-44.5, -44.4), (-25.6, -25.5)):
         k.box("neonmaze", 23.6, 5.0, z0, 48.4, 5.6, z1)                               # neon along the roof's edges
@@ -468,7 +484,9 @@ def build():
     for (x0, z0, x1, z1, mat) in [(BC[0], BC[1] - 0.05, BC[2], BC[1], "powdercoatyellow"), (BC[0], BC[3], BC[2], BC[3] + 0.05, "pinkbrick"),
                                   (BC[0] - 0.05, BC[1], BC[0], BC[3], "powdercoatgreen")]:
         k.box(mat, x0, 1.0, z0, x1, 1.6, z1)
-    for (x0, z0, x1, z1) in [(BC[0], BC[1], BC[2], BC[1] + 0.6), (BC[0], BC[3] - 0.6, BC[2], BC[3]), (BC[0], BC[1], BC[0] + 0.6, BC[3])]:
+    # (the caps run between the towers, not into them: a cap's end on a tower's outer face flickered there)
+    for (x0, z0, x1, z1) in [(BC[0] + 1.6, BC[1], BC[2] - 1.6, BC[1] + 0.6), (BC[0] + 1.6, BC[3] - 0.6, BC[2] - 1.6, BC[3]),
+                             (BC[0], BC[1] + 1.6, BC[0] + 0.6, BC[3] - 1.6)]:
         k.box("pinkbrick", x0, 2.5, z0, x1, 2.56, z1)
 
     # ================================================================== the duck pond (pink slime: throws you out)
@@ -481,7 +499,7 @@ def build():
     k.box("hardpan", SPILL[0], -1.2, SPILL[1], SPILL[2], -0.3, SPILL[3])
     k.box("fizzingsoda", SPILL[0], -0.3, SPILL[1], SPILL[2], -0.05, SPILL[3])
     wall_x(k, "chipboard", 24, 30, 33.5, 0, 3.0, t=0.12)
-    k.box("cratewood", 24, 0, 32.4, 30, 1.1, 33.4)
+    k.box("cratewood", 24, 0, 32.4, 30, 1.1, 33.44)                                 # (the counter against the wall)
     k.box("stripedwallpaper", 23.6, 3.0, 32.0, 30.4, 3.2, 34.0)
     k.box("galvanizedsteel", 13.6, 0, 40.6, 14.4, 10.0, 41.4)                          # the strength tester
     k.box("powdercoatyellow", 13.4, 9.0, 40.4, 14.6, 10.2, 41.6)
@@ -489,7 +507,7 @@ def build():
         k.box("stripedwallpaper", x - 0.6, 0, 46.8, x + 0.6, 7.0, 48.0)
     k.box("stripedwallpaper", -6.6, 7.0, 46.8, 6.6, 8.4, 48.0)
     k.box("neonmaze", -5.6, 7.15, 46.72, 5.6, 8.25, 46.8)                             # the gate's neon name board
-    bulbs(k, along((-6.6, 8.5, 46.75), (6.6, 8.5, 46.75), step=1.1))
+    bulbs(k, along((-6.6, 8.475, 46.75), (6.6, 8.475, 46.75), step=1.1))           # (sat on the arch)
 
     # ================================================================== the open ground broken up (cover for the chase,
     # few large pieces: momentum stays): food trucks and picnic tables east, a hay-bale maze west, the games marquee
