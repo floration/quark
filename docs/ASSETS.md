@@ -66,7 +66,7 @@ model's own space (metres, +Y up, front at -Z):
 - **weapon**: the first-person viewmodel. Origin at the weapon's pivot (the HUD's viewmodel x / y / depth put it
   there and its size scales it), barrel along -Z.
 - **projectile**: origin at the projectile, flying toward -Z (ROCKET, KNIFE, STICKY, CROSSBOW, BUBBLE, SYRINGE, ORB =
-  every other projectile). The game spins the sticky and the thrown knife and wobbles the bubble.
+  every other projectile). The game spins the sticky and the thrown knife and wobbles the bubble, on a mesh too (it stretches it in x and z), blinks a sticky's `team` colour once stuck, and draws the rocket's flame behind z +0.27 (its nozzle).
 - **crown**: the leaderboard crown, origin at the top of the head, front at -Z (the board letter stays drawn on top).
 - **prop** (`models/prop/<NAME>`), the rest of what the game draws as a model; the game keeps moving them (where they
   are, aim, crouch, body size are transforms on top of the model):
