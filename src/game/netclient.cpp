@@ -19,6 +19,11 @@ constexpr double kConnectRetry = 0.5;
 constexpr double kConnectTimeout = 10.0;
 constexpr double kServerTimeout = 10.0;
 constexpr int kCmdsPerPacket = 4;      // redundancy against packet loss
+// Prediction corrections (owner 2026-11-10: no rubberbanding at 200 ms): blended out with this time constant, so 95%
+// of one is gone in ~100 ms (it was 60 ms, gone in ~180), from up to this far; a bigger one (or a respawn, the
+// server placing you, a teleporter) snaps. It was 2 m, so a correction of a few metres at 200 ms ping jumped.
+constexpr float kCorrectionTauMs = 33.0f;
+constexpr float kMaxBlendedCorrection = 8.0f;
 
 uint32_t randomNonce() {
     std::random_device rd;
@@ -34,6 +39,9 @@ void NetClient::resetPrediction() {
     pred_ = predPrev_ = MoveState();
     errorOffset_ = {};
     lastReplay_ = 0;
+    corrections_ = 0;
+    wasAlive_ = snapNext_ = false;
+    teleSeq_ = 0;
     havePendingOffset_ = reconcilePending_ = false;
     moveEv_ = 0; moveLand_ = 0;
     hookCatch_ = HookCatch();
@@ -417,6 +425,7 @@ void NetClient::onSnapshot(Snapshot& s) {
             if (!play_.active && hex16 && rankSign(rankKey_, rankTicketMessage(e.text, server_.toString()), &sig)) sendCommand("ticketsig " + sig);
             continue;
         }
+        if (e.type == EV_SPAWN && e.a == clientId_) snapNext_ = true;   // (placed afresh: no blend from the old spot)
         if (e.type == EV_EDIT) { applyEditEvent(e.text); continue; }
         if (e.type == EV_PROP) { applyPropEvent(e); continue; }
         if (e.type == EV_DESTRUCT) {
@@ -575,10 +584,16 @@ void NetClient::reconcile(const Snapshot& s) {
                  length(mine.vel - s.self.vel) < 1e-3f && mine.flags == s.self.flags && mine.hookTarget == s.self.hookTarget &&
                  sameCharges(mine, s.self) && mine.acidOutMs == s.self.acidOutMs;
     lastReplay_ = 0;
+    // A respawn, the server placing us afresh (EV_SPAWN) or a teleporter in the commands being corrected: the next
+    // correction is a jump, not an error, and snaps
+    const bool snap = !wasAlive_ || snapNext_ || (teleSeq_ && teleSeq_ > s.ackCmdSeq && teleSeq_ < nextSeq_);
+    wasAlive_ = alive && mapReady_;
     if (!alive || !mapReady_) {
         pred_ = predPrev_ = s.self;
         errorOffset_ = {};
     } else if (!match) {
+        corrections_++;
+        bool teleported = false;
         Vec3 oldVisual = pred_.pos + errorOffset_;
         pred_ = s.self;
         // what we now hold for the acked command: the next snapshot with the same ack (no new commands reached the
@@ -602,12 +617,16 @@ void NetClient::reconcile(const Snapshot& s) {
                 } else { probe.n = 1; probe.box[0] = hookCatch_.box; probe.id[0] = hookCatch_.id; }
                 pmove(pred_, c, map_, &probe);
             } else pmove(pred_, c, map_);
+            teleported |= (pred_.events & ME_TELEPORT) != 0;
             predicted_[seq % kCmdRing] = pred_;
             predictedSeq_[seq % kCmdRing] = seq;
         }
+        // The correction is blended out (tick(): kCorrectionTauMs) rather than jumped, up to kMaxBlendedCorrection;
+        // further, or a respawn / teleport, it snaps (it was 2 m)
         Vec3 err = oldVisual - pred_.pos;
-        errorOffset_ = length(err) < 2.0f ? err : Vec3();
-    }
+        errorOffset_ = !snap && !teleported && dot(err, err) < kMaxBlendedCorrection * kMaxBlendedCorrection ? err : Vec3();
+    } else if (snap) errorOffset_ = {};
+    snapNext_ = false;
     // A grapple latched onto a player (or another's holding us): the anchor moves with them, and only the server knows
     // where they are now. Prediction pulls toward its latest value (the replay above already started from it).
     if (alive && mapReady_) {
@@ -657,10 +676,14 @@ void NetClient::tick(UserCmd cmd) {
         } else pmove(pred_, cmd, map_);
         moveEv_ |= pred_.events;
         moveLand_ = std::max(moveLand_, pred_.landSpeed);
+        if (pred_.events & ME_TELEPORT) teleSeq_ = cmd.seq;
     }
     predicted_[cmd.seq % kCmdRing] = pred_;
     predictedSeq_[cmd.seq % kCmdRing] = cmd.seq;
-    errorOffset_ *= std::exp(-cmd.msec / 60.0f); // fade corrections out over ~60 ms, at any tick rate
+    if (errorOffset_.x != 0 || errorOffset_.y != 0 || errorOffset_.z != 0) {   // (no exp while nothing's left: the common case)
+        errorOffset_ *= std::exp(-cmd.msec / kCorrectionTauMs);   // blend corrections out, at any tick rate
+        if (dot(errorOffset_, errorOffset_) < 1e-8f) errorOffset_ = {};
+    }
     if (++unsentCmds_ >= inputBatch_) sendInput();
 }
 
@@ -719,7 +742,9 @@ void NetClient::updateVisualPos(double tickAcc, float yaw, float pitch) {
     MoveState next = s;
     c.msec = 1;
     pmove(next, c, map_);
-    visualPos_ = vlerp(s.pos, next.pos, part) + errorOffset_;
+    // the correction as it will be blended by then (tick() blends it a tick at a time: at 125 Hz a big one would step)
+    const bool blending = errorOffset_.x != 0 || errorOffset_.y != 0 || errorOffset_.z != 0;
+    visualPos_ = vlerp(s.pos, next.pos, part) + (blending ? errorOffset_ * std::exp(-(float)ms / kCorrectionTauMs) : Vec3());
     visualOk_ = true;
 }
 
