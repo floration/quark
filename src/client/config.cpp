@@ -218,7 +218,7 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "streak_calls") streakCalls = std::min(std::max(iv, 0), 2);
         else if (k == "time_warn") timeWarn = std::min(std::max(iv, 0), 2);
         else if (k == "time_warn_text") timeWarnText = iv != 0;
-        else if (k == "cue_mute") cueMute = iv;
+        else if (k == "cue_mute") { const long long c = atoll(v.c_str()); cueMute = c < 0 && c >= INT32_MIN ? (long long)(uint32_t)c : c; }   // (an int before 2026-11-10: bit 31 made it negative)
         else if (k == "ann_mute") annMute = atoll(v.c_str());
         else if (k == "sound_viz") soundViz = iv != 0;
         else if (k == "net_graph") netGraph = iv != 0;

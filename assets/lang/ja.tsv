@@ -701,6 +701,7 @@ CTRL+Y (REDO)	CTRL+Y (やり直し)
 CTRL+Z (UNDO)	CTRL+Z (元に戻す)
 CUE	キュー
 CUE SOUNDS	キュー音
+CUE: CHAT	キュー: チャット
 CUE: DASH	キュー: ダッシュ
 CUE: DEATH	キュー: 死亡
 CUE: GRAPPLE FIRE	キュー: グラップル発射
@@ -710,9 +711,13 @@ CUE: HYPER	キュー: ハイパー
 CUE: JUMP	キュー: ジャンプ
 CUE: KILL	キュー: キル
 CUE: LANDING	キュー: 着地
+CUE: MENU CLICK	キュー: メニュークリック
+CUE: RESPAWN	キュー: リスポーン
 CUE: STREAK STING	キュー: 連続キル
 CUE: SUPER	キュー: スーパー
 CUE: TYPING	キュー: 入力
+CUE: VOTE CALLED	キュー: 投票
+CUE: WEAPON SWITCH	キュー: 武器切替
 CURSOR COLOR	カーソルの色
 CURSOR SIZE	カーソルサイズ
 CUSTOM	カスタム
@@ -796,6 +801,7 @@ DEATH CAMERA: MY BODY	デスカメラ: 自分の体
 DEATH CAMERA: THE KILLER	デスカメラ: キルした相手
 DEBAND	デバンド
 DEBAND: A FAINT DITHER, NO BANDS IN SKY / FOG;	デバンド: 薄いディザで空 / 霧の縞を除去;
+DEBRIS	瓦礫
 DECALOTYPE	DECALOTYPE
 DEFAULT	デフォルト
 DEFEND	防衛
@@ -870,6 +876,7 @@ DRAW: 250 M	描画: 250 M
 DRAW: 400 M	描画: 400 M
 DRIVER	ドライバー
 DROP MY EDITS	編集を破棄
+DRYFIRE	空撃ち
 DUCKING	ダッキング
 DUEL	デュエル
 DUEL - 1v1 (or 2v2): every life has a random modifier (low gravity, giants, rockets only...). First to 11.	デュエル - 1v1 (または2v2): ライフごとにランダムな修正 (低重力、巨人、ロケットのみ...)。11本先取。
@@ -3084,6 +3091,7 @@ SPEED: FAST	速度: 高速
 SPEED: HITSCAN	速度: ヒットスキャン
 SPEED: SLOW	速度: 低速
 SPEED: WALK	速度: 歩き
+SPLASH	水しぶき
 SPLIT	スプリット
 SPLIT TIME	スプリットタイム
 SPLITS VS	スプリット比較:
@@ -3254,6 +3262,7 @@ TEAMS: 1V1	チーム: 1V1
 TEAMS: 2V2	チーム: 2V2
 TEAR LINE OFFSET (US)	ティアリング位置オフセット (US)
 TEARS NOW OR WAITS A REFRESH	即ティアリングか次のリフレッシュを待つ
+TELEPORT	テレポート
 TENTHS	0.1秒表示
 TENTHS: THE LAST 10 S AS 0:09.4	0.1秒表示: 最後の10秒を 0:09.4 形式で
 TEST	テスト

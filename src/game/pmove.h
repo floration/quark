@@ -86,6 +86,9 @@ enum : uint8_t {
     ME_SUPER = 8,   // a dash jump (Celeste's super)
     ME_HYPER = 16,  // a super dash (the hyper)
     ME_HOOK = 32,   // your grapple caught something
+    // (the client's own sounds only: the server sends only the bits above to others, `events & 31` in server.cpp)
+    ME_BOUNCE = 64,     // a dash bounced off a wall
+    ME_TELEPORT = 128,  // a teleporter took you
 };
 constexpr float kLandSoundSpeed = 6.0f;   // m/s: softer landings make no sound
 enum : uint8_t {

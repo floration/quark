@@ -137,8 +137,7 @@ void Game::updateCommunity() {
         notify(pendingFilled_, 12);
         if (screen_ == Screen::InGame) addChat({pendingFilled_, rgba(cfg_.colorFriendly), time_ + 15});
         else error_ = pendingFilled_;
-        audio_.play(SND_STREAK, 1.0f);
-        audio_.play(SND_FINISH, 1.0f);   // (and the finish chime: it's heard over a match or from another window)
+        audio_.play(SND_MATCH_FOUND, 1.0f);   // (its own call, heard over a match or from another window; it was the streak sting + the finish chime)
         if (cfg_.queueFlash && !glfwGetWindowAttrib(win_, GLFW_FOCUSED)) glfwRequestWindowAttention(win_);   // (the taskbar button flashes)
         pendingFilled_.clear();
     }

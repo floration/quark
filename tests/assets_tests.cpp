@@ -101,7 +101,25 @@ const char* soundWhen(int id) {
         "king of the hill: the hill became contested (both teams on it) - < 0.5 s",
         "multi point: the enemy is capturing your point (as it starts, then every 3 s) - < 0.75 s",
         "the map's holdfire (no firing at the round start): a tick each second, higher and louder as firing is allowed - very short, < 0.1 s",
-        "race: a checkpoint that won't count (out of order, or a run that doesn't count): a buzz - < 0.4 s"};
+        "race: a checkpoint that won't count (out of order, or a run that doesn't count): a buzz - < 0.4 s",
+        "you switched weapons: two small mechanical clicks - very short, < 0.15 s",
+        "fire pressed with nothing to fire (holdfire, a thrown knife / syringe not back, the locator's wait): a dry click - very short, < 0.1 s",
+        "a thrown knife or syringe lands (3D; the syringe higher) - < 0.2 s",
+        "a bubble pops (3D) - short, < 0.15 s",
+        "glass breaks (3D; a shot's hole quieter and higher than a pane shattering) - < 0.6 s",
+        "rubble (3D): a breakable block broken, a wall coming down, a crumble platform shaking and falling - < 0.85 s",
+        "your dash bounced off a wall: a springy thud - < 0.3 s",
+        "a grapple let go (yours, or someone's in 3D) - < 0.25 s",
+        "a teleporter (yours; someone else's at both ends, in 3D) - < 0.7 s",
+        "a splash into a liquid (and quieter, higher, out of it; yours and others') - < 0.6 s",
+        "you respawned: a soft whoosh in - < 0.6 s",
+        "your health fell under the low-health line: a heartbeat - < 0.5 s",
+        "ball: a goal, a stadium horn (lower when it's against your side) - < 1.35 s",
+        "ball: the ball struck (a kick, a push, a hard bounce; 3D, louder the harder) - short, < 0.25 s",
+        "someone else's chat message: a soft blip (higher and louder when it names you) - very short, < 0.15 s",
+        "a vote was called - < 0.5 s",
+        "ranked: the queue found your match - < 0.75 s",
+        "a menu click (any button, toggle, arrow or list) - very short, < 0.05 s"};
     static_assert(sizeof d / sizeof *d == SND_VOICE_THREE, "a line for every sound effect, in SoundId order");
     return id >= 0 && id < SND_VOICE_THREE && d[id] ? d[id] : "";
 }
@@ -768,6 +786,39 @@ static void testAuditSounds() {
     // the wrong checkpoint's buzz is low (most of it under the ding's 1.3 kHz), the headshot's tink high
     ACHECK(lowShare(a.samples(SND_CHECKPOINT_WRONG)) > lowShare(a.samples(SND_CHECKPOINT)) + 0.1f);
     ACHECK(lowShare(a.samples(SND_HEADSHOT_TINK)) < 0.01f);
+    a.stop();
+}
+
+// The sound coverage audit's sounds (q, 2026-11-10: "ensure everything that is supposed to have a sound has one"): each
+// its own in DEFAULT (synthesized), as short as its README row says, with headroom, named as the files are, after the
+// earlier effects and before the announcer (so every earlier id keeps its meaning), and every effect inside cue_mute
+static void testCoverageSounds() {
+    struct Cue { int id; const char* name; float maxSec; };
+    const Cue cues[] = {{SND_WEAPON_SWITCH, "WEAPON_SWITCH", 0.15f}, {SND_DRYFIRE, "DRYFIRE", 0.1f}, {SND_KNIFE_HIT, "KNIFE_HIT", 0.2f},
+                        {SND_BUBBLE_POP, "BUBBLE_POP", 0.15f}, {SND_GLASS_BREAK, "GLASS_BREAK", 0.6f}, {SND_DEBRIS, "DEBRIS", 0.85f},
+                        {SND_DASH_BOUNCE, "DASH_BOUNCE", 0.3f}, {SND_GRAPPLE_RELEASE, "GRAPPLE_RELEASE", 0.25f},
+                        {SND_TELEPORT, "TELEPORT", 0.7f}, {SND_SPLASH, "SPLASH", 0.6f}, {SND_SPAWN, "SPAWN", 0.6f},
+                        {SND_LOW_HEALTH, "LOW_HEALTH", 0.5f}, {SND_GOAL, "GOAL", 1.35f}, {SND_BALL_KICK, "BALL_KICK", 0.25f},
+                        {SND_CHAT, "CHAT", 0.15f}, {SND_VOTE, "VOTE", 0.5f}, {SND_MATCH_FOUND, "MATCH_FOUND", 0.75f},
+                        {SND_UI_CLICK, "UI_CLICK", 0.05f}};
+    static_assert(SND_WEAPON_SWITCH == SND_CHECKPOINT_WRONG + 1 && SND_UI_CLICK + 1 == SND_VOICE_THREE, "after the earlier effects, before the announcer");
+    static_assert(SND_VOICE_THREE < 64, "every effect has a cue_mute bit");
+    ACHECK(sizeof cues / sizeof *cues == (size_t)(SND_VOICE_THREE - SND_WEAPON_SWITCH));
+    Audio a;
+    a.startOffline();
+    for (const Cue& c : cues) {
+        const auto& x = a.samples(c.id);
+        ACHECK(std::string(Audio::soundName(c.id)) == c.name);
+        ACHECK(x.size() > 1000 && x.size() <= (size_t)(c.maxSec * Audio::kRate) + 1);
+        ACHECK(peakOf(x) > 0.05f && peakOf(x) <= 0.95f && rms(x) > 0.003f);
+        for (int other = 0; other < SND_VOICE_THREE; other++) if (other != c.id) ACHECK(x != a.samples(other));   // (its own)
+    }
+    // the heartbeat is low (most of it under the ding's), the menu click the shortest effect of all, the horn the longest
+    // of these; the glass is high, the rubble low
+    ACHECK(lowShare(a.samples(SND_LOW_HEALTH)) > lowShare(a.samples(SND_CHECKPOINT)) + 0.1f);
+    ACHECK(lowShare(a.samples(SND_DEBRIS)) > lowShare(a.samples(SND_GLASS_BREAK)) + 0.1f);
+    for (int id = 0; id < SND_VOICE_THREE; id++) if (id != SND_UI_CLICK) ACHECK(a.samples(id).size() > a.samples(SND_UI_CLICK).size());
+    for (const Cue& c : cues) if (c.id != SND_GOAL) ACHECK(a.samples(SND_GOAL).size() > a.samples(c.id).size());
     a.stop();
 }
 
@@ -1571,6 +1622,7 @@ int assetTests() {
     testLanguages();
     testHitTiers();
     testAuditSounds();
+    testCoverageSounds();
     testVoiceSteal();
     testCategoryVolumes();
     testQuips();

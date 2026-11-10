@@ -1581,16 +1581,37 @@ void Game::updateAnnouncer() {
     if (!net_.hasSnapshot()) return;
     const ModeState& ms = net_.mode();
     auto say = [&](int id, int level) { if (cfg_.announcer >= level) announce(id); };
+    // (the coverage audit, 2026-11-10: with the announcer off the freeze's 3, 2, 1 and GO were silent: the holdfire's
+    // ticks and its release instead; and the warmup's MATCH STARTS IN counts its last 5 s with them)
     if (ms.phase == PHASE_FREEZE) {
         int c = (int)std::ceil(ms.timeLeft - 0.02f);
-        if (c != annCount_ && c >= 1 && c <= 3) say(SND_VOICE_ONE - (c - 1), 1);
+        if (c != annCount_ && c >= 1 && c <= 3) {
+            if (cfg_.announcer >= 1) say(SND_VOICE_ONE - (c - 1), 1);
+            else audio_.play(SND_HOLDFIRE_TICK, 0.6f);
+        }
         annCount_ = c;
     } else annCount_ = 0;
+    if (ms.mode == MODE_BALL) {   // the ball struck: a thump where it is, by how hard (at most 8 a second; modecalls.h)
+        if (const float dv = ballTouch_.step(net_.latest().timeMs, ms.bombPos); dv > 0 && time_ - ballKickAt_ > 0.12) {
+            ballKickAt_ = time_;
+            audio_.play3D(SND_BALL_KICK, ms.bombPos, clampf(dv / 25.0f, 0.4f, 1.0f), 0.92f + (qrand() % 16) * 0.01f);
+        }
+    } else ballTouch_.reset();
+    if (ms.phase == PHASE_WARMUP && ms.timeLeft > 0) {
+        const int c = (int)std::ceil(ms.timeLeft - 0.02f);
+        if (c != warmCount_ && c >= 1 && c <= 5) audio_.play(SND_HOLDFIRE_TICK, 0.5f);
+        warmCount_ = c;
+    } else warmCount_ = 0;
     if (annPrevValid_) {
         const ModeState& pv = annPrev_;
         const PlayerSnap* me = net_.findPlayer(net_.clientId());
         int myTeam = me && me->team() != TEAM_SPECTATOR ? me->team() : -1;
-        if (pv.phase == PHASE_FREEZE && ms.phase == PHASE_LIVE) say(SND_VOICE_GO, 1);
+        if (const int by = ballGoalBy(pv, ms); by >= 0)   // a goal: the horn, lower for one against your side
+            audio_.play(SND_GOAL, 0.8f, myTeam >= 0 && by != myTeam ? 0.84f : 1.0f);
+        if (pv.phase == PHASE_FREEZE && ms.phase == PHASE_LIVE) {
+            if (cfg_.announcer >= 1) say(SND_VOICE_GO, 1);
+            else audio_.play(SND_HOLDFIRE_TICK, 1.0f, 1.5f);
+        }
         if (pv.phase != PHASE_LIVE && ms.phase == PHASE_LIVE) liveSeenAt_ = time_;
         if (pv.mode == ms.mode && pv.round == ms.round && ms.phase == PHASE_LIVE) {
             if (ms.mode == MODE_BOMB && pv.bombState != ms.bombState) {
@@ -1610,7 +1631,7 @@ void Game::updateAnnouncer() {
                     const int c = (int)std::ceil(ms.timeLeft - 0.02f), was = (int)std::ceil(pv.timeLeft - 0.02f);
                     if (c != was && c >= 1 && c <= 10 && pv.timeLeft - ms.timeLeft < 2) {
                         if (c <= 3) say(SND_VOICE_ONE - (c - 1), 1);
-                        else audio_.play(SND_CHECKPOINT, 0.5f, 1.4f);
+                        else audio_.play(SND_HOLDFIRE_TICK, 0.55f, 1.0f);   // (the countdown tick; it was the race ding pitched up)
                         if (cfg_.timeWarnText) notify(std::to_string(c), 1);
                     }
                 }
@@ -1866,10 +1887,13 @@ void Game::handleEvents() {
                     const std::string stamp = cfg_.chatStamps ? chatStamp() : std::string();
                     const std::string who = shownName(e.a), text = cfg_.chatFilter ? filterChat(e.text) : e.text;
                     Color lc = cfg_.chatOneColor ? rgba(cfg_.chatColor) : isFriendly(e.a) ? rgba(cfg_.colorFriendly) : rgba(cfg_.colorEnemy);
-                    if (e.a != net_.clientId() && mentionsMe(e.text)) {
+                    const bool mention = e.a != net_.clientId() && mentionsMe(e.text);
+                    if (mention) {
                         if (cfg_.mentionHl) lc = {1.0f, 0.82f, 0.25f, 1};
-                        if (cfg_.mentionSound) audio_.play(SND_CHECKPOINT, 0.6f, 1.5f);
+                        if (cfg_.mentionSound) audio_.play(SND_CHAT, 0.8f, 1.5f);   // (your name: the chat blip, higher and louder)
                     }
+                    // someone else's message: a soft blip, at most one every 0.15 s (a burst of lines: one), CUE: CHAT
+                    if (e.a != net_.clientId() && !(mention && cfg_.mentionSound) && time_ - chatSndAt_ > 0.15) { chatSndAt_ = time_; audio_.play(SND_CHAT, 0.4f); }
                     Feed f{stamp + (e.b == 1 ? "(TEAM) " : "") + who + ": " + text, lc, time_ + cfg_.chatTime, crownOf(e.a), true};
                     Color nc;
                     if (nameColorOf(e.a, nc)) f.spans.push_back({stamp.size() + (e.b == 1 ? 7u : 0u), who.size(), nc});
@@ -1926,7 +1950,7 @@ void Game::handleEvents() {
                 std::istringstream ls(e.text);
                 Vec3 p;
                 if (ls >> p.x >> p.y >> p.z) {
-                    locatePos_ = p; locateId_ = e.a; locateUntil_ = time_ + kLocatorShow; audio_.play(SND_GRAPPLE_HIT, 0.6f, 1.4f);
+                    locatePos_ = p; locateId_ = e.a; locateUntil_ = time_ + kLocatorShow; audio_.play(SND_LOCATOR, 0.5f, 1.6f);   // (found: the ping's echo, higher; it was the grapple's hit)
                     locatorReady_ = std::max(locatorReady_, time_ + kLocatorCooldown - 0.1);   // (the server's clock for it, less the trip here)
                 }
                 break;
@@ -2029,8 +2053,9 @@ void Game::handleEvents() {
                 for (int i = 0; i < kMaxPlayers; i++) { std::string n = net_.playerName(i); if (!n.empty()) bracketNames_[i] = n; }
                 break;
             }
-            case EV_VOTE:
+            case EV_VOTE:   // a vote called: a notice (the coverage audit, 2026-11-10; at most one a second)
                 voteText_ = e.text;
+                if (!e.text.empty() && time_ - voteSndAt_ > 1.0) { voteSndAt_ = time_; audio_.play(SND_VOTE, 0.6f); }
                 break;
             case EV_HIT:
                 if (e.b == net_.clientId() && e.a != e.b && e.text.size() > 1 && e.text[0] == '@') {   // hit by someone: the arc
@@ -2064,6 +2089,7 @@ void Game::handleEvents() {
                     yaw_ = e.c / 1000.0f;
                     pitch_ = 0;
                     if (opts_.spawnYaw > -999) { yaw_ = deg2rad(opts_.spawnYaw); pitch_ = deg2rad(opts_.spawnPitch); }
+                    audio_.play(SND_SPAWN, 0.45f);   // (you're back in: the coverage audit, 2026-11-10)
                 }
                 break;
         }
@@ -2305,6 +2331,14 @@ void Game::frame(double dt) {
                 const PlayerSnap* mp = net_.findPlayer(net_.clientId());
                 if (!mp || !(mp->flags & PS_HASBOMB)) wantFire = false;
             }
+            // fire pressed with nothing to fire (the map's holdfire, a thrown knife / syringe not back, the locator's wait):
+            // a dry click on the press, at most 4 a second (the coverage audit, 2026-11-10)
+            if ((c.buttons & BTN_FIRE) && !(localPrevButtons_ & BTN_FIRE) && net_.selfAlive() && time_ - dryAt_ > 0.25 &&
+                net_.mode().phase != PHASE_FREEZE && (holdFireLeft() > 0 || weaponAwayLeft(hw) > 0 ||
+                                                      (hw == WPN_LOCATOR && net_.mode().phase == PHASE_LIVE && time_ < locatorReady_))) {
+                dryAt_ = time_;
+                audio_.play(SND_DRYFIRE, 0.5f * cfg_.volWeapons);
+            }
             if (hw == WPN_LOCATOR) {   // the locator: a ping every kLocatorCooldown (the server answers with EV_LOCATE)
                 if (wantFire && !localFireLocked_ && net_.selfAlive() && net_.mode().phase == PHASE_LIVE && time_ >= locatorReady_) {
                     locatorReady_ = time_ + kLocatorCooldown;
@@ -2462,9 +2496,11 @@ void Game::frame(double dt) {
                     reportImpact(old.type, (old.flags & PROJ_LOB) != 0, from, victim >= 0 ? from + (to - from) * et : old.pos, victim, vHead);
                 }
             }
-            if (!still && old.type == WPN_BUBBLE) { explosions_.push_back({old.pos, time_, 0.45f, true}); audio_.play3D(SND_BUBBLE, old.pos, 0.7f, 1.7f); } // pop
+            if (!still && old.type == WPN_BUBBLE) { explosions_.push_back({old.pos, time_, 0.45f, true}); audio_.play3D(SND_BUBBLE_POP, old.pos, 0.7f, 1.0f); } // pop
             else if (!still && weaponDef(old.type).splashRadius > 0) { explosions_.push_back({old.pos, time_}); audio_.play3D(SND_EXPLOSION, old.pos, 1.25f, 1.0f); }
             else if (!still && old.type == WPN_CROSSBOW) audio_.play3D(SND_BOLT_HIT, old.pos, 0.8f, 1.0f);
+            else if (!still && (old.type == WPN_KNIFE || old.type == WPN_SYRINGE))   // a thrown one landing (it was silent)
+                audio_.play3D(SND_KNIFE_HIT, old.pos, 0.8f, old.type == WPN_SYRINGE ? 1.5f : 1.0f);
             if (still && old.type == WPN_STICKY && length(old.vel) > 0.01f)
                 for (auto& p : projs) if (p.id == old.id && length(p.vel) < 0.01f) audio_.play3D(SND_STICKY_ATTACH, p.pos, 0.8f, 1.0f);
         }
@@ -2566,6 +2602,7 @@ void Game::frame(double dt) {
     if (opts_.backdrop.empty() || screen_ == Screen::InGame) drawMenu();
     std::string copied = ui_.takeCopy();
     if (!copied.empty()) glfwSetClipboardString(win_, copied.c_str());
+    if (ui_.takeClicks() > 0) audio_.play(SND_UI_CLICK, 0.45f);   // (a menu click: once a frame however many; CUE: MENU CLICK)
     if (!hudBuilt_) {
         if (perfStage_) drawPerf();
         else if (perfMini_) drawPerfMini();
@@ -5051,7 +5088,7 @@ void Game::drawHud() {
         const bool drainMode = ms.mode == MODE_VS || ms.mode == MODE_DUEL || isOneVsOneMode(ms.mode) || ms.mode == MODE_TOURNEY;
         const int left = (int)std::ceil(ms.timeLeft);
         if (cfg_.drainWarn && drainMode && ms.phase == PHASE_LIVE && !(ms.flags & MS_DRAIN) && ms.timeLeft > 0 && left <= 10) {
-            if (left != drainBeep_ && (left == 10 || left == 5)) audio_.play(SND_CHECKPOINT, 0.6f, 0.8f);
+            if (left != drainBeep_ && (left == 10 || left == 5)) audio_.play(SND_HOLDFIRE_TICK, 0.7f, 0.8f);   // (a low tick; it was the race ding)
             drainBeep_ = left;
             const std::string t = "STALEMATE - HEALTH DRAINS IN " + std::to_string(left);
             const float dts = std::max(1.0f, std::round(ts * 1.1f));
@@ -8584,14 +8621,17 @@ void Game::drawMoreSettings(const SetLayout& L) {
         g.hint("COUNTDOWN: A TICK EACH OF THE LAST 10 S");
         g.section("CUE SOUNDS");
         {
-            static const int cues[] = {SND_HURT, SND_DEATH, SND_DASH, SND_SUPER, SND_HYPER, SND_GRAPPLE_FIRE, SND_GRAPPLE_HIT, SND_JUMP, SND_LAND, SND_KILL, SND_STREAK, SND_TYPING};
+            static const int cues[] = {SND_HURT, SND_DEATH, SND_DASH, SND_SUPER, SND_HYPER, SND_GRAPPLE_FIRE, SND_GRAPPLE_HIT, SND_JUMP, SND_LAND, SND_KILL, SND_STREAK, SND_TYPING,
+                                       SND_UI_CLICK, SND_CHAT, SND_VOTE, SND_WEAPON_SWITCH, SND_SPAWN};   // (the coverage audit's, 2026-11-10: the ones that could get in the way)
             static const std::vector<std::string> cuen = {"CUE: HURT", "CUE: DEATH", "CUE: DASH", "CUE: SUPER", "CUE: HYPER", "CUE: GRAPPLE FIRE", "CUE: GRAPPLE HIT",
-                                                          "CUE: JUMP", "CUE: LANDING", "CUE: KILL", "CUE: STREAK STING", "CUE: TYPING"};
+                                                          "CUE: JUMP", "CUE: LANDING", "CUE: KILL", "CUE: STREAK STING", "CUE: TYPING",
+                                                          "CUE: MENU CLICK", "CUE: CHAT", "CUE: VOTE CALLED", "CUE: WEAPON SWITCH", "CUE: RESPAWN"};
+            static_assert(sizeof cues / sizeof *cues == 17 && SND_VOICE_THREE < 64, "a name for every cue; every effect fits cue_mute's bits");
             static int ci = 0;
-            ui_.cycle(g.x(), g.top(), hw, h, "CUE", ci, 12, cuen, UiExp::local());
+            ui_.cycle(g.x(), g.top(), hw, h, "CUE", ci, 17, cuen, UiExp::local());
             bool on = !(cfg_.cueMute >> cues[ci] & 1);
             if (ui_.toggle(xr, g.top(), hw, h, "PLAY IT", on, UiExp::cfg("cue_mute"))) {
-                cfg_.cueMute = on ? cfg_.cueMute & ~(int)(1u << cues[ci]) : cfg_.cueMute | (int)(1u << cues[ci]);
+                cfg_.cueMute = on ? cfg_.cueMute & ~(1LL << cues[ci]) : cfg_.cueMute | (1LL << cues[ci]);
                 if (on) audio_.play(cues[ci], 0.8f);
             }
             g.next();
@@ -8900,7 +8940,7 @@ void Game::drawMoreSettings(const SetLayout& L) {
         {
             bool on = !(cfg_.cueMute >> SND_TYPING & 1);
             if (ui_.toggle(xr, g.top(), hw, h, "TYPING SOUNDS", on, UiExp::cfg("cue_mute")))
-                cfg_.cueMute = on ? cfg_.cueMute & ~(int)(1u << SND_TYPING) : cfg_.cueMute | (int)(1u << SND_TYPING);
+                cfg_.cueMute = on ? cfg_.cueMute & ~(1LL << SND_TYPING) : cfg_.cueMute | (1LL << SND_TYPING);
         }
         g.next();
         ui_.toggle(g.x(), g.top(), hw, h, "QUIP CAPTIONS", cfg_.quipCaptions, UiExp::cfg("quip_captions"));
@@ -9118,7 +9158,7 @@ void Game::drawGameplayMore2(const SetLayout& L) {
     ui_.colorPicker(g.x(), g.top(), w, h, "LOW HEALTH COLOR", cfg_.lowHpColor, UiExp::cfg("low_hp_color"), d.lowHpColor);
     g.next();
     ui_.toggle(g.x(), g.top(), hw, h, "PULSE", cfg_.lowHpPulse, UiExp::cfg("low_hp_pulse"));
-    if (ui_.toggle(gx2, g.top(), hw, h, "WARNING BEEP", cfg_.lowHpSound, UiExp::cfg("low_hp_sound")) && cfg_.lowHpSound) audio_.play(SND_CHECKPOINT, 0.7f, 0.55f);
+    if (ui_.toggle(gx2, g.top(), hw, h, "WARNING BEEP", cfg_.lowHpSound, UiExp::cfg("low_hp_sound")) && cfg_.lowHpSound) audio_.play(SND_LOW_HEALTH, 0.7f);
     g.next();
     g.hint("THE SHARE OF THE MODE'S MAX HEALTH");
     g.section("HEALING");
@@ -10519,6 +10559,7 @@ void Game::drawMainStrip(float s, float H) {
         static const char* const kIds[5] = {"PLAY", "PRACTICE", "CREATE", "RANKS", "SETTINGS"};
         if (ui_.probing()) ui_.custom(0, y, sw, h, kLabels[i], (cur ? UiExp::inert() : kNav[i]).withId(kIds[i]));
         if (!((hv && uiIn_.pressed) || keyTab == i) || cur) continue;
+        ui_.noteClick();   // (the strip draws its own tabs: the menu click too)
         leaveForStrip();
         if (i < MAIN_TABS) openMainTab(i);
         else if (i == 3) { nextBoardFetch_ = 0; raceStatsView_ = false; setScreen(Screen::Leaderboard); }   // RANKS: the leaderboard
@@ -10546,6 +10587,7 @@ void Game::drawMainStrip(float s, float H) {
                       : (cfg_.confirmLeave && !armed ? UiExp::state("confirm", "quit") : UiExp::quit()).withId("QUIT");
         if (ui_.probing()) ui_.custom(0, y, sw, h, armed ? kSure : name, e);
         if (!(hv && uiIn_.pressed)) continue;
+        ui_.noteClick();
         if (i == 0) openUrl(kDiscordUrl);
         else if (i == 1) { if (screen_ != Screen::Info) { leaveForStrip(); setScreen(Screen::Info); } }   // how everything works
         else if (confirmed("quit")) quit_ = true;
@@ -10920,6 +10962,7 @@ bool Game::drawGameStrip(float s, float H) {
                                                                      : (i ? UiExp::nav("ingame/pause/settings/*") : UiExp::nav("ingame/pause")).withId(i ? "SETTINGS" : "GAME"));
         if (!(hv && uiIn_.pressed) || inert) continue;
         uiIn_.pressed = false;
+        ui_.noteClick();
         if (settingsInGame_) leaveSettings();   // (saved and sent, as its BACK)
         picker_ = PICK_NONE;
         voteSetup_ = voteMenu_ = practiceMenu_ = playersMenu_ = queueMenu_ = specPick_ = kickPick_ = false;
@@ -10952,6 +10995,7 @@ bool Game::drawGameStrip(float s, float H) {
         }
         if (!(hv && uiIn_.pressed)) continue;
         uiIn_.pressed = false;
+        ui_.noteClick();
         if (i == 1) { if (confirmed("quit")) quit_ = true; continue; }
         if (asks && !confirmed("leave")) continue;
         confirmWhat_.clear();
@@ -11856,7 +11900,7 @@ void Game::applyLive() {
     Audio::setSpatial(cfg_.stereoWidth, cfg_.behindMuffle, cfg_.hearRange);
     audio_.setDynamics(cfg_.dynRange);
     audio_.setLatency(cfg_.audioLatency);
-    audio_.setMuted((uint64_t)(uint32_t)cfg_.cueMute | ((uint64_t)cfg_.annMute << SND_VOICE_THREE));
+    audio_.setMuted(((uint64_t)cfg_.cueMute & ((1ULL << SND_VOICE_THREE) - 1)) | ((uint64_t)cfg_.annMute << SND_VOICE_THREE));
     audio_.keepHeard = cfg_.soundViz;
     if (!cfg_.soundViz) { audio_.heard.clear(); heardMarks_.clear(); }
     if (cfg_.occlusion != (bool)audio_.occluder) {
@@ -13482,7 +13526,10 @@ void Game::updateDestruction(const Map& map) {
                 sh.dust = shake;
                 visShards_.push_back(sh);
             }
-            audio_.play3D(shake ? SND_LAND : SND_EXPLOSION, (fx.pane.mn + fx.pane.mx) * 0.5f, shake ? 0.6f : 0.35f, shake ? 0.6f : 0.8f);
+            if (time_ - debrisAt_ > 0.05) {   // (rubble: the shake a quiet, higher rattle; one a frame or so for many at once)
+                debrisAt_ = time_;
+                audio_.play3D(SND_DEBRIS, (fx.pane.mn + fx.pane.mx) * 0.5f, shake ? 0.45f : 0.8f, shake ? 1.4f : 1.0f);
+            }
             continue;
         }
         if (breakMaterial(fx.material)) {   // a breakable block: chunks in its colour, out from the hit (a blast: more, faster)
@@ -13500,7 +13547,7 @@ void Game::updateDestruction(const Map& map) {
                 const float sh = 0.75f + 0.4f * glassRandF(sd);
                 visShards_.push_back({p, v, 0.03f + 0.06f * glassRandF(sd), Vec3(d.r, d.g, d.b) * sh, false, false, time_});
             }
-            audio_.play3D(SND_EXPLOSION, (fx.pane.mn + fx.pane.mx) * 0.5f, 0.45f, 0.9f);
+            if (time_ - debrisAt_ > 0.05) { debrisAt_ = time_; audio_.play3D(SND_DEBRIS, (fx.pane.mn + fx.pane.mx) * 0.5f, 0.8f, 1.1f); }
             continue;
         }
         if (fx.hole && fx.how == 1) {   // a whole wall coming down: chunks all over it, dropping
@@ -13516,7 +13563,7 @@ void Game::updateDestruction(const Map& map) {
                 const float sh = 0.8f + 0.3f * glassRandF(sd);
                 visShards_.push_back({p, v, 0.04f + 0.05f * glassRandF(sd), Vec3(0.55f, 0.22f, 0.15f) * sh, false, false, time_});
             }
-            audio_.play3D(SND_EXPLOSION, (fx.pane.mn + fx.pane.mx) * 0.5f, 0.6f, 0.6f);
+            if (time_ - debrisAt_ > 0.05) { debrisAt_ = time_; audio_.play3D(SND_DEBRIS, (fx.pane.mn + fx.pane.mx) * 0.5f, 1.0f, 0.8f); }
             continue;
         }
         if (fx.hole) {   // a hole: brick-red chunks thrown out of it
@@ -13551,7 +13598,10 @@ void Game::updateDestruction(const Map& map) {
                 visShards_.push_back(d);
             }
         }
-        audio_.play3D(SND_BOLT_HIT, fx.at, glassCrater(fx.how) ? 0.8f : 1.0f, glassCrater(fx.how) ? 1.8f : 1.5f);
+        if (time_ - glassSndAt_ > 0.04) {   // (a shot's hole: quieter and higher than a pane shattering; a shotgun's many holes: one)
+            glassSndAt_ = time_;
+            audio_.play3D(SND_GLASS_BREAK, fx.at, glassCrater(fx.how) ? 0.55f : 1.0f, glassCrater(fx.how) ? 1.35f : 1.0f);
+        }
     }
     // the panes still standing: see-through (the bake leaves glass out)
     // (translucentBrush: a pane on a wedge, corner or cut draws as its shape, not its box: Museum's dome)
@@ -13650,7 +13700,7 @@ bool Game::shotSpark(const Vec3& from, const Vec3& d, float wallT, float range, 
 // One of your projectiles hits on your screen now, not a round trip later: its explosion / pop / bolt hit, as the
 // server's would look (that one is then left out: see the vanish check in frame()).
 void Game::localBoom(uint16_t id, int type, const Vec3& at) {
-    if (type == WPN_BUBBLE) { explosions_.push_back({at, time_, 0.45f, true}); audio_.play3D(SND_BUBBLE, at, 0.7f, 1.7f); }
+    if (type == WPN_BUBBLE) { explosions_.push_back({at, time_, 0.45f, true}); audio_.play3D(SND_BUBBLE_POP, at, 0.7f, 1.0f); }
     else if (weaponDef(type).splashRadius > 0) { explosions_.push_back({at, time_}); audio_.play3D(SND_EXPLOSION, at, 1.25f); }
     else if (type == WPN_CROSSBOW) {
         audio_.play3D(SND_BOLT_HIT, at, 0.8f);
@@ -14062,7 +14112,7 @@ void Game::trackHealth() {
             healUntil_ = time_ + 1.0;
         }
         const float mx = cfg_.hpScaled ? std::max(1.0f, hpMax_) : 100.0f;
-        if (cfg_.lowHpSound && prevHp_ > mx * cfg_.lowHp && hp > 0 && hp <= mx * cfg_.lowHp) audio_.play(SND_CHECKPOINT, 0.7f, 0.55f);
+        if (cfg_.lowHpSound && prevHp_ > mx * cfg_.lowHp && hp > 0 && hp <= mx * cfg_.lowHp) audio_.play(SND_LOW_HEALTH, 0.7f);   // (its own heartbeat; it was the race ding pitched down)
         if (prevHp_ >= 0 && hp >= 0) hpChangedAt_ = time_;
         prevHp_ = hp;
     }
@@ -14222,9 +14272,10 @@ void Game::drawSoundViz(float cx, float cy, float s) {
         const HeardMark& m = heardMarks_[i];
         if (time_ >= m.until) { heardMarks_[i] = heardMarks_.back(); heardMarks_.pop_back(); continue; }
         const int id = m.id;
-        const char* w = id == SND_STEP || id == SND_JUMP || id == SND_LAND ? "STEPS" : id >= SND_RIFLE && id <= SND_SYRINGE ? "SHOT"
-                      : id == SND_EXPLOSION || id == SND_BUBBLE ? "BOOM" : id == SND_GRAPPLE_FIRE || id == SND_GRAPPLE_HIT ? "HOOK"
-                      : id == SND_HURT || id == SND_DEATH ? "HURT" : id == SND_DASH || id == SND_SUPER || id == SND_HYPER ? "DASH" : "SOUND";
+        const char* w = id == SND_STEP || id == SND_JUMP || id == SND_LAND || id == SND_SPLASH ? "STEPS" : id >= SND_RIFLE && id <= SND_SYRINGE ? "SHOT"
+                      : id == SND_EXPLOSION || id == SND_BUBBLE || id == SND_BUBBLE_POP || id == SND_DEBRIS || id == SND_GLASS_BREAK ? "BOOM"
+                      : id == SND_GRAPPLE_FIRE || id == SND_GRAPPLE_HIT || id == SND_GRAPPLE_RELEASE ? "HOOK"
+                      : id == SND_HURT || id == SND_DEATH ? "HURT" : id == SND_DASH || id == SND_SUPER || id == SND_HYPER || id == SND_TELEPORT ? "DASH" : "SOUND";
         const Vec3 d = m.at - ear;
         const float a = std::atan2(dot(d, right), dot(d, fwd)), f = (float)(m.until - time_) / 0.8f;
         const float x = cx + std::sin(a) * R, y = cy - std::cos(a) * R;
@@ -14317,11 +14368,35 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
                 audio_.play(SND_GRAPPLE_FIRE, 0.7f);
                 audio_.play3D(SND_GRAPPLE_HIT, m.hookPoint, 0.9f);
             }
+            if (ev & ME_BOUNCE) audio_.play(SND_DASH_BOUNCE, 0.8f);   // (pmove: a dash off a wall; ME_BOUNCE / ME_TELEPORT are
+            if (ev & ME_TELEPORT) audio_.play(SND_TELEPORT, 0.8f);    // never sent: everyone else's teleports are below)
         }
         if (net_.playback() && alive && prevAlive_ && (m.flags & MF_HOOKED) && !(prevMove_.flags & MF_HOOKED)) {   // (a demo: no ME_HOOK)
             audio_.play(SND_GRAPPLE_FIRE, 0.7f);
             audio_.play3D(SND_GRAPPLE_HIT, m.hookPoint, 0.9f);
         }
+    }
+    {   // the coverage audit (2026-11-10): a splash in and out of a liquid, steps up and down a ladder, a grapple let go
+        const Map& map = net_.map();
+        const AABB box = playerBox(m);
+        const bool wet = alive && !map.liquids.empty() && map.liquidAt(box);
+        if (alive && prevAlive_) {
+            if (wet != selfInLiquid_ && time_ - splashAt_ > 0.25) {   // (at most 4 a second: bobbing at the surface)
+                splashAt_ = time_;
+                if (wet) audio_.play(SND_SPLASH, clampf(std::fabs(m.vel.y) / 12.0f, 0.35f, 1.0f) * cfg_.volSteps, 0.92f + (qrand() % 16) * 0.01f);
+                else audio_.play(SND_SPLASH, 0.3f * cfg_.volSteps, 1.3f);
+            }
+            const float dy = std::fabs(m.pos.y - prevMove_.pos.y);   // (a rung about every 1.2 m: some 5 a second at the climb speed)
+            if (!map.ladders.empty() && !(m.flags & MF_ONGROUND) && dy < 2.0f && map.onLadder(box)) {
+                ladderDist_ += dy;
+                if (ladderDist_ > 1.2f) { ladderDist_ = 0; audio_.play(SND_STEP, 0.5f * cfg_.volSteps, 1.25f + (qrand() % 10) * 0.01f); }
+            }
+            if ((prevMove_.flags & MF_HOOKED) && !(m.flags & MF_HOOKED) && time_ - releaseAt_ > 0.15) { releaseAt_ = time_; audio_.play(SND_GRAPPLE_RELEASE, 0.5f); }
+            // your weapon switch (the predicted one: it plays as the weapon comes up; not as you respawn holding another)
+            if (switchPrev_ >= 0 && heldWeapon_ != switchPrev_ && time_ - switchAt_ > 0.05) { switchAt_ = time_; audio_.play(SND_WEAPON_SWITCH, 0.5f * cfg_.volWeapons); }
+        }
+        selfInLiquid_ = wet;
+        switchPrev_ = alive ? heldWeapon_ : -1;
     }
     prevMove_ = m;
     prevAlive_ = alive;
@@ -14370,6 +14445,9 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
         }
         if (i == me || !players[i].valid || !(players[i].snap.flags & PS_ALIVE)) { ra.valid = false; ra.firing = false; continue; }
         const PlayerSnap& p = players[i].snap;
+        const Map& map = net_.map();
+        const AABB pbox = playerBox(p.pos, (p.flags & PS_CROUCHED) != 0, bodyScale());
+        const bool wet = !map.liquids.empty() && map.liquidAt(pbox);
         if (ra.valid) {
             Vec3 d = p.pos - ra.pos;
             float h = std::sqrt(d.x * d.x + d.z * d.z);
@@ -14390,6 +14468,26 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
                 audio_.play3D(SND_HURT, p.pos + Vec3(0, 1.2f, 0), 0.8f, 1.0f);
             }
             if (p.hooked && !ra.hooked) audio_.play3D(SND_GRAPPLE_HIT, p.hookPoint, 0.9f, 1.0f);
+            // the coverage audit (2026-11-10): their grapple let go, a splash, a ladder step, a teleporter (no ME_TELEPORT
+            // for others: a jump of over 5 m in one frame, which the interpolation doesn't smooth (lerpPlayer), from
+            // next to a teleporter: at both ends)
+            if (!p.hooked && ra.hooked) audio_.play3D(SND_GRAPPLE_RELEASE, p.pos + Vec3(0, 1.2f, 0), 0.6f, 1.0f);
+            if (wet != ra.inLiquid && time_ >= ra.nextSplash) {
+                ra.nextSplash = time_ + 0.25;
+                audio_.play3D(SND_SPLASH, p.pos, (wet ? 0.8f : 0.35f) * cfg_.volOthersSteps, wet ? 0.92f + (qrand() % 16) * 0.01f : 1.3f);
+            }
+            if (!map.ladders.empty() && vy < 2.0f && !onFloor && map.onLadder(pbox)) {
+                ra.ladderDist += vy;
+                if (ra.ladderDist > 1.2f) { ra.ladderDist = 0; audio_.play3D(SND_STEP, p.pos, 0.7f * cfg_.volOthersSteps, 1.25f + (qrand() % 10) * 0.01f); }
+            }
+            if (!map.teleporters.empty() && time_ >= ra.nextTele && length(p.pos - ra.pos) > 5.0f) {
+                const AABB was = playerBox(ra.pos, false, bodyScale());
+                if (map.teleporterAt({was.mn - Vec3(1, 1, 1), was.mx + Vec3(1, 1, 1)}) >= 0) {
+                    ra.nextTele = time_ + 0.3;
+                    audio_.play3D(SND_TELEPORT, ra.pos + Vec3(0, 1, 0), 0.8f, 1.0f);
+                    audio_.play3D(SND_TELEPORT, p.pos + Vec3(0, 1, 0), 0.8f, 1.0f);
+                }
+            }
             bool firing = (p.flags & PS_FIRING) != 0;
             if (firing && p.weapon == WPN_LASER && time_ >= ra.nextLaser) {
                 audio_.play3D(SND_LASER, p.pos + Vec3(0, 1.5f, 0), 0.7f, 1.0f);
@@ -14400,6 +14498,7 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
             }
         }
         ra.pos = p.pos;
+        ra.inLiquid = wet;
         ra.hooked = p.hooked;
         ra.health = p.health;
         ra.valid = true;

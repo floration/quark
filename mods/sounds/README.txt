@@ -43,3 +43,34 @@ SOUND names:
   HIT_MED        you hit someone for 10 to 24 damage (heavier, louder)
   HIT_HEAVY      you hit someone for 25 to 50 damage
   HIT_BRUTAL     you hit someone for more than 50 damage (the heaviest, loudest)
+  SUPER          a super: a dash jump
+  HYPER          a hyper: a super dash
+  LOCATOR        the locator's ping (hide and seek / tag)
+  SIZZLE         a shot gone into lava or acid; acid hurting you
+  HEADSHOT_TINK  your hit was a headshot (over the hitsound)
+  HOOKED         someone's grapple caught you
+  BOMB_TICK      the planted bomb ticking
+  BOMB_PLANTING  someone planting (a click every 0.3 s)
+  BOMB_DEFUSING  someone defusing (a click every 0.3 s)
+  HILL_CONTESTED king of the hill: the hill contested
+  CAPTURE_ALARM  multi point: the enemy capturing your point
+  HOLDFIRE_TICK  a countdown tick (the holdfire, the match start)
+  CHECKPOINT_WRONG  race: a checkpoint that won't count
+  WEAPON_SWITCH  you switched weapons
+  DRYFIRE        fire pressed with nothing to fire
+  KNIFE_HIT      a thrown knife / syringe lands
+  BUBBLE_POP     a bubble pops
+  GLASS_BREAK    glass breaks
+  DEBRIS         rubble: a breakable block, a wall coming down
+  DASH_BOUNCE    your dash bounced off a wall
+  GRAPPLE_RELEASE  a grapple let go
+  TELEPORT       a teleporter
+  SPLASH         a splash into a liquid
+  SPAWN          you respawned
+  LOW_HEALTH     your health fell low (a heartbeat)
+  GOAL           ball: a goal
+  BALL_KICK      ball: the ball struck
+  CHAT           someone else's chat message
+  VOTE           a vote was called
+  MATCH_FOUND    ranked: the queue found your match
+  UI_CLICK       a menu click (keep it tiny)

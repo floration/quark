@@ -701,6 +701,7 @@ CTRL+Y (REDO)	CTRL+Y (다시 실행)
 CTRL+Z (UNDO)	CTRL+Z (실행 취소)
 CUE	신호음
 CUE SOUNDS	신호음
+CUE: CHAT	신호음: 채팅
 CUE: DASH	신호음: 대시
 CUE: DEATH	신호음: 사망
 CUE: GRAPPLE FIRE	신호음: 그래플 발사
@@ -710,9 +711,13 @@ CUE: HYPER	신호음: 하이퍼
 CUE: JUMP	신호음: 점프
 CUE: KILL	신호음: 킬
 CUE: LANDING	신호음: 착지
+CUE: MENU CLICK	신호음: 메뉴 클릭
+CUE: RESPAWN	신호음: 리스폰
 CUE: STREAK STING	신호음: 연속 킬
 CUE: SUPER	신호음: 슈퍼
 CUE: TYPING	신호음: 타이핑
+CUE: VOTE CALLED	신호음: 투표
+CUE: WEAPON SWITCH	신호음: 무기 교체
 CURSOR COLOR	커서 색상
 CURSOR SIZE	커서 크기
 CUSTOM	사용자 지정
@@ -796,6 +801,7 @@ DEATH CAMERA: MY BODY	사망 카메라: 내 시체
 DEATH CAMERA: THE KILLER	사망 카메라: 처치자
 DEBAND	디밴딩
 DEBAND: A FAINT DITHER, NO BANDS IN SKY / FOG;	디밴딩: 약한 디더링으로 하늘 / 안개의 띠 현상 제거;
+DEBRIS	잔해
 DECALOTYPE	DECALOTYPE
 DEFAULT	기본값
 DEFEND	수비
@@ -870,6 +876,7 @@ DRAW: 250 M	시야: 250 M
 DRAW: 400 M	시야: 400 M
 DRIVER	드라이버
 DROP MY EDITS	내 편집 취소
+DRYFIRE	공격발
 DUCKING	더킹
 DUEL	결투
 DUEL - 1v1 (or 2v2): every life has a random modifier (low gravity, giants, rockets only...). First to 11.	결투 - 1v1 (또는 2v2): 목숨마다 무작위 변형(저중력, 거인, 로켓만...)이 적용됩니다. 11선승.
@@ -3084,6 +3091,7 @@ SPEED: FAST	속도: 빠름
 SPEED: HITSCAN	속도: 히트스캔
 SPEED: SLOW	속도: 느림
 SPEED: WALK	속도: 걷기
+SPLASH	물보라
 SPLIT	구간
 SPLIT TIME	구간 기록
 SPLITS VS	구간 비교 대상
@@ -3254,6 +3262,7 @@ TEAMS: 1V1	팀: 1V1
 TEAMS: 2V2	팀: 2V2
 TEAR LINE OFFSET (US)	티어링 선 오프셋 (US)
 TEARS NOW OR WAITS A REFRESH	즉시 티어링 또는 한 주기 대기
+TELEPORT	텔레포트
 TENTHS	소수점
 TENTHS: THE LAST 10 S AS 0:09.4	소수점: 마지막 10초를 0:09.4처럼 표시
 TEST	테스트

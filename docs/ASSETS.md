@@ -19,7 +19,7 @@ python3 tools/studio/build.py build/assets_export     # -> build/studio/ (+ mani
 
 | Category | Files | Path (= the override path) |
 |---|---|---|
-| Sounds | 43 WAV (48 kHz mono), one kit: DEFAULT (the other sound packs were removed for now, 2026-11-10) | `sounds/default/<SOUND>.wav` |
+| Sounds | 61 WAV (48 kHz mono), one kit: DEFAULT (the other sound packs were removed for now, 2026-11-10) | `sounds/default/<SOUND>.wav` |
 | Voices | 27 announcer lines x 7 voices = 189 WAV | `voices/<voice>/<LINE>.wav`, voice = `male` `female` `british` `old_man` `e_girl` `india` `spy` |
 | Quips | each voice's quip set (today the default: 8 x 7 = 56 WAV) | `voices/<voice>/quips/<NAME>.wav` |
 | Models | 64 players, 11 weapon viewmodels, 7 projectiles, the crown, 8 props = 91 glTF | `models/player/<NAME>.gltf`, `models/weapon/<NAME>.gltf`, `models/projectile/<NAME>.gltf`, `models/crown/CROWN.gltf`, `models/prop/<NAME>.gltf` |

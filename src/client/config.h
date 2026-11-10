@@ -179,7 +179,7 @@ struct Settings {
     int streakCalls = 0;           // ...killstreaks: 0 everyone's, 1 only yours, 2 none
     int timeWarn = 1;              // ...time left: 0 off, 1 one minute + 30 s, 2 also a count of the last 10 s
     bool timeWarnText = false;     // ...and as text on screen
-    int cueMute = 0;               // ...cue sounds turned off (a bit per sound id below 32)
+    long long cueMute = 0;         // ...cue sounds turned off (a bit per sound effect id: below SND_VOICE_THREE, under 64)
     long long annMute = 0;         // ...announcer lines turned off (a bit per line, SND_VOICE_THREE = bit 0)
     bool soundViz = false;         // ...nearby sounds shown as marks around the crosshair
     bool netGraph = false;         // MORE 6: ping, loss and rates bottom right (apart from F3)

@@ -41,6 +41,15 @@ enum SoundId {
     // and a race checkpoint that won't count (a buzz, not the ding)
     SND_HEADSHOT_TINK, SND_HOOKED, SND_BOMB_TICK, SND_BOMB_PLANTING, SND_BOMB_DEFUSING, SND_HILL_CONTESTED,
     SND_CAPTURE_ALARM, SND_HOLDFIRE_TICK, SND_CHECKPOINT_WRONG,
+    // the sound coverage audit (q, 2026-11-10: "ensure everything that is supposed to have a sound has one"), all
+    // client-side: your weapon switch, fire pressed when nothing can fire (a thrown weapon away, the holdfire, the
+    // locator's wait), a thrown knife / syringe landing, a bubble popping, glass breaking, rubble (a breakable block,
+    // a wall coming down, a crumble platform), your dash's wall bounce, a grapple let go, a teleporter, a splash into
+    // a liquid, your respawn, the low-health warning, a goal in ball and the ball struck, a chat message, a vote
+    // called, a ranked queue filled, and a menu click
+    SND_WEAPON_SWITCH, SND_DRYFIRE, SND_KNIFE_HIT, SND_BUBBLE_POP, SND_GLASS_BREAK, SND_DEBRIS, SND_DASH_BOUNCE,
+    SND_GRAPPLE_RELEASE, SND_TELEPORT, SND_SPLASH, SND_SPAWN, SND_LOW_HEALTH, SND_GOAL, SND_BALL_KICK, SND_CHAT, SND_VOTE,
+    SND_MATCH_FOUND, SND_UI_CLICK,
     // the announcer (recorded lines from voice_data.h, in its order)
     SND_VOICE_THREE, SND_VOICE_TWO, SND_VOICE_ONE, SND_VOICE_GO, SND_VOICE_BOMB_PLANTED, SND_VOICE_BOMB_DEFUSED,
     SND_VOICE_HILL_TAKEN, SND_VOICE_HILL_LOST, SND_VOICE_POINT_TAKEN, SND_VOICE_POINT_LOST, SND_VOICE_ROUND_WON,

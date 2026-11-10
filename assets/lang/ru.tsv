@@ -701,6 +701,7 @@ CTRL+Y (REDO)	CTRL+Y (ПОВТОР)
 CTRL+Z (UNDO)	CTRL+Z (ОТМЕНА)
 CUE	СИГН.
 CUE SOUNDS	ЗВУК. СИГНАЛЫ
+CUE: CHAT	СИГН.: ЧАТ
 CUE: DASH	СИГНАЛ: РЫВОК
 CUE: DEATH	СИГНАЛ: СМЕРТЬ
 CUE: GRAPPLE FIRE	СИГНАЛ: ВЫСТРЕЛ КРЮКОМ
@@ -710,9 +711,13 @@ CUE: HYPER	СИГНАЛ: ГИПЕР
 CUE: JUMP	СИГН.: ПРЫЖОК
 CUE: KILL	СИГН.: УБИЙ.
 CUE: LANDING	СИГН.: ПРИЗЕМЛ.
+CUE: MENU CLICK	СИГН.: МЕНЮ
+CUE: RESPAWN	СИГН.: ВОЗРОЖД.
 CUE: STREAK STING	СИГНАЛ: СЕРИЯ
 CUE: SUPER	СИГНАЛ: СУПЕР
 CUE: TYPING	СИГН.: НАБОР
+CUE: VOTE CALLED	СИГН.: ГОЛОСОВ.
+CUE: WEAPON SWITCH	СИГН.: СМЕНА ОРУЖ.
 CURSOR COLOR	ЦВЕТ КУРСОРА
 CURSOR SIZE	РАЗМЕР КУРСОРА
 CUSTOM	СВОЙ
@@ -796,6 +801,7 @@ DEATH CAMERA: MY BODY	КАМЕРА СМЕРТИ: МОЁ ТЕЛО
 DEATH CAMERA: THE KILLER	КАМЕРА СМЕРТИ: УБИЙЦА
 DEBAND	ДЕБАНДИНГ
 DEBAND: A FAINT DITHER, NO BANDS IN SKY / FOG;	ДЕБАНДИНГ: ЛЁГКИЙ ДИЗЕРИНГ, БЕЗ ПОЛОС В НЕБЕ / ТУМАНЕ;
+DEBRIS	ОБЛОМКИ
 DECALOTYPE	DECALOTYPE
 DEFAULT	СТАНДАРТ
 DEFEND	ЗАЩИТА
@@ -870,6 +876,7 @@ DRAW: 250 M	ПРОРИС.: 250 М
 DRAW: 400 M	ПРОРИС.: 400 М
 DRIVER	ДРАЙВЕР
 DROP MY EDITS	СБРОС МОИХ ПРАВОК
+DRYFIRE	ХОЛОСТОЙ
 DUCKING	ПРИГЛУШ.
 DUEL	ДУЭЛЬ
 DUEL - 1v1 (or 2v2): every life has a random modifier (low gravity, giants, rockets only...). First to 11.	ДУЭЛЬ - 1v1 (или 2v2): у каждой жизни случайный модификатор (низкая гравитация, гиганты, только ракеты...). До 11.
@@ -3084,6 +3091,7 @@ SPEED: FAST	СКОРОСТЬ: БЫСТРО
 SPEED: HITSCAN	СКОРОСТЬ: ХИТСКАН
 SPEED: SLOW	СКОРОСТЬ: МЕДЛ.
 SPEED: WALK	СКОРОСТЬ: ШАГ
+SPLASH	ВСПЛЕСК
 SPLIT	СПЛИТ
 SPLIT TIME	ВРЕМЯ СПЛИТА
 SPLITS VS	СПЛИТЫ
@@ -3254,6 +3262,7 @@ TEAMS: 1V1	КОМАНДЫ: 1V1
 TEAMS: 2V2	КОМАНДЫ: 2V2
 TEAR LINE OFFSET (US)	СМЕЩЕНИЕ ЛИНИИ РАЗРЫВА (МКС)
 TEARS NOW OR WAITS A REFRESH	РАЗРЫВ СЕЙЧАС ИЛИ ЖДАТЬ ОБНОВЛЕНИЯ
+TELEPORT	ТЕЛЕПОРТ
 TENTHS	ДЕСЯТЫЕ
 TENTHS: THE LAST 10 S AS 0:09.4	ДЕСЯТЫЕ: ПОСЛЕДНИЕ 10 С КАК 0:09.4
 TEST	ТЕСТ

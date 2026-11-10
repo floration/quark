@@ -701,6 +701,7 @@ CTRL+Y (REDO)	CTRL+Y (重做)
 CTRL+Z (UNDO)	CTRL+Z (撤销)
 CUE	提示音
 CUE SOUNDS	提示音效
+CUE: CHAT	提示音: 聊天
 CUE: DASH	提示音: 冲刺
 CUE: DEATH	提示音: 死亡
 CUE: GRAPPLE FIRE	提示音: 发射钩索
@@ -710,9 +711,13 @@ CUE: HYPER	提示音: HYPER
 CUE: JUMP	提示音: 跳跃
 CUE: KILL	提示音: 击杀
 CUE: LANDING	提示音: 落地
+CUE: MENU CLICK	提示音: 菜单点击
+CUE: RESPAWN	提示音: 重生
 CUE: STREAK STING	提示音: 连杀
 CUE: SUPER	提示音: SUPER
 CUE: TYPING	提示音: 打字
+CUE: VOTE CALLED	提示音: 投票
+CUE: WEAPON SWITCH	提示音: 切换武器
 CURSOR COLOR	光标颜色
 CURSOR SIZE	光标大小
 CUSTOM	自定义
@@ -796,6 +801,7 @@ DEATH CAMERA: MY BODY	死亡镜头: 我的尸体
 DEATH CAMERA: THE KILLER	死亡镜头: 击杀者
 DEBAND	去色带
 DEBAND: A FAINT DITHER, NO BANDS IN SKY / FOG;	去色带: 轻微抖动, 天空 / 雾中无色带;
+DEBRIS	碎石
 DECALOTYPE	DECALOTYPE
 DEFAULT	默认
 DEFEND	防守
@@ -870,6 +876,7 @@ DRAW: 250 M	绘制: 250 米
 DRAW: 400 M	绘制: 400 米
 DRIVER	驱动
 DROP MY EDITS	放弃我的修改
+DRYFIRE	空枪
 DUCKING	闪避
 DUEL	决斗
 DUEL - 1v1 (or 2v2): every life has a random modifier (low gravity, giants, rockets only...). First to 11.	决斗 - 1v1 (或 2v2): 每条命都有随机修改器 (低重力、巨人、仅火箭...)。先到 11 分者胜。
@@ -3084,6 +3091,7 @@ SPEED: FAST	速度: 快
 SPEED: HITSCAN	速度: 即时命中
 SPEED: SLOW	速度: 慢
 SPEED: WALK	速度: 行走
+SPLASH	水花
 SPLIT	分段
 SPLIT TIME	分段时间
 SPLITS VS	分段对比
@@ -3254,6 +3262,7 @@ TEAMS: 1V1	队伍: 1V1
 TEAMS: 2V2	队伍: 2V2
 TEAR LINE OFFSET (US)	撕裂线偏移 (US)
 TEARS NOW OR WAITS A REFRESH	立即撕裂或等待一次刷新
+TELEPORT	传送
 TENTHS	十分之一秒
 TENTHS: THE LAST 10 S AS 0:09.4	十分之一秒: 最后 10 秒显示为 0:09.4
 TEST	测试

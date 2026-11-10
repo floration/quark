@@ -135,7 +135,7 @@ release checks are `CHECKLIST.md` there (section 16 of [RELEASE_CHECKLIST.md](RE
 - **The clang-only unused warnings** are listed in REMAINING.md section 2.
 
 **Assets**
-- **SUPER, HYPER, LOCATOR, SIZZLE and the sound audit's nine cues (HEADSHOT_TINK, HOOKED, BOMB_TICK, BOMB_PLANTING, BOMB_DEFUSING, HILL_CONTESTED, CAPTURE_ALARM, HOLDFIRE_TICK, CHECKPOINT_WRONG) are synthesized in `audio.cpp`**, like every default sound. The owner may replace them with the sound editor (in floration/quarkology since 1.20; Quarkology installs it), which lists all 43 sounds (one kit, DEFAULT: the other sound packs were removed for now, 2026-11-10; MOUTH for good).
+- **SUPER, HYPER, LOCATOR, SIZZLE and the sound audit's nine cues (HEADSHOT_TINK, HOOKED, BOMB_TICK, BOMB_PLANTING, BOMB_DEFUSING, HILL_CONTESTED, CAPTURE_ALARM, HOLDFIRE_TICK, CHECKPOINT_WRONG) and the coverage audit's eighteen (2026-11-10: WEAPON_SWITCH, DRYFIRE, KNIFE_HIT, BUBBLE_POP, GLASS_BREAK, DEBRIS, DASH_BOUNCE, GRAPPLE_RELEASE, TELEPORT, SPLASH, SPAWN, LOW_HEALTH, GOAL, BALL_KICK, CHAT, VOTE, MATCH_FOUND, UI_CLICK) are synthesized in `audio.cpp`**, like every default sound. The owner may replace them with the sound editor (in floration/quarkology since 1.20; Quarkology installs it), which lists all 61 sounds (one kit, DEFAULT: the other sound packs were removed for now, 2026-11-10; MOUTH for good).
 
 
 ## 1. What quark is

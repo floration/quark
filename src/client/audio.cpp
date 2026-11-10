@@ -79,6 +79,62 @@ void addTone(std::vector<float>& b, float f, float amp, float attack, float deca
         b[i] += std::sin(2 * PI * f * t) * amp * env(t, attack, decay);
     }
 }
+// The coverage audit's layers (2026-11-10): addThump's and addBand's sounds with the envelope's decay and the pitch fall
+// a multiply a sample instead of an exp (a sweep's cutoff every 32 samples), stopped at e^-12 (-104 dB) rather than
+// e^-18: its eighteen sounds as addThump / addBand layers added ~14 ms to startup.
+size_t fastEnd(const std::vector<float>& b, float start, float attack, float decay) {
+    return std::min(b.size(), (size_t)((start + attack + 12.0f * decay) * R) + 1);
+}
+void thumpF(std::vector<float>& b, float f0, float f1, float pitchTime, float amp, float attack, float decay, float start = 0) {
+    const size_t i0 = (size_t)(start * R), e = fastEnd(b, start, attack, decay);
+    const double kp = std::exp(-1.0 / (pitchTime * R)), kd = std::exp(-1.0 / (decay * R));
+    double p = 1, g = 1, ph = 0;
+    const double w0 = 2 * PI / R;
+    for (size_t i = i0; i < e; i++) {
+        const float t = (float)(i - i0) / R;
+        ph += w0 * (f1 + (f0 - f1) * p);
+        b[i] += (float)(std::sin(ph) * g) * amp * (t < attack ? std::sin(0.5f * PI * t / attack) : 1.0f);
+        p *= kp; g *= kd;
+    }
+}
+void bandF(std::vector<float>& b, float lo, float hi, float amp, float attack, float decay, uint32_t seed, float hiEnd = -1, float start = 0) {
+    Noise n; n.s ^= seed * 2654435761u;
+    float a = 0, c = 0, kHi = onePole(hi);
+    const float kLo = onePole(lo), len = b.size() / (float)R;
+    const size_t i0 = (size_t)(start * R), e = fastEnd(b, start, attack, decay);
+    const double kd = std::exp(-1.0 / (decay * R));
+    double g = 1;
+    for (size_t i = i0; i < e; i++) {
+        const float t = (float)(i - i0) / R;
+        if (hiEnd > 0 && ((i - i0) & 31) == 0) kHi = onePole(hi + (hiEnd - hi) * std::min(1.0f, t / len));
+        const float x = n();
+        a += (x - a) * kHi;
+        c += (x - c) * kLo;
+        b[i] += (a - c) * (float)g * amp * (t < attack ? std::sin(0.5f * PI * t / attack) : 1.0f);
+        g *= kd;
+    }
+}
+// a tone and its harmonics (each 1/h as loud), by rotating phasors: no sin or exp a sample (the coverage audit's horn
+// and arpeggio as addTone layers were the dearest part of its startup cost; this is a few multiplies a sample). The same
+// sine as addTone's for one harmonic, up to rounding.
+void addHarmonics(std::vector<float>& b, float f, int harmonics, float amp, float attack, float decay, float start = 0) {
+    const size_t i0 = (size_t)(start * R), e = fastEnd(b, start, attack, decay);
+    const double w = 2 * PI * f / R;
+    const float cr = (float)std::cos(w), ci = (float)std::sin(w), dk = (float)std::exp(-1.0 / (decay * R));
+    float zr = 1, zi = 0, g = amp;   // (z = e^(i phase); g = the level, decaying)
+    const size_t ia = std::min(e, i0 + (size_t)(attack * R));
+    for (size_t i = i0; i < e; i++) {
+        float pr = zr, pi = zi, sum = 0;
+        for (int h = 1; h <= harmonics; h++) {   // (sin(h phase): the imaginary part of z^h)
+            sum += pi / (float)h;
+            const float nr = pr * zr - pi * zi; pi = pr * zi + pi * zr; pr = nr;
+        }
+        b[i] += sum * g * (i < ia ? std::sin(0.5f * PI * (float)(i - i0) / R / attack) : 1.0f);
+        g *= dk;
+        const float nr = zr * cr - zi * ci; zi = zr * ci + zi * cr; zr = nr;
+        if ((i & 255) == 0) { const float m = 1.0f / std::sqrt(zr * zr + zi * zi); zr *= m; zi *= m; }   // (no drift)
+    }
+}
 // small room: a few feedback combs + a low-pass, mixed in quietly
 void addRoom(std::vector<float>& b, float mix, float size = 1.0f) {
     const int delays[4] = {1116, 1188, 1277, 1356};
@@ -236,6 +292,83 @@ void Audio::synthesize() {
     for (int k = 0; k < 2; k++)
         for (int h = 1; h <= 7; h += 2) addTone(cw, 175.0f * h, 0.5f / h, 0.004f, 0.06f, k * 0.15f);
     addBand(cw, 150, 1200, 0.15f, 0.004f, 0.08f, 86); finish(cw, 0.3f);
+    // the sound coverage audit's sounds (q, 2026-11-10)
+    // weapon switch: two small mechanical clicks, the second lower (the weapon seated)
+    auto& ws = s[SND_WEAPON_SWITCH];
+    ws = make(0.12f); thumpF(ws, 2600, 1800, 0.004f, 1, 0.0004f, 0.006f); bandF(ws, 2500, 9000, 0.35f, 0.0003f, 0.003f, 90);
+    thumpF(ws, 1400, 900, 0.005f, 0.8f, 0.0004f, 0.01f, 0.045f); bandF(ws, 1200, 5000, 0.3f, 0.0003f, 0.004f, 91, -1, 0.045f); finish(ws, 0.18f);
+    // dry fire: a dull, dead click (nothing went off)
+    auto& df = s[SND_DRYFIRE];
+    df = make(0.08f); thumpF(df, 700, 420, 0.004f, 1, 0.0004f, 0.008f); bandF(df, 800, 3000, 0.25f, 0.0003f, 0.003f, 92); finish(df, 0.16f);
+    // a thrown knife / syringe landing: a woody thunk with a short metal ring
+    auto& kh = s[SND_KNIFE_HIT];
+    kh = make(0.18f); thumpF(kh, 420, 180, 0.012f, 1, 0.0008f, 0.03f); bandF(kh, 600, 4000, 0.5f, 0.0005f, 0.012f, 93);
+    addHarmonics(kh, 2350, 1, 0.15f, 0.0008f, 0.05f); finish(kh, 0.24f);
+    // a bubble popping: a quick wet pop (it reused the bubble gun's shot pitched up)
+    auto& bp2 = s[SND_BUBBLE_POP];
+    bp2 = make(0.12f); thumpF(bp2, 1400, 500, 0.008f, 1, 0.0006f, 0.02f); bandF(bp2, 1500, 6000, 0.3f, 0.0003f, 0.006f, 94); finish(bp2, 0.2f);
+    // glass breaking: a bright crash of high noise with tinkles scattered after it, over a small knock
+    auto& gb = s[SND_GLASS_BREAK];
+    gb = make(0.55f); bandF(gb, 3000, 12000, 1, 0.001f, 0.08f, 95, 6000); thumpF(gb, 500, 200, 0.01f, 0.35f, 0.001f, 0.02f);
+    for (int k = 0; k < 9; k++) addHarmonics(gb, 3100.0f + 610.0f * (float)((k * 5) % 9), 1, 0.22f - k * 0.015f, 0.0005f, 0.018f, 0.02f + k * 0.045f + (k % 3) * 0.013f);
+    addRoom(gb, 0.25f, 0.8f); finish(gb, 0.32f);
+    // rubble: a low crumbling rumble with rock knocks through it (a breakable block, a wall down, a crumble platform)
+    auto& db = s[SND_DEBRIS];
+    db = make(0.8f); thumpF(db, 90, 40, 0.06f, 1, 0.004f, 0.12f); bandF(db, 100, 1800, 0.9f, 0.005f, 0.16f, 96, 500);
+    for (int k = 0; k < 7; k++) bandF(db, 300, 2500, 0.7f - k * 0.07f, 0.0005f, 0.012f, 97 + k, -1, 0.03f + k * 0.08f + (k % 2) * 0.03f);
+    finish(db, 0.36f);
+    // your dash bouncing off a wall: a springy thud, a rising boing over it
+    auto& dbn = s[SND_DASH_BOUNCE];
+    dbn = make(0.25f); thumpF(dbn, 160, 70, 0.02f, 1, 0.001f, 0.05f); thumpF(dbn, 300, 650, 0.05f, 0.45f, 0.004f, 0.07f, 0.01f);
+    bandF(dbn, 400, 2500, 0.25f, 0.0005f, 0.01f, 104); finish(dbn, 0.26f);
+    // a grapple let go: the rope reeling back, a falling zip with a click as it seats
+    auto& gr = s[SND_GRAPPLE_RELEASE];
+    gr = make(0.22f); bandF(gr, 600, 6000, 1, 0.004f, 0.05f, 105, 1500); thumpF(gr, 1200, 800, 0.004f, 0.4f, 0.0004f, 0.008f, 0.15f); finish(gr, 0.16f);
+    // a teleporter: a shimmering whoosh with a tone rising through it
+    auto& tp = s[SND_TELEPORT];
+    tp = make(0.6f); bandF(tp, 400, 1200, 1, 0.04f, 0.14f, 106, 7000); thumpF(tp, 400, 1600, 0.2f, 0.4f, 0.01f, 0.18f);
+    addHarmonics(tp, 2400, 1, 0.1f, 0.01f, 0.15f, 0.1f); finish(tp, 0.3f);
+    // a splash into a liquid: a wash of noise closing down, a low plunge, droplets after it
+    auto& sp = s[SND_SPLASH];
+    sp = make(0.5f); bandF(sp, 300, 6000, 1, 0.003f, 0.08f, 107, 1500); thumpF(sp, 200, 80, 0.02f, 0.4f, 0.002f, 0.04f);
+    for (int k = 0; k < 5; k++) thumpF(sp, 1300.0f + 300.0f * (float)((k * 3) % 5), 2300.0f + 250.0f * k, 0.01f, 0.15f, 0.0005f, 0.015f, 0.06f + k * 0.06f);
+    finish(sp, 0.3f);
+    // your respawn: a soft whoosh swelling in, with a fifth under it
+    auto& sw = s[SND_SPAWN];
+    sw = make(0.5f); bandF(sw, 200, 900, 1, 0.12f, 0.09f, 108, 3000); addHarmonics(sw, 660, 1, 0.25f, 0.1f, 0.12f); addHarmonics(sw, 990, 1, 0.15f, 0.12f, 0.1f);
+    finish(sw, 0.22f);
+    // low health: a heartbeat (two low thumps) with a quiet beep so small speakers carry it (it was the race ding pitched down)
+    auto& lh = s[SND_LOW_HEALTH];
+    lh = make(0.45f); thumpF(lh, 75, 45, 0.03f, 1, 0.003f, 0.04f); thumpF(lh, 70, 42, 0.03f, 0.7f, 0.003f, 0.05f, 0.18f);
+    addHarmonics(lh, 880, 1, 0.12f, 0.002f, 0.05f); addHarmonics(lh, 880, 1, 0.08f, 0.002f, 0.05f, 0.18f); finish(lh, 0.4f);
+    // ball: a goal's stadium horn (a chord with its harmonics, two blasts); the ball struck, a rubbery thump
+    auto& gl = s[SND_GOAL];
+    {   // (one blast built once, the second a copy 0.45 s on, its tail longer by the room)
+        std::vector<float> blast = make(0.85f);
+        for (float f : {233.0f, 293.7f, 349.2f}) addHarmonics(blast, f, 3, 0.3f, 0.03f, 0.1f);
+        gl = make(1.3f);
+        const size_t at = (size_t)(0.45f * R);
+        for (size_t i = 0; i < blast.size() && i + at < gl.size(); i++) { gl[i] += blast[i]; gl[i + at] += blast[i] * 1.1f; }
+    }
+    addRoom(gl, 0.4f, 1.4f); finish(gl, 0.34f);
+    auto& bk = s[SND_BALL_KICK];
+    bk = make(0.2f); thumpF(bk, 220, 110, 0.015f, 1, 0.001f, 0.04f); bandF(bk, 400, 2500, 0.4f, 0.0005f, 0.01f, 109); finish(bk, 0.3f);
+    // a chat message: a soft two-note blip
+    auto& ch = s[SND_CHAT];
+    ch = make(0.12f); addHarmonics(ch, 1175, 1, 0.6f, 0.002f, 0.025f); addHarmonics(ch, 1760, 1, 0.35f, 0.002f, 0.025f, 0.035f); finish(ch, 0.14f);
+    // a vote called: a rising two-note notice
+    auto& vt = s[SND_VOTE];
+    vt = make(0.45f); addHarmonics(vt, 784, 1, 0.5f, 0.003f, 0.08f); addHarmonics(vt, 1568, 1, 0.1f, 0.003f, 0.05f);
+    addHarmonics(vt, 1047, 1, 0.5f, 0.003f, 0.12f, 0.12f); addHarmonics(vt, 2094, 1, 0.1f, 0.003f, 0.06f, 0.12f); finish(vt, 0.2f);
+    // a ranked queue filled: a bright four-note arpeggio, the last held (it was the streak sting and the finish chime)
+    auto& mf = s[SND_MATCH_FOUND];
+    mf = make(0.7f);
+    for (int k = 0; k < 4; k++) { const float f = 523.25f * std::pow(2.0f, (k == 0 ? 0 : k == 1 ? 4 : k == 2 ? 7 : 12) / 12.0f);
+                                  addHarmonics(mf, f, 2, 0.45f, 0.003f, k == 3 ? 0.07f : 0.03f, k * 0.08f); }
+    finish(mf, 0.3f);
+    // a menu click: a tiny dry tick
+    auto& uc = s[SND_UI_CLICK];
+    uc = make(0.04f); thumpF(uc, 3000, 2200, 0.002f, 1, 0.0003f, 0.004f); bandF(uc, 3000, 9000, 0.2f, 0.0002f, 0.002f, 110); finish(uc, 0.08f);
     // (the other kits were built here, copies of these re-voiced or recorded: removed for now, audio.h)
     loadOverrideSounds();
     loadModSounds();
@@ -1177,6 +1310,8 @@ static const char* kModSoundNames[] = {"HIT", "KILL", "HURT", "STEP", "JUMP", "L
     "SUPER", "HYPER", "LOCATOR", "SIZZLE",
     "HEADSHOT_TINK", "HOOKED", "BOMB_TICK", "BOMB_PLANTING", "BOMB_DEFUSING", "HILL_CONTESTED", "CAPTURE_ALARM",
     "HOLDFIRE_TICK", "CHECKPOINT_WRONG",
+    "WEAPON_SWITCH", "DRYFIRE", "KNIFE_HIT", "BUBBLE_POP", "GLASS_BREAK", "DEBRIS", "DASH_BOUNCE", "GRAPPLE_RELEASE",
+    "TELEPORT", "SPLASH", "SPAWN", "LOW_HEALTH", "GOAL", "BALL_KICK", "CHAT", "VOTE", "MATCH_FOUND", "UI_CLICK",
     // the announcer's lines (SND_VOICE_*), as the asset export and the overrides name them
     "THREE", "TWO", "ONE", "GO", "BOMB_PLANTED", "BOMB_DEFUSED", "HILL_TAKEN", "HILL_LOST", "POINT_TAKEN", "POINT_LOST",
     "ROUND_WON", "ROUND_LOST", "OVERTIME", "YOU_WIN", "YOU_LOSE", "HIGH_SCORE", "NEW_LEADER", "YOU_DIED", "HEADSHOT",

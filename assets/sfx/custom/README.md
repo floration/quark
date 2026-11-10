@@ -66,5 +66,23 @@ Keep them short and starting instantly (no silence before the sound): they play 
 | CAPTURE_ALARM | multi point: the enemy is capturing your point (as it starts, then every 3 s) | < 0.75 s |
 | HOLDFIRE_TICK | the map's holdfire (no firing at the round start): a tick each second, higher and louder as firing is allowed | very short, < 0.1 s |
 | CHECKPOINT_WRONG | race: a checkpoint that won't count (out of order, or a run that doesn't count): a buzz | < 0.4 s |
+| WEAPON_SWITCH | you switched weapons: two small mechanical clicks | very short, < 0.15 s |
+| DRYFIRE | fire pressed with nothing to fire (the holdfire, a thrown knife / syringe not back, the locator's wait): a dry click | very short, < 0.1 s |
+| KNIFE_HIT | a thrown knife or syringe lands (3D; the syringe higher) | < 0.2 s |
+| BUBBLE_POP | a bubble pops (3D) | short, < 0.15 s |
+| GLASS_BREAK | glass breaks (3D; a shot's hole quieter and higher than a pane shattering) | < 0.6 s |
+| DEBRIS | rubble (3D): a breakable block broken, a wall coming down, a crumble platform shaking and falling | < 0.85 s |
+| DASH_BOUNCE | your dash bounced off a wall: a springy thud | < 0.3 s |
+| GRAPPLE_RELEASE | a grapple let go (yours, or someone's in 3D) | < 0.25 s |
+| TELEPORT | a teleporter (yours; someone else's at both ends, in 3D) | < 0.7 s |
+| SPLASH | a splash into a liquid (quieter and higher out of it; yours and others') | < 0.6 s |
+| SPAWN | you respawned: a soft whoosh in | < 0.6 s |
+| LOW_HEALTH | your health fell under the low-health line (WARNING BEEP): a heartbeat | < 0.5 s |
+| GOAL | ball: a goal, a stadium horn (lower when it's against your side) | < 1.35 s |
+| BALL_KICK | ball: the ball struck (a kick, a push, a hard bounce; 3D, louder the harder) | short, < 0.25 s |
+| CHAT | someone else's chat message: a soft blip (higher and louder when it names you) | very short, < 0.15 s |
+| VOTE | a vote was called | < 0.5 s |
+| MATCH_FOUND | ranked: the queue found your match | < 0.75 s |
+| UI_CLICK | a menu click (any button, toggle, arrow or list) | very short, < 0.05 s |
 
-That's 43 sounds. (The announcer's voice lines are separate: assets/voice/, tools/import_voice.py.)
+That's 61 sounds. (The announcer's voice lines are separate: assets/voice/, tools/import_voice.py.)
