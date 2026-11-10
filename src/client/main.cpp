@@ -91,6 +91,7 @@ int main(int argc, char** argv) {
         else if (a == "--crosshair") { opts.debugSettings = true; opts.debugCrosshair = true; }
         else if (a == "--hudlayout") { opts.debugSettings = true; opts.debugHudLayout = true; }
         else if (a == "--models") opts.debugModels = true;
+        else if (a == "--projectiles") opts.debugProjectiles = true;   // every projectile model in a row ahead (screenshots)
         else if (a == "--walk") { opts.debugModels = true; opts.debugWalk = true; }   // the lineup side-on, mid-stride (PLAYER ANIMATIONS screenshots)
         else if (a == "--modelpage") { opts.debugModels = true; opts.debugModelPage = std::max(0, atoi(next().c_str())); }   // the lineup's Nth batch of 11 (0: the first 11)
         else if (a == "--rpsshot") opts.debugRps = atoi(next().c_str());   // the tiebreak panel (screenshots)
