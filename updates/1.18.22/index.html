@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.18.22: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.18.22</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<p>The owner asked for the physics editor to &quot;set value equations, not just fixed values, like if i want the sqrt of speed to change my ground friction ... curves, ease in, out, whatever with bounds&quot;. They also asked for them to run &quot;in the game too&quot; (decision card, 2026-10-24), plus default values from other games, a Code view that shows how values drive the movement, a separate code graph and movement graph, a 3D movement graph, locked units and A/B compare. Protocol 43 → 44. The .qmode format only gains lines that older games ignore. No default movement value changed.</p>
+<h3>Movement equations (src/game/moveexpr.h/.cpp, customrules, pmove, protocol)</h3>
+<ul>
+<li><b>What</b>: a custom mode&#x27;s <code>.qmode</code> takes <code>expr.&lt;key&gt;=&lt;expression&gt;</code> for <code>gravity</code>, <code>speed</code>, <code>jump</code> and every movement key. The result is that setting&#x27;s multiplier, clamped to its usual range. The plain <code>&lt;key&gt;=</code> line stays as the fallback, holding the value at rest, and is what an older game reads.
+</li>
+<li><b>Language</b>:
+<ul>
+<li>numbers and <code>pi</code>;
+</li>
+<li>other settings by key (their multiplier) and <code>base.&lt;key&gt;</code> (the standard absolute value);
+</li>
+<li>live inputs <code>p.speed</code>, <code>p.hspeed</code>, <code>p.vspeed</code>, <code>p.air</code>, <code>p.ground</code>, <code>p.onground</code>, <code>p.charges</code>, <code>p.dashing</code>, <code>p.hooked</code> and <code>p.height</code> (capped at 50 m, and computed only when read);
+</li>
+<li><code>?:</code>, <code>|| &amp;&amp;</code>, comparisons, <code>+ - * / ^</code>, unary <code>- + !</code>;
+</li>
+<li>sqrt, abs, min, max, pow, exp, log, floor, ceil, round, sign, clamp, lerp, step, <code>ease(t,&quot;mode&quot;)</code> and <code>curve(x,x0,x1,y0,y1,&quot;mode&quot;)</code>, which is flat outside its bounds;
+</li>
+<li>13 ease modes.
+</li></ul>
+</li>
+<li><b>Static vs dynamic</b>:
+<ul>
+<li>Static equations read only settings. They are resolved once when the rules are set, in dependency order, so they cost nothing per step.
+</li>
+<li>Dynamic equations are compiled to stack bytecode, with the static parts folded and fused forms for constant operands, <code>c?k1:k2</code> and constant-bound curves. They run at the start of every 1 ms pmove step.
+</li></ul>
+</li>
+<li><b>Cost</b> (exprbench, median of 5 × 2M steps): a whole pmove step is about 170 ns. Rules without dynamic equations cost one predicted branch per command (noise level). One dynamic equation adds 6–10 ns, and five add about 90 ns (18 ns each), against a budget of 50 ns per equation.
+</li>
+<li><b>Determinism</b>: server and client must agree to the bit, or prediction drifts.
+<ul>
+<li>All the math is IEEE double, and the build has no fast-math and <code>-ffp-contract=off</code>.
+</li>
+<li>exp, log and pow are the game&#x27;s own code built from exact operations (within 1.4e-15 of glibc), because C libraries differ in the last bit.
+</li>
+<li>Numbers are parsed by the game&#x27;s own code, because strtod depends on the locale.
+</li>
+<li>Golden hashes of the math and of a compiled program are checked in tests, so Windows (MinGW) and Linux must match.
+</li>
+<li>Network test: 5 dynamic equations, 0 mispredictions in 800 against a client predicting by the received rules, and 798 in 800 when predicting by the standard rules.
+</li></ul>
+</li>
+<li><b>Errors</b>: syntax errors, unknown names, cycles (including a setting reading itself) and over-long equations leave that setting at its fixed value. The error gives its column and reason.
+</li>
+<li><b>Everything outside pmove follows the same per-step value</b>, through one helper (<code>stepTuning</code> / <code>moveValue</code>, <code>dashMaxCharges(state)</code>):
+<ul>
+<li>the server&#x27;s grapple onto players (range, cooldown);
+</li>
+<li>the HUD dash pips and hook bar;
+</li>
+<li>the syringe refill;
+</li>
+<li><code>dashReady</code>, and <code>dashAimedDown</code> (pmove&#x27;s own super / hyper events already use the per-step values);
+</li>
+<li>the bots&#x27; hook checks;
+</li>
+<li>the physics editor&#x27;s strafe bot.
+</li></ul>
+</li>
+<li><b>Left on whole-command values, and documented</b>: the server&#x27;s player probes (first step of the command) and the bots&#x27; <code>safeHook</code> plan.
+</li>
+<li><b>Charges policy</b>: when an equation lowers dash_charges mid-air, held charges above the new max go. Recharging charges keep their timers and come back once the max allows. An old loop that dropped the oldest recharges was removed; it only ran when the max changed, so normal play is unaffected.
+</li>
+<li><b>Protocol 44</b>: older clients would mispredict a mode with equations. The own movement state carries the air / ground timer (mods bit 128 plus a u16 <code>phaseMs</code>), only while an equation reads it, so a normal game sends the same bytes as 43. Demos: the generic converter covers 43 (the header reads unchanged), and the wire round trip is tested at 43 and 44.
+</li>
+<li><b>Unchanged without equations</b>:
+<ul>
+<li>a trace hash over 5.4M ms of random movement on 5 maps is identical before and after (<code>ca0bd28eac78f498</code>);
+</li>
+<li>all 15 physics presets × 3 maps × 2 sets match at 1 ms (328k samples);
+</li>
+<li>the dashtech, ladders and stairs outputs are identical.
+</li></ul>
+</li>
+<li><b>Tests</b>: <code>testMoveExpr</code> (movement group), <code>testMoveExprNetwork</code> (modes), <code>testMoveExprCallers</code>, <code>quark_tests moveexpr</code> and <code>quark_tests exprbench</code>. Coverage:
+<ul>
+<li>parse errors with columns, the limits, precedence, every function and ease;
+</li>
+<li>the clamps, static order, cycles, NaN fallback, the .qmode round trip and golden hashes;
+</li>
+<li>a friction curve: stops in 0.808 m / 213 ms, against 1.206 m / 365 ms standard;
+</li>
+<li>gravity driven by <code>p.air</code>: jump apex 1.039 m against 1.221 m;
+</li>
+<li>charges clamping and recharging, super dash with a changing dash_vertical;
+</li>
+<li>the network prediction test.
+</li></ul>
+</li></ul>
+<h3>Physics editor (tools/physics_editor)</h3>
+<ul>
+<li><b>Other games</b> (references/, 22 games, 189 values, <code>check.py</code>, <code>build.py</code>):
+<ul>
+<li>Quake 1 / QW, Quake 2, Quake 3 VQ3, CPMA, Warfork, Xonotic, Half-Life, CS 1.6, CS:GO, CS2, Source SDK defaults, HL2, TF2 Soldier and Scout, UT99, Halo CE, Overwatch 2, Valorant, Titanfall 2, Apex, Minecraft and Celeste.
+</li>
+<li>Values are converted to a 1.8 m player by each game&#x27;s own player height (metric games keep metres).
+</li>
+<li>Each value has a source and a confidence: exact (engine source or cvar default), measured (community measurement) or estimated (derived, e.g. Quake/Source air accel against Quark&#x27;s capped model).
+</li>
+<li>Closest to Quark by mean |ln ×| over 9 core settings: Xonotic 0.149, CPMA 0.353, Titanfall 2 0.409, Quake 0.49.
+</li>
+<li>Left out for lack of public numbers: Quake Live, Quake Champions, Reflex, Diabotical, newer Unreal, Doom, Splitgate, Halo Infinite, CoD, Fortnite and Portal 2.
+</li></ul>
+</li>
+<li><b>Values</b>:
+<ul>
+<li>Compare with games: a picker grouped or sorted by closeness, a column per game, confidence dots, ⚠ outside the range, &quot;use&quot; per value and &quot;load all&quot; per game (written as an <code># imported from</code> line).
+</li>
+<li>Each setting is fixed, ƒ equation (highlighting, autocomplete, live errors, a static/dynamic badge, the game&#x27;s own value through the helper&#x27;s new <code>physexpr</code>) or ⌒ curve (input, bounds, 13 easings, draggable ends, live plot).
+</li></ul>
+</li>
+<li><b>Code</b>: the .qmode, plus &quot;Movement code&quot;: the game&#x27;s real pmove.cpp / pmove.h / gamedefs.h, read-only and highlighted. Every constant is annotated <code>base × multiplier = value</code> for the current set, with a side list of every place each setting is read and plain notes on each function and step.
+</li>
+<li><b>Code graph</b> (new tab): settings → the 18 steps of a 1 ms pmove step, in order → the state they change. Changed settings are highlighted, and clicking a node opens its code.
+</li>
+<li><b>Movement graph</b> (was Graph): curves as before, plus a 3D view with a scrubber, lock units (fixed axis ranges and 3D camera, kept across runs and sets) and A/B: edited, standard, any saved .qmode or a game, overlaid or side by side, with B − A.
+</li>
+<li><b>Drive</b> starts even where mouse lock is refused (the Quark Project app now allows it too).
+</li>
+<li><b>Tests</b>: 277 page checks against the real helper and the in-page mock. The page&#x27;s evaluator matches <code>physexpr</code> on 50 expressions, and the mock matches <code>physsim</code> on dynamic equations.
+</li>
+<li><b>Helper events</b>: the physics editor helper reads pmove&#x27;s ME_* events, the same ones the game&#x27;s sounds use, so it now sees 1.18.21&#x27;s chained held dashes and buffered jumps. Before, it guessed from presses.
+</li></ul>
+<h3>Tests (tests/tests.cpp, rules_tests.h)</h3>
+<ul>
+<li><b>Why</b>: the <code>tickrate</code> timing tests failed on and off on cloud VMs for unchanged code too. A 1 ms sleep sometimes took 20-50 ms (VM steal), which pushes more than 1% of ticks over the 4 ms stall threshold in a 1 s window.
+</li>
+<li><b>What</b>: the harness measures its own waits. An attempt that failed while the host paused the test thread longer than 4 ms is printed, set aside and run again. A failure with no such pause counts at once, and the third attempt always counts. No assertion changed.
+</li></ul>
+<h3>Docs</h3>
+<ul>
+<li>docs/RELEASE_CHECKLIST.md: &quot;Custom mode with movement equations&quot; (a dynamic friction curve plays the same online, protocol 44) and &quot;Physics editor v2&quot;.
+</li>
+<li>tools/physics_editor/INTERFACE.md (v2), README.md, native/README.md and references/README.md.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.18.21/">&larr; 1.18.21</a></span><span><a href="../1.18.23/">1.18.23 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

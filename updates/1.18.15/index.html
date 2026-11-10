@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.18.15: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.18.15</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<p>Two owner answers to the cleanup crew&#x27;s open questions (2026-10-24): the hide and seek always-send radius (NET-10) is 24 m, and dedicated servers with no humans pause. No protocol, file format or setting change.</p>
+<h3>Dedicated server pause (src/game/server.cpp, server.h, src/server/main.cpp)</h3>
+<ul>
+<li><b>Why</b>: a bots-only server burned about 1-4% of a core (server CPU report: 4.2% with 7 bots at 1000 Hz on the Oracle box, which also runs production and the Discord bot) playing a match nobody watches. The owner picked &quot;pause&quot; over &quot;125 Hz until someone joins&quot; and &quot;keep running&quot;.
+</li>
+<li><b>What</b>: <code>ServerConfig::pauseWithoutHumans</code>, set only by <code>quark_server</code>. Server::updatePause, each frame(): with no humans connected (players away in their reconnect grace count as humans), no live ranked match (its ticket deadline runs on game time) and no edit waiting for its autosave (that runs on the tick), the server pauses: no simulate(), no snapshots, <code>tick_</code> and <code>timeMs_</code> (so every game timer: respawns, rounds, votes, bot timers) stand still. Logged once each way: &quot;paused: no humans (bots wait)&quot; / &quot;resumed&quot;.
+</li>
+<li><b>Still running while paused</b>: packet receive (a connect resumes the server in the same frame), the reachability probe, the load governor, timeouts and drops, ranking server replies, the restart flag. All of these run on wall time.
+</li>
+<li><b>Sleep</b>: idle() waits up to 50 ms on the socket (was 5 ms with no humans), so a paused server wakes ~20 times a second instead of ~200; any packet still wakes it at once.
+</li>
+<li><b>No catch-up, no rate verdict</b>: <code>nextTick_</code> follows the clock while paused, so resuming doesn&#x27;t run a burst of 20 ticks, and the tick-rate check resets its window at both edges and while paused, so a pause never steps the tick rate.
+</li>
+<li><b>The first human gets a normal game</b>: on pausing, a running vote is cancelled (it would otherwise resume with time left in front of the next player) and a match past warmup is reset to warmup (rulesReset), so a joiner doesn&#x27;t land in a frozen mid-match or end screen. A fresh server pauses at tick 0, already in warmup.
+</li>
+<li><b>Not paused</b>: games hosted from the client, vs bots, and every test server (the flag defaults off), so bot tests and the map / bot editors&#x27; sims run as before.
+</li>
+<li>Left as is: balance bots are updated in simulate(), so a paused server may list them until a player joins (fixed within 1 s after).
+</li>
+<li>Test (server group): <code>testPauseWithoutHumans</code>: with the flag, 2 bots alone pause at tick 0 with the clock at 0 and idle() sleeps the long wait; a real client connects, resumes, gets snapshots, tick and clock advance; after it leaves the server stays live through the grace, then pauses again in warmup with the clock frozen; each log line once; without the flag, bots alone keep ticking.
+</li></ul>
+<h3>Hide and seek visibility (src/game/server.cpp)</h3>
+<ul>
+<li><b>Why (NET-10)</b>: players and projectiles within <code>kVisNear</code> (20 m) of a viewer are always sent with no ray check. The owner chose 24 m for hide and seek.
+</li>
+<li><b>What</b>: <code>kVisNearHide = 24.0f</code>; updatePlayerVisibility and updateProjectileVisibility pick the radius once per pass (MODE_HIDE: 24 m, every other mode: 20 m), so the pair loop costs the same.
+</li>
+<li>Trade-off: a seeker&#x27;s client is sent hiders up to 24 m away through walls (a modified client could show them); in return no hider within 24 m appears late round a corner, and those pairs cast no rays.
+</li></ul>
+<h3>Docs</h3>
+<ul>
+<li>docs/RELEASE_CHECKLIST.md (dedicated servers): a bots-only server logs &quot;paused&quot;, a join logs &quot;resumed&quot; and starts at warmup; the 30-minute soak needs a player on, since bots alone now pause.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.18.14/">&larr; 1.18.14</a></span><span><a href="../1.18.16/">1.18.16 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>
