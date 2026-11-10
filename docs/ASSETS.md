@@ -19,7 +19,7 @@ python3 tools/studio/build.py build/assets_export     # -> build/studio/ (+ mani
 
 | Category | Files | Path (= the override path) |
 |---|---|---|
-| Sounds | 34 sounds x 5 kits = 170 WAV (48 kHz mono) | `sounds/<kit>/<SOUND>.wav`, kit = `default` `heavy_metal` `magical` `retro` `mouth` |
+| Sounds | 43 sounds x 5 kits = 215 WAV (48 kHz mono) | `sounds/<kit>/<SOUND>.wav`, kit = `default` `heavy_metal` `magical` `retro` `mouth` |
 | Voices | 27 announcer lines x 7 voices = 189 WAV | `voices/<voice>/<LINE>.wav`, voice = `male` `female` `british` `old_man` `e_girl` `india` `spy` |
 | Quips | each voice's quip set (today the default: 8 x 7 = 56 WAV) | `voices/<voice>/quips/<NAME>.wav` |
 | Models | 64 players, 11 weapon viewmodels, 7 projectiles, the crown, 8 props = 91 glTF | `models/player/<NAME>.gltf`, `models/weapon/<NAME>.gltf`, `models/projectile/<NAME>.gltf`, `models/crown/CROWN.gltf`, `models/prop/<NAME>.gltf` |
@@ -66,7 +66,7 @@ model's own space (metres, +Y up, front at -Z):
 - **weapon**: the first-person viewmodel. Origin at the weapon's pivot (the HUD's viewmodel x / y / depth put it
   there and its size scales it), barrel along -Z.
 - **projectile**: origin at the projectile, flying toward -Z (ROCKET, KNIFE, STICKY, CROSSBOW, BUBBLE, SYRINGE, ORB =
-  every other projectile). The game spins the sticky and the thrown knife and wobbles the bubble.
+  every other projectile). The game spins the sticky and the thrown knife and wobbles the bubble, on a mesh too (it stretches it in x and z), blinks a sticky's `team` colour once stuck, and draws the rocket's flame behind z +0.27 (its nozzle).
 - **crown**: the leaderboard crown, origin at the top of the head, front at -Z (the board letter stays drawn on top).
 - **prop** (`models/prop/<NAME>`), the rest of what the game draws as a model; the game keeps moving them (where they
   are, aim, crouch, body size are transforms on top of the model):

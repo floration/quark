@@ -734,6 +734,10 @@ float icon(int id, vec2 p, float h) {
     else if (id == 6)   // INFO: a ring, an i in it
         return min(min(abs(length(p - 12.0) - 10.0), seg(p, vec2(12.0, 11.0), vec2(12.0, 16.5))) - h, length(p - vec2(12.0, 7.3)) - 1.4);
     else if (id == 7) d = min(arc(p, vec2(12.0, 13.0), 8.5, -0.9, PI + 0.9), seg(p, vec2(12.0, 2.5), vec2(12.0, 11.0)));   // POWER
+    else if (id == 8) {   // EXIT: a door frame open on its right, an arrow out of it
+        d = min(seg(p, vec2(13.0, 3.5), vec2(4.5, 3.5)), min(seg(p, vec2(4.5, 3.5), vec2(4.5, 20.5)), seg(p, vec2(4.5, 20.5), vec2(13.0, 20.5))));
+        d = min(d, min(seg(p, vec2(10.0, 12.0), vec2(21.0, 12.0)), min(seg(p, vec2(17.0, 8.0), vec2(21.0, 12.0)), seg(p, vec2(17.0, 16.0), vec2(21.0, 12.0)))));
+    }
     return d - h;
 }
 void main() {

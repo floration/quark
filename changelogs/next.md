@@ -22,9 +22,11 @@
 - **Exclusive fullscreen at a custom FULLSCREEN SIZE:** the picture fills the screen again (it sat cut off in the bottom-left corner), alt-tabbing out gives the desktop its own resolution back (the game minimizes), and closing the game restores it straight away.
 - RANKED on the main menu is now a queue: pick a ladder and it joins a ranked game where someone is waiting, or hosts one (listed publicly) so the next player finds you.
 - The main menu's side strip (PLAY, PRACTICE, CREATE, RANKS, SETTINGS, DISCORD, INFO, QUIT) now stays on every menu screen, so you can jump anywhere without backing out first.
+- **In-game menus match the new main menu:** the pause menu has the same strip on its left (GAME, SETTINGS, and LEAVE / QUIT at its foot), a NOW PLAYING card with the mode, map and players and a big RESUME, the team buttons under it, and the match's options (VOTE, QUEUE, RECORD DEMO, PLAYERS) as a list; the host's controls sit in a HOST panel on the right. Vote, queue, players, practice and settings pages open beside the strip. The scoreboard has the main menu's flat panel look, with your row lit in your colour.
 
 ## Weapon models
 - **New weapon models:** all 11 weapons and the grapple launcher (arm and claw) are new low-poly models with outlines: a real AK rifle, a .50 sniper, a pump shotgun, a crossbow with a swept prod, a glass syringe and bubble tank, and more, in the same clean style as the maps and menus, with team-colour parts. Their moving parts animate too. They're AI-made placeholders until human-made ones replace them.
+- **New projectile models:** rockets, stickies, thrown knives, syringes, crossbow bolts, bubbles and the energy orb are low-poly outlined models in the weapons' style, so each looks like it came out of its gun. They still move as before: the sticky's core blinks, the bubble wobbles, the rocket's flame flickers, the knife spins. AI-made placeholders too.
 - **Weapon animations:** weapon models can now have moving parts: the shotgun racks after a shot, the sticky launcher turns its drum, the sniper's bolt cycles, the rifle's bolt kicks, the laser's coil spins while you fire, and more (each weapon its own). They move the moment you click, at any ping. VIDEO > EFFECTS: WEAPON ANIMATIONS turns them off. Other players' weapons show the parts still.
 
 ## Player models
@@ -46,3 +48,10 @@
 - **Glass and see-through pieces no longer flicker against walls, frames and floors:** a window pane set into its frame, a pane standing on a sill, a fence or shield wall butting a wall, and a bomb site or hill zone touching the floor used to show a speckled tint where they met. Now the solid surface always wins there. This costs nothing per frame, and glass still shows at any distance.
 - **Sloped pieces don't flicker either:** a ramp, wedge or cut piece lying flush on another piece of a different look flickered where they overlapped, because only box faces were fixed. Now they're fixed the same way.
 - **Map bugs found on the way:** Cruise Ship's funnel top no longer pokes out of the funnel as four ledges; Greenhouse's wing roofs no longer have slots open to the sky; Railyard's tank cars and locos no longer float 11 cm over their frames (you could see and shoot under them); Datacenter's two stair floodlights that were buried in the steps are gone.
+
+## Ball
+- **The ball has a step height:** it rolls up onto ledges and stairs up to 0.55 m (the same as a player's step) and keeps going, instead of bouncing off them. Anything taller is still a wall it bounces off.
+
+## Sounds
+- **New sound cues** (all made by the game itself, no new download): a metallic **tink on headshots** (over the hitsound; the HEADSHOT sound setting turns it off), a **jolt when someone's grapple catches you**, the planted **bomb ticks** (faster as it runs down, higher over the last 5 s), **planting and defusing click** while someone does it (only when you can see them), a **warning when the hill becomes contested**, an **alarm when the enemy captures your point** in multi point, a **clock tick for each second of Dojo's hold-fire start** and a higher one when you can fire, and a **buzz for a race checkpoint that won't count** (skipped one, or a run joined midway) instead of the normal ding.
+- **The bomb's explosion has a flash now:** a fireball out to its kill radius and a white screen flash when you're near (dimmer behind a wall). REDUCE FLASHING turns the screen flash off.

@@ -281,5 +281,6 @@ void pmove(MoveState& s, const UserCmd& cmd, const Map& map, HookProbe* probe = 
 // side of its centre `c`) moves like a player's hull with no input on an ice floor: half the gravity, the ground's
 // friction x kIceFriction on any floor, 1 ms steps. A wall or a ceiling sends it back at half the speed it hit with (a
 // player's hull would stop dead: a ball against a wall would stick there); a landing stops its fall, like a player's.
+// A ledge up to a player's step height (kStepHeight, 0.55 m) it goes up onto, keeping its speed, like a player.
 // Returns whether it ends the call on the floor.
 bool ballMove(Vec3& c, Vec3& v, const Map& map, float dt);

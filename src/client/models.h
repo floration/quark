@@ -168,6 +168,7 @@ void viewmodelParts(int weapon, const ModelPalette& pal, ModelParts& out);
 // projectile (WPN_* or MODEL_PROJ_ORB): flicker = rocket flame size (1 = still), core = sticky core brightness
 // (1 = lit), wobble = the bubble's squash (0 = round)
 void projectileParts(int type, const ModelPalette& pal, float flicker, float core, float wobble, ModelParts& out);
+void rocketFlameParts(float flicker, ModelParts& out);   // the rocket's flame boxes alone (a mesh rocket draws them behind its nozzle)
 // crown: pal team = gold for #1, silver for 2-10 (crownColor)
 void crownParts(const ModelPalette& pal, ModelParts& out);
 Vec3 crownColor(int place);

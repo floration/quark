@@ -72,6 +72,7 @@ struct LaunchOptions {
     bool debugWidgets = false;
     bool debugHudLayout = false; // --hudlayout: open HUD layout settings in game
     bool debugModels = false;
+    bool debugProjectiles = false;   // --projectiles: every projectile model in a row ahead (screenshots)
     bool debugWalk = false;    // (--walk: the --models lineup turned side-on)
     float debugLineupDist = 0;      // (--lineupdist M: the --models lineup that many metres ahead, spread wider with it)
     bool debugLineupEmpty = false; // (--lineupempty: --lineupdist's view with the lineup left out: a mask by difference)
@@ -276,6 +277,9 @@ private:
     void refreshHostBrains();               // list the brains again (a file gone: back to the built-in one) and check the choice
     void checkHostBrain();                  // compile the chosen brain (loadBrain: cached while the file is unchanged)
     void drawPauseMenu(float cx, float y);
+    void drawPauseMain();               // the pause menu's own page (in the main menu's look)
+    bool drawGameStrip(float s, float H);  // the main menu's strip in game (GAME, SETTINGS, LEAVE, QUIT); true: the game was left
+    void pauseBackdrop();
     // Settings: one shell, six tabs (drawSettings: the menus and the pause menu; game.cpp "Settings")
     enum { TAB_PLAYER, TAB_GAMEPLAY, TAB_CONTROLS, TAB_VIDEO, TAB_CROSSHAIR, TAB_HUD, TAB_LATENCY, TAB_SEARCH };   // (SEARCH: every setting in one list)
     int setTab_ = TAB_PLAYER;
@@ -833,6 +837,9 @@ private:
     // mustn't wait for the server). What was shown is kept per victim, and the server's EV_HIT for it is matched against
     // that, so it isn't shown twice; only damage the server adds on its own (stickies, bots' rules...) shows from EV_HIT.
     void hitFeedback(int victim, float dmg, bool head);
+    double headTinkAt_ = -1e9;   // the last headshot tink (hits landing together: one)
+    void bombBlast(const Vec3& at);   // the planted bomb went off: its fireball and the screen flash
+    float bombFlash_ = 0; double bombFlashAt_ = 0;   // that flash's strength (0 none) and when
     float shownDmg_[kMaxPlayers] = {};
     double shownAt_[kMaxPlayers] = {};
     double pingSec() const;   // (your round trip, from the snapshot; 0 offline)
@@ -1044,7 +1051,11 @@ private:
     double cornerAt_ = 0; int cornerFrames_ = 0, cornerFps_ = 0;   // SHOW FPS: frames counted over half a second
     float hpMax_ = 100; bool hpAlive_ = false;   // HEALTH BARS: MODE'S MAX: the most health seen this life (from its spawn)
     std::string captionText_; double captionUntil_ = 0;   // ANNOUNCER CAPTIONS: the last line, as text
-    double bombBeepAt_ = 0;            // the planted bomb's next beep (OBJECTIVE volume)
+    double bombBeepAt_ = 0;            // the planted bomb's next tick (OBJECTIVE volume)
+    CueGate bombActGate_, hillGate_, captureGate_;   // a plant's / defuse's clicks, the hill contested, your point being captured (modecalls.h)
+    float holdPrev_ = 0;               // the map's holdfire left, the last frame (its ticks: holdFireCue)
+    WrongCheckpoint wrongCp_;          // race: a checkpoint entered out of order (its buzz)
+    bool pulledPrev_ = false; double hookedAt_ = -1e9;   // someone's grapple held you the last frame; its sound's last play
     void announce(int snd);            // an announcer line (played, and captioned when ANNOUNCER CAPTIONS is on)
     int vrrHz_ = 0;                    // G-SYNC / FREESYNC: the monitor's refresh (the cap goes 3 under it)
     std::string confirmWhat_; double confirmUntil_ = 0;   // CONFIRM LEAVE: the button armed by a first click

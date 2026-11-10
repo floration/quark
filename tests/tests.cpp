@@ -1931,6 +1931,18 @@ static std::vector<std::string> testedMaps() {
 static void testMaps() {
     printf("maps\n");
     std::string err;
+    // the map pool target (owner, 2026-10-30): every mode playable on at least 5 official maps. Exempt: surf, one-way
+    // payload, multipoint and race (owner, 16:42Z / 2026-11-02), and the 1v1 variants duel and tourney (they play
+    // every 1v1 map); winner stays is retired.
+    for (int k = 0; k < MODE_COUNT; k++) {
+        if (k == MODE_SURF || k == MODE_PAYLOAD || k == MODE_POINTS || k == MODE_RACE || k == MODE_DUEL || k == MODE_TOURNEY || modeRetired(k)) continue;
+        int n = 0;
+        for (auto& name : testedMaps()) {
+            Map m;
+            if (!mapHiddenFromLists(name) && m.load(name) && isOfficialMap(m) && m.supportsMode(k)) n++;
+        }
+        if (n < 5) { printf("  %s: playable on %d official maps (want 5)\n", modeName(k), n); g_fail++; }
+    }
     // Lodestone is offered in every mode but the four that want a compact arena (owner, 1.17)
     { Map v; CHECK(v.load("viaduct") && v.supportsMode(MODE_RACE) && v.preferredMode == MODE_RACE && v.hasVoid && v.checkpoints.size() >= 5); }
     for (const char* name : {"lodestone"}) {
@@ -4572,6 +4584,19 @@ static void testBallMode(uint16_t port) {
         c = Vec3(19, kBallHalf, 0); v = Vec3(10, 0, 0);
         ballMove(c, v, m, 0.3f);
         CHECK(v.x < -3.0f && c.x < 19.5f);   // off the wall at half its speed
+    }
+    {   // a step height (owner, 2026-11-10): a 0.5 m ledge it rolls up onto, keeping its speed; a 0.7 m one it bounces off
+        std::string err;
+        Map m;
+        CHECK(m.parse("box -50 -1 -50 50 0 50\nbox 5 0 -50 50 0.5 50\nbox -50 0 -50 -5 0.7 50\nspawn any 0 0 0\n", &err));
+        Vec3 c(3, kBallHalf, 0), v(6, 0, 0);
+        ballMove(c, v, m, 1.0f);
+        printf("  into a 0.5 m step at 6 m/s: x %.2f y %.2f, %.2f m/s\n", c.x, c.y, v.x);
+        CHECK(c.x > 6.0f && std::fabs(c.y - (0.5f + kBallHalf)) < 0.02f && v.x > 3.0f);   // (ice friction alone: 6 to ~3.4 in 1 s)
+        c = Vec3(-3, kBallHalf, 0); v = Vec3(-6, 0, 0);
+        ballMove(c, v, m, 0.5f);
+        printf("  into a 0.7 m ledge at 6 m/s: x %.2f, %.2f m/s\n", c.x, v.x);
+        CHECK(v.x > 1.0f && c.x > -4.6f && c.y < kBallHalf + 0.05f);   // a wall: off it
     }
     {   // the ball wall (owner, 2026-11-02): the ball bounces off it; players, shots and sight go through; never drawn
         std::string err;

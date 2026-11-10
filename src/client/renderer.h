@@ -43,8 +43,9 @@ template <class T> struct NoInitAlloc : std::allocator<T> {
 using Vertex2DList = std::vector<Vertex2D, NoInitAlloc<Vertex2D>>;
 
 struct Color { float r, g, b, a; };
-// The UI's line icons (Renderer::icon; their shapes are in the UI shader, kUiFS's icon()): the main menu's strip
-enum UiIcon { ICON_PLAY = 0, ICON_GAUGE, ICON_GRID, ICON_TROPHY, ICON_GEAR, ICON_CHAT, ICON_INFO, ICON_POWER, ICON_COUNT };
+// The UI's line icons (Renderer::icon; their shapes are in the UI shader, kUiFS's icon()): the main menu's strip and
+// the pause menu's (EXIT: leave the game)
+enum UiIcon { ICON_PLAY = 0, ICON_GAUGE, ICON_GRID, ICON_TROPHY, ICON_GEAR, ICON_CHAT, ICON_INFO, ICON_POWER, ICON_EXIT, ICON_COUNT };
 constexpr Color kGlassTint = {0.86f, 0.90f, 0.93f, 0.26f};   // glass panes (map material 21): very light grey, see-through
 inline Color rgba(const Vec3& c, float a = 1) { return {c.x, c.y, c.z, a}; }
 
