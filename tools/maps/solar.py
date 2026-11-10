@@ -794,8 +794,10 @@ def course(stages):
         else:
             for sg in (-1, 1): k.bar(mt["wall2"], PP(8, sg * hw), PP(Lp, sg * hw), 1.0, tp_ - 2, tp_ + 14)
             st.finish = gate
+        # (the posts' feet go 0.5 m down into the platform, so they don't share the teleporter's bottom face: flush,
+        # the two z-fight; in the platform they change nothing)
         for (cx_, cz_) in ((gate[0], gate[2]), (gate[0], gate[5]), (gate[3], gate[2]), (gate[3], gate[5])):
-            k.box(mt["cap"], cx_ - 0.3, tp_, cz_ - 0.3, cx_ + 0.3, tp_ + 6.6, cz_ + 0.3)
+            k.box(mt["cap"], cx_ - 0.3, tp_ - 0.5, cz_ - 0.3, cx_ + 0.3, tp_ + 6.6, cz_ + 0.3)
         k.box(mt["cap"], gate[0] - 0.3, tp_ + 6, gate[2] - 0.3, gate[3] + 0.3, tp_ + 6.6, gate[5] + 0.3)
         # lights along the line
         k.light(st.ox, Y + 8, st.oz + 4, 30, 0.7)
