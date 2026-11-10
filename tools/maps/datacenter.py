@@ -224,8 +224,8 @@ def build():
     m.stairs(-46, 66, -42, 84, U, "z", -1); B(m, "steeldeckplate", -46, 0, 63, -42, U, 66)
     m.stairs(42, 66, 46, 84, U, "z", -1); B(m, "steeldeckplate", 42, 0, 63, 46, U, 66)
     # the exhaust duct: a 4 m tunnel off the roof into A's south face at gallery height
-    B(m, "ventilationduct", AX - 3, U, A_OUT + AZ, AX - 2, U + 4.6, A_OUT + AZ + 8)
-    B(m, "ventilationduct", AX + 2, U, A_OUT + AZ, AX + 3, U + 4.6, A_OUT + AZ + 8)
+    B(m, "ventilationduct", AX - 3, U, A_OUT + AZ, AX - 2, U + 3.8, A_OUT + AZ + 8)   # (the sides up to the top, not into it)
+    B(m, "ventilationduct", AX + 2, U, A_OUT + AZ, AX + 3, U + 3.8, A_OUT + AZ + 8)
     B(m, "ventilationduct", AX - 3, U + 3.8, A_OUT + AZ, AX + 3, U + 4.6, A_OUT + AZ + 8)
     # roof cover: chiller units in two staggered rows across the south roof, fan stacks over mid, a pipe rack; lanes
     # kept from each stair to the duct and to B's roof door
@@ -280,7 +280,8 @@ def build():
     B(m, "electricalcabinet", -3, 0, 0, 7, 6, 16)
     for (x0, z0) in ((-21, -6), (-21, 14), (14, -6), (14, 14)):
         x1, z1 = x0 + 10, z0 + 8
-        for (a0, b0, a1, b1) in ((x0, z0, x1, z0 + 0.1), (x0, z1 - 0.1, x1, z1), (x0, z0, x0 + 0.1, z1), (x1 - 0.1, z0, x1, z1)):
+        # (the E / W sides between the N / S ones, not into them: see-through mesh drawn twice at a corner flickers)
+        for (a0, b0, a1, b1) in ((x0, z0, x1, z0 + 0.1), (x0, z1 - 0.1, x1, z1), (x0, z0 + 0.1, x0 + 0.1, z1 - 0.1), (x1 - 0.1, z0 + 0.1, x1, z1 - 0.1)):
             B(m, "chainlinkmesh", a0, 0, b0, a1, 3.2, b1)
         B(m, "steel", x0, 3.2, z0, x1, 3.3, z1)
         for zz in (z0 + 2.2, z0 + 5.0): B(m, "serverrack", x0 + 1.5, 0, zz, x1 - 1.5, 2.4, zz + 1.0)
@@ -331,11 +332,17 @@ def build():
     for zc in RACK_Z:
         for (x0, x1) in RACK_X:
             B(m, "glow", x0, RK, zc - 0.62, x1, RK + 0.06, zc - 0.5); B(m, "glow", x0, RK, zc + 0.5, x1, RK + 0.06, zc + 0.62)
+    TRAY_LIGHTS_X, TRAY_LIGHTS_Z = range(-88, -23, 14), (30.7, 43.6, 57.9)
     for zc in (30.7, 37.2, 43.6, 50.0):
         B(m, "steel", -92, 6.4, zc - 0.3, -24, 6.5, zc + 0.3)
-        for x in range(-90, -23, 11): B(m, "steel", x - 0.04, 6.5, zc - 0.04, x + 0.04, C, zc + 0.04)
-    for zc in (30.7, 43.6, 57.9):
-        for x in range(-88, -23, 14): B(m, "lightblock", x, C - 0.1, zc - 0.4, x + 5, C, zc + 0.4)
+        for x in range(-90, -23, 11):
+            # (a hanger that meets a light panel stops under it, wholly under it: run up through it, the two tops
+            # flickered)
+            lx = next((lx for lx in TRAY_LIGHTS_X if zc in TRAY_LIGHTS_Z and lx - 0.04 < x < lx + 5.04), None)
+            if lx is not None: x = min(max(x, lx + 0.04), lx + 4.96)
+            B(m, "steel", x - 0.04, 6.5, zc - 0.04, x + 0.04, C if lx is None else C - 0.1, zc + 0.04)
+    for zc in TRAY_LIGHTS_Z:
+        for x in TRAY_LIGHTS_X: B(m, "lightblock", x, C - 0.1, zc - 0.4, x + 5, C, zc + 0.4)
     # the plenum: light strips and cable trays along its walls
     for z in range(22, 59, 9): B(m, "lightblock", PX0 + 2.5, -0.5, z, PX1 - 2.5, -0.4, z + 2)
     B(m, "steel", PX0, PY, 24, PX0 + 0.5, PY + 0.4, 54); B(m, "steel", PX1 - 0.5, PY, PZ0, PX1, PY + 0.4, PZ1)   # (not under the ladders)
@@ -355,7 +362,7 @@ def build():
             ox, oz = (AX - mx) / A_IN, (AZ - mz) / A_IN
             prism(m, "steel", [(mx - oz * 0.4, mz + ox * 0.4), (mx + oz * 0.4, mz - ox * 0.4), (mx + oz * 0.4 + ox * 1.2, mz - ox * 0.4 + oz * 1.2), (mx - oz * 0.4 + ox * 1.2, mz + ox * 0.4 + oz * 1.2)], 6.4, C)
     # B: hazard lines round the site, light panels in its roof, the UPS units' status lights
-    for (x0, z0, x1, z1) in ((52.5, 0.5, 68.5, 0.8), (52.5, 16.2, 68.5, 16.5), (52.5, 0.5, 52.8, 16.5), (68.2, 0.5, 68.5, 16.5)):
+    for (x0, z0, x1, z1) in ((52.5, 0.5, 68.5, 0.8), (52.5, 16.2, 68.5, 16.5), (52.5, 0.8, 52.8, 16.2), (68.2, 0.8, 68.5, 16.2)):
         B(m, "hazard", x0, 0, z0, x1, 0.02, z1)
     for x in (44, 60, 76):
         for z in (2, 15): B(m, "lightblock", x - 2, UC - 0.1, z - 1, x + 2, UC, z + 1)
@@ -365,8 +372,9 @@ def build():
         for z in (-6, 8, 22): B(m, "lightblock", x, C - 0.1, z - 0.5, x + 4, C, z + 0.5)
     for x in range(-90, 96, 14):
         for z in (-40, -28, -16):
-            B(m, "lightblock", x, C - 0.1, z - 0.5, x + 4, C, z + 0.5)
-            B(m, "lightblock", x, UC - 0.1, z - 0.5, x + 4, UC, z + 0.5)
+            # (the ones that met a wall start at its face: run into it, the panel's end flickered on the wall's far side)
+            B(m, "lightblock", 37 if x == 36 else x, C - 0.1, z - 0.5, 41 if x == 36 else x + 4, C, z + 0.5)
+            B(m, "lightblock", 50.2 if x == 50 else x, UC - 0.1, z - 0.5, 54.2 if x == 50 else x + 4, UC, z + 0.5)
     # NOC: the wall of screens, consoles behind the spawns
     B(m, "controlpanel", -28, 1.0, NN, 28, 5.4, NN + 0.1)
     B(m, "electricalcabinet", -20, 0, NN + 3, 20, 0.8, NN + 4)
@@ -387,7 +395,7 @@ def build():
     for x in (-24, -12, 12, 24): B(m, "roadmarkings", x - 0.15, 0, 64, x + 0.15, 0.01, YS - 4)
     for xd in (-32, 0, 32):
         for sx in (-1, 1): B(m, "rubber", xd + sx * 3.4 - 0.3, 0.4, 63, xd + sx * 3.4 + 0.3, 1.4, 63.4)
-    for (x, z) in ((-46, 72), (-46, 86), (-46, 106), (46, 72), (46, 86), (46, 106)):
+    for (x, z) in ((-46, 86), (-46, 106), (46, 86), (46, 106)):   # (none at z 72: the yard stairs fill the wall there)
         B(m, "glow", x - 0.3 if x < 0 else x - 0.1, 5.2, z - 0.6, x + 0.1 if x < 0 else x + 0.3, 5.6, z + 0.6); light(m, x * 0.95, 5, z, 16, 0.7)
     # the courtyard: lamp posts along its edges
     for x in (-70, -40, -10, 10, 40, 70):
