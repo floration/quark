@@ -170,7 +170,8 @@ logged and the default is kept. Parsed once at startup; drawing costs what the b
   what the written file reads back as (ERROR fails the generator, the rest warn):
   - at most **1000 triangles** a model, counted in the file, the ink hulls included;
   - an **ink outline** of its own: an inverted hull 10 mm out (`kit.OUTLINE`; range 6-15 mm), near-black `ink`,
-    never team-tinted (a mesh gets no game outline, so the settings' outline colour and width don't change it). Small
+    never team-tinted. On a player the game draws a material named `ink...` in the player's outline colour (TEAM / ENEMY
+    OUTLINE) and grows the hull with the outline width (1: as built, 10 mm; 2: 20 mm; 0: none). Small
     flush details go without a hull (half the triangles);
   - **size, +-10% in any dimension** (owner, 2026-11-09): every vertex, outline included, inside the hitbox grown 10%
     (body cylinder r 0.44 m under the neck line at 1.44 m, head cylinder r 0.198 m above it); the extents per

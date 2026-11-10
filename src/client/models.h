@@ -223,6 +223,13 @@ void partsToMesh(const ModelParts& parts, MeshData& out);
 struct ModelMesh {
     struct V { float pos[3], nrm[3], col[4]; uint8_t slot; };
     std::vector<V> opaque, translucent;   // 3 vertices per triangle
+    // The outline hull (opaque triangles of a material named "ink...": the low-poly models' inverted hull, grown
+    // kInkHull out from the solid it wraps). On a player the renderer draws them in the player's outline colour and
+    // grows or shrinks the hull with the outline width (PLAYER / TEAM / ENEMY OUTLINE WIDTH; 0: no hull):
+    // inkIdx the hull's vertices (indices into opaque), inkDir 3 floats each, the way it grows for 1 m (mitred: a
+    // corner moves so that every face beside it moves 1 m). Empty: no hull, nothing costs.
+    std::vector<uint32_t> inkIdx;
+    std::vector<float> inkDir;
     Vec3 center;                          // bounding sphere (model space)
     float radius = 0;
     // a box model (its file's extras.quark.boxes, docs/ASSETS.md): drawn by the box path like a built-in model
@@ -244,6 +251,7 @@ struct ModelMesh {
     // their pivots (playerMeshRig). rig.animated false: drawn still, as before.
     PlayerRig rig;
 };
+constexpr float kInkHull = 0.010f;   // the shipped low-poly players' hull (m; tools/models/players_lowpoly/kit.py OUTLINE): outline width 1
 void meshToModel(const MeshData& mesh, ModelMesh& out);
 // A player mesh: tags each part with its PlayerBone (anim_pelvis -> BONE_PELVIS; an unknown name: BONE_ROOT, still) and
 // measures the rig from the pivots: hips at the thighs' (x: the legs' spacing), knees at the shins', ankles at the

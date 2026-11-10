@@ -53,7 +53,7 @@ walk-lowpoly.png, box-vs-lowpoly.png). Use `--out <your scratch>/` while you ite
 
    Near-black only for ink and small details (eyes, slits). "dark" (0.36) is the darkest big area allowed.
 5. **Outline**: an inverted hull, `kit.OUTLINE` = **10 mm** (the rule's range is 6-15 mm), near-black `ink`, never
-   team-tinted. Leave it alone unless q asks.
+   team-tinted (the game recolours and rescales a player's `ink` from the outline settings). Leave it alone unless q asks.
 6. **Limbs** at least 120 mm thick (the kit's defaults are).
 7. No crouch. Deterministic, no randomness. AI-made placeholders (the file carries the provenance).
 
