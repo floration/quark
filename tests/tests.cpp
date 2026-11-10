@@ -1931,6 +1931,18 @@ static std::vector<std::string> testedMaps() {
 static void testMaps() {
     printf("maps\n");
     std::string err;
+    // the map pool target (owner, 2026-10-30): every mode playable on at least 5 official maps. Exempt: surf, one-way
+    // payload, multipoint and race (owner, 16:42Z / 2026-11-02), and the 1v1 variants duel and tourney (they play
+    // every 1v1 map); winner stays is retired.
+    for (int k = 0; k < MODE_COUNT; k++) {
+        if (k == MODE_SURF || k == MODE_PAYLOAD || k == MODE_POINTS || k == MODE_RACE || k == MODE_DUEL || k == MODE_TOURNEY || modeRetired(k)) continue;
+        int n = 0;
+        for (auto& name : testedMaps()) {
+            Map m;
+            if (!mapHiddenFromLists(name) && m.load(name) && isOfficialMap(m) && m.supportsMode(k)) n++;
+        }
+        if (n < 5) { printf("  %s: playable on %d official maps (want 5)\n", modeName(k), n); g_fail++; }
+    }
     // Lodestone is offered in every mode but the four that want a compact arena (owner, 1.17)
     { Map v; CHECK(v.load("viaduct") && v.supportsMode(MODE_RACE) && v.preferredMode == MODE_RACE && v.hasVoid && v.checkpoints.size() >= 5); }
     for (const char* name : {"lodestone"}) {

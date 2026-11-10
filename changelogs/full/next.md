@@ -135,3 +135,7 @@
 - Applies on the floor and in the air (a ball clipping a ledge's lip in flight goes over it), the same as a player's air step. Slopes are unchanged (already turned along the face). Ball walls are tall, so the ball never steps over one.
 - Server only, like the rest of the ball's physics (the ball isn't predicted): no protocol change. Cost: three extra axis sweeps only on a 1 ms step where the ball hits a face.
 - Test: `quark_tests ball` rolls it at 6 m/s into a 0.5 m step (it ends on top, still moving forward) and a 0.7 m ledge (it bounces off).
+
+## Maps: every mode playable on 5 official maps (a check)
+- Owner's map pool target (2026-10-30): every mode playable on at least 5 official maps. Counted on testing (2026-11-10), every mode it applies to already meets it: bomb 5 (Datacenter, Mine, War, Accelerator, Museum), hide 5 and tag 5 (Cruiseship, Fairground, Rooftops, Museum, Riverside), ball 5 (Stadium, QK8, Bridge, Express, Railyard), normal payload (npayload) 5; koth, power, vs, 1v1 and FFA have 8 or more. Surf, one-way payload, multipoint and race are exempt (owner), and duel / tourney play every 1v1 map. So no map changed.
+- New `quark_tests maps` check: each of those modes is offered (`Map::supportsMode`, so its spawns and objectives really exist, not just the `modes` line) on at least 5 official maps that aren't hidden from the lists. A map change that drops a mode below 5 now fails the tests instead of going unnoticed.
