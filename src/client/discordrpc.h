@@ -22,7 +22,7 @@ namespace drpc {
 // The Discord application's id (Discord Developer Portal > the application > Application ID). Empty: no Discord
 // status at all (no thread is started). quark.cfg's discord_app_id= and the environment variable QUARK_DISCORD_APP_ID
 // override it (digits only), so a new id can be tried before a build has it.
-constexpr const char kDiscordAppId[] = "";
+constexpr const char kDiscordAppId[] = "1562463456609968210";
 // The pictures (the website serves them: release.yml publishes `quark_tests mappreviews` to img/rpc/). Discord takes an
 // https URL as an image. An official map shows its own; any other map and the menus show the game's icon.
 constexpr const char kMapImageBase[] = "https://floration.github.io/quark/img/rpc/";   // + <map file name>.png
