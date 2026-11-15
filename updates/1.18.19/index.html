@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.18.19: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.18.19</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<p>Data-driven weapons and the weapons editor, the fourth editor in the series after the bot brains (1.18.11), the physics editor and the gamemode editor (1.18.17). The owner wants to create and modify weapons, test them against targets and bots, write custom weapon logic in code / blocks / a graph, and compare damage and DPS with other games. For an edited weapon to change the real game, every weapon number is now a field of the per-thread tuned rules, and a set&#x27;s optional hit / kill logic runs on the server. Design: <code>tools/weapon_editor/DESIGN.md</code>. No network protocol, map or demo format change: the set travels in the existing EV_RULES text. Owner&#x27;s call (2026-10-24): a &quot;new&quot; weapon is a variant of one of the 11 (its own name, numbers and logic, in that weapon&#x27;s slot with its model and sounds); extra weapon slots are a possible follow-up.</p>
+<h3>Weapon sets (src/game/weaponset.{h,cpp}, new)</h3>
+<ul>
+<li><b>Fields</b>: 280 in all: every <code>WeaponDef</code> value per weapon (refire, damage, range, projectile speed, splash radius, spread, scoped spread, zoom, pellets, gravity, lifetime, semi-auto; the kind, projectile / beam / sticky, is read-only) plus the numbers that were loose constants: head damage, knockback, falloff (start, end, minimum, or a <code>points</code> / <code>steps</code> curve per weapon), direct-hit damage, self damage, wallbang, and every alt-fire constant (rifle scoped refire; rocket lob speed and gravity; knife throw speed, gravity, life, away time and swing reach; shotgun bounces and bounce damage; laser pull scale and damage; the bubble stream&#x27;s seven numbers; syringe throw and heal; sticky max, arm time and inherit). Ranges are clamped like <code>CustomRules::fromText</code> clamps (nearest bound; nan = the default).
+</li>
+<li><b>Why absolute values</b>: the mode editor&#x27;s <code>weapon=</code> multipliers already scale fire rate, damage and projectile speed. A weapon set says what a weapon IS; the multipliers still apply on top, so the two editors never overwrite each other.
+</li>
+<li><b>Format</b>: <code>.qweapons</code>, the bot brain grammar (tools/bots/GRAMMAR.md) with a <code>weapons &quot;&lt;name&gt;&quot;</code> header, one value per param (no skill levels), <code>label &lt;weapon&gt; &quot;&lt;NAME&gt;&quot;</code>, and slots <code>hit</code>, <code>hit &lt;weapon&gt;</code>, <code>kill</code>, <code>kill &lt;weapon&gt;</code> (a weapon&#x27;s own slot runs instead of the general one). Reusing the grammar means the bot editor&#x27;s tokenizer, printer, Blocks and Graph code carry over to the editor. Canonical printer: <code>print(parse(text)) == text</code>; errors with line:col.
+</li>
+<li><b>Logic</b>: hit outputs <code>damage</code> (starts at what the game worked out after falloff, head, wallbang and splash), <code>knock</code> (x1) and <code>heal</code> (to the shooter, only when the hit hurt); kill outputs <code>heal</code> and <code>refund</code> (reset the shooter&#x27;s cooldown). Sensors: weapon, alt, dist, head, direct, splash, self, airborne, both players&#x27; health and speed, time, streak (hits on this victim less than 1 s apart), kills this life. A tree-walk interpreter that allocates nothing per call: 25-60 ns a call, which matters because the laser hits up to 1000 times a second per player. Logic runs on the server only (damage is server-side).
+</li>
+<li><b>Cost when unused</b>: none per shot. The tuned table is rebuilt only when the rules change (<code>rebuild()</code> in customrules.cpp compiles the set once), and the per-shot lookups are hoisted out of the pellet loop. A server without a set takes the same path as before.
+</li>
+<li><b>Bit-identical default</b>: with no set, and with the full standard set text loaded, every tuned value equals the old constants (test), so standard play is unchanged.
+</li></ul>
+<h3>Custom modes and the network (src/game/customrules.{h,cpp}, server.cpp)</h3>
+<ul>
+<li><code>weaponset=&lt;name&gt;</code> in a .qmode names <code>custom_weapons/&lt;name&gt;.qweapons</code>; <code>loadCustomMode</code> reads and validates it. The file form keeps only the name (the set has its own file); the network form (<code>toNetText</code>, EV_RULES) carries the text as <code>wsline=</code> lines so every client compiles the same set and predicts refire, spread, projectile speed and drop and the scope with the server&#x27;s numbers.
+</li>
+<li><b>Size limit</b>: rules text over 24,000 bytes (100 chunks of 240) is refused for the set, and the server sends the rules without it, logging why. Why 100 and not the 255 the chunk counter allows: every chunk is queued at once on join next to up to 62 welcome events, and <code>kMaxUnackedEvents</code> is 256, so a 255-chunk set would get the joining client dropped. The full standard set is 44 chunks; a set&#x27;s text is capped at 20,000 bytes.
+</li>
+<li>The gamemode and physics editors keep <code>weaponset=</code> verbatim like any line they don&#x27;t own (agreed with those threads).
+</li>
+<li>Ranked and time trials never run custom modes, so they always play the standard weapons.
+</li></ul>
+<h3>Weapon code reads the tuned values (gamedefs.h, server.cpp, bots.cpp, client/game.cpp)</h3>
+<ul>
+<li><code>WeaponExtra</code> (per weapon) and <code>WeaponAlt</code> (alt-fire numbers), read through <code>weaponExtra(w)</code> / <code>weaponAlt()</code>; <code>weaponFalloff()</code>. <code>headDamage</code>, <code>projectileGravity</code>, <code>bubbleStreamCount</code>, <code>stickyInherit</code> and <code>shotRefire</code> read them; the old constants remain as the standard values.
+</li>
+<li>server.cpp: a <code>weaponHit()</code> wrapper sends a hit straight to <code>damagePlayer</code> when no set has logic, else runs the hit slot, then damage, heal and the kill slot. <code>damagePlayer</code> / <code>killPlayer</code> themselves are untouched (they carry the mode logic hooks). Projectiles remember whether they were alt fire; <code>explode()</code> takes it.
+</li>
+<li>The knife&#x27;s reach now comes from the tuned table (<code>kKnifeRange</code> was computed once at startup and ignored custom rules); same 3.5 m by default.
+</li>
+<li>Falloff for projectiles and blasts is measured from the shooter&#x27;s eye to the hit (not distance travelled).
+</li>
+<li>bots.cpp: the knife-throw lead uses the tuned throw speed and gravity. client/game.cpp: the throw away-time, shotgun bounces and sticky max shown in the HUD use the tuned values.
+</li></ul>
+<h3>Tools for the editor</h3>
+<ul>
+<li><code>quark_tests exportweapons [out.json]</code> (the catalog: fields, weapons, slots, sensors, builtins, the standard text), <code>checkweapons &lt;file&gt;</code> (errors as JSON, exit 1), <code>weaponsast &lt;file&gt;</code>, <code>printweapons &lt;file&gt;</code>.
+</li>
+<li><code>quark_maptool</code> (tools/weapon_editor/native): <code>wpnparams</code>, <code>wpncheck</code>, <code>wpnstats</code> (per weapon and fire mode: damage, shots and time to kill, DPS, body and head, travel time and falloff at distances; the same rows the page computes, checked against it), <code>wpnrange</code> (the game&#x27;s real Server: a shooter with perfect, head, body or bot aim against still or moving dummy targets on a built-in range or any map, deterministic per seed; 10 s of rifle at 1000 Hz runs in about 0.09 s). <code>sim</code> / <code>simbatch</code> (bot editor) take <code>weapons</code>, <code>qmode</code> and <code>weaponsAllowed</code>, echo <code>weaponSet</code>, and report per-weapon kills, damage, accuracy and time to kill.
+</li></ul>
+<h3>The weapons editor page (tools/weapon_editor, 127.0.0.1:8773)</h3>
+<ul>
+<li>Tabs: Weapon (every field with slider, standard value and difference, numbers card, damage-vs-distance), Values (sortable table of every weapon and fire mode, body vs head, standard vs edited, DPS / TTK bars, falloff curves), Other games, Code / Blocks / Graph (one AST, &quot;try a hit&quot; runs a slot and marks the lines it ran), Range (top-down and 3D replay), Fights (live and batch bot matches). Saves <code>custom_weapons/&lt;name&gt;.qweapons</code>; &quot;Write wpn-&lt;set&gt;.qmode&quot; makes a custom mode that plays it (keeping every other line of an existing one). MOCK fallback when the helper is missing. Dense layout for a 2560x1440 screen.
+</li>
+<li><b>Other games</b>: 19 games, 224 weapons with sources and patch / date (<code>web/data/games.json</code>, <code>SOURCES.md</code>, rebuilt by <code>tools/weapon_editor/build_games.py</code>): Doom, Quake 1 / 2 / 3 / Live / Champions, UT99 / 2004 / 3, Xonotic, Warfork, TF2, Overwatch 2, VALORANT, CS2, Apex Legends, THE FINALS, Deadlock, Titanfall 2. Compared by shots and time to kill against each game&#x27;s own health pool (or a hero&#x27;s), with a per-game damage scale (UT99 Hardcore is x1.5) and &quot;closest weapons&quot; for each Quark weapon. Not found with citable numbers: Halo Infinite, Splitgate, Diabotical, Doom Eternal, Siege, Marvel Rivals, Fortnite, CoD, Battlefield.
+</li>
+<li>Quark Project app: Weapons Editor tab under the Editor Manager (port 8773), auto-installed by <code>installs.json</code>; the Editor Manager tracks its files.
+</li></ul>
+<h3>Tests</h3>
+<ul>
+<li><code>tests/weapon_tests.h</code> (weapons group; alone: <code>quark_tests weaponsets</code>): the standard text round-trips and gives bit-identical tuned values (no rules, mode multipliers, standard text under multipliers); 16 error cases with exact line:col; interpreter semantics with C++ f32 rounding; network / file forms (missing, broken, too big); through the real Server: sniper 30 body / 90 head with a set, an airborne hit slot doubling to 60, a rocket direct hit 70, rifle falloff x0.5 at 20 m, a kill slot healing 25; the EV_RULES client copy compiles to the same values. Fuzzed with ASan/UBSan (200k rules texts, 360k mutated sets): no crashes, one printer bug fixed (<code>-(0)</code> keeps its parentheses).
+</li>
+<li><code>tools/weapon_editor/native/test_wpn.py</code> (58 checks), <code>web/test/run.mjs</code> (73), and the bot and physics editors&#x27; helper tests still pass.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.18.18/">&larr; 1.18.18</a></span><span><a href="../1.18.20/">1.18.20 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

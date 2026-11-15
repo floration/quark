@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.18.20: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.18.20</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<p>The owner&#x27;s call from the sound audit (2026-10-24): &quot;quips get their own subfolder&quot; and &quot;quips get their own on/off setting and volume slider&quot;. Before, a quip was a random announcer line (any line with sound, call-outs included). It played only when ANNOUNCER was on and at ANNOUNCER VOLUME.</p>
+<h3>Quips as their own sounds (src/client/audio.h / audio.cpp, src/client/overrides.h / .cpp)</h3>
+<ul>
+<li><b>What:</b> each voice has its own quip set, held with that voice&#x27;s announcer lines (<code>AnnouncerLines::quip</code> / <code>quipName</code>) and played as <code>SND_QUIP + k</code>, up to 64 per voice. Changing the voice swaps the set and cuts a quip that is playing.
+</li>
+<li><b>Default set:</b> HEADSHOT, AIR_ROCKET, SPREE, RAMPAGE, UNSTOPPABLE, GODLIKE, NEW_LEADER and HIGH_SCORE in that voice, sorted by name.
+<ul>
+<li><b>Why only these:</b> a quip that sounds like a countdown, objective, round or time call would mislead a player.
+</li>
+<li>If one of those announcer lines is overridden, the default quip uses the override.
+</li></ul>
+</li>
+<li><b>Overrides:</b>
+<ul>
+<li>Any <code>voices/&lt;voice&gt;/quips/&lt;NAME&gt;.&lt;wav|ogg|flac|mp3&gt;</code>, shipped (<code>assets/overrides</code>) or the player&#x27;s own, replaces that voice&#x27;s whole set, sorted by name. If a name is both shipped and the player&#x27;s own, the player&#x27;s file wins.
+</li>
+<li>Each file is loudness-matched to the default quip with the same name, or to HEADSHOT, unless <code>sound-levels.txt</code> lists it. Files are cut at 5 s.
+</li>
+<li>Files in sub-folders, and files that don&#x27;t decode, are skipped.
+</li>
+<li>The new helper <code>overrides::listFolder</code> lists the folder.
+</li>
+<li><b>Why the whole set and not a merge:</b> the owner asked for the subfolder to be the quip list. A merge would make it impossible to remove a default quip.
+</li></ul>
+</li>
+<li><b>Own category:</b>
+<ul>
+<li>QUIPS off: a quip doesn&#x27;t start, and one already playing goes silent from the next mix period.
+</li>
+<li>QUIPS VOLUME scales quips only.
+</li>
+<li>EFFECTS and ANNOUNCER volume no longer touch quips.
+</li></ul>
+</li></ul>
+<h3>Network (unchanged protocol)</h3>
+<ul>
+<li>EV_QUIP still carries one random pick byte, the same for everyone. Each listener plays pick modulo the size of their own voice&#x27;s set.
+</li>
+<li>Announcer lines already play in each listener&#x27;s own voice, so quips do the same. Two players with the same voice and quip files hear the same quip.
+</li></ul>
+<h3>Settings and menu (src/client/config.*, src/client/ui)</h3>
+<ul>
+<li>New saved settings: <code>quips</code> (default 1) and <code>volume_quips</code> (default 1.00). They are applied at startup and from the console.
+</li>
+<li>VIDEO + AUDIO &gt; SOUND:
+<ul>
+<li>QUIPS VOLUME is a full-width slider under ANNOUNCER VOLUME.
+</li>
+<li>QUIPS shares HITSOUND&#x27;s row at half width. Turning it on plays a quip.
+</li>
+<li><b>Why the shared row:</b> on Windows the column also holds EXCLUSIVE AUDIO and its hint. A full extra row would push VOICE into the DEVICES button. With the shared row there is a 3 px gap, checked with a simulated Windows layout.
+</li></ul>
+</li>
+<li>The UI test (2432 widgets, 3 resolutions) passes with no layout issues.
+</li></ul>
+<h3>Assets, provenance, sound editor</h3>
+<ul>
+<li><code>quark_tests exportassets</code> writes <code>voices/&lt;voice&gt;/quips/&lt;NAME&gt;.wav</code>: 56 files, 8 per voice.
+</li>
+<li><code>tools/provenance.py</code> knows the new ids. <code>assets/provenance/voices.json</code> has 56 new entries, and <code>check</code> is ok.
+</li>
+<li>The sound editor:
+<ul>
+<li>shows a QUIPS group per voice in the Voices tab;
+</li>
+<li>exports to <code>voices/&lt;voice&gt;/quips/&lt;NAME&gt;.wav</code>;
+</li>
+<li>includes quips when copying a voice&#x27;s chain.
+</li></ul>
+</li>
+<li>Docs: docs/ASSETS.md and docs/RELEASE_CHECKLIST.md. The checklist has two new rows, and the announcer row no longer mentions quips.
+</li></ul>
+<h3>Tests</h3>
+<ul>
+<li>New <code>testQuips</code> (assets group) checks:
+<ul>
+<li>the default set has no call-out, is sorted, and matches the voice&#x27;s lines;
+</li>
+<li>pick modulo set size;
+</li>
+<li>the player&#x27;s own files replace one voice&#x27;s set only, with broken files and sub-folders skipped and the <code>sound-levels.txt</code> level kept;
+</li>
+<li>QUIPS off blocks new quips and silences one already playing;
+</li>
+<li>QUIPS VOLUME is independent of EFFECTS and ANNOUNCER volume.
+</li></ul>
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.18.19/">&larr; 1.18.19</a></span><span><a href="../1.18.21/">1.18.21 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

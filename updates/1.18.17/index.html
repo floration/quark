@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.18.17: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.18.17</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<p>Data-driven game mode logic and the gamemode editor, the third editor in the series after the bot brains (1.18.11) and the physics editor. The owner wants to make his own modes (scoring, rounds, respawns, win conditions) in an editor with code, blocks, a graph and a table of values for the same thing, as the bot editor has. For an edited mode to change the real game, the server&#x27;s mode rules now run from slots that a mode&#x27;s logic can replace one at a time. Design: the mode-editor thread&#x27;s design.md. No network protocol, map or demo format change; the 13 built-in modes play bit-identically to 1.18.15 (the lockstep below).</p>
+<h3>Custom modes keep their logic and unknown keys (src/game/customrules.{h,cpp})</h3>
+<ul>
+<li><b>Why</b>: three programs now write the same <code>custom_modes/&lt;name&gt;.qmode</code>: the game&#x27;s Host &gt; Custom modes, the physics editor and the gamemode editor. Before, a save from Host &gt; Custom modes rewrote the file from the keys it knew, so it would have deleted the mode editor&#x27;s logic and the physics editor&#x27;s keys without a word.
+</li>
+<li><b>What</b>: <code>CustomRules</code> gains <code>extraKeys</code> (key=value lines this build doesn&#x27;t know, verbatim and in file order) and <code>logic</code> (everything from the first <code>logic</code> line to the end of the file, verbatim, never parsed for keys). <code>toText()</code> writes the known keys as before, then <code>extraKeys</code>, then <code>logic</code>.
+</li>
+<li><code>toNetText()</code> is the old known-keys text, and it is what EV_RULES sends. Clients never run logic, and unknown keys mean nothing to a client of the same build, so the network text stays as small as it was.
+</li>
+<li><code>label=</code> (name#hash8, below) is a known key that is never kept in the file: the server works it out on start.
+</li>
+<li>Every trailing CR of a line is now stripped (was one), so a kept line reads back the same. The fuzzer found this on the round trip.
+</li>
+<li>Tests: rules test <code>customkeep</code>; <code>fuzz_rules</code> also checks that unknown keys and logic survive a load / save and that the network text round-trips without them; a fuzz seed with a logic block (tests/data/fuzz/rules/logic.qmode).
+</li></ul>
+<h3>Mode rules as slots (src/game/gamemodes.{h,cpp}, src/game/modeparams.h, src/game/server.cpp)</h3>
+<ul>
+<li><b>Why</b>: a mode&#x27;s logic has to be able to replace one rule (say, what a kill scores) and leave the rest native and fast. That needs each mode&#x27;s rules split at the same named points.
+</li>
+<li><b>Slots</b>: reset, warmup, matchStart, roundSetup, roundStart, live, tick, kill, stab, leave, spectate, roundOver; queries freezeLength, roundLength, roundsToWin, respawnDelay, canDamage, canHit, frozen, spawnType, teamLocked, canAutoStart.
+</li>
+<li><b>Objects</b> (native mechanics a mode switches on and hears back from as events): bombStep (plant / defuse / explode), cartStep (cartCheckpoint / delivered), pointStep (capture), raceStep (checkpoint / finish), neutralCartStep, stalemateDrain, the rock paper scissors tiebreak, the bracket&#x27;s walkover and the duel modifiers. The bomb&#x27;s plant raycast and the cart&#x27;s physics stay C++: what they mean (who wins, and why) is what a mode edits.
+</li>
+<li><b>Numbers</b>: <code>modeparams.h</code> (new) lists every number the native rules use in one <code>QUARK_MODE_PARAMS(X)</code> table (name, type, unit, range, default per mode, doc), with a constexpr <code>ModeParams</code> table per built-in mode. gamemodes.cpp reads <code>s.mp_-&gt;plantTime</code> and so on where it used constants: one L1 load each. A file that only changes numbers runs fully native with its own table.
+</li>
+<li><b>Speed</b>: native slots are switches on the mode (the old jump tables), not function-pointer tables, so the per-command queries stay inlinable. Each slot tests <code>Server::modeHooks_</code> first, which is null for every built-in mode: one predicted-not-taken branch. <code>frozen</code> is asked once a tick into a mask, not per command. serverbench shows no change in the native tick cost.
+</li>
+<li>server.cpp: killPlayer keeps the engine&#x27;s stats (deaths, kills) and the scoring moves into the kill slot, after EV_KILL and the bomb drop (nothing reads the scores in between). damagePlayer&#x27;s race and &quot;it&quot; branches became <code>rulesCanHit</code> / <code>rulesStab</code>. <code>rulesRespawnDelay</code> gets the player and <code>rulesCanDamage</code> the weapon, so a mode&#x27;s logic can decide per player and per weapon.
+</li>
+<li>Native code was refactored so a slot can be replaced on its own: <code>pickSeeker</code> / <code>pickRandomIt</code>, <code>tourneyStart</code> / <code>tourneyMatchWon</code>, the payload&#x27;s <code>delivered</code> raised once per round, <code>capture</code> raised 1-based, and LIVE runs timers, tick and timeUp in that order.
+</li>
+<li><code>modeRespawnDelay</code> / <code>modeRespawns</code> (gamedefs.h) are now constexpr: the ModeParams tables use them for each mode&#x27;s <code>respawn</code> default.
+</li>
+<li><b>No change in play</b>: a before/after trace of 13 seeded bot matches (one per mode, at 125 / 250 / 1000 Hz, 1500 s each, plus 4000 s of hide and seek) compared every tick&#x27;s ModeState, rules state, qrand state, each player&#x27;s state and every broadcast event: byte-identical. Test &quot;rules modehooks&quot;: number-only hooks run the native slots with their numbers, and hooked slots are called with their arguments.
+</li></ul>
+<h3>The mode logic language (src/game/modelogic.{h,cpp}, tools/modes/)</h3>
+<ul>
+<li><b>Format</b>: <code>tools/modes/GRAMMAR.md</code>. It is the bot brain language (lexer, typed f32 / f64 arithmetic, <code>if / elif / else</code>, <code>?:</code>, <code>param</code>, <code>curve</code>, <code>slot</code>) with a <code>logic 1</code> header and its own catalog of slots, fields and actions, plus <code>state</code>, <code>timer</code>, <code>use &lt;object&gt;</code>, <code>proc</code> (up to 4 typed arguments), <code>for p in &lt;set&gt;</code>, aggregates (<code>count</code>, <code>best</code>), <code>%</code> on ints and <code>p in &lt;set&gt;</code>. Loops walk the 32 player slots and can&#x27;t nest, so every slot has a static worst-case cost.
+</li>
+<li><b>Built-in modes as logic</b>: <code>common.qlogic</code> (merged under every mode) plus one file per mode: vs, bomb, race, koth, payload, ffa, npayload, duel, arena (the 1v1 mode: a name can&#x27;t start with a digit, and <code>mode=1v1</code> in a .qmode reads it), tourney, hide, tag, points. They say exactly what gamemodes.cpp does. <code>tools/modes/embed_modes.py</code> embeds them at build time (a CMake step, like the default brain); a missing file fails the build.
+</li>
+<li><b>Layers</b>: common, then the base mode&#x27;s file, then the custom .qmode&#x27;s logic. A file overrides only what it writes. A slot whose text matches the default runs native; only changed slots (and those calling a changed proc) are interpreted.
+</li>
+<li><b>The pipeline</b>: parser and canonical printer (<code>print(parse(text)) == text</code>, byte for byte on all 14 files), a JSON AST (the editor&#x27;s form), a type checker with line:col errors and warnings, a compiler to 8-byte instructions and an interpreter that allocates nothing per call. It talks to the game only through <code>ModeHost</code>.
+</li>
+<li><b>Limits</b> (a hostile or careless file can&#x27;t stall a server): 4096 instructions per slot, a worst case of 8192 per slot call (a loop body counts 32 times, checked at compile time), 4 nested slot calls at run time (kill() inside tick runs the kill slot; past the depth the native slot runs), 512 state values and 8 timers.
+</li>
+<li><code>logic N</code> has a converter table (<code>kModeLogicVersion</code> 1, none needed yet), as maps, demos and brains do.
+</li>
+<li><b>Label</b>: <code>name#hash8</code>, the first 8 hex digits of a sha256 over the mode&#x27;s canonical keys (not its name, map pool or label) and its merged logic without comments. Two servers showing the same label play the same rules.
+</li>
+<li><b>Cost</b> (<code>quark_tests modebench</code>: every slot of each default forced into the interpreter, 16 players): mean 170 ns per interpreted slot run. That fits easily in the design&#x27;s budget of 1 us for an interpreted tick, where a server&#x27;s whole simulation is about 4-10 us a tick.
+</li></ul>
+<h3>Logic on servers (src/game/server.{h,cpp}, gamemodes.cpp LogicHooks)</h3>
+<ul>
+<li><code>LogicHooks</code> implements <code>ModeHooks</code> and <code>ModeHost</code> over the Server. Every field and action of the catalog maps to the native state and mechanics, and announcements also go to the game log. Params are the base mode&#x27;s built-in table overridden by name.
+</li>
+<li><code>ModeHooks</code> for the interpreter: a bitmask of interpreted slots; <code>event()</code> returns false to run native (the depth limit); a read-only <code>query()</code>; <code>nativeLifetime()</code> so the logic&#x27;s state resets when reset / matchStart / roundSetup run natively. <code>frozen</code> is queried per command only when it is interpreted.
+</li>
+<li><code>Server::start</code> compiles the custom mode&#x27;s logic once. A compile error refuses the start with its line:col, which the host screen shows. The logic plays only while the server plays its base mode (the log says &quot;not played&quot; otherwise).
+</li>
+<li><b>Never on ranked or time trials</b>: <code>start()</code> now clears the custom rules for time trials as it already did for ranked, so neither can play custom numbers or logic. Their results reach the leaderboard, so they must play the standard rules. (The game never started a time trial with a custom mode; this makes the server enforce it too.)
+</li>
+<li><b>The label everywhere</b>: EV_RULES carries <code>label=name#hash8</code>; the server list name is <code>[name#hash8] &lt;server name&gt;</code>; the start log line names the label and the interpreted slots; each join log line says &quot;playing mode logic name#hash8&quot;.
+</li>
+<li><code>Server::presetModeLogic(text, base, err)</code> loads logic before start: the editor&#x27;s sim helper uses it.
+</li>
+<li><b>Where it runs</b>: games hosted with a custom mode (listen servers, unranked). Dedicated servers still have no custom-mode option.
+</li>
+<li>Clients never run mode logic. Everything a client shows already travels in ModeState, the score fields and the existing events, and the HUD follows the base mode, so the protocol stays the same and older clients joining just see the numbers they understand.
+</li></ul>
+<h3>Client (src/client/game.cpp)</h3>
+<ul>
+<li>Host &gt; Custom modes: a mode with logic shows <code>LOGIC: name#hash8</code> under the TIME / SCORE / ROUNDS hint, or the compile error in red. It is recompiled at most four times a second and only when the text changed (the hash covers the keys too), so the menu&#x27;s frame time doesn&#x27;t move.
+</li>
+<li>The CUSTOM MODE notice on joining adds <code> - LOGIC: name#hash8</code> when the server plays logic.
+</li></ul>
+<h3>Tests (tests/mode_tests.cpp, tests/rules_tests.h)</h3>
+<ul>
+<li>Group <code>modelogic</code>: round trips of every default, compile errors with line:col, the converter, every default compiling all-native, and the interpreter against a test double.
+</li>
+<li>Group <code>modelockstep</code>: two servers, one native and one with every slot forced through the interpreter, for all 13 built-in modes at 1000 / 250 / 125 Hz, 60 s each, with a coach driving the objectives. ModeState, the rules bookkeeping, qrand and the events are compared every tick: <b>1,090,375 ticks, 0 differences</b>. Also an interpreted KOTH against a server with no hooks at all, and a negative control: a kill slot that scores 2 is caught.
+</li>
+<li>Logic on servers: an unranked server plays it and shows the label; ranked and time trials drop the custom mode and its logic (a preset one too); a compile error refuses the start.
+</li>
+<li>Command-line tools for the editor: <code>quark_tests exportmode</code> (the catalog: types, slots, fields, actions, objects, params with units, ranges and each mode&#x27;s default, limits; plus every default&#x27;s text, AST, hash and slot costs), <code>checkmode &lt;file&gt; [--map &lt;name&gt;]</code> (diagnostics as JSON; with a map, an error for each map feature the logic needs that the map lacks), <code>modeast</code>, <code>printmode</code>, <code>modebench</code>.
+</li></ul>
+<h3>Sim helper (tools/mode_editor/native, linked into quark_maptool; tooling)</h3>
+<ul>
+<li><code>quark_maptool modesim</code>: one headless match of a mode on a map with bots. It runs the game&#x27;s own Server with the request&#x27;s .qmode, stepped tick by tick with no sockets and no real-time clock, so it is deterministic by seed. Output is NDJSON: start, frames (phase, round, clock, scores, objective state, players), events (kills, rounds, plants, captures, checkpoints, tags, overtime) and an end line with the winner, scoreboard and perf (times real time, server ns per tick avg / p99 / max). It can be paused, stepped, stopped and sped up over stdin.
+</li>
+<li><code>modebatch</code>: N seeds on every core but one, one fresh thread per match (batch seed N gives the same match as modesim seed N). It reports team win rates, draws, timeouts, lengths, score spread and per-bot averages, plus CSV.
+</li>
+<li><code>modecheck</code>: compiles a .qmode as modesim does and lists the map features it lacks.
+</li>
+<li>Formats: MODESIM.md; tests: test_modesim.py (every mode on its own map, determinism, rules take effect, logic labels and errors, controls, batch == modesim).
+</li></ul>
+<h3>The gamemode editor (tools/mode_editor/; tooling, not in the game download)</h3>
+<ul>
+<li>A local page on 127.0.0.1:8771 (<code>run.cmd</code> / <code>run.sh</code>; <code>install.py</code> installs or updates it into <code>Quark\gamemode-editor</code>, keeping the user&#x27;s config and provenance). Its look follows the bot editor&#x27;s brain page. The server is Python, standard library only; nothing is fetched from the internet.
+</li>
+<li>One AST (common + base mode + the file) behind seven views: <b>Code</b> (highlighted, line:col errors, canonical re-print, draft kept across restarts), <b>Blocks</b>, <b>Graph</b> (per slot or proc, plus an overview), <b>Values</b> (mode keys, params with unit / range / built-in default, state, timers, objects, curves), <b>Diff</b> against the built-in (an ordered line diff, with resets), <b>Phases</b> (warmup / freeze / round / overtime / round end / match end, each slot shown as interpreted, native or not written) and <b>Sim</b> (modesim and modebatch streamed live; when the build has no modesim the view says so and simulates nothing).
+</li>
+<li><b>The catalog comes from the game</b>: <code>quark_tests exportmode</code>. Without a build it falls back to a snapshot taken from one (<code>snapshot_catalog.py</code>), and the header says SNAPSHOT CATALOG. With the live catalog the editor&#x27;s errors and warnings match <code>checkmode</code> on all 13 built-ins.
+</li>
+<li><b>Saves never damage another editor&#x27;s lines</b>: the rule agreed with the physics editor. This editor patches only custommode / mode / timelimit / scorelimit / rounds / maps and the logic block, and keeps every other line byte for byte and in place (CRLF too). It never writes a key line after <code>logic</code>. It refuses (409) a save over a file that changed on disk since it was loaded, and (400) one that would touch a foreign line. A save writes only what differs from the built-in, so a file loads and saves to the same text.
+</li>
+<li><code>checkmode</code> (or <code>modecheck</code>) compiles the file the way the game will when the build has it. serve.py runs a quark_tests command only after finding its name in the binary, because an unknown command would run the whole test suite.
+</li>
+<li>Authorship: each save records <code>gamemodes/&lt;name&gt;</code> in the editor&#x27;s provenance.json (&quot;ai&quot; unless &quot;I wrote this myself&quot; is ticked; below).
+</li>
+<li>The JS is adapted from tools/bot_editor/web/js (each file names its source); the bot editor itself is unchanged. Tests: <code>node tools/mode_editor/web/test/run.mjs</code> (text &lt;-&gt; AST &lt;-&gt; blocks &lt;-&gt; graph round trips on all 14 defaults, the save rules, the sim formats).
+</li></ul>
+<h3>Provenance (tools/provenance.py, assets/provenance/gamemodes.json, docs/PROVENANCE.md)</h3>
+<ul>
+<li>New category <code>gamemodes</code>: one item per built-in mode logic file, <code>gamemodes/&lt;name&gt;</code> from <code>tools/modes/*.qlogic</code> (14 items, common included, all <code>ai</code>). Mode logic is something the owner can now replace by hand, like the bot areas, so it counts toward how much of the game is human-made. <code>sync</code> reads the items from the source (no build needed) and keeps a custom mode an editor names (a curated <code>gamemodes/</code> entry from a merge). <code>mode-editor</code> is a known <code>tool</code>.
+</li>
+<li>The human-made share goes from 17.8% (100 of 561) to 17.3% (100 of 575), because 14 AI-made items were added. Nothing was replaced.
+</li></ul>
+<h3>Editor Manager (tools/editor_dashboard/dashboard.py)</h3>
+<ul>
+<li>The gamemode editor is listed after the model editor (folder <code>gamemode-editor</code>, its sidecar&#x27;s tool <code>mode-editor</code>, page http://127.0.0.1:8771/), and <code>tools/mode_editor/</code> and <code>tools/modes/</code> count as its files.
+</li></ul>
+<h3>Docs</h3>
+<ul>
+<li>docs/RELEASE_CHECKLIST.md: a gamemode editor row (host a custom mode with logic and see its LOGIC label; ranked ignores logic; the editor opens on 8771, its saves keep the physics lines; Sim runs).
+</li>
+<li>docs/HANDOVER.md: tools/modes and tools/mode_editor in the repository layout. docs/PROVENANCE.md: the gamemodes row.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.18.16/">&larr; 1.18.16</a></span><span><a href="../1.18.18/">1.18.18 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

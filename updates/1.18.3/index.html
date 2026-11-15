@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.18.3: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.18.3</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<p>A server CPU pass asked for by the owner: &quot;decrease the amount of cpu it costs to run the servers; full deep analysis on every cpu cycle and if it needs to exist and ways to reduce them&quot;. Every change gives the same game results (checked by hashing the whole game state every tick, before and after), except the tick-rate check, which the owner asked to change. Network protocol unchanged (42); demos unaffected.</p>
+<h3>Where the CPU went (8 players, 1000 Hz, before)</h3>
+<ul>
+<li><b>The wait loop was most of it.</b> It spun the last 0.3 ms of every tick by re-running the whole frame, with a socket read each pass, and it woke for every input packet (8 players send 8,000 a second). On Linux that cost 25-30% of a core: 29-31% of a vCPU measured on the Oracle box, plus 30% steal. On Windows it cost about 8%, because Windows&#x27; 1 ms timer grid wakes late and the spin often started after the deadline.
+</li>
+<li><b>The game itself was small:</b> 4-10 µs a tick (0.5-1% of a core). Visibility rays (which players each client is sent) were about 70% of that with 8 humans.
+</li>
+<li><b>Snapshot encoding</b> cost about 3 µs per client, 60% of it in libm rounding calls.
+</li>
+<li><b>Syscalls (Linux):</b> about 2,400 recvfrom a second (80% of them empty), one sendto per snapshot (4,000 a second), and about 7,000 wake-ups a second.
+</li></ul>
+<h3>Wait loop (src/common/net.*, src/game/server.cpp idle(), src/server/main.cpp)</h3>
+<ul>
+<li><b>Sleep on a timer, then spin in place.</b> With humans on, the server sleeps on a timer alone until a short spin before the tick, then spins on the clock. It no longer reads the socket on every pass, and it no longer wakes for each input packet.
+<ul>
+<li>The game results are identical. Packets wait in the socket and are read in arrival order before the tick, against the same world, clock and command tokens, and nothing a command does is sent before that tick&#x27;s snapshot.
+</li>
+<li>Only info, connect and map-chunk replies can now wait up to one tick (about 1 ms).
+</li></ul>
+</li>
+<li><b>Linux:</b> the server threads get 1 ns timer slack (the default is 50 µs). On the Oracle box this cut the median wake from 74 to 25 µs late.
+<ul>
+<li>Receives use <code>recvmmsg</code>, and a tick&#x27;s snapshots go out in one <code>sendmmsg</code>.
+</li>
+<li>Measured with humans on: about 1 sleep, 1 receive batch and 1 send batch per tick, instead of 2,500 recvfrom + 430 select + 660 sendto a second.
+</li></ul>
+</li>
+<li><b>The spin adapts (<code>WakeSpin</code>).</b> It covers the host&#x27;s p99 wake lateness plus 20 µs, from 20 to 300 µs.
+<ul>
+<li>On a host whose lateness tail is beyond that (a capped or shared VM), it spins 60 µs at most. On the Oracle box, spinning longer made ticks later: it burned the CPU quota and the hypervisor paused the server. A 300 µs spin had p99 lateness of 6.9 ms; no spin had 0.3-1 ms.
+</li>
+<li><b>Windows keeps the 300 µs spin</b> so its tick timing stays as before: p99 about 700 µs late, against about 1,000 µs without it. Its timer only fires on the 1 ms clock interrupt, and the owner&#x27;s priority is latency.
+</li>
+<li><code>--tick-spin auto|N</code> sets the spin; 0 never spins and uses the least CPU.
+</li></ul>
+</li>
+<li><b>Measured, Windows</b> (8 humans, harbor): 8.3% → 7.4% of a core, or 2.7% with <code>--tick-spin 0</code>.
+</li>
+<li><b>Measured, Oracle box</b> (humans on): 29-31% → 10-12% of a vCPU, and steal 30% → 11-14%. That box also stepped down to 500 Hz under the new rate check (below), so part of this drop comes from the lower rate.
+</li></ul>
+<h3>Tick cost (same results)</h3>
+<ul>
+<li><b>Visibility (<code>Map::raycastAnyHinted</code>).</b> Each viewer/target pair remembers the brush that last blocked its sight and tries it first. That answer is used only where <code>raycastAny</code>&#x27;s own grid walk would reach that brush and hit it, so every ray gets the answer it got before.
+<ul>
+<li>Checked: 2.3 billion rays compared with zero differences, and per-tick visibility state hashed identical over 14 scenarios.
+</li>
+<li>The pair scan also skips dead slots in bulk.
+</li>
+<li>About 2x faster: snapbench midtown with 32 clients went from 97.8 to 47.5 µs.
+</li></ul>
+</li>
+<li><b>Snapshot encoding:</b> an exact <code>roundHalfAway</code> replaces <code>std::round</code> / <code>lround</code> / <code>remainder</code> in the quantizers. It was checked over all 2^32 floats, and the wire bytes hash identical. World encoding is 50% faster.
+</li>
+<li><b>Bots:</b> each bot caches its tick-rate and skill constants (exp terms, chance thresholds, sight-history offsets, turn steps), and angle wrapping takes an exact fast path when the angle is already in range. Bit-identical over 45 seeded matches at every tick rate; bot think is 15-18% faster.
+</li>
+<li><b>Lag compensation:</b> the rewind finds its history record by binary search inside the contiguous run, and the old walk&#x27;s checks finish it. A rifle shot rewound 250 ms costs 0.8 µs instead of 7.7.
+</li>
+<li><b>Hit feedback</b> walks a per-attacker bitmask instead of a 32x32 scan.
+</li>
+<li><b>Reachability check:</b> with no prober, it no longer rebuilds its status string 100 times a second.
+</li>
+<li><b>serverbench</b> (pinned core): harbor average tick 12.9 → 10.3 µs, hamlet 39.6 → 28.2 µs.
+</li></ul>
+<h3>Tick-rate check (owner; behaviour change)</h3>
+<ul>
+<li><b>Why.</b> Owner: &quot;if clients connected to the server are reporting server based time problems, aka the ticks are not all actually the supposed length, then the server should take the hz down&quot;. On the Oracle box the server was slow and never stepped down. Late ticks only counted when the server&#x27;s own CPU use was over 20%, and on a capped VM the CPU reads idle while the host pauses it.
+</li>
+<li><b>Late ticks.</b> A tick that starts more than 2 snapshot intervals late (at least 3 ms, so 4 ms at 1000 Hz) has used up the client&#x27;s interpolation buffer, and players see a hitch.
+<ul>
+<li>If over 1% of a 3 s window&#x27;s ticks are that late, the tick rate steps down whatever the CPU reads.
+</li>
+<li>Steps follow the existing rules: at the next break, or at once only when the server is over 90% busy or its own step up didn&#x27;t hold. Step-ups keep the doubling wait.
+</li>
+<li>Healthy Windows hosts measured 0.0% such ticks. The Oracle box measured 5-15%, so it runs at 500 Hz or lower.
+</li></ul>
+</li>
+<li><b>Bandwidth.</b> Owner: &quot;it should do the same for network bandwidth&quot;; the owner chose snapshots first.
+<ul>
+<li>Upload and download are now counted.
+</li>
+<li>The server is short of bandwidth when it uses over 90% of <code>--max-upload-kbps</code>, or when at least 2 players, and 2 in 3 of those on, lose snapshots or have their ping rise at once.
+</li>
+<li>It then lowers the snapshot rate (500, 333, 250, 125 a second), at once, since the game doesn&#x27;t change. Once snapshots are at their floor, it lowers the tick rate.
+</li>
+<li>Snapshots are most of the upload, and they were already capped at 500 a second apart from the tick rate, so going from 1000 to 500 Hz saved almost no upload.
+</li>
+<li>Clients follow the snapshot rate from the snapshot header.
+</li></ul>
+</li>
+<li><b>One lossy player no longer lowers the server&#x27;s rate.</b> Before, any single client reporting over 2% loss did.
+</li>
+<li><b>Reporting.</b> Every change is logged and announced in chat with its reason. <code>status</code> shows the rates, the share of late ticks, upload/download and the last change&#x27;s reason.
+</li>
+<li><b>Tests.</b> New tests in the tickrate group cover stall-driven steps, healthy jitter, an upload cap, and shared versus single-player congestion.
+</li></ul>
+<h3>Other</h3>
+<ul>
+<li>The dedicated server&#x27;s <code>Server</code> object (about 1 MB) lives on the heap instead of the main thread&#x27;s stack.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.18.2/">&larr; 1.18.2</a></span><span><a href="../1.18.4/">1.18.4 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

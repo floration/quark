@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.18.26: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.18.26</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<p>A client fix and a tests update (the &quot;Discuss and improve release tests&quot; work). No server, protocol or file format change: 1.18.26 plays with 1.18.22 to 1.18.25 (protocol 44). Times are from q&#x27;s Windows 10 PC (20 logical CPUs) and a 4-core Linux cloud box.</p>
+<h3>Weapon prediction (client)</h3>
+<ul>
+<li><b>After a knife or syringe throw, the predicted weapon stays the one held before it.</b> Since 1.18.7 the client
+ predicts the throw (<code>WeaponPredictor::thrown</code>: back to the weapon held before the knife, as the server does since
+ T14). But the commands after it rebuilt the prediction from the latest snapshot, which for one round trip still
+ shows the knife held; with the knife away that rule gives the first slot, the rocket. So the view model, HUD and
+ local fire feedback showed the rocket for one ping, then the right weapon. <code>run()</code> now keeps what <code>thrown()</code>
+ predicted while the snapshot still holds the away weapon (only then: the server&#x27;s word wins as soon as it
+ changes). Cost: four compares per tick.
+</li>
+<li>Found through the Windows test run: at Windows&#x27; 1x test pace a client tick falls inside that window; at Linux&#x27;s 4x
+ it never did, so the server-checked test missed it. A direct <code>WeaponPredictor</code> check now covers it on every
+ platform (it fails without the fix).
+</li></ul>
+<h3>Tests</h3>
+<ul>
+<li><b>Windows runs the test groups in parallel processes.</b> <code>quark_tests.exe</code> with no argument starts each group as
+ <code>quark_tests.exe group NAME --child</code> (CreateProcessW), several at once, with its output in a temp log printed in
+ the suite&#x27;s order, then runs tickrate, netcode and weaponpredict one at a time, as Linux does with fork. On q&#x27;s PC:
+ 837.7 s one after another, 199.9 s in parallel (4.2x). The longest groups (rules ~97 s, rules2 ~96 s, weapons
+ ~77 s) now set the time, so more jobs don&#x27;t help (60 jobs: 199.8 s); Windows uses 1 job per logical CPU (3 per
+ core under Wine missed 55-90 real-time checks).
+<ul>
+<li>Shared scheduler for both platforms (<code>tests/groupproc.cpp</code>: fork on Linux / macOS, CreateProcessW on Windows).
+</li>
+<li>The parent passes its port block to the children (<code>QUARK_TEST_PORTSHIFT</code>), so each group keeps its own ports.
+</li>
+<li>Children run in a job object that kills them with the parent (watchdog, Ctrl+C, a crash); compute-only groups run
+ at BELOW_NORMAL priority (nice 10 on Linux); a crash dialog never waits.
+</li>
+<li>A child that exits without its &quot;group finished&quot; line counts as a failure (Wine reports 0 for a killed process);
+ an exception exit code is reported as a crash.
+</li>
+<li><code>QUARK_TEST_JOBS=N</code> sets the job count and <code>QUARK_TEST_ONLY=a,b</code> runs only those groups, on both platforms.
+</li>
+<li>Linux is unchanged: ~107-113 s.
+</li></ul>
+</li>
+<li><b>weaponpredict on Windows:</b> the two &quot;shown from the key&quot; checks pumped 2 ms; at 1x that ran a second command after
+ the server&#x27;s refusal of the locator had come back, so <code>lastPred == WPN_LOCATOR</code> failed in every Windows run. They
+ now run exactly one command before the server runs anything.
+</li>
+<li><b>Payload push</b> waits up to 2 s more for the freeze to end before checking the round is live (it missed the 3.2 s
+ window once in a full run on a loaded box; the check itself is unchanged).
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.18.25/">&larr; 1.18.25</a></span><span><a href="../1.18.27/">1.18.27 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

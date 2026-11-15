@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.18.2: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.18.2</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<p>A gameplay update asked for by the owner: A/D strafing up, W-only air control down, quick dash as a shorter cooldown, a super dash hop that scales with the look angle, a lighter sniper body shot. It also fixes the six gameplay and visual bugs the 1.18.0 performance audit found and left for the owner&#x27;s call (five fixed here; the frame-rate-dependent view-model kick was already fixed in 1.18.0).</p>
+<ul>
+<li><b>Network protocol unchanged</b> (42). Nothing on the wire changed, so 1.18.x games and servers can connect to each other. But movement runs on both ends (client prediction, server authority), so an older 1.18 client on a 1.18.2 server, or the other way round, mispredicts A/D strafing, the quick-dash cooldown and the super dash hop, and gets corrected (rubber-banding) by the server. Balance changes have never bumped the protocol (rocket gravity, rifle damage, the 1.17 W-only air-control change); dedicated servers move to the new version when it reaches production.
+</li>
+<li>Demos are unaffected.
+</li></ul>
+<h3>Movement (src/game/pmove.cpp)</h3>
+<h4>A/D air strafing: cap +10%, acceleration +15% (owner)</h4>
+<ul>
+<li>Owner: &quot;increase ad strafing limit by 10% and increase rate of speed increase from ad strafing by 15%&quot;.
+</li>
+<li><b>Cap</b>: the Quake-style air wish-speed cap <code>kAirSpeedCap</code> (2.3) is multiplied by a new <code>kStrafeCapAD = 1.1</code> while a strafe key is held (<code>cmd.side != 0</code>): 2.53. W-only keeps 2.3.
+</li>
+<li><b>Acceleration</b>: a new <code>kStrafeAccelAD = 1.15</code> multiplies air acceleration while a strafe key is held, on top of the existing <code>kStrafeBoost</code> ramp (+10%, ramping in from 12.65 m/s).
+</li>
+<li>Together the push square to your momentum is 1.265x what it was (1.1 x 1.15): 0.0506 to 0.0640 m/s per ms below 12.65 m/s, 0.0557 to 0.0704 at full boost. The turn rate this gives at a given speed: 5.06 to 6.40 rad/s at 10 m/s, 3.48 to 4.40 at 16, 1.74 to 2.20 at 32.
+</li>
+<li>The point where the A/D boost starts (<code>cross</code>, 12.65 m/s) is still worked out from the base cap 2.3 and the unscaled air control 4, so neither change moves it.
+</li>
+<li>Measured with the game&#x27;s movement code (1 ms steps, the best of 181 yaws each ms, starting at run speed 9.5 m/s):
+</li></ul>
+<div class="scroll"><table><tr><th>Perfect strafe-jumping</th><th>Before</th><th>After</th></tr>
+<tr><td>after 1 s</td><td>18.18 m/s</td><td>20.70 m/s</td></tr>
+<tr><td>after 2 s</td><td>24.11 m/s</td><td>27.87 m/s</td></tr>
+<tr><td>after 4 s</td><td>32.88 m/s</td><td>38.35 m/s</td></tr>
+<tr><td>after 8 s</td><td>45.56 m/s</td><td>53.39 m/s</td></tr>
+</table></div>
+<ul>
+<li>At fixed turn rates (D + jump, 2 s): 30 deg/s 12.10 to 12.38 m/s; 90 deg/s 16.73 to 17.49; 180 deg/s 19.70 to 24.56; 360 deg/s 9.15 to 10.70. Overstrafing hard (720 deg/s) costs a little more: 6.65 to 6.30, because the bigger push also brakes harder past the window.
+</li></ul>
+<h4>W-only air control 10% slower (owner)</h4>
+<ul>
+<li>Owner: &quot;reduce w strafing by 10%&quot;.
+</li>
+<li>A new <code>kAirControlW = 0.9</code> multiplies the CPM-style forward/back air control rate (the turn toward where you look, speed kept, used only while no strafe key is held): min(4, 38 / speed) rad/s becomes 0.9 x that. So 4.0 to 3.6 rad/s under 9.5 m/s, 3.80 to 3.42 at 10 m/s, 2.375 to 2.138 at 16, 1.19 to 1.07 at 32. Measured toward a target 30 degrees off at 16 m/s: 68.1 to 61.3 deg/s.
+</li>
+<li><code>cross</code> again uses the unscaled 4, so the A/D boost ramp doesn&#x27;t move.
+</li></ul>
+<h4>Quick dash: a shorter cooldown instead of a third charge (owner)</h4>
+<ul>
+<li>Asked whether quick dash should get its shorter cooldown back, the owner said: &quot;quick dash should reduce dash cooldown&quot;.
+</li>
+<li>Before 1.17 quick dash recharged the dash 3x faster; 1.17 changed it to a third charge with the normal 1.2 s cooldown. Now it&#x27;s back to a third of the cooldown: a new <code>kQuickDashCooldown = 1/3</code> gives 400 ms (times a custom mode&#x27;s DASH COOLDOWN multiplier), and charges are the normal 2.
+</li>
+<li>On the floor, pressing dash repeatedly for 4 s: the cooldown allows a dash every ~1.2 s plus the dash itself (unchanged); quick dash about twice as many (was the third charge with 1.2 s). (Corrected in 1.18.7: holding dash gives one dash, since a dash needs a fresh press.) In the air from full charges: 2 dashes either way, then none until you land.
+</li>
+<li><code>dashCooldownMs()</code> takes the player&#x27;s movement modifiers now, so the HUD&#x27;s dash pips fill over 0.4 s with quick dash (they filled to a third, then lit).
+</li>
+<li>The BLADES arena rule reads &quot;KNIVES ONLY - DASH COOLDOWN 0.4 S&quot; (was &quot;A THIRD DASH CHARGE&quot;).
+</li></ul>
+<h4>Super dash: the hop rises the further down you look (owner)</h4>
+<ul>
+<li>Owner: &quot;in the hyper dash the lower you look (more directly into the ground) the higher you should bounce&quot;.
+</li>
+<li>The hop was always half a jump (<code>kSuperDashJump = 0.5</code>, 0.31 m). Now its share of the jump speed is 0.5 + 0.5 x t, with t going linearly from 0 at the super-dash threshold (the dash aimed 0.25 of the way down, 14.5 degrees) to 1 looking straight down (a new <code>kSuperDashJumpMax = 1.0</code>, a full 1.22 m jump). t is in terms of the dash&#x27;s vertical share (the sine of the look angle). A custom mode&#x27;s SUPER DASH JUMP multiplier scales both ends. Speed is unchanged.
+</li></ul>
+<div class="scroll"><table><tr><th>Look down</th><th>Hop speed</th><th>Hop height</th></tr>
+<tr><td>14.5 deg (threshold)</td><td>3.67 m/s</td><td>0.31 m (as before)</td></tr>
+<tr><td>20 deg</td><td>4.12 m/s</td><td>0.39 m</td></tr>
+<tr><td>30 deg</td><td>4.89 m/s</td><td>0.54 m</td></tr>
+<tr><td>45 deg</td><td>5.91 m/s</td><td>0.79 m</td></tr>
+<tr><td>60 deg</td><td>6.68 m/s</td><td>1.02 m</td></tr>
+<tr><td>88.8 deg (the mouse&#x27;s limit)</td><td>7.34 m/s</td><td>1.22 m</td></tr>
+</table></div>
+<ul>
+<li>Prediction matches: the dash&#x27;s vertical share (<code>dashUp</code>) is already in the own movement state while a dash runs, the only time a super dash can happen.
+</li>
+<li>The map report&#x27;s take-off envelope (the worst-case reach the map checks use) now super dashes at 88.8 degrees, where the hop is highest. <code>docs/MAP_REPORT.md</code> is regenerated: its movement envelope had not been rebuilt since the dash cooldown came back in 1.17.0, so its reach numbers drop to what the movement really allows (e.g. rise at 9.5 m/s 8.9 to 4.2 m). Every map still passes.
+</li>
+<li>The in-game tip says the hop gets higher the further down you look (it said &quot;a low hop&quot;).
+</li></ul>
+<h3>Weapons (src/game/gamedefs.h)</h3>
+<h4>Sniper body shot 40 (owner)</h4>
+<ul>
+<li>Owner: &quot;make sniper body shot do 40&quot;. Body 50 to 40; headshot stays 50 (<code>kSniperHeadDamage</code>; the server takes the larger of body and head damage, so a headshot is exactly 50). Instagib still kills with any hit (it sets damage to health + 1).
+</li>
+<li>Time to kill from 100 hp with perfect aim: 3 body shots in 3.0 s (was 2 in 1.5 s), or 2 headshots in 1.5 s. DPS against the laser&#x27;s 40: 0.83 to 0.67 on the body, 0.83 on the head.
+</li></ul>
+<h3>Fixes (the 1.18.0 audit&#x27;s gameplay bugs; owner: fix all six)</h3>
+<ul>
+<li><b>Tag knockouts carried into the next match</b>: <code>Server::tagOut_</code> was only ever added to, so in a second tag match on the same server everyone knocked out earlier was out at once. It is now cleared in <code>startMatch</code> (which covers a forcestart mid-match too) and in <code>rulesReset</code>. Test: <code>rules tag</code> plays a match out and starts another, then knocks someone out and forcestarts; everyone is back in both times.
+</li>
+<li><b>Payload cart collision box at the wrong end</b> (Railyard, team B&#x27;s rounds on maps without staged spawns): the server&#x27;s <code>updateCartSolid</code> and the client&#x27;s prediction (<code>NetClient::reconcile</code>) placed the box with the cart&#x27;s distance but not the track direction for the attacking team, 48.8 m from the drawn cart. Both now place it through <code>Map::cartTrack</code>, like everything else that places the cart. Test: <code>rules cartbox</code> checks both boxes are within 5 cm of the visible cart in rounds 1 and 2, and a shot onto the visible cart hits it.
+</li>
+<li><b>Cart shadow baked into the cached lighting</b>: the light bake copied the map with the cart&#x27;s collision box, so its shadow where the cart was at join time stayed in the cache. The bake copy now drops moving solids; <code>kBakeVersion</code> 11 to 12, so each map re-bakes once.
+</li>
+<li><b>Translucent parts of custom weapon models never drawn in first person</b>: the view model now collects its translucent triangles into their own list, uploaded with the world&#x27;s translucent ones in the same single upload, and drawn after the gun&#x27;s opaque parts (blended, no depth writes, with the view model&#x27;s projection). Without translucent parts the only extra work is one size check per frame. Checked with headless screenshots with no overrides, partly translucent and fully translucent models.
+</li>
+<li><b>An announcer line could be cut when 64 sounds played</b>: dropping &quot;the oldest&quot; took the first voice in the list, but the mixer&#x27;s swap-and-pop removal scrambles the order. Each voice now records when it started; when the mixer is full one pass over the 64 drops the oldest sound effect, and an announcer line only if every voice is one. Nothing changes until the mixer is full. Test: <code>assets</code> fills the mixer, lets a short sound end so the announcer line moves to the front, overflows it, and checks the line keeps playing.
+</li>
+<li><b>View-model kick frame-rate dependent</b>: already fixed in 1.18.0 (it recovers 8 per second), no change.
+</li>
+<li><b>HUD dash pips with quick dash</b>: see Quick dash above.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.18.1/">&larr; 1.18.1</a></span><span><a href="../1.18.3/">1.18.3 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

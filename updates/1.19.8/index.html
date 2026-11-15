@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.19.8: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Latest update</p>
+<h1>quark 1.19.8</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<p>Every change since production 1.19.7, with what changed and why. Human-made assets: 16.0% (tools/provenance.py summary). Protocol 69 (round hitboxes; 1.19.7 is 68), map format 14, unchanged from 1.19.7.</p>
+<h3>Hit registration (owner, 2026-11-04: &quot;why are the hitboxes cubes and not capsules&quot;)</h3>
+<ul>
+<li><b>Hits test two upright cylinders with flat ends instead of two boxes</b> (<code>hitShape</code>, <code>rayCylinderY</code> in pmove.h; protocol 69). The two axis-aligned boxes never turned with the player, so a standing player was 0.8 m wide face-on but 1.13 m across the corners (+41%) from 45 degrees, and the corners stuck out past the model. Now:
+<ul>
+<li>The body is a cylinder the hull&#x27;s full width (radius 0.4 m standing) from the feet up to the head&#x27;s bottom; the head is a head-wide cylinder (radius 0.18 m standing, <code>kHeadWidthFraction</code>) from there to the top. Flat ends on both (the owner: &quot;the bottom can be flat too, this makes calc easier, same with head it can be a cylinder&quot;; a capsule body and head sphere were the first version of this change). Seen from the front they are exactly the old boxes, so the owner&#x27;s 2026-10-27 rule holds unchanged: nothing beside the head over the shoulders, just under the head&#x27;s bottom is a body hit.
+</li>
+<li>Size modifiers (giant, tiny) and the knife&#x27;s wider swing (<code>grow</code>) scale both, as before.
+</li>
+<li>The movement hull is unchanged (a box), and so is the network traffic.
+</li></ul>
+</li>
+<li><b>Cost:</b> the same as before. A shot first tests the old box around both (the cheap reject). The side&#x27;s hit-or-miss is the line&#x27;s squared distance from the axis against the radius squared, and a flat end is a plane and a squared distance; the one square root (the exact entry on the side) is taken only when the line passes within the radius.
+</li>
+<li><b>Everything that tests a player uses it:</b> hitscan on the server (with lag compensation), projectiles, glass shards, the knife, the grapple&#x27;s catch (pmove: the client&#x27;s prediction too), the client&#x27;s own hit reports and sparks, and blasts (<code>hitboxClosest</code>: the nearest point on the body or the head). quark_maptool&#x27;s pellet stats (<code>wpn_stats.cpp</code>) see the same rectangles from the front as before.
+</li>
+<li><b>Tests (rules head):</b> every size still passes the head, beside-the-head, shoulder-corner, under-the-chin, from-above and knife checks, plus a new one: a level shot 2% inside the radius hits and 2% outside misses from 0, 23, 45 and 69 degrees (a box failed this at 45).
+</li></ul>
+<h3>Main menu (owner, 2026-11-04: design &quot;Y&quot;, &quot;combine X2 and X3&quot;)</h3>
+<ul>
+<li><b>Layout.</b> The one-column menu of 15 buttons (the big QUARK title, the name field, then two buttons a row) is replaced by a 72 px (720p design) icon strip on the far left and the current tab&#x27;s page on a see-through rail beside it. The strip has the title&#x27;s Q (<code>Renderer::logoQ</code>: the baked logo&#x27;s first 134 texel columns, so the Q is drawn exactly as in the title, team colours and FIXED LOGO COLORS included), the tabs PLAY / PRACTICE / CREATE (the page changes), RANKS (the leaderboard) and SETTINGS (the settings screen), and at its foot DISCORD, INFO and QUIT as icons with a label beside the strip on hover. QUIT keeps CONFIRM LEAVING: the first click arms it (red, SURE? QUIT), the second quits. The icons are drawn with the 2D primitives (<code>quad2D</code> segments, <code>roundRect</code> rings), no textures. The rail is mock4&#x27;s gradient (dark behind the page, clear by two thirds of the width, a little darker at the right edge) instead of the 60% veil over the whole backdrop, so the map shows on the right. The version moved beside the strip. The big title is no longer drawn over the main page (it still is over the save-copy and tutorial questions).
+</li>
+<li><b>PLAY.</b> LAST PLAYED: the mode, map and server of the last game you joined, with live players and ping when the server list has that address (matched by IP, no DNS lookup), and RECONNECT. New config keys <code>last_mode</code>, <code>last_map</code>, <code>last_server</code> record them: the server&#x27;s name when you connect from the list, the mode (with its ruleset or ranked ladder) and map once the first snapshot arrives. Connecting to another address clears them. They are kept by RESET ALL and left out of EXPORT like <code>last_address</code>. With no game yet (no recent server and no last map, as on a fresh install whose <code>last_address</code> defaults to 127.0.0.1) the card says NO GAME YET and its button is FIND A SERVER (JOIN). Then SERVERS (JOIN), BOTS (PLAY VS BOTS), HOST. On the right OFFICIAL SERVERS lists the built-in official addresses (<code>kOfficialServers</code>, master.h; PROD for production on 27500, TESTING for 27501) with the name, players and ping the list has for them, or <code>...</code> until it answers; a click joins. The last row counts the other servers (COMMUNITY · N MORE) and opens JOIN. MORE WAYS TO PLAY: RANKED opens HOST with its ranked ladder picker (the existing <code>PICK_RANKED</code>, <code>host/picker:ladders</code>; there is no ranked queue outside a server), CUSTOM MODE opens the custom mode builder on HOST&#x27;s chosen custom mode, or a new one (as HOST&#x27;s EDIT / NEW). Its BACK and Esc return to the main menu when it was opened there (<code>customFromMain_</code>, set as the screen opens: the UI test fails an Esc that leaves for a screen not on the way in), and to HOST when opened from HOST; SAVE still goes to HOST with the mode picked, ready to start.
+</li>
+<li><b>The server list only runs while PLAY is up.</b> Opening the PLAY tab refreshes the list as JOIN does (LAN broadcast, the internet list on its background thread, one query per listed server), at most every 10 s from here (JOIN still refreshes on every open), and <code>ServerBrowser::poll</code> runs only on JOIN or the PLAY tab. PRACTICE, CREATE and every other screen send nothing. No server is queried that JOIN wouldn&#x27;t query.
+</li>
+<li><b>PRACTICE.</b> AIM TRAINER: the scenario you started last (new key <code>last_trainer</code>, &quot;&lt;id&gt;:&lt;difficulty&gt;&quot;, written by <code>trainerStart</code>), its mode and difficulty, and LAST RUN / BEST from <code>trainer-scores.txt</code> when you have played it. START plays it again; ALL SCENARIOS opens the trainer&#x27;s menu (with no scenario yet, START opens the menu). Then TIME TRIAL, TUTORIAL and BENCHMARK, each with a short hint. YOUR BESTS shows only saved records: the two most played trainer scenarios&#x27; bests, each ranked race map&#x27;s best time trial (<code>race_times.log</code>), and the newest benchmark&#x27;s 1% low (its <code>.qbench</code> header). Nothing saved: one grey line.
+</li>
+<li><b>CREATE.</b> MAP EDITOR with OPEN EDITOR (and how many maps are in your maps folder), DEMOS, and RECENT MAPS: your maps folder&#x27;s <code>.qmap</code> files, newest first by file time, at most 5; a click opens that map in the editor.
+</li>
+<li><b>Name chip.</b> The name field became a chip top right (a square in your team colour with the first letter, then the name). A click opens it as the same text field (<code>NAME</code>, 20 characters); Enter, Esc or a click elsewhere closes it and saves. YOUR NAME (CHAT AND SCOREBOARD) shows under it on hover and while editing.
+</li>
+<li><b>The tab is remembered.</b> <code>mainTab_</code> stays while a page opened from the menu is up, so BACK (and Esc) from JOIN, HOST, VS BOTS, DEMOS, the trainer, the benchmarks, the leaderboard, settings and info, and leaving a game, come back to the tab you left. Esc on PRACTICE or CREATE goes to PLAY. The UI test&#x27;s BACK expectations accept any main tab (<code>nav(&quot;main*&quot;)</code>).
+</li>
+<li><b>Cost.</b> In a match nothing runs: <code>drawMenu</code> returns before any of it. In the menu: no file is read per frame. PRACTICE&#x27;s bests (trainer scores, race log, the newest benchmark header) and CREATE&#x27;s map list are read when the tab opens or the menu comes back. Fixed labels are static strings and numbers are formatted into reused strings, so a frame allocates nothing new beyond what the widgets did before.
+</li>
+<li><b>Narrow and wide screens.</b> The strip and page are anchored left, the chip and panels right. Below 280 design px of room beside the page (squarer than 5:4) the panels move under the page. Checked at 16:9, 5:4, 4:3 (the UI test&#x27;s 1024x768) and 21:9.
+</li>
+<li><b>Paths and tests.</b> Menu paths <code>main</code> (PLAY), <code>main/practice</code>, <code>main/create</code> (<code>--menupage main/practice</code> for screenshots). The UI test visits every tab and widget, and a new check (<code>mainMenuCheck</code>) fails the run unless each of the old menu&#x27;s 15 destinations (PLAY VS BOTS, TIME TRIAL, JOIN GAME, RECONNECT, HOST GAME, TUTORIAL, MAP EDITOR, LEADERBOARD, SETTINGS, INFO, DISCORD, DEMOS, AIM TRAINER, BENCHMARK, QUIT) plus the name, RANKED and CUSTOM MODE is on one of the three tabs with the same expectation as before.
+</li>
+<li><b>Text.</b> 42 new strings, translated into all nine other languages; the INFO pages and notices that named the old buttons now say PLAY &gt; SERVERS, PLAY &gt; HOST, PLAY &gt; BOTS, CREATE &gt; OPEN EDITOR, CREATE &gt; DEMOS and PRACTICE &gt; TIME TRIAL / TUTORIAL. Eight new CJK characters were added to the ja, ko and zh-CN atlases (<code>make_atlas.py</code>). Spanish and French use CREACIÓN / CRÉATION for CREATE because their HOST is already CREAR / CRÉER; the testing badge is TESTING, not TEST, because &quot;TEST&quot; is a verb in some tables.
+</li></ul>
+<h3>Build and release (CI)</h3>
+<ul>
+<li><b>The macOS build goes to an Intel Mac first, with arm64 as the fallback.</b> On 2026-11-02, from 13:39 to 23:08 UTC, GitHub&#x27;s macOS arm64 pool was full. Every <code>macos-latest</code> job sat queued about 15 minutes, then ended with &quot;The job was not acquired by Runner of type hosted even after multiple attempts&quot;. That turned every macos run red (runs 187-205), and those testing builds and releases 1.19.5 and 1.19.6 went out without macOS files. A probe at 22:55 UTC showed the split: <code>macos-14</code> got a runner in 3 s, <code>macos-15-intel</code> in 19 s, <code>macos-latest</code> and <code>macos-26</code> only after 13 min, and <code>macos-15</code> never did. The build steps moved to <code>.github/actions/macos-build</code>. The <code>macos</code> job now runs them on <code>macos-15-intel</code>, and the new <code>macos-arm</code> job (<code>macos-latest</code>) runs them only when the Intel job didn&#x27;t build. Both make the same universal (arm64 + x86_64, macOS 10.15+) files, and <code>publish</code> takes whichever one built. The trade-off: when no Intel Mac picks the job up, the arm64 fallback starts about 15 min later and the run still shows that first job as failed. GitHub plans to retire <code>macos-15-intel</code> in August 2027; switch the order back before then.
+</li></ul>
+<h3>Tests (quark_tests)</h3>
+<ul>
+<li><b>modelockstep2: no more &quot;winner at N Hz: no hooks&quot;.</b> The lockstep cases still had a winner stays case. Winner stays was retired (1v1 rotates the line itself now), so a server started in it plays 1v1 (<code>retiredTo</code>). Logic compiled for winner stays never hooks into a 1v1 server, which made it fail at 1000, 250 and 125 Hz, on 1.19.6 too. The case is gone, and 1v1&#x27;s case covers the line.
+</li>
+<li><b>The 3D flying checks (rules flymod, vamp3d) no longer fail under load.</b> <code>pump()</code> counts wall-clock time, and under load the server&#x27;s own clock falls behind it, so 0.5 s after <code>addBot</code> the flymod bot often hadn&#x27;t spawned yet. With eight busy cores beside it, the check failed in 8 of 8 runs; now it fails in 0 of 8. Both tests now pump server time and wait (for up to 5 s of game time) for the spawn and for the fly flag&#x27;s snapshot.
+</li>
+<li><b>The movement group&#x27;s air drift checks follow <code>kAirDriftAccel</code>.</b> The owner set air drift to 0 on 2026-11-01 (protocol 63). The checks still expected 8 m/s² of drift: a standing jump + W at about 7 m/s, a long fall reaching 9.5 m/s, and a sideways push past 3 m/s. That made 3 checks fail. With drift at 0, they now check the strafe push alone: 2.30 m/s for W-only and 2.53 m/s for A/D. If drift comes back, the old numbers apply again.
+</li></ul>
+<h3>Maps (map audit of testing @ fcc1c25, 2026-11-03)</h3>
+<ul>
+<li><b>Cobblestone (q&#x27;s hand-made benchmark map) built for FFA</b> (owner, 2026-11-03: &quot;cobblestone is ffa so you need to add some more spawns&quot;). It had only 4 spawns, 2 per team. Added:
+<ul>
+<li>16 <code>spawn any</code> spots, one on each part of the map (ground, the 8 m bridges and walkways, the 13.5 m and 21.5 m roofs), each facing the middle. Every spot came from <code>quark_maptool route</code> from an existing spawn, so each one is a standing spot the walk grid reaches.
+</li>
+<li>2 more <code>a</code> and 2 more <code>b</code> spawns beside the old ones, because team vs needs 4 a side (<code>spawn_pools</code> failed with 2).
+</li>
+<li><code>setting a cobbled old town of brick, timber and tin roofs</code>, <code>for ffa</code>, <code>modes ffa 1v1 duel vs tourney</code>.
+</li>
+<li><code>quark_maptool check</code> for ffa, vs and 1v1 passes every check, including out of bounds (1380 m² reachable only with movement tech, 0 m² outside the footprint). Nothing else in the map changed: it&#x27;s still q&#x27;s file.
+</li></ul>
+</li>
+<li><b>Mode coverage: one-way payload gets a map built for it.</b> The audit counted each mode&#x27;s built-for maps (the <code>for</code> line, which the menus pick by default) against a target of 2: one-way payload had none (only Railyard plays it) and ball one (Stadium). Railyard is now <code>for payload</code> (its track starts in team A&#x27;s roundhouse) and still offers neutral payload, ball and free for all, so neutral payload keeps three built-for maps (Dam, Express, Monorail). Duel needs no map of its own: like tourney it is a 1v1 variant and plays every 1v1 map (q), so the QK maps and Orbit stay <code>for 1v1</code>. Ball stays on Stadium until a new ball map is built (q). Ranked is unchanged: a ladder reads the <code>ranked</code> line and the official list (<code>isRankedMap</code>), never <code>for</code>.
+</li>
+<li><b>Black Hole offers duel and team vs</b> (<code>m.also = [&quot;duel&quot;, &quot;vs&quot;]</code>): it was the only map that offers 1v1 without them (modes were <code>1v1 tourney ffa</code>). It has 4 + 4 team spawns, so <code>canSupportMode</code> takes both. Its docstring and MAP_STRUCTURES.md no longer name winner stays, which was retired.
+</li>
+<li><b>Doubled brushes removed</b> (the same material on the same box twice: two draws and two collision tests of one box, and the editor&#x27;s FIX MAP would delete them): Mine 24 (neighbouring rooms each wrote their shared wall and ceiling boxes; <code>build_rooms</code> keeps each box once), QK6 21 (m2kit&#x27;s <code>Rooms.build</code> wrote the wall two rooms 1 m apart share once per room; it now writes each box once, which changes no other map), Cruise Ship 8 (the last suite&#x27;s end wall is the fore cabins&#x27; first partition; side-by-side inner rooms wrote their shared partition twice), Railyard 8 (the floodlight list named (-31.5, -20), the point-mirror twin of (31.5, 20), so that pair of masts was drawn twice and its two lights were doubled: those two masts are now as bright as the others). Tutorial&#x27;s one doubled box (<code>box -91 -2 -225.5 -29 12 -224.5</code>) is left for the tutorial&#x27;s own work.
+</li>
+<li><b>Mine: two door sills drawn in two materials on one box</b> (z-fighting): the refuge&#x27;s (<code>castiron</code> over <code>wetcaverock</code>, -64 -46 -87 .. -56 -45 -86) and the grotto&#x27;s (<code>glowwormcave</code> over <code>wetcaverock</code>, -15 -46 -67 .. -9 -45 -66). Each keeps its room&#x27;s own material, the one the room was built with.
+</li>
+<li><b>Black Hole: two far boxes 0 m wide</b> (<code>far 0 -16 -156 0 -14 -144</code> and <code>far 0 42 -156 0 44 -144</code>): the black disc&#x27;s top and bottom rows touch the circle at one point, so their width was 0 and they were never drawn. Those rows are skipped.
+</li>
+<li><b>Map builder cleanup, output unchanged</b> (every generated map in <code>maps/</code> and <code>maps/legacy/</code> byte-identical before and after, by sha256): <code>m4kit.py</code> was a copy of <code>bigkit.py</code> used only by Solar and <code>m5kit.py</code> a copy plus its own helpers, so <code>_materials</code>, <code>num</code>, <code>mat_id</code>, <code>clip_poly</code>, <code>yaw_to</code> and the whole <code>Kit</code> were defined three times. <code>bigkit</code>&#x27;s <code>Kit.stairs</code> took m4kit&#x27;s <code>floor=None</code> (unchanged when left out), Solar imports bigkit, m4kit is gone, and m5kit imports the kit and keeps only its own helpers. <code>m2kit.line_wall</code> and <code>m2kit.cutbox</code> had no caller. Orbit set its modes by rewriting its own saved file; it sets <code>no_ffa</code> like the race courses. Kit docstrings no longer name maps that are hand-made now.
+</li>
+<li><b>quark_maptool (the editors&#x27; checks) agrees with quark_tests.</b> It failed four maps the tests pass, so the editor showed q failures CI didn&#x27;t have:
+<ul>
+<li><code>ranked_mirror</code> still demanded point symmetry (Greenhouse: 194 solids without a mirrored twin, Spire 584); the tests judge ranked maps by fairness since 2026-10-30. That judgement is now one function, <code>rankedFairness</code> (tests/walkgrid.h: as many spawns a side; on a ladder played 1v1, both sides within 1 s of each other to the enemy spawns and to the middle on a plain run), which <code>testMaps</code> and the maptool check both call. Greenhouse: 5.8 / 5.8 s to the enemy, 2.9 / 2.6 s to the middle. The check id stays <code>ranked_mirror</code> because the Quarkology editors use it.
+</li>
+<li><code>nav_routes</code> walked to every checkpoint, so Solar failed every one; on a surf map the checkpoints are ridden, not walked, and the tests skip them. Maptool does too.
+</li>
+<li><code>out_of_bounds</code> was a copy of the old map report&#x27;s measure (the surfaces nav graph instead of the bots&#x27;, and other ladder links) and found 46,360 m² out of bounds on Tutorial where the tests find none. <code>tests/mapbounds.cpp</code> is now just the measure (<code>measureOutOfBounds</code>, <code>tests/mapbounds.h</code>) and is compiled into quark_maptool too, which passes its threaded walk grid in (the same grid spot for spot); <code>outOfBoundsTests</code> moved to tests.cpp and prints as before. Tutorial now: 0 m², Greenhouse 360 m² tech-only and 0 out of bounds, Spire 904 and 0.
+</li></ul>
+</li>
+<li><b>Docs:</b> CLAUDE.md&#x27;s map section described the pool before 1.19.6 (19 of its 21 maps are legacy now); it lists the current pool by built-for mode, the ranked maps and ladder defaults, the hand-made maps and the legacy maps, and the offering rule as <code>M.save</code> applies it (the Lodestone sentence went with Lodestone into legacy). MAP_STRUCTURES.md&#x27;s table follows the shipped <code>modes</code> lines (eight rows were off), gains Stadium (row and section) and loses a pointer to a plan that isn&#x27;t in the repo. HANDOVER, the release checklist&#x27;s Depot rows and the maptool README (&quot;21 shipped maps&quot;) are current.
+</li></ul>
+<h3>Performance (owner, 2026-11-02: &quot;checks the game for performance blocks&quot;; desktop Tracy profile 2026-11-03: GPU-bound, the GPU world pass is 176 of ~290 µs a frame)</h3>
+<ul>
+<li><b>Cobblestone (material 24) shader</b> (1.20 list C, owner 2026-11-03 &quot;go ahead and do all of this&quot;; q&#x27;s bench 2026-10-29: an all-cobblestone map&#x27;s 0.1% low was ~800 FPS against ~2800 with the old materials). Per pixel the look paid for an exact border-distance Voronoi over 3x3 + 5x5 cells (34 hash22 = 68 sin) plus a 3-octave fbm (12 hash2): about 80 sin calls. Now:
+<ul>
+<li>the border pass looks at the 3x3 cells around the nearest one, not 5x5 (9 instead of 25). It can miss a bisector two cells out only when a point sits in a far corner, which moves a joint by well under a pixel;
+</li>
+<li>far / grazing (a stone under ~2.5 pixels), the cells are skipped altogether: the stones&#x27; average colour, faded in over the same footprint PATTERN FADE uses, so nothing pops;
+</li>
+<li>the grain is 2 octaves of anti-aliased value noise, not fbm&#x27;s 3.
+ About 44 sin calls up close (-45%) and 8 far away (-90%). A/B (5 interleaved runs, llvmpipe, <code>--bench 8</code> in an all-cobblestone room): 36-38 -&gt; 50-52 FPS average, 1% low 25-30 -&gt; 40-41, 0.1% low 19-28 -&gt; 30-37. Screenshot diff at the same camera: mean 0.46 / 255, 0.15% of pixels over 16. q&#x27;s desktop is the real test (F3 0.1% low on Cobblestone).
+</li></ul>
+</li>
+<li>quark_maptool <code>bots</code>: the result has <code>powerPools</code> [A, B] in power mode. Used to check &quot;power bots favour team A&quot; (1.20 list C): 60 three-on-three matches on Reactors, Sewer, Amphitheatre and Bridge, 240 s each: A ahead 32, B 28. No bias, so no change.
+</li>
+<li><b>World pass without discard while no holes are blown.</b> The world shader has two <code>discard</code>s: holes in thin breakable walls, and the see-through pass&#x27;s invisible pixels. A shader with <code>discard</code> makes the GPU run it before the depth test, so every hidden pixel behind a nearer wall gets shaded. <code>Renderer::buildWorldFast</code> compiles a second world program without them (<code>compileWorld(..., noDiscard)</code>), and <code>drawScene</code> uses it for the opaque pass while <code>holeCount_</code> is 0. The frame&#x27;s own uniforms are set on both programs in <code>prepareScene</code> / <code>drawScene</code>; the rest (looks, grade, fog, shadow size, render scale, clean surfaces) are copied from <code>worldProg_</code> by <code>syncWorldFast</code> only after a setter marks them stale (<code>worldFastDirty_</code>). With holes blown, and in the block and see-through passes, the old program draws as before.
+<ul>
+<li>Desktop A/B of the shipped code (3090 Ti, Hamlet <code>--benchmark</code> 2560x1440 fullscreen ULTRA, 6 interleaved rounds, <code>QUARK_WORLD_DISCARD=1</code> against the default): 3561 to 3696 average FPS (+3.8%), 1% low 2848 to 3117 (+9.4%), 0.1% low 2589 to 2881 (+11.3%), every round. Tracy: GPU world pass 177.5 to 129.0 µs (-27%), CPU world pass unchanged (65.7 / 64.8 µs), the full uniform copy runs 3 times, all at map load. The screenshots are pixel-identical, and a hole blown in a brick wall stays see-through with no flicker (a test map on the desktop).
+</li>
+<li>Two earlier versions lost 6% average FPS: reading the uniforms back each frame (<code>glGetUniform*</code>) cost 83 µs of CPU. The first one copied every frame by design, and the second one copied every frame by mistake, because <code>buildCleanMeans</code> (called every frame with PATTERN FADE on) marked the copy stale before its early return.
+</li>
+<li>The other candidates tested in the same run: nearest-chunks-first (+2.6% avg, but coplanar faces flicker as the camera moves) and a depth-only prepass (-29% GPU world pass, but flat average FPS at ~3500 FPS). Neither ships.
+</li>
+<li><code>QUARK_WORLD_DISCARD=1</code> turns the second program off, for A/B, and so does the LATENCY tab&#x27;s new <b>EARLY DEPTH TEST</b> switch (<code>fast_world</code>, on by default; F3&#x27;s tweaks line shows EARLY DEPTH), added so the owner can A/B it in game (owner, 2026-11-03: &quot;keep the option i want to test it myself&quot;).
+</li></ul>
+</li>
+<li><b>Russian LIGHTMAP FILTER label clipped at 1280x720</b>: its values were &quot;ЛАЙТМАП: ГЛАДКИЙ&quot; / &quot;ЛАЙТМАП: РЕЗКИЙ&quot;, repeating the label&#x27;s subject; now just ГЛАДКИЙ / РЕЗКИЙ (the UI test&#x27;s layout check).
+</li>
+<li><b>Small per-frame savings</b> from a code audit: the last per-frame <code>glGetUniformLocation</code> (uWorldEdge) is cached, the CLEAN SURFACES key is a <code>std::array</code> instead of a heap-allocated vector each frame, and the frame-time ring wraps with a mask instead of a 64-bit divide.
+</li>
+<li><b>Build flags measured</b> (desktop, interleaved): -O2 against -O3 + LTO + AVX2 is within 0.1% (GPU-bound). LOW LATENCY ON costs 3.3% average FPS but has the best lows (+2% vs OFF); ULTRA costs 8.2% average.
+</li>
+<li><code>tools/lang/extract.py</code> skips <code>static_assert</code> messages, which are never drawn.
+</li>
+<li><b>Frame walkthrough</b> (owner, 2026-11-02: &quot;build a document that shows the code, pseudo code, and instructions for a single frame end to end&quot;): every stage of a frame from the desktop Tracy captures (1.19.7, 3090 Ti, 1440p, ULTRA) with code, pseudo code, the hot machine code, what it does and why, and ranked fixes. The frame is GPU-bound (GPU world pass 176 of ~290 µs); the CPU&#x27;s real work is ~167 µs (bench) / ~128 µs (FFA), the rest waiting on the GPU. Every big spike in the captures (1.6 s, 6.7 ms, 3.6 ms, 1.9 ms) was during a map load; the worst in-play frame was ~0.7 ms. The items below came out of it. Desktop A/B of all of them together (Hamlet <code>--benchmark</code>, 6 interleaved rounds, base b332895 against 766e6f4): 3561 to 3806 average FPS (+6.85%), 1% low 2839 to 2952 (+3.98%), 0.1% low 2580 to 2684 (+4.02%), every round; Tracy: prepareScene 26.3 to 13.6 µs, CPU shadow pass 11.3 to 3.9 µs, drawWorld 149.7 to 123.5 µs, Game::frame 178.6 to ~138 µs; the GPU world pass is unchanged (176 µs), so the frame is even more GPU-bound. The early depth test above was not in either side and stacks.
+<ul>
+<li><b>Shadow caster rect from bounding spheres.</b> <code>prepareScene</code> used to put every caster triangle (4,539 vertices on the benchmark, reading 12 of each 72 bytes) through the shadow matrix to find the part of the shadow map casters can touch. <code>box</code>, <code>boxPitched</code>, <code>mesh</code> and the editor&#x27;s dynamic <code>slope</code> now record a centre and radius as they emit, and the rect is the union of their circles (radius × the light rows&#x27; length). It is never smaller than the old rect (2,000 random scenes: always contains it, 1.5% larger on average). Micro-benchmark: 25-31 µs to 1.3 µs a frame at 8 players, 75-94 to 4-5 µs at 24. Screenshots identical.
+</li>
+<li><b>44-byte dynamic vertex (was 72).</b> Positions stay float; the normal is three shorts, colour + sun visibility, edge distances and outline colour + width are half floats (the edge now stores the distance to all four edges and the vertex shader rebuilds the old form, so halfs lose nothing on a slope&#x27;s 1000 m &quot;no edge&quot;). <code>emitBox</code> packs a box&#x27;s values once and writes every vertex in place (building a vertex on the stack and copying it was slower: store-forwarding stalls); <code>DynVertex</code> no longer zero-fills when the lists grow. Meshes use SSE2 for the packing (scalar fallback for arm64). Box emission 240 to 155 ns, the upload 405 to 248 KB a frame at 8 players. Trade-off: colours quantize to within 2 of 255 levels on 0.7% of pixels (player faces, the view model); outlines unchanged.
+</li>
+<li><b>The dynamic buffer is orphaned at the bytes written</b> (rounded up to 64 KB) instead of the whole grown capacity. Pre-sizing it at init and orphaning it whole measured slower (632 against 592 µs prepareScene on software GL); bytes-written measured 566.
+</li>
+<li><b>Shadow pass scissored to the caster rect</b> (+3 texels a side, more than the widest filter reaches). The GPU shadow pass cost a flat 16.4 µs whatever the casters, i.e. the full 2048² clear; nothing outside the rect is ever sampled.
+</li>
+<li><b>Stuck props:</b> each prop&#x27;s model yaw and pitch (<code>atan2</code> + <code>asin</code>) are worked out once when it lands (<code>readPropEvent</code>) instead of every frame; bit-identical (a test compares them). <code>drawStuckProps</code> was 10 µs a frame on the benchmark.
+</li>
+<li><b>Collision grid compact references.</b> Beside <code>cellBrushes</code> the grid keeps <code>cellRefs</code> (28-byte <code>GridRef</code>: the brush&#x27;s box, shape, a stops-players / shots / sight / clip / wallbang / glass bit set, and its index), written by <code>buildGrid</code> and <code>changeBrush</code> (the only two writers). Sweeps (<code>forBox</code>) and rays (<code>raycast</code>, <code>raycastBullet</code>, <code>castAny</code>, <code>raycastAnyHinted</code>) no longer load a 148-byte <code>Brush</code> per reference just to read its material; a <code>Brush</code> is read only for a slope&#x27;s planes or a hit&#x27;s material. Results are bit-identical: 11.9 M queries on all 62 maps (rays at body heights with and without clip, sweeps on 3 axes at 4 scales, boxSolid, again after breaking glass, blocks and holes) compared old against new, simhash and the ISA check unchanged. Rays 14-32% faster, sweeps 2-25%, a server tick ~4% (serverbench). A test checks the refs stay in step after random edits and destruction. Trade-off: 28 bytes per grid reference (~330 KB on hamlet).
+</li>
+<li><b>Server game log on its own thread.</b> <code>--log</code> lines are formatted on the tick thread into a reused buffer and handed to an <code>AsyncFileWriter</code> (as the demo recorder) every 256 KB or 1 s; before, a 1 MB stdio buffer was written inside whichever tick filled it. Same bytes (md5 of a 23 MB extreme log). Against a disk draining at 8 MB/s the worst tick fell from 5-97 ms to 1.5-6 ms. Trade-off: if the disk stalls, the waiting log grows in memory.
+</li>
+<li><b>Loading screen paced to a 33 ms deadline</b> (<code>sleepPrecise</code>, waking as soon as the bake ends) instead of 30 × <code>sleepMs(1)</code>, which takes ~2 ms each on Windows: frames went from ~60 ms (16 FPS) to ~35 ms.
+</li>
+<li><b>Renderer warmup covers more first-use driver work:</b> the late-latch buffer is created at load (it was created on the first frame in play, latch on or off), and the warmup draws two frames, the second with the view model faded and its translucent parts. The first-frames view-pass spike went from ~1.6 to ~0.33 ms on software GL. Trade-off: one more warmup frame per load, behind the loading screen.
+</li>
+<li><b>Bots:</b> the route searches&#x27; scratch is sized when the nav graph is built (in the background), and the build thread frees its own copy of the map. The first bot think on a map went from 75 to 41 µs; decisions unchanged (simhash identical).
+</li>
+<li><b>Profiling builds:</b> the stderr stats line printed every 5 s from <code>flush2D</code> is gone (it made a 0.5 ms frame every 5 s in Tracy captures, 215 ms on the desktop&#x27;s console); its values are Tracy plots now.
+</li></ul>
+</li>
+<li><b>Clean-surface averages on the GPU</b> (frame walkthrough: the readback was a 4.5-6 ms CPU wait at each load, and again on every frame a palette setting changed). Each look&#x27;s patches go on a 64 px grid of one RGBA32F texture, <code>glGenerateMipmap</code> level 6 holds one texel per patch (its mean), and one <code>glBlitFramebuffer</code> per look copies them into <code>uCleanTex</code>; the world shader is unchanged and nothing waits on <code>glReadPixels</code>. Unused materials are cleared with <code>glClearBufferfv</code> (now in the required GL 3.0 loader list). Rebuilds are capped at 10 per second while a slider is dragged (the last value always applied). Results match the old CPU averages within 1.3e-7. Trade-off: on software GL (llvmpipe) a rebuild costs a little more CPU.
+</li>
+<li><b>BORDERLESS is the default display for a new config</b> (owner, 2026-11-03: &quot;borderless gets more perf than windowed already massively&quot;; the adversarial review of the frame walkthrough flagged the compositor as the biggest latency lead: a composed window adds 2 to 6 ms on Windows). <code>displayMode</code> defaults to 1. A config from before (no <code>display_default</code> key) on WINDOWED moves to BORDERLESS once in <code>finishLoad</code>; <code>display_default=1</code> is written from then on, so a player who sets WINDOWED again keeps it. Screenshot and UI test runs on a fresh data folder stay windowed at the config&#x27;s size, so their pictures don&#x27;t depend on the monitor.
+</li>
+<li><b>Profile-guided dedicated server</b> (owner, 2026-11-03: &quot;what about that behavior defined compile options ... where it uses the program itself to make it optimize better?&quot;, then &quot;4% faster server is nice&quot;). CMake <code>QUARK_PGO=OFF|GEN|USE</code> + <code>QUARK_PGO_DIR</code> (GCC: <code>-fprofile-generate</code> with atomic counters, then <code>-fprofile-use -fprofile-partial-training -fprofile-correction</code>, coverage mismatches only a warning; clang: .profraw merged to quark.profdata), <code>tools/pgo_train.sh</code> (benchmark demo, hosted FFA, <code>quark_tests serverbench</code>, simhash) and <code>tools/pgo_server.sh</code>, which the Linux release job now runs: an instrumented server-only build, its training (serverbench over five maps / modes plus simhash, ~30 s), the profiled build, and a check that it simulates exactly as the normal build (simhash, 10 seeds; any difference fails the release). The shipped Linux <code>quark_server</code> is the profiled one; the client and the Windows / macOS builds are unchanged. Why: the code layout and inlining follow how the server really runs; PGO never touches the float maths (the fast-math rules hold). Measured on a 4-core VM, Hamlet FFA 24 bots + 8 clients, interleaved: tick avg -3.7% (prototype trained with the client too, 10 pairs) and -5.7% (the server-only training CI uses, 4 pairs, lower in 4/4); bot think per call -6%; p99.9 and worst within the VM&#x27;s noise. Trade-offs: ~6 more minutes in the Linux release job, 4% bigger code; the client gained nothing measurable (GPU-bound) and a MinGW build can&#x27;t reuse a Linux GCC profile (different gcov version and control flow), so Windows stays as it was. The instrumented client&#x27;s light bake takes over 10 minutes (the bake threads share the atomic counters), so <code>pgo_train.sh</code> bakes with a normal build first.
+</li>
+<li><b>Build: <code>-fno-math-errno -fno-trapping-math</code></b> (owner, 2026-11-03: &quot;what about fast math, or disabling some safety stuff?&quot;): the two parts of fast-math that never change a computed value. GCC now inlines round / lround / lrint to SSE4.1 <code>roundss</code> sequences and drops sqrt&#x27;s errno branch. The client&#x27;s libm rounding calls went from 238 <code>roundf</code> + 113 <code>lround</code>/<code>llround</code> to 4 + 3 (only key, settings and console handling left), the server&#x27;s from 73 to 3. Checked bit for bit against glibc on all 2^32 floats (SSE4.1 and AVX2), MinGW&#x27;s libm rounding verified exact, simhash (10 seeds) and isa_check unchanged. 2D text&#x27;s glyph-scale fraction uses the inline <code>uiRound</code> (GCC kept an <code>lroundf</code> call there). Server tick on a noisy VM: avg -5%, p99.9 -9%. Not <code>-ffast-math</code>, <code>-ffinite-math-only</code>, <code>-fno-signed-zeros</code> or reassociation: those would break bit-identical prediction.
+</li></ul>
+<h3>Latency</h3>
+<ul>
+<li><b>Mouse input on its own restricted thread</b> (owner, 2026-11-03: &quot;mouse input own its own restricted thread is most important&quot;). Raw input already had its own thread (HIGHEST priority, any core). Now, with the new setting MOUSE THREAD: OWN CORE (on by default, config <code>mouse_own_core</code>; MORE 9 under FRAME CAP OFFSET), that thread:
+<ul>
+<li>runs at THREAD_PRIORITY_TIME_CRITICAL, above the game&#x27;s HIGHEST, so a report preempts anything else of ours;
+</li>
+<li>is pinned (hard affinity) to one logical core: the last one of the fastest efficiency class (GetSystemCpuSetInformation; on Intel hybrid CPUs that&#x27;s a P-core, never an E-core; parked cores skipped); on older Windows, the last core;
+</li>
+<li>is never power-throttled (ThreadPowerThrottling, execution speed);
+</li>
+<li>keeps the game&#x27;s own thread off that core (its affinity minus that core, given back when the thread stops or the setting goes off).
+ Why: an 8 kHz mouse sends a report every 125 µs. On a shared core a report could wait for the game&#x27;s frame or another thread&#x27;s time slice before it was even summed, so the frame&#x27;s mouse read could miss motion that had already arrived. On its own core the thread wakes as each report lands. The cost is one logical core the game&#x27;s main thread no longer uses. It isn&#x27;t pinned with fewer than 4 cores, or on Linux / macOS (GLFW&#x27;s raw motion there). SHARED is the old behaviour, for A/B. The hint shows which core it&#x27;s on.
+</li></ul>
+</li>
+<li>Translations for the new setting in all 9 languages; CJK atlases rebuilt.
+</li>
+<li><b>F3&#x27;s swap-to-GPU gap sawtooth</b> (owner, 2026-11-03: &quot;the wait between swap and GPU slowly grows over 10 seconds, then drops back down&quot;). GPU timestamps are placed on the CPU clock with an offset measured every 10 s (<code>glGetInteger64v(GL_TIMESTAMP)</code>, best of 3; kept rare because it&#x27;s a synchronous query). The two clocks tick at slightly different rates, so between calibrations every GPU time slid by the drift, then snapped back at the next one. It was measurement only: the frames never changed. The game now keeps the drift rate from the last two calibrations and places each GPU time with offset + drift * (time since the calibration) (<code>Game::gpuToCpu</code>). A rate over 0.1% means the clocks jumped (driver reset, sleep), so it starts over. The input-to-frame latency uses the same conversion. Follow-up (owner: &quot;still happening just not as bad&quot;): a few µs of noise in either of two samples 10 s apart tilted the rate. Now it calibrates every 2 s and fits offset and rate by least squares over the last 8 samples (16 s). A sample 0.5 ms off the line (driver reset, sleep) restarts the fit. The calibration runs only while F3 / F4 is on. <code>QUARK_GPU_CALIB=&lt;s&gt;</code> sets the period, for testing.
+</li>
+<li><b>F3&#x27;s pipeline graph updates every 100 ms</b> (owner, 2026-11-03: &quot;the graph should update more than every 500,000,000 ns&quot;). Its averages (<code>pipeAverages</code>) were taken with the text lines, twice a second. They have their own 0.1 s timer now. The text lines stay at 0.5 s so they stay readable, and F4 stays twice a second. The cost is only a division per row, 10 times a second. At hundreds of FPS, 100 ms still averages dozens of frames or more.
+</li>
+<li><b>ULTRA SAFETY AUTO</b> (optimization thread, 2026-11-03: ULTRA&#x27;s fixed 150 µs margin read the mouse earlier than most PCs need). <code>ultra_margin_us=0</code> (the new default; old configs set to 150 become AUTO) learns the margin from the GPU&#x27;s misses (<code>src/client/ultramargin.h</code>): it starts at 150 µs; a CPU wait after the swap (input read too early) brings it down slowly, by 1% of (wait - 15 µs) per frame; a GPU bubble in a frame the pacing held back raises it at once, by 15 µs + 25%; CPU-bound frames change nothing; held between 25 and 1000 µs. The fixed 150 µs left a 93 µs median after-swap wait in the desktop FFA capture. F3&#x27;s line shows AUTO SAFETY N US, or SAFETY N US for a fixed one (VIDEO + AUDIO &gt; MORE 8). Test <code>testUltraMargin</code>. Trade-off: about 2% of frames may have a small GPU bubble while it probes.
+</li>
+<li><b>ULTRA&#x27;s pacing loop polls the GPU fence every 10 µs instead of every 100 µs</b> (optimization thread&#x27;s Tracy reading, 2026-11-03). Each step was already a spin, so this adds only non-blocking polls. Before, a GPU that finished mid-step was seen up to 100 µs late, the input read started that much later than it could, and the learnt GPU time (<code>ultraGpu_</code>) took in the delay too. The loop now has its own Tracy zone (&quot;ultra: pace the input read&quot;, about 70-110 µs of every frame on the desktop).
+</li>
+<li><b>LATENCY tab</b> (owner, 2026-11-02: &quot;actually make a latency settings tab and each tweak gets its own toggle, so i can test every combination myself&quot;). <code>TAB_LATENCY</code> sits before SEARCH (8 tabs; <code>last_tab</code> clamps to 7). Each tweak that was tied to LOW LATENCY is now its own config key, so any combination can be measured:
+<ul>
+<li><code>early_flush</code> (on): the two <code>glFlush()</code> calls of 1.19.7&#x27;s early flush (after the shadow pass and after the world&#x27;s draw calls).
+</li>
+<li><code>cpu_latch</code> (on): the CPU late latch, the mouse read again just before the world&#x27;s draw calls (it still needs LOW LATENCY ON or ULTRA, which time the frame for it).
+</li>
+<li><code>gpu_latch</code> (off, new): <b>GPU late latch.</b> The view-projection matrix lives in a persistent, coherent uniform buffer (<code>GL_ARB_buffer_storage</code>, GL 4.4; a ring of 3 slots so the GPU never reads a slot being written). The world, dynamic and flat shaders take <code>uLatchVP</code> from it when <code>uLatchUse</code> is set. From the moment the world&#x27;s draw calls are issued, Windows&#x27; raw-mouse thread (<code>RawMouse::onMotion</code>) turns each new report into yaw / pitch with the frame&#x27;s gain and writes the newer matrix straight into the buffer, so the GPU picks up motion that arrived after the CPU sent the frame (the stretch between the late read and the GPU starting the world: F3&#x27;s DRAW CALLS row onward). Off when: no buffer storage (N/A), no raw input (not Windows), MOUSE ACCEL on (its gain depends on the frame&#x27;s motion), or the window isn&#x27;t focused. The mouse thread and the render thread share the slot under a spinlock (<code>std::atomic_flag</code>), held for one 64-byte copy. Disarmed before the next frame&#x27;s read, so the CPU&#x27;s aim and the GPU&#x27;s never count a report twice. Things projected on the CPU (name tags, health bars) keep the frame&#x27;s aim, a sliver behind.
+</li>
+<li><code>hud_first</code> (off, new, ULTRA only): <b>HUD before the world.</b> The HUD&#x27;s batches go into their own RGBA8 layer (alpha-preserving <code>glBlendFuncSeparate</code>) before the late read, and are laid over the world afterwards with one premultiplied fullscreen triangle, so only that triangle sits between the world and the swap. Costs one fullscreen blend on the GPU; gains the HUD&#x27;s draw calls (F3&#x27;s HUD DRAW row) between the late read and the swap. Not measured yet: that&#x27;s what the switch is for.
+</li>
+<li><code>disable_fso</code> and GPU SCHEDULING moved here from VIDEO &gt; MORE.
+</li>
+<li>F3&#x27;s graph has a line naming LOW LATENCY&#x27;s level and the tweaks that took effect that frame (FLUSH, CPU LATCH, GPU LATCH, HUD FIRST), so screenshots of different combinations can be told apart.
+</li></ul>
+</li>
+<li><b>PERFORMANCE CHECK</b> (owner, 2026-11-02: &quot;the game should read your gpu settings (nvidia/amd/intel/integrated) and if you have anything that is making your performance worse it should recommend you change it&quot;). <code>perfCheck()</code> (gpuprefs.cpp) runs when the tab opens and on CHECK AGAIN:
+<ul>
+<li>NVIDIA (NVAPI&#x27;s global driver profile, read only): power management not at maximum performance, triple buffering on, vertical sync forced on, max pre-rendered frames above 1, threaded optimization on, a MAX FRAME RATE cap. Each with the NVIDIA Control Panel path.
+</li>
+<li>The game on an integrated GPU while a dedicated one is present (Windows&#x27; graphics preference path).
+</li>
+<li>Windows: the Power saver plan, power mode Best power efficiency, running on battery, hardware GPU scheduling off, Game Mode off.
+</li>
+<li>AMD (owner, 2026-11-02: &quot;it should also read amd intel integrated gpu settings&quot;): through ADLX (<code>amdadlx64.dll</code>, installed with the Adrenalin driver, also on Radeon integrated graphics), read only, for every AMD GPU: Radeon Anti-Lag supported but off, Radeon Chill on (caps the frame rate), Radeon Boost on (drops the resolution while you turn), Enhanced Sync on, Wait for vertical refresh Always on, Frame Rate Target Control on. The game carries no AMD code: it loads the driver&#x27;s DLL and calls the few interface slots it needs (as AMD&#x27;s ADLX SDK lays them out); no AMD driver, no DLL, nothing read. If ADLX can&#x27;t be read, the tab says so and names the settings to check by hand.
+</li>
+<li>Intel, integrated and Arc: through the Graphics Control Library (<code>ControlLib.dll</code>, installed with the driver; IGCL API 1.1), read only, the game&#x27;s own profile first and then the global one: Endurance Gaming on (it trades frames for battery), a forced vsync mode (not &quot;application choice&quot; or off), Low Latency off, the frame rate limiter on. Same approach: the driver&#x27;s DLL, the few calls and structures as Intel&#x27;s header declares them, nothing linked in.
+</li>
+<li>The check runs on its own thread (loading three drivers&#x27; libraries can take a moment), so the menu keeps its frame rate; the tab shows CHECKING... meanwhile.
+</li>
+<li>Not Windows: WINDOWS ONLY.
+</li></ul>
+</li>
+<li><b>The frame cap learns the timer&#x27;s lateness</b> (owner, 2026-11-03: &quot;even though i can hit several thousand minimum fps, when limiting to 1000 my lows are even as low as 600&quot;). The owner&#x27;s 1000 FPS benchmark (Hamlet, 26,917 frames) had avg 1000, a 1% low of 832 and a 0.1% low of 589. 347 frames were over 1.2 ms, in two fixed sizes, ~1.20 and ~1.70 ms, and 258 of them made a 2.00 ms pair with the short frame after. So the cap&#x27;s sleep woke 0.2 / 0.7 ms late on Windows&#x27; timer grid, and the cadence pulled the next frame in. <code>waitUntil</code> slept until 0.3 ms before the deadline and trusted the timer for the rest. <code>CapWait</code> (net.h) records each sleep&#x27;s lateness (20 µs bins, windows of 256) and sleeps only until the 99.9th percentile + 50 µs before the deadline, then spins. It rises at once and falls a quarter of the way per window, between 50 µs and 2.5 ms, starting at 1 ms. Trade-off: up to a core spinning instead of sleeping while capped (at 1000 FPS the spin can cover the whole wait). Other waits (latent sync, the server) keep <code>waitUntil</code>.
+</li>
+<li><b>The game thread: HIGHEST priority while focused, and no power throttling</b> (owner, 2026-11-03: &quot;981 low is great for a 1000 cap, but can we do even better&quot;). With CapWait, the 13:07 run&#x27;s 47 frames over 1.015 ms each paired with a short one (pairs = 2.000 ms ±3 µs). So the cap woke on time, and the thread was then held up 20-50 µs before its input read (fence, network, poll). <code>setGamePriority</code> (gpuprefs.cpp) now also sets the main thread to THREAD_PRIORITY_HIGHEST (NORMAL when alt-tabbed). Once, it opts the process and the thread out of execution-speed power throttling (EcoQoS: Windows 11 can move a throttled thread to an E-core and slow it), and the process out of timer-resolution throttling. These are looked up at run time, so older Windows is unaffected. The owner&#x27;s 13:25 run: 0.1% low 981 → 985, worst 1.052 → 1.025 ms. LOW LATENCY OFF (13:27) scored no better (981.7), so the GPU wait isn&#x27;t the cause.
+</li>
+<li><b>The 2 Hz pair of late frames: the cursor re-hold.</b> Both runs had their biggest bumps exactly 500 frames apart: +8 µs, then two frames later +20 µs, each group adding up to 3.000 ms. That was <code>RawMouse::hold</code>, called every 0.5 s while captured (in case the window moved). It ran SetCursorPos (which posts a mouse-move for the next poll) and ClipCursor every time. Now it checks GetClipCursor / GetCursorPos first and sets nothing when the cursor is already held at the centre.
+</li>
+<li><b>LATENCY &gt; FRAME CAP OFFSET</b> (owner, 2026-11-03: &quot;add a latency setting for framecap offset, in us ... default framecap offset should be 5% of the frametime of the framecap&quot;; &quot;adding 0.05ms latency to make the framecap absolutely perfect is worth it imo&quot;). With an FPS limit, the cap now wakes the offset before the deadline and runs the parts that vary (the low-latency GPU wait, the network). It then spins to the deadline and reads the mouse there (main.cpp). A hold-up shorter than the offset no longer moves the frame. The mouse is read on the deadline either way, so the input isn&#x27;t older than before the setting. <code>cap_offset_us</code>: -1 AUTO (5% of the cap&#x27;s frame: 50 µs at 1000, 250 µs at 200), 0 off, else µs, at most half the frame. 4 new translated lines.
+</li>
+<li><b>BENCHMARK result graph is a line</b> (owner, 2026-11-03: &quot;it should be a line not a fill from the bottom graph, kind of like capframex has, and scale in so the highest and lowest frametimes make the bounds, show in us the bounds and average&quot;). The graph was a fill up from 0 to each column&#x27;s mean, topped at the next of 5 / 10 / 20 ... ms with 60 / 144 / 240 FPS lines. At a 1000 cap that put the whole run in a sliver. Now the y axis runs from the run&#x27;s fastest to its slowest frame. A 1.5 px line goes through each column&#x27;s mean frame (928 columns, one per 720p px; it was 464). Behind it, at 35%, is each column&#x27;s fastest-to-slowest span (<code>graphColumns</code>&#x27; new <code>minMs</code>), so a spike the mean averages out still shows. MAX / MIN / AVG are labelled in µs (the average as a dashed line). The FPS reference lines are gone (they&#x27;d be off this scale). 3 new translated lines. STDEV, AVG FRAME and the worst frame are shown in µs with one decimal (owner: &quot;stdev should be in us not ms&quot;). A capped run&#x27;s stdev of 0.2 µs read &quot;0.000 MS&quot;, and its worst frame of 1004.8 µs read &quot;1.00 MS&quot;.
+</li></ul>
+<h3>Languages (fixes from a screenshot sweep of every language on the desktop PC after 1.19.7: 69 screenshots and the untranslated-lines list per language)</h3>
+<ul>
+<li><b>The aim trainer was in English.</b> <code>extract.py</code> didn&#x27;t read <code>trainer.cpp</code> / <code>trainer.h</code>. Its scenario descriptions, kinds and difficulties are now keys; scenario names stay English, like map names.
+</li>
+<li><b>Info-page headings never translated.</b> Their keys are <code># TEAM MODES</code> and so on, but <code>#</code> is the number placeholder, so the drawn heading (without the <code># </code>) never matched. The whole <code># ...</code> line is now translated, then its <code># </code> is cut.
+</li>
+<li><b><code>extract.py</code> mangled or dropped paragraphs:</b> its printf rule read &quot;10% damage&quot; as <code>% d</code> (the key said &quot;10#amage&quot;); it now ignores the space flag. It dropped the &quot;~13 m/s&quot; paragraph for the <code>~</code> and the &quot;.qmap&quot; one under its file-name rule. Upper-case hints with <code>=</code>, <code>&lt;</code>, <code>&gt;</code> or <code>/</code> (&quot;WIDTH 0 = NO OUTLINE&quot;, &quot;PING: &lt; 50&quot;, &quot;SNAPS: = TICK&quot;) are kept now. 73 new keys, 3787 in all.
+</li>
+<li><b>&quot;LABEL: VALUE&quot; with an unknown value:</b> when the left side of &quot;: &quot; isn&#x27;t a key by itself, the lookup now tries it with its colon (&quot;PLAYER MODEL:&quot;), so the label translates and the value stays.
+</li>
+<li><b>F3&#x27;s latency column</b> was sized for English row names, so translated names ran into the numbers; it&#x27;s now as wide as the widest translated name.
+</li>
+<li><b>CJK lines wrapped too early,</b> because a line could only break at a space. Chinese, Japanese and Korean text may now break between characters (never before <code>:</code> <code>,</code> <code>)</code> <code>.</code> <code>;</code>), so lines fill the width as English does.
+</li>
+<li><b>Squeezed labels lost their word spaces</b> (&quot;BOTSAUSGLEICHEN&quot;): closing up a label tightened a space from both sides, about 30% of its width. A space now closes by 10% at most, and the letters take the rest.
+</li>
+<li><b>Wrong words:</b> Russian VOTES was &quot;voices&quot; (now ГОЛОСОВАНИЕ), Turkish ADVANCED was &quot;forward&quot; (now GELİŞMİŞ), and the spectator FOV&#x27;s MINE (&quot;my own&quot;) was translated as the explosive in Portuguese, Russian, Turkish, Chinese and German (now possessive; French too).
+</li>
+<li>The CJK atlases were rebaked for the new characters: zh-CN 1632, ja 1323, ko 1094 glyphs.
+</li>
+<li><b>The launcher&#x27;s LANGUAGE</b> (owner, 2026-11-03: &quot;the launcher doesnt have language options... it should sync in game language option&quot; / &quot;and both should sync with os default language&quot;). The launcher now links <code>quark_lang</code> and draws through the same lookup as the game (<code>Renderer::setTranslate</code>, the language&#x27;s glyph atlas). Its OPTIONS has LANGUAGE: AUTO plus the ten languages. It&#x27;s the game&#x27;s own setting: the launcher reads <code>language=</code> from the game&#x27;s <code>quark.cfg</code> (the same <code>userDataPath</code>) and writes that one line back atomically, keeping every other line (<code>releases::cfgLanguage</code> / <code>withCfgLanguage</code>, tested). It re-reads the file when its time stamp changes, checked once a second, so a change in the game shows in an open launcher within a second. The game reads the file at start, so a pick in the launcher applies at the next game start. Before the game has ever run there&#x27;s no <code>quark.cfg</code>, and the launcher doesn&#x27;t write a one-line one: the game would take it for an old config and apply old-file migrations. Its pick waits in <code>launcher.cfg</code> (<code>language=</code>) and is passed to the game&#x27;s start as <code>--language CODE</code> (new; ignored by older versions), and is dropped once the game&#x27;s file exists.
+</li>
+<li><b>The launcher&#x27;s text is keys now:</b> <code>extract.py</code> reads <code>src/launcher/main.cpp</code> and <code>gamefiles.cpp</code>. Every line built from pieces (status lines, notices, the antivirus help) is one <code>say(&quot;... %s ...&quot;, {...})</code> format, so it&#x27;s one pattern key (&quot;downloading version {}...&quot;) instead of fragments that never match. Long notice lines are one literal each for the same reason. 107 new lines translated into 9 languages, plus 71 identity rows for the <code>%s</code> pieces <code>extract.py</code> also lists (never drawn alone). The CJK atlases were rebaked (zh-CN 1676, ja 1357, ko 1118 glyphs). <code>--options</code> opens OPTIONS at start (screenshots).
+</li>
+<li><b>The OPTIONS page drew its title over the changelog&#x27;s</b>, so it was unreadable in every language. The changelog title is now skipped while OPTIONS is open.
+</li>
+<li><b>AUTO used the region format on Windows</b> (<code>GetUserDefaultLocaleName</code>), so English Windows with a German date format chose German. It now reads <code>GetUserPreferredUILanguages</code> (the display language, then the other preferred ones in order) and takes the first one the game has, falling back to <code>GetUserDefaultUILanguage</code>, then English. On macOS a Finder-started app has no <code>LANG</code>, so it now reads <code>CFLocaleCopyPreferredLanguages</code>. On Linux the GNU <code>LANGUAGE</code> priority list (&quot;fr:en&quot;) is honoured, as gettext does, before <code>LC_ALL</code> / <code>LC_MESSAGES</code> / <code>LANG</code>. A locale like &quot;nl&quot; now falls through to the next preferred language instead of straight to English.
+</li></ul>
+<h3>Player animations (Quake Live-style walking, visual only)</h3>
+<ul>
+<li><b>Joints on the player models.</b> <code>ModelPart</code> gains <code>bone</code> (<code>PlayerBone</code>, models.h: root, pelvis, torso, head, thigh_l / shin_l / thigh_r / shin_r, foot_l / foot_r). Each built-in model&#x27;s legs are rebuilt as thigh + shin (cut at the knee; the thigh reaches 2 cm under it so a bent knee shows no gap, the shin is 5 mm slimmer so the overlap doesn&#x27;t flicker) with the boot or shoe on a foot joint and knee pads / shin guards on the thigh / shin. The standing pose is the old silhouette: the cut is inside the old leg box, the shin now starts inside the boot. Part counts: 2 to 6 more a model (all 11: 197 to 227 boxes; STANDARD 16 to 18, WIZARD 20 to 26, the most; kMaxDefaultParts stays 32). Per model: ROBOT&#x27;s piston stripes and BANDIT&#x27;s chaps are cut at the knee too; PIRATE&#x27;s tall boot is a shaft (shin) + a foot (one more seam line at 10 cm); FIGHTER&#x27;s legs reach up inside the shorts to the hips (hidden standing) so the hips sit at 0.8 m, not at the shorts&#x27; hem; WIZARD gets hidden legs under the robe (no shadow) whose shoes step out at the front, the robe above the hem turning with the legs and the hem staying on the floor; SIMPLE stays the two hitbox boxes, all root, still.
+</li>
+<li><b>The pose</b> (<code>playerPose</code>, pure, models.cpp): the joints&#x27; pivots are measured from the boxes (<code>playerRig</code>: hip = top of the thighs, knee = bottom of the thighs, ankle = top of the feet, neck = bottom of the head), so a box model file with longer legs walks with longer legs. The gait swings the thighs (22 degrees walking, 30 running), bends the knee of the leg swinging through (0.55 / 1.25 rad), keeps the feet level, and drops the body by as much as the spread lifts the lower foot so the planted foot stays on the floor (the run&#x27;s bob comes from that). The torso leans 7 degrees at run speed, and takes 10% of the aim pitch, the head 30% (each at most 20 degrees). In the air everything blends into a tucked jump pose (thighs 43 / 20 degrees forward, knees 83 / 54 degrees). Every number is in one table, <code>kAnim</code>, to retime later.
+</li>
+<li><b>The tracking</b> (<code>animStep</code>, <code>Game::anim_[kMaxPlayers]</code>, fixed: no allocation): velocity from where each player is drawn (smoothed, 50 ms), the phase advanced by the ground covered over the stride (1.7 m a cycle walking, 3.4 m running, blended from 2.5 to 7 m/s; the ground speed is 9.5), capped at 2.2 cycles a second so strafe-hopping at 15-30 m/s doesn&#x27;t blur the legs. The legs turn toward the move, at most 60 degrees from the aim, at 12/s; moving more than 110 degrees from forward is a back-pedal (until under 85: hysteresis, so a strafe doesn&#x27;t flip) with the legs forward and the cycle backwards. Standing, the legs stay put until the aim is 52 degrees away, then follow it, and the feet come together. A move over 3 m in a frame (respawn, teleport) starts again standing. Model metres: a double-size duel body steps as far.
+</li>
+<li><b>Ground or air:</b> your own from the prediction&#x27;s MF_ONGROUND; anyone else by one short <code>raycastAny</code> straight down from their feet (0.5 m), only while they&#x27;re on screen (off it the last answer stands) and not while rising faster than 2.5 m/s. Chosen over vertical motion alone, which reads a jump&#x27;s apex as ground; the ray is the cheaper of the two that work.
+</li>
+<li><b>Drawing:</b> <code>Renderer::boxXf</code> takes the box&#x27;s whole matrix and mirrors <code>box()</code> (culling, shadow-only list, casters), going through <code>emitBox</code>, so PLAYER SATURATION applies. A posed player costs per frame: the rig (one pass over its ~20 boxes), 10 affine joint matrices with the trig shared, one more affine multiply a joint for the world, a 3x3 transform a box (no per-box sin / cos, which <code>box()</code> does). Measured on this container, CPU before emitBox: 0.76-0.81 µs a player still, 1.12-1.15 µs posed (+0.35 µs, including the tracking&#x27;s exp / atan2); 8 bots: under 3 µs a frame. The Hamlet benchmark under llvmpipe (software GL, render scale 25%, 3 interleaved rounds): average frame 32.41 ms before, 32.99 with animations, 32.17 with them off: within that machine&#x27;s noise.
+</li>
+<li><b>Where:</b> every other player, your own shadow / unseen body, the follow view&#x27;s body and its shadow, and the PLAYER tab&#x27;s preview (walks in place). A glTF mesh override stays still (it has no joints). A box model file animates when its boxes name their joints (<code>&quot;bone&quot;</code>, optional, docs/ASSETS.md); a file without it, or without a thigh and a shin on both sides, draws standing as before. The export writes <code>bone</code> for every non-root box.
+</li>
+<li><b>Setting:</b> GAMEPLAY &gt; MORE &gt; FORCE PLAYER MODELS &gt; <b>PLAYER ANIMATIONS</b> (<code>player_anims</code>, on by default; off: the old still pose and the old drawing path). The column was full (the new row pushed ALL SETTINGS over BACK at 1280x720), so CHAT SECONDS and CHAT LINES share one row of halves, as VIDEO &gt; MORE 4&#x27;s BRIGHTNESS / SATURATION do. Translated in all 9 languages (plus the box loader&#x27;s &quot;unknown bone&quot; error).
+</li>
+<li><b>Unchanged:</b> hitboxes, pmove, the server, the protocol: it&#x27;s all drawn on the client from what it already draws.
+</li>
+<li><b>Tests</b> (assets group, <code>testPlayerAnimation</code>): every model but SIMPLE has both thighs and shins (SIMPLE: all root, still); standing still is the old layout exactly; over speeds 0-25 m/s (and NaN), phases, leg turns to and past the limit, air 0 / 0.5 / 1 and pitch +-89 degrees no box corner goes NaN, under the floor (2 cm; 10 cm in the air), over the model&#x27;s top by 10 cm (the head&#x27;s tilt) or more than 0.3 m out from the body cylinder&#x27;s radius (kPlayerHalfWidth, or the standing model&#x27;s own reach from the axis, if wider): the farthest is 0.219 m, a running stride&#x27;s front foot. The tracking: 5 m walked at 2.5 m/s is 5 / 1.7 cycles (within 10%), 25 m/s is capped at 2.2 a second, straight back is a back-pedal with the legs forward, a strafe turns them 60 degrees, the air pose, the idle turn, a teleport reset, garbage in (NaN, negative dt). The export / box model round trip compares <code>bone</code>; the loader takes a bone by name and refuses an unknown one or a number.
+</li>
+<li><b>Screenshots:</b> <code>quark --walk</code> lines up the 11 models side-on, each a step apart mid-stride (the last one in the jump pose; <code>--models</code> lineups run in place too).
+</li></ul>
+<h3>Video: PLAYER SATURATION (owner, 2026-11-03: &quot;sure&quot; to a players-only saturation slider next to PLAYER BRIGHTNESS)</h3>
+<ul>
+<li>New slider VIDEO &gt; MORE 4 &gt; PLAYERS &gt; SATURATION (next to the old PLAYER BRIGHTNESS, now shown as BRIGHTNESS: the two share one row as halves, since a full row more pushed the OUTLINES hint into BACK), 0 to 2 (default 1, config <code>player_saturation</code>). It changes only the players&#x27; bodies (and what they hold), after lighting and before fog: 0 is grey, 2 doubles the colour&#x27;s distance from its grey (Rec. 709 luma, clamped at 0). The map, the HUD, outlines and the view model are untouched. The existing SATURATION (MORE 2) still grades the whole 3D scene.
+</li>
+<li>How, at no cost: the value rides in the spare 4th 16-bit lane of each dynamic vertex&#x27;s normal (0 = as drawn, else 1 + sat x 16383), set by the player loop like the outline colour. That&#x27;s one OR per vertex on the CPU, no new vertex attribute, no new uniform or draw call, and one branch-free-when-1 mix in the dynamic shader; every other dynamic vertex keeps 0 there and draws exactly as before.
+</li>
+<li>Checked with three headless screenshots on Dojo at 0, 1 and 2: greys, unchanged, vivid; the map identical.
+</li>
+<li>Translations for the slider and its hint in all 9 languages; CJK atlases rebuilt.
+</li></ul>
+<h3>Ball</h3>
+<ul>
+<li><b>Dashing into the ball doesn&#x27;t hurt</b> (owner, 2026-11-03: &quot;make ball not do damage if you are dashing into it, like the ball should have velocity relative to you and the ground like 25m/s to you and 20m/s to the ground&quot;). The hit used only the speed relative to the player (over 20 m/s), so a 30 m/s dash into a still ball counted as a 30 m/s hit. Now it needs both: over 25 m/s relative to you and over 20 m/s ground speed (<code>ballStep</code>, gamemodes.cpp). The damage stays 1 per m/s of relative speed. A dash into a slow ball now just pushes it. The ball is server-simulated, so there&#x27;s no protocol change.
+</li></ul>
+<h3>Voting (owner, 2026-11-01: &quot;just one VOTE button, then you toggle on options&quot;)</h3>
+<ul>
+<li><b>The builder&#x27;s GAMEMODE / MODIFIERS / MAP toggles moved onto the VOTE page itself</b>, with CHOOSE naming the first step: one click and one page fewer. The page keeps its height by pairing START/RESTART, RESTART/5 MORE MINUTES and RANKED/SHUFFLE TEAMS. BACK walks one step back (summary &gt; map &gt; modifiers &gt; gamemode &gt; VOTE).
+</li>
+<li><b>New modifiers FIRE RATE (x0.25-4) and PROJECTILE SPEED (x0.25-3)</b> apply to every weapon through the custom rules&#x27; existing <code>weapon=</code> multipliers, so there is no protocol change; the server&#x27;s <code>mods</code> whitelist gained <code>firerate</code> / <code>projspeed</code> (an older server answers &quot;bad modifier&quot;). Player size and ammo limits, also on q&#x27;s list, don&#x27;t exist as gameplay yet and were not invented.
+</li>
+<li>The UI test now reaches the builder&#x27;s modifiers and summary pages (scoped builder pickers, one context per toggle combination); before, they were never tested.
+</li></ul>
+<h3>Acid and lava (owner, 2026-10-27: &quot;it should destroy, so should lava, yes screen tint, and pulse and sizzle&quot;)</h3>
+<ul>
+<li><b>Projectiles that enter lava, a deadly liquid or acid are removed there</b>: no blast, hit or prop, and no explosion revealed to players who couldn&#x27;t see it. The server&#x27;s 1 ms step and the client&#x27;s own copies use the same <code>Map::dissolveAlong</code> test, so nothing blows up or reports a hit past the surface; a vanished projectile at the surface plays a hiss.
+</li>
+<li><b>In acid:</b> a green screen tint (0.12 alpha, pulsing +-0.04 while it hurts; steady with REDUCE FLASHING), the health bar pulses acid green, and the new SND_SIZZLE plays on contact and every 0.4 s. SIZZLE is generated in code like the other default sounds and added after LOCATOR, so recorded kits&#x27; ids are unchanged; override name SIZZLE.
+</li></ul>
+<h3>Netcode and server</h3>
+<ul>
+<li><b>NET-14: projectile ids never repeat while one is in flight.</b> <code>newProjId</code> skips 0 and any id a live projectile holds, so a long-lived sticky never shares its id after the u16 wrap (a wrong trail or missed explosion). Server only, no protocol change; one scan of 128 slots per shot.
+</li>
+<li><b>COR-8: interpolation is clamped to kMaxInterpMs + 0.1 s behind the newest snapshot</b>, and the bracket search stops at a server clock reset; it could draw poses up to ~1 s old.
+</li>
+<li><b>Visibility rays scale with the target&#x27;s size</b> (a MOVE_BIG giant&#x27;s head is twice as high), so a giant whose head sticks out over cover is sent. Same ray budget.
+</li>
+<li><b>breakGlass&#x27;s shard scratch list is a heap buffer that is never freed</b> instead of a thread_local object: a thread_local with a destructor crashed at thread exit under MinGW on hosted servers. Still no allocation per break.
+</li>
+<li><b>install.sh keeps a testing install that is ahead of the checkout</b>, runs the testing updater during the install, and sets <code>StartLimitIntervalSec=0</code> on the server units. Re-cloning had put quark-testing on the older production build, which couldn&#x27;t load the newer maps; systemd then gave up before the updater rebuilt (~10 min).
+</li></ul>
+<h3>Tests and tools</h3>
+<ul>
+<li>Timing tests notice every host pause (ratePump&#x27;s sleeps and the loop&#x27;s own off-CPU time), allow up to 5 attempts and only re-run attempts the host paused, so a real regression still fails; the grapple latch prediction check is a timing test now.
+</li>
+<li>A test server that fails to start always prints a FAIL line (<code>START_SERVER</code>).
+</li>
+<li>release_check.sh reads its alone groups from <code>quark_tests groups alone</code> instead of a copy.
+</li>
+<li>A CRLF demo versions.txt reads correctly (test added); the material table check allows the ball wall.
+</li>
+<li>ZONESTATS builds link on MinGW (no thread_local init function); pmove&#x27;s internal CmdCtx no longer clashes with the map tool&#x27;s; unused constants removed; SIGNING.md no longer points at a deleted key file.
+</li></ul>
+<h3>Tutorial (1.19.9 &quot;Tutorial update&quot;; q: &quot;show a demo of a bot doing whatever movement tech, then puts you on a map that shows the bot doing it and gives you instructions on how to, all the special moves and combos&quot;)</h3>
+<ul>
+<li><b>What it is.</b> MAIN MENU &gt; PRACTICE &gt; TUTORIAL (or <code>quark --tutorial [LESSON[:PHASE]]</code>) hosts a local game like TIME TRIAL (<code>Game::startTutorial</code> -&gt; <code>startHost</code> with <code>ServerConfig::tutorial</code>): the map <code>tutorial</code>, FFA, three players (you, the GHOST and, in the two grapple-a-player lessons, the PARTNER), warmup for good (<code>autoStart</code> off: no clock, no scores). Each lesson has a <b>DEMO</b> and a <b>TRY</b> phase:
+<ul>
+<li><b>DEMO:</b> the camera follows the ghost from behind and over your lane. Your input is held. The ghost&#x27;s keys light up under your own binds&#x27; names (W / A / S / D, JUMP, DASH, GRAPPLE, FIRE, ALT FIRE), with where it aims (level, a little down, straight down, up) and its turning. SUPER / HYPER pop up over it as it does them. JUMP, ENTER or a click hands over to you; otherwise one loop of the script plays.
+</li>
+<li><b>TRY:</b> you at your lane&#x27;s start, the ghost looping beside you. The steps are on the left and the goal has a bar and a number. The lesson&#x27;s check runs on your own predicted movement every frame, so the bar moves as you see yourself move. Done: LESSON DONE, NEXT: &lt;lesson&gt;, and 2.5 s later the next lesson. After the last: TUTORIAL COMPLETE (LESSONS, MODES GUIDE: INFO &gt; MODES, PLAY VS BOTS).
+</li>
+<li><b>Keys:</b> RACE RESET (R) starts the lesson over and the CHAT key (ENTER) skips (the tutorial has nobody to chat to; the console still opens). Esc: RESUME, WATCH AGAIN, SKIP LESSON, START OVER, LESSONS, SETTINGS, LEAVE TUTORIAL, QUIT. LESSONS lists all 28 in four columns (three first, but ten KEY TECH lessons pushed BACK off a 720p screen), the ten KEY TECH ones first under a gold KEY TECH heading (a gold bar on each), and a green mark on each one done (<code>tutorial_done</code>, a bit per lesson, kept across sessions; an int whose limit is 2^30, so <code>static_assert(L_COUNT &lt;= 30)</code>).
+</li>
+<li><b>First launch:</b> the main menu shows WELCOME TO QUARK once, with START TUTORIAL or NOT NOW (Esc). Either answer sets <code>tutorial_offered=1</code>. Existing players see it once too, since their config has no such key yet. It isn&#x27;t shown in the UI test or screenshot runs (<code>--tutorial-offer</code> forces it for screenshots).
+</li></ul>
+</li>
+<li><b>The lessons (one per tech, using the game&#x27;s own mechanics and names; nothing invented): 28, ten of them KEY TECH.</b> q: &quot;big techs that are important&quot;; &quot;another key tech is grappling other players, and when you get grappled, dashing out of it / also rocket grapple is considered a key tech&quot;; &quot;find more movement combos for key techs&quot;; the bubble launch: &quot;if it doesnt [kill you] thats cool&quot;. In order (the order of the bays and of NEXT):
+<ul>
+<li>Walking (run and jump two hurdles to a line at 44 m), AD strafing (bunny hops holding one strafe key and turning with it: 12 m/s with no dash or grapple), the dash (an air dash across a 9 m lava gap), sideways dashes (a dash holding only LEFT, one holding only RIGHT), super (2), hyper (2).
+</li>
+<li><b>Pop</b> (KEY TECH): a super, then the dash held straight down with jump as you come down: the dash goes as its cooldown ends (930 ms in), a hyper off the floor with the super&#x27;s 24 m/s, 90% of it up: 26.1 m/s up, 14.2 m high. Goal: 12 m up out of a hyper from 20 m/s or more (<code>G_POP</code>).
+</li>
+<li>Super chaining (hyper every landing, now aimed 15 degrees down, not 20: more of each hyper stays level, 35 m/s where 20 degrees gave 34; goal 27 m/s), the dash slide (0.8 s), the wall bounce (2).
+</li>
+<li><b>Ramp dash</b>: a 60 degree wedge 18 m in. Walking, its face is a wall; a dash into it head on runs on up the face at the dash&#x27;s 24 m/s: the ghost&#x27;s dash 1.6 m before it takes it 9.0 m up. Goal: 5 m up past the ramp&#x27;s foot with a dash since you were on the floor (<code>G_RAMP</code>).
+</li>
+<li>The grapple (onto a 10 m ledge).
+</li>
+<li><b>Ceiling hang</b>: hook the ceiling a few metres ahead and hold: you hang and swing under it. Straight overhead the hook pulls you in and lets go at its 1.2 m release distance, so the text says to hook more than 1 m to the side. Goal: 1.5 s hooked to the map with the anchor 2 m or more above you, off the floor (<code>G_HANG</code>).
+</li>
+<li><b>Swing turn</b>: a super to 24 m/s, then the pillar 32 m in hooked as it comes up beside you and let go as you pass it: the ghost turns 41 degrees and keeps 24 m/s. Held on, the hook brakes you from 24 to 15 m/s, so the text says to let go. Goal: 35 degrees of heading turned on a hook at 20 m/s or more (<code>G_SWING</code>). The ghost aims with <code>LessonDef::aimPoint</code> (the pillar), and the demo says AIM: AT THE PILLAR.
+</li>
+<li>Grapple walking (16 m/s along the floor).
+</li>
+<li><b>Hook-start chain</b>: grapple walk to 24 m/s, let go and hyper every landing aimed 15 degrees down: 29, 34, 35 m/s, 1.3 s after letting go. A hyper above 36 caps you, so 35 is the top, and the text says so. Goal: 34 m/s (<code>G_SPEED</code>, no dash or grapple counted since standing).
+</li>
+<li><b>Grapple a player</b> and <b>dash out of a grapple</b> (KEY TECH, below). Grapple a player has a 4th step: with someone latched, your own dash doesn&#x27;t break your pull (it follows you, and drags them sideways: 2.5 m/s in the test), so shotgun or knife them as they arrive.
+</li>
+<li>Rocket jump.
+</li>
+<li><b>Fall bounce</b>: a rocket jump straight up (17 m), jump held all the way down: a landing hop is jumpSpeed + min((impact - jumpSpeed) x 0.5, 8), at most 15.7 m/s, reached from 11.7 m, and it gives a dash charge back. Goal: a 15 m/s hop off a landing with no dash (<code>G_HOPUP</code>).
+</li>
+<li><b>Rocket super</b> (KEY TECH): a super, then a rocket straight down 0.3 s into it: 33.3 m/s level, past the dash&#x27;s 32 cap. Goal: 32.5 m/s level thrown by your own blast since leaving the floor (<code>G_KNOCKSPEED</code>).
+</li>
+<li><b>Rocket pop</b> (KEY TECH): the pop with the rocket fired in the very tick the hyper&#x27;s dash starts: 47.4 m/s up, 47.6 m high. Goal: 30 m up out of a hyper from 20 m/s (<code>G_LAUNCH</code>).
+</li>
+<li><b>The launch</b> (KEY TECH, below).
+</li>
+<li><b>Hook boost</b> (KEY TECH): grapple walking at 24 m/s, a rocket straight down while still hooked, let go 40 ms later (held on, the hook pulls you back toward it): 40.4 m/s level. Goal: 37 m/s. Outside the tutorial the blast costs about 3 hp.
+</li>
+<li>Sticky jump.
+</li>
+<li><b>Sticky stack</b> (KEY TECH): three stickies at your feet (each armed 0.35 s after landing), then jump and set them all off: 21.9, 36.2, 50.5 m/s up for one, two, three; 53.2 m high. Goal: 40 m up.
+</li>
+<li><b>Bubble launch</b> (KEY TECH, below).
+</li>
+<li><b>The rocket grapple</b> (KEY TECH): 0.4 s on your own rocket. It was called rocket riding; renamed to q&#x27;s name, <code>--tutorial rocketgrapple</code>. (Hooking your own rocket, as q named it; the hook boost is a separate lesson.)
+</li></ul>
+</li>
+<li><b>The two rules, measured and in the lessons&#x27; steps</b> (rocket pop, rocket super, hook boost, hook-start chain): a dash erases a blast&#x27;s push (a rocket at your feet throws you 17.0 m up; the same with a dash 35 ms after the shot: 0.2 m), so fire after the dash or hyper, never just before one; and a dash above 32 m/s (a hyper above 36) caps you down (the rocket super&#x27;s 33.3 m/s, then an air dash: 32.0). The rocket pop&#x27;s timing is strict: the rocket 0 / 10 / 20 ms after the hyper gives 47.4 / 44.3 / 41.1 m/s up, about 3 m/s per 10 ms late, and the text says &quot;10 MS LATE LOSES 3 M/S&quot;.
+</li>
+<li><b>The bubble launch, measured</b> (q: &quot;if it doesnt [kill you] thats cool&quot;). Standing still, aim straight down and alt-fire the bubble gun: the whole stream (25 bubbles with no enemy within 30 m, <code>bubbleStreamCount</code>) pops under you: <b>58.4 m/s up, 72.8 m high</b>, every 1.8 s (the stream&#x27;s reload). Out of the tutorial it costs 11.9 hp. A jump first: 48.0 m/s up (rising already, the slower bubbles can&#x27;t catch you, so the text says &quot;from standing or a slow rise only&quot;). From a run with a jump: 42.6 m/s up and 25.3 m/s along. With an enemy within 5 m the stream is 5 bubbles: 16.6 m/s up (enemy 3 m off), and the text says so. Its bay is 30 x 80. Goal: 55 m up, thrown by your own bubbles (<code>G_KNOCKUP</code>). <b>One server change for it:</b> in the tutorial nobody counts as an enemy for the stream&#x27;s size (<code>cfg_.tutorial</code>: the ghost in the next lane, 12 m off, would cut your stream to 11 bubbles, and you the ghost&#x27;s); the test puts a bot in your lane and checks the full 58.4 m/s. Nothing changes outside the tutorial.
+</li>
+<li><b>The launch, measured</b> (quark_tests tutorial: the ghost&#x27;s script on the real server and map). Grapple walk with the hook just under level until 24 m/s, then in one tick: release, pitch -89, JUMP + DASH + FIRE. In pmove the hyper comes first: carried speed 24 + 5 = 29 m/s, mostly up because the dash aims down (up share 0.9). The rocket goes off at your feet about 33 ms later and adds about 22 m/s up. Result: <b>48.7 m/s up and 17.2 m/s level off the floor, 50 m high, 65.7 m along.</b> The same input with the rocket held back (the hyper alone) gives 26.1 m/s up and 14.2 m high, so the rocket more than triples the height. The order matters: if the blast came first it would lift you off the floor and there would be no floor for the hyper.
+</li>
+<li><b>Grappling players, measured</b> (quark_tests tutorial: the real latch on the real server; no new mechanics, the tutorial only lets this one pair hook). Grapple a player: the ghost&#x27;s hook latched onto the PARTNER running across the bay at 9.5 m/s, the two pulled together up to 24 m/s, and let go as they met 0.83 s later (meeting at the release distance). Dash out of a grapple: the PARTNER&#x27;s hook caught the ghost at 601 ms; pulled toward it at 13.3 m/s, the ghost dashed 350 ms later and was free <b>the same tick</b> (pmove&#x27;s dash clears <code>MF_PULLED</code>, <code>syncLatch</code> ends the latch, the PARTNER&#x27;s hook goes to its 1 s cooldown). As you, with no dash you&#x27;re pulled up to 24 m/s over 14 m for as long as it holds its grapple (0.9 s here; at most 3 s, <code>kGrappleLatchMax</code>); a dash 300 ms in breaks free on that tick. Grabbing something with your own grapple breaks free too (pmove, the same rule), and the lesson says so.
+</li>
+<li><b>The PARTNER</b> (the two grapple-a-player lessons, <code>LessonDef::partner</code>): a second scripted bot, spectating in every other lesson. Its script loops with the ghost&#x27;s and it&#x27;s put back at its start every loop. It runs across the middle of the bay 30 m in (grapple a player), or stands 34 m in and hooks the ghost in the demo and you in your turn (<code>tutorial try</code>, sent when your turn starts; dash out of a grapple). A script step with pitch <code>kAimAt</code> aims at the other one: the server works out the yaw and pitch every tick (a bot&#x27;s view time is now, so no rewind). Only the lesson&#x27;s pair may hook (<code>Server::tutorialHookAllowed</code>, through <code>nativeCanDamage</code>, which in the tutorial decides only grapples: <code>damagePlayer</code> stops all else): anyone onto the PARTNER, or the PARTNER onto anyone. The client&#x27;s grapple prediction catches only the PARTNER, and only in its lesson (<code>NetClient::hookPlayers</code>, a bit per player, replacing the earlier all-or-nothing flag).
+</li>
+<li><b>The ghost</b> (src/game/tutorial_server.cpp) is a server bot (<code>addBot</code>, named GHOST) whose <code>BotBrain::script</code> returns the lesson&#x27;s input script (<code>tut::ghostCmd</code>): <code>Seg</code>s of held keys, a yaw rate and a pitch, run through the normal pmove and weapons. That gives real rockets, stickies and rocket riding, drawn by the normal player and projectile rendering, for no new wire messages. Each loop it&#x27;s put back at its start (fresh MoveState, its projectiles cleared).
+<ul>
+<li>The game sends <code>tutorial &lt;lesson&gt; &lt;epoch ms&gt;</code> (a string command, no protocol change). The epoch is the view time + 0.5 s. The keys shown are the script&#x27;s at the drawn time minus the epoch, so they match what the ghost is doing on screen. The server clamps the epoch to between 1 s ago and 3 s ahead. <code>tutorial reset</code> sends you back to the start.
+</li>
+<li>Spawns: <code>tutorialSpawnAt</code> puts you at your lane&#x27;s start and the ghost at its own.
+</li>
+<li>Nobody touches anybody: <code>nativeCanHit</code> is false between players, <code>damagePlayer</code> returns early, projectiles skip player boxes (<code>tickProjectiles</code>), and the grapple catches no player but the PARTNER in its lessons (above). Your own blasts still throw you, with no damage. <code>grappleTargets</code> lets this one bot ride rockets (bots never do otherwise).
+</li>
+<li>Client side, the ghost counts as friendly (your colour, no hit tests against it), and the score box reads TUTORIAL / LESSON n OF 28 instead of the warmup line.
+</li></ul>
+</li>
+<li><b>The check</b> (<code>tut::Check</code>, src/game/tutorial.h): the lesson&#x27;s goal, fed the movement and its pmove events (ME_*) once a frame. It&#x27;s a few comparisons with no allocation. Standing still on the floor for 0.3 s starts a new try (so a strafe speed after a dash doesn&#x27;t count). A blast is told from a jump by the rise in upward speed with the jump&#x27;s own speed taken off, no dash and not hooked.
+</li>
+<li><b>The map <code>tutorial</code></b> (tools/maps/tutorial.py): 28 sealed 24 m-wide bays side by side along z, each running along +x from x -90 and built for its one tech. 12 to 80 m tall (72 m for the launch hall, 80 m for the bubble launch, 64 m for the sticky stack, 60 m for the rocket pop) and 12 to 180 m long. The ramp dash bay has a 60 degree wedge onto a 10.4 m shelf, the swing turn bay a floor-to-ceiling pillar 32 m in. The dash bay has a lava pit with striped edges, the bounce bay a striped end wall, and the grapple / jump bays ledges with flat faces (a 5 cm overhang snagged the grapple). Tall bays have rows of lights and glow bands up their walls.
+<ul>
+<li><b>Side by side, not in a row:</b> the first layout was a 1137 m row along x, and the ghost was drawn stuck at x 512, because snapshots carry positions as int16 at 1/64 m (<code>Buffer::vecq</code>, +-512 m). The new layout fits in x -91..91, z -351..351.
+</li>
+<li>It&#x27;s hidden from every map list, vote and picker by name (<code>mapHiddenFromLists</code>): the client&#x27;s map list, the server&#x27;s map rotation, and the dedicated server&#x27;s fallback pick. Only the tutorial hosts it.
+</li></ul>
+</li>
+<li><b>Performance.</b> When the tutorial isn&#x27;t running, the cost is a few <code>tut_.on</code> tests. While it runs, the text is formatted once a lesson and again when the pause menu closes (the binds may have changed). The readout is written into a string that keeps its capacity, the key names are cached, and nothing is allocated per frame. The demo camera turns off the late latch (no mouse re-read for a view that isn&#x27;t yours) and hides the first-person models and your own HUD.
+</li>
+<li><b>Translations.</b> 211 new strings, in all 9 languages (the bot names GHOST and PARTNER stay as they are, as on their nametags). Step text is drawn as &quot;KEYS: TEXT&quot;, so each side of &quot;: &quot; is translated (your key names stay as they are). The ja / ko / zh-CN atlases were re-baked for 66 new characters.
+</li>
+<li><b>Tests.</b> <code>quark_tests tutorial</code>:
+<ul>
+<li>The lesson table, scripts, the map (every start has floor and room, every bay&#x27;s far wall where its length says), and the check on made-up movement.
+</li>
+<li>Every lesson&#x27;s ghost on the real server and map, fed into the very check you get. Each one passes within one loop, and the launch is also run without its rocket to prove the rocket is what makes it. The combos&#x27; numbers above are asserted (within a tolerance), so a change to the movement that moves them fails the test and the lesson texts get updated with it.
+</li>
+<li>The combos&#x27; variants and rules (<code>testTutorialCombos</code>): sticky stacks of 1 / 2 / 3, the rocket pop&#x27;s timing, a dash erasing a blast, the air dash&#x27;s 32 cap, and the bubble launch standing / after a jump / from a run / with you in your lane / with an enemy 3 m off / its cost.
+</li>
+<li>The PARTNER&#x27;s lessons with the real latch: who may hook whom in each lesson (and nobody in the others), the ghost latched onto the running PARTNER with no damage, the PARTNER&#x27;s hook on the ghost broken by the dash on the dash&#x27;s tick with the hook&#x27;s cooldown after, and a bot standing in for you: held without a dash, free on the tick of a dash 300 ms in, and the lesson&#x27;s check done only then.
+</li>
+<li><code>TUT_TRACE=&lt;lesson&gt;</code> prints a trace of it.
+</li>
+<li>The map passes the <code>maps</code>, <code>mapbounds</code>, <code>mapbounds2</code> and <code>bounds</code> groups.
+</li></ul>
+</li></ul>
+<h3>Info screen</h3>
+<p>INFO &gt; CONTROLS had three lines left over from older movement and weapon numbers (each checked against the code, and re-translated in all 9 languages):</p>
+<ul>
+<li><b>Air drift.</b> It said holding a direction in the air &quot;drifts you up to run speed&quot;. The drift is 0 since protocol 63 (owner, 2026-11-01: &quot;change air drift to 0&quot;; <code>kAirDriftAccel</code>). What&#x27;s left is the air acceleration&#x27;s 2.3 m/s cap, so now: you keep your speed in the air, a held direction steers it, and a standing jump drifts 2.3 m/s at most.
+</li>
+<li><b>Dash exit speed.</b> It said every dash leaves you 1 m/s faster. That&#x27;s only on the floor; in the air the dash adds max(1, 0.35 x (32 - your speed)) (<code>kDashAirGap</code>, owner 2026-10-28), so now: &quot;on the floor by 1 m/s, in the air by about a third of what you are below 32 m/s (from 10 m/s you leave at 17.7)&quot;, and that a dash above 32 slows you to 32. (&quot;About a third&quot;, not &quot;35%&quot;: the language extractor reads &quot;% o&quot; as a format.)
+</li>
+<li><b>Syringe.</b> It said 10 hp a use and +30 hp thrown; they were halved to 5 and 15 (owner, 2026-10-31: &quot;half syringe healing&quot;).
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.19.7/">&larr; 1.19.7</a></span><span><a href="../">All updates &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

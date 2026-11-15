@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.19.5: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.19.5</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<p>1.19.5 is the production release after 1.19.4: the testing line <code>1.19.4.&lt;N&gt;</code> promoted with WINNER STAYS mode retired (owner, 2026-11-02: &quot;you can go ahead and start working on 1.19.5 prod&quot;, then &quot;release checklist complete good to go&quot;). Every change below was made, explained and built in one of those testing builds. The short version is on the <a href="../">updates page</a>.</p>
+<ul>
+<li><b>Network protocol 67</b> (1.19.4 used 66: 67 3D VAMP&#x27;s zero-g flight and the MOVE UP / MOVE DOWN buttons). A 1.19.5 game only plays with a 1.19.5 server, so update games and servers together.
+</li>
+<li><b>Map format 13</b>, as 1.19.4.
+</li>
+<li><b>Human-made assets: 16.1%</b> (no asset changes since 1.19.4).
+</li></ul>
+<h3>Numbered default names (owner, 2026-11-01: &quot;each new player should get default player name &quot;playerX&quot; with their number therefore the next player who plays should be player24 by default&quot;)</h3>
+<ul>
+<li><b>Worker.</b> New D1 table <code>player_numbers</code> (<code>n INTEGER PRIMARY KEY AUTOINCREMENT</code>, <code>id</code> unique, <code>created</code>; <code>tools/master/migrations/0003_player_numbers.sql</code>). The migration numbers the players already in <code>names</code> in row order (oldest first), so the 23 known players are 1-23 and the next new one is 24. A player gets the next number the first time the Worker sees them: <code>POST /number</code> (form <code>secret</code>, answers <code>num &lt;N&gt;</code>) and every write that saves a name (<code>saveName</code>), so old games still number their players in the order they turn up. Insert only when missing (<code>INSERT ... WHERE NOT EXISTS</code>): a conflicting <code>INSERT OR IGNORE</code> alone still uses up an AUTOINCREMENT number, so a player sending their name every match would have burned one each time. AUTOINCREMENT, not MAX+1, so a number is never handed out twice, even after an id move deletes a row. Id moves (pre-1.17 ids) carry the number over. A worker deployed before the migration answers <code>/number</code> with 503 and saves names as before.
+</li>
+<li><b>Game.</b> While the name is exactly the default <code>player</code> (and there&#x27;s a ranked key, not in a screenshot run or the UI test), the client asks <code>/number</code> in the background at start-up (RankService thread, no frame cost), again every 5 minutes if it fails (offline, an old Worker), and on <code>num N</code> sets the name to <code>player&lt;N&gt;</code>, saves the config and sends <code>name</code> to the server if connected. It stops for good once the name is anything else, so a typed name is never replaced. Players already named plain <code>player</code> get their (backfilled) number on their next start.
+</li></ul>
+<h3>1v1 rotation every round (owner, 2026-11-01: &quot;by default 1v1s should cycle people every round even in ranked, so in ranked it acts like an ffa but of 1v1&#x27;s&quot;; picked winner stays over both players rotating out)</h3>
+<ul>
+<li><b>Rule (first version; replaced below).</b> <code>ServerConfig::rotate1v1</code> (dedicated <code>--rotate match|winner|round</code>, default <code>winner</code>). In 1v1 (arena) and 1v1 duel, when a human spectator is in line (<code>Server::rotateEveryRound</code>), <code>nativeRoundOver</code> ends the match after every round: <code>enterMatchEnd</code> with the round&#x27;s winner (a draw: none), so ranked opens a ticket and posts a result for that one round and the Worker rates it between the two who played it. Why a match per round and not rounds inside one match: ranked rates whole matches between their players, so a round can only be rated on its own as a match; the &quot;FFA of 1v1s&quot; is everyone&#x27;s rating moving round by round.
+</li>
+<li><b>Timing.</b> The round result is already on screen for the round end (2.5 s), so the match end lasts 1 s (not 10), and the next match starts straight from the match end (<code>rulesReset</code>, seats filled from the line, <code>startMatch</code>: the 3 s freeze) instead of the 5 s warmup countdown. Between rounds: 2.5 + 1 + 3 s, against 2.5 + 3 s inside a match.
+</li>
+<li><b>Who plays.</b> <code>winner</code>: the loser to the back of the line, the first in line in (a draw: the same two again), as winner stays after a match did. <code>round</code>: both to the back (the winner ahead of the loser), the next two in. <code>match</code>: the old rule (first to 5, then winner stays). Two players alone, or winner stays mode (its own per-round rotation), are unchanged.
+</li>
+<li><b>Tests.</b> <code>duel</code> group: <code>testRotateEveryRound</code> (3 players: a round ends the match, no warmup, ann stays and cat comes in, then cat beats ann and bob comes in; <code>rotate1v1 0</code> keeps the match going).
+</li></ul>
+<h3>3D VAMP: zero-g 1v1 on lasers (owner, 2026-11-01)</h3>
+<ul>
+<li><b>Ruleset.</b> A tenth 1v1 ruleset, <code>3dvamp</code> / &quot;3D VAMP&quot; (<code>arenaVariant</code> 9, gamedefs.h): lasers only, <code>AR_VAMPIRE | AR_FLY | AR_NO_KNOCKBACK</code> (the last two free AR_* bits, 64 and 128). An arena ruleset rather than a new mode so it gets 1v1&#x27;s rounds, tourney, winner stays, free for all rulesets, the vote builder&#x27;s 1V1 ruleset step and the menus&#x27; ruleset pickers with no new mode code. Not on any ranked ladder (<code>arenaVariantRanked</code> unchanged). The 1V1 card now says how many rulesets there are instead of a fixed &quot;9&quot;.
+</li>
+<li><b>Heal ramp.</b> <code>ArenaVariant</code> has a <code>vampireFade</code> (default <code>kVampireFadeTime</code>, 60 s, so laser vampire and the duel / custom vampires are unchanged); 3D VAMP&#x27;s is 30 s. The heal is <code>vampireHealShare(t, fade)</code>: 100% of the damage dealt at the round&#x27;s start, falling linearly to 50% (<code>kVampireMinHeal</code>) at <code>fade</code>, flat after. <code>t</code> counts from <code>roundStart_</code>, which every round resets, so the ramp restarts each round. (In free for all, which has no rounds, it runs from the start of the match.)
+</li>
+<li><b>No knockback.</b> <code>AR_NO_KNOCKBACK</code> zeroes the knockback in <code>Server::damagePlayer</code>, before it&#x27;s applied (the laser&#x27;s push and the tractor pull).
+</li>
+<li><b>Flight (pmove).</b> <code>MoveState::fly</code>, set at spawn from <code>AR_FLY</code>, sends <code>pmoveStep</code> to a new <code>flyStep</code>: the wish is forward x W/S + right x A/D on the level (pitch never steers) + world up x (UP - DOWN), capped at <code>kFlySpeed</code> 9.5 m/s (the run speed) whatever is held, diagonals included, so there&#x27;s no strafe gain. The velocity moves straight toward the wish at <code>kFlyAccel</code> 120 m/s2 (full speed in ~80 ms, like the run) and to a stop at <code>kFlyStop</code> 120 m/s2 with no keys, so nothing drifts and letting go stops you in ~80 ms. No gravity, no jump, dash or grapple (the server&#x27;s and the client&#x27;s grapple probes skip a flyer). Walls slide you through the same <code>slideMove</code> as walking (a slope&#x27;s face takes what goes into it). Frozen (the round countdown): held still. Shared code, so prediction matches the server.
+</li>
+<li><b>Out of bounds.</b> A flyer more than 40 m (<code>Server::kFlyKillMargin</code>) past the map&#x27;s solid geometry on any side or above it dies as a fall (cause 252, a ring-out if someone hit them); below, the map&#x27;s void.
+</li>
+<li><b>Protocol 67.</b> UserCmd buttons <code>BTN_UP</code> (bit 6) and <code>BTN_DOWN</code> (bit 7); the own movement state&#x27;s opt bit 128 byte carries bit 64 = flying (so it&#x27;s sent, one byte, only while flying; the dash bounce count there is 6 bits from 67 on, it never passes 2). <code>kSnapFlySince</code> reads older demos as never flying. Bombs&#x27; <code>rootCmd</code> drops the two new buttons too.
+</li>
+<li><b>Keys.</b> Two new actions, MOVE UP (default SPACE) and MOVE DOWN (default L SHIFT), on CONTROLS &gt; MORE KEYS under RACE + FLYING. They share jump&#x27;s and dash&#x27;s default keys on purpose (flying has neither): binding a key to one of the pair doesn&#x27;t unbind it from the other (jump / MOVE UP, dash / MOVE DOWN), every other action still gives it up. Binds version 5: an older quark.cfg gets MOVE UP / MOVE DOWN on whatever keys its jump / dash have. CONTROLS &gt; MORE 2 &gt; MOVEMENT: VERTICAL KEYS (<code>vertical_keys</code>): TWO KEYS, or ONE KEY, where MOVE UP held flies up and, while flying, not holding it flies down.
+</li>
+<li><b>Map: Black Hole</b> (<code>tools/maps/blackhole.py</code>, built for 1v1, offered for tourney, winner stays and free for all). Final Destination in space: a flat 40 x 20 m asteroid top with nothing on it, the rock tapering away under it in layers (each hidden under the one above: no ledges), <code>void -50</code>. The sky is black (the starfield); 150 m to the north a black disc of far scenery is the hole, ringed by a thin lensed band of lava (the only bright, unlit, non-solid material: it doesn&#x27;t move the map&#x27;s bounds, so the fly kill box stays tight round the rock) and a flat lava accretion disc (radius 38-80 m) seen nearly edge on, its far half behind the hole. The sun comes from the disc. No dressing pass (no props). Four spawns a side (winner stays draws from them), facing each other across the floor, so <code>holdfire 3</code> (as Dojo&#x27;s bow: the map checks exempt a hold-fire map from the spawns-in-sight rule). Bots fly in it but don&#x27;t use MOVE UP / DOWN.
+</li>
+<li><b>Tests.</b> <code>movement</code>: <code>testFlyMove</code> (no drift with no keys, UP / DOWN, the stop, the cap with W + A + UP and while turning, wall slide and floor, frozen, the wire flag both ways). <code>rules vamp3d</code> (in <code>rules</code>): the ruleset&#x27;s flags, the ramp&#x27;s 100 / 75 / 50 / 50 %, no knockback, flying out is a fall, and the next round&#x27;s heal back at 100%.
+</li></ul>
+<h3>Aim trainer (owner, 2026-11-01: &quot;theres 3 main modes ... 3 categories clicking, switching, tracking ... each mode is 30 seconds long, and the score you get is determined by how many objects you destroy and your accuracy&quot;)</h3>
+<ul>
+<li>Main menu &gt; AIM TRAINER: pick the mode (3D STATIC, 2D), the difficulty (EASY, MEDIUM, HARD) and the category (CLICKING, SWITCHING, TRACKING); six scenarios each, as the owner listed them (wall ball, air ball, reactor, bouncy balls, crossing guard, crazy ball; 2D&#x27;s 2 ball and frenzy; switching&#x27;s drifting copies with 10 / 20 hp; tracking&#x27;s bouncy, wall wander, ring, 360, grid and dash, flattened onto the wall for 2D). Sizes, counts and speeds per difficulty are the owner&#x27;s (src/game/trainer.cpp&#x27;s table).
+</li>
+<li>3D STATIC: you can&#x27;t move. 2D: the camera never turns; the mouse moves the crosshair over the wall at your normal sensitivity, held inside the view.
+</li>
+<li>Clicking uses the rifle with autofire off (one shot a click, the rifle&#x27;s refire, a click up to 80 ms early waits for it); switching and tracking use the laser (40 dps) with an 80 m reach (the game&#x27;s is 24 m: the owner asked for a longer one, and the walls are 24 m away).
+</li>
+<li>Score: kills x 100 x accuracy (clicking: hits / shots; laser: time on a target / time held); tracking: damage x 10 x accuracy. A 3 s countdown before the 30 s clock; shots in it don&#x27;t count. The shot is tested against where the targets were drawn, then they move (what you saw is what you hit).
+</li>
+<li>Your best and last score and plays per scenario and difficulty are kept in the data folder&#x27;s trainer-scores.txt. The online leaderboard comes in a later build.
+</li>
+<li>In a run (owner, 2026-11-01: &quot;remove the grid lines in the background its distracting, and allow f3 and settings menu while in aim trainer mode&quot;): no grid lines on the room&#x27;s floor and walls (only the 2D target area&#x27;s frame); ESC pauses the run (the targets and the clock hold still) with RESUME, SETTINGS (the whole settings menu over the run; ESC or BACK returns to the pause menu), RESTART and TRAINER MENU; F3 / F4 (the perf overlays) and the screenshot key pass through as in a match. The fog and dark sky are set again each frame, so a setting changed mid-run can&#x27;t bring the game&#x27;s haze back.
+</li>
+<li>2D is real 2D (owner, 2026-11-02: &quot;for the 2d mode i dont want you to do any 3d rendering at all like straight up real 2d only&quot;): no 3D scene at all, only a flat background, the target area&#x27;s frame, flat discs and a 2D shot line, drawn in screen space. The wall maps linearly onto the screen (its width at 24 m), so sizes and speeds stay the spec&#x27;s; the mouse moves the crosshair linearly (a radian of mouse turn = 24 m, the 3D aim&#x27;s sensitivity at the centre; before, the cursor sped up toward the edges), held inside the screen.
+</li>
+<li>A client-only scene like the map editor (no server, nothing on the network); the simulation is src/game/trainer.h, tested headless (quark_tests trainer: every scenario&#x27;s 30 s at every difficulty, targets where the spec puts them, a perfect aim scores, no aim scores 0).
+</li></ul>
+<h3>Servers: the testing server always comes back</h3>
+<ul>
+<li><code>tools/server/install.sh</code>: <code>quark-testing-active.path</code> has no start or trigger limit (<code>StartLimitIntervalSec=0</code>, <code>TriggerLimitIntervalSec=0</code>), and every install runs <code>reset-failed</code> on it and the testing service. A burst of restarts on 2026-10-30 left the path unit failed, so when 1.19.4 went to production (testing stopped, as designed) and the next testing build re-created the switch file, nothing started the testing server: it stayed down for ~10 hours until reset by hand.
+</li></ul>
+<h3>3D VAMP: snap tap on MOVE UP / MOVE DOWN (owner, 2026-11-02: &quot;the snap tap thing doesnt work with the up and down in 3d movement&quot;)</h3>
+<ul>
+<li>With VERTICAL KEYS: TWO KEYS, MOVE UP and MOVE DOWN now go through the same SOCD axis as the move keys (<code>Game::buildCmd</code>): OPPOSITE KEYS CANCEL (both held: neither), LAST WINS (snap tap: the last pressed), FIRST WINS. Before, both held sent both buttons, which pmove cancels, whatever the setting. Ranked keeps CANCEL, as for the move keys. Client only: the command&#x27;s BTN_UP / BTN_DOWN bits are as before.
+</li></ul>
+<h3>1v1: joining a full game queues you, no LET IN vote (owner, 2026-11-02: &quot;for some reason it wants to &quot;let people in&quot; in the 3d lg instead of queueing spectators&quot;)</h3>
+<ul>
+<li><code>team a|b</code> in a full, even 1v1 (any 1v1: ranked or not, 1v1 duel): straight into the line to play (queueToPlay), as ranked already did. Before, an unranked one called VOTE_LETIN (&quot;LET X IN (TEAMS GO UNEVEN)&quot;), which made a 2v1 out of a 1v1 and skipped the line the every-round rotation plays from. The vote stays for 2v2 duels. Test: testDuel (duel group).
+</li></ul>
+<h3>3D FLYING as a modifier (owner, 2026-11-02: &quot;3d movement should just be its own modifier not its own gamemode, so you can play it on anything&quot;)</h3>
+<ul>
+<li><code>CustomRules::fly</code> (<code>fly=1</code> in a .qmode, a vote&#x27;s <code>mods fly=1</code>, EV_RULES): adds AR_FLY to <code>Server::arenaRules()</code>, so every player spawns flying (MoveState::fly) on any mode and map; the 3D VAMP ruleset keeps AR_FLY in its own rules (a preset). Vote MODIFIERS: a 3D FLYING toggle (a seventh row); Host &gt; Custom modes &gt; GENERAL: a 3D FLYING toggle under REGEN. The vote&#x27;s title names it &quot;3D FLYING&quot;. No protocol change: the flag reaches clients as the flying bit of their own movement state (protocol 67). Flown out past the map (kFlyKillMargin) is a fall on every map, as on Black Hole. Test: rules flymod (fly=1 round-trips, a free for all on Harbor spawns flying, prediction flies).
+</li></ul>
+<h3>Flight moves like running (owner, 2026-11-02: &quot;the accel for 3d mode should be the same as regular ground accel in every direction&quot;)</h3>
+<ul>
+<li><code>flyStep</code>: the ground&#x27;s friction (kFriction 7, kStopSpeed 2, the custom mode&#x27;s multipliers) on the whole 3D velocity, then the ground&#x27;s <code>accelerate</code> (kGroundAccel 16, at kGroundSpeed 9.5 x the speed multiplier) toward W/S/A/D + MOVE UP/DOWN. Before: its own linear ramp to the keys&#x27; velocity at 120 m/s2 and a 120 m/s2 stop (~80 ms each way). Now full speed takes the run&#x27;s time and a stop the run&#x27;s ~0.4 s, and turning behaves as on the ground (test: within 5% of running with the same keys and turn; 11.46 vs 11.89 m/s at 1 ms steps). kFlySpeed / kFlyAccel / kFlyStop are gone.
+</li></ul>
+<h3>JOIN GAME (owner, 2026-11-02: &quot;it should say join game instead of join teama/b when theres no &quot;teams&quot; particularly like in 1v1s&quot;)</h3>
+<ul>
+<li>Pause menu: 1v1 modes (1v1, winner stays) and duel show one JOIN GAME (<code>team a</code>: the server takes the side with room or puts you in line) in place of JOIN TEAM A / JOIN TEAM B; the no-team modes&#x27; PLAY is JOIN GAME too. The spectator banner&#x27;s hint says JOIN THE GAME FROM THE MENU (ESC) there.
+</li></ul>
+<h4>Spectating, the 1v1 line, forced models</h4>
+<ul>
+<li>Spectator camera: a spectator in a team-based mode was treated as team A, so in 1v1 / duel cycling only ever found the team A player and the camera snapped back from team B. Now a real spectator may watch anyone; only a player dead inside a team match is limited to teammates (after the kill cam). <code>Game::specWatchable</code>.
+</li>
+<li>1v1 every-round rotation: a drawn round (both dead at once, or a timed-out match) ended with no winner, and winner stays then kept the same two seated, so the line sometimes didn&#x27;t move. A drawn rotation round now sends both to the back (seat A first) and the next in line step in. Test: testRotateEveryRound&#x27;s draw step.
+</li>
+<li>TEAM MODEL (config <code>team_model</code>): like ENEMY MODEL, every teammate drawn as one model; ranked still draws everyone standard. The section is now FORCE PLAYER MODELS.
+</li>
+<li><b>1v1 line, kills carry over</b> (owner, 2026-11-02: &quot;why is 1v1s best of 1? are you mad&quot;, then &quot;the line rotates every death... but the score should just stay&quot;, &quot;cycle on death, first to 11 kills wins&quot;). The every-round rule made each round (one life) its own match: a best of 1 with the scores reset every kill. Now, with someone in line, <code>nativeRoundOver</code> moves the line after each round (winner stays; <code>--rotate round</code>: both out; a draw: both out) without ending the match: players&#x27; scores (their kills, from nativeKill) carry over, the team scores show the two seated players&#x27; kills (<code>syncWinnerScores</code> also runs for a rotating match), the HUD&#x27;s &quot;first to&quot; is <code>rotateKills</code> (default 11, <code>--rotate-kills N</code>), and the first player to it wins the match (match end, then winner stays and a new match straight away, scores reset). Ranked: each duel is still rated on its own (<code>rankedPlayed</code>, split out of <code>enterMatchEnd</code>; the next round going live opens a new ticket), so ranked stays an FFA of 1v1s. <code>rotationMatch_</code> now marks a match that has rotated (reset in <code>startMatch</code>), so the rule holds if the line empties mid-match. Test: <code>testRotateEveryRound</code> (no match end between turns, kills carried, a draw moves the line, ann to 3 kills ends the match, the next match resets).
+</li>
+<li><b>3D FLYING polish.</b> Bots: <code>botThinkDirect</code> ends with a flight step when <code>move.fly</code>: no jump / dash buttons, MOVE UP / DOWN toward the target&#x27;s height plus a 2 m weave (sin of time, per-bot phase), else hold height; never down with the floor within 1 m. Before, bots only moved flat, an easy shot from above. Test: flymod (a bot below its target presses MOVE UP). HUD: <code>HudBarVals::fly</code> draws only the weapon bar (no dash or grapple in flight; AUTO-HIDE counts only the weapon then); the speed meter adds vertical speed while flying.
+</li>
+<li><b>Trainer HUD under F3.</b> The scenario name and key hints sat at (16, 16), under the F3 box at the top left (q&#x27;s screenshot, 2026-11-02). <code>Game::perfBoxBottom()</code> gives where the F3 / F4 box ends; the trainer draws its two lines 8 px below it.
+</li>
+<li><b>Trainer: hide the HUD and the weapon</b> (owner, 2026-11-02: &quot;you should also be able to hide the ui in aim trainer mode, and weapon&quot;). The game&#x27;s HIDE HUD key (hudHidden_) now works in a run: the timer, score, accuracy and labels go, the crosshair, countdown, pause menu and results stay. The pause menu gains SHOW HUD and SHOW WEAPON toggles; SHOW WEAPON is HUD &gt; VIEWMODEL&#x27;s hidden flag (saved), so it is the same in matches. Uitest: trainer/run/pause, 6 widgets.
+</li>
+<li><b>F3 graph in the trainer</b> (owner, 2026-11-02: &quot;in the aim trainer the fps timeline graph doesnt show up&quot;). drawPerf / drawPerfMini drew the pipeline graph only on Screen::InGame, and the trainer&#x27;s frame set none of its marks. trainerFrame now marks PM_TICKS (its update), PM_LATCH (= the frame&#x27;s read: no late latch), PM_SCENE0 + the GPU start before its view and PM_SCENE1 after (2D: no view, so the span is ~0); the main loop&#x27;s HUD / swap marks follow as for a match. Both draws allow Screen::TrainerRun.
+</li>
+<li><b>Winner stays mode retired</b> (owner, 2026-11-02: &quot;remove winner stays mode because 1v1 is automatically winner stays now&quot;). MODE_WINNER keeps its id 15 (the protocol, demos, logs, the mode logic&#x27;s base names) but <code>modeRetired()</code> hides it from the host / vs bots / in-game mode pickers and the vote builder (the picker&#x27;s mode list is now built from modeVis in every case, the RANKED tile last), <code>canSupportMode(MODE_WINNER)</code> is false (no map offers it, without changing any map file or ranked map hash), and <code>retiredTo()</code> turns a request for it into 1v1: <code>Server::start</code> (config, <code>--mode winner</code>), <code>playMap</code> (map commands and votes) and a custom mode&#x27;s <code>mode=winner</code>. Test: testWinnerStaysMode now checks those three (the old first-to-10 test goes with the mode).
+</li>
+<li><b>Client: no read of a missing snapshot in <code>NetClient::tick</code>.</b> It checked <code>bombRooted(mode(), ...)</code>, and <code>mode()</code> is <code>snaps_.back()</code>: with the map ready but no snapshot yet (a map change), that read past an empty deque. Undefined behaviour, and the likely cause of the crash only the LTO build showed (q&#x27;s PC: <code>quark_tests duel</code>, testWinnerStaysMode, NetClient::tick+166; fine without LTO and under ASan on Linux). Now <code>hasSnapshot() &amp;&amp;</code> first.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.19.4/">&larr; 1.19.4</a></span><span><a href="../1.19.6/">1.19.6 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

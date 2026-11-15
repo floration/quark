@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.18.24: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.18.24</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<p>Three bot changes from the bot editor thread, approved by the owner: the nav graph no longer routes through things standing on a floor, bot perception is spread over ticks, and HOST GAME can pick a custom bot brain. No network protocol, map or demo format change.</p>
+<h3>Bot navigation (src/game/bots.{h,cpp})</h3>
+<ul>
+<li><b>The bug</b>: the nav graph had one node per walkable top, so a route across a floor went straight through whatever stood on it. The Depot bomb carrier pushed into its gatehouse&#x27;s front wall (stuck about 16 s), Depot yard runs stopped at the perch (about 14 s), and Summit&#x27;s west spawn walked into the ledge ramp&#x27;s tall end for about 4-20 s.
+</li>
+<li><b>The fix</b>: each top is cut into rectangles round anything standing on it that a player can&#x27;t step over (grown by the player hull), with edges snapped at 10 cm so there are no slivers. Pieces of one top link where they meet; different tops link when a step, jump or drop reaches and nothing stands in the way (corner to corner for diagonal jumps, so Viaduct&#x27;s zig-zag pads with posts still link).
+</li>
+<li><b>Routing</b>: A* over regions (a top&#x27;s joined pieces per 12 m tile, ALT landmarks, exact), then a fine A* through that corridor. Routes average x1.07 the shortest possible.
+</li>
+<li>Goals off the pieces (a hill centre under a mast, a site inside a crate) take the nearest piece within 4 m (<code>NavGraph::kGoalNear</code>). A bot drifting onto a piece next to its route keeps the route instead of searching again.
+</li>
+<li><b>Results</b>: Depot gate 16 s stuck to 8.0 s to arrive; Depot yard 14 s to 3.6 s; the Summit hold is gone. Depot bomb bot sims went from 11 to 310 kills over the same runs.
+</li>
+<li><b>Urgent bomb bots</b>: a bomb carrier or defuser hunting someone planned a route to both the hunt and the objective every think (the second always won). With the finer graph that doubled the searches per tick and starved the per-tick path budget; it now plans one.
+</li>
+<li><b>Trade-offs</b>: Summit KOTH hill time is down about 30% (bots used to stand stuck on the hill, which counted as holding it). Building the nav graph is slower (Midtown 60 to 305 ms, on the background thread, so no frame or tick cost). Lodestone&#x27;s worst single route search rose from about 2.6 to 3.5 ms; average and p99 searches improved.
+</li>
+<li><code>NavKind::Surfaces</code> keeps the old whole-tops graph for the map report, the stairs check and the map editor&#x27;s metrics, so <code>docs/MAP_REPORT.md</code> is byte-identical.
+</li></ul>
+<h3>Bot perception spread (src/game/bots.cpp)</h3>
+<ul>
+<li>Bots look (perception, 20 Hz of game time) starting from their respawn time, so a round restart put every bot on one tick from then on: 8-12 of 16 bots looked on the same tick in Depot bomb. Each bot now looks on a fixed phase of the 50 ms period from its id (golden-ratio steps), kept through deaths; a missed look (dead, a hitch) waits for its next phase instead of happening at once.
+</li>
+<li>serverbench (pinned core, median of 3): busiest tick 10 to 1 bot looking (Depot bomb 1000 Hz), 8 to 3 (125 Hz). Bot think time per tick p99: Hamlet 24 bots 500 to 372 us, Depot 125 Hz 667 to 631 us, Midtown points 288 to 272 us. Whole-tick p99 on Hamlet 1053 to 917 us.
+</li>
+<li>serverbench gains Midtown points (16 bots) and Depot bomb (1000 / 125 Hz) runs, a run selector, the busiest look tick and the bots&#x27; think time per tick.
+</li></ul>
+<h3>HOST GAME &gt; ADVANCED &gt; BOT BRAIN (client host menu, botbrain listBrains())</h3>
+<ul>
+<li>A cycle under SERVER LOG: BUILT-IN, then every <code>bots/*.qbrain</code> in the data folder, listed again whenever HOST opens. The choice is saved (<code>host_bot_brain</code>) and goes to <code>ServerConfig::botBrain</code>, so console <code>addbot</code> and balance bots play it too.
+</li>
+<li>A brain that doesn&#x27;t compile shows ERROR ON LINE n - BOTS PLAY THE BUILT-IN BRAIN under the row (the full file:line:col error goes to the console); hosting with it says so and uses the built-in brain. A brain whose file is gone falls back to BUILT-IN when HOST opens.
+</li>
+<li>Ranked: BOT BRAIN: OFF (RANKED), greyed, never applied (the server refuses too). VS BOTS keeps the built-in brain.
+</li>
+<li>Why ADVANCED: the main host panel has no free row in duel.
+</li>
+<li>INFO &gt; HOSTING, <code>docs/UI_TEST.md</code> and <code>docs/RELEASE_CHECKLIST.md</code> are updated; the checklist also gets a row for the nav fix (Depot gate and yard, Summit west spawn, Viaduct pads).
+</li></ul>
+<h3>Tests</h3>
+<ul>
+<li><code>testBotNavBlockers</code> (the three stuck cases; each fails on the old graph), <code>navstuck</code> and <code>navbench</code> commands, <code>testNavGraph</code> checks the region A* is exact and routes are short; allmaps / checkNavRoutes take spawns and goals the way bots do (<code>nodeNear</code>).
+</li>
+<li>The UI test&#x27;s data folder gets two brains (one broken), so the cycle and error line are clicked and layout-checked: 2396 widgets pass.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.18.23/">&larr; 1.18.23</a></span><span><a href="../1.18.25/">1.18.25 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

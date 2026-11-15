@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.18.7: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.18.7</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<p>An update from the owner&#x27;s gameplay feel review (the review&#x27;s items F1 and F2, the owner&#x27;s dash bar report, and the owner&#x27;s new dash timing).</p>
+<ul>
+<li><b>Network protocol 43</b> (was 42). The own movement state now carries each spent dash charge&#x27;s recharge timer and the speed a running dash started from, so <b>1.18.7 doesn&#x27;t play with 1.18.6 or older games and servers</b>: a 1.18.6 client joining a 1.18.7 server (or the other way round) is turned away with the usual &quot;version mismatch (server 43)&quot; reject. Update the game and the dedicated servers together (servers auto-update when 1.18.7 reaches production; until then the TESTING build only plays with TESTING servers). Demos recorded with protocol 42 or older are converted at startup as always (the original kept in <code>demos/old/&lt;version&gt;/</code>): their snapshots had no recharge timers, so they read as nothing recharging.
+</li>
+<li><b>Gameplay changed only in the dash</b> (below: its timing, and the wall bounce / dash jump / super dash speeds). Everything else is in what the client shows and predicts.
+</li></ul>
+<h3>Movement: dash timing (src/game/pmove.h, src/game/pmove.cpp)</h3>
+<ul>
+<li><b>Owner</b>: &quot;2nd dash you can use after 0.6 seconds&quot;, then &quot;dashes take 1.2 seconds to recharge, but you can use them 0.6 seconds apart, so when you jump in the air with 2 dashes, you can use both of them within 1 second, without recharging any charges&quot;, with refills picked on a card as &quot;Landing refills, 1.2 s wait&quot;.
+</li>
+<li><b>Before</b> (1.17 to 1.18.6): two charges, and every dash waited 1.2 s (<code>kDashCooldown</code>) from the end of the previous one. From full in the air, the second dash came 1.32 s after the first (start to start), so both didn&#x27;t fit in a second.
+</li>
+<li><b>Now</b>, two timers:
+<ul>
+<li><b>Cooldown between dashes</b>: <code>kDashCooldown</code> 1.2 -&gt; <b>0.6 s</b>, still counted from the END of the previous dash (<code>dashCooldownMs</code>, whole ms), still counting only while no dash runs.
+</li>
+<li><b>Recharge per spent charge</b>: new <code>kDashRecharge = 1.2 s</code>. A spent charge gets its own timer (<code>MoveState::dashRechargeMs[]</code>, whole ms, oldest first, <code>dashRecharging</code> of them), started when the dash that spent it ends: while that dash runs, its timer waits at the full 1.2 s, and older timers keep counting. Once a timer is over, the charge can come back, but only the way charges always have: ending a step on the floor refills all of them, a bhop landing (jump held) or a hard-landing bounce up to one, a dash jump all, a super dash or a wall bounce exactly one. No refill during a dash&#x27;s own steps, on a ladder or off a grapple, as before. A charge whose 1.2 s is over while you&#x27;re in the air stays spent until you land. A teammate&#x27;s syringe still gives every charge back at once and now also clears the recharges (<code>dashRefillAll</code>).
+</li>
+<li>Why per-charge timers rather than one: the owner&#x27;s rule is per dash (&quot;dashes take 1.2 seconds to recharge&quot;), and with two charges the second can be spent while the first is still recharging. One timer couldn&#x27;t say which charge comes back when.
+</li></ul>
+</li>
+<li><b>The dash techs&#x27; refills and the recharge.</b> A dash jump still gives back the charge its own dash just spent, at once (owner: &quot;exempt the dash jump&quot;; that charge&#x27;s recharge timer, the newest, is dropped), so from two charges you keep both, as before. Any other charge still recharging stays out until its 1.2 s: a ground dash, then 0.6 s later a dash jump, leaves one. (A first 1.18.7 build applied the recharge to the dash jump too, so a dash jump from two left one; the owner exempted it.) A super dash and a wall bounce follow the recharge: they still leave exactly one, down to one if you hold more (custom modes with 3+ charges), else up to one only if a charge has recharged. The client&#x27;s super / hyper sound used to tell the two apart by the charges left (one = hyper). That no longer works, so it now uses pmove&#x27;s own aimed-down test (<code>dashAimedDown</code>).
+</li>
+<li><b>Measured</b> with the game&#x27;s movement code (1 ms steps, a fresh dash press every other ms, <code>build/quark_tests dashtech</code>):
+</li></ul>
+<div class="scroll"><table><tr><th>Pressing dash repeatedly</th><th>1.18.6</th><th>1.18.7</th></tr>
+<tr><td>in the air from full: the two dashes, start to start</td><td>1,320 ms</td><td><b>720 ms</b> (0.12 s dash + 0.6 s), then none until you land</td></tr>
+<tr><td>on the floor, start to start</td><td>1,320 ms (4 in 4 s)</td><td><b>720 ms</b> (6 in 4 s): the 1.2 s recharge is over before the 0.6 s spacing lets the third go</td></tr>
+<tr><td>bunny-hopping (jump held), start to start at least</td><td>about 1,200 ms (the cooldown)</td><td>600 ms (6 in 4 s; a dash on a landing tick is a dash jump, which ends at once)</td></tr>
+<tr><td>chained super dashes over 4 s</td><td>4</td><td>5, at least 668 ms start to start</td></tr>
+<tr><td>quick dash: air, two dashes</td><td>520 ms</td><td><b>320 ms</b></td></tr>
+<tr><td>quick dash: floor</td><td>520 ms (8 in 4 s)</td><td><b>320 ms</b> (13 in 4 s)</td></tr>
+<tr><td>quick dash: bunny-hopping, start to start at least</td><td>about 400 ms (the cooldown)</td><td>200 ms (14 in 4 s)</td></tr>
+<tr><td>quick dash: chained super dashes</td><td></td><td>6 in 4 s, at least 386 ms start to start</td></tr>
+</table></div>
+<p>On the floor a spent charge comes back exactly 1,200 ms after its dash ended (tested).</p>
+<ul>
+<li><b>Quick dash</b> (<code>MOVE_QUICK_DASH</code>: duel QUICK DASH / DASHING BLADES, the BLADES arena) keeps a third of both (<code>kQuickDashCooldown</code> 1/3, unchanged): 0.2 s apart (was a 0.4 s cooldown) and a 0.4 s recharge. The BLADES description now reads &quot;KNIVES ONLY - QUICK DASH, 0.2 S APART&quot; (was &quot;DASH COOLDOWN 0.4 S&quot;; kept about as short as the other arena lines).
+</li>
+<li><b>Custom modes</b>: the DASH COOLDOWN multiplier (<code>move_dash_cooldown</code>) scales both timers, so there&#x27;s no new setting and old <code>.qmode</code> files load unchanged. The MOVEMENT page&#x27;s standard value is now 0.6 s. An old file&#x27;s multiplier keeps its number: 2x used to mean 2.4 s between dashes and now means 1.2 s apart with a 2.4 s recharge. Charges stay at most 10 (2 x the 5x limit, now an explicit cap <code>kMaxDashCharges</code>, the timers&#x27; room).
+</li>
+<li>Tests: <code>dashtech</code>: the exact cooldown and recharge at every step of two air dashes (0.599 s after the end: nothing; 0.6 s: the second; both recharged in the air but nothing back until landing), the ground, bhop, super dash chain and quick dash spacings above, the ground&#x27;s 1,200 ms recharge, the dash jump keeping both from full and leaving one when the other charge is still recharging, and an own-state round trip. <code>syringe</code>: a throw clears a 30 s cooldown and two 30 s recharges. <code>demos</code>: a protocol 42 record converts to 43 (charges and cooldown kept, nothing recharging), next to the 41 and 40 cases.
+</li>
+<li><b>One shared rule</b>: <code>dashReady(const MoveState&amp;)</code> (pmove.h) says whether a fresh press in the next command starts a dash: a charge left, no dash running, the cooldown over by that command&#x27;s first 1 ms step. The bots (fight dashes, run dashes, breaking free of a grapple pull), the HUD pips and the map report all use it, so they match pmove exactly. Bots needed nothing else: their dash rates are per-second chances gated by that check, not tuned around the old 1.2 s.
+</li></ul>
+<h3>Movement: dash tech speeds (src/game/pmove.cpp)</h3>
+<ul>
+<li><b>Owner</b>: &quot;the wall bounce dash, super, and hyper should all have their horizontal speed changed from 24/24/32 into 16/24/+5 of current&quot;.
+</li>
+<li><b>The names in the code</b> (the same names the SUPER / HYPER sounds use, game.cpp: SND_SUPER for a dash cut short by a jump, SND_HYPER when that dash was aimed down):
+<ul>
+<li><b>wall bounce</b> = the dash wall bounce: a dash into a wall under 45 deg from its normal reflects off it (<code>kDashBounceAngle</code>).
+</li>
+<li><b>super</b> = the dash jump (Celeste&#x27;s super): jump while a dash runs along the floor.
+</li>
+<li><b>hyper</b> = the super dash (Celeste&#x27;s hyper): the same off a dash aimed at least 14.5 deg down (<code>kSuperDashDown</code>).
+</li></ul>
+</li>
+<li><b>Wall bounce: 24 -&gt; 16 m/s.</b> It reflected at the dash&#x27;s burst (24, or the dash&#x27;s exit speed when that was higher, up to 32), ran the rest of the dash at it and left with it. Now it&#x27;s the new <code>kDashBounceSpeed = 16</code> (x a custom mode&#x27;s DASH SPEED, which scaled the burst before): the reflected rest of the dash runs at 16 and leaves at 16 (<code>dashBurst()</code> gives a bounced dash&#x27;s speed). A dash jump after a bounce keeps the 16 (as it kept the burst before); a super dash after one adds to 16. Measured: at 30 deg into a wall it leaves at (-8.0, 13.86) = 16 m/s (was (-12.0, 20.78) = 24).
+</li>
+<li><b>Super (dash jump): unchanged</b>, it leaves with the dash&#x27;s burst (24 from a standstill or a run; the dash&#x27;s exit speed, up to 32, when faster).
+</li>
+<li><b>Hyper (super dash): the speed you had + 5.</b> It was the burst x 1.25 (<code>kSuperDashBoost</code>), at least the burst, at most 36: 30 m/s whatever you came in with, up to 36 at speed. Now it&#x27;s the horizontal speed you had when that dash started (the new <code>MoveState::dashFromSpeed</code>, or the bounce&#x27;s 16 after a wall bounce) + 5 m/s (<code>kSuperDashBoost</code> is now 5, an addition).
+<ul>
+<li><b>What &quot;current&quot; means, and why</b>: the speed you carried into the dash, not the dash&#x27;s own burst. During the dash you always move at the burst (24), so &quot;+5 of the burst&quot; would be a flat 29, barely different from today&#x27;s flat 30. The owner&#x27;s request is a change from a fixed number to one that follows your momentum (&quot;of current&quot;). This way a hyper always adds 5 to what you had.
+</li>
+<li><b>Floor</b>: never less than the same dash leaves with on its own (its exit speed: your speed + 1, at least 11). Without it, a hyper from a standstill would leave at 5 m/s, slower than a plain dash. With it, a hyper from a standstill is 11 m/s (was 30).
+</li>
+<li><b>Cap</b>: <code>kSuperDashMax</code> 36 is kept. It&#x27;s there because the dash&#x27;s speed limit is intended (owner decision 5.4). Without it, hypers chained off bhop landings would add 5 each without end. The cap was already 36.
+</li>
+<li><b>Custom modes</b>: SUPER DASH BOOST (<code>move_super_dash_boost</code>) now scales the +5 (the MOVEMENT page shows standard 5 m/s; it was x1.25). Old files load unchanged; an old 2x now means +10 m/s instead of x2.5. SUPER DASH SPEED (MAX) still scales the 36.
+</li></ul>
+</li></ul>
+<div class="scroll"><table><tr><th>super dash (hyper) from</th><th>1.18.6</th><th>1.18.7</th></tr>
+<tr><td>a standstill</td><td>30 m/s</td><td>11 m/s (the dash&#x27;s own floor)</td></tr>
+<tr><td>a run (9.5 m/s), or out of a bhop at 9.5</td><td>30</td><td>14.5</td></tr>
+<tr><td>20 m/s</td><td>30</td><td>25</td></tr>
+<tr><td>30 m/s</td><td>36 (cap)</td><td>35</td></tr>
+<tr><td>33 m/s and up</td><td>36 (cap)</td><td>36 (cap)</td></tr>
+</table></div>
+<p>Chained hypers off bhop landings (jump held, forward, looking down, a dash press whenever it&#x27;s allowed) over 4 s: 5 hypers, fastest 31.0 m/s; with quick dash, 6, reaching the 36 cap. The hop (half a jump at the threshold up to a full jump straight down) is unchanged.</p>
+<ul>
+<li><b>Map report</b>: the speed build-up&#x27;s super-dash variant used to reach 30 m/s off the first hyper. Now it chains +5s, so the run-up to 28 / 32 / 36 m/s goes from 0 / 17 / 20 m to 24 / 38 / 44 m (the take-off envelope at each speed is the same). No map&#x27;s score changed (viaduct&#x27;s tech path: 9.4 -&gt; 9.2 jumps per 100 m, challenge still 8.0).
+</li>
+<li>Tests: <code>dashtech</code>: the hyper from a run and out of a bhop is the speed before + 5 (14.5), from a standstill 11, 30 -&gt; 35 and 33 -&gt; 36; the wall bounce leaves at 16, a dash jump after it keeps 16; the chained hypers never pass 36.
+</li></ul>
+<h3>On the wire (src/game/protocol.cpp)</h3>
+<ul>
+<li>Protocol 43 also adds the f32 <code>dashFromSpeed</code> to the dash block (opt bit 2, sent only while a dash runs: 4 bytes), so a predicted hyper is exact. Older demos read it as the dash&#x27;s exit speed - 1.
+</li>
+<li><b>Own movement state</b> (protocol 43): the opt bit 4 block is now a byte of <code>charges | recharging &lt;&lt; 4</code>, the u16 cooldown, then a u16 per recharging charge (it was the u8 charges + the u16 cooldown). It&#x27;s sent only when charges aren&#x27;t 2 or a timer runs, as before: 3 bytes plus 2 per recharging charge, for at most about 1.3 s after a dash, and only in your own snapshot. Measured: 54 bytes for an idle own state, 61 with two charges recharging. Exact (whole ms), so prediction replays from any snapshot to the same state: the replay test now also compares the recharges, 0 of 357 snapshot points differ (345 of them with a charge recharging). A hostile count above 10 is dropped on read.
+</li></ul>
+<h3>Map report (tests/mapreport.cpp, docs/MAP_REPORT.md, docs/MAP_METRICS.md)</h3>
+<ul>
+<li>The movement envelope the map checks grade with is simulated with pmove, so it follows the new timing. Two changes to the simulation itself. The speed build-up dashes when <code>dashReady</code> says a press would go (it checked the old cooldown field by hand). The take-offs get a new option: a second dash pressed the moment pmove allows it. Before, the second dash only came from fixed presses 0.125 s and 0.3 s after the first, which the 1.2 s cooldown always refused (and the 0.6 s one would too), so the envelope had quietly dropped to one dash since that cooldown came back (protocol 42). Grading is unchanged; no metric was loosened.
+</li>
+<li><b>Envelope</b> (from a take-off at each speed: rise, then across at the take-off&#x27;s level, 3.5 m up and 8 m up):
+</li></ul>
+<div class="scroll"><table><tr><th>speed</th><th>1.18.6</th><th>1.18.7</th></tr>
+<tr><td>9.5 m/s (a run)</td><td>4.2 m up; 21.5 / 11.5 / 0 m across</td><td>8.1 m up; 47.5 / 43.5 / 33.0 m across</td></tr>
+<tr><td>20 m/s</td><td>7.1 m up; 33.0 / 29.5 / 0 m</td><td>11.7 m up; 48.5 / 44.0 / 37.0 m</td></tr>
+<tr><td>28 m/s</td><td>11.2 m up; 55.5 / 51.5 / 45.0 m</td><td>17.4 m up; 70.5 / 66.5 / 61.0 m</td></tr>
+<tr><td>36 m/s</td><td>13.1 m up; 67.5 / 63.5 / 57.0 m (42 m of run-up to get there)</td><td>20.0 m up; 83.0 / 79.5 / 73.5 m (44 m of run-up, with the new super dash speeds)</td></tr>
+</table></div>
+<p>At a run that&#x27;s close to the 1.17 envelope (42 m across, 8.9 m up: a dash jump and two more dashes, no cooldown).</p>
+<ul>
+<li><b>Scores</b>: every map check in <code>quark_tests</code> still passes, as before (dojo&#x27;s low layout, movement and creativity grades are unchanged by this). What moved: harbor&#x27;s movement score 8.4 -&gt; 8.3; viaduct&#x27;s movement 8.6 -&gt; 8.7 and its race challenge 7.6 -&gt; 8.0 (more jumps per 100 m on the tech path); the tech payoff sub-score of anvil 7.5 -&gt; 7.4 and depot 6.9 -&gt; 6.8 (a sub-score; the movement score is the mean); lodestone&#x27;s race challenge 3.6 -&gt; 3.8. The roof and wall-top areas a good player reaches beyond the run are unchanged on every map (the playable footprint already bounds them), and none of it is out of bounds.
+</li></ul>
+<h3>Weapon switch predicted (src/client/game.cpp, src/client/weaponpredict.h)</h3>
+<ul>
+<li><b>Before</b>: after a weapon key, the view model, weapon name, slot highlight, cooldown bar, scope and every part of local fire prediction (shot sound, tracer, refire, laser beam, the muzzle point projectiles start from) kept the old weapon until a snapshot confirmed the switch: one round trip, about 80 ms online. Firing in that window played the old weapon&#x27;s sound, tracer and cooldown (rocket to laser showed a rocket sound and a 1.2 s bar) while the server fired the new one.
+</li>
+<li><b>The held-fire bug</b>: when the snapshot confirmed, the client cleared its wanted weapon, so the next command carried &quot;no change&quot; (255). The local fire lock compared that against the last command&#x27;s weapon, saw a change with fire held and locked local fire: your own laser beam and its sound stopped until you let go, while the server kept firing and dealing damage.
+</li>
+<li><b>Now</b>: the client keeps a predicted held weapon. From the first command after the key it runs the server&#x27;s switch rules on what it knows: the mode&#x27;s weapon pool (<code>weaponMask</code>, the same function the server uses), a weapon that&#x27;s away (a thrown knife or syringe) only when nothing else is left, no switch while dead, frozen players can still switch (as on the server). It also predicts the server&#x27;s switch to the next weapon after a knife or syringe throw.
+</li>
+<li><b>Rejections</b>: the choice goes out in every command until a snapshot&#x27;s acknowledged command number covers the first command that carried it; from then on the snapshot&#x27;s weapon is the answer. If the server accepted, nothing changes on screen; if it refused, its weapon comes back once. No timing margin is guessed. A reconnect clears the choice.
+</li>
+<li><b>The fire lock</b> now follows the server&#x27;s own rule exactly: it locks only when a command switches weapon with fire or alt-fire held.
+</li>
+<li><b>Also fixed</b>: pressing A, then B, then A again within one round trip left you on B (a stale snapshot still said A, so the client dropped the choice).
+</li>
+<li>Demos and spectating still show the snapshot&#x27;s weapon. Cost: a few integer compares per tick, nothing allocated.
+</li>
+<li>Test <code>rules weaponpredict</code> runs the predictor against a real server and checks the server&#x27;s weapon and fire lock after every command: plain switch, fire right after the key held through the confirmation, a switch with fire held, an unforeseen refusal, a weapon outside the pool, a knife throw and asking for the knife while it&#x27;s away, death and respawn, and a 40 ms round trip. About 4,500 commands checked, 0 wrong.
+</li></ul>
+<h3>Round clock on the HUD (src/client/game.cpp, src/client/hudclock.h)</h3>
+<ul>
+<li><b>Before</b>: since 1.17.0 the line under the mode title showed the time left only in overtime (and in drain, KOTH and time trial, which have their own lines). The 1.17 overtime change replaced the plain clock with two overtime-only branches, so FFA, tag, hide and seek, bomb, payload, both-ways payload, multi point and race showed no clock unless you turned on the verbose HUD. Tag&#x27;s 60 s fuse is the whole mode and wasn&#x27;t on screen.
+</li>
+<li><b>Now</b> (owner: &quot;the round clock should appear in all modes with a timer&quot;): FFA, tag, hide, payload, npayload, points and race show <code>m:ss</code>; bomb shows the round clock before the plant and <code>BOMB m:ss</code> after it (the big red fuse under the objective stays); any overtime <code>OVERTIME m:ss</code>; FFA overtime, VS / duel / 1v1 / tourney (drain), KOTH (<code>FIRST TO N</code>, untimed) and time trial are unchanged. A live round with no timer shows nothing rather than a frozen 0:00.
+</li>
+<li>The line is built into a stack buffer with no per-frame allocation (the old string concatenations are gone).
+</li>
+<li>Test <code>rules hudclock</code> starts a real server in 12 modes and checks the line each client receives, plus the planted bomb, overtime, FFA overtime, time trial, an untimed round and the stalemate by hand. Checked with headless screenshots in each mode.
+</li></ul>
+<h3>Dash bar (src/client/game.cpp)</h3>
+<ul>
+<li><b>Before</b> (1.18.6): while the 1.2 s cooldown ran, each charged pip was drawn growing from empty. One dash left one charge, but both pips looked empty, so it read as if one dash had spent both (owner&#x27;s report). An earlier 1.18.7 build drew a full dim pip with the progress lit over it.
+</li>
+<li><b>Now</b> (owner: &quot;it should still be light grey that turns to blue (the whole bar not the slider) aka the off color to the on color&quot;): a pip per charge. A charge you have but can&#x27;t dash with yet (the dash still running, or the 0.6 s cooldown since it ended) is a whole light grey pip with no progress fill. It turns wholly to the HUD color (blue by default) the moment a press would dash (<code>dashReady</code>, pmove&#x27;s own rule). A spent charge is just the dark backing, while it recharges and after, until a refill gives it back (so in the air it stays empty until you land). The DASH label is white when you can dash, grey otherwise. The pip is also grey during the 0.12 s burst, because a press then is dropped; without that it would flash blue between the dash and its cooldown. Cost: one rectangle per pip, fewer than before.
+</li>
+<li>The CONTROLS page tip now reads: &quot;You hold 2 dashes, usable 0.6 s apart (from the end of the last one). A spent dash recharges for 1.2 s from the end of the dash that spent it; after that, landing gives it back (a bunny hop gives one).&quot;
+</li></ul>
+<h3>Corrections</h3>
+<ul>
+<li>The 1.18.2 full changelog said holding dash for 4 s gives 4 dashes 1201 ms apart. A dash needs a fresh press, so holding gives one dash; pressing repeatedly gives dashes about 1320 ms apart, start to start (the 120 ms dash plus the 1.2 s cooldown), and with quick dash about 520 ms.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.18.6/">&larr; 1.18.6</a></span><span><a href="../1.18.9/">1.18.9 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

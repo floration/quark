@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.18.16: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.18.16</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<p>Two of the owner&#x27;s answers to the sound audit (2026-10-24): hiders should hear the locator ping, and the unused AIRBORNE / TEN / FIVE SECONDS lines can be removed.</p>
+<h3>Locator ping (src/game/server.cpp, src/client/game.cpp)</h3>
+<ul>
+<li><b>What:</b> when the locator fires (hide and seek&#x27;s seeker, tag&#x27;s tagger), every other connected player (spectators too) hears <code>SND_LOCATOR</code> in 3D at the firer&#x27;s position + 1.5 m, volume 1.0, in the firer&#x27;s sound pack. The firer keeps its own 2D ping.
+</li>
+<li><b>How:</b> the reserved event type <code>EV_SOUND</code> (unused until now): <code>Server::useLocator</code> sends it when the locator really fires, with a = the firer, c = <code>WPN_LOCATOR</code>, the feet position in the text.
+</li>
+<li><b>Why not the firing flag:</b> a player hidden from you (the usual case for the seeker, seen from a hider) has their position and <code>PS_FIRING</code> stripped from your snapshot, so the remote fire-sound loop can&#x27;t know about it.
+</li>
+<li>No protocol change: older clients drop unknown event types, and demos never held this event. Bots don&#x27;t react to the ping.
+</li>
+<li>Test (rules group): in hide and seek and in tag, a hider gets exactly one <code>EV_SOUND</code> (a = it, c = locator, within 2 m of &quot;it&quot;); &quot;it&quot; gets none; the hider still gets no <code>EV_LOCATE</code>.
+</li></ul>
+<h3>Announcer lines (src/client/audio.h/.cpp, tools/make_voice.py, assets/provenance/voices.json, tools/sound_editor)</h3>
+<ul>
+<li><code>SND_VOICE_AIRBORNE</code>, <code>SND_VOICE_TEN_SECONDS</code> and <code>SND_VOICE_FIVE_SECONDS</code> are removed. None was ever played, and no voice had a recording: each was exported as 0.1 s of silence.
+</li>
+<li>Every voice now has 27 lines (189 voice files instead of 210; 415 exported assets instead of 436). An override or mod file with one of those names is now ignored.
+</li>
+<li>The remaining 189 voice files export byte-identical to before (checked with <code>cmp</code>), so every line still maps to its own recording. Quips drew only from lines with sound, so they&#x27;re unchanged.
+</li>
+<li>The sound editor&#x27;s line list, levelling presets and audit notes follow; docs/ASSETS.md says 27 x 7.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.18.15/">&larr; 1.18.15</a></span><span><a href="../1.18.17/">1.18.17 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

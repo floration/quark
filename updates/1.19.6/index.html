@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.19.6: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.19.6</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<p>Every change since production 1.19.5, with what changed and why. Human-made assets: 16.1% (tools/provenance.py summary).</p>
+<h3>Black Hole: pillars and more space (owner, 2026-11-02: &quot;increase the outer decoration on black hole, and add some pillars on the platform to increase visibility&quot;)</h3>
+<ul>
+<li><b>Pillars.</b> Four 1 x 1 x 7 m basalt pillars at (±8, ±5) with a glowing band 1 m under each top (<code>tools/maps/blackhole.py</code> <code>pillars</code>): something to judge height and drift by while flying, against the black sky. Too thin to be cover; the map checks still pass (16 m² of pillar tops only flight reaches, none out of bounds).
+</li>
+<li><b>Outer decoration</b> (<code>space</code>), all non-solid (lava and far scenery), so the map&#x27;s playable bounds and <code>Server::flownOut</code>&#x27;s 40 m margin are unchanged: two 3 m jets up and down out of the hole&#x27;s poles (about 106 m each), a broken debris ring 100-112 m round the disc (every other 10°, far side only), and ten stray rocks as dark silhouettes 60-140 m out, some between the rock and the disc.
+</li></ul>
+<h3>The ball wall (owner, 2026-11-02: &quot;make a block that only stops the ball so it cant fall off the maps (no ceiling tho)&quot;)</h3>
+<ul>
+<li>New material 596 <code>ballwall</code> (map.h <code>kMatBallWall</code>, the 11th feature block). It is not solid to players, shots or sight, so it isn&#x27;t in the collision grid: <code>Map::buildGrid</code> collects the ball walls&#x27; boxes into <code>Map::ballWalls</code>, and <code>ballMove</code> (pmove.cpp <code>ballSweep</code>) clips the ball against them after the map&#x27;s own sweep. A wall it hits is plain rubber, like every other surface. A few boxes per map, so the extra loop costs nothing next to the grid sweep, and only the ball pays it.
+</li>
+<li>Never drawn in play (<code>hiddenMaterial</code>: clip and the ball wall; not baked, not lit, skipped by the minimap); the editor draws it see-through with clip.
+</li>
+<li><b>Map format 14</b> (<code>upgradeMap13to14</code>: nothing to change, a format 13 map has no ball wall) and <b>protocol 68</b>: an older game can&#x27;t read the new keyword. The shipped hand-made maps&#x27; version lines go to 14 (nothing else in them changes).
+</li></ul>
+<h3>Ball on more maps (owner, 2026-11-02: &quot;ball needs a soccer field map obv ... you can add ball to the western map i forgot the name, and railyard&quot;)</h3>
+<ul>
+<li><b>Stadium</b> (<code>tools/maps/stadium.py</code>, new, built for ball): a 120 x 76 m astroturf pitch with flush painted lines (touchlines, halfway, centre circle, penalty and six-yard boxes), a 14 x 5 m goal 4.5 m deep at each end (galvanized frame, cargo net back, sides and roof: the ball and players stop at it, shots go through), the goal site the inside of the frame. Ball walls 4 m outside the touchlines and 2 m behind the goals, 40 m tall and open to the sky. Four tiers of stands all round (0.5 m steps, walkable; the side stands under a cantilever roof), plexiglass dugouts on the south touchline, floodlight masts in the corners. <code>holdfire 3</code>: the teams line up facing each other across the halfway line (a kickoff), so nobody fires for 3 s; that is also why the spawn sight check passes. Every map check passes, out of bounds included.
+</li>
+<li><b>Express</b>: a goal across each canyon gap (x +-87..90, the gap&#x27;s whole 9 m width, under the arch); the ball starts in the town square. <b>Railyard</b>: the goal is the front band of each team&#x27;s building inside its three doors (roundhouse / goods shed, point mirrored); the ball starts on the main line at mid-yard.
+</li>
+<li><code>quark_tests ball</code> now checks every map that offers ball: one goal per team, and the ball starts clear of the map and halfway between the goals (bridge 86 / 86 m, express 89 / 89, qk8 66 / 66, railyard 107 / 107, stadium 62 / 62). <code>ballStartPoint</code> / <code>ballGoalOwner</code> (gamemodes.h) expose the server&#x27;s own rules for it.
+</li></ul>
+<h3>Bomb on Museum (owner, 2026-11-02: &quot;add bomb to museum&quot;)</h3>
+<ul>
+<li>Only lines added to q&#x27;s hand-made <code>maps/museum.qmap</code>: <code>bomb</code> on its modes line, two sites (A: Mammals, x -45..-33, z -1..9; B: Minerals, x 36..48, z 0..9) and the bomb spawn sets (five attackers in the entrance hall, five defenders in the service hall). Nav times (attackers vs defenders): A 5.6 s vs 6.3 s, B 6.1 s vs 6.9 s, close to q&#x27;s rule of the defenders about 1 s behind (the museum is too small for the 5 s walk). Every map check passes.
+</li></ul>
+<h3>Neutral payload on Suspension Bridge (owner, 2026-11-02: &quot;add neutral payload to suspension bridge&quot;)</h3>
+<ul>
+<li>The track (<code>bridge.py</code> <code>WEST</code>, point mirrored, 218 m): from A&#x27;s toll plaza along the north lane (z 6.5) past the container spills at x -60, across the median at x -37.5 to the south lane (z -6.5) past the spills at x -20, and through mid-span (the cart&#x27;s start) to the other half. The spills stagger the lanes, so the track weaves like the walk lanes do. The median gets 10 m gaps at x +-38 and mid-span for it (it was 4 m gaps every 40 m). Point-symmetric, so both teams&#x27; pushes are the same: nav to halfway 12.6 s for both. <code>cart_sweep</code> and every other check passes.
+</li></ul>
+<h3>Power bots: no team A edge (work board: &quot;Power mode: bots favour team A&quot;)</h3>
+<ul>
+<li>Measured with <code>quark_maptool bots</code> (8 advanced bots, 610 s): team A won 29-19 over 48 matches on Castle and Bridge, and with the slots swapped (B on the even slots) B won 29-19. So the edge was the slot, not the side: each bot&#x27;s 20 Hz look phase was <code>id x golden ratio</code>, and with teams on alternating slots team A&#x27;s looks came on average 0.03 of a period before team B&#x27;s in every meeting.
+</li>
+<li>In a team mode the phase now comes from the bot&#x27;s rank on its team (<code>teamRank</code>), team B&#x27;s half a period after team A&#x27;s, which makes every A-B pair&#x27;s offset average exactly half a period. After: 43-49 over 96 matches, both slot orders, no pattern. Free for all keeps the slot phases.
+</li></ul>
+<h3>Modes lines</h3>
+<ul>
+<li><code>prefabs.py</code> no longer adds <code>winner</code> to 1v1 maps&#x27; modes lines (WINNER STAYS was retired in 1.19.5: 1v1 is winner stays).
+</li></ul>
+<p>Every change on <code>testing</code> since production 1.19.5, with what changed and why. The release PR renames this file to <code>changelogs/full/&lt;VERSION&gt;.md</code>.</p>
+<h3>Map cleanup (owner, 2026-11-02: &quot;do a final cleanup check of every map any awkward spots or steps too tall or whatever&quot;, &quot;no major changes in the cleanup check only minor stuff&quot;)</h3>
+<p>Every generated map was checked with the walk grid of <code>tests/walkgrid.h</code> (a scratch audit: spots you can walk into but not back out of to a spawn, rises between 0.57 and 0.95 m in a run of steps, crouch-only floor and crouch-only passages, spawns within 0.2 m of a wall) and by reading the map scripts; only small fixes were made. The step-up is 0.55 m (pmove <code>kStepHeight</code>), so every new step is 0.5 m or less.</p>
+<ul>
+<li><b>Dam</b> (<code>tools/maps/dam.py</code>): the river below the dam (bed 2.2 m under the banks, x -5..5, z 40..76) had no way out on foot: anyone knocked in needed the grapple or a dash. New flights of five 0.44 m steps: one at its south end (x -1.5..1.5, z 40..43) and one up each bank north of the footbridge (x 2..5 / -5..-2, z 70..72).
+</li>
+<li><b>Datacenter</b> (<code>tools/maps/datacenter.py</code>): the parapet&#x27;s coping strip (y 9.6) ran across the two gaps where the yard stairs reach the roof (x -46..-41 and 41..46, z 62..63), leaving 1.2 m over the roof: a crouch-only doorway on both stair routes. The strip now stops at the gaps.
+</li>
+<li><b>Monorail</b> (<code>tools/maps/monorail.py</code>): the canal / reflecting pool (sunk 1.5 m) had steps only at its two ends, and its bridges leave 1.1 m over the bed, so the lengths x -100..-82 and -74..-52 (and their turned copies) were pits with no way out; each gets a three-step flight up onto the bridge at its end (x -88..-82, -58..-52). The 2 m of canal west of the end steps (x -130..-128) was a 1.5 m deep slot: filled to the street (bed and water now start at x -128). The old town&#x27;s hanging shop signs stood 10 cm off the facades (floating): they touch them now.
+</li>
+<li><b>Mine</b> (<code>tools/maps/mine.py</code>): in the ore bay (the koth hill), a 0.9 m pocket between the east bar stack and the crystals south of it (x -36.4..-35.6, z -18.1) was a drop-in you couldn&#x27;t walk out of (the stack is 1.2 m over it): a 0.5 m heap of ore fills it, so the stack is a short hop. The ore heap under the pile was 0.6 m, just over the step-up (a hop on every side): now 0.5 m, the crystals and loose bars on it lowered with it. Cover heights (the bar stacks, 1.4 / 1.8 m) are unchanged.
+</li>
+<li><b>Fairground</b> (<code>tools/maps/fairground.py</code>): the ring step in front of the big top&#x27;s seating was 0.6 m, over the 0.55 m step-up: 0.5 m now (the first tier, 1.6 m, stays a jump from it).
+</li>
+<li><b>Greenhouse</b> (<code>tools/maps/greenhouse.py</code>): the two free-for-all spawns on the walkway ring (x -1.5 / 1.5, z 11.3 / -11.3) had the player&#x27;s hull 1 cm from the outer glass; moved 0.2 m in (z 11.1 / -11.1). Mirrored pair, so the ranked fairness is unchanged.
+</li>
+<li><b>Lighthouse</b> (<code>tools/maps/lighthouse.py</code>): the mooring ring at x 30, z -6 hung 5.5 m in the air over the low east shore with no cliff behind it (the other seven are on the rock): removed.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.19.5/">&larr; 1.19.5</a></span><span><a href="../1.19.7/">1.19.7 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

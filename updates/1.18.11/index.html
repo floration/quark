@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.18.11: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.18.11</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<p>Data-driven bot brains, for the owner&#x27;s bot editor (&quot;in the bot brain section it should have regular code and block code and graph network formats for the same thing ... what % they do X, Y, Z; what curves apply to certain things, values&quot;). Edited brains have to change the real game&#x27;s bots, so the bot code now reads every choice and number from a brain. No network protocol, map or demo format change; default bots are bit-identical to 1.18.10.</p>
+<h3>The brain (src/game/botbrain.h, src/game/botbrain.cpp, tools/bots/)</h3>
+<ul>
+<li><b>What a brain is</b>: parameters (one value, or one per skill level), curves (linear, step or piecewise), weapon lists, an ideal-range table, and <b>slots</b>: the fixed decision points the bot code calls (react, hearing, targetScore, objective.&lt;mode&gt; for every mode, urgent, pickWeapon, idealRange, rejudge, fire, strafe, fightJump / fightDash / fightHook, pulledDash, look, routeHook, runDash, bhop, unstick and more). Each slot is a small program: expressions, <code>if</code>, <code>weighted</code> choices, <code>roll</code> / <code>gauss</code> / <code>chance(rate)</code>.
+</li>
+<li><b>What stays C++ (the body)</b>: navigation, the pit / lava / edge safety checks, the grapple&#x27;s <code>safeHook</code>, the aim &quot;hand&quot; (turn speed, flick, settle, tracking error) and the air-strafe maths. A brain tunes their numbers but can&#x27;t switch the safety off. Why: a brain file must never be able to make bots walk into the void or break movement rules.
+</li>
+<li><b>Hidden switches made explicit</b>: some behaviour used to be switched by unrelated numbers: <code>leadMean &gt;= 0.8</code> turned on leading targets, <code>airStrafe &gt; 0.8</code> expert hooking, <code>skill == EXPERT</code> the dash jump, <code>predict</code> set the flee time. They are now their own per-level parameters with the same values, so tuning one number no longer changes another behaviour by surprise.
+</li>
+<li><b>Format</b>: <code>tools/bots/GRAMMAR.md</code> (the text language and the JSON form the editor uses). Files start with <code>version 1</code>; like maps, a converter table (<code>kBrainFormatVersion</code>, static_assert on its size) upgrades older versions on load. Input caps (512 tokens per line, nesting depth 48) keep a hostile local file from overflowing the stack.
+</li>
+<li><b>The built-in brain</b> is <code>tools/bots/default.qbrain</code>, embedded at build time (<code>tools/bots/embed_brain.py</code>). It is written in the same language and parses to exactly the C++ values.
+</li></ul>
+<h3>Speed (performance first)</h3>
+<ul>
+<li><b>Phase 1</b>: every literal the bot code read is now a <code>BrainParams</code> field, filled per level from a C++ table with the 1.18.9 bot values (unchanged since 1.18.4). Measured against 1.18.7&#x27;s bot: 1679 vs 1662 ns per think, within noise.
+</li>
+<li><b>Phase 2</b>: a brain file is compiled once to a flat 8-byte instruction array over a fixed 64-register file and run by an interpreter that allocates nothing per call. <b>The built-in brain never uses the interpreter</b>: it stays native. A file pays only for the slots it changes.
+</li>
+<li>Cost (<code>quark_tests brainbench</code>, 230,010 thinks on 4 maps, 10-12 bots, 250 Hz): native 1339 ns per think (p99 7-14 us, p99.9 25-33 us); every slot interpreted 2129 ns (p99 10-17 us, p99.9 32-42 us). +790 ns per think = about 1.3% of one core at 16 bots and 1000 Hz, only for fully custom brains.
+</li></ul>
+<h3>Picking a brain (src/game/server.cpp, src/server/main.cpp)</h3>
+<ul>
+<li>Console <code>addbot [a|b] [skill] [brain=&lt;name&gt;]</code> loads <code>&lt;user data&gt;/bots/&lt;name&gt;.qbrain</code> (cached by content). <code>brain=default</code> forces the built-in brain.
+</li>
+<li>Dedicated server <code>--botbrain &lt;name&gt;</code> (ServerConfig::botBrain): every bot the server adds plays it. A file that fails to compile is refused with <code>file:line:col: message</code>; from the config the error goes to the server log and bots play the built-in brain.
+</li>
+<li>A bot playing a brain file names it and the first 8 hex digits of its hash on the join line (<code>BOT ANNA (EXPERT, mybrain#1a2b3c4d)</code>), so players can tell. Built-in bots&#x27; join line is unchanged.
+</li>
+<li><b>Where brains run</b>: local, listen and unranked servers (owner&#x27;s choice on 2026-10-24). Ranked and time trial never load them (they have no bots either).
+</li></ul>
+<h3>Tests (tests/brain_tests.cpp, group <code>brains</code>)</h3>
+<ul>
+<li>default.qbrain round trip: print(parse(text)) == text, byte for byte; number printing cases.
+</li>
+<li>The parsed default equals the C++ table at all 4 levels; every slot native; no warnings.
+</li>
+<li>Converter: v1 unchanged; versions 0 and 2 refused with line:col.
+</li>
+<li>15 compile-error cases (line:col and message), the nesting and line-length caps, interpreter unit checks.
+</li>
+<li><code>addbot brain=</code>, cfg botBrain, <code>brain=default</code> and the ranked refusal.
+</li>
+<li><b>Lockstep</b>: the default brain run natively vs fully interpreted: 1,186,724 bot thinks over 11 maps/modes at 1000, 250 and 125 Hz, every UserCmd field and the whole bot state (rng included) compared bitwise each think: 0 mismatches. A negative control (one slot changed) is detected. (Before the temporary harness was removed, 1.18.7&#x27;s bot vs the new native code: 1,187,874 thinks, 0 mismatches.)
+</li>
+<li>Command-line tools for the bot editor: <code>quark_tests exportbrain [out.json]</code> (text, AST and a catalog of 122 params, 47 sensors and the slot kinds), <code>checkbrain &lt;file&gt;</code> (diagnostics as JSON, exit 1 on errors), <code>brainast</code>, <code>printbrain</code>, <code>brainbench</code>.
+</li></ul>
+<h3>The bot editor (tools/bot_editor/, tooling; not in the game download)</h3>
+<ul>
+<li>A local web tool (<code>run.cmd</code> / <code>run.sh</code>, <code>serve.py</code> on 127.0.0.1:8769, stdlib Python) for placing bots on any map (the shipped maps and the player&#x27;s own, including the map editor&#x27;s), giving each an objective (go to, hold an area, follow a route, attack or defend the mode&#x27;s objective), watching live runs with the game&#x27;s real bots (paths, goals, targets, view cones, the decision behind each goal; pause, step, speed, timeline), and batch runs that compare brains (wins, K/D, damage, objective time per brain and per bot).
+</li>
+<li>The brain editor shows one brain as text code, blocks, a node graph and a values view with draggable curves; each view is drawn from the same tree, so they never disagree. Saving writes a <code>.qbrain</code> holding only what differs from the default, checked by the game&#x27;s own compiler (<code>quark_tests checkbrain</code>).
+</li>
+<li>The simulator is in the shared <code>quark_maptool</code> helper: new <code>sim</code>, <code>simbatch</code> and <code>simcheck</code> commands (tools/bot_editor/native/SIM.md), built on the map editor&#x27;s BotSim, which now also runs several matches per process. Objective overrides steer the game&#x27;s own <code>botThink</code> (no game code change); measured 100-880x real time per match and about 27 matches/s for 4-bot FFA batches on 4 threads.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.18.10/">&larr; 1.18.10</a></span><span><a href="../1.18.12/">1.18.12 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

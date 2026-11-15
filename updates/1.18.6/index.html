@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.18.6: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.18.6</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<p>The owner asked for a sound editor: &quot;show all the packs, each sound that exists in them, be able to play them, solo and some different samples of gameplay with them ... trim ... filters, and automation for making them all the same volume based on lufs (you can pick a group to all be the same volume)&quot;. The editor is a tool outside the game. One small game change makes its loudness levelling hold in the game. Gameplay, network protocol and demos are unchanged.</p>
+<h3>Sound levels (src/client/audio.cpp, src/client/overrides.*, tools/embed_overrides.py)</h3>
+<ul>
+<li><b>Why:</b> every replacement sound is rescaled to the loudness of the sound it replaces (<code>prepareClip</code>: the loudest 20 ms; the hitsound tiers by heard loudness, <code>levelHit</code>). That keeps the kits fair, but it also undoes any levelling done in the editor. Example: a group of weapons set to one LUFS comes back at each default&#x27;s own level.
+</li>
+<li><b>What:</b> a text file <code>sound-levels.txt</code> at the overrides root (shipped <code>assets/overrides/</code> and the player&#x27;s <code>&lt;data folder&gt;/overrides/</code>; the player&#x27;s lines add to the shipped ones) lists, one per line without the extension, the files that keep their own level, e.g. <code>sounds/default/ROCKET</code>, <code>voices/male/GO</code>. <code>mods/sounds/sound-levels.txt</code> does the same for mods (paths relative to <code>mods/sounds</code>, e.g. <code>default/ROCKET</code>).
+<ul>
+<li>The file is matched without regard to case. Backslashes, a leading <code>./</code>, an audio extension, blank lines and <code>#</code> comments are tolerated.
+</li></ul>
+</li>
+<li><b>How a listed file is prepared:</b> the same as before (mono, leading silence trimmed, resampled to 48 kHz, cut at 3 s or 5 s with a 10 ms fade), but with no loudness match and no hitsound levelling. If its peak is over 1.0 it is scaled down to 1.0, never hard-clipped.
+<ul>
+<li>A kept DEFAULT replacement still carries over to the kits that use DEFAULT&#x27;s sound, at its own level, and RETRO&#x27;s chiptuned copy keeps that level too.
+</li></ul>
+</li>
+<li><b>Cost:</b> none without overrides. The list is read only after the <code>overrides::any()</code> early return; mods make one file-open attempt at startup.
+</li>
+<li><code>tools/embed_overrides.py</code> skipped every <code>.txt</code> file, so a shipped <code>sound-levels.txt</code> would never have reached the game. A root-level <code>sound-levels.txt</code> is now embedded; other <code>.txt</code> / <code>.md</code> files are still skipped.
+</li>
+<li>Test: <code>testSoundLevels</code> (assets group). A 0.1-peak tone stays at 0.1 when listed (a sound, a hitsound tier and a voice line) and is matched when not. A listed 2.5-peak file comes out at 1.0. The test also covers case-insensitive matching, CRLF, backslashes and a commented-out line.
+</li>
+<li>Docs: docs/ASSETS.md (the overrides table), assets/sfx/custom/README.md, mods/sounds/README.txt.
+</li></ul>
+<h3>Sound editor (tools/sound_editor)</h3>
+<ul>
+<li>A local page that runs from disk in Chrome or Edge with no server. <code>build.py &lt;export&gt; &lt;out&gt;</code> builds it from <code>quark_tests exportassets</code> (stdlib Python; FLAC data when ffmpeg is present, about 22 MB, otherwise WAV, about 40 MB).
+</li>
+<li>Grids of every kit&#x27;s 33 sounds and every voice&#x27;s 30 lines, with play, solo and mute. 10 gameplay scenes use the game&#x27;s own values: per-sound volumes, pitch jitter, refire times, the 40 ms hitsound gate, the 3D gain and pan formula, the 0.6 master and the mixer&#x27;s soft limit.
+</li>
+<li>Editing: drop a file to replace a sound. Trim and fade on the waveform, then a filter chain (EQ, pitch, compressor, drive, reverb, limiter) with A/B against the original and undo.
+</li>
+<li>Loudness is measured by BS.1770-4 (within 0.05 LU of ffmpeg&#x27;s ebur128), plus max momentary, true peak and the game&#x27;s heard loudness. Group levelling brings a chosen group to one loudness and keeps the hitsound ladder&#x27;s ratios.
+</li>
+<li>A &quot;missing sounds&quot; list from an audit of events that have no sound, such as gunfire from players the server hides, the bomb explosion and a tag.
+</li>
+<li>Export writes <code>sounds/&lt;kit&gt;/&lt;SOUND&gt;.wav</code>, <code>voices/&lt;voice&gt;/&lt;LINE&gt;.wav</code> and a merged <code>sound-levels.txt</code>.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.18.5/">&larr; 1.18.5</a></span><span><a href="../1.18.7/">1.18.7 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.19.7: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.19.7</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<p>Every change since production 1.19.6, with what changed and why. Human-made assets: 16.1% (tools/provenance.py summary). Protocol 68 and map format 14, unchanged from 1.19.6.</p>
+<h3>Languages (owner, 2026-11-02: &quot;support the top 10 global languages&quot;, &quot;gaming list yeah&quot;)</h3>
+<ul>
+<li><b>Which ten.</b> These are the top gaming-audience languages: English, Simplified Chinese, Russian, Spanish, Brazilian Portuguese, German, Japanese, French, Korean and Turkish. Turkish was picked over Polish for its larger Steam share.
+</li>
+<li><b>How it works.</b> The code keeps writing English. <code>src/client/lang.cpp</code> translates each string just before the renderer draws or measures it (<code>Renderer::text</code>, <code>textWidth</code>, <code>fitText</code>, <code>textClip</code>), so no menu, HUD or notice code changed. The tables are <code>assets/lang/&lt;code&gt;.tsv</code>: an English key, a TAB, then the translation. <code>tools/lang/extract.py</code> collects 3695 keys from the source. Its sources are string literals, each line of multi-line text, <code>%s</code> pieces, and the whole <code>%s</code> line as a <code>{}</code> pattern. <code>tools/lang/embed.py</code> builds them into the game at build time.
+</li>
+<li><b>Strings built at run time.</b> When a drawn string isn&#x27;t a key, the lookup tries these in order:
+<ol>
+<li>Digit runs read as <code>#</code> (&quot;KILLS: 12&quot; -&gt; &quot;KILLS: #&quot;, with the number put back).
+</li>
+<li><code>{}</code> patterns, whose captured parts are translated too.
+</li>
+<li>A number in front of a word.
+</li>
+<li>The string with the decorations round it removed (&quot;&gt; TEAM &lt;&quot;, &quot;SAY: &quot;).
+</li>
+<li>Splitting it at &quot;: &quot;, &quot; - &quot;, &quot; / &quot; or a double space.
+</li>
+<li>Splitting it at a word boundary whose left part is a key.
+ Anything left over is drawn as it is, which covers player names, chat and map names.
+</li></ol>
+</li>
+<li><b>Speed.</b> English is a no-op: <code>lang::active()</code> is false, so nothing is looked up. Other languages do one hash lookup per drawn string from a cache of drawn strings. The cache is cleared in <code>lang::frame()</code> once it holds over 8192 entries (that happens with changing numbers). A string drawn before costs no allocation. Picking a language parses its table once, in a few ms, and decodes its atlas in tens of ms.
+</li>
+<li><b>Glyphs.</b> Characters past ASCII come from a per-language distance-field atlas, <code>assets/lang/atlas/</code>, baked by <code>tools/lang/make_atlas.py</code>:
+<ul>
+<li>The cells use the UI font&#x27;s layout, 66 texels in a 62-column atlas (4092 wide). The atlas is drawn by the same shader from texture unit 7. A glyph id of 95 or more is an atlas glyph.
+</li>
+<li><b>base:</b> 341 glyphs. Latin-1, Latin Extended-A, Cyrillic, typographic marks and every language&#x27;s own name. It comes from Rubik Bold, the same font as ASCII.
+</li>
+<li><b>zh-CN, ja, ko:</b> 1630, 1316 and 1088 glyphs. Each is base plus that language&#x27;s characters, in its own forms of Noto Sans CJK Bold (SIL OFL 1.1, <code>assets/fonts/NotoSansCJK-OFL.txt</code>). Ideographs are 6 units tall, against Rubik&#x27;s 5.25 capitals, and centred on the capitals.
+</li>
+<li>All text measuring and cutting (<code>textfit.cpp</code>, <code>Ui::wrap</code>, fitted and clipped labels) now steps through UTF-8 whole characters, so a cut never splits a character.
+</li></ul>
+</li>
+<li><b>Setting.</b> <code>language=</code> in the config: <code>auto</code> (the default), or a code. <code>auto</code> reads Windows&#x27; UI language (<code>GetUserDefaultLocaleName</code>), or <code>LC_ALL</code> / <code>LC_MESSAGES</code> / <code>LANG</code> elsewhere. An unknown language falls back to English.
+</li>
+<li><b>Fit.</b> Translations were shortened wherever the UI test found a clipped label at 1280x720 or 1024x768. The aim was 1.6x the English width or less, and tighter on settings rows that are already full. Russian lost 9 more labels in the final pass (for example ПРЕДУПР. СЕТИ for NETWORK WARNINGS).
+</li>
+<li><b>Dropdowns</b> open upward when the list would leave the window. The German test found the LANGUAGE list off screen.
+</li>
+<li><b>Tests.</b> <code>quark_tests assets</code> checks every table against the key list: the same keys, and the same number of <code>#</code>. The UI test (<code>quark --uitest</code>, with <code>QUARK_UITEST_LANG=&lt;code&gt;</code>) ran in full in Chinese and Russian, and on the menus in the other seven languages. Its only failures were 6 editor EDIT checks, and English fails the same ones. <code>QUARK_LANG_MISSES=&lt;file&gt;</code> writes the drawn strings that had no translation, for the next pass.
+</li>
+<li><b>Known gaps.</b> Some text built at run time stays in English. Bot names, map names and the editor&#x27;s tool tips aren&#x27;t translated. There is no kerning for atlas glyphs.
+</li></ul>
+<h3>Latency (owner, 2026-11-02, after F3 showed a gap between SWAP and GPU: &quot;can the game enable the setting?&quot;)</h3>
+<ul>
+<li><b>Early flush in LOW LATENCY: ON.</b> OpenGL holds a frame&#x27;s commands until something flushes them. Under ON, nothing did until <code>SwapBuffers</code>, so the GPU sat idle through DRAW CALLS, HUD DRAW and SWAP, then waited out the driver&#x27;s submission: about 45-65 µs on q&#x27;s desktop at 3000+ FPS. <code>drawWorld</code> now calls <code>glFlush()</code> after the shadow pass (before the late latch) and after the world&#x27;s draw calls (before the HUD), in ON as in ULTRA. The GPU then starts while the CPU finishes the HUD. A flush costs a few µs of CPU, and the frame queue is unchanged.
+</li>
+<li><b>GPU SCHEDULING</b> (VIDEO + AUDIO &gt; MORE, LATENCY, under the NVIDIA rows). Windows&#x27; &quot;Hardware-accelerated GPU scheduling&quot; lets the GPU schedule its own queue, which shortens the hand-off from a submitted frame to the GPU starting it.
+<ul>
+<li>It&#x27;s a system setting: <code>HwSchMode</code> (2 on, 1 off) under <code>HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers</code>, read at boot. A game can&#x27;t change it silently.
+</li>
+<li>The row reads the value (<code>hwSchedState</code>, gpuprefs.cpp). ON means it&#x27;s set, TURN ON means it&#x27;s off, and N/A means there&#x27;s no value (the GPU or driver doesn&#x27;t offer it, or this isn&#x27;t Windows).
+</li>
+<li>TURN ON runs <code>reg.exe add ...</code> through Windows&#x27; &quot;runas&quot; admin prompt, hidden so no console window opens (<code>hwSchedEnable</code>), then says to restart.
+</li></ul>
+</li>
+<li><b>Scanout, for the record.</b> F3&#x27;s estimate at 240 Hz, about 2083 µs, is half a refresh: the crosshair&#x27;s row is redrawn once a refresh, whatever the FPS. Only a faster refresh shortens it. The game&#x27;s own part is about 210 µs.
+</li>
+<li><b>F3 in nanoseconds, game vs hardware</b> (owner, 2026-11-02: &quot;there should also be a view without the hardware limits just straight the game limit ... also since many things are sub us now we should measure in ns&quot;).
+<ul>
+<li><code>drawPipeline</code> now prints every row and the total in ns, grouped by thousands. A line under the title splits the total into GAME, MOUSE POLLING (row 0: half the mouse&#x27;s report interval) and DISPLAY (every row after the GPU: compositor, vsync and scanout estimates).
+</li>
+<li>F3 now cycles five stages. Stage 4 is GAME ONLY: the hardware rows are removed and the bars are scaled to the game&#x27;s part, from the mouse report&#x27;s arrival to the GPU done. <code>perfOn()</code> covers stages 3 and 4, so both measure. F4&#x27;s number is in ns too.
+</li></ul>
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.19.6/">&larr; 1.19.6</a></span><span><a href="../1.19.8/">1.19.8 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

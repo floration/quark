@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.18.21: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.18.21</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<p>These changes come from the owner&#x27;s picks in the gameplay feel review (2026-10-24): all the fixes (F3, F5 to F23), the starred items X1 to X3, T1, T2, T9, T15, T16 and T21, and the owner&#x27;s &quot;yes&quot; picks: T3, T4, T6, T10, T11, T13, T14, T17, T18, T22, T23, T27, X4 to X9 and X11. X10 (bomb and FFA calls) is not in this build. Not yet checked in real play: X5 at a real ping (only tested locally), and T18 (bots never got the cart to the last leg).</p>
+<ul>
+<li><b>No protocol change</b> (still 43): 1.18.21 plays with 1.18.16 to 1.18.20 games and servers, and demos are unchanged. Everything new rides on fields older builds already ignore: movement events in the top six bits of <code>PlayerSnap::keys</code> (older clients only read the low ten held-key bits), the attacker&#x27;s position in the text of the victim&#x27;s copy of <code>EV_HIT</code>, the killer&#x27;s HP and respawn time in the text of the kill event, and a new <code>EV_GUNFIRE</code> event type (older clients drop unknown events).
+</li>
+<li><b>T10 is the built option, pending the owner&#x27;s pick on a card.</b> Crossbow body damage 50 -&gt; 49 doubles the body-only time to kill, from 2.0 s to 4.0 s (see below).
+</li></ul>
+<h3>Movement: input (src/client/game.cpp, src/game/pmove.cpp)</h3>
+<h4>F17: taps shorter than a frame</h4>
+<ul>
+<li><b>What:</b> jump, dash and grapple presses are latched into the next command, the way fire already was.
+</li>
+<li><b>Why:</b> a press and release inside one frame never reached a command, so the tap was lost.
+</li></ul>
+<h4>T1: jump buffer for taps</h4>
+<ul>
+<li><b>What:</b> a jump tapped within the existing 0.1 s jump buffer jumps on landing exactly like holding jump (including the bhop bounce).
+</li>
+<li><b>Why:</b> a tap up to 30 ms before landing did nothing, and each 10 ms late cost about 1.4 m/s, so tappers lost to auto-hop. Measured: taps 10, 30, 60 and 90 ms early give the same result as holding; 150 ms early does not.
+</li></ul>
+<h4>T2: held dash</h4>
+<ul>
+<li><b>What:</b> holding dash fires a dash the moment one is allowed (pmove&#x27;s fresh-press rule is dropped), and a press made up to 0.1 s too early is held client-side until then.
+</li>
+<li><b>Numbers:</b> held on the floor, dashes come 720 ms apart (0.12 s dash + 0.6 s); in the air, two and then none until you land, as the 1.18.7 dash rule says. Bots are unaffected.
+</li></ul>
+<h4>F18: strafe speed and frame rate</h4>
+<ul>
+<li><b>What:</b> a frame&#x27;s turn is spread over its ticks; the last tick has the exact aim. A tick with fire, alt-fire or grapple, and every tick after it, keeps the exact aim, so shots go where you looked. No added latency. Not on the frame you spawn.
+</li>
+<li><b>Why:</b> strafe-jump speed depended on fps. Speed loss over 1.5 s of A/D at 2.5 rad/s, against a 1000 fps run: 30 fps -10.8%, 60 fps -5.5%, 144 fps -2.2% before; now -0.1% or better at any fps (at 3.5 rad/s it was -16.6 / -7.5 / -2.5%).
+</li></ul>
+<h4>T3: dash jump after a ground dash aimed up</h4>
+<ul>
+<li><b>What:</b> a dash that starts on the floor opens the 0.1 s dash-jump window (it reuses <code>jumpGrace</code>), even if it lifts you off at once.
+</li>
+<li><b>Why:</b> a ground dash aimed slightly up left the floor on its first tick, so it could not be dash-jumped: at +0.5 deg you got a plain 11 m/s dash instead of 24. Now +0.5 deg and +2.9 deg ground dashes with jump 30 ms in give 24 m/s and 7.32 m/s up.
+</li></ul>
+<h4>T4: dash-jump window for held hops</h4>
+<ul>
+<li><b>What:</b> every jump off the floor opens the same 0.1 s window, held bunny hops included.
+</li>
+<li><b>Why:</b> hold-jump hoppers touched the floor for about 6 ms, so their window was 6 ms against 100 ms for a fresh jump press.
+</li></ul>
+<h4>T6: ladders</h4>
+<ul>
+<li><b>What:</b> only W and S climb; S climbs down; W climbs down when you look more than 26 deg below level; A and D move sideways only. Keys still move you off the wall (seven map ladders need it).
+</li>
+<li><b>Why:</b> any key climbed up, and down was a hard switch at 26 deg below level.
+</li></ul>
+<h3>Movement: prediction (src/client/game.cpp, src/game/netclient.cpp)</h3>
+<h4>F19: syringe refill predicted</h4>
+<ul>
+<li><b>What:</b> reconcile now also compares dash charges, recharge timers and the dash and hook cooldowns with the server&#x27;s.
+</li>
+<li><b>Why:</b> a syringe refill wasn&#x27;t predicted: the dash pips stayed empty and the next dash or grapple came a round trip late as a ~1.2 m correction.
+</li></ul>
+<h4>F20: grappling an enemy predicted</h4>
+<ul>
+<li><b>What:</b> the hook probe is built from the interpolated enemies you see, with the server&#x27;s filters.
+</li>
+<li><b>Why:</b> you were pulled toward the wall behind them, then corrected: about 1.4 m at 60 ms ping.
+</li></ul>
+<h3>Combat: numbers (src/game/gamedefs.h)</h3>
+<h4>T9: kills that fell just short</h4>
+<ul>
+<li><b>Rifle body 4.95 -&gt; 5.0</b>: 20 body shots now kill (they left 1 HP). Perfect-aim body kill 2.88 s.
+</li>
+<li><b>Shotgun head pellet 2.55 -&gt; 2.6</b>: two point-blank head blasts do 100.4 (was 98.6).
+</li>
+<li>The sound editor&#x27;s scenes show 5.0.
+</li></ul>
+<h4>T10: crossbow body 50 -&gt; 49 (pending the owner&#x27;s pick)</h4>
+<ul>
+<li><b>What:</b> body 49, head unchanged at 75.
+</li>
+<li><b>Why:</b> a headshot never saved a bolt at 100 HP: 50 + 50 and 75 + 50 both killed in two. Now two body bolts do 98 (three bolts needed) and head + body does 124 (two). This was the smallest change that makes a headshot matter.
+</li>
+<li><b>Trade-off, plainly:</b> body-only time to kill doubles, from <b>2.0 s to 4.0 s</b> (at the 2 s refire). With a headshot it stays 2.0 s.
+</li></ul>
+<h4>T11: own rocket splash ramp</h4>
+<ul>
+<li><b>What:</b> your own splash damage is 10% at feet + 0.3 m or lower, rising linearly to 100% at feet + 1.2 m (<code>kSelfRampLow</code> / <code>kSelfRampHigh</code>).
+</li>
+<li><b>Why:</b> self-damage jumped tenfold at feet + 0.3 m: a rocket at knee height cost about 30 HP, a hair lower 3. Now: at 0.5 m 10.2 (was 34), at 0.75 m 18.7, at 1.2 m and up 34. Rocket jumps (at the feet) are unchanged.
+</li></ul>
+<h3>Combat: firing (src/game/server.cpp, src/client/game.cpp, src/client/weaponpredict.h)</h3>
+<h4>T13: early clicks on slow weapons</h4>
+<ul>
+<li><b>What:</b> a fresh click on the sniper, crossbow or rocket up to 0.1 s early (<code>kTapBuffer</code>) fires when the weapon is ready, on the command clock. A lob, a switch or the fire lock drops it.
+</li>
+<li><b>Why:</b> the old 0.15 s fire buffer was dead code, so early taps were dropped.
+</li></ul>
+<h4>T14: weapon after a throw</h4>
+<ul>
+<li><b>What:</b> after a knife or syringe throw you switch back to the weapon held before (<code>ServerPlayer::prevWeapon</code>, predicted by <code>WeaponPredictor::prev</code>).
+</li>
+<li><b>Why:</b> it always went to the first slot, the rocket.
+</li></ul>
+<h4>F12: spawn fire lock mirrored</h4>
+<ul>
+<li><b>What:</b> the client mirrors the server&#x27;s 0.25 s spawn fire lock (<code>kSpawnFireLock</code>), shortened by your own ping.
+</li>
+<li><b>Why:</b> a click right after respawning played a shot the server never fired.
+</li></ul>
+<h4>F22: per-player command clock</h4>
+<ul>
+<li><b>What:</b> refire is timed by a per-player command clock (the Quake 3 way), clamped to [server time - 0.1 s, server time]. Refire, the semi-auto buffer, the 0.25 s spawn lock and the syringe refill use it.
+</li>
+<li><b>Why:</b> refire was timed by when packets arrived, so taps at the end of a cooldown fired with a later aim or were lost. Measured: a held rifle fires 7 shots in 0.96 s on exact cooldown ends; 200 commands of 8 ms in one tick give at most one shot. Before, the first command of a tick decided, up to 7 ms early aim at 125 Hz, or a tick late.
+</li></ul>
+<h4>F21: lag compensation between ticks</h4>
+<ul>
+<li><b>What:</b> the rewind blends between two history records (never across a gap over 4 m, a teleport).
+</li>
+<li><b>Why:</b> it landed up to a tick behind what you saw: about 8 cm at strafe speed at 125 Hz, more at lower tick rates.
+</li></ul>
+<h4>F16: rocket splash and cover</h4>
+<ul>
+<li><b>What:</b> when the body centre is blocked, splash also tests the closest point and the head (at most 2 more rays, only then).
+</li>
+<li><b>Why:</b> a half-peeking player took 0 damage instead of the expected amount. Test: 4.7 damage over a crate (was 0).
+</li></ul>
+<h4>F14: shotgun headshots</h4>
+<ul>
+<li><b>What:</b> a shotgun blast counts as a headshot only when at least half its damage was to the head.
+</li>
+<li><b>Why:</b> one head pellet made the whole blast a headshot. A 3 m neck-high blast with 4 of 20 pellets on the head (37.6 damage) was a HEADSHOT; a point-blank head blast (52) still is.
+</li></ul>
+<h4>F15: bubble stream count</h4>
+<ul>
+<li><b>What:</b> the bubble stream counts only enemies you can see (at most 2 rays per enemy within 30 m, once per 1.8 s stream).
+</li>
+<li><b>Why:</b> the sight table counts everyone within 20 m as seen, so 5 bubbles meant someone within 5 m, even through a wall. Test: 5 bubbles with an enemy in sight at 3 m, 15 with one behind a wall.
+</li></ul>
+<h4>T21: ring-out credit</h4>
+<ul>
+<li><b>What:</b> a fall or ring-out within 3 s of being hit (rocket, crossbow knock, grapple pull; also the <code>kill</code> command) is the attacker&#x27;s kill, checked against their <code>joinId</code>. Teammates, race, hide and seek and tag are excluded. Kill feed: &quot;X [fell] Y&quot;.
+</li>
+<li><b>Why:</b> the victim lost a point and nobody got one. This matters on Temple, Gantry (ranked instagib), Dojo, Anvil and others.
+</li></ul>
+<h3>Sound (src/client/game.cpp, src/client/clientfeel.h, src/game/pmove.cpp, src/game/server.cpp)</h3>
+<h4>F3: own hurt sound</h4>
+<ul>
+<li><b>What:</b> at most once per 0.15 s; damage in between is summed, and volume is 0.45 + 0.011 per point (1.0 at 50; it was a fixed 0.7).
+</li>
+<li><b>Why:</b> under the laser (and drain or vampire) it played about 40 times a second, around 9 voices at once, drowning footsteps. A 1 s laser burst hitting every 10 ms now plays 7 sounds instead of 100.
+</li></ul>
+<h4>F8: movement sounds from movement events</h4>
+<ul>
+<li><b>What:</b> pmove reports its events per tick (<code>MoveState::events</code>: jump, land, dash, super, hyper, hook, plus the landing speed); they&#x27;re not sent or compared. The client collects them from each predicted tick and plays sounds from them.
+</li>
+<li><b>Why:</b> sounds came from comparing state once a frame, so a landing and a jump in the same step, or a dash and a dash jump in one frame, were missed: jump + dash together made a silent dash jump or hyper, and bunny-hop jump and land sounds mostly vanished (more at higher fps).
+</li></ul>
+<h4>X2: enemy movement sounds</h4>
+<ul>
+<li><b>What:</b> the server collects each player&#x27;s movement events between snapshots and sends them in the top bits of <code>PlayerSnap::keys</code> (<code>kKeyEvShift</code> 10, plus <code>KEY_EV_LAND_HARD</code> for a landing over 12 m/s). The client plays others&#x27; jump, land (louder when hard), dash, super and hyper sounds in 3D. Demos carry skipped snapshots&#x27; events.
+</li>
+<li><b>Why:</b> enemies were silent in the air, and holding jump is optimal, so movers were almost silent, while bots hear dashes 36 m away. Test: 2 s of hops and a dash, 4 jumps, 4 landings and 1 dash heard.
+</li></ul>
+<h4>X9: muffled distant gunfire</h4>
+<ul>
+<li><b>What:</b> living humans within 60 m (<code>kMuffledRange</code>) who aren&#x27;t sent the shooter get <code>EV_GUNFIRE</code>: the weapon and a spot rounded to 4 m, no shooter id. At most once per 0.3 s per shooter and listener; the scan runs at most 20 times a second per shooter. Not for the knife, syringe or locator. The client plays the weapon&#x27;s sound at volume 0.45, pitch 0.8.
+</li>
+<li><b>Why:</b> gunfire more than 20 m away and out of sight was silent to players, while bots hear it out to 75 m. Older clients ignore the event.
+</li></ul>
+<h4>F23 (sound part): remote footsteps on stairs</h4>
+<ul>
+<li>Footsteps are probed on stairs when the climb is 45 degrees or less. Before, a step only counted under 3 m/s vertical speed, so stairs were silent.
+</li>
+<li><b>Dropped:</b> the &quot;TEN / FIVE SECONDS never play&quot; part of F23. The owner removed those lines in 1.18.16.
+</li></ul>
+<h4>X8: front and back</h4>
+<ul>
+<li><b>What:</b> a 3D sound behind you is up to 3 dB quieter and goes through a one-pole low-pass (about 4 kHz straight behind), both scaled by how far behind it is. Sounds in front and 2D voices cost the same as before.
+</li>
+<li><b>Why:</b> sounds panned left and right only, so front and back sounded the same. Measured 5 m behind against in front: -3.1 dB, high frequencies x0.17.
+</li></ul>
+<h3>HUD (src/client/game.cpp)</h3>
+<h4>X7: smooth stairs</h4>
+<ul>
+<li><b>What:</b> on the floor, a height change under 0.6 m between frames is eased on the camera with an 8 ms time constant (95% in 25 ms). Camera only (shots leave from the real eye, so they can differ by up to 0.5 m for those 25 ms); reset on death; not in demos.
+</li>
+<li><b>Why:</b> a stair step moved the camera up to 0.55 m in a single tick, so running up ten steps was ten jolts.
+</li></ul>
+<h4>X4: instant hit sparks</h4>
+<ul>
+<li><b>What:</b> rifle, sniper, shotgun (not ricochets) and laser (at most 20 a second) shots are tested on the client against enemies as you see them, stopping at the first wall, and draw a red spark per hit at once. The hit sound and damage number still come from the server.
+</li>
+<li><b>Why:</b> hit confirmation waited a round trip (about 80 ms online).
+</li></ul>
+<h4>X5: your projectiles at the click</h4>
+<ul>
+<li><b>What:</b> rockets, lobs, crossbow bolts and knives get a local copy launched as the server launches them (0.3 m from the eye, same speed, spread, lob drop, <code>projectileExtrapolate</code>), drawn from the muzzle and hidden for the first 0.8 m. The server&#x27;s projectile takes over the drawn lead (at most 0.4 s ahead) and the offset blends out over 0.2 s; a copy nobody claims in 0.6 s is dropped. At most 8 copies, one ray a frame each.
+</li>
+<li><b>Trade-off:</b> a rocket can sit at a wall about a round trip before the server&#x27;s explosion.
+</li>
+<li><b>Not checked at real ping:</b> tested locally only.
+</li></ul>
+<h4>X3: damage direction and enemy tracers</h4>
+<ul>
+<li><b>What:</b> a red arc round the crosshair toward the attacker, fading over 1 s, up to 6 at once (made a little bigger and stronger after the first try). Enemy rifle shots draw 0.2 s tracers. The attacker&#x27;s position comes in the victim&#x27;s copy of <code>EV_HIT</code> (decimetres in the text).
+</li>
+<li><b>Why:</b> getting hit gave no direction, and enemy rifle shots drew no tracer.
+</li></ul>
+<h4>X6: kill marker and death burst</h4>
+<ul>
+<li><b>What:</b> a red X kill marker for 0.45 s (fading over the last 0.2 s), shown while scoped too. A killed player in sight plays <code>SND_DEATH</code> in 3D and a red burst (the explosion effect). No new assets.
+</li>
+<li><b>Why:</b> a kill looked the same as a hit, and a killed enemy just vanished.
+</li></ul>
+<h4>F13: kill sound order</h4>
+<ul>
+<li><b>What:</b> the batched hit is sent before the kill.
+</li>
+<li><b>Why:</b> hits are batched every 50 ms, so the killing hit&#x27;s sound and number arrived after the kill sound (laser and sticky chains).
+</li></ul>
+<h4>X1: death screen</h4>
+<ul>
+<li><b>What:</b> &quot;KILLED BY X [WEAPON] - 37 HP&quot; and &quot;RESPAWN IN 1.4&quot;. The killer&#x27;s HP is shown outside ranked only (and not when the killer is dead). Round modes show no countdown. Carried as &quot;&lt;killer hp&gt; &lt;respawn ms&gt;&quot; in the victim&#x27;s kill event text.
+</li>
+<li><b>Why:</b> the screen only said &quot;DEAD - WATCHING X&quot;.
+</li></ul>
+<h4>F23 (HUD part): weapon bar</h4>
+<ul>
+<li>The HUD weapon bar fills over the shot&#x27;s own refire, including alt-fire refire and the spawn lock.
+</li></ul>
+<h3>Modes (src/game/gamemodes.cpp, src/game/server.cpp)</h3>
+<h4>F11: spectating in team modes</h4>
+<ul>
+<li><b>What:</b> after dying in a team mode you watch your killer for 1.5 s (<code>kKillCamTime</code>; the server gives you the killer&#x27;s sight for that time), then cycling shows teammates only.
+</li>
+<li><b>Why:</b> dead players could watch an enemy&#x27;s first-person view, which matters in bomb.
+</li></ul>
+<h4>T16: team spawns</h4>
+<ul>
+<li><b>What:</b> team spawns are picked like FFA, but only enemies count, and spawns no enemy can see are preferred. A spawn a teammate stands on is taken.
+</li>
+<li><b>Why:</b> spawns avoided teammates instead. Respawns in an enemy&#x27;s sight: Summit KOTH 57% -&gt; 22%, Midtown 33% -&gt; 20%, Railyard 12% -&gt; 9%.
+</li></ul>
+<h4>F6: hide and seek seeker respawn</h4>
+<ul>
+<li><b>What:</b> a seeker who falls or dies is back after 2 s (<code>kSeekerRespawn</code>, the owner&#x27;s pick) and stays the seeker.
+</li>
+<li><b>Why:</b> the seeker was never respawned, so the round idled out its 300 s and every hider scored.
+</li></ul>
+<h4>T23: hide and seek tiebreak</h4>
+<ul>
+<li><b>What:</b> each player&#x27;s time hidden (alive, not seeker, in live rounds) is summed. A tie on score goes to the most time hidden (&quot;tied for first - X stayed hidden longest (N s)&quot;). Rock paper scissors only if that&#x27;s level within half a tick.
+</li>
+<li><b>Why:</b> rock paper scissors decided 4 of 6 bot hide matches, 2 of them 5-way ties after 15 to 20 minutes.
+</li></ul>
+<h4>F9: payload and points round calls</h4>
+<ul>
+<li><b>What:</b> round 1 names no winner: &quot;TEAM A pushed 57 m - TEAM B must beat it&quot; with the ROUND OVER voice. Round 2 says &quot;beats&quot;, &quot;level with&quot; or &quot;short of TEAM A&#x27;s 57 m&quot;.
+</li>
+<li><b>Why:</b> defenders heard ROUND WON, then YOU LOSE 4 s later (9 of 12 Railyard matches).
+</li></ul>
+<h4>T15: stopwatch round 2</h4>
+<ul>
+<li><b>What:</b> round 2 of payload and points ends as soon as the result is locked: the attackers are past the first attack&#x27;s mark, or, against a finished attack, their clock is past its time. The stopwatch runs from when the round goes live. The built-in payload and points logic (<code>tools/modes/payload.qlogic</code>, <code>points.qlogic</code>) does the same, so a custom mode based on them keeps it.
+</li>
+<li><b>Why:</b> 9 of 12 Railyard matches wasted about 3 minutes (up to 4.6).
+</li></ul>
+<h4>T22: shorter round end in 1v1, duel and tourney</h4>
+<ul>
+<li><b>What:</b> the <code>roundEndTime</code> mode parameter is 2.5 s for 1v1, duel and tourney (was the common 4 s; <code>modeparams.h</code> and their <code>tools/modes/*.qlogic</code>). Other modes are unchanged, and a custom mode can still set its own.
+</li>
+<li><b>Why:</b> these rounds are one kill each way, so the 4 s break was a large share of the match.
+</li></ul>
+<h4>T17: level attacks in payload and multi point</h4>
+<ul>
+<li><b>What:</b> each attack keeps when (since its round went live) it reached its best progress (<code>bestTime_</code>, <code>noteBest</code>). Level on progress, the sooner one wins; dead level is a draw, and the tiebreaker pair of rounds is gone. The T15 stopwatch also locks round 2 as won once the attack is level and got there sooner. Calls: &quot;TEAM A took 2 points by 3:40 - TEAM B must beat it&quot;; &quot;TEAM B took 2 points by 2:55 - level with TEAM A&#x27;s 2 points, there sooner than its 3:40&quot;. The built-in logic reads it as <code>cart.bestTime[team]</code> (payload.qlogic, points.qlogic), so custom modes on them keep the same result.
+</li>
+<li><b>Why:</b> Midtown went to tiebreaker rounds in 6 of 16 bot matches, each adding 8 to 11 minutes.
+</li></ul>
+<h4>T18: payload&#x27;s last leg</h4>
+<ul>
+<li><b>What:</b> on a payload map without staged spawns, an attacker past the last checkpoint respawns after 3 s (<code>kLastLegRespawn</code>); everyone else after 5 s. It&#x27;s in the mode&#x27;s respawn delay (<code>rulesRespawnDelay</code> and payload.qlogic&#x27;s <code>respawnDelay</code>, with two new read-only logic fields, <code>cart.checkpointCount</code> and <code>stagedSpawns</code>), so the death screen&#x27;s RESPAWN IN shows it. No map change.
+</li>
+<li><b>Why:</b> on Railyard&#x27;s last leg attackers spawned 55 m from the cart and defenders 37 m (about 2.6 s more running each life), and only 3 of 40 bot rounds were delivered. Forward staged spawns would have made Railyard one-way and needed its spawns re-balanced.
+</li>
+<li><b>Not measured in play:</b> in 25 minutes of advanced bots each way (3 s and 5 s), the bots never got the cart past about 16 of 136 m, so they never reached the last leg.
+</li></ul>
+<h4>T27: FFA spawns</h4>
+<ul>
+<li><b>What:</b> FFA picks at random among the standing spawns nobody can see that are at least 75% as far as the best one (the six farthest only; at most 6 rays per living player).
+</li>
+<li><b>Why:</b> it always took the single farthest spawn, so spawns were predictable. Harbor now uses 3 different spawns and Gantry 6 in 60 tries, none in sight.
+</li></ul>
+<h4>F23 (modes part)</h4>
+<ul>
+<li>1v1 and duel calls use player names (&quot;a &amp; b&quot; in 2v2) instead of &quot;TEAM A wins&quot;.
+</li>
+<li>Killstreaks reset at match start, so they don&#x27;t carry over from warmup or the last match.
+</li>
+<li>Multi point can&#x27;t start on a map without points (and ends if it runs).
+</li></ul>
+<h3>Bots (src/game/bots.cpp, src/game/botbrain.cpp, tools/bots, tools/maps)</h3>
+<h4>F7: play vs bots sizes</h4>
+<ul>
+<li><b>What:</b> 1V1 is 1 enemy and 0 allies; DUEL uses the duel team size per side.
+</li>
+<li><b>Why:</b> both used the team sliders, so they were really 2v3.
+</li></ul>
+<h4>F10: bomb vs bots on Depot and Lodestone</h4>
+<ul>
+<li><b>What:</b> defender bots pick a site by their rank in the team (a new <code>teamRank</code> sensor in the text brain: GRAMMAR.md, the bot editor&#x27;s ast.js, default.qbrain). Depot&#x27;s gatehouse front posts are moved inside the wall ends. Lodestone&#x27;s rock ribs stop 2.5 m short of the cavern wall, and its portal posts are flush.
+</li>
+<li><b>Why:</b> sites were picked by slot-id parity, which sent every defender to the same site. Depot attackers stuck on the spawn wall: a 0.7 m gap for a 0.8 m player, 0 kills in 60 s in most rounds. Lodestone&#x27;s ribs made dead-end corners.
+</li>
+<li><b>Map report:</b> Lodestone points 7.6 -&gt; 7.4; payload 9.0 -&gt; 9.5; both-ways payload 8.6 -&gt; 9.1. Every map still passes. The test harness now shares a route-search budget per tick.
+</li></ul>
+<h4>X11: bots react to being hit</h4>
+<ul>
+<li><b>What:</b> being hit counts as hearing the attacker. After the bot&#x27;s reaction time (450 / 300 / 200 / 150 ms by level) it gets a rough position (with the usual sound error), turns and hunts. Uses <code>lastHitBy</code>.
+</li>
+<li><b>Why:</b> bots didn&#x27;t react to being hit from beyond their hearing, by a sniper for example.
+</li></ul>
+<h3>Servers (src/game/gamemodes.cpp)</h3>
+<h4>F5: short-handed matches</h4>
+<ul>
+<li><b>What:</b> in an unranked match that loses a side, or everyone, the match holds (no rounds awarded, clocks wait) and says &quot;not enough players - the match ends in 10 s unless someone joins&quot;. After 10 s (<code>kShortHanded</code>), the side still there wins by forfeit in team modes (&quot;X wins - the other side left&quot;); otherwise it goes back to warmup. Someone joining in time resumes it. Tourney (walkovers), tag and hide and seek settle it themselves. A match started short-handed on purpose (forcestart, a lone vote) plays on.
+</li>
+<li><b>Why:</b> an empty or one-sided server kept playing: VS looped &quot;round draw&quot; every 7 s, KOTH stayed live, and an opponent leaving 1v1 or duel auto-awarded rounds until &quot;TEAM A wins&quot;.
+</li></ul>
+<h3>Tests</h3>
+<ul>
+<li>New or extended headless tests for the fixes (<code>testFeelFixes</code> in the weapons group, and the rules, movement and bot tests). Throw and syringe timing checks were widened by the command clock&#x27;s 0.1 s window.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.18.20/">&larr; 1.18.20</a></span><span><a href="../1.18.22/">1.18.22 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

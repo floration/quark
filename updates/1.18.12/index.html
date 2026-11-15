@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.18.12: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.18.12</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<p>The owner asked for a model editor: a local tool to look at every model the way the game draws it and replace it. The editor itself is a tool outside the game. The game changes make its exports draw exactly like the built-in models, let every model the game draws be replaced, and keep a player&#x27;s own model files out of ranked. Gameplay, the network protocol (43) and demos are unchanged: 1.18.12 plays with 1.18.7 and newer games and servers.</p>
+<h3>Ranked fairness: your own model files stay out of ranked (src/client/gltf.cpp, src/client/models.h, src/client/overrides.*, src/client/game.cpp)</h3>
+<ul>
+<li><b>Why:</b> a player&#x27;s own <code>overrides/models/...</code> files (the user overrides folder, <code>%APPDATA%\quark\overrides</code> on Windows) applied in ranked too. Ranked forces the STANDARD player model, so one <code>models/player/STANDARD.glb</code> was enough to make every enemy huge or neon for that player alone; projectiles and the crown worked the same way.
+</li>
+<li><b>What:</b> both sets of model overrides are loaded once at startup (<code>ModelOverrides</code>: the shipped set from <code>assets/overrides/</code> and yours, <code>loadModelOverrides</code>). <code>drawWorld</code> picks one set once a frame: a player in a ranked match or a time trial (<code>MS_RANKED | MS_TIMETRIAL</code>, <code>rankedPlayer()</code>) gets the shipped set (or the default boxes where nothing is shipped); everyone else, including spectators of a ranked match, gets yours over the shipped ones, as before.
+</li>
+<li><b>Cost:</b> the same as before: one pointer pick per model drawn, decided once a frame. No file is read during a match.
+</li>
+<li><code>overrides::find</code> / <code>readRelative</code> take where to look: <code>FROM_ANY</code> (yours, then the shipped ones; the default), <code>FROM_SHIPPED</code> or <code>FROM_USER</code>. Sounds and the font are unchanged (they don&#x27;t change what you can see of other players).
+</li>
+<li>Test (<code>testOverrides</code>): a user STANDARD.gltf loads and is drawn, and never in ranked; every model&#x27;s ranked pick is the shipped one.
+</li></ul>
+<h3>Every model replaceable: the props (src/client/models.cpp, src/client/game.cpp)</h3>
+<ul>
+<li><b>Why:</b> the arms, the bomb and the payload objective were drawn box by box inline in <code>drawWorld</code> / <code>drawHeldWeapon</code>, so they had no export and couldn&#x27;t be overridden. Every other model already could.
+</li>
+<li><b>What:</b> a new model kind, <code>MODEL_PROP</code> (<code>models/prop/&lt;NAME&gt;</code>), built by <code>propParts</code> and drawn through the same parts + override path as players, weapons, projectiles and the crown:
+<ul>
+<li><code>GUN_ARM</code>: the arm and gun every other player holds out.
+</li>
+<li><code>ARM</code>: the arm a weapon model is held on in hide and seek and tag.
+</li>
+<li><code>BOMB_PACK</code>: the bomb on a carrier&#x27;s back (player space).
+</li>
+<li><code>BOMB</code>: the dropped or planted bomb.
+</li>
+<li><code>CART</code>: the payload cart (11 boxes).
+</li>
+<li><code>GATE</code>: a checkpoint gate (both posts).
+</li></ul>
+</li>
+<li>Position, aim, crouch and body size stay transforms in game.cpp (<code>drawProp</code>, <code>drawArm</code>). Colours that change at run time are slots: the bomb&#x27;s blink is <code>glow</code> (reference: its dark grey); the cart&#x27;s <code>team</code>, <code>metal</code>, <code>glow</code> and a new <b><code>accent</code> slot</b> (the map&#x27;s accent colour, the cart&#x27;s rim); the gate&#x27;s <code>team</code> (reference: the unreached grey).
+</li>
+<li><b>Reference palettes are per model</b> (<code>referencePalette(kind, idx)</code>), and <code>overrideTints</code> takes the model, because a prop&#x27;s reference colours aren&#x27;t a player&#x27;s.
+</li>
+<li><b>Defaults are pixel-identical</b>: the same box calls with the same floats. Before / after screenshots of the cart, both gates, the bomb and its backpack, the gun arms and the held-weapon arms compare identical. Same number of boxes per frame.
+</li>
+<li>The asset export now writes <b>30 models</b> (was 24: 5 players, 11 weapons, 7 projectiles, the crown and the 6 props). The provenance registry lists the 6 new ones as AI-made (assets/provenance/models.json). docs/ASSETS.md documents them and fixes stale counts (11 weapons).
+</li></ul>
+<h3>Box model files (src/client/gltf.cpp, src/client/models.*, tests)</h3>
+<ul>
+<li><b>Why:</b> an override was drawn as a plain lit mesh. A model editor export of a player had no outlines, a crouch squashed the whole body, the face plates showed in first person, and the default players&#x27; constant-offset colours turned into a plain multiply (the HEAVY / ROBOT / KNIGHT grey is team x 0.6 + 0.06, the SCOUT visor team x 1.8 + 0.3, the ROBOT eye team x 2 + 0.4).
+</li>
+<li><b>What:</b> an override whose first mesh carries its box list (<code>meshes[0].extras.quark</code>, <b>version 2</b>) is drawn by the game&#x27;s own box path, exactly like a built-in model: 1 px outlines, a crouch squashing only the boxes marked <code>crouch</code>, <code>visOnly</code> boxes (face plates) hidden on your own body, per-box shadows, the same colour formula.
+<ul>
+<li><code>ModelPart</code> carries <code>mul</code> / <code>add</code> / <code>teamMul</code> (drawn colour = slot colour x <code>mul</code> + team colour x <code>teamMul</code> + <code>add</code>) and <code>crouch</code>. <code>exportModelParts</code> derives them from the builders (each slot set to black, then white, with the team white; crouch from a half-height build). The export writes them with <code>shadow</code>, <code>visOnly</code> and <code>alpha</code>, at 9 significant digits so the floats come back exactly. <b>An unchanged export put back as an override draws pixel-identically to the default</b> (all 30 checked in screenshots).
+</li>
+<li>The triangles in the file are then only for other viewers (Blender, the website, the editor).
+</li></ul>
+</li>
+<li><b>Checks</b> (once at startup, when the file loads): 1 to 256 boxes, every number finite, centres within 64 m, half sizes over 0 and at most 32 m, colours / <code>mul</code> / <code>add</code> / <code>teamMul</code> from 0 to 16, alpha over 0 and at most 1, known slot names, booleans. <b>A bad box list fails the file and keeps the default</b> (logged). No extras, or another version (the editor&#x27;s early version 1 notes), is drawn as a mesh as before.
+</li>
+<li><b>Cost:</b> parsed once at startup; drawing goes through <code>overrideBoxParts</code> into the reused box list, so a box override costs what the built-in boxes cost. Not animated in a box override: the rocket&#x27;s flame flicker, the sticky&#x27;s core blink and the bubble&#x27;s wobble (it still spins and turns).
+</li>
+<li><b>Override tints</b>: slots a model&#x27;s drawing doesn&#x27;t colour (glow, metal, base, accent on a player or the crown, and so on) now draw as authored (tint 1) on a mesh override. Before, they were tinted by white / reference: a player&#x27;s <code>glow</code> came out x (1, 1.82, 6.67).
+</li>
+<li>Tests: every default model&#x27;s file round-trips to identical boxes and draws (any palette, crouched) as the built-in model does; 17 bad box lists are refused; the editor&#x27;s version 1 extras load as a mesh; undriven slots keep the reference.
+</li>
+<li>docs/ASSETS.md has the schema (&quot;Box models&quot;).
+</li></ul>
+<h3>Drawing: the box list reserved once (src/client/models.h, src/client/game.cpp)</h3>
+<ul>
+<li>The list every model is drawn from (<code>parts_</code>) is reserved once at startup for the larger of <code>kMaxDefaultParts = 32</code> (the tests check no default model has more) and the biggest box override, so drawing never grows it. Why: the props moved into it (up to 11 boxes for the cart), and a growth mid-frame is an allocation on the frame path (a 1% low risk). Per-frame work is unchanged apart from filling that reused list.
+</li></ul>
+<h3>Screenshot tooling (src/client/main.cpp, src/client/game.cpp)</h3>
+<ul>
+<li><code>--cam</code> now also places the camera in a match (the late aim re-read is skipped then), and <code>--models</code> in bomb mode has the lineup carry the bomb (turned away, backpacks showing) with a dropped bomb in front. Why: exact before / after pixel comparisons of the objective props (the cart, the gates, the bomb and its backpack) for the change above.
+</li></ul>
+<h3>Model editor (tools/model_editor)</h3>
+<ul>
+<li>A local page that runs from disk (<code>file://</code>) in Chrome or Edge, with no server, no network and no libraries. <code>python3 tools/model_editor/build.py &lt;export&gt; &lt;out&gt;</code> (or <code>build.cmd</code>, default output <code>%USERPROFILE%\Desktop\Quark\model-editor</code>) builds it from <code>quark_tests exportassets</code>: the page plus <code>data/manifest.js</code> (every model with its box list, the shipped model overrides, each map&#x27;s palette and sun), about 400 KB, Python 3 standard library only. On Windows, <code>tools\model_editor\install.cmd [output folder]</code> does it all from a repository checkout: it builds only <code>quark_tests</code> with MinGW in <code>build-model-editor\</code>, exports the assets and runs build.cmd (non-interactive, opens no browser, safe to re-run).
+</li>
+<li><b>Drawing</b>: a WebGL2 port of the game&#x27;s dynamic object shader (lighting, shadow map, outlines, translucent pass, sky) in orbit, first-person viewmodel, third-person (gun arm, held weapon, crown), projectile in flight, the <code>--models</code> lineup and a track view with the cart and gates. Checked against the game&#x27;s own screenshots: model faces match to 0 to 1 of 255, viewmodels 97 to 99% of pixels within 3 / 255.
+</li>
+<li><b>Editing</b>: box by box with fields, picking, a move / resize gizmo, undo / redo; recolouring rewrites <code>mul</code> (keeping <code>add</code> / <code>teamMul</code> while they fit); <code>mul</code> / <code>add</code> / <code>teamMul</code> and the crouch flag are editable; boxes are checked against the game&#x27;s limits before export. <code>.glb</code> / <code>.gltf</code> import, read as the game&#x27;s loader reads it.
+</li>
+<li><b>Export</b>: <code>models/&lt;kind&gt;/&lt;NAME&gt;.glb</code> overrides to a folder (File System Access) or a zip, with the box list in the extras, plus a <code>provenance.json</code> sidecar (docs/PROVENANCE.md). Problem checks: the 20 000 triangle limit, bounds, slots the game doesn&#x27;t drive.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.18.11/">&larr; 1.18.11</a></span><span><a href="../1.18.13/">1.18.13 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

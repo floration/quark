@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.18.5: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.18.5</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<p>1.18.5 is the second performance pass over the client. 14 auditors each read one small part of the game (the frame loop, the world drawing in two halves, the 3D renderer, text and 2D, the HUD, the in-match menus, input, sound, netcode, F3 and the GPU settings, loading and the light bake, the menus, the editor), first for useless loops and branches, then for speedups and bugs. The changes that give the same picture and the same game were applied; the ones that change how the game plays were fixed only where they were clearly bugs, or where the owner chose. The server&#x27;s own pass is 1.18.3 / 1.18.4.</p>
+<ul>
+<li><b>Network protocol unchanged</b> (42). One netcode change (reliable events) needs no server change to work, and pairs with 1.18.4&#x27;s server half.
+</li>
+<li><b>Simulation unchanged</b>: every test, including the hashed per-tick ones, gives the same results.
+</li>
+<li>Costs below were measured on the owner&#x27;s PC (Windows, MinGW, RTX 3090 Ti, 240 Hz, 8 kHz mouse) unless marked as estimates.
+</li></ul>
+<h3>Loading</h3>
+<h4>Shipped light bakes (owner)</h4>
+<ul>
+<li>Before: every official map&#x27;s lighting was baked on the player&#x27;s PC the first time it was joined after an update (the cache is keyed by the map&#x27;s content, and maps change often): Midtown 4.9-5.3 s, Lodestone 2.6-2.8 s, all 21 maps about 24 s on a 20-thread PC, 2.5x that on 8 threads.
+</li>
+<li>Now: CI bakes the official maps once (<code>quark --bake-maps &lt;dir&gt;</code>, headless, no window or GL), packs them zlib-compressed (<code>tools/pack_lightcache.py</code>, 87 MB → 11.7 MB) and every platform&#x27;s package carries them in <code>maps/lightcache/&lt;sha256&gt;.qlbz</code>. On a cache miss the game inflates the shipped bake (about 21 ms for Midtown) instead of baking: Midtown&#x27;s first join 5.26 s → 0.05 s, Lodestone 2.79 → 0.04 s. Shipped bakes are read only (never written, touched or evicted); a map without one bakes as before.
+</li>
+<li><code>.qlbz</code>, not the user cache&#x27;s <code>.qlm</code>: the launcher keeps every <code>.qlm</code> as a player file through updates, so old shipped bakes would pile up; <code>.qlbz</code> are game files updates replace.
+</li>
+<li>Packages grow by 11.7 MB each. CI has a <code>lightcache</code> job before packaging; a missing bake only warns (it means a first-join bake, not a broken release). Local builds (<code>build_windows.ps1</code>, so also <code>build-releases.cmd</code>) bake into <code>build-win\lightcache</code>: about 25 s the first time, under a second when no map changed.
+</li>
+<li>Tests: a shipped bake is used without touching the user cache; a stale bake version, another map&#x27;s bake, a cut stream and raw bytes under the compressed name are each refused and baked as usual.
+</li></ul>
+<h4>Faster cached loads</h4>
+<ul>
+<li>The bake&#x27;s prepass (which faces are buried, which edges and lifts) ran on one thread on every load, cached or not: 110-180 ms on Midtown and Lodestone. Its three passes now run on every core but one, in chunks, with the same output (vertex hashes identical): cached Midtown 111 → 41 ms, Lodestone 107 → 38 ms.
+</li>
+<li>The bake&#x27;s progress loop and the loading screen waited in 30 ms sleeps (MinGW&#x27;s <code>sleep_for</code> ignores the 1 ms timer, so 31-47 ms): a finished bake waited up to that long to be noticed. Both now wait in 1 ms steps.
+</li>
+<li>The cache file is touched on use, so eviction (the 32 newest) keeps the maps you play, and written atomically (a temporary file, then a rename: a power loss can&#x27;t leave a zero-filled cache that loads as black lighting).
+</li>
+<li>glTF models: accessor sizes are range-checked (overflow-safe) before allocating, and normals / colours whose count doesn&#x27;t match the positions are ignored (they were read past the end).
+</li></ul>
+<h3>The frame and its latency</h3>
+<h4>Mouse reads</h4>
+<ul>
+<li>The late mouse reads (the late latch, and ULTRA&#x27;s read before the camera) take only the motion now. The window focus check (a system call) and the twice-a-second cursor re-hold (SetCursorPos / ClipCursor, several µs under the global input lock) ran inside them, so twice a second they landed between the read and the swap, in the 0.1% lows. Both are done in the frame&#x27;s first read; focus can&#x27;t change before the next event poll. The cursor is also re-held at once after a resize or a display mode change.
+</li>
+<li>The cursor is held only when the window has the focus: a capture that happened behind another window (a bake ending, a connect) moved the other program&#x27;s cursor to the game&#x27;s centre.
+</li>
+<li>F3&#x27;s INPUT-&gt;FRAME took the late read&#x27;s input as the next frame&#x27;s, about one frame too high; a report racing the read could also lose its timestamp and drop the sample.
+</li></ul>
+<h4>Screen mode cached</h4>
+<ul>
+<li><code>glfwGetVideoMode</code> asks the display driver every call (EnumDisplaySettings, tens of µs). Latent Sync called it every frame, and F3 and the settings page too. The mode is now read once and again on a display mode change, a resize or another monitor.
+</li></ul>
+<h4>ULTRA pacing</h4>
+<ul>
+<li>Bug: ULTRA learnt the CPU&#x27;s time per frame from the input read to after its wait for the last frame on the GPU. When the GPU was the bottleneck that wait was always there (the target starts a margin early), so the learnt CPU time grew about 15 µs a frame until the pacing stopped pacing, adding about a GPU frame of latency. The CPU time now ends at the swap, before that wait, and without Latent Sync&#x27;s hold for the blank.
+</li>
+<li>The LOW LATENCY ON fences no longer run under ULTRA pacing (Latent Sync) where they did nothing, and their extra flush is gone (the next swap flushes it).
+</li></ul>
+<h4>Latent Sync</h4>
+<ul>
+<li>The lead (how early a frame starts) was the single slowest frame of the last 3 seconds: one hitch, or a loading-screen frame, held every frame&#x27;s mouse read milliseconds early for seconds. It&#x27;s now the 3rd slowest of the last 256 frames (about a second at 240 Hz), loading-screen frames not counted, each clamped to a refresh: one or two slow frames tear once instead.
+</li>
+<li>Unsynced (a PC that can&#x27;t keep up), it no longer drains the GPU every frame (it serialized CPU and GPU on exactly the PCs short of speed); it uses ULTRA&#x27;s learnt times.
+</li>
+<li>The monitor&#x27;s scanline clock is reopened when the mode changes and retried a second after a failure (a driver reset stopped Latent Sync for good).
+</li></ul>
+<h4>Less after the late read</h4>
+<ul>
+<li>The translucent geometry&#x27;s upload (beams, tracers, lines) and the uniforms that don&#x27;t depend on the aim (about 55 of 63, with their powf work) moved from after the late read to before it. Uniform locations are looked up once (each call was a hash lookup), and the constant ones are set once at start. relatch only re-aims the camera (the projection is unchanged), and the view model&#x27;s matrix is made once.
+</li></ul>
+<h3>Drawing</h3>
+<h4>Text and 2D</h4>
+<ul>
+<li>Every glyph and rectangle made about 12 libm rounding calls (<code>round</code> / <code>lround</code> are out-of-line calls in this build): 222 ns a glyph. Exact integer rounding (checked against <code>std::round</code> over every float), the colour packed once per string, and integer texture coordinates: 31 ns a glyph, byte-identical vertices. About 160 µs a frame with F3 open, 40-75 µs for a normal HUD.
+</li>
+<li>Buttons, cycles and sliders copy their label only when it must be clipped, and measure it once; a slider formats its number once unless it changed.
+</li></ul>
+<h4>World and HUD</h4>
+<ul>
+<li>Health bars: a bar wholly off screen no longer casts its 9 sight rays (projection only rejected points behind the camera), and the ray that last found a player hidden is tried first (all 9 must be clear, so the answer is the same; a player behind cover usually costs one ray).
+</li>
+<li>The per-frame vertex lists are reserved at start (a busy frame used to regrow them mid-frame), and the players&#x27; interpolation writes straight into the frame&#x27;s array.
+</li>
+<li>The hud.cfg file is watched on a thread of its own (a stat on the frame once a second, 12-17 µs, landed in the 0.1% lows), and through the UTF-8 path: under a user folder with an accented name, edits never reloaded.
+</li>
+<li>The custom mode editor&#x27;s mode list is built once (13 strings a frame).
+</li></ul>
+<h3>Audio</h3>
+<ul>
+<li><b>The game thread never waits for the mixer.</b> play() took the mixer&#x27;s lock, which the mixer held for its whole pass (10-100 µs): a sound played at that moment stalled the frame. Sounds now go into a queue the mixer takes at the start of each period (same order, same voice-stealing rule); switching the announcer voice hands the new lines over without the mixer ever reading freed ones.
+</li>
+<li><b>3D sounds follow the listener</b>: their left / right gains were fixed when they started, so a 1.2 s explosion stayed in the ear it began in through a 180° turn. They&#x27;re recomputed every period, ramped to avoid clicks.
+</li>
+<li>The mixer&#x27;s inner loop uses a 32.32 fixed-point position with no per-sample bounds check (long or pitched sounds play slightly more exactly).
+</li>
+<li><b>Shared mode at the engine&#x27;s shortest period</b> (Windows 10+, IAudioClient3), in the engine&#x27;s float mix format, where the driver allows a period under the default: about 3 ms queued instead of 10. Otherwise (the owner&#x27;s driver offers only 10 ms) the 10 ms path; <code>QUARK_AUDIO_LEGACY=1</code> forces it. The startup log names the engine period and why it isn&#x27;t shorter.
+</li>
+<li><b>EXCLUSIVE AUDIO</b> also tries 32-bit float, 24-bit and extensible 16-bit formats (some USB DACs take only those), tries the next format when one fails to start, and shows N/A (no format the device takes) apart from BUSY.
+</li></ul>
+<h3>Netcode</h3>
+<ul>
+<li><b>Reliable events were lost.</b> The client acked the newest event id it saw; the server resends unacked events at a pace and lets small ones pass a big one that doesn&#x27;t fit, so a later event could arrive first, the ack covered the missing one, and the server dropped it: kill feed lines, chat, names, ranked tickets, map edits. Events are now handled strictly in id order and acked only up to the last one with none missing before it (demos, which have gaps, take every newer one). 1.18.4&#x27;s server gives the oldest event priority so it can&#x27;t be held back.
+</li>
+<li>The render bracket is found from the newest snapshot back and stops: with INTERP DISABLED (or a stall) it walked all 512 snapshots every frame.
+</li>
+<li>A prediction mismatch stores the server&#x27;s state as the acked prediction, so the next snapshot with the same ack doesn&#x27;t replay every command again (50-300 µs each).
+</li>
+<li>findPlayer is a table lookup, the jitter estimate starts fresh for each connection and eases in demos, a snapshot with tick rate 0 or over 1000 is refused, and demo records hold at most 255 events (the count wrapped with 256 stuck props), numbered only once written.
+</li></ul>
+<h3>Editor</h3>
+<ul>
+<li>Only edits that change boxes rebuild the 30 MB static batch on a big map (a title keystroke, a slider move or a spawn nudge used to: 10-30 ms each), and online only when a box really changed.
+</li>
+<li>A held handle does nothing when the drag hasn&#x27;t changed, and no longer copies the whole map every frame (80-200 µs on Midtown); actions copy the map without its 470 KB text.
+</li>
+<li>The static batch keeps its memory between rebuilds (it grew 30 MB from nothing each time, ~16 ms), per-map results (clip boxes, mode support) are cached, and the culling margin from a match is reset.
+</li>
+<li>Online: when another editor adds or deletes an object of the kind you have selected, your drag ends and the selection follows the same object (an index could point at the next one and overwrite it).
+</li></ul>
+<h3>Fixes</h3>
+<ul>
+<li><b>The click that brings the game back after alt-tab fired the weapon.</b> A mouse press in the same event poll as the focus coming back is the window&#x27;s now; its button isn&#x27;t down until released. (owner)
+</li>
+<li><b>ALT TOGGLE scope</b>: the zoom, the scope overlay and the scoped sensitivity followed the key held, while the server got the toggled state: after a tap the view and the server disagreed.
+</li>
+<li><b>Enemy footsteps in mid-air</b>: &quot;walking&quot; was under 0.05 m of height change per frame, so at 4000 fps anything slower than 200 m/s up or down counted (jumps, falls, grapples). It&#x27;s now a speed (3 m/s, the old 60 fps threshold).
+</li>
+<li><b>Killstreaks</b> reset when a match starts again (back to warmup, or another mode) and when a slot&#x27;s player leaves; they only reset on leaving the server.
+</li>
+<li>A click just before Esc, chat or the console, or as a map started loading, fired one shot on the first tick after.
+</li>
+<li>The weapon kick decayed only while the view model was drawn: scoped, dead or with the model hidden it stayed, unscoping replayed it, and shots started up to 9.6 cm back.
+</li>
+<li>Remote shots and knife slashes start at the shooter&#x27;s eye at their body size (giant and double size) and crouch; watching a player, their laser and sniper shots were edge on and invisible.
+</li>
+<li>F3: the GPU clock is calibrated as the halfway point of the query, best of 3, before the first results; the frames&#x27; slots are read oldest first (after a wrap the vsync model could ratchet); F3 / F4 start fresh when turned on; with no late read the mouse is fixed at the frame&#x27;s read.
+</li>
+<li>The custom mode editor&#x27;s PLAYS AS skipped back to FFA past ranked arena / tourney, so hide and seek, tag and points couldn&#x27;t be reached going forward.
+</li>
+<li>The console set nothing, saved the file and said nothing for an unknown setting with a value; now it says &quot;unknown setting&quot;. The announcer is reloaded only when the voice is what was set.
+</li>
+<li>The selected host / bots map index could point past the list after maps were deleted (the map picker read it unguarded).
+</li>
+<li>Ranked lifetime stats: the &quot;anyone unknown?&quot; check ran every frame once everyone was known; now once a second.
+</li>
+<li>Audio: the IAudioClient3 interface was declared in an anonymous namespace with no derived class, which let GCC compile every call through it as unreachable: a build crashed at audio start on Windows 10+ (caught by the UI test before release).
+</li></ul>
+<h3>Found, not changed</h3>
+<ul>
+<li>Sorting world chunks front to back, indexed / packed vertices, a static view-model buffer and drawing the view model first: possible GPU savings, but not output-identical or not measured; left for a measured pass.
+</li>
+<li>The raw input thread could unregister while the mouse isn&#x27;t captured (8000 wake-ups a second in menus); the snapshot history as a fixed ring; batching input packets on catch-up frames (needs the server owner); following a change of the default audio device.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.18.4/">&larr; 1.18.4</a></span><span><a href="../1.18.6/">1.18.6 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

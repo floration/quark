@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.18.29: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.18.29</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<h3>Settings &gt; HUD (src/client/game.cpp, game.h, ui.h)</h3>
+<ul>
+<li><b>The HUD tab previews the HUD live.</b> The owner: &quot;you should be able to see the UI in real time while you are editing it&quot;. Settings in a match hid the HUD (1.18.13&#x27;s redesign, so it didn&#x27;t cut through the opaque panel) and the main menu had none, so every offset, size and colour change was blind. Now, on the HUD tab only (not the widget editor or the other tabs, which are unchanged):
+<ul>
+<li>In a match the HUD draws with live values under the settings: crosshair, health, weapon name, cooldown bars and speed meter (drawn while paused here only), weapon list, sticky counter, and the verbose block, key overlay and custom widgets when they&#x27;re on. The score box, kill feed and chat stay off (they&#x27;d sit under the tab row). The world is dimmed 0.25 instead of 0.55. While dead it uses the sample values.
+</li>
+<li>From the main menu the same elements draw at their real places with sample values: 100 health, the first slot&#x27;s weapon, full bars with 2 dash pips, 12 m/s, FFA&#x27;s weapon list, the key overlay when VERBOSE INFO is on.
+</li>
+<li>The panel is 0.6 alpha on this tab (1.0 elsewhere), so elements under it show through and its text stays readable.
+</li>
+<li>The selected element gets a thin pulsing accent outline over everything (a dim dashed one when SHOW is off; none for the 3D weapon model). While one of its sliders is held, and for 1.5 s after any change to it or picking it, it is drawn again over the panel at full strength.
+</li></ul>
+</li>
+<li><b>How:</b> each element&#x27;s drawing moved into a helper that takes its values and can return its screen rectangle without drawing (drawHudHealth, drawHudWeaponName, drawHudBars, drawHudSpeed, drawHudSlots; drawKeyOverlay gained sample / draw flags). The live HUD calls the same helpers with the same values, so its per-frame work is unchanged; the preview&#x27;s extra work (sample values, outline rectangles) only runs while the HUD tab is open. <code>Ui::sliderHeld()</code> tells the preview a slider is being dragged.
+</li>
+<li>Screenshot runs: <code>--settingstab hud/&lt;health|weapon|bars|speed|slots|keys&gt;</code> opens the tab with that element picked.
+</li></ul>
+<h3>Docs</h3>
+<ul>
+<li>docs/RELEASE_CHECKLIST.md: the settings shell lines say the HUD tab shows the HUD; a &quot;live preview&quot; check on the HUD tab line.
+</li></ul>
+<h3>Known</h3>
+<ul>
+<li>At their default place the weapon list and weapon name&#x27;s bottom row sit behind the settings footer&#x27;s BACK / RESET WHOLE HUD buttons, which stay opaque; picking the weapon list draws it over them.
+</li></ul>
+<h3>Compatibility</h3>
+<ul>
+<li>Client only, no protocol change (still 44).
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.18.28/">&larr; 1.18.28</a></span><span><a href="../1.18.30/">1.18.30 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>
