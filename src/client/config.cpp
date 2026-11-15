@@ -313,6 +313,9 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "zoom_fov_rifle") { if (std::isfinite(fv)) zoomFovRifle = clampf(fv, 10, 140); }
         else if (k == "fullbright_color") fullbrightColor = parseColor(v, fullbrightColor);
         else if (k == "discord") discordName = v.substr(0, 40);
+        else if (k == "discord_status") discordStatus = iv != 0;
+        else if (k == "discord_show_server") discordShowServer = iv != 0;
+        else if (k == "discord_app_id") { std::string id = v.substr(0, 32); while (!id.empty() && (id.back() == '\r' || id.back() == ' ')) id.pop_back(); discordAppId = id; }
         else if (k == "ui_font") {   // (Settings > FONT: a built-in's id or a mods/fonts file name)
             std::string f = v.substr(0, 128);
             while (!f.empty() && (f.back() == '\r' || f.back() == ' ')) f.pop_back();
@@ -463,7 +466,8 @@ std::string Settings::toText() const {
       << "\nsky_color=" << colorHex(skyColor) << "\nglow_color=" << colorHex(glowColor) << "\nhigh_contrast=" << highContrast << "\nf3_safe=" << f3Safe << "\non_top=" << onTop << "\ngun_color=" << gunColor
       << "\ngun_custom=" << colorHex(gunCustom) << "\nobj_opacity=" << objOpacity << "\nobj_pulse=" << objPulse << "\ndash_buffer=" << dashBuffer << "\nsmooth_amt=" << smoothAmt << "\nlightmap_nearest=" << lightmapNearest
       << "\nwallbang_tint=" << wallbangTint << "\nwallbang_color=" << colorHex(wallbangColor) << "\nultra_margin_auto=1" << "\nultra_margin_us=" << ultraMarginUs << "\ncap_offset_us=" << capOffsetUs << "\nnv_threaded=" << nvThreaded << "\nnv_dxgi=" << nvDxgi
-      << "\nquip_captions=" << quipCaptions << "\nann_duck=" << annDuck;
+      << "\nquip_captions=" << quipCaptions << "\nann_duck=" << annDuck << "\ndiscord_status=" << discordStatus << "\ndiscord_show_server=" << discordShowServer;
+    if (!discordAppId.empty()) f << "\ndiscord_app_id=" << discordAppId;
     for (int i = 0; i < 3; i++) if (!colorPreset[i].empty()) f << "\ncolor_preset_" << i + 1 << "=" << colorPreset[i];
     for (auto& b : cmdBinds) f << "\ncbind_" << b.first << "=" << b.second;
     for (auto& a : aliases) f << "\nalias_" << a.first << "=" << a.second;

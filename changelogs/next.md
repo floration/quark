@@ -62,3 +62,6 @@
 
 ## Visuals
 - **FULLBRIGHT keeps your WORLD OUTLINE colour:** with fullbright on, the map's outlines were always black whatever colour you'd picked. They now use your colour (black is still the default).
+
+## Discord
+- **Discord status:** while Quark runs, your Discord profile can show what you're playing: the map's picture and name, the mode (with "Ranked" on ranked), the score with your side first (or your place, like "2nd of 8", in free for all and race), the server's name and player count, and how long you've been on that server. In the menus it says what you're doing (browsing servers, in settings, editing a map, watching a demo, ...). It needs the Discord app open on the same computer, and nothing is sent anywhere else. GAMEPLAY > MORE 4: DISCORD STATUS turns it off (your status clears at once) and SHOW SERVER NAME shows just "Online" instead of the server; STREAMER MODE hides the server too. Not switched on in this build yet: it starts working once the game has its Discord application.

@@ -29,6 +29,7 @@
 #include "gpuprefs.h"
 #include "binds.h"
 #include "config.h"
+#include "discordrpc.h"
 #include "renderer.h"
 #include "uifonts.h"
 #include "ui.h"
@@ -465,6 +466,19 @@ private:
     void drawBenchList(const SetLayout& L);
     void drawBenchResults(const SetLayout& L);
     bool paused_ = false, chatting_ = false, showScores_ = false, settingsInGame_ = false;
+    // DISCORD STATUS (discordrpc.h): off in automated runs (rpcAllowed_ false); checked once a second (rpcNextAt_, the
+    // game's clock), the Presence handed to the thread only when it changed. rpcHost_: the game being played is this
+    // machine's (0 online, 1 hosted, 2 vs bots); rpcMax_: the server's player limit when known (the list, or our own).
+    drpc::Client rpc_;
+    drpc::Presence rpcLast_;
+    bool rpcAllowed_ = false;
+    std::string rpcAppId_;
+    double rpcNextAt_ = 3;   // (the first a few seconds in: a start straight into a game shows the game, not "Connecting")
+    int rpcHost_ = 0, rpcMax_ = 0;
+    char rpcKey_[96] = {};   // (what the timer counts: this server, or the menus, the editor...; a new one restarts it)
+    int64_t rpcStart_ = 0;
+    void discordTick();
+    void discordPresence(drpc::Presence& p);
     bool unratedServer_ = false;   // the server said its ranked isn't rated (kUnratedNotice: a testing server)
     std::string chatText_, joinAddr_, error_;
     size_t chatCursor_ = 0;      // caret in chatText_ (chat / console input)
