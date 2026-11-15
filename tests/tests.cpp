@@ -5151,6 +5151,8 @@ int modeBench();                 // tests/mode_tests.cpp: interpreted mode slot 
 int modeLockstepTests(int part = 0, int parts = 1);   // tests/mode_tests.cpp: logic on servers, native vs interpreted lockstep (the failure count)
 int exportAssets(const char* dir);   // tests/assets_tests.cpp: every default asset as files + manifest.json
 int assetTests();                    // tests/assets_tests.cpp (returns the failures)
+int discordRpcTests();                 // tests/discordrpc_tests.cpp: DISCORD STATUS (returns the failures)
+int exportMapPreviews(const char* dir, int size);   // tests/discordrpc_tests.cpp: the website's img/rpc/<map>.png
 
 static void testLadders() {
     printf("ladders: every one climbable\n");
@@ -10836,6 +10838,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (argc >= 2 && std::string(argv[1]) == "exportassets") return exportAssets(argc > 2 ? argv[2] : "assets_export") ? 1 : 0;
+    if (argc >= 2 && std::string(argv[1]) == "mappreviews") return exportMapPreviews(argc > 2 ? argv[2] : "mappreviews", argc > 3 ? atoi(argv[3]) : 512) ? 1 : 0;
     if (argc >= 2 && (std::string(argv[1]) == "exportbrain" || std::string(argv[1]) == "checkbrain" || std::string(argv[1]) == "brainast" || std::string(argv[1]) == "printbrain"))
         return brainTool(argv[1], argc > 2 ? argv[2] : nullptr);
     if (argc >= 2 && std::string(argv[1]) == "brainbench") return brainBench(TP(29170));
@@ -10905,6 +10908,7 @@ int main(int argc, char** argv) {
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
         {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotNavBlockers(TP(29030)); testBotAim(p); testHostedBotsThreadExit(TP(29010)); testBotHurtTurn(TP(29011)); }},
         {"assets", [] { g_fail += assetTests(); }},
+        {"discordrpc", [] { g_fail += discordRpcTests(); }},
         {"modelogic", [] { g_fail += modeTests(); }},
         {"resetmaps", [] { testResetMaps(); testLegacyMaps(); }},   // (each forked group has its own user data dir: these write only there)
         {"userdata", [] { testUserData(); }},
@@ -10950,7 +10954,7 @@ int main(int argc, char** argv) {
                     return g_fail ? 1 : 0;
                 }
         printf("no test group '%s' (quark_tests groups lists them; the tools: playtest, serverbench, snapbench, ffaexperts, simhash,\n"
-               "racefloors, bounds, exportassets, rules NAME, signing, launcher, bot, serial)\n", name.c_str());
+               "racefloors, bounds, exportassets, mappreviews, rules NAME, signing, launcher, bot, serial)\n", name.c_str());
         return 1;
     }
     // QUARK_TEST_ONLY=a,b,c runs just those groups, as the whole suite runs them (in parallel, then the alone ones)

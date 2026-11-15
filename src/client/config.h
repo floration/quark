@@ -252,6 +252,11 @@ struct Settings {
     std::string language = "auto";   // Settings > INTERFACE > LANGUAGE (lang.h): "auto" (the system's) or a language code
     std::string uiFont = "rubik";   // Settings > FONT (uifonts.h): a built-in's id (rubik, worksans, classic, ...) or a mods/fonts file name
     std::string discordName;    // linked on the master for the Discord bot (roles, queue pings)
+    // GAMEPLAY > MORE 4: DISCORD STATUS (the map, mode, score and server on your Discord profile, discordrpc.h) and SHOW
+    // SERVER NAME (off: "Online"); discordAppId: the Discord application's id when it isn't built in yet (digits; "" the
+    // build's kDiscordAppId; written only when set)
+    bool discordStatus = true, discordShowServer = true;
+    std::string discordAppId;
     bool crowns = true;         // gold / silver crowns on ranked leaders
     bool chatOff = false;       // other players' chat hidden (settings "DISABLE CHAT", or the TOGGLE CHAT key)
     bool dmgNums = true;        // the numbers over whoever you hit (VISUALS > DAMAGE NUMBERS)

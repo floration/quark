@@ -504,6 +504,8 @@ if(QUARK_BUILD_CLIENT)
     src/client/profiles.cpp
     src/client/binds.cpp
     src/client/uitest.cpp
+    src/client/mappreview.cpp
+    src/client/discordrpc.cpp
   )
   target_link_libraries(quark quark_core quark_launcher_core quark_audio quark_lang glfw ${CMAKE_DL_LIBS})
   if(WIN32)
@@ -533,7 +535,7 @@ endif()
 
 if(QUARK_BUILD_TESTS)
   # (src/client/lightmap.cpp: the light bake has no graphics; the shipped-bake check runs it)
-  add_executable(quark_tests tests/tests.cpp tests/mapbounds.cpp tests/launcher_tests.cpp tests/assets_tests.cpp tests/brain_tests.cpp tests/mode_tests.cpp tests/groupproc.cpp src/client/lightmap.cpp src/client/layout.cpp src/client/theme.cpp src/client/filewatch.cpp)
+  add_executable(quark_tests tests/tests.cpp tests/mapbounds.cpp tests/launcher_tests.cpp tests/assets_tests.cpp tests/brain_tests.cpp tests/mode_tests.cpp tests/groupproc.cpp src/client/lightmap.cpp src/client/layout.cpp src/client/theme.cpp src/client/filewatch.cpp src/client/mappreview.cpp src/client/discordrpc.cpp tests/discordrpc_tests.cpp)
   target_link_libraries(quark_tests quark_core quark_launcher_core quark_audio quark_lang)
   target_compile_definitions(quark_tests PRIVATE QUARK_SOURCE_DIR="${CMAKE_SOURCE_DIR}")   # cross-language constant checks read tools/
   target_compile_definitions(quark_tests PRIVATE QUARK_TEST_DATA="${CMAKE_SOURCE_DIR}/tests/data")   # regression inputs

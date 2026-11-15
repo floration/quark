@@ -31,6 +31,7 @@
 #include "overrides.h"
 #include "hudclock.h"
 #include "modecalls.h"
+#include "mappreview.h"
 #include "../game/modeparams.h"
 
 static std::string fmtRace(int ms);
@@ -149,6 +150,11 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     // the name is still the plain default, then kept in the config like a typed name (see updatePlayerNumber).
     numberWanted_ = !rankKey_.secret.empty() && opts_.screenshot.empty() && cfg_.name == "player";
     ui_.steadyCaret = !opts_.screenshot.empty();
+    // DISCORD STATUS: only with an application id, and never in the automated runs (screenshots, the UI test, benches;
+    // quark_tests and the dedicated server don't have it at all)
+    rpcAppId_ = drpc::resolveAppId(cfg_.discordAppId);
+    rpcAllowed_ = !rpcAppId_.empty() && !opts_.uiTest && opts_.screenshot.empty() && !opts_.benchmark && opts_.bench <= 0 && !opts_.menuShot &&
+                  opts_.backdrop.empty();
     if (opts_.hostMode < 0 && opts_.vsBotsMode < 0 && opts_.connect.empty() && opts_.editMap.empty()) loadMenuBackdrop();
     if (opts_.debugInfo) { setScreen(Screen::Info); infoTab_ = opts_.debugInfo - 1; }
     if (opts_.debugFonts) { setScreen(Screen::Settings); fontsOpen_ = opts_.debugFonts == 1; debugSettingsTab(); }
@@ -224,6 +230,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
 }
 
 void Game::shutdown() {
+    rpc_.stop(300);   // (the status cleared; never holds the exit up for long)
     audio_.stop();
     if (mouseHeld_) rawMouse_.hold(win_, false);   // (let the cursor go)
     rawMouse_.stop();
@@ -383,6 +390,7 @@ void Game::startHost(bool vsBots) {
     hostQuit_ = false;
     Server* srv = host_.get();
     hostThread_ = std::thread([this, srv] { raiseThreadPriority(); srv->run(hostQuit_); });
+    rpcHost_ = sc.vsBots && !sc.timeTrial ? 2 : 1; rpcMax_ = sc.maxPlayers;   // (DISCORD STATUS: "Vs bots" / "Local game")
     connectTo("127.0.0.1:" + std::to_string(host_->port()));
     host_->setHostNonce(net_.sessionNonce()); // this client (only) is admin on its own server
 }
@@ -425,8 +433,9 @@ void Game::connectTo(const std::string& rawAddr) {
     if (!host_) {
         // the main menu's LAST PLAYED: the server's name when the list has it (its mode and map come once in game)
         if (addr != cfg_.lastAddress) { cfg_.lastMode.clear(); cfg_.lastMap.clear(); cfg_.lastServer.clear(); }
+        rpcHost_ = rpcMax_ = 0;
         for (const ServerInfo& sv : browser_.servers())
-            if (!sv.noReply && sv.addr.toString() == addr) cfg_.lastServer = sv.name;
+            if (!sv.noReply && sv.addr.toString() == addr) { cfg_.lastServer = sv.name; rpcMax_ = sv.maxPlayers; }
         cfg_.lastAddress = addr;
         std::vector<std::string> rec = splitList(cfg_.recentServers);   // (newest first, no repeats, 8 kept)
         rec.erase(std::remove(rec.begin(), rec.end(), addr), rec.end());
@@ -436,6 +445,69 @@ void Game::connectTo(const std::string& rawAddr) {
         cfg_.save();
     }
     setScreen(Screen::Connecting);
+}
+
+// DISCORD STATUS (discordrpc.h), once a second: the setting followed (off: the status cleared and the thread gone),
+// then this second's Presence, handed over only when it differs from the last. No allocation here once running.
+void Game::discordTick() {
+    rpcNextAt_ = time_ + 1.0;
+    if (!cfg_.discordStatus) { if (rpc_.running()) rpc_.stop(); return; }
+    if (!rpc_.running()) { rpc_.start(rpcAppId_); rpcLast_ = drpc::Presence(); rpcLast_.where = drpc::W_COUNT; }   // (sent again)
+    drpc::Presence p;
+    discordPresence(p);
+    if (p != rpcLast_) { rpcLast_ = p; rpc_.set(p); }
+}
+
+void Game::discordPresence(drpc::Presence& p) {
+    using namespace drpc;
+    const bool connected = net_.state() == ConnState::Connected;
+    if (bench_.phase != BenchRun::OFF) p.where = W_BENCHMARK;
+    else if (tut_.on) p.where = W_TUTORIAL;
+    else if (net_.playback() && (screen_ == Screen::InGame || screen_ == Screen::Connecting)) p.where = W_DEMO;
+    else if (screen_ == Screen::Editor || (edSession_ && screen_ == Screen::InGame)) p.where = W_EDITOR;
+    else switch (screen_) {
+        case Screen::InGame: p.where = connected ? W_GAME : W_CONNECTING; break;
+        case Screen::Connecting: p.where = W_CONNECTING; break;
+        case Screen::Join: p.where = W_BROWSING; break;
+        case Screen::Host: p.where = W_HOSTING; break;
+        case Screen::VsBots: p.where = W_BOTSETUP; break;
+        case Screen::Settings: p.where = W_SETTINGS; break;
+        case Screen::Leaderboard: p.where = W_LEADERBOARD; break;
+        case Screen::CustomMode: p.where = W_CUSTOMMODE; break;
+        case Screen::Info: p.where = W_INFO; break;
+        case Screen::Demos: p.where = W_DEMOS; break;
+        case Screen::Benchmarks: case Screen::BenchmarkResult: p.where = W_BENCHMARK; break;
+        case Screen::Trainer: case Screen::TrainerRun: p.where = W_TRAINER; break;
+        default: p.where = W_MENU; break;
+    }
+    // the map: the game's (a match, a demo, an edit session, the tutorial), or the editor's own
+    const std::string* name = nullptr; const std::string* title = nullptr;
+    if (p.where == W_GAME || p.where == W_DEMO || p.where == W_TUTORIAL || (p.where == W_EDITOR && screen_ != Screen::Editor)) {
+        if (net_.mapReady()) { name = &net_.map().name; title = &net_.map().title; }
+    } else if (p.where == W_EDITOR) { name = &edName_; title = &ed_.title; }
+    if (name && !name->empty()) {
+        snprintf(p.map, sizeof p.map, "%s", name->c_str());
+        snprintf(p.mapTitle, sizeof p.mapTitle, "%s", (title->empty() ? *name : *title).c_str());
+        if (p.mapTitle[0] >= 'a' && p.mapTitle[0] <= 'z') p.mapTitle[0] = (char)(p.mapTitle[0] - 32);   // (as the menus show it: "Surfy")
+        p.officialMap = isOfficialMapName(*name);
+    }
+    char key[96];
+    if (p.where == W_GAME || p.where == W_TUTORIAL) {
+        const ModeState& ms = net_.mode();
+        const auto& players = net_.latest().players;
+        p.mode = ms.mode;
+        p.ranked = (ms.flags & MS_RANKED) != 0;
+        p.timeTrial = (ms.flags & MS_TIMETRIAL) != 0;
+        scoreFromMode(ms, players, net_.clientId(), p);
+        p.serverKind = rpcHost_ == 2 ? SV_BOTS : rpcHost_ == 1 || p.timeTrial ? SV_LOCAL : SV_ONLINE;
+        p.showServer = cfg_.discordShowServer && !cfg_.streamer;   // (STREAMER MODE: no server name either)
+        if (p.serverKind == SV_ONLINE && p.showServer) snprintf(p.server, sizeof p.server, "%s", cfg_.lastServer.c_str());
+        p.players = (uint8_t)std::min<size_t>(players.size(), 255);
+        p.maxPlayers = (uint8_t)std::min(std::max(rpcMax_, 0), 255);
+        snprintf(key, sizeof key, "g%s", net_.address().c_str());   // (this server: a map change doesn't restart the timer)
+    } else snprintf(key, sizeof key, "%c", p.where == W_EDITOR ? 'e' : p.where == W_DEMO ? 'd' : p.where == W_TRAINER ? 't' : p.where == W_BENCHMARK ? 'b' : 'm');
+    if (strcmp(key, rpcKey_) != 0) { memcpy(rpcKey_, key, sizeof key); rpcStart_ = (int64_t)std::time(nullptr); }
+    p.start = rpcStart_;
 }
 
 void Game::leaveGame(const std::string& error) {
@@ -604,76 +676,6 @@ void Game::drawBakeScreen(const std::string& name, float p) {
     float ts = std::max(2.0f, std::round(r_.height() / 360.0f));
     std::string t = "BAKING LIGHT - " + upper(name);
     r_.text((r_.width() - r_.textWidth(t, ts)) * 0.5f, by - 30 * ts / 2, ts, t, kWhite);
-}
-
-// A map's preview for the picker: seen from above, each column of the map the colour of its highest surface (the roof
-// of an indoor map and anything covering most of it left out, so the rooms show), lit by its height and a light from
-// the top left, edges where the height steps. Rows bottom-up (the renderer's atlas). About a millisecond a map, once
-// per map file (cached with its info).
-static std::vector<uint8_t> makeMapPreview(const Map& m, const int W, const int H) {
-    std::vector<uint8_t> img((size_t)W * H * 4);
-    std::vector<float> top((size_t)W * H, -1e9f);
-    std::vector<Vec3> col((size_t)W * H, Vec3(0.07f, 0.08f, 0.1f));
-    const AABB& b = m.bounds;
-    const float sx = b.mx.x - b.mn.x, sz = b.mx.z - b.mn.z;
-    if (sx <= 0 || sz <= 0) return img;
-    const float scale = std::min((W - 8) / sx, (H - 8) / sz), ox = (W - sx * scale) * 0.5f, oz = (H - sz * scale) * 0.5f;
-    const Vec3 base = m.hasPalette ? m.palBase : Vec3(0.62f, 0.62f, 0.64f), accent = m.hasPalette ? m.palAccent : Vec3(0.40f, 0.40f, 0.43f),
-               metal = m.hasPalette ? m.palMetal : Vec3(0.30f, 0.33f, 0.37f), glow = m.hasPalette ? m.palGlow : Vec3(1.0f, 0.55f, 0.15f);
-    auto matColor = [&](int mat) -> Vec3 {
-        switch (mat) {
-            case 1: case 8: return accent;
-            case 2: return Vec3(0.25f, 0.25f, 0.27f);
-            case 3: case kMatSteel: case kMatDiamond: case kMatCorrugated: return metal;
-            case 4: case kMatCrystal: return glow;
-            case 6: return Vec3(0.15f, 0.35f, 0.6f);
-            case 7: return Vec3(1.0f, 0.35f, 0.05f);
-            case kMatAcid: return Vec3(0.35f, 0.9f, 0.2f);
-            case kMatIce: case kMatSnow: return Vec3(0.8f, 0.88f, 0.95f);
-            case kMatSand: return Vec3(0.78f, 0.68f, 0.45f);
-            case kMatWood: return Vec3(0.55f, 0.38f, 0.22f);
-            case kMatGrass: return Vec3(0.3f, 0.55f, 0.22f);
-            case kMatBrick: case kMatBrickBreak: case kMatTerracotta: return Vec3(0.6f, 0.28f, 0.2f);
-            case kMatGlass: case kMatGlassBreak: return Vec3(0.6f, 0.75f, 0.8f);
-            case kMatAsphalt: return Vec3(0.2f, 0.2f, 0.22f);
-            case kMatMud: return Vec3(0.35f, 0.27f, 0.18f);
-            case kMatRust: return Vec3(0.5f, 0.27f, 0.15f);
-            case kMatHazard: return Vec3(0.85f, 0.7f, 0.1f);
-            default: return base;
-        }
-    };
-    const float area = sx * sz;
-    for (const Brush& br : m.brushes) {
-        if (hiddenMaterial(br.material) || br.material == 5) continue;   // (clip, ball wall: invisible; far: scenery outside the walls)
-        const AABB& a = br.box;
-        if (m.indoor && a.mn.y >= m.ceilingY - 0.5f) continue;
-        if ((a.mx.x - a.mn.x) * (a.mx.z - a.mn.z) > area * 0.5f && a.mn.y > b.mn.y + 2.0f) continue;   // (a roof over most of it)
-        const int x0 = std::max(0, (int)std::floor(ox + (a.mn.x - b.mn.x) * scale)), x1 = std::min(W - 1, (int)std::ceil(ox + (a.mx.x - b.mn.x) * scale) - 1);
-        const int z0 = std::max(0, (int)std::floor(oz + (a.mn.z - b.mn.z) * scale)), z1 = std::min(H - 1, (int)std::ceil(oz + (a.mx.z - b.mn.z) * scale) - 1);
-        const Vec3 c = matColor(br.material);
-        for (int z = z0; z <= z1; z++)
-            for (int x = x0; x <= x1; x++) {
-                const size_t k = (size_t)z * W + x;
-                if (a.mx.y > top[k]) { top[k] = a.mx.y; col[k] = c; }
-            }
-    }
-    const float lo = b.mn.y, span = std::max(1.0f, b.mx.y - b.mn.y);
-    for (int z = 0; z < H; z++)
-        for (int x = 0; x < W; x++) {
-            const size_t k = (size_t)z * W + x;
-            Vec3 c = col[k];
-            if (top[k] > -1e8f) {
-                const float h = top[k];
-                const float hl = x > 0 && top[k - 1] > -1e8f ? top[k - 1] : h, hu = z > 0 && top[k - W] > -1e8f ? top[k - W] : h;
-                float lit = 0.55f + 0.45f * clampf((h - lo) / span, 0, 1);
-                lit += clampf((h - hl + h - hu) * 0.08f, -0.25f, 0.25f);   // (the light from the top left)
-                if (std::fabs(h - hl) > 0.6f || std::fabs(h - hu) > 0.6f) lit *= 0.6f;   // (a step: an edge)
-                c = c * lit;
-            }
-            uint8_t* p = &img[((size_t)(H - 1 - z) * W + x) * 4];
-            p[0] = (uint8_t)(clampf(c.x, 0, 1) * 255); p[1] = (uint8_t)(clampf(c.y, 0, 1) * 255); p[2] = (uint8_t)(clampf(c.z, 0, 1) * 255); p[3] = 255;
-        }
-    return img;
 }
 
 // The map behind the main menu (lighting is baked once, then cached like any map).
@@ -2157,6 +2159,7 @@ void Game::frame(double dt) {
     QZONE("Game::frame");
     struct CpuTime { double t0 = timeNow(); double* out; ~CpuTime() { *out = timeNow() - t0; } } cpuTime{timeNow(), &lastCpu_}; // --bench: CPU part of the frame
     time_ += dt;
+    if (rpcAllowed_ && time_ >= rpcNextAt_) discordTick();   // (once a second: a compare the rest of the time)
     if (cfg_.uiFont != fontTried_) applyUiFontSetting();   // (a string compare; the font is built only when it changed)
     if (cfg_.language != langTried_) applyLanguageSetting();   // (likewise: the table and atlas load only when it changed)
     lang::frame();
@@ -9426,6 +9429,11 @@ void Game::drawGameplayMore4(const SetLayout& L) {
     ui_.toggle(gx2, g.top(), hw, h, "HIDE RATINGS", cfg_.hideRatings, UiExp::cfg("hide_ratings"));
     g.next();
     g.hint("STREAMER: ADDRESSES, CODES, OTHERS' NAMES HIDDEN");
+    // (DISCORD STATUS: the map, mode, score and server on your Discord profile, discordrpc.h; a change is seen at once)
+    if (ui_.toggle(g.x(), g.top(), hw, h, "DISCORD STATUS", cfg_.discordStatus, UiExp::cfg("discord_status"))) rpcNextAt_ = 0;
+    if (ui_.toggle(gx2, g.top(), hw, h, "SHOW SERVER NAME", cfg_.discordShowServer, UiExp::cfg("discord_show_server"))) rpcNextAt_ = 0;
+    g.next();
+    g.hint("DISCORD: MAP, MODE AND SCORE ON YOUR PROFILE");
     g.section("RACE");
     {
         static const std::vector<std::string> vn = {"VS: BEST RUN", "VS: BEST SEGMENTS", "VS: LAST RUN"};

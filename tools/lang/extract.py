@@ -12,7 +12,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 SRC = [os.path.join(ROOT, "src", "client")] 
 EXTRA = [os.path.join(ROOT, "src", "game", f) for f in ("gamemodes.cpp", "server.cpp", "gamedefs.h", "settings.h", "trainer.cpp", "trainer.h")] + \
     [os.path.join(ROOT, "src", "launcher", f) for f in ("main.cpp", "gamefiles.cpp")]   # (the launcher: its LANGUAGE is the game's)
-SKIPFILES = {"surface_looks.h", "font_ui.h", "font_builtin.h", "logo_data.h", "voice_data.h", "sfx_recorded.h", "uitest.cpp", "lang.cpp"}
+SKIPFILES = {"surface_looks.h", "font_ui.h", "font_builtin.h", "logo_data.h", "voice_data.h", "sfx_recorded.h", "uitest.cpp", "lang.cpp", "discordrpc.cpp", "discordrpc.h"}   # (discordrpc: Discord shows its text in English, the game never draws it)
 LIT = re.compile(r'(?<![A-Za-z0-9_])(?:u8)?"((?:[^"\\\n]|\\.)*)"')
 NUM = re.compile(r'%[-+0#]*\d*(?:\.\d+)?(?:l|ll|z|h)?[diufgeExX]')   # (no ' ' flag: "10% damage" is text)
 

@@ -262,6 +262,8 @@ jobs:
           build/quark_tests exportassets build/assets_export > /dev/null
           python3 tools/studio/build.py build/assets_export
           python3 tools/site_assets.py --studio build/studio --out site-assets
+          # the Discord status's map pictures (src/client/discordrpc.h): every official map from above, the site's img/rpc/
+          build/quark_tests mappreviews rpc-images 512 && python3 tools/png_squeeze.py rpc-images
           sh tools/launcher_build.sh -DCMAKE_BUILD_TYPE=Release
           # the dedicated server, built with a profile of its own ticks (PGO: ~4% faster ticks); fails if it simulates
           # differently from build/ (tools/pgo_server.sh)
@@ -277,6 +279,8 @@ jobs:
         with: { name: linux, path: "quark-linux.tar.gz\nquark-linux.qpak\nquark-launcher-linux" }
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with: { name: site-assets, path: site-assets, retention-days: 7 }   # (the pages / release-testing jobs publish it)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with: { name: rpc-images, path: rpc-images, retention-days: 7 }   # (the map pictures: img/rpc/ on the site, as site-assets)
 
   sanitizers:   # REVIEW ENG-3: a memory / undefined-behaviour check, not a gameplay test (those run locally before a push).
     # quark_tests only drives the code here: the job fails on a sanitizer report or a fuzzer crash, never on a test's own
@@ -436,6 +440,8 @@ jobs:
             dist/windows/* dist/linux/* dist/quark-release.txt dist/quark-release.txt.sig dist/SHA256SUMS dist/SHA256SUMS.sig
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with: { name: site-assets, path: site-assets }
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with: { name: rpc-images, path: rpc-images }
       - name: the website's TESTING assets (assets/data/testing/ on gh-pages; everything else as production left it), signed
         env:
           GH_TOKEN: ${{ github.token }}
@@ -451,6 +457,8 @@ jobs:
           rm -rf site/.git site/assets/data/testing site/SHA256SUMS site/SHA256SUMS.sig
           mkdir -p site/assets/data
           cp -r site-assets site/assets/data/testing
+          # the Discord status's map pictures (img/rpc/<map>.png): this build's added or replaced, none removed
+          mkdir -p site/img/rpc && cp rpc-images/*.png site/img/rpc/
           # B6, as the pages job: a signed SHA256SUMS of every file the site serves (now with these assets)
           (cd site && find . -type f ! -name SHA256SUMS ! -name SHA256SUMS.sig ! -name .nojekyll | sed 's#^\./##' | LC_ALL=C sort | xargs -d '\n' sha256sum -- > SHA256SUMS)
           sh tools/sign/sign_release.sh site/SHA256SUMS
@@ -480,6 +488,8 @@ jobs:
         with: { persist-credentials: false, ref: site, path: site }   # the website's source: the site branch (HANDOVER section 4)
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with: { name: site-assets, path: site/assets/data/production }   # (the linux job's export of this release)
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with: { name: rpc-images, path: rpc-images }   # (the Discord status's map pictures: site/img/rpc/ below)
       - name: publish site/ to the gh-pages branch (served at floration.github.io/quark), signed
         env:
           GH_TOKEN: ${{ github.token }}
@@ -496,8 +506,12 @@ jobs:
           if [ "$rc" = 0 ]; then
             git clone -q --depth 1 -b gh-pages "$URL" "$RUNNER_TEMP/gh-pages"
             if [ -d "$RUNNER_TEMP/gh-pages/assets/data/testing" ]; then mkdir -p site/assets/data && cp -r "$RUNNER_TEMP/gh-pages/assets/data/testing" site/assets/data/testing; fi
+            # (the map pictures a testing build added stay: a map only testing has keeps its picture)
+            if [ -d "$RUNNER_TEMP/gh-pages/img/rpc" ]; then mkdir -p site/img/rpc && cp "$RUNNER_TEMP/gh-pages/img/rpc/"*.png site/img/rpc/ 2>/dev/null || true; fi
             rm -rf "$RUNNER_TEMP/gh-pages"
           elif [ "$rc" != 2 ]; then echo "::error::can't read the gh-pages branch"; exit 1; fi
+          # the Discord status's map pictures (src/client/discordrpc.h): this release's, img/rpc/<map>.png
+          mkdir -p site/img/rpc && cp rpc-images/*.png site/img/rpc/
           # B6: what the site serves is signed too: SHA256SUMS of every file, signed with the release key (the
           # downloads it links are release assets, each with its own .sig). master.txt keeps its own signature,
           # made by the owner (sign-master, docs/SIGNING.md), which is the only one the game reads.
