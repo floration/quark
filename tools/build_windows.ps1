@@ -61,8 +61,14 @@ $testsFlag = if ($Tests -or $Editors) { 'ON' } else { 'OFF' }
 cmake -S . -B build-win -G 'MinGW Makefiles' -DCMAKE_BUILD_TYPE=Release "-DPython3_EXECUTABLE=$py" "-DQUARK_BUILD_TESTS=$testsFlag" "-DQUARK_VERSION_SUFFIX=$VersionSuffix"
 if ($LASTEXITCODE -ne 0) { throw 'cmake configure failed' }
 $targets = @('quark', 'quark_server', 'quark_launcher'); if ($Tests -or $Editors) { $targets += 'quark_tests' }; if ($Editors) { $targets += @('quark_maptool', 'copy_maps') }
-cmake --build build-win -j $env:NUMBER_OF_PROCESSORS --target $targets
-if ($LASTEXITCODE -ne 0) { throw 'build failed' }
+# (compiler and linker warnings go to stderr, e.g. newer MinGW ld's ".rsrc merge failure: multiple non-default
+# manifests": Windows PowerShell 5.1 turns a native command's stderr line into a terminating error under 'Stop', so the
+# build is judged by its exit code alone)
+$ErrorActionPreference = 'Continue'
+cmake --build build-win -j $env:NUMBER_OF_PROCESSORS --target $targets 2>&1 | ForEach-Object { "$_" }
+$buildExit = $LASTEXITCODE
+$ErrorActionPreference = 'Stop'
+if ($buildExit -ne 0) { throw 'build failed' }
 
 if ($Tests) {
   $env:TMPDIR = Join-Path $env:TEMP "quark_tests.$PID"; New-Item -ItemType Directory -Force $env:TMPDIR | Out-Null   # (HANDOVER: a private TMPDIR)
