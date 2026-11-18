@@ -7,6 +7,7 @@
 - **Smoother corrections:** when the server does correct where you are (a push only it knows about, such as knockback), you glide to the right spot over about a tenth of a second instead of jumping there, for corrections up to 8 m (it was 2 m). Respawns, teleporters and bigger jumps still put you there at once.
 
 ## Latency
+- **Shots fire on the frame you click:** a click no longer waits for the next 1 ms game tick (up to 1 ms, 0.5 ms on average), so a shot shows as fast as a mouse turn.
 - **F3 frame pacing graph:** under the mouse-to-photon graph, F3 now draws the last 5 seconds of frame times, so uneven frames show as spikes. It's scaled to your average frame time ±50%, and widens while a slower or faster frame is on it. Nothing is measured while F3 is off.
 - F3's latency graph says GPU WAIT (LATENT SYNC) instead of GPU WAIT (ULTRA) when Latent Sync is on and LOW LATENCY isn't ULTRA.
 

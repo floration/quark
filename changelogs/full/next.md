@@ -13,6 +13,11 @@
 - No protocol change (still 71): nothing on the wire differs.
 - Tests (`netcode` group, `testCorrectionBlend`): a UDP relay holding packets 100 ms each way; a 2.8 m server-only push is blended (under 12% left 100 ms later), a ~20 m move and a respawn 7 m away snap.
 
+## Latency: clicks pull the next tick forward
+- **Why:** owner, 2026-11-18: "clicks should also be rendered seperate from the 1ms ticks". Measured on the owner's PC with `input_latency.exe` (exclusive, VSYNC OFF, uncapped, ~7,000 FPS): a mouse turn showed on the next frame, but about a third of clicks showed one capture step (~1.5 ms) later than turns. A turn is drawn every frame (`updateVisualPos` with the latest yaw), but fire only reaches the game when a 1,000 Hz tick builds a command (`buildCmd`, BTN_FIRE), so a click waited up to 1 ms (0.5 ms on average) for that tick.
+- **Now:** when a fire press is waiting (`fireLatched_`) and no tick is due this frame, the next tick is pulled into this frame, and the time it borrowed is taken off the accumulator after it (`tickAcc_` goes negative until that tick's own time comes). So the shot (prediction, sound, beam, muzzle flash, tracers, hit reports) happens on the frame of the click. Only that one tick runs early: the tick grid and one command per tick stay as they were, and the server sees nothing different (no protocol change).
+- **Trade-off:** for up to 1 ms after a click, your own drawn position is the pulled tick's (up to 1 ms ahead: 2.4 cm at 24 m/s), because `updateVisualPos` doesn't draw behind the last tick. Not measurable in play.
+
 ## Latency / F3
 - **Frame pacing graph** (owner, 2026-11-04: "the f3 screen should also have a frametime graph on it to check frame pacing"; "5 second history ... 50% of your frametime up and down, unless somehow you escape it then that becomes the new max/min while its in the graph"). F3 stages 3 and 4 draw it under the mouse-to-photon graph (in menus, where that graph isn't drawn, under the text lines).
   - Storage: 500 columns of 10 ms (`Game::ftCols_`), each its fastest and slowest frame plus a sum and count for the average. The 2048-frame `frameTimes_` ring can't hold 5 s at thousands of FPS (5 s at 15,000 FPS is 75,000 frames), so columns are fixed-size whatever the frame rate: one store and two compares a frame.

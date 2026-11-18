@@ -2301,6 +2301,12 @@ void Game::frame(double dt) {
         // F18: this frame's turn spread over its ticks (clientfeel.h spreadYaw): the last tick has now's exact yaw, each
         // earlier one its share of the way there; a tick with fire, alt-fire or a grapple shot held, and every tick after
         // it, takes the exact aim (what you see is what you shoot). Not across a spawn or while dead (the yaw is set).
+        // A click between two ticks fires now, not on the next 1 ms tick (owner, 2026-11-18: "clicks should also be
+        // rendered separate from the 1ms ticks"; measured: a click showed up to a tick later than a mouse turn, which the
+        // frame draws at once). The next tick is pulled forward to this frame and the time it borrowed is paid back
+        // after it, so the tick grid, and one command per tick, stay as they were: only that one tick runs early.
+        double borrowed = 0;
+        if (fireLatched_ && tickAcc_ < period && !bake_ && !net_.playback()) { borrowed = period - tickAcc_; tickAcc_ = period; }
         const int frameTicks = (int)(tickAcc_ / period);
         const bool spread = frameTicks > 1 && aliveBefore && fireAlive_;
         const float yawFrom = spread ? tickYaw_ : yaw_;
@@ -2449,6 +2455,7 @@ void Game::frame(double dt) {
             }
             tickAcc_ -= period;
         }
+        tickAcc_ -= borrowed;   // (negative until the pulled tick's own time comes: the next tick then runs on the old grid)
         tickYaw_ = yaw_;   // (the last tick's: now's)
         if (net_.playback()) wp_.reset();   // (a demo: what the recorded player held)
         heldWeapon_ = wp_.current(weaponView());   // (no tick this frame: the last one's, or the snapshot's when dead)
