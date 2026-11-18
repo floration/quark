@@ -9,6 +9,7 @@
 ## Latency
 - **Shots fire on the frame you click:** a click no longer waits for the next 1 ms game tick (up to 1 ms, 0.5 ms on average), so a shot shows as fast as a mouse turn.
 - F3 shows how long a click takes to reach the screen (CLICK->FRAME, split into its steps).
+- **ULTRA clicks as fast as turns (Windows):** with LOW LATENCY ULTRA, a click is checked again just before the frame is drawn, like mouse motion already was, and the shot fires in that frame instead of the next one (measured ~1.5 ms before; clicks now come from the raw input thread, as motion does).
 - **F3 frame pacing graph:** under the mouse-to-photon graph, F3 now draws the last 5 seconds of frame times, so uneven frames show as spikes. It's scaled to your average frame time ±50%, and widens while a slower or faster frame is on it. Nothing is measured while F3 is off.
 - F3's latency graph says GPU WAIT (LATENT SYNC) instead of GPU WAIT (ULTRA) when Latent Sync is on and LOW LATENCY isn't ULTRA.
 

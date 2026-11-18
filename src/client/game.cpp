@@ -948,7 +948,12 @@ bool Game::isDown(int action) const {
     if (testHeld_ >> action & 1) return true;   // (the UI test holding e.g. the scoreboard key; 0 in play)
     for (int k = 0; k < kBindSlots; k++) {
         int c = binds().code[action][k];
-        if (c >= kMouseCode && c < kMouseCode + 16) { if (!(swallowedBtn_ >> (c - kMouseCode) & 1) && glfwGetMouseButton(win_, c - kMouseCode) == GLFW_PRESS) return true; }
+        if (c >= kMouseCode && c < kMouseCode + 16) {
+            const int btn = c - kMouseCode;
+            if (swallowedBtn_ >> btn & 1) continue;
+            if (rawBtns_ && btn < 5) { if (rawHeld_ >> btn & 1) return true; }   // (raw: as soon as it's down, and let go as soon as it's up)
+            else if (glfwGetMouseButton(win_, btn) == GLFW_PRESS) return true;
+        }
         else if (c > 0 && c < kMouseCode && glfwGetKey(win_, c) == GLFW_PRESS) return true;
         else if ((c == kWheelUp || c == kWheelDown) && timeNow() < wheelHeldUntil_[c - kWheelUp]) return true;
     }
@@ -1097,7 +1102,9 @@ bool Game::pressInput(int code) {
         }
         return true;
     }
-    if (b.has(A_FIRE, code)) { fireLatched_ = true; if (clickPoll_ < 0 && perfOn()) clickPoll_ = timeNow(); } // a click shorter than a tick still fires
+    const int rawBtn = code - kMouseCode;
+    if (rawBtn >= 0 && rawBtn < 5 && rawOwed_[rawBtn]) rawOwed_[rawBtn]--;   // (GLFW's copy of a press the raw thread already fired)
+    else if (b.has(A_FIRE, code)) { fireLatched_ = true; if (clickPoll_ < 0 && perfOn()) clickPoll_ = timeNow(); } // a click shorter than a tick still fires
     // ...and so does a jump, dash or grapple tap (it went down and up between two ticks: no command saw it held)
     if (b.has(A_JUMP, code)) moveLatched_ |= BTN_JUMP;
     if (b.has(A_DASH, code)) { moveLatched_ |= BTN_DASH; dashHoldUntil_ = time_ + cfg_.dashBuffer; }   // (MORE 6: DASH BUFFER, 0.1 s by default)
@@ -1391,6 +1398,25 @@ void Game::applyRawInput() {
 // and again just before the camera in ULTRA. Without the thread (not Windows), GLFW's raw motion comes via onCursor.
 // late: the late latch's and ULTRA's reads, inside the frame: only the motion (the focus can't change before the next
 // event poll, and the cursor hold's syscalls stay out of the stretch between the read and the swap).
+// Raw clicks (Windows): the buttons' held state and FIRE presses straight from the raw thread, only in play with the
+// mouse ours. True when a FIRE press latched (fireLatched_). Read at the frame's start, and again by ULTRA's late read.
+bool Game::takeRawButtons() {
+    const unsigned presses = rawMouse_.takePresses();
+    rawBtns_ = mouseCaptured_ && mouseFocused_ && screen_ == Screen::InGame && !paused_ && !chatting_;
+    rawHeld_ = rawMouse_.held();
+    bool fired = false;
+    if (!rawBtns_) for (auto& o : rawOwed_) o = 0;
+    else
+        for (int i = 0; i < 5; i++)
+            if ((presses >> i & 1) && !(swallowedBtn_ >> i & 1) && binds().has(A_FIRE, kMouseCode + i)) {
+                fireLatched_ = fired = true;   // (and the shot goes out this frame: the tick loop pulls its tick forward)
+                if (clickPoll_ < 0 && perfOn()) clickPoll_ = timeNow();   // (F3 / --clicklog)
+                if (rawOwed_[i] < 3) rawOwed_[i]++;
+                markInput();
+            }
+    return fired;
+}
+
 void Game::readMouse(bool late) {
     if (!rawMouse_.active()) return;
     double dx = 0, dy = 0, firstAt = 0;
@@ -1404,6 +1430,7 @@ void Game::readMouse(bool late) {
         else if (mouseHeld_ && (!mouseCaptured_ || !mouseFocused_)) { rawMouse_.hold(win_, false); mouseHeld_ = false; }
     }
     r_.latchDisarm();   // (GPU LATE LATCH: the counts are the game's from here; the next arm starts from its aim)
+    if (!late) takeRawButtons();
     if (!rawMouse_.take(&dx, &dy, &n, &firstAt) || !mouseCaptured_ || !mouseFocused_) return;   // (motion meanwhile: dropped)
     // (F3: when it arrived; 0: a report raced the take and lost its stamp, motion kept)
     if (firstAt > 0 && (pendingInput_ < 0 || firstAt < pendingInput_)) pendingInput_ = firstAt;
@@ -2157,6 +2184,177 @@ void Game::drawStuckProps(const Vec3& eye, float alpha) {
 // ---------------------------------------------------------------------------
 // main loop
 
+// The frame's input + prediction ticks (frame(); and ULTRA's late click, drawWorld): every tick that's due, each with its
+// command, its predicted shot and net_.tick, then your drawn position.
+void Game::inputTicks(double period, bool aliveBefore) {
+    QZONE("input + prediction ticks");
+    // F18: this frame's turn spread over its ticks (clientfeel.h spreadYaw): the last tick has now's exact yaw, each
+    // earlier one its share of the way there; a tick with fire, alt-fire or a grapple shot held, and every tick after
+    // it, takes the exact aim (what you see is what you shoot). Not across a spawn or while dead (the yaw is set).
+    // A click between two ticks fires now, not on the next 1 ms tick (owner, 2026-11-18: "clicks should also be
+    // rendered separate from the 1ms ticks"; measured: a click showed up to a tick later than a mouse turn, which the
+    // frame draws at once). The next tick is pulled forward to this frame and the time it borrowed is paid back
+    // after it, so the tick grid, and one command per tick, stay as they were: only that one tick runs early.
+    double borrowed = 0;
+    if (fireLatched_ && tickAcc_ < period && !bake_ && !net_.playback()) { borrowed = period - tickAcc_; tickAcc_ = period; }
+    const int frameTicks = (int)(tickAcc_ / period);
+    const bool spread = frameTicks > 1 && aliveBefore && fireAlive_;
+    const float yawFrom = spread ? tickYaw_ : yaw_;
+    bool exactAim = !spread;
+    int tickNo = 0;
+    while (tickAcc_ >= period) {
+        if (bake_) {   // the world isn't there yet: keep the connection alive, nothing else
+            fireLatched_ = false;   // (no stray shot when the new map is ready)
+            moveLatched_ = 0;
+            UserCmd k; k.yaw = yaw_; k.pitch = pitch_;
+            net_.tick(k);
+            tickAcc_ -= period;
+            continue;
+        }
+        UserCmd c = buildCmd();
+        tickNo++;
+        if (c.buttons & (BTN_FIRE | BTN_ALTFIRE)) exactAim = true;
+        if ((c.buttons & BTN_GRAPPLE) && !(net_.predicted().flags & MF_HOOKED)) exactAim = true;
+        if (!exactAim) c.yaw = spreadYaw(yawFrom, yaw_, tickNo, frameTicks);
+        // the weapon the server will hold after this command (predicted: a switch shows now, not a round trip
+        // later); switching with fire held locks fire until it's let go, as the server does (runPlayerCmd)
+        bool switchLock = false;
+        const int hw = heldWeapon_ = wp_.run(c, weaponView(), &switchLock);
+        if (switchLock) localFireLocked_ = true;
+        // local fire feedback (server is authoritative for damage)
+        bool altShot = altFires(hw) && (c.buttons & BTN_ALTFIRE) && // knife throw / shotgun bounce (no throws in hide and seek / tag)
+                       !(hw == WPN_KNIFE && net_.hasSnapshot() && isItMode(net_.mode().mode));
+        bool wantFire = ((c.buttons & BTN_FIRE) != 0 || altShot) && holdFireLeft() <= 0 // (the map's holdfire: no shots yet)
+                        && weaponAwayLeft(hw) <= 0;                        // (a thrown knife / syringe: disabled)
+        if (net_.hasSnapshot() && isItMode(net_.mode().mode)) {   // hide and seek / tag: only "it" has the knife (no swing, no slash for the rest)
+            const PlayerSnap* mp = net_.findPlayer(net_.clientId());
+            if (!mp || !(mp->flags & PS_HASBOMB)) wantFire = false;
+        }
+        // fire pressed with nothing to fire (the map's holdfire, a thrown knife / syringe not back, the locator's wait):
+        // a dry click on the press, at most 4 a second (the coverage audit, 2026-11-10)
+        if ((c.buttons & BTN_FIRE) && !(localPrevButtons_ & BTN_FIRE) && net_.selfAlive() && time_ - dryAt_ > 0.25 &&
+            net_.mode().phase != PHASE_FREEZE && (holdFireLeft() > 0 || weaponAwayLeft(hw) > 0 ||
+                                                  (hw == WPN_LOCATOR && net_.mode().phase == PHASE_LIVE && time_ < locatorReady_))) {
+            dryAt_ = time_;
+            audio_.play(SND_DRYFIRE, 0.5f * cfg_.volWeapons);
+        }
+        if (hw == WPN_LOCATOR) {   // the locator: a ping every kLocatorCooldown (the server answers with EV_LOCATE)
+            if (wantFire && !localFireLocked_ && net_.selfAlive() && net_.mode().phase == PHASE_LIVE && time_ >= locatorReady_) {
+                locatorReady_ = time_ + kLocatorCooldown;
+                audio_.play(SND_LOCATOR, 0.8f);
+            }
+            wantFire = false;
+        }
+        if (localFireLocked_) { // mirror the server: after a knife throw or a switch, let go before the next weapon fires
+            if (!(c.buttons & fireButtons(hw))) localFireLocked_ = false;
+            else wantFire = false;
+        }
+        if (switchLock || localFireLocked_ || hw != localTapWeapon_) localFireQueued_ = -1;
+        if (tapBuffered(hw) && !localFireLocked_ && holdFireLeft() <= 0 && weaponAwayLeft(hw) <= 0) {   // mirror the server's tap buffer (T13)
+            if (wantFire && !altShot && (c.buttons & BTN_FIRE) && !(localPrevButtons_ & BTN_FIRE) && time_ < localNextFire_) { localFireQueued_ = time_ + kTapBuffer; localTapWeapon_ = hw; }
+            if (!wantFire && time_ <= localFireQueued_) wantFire = true;
+        }
+        if (weaponDef(hw).semiAuto) { // mirror the server: one shot per click, short buffer
+            if (wantFire && !localFireHeld_) { localFireQueued_ = time_ + kFireBuffer; localTapWeapon_ = hw; }
+            localFireHeld_ = wantFire;
+            wantFire = time_ <= localFireQueued_;
+        } else localFireHeld_ = wantFire;
+        if (wantFire && net_.selfAlive() && time_ >= localNextFire_ && net_.mode().phase != PHASE_FREEZE) {
+            localFireQueued_ = -1;
+            if (clickPoll_ >= 0) { clickFramePoll_ = clickPoll_; clickFrameShot_ = timeNow(); clickPoll_ = -1; }   // (F3 / --clicklog)
+            int w = hw;
+            bool alt = (c.buttons & BTN_ALTFIRE) != 0 && ((w != WPN_KNIFE && w != WPN_SYRINGE) || altShot); // same throw rule as above
+            // the shot's place in a held burst, like the server's (it picks the spread: burstOffset, NET-9)
+            bool held = (localPrevButtons_ & (altShot ? BTN_ALTFIRE : BTN_FIRE)) != 0;
+            const bool cadence = held && time_ - localNextFire_ < 0.1;   // (held: on the beat, as the server keeps it)
+            localBurst_ = cadence && w == localBurstWeapon_ ? localBurst_ + 1 : 0;
+            localBurstWeapon_ = w;
+            // the next shot one refire after this one's slot, not after this frame: re-basing on the frame's time made
+            // every held shot up to a frame late, adding up (a rifle burst's last shot heard ~70 ms after the real one)
+            localRefire_ = shotRefire(w, alt);   // (the HUD's weapon bar: this shot's own, alt-fire's too)
+            localNextFire_ = (cadence ? localNextFire_ : time_) + localRefire_;
+            if (isThrow(w, alt)) (w == WPN_KNIFE ? localKnifeBack_ : localSyringeBack_) = time_ + (w == WPN_KNIFE ? weaponAlt().knifeAway : weaponAlt().syringeAway);
+            if (w != WPN_LASER || time_ >= nextLaserSound_) { // laser fires every 10 ms: sound at 20 Hz
+                audio_.play(SND_RIFLE + w, (w == WPN_LASER ? 0.6f : 0.8f) * cfg_.volWeapons, 0.97f + (qrand() % 7) * 0.01f);
+                nextLaserSound_ = time_ + 0.05;
+            }
+            if (w == WPN_KNIFE && !alt) knifeSlash_[net_.clientId() % kMaxPlayers] = time_;
+            if (isThrow(w, alt)) { localFireLocked_ = true; heldWeapon_ = wp_.thrown(weaponView()); }   // (and out comes the next weapon)
+            recoil_ = w == WPN_LASER ? 0.15 : w == WPN_SNIPER ? 1.6 : 1.0;
+            vmShotAt_[w] = time_; vmShotRefire_[w] = localRefire_; vmShots_[w]++;   // (the model's moving parts: drawViewParts)
+            matchShots_++;
+            if (w != WPN_KNIFE && w != WPN_SYRINGE && w != WPN_LOCATOR) muzzleUntil_ = time_ + (w == WPN_SNIPER ? 0.07 : 0.05);
+            if (w == WPN_ROCKET || w == WPN_CROSSBOW || (w == WPN_STICKY && !alt) || isThrow(w, alt)) spawnPredictedProjectile(w, alt, c);   // X5
+            if (!weaponDef(w).projectile && w != WPN_KNIFE && w != WPN_SYRINGE && w != WPN_LOCATOR && !(w == WPN_SHOTGUN && alt) &&
+                (w != WPN_LASER || time_ >= nextLocalSpark_) && cfg_.impactSparks)
+                localImpactSparks(w, c);   // X4: a spark on an enemy you hit, at once (the sound and number: the server's)
+            if (!weaponDef(w).projectile && w != WPN_SYRINGE && w != WPN_LOCATOR && !(w == WPN_SHOTGUN && alt) && !isThrow(w, alt) &&
+                !net_.map().glass.empty())
+                predictShotGlass(w, c);
+            if (!weaponDef(w).projectile && w != WPN_SYRINGE && w != WPN_LOCATOR && !(w == WPN_SHOTGUN && alt) && !isThrow(w, alt))
+                reportShotHits(w, c);   // (your hits count as you saw them; a ricochet's stay the server's)
+            bool showShot = cfg_.ownShots == 1 || (cfg_.ownShots == 0 && !vmHidden(w)); // VISUALS > YOUR SHOTS
+            if (w == WPN_LASER) laserUntil_ = showShot ? time_ + 0.07 : 0;
+            else if (showShot && !weaponDef(w).projectile && w != WPN_KNIFE && w != WPN_SYRINGE) { // (knife throw: the projectile shows it)
+                const MoveState& m = net_.predicted();
+                Vec3 eye = m.pos + Vec3(0, ((m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
+                Vec3 aim = angleForward(yaw_, pitch_);
+                const WeaponDef& wd = weaponDef(w);
+                float spread = (wd.scopedSpread >= 0 && (c.buttons & BTN_ALTFIRE)) ? wd.scopedSpread : wd.spread;
+                for (int k = 0; k < wd.pellets; k++) { // the server's fixed spread pattern, so tracers show the real shot
+                    Vec3 d = spreadAim(aim, spread, k, wd.pellets, localBurst_);
+                    Vec3 from = muzzlePoint(w, eye);
+                    if (w == WPN_SHOTGUN && alt) { // ricochet: draw each leg (players ignored, like the server's walls)
+                        Vec3 o = eye;
+                        float range = wd.range;
+                        for (int b = 0; b <= weaponAlt().bounces && range > 0.01f; b++) {
+                            Vec3 n;
+                            float t = net_.map().raycast(o, d, range, &n);
+                            Vec3 to = o + d * (t < 0 ? range : t);
+                            tracers_.push_back({b ? o : from, to, time_ + 0.3, tracerColorFor(net_.clientId())});
+                            if (t < 0) break;
+                            if (cfg_.impactSparks) explosions_.push_back({to - d * 0.03f, time_, 0.06f, false, false, false, true, 0.2f});
+                            o = to + n * 0.01f; d = d - n * (2.0f * dot(d, n)); range -= t;
+                        }
+                        continue;
+                    }
+                    float bangT, t = net_.map().raycastBullet(eye, d, wd.range, &bangT);
+                    if (t < 0) t = wd.range;
+                    tracers_.push_back({from, eye + d * t, time_ + (w == WPN_SNIPER ? 0.9 : 0.2), tracerColorFor(net_.clientId())});
+                }
+            }
+        }
+        localPrevButtons_ = c.buttons;
+        {   // rocket riding: your rockets not handed over yet can be caught too (only while the grapple's held)
+            NetClient::RocketCopy rc[HookProbe::kRockets];
+            int n = 0;
+            if ((c.buttons & BTN_GRAPPLE) && moveTuning().rocketRide)
+                for (const auto& q : predProj_)
+                    if (q.live && !q.atWall && q.type == WPN_ROCKET && n < HookProbe::kRockets) {
+                        const ProjFlight g = projectileFlight(WPN_ROCKET, q.lob ? kRocketLobGravity : 1.0f);
+                        Vec3 p = q.pos0, v = q.vel0;
+                        net_.map().flyProjectile(p, v, g, (float)(time_ - q.born));
+                        rc[n++] = {p, v, g.grav, g.accel};
+                    }
+            net_.setRocketCopies(rc, n);
+        }
+        net_.tick(c);
+        if (net_.predicted().events & ME_DASH) dashHoldUntil_ = -1;   // (the press made its dash)
+        if (net_.predicted().glassBrush >= 0) {   // (dashed or grappled through a pane: broken now, as the server will)
+            const MoveState& pm = net_.predicted();
+            net_.predictGlass(pm.glassBrush, pm.glassHow, pm.glassAt, pm.glassDir);
+        }
+        tickAcc_ -= period;
+    }
+    tickAcc_ -= borrowed;   // (negative until the pulled tick's own time comes: the next tick then runs on the old grid)
+    tickYaw_ = yaw_;   // (the last tick's: now's)
+    if (net_.playback()) wp_.reset();   // (a demo: what the recorded player held)
+    heldWeapon_ = wp_.current(weaponView());   // (no tick this frame: the last one's, or the snapshot's when dead)
+    flushLaserHits(false);   // (the laser's last 50 ms of hits)
+    net_.flushInput();   // (PERF-12: one input packet per frame, or per 2 ticks when a frame runs more)
+    net_.updateVisualPos(bake_ ? 0.0 : tickAcc_, yaw_, pitch_);   // your own position as of now, for drawing
+}
+
 void Game::frame(double dt) {
     focusGained_ = false;   // (the event poll that saw the focus come back is over)
     QZONE("Game::frame");
@@ -2300,172 +2498,7 @@ void Game::frame(double dt) {
             }
             fireAlive_ = aliveNow;
         }
-        QZONE("input + prediction ticks");
-        // F18: this frame's turn spread over its ticks (clientfeel.h spreadYaw): the last tick has now's exact yaw, each
-        // earlier one its share of the way there; a tick with fire, alt-fire or a grapple shot held, and every tick after
-        // it, takes the exact aim (what you see is what you shoot). Not across a spawn or while dead (the yaw is set).
-        // A click between two ticks fires now, not on the next 1 ms tick (owner, 2026-11-18: "clicks should also be
-        // rendered separate from the 1ms ticks"; measured: a click showed up to a tick later than a mouse turn, which the
-        // frame draws at once). The next tick is pulled forward to this frame and the time it borrowed is paid back
-        // after it, so the tick grid, and one command per tick, stay as they were: only that one tick runs early.
-        double borrowed = 0;
-        if (fireLatched_ && tickAcc_ < period && !bake_ && !net_.playback()) { borrowed = period - tickAcc_; tickAcc_ = period; }
-        const int frameTicks = (int)(tickAcc_ / period);
-        const bool spread = frameTicks > 1 && aliveBefore && fireAlive_;
-        const float yawFrom = spread ? tickYaw_ : yaw_;
-        bool exactAim = !spread;
-        int tickNo = 0;
-        while (tickAcc_ >= period) {
-            if (bake_) {   // the world isn't there yet: keep the connection alive, nothing else
-                fireLatched_ = false;   // (no stray shot when the new map is ready)
-                moveLatched_ = 0;
-                UserCmd k; k.yaw = yaw_; k.pitch = pitch_;
-                net_.tick(k);
-                tickAcc_ -= period;
-                continue;
-            }
-            UserCmd c = buildCmd();
-            tickNo++;
-            if (c.buttons & (BTN_FIRE | BTN_ALTFIRE)) exactAim = true;
-            if ((c.buttons & BTN_GRAPPLE) && !(net_.predicted().flags & MF_HOOKED)) exactAim = true;
-            if (!exactAim) c.yaw = spreadYaw(yawFrom, yaw_, tickNo, frameTicks);
-            // the weapon the server will hold after this command (predicted: a switch shows now, not a round trip
-            // later); switching with fire held locks fire until it's let go, as the server does (runPlayerCmd)
-            bool switchLock = false;
-            const int hw = heldWeapon_ = wp_.run(c, weaponView(), &switchLock);
-            if (switchLock) localFireLocked_ = true;
-            // local fire feedback (server is authoritative for damage)
-            bool altShot = altFires(hw) && (c.buttons & BTN_ALTFIRE) && // knife throw / shotgun bounce (no throws in hide and seek / tag)
-                           !(hw == WPN_KNIFE && net_.hasSnapshot() && isItMode(net_.mode().mode));
-            bool wantFire = ((c.buttons & BTN_FIRE) != 0 || altShot) && holdFireLeft() <= 0 // (the map's holdfire: no shots yet)
-                            && weaponAwayLeft(hw) <= 0;                        // (a thrown knife / syringe: disabled)
-            if (net_.hasSnapshot() && isItMode(net_.mode().mode)) {   // hide and seek / tag: only "it" has the knife (no swing, no slash for the rest)
-                const PlayerSnap* mp = net_.findPlayer(net_.clientId());
-                if (!mp || !(mp->flags & PS_HASBOMB)) wantFire = false;
-            }
-            // fire pressed with nothing to fire (the map's holdfire, a thrown knife / syringe not back, the locator's wait):
-            // a dry click on the press, at most 4 a second (the coverage audit, 2026-11-10)
-            if ((c.buttons & BTN_FIRE) && !(localPrevButtons_ & BTN_FIRE) && net_.selfAlive() && time_ - dryAt_ > 0.25 &&
-                net_.mode().phase != PHASE_FREEZE && (holdFireLeft() > 0 || weaponAwayLeft(hw) > 0 ||
-                                                      (hw == WPN_LOCATOR && net_.mode().phase == PHASE_LIVE && time_ < locatorReady_))) {
-                dryAt_ = time_;
-                audio_.play(SND_DRYFIRE, 0.5f * cfg_.volWeapons);
-            }
-            if (hw == WPN_LOCATOR) {   // the locator: a ping every kLocatorCooldown (the server answers with EV_LOCATE)
-                if (wantFire && !localFireLocked_ && net_.selfAlive() && net_.mode().phase == PHASE_LIVE && time_ >= locatorReady_) {
-                    locatorReady_ = time_ + kLocatorCooldown;
-                    audio_.play(SND_LOCATOR, 0.8f);
-                }
-                wantFire = false;
-            }
-            if (localFireLocked_) { // mirror the server: after a knife throw or a switch, let go before the next weapon fires
-                if (!(c.buttons & fireButtons(hw))) localFireLocked_ = false;
-                else wantFire = false;
-            }
-            if (switchLock || localFireLocked_ || hw != localTapWeapon_) localFireQueued_ = -1;
-            if (tapBuffered(hw) && !localFireLocked_ && holdFireLeft() <= 0 && weaponAwayLeft(hw) <= 0) {   // mirror the server's tap buffer (T13)
-                if (wantFire && !altShot && (c.buttons & BTN_FIRE) && !(localPrevButtons_ & BTN_FIRE) && time_ < localNextFire_) { localFireQueued_ = time_ + kTapBuffer; localTapWeapon_ = hw; }
-                if (!wantFire && time_ <= localFireQueued_) wantFire = true;
-            }
-            if (weaponDef(hw).semiAuto) { // mirror the server: one shot per click, short buffer
-                if (wantFire && !localFireHeld_) { localFireQueued_ = time_ + kFireBuffer; localTapWeapon_ = hw; }
-                localFireHeld_ = wantFire;
-                wantFire = time_ <= localFireQueued_;
-            } else localFireHeld_ = wantFire;
-            if (wantFire && net_.selfAlive() && time_ >= localNextFire_ && net_.mode().phase != PHASE_FREEZE) {
-                localFireQueued_ = -1;
-                if (clickPoll_ >= 0) { clickFramePoll_ = clickPoll_; clickFrameShot_ = timeNow(); clickPoll_ = -1; }   // (F3 / --clicklog)
-                int w = hw;
-                bool alt = (c.buttons & BTN_ALTFIRE) != 0 && ((w != WPN_KNIFE && w != WPN_SYRINGE) || altShot); // same throw rule as above
-                // the shot's place in a held burst, like the server's (it picks the spread: burstOffset, NET-9)
-                bool held = (localPrevButtons_ & (altShot ? BTN_ALTFIRE : BTN_FIRE)) != 0;
-                const bool cadence = held && time_ - localNextFire_ < 0.1;   // (held: on the beat, as the server keeps it)
-                localBurst_ = cadence && w == localBurstWeapon_ ? localBurst_ + 1 : 0;
-                localBurstWeapon_ = w;
-                // the next shot one refire after this one's slot, not after this frame: re-basing on the frame's time made
-                // every held shot up to a frame late, adding up (a rifle burst's last shot heard ~70 ms after the real one)
-                localRefire_ = shotRefire(w, alt);   // (the HUD's weapon bar: this shot's own, alt-fire's too)
-                localNextFire_ = (cadence ? localNextFire_ : time_) + localRefire_;
-                if (isThrow(w, alt)) (w == WPN_KNIFE ? localKnifeBack_ : localSyringeBack_) = time_ + (w == WPN_KNIFE ? weaponAlt().knifeAway : weaponAlt().syringeAway);
-                if (w != WPN_LASER || time_ >= nextLaserSound_) { // laser fires every 10 ms: sound at 20 Hz
-                    audio_.play(SND_RIFLE + w, (w == WPN_LASER ? 0.6f : 0.8f) * cfg_.volWeapons, 0.97f + (qrand() % 7) * 0.01f);
-                    nextLaserSound_ = time_ + 0.05;
-                }
-                if (w == WPN_KNIFE && !alt) knifeSlash_[net_.clientId() % kMaxPlayers] = time_;
-                if (isThrow(w, alt)) { localFireLocked_ = true; heldWeapon_ = wp_.thrown(weaponView()); }   // (and out comes the next weapon)
-                recoil_ = w == WPN_LASER ? 0.15 : w == WPN_SNIPER ? 1.6 : 1.0;
-                vmShotAt_[w] = time_; vmShotRefire_[w] = localRefire_; vmShots_[w]++;   // (the model's moving parts: drawViewParts)
-                matchShots_++;
-                if (w != WPN_KNIFE && w != WPN_SYRINGE && w != WPN_LOCATOR) muzzleUntil_ = time_ + (w == WPN_SNIPER ? 0.07 : 0.05);
-                if (w == WPN_ROCKET || w == WPN_CROSSBOW || (w == WPN_STICKY && !alt) || isThrow(w, alt)) spawnPredictedProjectile(w, alt, c);   // X5
-                if (!weaponDef(w).projectile && w != WPN_KNIFE && w != WPN_SYRINGE && w != WPN_LOCATOR && !(w == WPN_SHOTGUN && alt) &&
-                    (w != WPN_LASER || time_ >= nextLocalSpark_) && cfg_.impactSparks)
-                    localImpactSparks(w, c);   // X4: a spark on an enemy you hit, at once (the sound and number: the server's)
-                if (!weaponDef(w).projectile && w != WPN_SYRINGE && w != WPN_LOCATOR && !(w == WPN_SHOTGUN && alt) && !isThrow(w, alt) &&
-                    !net_.map().glass.empty())
-                    predictShotGlass(w, c);
-                if (!weaponDef(w).projectile && w != WPN_SYRINGE && w != WPN_LOCATOR && !(w == WPN_SHOTGUN && alt) && !isThrow(w, alt))
-                    reportShotHits(w, c);   // (your hits count as you saw them; a ricochet's stay the server's)
-                bool showShot = cfg_.ownShots == 1 || (cfg_.ownShots == 0 && !vmHidden(w)); // VISUALS > YOUR SHOTS
-                if (w == WPN_LASER) laserUntil_ = showShot ? time_ + 0.07 : 0;
-                else if (showShot && !weaponDef(w).projectile && w != WPN_KNIFE && w != WPN_SYRINGE) { // (knife throw: the projectile shows it)
-                    const MoveState& m = net_.predicted();
-                    Vec3 eye = m.pos + Vec3(0, ((m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
-                    Vec3 aim = angleForward(yaw_, pitch_);
-                    const WeaponDef& wd = weaponDef(w);
-                    float spread = (wd.scopedSpread >= 0 && (c.buttons & BTN_ALTFIRE)) ? wd.scopedSpread : wd.spread;
-                    for (int k = 0; k < wd.pellets; k++) { // the server's fixed spread pattern, so tracers show the real shot
-                        Vec3 d = spreadAim(aim, spread, k, wd.pellets, localBurst_);
-                        Vec3 from = muzzlePoint(w, eye);
-                        if (w == WPN_SHOTGUN && alt) { // ricochet: draw each leg (players ignored, like the server's walls)
-                            Vec3 o = eye;
-                            float range = wd.range;
-                            for (int b = 0; b <= weaponAlt().bounces && range > 0.01f; b++) {
-                                Vec3 n;
-                                float t = net_.map().raycast(o, d, range, &n);
-                                Vec3 to = o + d * (t < 0 ? range : t);
-                                tracers_.push_back({b ? o : from, to, time_ + 0.3, tracerColorFor(net_.clientId())});
-                                if (t < 0) break;
-                                if (cfg_.impactSparks) explosions_.push_back({to - d * 0.03f, time_, 0.06f, false, false, false, true, 0.2f});
-                                o = to + n * 0.01f; d = d - n * (2.0f * dot(d, n)); range -= t;
-                            }
-                            continue;
-                        }
-                        float bangT, t = net_.map().raycastBullet(eye, d, wd.range, &bangT);
-                        if (t < 0) t = wd.range;
-                        tracers_.push_back({from, eye + d * t, time_ + (w == WPN_SNIPER ? 0.9 : 0.2), tracerColorFor(net_.clientId())});
-                    }
-                }
-            }
-            localPrevButtons_ = c.buttons;
-            {   // rocket riding: your rockets not handed over yet can be caught too (only while the grapple's held)
-                NetClient::RocketCopy rc[HookProbe::kRockets];
-                int n = 0;
-                if ((c.buttons & BTN_GRAPPLE) && moveTuning().rocketRide)
-                    for (const auto& q : predProj_)
-                        if (q.live && !q.atWall && q.type == WPN_ROCKET && n < HookProbe::kRockets) {
-                            const ProjFlight g = projectileFlight(WPN_ROCKET, q.lob ? kRocketLobGravity : 1.0f);
-                            Vec3 p = q.pos0, v = q.vel0;
-                            net_.map().flyProjectile(p, v, g, (float)(time_ - q.born));
-                            rc[n++] = {p, v, g.grav, g.accel};
-                        }
-                net_.setRocketCopies(rc, n);
-            }
-            net_.tick(c);
-            if (net_.predicted().events & ME_DASH) dashHoldUntil_ = -1;   // (the press made its dash)
-            if (net_.predicted().glassBrush >= 0) {   // (dashed or grappled through a pane: broken now, as the server will)
-                const MoveState& pm = net_.predicted();
-                net_.predictGlass(pm.glassBrush, pm.glassHow, pm.glassAt, pm.glassDir);
-            }
-            tickAcc_ -= period;
-        }
-        tickAcc_ -= borrowed;   // (negative until the pulled tick's own time comes: the next tick then runs on the old grid)
-        tickYaw_ = yaw_;   // (the last tick's: now's)
-        if (net_.playback()) wp_.reset();   // (a demo: what the recorded player held)
-        heldWeapon_ = wp_.current(weaponView());   // (no tick this frame: the last one's, or the snapshot's when dead)
-        flushLaserHits(false);   // (the laser's last 50 ms of hits)
-        net_.flushInput();   // (PERF-12: one input packet per frame, or per 2 ticks when a frame runs more)
-        net_.updateVisualPos(bake_ ? 0.0 : tickAcc_, yaw_, pitch_);   // your own position as of now, for drawing
+        inputTicks(period, aliveBefore);
         pipeMark(PM_TICKS);
         framePlayersOk_ = false;   // (the ticks moved the render time on)
         scopeOverlay_ = heldWeapon_ == WPN_SNIPER; // crossbow: just a light zoom, normal crosshair
@@ -2756,6 +2789,15 @@ void Game::drawWorld(float alpha) {
     // carries this. Raw mouse messages only: keys and clicks wait for the next frame, as before.
     if (cfg_.lowLatency == 2 && alive && !demoView && mouseCaptured_) {
         readMouse(true);
+        // ...and the clicks: a FIRE press since the frame's start fires now, in a tick pulled into this frame (as the
+        // frame's own ticks pull one for a click), instead of waiting for the next frame's poll: input read at an ULTRA
+        // frame's start was ~1 ms from the GPU's end of that frame, the late read ~0.1 ms (owner's PC, 2026-11-18).
+        // Not when this frame already ran a tick ahead of its time (a click a moment ago: the next frame takes it).
+        if (takeRawButtons() && !net_.playback() && tickAcc_ >= 0) {
+            const double period = net_.tickPeriod();
+            inputTicks(period, fireAlive_);
+            alpha = (float)clampf((float)(tickAcc_ / period), 0, 1);
+        }
         if (pendingInput_ >= 0) { if (frameInput_ < 0) frameInput_ = pendingInput_; pendingInput_ = -1; }   // (F3: shown this frame)
     }
     // camera: own prediction when alive, else spectate someone

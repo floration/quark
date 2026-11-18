@@ -22,6 +22,12 @@ struct RawMouseProc {
                 const RAWINPUT* ri = (const RAWINPUT*)buf;
                 if (ri->header.dwType == RIM_TYPEMOUSE) {
                     const RAWMOUSE& m = ri->data.mouse;
+                    if (const USHORT bf = m.usButtonFlags) {   // (buttons 1-5: a down flag at 1 << 2i, its up at 2 << 2i)
+                        for (int i = 0; i < 5; i++) {
+                            if (bf & (1u << (2 * i))) { self->held_.fetch_or(1u << i, std::memory_order_release); self->pressed_.fetch_or(1u << i, std::memory_order_release); }
+                            if (bf & (2u << (2 * i))) self->held_.fetch_and(~(1u << i), std::memory_order_release);
+                        }
+                    }
                     long dx = m.lLastX, dy = m.lLastY;
                     if (m.usFlags & MOUSE_MOVE_ABSOLUTE) {   // (remote desktop, tablets: positions)
                         dx = self->haveAbs_ ? m.lLastX - self->lastAbsX_ : 0;

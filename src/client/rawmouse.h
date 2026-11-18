@@ -25,6 +25,10 @@ public:
     // messages at all. GLFW's own captured mode re-centred the cursor after every frame's motion (SetCursorPos) and
     // handled a legacy mouse-move message: ~50 us a frame on the owner's PC with an 8 kHz mouse. Off: let it go.
     void hold(GLFWwindow* w, bool on);
+    // Buttons 1-5 (GLFW's 0-4) as raw input sees them, as bits: held now, and pressed since the last takePresses().
+    // A click reaches this thread ~1.3 ms before Windows' WM_LBUTTONDOWN reaches GLFW's poll (owner's PC, 2026-11-18).
+    unsigned held() const { return held_.load(std::memory_order_acquire); }
+    unsigned takePresses() { return pressed_.exchange(0, std::memory_order_acq_rel); }
     // Called on the mouse's thread after each report with the counts since the last take (GPU LATE LATCH); null: none.
     std::atomic<void (*)(void*, long long, long long)> onMotion{nullptr};
     void* onMotionCtx = nullptr;
@@ -35,6 +39,7 @@ private:
     std::atomic<bool> active_{false};
     std::atomic<long long> dx_{0}, dy_{0};
     std::atomic<int> reports_{0};
+    std::atomic<unsigned> held_{0}, pressed_{0};
     std::atomic<double> firstAt_{0};
     void* hwnd_ = nullptr;
     int core_ = -1;

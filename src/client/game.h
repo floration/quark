@@ -711,6 +711,12 @@ private:
     double lastMx_ = 0, lastMy_ = 0;
     bool mouseCaptured_ = false, firstMouse_ = true;
     bool fireLatched_ = false;
+    // Raw clicks (Windows' raw input thread, readMouse): while rawBtns_ is on, the mouse buttons' held state is the raw
+    // thread's (rawHeld_), and a FIRE press latches from it a frame or more before GLFW's copy of the same press, which
+    // rawOwed_ (per button) then skips so a quick click isn't fired twice.
+    bool rawBtns_ = false;
+    unsigned rawHeld_ = 0;
+    uint8_t rawOwed_[5] = {};
     double dashHoldUntil_ = -1;   // a dash press holds BTN_DASH till then, or till its dash starts (pmove dashes while it's held)
     static constexpr double kDashPressBuffer = 0.1;
     uint16_t moveLatched_ = 0;   // BTN_JUMP / DASH / GRAPPLE pressed since the last command (a tap shorter than a tick still counts)
@@ -1090,6 +1096,8 @@ private:
     uint8_t barRay_[kMaxPlayers] = {};   // (health bars: the sight ray that last found a player hidden, tried first)
     double mouseHeldAt_ = 0;
 public:
+    bool takeRawButtons();
+    void inputTicks(double period, bool aliveBefore);
     void readMouse(bool late = false); // the main loop, before glfwPollEvents: raw mouse reports in one read (Windows)
 private:
 public:
