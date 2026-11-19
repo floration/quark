@@ -124,6 +124,8 @@ void Game::overrideTints(int kind, int idx, const ModelPalette& drawn, Vec3* tin
 bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     win_ = win;
     opts_ = opts;
+    if (!opts_.clickLog.empty() && !(clickLog_ = std::fopen(opts_.clickLog.c_str(), "w")))
+        std::fprintf(stderr, "--clicklog: can't write %s\n", opts_.clickLog.c_str());
     cfg_.load();
     // --language CODE (the launcher's LANGUAGE picked before this folder had a quark.cfg): this start's setting, kept
     if (!opts_.language.empty() && (opts_.language == "auto" || lang::indexOf(opts_.language) >= 0)) cfg_.language = opts_.language;
@@ -1095,7 +1097,7 @@ bool Game::pressInput(int code) {
         }
         return true;
     }
-    if (b.has(A_FIRE, code)) fireLatched_ = true; // a click shorter than a tick still fires
+    if (b.has(A_FIRE, code)) { fireLatched_ = true; if (clickPoll_ < 0 && perfOn()) clickPoll_ = timeNow(); } // a click shorter than a tick still fires
     // ...and so does a jump, dash or grapple tap (it went down and up between two ticks: no command saw it held)
     if (b.has(A_JUMP, code)) moveLatched_ |= BTN_JUMP;
     if (b.has(A_DASH, code)) { moveLatched_ |= BTN_DASH; dashHoldUntil_ = time_ + cfg_.dashBuffer; }   // (MORE 6: DASH BUFFER, 0.1 s by default)
@@ -1405,6 +1407,7 @@ void Game::readMouse(bool late) {
     if (!rawMouse_.take(&dx, &dy, &n, &firstAt) || !mouseCaptured_ || !mouseFocused_) return;   // (motion meanwhile: dropped)
     // (F3: when it arrived; 0: a report raced the take and lost its stamp, motion kept)
     if (firstAt > 0 && (pendingInput_ < 0 || firstAt < pendingInput_)) pendingInput_ = firstAt;
+    if (clickLog_ && firstAt > 0 && !late && moveFrameIn_ < 0) moveFrameIn_ = firstAt;
     mouseEventsPoll_ += n;   // (F3: the mouse's report rate)
     turn(dx, dy);
 }
@@ -2371,6 +2374,7 @@ void Game::frame(double dt) {
             } else localFireHeld_ = wantFire;
             if (wantFire && net_.selfAlive() && time_ >= localNextFire_ && net_.mode().phase != PHASE_FREEZE) {
                 localFireQueued_ = -1;
+                if (clickPoll_ >= 0) { clickFramePoll_ = clickPoll_; clickFrameShot_ = timeNow(); clickPoll_ = -1; }   // (F3 / --clicklog)
                 int w = hw;
                 bool alt = (c.buttons & BTN_ALTFIRE) != 0 && ((w != WPN_KNIFE && w != WPN_SYRINGE) || altShot); // same throw rule as above
                 // the shot's place in a held burst, like the server's (it picks the spread: burstOffset, NET-9)
@@ -12336,6 +12340,14 @@ void Game::drawPerf() {
             latText_ = b;
         }
         latSamples_.clear();
+        if (!clickPollShot_.empty()) {
+            auto avg = [](const std::vector<float>& v) { double s = 0; for (float x : v) s += x; return s / v.size(); };
+            const double a = avg(clickPollShot_), b = avg(clickShotSwap_), c = avg(clickSwapGpu_);
+            char b2[200];
+            snprintf(b2, sizeof b2, "CLICK->FRAME AVG %.2fMS  POLL->SHOT %.2f  SHOT->SWAP %.2f  SWAP->GPU %.2f", a + b + c, a, b, c);
+            clickText_ = b2;
+        }
+        clickPollShot_.clear(); clickShotSwap_.clear(); clickSwapGpu_.clear();
     }
     if (time_ >= perfNextUpdate_ && frameCount_ > 10) {
         perfNextUpdate_ = time_ + 0.5;
@@ -12361,10 +12373,13 @@ void Game::drawPerf() {
     const float s = r_.height() / 720.0f;
     float ts = std::max(1.0f, std::round(s * 2.0f));
     // (stage 1: the FPS line; 2: + worst frame / ping / 3D size and version / server; 3: all, the graph under them)
-    const std::string* lines[5] = {&perfText_, &perfText2_, &perfTick_, &latText_, &perfPrio_};
-    const int nl = perfStage_ == 1 ? 1 : perfStage_ == 2 ? 3 : perfPrio_.empty() ? 4 : 5;   // (the priority line: Windows only)
+    // (stage 3+: the click line once a click has fired, then the priority line: Windows only)
+    const std::string* lines[6] = {&perfText_, &perfText2_, &perfTick_, &latText_, &perfPrio_, &perfPrio_};
+    int nl = perfStage_ == 1 ? 1 : perfStage_ == 2 ? 3 : 4;
+    if (perfStage_ >= 3 && !clickText_.empty()) lines[nl++] = &clickText_;
+    if (perfStage_ >= 3 && !perfPrio_.empty()) lines[nl++] = &perfPrio_;
     const float lh = r_.textHeight(ts) + 4 * s, x = 24 * s, y = 8 * s, maxW = 372 * s - 16 * s;
-    float lw[5], w = 0;
+    float lw[6], w = 0;
     for (int i = 0; i < nl; i++) w = std::max(w, lw[i] = r_.textWidth(*lines[i], ts));
     w = std::min(w, maxW);
     r_.rect(x, y, w + 16 * s, lh * nl + 4 * s, {0, 0, 0, 0.6f});
@@ -13065,6 +13080,36 @@ void Game::afterSwap() {
         gpuCalibAt_ = now;
     }
     pipeCollect();
+    {   // clicks (and, for --clicklog, mouse moves): a GPU timestamp after this frame's commands, read back later
+        const double stale = timeNow() - 0.05;
+        if (clickPoll_ >= 0 && clickPoll_ < stale) clickPoll_ = -1;   // (a click that fired nothing: refire, holdfire)
+        auto put = [&](double poll, double shot, bool move) {
+            ClickQuery& q = clickQ_[clickNext_];
+            if (q.used) return;
+            if (!q.q) glGenQueries(1, &q.q);
+            glQueryCounter(q.q, GL_TIMESTAMP);
+            q.poll = poll; q.shot = shot; q.swap = pipeNow_[PM_SWAP1]; q.move = move; q.used = true;
+            clickNext_ = (clickNext_ + 1) % 16;
+        };
+        if (clickFrameShot_ >= 0) put(clickFramePoll_, clickFrameShot_, false);
+        if (moveFrameIn_ >= 0) put(moveFrameIn_, 0, true);
+        clickFrameShot_ = clickFramePoll_ = moveFrameIn_ = -1;
+        for (auto& q : clickQ_) {
+            if (!q.used) continue;
+            GLint avail = 0;
+            glGetQueryObjectiv(q.q, GL_QUERY_RESULT_AVAILABLE, &avail);
+            if (!avail) continue;
+            GLuint64 t = 0;
+            glGetQueryObjectui64v(q.q, GL_QUERY_RESULT, &t);
+            const double done = gpuToCpu(t);
+            q.used = false;
+            if (done < q.poll || done - q.poll > 1.0) continue;
+            if (q.move) { if (clickLog_) { std::fprintf(clickLog_, "move %.0f\n", (done - q.poll) * 1e6); std::fflush(clickLog_); } continue; }
+            const double a = (q.shot - q.poll) * 1e6, b = (q.swap - q.shot) * 1e6, c = (done - q.swap) * 1e6;
+            if (clickLog_) { std::fprintf(clickLog_, "click %.0f %.0f %.0f %.0f\n", a, b, c, (done - q.poll) * 1e6); std::fflush(clickLog_); }   // (flushed: a killed game keeps its lines)
+            if (perfStage_ >= 3 && clickPollShot_.size() < 4096) { clickPollShot_.push_back((float)(a / 1000)); clickShotSwap_.push_back((float)(b / 1000)); clickSwapGpu_.push_back((float)(c / 1000)); }
+        }
+    }
     if (perfStage_ < 3) return;   // (F4 / F3's shorter stages: the graph's marks only (and the clocks above); F3's input to frame latency below)
     // Input-to-frame latency: GPU timestamp written after this frame's commands, converted to
     // the CPU clock, minus when the game received the input event from the OS. Read back a few

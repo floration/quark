@@ -1,5 +1,6 @@
 // The client application: menus, hosting, connection, input, world/HUD rendering.
 #pragma once
+#include <cstdio>
 #include <cstring>
 #include <map>
 #include <set>
@@ -63,6 +64,7 @@ struct LaunchOptions {
     bool debugPulse = false;    // --pulse: --fire / --scope let go every other 0.3 s (a switch or a throw needs a release), and
                                 // a step right before the --screenshot (what was fired is seen from the side)
     bool debugPerf = false;     // --perf: F3 overlay on, with a synthetic input event every frame
+    std::string clickLog;       // --clicklog FILE: each click's and mouse move's way to the GPU, one line each (latency tests)
     bool textHeavy = false;     // --textheavy: scoreboard + F3 + chat lines always on, to measure text cost (with --bench)
     bool feedShot = false;      // --feedshot: made-up kill feed and chat lines that stay (HUD screenshots and benches)
     bool debugCrosshair = false;
@@ -936,7 +938,7 @@ private:
     int perfStage_ = 0;
     bool hudBuilt_ = false;            // drawWorld built the HUD (and F3 / F4) before its late read this frame
     bool perfMini_ = false;            // F4: only the mouse to photon number (drawPerfMini)
-    bool perfOn() const { return perfStage_ >= 3 || perfMini_; }   // (the pipeline graph's measuring runs)
+    bool perfOn() const { return perfStage_ >= 3 || perfMini_ || clickLog_; }   // (the pipeline graph's measuring runs)
     std::string perfMiniText_;
     static constexpr size_t kFrameTimes = 2048;   // (a power of two: the ring index wraps with a mask)
     static_assert((kFrameTimes & (kFrameTimes - 1)) == 0, "kFrameTimes must be a power of two");
@@ -1135,6 +1137,16 @@ private:
     UltraMargin ultraMargin_;                  // ULTRA SAFETY: AUTO's learnt margin (ultramargin.h)
     bool ultraHeld_ = false;                   // this frame's input read was held back by the pacing (so a bubble is the margin's)
     struct LatQuery { unsigned q; double input; bool used; };
+    // Click timing (F3's CLICK->FRAME line, --clicklog): a FIRE press's poll time (clickPoll_), the tick that fired it
+    // (clickShot_), this frame's swap, and a GPU timestamp after the frame's commands. A mouse move's raw-thread arrival
+    // to its frame's GPU end too (--clicklog only), to compare.
+    struct ClickQuery { unsigned q = 0; double poll = 0, shot = 0, swap = 0; bool move = false, used = false; };
+    ClickQuery clickQ_[16] = {};
+    int clickNext_ = 0;
+    double clickPoll_ = -1, clickFramePoll_ = -1, clickFrameShot_ = -1, moveFrameIn_ = -1;
+    std::FILE* clickLog_ = nullptr;
+    std::vector<float> clickPollShot_, clickShotSwap_, clickSwapGpu_;   // ms, last second (F3)
+    std::string clickText_;
     LatQuery latQ_[16] = {};
     int latNext_ = 0;
     double gpuClockOffset_ = 0, gpuCalibAt_ = -10;

@@ -77,6 +77,7 @@ int main(int argc, char** argv) {
         else if (a == "--hook") opts.debugHook = true;   // the grapple held (screenshots)
         else if (a == "--pulse") opts.debugPulse = true;   // (with --fire: stuck bolt / knife screenshots)
         else if (a == "--perf") opts.debugPerf = true;
+        else if (a == "--clicklog") opts.clickLog = next();
         else if (a == "--settings") opts.debugSettings = true;
         else if (a == "--backdrop") opts.backdrop = next();
         else if (a == "--cam") { // --cam x y z yawDeg pitchDeg: fixed camera over a --backdrop map (map shots), or in a match
