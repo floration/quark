@@ -29,10 +29,11 @@ struct Settings {
 #ifdef _WIN32
     int presentMode = 3;        // (the default: latent sync; a typical PC runs many times the refresh rate)
 #else
-    int presentMode = 0;        // (the default: no vsync; latent sync needs Windows' scanline)
+    int presentMode = 0;        // (the default: no vsync. Linux has latent sync too (vblank stamps), but on a Wayland
+                                // desktop it needs the compositor to allow tearing, so it's picked, not the default)
 #endif
                                 // 0 immediate (vsync off, tearing), 1 vsync, 2 adaptive vsync (tears only when late),
-                                // 3 latent sync (Windows: a frame a refresh, flipped as the blank begins; Game::latentWait)
+                                // 3 latent sync (Windows, Linux: a frame a refresh, flipped as the blank begins; Game::latentWait)
     int latentOffsetUs = 0;     // latent sync: the flip this much later (+) or sooner (-), moving the tear line
     bool disableFso = false;
     // LATENCY tab (owner, 2026-11-02: each tweak its own toggle): the frame's tweaks between the mouse and the GPU

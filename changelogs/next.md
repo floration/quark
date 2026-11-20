@@ -7,6 +7,7 @@
 - **Smoother corrections:** when the server does correct where you are (a push only it knows about, such as knockback), you glide to the right spot over about a tenth of a second instead of jumping there, for corrections up to 8 m (it was 2 m). Respawns, teleporters and bigger jumps still put you there at once.
 
 ## Latency
+- **Latent Sync on Linux:** VIDEO + AUDIO > PRESENT now offers LATENT SYNC on Linux too: one frame a refresh, flipped as the screen's blank begins, so there's no tear line and no vsync queue. It times the flip from the graphics driver's vblank clock. On a Wayland desktop, allow tearing for full-screen games in your compositor first (KDE: "Allow tearing in full screen applications"; Hyprland: the immediate rule), or it waits for the compositor like vsync. NO VSYNC stays the default on Linux.
 - **F3 frame pacing graph:** under the mouse-to-photon graph, F3 now draws the last 5 seconds of frame times, so uneven frames show as spikes. It's scaled to your average frame time ±50%, and widens while a slower or faster frame is on it. Nothing is measured while F3 is off.
 - F3's latency graph says GPU WAIT (LATENT SYNC) instead of GPU WAIT (ULTRA) when Latent Sync is on and LOW LATENCY isn't ULTRA.
 

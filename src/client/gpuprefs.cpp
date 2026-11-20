@@ -562,9 +562,78 @@ std::vector<PerfFinding> perfCheck(const std::string&) { return {}; }
 bool fsoDisable(bool, std::string* msg) { *msg = "FULLSCREEN OPTIMIZATIONS: WINDOWS ONLY"; return false; }
 int hwSchedState() { return -1; }
 bool hwSchedEnable(std::string* msg) { *msg = "GPU SCHEDULING: WINDOWS ONLY"; return false; }
+#if defined(__linux__)
+// ---- RasterClock on Linux: the kernel's vblank timestamp (GLX_OML_sync_control) -------------------------------------
+// glXGetSyncValuesOML gives the time (UST, microseconds) the display's last vertical blank was stamped. DRM stamps the
+// end of the blank (scanout of the first line), so the next blank begins a refresh later, less the blank's own length
+// (taken as Windows' first guess: a 30th of the active lines). A fresh stamp is read every frame, so the phase never
+// drifts and the integer refresh rate's error doesn't add up. Under X11 an unredirected fullscreen window (and a
+// swap interval of 0) flips at once; an X11 game on a Wayland desktop (XWayland) needs the compositor to allow
+// tearing for it (KDE: "Allow tearing in full screen applications"; Hyprland: the immediate window rule), else the
+// compositor still holds every frame for its own vblank. GLFW 3.3 is built for X11 here, so a Wayland desktop always
+// runs the game through XWayland.
+#include <GLFW/glfw3.h>
+#include <cmath>
+#include <cstdint>
+#include <ctime>
+extern "C" {   // (GLFW's X11 / GLX native getters, declared here so the X11 and GLX headers aren't needed)
+void* glfwGetX11Display(void);
+unsigned long glfwGetGLXWindow(GLFWwindow* window);
+}
+namespace {
+using GetSyncValuesFn = int (*)(void* dpy, unsigned long drawable, int64_t* ust, int64_t* msc, int64_t* sbc);
+GetSyncValuesFn getSyncValues() {
+    static const auto fn = (GetSyncValuesFn)glfwGetProcAddress("glXGetSyncValuesOML");
+    return fn;
+}
+double clockSeconds(int which) {
+    timespec ts{};
+    clock_gettime(which ? CLOCK_MONOTONIC : CLOCK_REALTIME, &ts);
+    return ts.tv_sec + ts.tv_nsec * 1e-9;
+}
+}
+
+bool RasterClock::open(GLFWmonitor*) {
+    close();
+    GLFWwindow* w = glfwGetCurrentContext();
+    if (!w || !glfwExtensionSupported("GLX_OML_sync_control") || !getSyncValues()) return false;
+    dpy_ = glfwGetX11Display();
+    drawable_ = glfwGetGLXWindow(w);
+    if (!dpy_ || !drawable_) return false;
+    // (which clock the driver stamps with: CLOCK_MONOTONIC on Mesa and NVIDIA; a stamp seconds away from it is taken
+    // as CLOCK_REALTIME's)
+    int64_t ust = 0, msc = 0, sbc = 0;
+    if (!getSyncValues()(dpy_, drawable_, &ust, &msc, &sbc) || ust <= 0) return false;
+    clock_ = std::fabs(clockSeconds(1) - ust * 1e-6) < 5.0 ? 1 : 0;
+    adapter_ = 1;
+    return true;
+}
+
+void RasterClock::close() {
+    adapter_ = 0;
+    dpy_ = nullptr;
+    drawable_ = 0;
+}
+
+bool RasterClock::nextBlank(double refresh, double* at) {
+    if (!adapter_) return false;
+    int64_t ust = 0, msc = 0, sbc = 0;
+    if (!getSyncValues()(dpy_, drawable_, &ust, &msc, &sbc) || ust <= 0) return false;
+    const double now = timeNow();
+    const double age = clockSeconds(clock_) - ust * 1e-6;   // (how long ago the last blank ended)
+    // A stamp from the future or older than a quarter second: no live vblank clock (a hidden window, XWayland's 1 Hz
+    // fallback for an unseen one): no sync until it comes back (rasterBlank opens it again a second later)
+    if (age < -0.002 || age > 0.25) return false;
+    double t = now - age + refresh - refresh / 31.0;   // (the next blank's start: a refresh after, less the blank)
+    while (t <= now) t += refresh;
+    *at = t;
+    return true;
+}
+#else
 bool RasterClock::open(GLFWmonitor*) { return false; }
 void RasterClock::close() {}
 bool RasterClock::nextBlank(double, double*) { return false; }
+#endif
 bool nvMaxClocks(bool, std::string* msg) { *msg = "GPU MAX CLOCKS: WINDOWS ONLY"; return false; }
 bool nvThreadedOff(bool, std::string* msg) { *msg = "THREADED OPTIMIZATION: WINDOWS ONLY"; return false; }
 bool nvDxgiPresent(bool, std::string* msg) { *msg = "DXGI PRESENT: WINDOWS ONLY"; return false; }
