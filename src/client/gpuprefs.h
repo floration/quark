@@ -1,12 +1,14 @@
 // Windows display-timing helpers for the low-latency settings.
-//  - RasterClock (PRESENT: LATENT SYNC): where the monitor's scanout is, from the display driver (D3DKMTGetScanLine),
-//    so a frame can be handed over just as a refresh's vertical blank begins and its tear line falls off screen.
+//  - RasterClock (PRESENT: LATENT SYNC): where the monitor's scanout is, so a frame can be handed over just as a
+//    refresh's vertical blank begins and its tear line falls off screen. Windows: from the display driver
+//    (D3DKMTGetScanLine). Linux (X11, and X11 games on Wayland): from the kernel's timestamp of the last vertical blank
+//    (GLX_OML_sync_control), the scanline worked out from the time since it.
 //  - nvMaxClocks (GPU MAX CLOCKS): NVIDIA's "Power management mode: Prefer maximum performance" in the driver profile
 //    for this executable (NVAPI driver settings), so a GPU that's idle half of every frame doesn't clock down.
 //  - setGamePriority (PRIORITIZE GAME): the process's GPU scheduling class (D3DKMTSetProcessSchedulingPriorityClass)
 //    and CPU priority class raised while the game has focus, so a browser video or a hardware-accelerated Electron app
 //    drawing at the same time waits for the game's frames instead of sharing the GPU queue with them evenly.
-// Elsewhere (Linux, macOS) none is available: open() and nvMaxClocks() fail, setGamePriority() does nothing.
+// Elsewhere none is available (RasterClock: macOS too): open() and nvMaxClocks() fail, setGamePriority() does nothing.
 #pragma once
 #include <string>
 #include <vector>
@@ -16,7 +18,9 @@ struct GLFWmonitor;
 class RasterClock {
 public:
     ~RasterClock() { close(); }
-    bool open(GLFWmonitor* m);   // false: not available (not Windows, or the driver doesn't report the scanline)
+    // false: not available (macOS; Windows: the driver doesn't report the scanline; Linux: no GLX_OML_sync_control,
+    // e.g. Wayland without XWayland, or a driver without it). Linux reads the current GL context's window.
+    bool open(GLFWmonitor* m);
     void close();
     bool ok() const { return adapter_ != 0; }
     // From one scanline read: when the next vertical blank begins, as timeNow() (refresh: the period, seconds).
@@ -25,6 +29,11 @@ public:
 private:
     unsigned adapter_ = 0, source_ = 0;
     int height_ = 0, total_ = 0;   // (active lines; lines a refresh including the blank: the most seen + 1)
+#if defined(__linux__)
+    void* dpy_ = nullptr;          // (the X display and the GLX window whose vblank clock is read)
+    unsigned long drawable_ = 0;
+    int clock_ = 1;                // (the clock the driver stamps with: CLOCK_MONOTONIC (1), or CLOCK_REALTIME (0))
+#endif
 };
 
 // On: the setting in this executable's driver profile (made if there's none). Off: the setting removed from it

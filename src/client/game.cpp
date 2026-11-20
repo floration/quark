@@ -7807,7 +7807,7 @@ void Game::drawVideoSettings(const SetLayout& L) {
     videoPresetCycle(f.x(), f.top(), w, h);   // (the quality preset first: review round 2)
     f.next();
     f.section("LATENCY");
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__linux__)   // (latent sync: Windows' scanline, Linux's vblank stamps; not macOS)
     static const std::vector<std::string> presNames = {"VSYNC: OFF", "VSYNC: ON", "VSYNC: ADAPTIVE", "VSYNC: LATENT SYNC"};
     const int nPres = 4;
 #else
@@ -8883,11 +8883,19 @@ void Game::drawMoreSettings(const SetLayout& L) {
             int si = cfg_.latentSlow;
             if (ui_.cycle(L.X(kColR + kColW - kHalfW), g.top(), hw, h, "LATE FRAME", si, 2, sn, UiExp::cfg("latent_slow"))) cfg_.latentSlow = si;
             g.next();
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__linux__)
+#ifdef __linux__
+            // (Linux: the vblank clock is GLX_OML_sync_control's; a driver without it, or a window not on screen, gets no sync)
+            if (cfg_.presentMode == 3 && !raster_.ok())
+                g.hint("NO VBLANK CLOCK FROM THIS DRIVER OR WINDOW:", "IT RUNS AS VSYNC: OFF");
+            else if (cfg_.presentMode == 3)
+                g.hint("WAYLAND (XWAYLAND): ALLOW TEARING IN THE", "COMPOSITOR (KDE: FULL SCREEN APPS), ELSE IT WAITS");
+            else
+#endif
             g.hint(cfg_.presentMode == 3 ? "SPARE TIME BEFORE THE BLANK; A LATE FRAME" : "PICK VSYNC: LATENT SYNC (VIDEO + AUDIO) FIRST;",
                    cfg_.presentMode == 3 ? "TEARS NOW OR WAITS A REFRESH" : "THESE ONLY APPLY TO IT");
 #else
-            g.hint("N/A HERE: LATENT SYNC IS WINDOWS ONLY");
+            g.hint("N/A HERE: LATENT SYNC IS WINDOWS AND LINUX ONLY");
 #endif
         }
         g.section("MENU CURSOR");
