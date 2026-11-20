@@ -37,7 +37,7 @@ The work up to 1.17.0 was done in one long claude.ai cloud session. **1.17.0 shi
 2. Give the environment a setup script, so each session can build, test, take screenshots and make test packages:
    ```
    sudo apt-get update && sudo apt-get install -y cmake g++ python3 zip xvfb \
-     libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev mingw-w64
+     libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev libwayland-dev libxkbcommon-dev mingw-w64
    ```
    Node 22 or newer is needed for the Worker's tests (`node tools/master/test.mjs`). Cloud images usually have it already.
 3. **What a cloud session cannot do:**

@@ -12,6 +12,7 @@
 #include "gpuprofile.h"
 #include <array>
 #include "game.h"
+#include "wltear.h"
 #include "lang.h"
 #include "complete.h"
 #include "openurl.h"
@@ -8885,11 +8886,11 @@ void Game::drawMoreSettings(const SetLayout& L) {
             g.next();
 #if defined(_WIN32) || defined(__linux__)
 #ifdef __linux__
-            // (Linux: the vblank clock is GLX_OML_sync_control's; a driver without it, or a window not on screen, gets no sync)
-            if (cfg_.presentMode == 3 && !raster_.ok())
+            // (Linux: the vblank clock is the kernel's (DRM), else GLX_OML_sync_control's; with neither, no sync)
+            if (cfg_.presentMode == 3 && !raster_.ok() && !drm_.ok())
                 g.hint("NO VBLANK CLOCK FROM THIS DRIVER OR WINDOW:", "IT RUNS AS VSYNC: OFF");
-            else if (cfg_.presentMode == 3)
-                g.hint("WAYLAND (XWAYLAND): ALLOW TEARING IN THE", "COMPOSITOR (KDE: FULL SCREEN APPS), ELSE IT WAITS");
+            else if (cfg_.presentMode == 3 && getenv("WAYLAND_DISPLAY"))
+                g.hint("WAYLAND: ALLOW TEARING IN THE", "COMPOSITOR (KDE: FULL SCREEN APPS), ELSE IT WAITS");
             else
 #endif
             g.hint(cfg_.presentMode == 3 ? "SPARE TIME BEFORE THE BLANK; A LATE FRAME" : "PICK VSYNC: LATENT SYNC (VIDEO + AUDIO) FIRST;",
@@ -12093,14 +12094,17 @@ std::string Game::shotDir() const {
 }
 
 #if defined(__linux__)
+#include <dlfcn.h>
 extern "C" {
 struct _XDisplay;
 _XDisplay* glfwGetX11Display(void);
 unsigned long glfwGetX11Window(GLFWwindow* window);
-unsigned long XInternAtom(_XDisplay*, const char*, int);
-int XChangeProperty(_XDisplay*, unsigned long, unsigned long, unsigned long, int, int, const unsigned char*, int);
-int XDeleteProperty(_XDisplay*, unsigned long, unsigned long);
-int XFlush(_XDisplay*);
+}
+// GLFW 3.4 loads libX11 itself at run time (so a Wayland-only system needs no X11), so Xlib's functions come
+// from the same library through dlsym, not from linking it.
+template <class F> static F x11Fn(const char* name) {
+    static void* lib = dlopen("libX11.so.6", RTLD_LAZY | RTLD_LOCAL);
+    return lib ? (F)dlsym(lib, name) : nullptr;
 }
 #endif
 // BYPASS COMPOSITOR (MORE 6, Linux on X11): _NET_WM_BYPASS_COMPOSITOR on the window: 1 asks the compositor to step
@@ -12111,9 +12115,15 @@ void Game::applyCompositor() {
     if (want == compositorSet_) return;
     compositorSet_ = want;
 #if defined(__linux__)
+    if (glfwGetPlatform() != GLFW_PLATFORM_X11) return;   // (Wayland: fullscreen windows already skip the compositor)
     _XDisplay* d = glfwGetX11Display();
     const unsigned long w = glfwGetX11Window(win_);
-    if (!d || !w) return;
+    auto XInternAtom = x11Fn<unsigned long (*)(_XDisplay*, const char*, int)>("XInternAtom");
+    auto XChangeProperty = x11Fn<int (*)(_XDisplay*, unsigned long, unsigned long, unsigned long, int, int,
+                                         const unsigned char*, int)>("XChangeProperty");
+    auto XDeleteProperty = x11Fn<int (*)(_XDisplay*, unsigned long, unsigned long)>("XDeleteProperty");
+    auto XFlush = x11Fn<int (*)(_XDisplay*)>("XFlush");
+    if (!d || !w || !XInternAtom || !XChangeProperty || !XDeleteProperty || !XFlush) return;
     const unsigned long atom = XInternAtom(d, "_NET_WM_BYPASS_COMPOSITOR", 0), cardinal = 6;   // (XA_CARDINAL)
     if (cfg_.bypassCompositor == 0) {
         if (cfg_.displayMode == 0) XDeleteProperty(d, w, atom);   // (fullscreen: GLFW's own 1 stays)
@@ -12928,6 +12938,18 @@ bool Game::rasterBlank(double* at, double* refresh) {
         raster_.open(mon);
         latentMon_ = mon; latentH_ = vmH_; latentHz_ = vmHz_; latentOpenAt_ = time_;
     }
+#if defined(__linux__)
+    // Linux: the kernel's vblank stamps (drmvblank.h: any desktop, any driver with KMS), opened again with the
+    // monitor's mode like the scanline; the driver's own clock (raster_) when /dev/dri can't be read
+    if (mon != drmMon_ || vmW_ != drmW_ || vmH_ != drmH_ || vmHz_ != drmHz_ || (!drm_.ok() && time_ - drmOpenAt_ > 1.0)) {
+        int x = 0, y = 0;
+        if (mon) glfwGetMonitorPos(mon, &x, &y);
+        drm_.open(vmW_, vmH_, vmHz_, x, y);
+        drmMon_ = mon; drmW_ = vmW_; drmH_ = vmH_; drmHz_ = vmHz_; drmOpenAt_ = time_;
+    }
+    if (drm_.nextBlank(at, refresh)) return true;
+    drm_.close();
+#endif
     if (raster_.nextBlank(*refresh, at)) return true;
     raster_.close();
     return false;
@@ -12983,6 +13005,9 @@ void Game::beforeSwap() {
 void Game::applyPresentMode() {
     int interval = 0;
     if (cfg_.presentMode == 1 || cfg_.vrr) interval = 1;   // (G-SYNC / FREESYNC: vsync, the cap under the refresh keeps it out of vsync's queue)
+    // native Wayland: the compositor holds every frame for its blank unless asked; NO VSYNC and LATENT SYNC ask it to
+    // tear (wltear.h; the compositor has the last word)
+    wltear::set(win_, interval == 0 && (cfg_.presentMode == 0 || cfg_.presentMode == 3));
     if (cfg_.presentMode == 2 && !cfg_.vrr) {
         bool tear = glfwExtensionSupported("WGL_EXT_swap_control_tear") || glfwExtensionSupported("GLX_EXT_swap_control_tear");
         interval = tear ? -1 : 1; // adaptive: vsync, but tear instead of waiting when a frame is late

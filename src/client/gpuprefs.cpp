@@ -570,8 +570,8 @@ bool hwSchedEnable(std::string* msg) { *msg = "GPU SCHEDULING: WINDOWS ONLY"; re
 // drifts and the integer refresh rate's error doesn't add up. Under X11 an unredirected fullscreen window (and a
 // swap interval of 0) flips at once; an X11 game on a Wayland desktop (XWayland) needs the compositor to allow
 // tearing for it (KDE: "Allow tearing in full screen applications"; Hyprland: the immediate window rule), else the
-// compositor still holds every frame for its own vblank. GLFW 3.3 is built for X11 here, so a Wayland desktop always
-// runs the game through XWayland.
+// compositor still holds every frame for its own vblank. This is the fallback: Game::rasterBlank reads the kernel's
+// vblank stamps straight from DRM first (drmvblank.h), which any desktop and driver with KMS has.
 #include <GLFW/glfw3.h>
 #include <cmath>
 #include <cstdint>
@@ -596,7 +596,8 @@ double clockSeconds(int which) {
 bool RasterClock::open(GLFWmonitor*) {
     close();
     GLFWwindow* w = glfwGetCurrentContext();
-    if (!w || !glfwExtensionSupported("GLX_OML_sync_control") || !getSyncValues()) return false;
+    if (!w || glfwGetPlatform() != GLFW_PLATFORM_X11) return false;   // (native Wayland: EGL, no GLX)
+    if (!glfwExtensionSupported("GLX_OML_sync_control") || !getSyncValues()) return false;
     dpy_ = glfwGetX11Display();
     drawable_ = glfwGetGLXWindow(w);
     if (!dpy_ || !drawable_) return false;

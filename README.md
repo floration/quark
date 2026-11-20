@@ -9,7 +9,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ctest --test-dir build          # or build/quark_tests
 ```
-Linux needs X11/GL dev packages (`libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev`).
+Linux needs X11/Wayland/GL dev packages (`libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev libwayland-dev libxkbcommon-dev`).
 Windows: MinGW-w64 (gcc; what releases are built with; MSVC isn't supported). macOS: Xcode command line tools.
 The build needs `python3` (standard library only): it generates the recorded announcer lines from `assets/voice/`.
 Executables: `quark` (game), `quark_server` (dedicated server), `quark_tests` (headless tests).

@@ -28,6 +28,7 @@
 #include "modecalls.h"
 #include "rawmouse.h"
 #include "gpuprefs.h"
+#include "drmvblank.h"
 #include "binds.h"
 #include "config.h"
 #include "discordrpc.h"
@@ -961,6 +962,10 @@ private:
     void turn(double dx, double dy);   // mouse counts into yaw_ / pitch_
     RawMouse rawMouse_;                // Windows: raw mouse reports on their own thread (rawmouse.h)
     RasterClock raster_;               // latent sync: the monitor's scanline (gpuprefs.h)
+    DrmVblank drm_;                    // latent sync on Linux: the kernel's vblank stamps (drmvblank.h)
+    GLFWmonitor* drmMon_ = nullptr;
+    int drmW_ = 0, drmH_ = 0, drmHz_ = 0;
+    double drmOpenAt_ = -10;
     GLFWmonitor* latentMon_ = nullptr; // (the monitor raster_ was opened on)
     double latentFlip_ = 0;            // (this frame's planned flip: the vertical blank it's for)
     // (the lead: the 3rd slowest of the last 256 frames' input read to finished on the GPU, about a second at 240 Hz:

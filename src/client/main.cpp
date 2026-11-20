@@ -12,6 +12,7 @@
 #include "lightmap.h"
 #include "../launcher/selfupdate.h"
 #include "isa.h"
+#include "wltear.h"
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -166,15 +167,30 @@ int main(int argc, char** argv) {
         for (auto& l : moveOldOfficialMaps().log) fprintf(stderr, "maps: %s\n", l.c_str());
     struct DemoUpgradeJoin { ~DemoUpgradeJoin() { demo::finishUpgrade(5.0); } } demoUpgradeJoin;
     netInit();
+    Settings pre;
+    pre.load();
+#if defined(__linux__)
+    // Linux (GLFW 3.4 has both): X11 (XWayland on a Wayland desktop), as before; native Wayland only for PRESENT:
+    // LATENT SYNC on a Wayland desktop, where the game asks the compositor to tear itself (wltear.h). QUARK_PLATFORM=
+    // x11 / wayland picks one; a desktop without the one picked gets the other.
+    {
+        const char* want = getenv("QUARK_PLATFORM");
+        const bool wayland = want ? strcmp(want, "wayland") == 0 : (getenv("WAYLAND_DISPLAY") && pre.presentMode == 3);
+        glfwInitHint(GLFW_PLATFORM, wayland ? GLFW_PLATFORM_WAYLAND : GLFW_PLATFORM_X11);
+    }
+    if (!glfwInit()) {   // (the one picked isn't there: whichever is; a failed init leaves nothing behind)
+        glfwInitHint(GLFW_PLATFORM, GLFW_ANY_PLATFORM);
+        if (!glfwInit()) { fprintf(stderr, "glfwInit failed\n"); return 1; }
+    }
+#else
     if (!glfwInit()) { fprintf(stderr, "glfwInit failed\n"); return 1; }
+#endif
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE); // required on macOS
     glfwWindowHint(GLFW_SAMPLES, 0);
 
-    Settings pre;
-    pre.load();
     // Created windowed; Game::init switches to the configured display mode.
     if (pre.out10) {   // VIDEO + AUDIO > MORE 2: 10-BIT OUTPUT (the driver gives the nearest it has; VIDEO shows what it got)
         glfwWindowHint(GLFW_RED_BITS, 10); glfwWindowHint(GLFW_GREEN_BITS, 10); glfwWindowHint(GLFW_BLUE_BITS, 10); glfwWindowHint(GLFW_ALPHA_BITS, 2);
@@ -217,6 +233,7 @@ int main(int argc, char** argv) {
     if (opts.uiTest) {   // the UI test drives the frames itself
         int rc = runUiTest(game, win, opts);
         game.shutdown();
+        wltear::release();
         glfwDestroyWindow(win);
         glfwTerminate();
         Server::waitBackground(3.0);
@@ -269,6 +286,7 @@ int main(int argc, char** argv) {
     // server's goodbyes (owner, 2026-11-05: closing the game should put the desktop resolution back)
     if (glfwGetWindowMonitor(win)) { glfwHideWindow(win); glfwSetWindowMonitor(win, nullptr, 0, 0, 640, 480, 0); }
     game.shutdown();
+    wltear::release();
     glfwDestroyWindow(win);
     glfwTerminate();
     Server::waitBackground(3.0);   // (window gone: a hosted game's UPnP / list removal may finish, FINAL_REVIEW 2.10)

@@ -474,6 +474,11 @@ if(QUARK_BUILD_CLIENT)
   set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
   set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
   set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
+  # GLFW 3.4: Linux builds both X11 and Wayland (picked at run time). A build dir
+  # configured with 3.3 still has 3.3's GLFW_USE_WAYLAND, which 3.4 refuses: drop it.
+  unset(GLFW_USE_WAYLAND CACHE)
+  set(GLFW_BUILD_X11 ON CACHE BOOL "" FORCE)
+  set(GLFW_BUILD_WAYLAND ON CACHE BOOL "" FORCE)
   add_subdirectory(third_party/glfw EXCLUDE_FROM_ALL)
   target_compile_options(glfw PRIVATE -Wno-sign-compare -Wno-missing-field-initializers)   # third party: our -Wextra is for our code
 
@@ -484,6 +489,8 @@ if(QUARK_BUILD_CLIENT)
     src/client/game.cpp
     src/client/rawmouse.cpp
     src/client/gpuprefs.cpp
+    src/client/drmvblank.cpp
+    src/client/wltear.cpp
     src/client/community.cpp
     src/client/editor.cpp
     src/client/benchmark.cpp
