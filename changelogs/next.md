@@ -70,3 +70,6 @@
 
 ## Discord
 - **Discord status:** while Quark runs, your Discord profile can show what you're playing: the map's picture and name, the mode (with "Ranked" on ranked), the score with your side first (or your place, like "2nd of 8", in free for all and race), the server's name and player count, and how long you've been on that server. In the menus it says what you're doing (browsing servers, in settings, editing a map, watching a demo, ...). It needs the Discord app open on the same computer, and nothing is sent anywhere else. GAMEPLAY > MORE 4: DISCORD STATUS turns it off (your status clears at once) and SHOW SERVER NAME shows just "Online" instead of the server; STREAMER MODE hides the server too.
+
+## Bots
+- **Bots hook back on when knocked off an edge:** a bot pushed off a ledge over a pit or the void (Black Hole's platform, any map with a drop) now fires its grapple at the ground, a wall or a pillar it can reach, holds it until the pull lifts it over the edge and steers back on, instead of falling to its death. Only where the rules give the grapple (not run-only or race) and when its hook is off cooldown; slower bot levels aim slower, so they save themselves less often.

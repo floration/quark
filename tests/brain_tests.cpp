@@ -48,7 +48,7 @@ std::string diffBrains(const BotBrain& x, const BotBrain& y) {
     BB(aimYaw) BB(aimPitch) BB(yawVel) BB(pitchVel) BB(noiseYaw) BB(noisePitch) BB(flickYaw) BB(flickPitch)
     BB(glanceUntil) BB(nextGlance) BB(glanceYaw) BB(goal) BB(goalUntil) BB(lastPos) BB(stuckCheckAt) BB(strafeDir)
     BB(strafeSwitchAt) BB(unstickUntil) BB(fleeUntil) BB(hookUntil) BB(nextHookTry) BB(hookAnchor) BB(hookChecked)
-    BB(fightHookUntil) BB(nextDecision) BB(nearEdge) BB(edgeFar) BB(edgeAway) BB(pathPrev) BB(pathGoalNode) BB(waypoint)
+    BB(fightHookUntil) BB(recoverUntil) BB(nextRecoverLook) BB(recoverAnchor) BB(recoverTop) BB(recoverReady) BB(recoverCaught) BB(nextDecision) BB(nearEdge) BB(edgeFar) BB(edgeAway) BB(pathPrev) BB(pathGoalNode) BB(waypoint)
     BB(pathGoal) BB(repathAt) BB(nextSteer) BB(needPath) BB(nextLook)
 #undef BB
     if (x.path != y.path) d += "path ";
