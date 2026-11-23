@@ -83,6 +83,7 @@
 (IT AFFECTS GAMEPLAY)
 (LEAVE)
 (MISSING)
+(NICE; RAISING IT NEEDS PERMISSION: F3 SAYS)
 (NOT IN RANKED)
 (PUBLIC)
 (REFRESH - 3)
@@ -673,9 +674,12 @@ COUNTDOWN: A TICK EACH OF THE LAST 10 S
 CP
 CPU
 CPU ABOVE NORMAL
+CPU GOES TO THE GAME FIRST WHILE FOCUSED
 CPU HIGH
 CPU LATCH
 CPU LATE LATCH
+CPU NICE #
+CPU NICE # (WANTED #: NO PERMISSION)
 CPU NORMAL
 CPU OTHER
 CPU PRIORITY
@@ -3631,6 +3635,7 @@ WINDOW SIZE
 WINDOW SIZE:
 WINDOWED
 WINDOWS
+WINDOWS + LINUX, WITH PRIORITIZE GAME ON;
 WINDOWS GAME MODE IS OFF
 WINDOWS IS ON THE POWER SAVER PLAN
 WINDOWS ONLY
@@ -3639,7 +3644,6 @@ WINDOWS RAW INPUT, NO MOUSE ACCEL
 WINDOWS SETTINGS > GAMING > GAME MODE: ON
 WINDOWS SETTINGS > SYSTEM > DISPLAY > GRAPHICS > QUARK: HIGH PERFORMANCE
 WINDOWS SETTINGS > SYSTEM > POWER: POWER MODE BEST PERFORMANCE
-WINDOWS, WITH PRIORITIZE GAME ON;
 WINNER STAYS
 WINNER STAYS - 1v1 rounds on one ruleset while everyone else waits in line. Each round's winner stays; the loser goes to the back of the line and the next in line plays the winner. Every round you win counts: first to 10 wins.
 WINNER STAYS - FIRST TO
@@ -4131,6 +4135,7 @@ practice: position saved
 practice: you take damage again
 practice: you take no damage
 press ESC again to leave the session
+prioritize: Linux allowed nice #, not # (needs CAP_SYS_NICE or an RLIMIT_NICE allowance)
 prioritize: Windows refused the GPU scheduling class (NTSTATUS 0x#)
 proj # type # owner # pos # # # vel # # #
 proj # type # owner # pos # # # vel # # #{}

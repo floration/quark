@@ -3382,6 +3382,9 @@ void Game::drawWorld(float alpha) {
         else if (mt == WPN_KNIFE) mp = (float)time_ * 25.0f;                                     // spins end over end
         else if (mt == WPN_BUBBLE) { wob = 0.03f * std::sin((float)time_ * 14 + pr.id); my = mp = 0; }   // wobbles
         else if (mt == MODEL_PROJ_ORB) my = mp = 0;
+        // FULLBRIGHT (player request, 2026-11-22: "fullbright projectiles"): flat and unlit like the world, so a rocket
+        // in shadow or far off is its full team colour (a negative sun visibility: the dynamic shader's unlit path)
+        const float projSv = cfg_.fullbright ? -1.0f : 1.0f;
         ModelPalette ppal;
         ppal.c[TINT_TEAM] = col;
         ppal.c[TINT_GLOW] = r_.glowColor;
@@ -3396,17 +3399,17 @@ void Game::drawWorld(float alpha) {
                 const float sx = 1.0f + wob / 0.17f;   // (the box bubble's radius 0.17 + wob across, 0.17 up)
                 xf.m[0] *= sx; xf.m[10] *= sx;
             }
-            r_.mesh(*ov, xf, tint, 1.0f);
+            r_.mesh(*ov, xf, tint, projSv);
             if (mt == WPN_ROCKET) {
                 rocketFlameParts(fl, parts_);
-                for (const ModelPart& q : parts_) r_.boxPitched(pr.pos, q.c, q.h, my, mp, q.color, 1.0f);
+                for (const ModelPart& q : parts_) r_.boxPitched(pr.pos, q.c, q.h, my, mp, q.color, projSv);
             }
         } else {
             if (const ModelParts* bx = boxOverride(MODEL_PROJECTILE, mt)) overrideBoxParts(MODEL_PROJECTILE, mt, *bx, ppal, 1.0f, parts_);   // (still: no flicker / blink / wobble)
             else projectileParts(mt, ppal, fl, core, wob, parts_);
             for (const ModelPart& q : parts_) {
                 if (q.alpha < 1) r_.translucentBox({pr.pos + q.c - q.h, pr.pos + q.c + q.h}, rgba(q.color, q.alpha));
-                else r_.boxPitched(pr.pos, q.c, q.h, my, mp, q.color, 1.0f);
+                else r_.boxPitched(pr.pos, q.c, q.h, my, mp, q.color, projSv);
             }
         }
         if (cfg_.trails == 0 || cfg_.trailOpacity < 0.01f) return;   // (MORE 2: TRAILS off / short / full, and their opacity)
@@ -7787,6 +7790,14 @@ void Game::drawVideoSettings(const SetLayout& L) {
         setGamePriority(prioLevel(glfwGetWindowAttrib(win_, GLFW_FOCUSED) != 0));
     f.next();
     f.hint("GPU + CPU GO TO THE GAME FIRST WHILE FOCUSED", "(BROWSER VIDEOS, ELECTRON APPS WAIT)");
+#elif defined(__linux__)
+    f.y -= 16;
+    f.hint("", keyOf(A_PERF) + " SHOWS INPUT->FRAME LATENCY");
+    // (player request, 2026-11-22: CPU priority on Linux too: the game's nice, setGamePriority)
+    if (ui_.toggle(f.x(), f.top(), w, h, "PRIORITIZE GAME", cfg_.prioritize, UiExp::cfg("prioritize")) && !uiTest_)
+        setGamePriority(prioLevel(glfwGetWindowAttrib(win_, GLFW_FOCUSED) != 0));
+    f.next();
+    f.hint("CPU GOES TO THE GAME FIRST WHILE FOCUSED", "(NICE; RAISING IT NEEDS PERMISSION: F3 SAYS)");
 #else
     f.y -= 16;
     f.hint("", keyOf(A_PERF) + " SHOWS INPUT->FRAME LATENCY");
@@ -9084,7 +9095,7 @@ void Game::drawMoreSettings(const SetLayout& L) {
             if (!uiTest_) setGamePriority(prioLevel(glfwGetWindowAttrib(win_, GLFW_FOCUSED) != 0));
         }
         g.next();
-        g.hint("WINDOWS, WITH PRIORITIZE GAME ON;", "HIGH CAN SLOW OTHER PROGRAMS");
+        g.hint("WINDOWS + LINUX, WITH PRIORITIZE GAME ON;", "HIGH CAN SLOW OTHER PROGRAMS");
         g.section("PRESET");   // a starting point: shadows, anti-aliasing, render scale, fog and effects at once
         {
             videoPresetCycle(g.x(), g.top(), w, h);
@@ -12355,7 +12366,7 @@ void Game::drawPerf() {
     float ts = std::max(1.0f, std::round(s * 2.0f));
     // (stage 1: the FPS line; 2: + worst frame / ping / 3D size and version / server; 3: all, the graph under them)
     const std::string* lines[5] = {&perfText_, &perfText2_, &perfTick_, &latText_, &perfPrio_};
-    const int nl = perfStage_ == 1 ? 1 : perfStage_ == 2 ? 3 : perfPrio_.empty() ? 4 : 5;   // (the priority line: Windows only)
+    const int nl = perfStage_ == 1 ? 1 : perfStage_ == 2 ? 3 : perfPrio_.empty() ? 4 : 5;   // (the priority line: Windows and Linux)
     const float lh = r_.textHeight(ts) + 4 * s, x = 24 * s, y = 8 * s, maxW = 372 * s - 16 * s;
     float lw[5], w = 0;
     for (int i = 0; i < nl; i++) w = std::max(w, lw[i] = r_.textWidth(*lines[i], ts));

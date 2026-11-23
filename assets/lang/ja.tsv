@@ -83,6 +83,7 @@
 (IT AFFECTS GAMEPLAY)	(ゲームプレイに影響)
 (LEAVE)	(退出)
 (MISSING)	(なし)
+(NICE; RAISING IT NEEDS PERMISSION: F3 SAYS)	(NICE。上げるには許可が必要: F3で確認)
 (NOT IN RANKED)	(ランク以外)
 (PUBLIC)	(公開)
 (REFRESH - 3)	(更新 - 3)
@@ -673,9 +674,12 @@ COUNTDOWN: A TICK EACH OF THE LAST 10 S	カウントダウン: 最後の10秒に
 CP	CP
 CPU	CPU
 CPU ABOVE NORMAL	CPU 通常以上
+CPU GOES TO THE GAME FIRST WHILE FOCUSED	フォーカス中はCPUをゲーム優先
 CPU HIGH	CPU 高
 CPU LATCH	CPU LATCH
 CPU LATE LATCH	CPU 遅延読み取り
+CPU NICE #	CPU NICE #
+CPU NICE # (WANTED #: NO PERMISSION)	CPU NICE # (要求 #: 許可なし)
 CPU NORMAL	CPU 通常
 CPU OTHER	CPU その他
 CPU PRIORITY	CPU優先度
@@ -3631,6 +3635,7 @@ WINDOW SIZE	ウィンドウサイズ
 WINDOW SIZE:	ウィンドウサイズ:
 WINDOWED	ウィンドウ
 WINDOWS	WINDOWS
+WINDOWS + LINUX, WITH PRIORITIZE GAME ON;	WINDOWS + LINUX、ゲーム優先オン時;
 WINDOWS GAME MODE IS OFF	WINDOWS のゲームモードがオフ
 WINDOWS IS ON THE POWER SAVER PLAN	WINDOWS が省電力プラン
 WINDOWS ONLY	WINDOWS のみ
@@ -3639,7 +3644,6 @@ WINDOWS RAW INPUT, NO MOUSE ACCEL	WINDOWS の RAW INPUT, マウス加速なし
 WINDOWS SETTINGS > GAMING > GAME MODE: ON	WINDOWS の設定 > ゲーム > ゲームモード: オン
 WINDOWS SETTINGS > SYSTEM > DISPLAY > GRAPHICS > QUARK: HIGH PERFORMANCE	WINDOWS の設定 > システム > ディスプレイ > グラフィックス > QUARK: 高パフォーマンス
 WINDOWS SETTINGS > SYSTEM > POWER: POWER MODE BEST PERFORMANCE	WINDOWS の設定 > システム > パワー: 最適なパフォーマンス
-WINDOWS, WITH PRIORITIZE GAME ON;	WINDOWS、ゲーム優先オン時;
 WINNER STAYS	勝ち残り
 WINNER STAYS - 1v1 rounds on one ruleset while everyone else waits in line. Each round's winner stays; the loser goes to the back of the line and the next in line plays the winner. Every round you win counts: first to 10 wins.	勝ち残り - 1つのルールで1v1ラウンド、他の全員は順番待ち。各ラウンドの勝者は残り、敗者は列の最後尾へ、次の人が勝者と対戦。勝ったラウンドはすべてカウント: 10勝先取で勝利。
 WINNER STAYS - FIRST TO	勝ち残り - 先取
@@ -4131,6 +4135,7 @@ practice: position saved	練習: 位置を保存しました
 practice: you take damage again	練習: 再びダメージを受けます
 practice: you take no damage	練習: ダメージを受けません
 press ESC again to leave the session	もう一度ESCでセッションを退出
+prioritize: Linux allowed nice #, not # (needs CAP_SYS_NICE or an RLIMIT_NICE allowance)	prioritize: Linux allowed nice #, not # (needs CAP_SYS_NICE or an RLIMIT_NICE allowance)
 prioritize: Windows refused the GPU scheduling class (NTSTATUS 0x#)	優先: WindowsがGPUスケジューリングクラスを拒否しました (NTSTATUS 0x#)
 proj # type # owner # pos # # # vel # # #	proj # type # owner # pos # # # vel # # #
 proj # type # owner # pos # # # vel # # #{}	proj # type # owner # pos # # # vel # # #{}

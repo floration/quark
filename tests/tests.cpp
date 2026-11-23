@@ -10053,6 +10053,68 @@ static void testBotFalls(uint16_t port) {
     std::remove(path.c_str());
 }
 
+// Knocked off the edge (a player report, 2026-11-23: on Black Hole, a lone floating platform over the void, bots were
+// killed by just knocking them off): a bot falling where nothing below would catch it hooks back onto the ground
+// with the grapple, when the rules give it one and it's off cooldown. A bot alone on Black Hole in free for all
+// (normal gravity), put just past each side's edge moving outward as a push leaves it (the four sides, three spots on
+// each, a soft and a hard push), at each level. Returns the landings out of the trials. (Before: none, at any level.)
+static int botRecoverTrials(uint16_t port, int skill, int& trials) {
+    SimClock clock;
+    qsrand(0xB1AC4u + (uint32_t)skill);
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "blackhole"; cfg.mode = MODE_FFA; cfg.port = port; cfg.autoStart = false; cfg.balanceBots = false;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return 0; } }
+    const int bot = s.addBot(TEAM_A, skill);
+    CHECK(bot >= 0);
+    if (bot < 0) { s.stop(); return 0; }
+    simNavReady(s);
+    simRun(s, 1.0);
+    int landed = 0;
+    trials = 0;
+    const ServerPlayer& p = s.players_[bot];
+    for (int side = 0; side < 4; side++)
+        for (int spot = -1; spot <= 1; spot++)
+            for (int hard = 0; hard < 2; hard++) {
+                for (int k = 0; k < 200 && !p.alive; k++) simRun(s, 0.05);   // (back from the last fall)
+                if (!p.alive) continue;
+                simRun(s, 0.3);
+                // just over the edge (the floor is 40 x 20 m, its top at y 0), moving out and a little up
+                const Vec3 out = side == 0 ? Vec3(1, 0, 0) : side == 1 ? Vec3(-1, 0, 0) : side == 2 ? Vec3(0, 0, 1) : Vec3(0, 0, -1);
+                const Vec3 along = {-out.z, 0, out.x};
+                const Vec3 at = out * (side < 2 ? 20.6f : 10.6f) + along * (spot * (side < 2 ? 6.0f : 12.0f)) + Vec3(0, 0.2f, 0);
+                MoveState& m = s.players_[bot].move;
+                m.pos = at;
+                m.vel = out * (hard ? 12.0f : 6.0f) + along * (spot * 2.0f) + Vec3(0, hard ? 4.0f : 2.0f, 0);
+                m.flags &= (uint8_t)~(MF_ONGROUND | MF_HOOKED);
+                m.hookCooldown = 0;
+                trials++;
+                bool died = false, back = false;   // (back on the floor at some point, and alive at the end)
+                for (int k = 0; k < 120 && !died; k++) {   // (6 s: the void is 2 s of falling down; one left hanging falls later)
+                    simRun(s, 0.05, [&] { back |= p.alive && (p.move.flags & MF_ONGROUND) && p.move.pos.y > -0.5f; });   // (every tick: a bunny hop touches down for one)
+                    died = !p.alive;
+                }
+                landed += !died && back;
+            }
+    s.stop();
+    return landed;
+}
+static void testBotRecoverHook(uint16_t port) {
+    printf("bots knocked off an edge hook back on\n");
+    // Most experts make it; the lower levels' slower hands miss more of the moment (just off the edge and still level
+    // with it, a pull to one of the four pillars, or once it has fallen a few metres, one up the side, lands it; in
+    // between, nothing on that bare rock does): at least 3 in 4 experts, 1 in 2 advanced, 1 in 3 intermediate and
+    // 1 in 4 beginners (2026-11-23: 21, 16, 13 and 8 of 24)
+    const char* names[BOT_SKILLS] = {"beginner", "intermediate", "advanced", "expert"};
+    const int need[BOT_SKILLS] = {6, 8, 12, 18};
+    for (int skill = 0; skill < BOT_SKILLS; skill++) {
+        int trials = 0, landed = botRecoverTrials((uint16_t)(port + skill), skill, trials);
+        printf("  %-12s %d of %d back on the floor\n", names[skill], landed, trials);
+        CHECK(trials == 24 && landed >= need[skill]);
+    }
+}
+
 // Team order (a map worker, 2026-10-30: "the team listed second scores about 3% more"): one seeded match of expert
 // bots, team A's n added before team B's or after them (so A has the low slot ids or the high ones); team A's score
 // and kills, and both teams' totals.
@@ -10900,7 +10962,7 @@ int main(int argc, char** argv) {
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); testWinnerStays(TP(28522)); testWinnerStaysMode(TP(28523)); testRotateEveryRound(TP(28524)); testAccuracyPerWeapon(); }},
         {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testFlyMove(); testGrappleAgainstWall(); testAcid(); testProjectilesDissolve(); testLiquids(); testFeatureBlocks(); testStrafeEase(); testSeeThrough(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testModeSpawnSets(); testMapFix(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
-        {"botfalls", [] { testBotFalls(TP(29060)); }},
+        {"botfalls", [] { testBotFalls(TP(29060)); testBotRecoverHook(TP(29064)); }},
         {"bombsites", [] { testBombSites(TP(29090)); testPlantKnockback(TP(29091)); }},
         {"ball", [] { testBallMode(TP(29092)); }},
         {"tickorder", [] { testTickOrder(TP(29096)); }},

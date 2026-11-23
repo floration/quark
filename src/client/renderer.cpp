@@ -257,7 +257,14 @@ void main() {
         // (the outline takes WORLD OUTLINE's colour, as without fullbright; uWorldEdge is linear and this path writes
         // sRGB, so back to sRGB: black, the default, stays black)
         float o = (mat >= 4 && mat < 8) || mat == 11 ? 1.0 : outline(vEdge, uOutlineW);
-        fragColor = vec4(o >= 1.0 ? uFullColor * g : mix(pow(uWorldEdge, vec3(1.0 / 2.2)), uFullColor * g, o), 1.0);
+        vec3 fc = uFullColor * g;
+        // (player request, 2026-11-22: "make water somewhat visible with fullbright": a pool was the flat colour at half,
+        // a grey slab like any shadowed face, and lava nearly white. Each liquid gets its hue over the flat colour,
+        // still flat and unlit, so a pit reads as water / lava / acid at a glance)
+        if (mat == 6) fc = mix(uFullColor * 0.85, vec3(0.20, 0.50, 0.90), 0.6);
+        else if (mat == 7) fc = mix(uFullColor * 0.9, vec3(1.00, 0.40, 0.10), 0.65);
+        else if (mat == 11) fc = mix(uFullColor * 0.9, vec3(0.40, 0.95, 0.15), 0.6);
+        fragColor = vec4(o >= 1.0 ? fc : mix(pow(uWorldEdge, vec3(1.0 / 2.2)), fc, o), 1.0);
         return;
     }
     if ((mat >= 4 && mat < 8) || mat == 11) { // glow trim / far scenery / water / lava / acid: unlit, skip everything below
@@ -618,6 +625,10 @@ vec3 grade(vec3 c) {
 }
 out vec4 fragColor;
 void main() {
+    if (vColor.a < 0.0) {   // FULLBRIGHT's projectiles (sunVis < 0: Game::drawProj): their colour flat, unlit, no fog, outlined
+        fragColor = vec4(dith(pow(mix(vOutline, vColor.rgb, outline(vEdge, vOutlineW)), vec3(1.0 / 2.2))), 1.0 - uFade);
+        return;
+    }
     float sh = uReceiveShadow != 0 ? shadowAt(vShadow) : 1.0;
     float ndl = max(dot(normalize(vN), uSunDir), 0.0);
     vec3 light = uSkyColor * (0.6 + 0.25 * vN.y) + uSunColor * ndl * vColor.a * sh;

@@ -34,6 +34,9 @@ struct BotAwareness {
     double hurtNoticed = -1e9; // the hit from it (ServerPlayer::lastHitByAt) last turned to (X11)
 };
 
+// A whole walkable top (bots: where a knocked-off bot hooks back on): its rectangle and height.
+struct BotTop { float x0 = 0, z0 = 0, x1 = 0, z1 = 0, y = 0; };
+
 struct BotBrain {
     int skill = BOT_INTERMEDIATE;
     uint32_t rng = 1;
@@ -69,6 +72,13 @@ struct BotBrain {
     Vec3 hookAnchor;
     bool hookChecked = false;   // the grapple's catch was checked again (safeHook) from where it caught
     double fightHookUntil = 0;  // fighting: hooking the target (held while the aim is on them) until then
+    // knocked off: falling where nothing below catches it, hooking back onto the ground (recoverAnchor, getting it onto
+    // recoverTop) until it lands or this runs out; nextRecoverLook: when it next looks whether it's falling to its death
+    double recoverUntil = 0, nextRecoverLook = 0;
+    Vec3 recoverAnchor;
+    BotTop recoverTop;
+    bool recoverReady = false;    // ...a pull from the anchor lands it (fires when the aim gets there; else only aims)
+    bool recoverCaught = false;   // ...and the hook has caught (held for the pull, then the flight in: no new aim)
     double nextDecision = 0;    // fight movement choices (jump, dash) are rolled at a fixed game-time rate
     bool nearEdge = false;      // a drop into the void / lava within 3 m (looked for at 20 Hz)
     bool edgeFar = false;       // ...or only within 5 m

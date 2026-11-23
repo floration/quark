@@ -83,6 +83,7 @@
 (IT AFFECTS GAMEPLAY)	(OYNANIŞI ETKİLER)
 (LEAVE)	(AYRIL)
 (MISSING)	(EKSİK)
+(NICE; RAISING IT NEEDS PERMISSION: F3 SAYS)	(NICE; YÜKSELTMEK İZİN İSTER: F3 GÖSTERİR)
 (NOT IN RANKED)	(DERECELİDE YOK)
 (PUBLIC)	(AÇIK)
 (REFRESH - 3)	(YENİLE - 3)
@@ -673,9 +674,12 @@ COUNTDOWN: A TICK EACH OF THE LAST 10 S	GERİ SAYIM: SON 10 SN HER SANİYE BİR 
 CP	KN
 CPU	CPU
 CPU ABOVE NORMAL	CPU NORMALİN ÜSTÜ
+CPU GOES TO THE GAME FIRST WHILE FOCUSED	ODAKTAYKEN CPU ÖNCE OYUNA
 CPU HIGH	CPU YÜKSEK
 CPU LATCH	CPU LATCH
 CPU LATE LATCH	CPU GEÇ OKUMA
+CPU NICE #	CPU NICE #
+CPU NICE # (WANTED #: NO PERMISSION)	CPU NICE # (İSTENEN #: İZİN YOK)
 CPU NORMAL	CPU NORMAL
 CPU OTHER	CPU DİĞER
 CPU PRIORITY	CPU ÖNCELİĞİ
@@ -3631,6 +3635,7 @@ WINDOW SIZE	PENCERE BOYUTU
 WINDOW SIZE:	PENCERE BOYUTU:
 WINDOWED	PENCERELİ
 WINDOWS	WINDOWS
+WINDOWS + LINUX, WITH PRIORITIZE GAME ON;	WİNDOWS + LINUX, OYUNA ÖNCELİK VER AÇIKKEN;
 WINDOWS GAME MODE IS OFF	WINDOWS OYUN MODU KAPALI
 WINDOWS IS ON THE POWER SAVER PLAN	WINDOWS GÜÇ TASARRUFU PLANINDA
 WINDOWS ONLY	SADECE WINDOWS
@@ -3639,7 +3644,6 @@ WINDOWS RAW INPUT, NO MOUSE ACCEL	WINDOWS RAW INPUT, FARE İVMESİ YOK
 WINDOWS SETTINGS > GAMING > GAME MODE: ON	WINDOWS AYARLARI > OYUN > OYUN MODU: AÇIK
 WINDOWS SETTINGS > SYSTEM > DISPLAY > GRAPHICS > QUARK: HIGH PERFORMANCE	WINDOWS AYARLARI > SİSTEM > EKRAN > GRAFİK > QUARK: YÜKSEK PERFORMANS
 WINDOWS SETTINGS > SYSTEM > POWER: POWER MODE BEST PERFORMANCE	WINDOWS AYARLARI > SİSTEM > GÜÇ: EN İYİ PERFORMANS
-WINDOWS, WITH PRIORITIZE GAME ON;	WİNDOWS, OYUNA ÖNCELİK VER AÇIKKEN;
 WINNER STAYS	KAZANAN KALIR
 WINNER STAYS - 1v1 rounds on one ruleset while everyone else waits in line. Each round's winner stays; the loser goes to the back of the line and the next in line plays the winner. Every round you win counts: first to 10 wins.	KAZANAN KALIR - herkes sırada beklerken tek kural setinde 1v1 raundlar. Her raundun galibi kalır; kaybeden sıranın sonuna gider ve sıradaki galiple oynar. Kazandığın her raund sayılır: 10 alan kazanır.
 WINNER STAYS - FIRST TO	KAZANAN KALIR - İLK
@@ -4131,6 +4135,7 @@ practice: position saved	antrenman: konum kaydedildi
 practice: you take damage again	antrenman: yine hasar alıyorsun
 practice: you take no damage	antrenman: hasar almıyorsun
 press ESC again to leave the session	oturumdan ayrılmak için tekrar ESC'ye bas
+prioritize: Linux allowed nice #, not # (needs CAP_SYS_NICE or an RLIMIT_NICE allowance)	prioritize: Linux allowed nice #, not # (needs CAP_SYS_NICE or an RLIMIT_NICE allowance)
 prioritize: Windows refused the GPU scheduling class (NTSTATUS 0x#)	öncelik: Windows GPU zamanlama sınıfını reddetti (NTSTATUS 0x#)
 proj # type # owner # pos # # # vel # # #	proj # type # owner # pos # # # vel # # #
 proj # type # owner # pos # # # vel # # #{}	proj # type # owner # pos # # # vel # # #{}

@@ -1,5 +1,10 @@
 # Next
 
+## Player suggestions (dima)
+- **Fullbright projectiles:** with FULLBRIGHT on, rockets, stickies, knives, syringes, bolts, bubbles and orbs are drawn flat in their full colour like the map, with no shading or fog, so they stand out in dark corners and far away.
+- **Water, lava and acid show under fullbright:** they were a flat grey (lava nearly white). Now each keeps its colour (blue, orange, green) over the fullbright colour.
+- **CPU priority on Linux:** PRIORITIZE GAME and CPU PRIORITY now work on Linux, using the game's nice value while it has focus. Raising it needs permission (CAP_SYS_NICE, or a nice limit in limits.conf, which gamemode sets up). F3 shows the nice value you got.
+
 ## Netcode
 - **Your hits show at once at any ping:** the hit flash, hitsound and damage number appear the moment you land a hit, instead of a round trip later when the server answered. The server's answer no longer shows them a second time; only damage the server adds on its own (stickies, your own blasts) still shows when it answers.
 - **Your rockets explode on the wall at high ping:** your own rocket, bolt or knife copy now waits as long as your ping needs for the server's, so a rocket no longer sits on the wall waiting for the server's explosion.
@@ -65,3 +70,6 @@
 
 ## Discord
 - **Discord status:** while Quark runs, your Discord profile can show what you're playing: the map's picture and name, the mode (with "Ranked" on ranked), the score with your side first (or your place, like "2nd of 8", in free for all and race), the server's name and player count, and how long you've been on that server. In the menus it says what you're doing (browsing servers, in settings, editing a map, watching a demo, ...). It needs the Discord app open on the same computer, and nothing is sent anywhere else. GAMEPLAY > MORE 4: DISCORD STATUS turns it off (your status clears at once) and SHOW SERVER NAME shows just "Online" instead of the server; STREAMER MODE hides the server too.
+
+## Bots
+- **Bots hook back on when knocked off an edge:** a bot pushed off a ledge over a pit or the void (Black Hole's platform, any map with a drop) now fires its grapple at the ground, a wall or a pillar it can reach, holds it until the pull lifts it over the edge and steers back on, instead of falling to its death. Only where the rules give the grapple (not run-only or race) and when its hook is off cooldown; slower bot levels aim slower, so they save themselves less often.

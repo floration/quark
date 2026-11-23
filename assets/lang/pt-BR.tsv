@@ -83,6 +83,7 @@
 (IT AFFECTS GAMEPLAY)	(AFETA A JOGABILIDADE)
 (LEAVE)	(SAIR)
 (MISSING)	(FALTANDO)
+(NICE; RAISING IT NEEDS PERMISSION: F3 SAYS)	(NICE; AUMENTAR EXIGE PERMISSÃO: F3 MOSTRA)
 (NOT IN RANKED)	(FORA DA RANQUEADA)
 (PUBLIC)	(PÚBLICO)
 (REFRESH - 3)	(ATUALIZAR - 3)
@@ -673,9 +674,12 @@ COUNTDOWN: A TICK EACH OF THE LAST 10 S	CONTAGEM: UM TIQUE A CADA UM DOS ÚLTIMO
 CP	CP
 CPU	CPU
 CPU ABOVE NORMAL	CPU ACIMA DO NORMAL
+CPU GOES TO THE GAME FIRST WHILE FOCUSED	A CPU PRIORIZA O JOGO EM FOCO
 CPU HIGH	CPU ALTA
 CPU LATCH	CPU LATCH
 CPU LATE LATCH	LEITURA TARDIA CPU
+CPU NICE #	CPU NICE #
+CPU NICE # (WANTED #: NO PERMISSION)	CPU NICE # (PEDIDO #: SEM PERMISSÃO)
 CPU NORMAL	CPU NORMAL
 CPU OTHER	CPU OUTROS
 CPU PRIORITY	PRIORIDADE DA CPU
@@ -3631,6 +3635,7 @@ WINDOW SIZE	TAM. JANELA
 WINDOW SIZE:	TAM. JANELA:
 WINDOWED	JANELA
 WINDOWS	WINDOWS
+WINDOWS + LINUX, WITH PRIORITIZE GAME ON;	WINDOWS + LINUX, COM PRIORIZAR O JOGO LIGADO;
 WINDOWS GAME MODE IS OFF	O MODO DE JOGO DO WINDOWS ESTÁ DESLIGADO
 WINDOWS IS ON THE POWER SAVER PLAN	O WINDOWS ESTÁ NO PLANO ECONOMIA DE ENERGIA
 WINDOWS ONLY	SÓ WINDOWS
@@ -3639,7 +3644,6 @@ WINDOWS RAW INPUT, NO MOUSE ACCEL	RAW INPUT DO WINDOWS, SEM ACEL. DO MOUSE
 WINDOWS SETTINGS > GAMING > GAME MODE: ON	CONFIGURAÇÕES DO WINDOWS > JOGOS > MODO DE JOGO: LIGADO
 WINDOWS SETTINGS > SYSTEM > DISPLAY > GRAPHICS > QUARK: HIGH PERFORMANCE	CONFIGURAÇÕES DO WINDOWS > SISTEMA > VÍDEO > GRÁFICOS > QUARK: ALTO DESEMPENHO
 WINDOWS SETTINGS > SYSTEM > POWER: POWER MODE BEST PERFORMANCE	CONFIGURAÇÕES DO WINDOWS > SISTEMA > ENERGIA: MELHOR DESEMPENHO
-WINDOWS, WITH PRIORITIZE GAME ON;	WINDOWS, COM PRIORIZAR O JOGO LIGADO;
 WINNER STAYS	VENCEDOR FICA
 WINNER STAYS - 1v1 rounds on one ruleset while everyone else waits in line. Each round's winner stays; the loser goes to the back of the line and the next in line plays the winner. Every round you win counts: first to 10 wins.	VENCEDOR FICA - rodadas 1v1 com um conjunto de regras enquanto os outros esperam na fila. O vencedor de cada rodada fica; o perdedor vai para o fim da fila e o próximo enfrenta o vencedor. Toda rodada vencida conta: primeiro a 10 vence.
 WINNER STAYS - FIRST TO	VENCEDOR FICA - PRIMEIRO A
@@ -4131,6 +4135,7 @@ practice: position saved	treino: posição salva
 practice: you take damage again	treino: você sofre dano de novo
 practice: you take no damage	treino: você não sofre dano
 press ESC again to leave the session	aperte ESC de novo para sair da sessão
+prioritize: Linux allowed nice #, not # (needs CAP_SYS_NICE or an RLIMIT_NICE allowance)	prioritize: Linux allowed nice #, not # (needs CAP_SYS_NICE or an RLIMIT_NICE allowance)
 prioritize: Windows refused the GPU scheduling class (NTSTATUS 0x#)	priorizar: o Windows recusou a classe de agendamento da GPU (NTSTATUS 0x#)
 proj # type # owner # pos # # # vel # # #	proj # type # owner # pos # # # vel # # #
 proj # type # owner # pos # # # vel # # #{}	proj # type # owner # pos # # # vel # # #{}

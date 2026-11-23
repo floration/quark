@@ -853,6 +853,192 @@ bool safeHook(const Server& s, const ServerPlayer& me, const Vec3& anchor) {
     return true;
 }
 
+// Falling to its death (maps with pits or lava; a player report, 2026-11-23: on Black Hole bots were killed by just
+// knocking them off the edge): nothing safe under it, and its flight for the next 1.2 s (gravity only, no air control;
+// 0.15 s steps, each step's segment raycast so a wall or floor on the way is met, not skipped) meets nothing safe to
+// stand on. The first probe is one ray: an airborne bot over the floor (a hop, a fight jump) stops there.
+bool fallingToDeath(const Server& s, const MoveState& m, float g) {
+    if (safeDrop(s, m.pos + Vec3(0, 0.3f, 0))) return false;   // (where it is, not ahead: ahead can be inside the rock)
+    Vec3 p = m.pos + Vec3(0, 0.3f, 0), v = m.vel;
+    const float dt = 0.15f;
+    for (int k = 0; k < 8; k++) {
+        Vec3 d = v * dt + Vec3(0, -0.5f * g * dt * dt, 0);
+        v.y -= g * dt;
+        float len = length(d);
+        Vec3 n;
+        float t = len > 1e-4f ? s.map_.raycast(p, d / len, len, &n) : -1;
+        if (t >= 0) return !(n.y > 0.7f && safeDrop(s, p + d * (t / len) + Vec3(0, 0.3f, 0)));   // (a wall: slides down it)
+        p += d;
+        if (p.y < s.map_.killY()) return true;
+    }
+    return !safeDrop(s, p);
+}
+
+// (safe ground at about height y under p: that top itself, not a floor further down)
+bool topAt(const Server& s, const Vec3& p, float y) {
+    const Vec3 at = {p.x, y + 0.4f, p.z};
+    return s.map_.raycastAny(at, {0, -1, 0}, 0.8f) && safeDrop(s, at);
+}
+
+// (a catch at h, hooked from `from`, gets it onto top r: on the top, or on its side within a metre of it (from under
+// the edge: the pull up the side flings it over), with the top on past it, the way the pull goes, and a step either
+// side of that, to come down on (a catch near another edge, or on a side over another pit, would fling it off again);
+// or on something standing on the top, higher up (a wall, a pillar: pulled up and in, over the edge with room to spare),
+// with the top in front of it)
+bool recoverCatch(const Server& s, const BotTop& r, const Vec3& from, const Vec3& h) {
+    Vec3 in = {h.x - from.x, 0, h.z - from.z};
+    float l = length(in);
+    if (l < 0.1f) return false;   // (straight up or down: no way in)
+    in = in / l;
+    const Vec3 side = {-in.z, 0, in.x};
+    if (h.y > r.y + 0.8f)   // (higher: over the top, and the top just in front of it)
+        return h.y < r.y + 10.0f && h.x > r.x0 && h.x < r.x1 && h.z > r.z0 && h.z < r.z1 && topAt(s, h - in * 0.8f, r.y) && topAt(s, h - in * 2.0f, r.y);
+    const float pad = 0.7f;   // (the side faces: just outside the rectangle)
+    if (!(h.x > r.x0 - pad && h.x < r.x1 + pad && h.z > r.z0 - pad && h.z < r.z1 + pad && h.y > r.y - 1.0f && h.y < r.y + 0.3f)) return false;
+    // (on the top: not right at the lip either. A catch there pulls the hull into the lip's corner, where it hangs)
+    if (h.y > r.y - 0.05f && !topAt(s, h - in * 1.0f, r.y)) return false;
+    return topAt(s, h + in * 1.5f, r.y) && topAt(s, h + in * 3.0f, r.y) && topAt(s, h + in * 1.5f + side * 1.5f, r.y) && topAt(s, h + in * 1.5f - side * 1.5f, r.y);
+}
+
+// Hooked back on toward top r: when to let go. Over it (at its height or above, with the top under it and under where
+// its speed takes it in a third of a second: not still swinging out). Not sooner: from under the edge the pull up the
+// side is also what carries it in over the top once it's up past the edge (rising past it is no landing: let go there
+// and it goes up and down beside the edge; pmove lets go by itself at the anchor).
+bool recoverLetGo(const Server& s, const BotTop& r, const Vec3& p, const Vec3& v) {
+    const Vec3 hv = {v.x, 0, v.z};
+    return p.y > r.y - 0.1f && topAt(s, p, r.y) && topAt(s, p + hv * 0.35f, r.y);
+}
+
+// A grapple pull toward `anchor` from where the bot is, as it moves now, let go where botThink lets go of it
+// (recoverLetGo, or pmove's own release when it gets there), then its flight on: does it come down on top r?
+// Simulated roughly as safeHook does (the pull, its top speed, the hook's lighter gravity, sliding along what it runs
+// into; 50 ms steps), the path a ray half a metre over the feet (what the hull steps up onto in the air is no wall),
+// for up to 2.5 s: a ray a step.
+bool pullLands(const Server& s, const ServerPlayer& me, const Vec3& anchor, const BotTop& r, float g) {
+    MoveTuning scratch;
+    const auto& mt = stepTuning(me.move, &s.map_, scratch).m;
+    const float accel = 38.0f * mt[MV_HOOK_ACCEL], top = 24.0f * mt[MV_HOOK_MAX], release = 1.2f * mt[MV_HOOK_RELEASE];
+    const float hookG = g * 0.5f * mt[MV_HOOK_GRAVITY];   // (pmove.cpp: kHookAccel, kHookMaxSpeed, kHookRelease, kHookGravityScale)
+    Vec3 p = me.move.pos, v = me.move.vel;
+    bool hooked = true;
+    const float dt = 0.05f, kHull = kPlayerHalfWidth;
+    for (int k = 0; k < 50; k++) {
+        Vec3 to = anchor - (p + Vec3(0, 1.0f, 0));
+        float dist = length(to);
+        if (hooked && (dist < release || recoverLetGo(s, r, p, v))) hooked = false;
+        if (hooked) {
+            float before = length(v);
+            v += to / dist * (accel * dt);
+            float sp = length(v), cap = std::max(top, before);
+            if (sp > cap) v = v * (cap / sp);
+            v.y -= hookG * dt;
+        } else v.y -= g * dt;
+        const Vec3 from = p + Vec3(0, 0.5f, 0), step = v * dt;
+        const float len = length(step);
+        Vec3 n;
+        // (the ray reaches on past the step by the hull's half width: the hull meets a wall, or the lip, that much
+        // before its middle does)
+        float t = len > 1e-4f ? s.map_.raycast(from, step / len, len + kHull, &n) : -1;
+        if (t >= 0 && n.y > 0.7f) return topAt(s, from + step * (t / len), r.y);   // (came down on something: that top?)
+        if (t >= 0) {   // a wall in the way: up to it, then sliding along it
+            p += step * (std::max(t - kHull - 0.05f, 0.0f) / len);
+            float into = dot(v, n);
+            if (into < 0) v = v - n * into;
+            continue;
+        }
+        p += step;
+        if ((!hooked && v.y < 0 && p.y < r.y - 1.0f) || p.y < s.map_.killY()) return false;   // (past it, falling)
+    }
+    return false;
+}
+
+// Where to hook to get back onto the ground from the air: the nearest walkable tops in the grapple's reach (whole
+// tops: the nav pieces of one brush's top together, not the pieces it's cut into round what stands on it), each tried
+// at: what stands on it (a pillar, a crate, a wall: the nav tops over it, aimed just under their tops), or 3 m over it
+// 6 and 16 m in (a pull up and in clears the edge with room to spare: on bare rock, a level one sinks the bot under
+// the lip on the way); the floor itself far in (the pull's nearly level: a near one pulls down into the lip), 6 m in
+// and 3 m in (a pull that ends there lands on it, not past it); and its side just under the edge nearest the bot
+// (fallen below it: a pull up the side flings it over). Each catch must be one recoverCatch takes, and the first whose
+// pull lands (pullLands) is the one: 2. None lands yet (coming off the edge, or not yet far enough under it): the side,
+// or else the first catch, to aim at meanwhile: 1. Nothing: 0. At most 4 tops: 9 rays each and a few short drops for
+// each catch, 8 pulls simulated (pullLands: up to 50 rays each), two passes over the nav pieces and one over the
+// regions (no rays); only while falling to its death.
+int recoverAnchor(const Server& s, const ServerPlayer& me, const Vec3& eye, float g, Vec3& anchor, BotTop& top) {
+    const float range = kGrappleRange * moveValue(me.move, MV_HOOK_RANGE, &s.map_) * 0.95f;
+    const Vec3& p = me.move.pos;
+    const auto& nodes = s.nav_.nodes;
+    const auto& surf = s.nav_.surf;
+    if (surf.size() != nodes.size()) return 0;
+    int best[4] = {-1, -1, -1, -1};   // (brushes: the nearest 4 by distance to one of their pieces)
+    float bestD[4] = {1e9f, 1e9f, 1e9f, 1e9f};
+    for (size_t i = 0; i < nodes.size(); i++) {
+        const auto& n = nodes[i];
+        float dx = std::max({n.x0 - p.x, 0.0f, p.x - n.x1}), dz = std::max({n.z0 - p.z, 0.0f, p.z - n.z1}), dy = n.y - eye.y;
+        float d = dx * dx + dz * dz + dy * dy;
+        if (d > range * range || d >= bestD[3]) continue;
+        int k = 0;
+        while (k < 4 && best[k] != surf[i]) k++;
+        if (k < 4) { if (d >= bestD[k]) continue; }   // (that top's already in, nearer)
+        else k = 3;
+        while (k > 0 && d < bestD[k - 1]) { best[k] = best[k - 1]; bestD[k] = bestD[k - 1]; k--; }
+        best[k] = surf[i]; bestD[k] = d;
+    }
+    BotTop tops[4];
+    bool any[4] = {};
+    for (size_t i = 0; i < nodes.size(); i++)
+        for (int k = 0; k < 4; k++)
+            if (best[k] >= 0 && surf[i] == best[k]) {
+                const auto& n = nodes[i];
+                BotTop& t = tops[k];
+                if (!any[k]) { t = {n.x0, n.z0, n.x1, n.z1, n.y}; any[k] = true; }
+                else { t.x0 = std::min(t.x0, n.x0); t.z0 = std::min(t.z0, n.z0); t.x1 = std::max(t.x1, n.x1); t.z1 = std::max(t.z1, n.z1); t.y = std::max(t.y, n.y); }
+            }
+    int found = 0, sims = 8;   // (at most 8 pulls simulated a look: up to 50 rays each)
+    bool side = false;
+    // (a catch, checked; true: its pull lands)
+    auto tryAim = [&](const BotTop& r, const Vec3& tgt, bool isSide) {
+        Vec3 d = tgt - eye;
+        float dl = length(d);
+        if (dl < 1e-3f) return false;
+        d = d / dl;
+        int mat = -1;
+        float t = s.map_.raycast(eye, d, range, nullptr, &mat, true);
+        if (t < 0 || mat == 9 || mat == kMatNoGrapple) return false;
+        Vec3 h = eye + d * t;
+        if (!recoverCatch(s, r, eye, h)) return false;
+        if (sims > 0 && (sims--, pullLands(s, me, h, r, g))) { anchor = h; top = r; found = 2; return true; }
+        if (!found || (isSide && !side)) { anchor = h; top = r; found = 1; side = isSide; }   // (meanwhile: the nearest side, else the first)
+        return false;
+    };
+    struct Aim { float inset, up; };
+    static const Aim aims[] = {{6.0f, 3.0f}, {16.0f, 3.0f}, {16.0f, -0.1f}, {6.0f, -0.1f}, {3.0f, -0.1f}, {0.0f, -0.25f}};
+    for (int k = 0; k < 4; k++) {
+        if (best[k] < 0) break;
+        const BotTop& r = tops[k];
+        if (r.x1 - r.x0 < 2.0f || r.z1 - r.z0 < 2.0f) continue;   // (a post's top, a ledge: no landing to hook back onto)
+        // what stands on it (the tops of the nav regions over it, up to 10 m higher: a pillar, a crate, a wall), the
+        // nearest 3, aimed at just under their tops
+        int up[3] = {-1, -1, -1};
+        float upD[3] = {1e9f, 1e9f, 1e9f};
+        const auto& regs = s.nav_.regions;
+        for (int i = 0; i < (int)regs.size(); i++) {
+            const auto& q = regs[i];
+            const float cx = (q.x0 + q.x1) * 0.5f, cz = (q.z0 + q.z1) * 0.5f;
+            if (q.y < r.y + 1.0f || q.y > r.y + 10.0f || cx < r.x0 || cx > r.x1 || cz < r.z0 || cz > r.z1) continue;
+            float d = (cx - p.x) * (cx - p.x) + (cz - p.z) * (cz - p.z);
+            for (int j = 0; j < 3; j++)
+                if (d < upD[j]) { for (int m = 2; m > j; m--) { up[m] = up[m - 1]; upD[m] = upD[m - 1]; } up[j] = i; upD[j] = d; break; }
+        }
+        for (int i : up)
+            if (i >= 0 && tryAim(r, Vec3((regs[i].x0 + regs[i].x1) * 0.5f, regs[i].y - 0.5f, (regs[i].z0 + regs[i].z1) * 0.5f), false)) return 2;
+        for (const Aim& a : aims) {
+            float ix = std::min(a.inset, (r.x1 - r.x0) * 0.5f), iz = std::min(a.inset, (r.z1 - r.z0) * 0.5f);
+            if (tryAim(r, Vec3(clampf(p.x, r.x0 + ix, r.x1 - ix), r.y + a.up, clampf(p.z, r.z0 + iz, r.z1 - iz)), a.inset == 0.0f)) return 2;
+        }
+    }
+    return found;
+}
+
 // ---- a loaded brain's interpreted slots (null when every slot is native: the built-in brain, or one that only
 // retunes numbers). The common sensors are filled once per think; each call site fills its own and runs the slot.
 struct Interp {
@@ -1713,6 +1899,93 @@ UserCmd botThinkDirect(Server& s, int id) {
         }
     }
 
+    // Knocked off (a player report, 2026-11-23: on Black Hole, a lone platform over the void, a push off the edge was a
+    // free kill): falling where nothing below catches it, the bot hooks back onto the ground, over the fight and the
+    // route (survival first). Every level does it (the rules' grapple is all it takes; a slower hand is slower to aim
+    // it), unless the rules give no grapple, it's run only or a race, or it flies (3D VAMP: it just flies back). Looked
+    // for at 20 Hz, and only while airborne on a map with pits or lava; the search's rays only once it's falling to its
+    // death (fallingToDeath, recoverAnchor). It aims at the anchor and fires once a pull from there lands it on the
+    // top (pullLands: just off the edge, a pull up to a pillar on it; on bare rock, often only once it has fallen far
+    // enough for a pull up the side to fling it over), holds until it's over the top, then steers in onto it.
+    bool recovering = false;
+    Vec3 recoverDir;
+    if (!(me.move.flags & MF_ONGROUND) && (s.map_.hasVoid || !s.map_.lava.empty())) {
+        MoveTuning scratch;
+        const MoveTuning& mt = stepTuning(me.move, &s.map_, scratch);
+        const bool canHook = !me.move.fly && mt.grapple && navOk &&
+                             !(me.move.mods & MOVE_RUN_ONLY) && !isRaceMode(s.ms_.mode);
+        const float g = moveBaseGravity() * mt.gravity * ((me.move.mods & MOVE_LOW_GRAVITY) ? 0.4f : 1.0f);
+        // (not caught yet: looks again at 20 Hz, for a pull that lands now or for where to aim meanwhile)
+        if (canHook && (!b.recoverCaught || now >= b.recoverUntil) && now >= b.nextRecoverLook && !(me.move.flags & MF_HOOKED) && me.move.hookCooldown <= 0) {
+            b.nextRecoverLook = now + 0.05;
+            if (fallingToDeath(s, me.move, g)) {
+                QZONE("bot recover hook");
+                // (the anchor being aimed at is kept while its line stays clear and its pull still lands: a new one
+                // every look would keep the hand chasing it)
+                int found = 0;
+                if (now < b.recoverUntil && b.recoverReady) {
+                    const Vec3 d = b.recoverAnchor - eye;
+                    const float dl = length(d), t = dl > 1e-3f ? s.map_.raycast(eye, d / dl, dl + 0.5f, nullptr, nullptr, true) : -1;
+                    if (t >= 0 && std::fabs(t - dl) < 0.5f && pullLands(s, me, b.recoverAnchor, b.recoverTop, g)) found = 2;
+                }
+                if (!found) found = recoverAnchor(s, me, eye, g, b.recoverAnchor, b.recoverTop);
+                if (found) {
+                    if (now >= b.recoverUntil) { b.hookUntil = 0; b.fightHookUntil = 0; b.recoverCaught = false; }   // (the route's and the fight's hooks give way)
+                    b.recoverUntil = now + 0.3;   // (looked for again before then)
+                    b.recoverReady = found == 2;
+                }
+            } else b.recoverUntil = 0;   // (it'll land after all: a hop, a gap jump)
+        }
+        if (canHook && now < b.recoverUntil) {
+            recovering = true;
+            const BotTop& n = b.recoverTop;
+            const Vec3& at = b.recoverAnchor;
+            // where it comes down: the anchor, a little further in from the edge it came over
+            Vec3 land = {clampf(at.x, n.x0 + std::min(1.5f, (n.x1 - n.x0) * 0.5f), n.x1 - std::min(1.5f, (n.x1 - n.x0) * 0.5f)), n.y,
+                         clampf(at.z, n.z0 + std::min(1.5f, (n.z1 - n.z0) * 0.5f), n.z1 - std::min(1.5f, (n.z1 - n.z0) * 0.5f))};
+            Vec3 toLand = {land.x - me.move.pos.x, 0, land.z - me.move.pos.z};
+            recoverDir = length(toLand) > 0.3f ? normalize(toLand) : Vec3();
+            cmd.buttons &= (uint16_t)~(BTN_GRAPPLE | BTN_FIRE | BTN_JUMP | BTN_DASH);
+            if (me.move.flags & MF_HOOKED) {
+                // caught: somewhere else than aimed (a player in the way is fine: pulled to them), let go and look again
+                // once the cooldown's done; else held while the pull still has to lift it over the edge (the 1.6 s a
+                // pull takes, from the catch). Let go as pullLands does (recoverLetGo), then steered in
+                if (!b.recoverCaught) { b.recoverCaught = true; b.recoverUntil = now + 1.6; }
+                const bool missed = me.move.hookTarget == 0 && length(me.move.hookPoint - at) > 3.0f;
+                if (missed) { b.recoverUntil = 0; b.recoverCaught = false; }
+                else if (!recoverLetGo(s, n, me.move.pos, me.move.vel)) cmd.buttons |= BTN_GRAPPLE;
+                else b.recoverUntil = std::min(b.recoverUntil, now + 0.8);   // (let go: the flight in, within the hook's cooldown)
+                Vec3 along = {me.move.hookPoint.x - me.move.pos.x, 0, me.move.hookPoint.z - me.move.pos.z};
+                if ((cmd.buttons & BTN_GRAPPLE) && length(along) > 0.5f) recoverDir = normalize(along);   // (keys along the pull)
+            } else if (!b.recoverCaught && !(me.move.flags & MF_HOOKHELD) && me.move.hookCooldown <= 0) {
+                // not caught yet (let go: only the flight in, steered): aim (a hand: it takes the time it takes) and,
+                // once a pull lands, fire as soon as the aim as it is (this command's: the view at the start of the
+                // tick) would catch somewhere whose own pull lands, the hand still on its way or not: a sweep across
+                // the edge catches it, as a player's does (a ray a tick while aiming, a few drops, and that catch's
+                // pull: the anchor's, checked at the last look, may not land any more)
+                Vec3 d = normalize(at - eye);
+                wantYaw = yawOf(d);
+                wantPitch = std::asin(clampf(d.y, -1, 1));
+                ffYaw = 0;
+                gain = sp.hookAimGain;
+                if (b.recoverReady) {
+                    int mat = -1;
+                    const Vec3 aim = angleForward(b.aimYaw, clampf(b.aimPitch, -1.5f, 1.5f));
+                    float t = s.map_.raycast(eye, aim, kGrappleRange * moveValue(me.move, MV_HOOK_RANGE, &s.map_), nullptr, &mat, true);
+                    const Vec3 h = eye + aim * std::max(t, 0.0f);
+                    if (t >= 0 && mat != 9 && mat != kMatNoGrapple && recoverCatch(s, n, eye, h) && pullLands(s, me, h, n, g)) {
+                        cmd.buttons |= BTN_GRAPPLE;
+                        b.recoverAnchor = h;
+                    }
+                }
+            }
+            // (waiting for a pull that lands: no keys. Steering in would only brake the drift out that gives a pull up
+            // the side its run at the edge, and draw it in under the lip)
+            if (!b.recoverCaught && !b.recoverReady && !(me.move.flags & MF_HOOKED)) recoverDir = Vec3();
+            moveDir = recoverDir;
+        }
+    } else { b.recoverUntil = 0; b.recoverCaught = false; }
+
     // Turn like a hand on a mouse: speed capped, changing at a limited rate, so long flicks take time and
     // settle; while tracking, the hand also moves with the target. Stepped in 1 ms of game time whatever the
     // tick length, so the hand is the same at every server tick rate.
@@ -1841,6 +2114,11 @@ UserCmd botThinkDirect(Server& s, int id) {
         }
     }
 
+    if (recovering) {   // (hooking back on: its keys, over the pit brake's, which would steer it back out over the edge)
+        cmd.forward = (int8_t)clampf(dot(recoverDir, fwd) * 127, -127, 127);
+        cmd.side = (int8_t)clampf(dot(recoverDir, right) * 127, -127, 127);
+        cmd.buttons &= (uint16_t)~(BTN_JUMP | BTN_DASH);
+    }
     // unstick: if we've barely moved for a while, hop and sidestep; when just roaming, pick somewhere else
     if (now >= b.stuckCheckAt) {
         bool stuck;

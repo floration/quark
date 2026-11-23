@@ -83,6 +83,7 @@
 (IT AFFECTS GAMEPLAY)	(ВЛИЯЕТ НА ГЕЙМПЛЕЙ)
 (LEAVE)	(ВЫЙТИ)
 (MISSING)	(НЕТ)
+(NICE; RAISING IT NEEDS PERMISSION: F3 SAYS)	(NICE; ДЛЯ ПОВЫШЕНИЯ НУЖНЫ ПРАВА: СМ. F3)
 (NOT IN RANKED)	(НЕ В РЕЙТИНГЕ)
 (PUBLIC)	(ОТКРЫТ.)
 (REFRESH - 3)	(ОБНОВИТЬ - 3)
@@ -673,9 +674,12 @@ COUNTDOWN: A TICK EACH OF THE LAST 10 S	ОТСЧЁТ: ТИК КАЖДУЮ ИЗ �
 CP	CP
 CPU	ЦП
 CPU ABOVE NORMAL	ЦП ВЫШЕ ОБЫЧНОГО
+CPU GOES TO THE GAME FIRST WHILE FOCUSED	ЦП В ПРИОРИТЕТЕ У ИГРЫ, ПОКА ОНА В ФОКУСЕ
 CPU HIGH	ЦП ВЫСОКИЙ
 CPU LATCH	CPU LATCH
 CPU LATE LATCH	ПОЗДНЕЕ ЧТЕНИЕ CPU
+CPU NICE #	ЦП NICE #
+CPU NICE # (WANTED #: NO PERMISSION)	ЦП NICE # (НУЖНО #: НЕТ ПРАВ)
 CPU NORMAL	ЦП ОБЫЧНЫЙ
 CPU OTHER	ЦП ПРОЧЕЕ
 CPU PRIORITY	ПРИОРИТЕТ ЦП
@@ -3631,6 +3635,7 @@ WINDOW SIZE	РАЗМЕР ОКНА
 WINDOW SIZE:	РАЗМЕР ОКНА:
 WINDOWED	В ОКНЕ
 WINDOWS	WINDOWS
+WINDOWS + LINUX, WITH PRIORITIZE GAME ON;	WINDOWS + LINUX, С ВКЛЮЧЁННЫМ ПРИОРИТЕТОМ ИГРЕ;
 WINDOWS GAME MODE IS OFF	ИГРОВОЙ РЕЖИМ WINDOWS ВЫКЛЮЧЕН
 WINDOWS IS ON THE POWER SAVER PLAN	WINDOWS В РЕЖИМЕ ЭКОНОМИИ ЭНЕРГИИ
 WINDOWS ONLY	ТОЛЬКО WINDOWS
@@ -3639,7 +3644,6 @@ WINDOWS RAW INPUT, NO MOUSE ACCEL	RAW INPUT WINDOWS, БЕЗ УСКОРЕНИЯ �
 WINDOWS SETTINGS > GAMING > GAME MODE: ON	ПАРАМЕТРЫ WINDOWS > ИГРЫ > ИГРОВОЙ РЕЖИМ: ВКЛ
 WINDOWS SETTINGS > SYSTEM > DISPLAY > GRAPHICS > QUARK: HIGH PERFORMANCE	ПАРАМЕТРЫ WINDOWS > СИСТЕМА > ДИСПЛЕЙ > ГРАФИКА > QUARK: ВЫСОКАЯ ПРОИЗВОДИТЕЛЬНОСТЬ
 WINDOWS SETTINGS > SYSTEM > POWER: POWER MODE BEST PERFORMANCE	ПАРАМЕТРЫ WINDOWS > СИСТЕМА > ПИТАНИЕ: МАКС. ПРОИЗВОДИТЕЛЬНОСТЬ
-WINDOWS, WITH PRIORITIZE GAME ON;	WINDOWS, С ВКЛЮЧЁННЫМ ПРИОРИТЕТОМ ИГРЕ;
 WINNER STAYS	ПОБЕДИТЕЛЬ ОСТ.
 WINNER STAYS - 1v1 rounds on one ruleset while everyone else waits in line. Each round's winner stays; the loser goes to the back of the line and the next in line plays the winner. Every round you win counts: first to 10 wins.	ПОБЕДИТЕЛЬ ОСТАЁТСЯ - раунды 1v1 по одним правилам, остальные ждут в очереди. Победитель раунда остаётся; проигравший уходит в конец очереди, а следующий играет с победителем. Каждый выигранный раунд засчитывается: до 10 побед.
 WINNER STAYS - FIRST TO	ПОБЕДИТЕЛЬ ОСТАЁТСЯ - ДО
@@ -4131,6 +4135,7 @@ practice: position saved	тренировка: позиция сохранена
 practice: you take damage again	тренировка: вы снова получаете урон
 practice: you take no damage	тренировка: вы не получаете урон
 press ESC again to leave the session	нажмите ESC ещё раз, чтобы выйти из сессии
+prioritize: Linux allowed nice #, not # (needs CAP_SYS_NICE or an RLIMIT_NICE allowance)	prioritize: Linux allowed nice #, not # (needs CAP_SYS_NICE or an RLIMIT_NICE allowance)
 prioritize: Windows refused the GPU scheduling class (NTSTATUS 0x#)	приоритет: Windows отказала в классе планирования GPU (NTSTATUS 0x#)
 proj # type # owner # pos # # # vel # # #	proj # type # owner # pos # # # vel # # #
 proj # type # owner # pos # # # vel # # #{}	proj # type # owner # pos # # # vel # # #{}

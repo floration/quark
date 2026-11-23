@@ -83,6 +83,7 @@
 (IT AFFECTS GAMEPLAY)	(게임플레이에 영향)
 (LEAVE)	(나가기)
 (MISSING)	(없음)
+(NICE; RAISING IT NEEDS PERMISSION: F3 SAYS)	(NICE; 올리려면 허가 필요: F3에서 확인)
 (NOT IN RANKED)	(랭크 제외)
 (PUBLIC)	(공개)
 (REFRESH - 3)	(새로고침 - 3)
@@ -673,9 +674,12 @@ COUNTDOWN: A TICK EACH OF THE LAST 10 S	카운트다운: 마지막 10초 동안 
 CP	CP
 CPU	CPU
 CPU ABOVE NORMAL	CPU 보통 이상
+CPU GOES TO THE GAME FIRST WHILE FOCUSED	창 활성 시 CPU를 게임에 우선 할당
 CPU HIGH	CPU 높음
 CPU LATCH	CPU LATCH
 CPU LATE LATCH	CPU 늦은 읽기
+CPU NICE #	CPU NICE #
+CPU NICE # (WANTED #: NO PERMISSION)	CPU NICE # (요청 #: 허가 없음)
 CPU NORMAL	CPU 보통
 CPU OTHER	CPU 기타
 CPU PRIORITY	CPU 우선순위
@@ -3631,6 +3635,7 @@ WINDOW SIZE	창 크기
 WINDOW SIZE:	창 크기:
 WINDOWED	창 모드
 WINDOWS	WINDOWS
+WINDOWS + LINUX, WITH PRIORITIZE GAME ON;	WINDOWS + LINUX, 게임 우선 켜짐 시;
 WINDOWS GAME MODE IS OFF	WINDOWS 게임 모드가 꺼져 있음
 WINDOWS IS ON THE POWER SAVER PLAN	WINDOWS가 절전 모드 전원 관리 옵션임
 WINDOWS ONLY	WINDOWS 전용
@@ -3639,7 +3644,6 @@ WINDOWS RAW INPUT, NO MOUSE ACCEL	WINDOWS RAW INPUT, 마우스 가속 없음
 WINDOWS SETTINGS > GAMING > GAME MODE: ON	WINDOWS 설정 > 게임 > 게임 모드: 켜짐
 WINDOWS SETTINGS > SYSTEM > DISPLAY > GRAPHICS > QUARK: HIGH PERFORMANCE	WINDOWS 설정 > 시스템 > 디스플레이 > 그래픽 > QUARK: 고성능
 WINDOWS SETTINGS > SYSTEM > POWER: POWER MODE BEST PERFORMANCE	WINDOWS 설정 > 시스템 > 전원: 최고 성능
-WINDOWS, WITH PRIORITIZE GAME ON;	WINDOWS, 게임 우선 켜짐 시;
 WINNER STAYS	승자 잔류
 WINNER STAYS - 1v1 rounds on one ruleset while everyone else waits in line. Each round's winner stays; the loser goes to the back of the line and the next in line plays the winner. Every round you win counts: first to 10 wins.	승자 잔류 - 나머지가 줄을 서서 기다리는 동안 한 가지 규칙으로 1v1 라운드를 진행합니다. 라운드 승자는 남고, 패자는 줄 맨 뒤로 가며 다음 사람이 승자와 대결합니다. 이긴 라운드는 모두 집계됩니다: 10승 선취.
 WINNER STAYS - FIRST TO	승자 잔류 - 선취
@@ -4131,6 +4135,7 @@ practice: position saved	연습: 위치 저장됨
 practice: you take damage again	연습: 다시 피해 받음
 practice: you take no damage	연습: 피해 받지 않음
 press ESC again to leave the session	ESC를 다시 누르면 세션 종료
+prioritize: Linux allowed nice #, not # (needs CAP_SYS_NICE or an RLIMIT_NICE allowance)	prioritize: Linux allowed nice #, not # (needs CAP_SYS_NICE or an RLIMIT_NICE allowance)
 prioritize: Windows refused the GPU scheduling class (NTSTATUS 0x#)	우선순위: Windows가 GPU 스케줄링 클래스를 거부함 (NTSTATUS 0x#)
 proj # type # owner # pos # # # vel # # #	proj # type # owner # pos # # # vel # # #
 proj # type # owner # pos # # # vel # # #{}	proj # type # owner # pos # # # vel # # #{}

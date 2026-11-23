@@ -83,6 +83,7 @@
 (IT AFFECTS GAMEPLAY)	(影响游戏玩法)
 (LEAVE)	(离开)
 (MISSING)	(缺失)
+(NICE; RAISING IT NEEDS PERMISSION: F3 SAYS)	(NICE; 提高需要权限: F3 显示)
 (NOT IN RANKED)	(排位不可用)
 (PUBLIC)	(公开)
 (REFRESH - 3)	(刷新率 - 3)
@@ -673,9 +674,12 @@ COUNTDOWN: A TICK EACH OF THE LAST 10 S	倒计时: 最后 10 秒每秒一响
 CP	CP
 CPU	CPU
 CPU ABOVE NORMAL	CPU 高于正常
+CPU GOES TO THE GAME FIRST WHILE FOCUSED	聚焦时 CPU 优先分配给游戏
 CPU HIGH	CPU 高
 CPU LATCH	CPU LATCH
 CPU LATE LATCH	CPU 延迟读取
+CPU NICE #	CPU NICE #
+CPU NICE # (WANTED #: NO PERMISSION)	CPU NICE # (请求 #: 无权限)
 CPU NORMAL	CPU 正常
 CPU OTHER	CPU 其他
 CPU PRIORITY	CPU 优先级
@@ -3631,6 +3635,7 @@ WINDOW SIZE	窗口大小
 WINDOW SIZE:	窗口大小:
 WINDOWED	窗口化
 WINDOWS	WINDOWS
+WINDOWS + LINUX, WITH PRIORITIZE GAME ON;	WINDOWS + LINUX, 开启优先游戏时;
 WINDOWS GAME MODE IS OFF	WINDOWS 游戏模式已关闭
 WINDOWS IS ON THE POWER SAVER PLAN	WINDOWS 处于节能方案
 WINDOWS ONLY	仅 WINDOWS
@@ -3639,7 +3644,6 @@ WINDOWS RAW INPUT, NO MOUSE ACCEL	WINDOWS RAW INPUT, 无鼠标加速
 WINDOWS SETTINGS > GAMING > GAME MODE: ON	WINDOWS 设置 > 游戏 > 游戏模式: 开
 WINDOWS SETTINGS > SYSTEM > DISPLAY > GRAPHICS > QUARK: HIGH PERFORMANCE	WINDOWS 设置 > 系统 > 屏幕 > 显示卡 > QUARK: 高性能
 WINDOWS SETTINGS > SYSTEM > POWER: POWER MODE BEST PERFORMANCE	WINDOWS 设置 > 系统 > 电源: 最佳性能
-WINDOWS, WITH PRIORITIZE GAME ON;	WINDOWS, 开启优先游戏时;
 WINNER STAYS	胜者留场
 WINNER STAYS - 1v1 rounds on one ruleset while everyone else waits in line. Each round's winner stays; the loser goes to the back of the line and the next in line plays the winner. Every round you win counts: first to 10 wins.	胜者留场 - 在同一规则下进行 1v1 回合, 其他人排队等候。每回合胜者留场; 败者排到队尾, 下一位挑战胜者。每赢一回合都计分: 先赢 10 回合者胜。
 WINNER STAYS - FIRST TO	胜者留场 - 先达到
@@ -4131,6 +4135,7 @@ practice: position saved	练习: 位置已保存
 practice: you take damage again	练习: 你恢复受到伤害
 practice: you take no damage	练习: 你不受伤害
 press ESC again to leave the session	再按一次 ESC 离开会话
+prioritize: Linux allowed nice #, not # (needs CAP_SYS_NICE or an RLIMIT_NICE allowance)	prioritize: Linux allowed nice #, not # (needs CAP_SYS_NICE or an RLIMIT_NICE allowance)
 prioritize: Windows refused the GPU scheduling class (NTSTATUS 0x#)	优先: WINDOWS 拒绝了 GPU 调度类 (NTSTATUS 0x#)
 proj # type # owner # pos # # # vel # # #	proj # type # owner # pos # # # vel # # #
 proj # type # owner # pos # # # vel # # #{}	proj # type # owner # pos # # # vel # # #{}
