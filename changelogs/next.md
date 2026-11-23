@@ -1,5 +1,10 @@
 # Next
 
+## Player suggestions (dima)
+- **Fullbright projectiles:** with FULLBRIGHT on, rockets, stickies, knives, syringes, bolts, bubbles and orbs are drawn flat in their full colour like the map, with no shading or fog, so they stand out in dark corners and far away.
+- **Water, lava and acid show under fullbright:** they were a flat grey (lava nearly white). Now each keeps its colour (blue, orange, green) over the fullbright colour.
+- **CPU priority on Linux:** PRIORITIZE GAME and CPU PRIORITY now work on Linux, using the game's nice value while it has focus. Raising it needs permission (CAP_SYS_NICE, or a nice limit in limits.conf, which gamemode sets up). F3 shows the nice value you got.
+
 ## Netcode
 - **Your hits show at once at any ping:** the hit flash, hitsound and damage number appear the moment you land a hit, instead of a round trip later when the server answered. The server's answer no longer shows them a second time; only damage the server adds on its own (stickies, your own blasts) still shows when it answers.
 - **Your rockets explode on the wall at high ping:** your own rocket, bolt or knife copy now waits as long as your ping needs for the server's, so a rocket no longer sits on the wall waiting for the server's explosion.

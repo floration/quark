@@ -83,6 +83,7 @@
 (IT AFFECTS GAMEPLAY)	(BEEINFLUSST DAS GAMEPLAY)
 (LEAVE)	(RAUS)
 (MISSING)	(FEHLT)
+(NICE; RAISING IT NEEDS PERMISSION: F3 SAYS)	(NICE; ANHEBEN BRAUCHT RECHTE: F3 ZEIGT ES)
 (NOT IN RANKED)	(NICHT IN RANKED)
 (PUBLIC)	(ÖFFENTLICH)
 (REFRESH - 3)	(AKTUALISIEREN - 3)
@@ -673,9 +674,12 @@ COUNTDOWN: A TICK EACH OF THE LAST 10 S	COUNTDOWN: EIN TICK IN DEN LETZTEN 10 S
 CP	CP
 CPU	CPU
 CPU ABOVE NORMAL	CPU HÖHER ALS NORMAL
+CPU GOES TO THE GAME FIRST WHILE FOCUSED	CPU GEHT IM FOKUS ZUERST ANS SPIEL
 CPU HIGH	CPU HOCH
 CPU LATCH	CPU LATCH
 CPU LATE LATCH	CPU LATE LATCH
+CPU NICE #	CPU NICE #
+CPU NICE # (WANTED #: NO PERMISSION)	CPU NICE # (GEWOLLT #: KEINE RECHTE)
 CPU NORMAL	CPU NORMAL
 CPU OTHER	CPU ANDERE
 CPU PRIORITY	CPU-PRIORITÄT
@@ -3631,6 +3635,7 @@ WINDOW SIZE	FENSTERGRÖSSE
 WINDOW SIZE:	FENSTERGRÖSSE:
 WINDOWED	FENSTER
 WINDOWS	WINDOWS
+WINDOWS + LINUX, WITH PRIORITIZE GAME ON;	WINDOWS + LINUX, MIT SPIEL PRIORISIEREN AN;
 WINDOWS GAME MODE IS OFF	DER WINDOWS-SPIELMODUS IST AUS
 WINDOWS IS ON THE POWER SAVER PLAN	WINDOWS NUTZT DEN ENERGIESPARPLAN
 WINDOWS ONLY	NUR WINDOWS
@@ -3639,7 +3644,6 @@ WINDOWS RAW INPUT, NO MOUSE ACCEL	WINDOWS RAW INPUT, OHNE MAUSBESCHL.
 WINDOWS SETTINGS > GAMING > GAME MODE: ON	WINDOWS-EINSTELLUNGEN > SPIELEN > SPIELMODUS: AN
 WINDOWS SETTINGS > SYSTEM > DISPLAY > GRAPHICS > QUARK: HIGH PERFORMANCE	WINDOWS-EINSTELLUNGEN > SYSTEM > BILDSCHIRM > GRAFIK > QUARK: HOHE LEISTUNG
 WINDOWS SETTINGS > SYSTEM > POWER: POWER MODE BEST PERFORMANCE	WINDOWS-EINSTELLUNGEN > SYSTEM > STROM: BESTE LEISTUNG
-WINDOWS, WITH PRIORITIZE GAME ON;	WINDOWS, MIT SPIEL PRIORISIEREN AN;
 WINNER STAYS	GEWINNER BLEIBT
 WINNER STAYS - 1v1 rounds on one ruleset while everyone else waits in line. Each round's winner stays; the loser goes to the back of the line and the next in line plays the winner. Every round you win counts: first to 10 wins.	GEWINNER BLEIBT - 1v1-Runden mit einem Regelsatz, während alle anderen anstehen. Der Sieger jeder Runde bleibt; der Verlierer geht ans Ende der Schlange und der Nächste spielt gegen den Sieger. Jede gewonnene Runde zählt: wer zuerst 10 hat, gewinnt.
 WINNER STAYS - FIRST TO	GEWINNER BLEIBT - WER ZUERST
@@ -4131,6 +4135,7 @@ practice: position saved	Training: Position gespeichert
 practice: you take damage again	Training: du nimmst wieder Schaden
 practice: you take no damage	Training: du nimmst keinen Schaden
 press ESC again to leave the session	drück nochmal ESC, um die Sitzung zu verlassen
+prioritize: Linux allowed nice #, not # (needs CAP_SYS_NICE or an RLIMIT_NICE allowance)	prioritize: Linux allowed nice #, not # (needs CAP_SYS_NICE or an RLIMIT_NICE allowance)
 prioritize: Windows refused the GPU scheduling class (NTSTATUS 0x#)	priorisieren: Windows lehnte die GPU-Scheduling-Klasse ab (NTSTATUS 0x#)
 proj # type # owner # pos # # # vel # # #	proj # type # owner # pos # # # vel # # #
 proj # type # owner # pos # # # vel # # #{}	proj # type # owner # pos # # # vel # # #{}

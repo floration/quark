@@ -83,6 +83,7 @@
 (IT AFFECTS GAMEPLAY)	(AFFECTE LE GAMEPLAY)
 (LEAVE)	(QUITTER)
 (MISSING)	(MANQUANT)
+(NICE; RAISING IT NEEDS PERMISSION: F3 SAYS)	(NICE ; LE MONTER DEMANDE UNE PERMISSION : F3 LE DIT)
 (NOT IN RANKED)	(PAS EN CLASSÉ)
 (PUBLIC)	(PUBLIC)
 (REFRESH - 3)	(ACTUALISER - 3)
@@ -673,9 +674,12 @@ COUNTDOWN: A TICK EACH OF THE LAST 10 S	COMPTE À REBOURS : UN TIC CHAQUE SECOND
 CP	CP
 CPU	CPU
 CPU ABOVE NORMAL	CPU SUP. À LA NORMALE
+CPU GOES TO THE GAME FIRST WHILE FOCUSED	LE CPU VA D'ABORD AU JEU QUAND IL A LE FOCUS
 CPU HIGH	CPU HAUTE
 CPU LATCH	CPU LATCH
 CPU LATE LATCH	LECTURE TARDIVE CPU
+CPU NICE #	CPU NICE #
+CPU NICE # (WANTED #: NO PERMISSION)	CPU NICE # (DEMANDÉ # : PAS DE PERMISSION)
 CPU NORMAL	CPU NORMALE
 CPU OTHER	CPU AUTRE
 CPU PRIORITY	PRIORITÉ CPU
@@ -3631,6 +3635,7 @@ WINDOW SIZE	TAILLE FENÊTRE
 WINDOW SIZE:	TAILLE FENÊTRE :
 WINDOWED	FENÊTRÉ
 WINDOWS	WINDOWS
+WINDOWS + LINUX, WITH PRIORITIZE GAME ON;	WINDOWS + LINUX, AVEC PRIORISER LE JEU ACTIVÉ ;
 WINDOWS GAME MODE IS OFF	LE MODE JEU DE WINDOWS EST DÉSACTIVÉ
 WINDOWS IS ON THE POWER SAVER PLAN	WINDOWS EST EN MODE ÉCONOMIE D'ÉNERGIE
 WINDOWS ONLY	WINDOWS SEULEMENT
@@ -3639,7 +3644,6 @@ WINDOWS RAW INPUT, NO MOUSE ACCEL	RAW INPUT WINDOWS, SANS ACCÉL. SOURIS
 WINDOWS SETTINGS > GAMING > GAME MODE: ON	PARAMÈTRES WINDOWS > JEUX > MODE JEU : OUI
 WINDOWS SETTINGS > SYSTEM > DISPLAY > GRAPHICS > QUARK: HIGH PERFORMANCE	PARAMÈTRES WINDOWS > SYSTÈME > AFFICHAGE > GRAPHIQUES > QUARK : HAUTES PERF.
 WINDOWS SETTINGS > SYSTEM > POWER: POWER MODE BEST PERFORMANCE	PARAMÈTRES WINDOWS > SYSTÈME > ALIMENTATION : MEILLEURES PERF.
-WINDOWS, WITH PRIORITIZE GAME ON;	WINDOWS, AVEC PRIORISER LE JEU ACTIVÉ ;
 WINNER STAYS	LE GAGNANT RESTE
 WINNER STAYS - 1v1 rounds on one ruleset while everyone else waits in line. Each round's winner stays; the loser goes to the back of the line and the next in line plays the winner. Every round you win counts: first to 10 wins.	LE GAGNANT RESTE - manches en 1v1 sur une règle pendant que les autres font la queue. Le gagnant de chaque manche reste ; le perdant retourne en fin de file et le suivant affronte le gagnant. Chaque manche gagnée compte : le premier à 10 gagne.
 WINNER STAYS - FIRST TO	LE GAGNANT RESTE - PREMIER À
@@ -4131,6 +4135,7 @@ practice: position saved	entraînement : position sauvegardée
 practice: you take damage again	entraînement : vous subissez de nouveau des dégâts
 practice: you take no damage	entraînement : vous ne subissez aucun dégât
 press ESC again to leave the session	appuyez de nouveau sur ÉCHAP pour quitter la session
+prioritize: Linux allowed nice #, not # (needs CAP_SYS_NICE or an RLIMIT_NICE allowance)	prioritize: Linux allowed nice #, not # (needs CAP_SYS_NICE or an RLIMIT_NICE allowance)
 prioritize: Windows refused the GPU scheduling class (NTSTATUS 0x#)	priorité : Windows a refusé la classe de planification GPU (NTSTATUS 0x#)
 proj # type # owner # pos # # # vel # # #	proj # type # owner # pos # # # vel # # #
 proj # type # owner # pos # # # vel # # #{}	proj # type # owner # pos # # # vel # # #{}

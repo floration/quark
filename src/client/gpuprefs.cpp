@@ -568,6 +568,67 @@ bool RasterClock::nextBlank(double, double*) { return false; }
 bool nvMaxClocks(bool, std::string* msg) { *msg = "GPU MAX CLOCKS: WINDOWS ONLY"; return false; }
 bool nvThreadedOff(bool, std::string* msg) { *msg = "THREADED OPTIMIZATION: WINDOWS ONLY"; return false; }
 bool nvDxgiPresent(bool, std::string* msg) { *msg = "DXGI PRESENT: WINDOWS ONLY"; return false; }
+#ifdef __linux__
+// Linux (player request, 2026-11-22: "add cpu priority for linux": nice, the same idea as Windows' priority classes).
+// Linux's nice is per thread, so every thread of the game's (/proc/self/task) gets it: the render thread, the hosted
+// server's, audio's; a thread started later inherits its starter's. Raising it (below 0) needs CAP_SYS_NICE or an
+// RLIMIT_NICE allowance (limits.conf "@games - nice -10", what gamemode grants): asked for -5 (ABOVE NORMAL) or -10
+// (HIGH), and if refused the smallest raise allowed is taken, else it stays 0 and F3 says so. With the kernel's
+// autogroup (desktop sessions), nice only orders threads within the game's own group: the group's nice
+// (/proc/self/autogroup) is set the same way, so the game also wins against other programs. Back to 0 out of focus
+// (lowering a nice is always allowed).
+#include <sys/resource.h>
+#include <dirent.h>
+#include <cerrno>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <algorithm>
+
+namespace {
+int g_niceWant = 0, g_niceGot = 0;   // (the last level's nice asked for, and what the render thread got)
+bool g_niceRefused = false;
+
+int setAllThreadsNice(int nice) {   // the nice every thread got (the render thread's), trying nice, then milder raises
+    for (int n = nice; ; n += (n < 0 ? 1 : 0)) {
+        bool ok = true;
+        if (DIR* d = opendir("/proc/self/task")) {
+            while (dirent* e = readdir(d)) {
+                if (e->d_name[0] < '0' || e->d_name[0] > '9') continue;
+                if (setpriority(PRIO_PROCESS, (id_t)atoi(e->d_name), n) != 0 && errno != ESRCH) ok = false;   // (ESRCH: it just ended)
+            }
+            closedir(d);
+        } else ok = setpriority(PRIO_PROCESS, 0, n) == 0;
+        if (ok || n >= 0) {   // (n >= 0 and refused: left as it was)
+            if (FILE* f = fopen("/proc/self/autogroup", "w")) { fprintf(f, "%d", n); fclose(f); }   // (fails quietly without autogroup or rights)
+            return ok ? n : 0;
+        }
+    }
+}
+}  // namespace
+
+void setGamePriority(int level) {
+    static int now = -1;
+    if (now == level) return;
+    now = level;
+    // (relative to the nice the game was started with: launched already raised, by gamemode or `nice`, it never drops
+    // below that, and out of focus it goes back to it)
+    static const int base = [] { errno = 0; const int n = getpriority(PRIO_PROCESS, 0); return errno ? 0 : n; }();
+    g_niceWant = std::min(base, level >= 2 ? -10 : level > 0 ? -5 : base);
+    g_niceGot = setAllThreadsNice(g_niceWant);
+    g_niceRefused = g_niceGot != g_niceWant;
+    if (g_niceRefused) printf("prioritize: Linux allowed nice %d, not %d (needs CAP_SYS_NICE or an RLIMIT_NICE allowance)\n", g_niceGot, g_niceWant);
+}
+std::string gamePriorityStatus() {
+    errno = 0;
+    const int n = getpriority(PRIO_PROCESS, 0);
+    char b[96];
+    if (g_niceRefused) snprintf(b, sizeof b, "CPU NICE %d (WANTED %d: NO PERMISSION)", errno ? g_niceGot : n, g_niceWant);
+    else snprintf(b, sizeof b, "CPU NICE %d", errno ? g_niceGot : n);
+    return b;
+}
+#else
 void setGamePriority(int) {}
 std::string gamePriorityStatus() { return ""; }
+#endif
 #endif
